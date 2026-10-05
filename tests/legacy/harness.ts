@@ -106,3 +106,11 @@ export async function loadLegacyStaffApi(): Promise<(req: Request, env: unknown)
   return m.staffApi;
 }
 export const legacyMigrationsDir = () => join(LEGACY_DIR!, 'drizzle');
+
+/** Tải các hàm thuần của bản cũ: validateQuotation, validDeliveryDate. */
+export async function loadLegacyQuotation(): Promise<any> {
+  return await import(pathToFileURL(join(LEGACY_DIR!, 'lib/quotation-store.mjs')).href);
+}
+export async function loadLegacyDeliveryDate(): Promise<any> {
+  return await import(pathToFileURL(join(LEGACY_DIR!, 'lib/contract-delivery-date.mjs')).href);
+}
