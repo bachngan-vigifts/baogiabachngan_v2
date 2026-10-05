@@ -1,0 +1,115 @@
+import { AppError } from '../../../core/errors.ts';
+import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
+import { Router, json, readJson, type RouteContext } from '../../../core/http/router.ts';
+import { checkMethodAndOrigin } from '../../../core/http/security.ts';
+import type { AnyDb } from '../../../core/db/client.ts';
+import { FORBIDDEN_MESSAGE, SUPPLIER_FORBIDDEN_MESSAGE, canAccessArea, type Area } from '../domain/area-policy.ts';
+import { isSupplier } from '../domain/roles.ts';
+import { RATE_LIMITS, SESSION_LIFETIME_SECONDS, clearedSessionCookie, isToken, newToken, publicMember, readSessionToken, sessionCookie, sha256Hex, tooManyAttempts, type MemberRow } from '../domain/session.ts';
+import * as repo from '../repo/auth-repo.ts';
+import { registerMemberRoutes } from './member-routes.ts';
+
+/** Môi trường mà các route của `staff` cần. Nơi lắp ráp ứng dụng (src/app) tạo ra từ bindings của Cloudflare. */
+export interface StaffEnv {
+  db: AnyDb;
+  /** Giây Unix hiện tại; mặc định đồng hồ hệ thống (test truyền đồng hồ giả). */
+  nowSec?: () => number;
+  /** Số vòng PBKDF2 khi tạo hash mới (mặc định 600.000; test hạ xuống cho nhanh). */
+  passwordIterations?: number;
+}
+type Ctx = RouteContext<StaffEnv>;
+export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }
+
+const now = (c: Ctx) => (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))();
+const session = (c: Ctx) => c.state.session as SessionState;
+
+async function limit(c: Ctx, key: string, max: number) {
+  if (await repo.countAttempt(c.env.db, key, now(c)) > max) throw tooManyAttempts();
+}
+
+/**
+ * Chốt quyền cho MỌI route (gắn vào Router qua `authorize`): route 'public' đi thẳng; còn lại phải có phiên hợp lệ
+ * và khu vực của route phải nằm trong quyền của người dùng. NCC đi sai khu vực nhận đúng thông báo của bản cũ.
+ */
+export async function authorizeRoute(c: Ctx): Promise<void> {
+  const area = c.meta as Area;
+  if (area === 'public') return;
+  const token = readSessionToken(c.req.headers.get('cookie'));
+  const tokenHash = sha256Hex(token);
+  const member = await repo.findSessionMember(c.env.db, tokenHash, now(c));
+  if (!member) throw new AppError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  if (!canAccessArea(member, area)) throw new AppError(403, isSupplier(member) ? SUPPLIER_FORBIDDEN_MESSAGE : FORBIDDEN_MESSAGE[area]);
+  c.state.session = { member, tokenHash } satisfies SessionState;
+}
+
+export function registerAuthRoutes(router: Router<StaffEnv>): void {
+  // ---- Công khai ----
+  router.post('/activation-info', async c => {
+    const body = await readJson(c.req, 4096);
+    await limit(c, 'ip:' + (c.req.headers.get('cf-connecting-ip') || 'unknown'), RATE_LIMITS.ip);
+    const hash = await activationHash(body);
+    const found = await repo.findActivation(c.env.db, hash, now(c));
+    if (!found) throw expiredLink();
+    return json({ email: found.email, expiresAt: found.expires! * 1000 });
+  }, 'public');
+
+  router.post('/activate', async c => {
+    const body = await readJson(c.req, 4096);
+    await limit(c, 'ip:' + (c.req.headers.get('cf-connecting-ip') || 'unknown'), RATE_LIMITS.ip);
+    const hash = await activationHash(body);
+    const found = await repo.findActivation(c.env.db, hash, now(c));
+    if (!found) throw expiredLink();
+    await limit(c, 'activation:' + hash, RATE_LIMITS.activation);
+    const passwordHash = await hashPassword(body.password, c.env.passwordIterations);
+    const ok = await repo.completeActivation(c.env.db, { memberId: found.memberId, email: found.email, tokenHash: hash, passwordHash, now: now(c) });
+    if (!ok) throw new AppError(400, 'Liên kết đã được sử dụng.');
+    return json({ ok: true });
+  }, 'public');
+
+  router.post('/login', async c => {
+    const body = await readJson(c.req, 4096);
+    const email = String(body.email || '').trim().toLowerCase();
+    await limit(c, 'ip:' + (c.req.headers.get('cf-connecting-ip') || 'unknown'), RATE_LIMITS.ip);
+    await limit(c, 'email:' + email, RATE_LIMITS.email);
+    const row = await repo.findLoginRow(c.env.db, email);
+    // Luôn tốn thời gian băm như nhau dù email có tồn tại hay không (verifyPassword dùng hash giả khi thiếu).
+    const valid = await verifyPassword(body.password, row?.passwordHash, c.env.passwordIterations);
+    if (!valid || !row?.active) throw new AppError(401, 'Email hoặc mật khẩu không đúng, hoặc tài khoản chưa được kích hoạt.');
+    const token = newToken();
+    await repo.createSession(c.env.db, { tokenHash: sha256Hex(token), memberId: row.id, version: row.version, now: now(c), lifetime: SESSION_LIFETIME_SECONDS });
+    return json({ user: publicMember(row) }, 200, { 'set-cookie': sessionCookie(token) });
+  }, 'public');
+
+  // ---- Tài khoản của chính mình (mọi vai trò, kể cả NCC) ----
+  router.get('/me', c => json({ user: publicMember(session(c).member) }), 'self');
+
+  router.post('/logout', async c => {
+    await repo.deleteSession(c.env.db, session(c).tokenHash);
+    return json({ ok: true }, 200, { 'set-cookie': clearedSessionCookie() });
+  }, 'self');
+
+  router.post('/password', async c => {
+    const body = await readJson(c.req, 4096);
+    const me = session(c).member;
+    await limit(c, 'password:' + me.id, RATE_LIMITS.password);
+    const current = await repo.getPasswordHash(c.env.db, me.id);
+    if (!await verifyPassword(body.currentPassword, current, c.env.passwordIterations)) throw new AppError(400, 'Mật khẩu hiện tại không đúng.');
+    const next = await hashPassword(body.password, c.env.passwordIterations);
+    await repo.changePassword(c.env.db, me.id, next);
+    return json({ ok: true }, 200, { 'set-cookie': clearedSessionCookie() });
+  }, 'self');
+}
+
+const expiredLink = () => new AppError(400, 'Liên kết đã hết hạn, đã sử dụng hoặc đã được thay bằng liên kết mới. Vui lòng nhờ Manager cấp lại và mở đúng liên kết mới nhất.');
+async function activationHash(body: Record<string, unknown>): Promise<string> {
+  if (!isToken(body.token)) throw new AppError(400, 'Liên kết kích hoạt không hợp lệ hoặc đã hết hạn.');
+  return sha256Hex(body.token);
+}
+
+/** Router của module staff: đã gắn chốt Origin/phương thức và chốt quyền; mọi route BẮT BUỘC khai báo khu vực. */
+export function createStaffRouter(): Router<StaffEnv> {
+  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => checkMethodAndOrigin(req, url), authorize: authorizeRoute });
+  registerAuthRoutes(router);
+  registerMemberRoutes(router);
+  return router;
+}

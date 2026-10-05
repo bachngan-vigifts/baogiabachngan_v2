@@ -1,0 +1,94 @@
+import { and, eq, gt, lte, sql } from 'drizzle-orm';
+import type { AnyDb } from '../../../core/db/client.ts';
+import { authAttempts, credentials, employees, positions, sessions } from '../schema.ts';
+import { RATE_WINDOW_SECONDS, sha256Hex, type MemberRow } from '../domain/session.ts';
+
+/**
+ * Truy vấn xác thực. Mỗi hàm là một thao tác nhỏ; những chuỗi cần nguyên tử dùng `db.batch` (D1 không có transaction).
+ * `now` là giây Unix, truyền vào để test điều khiển được thời gian.
+ */
+const memberColumns = {
+  id: employees.id, name: employees.name, phone: employees.phone, email: employees.email, role: employees.role,
+  positionId: employees.positionId, positionName: positions.name, active: employees.active,
+};
+
+/**
+ * Đếm một lần thử và trả về tổng số lần trong cửa sổ hiện tại. MỘT câu lệnh duy nhất (upsert có RETURNING)
+ * nên hai yêu cầu đồng thời không đếm sót. Khoá được băm SHA-256 trước khi lưu (không lưu email/IP thô).
+ */
+export async function countAttempt(db: AnyDb, key: string, now: number): Promise<number> {
+  const rows = await db.insert(authAttempts).values({ key: sha256Hex(key), count: 1, expires: now + RATE_WINDOW_SECONDS })
+    .onConflictDoUpdate({
+      target: authAttempts.key,
+      set: {
+        count: sql`CASE WHEN ${authAttempts.expires} <= ${now} THEN 1 ELSE ${authAttempts.count} + 1 END`,
+        expires: sql`CASE WHEN ${authAttempts.expires} <= ${now} THEN excluded.expires ELSE ${authAttempts.expires} END`,
+      },
+    }).returning({ count: authAttempts.count });
+  return rows[0]!.count;
+}
+
+/** Phiên hợp lệ: chưa hết hạn, tài khoản còn hoạt động, và phiên cùng "phiên bản" với thông tin đăng nhập (đổi mật khẩu = huỷ mọi phiên cũ). */
+export async function findSessionMember(db: AnyDb, tokenHash: string, now: number): Promise<(MemberRow & { active: boolean }) | null> {
+  const rows = await db.select(memberColumns).from(sessions)
+    .innerJoin(employees, eq(employees.id, sessions.memberId))
+    .innerJoin(credentials, eq(credentials.memberId, employees.id))
+    .leftJoin(positions, eq(positions.id, employees.positionId))
+    .where(and(eq(sessions.hash, tokenHash), gt(sessions.expires, now), eq(employees.active, true), eq(sessions.version, credentials.version)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function findLoginRow(db: AnyDb, email: string) {
+  const rows = await db.select({ ...memberColumns, passwordHash: credentials.passwordHash, version: credentials.version })
+    .from(employees).innerJoin(credentials, eq(credentials.memberId, employees.id)).leftJoin(positions, eq(positions.id, employees.positionId))
+    .where(eq(employees.email, email)).limit(1);
+  return rows[0] ?? null;
+}
+
+/** Tạo phiên mới và dọn phiên/lần thử đã hết hạn trong cùng một lô. */
+export async function createSession(db: AnyDb, p: { tokenHash: string; memberId: string; version: number; now: number; lifetime: number }) {
+  await db.batch([
+    db.insert(sessions).values({ hash: p.tokenHash, memberId: p.memberId, version: p.version, expires: p.now + p.lifetime }),
+    db.delete(sessions).where(lte(sessions.expires, p.now)),
+    db.delete(authAttempts).where(lte(authAttempts.expires, p.now)),
+  ]);
+}
+
+export const deleteSession = (db: AnyDb, tokenHash: string) => db.delete(sessions).where(eq(sessions.hash, tokenHash)).run();
+
+export async function findActivation(db: AnyDb, tokenHash: string, now: number) {
+  const rows = await db.select({ memberId: credentials.memberId, email: employees.email, expires: credentials.activationExpires })
+    .from(credentials).innerJoin(employees, eq(employees.id, credentials.memberId))
+    .where(and(eq(employees.active, true), eq(credentials.activationHash, tokenHash), gt(credentials.activationExpires, now))).limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Đặt mật khẩu bằng liên kết kích hoạt. Câu UPDATE chỉ thành công nếu liên kết CÒN NGUYÊN (chưa dùng, chưa hết hạn),
+ * nên hai người bấm cùng lúc thì chỉ một người thắng. Trả về false nếu liên kết đã bị dùng.
+ */
+export async function completeActivation(db: AnyDb, p: { memberId: string; email: string; tokenHash: string; passwordHash: string; now: number }): Promise<boolean> {
+  const res = await db.update(credentials)
+    .set({ passwordHash: p.passwordHash, activationHash: null, activationExpires: null, version: sql`${credentials.version} + 1` })
+    .where(and(eq(credentials.memberId, p.memberId), eq(credentials.activationHash, p.tokenHash), gt(credentials.activationExpires, p.now))).run();
+  if (!res.meta.changes) return false;
+  await db.batch([
+    db.delete(sessions).where(eq(sessions.memberId, p.memberId)),
+    db.delete(authAttempts).where(eq(authAttempts.key, sha256Hex('email:' + p.email))),
+  ]);
+  return true;
+}
+
+export async function getPasswordHash(db: AnyDb, memberId: string): Promise<string | null> {
+  const rows = await db.select({ h: credentials.passwordHash }).from(credentials).where(eq(credentials.memberId, memberId)).limit(1);
+  return rows[0]?.h ?? null;
+}
+
+/** Đổi mật khẩu: tăng phiên bản và xoá MỌI phiên của người đó (kể cả phiên hiện tại – phải đăng nhập lại). */
+export async function changePassword(db: AnyDb, memberId: string, passwordHash: string) {
+  await db.batch([
+    db.update(credentials).set({ passwordHash, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, memberId)),
+    db.delete(sessions).where(eq(sessions.memberId, memberId)),
+  ]);
+}

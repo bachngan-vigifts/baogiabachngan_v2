@@ -1,0 +1,29 @@
+{
+  "name": "bach-ngan-bao-gia",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\" \"src/**/*.test.ts\"",
+    "test:db": "node --import tsx --test \"tests/db/*.test.ts\"",
+    "db:generate": "drizzle-kit generate",
+    "docs:data-model": "node --import tsx scripts/gen-data-model-doc.ts",
+    "docs:ncc": "node --import tsx scripts/gen-ncc-actions-doc.ts",
+    "bootstrap:manager": "node --import tsx scripts/bootstrap-manager.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.0.1",
+    "drizzle-orm": "0.45.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "drizzle-kit": "0.31.10",
+    "tsx": "^4.19.0",
+    "typescript": "5.9.3"
+  }
+}
