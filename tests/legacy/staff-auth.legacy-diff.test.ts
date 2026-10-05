@@ -2,44 +2,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legacyAvailable, skipReason, loadLegacyStaffApi, legacyMigrationsDir } from './harness.ts';
-import { TestD1, createTestDb } from '../helpers/d1.ts';
-import { seedStaff, PASSWORD, token, T } from '../helpers/staff-fixture.ts';
-import { createStaffRouter, type StaffEnv } from '../../src/modules/staff/api/auth-routes.ts';
-import { json } from '../../src/core/http/router.ts';
+import { PASSWORD, token, T } from '../helpers/staff-fixture.ts';
 import { sha256Hex } from '../../src/modules/staff/domain/session.ts';
+import { legacyDriver as legacyDriverBase, newDriver, cookieOf, login, type Driver } from './staff-driver.ts';
 
 const staffApi = legacyAvailable ? await loadLegacyStaffApi() : null;
 const opts = { skip: skipReason, timeout: 120000 };
-const O = 'https://staff.test';
-
-interface Call { method?: string; body?: unknown; raw?: string; cookie?: string; origin?: string | null; type?: string | null; ip?: string }
-interface Driver { d1: TestD1; call(path: string, c?: Call): Promise<{ status: number; body: any; cookie: string | null }> }
-
-const req = (path: string, c: Call = {}) => {
-  const method = c.method ?? (c.body !== undefined || c.raw !== undefined ? 'POST' : 'GET');
-  const headers: Record<string, string> = {};
-  if (c.origin !== null) headers.origin = c.origin ?? O;
-  if (c.type !== null && (c.body !== undefined || c.raw !== undefined)) headers['content-type'] = c.type ?? 'application/json';
-  if (c.cookie) headers.cookie = c.cookie;
-  if (c.ip) headers['cf-connecting-ip'] = c.ip;
-  return new Request(O + '/api/staff' + path, { method, headers, body: c.raw ?? (c.body !== undefined ? JSON.stringify(c.body) : undefined) });
-};
-const read = async (r: Response) => ({ status: r.status, body: await r.json().catch(() => null), cookie: r.headers.get('set-cookie') });
-
-async function legacyDriver(): Promise<Driver> {
-  const d1 = new TestD1().migrate(legacyMigrationsDir());
-  d1.exec("INSERT INTO staff_setup (id) VALUES ('initial-roster-v1')"); // bỏ qua bước nạp danh sách nhân viên ban đầu của bản cũ
-  await seedStaff(d1);
-  return { d1, call: async (p, c) => read(await staffApi!(req(p, c), { DB: d1 })) };
-}
-async function newDriver(): Promise<Driver> {
-  const { d1, db } = createTestDb(); await seedStaff(d1);
-  const router = createStaffRouter();
-  router.get('/customers', () => json({ ok: true }), 'business'); // đại diện một route nghiệp vụ để so quyền NCC
-  const env: StaffEnv = { db, passwordIterations: 1000 };
-  return { d1, call: async (p, c) => read(await router.handle(req(p, c), env)) };
-}
-
+const legacyDriver = () => legacyDriverBase(staffApi!);
 /** Quan sát được: mã, nội dung, cookie (che token), cộng với trạng thái DB cuối kịch bản. */
 const mask = (s: string | null) => s && s.replace(/[a-f0-9]{64}/g, '<TOKEN>');
 async function observe(d: Driver, steps: (rec: (label: string, p: Promise<any>) => Promise<any>, d: Driver) => Promise<void>) {
@@ -52,7 +21,6 @@ async function observe(d: Driver, steps: (rec: (label: string, p: Promise<any>) 
     creds: q.prepare('SELECT member_id, version, password_hash IS NOT NULL pw, activation_hash IS NOT NULL act FROM staff_credentials ORDER BY member_id').all().map(r => ({ ...r })) });
   return log;
 }
-const cookieOf = (r: any) => (r.cookie as string | null)?.split(';')[0] ?? '';
 
 async function compare(name: string, steps: Parameters<typeof observe>[1]) {
   const [legacy, mine] = [await observe(await legacyDriver(), steps), await observe(await newDriver(), steps)];
@@ -60,7 +28,6 @@ async function compare(name: string, steps: Parameters<typeof observe>[1]) {
   for (let i = 0; i < legacy.length; i++) assert.deepStrictEqual(mine[i], legacy[i], `[${name}] bước "${legacy[i].label}"`);
   return legacy;
 }
-const login = (d: Driver, email: string, password: any = PASSWORD, ip?: string) => d.call('/login', { body: { email, password }, ip });
 
 test('KÍCH HOẠT ↔ bản cũ: xem liên kết, mật khẩu yếu, kích hoạt, dùng lại liên kết, đăng nhập bằng mật khẩu mới', opts, async () => {
   await compare('kích hoạt', async (rec, d) => {

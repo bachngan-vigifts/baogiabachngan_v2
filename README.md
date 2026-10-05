@@ -38,3 +38,10 @@ docs/              ROADMAP.md · DATA-MODEL.md (tự sinh)
 6. Đổi bảng cũ phải qua `tests/db/legacy-compat.test.ts` (không mất cột, không đổi kiểu).
 7. Không đưa dữ liệu thật (SĐT, email, snapshot) vào repo.
 8. Hàm thuần trong `domain/` được đối chiếu với bản cũ bằng test ngẫu nhiên (`*.legacy-diff.test.ts`) trước khi coi là port xong.
+
+## Tạo Manager đầu tiên (DB còn trống)
+
+```bash
+npm run bootstrap:manager -- --name "Họ tên" --email a@b.vn --phone 09xxxxxxxx --origin https://ten-mien.vn > manager.sql
+wrangler d1 execute DB --remote --file=manager.sql     # liên kết kích hoạt in ra STDERR, hiệu lực 24 giờ
+```
