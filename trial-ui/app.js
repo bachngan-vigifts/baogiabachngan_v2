@@ -298,17 +298,49 @@ async function loadMembers() {
   catch (e) { state.members = state.members || []; if (e.status !== 401) showGlobalError(e.message); }
   renderMembers();
 }
-// Tình trạng đồng bộ Sapo → app (sản phẩm, khách hàng, nhân viên). Chỉ đọc; Sapo/luồng trung gian tự gửi dữ liệu lên.
+// Tình trạng đồng bộ Sapo → app (sản phẩm, khách hàng, nhân viên): Sapo đẩy sang, hoặc app tự lấy bằng phiên Sapo của Manager.
+const viTime = iso => new Date(iso).toLocaleString('vi-VN');
 async function loadSapoSync() {
   let d; try { d = await api('/admin/sapo-sync'); } catch { $('#sapo-sync').hidden = true; return; }
-  const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + new Date(iso).toLocaleString('vi-VN') : 'Chưa nhận dữ liệu';
+  const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + viTime(iso) : 'Chưa nhận dữ liệu';
+  const s = d.session || {}, p = d.pull || {};
   $('#sapo-sync').hidden = false;
-  $('#sync-state').textContent = d.configured ? 'Đang bật' : 'Chưa bật';
-  $('#sync-note').textContent = d.configured ? 'Sapo tự gửi khi có thay đổi' : 'Cần cài mã SAPO_SYNC_TOKEN';
+  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : p.ok === false ? 'Lỗi' : 'Đang chạy';
+  $('#sync-state').classList.toggle('warn', !!(s.expired || p.ok === false));
+  $('#sync-note').textContent = !d.configured ? 'Cần cài mã SAPO_SYNC_TOKEN'
+    : !s.connected ? 'Bấm "Kết nối Sapo" để bắt đầu'
+    : s.expired || p.ok === false ? (p.error || 'Cần kết nối lại Sapo')
+    : p.finishedAt ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
+  $('#sapo-connect').textContent = s.connected ? 'Kết nối lại' : 'Kết nối Sapo';
+  $('#sapo-connect').hidden = !d.configured; $('#sapo-pull').hidden = !d.configured || !s.connected; $('#sapo-disconnect').hidden = !s.connected;
   $('#sync-products').textContent = n(d.products.count); $('#sync-products-at').textContent = at(d.products.lastSyncedAt);
   $('#sync-customers').textContent = n(d.customers.count); $('#sync-customers-at').textContent = at(d.customers.lastSyncedAt);
   $('#sync-staff').textContent = n(d.staff.count); $('#sync-staff-note').textContent = d.staff.linked ? `+ ${n(d.staff.linked)} đã khớp tài khoản web` : 'Hồ sơ mới cần cấp liên kết';
 }
+$('#sapo-connect').addEventListener('click', () => { $('#sapo-form').reset(); $('#sapo-error').textContent = ''; $('#sapo-dialog').showModal(); });
+$('#sapo-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#save-sapo'), err = $('#sapo-error'), cookie = String(new FormData(e.target).get('cookie') || '').trim();
+  err.textContent = '';
+  if (!/_admin_session_id=/.test(cookie)) { err.textContent = 'Chuỗi cookie cần có _admin_session_id. Kiểm tra lại bước 3.'; return; }
+  btn.disabled = true;
+  try { await api('/admin/sapo-session', 'POST', { cookie }); $('#sapo-dialog').close(); toast('Đã kết nối Sapo.'); await loadSapoSync(); }
+  catch (ex) { err.textContent = ex.message; }
+  finally { btn.disabled = false; }
+});
+$('#sapo-disconnect').addEventListener('click', async () => {
+  if (!await confirmBox('App sẽ ngừng tự lấy dữ liệu từ Sapo cho tới khi kết nối lại.', { title: 'Ngắt kết nối Sapo?', ok: 'Ngắt kết nối', danger: true })) return;
+  try { await api('/admin/sapo-session', 'DELETE', {}); $('#sapo-dialog').close(); toast('Đã ngắt kết nối Sapo.'); await loadSapoSync(); } catch (ex) { toast(ex.message, 'error'); }
+});
+$('#sapo-pull').addEventListener('click', async () => {
+  const btn = $('#sapo-pull'); btn.disabled = true; btn.textContent = 'Đang đồng bộ…';
+  try {
+    const r = await api('/admin/sapo-pull', 'POST', {}), x = r.results || {};
+    toast(`Đã đồng bộ: ${(x.products?.created || 0) + (x.products?.updated || 0)} sản phẩm, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới.`);
+    loadMembers(); state.products = null; loadCustomers();
+  } catch (ex) { toast(ex.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Đồng bộ ngay'; loadSapoSync(); }
+});
 
 // ---------------------------------------------------------------- điều hướng
 const VIEWS = { quotes: 'Báo giá', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá' };

@@ -482,3 +482,8 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 .image-preview span.thumb.big { width: 80px; height: 80px; }
 .file-btn { justify-self: start; }
 .modal-foot .spacer { flex: 1; }
+
+/* Ô đồng bộ Sapo trên trang Nhân viên */
+.sync-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.stat strong.warn { color: var(--danger, #b42318); }
+.steps { margin: 0; padding-left: 18px; display: grid; gap: 4px; }

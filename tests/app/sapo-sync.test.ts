@@ -173,3 +173,82 @@ test('ánh xạ Sapo: trạng thái nhân viên dạng chuỗi, khách lẻ, bi�
   const m = mapSapoProduct({ id: 1, name: 'Nồi', sku: 'N1', price: '420000', images: [{ src: 'http://evil.test/x.jpg' }] });
   assert.equal(m.variants[0]!.retail, 420000); assert.equal(m.variants[0]!.imageUrl, '');
 });
+
+// ---------------- Kéo dữ liệu từ Sapo bằng phiên Manager ----------------
+import { sapoRuntimeSessions, sapoHealthMonitorState } from '../../src/modules/integrations/schema.ts';
+
+function fakeSapo(data: Record<string, any[]>, opts: { expired?: boolean } = {}) {
+  const calls: string[] = [];
+  const fetch: typeof globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input)); calls.push(url.pathname + url.search);
+    assert.equal(init?.method, 'GET', 'chỉ đọc Sapo');
+    assert.match(String((init?.headers as Record<string, string>).cookie), /_admin_session_id=abc/);
+    if (opts.expired) return new Response('', { status: 302, headers: { location: '/admin/login' } });
+    const key = url.pathname.replace(/^\/admin\//, '').replace(/\.json$/, '');
+    const page = Number(url.searchParams.get('page') || 1), all = data[key] ?? [];
+    return Response.json({ [key]: all.slice((page - 1) * 250, page * 250), metadata: { total: all.length } });
+  }) as typeof globalThis.fetch;
+  return { fetch, calls };
+}
+
+test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, lịch tự động dùng mã bí mật; phiên hết hạn được báo rõ', async () => {
+  const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  await db.insert(pricePolicies).values({ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 });
+  await db.insert(warehouses).values({ id: 'q1', name: 'Kho Q1' });
+  const sapo = fakeSapo({
+    accounts: [{ id: 21, full_name: 'NV Sapo', email: 'nv21@x.vn' }],
+    customers: [{ id: 501, name: 'Công ty C', tax_code: '0312345678', modified_on: '2026-10-06T00:00:00Z' }, ...Array.from({ length: 300 }, (_, i) => ({ id: 600 + i, name: 'Khách lẻ ' + i }))],
+    locations: [{ id: 7, name: 'Kho Q1' }],
+    products: [{ id: 9, name: 'Nồi', variants: [{ sku: 'N-24', price: 420000, inventories: [{ location_id: 7, available: 5 }] }] }],
+  });
+  const expiredSapo = fakeSapo({}, { expired: true });
+  let fake = sapo;
+  const router = createAppRouter();
+  const env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, get sapoFetch() { return fake.fetch; } };
+  const call = async (path: string, cookie = '', method = 'GET', body?: object, headers: Record<string, string> = { origin }) => {
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', cookie, ...headers }, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
+  };
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  const emp = (await call('/login', '', 'POST', { email: 'emp@x.vn', password: PASSWORD })).cookie;
+
+  assert.equal((await call('/admin/sapo-pull', mgr, 'POST', {})).status, 409, 'chưa kết nối');
+  assert.equal((await call('/admin/sapo-session', emp, 'POST', { cookie: '_admin_session_id=abc' })).status, 403);
+  assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: 'khong-co-phien=1' })).status, 400);
+  const saved = await call('/admin/sapo-session', mgr, 'POST', { cookie: 'Cookie: _admin_session_id=abc; other=1' });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  const [row] = await db.select().from(sapoRuntimeSessions);
+  assert.ok(!row!.encryptedCookie.includes('abc'), 'cookie lưu mã hoá');
+
+  const run = await call('/admin/sapo-pull', mgr, 'POST', {});
+  assert.equal(run.status, 200, JSON.stringify(run.data));
+  assert.equal(run.data.results.staff.created, 1);
+  assert.equal(run.data.results.customers.applied, 1);
+  assert.equal(run.data.results.products.created, 1);
+  assert.equal((await db.select().from(productStock)).find(s => s.sku === 'N-24')!.quantity, 5, 'ghép tồn theo location_id');
+  assert.ok(sapo.calls.some(u => u.startsWith('/admin/customers.json?limit=250&page=2')), 'đọc đủ các trang');
+  // Lần sau chỉ lấy bản ghi sửa sau lần trước (gửi kèm bộ lọc modified_on_min).
+  sapo.calls.length = 0;
+  const cron = await call('/integrations/sapo/pull', '', 'POST', {}, { authorization: 'Bearer ' + SECRET });
+  assert.equal(cron.status, 200); assert.equal(cron.data.ok, true);
+  assert.ok(sapo.calls.some(u => u.includes('modified_on_min=')));
+  assert.equal(cron.data.results.customers.applied ?? 0, 0, 'không có gì mới'); assert.equal(cron.data.results.customers.received, 300, 'bản ghi thiếu mốc thời gian vẫn được xét lại');
+  assert.equal((await call('/integrations/sapo/pull', '', 'POST', {}, {})).status, 401);
+
+  // Phiên hết hạn: báo rõ cho Manager; trang tình trạng hiện "hết hạn"; cookie không bao giờ trả về.
+  fake = expiredSapo;
+  const bad = await call('/admin/sapo-pull', mgr, 'POST', {});
+  assert.equal(bad.status, 409); assert.equal(bad.data.code, 'SAPO_SESSION_EXPIRED');
+  const status = await call('/admin/sapo-sync', mgr);
+  assert.equal(status.data.session.connected, true); assert.equal(status.data.session.expired, true);
+  assert.ok(!JSON.stringify(status.data).includes('abc'));
+  // Lưu phiên mới kiểm tra với Sapo trước: phiên hỏng thì không lưu.
+  assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=abc' })).status, 503);
+  fake = sapo;
+  assert.equal((await call('/admin/sapo-session', mgr, 'DELETE', {})).data.connected, false);
+  assert.equal((await db.select().from(sapoRuntimeSessions)).length, 0);
+  // Khoá chạy chồng: đang có lượt chạy thì từ chối.
+  await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=abc' });
+  await db.update(sapoHealthMonitorState).set({ updatedAt: new Date().toISOString() }).where(eq(sapoHealthMonitorState.id, 'pull-lock'));
+  assert.equal((await call('/admin/sapo-pull', mgr, 'POST', {})).status, 409);
+});

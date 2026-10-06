@@ -1,5 +1,6 @@
 import { and, asc, count, eq, inArray, isNotNull, like, max, ne, sql, type AnyColumn } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
+import type { AnyDb } from '../../../core/db/client.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { fold } from '../../../core/text/fold.ts';
@@ -7,6 +8,7 @@ import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { credentials, employees, sessions, staffSapoLinks } from '../../staff/schema.ts';
 import { customers } from '../../customers/schema.ts';
 import { pricePolicies, productPrices, products, productStock, warehouses } from '../../catalog/schema.ts';
+import { registerSapoPullRoutes, pullStatus } from './sapo-pull.ts';
 import { isEligibleSapoCustomer, mapSapoCustomer, mapSapoProduct, mapSapoStaff, records, type SapoCustomer, type SapoVariant } from '../domain/sapo-mapping.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -26,10 +28,7 @@ export const SAPO_SYNC_PATHS = { products: '/integrations/sapo/product', custome
  * chỉ nhận yêu cầu mang đúng mã bí mật SAPO_SYNC_TOKEN (xem `authorizeRoute`). Chạy lại nhiều lần vẫn an toàn.
  */
 export function registerSapoSyncRoutes(router: Router<StaffEnv>) {
-  router.post(SAPO_SYNC_PATHS.customers, async c => json(await syncCustomers(c, await readJson(c.req, 2_000_000))), 'sapo-sync');
-  router.post(SAPO_SYNC_PATHS.staff, async c => json(await syncStaff(c, await readJson(c.req, 500_000))), 'sapo-sync');
-  router.post(SAPO_SYNC_PATHS.products, async c => json(await syncProducts(c, await readJson(c.req, 5_000_000))), 'sapo-sync');
-
+  registerSapoPullRoutes(router);
   // Manager xem tình trạng đồng bộ (không bao giờ trả mã bí mật).
   router.get('/admin/sapo-sync', async c => {
     const db = c.env.db;
@@ -40,6 +39,7 @@ export function registerSapoSyncRoutes(router: Router<StaffEnv>) {
       db.select({ n: count() }).from(staffSapoLinks),
     ]);
     return json({
+      ...(await pullStatus(db)),
       configured: tokenConfigured(c),
       paths: SAPO_SYNC_PATHS,
       customers: { count: Number(cus?.n ?? 0), lastSyncedAt: cus?.last ?? null },
@@ -47,12 +47,16 @@ export function registerSapoSyncRoutes(router: Router<StaffEnv>) {
       staff: { count: Number(staff?.n ?? 0), linked: Number(links?.n ?? 0) },
     });
   }, 'admin');
+  router.post(SAPO_SYNC_PATHS.customers, async c => json(await syncCustomers(c.env.db, await readJson(c.req, 2_000_000))), 'sapo-sync');
+  router.post(SAPO_SYNC_PATHS.staff, async c => json(await syncStaff(c.env.db, await readJson(c.req, 500_000))), 'sapo-sync');
+  router.post(SAPO_SYNC_PATHS.products, async c => json(await syncProducts(c.env.db, await readJson(c.req, 5_000_000))), 'sapo-sync');
+
 }
 
 export const tokenConfigured = (c: Ctx) => (c.env.sapoSyncToken ?? '').length >= 32;
 
 // ---------------- Khách hàng ----------------
-async function syncCustomers(c: Ctx, body: Record<string, unknown>) {
+export async function syncCustomers(db: AnyDb, body: Record<string, unknown>) {
   const observed = observedAt(body), raw = records(body, 'customers', 'customer');
   if (raw.length > MAX.customers) throw tooMany(MAX.customers, 'khách hàng');
   const rows = raw.map(r => mapSapoCustomer(r, observed)).filter((r): r is SapoCustomer => !!r);
@@ -61,7 +65,7 @@ async function syncCustomers(c: Ctx, body: Record<string, unknown>) {
   const search = (r: SapoCustomer) => fold([r.name, r.contact, r.phone, r.email, r.address, r.taxCode, r.customerCode].join(' '));
   const eligible = rows.filter(isEligibleSapoCustomer), others = rows.filter(r => !isEligibleSapoCustomer(r));
   let applied = 0;
-  await c.env.db.transaction(async tx => {
+  await db.transaction(async tx => {
     if (eligible.length) {
       const done = await tx.insert(customers).values(eligible.map(r => ({
         id: r.id, name: r.name, contact: r.contact, phone: r.phone, email: r.email, address: r.address, taxCode: r.taxCode,
@@ -84,13 +88,13 @@ async function syncCustomers(c: Ctx, body: Record<string, unknown>) {
 }
 
 // ---------------- Nhân viên ----------------
-async function syncStaff(c: Ctx, body: Record<string, unknown>) {
+export async function syncStaff(db: AnyDb, body: Record<string, unknown>) {
   const raw = records(body, 'members', 'account', ['accounts']);
   if (raw.length > MAX.staff) throw tooMany(MAX.staff, 'nhân viên');
   const rows = raw.map(mapSapoStaff).filter(r => !!r);
   if (new Set(rows.map(r => r.sapoId)).size !== rows.length) throw new AppError(400, 'Trùng mã nhân viên trong một lần đồng bộ.');
   const now = new Date().toISOString(), result = { received: raw.length, created: 0, updated: 0, linked: 0, deactivated: 0, skipped: raw.length - rows.length };
-  await c.env.db.transaction(async tx => {
+  await db.transaction(async tx => {
     const links = new Map((await tx.select().from(staffSapoLinks)).map(l => [l.sapoId, l.memberId]));
     const linkedMembers = new Set(links.values());
     for (const r of rows) {
@@ -129,15 +133,15 @@ async function syncStaff(c: Ctx, body: Record<string, unknown>) {
 // ---------------- Sản phẩm ----------------
 const keep = <T>(value: T | null | '', column: AnyColumn) => value === null || value === '' ? sql`${column}` : value;
 
-async function syncProducts(c: Ctx, body: Record<string, unknown>) {
+export async function syncProducts(db: AnyDb, body: Record<string, unknown>, locations: Map<string, string> = new Map()) {
   if (body.dry_run === true || body.test === true) return { ok: true, dryRun: true };
   const variants: SapoVariant[] = []; let skipped = 0;
-  for (const p of records(body, 'products', 'product')) { const m = mapSapoProduct(p); variants.push(...m.variants); skipped += m.skipped; }
+  for (const p of records(body, 'products', 'product')) { const m = mapSapoProduct(p, locations); variants.push(...m.variants); skipped += m.skipped; }
   if (variants.length > MAX.variants) throw tooMany(MAX.variants, 'mã sản phẩm');
   if (!variants.length) throw new AppError(400, 'Dữ liệu Sapo không có SKU sản phẩm hợp lệ.');
   const now = new Date().toISOString(), unknownPolicies = new Set<string>(), unknownWarehouses = new Set<string>();
   const result = { received: variants.length, created: 0, updated: 0, hidden: 0, skipped };
-  await c.env.db.transaction(async tx => {
+  await db.transaction(async tx => {
     const policies = await tx.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name));
     const stores = await tx.select().from(warehouses).where(eq(warehouses.active, true));
     const policyId = new Map(policies.map(p => [p.name, p.id])), storeId = new Map(stores.map(w => [w.name, w.id]));

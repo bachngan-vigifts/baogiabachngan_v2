@@ -32,7 +32,7 @@ Deno.serve(async req => {
       if(token) headers.set('cookie', '__Host-bn-session=' + token);
     }
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
-    const response = await router.handle(forwarded,{db,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || ''});
+    const response = await router.handle(forwarded,{db,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined});
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');
     if(cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';

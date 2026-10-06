@@ -94,7 +94,7 @@ function imageOf(p: Record<string, any>, v: Record<string, any>): string {
 const clampTax = (v: unknown) => { const n = num(v); return n !== null && n >= 0 && n <= 100 ? n : null; };
 
 /** Một sản phẩm Sapo (kèm biến thể) → các biến thể có SKU. Biến thể/sản phẩm ngừng bán vẫn trả về với `active: false` để ẩn. */
-export function mapSapoProduct(raw: unknown): { variants: SapoVariant[]; skipped: number } {
+export function mapSapoProduct(raw: unknown, locationNames: Map<string, string> = new Map()): { variants: SapoVariant[]; skipped: number } {
   const p = obj(raw); if (!p) return { variants: [], skipped: 1 };
   const productActive = !str(p.status) || str(p.status) === 'active';
   const variants: SapoVariant[] = []; let skipped = 0;
@@ -113,7 +113,7 @@ export function mapSapoProduct(raw: unknown): { variants: SapoVariant[]; skipped
     }
     const stock: Record<string, number> = {};
     for (const row of list(v.inventories)) {
-      const r = obj(row), name = str(r?.location_name || obj(r?.location)?.name || r?.location_label || r?.warehouse || r?.warehouse_name, 200);
+      const r = obj(row), name = str(r?.location_name || obj(r?.location)?.name || r?.location_label || r?.warehouse || r?.warehouse_name || locationNames.get(str(r?.location_id)), 200);
       const value = num(r?.available ?? r?.on_hand ?? r?.amount ?? r?.quantity);
       if (name && value !== null) stock[name] = Math.sign(value) * Math.floor(Math.abs(value) + 0.5);
     }
@@ -132,3 +132,6 @@ export function mapSapoProduct(raw: unknown): { variants: SapoVariant[]; skipped
   }
   return { variants, skipped };
 }
+
+/** Thời điểm sửa cuối của một bản ghi Sapo (ms), NaN nếu không có. */
+export const sapoModifiedAt = (r: Record<string, any>) => Date.parse(str(r.modified_on || r.updated_on || r.updated_at || r.created_on || r.created_at, 80));

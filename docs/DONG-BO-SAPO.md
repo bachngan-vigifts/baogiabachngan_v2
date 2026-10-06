@@ -1,5 +1,30 @@
 # Đồng bộ Sapo → app (sản phẩm, khách hàng, nhân viên)
 
+Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy tắc ghi dữ liệu*):
+1. **App tự lấy** bằng phiên đăng nhập Sapo của Manager. Sapo hiện không cấp token API nên đây là cách chính.
+2. **Sapo / luồng trung gian đẩy sang**: webhook như web cũ (mục *Nhận dữ liệu đẩy*).
+
+## 1. App tự lấy bằng phiên Sapo của Manager
+- Manager vào trang **Nhân viên**, ô **Đồng bộ Sapo**, bấm **Kết nối Sapo**, rồi dán cookie phiên Sapo theo 3 bước ghi trong hộp thoại.
+  - App gọi thử Sapo trước, phiên dùng được mới lưu.
+  - Cookie được **mã hoá AES-GCM** (khoá dẫn xuất từ secret `SAPO_SYNC_TOKEN`, không nằm trong DB) và không bao giờ trả về trình duyệt.
+- App **chỉ đọc** Sapo (GET):
+  - `/accounts.json` lấy nhân viên,
+  - `/customers.json` lấy khách hàng,
+  - `/products.json` lấy sản phẩm,
+  - `/locations.json` lấy tên chi nhánh để ghép tồn kho.
+
+  App đọc mỗi trang 250 dòng, tối đa 12 trang mỗi loại mỗi lần chạy, lần sau đọc tiếp. Từ lần thứ hai app chỉ lấy bản ghi sửa sau lần trước: gửi kèm `modified_on_min` và lọc lại phía app.
+- **Khi nào chạy:**
+  - Nút **Đồng bộ ngay**.
+  - Workflow `.github/workflows/sapo-pull.yml` chạy mỗi 30 phút (phút 7 và 37), gọi `POST …/integrations/sapo/pull` bằng `SAPO_SYNC_TOKEN`.
+  - Khoá 5 phút chống hai lượt chạy chồng nhau.
+- **Phiên hết hạn:** ô trạng thái báo *Phiên hết hạn*, Manager bấm **Kết nối lại**. Lịch tự động chỉ cảnh báo, không đánh đỏ liên tục.
+- **Đăng nhập bằng email/SĐT + mật khẩu Sapo ngay trên app:** chưa làm. Cần biết chính xác yêu cầu đăng nhập của Sapo: địa chỉ, tên trường, có mã chống bot ẩn hay không.
+  Việc cho Codex: mở trang đăng nhập Sapo, F12 → Network, đăng nhập, rồi gửi Claude **địa chỉ, phương thức và tên các trường** của yêu cầu đăng nhập, kèm tên cookie trả về. **Không gửi mật khẩu.**
+
+## 2. Nhận dữ liệu đẩy
+
 Sapo (`bachngankiengiang.mysapogo.com`) **tự gửi** dữ liệu mới sang app. App không đăng nhập vào Sapo và không ghi gì ngược lại Sapo.
 Ba đường nhận giữ **đúng như web cũ**, nên luồng đang gửi sang web cũ chỉ cần đổi địa chỉ và mã bí mật.
 

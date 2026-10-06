@@ -18,6 +18,9 @@ export interface StaffEnv {
   passwordIterations?: number;
   /** Mã bí mật cho luồng đồng bộ Sapo (secret SAPO_SYNC_TOKEN, ≥ 32 ký tự). Thiếu thì mọi yêu cầu đồng bộ bị từ chối. */
   sapoSyncToken?: string;
+  /** Địa chỉ Sapo admin (mặc định cửa hàng Bách Ngân) và hàm fetch gọi Sapo (test truyền Sapo giả). */
+  sapoAdminBase?: string;
+  sapoFetch?: typeof fetch;
 }
 type Ctx = RouteContext<StaffEnv>;
 export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }
