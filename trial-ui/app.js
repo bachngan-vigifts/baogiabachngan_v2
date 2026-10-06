@@ -3,6 +3,8 @@
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
+import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel } from './order-print.js';
+import { openContractDocs } from './contract-ui.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -1832,13 +1834,13 @@ async function loadOrders() {
 }
 // ----- danh sách HĐKT
 async function loadContracts() {
-  $('#contracts-list').innerHTML = skeleton(8);
+  $('#contracts-list').innerHTML = skeleton(9);
   try {
     const d = await api('/contracts?q=' + encodeURIComponent($('#contracts-search').value));
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
       <td><b>${esc(k.contractNo)}</b></td><td>${esc(k.customerName)}<small>${orderLink(k.orderId, k.orderNo)}${k.quoteNo ? ' · ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td></tr>`),
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Hồ sơ</button></td></tr>`),
       'Chưa có HĐKT. Mở một đơn đặt hàng và bấm "Lập HĐKT".');
   } catch (e) { listError('contracts', e); }
 }
@@ -2040,7 +2042,8 @@ async function openOrder(id) {
     step(o.status === 'delivered', 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao`, '#/deliveries'),
     step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : 'Đã thu đủ', '#/receivables'),
   ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
-  $('#order-actions').innerHTML = (o.status === 'draft' ? '<button class="btn ok" id="order-confirm" title="Khách đặt hàng từ trang khách hàng: kiểm tra rồi xác nhận">Xác nhận đơn</button>' : '')
+  $('#order-actions').innerHTML = '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>'
+    + (o.status === 'draft' ? '<button class="btn ok" id="order-confirm" title="Khách đặt hàng từ trang khách hàng: kiểm tra rồi xác nhận">Xác nhận đơn</button>' : '')
     + (o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '');
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)]]
@@ -2056,7 +2059,8 @@ async function openOrder(id) {
   $('#order-contract-action').innerHTML = !k && o.status !== 'cancelled' ? '<button class="btn secondary small" id="order-new-contract">＋ Lập HĐKT</button>' : '';
   $('#order-contract').innerHTML = k ? `<dl class="kv"><dt>Số HĐKT</dt><dd><b>${esc(k.contractNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(CONTRACT_STATUS, k.status)}</dd>
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
-    <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>${k.status === 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}`
+    <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
+    <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${k.status === 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
     : '<p class="muted">Chưa lập HĐKT. Lập HĐKT để cấp số hợp đồng và chia kỳ thanh toán (cọc + phần còn lại).</p>';
   // Ngày giao dự kiến nằm ngay ở Lịch giao hàng: nhân viên đổi ngày → đơn (và đơn khách xem) cập nhật theo.
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><label><span>Ngày giao dự kiến</span><input type="date" id="order-expected" value="${esc(o.expectedDeliveryDate || '')}"></label>
@@ -2091,7 +2095,41 @@ async function verifyAndConfirmOrder() {
     toast('Đã xác nhận đơn của khách.'); openOrder(o.id);
   } catch (ex) { toast(ex.message, 'err'); }
 }
+/** Xem trước đơn đặt hàng (mẫu đơn Minh Long), sửa trực tiếp trên phiếu rồi in / lưu PDF hoặc tải Excel. */
+function openOrderPrint() {
+  const p = orderPrintData(sales.detail, state.user?.name || '');
+  const dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Đơn đặt hàng</span><h2>In / Tải ${esc(p.orderNo)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><div class="row-gap print-tools"><label class="check"><input type="checkbox" data-prices> Hiện đơn giá, thành tiền</label><span class="muted small">Bấm vào chữ trên phiếu để sửa trước khi in / tải.</span></div>
+      <div class="paper ddh-paper" data-sheet></div></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-xlsx>Tải Excel</button><button type="button" class="btn primary" data-print>In / Lưu PDF</button></div>`;
+  document.body.append(dlg);
+  const sheet = dlg.querySelector('[data-sheet]'), prices = () => dlg.querySelector('[data-prices]').checked;
+  const render = () => { sheet.innerHTML = orderSheetHtml(p, { prices: prices(), edit: true }); };
+  render();
+  dlg.querySelector('[data-prices]').addEventListener('change', () => { readEdits(sheet, p); render(); });
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+  dlg.querySelector('[data-print]').addEventListener('click', () => {
+    readEdits(sheet, p);
+    const out = $('#print-sheet'); out.innerHTML = orderSheetHtml(p, { prices: prices() }); out.classList.add('landscape');
+    const title = document.title; document.title = `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-');
+    window.print(); document.title = title; out.classList.remove('landscape');
+  });
+  dlg.querySelector('[data-xlsx]').addEventListener('click', async e => {
+    readEdits(sheet, p); e.target.disabled = true;
+    try { await downloadOrderExcel(p, { prices: prices() }); } catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
+  });
+  dlg.showModal();
+}
 document.addEventListener('click', async e => {
+  if (e.target.closest('#order-print')) openOrderPrint();
+  if (e.target.closest('[data-contract-docs]')) openContractDocs({ detail: sales.detail, api, toast, onSaved: () => openOrder(sales.order.id) });
+  const listDocs = e.target.closest('[data-contract-docs-for]');
+  if (listDocs) {
+    e.stopPropagation();
+    try { const d = await api('/orders/' + encodeURIComponent(listDocs.dataset.contractDocsFor)); openContractDocs({ detail: d, api, toast, onSaved: loadContracts }); } catch (ex) { toast(ex.message, 'err'); }
+  }
   if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
   if (e.target.closest('#order-expected-save')) {
     const date = document.getElementById('order-expected').value; if (!date) return toast('Chọn ngày giao.', 'err');

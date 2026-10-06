@@ -49,6 +49,8 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id }); assert.equal(o.status, 201, JSON.stringify(o.data));
   assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).data.code, 'ORDER_EXISTS');
   let d = (await call('/orders/' + o.data.id, emp)).data;
+  // Bản in đơn đặt hàng: người phụ trách / người soạn kèm theo đơn.
+  assert.ok(d.order.ownerName && d.order.createdByName !== undefined && d.order.createdByCustomer === false && typeof d.order.customerCode === 'string');
   assert.match(d.order.orderNo, /^DH_\d{8}_001$/);
   assert.equal(d.order.customerId, '1001'); assert.equal(d.order.quoteNo, 'B2B_BG20261006_001');
   assert.equal(d.order.subtotal, 23_000_000); assert.equal(d.order.tax, 1_840_000); assert.equal(d.order.total, 24_840_000);
