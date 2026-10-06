@@ -1,5 +1,5 @@
 {
-  "id": "87942c3e-589f-4530-962a-4c2827f3a93f",
+  "id": "5e362824-4d04-41a2-8b23-e6cd50a5023b",
   "prevId": "7bd96ab8-cbfb-425c-bd86-c1c19321ea79",
   "version": "7",
   "dialect": "postgresql",
@@ -955,6 +955,165 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.product_movements": {
+      "name": "product_movements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ref_key": {
+          "name": "ref_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "qty": {
+          "name": "qty",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit": {
+          "name": "unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "unit_price": {
+          "name": "unit_price",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "partner": {
+          "name": "partner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "location": {
+          "name": "location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "ref_code": {
+          "name": "ref_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "link": {
+          "name": "link",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_product_movements_ref": {
+          "name": "idx_product_movements_ref",
+          "columns": [
+            {
+              "expression": "ref_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_product_movements_sku": {
+          "name": "idx_product_movements_sku",
+          "columns": [
+            {
+              "expression": "sku",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_product_movements_kind": {
+          "name": "chk_product_movements_kind",
+          "value": "\"product_movements\".\"kind\" IN ('sale', 'delivery', 'purchase', 'transfer', 'adjustment', 'customer_return', 'supplier_return')"
+        }
+      },
       "isRLSEnabled": true
     },
     "public.product_prices": {
@@ -6819,7 +6978,7 @@
       "checkConstraints": {
         "chk_sapo_inventory_docs_kind": {
           "name": "chk_sapo_inventory_docs_kind",
-          "value": "\"sapo_inventory_docs\".\"kind\" IN ('purchase_order', 'stock_transfer', 'stock_adjustment')"
+          "value": "\"sapo_inventory_docs\".\"kind\" IN ('purchase_order', 'stock_transfer', 'stock_adjustment', 'order_return', 'purchase_return')"
         }
       },
       "isRLSEnabled": true
@@ -7569,202 +7728,6 @@
           "value": "\"payment_schedules\".\"amount\" >= 0"
         }
       },
-      "isRLSEnabled": true
-    },
-    "public.product_sales_history": {
-      "name": "product_sales_history",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "sku": {
-          "name": "sku",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_id": {
-          "name": "order_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_line_id": {
-          "name": "order_line_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_no": {
-          "name": "order_no",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "customer_name": {
-          "name": "customer_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "unit": {
-          "name": "unit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "qty": {
-          "name": "qty",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unit_price": {
-          "name": "unit_price",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tax_rate": {
-          "name": "tax_rate",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "sold_on": {
-          "name": "sold_on",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recorded_at": {
-          "name": "recorded_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_product_sales_line": {
-          "name": "idx_product_sales_line",
-          "columns": [
-            {
-              "expression": "order_line_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_product_sales_sku": {
-          "name": "idx_product_sales_sku",
-          "columns": [
-            {
-              "expression": "sku",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sold_on",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "product_sales_history_order_id_sales_orders_id_fk": {
-          "name": "product_sales_history_order_id_sales_orders_id_fk",
-          "tableFrom": "product_sales_history",
-          "tableTo": "sales_orders",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "product_sales_history_order_line_id_sales_order_lines_id_fk": {
-          "name": "product_sales_history_order_line_id_sales_order_lines_id_fk",
-          "tableFrom": "product_sales_history",
-          "tableTo": "sales_order_lines",
-          "columnsFrom": [
-            "order_line_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "product_sales_history_customer_id_sapo_customers_id_fk": {
-          "name": "product_sales_history_customer_id_sapo_customers_id_fk",
-          "tableFrom": "product_sales_history",
-          "tableTo": "sapo_customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "product_sales_history_owner_id_staff_members_id_fk": {
-          "name": "product_sales_history_owner_id_staff_members_id_fk",
-          "tableFrom": "product_sales_history",
-          "tableTo": "staff_members",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "public.sales_contracts": {

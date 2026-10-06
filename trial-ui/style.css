@@ -892,3 +892,9 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .sales-history .sh-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; } .sales-history .sh-stats .stat { padding: 10px 12px; } .sales-history .sh-stats strong { font-size: 1.05rem; } .sku-line .link-btn + .link-btn { margin-left: 8px; }
 @media (max-width: 700px) { .sales-history .sh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .chat-side-head h1 { white-space: nowrap; font-size: 1.1rem; } .chat-side-head .row-gap { flex-wrap: nowrap; gap: 6px; } .chat-side-head .btn.small { padding: 6px 10px; }
+/* Thẻ sản phẩm: tồn kho + lịch sử sản phẩm */
+.product-card.modal { width: 900px; }
+.product-card .pc-title { font-size: .95rem; margin: 4px 0 8px; } .product-card .pc-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: 18px; }
+.product-card .pc-filter .chip { padding: 3px 9px; font-size: .78rem; }
+.product-card .pc-table td small { display: block; color: var(--muted); font-size: .76rem; }
+.prod-open { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; } .prod-open:hover .strong { color: var(--blue); text-decoration: underline; }

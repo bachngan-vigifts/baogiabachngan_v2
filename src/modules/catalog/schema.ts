@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
+import { PRODUCT_MOVE_KINDS } from './domain/product-history.ts';
 
 export const stockImports = pgTable('stock_imports', {
   revision: bigint('revision', { mode: 'number' }).primaryKey(),
@@ -104,3 +105,30 @@ export const catalogVersions = pgTable('catalog_versions', {
   uniqueIndex('idx_catalog_versions_current').on(t.isCurrent).where(sql`${t.isCurrent} = true`),
   check('chk_catalog_versions_count', sql`${t.productCount} >= 0`),
 ]).enableRLS();
+
+/**
+ * Lịch sử sản phẩm: mỗi biến động của một mã (bán, xuất kho giao hàng, nhập hàng, điều chuyển, cân bằng kho, trả hàng…),
+ * chỉ giữ PRODUCT_HISTORY_LIMIT (20) giao dịch gần nhất mỗi mã. `ref_key` duy nhất theo chứng từ + dòng (ghi lại không trùng).
+ * `qty` luôn dương (chiều theo `kind`), riêng cân bằng kho là chênh lệch có dấu.
+ */
+export const productMovements = pgTable('product_movements', {
+  id: text('id').primaryKey(),
+  refKey: text('ref_key').notNull(),
+  sku: text('sku').notNull(),
+  kind: text('kind', { enum: PRODUCT_MOVE_KINDS }).notNull(),
+  name: text('name').notNull().default(''),
+  qty: doublePrecision('qty').notNull(),
+  unit: text('unit').notNull().default(''),
+  unitPrice: doublePrecision('unit_price'),
+  /** Khách hàng / nhà cung cấp. */
+  partner: text('partner').notNull().default(''),
+  /** Kho (điều chuyển: "kho đi → kho đến"). */
+  location: text('location').notNull().default(''),
+  refCode: text('ref_code').notNull().default(''),
+  /** Đường dẫn mở chứng từ trên web (vd. `#/orders/<id>`), trống nếu chứng từ chỉ có trên Sapo. */
+  link: text('link').notNull().default(''),
+  status: text('status').notNull().default(''),
+  note: text('note').notNull().default(''),
+  occurredAt: text('occurred_at').notNull(),
+  recordedAt: text('recorded_at').notNull(),
+}, t => [uniqueIndex('idx_product_movements_ref').on(t.refKey), index('idx_product_movements_sku').on(t.sku, t.occurredAt), enumCheck('chk_product_movements_kind', t.kind, PRODUCT_MOVE_KINDS)]).enableRLS();

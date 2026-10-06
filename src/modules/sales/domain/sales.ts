@@ -81,9 +81,6 @@ export const addDays = (iso: string, days: number) => new Date(Date.parse(iso.sl
  * none = chưa có kỳ phải thu · unpaid = chưa thu · deposit_due = chờ đặt cọc · deposit_paid = đã cọc · partial = đã thu một phần · overdue = quá hạn · paid = đã thu đủ.
  */
 export type PayState = 'none' | 'unpaid' | 'deposit_due' | 'deposit_paid' | 'partial' | 'overdue' | 'paid';
-/** Số lần bán gần nhất giữ lại cho mỗi mã hàng (bảng product_sales_history). */
-export const SALES_HISTORY_PER_SKU = 10;
-
 export interface Receivable {
   due: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; status: 'paid' | 'overdue' | 'open' | 'none';
   /** Tiền cọc phải thu (kỳ `deposit`) và phần cọc đã thu. */

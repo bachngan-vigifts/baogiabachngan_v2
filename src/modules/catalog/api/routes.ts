@@ -7,6 +7,8 @@ import { foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { catalogVersions, pricePolicies, productPrices, products, productStock, warehouses } from '../schema.ts';
 import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../domain/product-filters.ts';
+import { historyOf } from './product-history.ts';
+import { PRODUCT_HISTORY_LIMIT } from '../domain/product-history.ts';
 
 const amount = z.number().finite().min(0).max(1e12).nullable();
 const size = z.number().finite().min(0).max(1e6).nullable().optional();
@@ -172,6 +174,18 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const rows = await c.env.db.select({ brand: products.brand, n: count() }).from(products)
       .where(and(eq(products.active, true), sql`${products.brand} <> ''`)).groupBy(products.brand).orderBy(asc(products.brand));
     return json({ brands: rows.map(r => ({ name: r.brand, count: Number(r.n) })) });
+  }, 'business');
+
+  /**
+   * Lịch sử sản phẩm: 20 biến động gần nhất của mã (bán, xuất kho giao hàng, nhập hàng, điều chuyển, cân bằng kho, trả hàng)
+   * + giá bán gần nhất / thấp / cao / trung bình từ các lần bán.
+   */
+  router.get('/products/:sku/history', async c => {
+    const sku = decodeURIComponent(c.params.sku!).trim().slice(0, 500);
+    const rows = await historyOf(c.env.db, sku);
+    const prices = rows.filter(r => r.kind === 'sale' && r.unitPrice !== null).map(r => r.unitPrice!);
+    return json({ sku, limit: PRODUCT_HISTORY_LIMIT, history: rows.map(({ id, refKey, recordedAt, ...r }) => r),
+      sales: prices.length ? { count: prices.length, last: prices[0], min: Math.min(...prices), max: Math.max(...prices), avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) } : null });
   }, 'business');
 
   router.get('/products/:sku', async c => {
