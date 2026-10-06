@@ -764,6 +764,8 @@ $('#print-quote').addEventListener('click', () => {
     ${d.notes.trim() ? `<div class="ps-notes"><b>Ghi chú:</b>\n${esc(d.notes.trim())}</div>` : ''}
     <div class="ps-sign"><div><p><b>XÁC NHẬN CỦA KHÁCH HÀNG</b></p><p><i>(Ký, ghi rõ họ tên)</i></p><div class="space"></div></div>
       <div><p><b>NGƯỜI LẬP BÁO GIÁ</b></p><p><i>(Ký, ghi rõ họ tên)</i></p><div class="space"></div><p><b>${esc(d.owner)}</b>${d.ownerPhone ? `<br>${esc(d.ownerPhone)}` : ''}</p></div></div>`;
+  // Bản demo chạy trong khung không cho mở hộp thoại in → xem trước bản in trên màn hình.
+  if (window.BN_DEMO) { $('#print-preview-body').innerHTML = $('#print-sheet').innerHTML; $('#print-preview').showModal(); return; }
   const title = document.title; document.title = `Bao-gia-${d.quoteNo}`.replace(/[^\w.-]+/g, '-');
   window.print(); document.title = title;
 });
