@@ -3,7 +3,7 @@
 import { totals, after } from './quote-math.js';
 import { searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
-import { verifyBox, duePill } from './verify.js';
+import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -388,8 +388,8 @@ async function loadDebt() {
     $('#p-debt-empty').hidden = list.length > 0;
     tbody.innerHTML = list.map(o => { const r = o.receivable; return `<tr>
       <td class="first"><span class="strong">${esc(o.orderNo)}</span><small>Ngày đặt ${fmtDate(o.orderDate)}</small></td>
-      <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num"><b>${money(r.balance)}</b></td>
-      <td data-label="Hạn">${o.schedules.map(s => `<small>${esc(s.note || (s.kind === 'deposit' ? 'Đặt cọc' : 'Phần còn lại'))}: ${money(s.amount)} · ${s.dueDate ? 'hạn ' + fmtDate(s.dueDate) : 'sau khi giao hàng'}</small>`).join('')}</td>
+      <td class="right num">${money(r.due)}</td><td class="right num ${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</td><td class="right num"><b>${money(r.balance)}</b></td>
+      <td data-label="Hạn">${allocatePayments(o.schedules, r.paid).map(s => `<small>${esc(s.note || (s.kind === 'deposit' ? 'Đặt cọc' : 'Phần còn lại'))}: ${money(s.amount)} · ${s.left <= 0 ? installmentStatus(s) : (s.dueDate ? 'hạn ' + fmtDate(s.dueDate) : 'sau khi giao hàng') + (s.covered > 0 ? ' · ' + installmentStatus(s) : '')}</small>`).join('')}</td>
       <td data-label="Tình trạng">${pill(DEBT_STATUS, r.status)}${r.overdue > 0 ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}</td></tr>`; }).join('');
     const pays = orders.filter(o => o.receivable).flatMap(o => o.payments.map(p => ({ ...p, orderNo: o.orderNo }))).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
     $('#p-pay-history').innerHTML = pays.length ? pays.map(p => `<li><span>${fmtDate(p.paidAt)} · ${esc(METHOD[p.method] || p.method)}<small>Đơn ${esc(p.orderNo)}</small></span><b>${money(p.amount)}</b></li>`).join('') : '<li class="muted">Chưa có lần thanh toán nào.</li>';
