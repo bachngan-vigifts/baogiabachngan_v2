@@ -50,7 +50,7 @@
     <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="true">Báo giá</button>
     <button type="button" class="chip" role="tab" data-tab="new" aria-selected="false">Tạo báo giá / Đặt hàng</button>
     <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false">Đơn hàng</button>
-    <button type="button" class="chip" role="tab" data-tab="stock" aria-selected="false">Hỏi tồn kho</button>
+    <button type="button" class="chip" role="tab" data-tab="stock" aria-selected="false">Đơn check tồn</button>
     <button type="button" class="chip" role="tab" data-tab="debt" aria-selected="false">Công nợ</button>
   </nav>
 
@@ -81,7 +81,12 @@
     <div class="card">
       <div class="card-title-row">
         <div><h2 class="card-title">Sản phẩm báo giá <span class="muted" id="p-cart-count">(0)</span></h2><small class="muted">Giá đã trừ chiết khấu riêng của quý khách, chưa gồm VAT.</small></div>
-        <div class="row-gap"><button type="button" class="btn navy small" id="p-pick">＋ Thêm sản phẩm</button></div>
+        <div class="row-gap portal-actions">
+          <button type="button" class="btn secondary small" id="p-ask-stock" title="Gửi các sản phẩm đã chọn để nhân viên kiểm tra tồn kho">Gửi check tồn</button>
+          <button type="button" class="btn secondary small" id="p-send-quote">Gửi yêu cầu báo giá</button>
+          <button type="button" class="btn primary small" id="p-send-order">Đặt hàng ngay</button>
+          <button type="button" class="btn navy small" id="p-pick">＋ Thêm sản phẩm</button>
+        </div>
       </div>
       <div class="table-wrap lines-wrap">
         <table class="line-table portal-lines">
@@ -89,6 +94,7 @@
           <tbody id="p-cart"></tbody>
         </table>
       </div>
+      <p class="error" id="p-error" role="alert"></p>
     </div>
 
     <div class="editor-bottom">
@@ -103,30 +109,21 @@
         <h2 class="card-title">Ghi chú gửi nhân viên phụ trách</h2>
         <textarea id="p-note" rows="4" maxlength="2000" placeholder="Ví dụ: in logo công ty, giao trước ngày…, xuất hoá đơn…"></textarea>
       </div>
-      <p class="error" id="p-error" role="alert"></p>
-      <div class="card portal-submit">
-        <p class="muted small">Báo giá / đơn hàng được nhân viên phụ trách kiểm tra và xác nhận. Quý khách theo dõi ở thẻ "Báo giá" và "Đơn hàng".</p>
-        <div class="portal-actions">
-          <button type="button" class="btn ghost" id="p-ask-stock" title="Gửi các sản phẩm đã chọn để nhân viên kiểm tra tồn kho">Hỏi tồn kho</button>
-          <button type="button" class="btn secondary" id="p-send-quote">Gửi yêu cầu báo giá</button>
-          <button type="button" class="btn primary" id="p-send-order">Đặt hàng ngay</button>
-        </div>
-      </div>
     </div>
   </section>
 
-  <!-- Hỏi tồn kho: khách không xem tồn, gửi hỏi – nhân viên phụ trách trả lời -->
+  <!-- Đơn check tồn: khách không xem tồn, gửi hỏi – nhân viên phụ trách trả lời -->
   <section data-panel="stock" hidden>
-    <div class="card"><p class="muted small">Chọn sản phẩm ở thẻ "Tạo báo giá / Đặt hàng" rồi bấm <b>Hỏi tồn kho</b>. Nhân viên phụ trách nhận thông báo và trả lời số lượng đáp ứng được.</p></div>
+    <div class="card"><p class="muted small">Chọn sản phẩm ở thẻ "Tạo báo giá / Đặt hàng" rồi bấm <b>Gửi check tồn</b>. Nhân viên phụ trách nhận thông báo và trả lời số lượng đáp ứng được.</p></div>
     <div id="p-stock"></div>
-    <p class="muted card" id="p-stock-empty" hidden>Quý khách chưa gửi yêu cầu hỏi tồn nào.</p>
+    <p class="muted card" id="p-stock-empty" hidden>Quý khách chưa gửi đơn check tồn nào.</p>
   </section>
 
   <!-- Công nợ -->
   <section data-panel="debt" hidden>
     <div class="stats" id="p-debt-stats"></div>
     <div class="card">
-      <h2 class="card-title">Công nợ theo đơn hàng</h2>
+      <h2 class="card-title">Công nợ theo đơn hàng</h2><p class="muted small">Chỉ tính các đơn hàng đã được nhân viên xác nhận hoặc đã ký HĐKT.</p>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn hàng</th><th class="right">Giá trị đơn</th><th class="right">Đã thanh toán</th><th class="right">Còn phải trả</th><th>Hạn thanh toán</th><th>Tình trạng</th></tr></thead><tbody id="p-debt"></tbody></table></div>
       <p class="muted" id="p-debt-empty" hidden>Quý khách chưa có công nợ.</p>
     </div>

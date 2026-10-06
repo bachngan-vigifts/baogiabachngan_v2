@@ -33,6 +33,7 @@ Giá khách thấy = giá **"Giá bán lẻ"** − chiết khấu riêng theo nh
    - Nhân viên chỉ duyệt được báo giá do khách gửi; báo giá thường vẫn chỉ Manager duyệt.
 3. **Khách bấm "Xác nhận đặt hàng"** trên báo giá đã duyệt → đơn đặt hàng *Chờ xác nhận* (`sales_orders.status = draft`).
 4. **Nhân viên bấm "Xác nhận đơn"** trên trang đơn → *Đã xác nhận*. Từ đây đơn đi tiếp như thường: HĐKT, giao hàng, công nợ.
+   - **Công nợ** (thẻ *Công nợ* của khách và trang *Công nợ* của nhân viên) chỉ tính đơn đã xác nhận hoặc đơn có HĐKT đã ký; đơn đang chờ xác nhận chưa phát sinh công nợ.
 5. **Đặt hàng ngay** (từ danh mục, không qua bước báo giá): tạo cùng lúc báo giá chờ duyệt và đơn *Chờ xác nhận*. Nhân viên xác nhận đơn thì báo giá của đơn cũng được duyệt luôn.
 
 Khách huỷ được đơn khi đơn chưa được xác nhận. Báo giá nhân viên lập cho khách chỉ hiện với khách khi đã được duyệt.
@@ -82,10 +83,10 @@ Các sự kiện được thông báo:
 - **Trang tự làm mới:**
   - Nhận push thì service worker báo cho các tab đang mở. Ngoài ra trang tự kiểm tra `/notifications?since=` mỗi 30 giây và mỗi lần quay lại tab.
   - Khi có thông báo mới, trang hiện thông báo nhỏ và tải lại dữ liệu đang xem: danh sách báo giá, đơn đang mở, trang Khách hỏi tồn… Báo giá đang sửa dở thì không bị tải đè.
-- **Khách hỏi tồn kho** (bảng `customer_stock_requests`, migration `0013`, phân quyền ở `0014`):
-  - Khách chọn sản phẩm rồi bấm *Hỏi tồn kho*.
+- **Đơn check tồn** (bảng `customer_stock_requests`, migration `0013`, phân quyền ở `0014`):
+  - Khách chọn sản phẩm rồi bấm *Gửi check tồn* (cạnh nút *＋ Thêm sản phẩm*).
   - Nhân viên mở trang **Khách hỏi tồn**: xem tồn khả dụng, NCC và hàng chờ về; nhập số đáp ứng được và lời nhắn.
-  - Khách nhận thông báo và xem câu trả lời ở thẻ *Hỏi tồn kho*.
+  - Khách nhận thông báo và xem câu trả lời ở thẻ *Đơn check tồn*.
 - **API:**
   - Khu vực `self`: `/push/config`, `/push/subscribe`, `/push/unsubscribe`, `/notifications`, `/notifications/read`.
   - Khu vực `customer-portal`: `/portal/stock-requests`.

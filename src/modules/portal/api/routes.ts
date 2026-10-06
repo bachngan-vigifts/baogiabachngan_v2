@@ -15,9 +15,9 @@ import { quotations, quoteLines } from '../../quotes/schema.ts';
 import { cleanQuotation } from '../../quotes/domain/quotation-schema.ts';
 import { quoteHeaderIndex, quoteLineRows } from '../../quotes/domain/quote-index.ts';
 import { customerDiscount, totals } from '../../quotes/domain/quote-math.ts';
-import { customerPayments, deliveries, paymentSchedules, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { customerPayments, deliveries, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { createOrderFromQuote } from '../../sales/api/routes.ts';
-import { receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
 import { cleanDiscounts, nextQuoteNo, parseDiscounts, publicQuote } from '../domain/portal.ts';
@@ -170,23 +170,25 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const { customer } = await myAccount(c), db = c.env.db;
     const orders = await db.select(ORDER_FIELDS).from(salesOrders).where(eq(salesOrders.customerId, customer.id)).orderBy(desc(salesOrders.orderDate), desc(salesOrders.orderNo)).limit(200);
     const ids = orders.map(o => o.id);
-    const [lines, ships, sch, pay] = ids.length ? await Promise.all([
+    const [lines, ships, sch, pay, cts] = ids.length ? await Promise.all([
       db.select({ orderId: salesOrderLines.orderId, lineNo: salesOrderLines.lineNo, sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit, qty: salesOrderLines.qty, deliveredQty: salesOrderLines.deliveredQty, unitPrice: salesOrderLines.unitPrice, amount: salesOrderLines.amount })
         .from(salesOrderLines).where(inArray(salesOrderLines.orderId, ids)).orderBy(asc(salesOrderLines.lineNo)),
       db.select({ orderId: deliveries.orderId, deliveryNo: deliveries.deliveryNo, plannedDate: deliveries.plannedDate, timeSlot: deliveries.timeSlot, status: deliveries.status })
         .from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))).orderBy(asc(deliveries.plannedDate)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
       db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(inArray(customerPayments.orderId, ids)).orderBy(asc(customerPayments.paidAt)),
-    ]) : [[], [], [], []];
+      db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
+    ]) : [[], [], [], [], []];
     const today = vietnamDate().iso;
-    return json({ orders: orders.map(o => ({
+    return json({ orders: orders.map(o => { const counts = debtCounts(o.status, cts.find(x => x.orderId === o.id)?.status); return {
       ...o, lines: lines.filter(l => l.orderId === o.id), deliveries: ships.filter(d => d.orderId === o.id),
-      receivable: o.status === 'cancelled' ? null : receivable(sch.filter(s => s.orderId === o.id), pay.filter(p => p.orderId === o.id), today),
+      // Công nợ chỉ tính khi đơn đã được xác nhận hoặc HĐKT đã ký.
+      receivable: counts ? receivable(sch.filter(s => s.orderId === o.id), pay.filter(p => p.orderId === o.id), today) : null,
       // Công nợ cho khách: các kỳ phải trả (cọc / phần còn lại, hạn) và các lần đã thanh toán.
-      schedules: o.status === 'cancelled' ? [] : sch.filter(s => s.orderId === o.id).map(s => ({ kind: s.kind, amount: s.amount, dueDate: s.dueDate, note: s.note }))
+      schedules: !counts ? [] : sch.filter(s => s.orderId === o.id).map(s => ({ kind: s.kind, amount: s.amount, dueDate: s.dueDate, note: s.note }))
         .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999')),
       payments: pay.filter(p => p.orderId === o.id).map(p => ({ amount: p.amount, paidAt: p.paidAt, method: p.method })),
-    })) });
+    }; }) });
   }, 'customer-portal');
 
   /** Khách huỷ đơn khi nhân viên chưa xác nhận. */

@@ -653,8 +653,6 @@ a.flow-step:hover { border-color: var(--blue); }
 .portal-lines .col-idx { width: 44px; } .portal-lines .col-img { width: 78px; } .portal-lines .col-unit { width: 64px; } .portal-lines .col-qty { width: 92px; }
 .portal-lines .col-price, .portal-lines .col-after, .portal-lines .col-total { width: 120px; } .portal-lines .col-disc { width: 60px; } .portal-lines .col-act { width: 40px; }
 .portal-lines .thumb { width: 60px; height: 60px; }
-.portal-submit { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.portal-submit p { margin: 0; flex: 1; min-width: 220px; }
 /* Ảnh sản phẩm hiện trọn (không cắt) trên trang khách hàng */
 .portal img.thumb { object-fit: contain; background: #fff; }
 .portal .picker-list .thumb { width: 52px; height: 52px; }
@@ -684,7 +682,8 @@ a.flow-step:hover { border-color: var(--blue); }
   .portal-lines td.right { text-align: left; }
   .portal-lines .thumb { width: 52px; height: 52px; }
   .portal-lines .line-actions { text-align: right; }
-  .portal-submit .portal-actions { width: 100%; } .portal-submit .portal-actions .btn { flex: 1; }
+  .portal-lines tr.line-empty td { grid-column: 1 / -1; } .portal-lines .add-first { width: 100%; }
+  .card-title-row .portal-actions { width: 100%; } .card-title-row .portal-actions .btn { flex: 1 1 auto; }
 }
 .portal-cart .num-input { width: 72px; text-align: right; }
 
