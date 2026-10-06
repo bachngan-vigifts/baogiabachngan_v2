@@ -87,19 +87,19 @@ textarea { resize: vertical; }
 .brand.light { color: #fff; }
 
 /* ---------- Đăng nhập ---------- */
-.auth { min-height: 100vh; display: grid; grid-template-columns: minmax(320px, 44%) 1fr; }
-.auth-side { background: radial-gradient(circle at 20% 0%, #2b3f62 0, transparent 55%), var(--navy); color: #fff; padding: 44px; display: flex; flex-direction: column; }
-.auth-pitch { margin: auto 0; max-width: 420px; }
-.auth-pitch h2 { font-size: 1.9rem; line-height: 1.25; letter-spacing: -.02em; margin-bottom: 22px; }
-.auth-pitch ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; color: #c6d0de; }
-.auth-pitch li { display: flex; gap: 10px; align-items: center; }
-.auth-pitch li::before { content: "✓"; width: 22px; height: 22px; border-radius: 50%; background: #c8212b33; color: #ff8d93; display: grid; place-items: center; font-size: .75rem; font-weight: 700; flex: none; }
-.auth-foot { color: #8090a8; }
-.auth-main { display: grid; place-items: center; padding: 32px 20px; }
-.auth-card { width: 400px; max-width: 100%; }
-.auth-card h1 { margin-bottom: 6px; }
-.auth-card form { display: grid; gap: 16px; margin: 26px 0 18px; }
-.auth-card .btn.primary { padding: 12px; font-size: 1rem; }
+.auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; background: var(--brand-navy); }
+.auth-card { width: min(100%, 460px); background: #fff; padding: 36px; border-radius: 18px; box-shadow: 0 20px 60px #07152960; }
+.auth-logo img { display: block; width: 100%; height: auto; }
+.auth-brand-name { text-align: center; margin: 14px auto 0; color: #7a8699; line-height: 1.45; }
+.auth-card h1 { font-family: inherit; color: var(--ink); font-size: 1.6rem; margin: 20px 0 8px; }
+.auth-card form { display: grid; gap: 18px; margin: 24px 0 18px; }
+.auth-card label { display: grid; gap: 8px; font-size: .95rem; font-weight: 500; }
+.auth-card input:not([type=checkbox]) { padding: 12px; font-size: 16px; border-color: #bdc8d9; }
+.auth-card .show-password { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.auth-card .show-password input { width: 18px; height: 18px; margin: 0; accent-color: var(--blue); }
+.auth-card .btn.primary { padding: 13px; font-size: 1rem; }
+.auth-help { font-size: .88rem; color: #52627b; line-height: 1.6; }
+@media (max-width: 480px) { .auth-card { padding: 26px 20px; } }
 .mobile-only { display: none !important; }
 
 /* ---------- Khung ứng dụng ---------- */
@@ -276,9 +276,6 @@ table { width: 100%; border-collapse: collapse; }
   .sidebar { display: none; }
   .mobile-only { display: revert !important; }
   .hide-sm { display: none; }
-  .auth { grid-template-columns: 1fr; }
-  .auth-side { display: none; }
-  .auth-card .brand { margin-bottom: 26px; color: var(--navy); display: flex !important; }
   .topbar { padding: 0 16px; }
   .view { padding: 18px 16px 110px; }
   .banner { margin: 12px 16px 0; }
@@ -541,3 +538,15 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 .type-pick.small button { padding: 8px; }
 #new-quote-dialog .modal-body > p { margin-top: 10px; }
 .form-grid + .form-grid { margin-top: 12px; }
+
+/* Điện thoại: chữ trong ô nhập ≥ 16px để iPhone không tự phóng to khi chạm vào ô; hộp thoại không tràn ngang */
+@media (max-width: 680px) {
+  input, select, textarea { font-size: 16px; }
+  .modal { overflow-x: hidden; max-height: 92dvh; }
+  .modal .form-grid.cols-2 { grid-template-columns: 1fr; }
+  .modal-head, .modal-body { padding-left: 16px; padding-right: 16px; }
+  .modal-head h2 { font-size: 1.3rem; }
+  .type-pick { gap: 6px; }
+  .type-pick button { padding: 9px 4px; min-width: 0; }
+  input[type="date"] { -webkit-appearance: none; appearance: none; min-height: 44px; display: block; text-align: left; }
+}

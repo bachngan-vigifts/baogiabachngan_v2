@@ -174,7 +174,7 @@ function showAuth(message = '') {
   state.user = null; saveToken('');
   $('#workspace').hidden = true; $('#auth').hidden = false;
   $('#auth-error').textContent = message;
-  if (!activation) { $('#auth-title').textContent = 'Đăng nhập'; }
+  if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   setTimeout(() => ($('#email').value ? $('#password') : $('#email')).focus(), 0);
 }
 function setupActivationForm() {
@@ -186,11 +186,7 @@ function setupActivationForm() {
   const email = hashParams().get('email');
   if (email) { $('#email').value = email; $('#email').readOnly = true; }
 }
-$$('[data-toggle-pw]').forEach(b => b.addEventListener('click', () => {
-  const input = document.getElementById(b.dataset.togglePw);
-  const show = input.type === 'password'; input.type = show ? 'text' : 'password';
-  b.textContent = show ? 'Ẩn' : 'Hiện'; b.setAttribute('aria-label', show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu');
-}));
+$('#show-password').addEventListener('change', e => { for (const id of ['#password', '#password2']) $(id).type = e.target.checked ? 'text' : 'password'; });
 $('#login-form').addEventListener('submit', async e => {
   e.preventDefault();
   const email = $('#email').value.trim(), password = $('#password').value, err = $('#auth-error');
@@ -789,7 +785,9 @@ async function openNewQuote() {
   $('#new-quote-form').reset(); $('#nq-error').textContent = '';
   $('#nq-date').value = todayIso(); $('#nq-no').value = '';
   nqSetType(nq.type);
-  $('#new-quote-dialog').showModal(); $('#nq-customer').focus();
+  $('#new-quote-dialog').showModal();
+  // Máy tính: đặt sẵn con trỏ vào ô khách hàng; điện thoại thì không (tránh bật bàn phím che hộp).
+  if (matchMedia('(pointer: fine)').matches) $('#nq-customer').focus(); else $('#nq-date').blur();
 }
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-new-quote]'); if (!a) return;
