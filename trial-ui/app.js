@@ -117,7 +117,8 @@ async function api(path, method = 'GET', body) {
 const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
   quoteFilter: { q: '', type: '', owner: '', sort: 'updated' },
-  customerQuery: '', memberQuery: '', memberStatus: '',
+  customerQuery: '', customerTotal: 0, memberQuery: '', memberStatus: '',
+  products: null, productTotal: 0, productQuery: '', productBrand: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
 
@@ -199,7 +200,7 @@ $('#logout').addEventListener('click', async () => {
   if (editor.dirty && !await confirmBox('Báo giá đang sửa chưa được lưu. Vẫn đăng xuất?', { ok: 'Đăng xuất' })) return;
   editor.dirty = false;
   try { await api('/logout', 'POST', {}); } catch { /* vẫn thoát */ }
-  state.quotes = state.customers = state.members = null;
+  state.quotes = state.customers = state.members = state.products = null;
   showAuth(); $('#auth-note').textContent = 'Đã đăng xuất.';
 });
 $('#change-password').addEventListener('click', () => {
@@ -235,9 +236,17 @@ async function loadQuotes() {
   catch (e) { state.quotes = state.quotes || []; if (e.status !== 401) showGlobalError(e.message); }
   renderQuotes(); renderCustomers();
 }
-async function loadCustomers() {
-  try { state.customers = (await api('/customers')).customers; }
-  catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
+// Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
+let customerReq = 0;
+async function loadCustomers(more = false) {
+  const req = ++customerReq, offset = more ? (state.customers || []).length : 0;
+  try {
+    const d = await api(`/customers?limit=100&offset=${offset}&q=${encodeURIComponent(state.customerQuery)}`);
+    if (req !== customerReq) return;
+    state.customers = more ? [...state.customers, ...d.customers] : d.customers;
+    state.customerTotal = d.total ?? d.customers.length;
+    if (!state.customerQuery) state.customerGrandTotal = state.customerTotal;
+  } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
   renderCustomers(); renderStats();
 }
 async function loadMembers() {
@@ -247,7 +256,7 @@ async function loadMembers() {
 }
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { quotes: 'Báo giá', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá' };
+const VIEWS = { quotes: 'Báo giá', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -274,6 +283,8 @@ function route() {
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
   window.scrollTo(0, 0);
   if (view === 'editor') openEditor(id);
+  if (view === 'products' && !state.products) loadProducts();
+  hideProductSuggest();
 }
 const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
 
@@ -303,7 +314,7 @@ function renderStats() {
   $('#stat-value').textContent = shortMoney(list.reduce((s, q) => s + q.total, 0));
   $('#stat-month').textContent = thisMonth.length.toLocaleString('vi-VN');
   $('#stat-month-value').textContent = thisMonth.length ? shortMoney(thisMonth.reduce((s, q) => s + q.total, 0)) : 'Chưa có báo giá';
-  $('#stat-customers').textContent = state.customers ? state.customers.length.toLocaleString('vi-VN') : '–';
+  $('#stat-customers').textContent = state.customerGrandTotal !== undefined ? state.customerGrandTotal.toLocaleString('vi-VN') : '–';
   $('#nav-quote-count').textContent = all.length;
 }
 function renderQuotes() {
@@ -400,7 +411,7 @@ async function openEditor(id) {
 function fillEditor(id, revision, data) {
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
-  editor.customerId = data.customerId || '';
+  editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : '';
   editor.rows = (data.rows?.length ? data.rows : [blankRow()]).map(r => ({ ...r, id: r.id || uid(), discountType: r.discountType || 'percent' }));
   qf.reset();
   for (const name of ['quoteNo', 'date', 'owner', 'ownerPhone', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'notes'])
@@ -425,8 +436,7 @@ qf.addEventListener('input', e => {
   markDirty();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
   if (['customer', 'phone'].includes(e.target.name)) {
-    const c = state.customers?.find(x => x.id === editor.customerId);
-    if (c && e.target.name === 'customer' && e.target.value.trim() !== c.name) editor.customerId = '';
+    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) editor.customerId = '';
     updateContactsButton();
   }
   if (e.target.name === 'quoteNo') $('#editor-title').textContent = e.target.value || 'Báo giá';
@@ -451,7 +461,7 @@ function lineCell(r, i) {
   return `<tr data-i="${i}">
     <td class="col-idx">${i + 1}</td>
     <td class="col-product" data-label="Sản phẩm">
-      <input data-k="name" value="${esc(r.name)}" placeholder="Tên sản phẩm" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
+      <input data-k="name" value="${esc(r.name)}" placeholder="Gõ tên hoặc mã để tìm sản phẩm…" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
       <div class="sub"><input data-k="sku" value="${esc(r.sku)}" placeholder="Mã SKU" maxlength="4000" aria-label="SKU dòng ${i + 1}"></div>
     </td>
     <td class="col-unit" data-label="ĐVT"><input data-k="unit" value="${esc(r.unit)}" placeholder="cái" maxlength="40" aria-label="Đơn vị tính dòng ${i + 1}"></td>
@@ -567,18 +577,24 @@ function calculate() {
 // ----- khách hàng trong báo giá
 const suggest = $('#customer-suggest'), searchInput = $('#customer-search-input');
 let suggestIndex = -1, suggestItems = [];
+let suggestTimer, suggestReq = 0;
 function showSuggest() {
-  const q = normalize(searchInput.value);
-  suggestItems = (state.customers || []).filter(c => !q || normalize(`${c.name} ${c.contact} ${c.phone} ${c.taxCode} ${c.customerCode}`).includes(q)).slice(0, 8);
-  suggestIndex = suggestItems.length ? 0 : -1;
-  suggest.innerHTML = suggestItems.length
-    ? suggestItems.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === suggestIndex}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · ') || c.address || '')}</small></li>`).join('')
-    : `<li class="none">${state.customers?.length ? 'Không tìm thấy. Nhập thông tin bên dưới rồi bấm "Lưu vào danh bạ".' : 'Danh bạ đang trống.'}</li>`;
-  suggest.hidden = false; searchInput.setAttribute('aria-expanded', 'true');
+  clearTimeout(suggestTimer);
+  suggestTimer = setTimeout(async () => {
+    const req = ++suggestReq;
+    let items = [];
+    try { items = (await api(`/customers?limit=8&q=${encodeURIComponent(searchInput.value)}`)).customers; } catch { /* hiện thông báo trống */ }
+    if (req !== suggestReq || document.activeElement !== searchInput) return;
+    suggestItems = items; suggestIndex = items.length ? 0 : -1;
+    suggest.innerHTML = items.length
+      ? items.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === suggestIndex}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · ') || c.address || '')}</small></li>`).join('')
+      : `<li class="none">${searchInput.value.trim() ? 'Không tìm thấy. Nhập thông tin bên dưới rồi bấm "Lưu vào danh bạ".' : 'Danh bạ đang trống.'}</li>`;
+    suggest.hidden = false; searchInput.setAttribute('aria-expanded', 'true');
+  }, 180);
 }
 function hideSuggest() { suggest.hidden = true; searchInput.setAttribute('aria-expanded', 'false'); }
 function pickCustomer(c) {
-  editor.customerId = c.id;
+  editor.customerId = c.id; editor.customerName = c.name;
   field('customer').value = c.name; field('contact').value = c.contact || ''; field('phone').value = c.phone || '';
   field('email').value = c.email || ''; field('customerTaxCode').value = c.taxCode || ''; field('customerAddress').value = c.address || '';
   editor.base.customerCode = c.customerCode || '';
@@ -587,7 +603,7 @@ function pickCustomer(c) {
 }
 searchInput.addEventListener('focus', showSuggest);
 searchInput.addEventListener('input', showSuggest);
-searchInput.addEventListener('blur', () => setTimeout(hideSuggest, 150));
+searchInput.addEventListener('blur', () => { clearTimeout(suggestTimer); suggestReq++; setTimeout(hideSuggest, 150); });
 searchInput.addEventListener('keydown', e => {
   if (suggest.hidden) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -600,17 +616,15 @@ searchInput.addEventListener('keydown', e => {
 suggest.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pickCustomer(suggestItems[li.dataset.i]); } });
 function updateContactsButton() {
   const name = field('customer').value.trim();
-  const known = editor.customerId || (state.customers || []).some(c => normalize(c.name) === normalize(name));
-  $('#save-to-contacts').hidden = !name || known;
+  $('#save-to-contacts').hidden = !name || !!editor.customerId;
 }
 $('#save-to-contacts').addEventListener('click', async () => {
   const body = { name: field('customer').value.trim(), contact: field('contact').value.trim(), phone: field('phone').value.trim().slice(0, 40), email: field('email').value.trim(), taxCode: field('customerTaxCode').value.trim(), address: field('customerAddress').value.trim() };
   const btn = $('#save-to-contacts'); btn.disabled = true;
   try {
     const { id } = await api('/customers', 'POST', body);
-    editor.customerId = id; markDirty();
-    state.customers = [...(state.customers || []), { id, ...body }].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-    renderCustomers(); renderStats(); updateContactsButton();
+    editor.customerId = id; editor.customerName = body.name; markDirty();
+    updateContactsButton(); loadCustomers();
     toast('Đã lưu ' + body.name + ' vào danh bạ.');
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; }
@@ -770,6 +784,159 @@ $('#print-quote').addEventListener('click', () => {
   window.print(); document.title = title;
 });
 
+// ---------------------------------------------------------------- sản phẩm
+const POLICY_KEY = 'bn-price-policy';
+let preferredPolicy = '';
+try { preferredPolicy = localStorage.getItem(POLICY_KEY) || ''; } catch { /* bỏ qua */ }
+const currentPolicy = () => (state.policies.find(p => p.id === preferredPolicy) || state.policies[0])?.id || '';
+/** Giá theo bảng giá đang chọn; nếu trống thì lấy bảng giá đầu tiên có giá. */
+function productPrice(p) {
+  const pick = p.prices?.[currentPolicy()];
+  if (Number.isFinite(pick)) return pick;
+  for (const pol of state.policies) if (Number.isFinite(p.prices?.[pol.id])) return p.prices[pol.id];
+  return null;
+}
+/** Tồn khả dụng = tổng các kho thật (không tính NCC và hàng chờ về). */
+const availableStock = p => state.warehouses.filter(w => w.kind === 'stock').reduce((s, w) => s + (Number(p.stock?.[w.id]) || 0), 0);
+const stockDetail = p => state.warehouses.filter(w => p.stock?.[w.id] !== undefined).map(w => `${w.name}: ${fmtNum(Number(p.stock[w.id]))}`).join('\n');
+const thumb = p => p.imageUrl ? `<img class="thumb" src="${esc(p.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8"/></svg></span>';
+function applyCatalogMeta(d) {
+  if (d.policies) state.policies = d.policies;
+  if (d.warehouses) state.warehouses = d.warehouses;
+  const sel = $('#product-policy');
+  sel.innerHTML = state.policies.map(p => `<option value="${esc(p.id)}">Bảng giá: ${esc(p.name)}</option>`).join('');
+  sel.value = currentPolicy(); sel.hidden = state.policies.length < 2;
+  $('#product-price-head').textContent = state.policies.find(p => p.id === currentPolicy())?.name || 'Giá';
+  $('#product-sub').textContent = d.observedAt ? `Danh mục cập nhật lúc ${new Date(d.observedAt).toLocaleString('vi-VN')}. Chọn sản phẩm để tạo báo giá nhanh.` : 'Danh mục, giá bán và tồn kho để chọn nhanh khi lập báo giá.';
+}
+let productReq = 0, brandsLoaded = false;
+async function loadProducts(more = false) {
+  const req = ++productReq, offset = more ? (state.products || []).length : 0;
+  if (!more) { state.products = null; renderProducts(); }
+  try {
+    const d = await api(`/products?limit=60&offset=${offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}`);
+    if (req !== productReq) return;
+    applyCatalogMeta(d);
+    state.products = more ? [...state.products, ...d.products] : d.products; state.productTotal = d.total;
+  } catch (e) { state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message); }
+  renderProducts();
+  if (!brandsLoaded) {
+    brandsLoaded = true;
+    api('/product-brands').then(d => {
+      $('#product-brand').innerHTML = '<option value="">Mọi thương hiệu</option>' + d.brands.map(b => `<option value="${esc(b.name)}">${esc(b.name)} (${b.count})</option>`).join('');
+      $('#product-brand').value = state.productBrand;
+    }).catch(() => { brandsLoaded = false; });
+  }
+}
+function renderProducts() {
+  const tbody = $('#product-list');
+  if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
+  const list = state.products, filtered = state.productQuery || state.productBrand;
+  $('#product-count').textContent = list.length ? `${list.length.toLocaleString('vi-VN')}/${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
+  tbody.innerHTML = list.map(p => {
+    const price = productPrice(p), stock = availableStock(p), sel = state.selected.has(p.sku);
+    return `<tr>
+      <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
+      <td class="first"><span class="prod-cell">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></span></td>
+      <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
+      <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
+      <td class="right num" data-label="Giá">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
+      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}">${fmtNum(stock)}</td>
+      <td class="actions-cell"><div class="row-actions"><button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button></div></td>
+    </tr>`;
+  }).join('');
+  $('#product-empty').hidden = list.length > 0;
+  $('#product-empty-title').textContent = filtered ? 'Không tìm thấy sản phẩm' : 'Chưa có dữ liệu sản phẩm';
+  $('#product-empty-text').textContent = filtered ? 'Thử từ khoá khác hoặc bỏ lọc thương hiệu.' : 'Danh mục sẽ hiện ở đây sau khi nhập dữ liệu từ web cũ.';
+  $('#product-table').hidden = list.length === 0;
+  $('#product-more-row').hidden = list.length >= state.productTotal;
+  renderSelection();
+}
+function renderSelection() {
+  const n = state.selected.size;
+  $('#product-selection').hidden = n === 0;
+  $('#product-selection-text').textContent = `Đã chọn ${n} sản phẩm`;
+}
+/** Dòng báo giá từ một sản phẩm trong danh mục. */
+function rowFromProduct(p) {
+  const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price: productPrice(p) ?? 0 };
+  if (p.imageUrl) row.image = p.imageUrl;
+  if (Number(p.perCarton) > 0) row.perCarton = Number(p.perCarton);
+  if (Number(p.cartonWeight) > 0) row.cartonWeight = Number(p.cartonWeight);
+  return row;
+}
+let productTimer;
+$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(() => loadProducts(), 250); });
+$('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; loadProducts(); });
+$('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });
+$('#product-more').addEventListener('click', () => loadProducts(true));
+$('#product-list').addEventListener('change', e => {
+  const box = e.target.closest('[data-select]'); if (!box) return;
+  const p = state.products.find(x => x.sku === box.dataset.select);
+  if (box.checked) state.selected.set(p.sku, p); else state.selected.delete(p.sku);
+  renderSelection();
+});
+$('#product-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-quote-product]'); if (!b) return;
+  editor.pending = newQuoteData({ rows: [rowFromProduct(state.products.find(x => x.sku === b.dataset.quoteProduct))] });
+  go('#/quotes/new');
+});
+$('#product-clear').addEventListener('click', () => { state.selected.clear(); renderProducts(); });
+$('#product-to-quote').addEventListener('click', () => {
+  editor.pending = newQuoteData({ rows: [...state.selected.values()].map(rowFromProduct) });
+  state.selected.clear(); renderSelection(); go('#/quotes/new');
+});
+
+// ----- tìm sản phẩm ngay trong dòng báo giá (gõ tên hoặc mã SKU)
+const pSuggest = $('#product-suggest');
+let pTimer, pReq = 0, pItems = [], pIndex = -1, pInput = null;
+function hideProductSuggest() { pSuggest.hidden = true; pItems = []; pIndex = -1; }
+function placeProductSuggest() {
+  if (!pInput) return;
+  const r = pInput.getBoundingClientRect();
+  pSuggest.style.left = Math.max(8, Math.min(r.left + scrollX, scrollX + innerWidth - pSuggest.offsetWidth - 8)) + 'px';
+  pSuggest.style.top = r.bottom + scrollY + 4 + 'px';
+}
+function searchProducts(input) {
+  pInput = input; clearTimeout(pTimer);
+  const q = input.value.trim();
+  if (q.length < 2) { hideProductSuggest(); return; }
+  pTimer = setTimeout(async () => {
+    const req = ++pReq;
+    let d;
+    try { d = await api(`/products?limit=8&q=${encodeURIComponent(q)}`); } catch { return; }
+    if (req !== pReq || document.activeElement !== input) return;
+    applyCatalogMeta(d);
+    pItems = d.products; pIndex = pItems.length ? 0 : -1;
+    if (!pItems.length) { hideProductSuggest(); return; }
+    pSuggest.innerHTML = pItems.map((p, i) => {
+      const price = productPrice(p);
+      return `<li role="option" data-i="${i}" aria-selected="${i === pIndex}"><span class="prod-opt">${thumb(p)}<span class="prod-text"><b>${esc(p.name)}</b><small>${esc([p.sku, p.brand, p.unit].filter(Boolean).join(' · '))} · tồn ${fmtNum(availableStock(p))}</small></span><span class="price">${price === null ? '' : money(price)}</span></span></li>`;
+    }).join('');
+    pSuggest.hidden = false; placeProductSuggest();
+  }, 200);
+}
+function pickProduct(p) {
+  const tr = pInput?.closest('tr'); if (!tr) return;
+  const i = Number(tr.dataset.i), old = editor.rows[i];
+  editor.rows[i] = { ...rowFromProduct(p), id: old.id, qty: old.qty || 1, discount: old.discount, discountType: old.discountType, printFee: old.printFee, ...(Number.isFinite(old.taxRate) ? { taxRate: old.taxRate } : {}), ...(old.costPrice !== undefined ? { costPrice: old.costPrice } : {}) };
+  hideProductSuggest(); markDirty(); renderLines();
+  $(`#line-list tr[data-i="${i}"] [data-k="qty"]`)?.focus();
+}
+$('#line-list').addEventListener('input', e => { if (e.target.matches('[data-k="name"], [data-k="sku"]')) searchProducts(e.target); });
+$('#line-list').addEventListener('focusout', e => { if (e.target === pInput) setTimeout(hideProductSuggest, 150); });
+$('#line-list').addEventListener('keydown', e => {
+  if (pSuggest.hidden || e.target !== pInput) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); e.stopImmediatePropagation();
+    pIndex = (pIndex + (e.key === 'ArrowDown' ? 1 : -1) + pItems.length) % pItems.length;
+    $$('li', pSuggest).forEach((li, i) => li.setAttribute('aria-selected', String(i === pIndex)));
+  } else if (e.key === 'Enter' && pItems[pIndex]) { e.preventDefault(); e.stopImmediatePropagation(); pickProduct(pItems[pIndex]); }
+  else if (e.key === 'Escape') hideProductSuggest();
+}, true);
+pSuggest.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pickProduct(pItems[li.dataset.i]); } });
+addEventListener('resize', () => { if (!pSuggest.hidden) placeProductSuggest(); });
+
 // ---------------------------------------------------------------- khách hàng
 let customerId = null;
 function quoteCountByCustomer() {
@@ -780,9 +947,9 @@ function quoteCountByCustomer() {
 function renderCustomers() {
   const tbody = $('#customer-list');
   if (!state.customers) { tbody.innerHTML = skeleton(6); return; }
-  const q = normalize(state.customerQuery), counts = quoteCountByCustomer();
-  const list = state.customers.filter(c => !q || normalize(`${c.name} ${c.contact} ${c.phone} ${c.email} ${c.taxCode} ${c.customerCode}`).includes(q));
-  $('#customer-count').textContent = `${list.length}/${state.customers.length} khách hàng`;
+  const counts = quoteCountByCustomer(), list = state.customers;
+  $('#customer-count').textContent = `${list.length.toLocaleString('vi-VN')}/${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
+  $('#customer-more-row').hidden = list.length >= state.customerTotal;
   tbody.innerHTML = list.map(c => `
     <tr>
       <td class="first"><span class="strong">${esc(c.name)}</span>${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
@@ -795,13 +962,15 @@ function renderCustomers() {
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
     </tr>`).join('');
-  const none = state.customers.length === 0;
+  const none = !state.customerQuery && list.length === 0;
   $('#customer-empty').hidden = list.length > 0;
   $('#customer-empty-title').textContent = none ? 'Chưa có khách hàng' : 'Không tìm thấy khách hàng';
   $('#customer-empty-text').textContent = none ? 'Thêm khách hàng để chọn nhanh khi lập báo giá.' : 'Thử từ khoá khác.';
   $('#customer-table').hidden = list.length === 0;
 }
-$('#customer-search').addEventListener('input', e => { state.customerQuery = e.target.value; renderCustomers(); });
+let customerTimer;
+$('#customer-search').addEventListener('input', e => { state.customerQuery = e.target.value; clearTimeout(customerTimer); customerTimer = setTimeout(() => loadCustomers(), 250); });
+$('#customer-more').addEventListener('click', () => loadCustomers(true));
 $('#customer-list').addEventListener('click', e => {
   const edit = e.target.closest('[data-edit-customer]'); if (edit) return openCustomer(edit.dataset.editCustomer);
   const qb = e.target.closest('[data-quote-for]');

@@ -1,7 +1,7 @@
 // Máy chủ giả lập cho BẢN DEMO (Artifact / xem thử không có Supabase).
 // Thay fetch tới API bằng xử lý trong trình duyệt; dữ liệu mẫu lưu ở localStorage của người xem.
 // Không dùng cho bản thật: bản thật gọi Edge Function `baogia-v2-api`.
-import { totals } from './quote-math.js';
+import { totals, normalize } from './quote-math.js';
 
 export const DEMO_API = 'https://demo.bachngan.local/api/staff';
 const KEY = 'bn-demo-db-v1';
@@ -40,7 +40,24 @@ function seed() {
       { name: 'Túi giữ nhiệt', sku: 'TGN-01', qty: 300, price: 45000 },
     ]),
   ];
-  return { positions, members, customers, quotes, sessions: {} };
+  const policies = [{ id: 'le', name: 'Giá bán lẻ' }, { id: 'si', name: 'Giá sỉ' }];
+  const warehouses = [{ id: 'q1', name: 'Kho Quận 1', kind: 'stock' }, { id: 'td', name: 'Kho Thủ Đức', kind: 'stock' }, { id: 'ncc', name: 'NCC', kind: 'supplier' }, { id: 'hcv', name: 'Hàng chờ về', kind: 'incoming' }];
+  const P = (sku, name, brand, unit, le, si, q1, td) => ({ sku, name, brand, unit, pattern: '', imageUrl: '', prices: { le, si }, stock: { q1, td, ncc: 0, hcv: 0 } });
+  const products = [
+    P('LHC4125', 'Bình giữ nhiệt Lock&Lock Energetic 500ml', 'Lock&Lock', 'cái', 185000, 166000, 120, 40),
+    P('LHC4131', 'Bình giữ nhiệt Lock&Lock Feather Light 450ml', 'Lock&Lock', 'cái', 245000, 220000, 35, 0),
+    P('LLG445', 'Hộp cơm thủy tinh Lock&Lock 3 ngăn', 'Lock&Lock', 'hộp', 210000, 189000, 8, 12),
+    P('LBF-1', 'Bộ hộp bảo quản Lock&Lock 4 món', 'Lock&Lock', 'bộ', 329000, 296000, 0, 0),
+    P('ML-LY-02', 'Bộ ly sứ Minh Long Jasmine 6 món', 'Minh Long', 'bộ', 320000, 288000, 60, 25),
+    P('ML-CHEN-01', 'Bộ chén dĩa Minh Long Hoàng Cung 22 món', 'Minh Long', 'bộ', 2450000, 2205000, 6, 2),
+    P('ML-HC-01', 'Nồi sứ dưỡng sinh Healthy Cook 1,5L', 'Minh Long', 'cái', 690000, 621000, 14, 9),
+    P('LYS-500', 'Bình nước thủy tinh LYS 500ml', 'LYS', 'cái', 145000, 130000, 200, 80),
+    P('LYS-SET', 'Bộ cốc thủy tinh LYS 6 chiếc', 'LYS', 'bộ', 260000, 234000, 45, 30),
+    P('HQ-TET-01', 'Hộp quà Tết cao cấp Phúc Lộc', 'Bách Ngân', 'hộp', 250000, 225000, 150, 0),
+    P('TGN-01', 'Túi giữ nhiệt in logo', 'Bách Ngân', 'cái', 45000, 40000, 500, 300),
+    P('SO-DA-01', 'Sổ da A5 khắc tên', 'Bách Ngân', 'cuốn', 120000, 108000, 75, 20),
+  ];
+  return { positions, members, customers, quotes, policies, warehouses, products, sessions: {} };
 }
 
 let db;
@@ -66,8 +83,14 @@ function cleanQuote(d) {
   return { ...d, rows: d.rows.map(r => ({ ...r, id: id(), discountType: r.discountType || 'percent' })) };
 }
 
+const fold = v => normalize(v).replace(/đ/g, 'd');
+const matches = (text, q) => fold(q).split(' ').filter(Boolean).every(w => fold(text).includes(w));
+let query = new URLSearchParams();
+const page = def => ({ limit: Math.min(Number(query.get('limit')) || def, 500), offset: Number(query.get('offset')) || 0 });
+
 function handle(method, path, body, auth) {
   load();
+  if (!db.products) { const fresh = seed(); Object.assign(db, { policies: fresh.policies, warehouses: fresh.warehouses, products: fresh.products }); }
   const me = auth && db.sessions[auth] ? db.members.find(m => m.id === db.sessions[auth] && m.active) : null;
   const need = () => me || fail(401, 'Vui lòng đăng nhập.');
   const manager = () => (need().role === 'manager' ? me : fail(403, 'Chỉ Manager được dùng chức năng này.'));
@@ -92,7 +115,23 @@ function handle(method, path, body, auth) {
     me.password = body.password; for (const k of Object.keys(db.sessions)) if (db.sessions[k] === me.id) delete db.sessions[k]; save();
     return { ok: true, sessionToken: '' };
   }
-  if (method === 'GET' && path === '/customers') { need(); return { customers: [...db.customers].sort((a, b) => a.name.localeCompare(b.name, 'vi')) }; }
+  if (method === 'GET' && path === '/customers') {
+    need();
+    const all = [...db.customers].filter(c => matches(`${c.name} ${c.contact} ${c.phone} ${c.email} ${c.taxCode} ${c.customerCode}`, query.get('q'))).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    const { limit, offset } = page(100);
+    return { customers: all.slice(offset, offset + limit), total: all.length, limit, offset };
+  }
+  if (method === 'GET' && path === '/products') {
+    need();
+    const brand = query.get('brand') || '';
+    const all = db.products.filter(p => (!brand || p.brand === brand) && matches(`${p.sku} ${p.name} ${p.brand}`, query.get('q'))).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    const { limit, offset } = page(50);
+    return { products: all.slice(offset, offset + limit), total: all.length, limit, offset, policies: db.policies, warehouses: db.warehouses, observedAt: day(0) + 'T07:00:00.000Z' };
+  }
+  if (method === 'GET' && path === '/product-brands') {
+    need(); const m = new Map(); for (const p of db.products) m.set(p.brand, (m.get(p.brand) || 0) + 1);
+    return { brands: [...m].sort((a, b) => a[0].localeCompare(b[0], 'vi')).map(([name, count]) => ({ name, count })) };
+  }
   if ((method === 'POST' && path === '/customers') || (method === 'PUT' && (m = /^\/customers\/([^/]+)$/.exec(path)))) {
     need();
     const name = String(body.name || '').trim(); if (!name) fail(400, 'Vui lòng nhập tên khách hàng.');
@@ -164,7 +203,7 @@ export function installDemoApi() {
     await new Promise(r => setTimeout(r, 120));
     const auth = /^Bearer (\w+)$/.exec(init.headers?.authorization || '')?.[1];
     let status = 200, payload;
-    try { payload = handle(init.method || 'GET', url.slice(DEMO_API.length).split('?')[0], init.body ? JSON.parse(init.body) : {}, auth); if ((init.method || 'GET') === 'POST' && /\/(quotes|customers|admin\/members)$/.test(url)) status = 201; }
+    try { query = new URL(url).searchParams; payload = handle(init.method || 'GET', url.slice(DEMO_API.length).split('?')[0], init.body ? JSON.parse(init.body) : {}, auth); if ((init.method || 'GET') === 'POST' && /\/(quotes|customers|admin\/members)$/.test(url)) status = 201; }
     catch (e) { status = e.status || 500; payload = { error: e.status ? e.message : 'Lỗi bản demo: ' + e.message }; }
     return new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } });
   };

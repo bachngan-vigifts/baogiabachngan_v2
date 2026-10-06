@@ -52,6 +52,7 @@
     <nav class="side-nav" aria-label="Điều hướng chính">
       <span class="nav-label">Kinh doanh</span>
       <a class="nav" href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg><span>Báo giá</span><b id="nav-quote-count" class="badge">0</b></a>
+      <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg><span>Sản phẩm</span></a>
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
       <span class="nav-label manager-only">Quản trị</span>
       <a class="nav manager-only" href="#/staff" data-nav="staff"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Nhân viên</span></a>
@@ -232,6 +233,37 @@
       </form>
     </section>
 
+    <!-- ---------- Sản phẩm ---------- -->
+    <section class="view" id="view-products" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Kinh doanh</span><h1>Sản phẩm</h1><p class="muted" id="product-sub">Danh mục, giá bán và tồn kho để chọn nhanh khi lập báo giá.</p></div>
+      </div>
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="product-search" type="search" placeholder="Tìm tên, mã SKU, thương hiệu… (gõ không dấu được)" aria-label="Tìm sản phẩm"></label>
+          <select id="product-brand" aria-label="Thương hiệu"><option value="">Mọi thương hiệu</option></select>
+          <select id="product-policy" aria-label="Bảng giá dùng khi lập báo giá"></select>
+          <span class="muted small" id="product-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="product-table">
+            <thead><tr><th class="check-col"><span class="sr-only">Chọn</span></th><th>Sản phẩm</th><th>Thương hiệu</th><th>ĐVT</th><th class="right" id="product-price-head">Giá</th><th class="right">Tồn kho</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <tbody id="product-list"></tbody>
+          </table>
+        </div>
+        <div id="product-empty" class="empty" hidden>
+          <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg></div>
+          <h3 id="product-empty-title">Chưa có dữ liệu sản phẩm</h3><p class="muted" id="product-empty-text">Danh mục sẽ hiện ở đây sau khi nhập dữ liệu từ web cũ.</p>
+        </div>
+        <div class="more-row" id="product-more-row" hidden><button class="btn secondary" id="product-more">Xem thêm</button></div>
+      </div>
+      <div class="selection-bar" id="product-selection" hidden>
+        <span id="product-selection-text"></span>
+        <button class="btn ghost small" id="product-clear">Bỏ chọn</button>
+        <button class="btn primary" id="product-to-quote">Tạo báo giá</button>
+      </div>
+    </section>
+
     <!-- ---------- Khách hàng ---------- -->
     <section class="view" id="view-customers" hidden>
       <div class="page-head">
@@ -249,6 +281,7 @@
             <tbody id="customer-list"></tbody>
           </table>
         </div>
+        <div class="more-row" id="customer-more-row" hidden><button class="btn secondary" id="customer-more">Xem thêm</button></div>
         <div id="customer-empty" class="empty" hidden>
           <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg></div>
           <h3 id="customer-empty-title">Chưa có khách hàng</h3><p class="muted" id="customer-empty-text">Thêm khách hàng để chọn nhanh khi lập báo giá.</p>
@@ -282,6 +315,7 @@
 
   <nav class="bottom-nav" aria-label="Điều hướng">
     <a href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg>Báo giá</a>
+    <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
     <a href="#/quotes/new" class="fab" aria-label="Tạo báo giá"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
     <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Nhân viên</a>
@@ -369,6 +403,7 @@
   <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button></div>
 </dialog>
 
+<ul id="product-suggest" class="suggest floating" role="listbox" hidden></ul>
 <div id="print-sheet" class="print-sheet ps-root" aria-hidden="true"></div>
 <script type="module" src="app.js"></script>
 </body>

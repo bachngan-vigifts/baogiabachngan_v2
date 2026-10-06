@@ -226,9 +226,9 @@ table { width: 100%; border-collapse: collapse; }
 .act-grid { display: grid; grid-template-columns: repeat(2, 28px); gap: 2px; justify-content: end; }
 .line-actions .icon-btn { width: 28px; height: 28px; }
 .print-off input { background: var(--surface-2); color: #9aa5b5; }
-.cost-only { display: none; }
-.show-cost .cost-only { display: revert; }
-.show-cost dl.cost-only { display: grid; }
+.cost-only { display: none !important; }
+.show-cost .cost-only { display: revert !important; }
+.show-cost dl.cost-only { display: grid !important; }
 .totals { display: grid; gap: 10px; margin: 0; }
 .totals div { display: flex; justify-content: space-between; gap: 12px; }
 .totals dt { color: var(--muted); }
@@ -372,3 +372,24 @@ table { width: 100%; border-collapse: collapse; }
 /* ---------- Bản demo ---------- */
 .demo-note { display: grid; gap: 4px; margin-top: 18px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--amber-50); border: 1px solid #f1d8a8; color: #6b4300; font-size: .86rem; }
 .demo-note code { background: #fff; border: 1px solid #f1d8a8; border-radius: 4px; padding: 0 4px; font-size: .84rem; }
+
+/* ---------- Sản phẩm ---------- */
+.check-col { width: 40px; }
+.check-col input, td.check-cell input { width: 18px; height: 18px; accent-color: var(--red); }
+.prod-cell { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.thumb { width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); object-fit: cover; flex: none; display: grid; place-items: center; color: var(--muted); }
+.thumb svg { width: 18px; height: 18px; }
+.stock-low { color: var(--amber); } .stock-out { color: #b4232c; }
+.more-row { display: flex; justify-content: center; padding: 14px; border-top: 1px solid var(--line); }
+.selection-bar { position: sticky; bottom: 16px; margin-top: 14px; display: flex; align-items: center; gap: 12px; justify-content: flex-end; background: var(--navy); color: #fff; padding: 10px 12px 10px 18px; border-radius: 12px; box-shadow: var(--shadow-lg); }
+.selection-bar span { margin-right: auto; font-weight: 600; }
+.selection-bar .btn.ghost { color: #c9d3e1; }
+.selection-bar .btn.ghost:hover { background: #ffffff1a; }
+.suggest.floating { position: absolute; left: 0; top: 0; right: auto; width: 440px; max-width: calc(100vw - 24px); z-index: 60; }
+.suggest .prod-opt { display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; }
+.suggest .prod-opt .thumb { width: 36px; height: 36px; border-radius: 6px; }
+.suggest .prod-opt b { font-weight: 600; }
+.suggest .prod-text { display: grid; min-width: 0; }
+.suggest .price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 900px) { .selection-bar { bottom: calc(76px + env(safe-area-inset-bottom)); } }
+@media (max-width: 680px) { td.check-cell { position: absolute; left: 10px; top: 14px; } #product-table tr { padding-left: 40px; } }
