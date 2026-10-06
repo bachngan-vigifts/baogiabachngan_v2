@@ -1,0 +1,27 @@
+# Mỗi 30 phút nhắc app tự lấy nhân viên, khách hàng, sản phẩm mới từ Sapo (bằng phiên Sapo Manager đã kết nối trên trang Nhân viên).
+# Cần secret SAPO_SYNC_TOKEN (cùng mã với Supabase). Thiếu secret thì bỏ qua. Phiên Sapo hết hạn: chỉ cảnh báo, Manager kết nối lại trên web.
+name: Đồng bộ Sapo
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+concurrency: sapo-pull
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
+      URL: https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff/integrations/sapo/pull
+    steps:
+      - name: Thiếu SAPO_SYNC_TOKEN
+        if: env.SAPO_SYNC_TOKEN == ''
+        run: echo "::warning::Chưa có secret SAPO_SYNC_TOKEN – bỏ qua đồng bộ Sapo."
+      - name: Lấy dữ liệu mới từ Sapo
+        if: env.SAPO_SYNC_TOKEN != ''
+        run: |
+          body=$(curl -sS -m 400 -X POST "$URL" -H "Authorization: Bearer $SAPO_SYNC_TOKEN" -H 'Content-Type: application/json' -d '{}' -w '\n%{http_code}')
+          code=$(echo "$body" | tail -n1); json=$(echo "$body" | sed '$d')
+          echo "$json" | jq -c '{ok, code, error, results, unknownPolicies, unknownWarehouses}' || echo "$json" | head -c 500
+          [ "$code" = "200" ] || { echo "::error::Gọi đồng bộ lỗi HTTP $code"; exit 1; }
+          if [ "$(echo "$json" | jq -r '.ok')" != "true" ]; then echo "::warning::$(echo "$json" | jq -r '.error')"; fi
