@@ -478,7 +478,7 @@ const defaultLineDiscount = () => editor.defaultDiscount > 0 ? { discount: edito
 const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT, ...defaultLineDiscount() });
 function newQuoteData(extra = {}) {
   const type = extra.type || 'B2B', date = extra.date || todayIso();
-  return { type, quoteNo: nextQuoteNo(type, date), date, vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: defaultNotes(type), notesVersion: 2, ...extra, rows: extra.rows || [blankRow()] };
+  return { type, quoteNo: nextQuoteNo(type, date), date, vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: defaultNotes(type), notesVersion: 2, ...extra, rows: extra.rows || [] };
 }
 
 async function openEditor(id) {
@@ -509,7 +509,7 @@ function fillEditor(id, revision, data) {
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : '';
-  editor.rows = (data.rows?.length ? data.rows : [blankRow()]).map(r => ({ ...r, id: r.id || uid(), discountType: r.discountType || 'percent' }));
+  editor.rows = (data.rows || []).map(r => ({ ...r, id: r.id || uid(), discountType: r.discountType || 'percent' }));
   qf.reset();
   for (const name of ['quoteNo', 'date', 'owner', 'ownerPhone', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'notes'])
     field(name).value = data[name] ?? '';
@@ -608,7 +608,9 @@ function lineCell(r, i) {
 }
 function renderLines(focus) {
   $('#line-head').innerHTML = lineHead();
-  $('#line-list').innerHTML = editor.rows.map(lineCell).join('');
+  // Báo giá chưa có sản phẩm: thay dòng trống số 1 bằng lời mời "+ Thêm sản phẩm".
+  $('#line-list').innerHTML = editor.rows.length ? editor.rows.map(lineCell).join('')
+    : `<tr class="line-empty"><td colspan="${$$('#line-head th').length || 1}"><button type="button" class="add-first" data-add-first>＋ Thêm sản phẩm</button></td></tr>`;
   $('#line-count').textContent = `(${editor.rows.length})`;
   if ($('#shipping-card').open) renderShippingRows();
   qf.classList.toggle('type-hrc', editor.type === 'HRC');
@@ -678,17 +680,15 @@ document.addEventListener('keydown', e => {
   input.focus(); input.select(); input.scrollIntoView({ block: 'nearest' });
 });
 $('#line-list').addEventListener('click', async e => {
+  if (e.target.closest('[data-add-first]')) return $('#pick-products').click();
   const tr = e.target.closest('tr'); if (!tr) return;
   const i = Number(tr.dataset.i), rows = editor.rows;
   if (e.target.closest('[data-stock]')) return showStock(rows[i]);
   if (e.target.closest('[data-image]')) return openImage(i);
   if (!e.target.closest('[data-del]')) return;
-  if (rows.length === 1) rows[0] = blankRow();
-  else {
-    const r = rows[i];
-    if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true })) return;
-    rows.splice(i, 1);
-  }
+  const r = rows[i];
+  if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true })) return;
+  rows.splice(i, 1);
   markDirty(); renderLines();
 });
 async function showStock(r) {
@@ -802,22 +802,26 @@ document.addEventListener('click', e => {
 });
 $('#nq-type').addEventListener('click', e => { const b = e.target.closest('button'); if (b) nqSetType(b.dataset.value); });
 $('#nq-date').addEventListener('change', () => nqSetType(nq.type));
+/** Bật/tắt vòng xoay "đang tìm" trên ô tìm khách hàng. */
+const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy', on);
 {
   const input = $('#nq-customer'), list = $('#nq-suggest'); let items = [], timer, req = 0;
   const hide = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); };
   input.addEventListener('input', () => {
-    nq.customer = null; clearTimeout(timer);
+    nq.customer = null; clearTimeout(timer); comboBusy(input, true);
     timer = setTimeout(async () => {
       const r = ++req; let found = [];
       try { found = (await api(`/customers?limit=8&q=${encodeURIComponent(input.value)}`)).customers; } catch { /* để trống */ }
-      if (r !== req || document.activeElement !== input) return;
+      if (r !== req) return;
+      comboBusy(input, false);
+      if (document.activeElement !== input) return;
       items = found;
       list.innerHTML = found.length ? found.map((c, i) => `<li role="option" data-i="${i}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · '))}</small></li>`).join('')
         : `<li class="none">Không có trong danh bạ – vẫn tạo được, điền thông tin khách trong báo giá.</li>`;
       list.hidden = false; input.setAttribute('aria-expanded', 'true');
     }, 180);
   });
-  input.addEventListener('blur', () => setTimeout(hide, 150));
+  input.addEventListener('blur', () => { clearTimeout(timer); req++; comboBusy(input, false); setTimeout(hide, 150); });
   list.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (!li) return; e.preventDefault(); nq.customer = items[li.dataset.i]; input.value = nq.customer.name; hide(); });
 }
 $('#new-quote-form').addEventListener('submit', e => {
@@ -829,7 +833,7 @@ $('#new-quote-form').addEventListener('submit', e => {
   const c = nq.customer, typed = $('#nq-customer').value.trim();
   const customer = c ? { customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' } : typed ? { customer: typed } : {};
   editor.defaultDiscount = disc;
-  editor.pending = { ...newQuoteData({ type: nq.type, date, quoteNo: no, ...customer, rows: [blankRow()] }), defaultDiscount: disc };
+  editor.pending = { ...newQuoteData({ type: nq.type, date, quoteNo: no, ...customer, rows: [] }), defaultDiscount: disc };
   $('#new-quote-dialog').close();
   if (location.hash === '#/quotes/new') route(); else go('#/quotes/new');
 });
@@ -904,12 +908,14 @@ const suggest = $('#customer-suggest'), searchInput = field('customer');
 let suggestIndex = -1, suggestItems = [];
 let suggestTimer, suggestReq = 0;
 function showSuggest() {
-  clearTimeout(suggestTimer);
+  clearTimeout(suggestTimer); comboBusy(searchInput, true);
   suggestTimer = setTimeout(async () => {
     const req = ++suggestReq;
     let items = [];
     try { items = (await api(`/customers?limit=8&q=${encodeURIComponent(searchInput.value)}`)).customers; } catch { /* hiện thông báo trống */ }
-    if (req !== suggestReq || document.activeElement !== searchInput) return;
+    if (req !== suggestReq) return;
+    comboBusy(searchInput, false);
+    if (document.activeElement !== searchInput) return;
     suggestItems = items; suggestIndex = items.length ? 0 : -1;
     suggest.innerHTML = items.length
       ? items.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === suggestIndex}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · ') || c.address || '')}</small></li>`).join('')
@@ -928,7 +934,7 @@ function pickCustomer(c) {
 }
 searchInput.addEventListener('focus', () => { if (!editor.customerId) showSuggest(); });
 searchInput.addEventListener('input', showSuggest);
-searchInput.addEventListener('blur', () => { clearTimeout(suggestTimer); suggestReq++; setTimeout(hideSuggest, 150); });
+searchInput.addEventListener('blur', () => { clearTimeout(suggestTimer); suggestReq++; comboBusy(searchInput, false); setTimeout(hideSuggest, 150); });
 searchInput.addEventListener('keydown', e => {
   if (suggest.hidden) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

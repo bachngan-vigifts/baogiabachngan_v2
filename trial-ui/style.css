@@ -198,6 +198,11 @@ table { width: 100%; border-collapse: collapse; }
 .editor-bottom { display: grid; grid-template-columns: 1fr 380px; gap: 16px; margin-top: 16px; }
 .picker-label { margin-bottom: 14px; }
 .combo { position: relative; display: block; }
+/* Đang tìm trong danh bạ: vòng xoay ở cuối ô nhập. */
+.combo.busy input { padding-right: 36px; }
+.combo.busy::after { content: ''; position: absolute; right: 12px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border: 2px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; pointer-events: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .combo.busy::after { animation-duration: 2s; } }
 .suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px; max-height: 280px; overflow: auto; z-index: 30; }
 .suggest li { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-weight: 400; display: grid; }
 .suggest li small { color: var(--muted); }
@@ -442,6 +447,9 @@ label.btn.busy { opacity: .55; pointer-events: none; }
 .line-table input.plain { border-color: transparent; background: transparent; padding: 3px 6px; margin-left: -6px; }
 .line-table input.plain:hover { border-color: var(--line-strong); }
 .sku-input { width: 150px; font-size: .84rem; color: #3a4860; }
+.line-empty td { padding: 18px 12px !important; text-align: left; }
+.add-first { border: 1px dashed var(--blue); background: var(--blue-50); color: var(--blue); font: inherit; font-weight: 700; border-radius: var(--radius-sm); padding: 10px 16px; cursor: pointer; }
+.add-first:hover { background: var(--blue); color: #fff; }
 .link-btn { border: 0; background: none; color: var(--blue); font-weight: 700; font-size: .82rem; text-decoration: underline; cursor: pointer; padding: 0; white-space: nowrap; }
 .product-meta { font-size: .8rem; color: var(--muted); margin-top: 2px; }
 .sub-field { display: grid; grid-template-columns: 86px 1fr; align-items: center; gap: 6px; margin-top: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }
