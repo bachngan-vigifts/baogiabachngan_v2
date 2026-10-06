@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -6,6 +6,7 @@ import { AppError } from '../../../core/errors.ts';
 import { foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { catalogVersions, pricePolicies, productPrices, products, productStock, warehouses } from '../schema.ts';
+import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../domain/product-filters.ts';
 
 const amount = z.number().finite().min(0).max(1e12).nullable();
 const size = z.number().finite().min(0).max(1e6).nullable().optional();
@@ -39,6 +40,39 @@ const warehouseKind = (name: string) => name === 'NCC' ? 'supplier' as const : n
 const chunks = <T>(xs: T[], n = 500) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
 /**
+ * Điều kiện tìm sản phẩm (trang Sản phẩm và hộp "Tìm nhanh sản phẩm" như web cũ):
+ * `q` nhiều từ khoá không dấu · `brand` · `group` nhóm sản phẩm theo tên · `policy` + `min`/`max` khoảng giá theo
+ * bảng giá đang chọn · `scope=minhlong|other` sản phẩm theo loại báo giá (HRC/B2B = Minh Long, VIGIFTS = còn lại);
+ * gõ đúng một mã SKU thì vẫn ra mã đó dù khác phạm vi (giống web cũ).
+ */
+function searchFilter(params: URLSearchParams, brand: string) {
+  const q = params.get('q'), group = params.get('group'), scope = params.get('scope'), policy = params.get('policy') || '';
+  const range = priceRange(params.get('min'), params.get('max'));
+  if (!range) throw new AppError(400, 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.');
+  const name = foldSql(products.name), label = foldSql(products.brand, products.name);
+  const groupCond = isProductGroup(group) ? and(...PRODUCT_GROUPS[group].all.map(re => sql`${name} ~ ${re}`)) : undefined;
+  const isMinhLong = or(...MINH_LONG_WORDS.map(w => sql`${label} LIKE ${'%' + w + '%'}`));
+  const scopeCond = scope === 'minhlong' ? isMinhLong : scope === 'other' ? sql`NOT (${isMinhLong})` : undefined;
+  const words = (q || '').trim().split(/\s+/).filter(Boolean);
+  const exactSku = words.length === 1 ? sql`lower(${products.sku}) = lower(${words[0]})` : undefined;
+  const priceCond = policy && (range.min !== null || range.max !== null) ? sql`EXISTS (SELECT 1 FROM ${productPrices} pp WHERE pp.sku = ${products.sku} AND pp.policy_id = ${policy} AND pp.price IS NOT NULL
+    ${range.min !== null ? sql`AND pp.price >= ${range.min}` : sql``} ${range.max !== null ? sql`AND pp.price <= ${range.max}` : sql``})` : undefined;
+  return and(
+    eq(products.active, true),
+    brand ? eq(products.brand, brand) : undefined,
+    matchAllWords(foldSql(products.sku, products.name, products.brand, products.pattern), q),
+    groupCond, priceCond,
+    scopeCond && exactSku ? or(scopeCond, exactSku) : scopeCond,
+  );
+}
+
+/** Gõ đúng một mã SKU thì mã đó đứng đầu kết quả. */
+const exactSkuFirst = (q: string | null) => {
+  const words = (q || '').trim().split(/\s+/).filter(Boolean);
+  return words.length === 1 ? [sql`(lower(${products.sku}) = lower(${words[0]})) DESC`] : [];
+};
+
+/**
  * Danh mục sản phẩm. Dữ liệu được nạp từ bản cũ/Sapo vào các bảng catalog;
  * giá trả về theo thứ tự chính sách giá (`price_policies.sort_order`), tồn theo kho đang dùng.
  */
@@ -49,14 +83,10 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     // `skus=a,b,c`: lấy đúng các mã (kể cả đã ẩn) – dùng để bổ sung ảnh/thông tin cho dòng báo giá cũ.
     const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 300);
     const { limit, offset } = skuList.length ? { limit: skuList.length, offset: 0 } : paged;
-    const where = skuList.length ? inArray(products.sku, skuList) : and(
-      eq(products.active, true),
-      brand ? eq(products.brand, brand) : undefined,
-      matchAllWords(foldSql(products.sku, products.name, products.brand, products.pattern), c.url.searchParams.get('q')),
-    );
+    const where = skuList.length ? inArray(products.sku, skuList) : searchFilter(c.url.searchParams, brand);
     const [[{ total = 0 } = {}], rows, policies, stores, version] = await Promise.all([
       db.select({ total: count() }).from(products).where(where),
-      db.select().from(products).where(where).orderBy(asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(limit).offset(offset),
+      db.select().from(products).where(where).orderBy(...exactSkuFirst(c.url.searchParams.get('q')), asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(limit).offset(offset),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
       db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
       db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),

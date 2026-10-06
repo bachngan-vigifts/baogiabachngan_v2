@@ -1168,32 +1168,54 @@ addEventListener('resize', () => { if (!pSuggest.hidden) placeProductSuggest(); 
 
 // ----- chọn sản phẩm từ danh mục ngay trong báo giá
 let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
+const kindStock = (p, kind) => { const ws = state.warehouses.filter(w => w.kind === kind && p.stock?.[w.id] !== undefined); return ws.length ? ws.reduce((t, w) => t + Number(p.stock[w.id] || 0), 0) : null; };
+const stockText = v => v === null ? 'Chưa có số liệu' : fmtNum(v);
+/** Bộ lọc giống "Tìm nhanh sản phẩm" của web cũ: phạm vi theo loại báo giá, nhóm, khoảng giá theo chính sách đang chọn. */
+function pickerQuery(offset) {
+  const v = id => $(id).value.trim(), params = new URLSearchParams({ limit: '40', offset: String(offset), q: v('#picker-search'), policy: currentPolicy() });
+  if (!$('#picker-all').checked) params.set('scope', editor.type === 'VIGIFTS' ? 'other' : 'minhlong');
+  if (v('#picker-group')) params.set('group', v('#picker-group'));
+  if (v('#picker-min')) params.set('min', v('#picker-min'));
+  if (v('#picker-max')) params.set('max', v('#picker-max'));
+  return params;
+}
+function pickerPolicyOptions() {
+  $('#picker-policy').innerHTML = state.policies.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  $('#picker-policy').value = currentPolicy();
+}
 async function loadPicker(more = false) {
   const req = ++pickerReq, offset = more ? pickerItems.length : 0;
-  const q = $('#picker-search').value, brand = $('#picker-brand').value;
+  const min = $('#picker-min').value, max = $('#picker-max').value;
+  if ((min !== '' && Number(min) < 0) || (max !== '' && Number(max) < 0) || (min !== '' && max !== '' && Number(min) > Number(max))) {
+    $('#picker-status').textContent = 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.'; $('#picker-list').innerHTML = ''; $('#picker-more-row').hidden = true; return;
+  }
   let d;
-  try { d = await api(`/products?limit=40&offset=${offset}&q=${encodeURIComponent(q)}&brand=${encodeURIComponent(brand)}`); }
+  try { d = await api('/products?' + pickerQuery(offset)); }
   catch (e) { $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; return; }
   if (req !== pickerReq) return;
-  applyCatalogMeta(d);
+  applyCatalogMeta(d); if (!$('#picker-policy').options.length) pickerPolicyOptions();
+  $('#picker-snapshot').textContent = d.observedAt ? `Tồn kho chụp lúc ${new Date(d.observedAt).toLocaleString('vi-VN')} · Đơn giá báo giá chưa VAT.` : 'Đơn giá báo giá chưa VAT.';
   pickerItems = more ? [...pickerItems, ...d.products] : d.products; pickerTotal = d.total;
+  const inQuote = new Set(editor.rows.map(r => r.sku).filter(Boolean));
+  const policy = state.policies.find(x => x.id === currentPolicy());
   $('#picker-list').innerHTML = pickerItems.map((p, i) => {
-    const price = productPrice(p);
-    return `<li data-i="${i}">${thumb(p)}
-      <span class="prod-text"><b>${esc(p.name)}</b><small>${esc([p.sku, p.brand, p.unit].filter(Boolean).join(' · '))}</small></span>
-      <span class="price">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}<small>Tồn ${fmtNum(availableStock(p))}</small></span>
+    const price = productPrice(p), included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế', has = inQuote.has(p.sku);
+    const vat = p.taxable ? (Number.isFinite(p.taxOut) ? `VAT ${p.taxOut}%` : 'Chưa có thuế đầu ra') : 'Không áp dụng thuế';
+    return `<li data-i="${i}" class="${has ? 'added' : ''}">${thumb(p)}
+      <span class="prod-text"><b>${esc(p.name)}</b><small>Nhãn hiệu: ${esc(p.brand || 'Chưa có trên Sapo')}</small>
+        <small>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · ${vat}</small>
+        <small>Tồn khả dụng: <strong>${stockText(kindStock(p, 'stock'))}</strong> | Tồn NCC: ${stockText(kindStock(p, 'supplier'))} – Hàng chờ về: ${stockText(kindStock(p, 'incoming'))}</small></span>
+      <span class="price">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}<small>${included ? 'Đã gồm VAT' : 'Chưa VAT'}</small></span>
       <input class="num-input" inputmode="decimal" value="1" aria-label="Số lượng ${esc(p.name)}">
-      <button type="button" class="btn secondary small pick-add" data-add="${i}">＋ Thêm</button>
+      <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
     </li>`;
   }).join('');
+  $('#picker-status').textContent = `${fmtNum(pickerTotal)} sản phẩm phù hợp · Giá theo chính sách "${policy?.name || ''}"${$('#picker-all').checked ? '' : editor.type === 'VIGIFTS' ? ' · Sản phẩm Vigifts' : ' · Sản phẩm Minh Long'}.`;
   $('#picker-empty').hidden = pickerItems.length > 0;
-  $('#picker-empty').textContent = q || brand ? 'Không tìm thấy sản phẩm phù hợp.' : 'Chưa có dữ liệu sản phẩm. Danh mục sẽ hiện sau khi nhập dữ liệu từ web cũ.';
+  $('#picker-empty').textContent = pickerTotal || d.total ? '' : $('#picker-search').value || $('#picker-group').value || min || max ? 'Không tìm thấy sản phẩm phù hợp. Thử bỏ bớt bộ lọc hoặc tick "Tìm trên tất cả sản phẩm".' : 'Chưa có dữ liệu sản phẩm.';
   $('#picker-more-row').hidden = pickerItems.length >= pickerTotal;
-  if (!more && !$('#picker-brand').options[1]) api('/product-brands').then(b => {
-    $('#picker-brand').innerHTML = '<option value="">Mọi thương hiệu</option>' + b.brands.map(x => `<option value="${esc(x.name)}">${esc(x.name)} (${x.count})</option>`).join('');
-    $('#picker-brand').value = brand;
-  }).catch(() => {});
 }
+const reloadPicker = () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), 250); };
 /** Thêm dòng vào báo giá; dòng trống duy nhất (mới tạo) được thay luôn. */
 function addRowsToQuote(rows) {
   const blank = editor.rows.length === 1 && !editor.rows[0].name && !Number(editor.rows[0].price) && !editor.rows[0].sku;
@@ -1203,10 +1225,26 @@ function addRowsToQuote(rows) {
 }
 $('#pick-products').addEventListener('click', () => {
   pickerAdded = 0; $('#picker-added').textContent = '';
+  pickerPolicyOptions();
   $('#picker-dialog').showModal(); $('#picker-search').focus(); loadPicker();
 });
-$('#picker-search').addEventListener('input', () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), 250); });
-$('#picker-brand').addEventListener('change', () => loadPicker());
+$('#picker-search').addEventListener('input', reloadPicker);
+$('#picker-policy').addEventListener('change', e => {
+  preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ }
+  applyCatalogMeta({}); loadPicker();
+});
+$('#picker-all').addEventListener('change', () => loadPicker());
+$('#picker-group').addEventListener('change', () => loadPicker());
+$('#picker-range').addEventListener('change', e => {
+  if (e.target.value === 'custom') { $('#picker-min').focus(); return; }
+  const [min = '', max = ''] = e.target.value.split(':');
+  $('#picker-min').value = min; $('#picker-max').value = max; loadPicker();
+});
+for (const id of ['#picker-min', '#picker-max']) $(id).addEventListener('input', () => { $('#picker-range').value = 'custom'; reloadPicker(); });
+$('#picker-clear').addEventListener('click', () => {
+  for (const id of ['#picker-search', '#picker-group', '#picker-range', '#picker-min', '#picker-max']) $(id).value = '';
+  loadPicker(); $('#picker-search').focus();
+});
 $('#picker-more').addEventListener('click', () => loadPicker(true));
 $('#picker-list').addEventListener('click', e => {
   const b = e.target.closest('[data-add]'); if (!b) return;
@@ -1214,7 +1252,7 @@ $('#picker-list').addEventListener('click', e => {
   if (!(qty > 0)) { li.querySelector('input').classList.add('invalid'); return; }
   const row = rowFromProduct(p);
   if (!row || !addRowsToQuote([{ ...row, qty }])) return;
-  pickerAdded++; li.classList.add('added'); b.textContent = '✓ Đã thêm';
+  pickerAdded++; li.classList.add('added'); b.textContent = '✓ Đã thêm'; b.disabled = true;
   $('#picker-added').textContent = `Đã thêm ${pickerAdded} sản phẩm vào báo giá`;
 });
 $('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });

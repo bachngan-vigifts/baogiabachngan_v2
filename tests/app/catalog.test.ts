@@ -188,3 +188,42 @@ test('nhập theo lô: lô thường chỉ cập nhật (không ẩn), lô cuố
   // allSkus phải chứa mọi mã của lô.
   assert.equal((await post({ products: [prod('E', 1)], replaceAll: true, allSkus: ['A'] })).status, 400);
 });
+
+test('tìm nhanh sản phẩm như web cũ: nhóm, khoảng giá theo bảng giá, phạm vi theo loại báo giá, mã SKU chính xác', async () => {
+  const { db, call, emp } = await setup();
+  const t = '2026-10-06T00:00:00.000Z';
+  await db.insert(pricePolicies).values([{ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 }, { id: 'si', name: 'Giá sỉ', sortOrder: 1 }]);
+  await db.insert(products).values([
+    { sku: '031199000', name: 'Chén cơm 11.2 cm Jas Lys Trắng Ngà', brand: 'MINH LONG - LYS', updatedAt: t },
+    { sku: 'ML-TRA', name: 'Bộ trà Minh Long Daisy', brand: 'MINH LONG', updatedAt: t },
+    { sku: 'LHC-LY', name: 'Ly giữ nhiệt Lock&Lock 500ml', brand: 'Lock&Lock', updatedAt: t },
+    { sku: 'LHC-BINH', name: 'Bình giữ nhiệt Lock&Lock 1L', brand: 'Lock&Lock', updatedAt: t },
+    { sku: 'HC-NOI', name: 'Nồi Healthy Cook 24cm', brand: 'Healthy Cook', updatedAt: t },
+    { sku: 'BH-01', name: 'Bình hoa sứ dưỡng sinh', brand: '', updatedAt: t },
+  ]);
+  await db.insert(productPrices).values([
+    { sku: '031199000', policyId: 'le', price: 23000 }, { sku: 'ML-TRA', policyId: 'le', price: 1_500_000 },
+    { sku: 'LHC-LY', policyId: 'le', price: 350000 }, { sku: 'LHC-LY', policyId: 'si', price: 250000 },
+    { sku: 'LHC-BINH', policyId: 'le', price: 650000 }, { sku: 'HC-NOI', policyId: 'le', price: 2_500_000 },
+  ]);
+  const skus = async (qs: string) => { const r = await call('/products?' + qs, emp); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.products.map((p: any) => p.sku).sort(); };
+  // Phạm vi: HRC/B2B = Minh Long (cả Healthy Cook, sứ dưỡng sinh); VIGIFTS = phần còn lại.
+  assert.deepEqual(await skus('scope=minhlong'), ['031199000', 'BH-01', 'HC-NOI', 'ML-TRA']);
+  assert.deepEqual(await skus('scope=other'), ['LHC-BINH', 'LHC-LY']);
+  // Gõ đúng mã thì vẫn ra dù khác phạm vi, và đứng đầu.
+  assert.deepEqual(await skus('scope=minhlong&q=lhc-ly'), ['LHC-LY']);
+  // Nhóm sản phẩm theo tên (bỏ dấu, đúng từ).
+  assert.deepEqual(await skus('group=thermalCup'), ['LHC-LY']);
+  assert.deepEqual(await skus('group=thermalBottle'), ['LHC-BINH']);
+  assert.deepEqual(await skus('group=tableware'), ['031199000']);
+  assert.deepEqual(await skus('group=tea'), ['ML-TRA']);
+  assert.deepEqual(await skus('group=vase'), ['BH-01']);
+  assert.deepEqual(await skus('group=cookware'), ['HC-NOI']);
+  assert.deepEqual(await skus('group=khong-co'), ['031199000', 'BH-01', 'HC-NOI', 'LHC-BINH', 'LHC-LY', 'ML-TRA']);
+  // Khoảng giá theo bảng giá đang chọn; sản phẩm chưa có giá ở bảng đó thì không khớp.
+  assert.deepEqual(await skus('policy=le&min=300000&max=1000000'), ['LHC-BINH', 'LHC-LY']);
+  assert.deepEqual(await skus('policy=si&max=300000'), ['LHC-LY']);
+  assert.deepEqual(await skus('policy=le&min=2000000'), ['HC-NOI']);
+  assert.equal((await call('/products?policy=le&min=5&max=1', emp)).status, 400);
+  assert.equal((await call('/products?policy=le&min=-1', emp)).status, 400);
+});
