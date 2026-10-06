@@ -198,6 +198,11 @@ table { width: 100%; border-collapse: collapse; }
 .editor-bottom { display: grid; grid-template-columns: 1fr 380px; gap: 16px; margin-top: 16px; }
 .picker-label { margin-bottom: 14px; }
 .combo { position: relative; display: block; }
+/* Đang tìm trong danh bạ: vòng xoay ở cuối ô nhập. */
+.combo.busy input { padding-right: 36px; }
+.combo.busy::after { content: ''; position: absolute; right: 12px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border: 2px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; pointer-events: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .combo.busy::after { animation-duration: 2s; } }
 .suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px; max-height: 280px; overflow: auto; z-index: 30; }
 .suggest li { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-weight: 400; display: grid; }
 .suggest li small { color: var(--muted); }
@@ -237,7 +242,27 @@ table { width: 100%; border-collapse: collapse; }
 .totals .grand { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 2px; }
 .totals .grand dt { color: var(--ink); font-weight: 700; }
 .totals .grand dd { font-size: 1.4rem; font-weight: 800; color: var(--brand-navy); letter-spacing: -.02em; }
-.totals.profit { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line-strong); }
+.totals.profit { margin-top: 10px; }
+/* Mục "Lợi nhuận nhanh" (Manager) như web cũ. */
+.profit-card { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line-strong); display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+.profit-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 800; }
+.profit-head > span { flex: 1; }
+.profit-head > b { background: var(--green-50); color: var(--green); border-radius: 999px; padding: 2px 10px; font-variant-numeric: tabular-nums; }
+.profit-head > b.neg { background: #fdecee; }
+.profit-head-actions { display: flex; gap: 6px; flex-wrap: wrap; order: 3; width: 100%; }
+.profit-head-actions button { border: 1px solid var(--line); background: var(--surface); color: var(--blue); font: inherit; font-size: .78rem; font-weight: 700; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.profit-head-actions button:hover { background: var(--blue-50); }
+.profit-head-actions button[aria-pressed="true"] { background: var(--blue); color: #fff; border-color: var(--blue); }
+.profit-head-actions button:disabled { opacity: .6; cursor: progress; }
+.profit-printing h3 { font-size: .85rem; margin: 0 0 6px; }
+.profit-printing .table-wrap { overflow-x: auto; max-width: 100%; }
+.printing-table th, .printing-table td { padding: 6px 8px; font-size: .82rem; }
+.printing-table select { width: 100%; min-width: 120px; }
+.printing-table input { width: 100%; min-width: 80px; }
+.profit-payer { border: 0; padding: 0; margin: 0; display: flex; gap: 14px; flex-wrap: wrap; font-size: .88rem; }
+.profit-payer legend { font-weight: 700; font-size: .8rem; color: var(--muted); margin-bottom: 4px; padding: 0; }
+.profit-payer label { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-weight: 500; margin: 0; }
+.profit-payer input { width: auto; min-height: 0; margin: 0; }
 .pos { color: var(--green) !important; } .neg { color: #b4232c !important; }
 #words-total { margin-top: 12px; font-style: italic; }
 .note-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
@@ -424,6 +449,18 @@ label.btn.busy { opacity: .55; pointer-events: none; }
 
 /* ---------- Bảng sản phẩm báo giá (cột theo web cũ) ---------- */
 .btn.navy { background: var(--navy); color: #fff; }
+/* Nút trên trang báo giá (như web cũ). */
+.btn.ok { background: var(--green); color: #fff; border-color: var(--green); }
+.btn.ok:hover:not(:disabled) { filter: brightness(.93); }
+.btn.danger-outline { background: var(--surface); color: #b4232c; border: 1px solid #f0c6ca; }
+.btn.danger-outline:hover:not(:disabled) { background: #fdecee; }
+.quote-actions { flex-wrap: wrap; justify-content: flex-end; }
+.quote-actions .btn:disabled { opacity: .5; cursor: not-allowed; }
+.menu-wrap { position: relative; display: inline-flex; }
+.menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; min-width: 240px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px; display: grid; }
+.menu[hidden] { display: none; }
+.menu button { text-align: left; border: 0; background: none; font: inherit; padding: 9px 12px; border-radius: 6px; cursor: pointer; color: var(--text, inherit); }
+.menu button:hover { background: var(--blue-50); }
 .btn.navy:hover:not(:disabled) { background: var(--navy-700); }
 #type-hint { display: block; margin-top: 2px; }
 .line-table { table-layout: fixed; min-width: 1080px; }
@@ -442,6 +479,9 @@ label.btn.busy { opacity: .55; pointer-events: none; }
 .line-table input.plain { border-color: transparent; background: transparent; padding: 3px 6px; margin-left: -6px; }
 .line-table input.plain:hover { border-color: var(--line-strong); }
 .sku-input { width: 150px; font-size: .84rem; color: #3a4860; }
+.line-empty td { padding: 18px 12px !important; text-align: left; }
+.add-first { border: 1px dashed var(--blue); background: var(--blue-50); color: var(--blue); font: inherit; font-weight: 700; border-radius: var(--radius-sm); padding: 10px 16px; cursor: pointer; }
+.add-first:hover { background: var(--blue); color: #fff; }
 .link-btn { border: 0; background: none; color: var(--blue); font-weight: 700; font-size: .82rem; text-decoration: underline; cursor: pointer; padding: 0; white-space: nowrap; }
 .product-meta { font-size: .8rem; color: var(--muted); margin-top: 2px; }
 .sub-field { display: grid; grid-template-columns: 86px 1fr; align-items: center; gap: 6px; margin-top: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }

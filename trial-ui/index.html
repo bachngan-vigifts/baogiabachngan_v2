@@ -117,12 +117,23 @@
             <h1 id="editor-title">Tạo báo giá</h1>
             <span class="pill" id="editor-revision" hidden></span>
             <span class="pill warn" id="editor-dirty" hidden>Chưa lưu</span>
+            <span class="pill" id="editor-approval" hidden></span>
           </div>
-          <div class="editor-actions">
+          <!-- Như web cũ: chỉ báo giá ĐÃ DUYỆT mới Sinh HĐKT / Tạo đơn hàng / Tải báo giá. Duyệt, Xoá: chỉ Manager. -->
+          <div class="editor-actions quote-actions">
+            <button type="button" class="btn secondary" id="quote-contract" hidden>Sinh HĐKT</button>
+            <button type="button" class="btn secondary" id="quote-to-order" hidden>Tạo đơn hàng</button>
+            <span class="menu-wrap">
+              <button type="button" class="btn secondary" id="quote-download" aria-haspopup="menu" aria-expanded="false">Tải báo giá ▾</button>
+              <span class="menu" id="download-menu" role="menu" hidden>
+                <button type="button" role="menuitem" id="print-quote">PDF A4 theo mẫu</button>
+                <button type="button" role="menuitem" id="excel-quote">Excel (báo giá + phí vận chuyển)</button>
+              </span>
+            </span>
             <button type="button" class="btn secondary" id="duplicate-quote" hidden title="Tạo bản sao với số báo giá mới">Nhân bản</button>
-            <button type="button" class="btn secondary" id="quote-to-order" hidden title="Tạo đơn đặt hàng từ báo giá đã lưu">Tạo đơn đặt hàng</button>
-            <button type="button" class="btn secondary" id="print-quote"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6 M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M7 14h10v7H7z"/></svg>In / PDF</button>
             <button class="btn primary" id="save-quote" title="Ctrl + S">Lưu báo giá</button>
+            <button type="button" class="btn ok" id="approve-quote" hidden>Duyệt</button>
+            <button type="button" class="btn danger-outline" id="delete-quote" hidden>Xoá báo giá</button>
           </div>
         </div>
         <div id="conflict-banner" class="banner warn-banner" role="alert" hidden>
@@ -220,11 +231,29 @@
               <div class="grand"><dt>Tổng thanh toán</dt><dd id="sum-total">0 ₫</dd></div>
             </dl>
             <button type="button" class="btn navy block manager-only" id="toggle-profit" aria-expanded="false">Xem lợi nhuận tạm tính</button>
-            <dl class="totals profit" id="profit-card" hidden>
-              <div><dt>Giá vốn</dt><dd id="sum-cost">0 ₫</dd></div>
-              <div><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div>
-              <div><dt>Biên lợi nhuận</dt><dd id="sum-margin">0%</dd></div>
-            </dl>
+            <!-- Lợi nhuận tạm tính (chỉ Manager) – y như web cũ: doanh thu trước VAT − giá nhập − cước người gửi trả − phí in gia công. -->
+            <div class="profit-card" id="profit-card" hidden>
+              <div class="profit-head"><span>Lợi nhuận nhanh</span>
+                <div class="profit-head-actions"><button type="button" id="refresh-profit-costs">Cập nhật CK mua vào</button><button type="button" id="toggle-cost-fields" aria-pressed="false">Xem giá nhập</button></div>
+                <b id="sum-margin">0%</b></div>
+              <dl class="totals profit">
+                <div><dt>Doanh thu trước VAT</dt><dd id="sum-revenue">0 ₫</dd></div>
+                <div><dt>Giá nhập</dt><dd id="sum-cost">0 ₫</dd></div>
+                <div><dt>Cước vận chuyển</dt><dd id="sum-shipping">Chưa có cước dự toán</dd></div>
+              </dl>
+              <section class="profit-printing" id="profit-printing" hidden>
+                <h3>Phí in gia công</h3>
+                <div class="table-wrap"><table class="data-table printing-table"><thead id="printing-head"></thead><tbody id="printing-rows"></tbody></table></div>
+                <p class="muted small" id="printing-status" role="status"></p>
+              </section>
+              <fieldset class="profit-payer"><legend>Bên thanh toán cước</legend>
+                <label><input type="radio" name="profitShippingPayer" value="sender"> Người gửi trả</label>
+                <label><input type="radio" name="profitShippingPayer" value="receiver" checked> Người nhận trả</label>
+              </fieldset>
+              <p class="muted small" id="profit-shipping-hint" hidden>Chưa có cước dự toán nên lợi nhuận chưa trừ chi phí vận chuyển.</p>
+              <dl class="totals"><div class="grand"><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div></dl>
+              <p class="muted small">Chỉ Manager thấy mục này. Bấm cập nhật CK mua vào để tự điền giá nhập theo nhóm hàng.</p>
+            </div>
             <p class="muted small" id="words-total"></p>
           </div>
         </div>
@@ -508,6 +537,20 @@
   </form>
 </dialog>
 
+<dialog id="workshop-dialog" class="modal narrow">
+  <form id="workshop-form" novalidate>
+    <div class="modal-head"><div><span class="eyebrow">Phí in gia công</span><h2>Thêm xưởng in mới</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid">
+      <label>Tên xưởng<input name="name" required maxlength="180" autocomplete="organization"></label>
+      <label>MST<input name="taxCode" maxlength="40"></label>
+      <label>Địa chỉ<input name="address" maxlength="1000" autocomplete="street-address"></label>
+      <label>SĐT<input name="phone" type="tel" maxlength="40" autocomplete="tel"></label>
+      <label>Email<input name="email" type="email" maxlength="254" autocomplete="email"></label>
+      <p class="error" id="workshop-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary">Lưu xưởng in</button></div>
+  </form>
+</dialog>
 <dialog id="new-quote-dialog" class="modal">
   <form id="new-quote-form" novalidate>
     <div class="modal-head"><div><span class="eyebrow">Tạo báo giá mới</span><h2>Tạo báo giá <span id="nq-type-name">HRC</span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
@@ -641,6 +684,7 @@
 
 <ul id="product-suggest" class="suggest floating" role="listbox" hidden></ul>
 <div id="print-sheet" class="print-sheet ps-root" aria-hidden="true"></div>
-<script type="module" src="app.js"></script>
+<script src="excel-export.js" defer></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

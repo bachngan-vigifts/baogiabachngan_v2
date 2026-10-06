@@ -29,6 +29,13 @@
       "when": 1791284212445,
       "tag": "0006_sales_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791288233925,
+      "tag": "0008_quote_approval",
+      "breakpoints": true
     }
   ]
 }
