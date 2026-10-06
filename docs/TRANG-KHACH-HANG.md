@@ -62,3 +62,31 @@ Thay đổi ở API sẵn có:
 - `PUT /orders/:id/status {confirmed}` chỉ áp dụng cho đơn *Chờ xác nhận*.
 - `POST /quotes/:id/approve` cho phép nhân viên phụ trách duyệt báo giá do khách gửi.
 - `GET /quotes` trả thêm `fromCustomer`; `GET /quotes/:id` trả thêm `fromCustomer` và `canApprove`.
+
+## Thông báo (Web Push như web cũ) và trang tự làm mới
+Các sự kiện được thông báo:
+
+| Sự kiện | Ai nhận |
+| --- | --- |
+| Khách gửi yêu cầu báo giá (`customer_quote`) | Nhân viên phụ trách |
+| Khách đặt hàng hoặc xác nhận đặt hàng (`customer_order`) | Nhân viên phụ trách |
+| Khách hỏi tồn kho (`customer_stock_request`) | Nhân viên phụ trách |
+| Nhân viên xác nhận báo giá (`quote_confirmed`), xác nhận hoặc huỷ đơn (`order_confirmed` / `order_cancelled`), trả lời tồn kho (`stock_answer`) | Khách |
+
+- **Bật thông báo:** chuông thông báo trên đầu trang → **Bật thông báo trên máy này**.
+  - Trình duyệt đăng ký nhận qua service worker `push-sw.js`; app lưu đăng ký vào `staff_web_push_subscriptions`.
+  - Trên iPhone, phải thêm trang vào Màn hình chính trước thì mới bật được.
+- **Nội dung thông báo được mã hoá gửi kèm** (RFC 8291 `aes128gcm`, VAPID RFC 8292).
+  - Web cũ gửi push rỗng rồi service worker tự gọi API bằng cookie. Web mới đăng nhập bằng mã phiên trong tab nên service worker không tự gọi được.
+  - **Khoá VAPID máy chủ tự sinh lần đầu**, lưu ở bảng `web_push_keys`, khoá riêng được mã hoá bằng `SAPO_SYNC_TOKEN`. Không cần cài thêm mã bí mật.
+- **Trang tự làm mới:**
+  - Nhận push thì service worker báo cho các tab đang mở. Ngoài ra trang tự kiểm tra `/notifications?since=` mỗi 30 giây và mỗi lần quay lại tab.
+  - Khi có thông báo mới, trang hiện thông báo nhỏ và tải lại dữ liệu đang xem: danh sách báo giá, đơn đang mở, trang Khách hỏi tồn… Báo giá đang sửa dở thì không bị tải đè.
+- **Khách hỏi tồn kho** (bảng `customer_stock_requests`, migration `0013`, phân quyền ở `0014`):
+  - Khách chọn sản phẩm rồi bấm *Hỏi tồn kho*.
+  - Nhân viên mở trang **Khách hỏi tồn**: xem tồn khả dụng, NCC và hàng chờ về; nhập số đáp ứng được và lời nhắn.
+  - Khách nhận thông báo và xem câu trả lời ở thẻ *Hỏi tồn kho*.
+- **API:**
+  - Khu vực `self`: `/push/config`, `/push/subscribe`, `/push/unsubscribe`, `/notifications`, `/notifications/read`.
+  - Khu vực `customer-portal`: `/portal/stock-requests`.
+  - Khu vực `business`: `/stock-requests`, `/stock-requests/:id/answer`.

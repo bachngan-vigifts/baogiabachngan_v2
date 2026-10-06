@@ -42,6 +42,7 @@
       <a class="nav" href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3 M15 17l1.5 1.5L19 16"/></svg><span>HĐKT</span></a>
       <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg><span>Lịch giao hàng</span></a>
       <a class="nav" href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg><span>Công nợ</span></a>
+      <a class="nav" href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg><span>Khách hỏi tồn</span><b id="nav-stock-count" class="badge" hidden>0</b></a>
       <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg><span>Sản phẩm</span></a>
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
       <span class="nav-label manager-only">Quản trị</span>
@@ -66,6 +67,7 @@
       <div class="crumbs"><span class="muted">Bách Ngân</span><span class="slash">/</span><b id="breadcrumb">Báo giá</b></div>
       <div class="topbar-right">
         <span id="today" class="muted hide-sm"></span>
+        <div class="bell-wrap" id="staff-bell"></div>
         <button class="avatar small mobile-only" id="account-button-m" aria-label="Tài khoản">BN</button>
       </div>
     </header>
@@ -372,6 +374,15 @@
     </section>
 
     <!-- ---------- Công nợ ---------- -->
+    <!-- Khách hỏi tồn kho từ trang khách hàng: nhân viên phụ trách trả lời -->
+    <section class="view" id="view-stock-requests" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Khách hàng</span><h1>Khách hỏi tồn</h1><p class="muted">Khách gửi từ trang khách hàng (khách không xem được tồn kho). Nhập số đáp ứng được và lời nhắn – khách nhận thông báo ngay.</p></div>
+        <div class="chips" id="stock-req-filter"><button type="button" class="chip" data-status="open" aria-pressed="true">Chờ trả lời</button><button type="button" class="chip" data-status="" aria-pressed="false">Tất cả</button></div>
+      </div>
+      <div id="stock-req-list"></div>
+      <p class="muted card" id="stock-req-empty" hidden>Không có yêu cầu nào.</p>
+    </section>
     <section class="view" id="view-receivables" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Bán hàng</span><h1>Công nợ</h1><p class="muted">Phải thu theo đơn: tổng các kỳ (cọc, phần còn lại) trừ số đã thu.</p></div>
@@ -445,6 +456,7 @@
     <a href="#/quotes/new" class="fab" data-new-quote aria-label="Tạo báo giá"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
     <a href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg>Giao hàng</a>
     <a href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg>Công nợ</a>
+    <a href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg>Hỏi tồn</a>
     <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3"/></svg>HĐKT</a>
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
     <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>

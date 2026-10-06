@@ -50,6 +50,13 @@
       "when": 1791292019176,
       "tag": "0011_customer_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791297400963,
+      "tag": "0013_stock_requests_push_keys",
+      "breakpoints": true
     }
   ]
 }

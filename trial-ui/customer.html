@@ -14,6 +14,7 @@
 <header class="portal-head" id="p-head" hidden>
   <div class="portal-brand"><span class="logo">BN</span><div><b>BÁCH NGÂN</b><small>Trang khách hàng</small></div></div>
   <div class="portal-who"><b id="p-customer">Đang tải…</b><small id="p-user"></small></div>
+  <div class="bell-wrap" id="p-bell"></div>
   <button type="button" class="btn ghost small" id="p-logout">Đăng xuất</button>
 </header>
 <!-- Đăng nhập / đặt mật khẩu riêng của khách hàng (không qua trang nhân viên) -->
@@ -49,6 +50,7 @@
     <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="true">Báo giá</button>
     <button type="button" class="chip" role="tab" data-tab="new" aria-selected="false">Tạo báo giá / Đặt hàng</button>
     <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false">Đơn hàng</button>
+    <button type="button" class="chip" role="tab" data-tab="stock" aria-selected="false">Hỏi tồn kho</button>
     <button type="button" class="chip" role="tab" data-tab="debt" aria-selected="false">Công nợ</button>
   </nav>
 
@@ -105,11 +107,19 @@
       <div class="card portal-submit">
         <p class="muted small">Báo giá / đơn hàng được nhân viên phụ trách kiểm tra và xác nhận. Quý khách theo dõi ở thẻ "Báo giá" và "Đơn hàng".</p>
         <div class="portal-actions">
+          <button type="button" class="btn ghost" id="p-ask-stock" title="Gửi các sản phẩm đã chọn để nhân viên kiểm tra tồn kho">Hỏi tồn kho</button>
           <button type="button" class="btn secondary" id="p-send-quote">Gửi yêu cầu báo giá</button>
           <button type="button" class="btn primary" id="p-send-order">Đặt hàng ngay</button>
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- Hỏi tồn kho: khách không xem tồn, gửi hỏi – nhân viên phụ trách trả lời -->
+  <section data-panel="stock" hidden>
+    <div class="card"><p class="muted small">Chọn sản phẩm ở thẻ "Tạo báo giá / Đặt hàng" rồi bấm <b>Hỏi tồn kho</b>. Nhân viên phụ trách nhận thông báo và trả lời số lượng đáp ứng được.</p></div>
+    <div id="p-stock"></div>
+    <p class="muted card" id="p-stock-empty" hidden>Quý khách chưa gửi yêu cầu hỏi tồn nào.</p>
   </section>
 
   <!-- Công nợ -->

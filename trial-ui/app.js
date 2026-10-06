@@ -1,6 +1,7 @@
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
+import { setupNotifications } from './notify.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -227,6 +228,7 @@ async function enter() {
   currentHash = location.hash;
   route();
   loadAll();
+  notifier.start();
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -270,6 +272,7 @@ async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
+  loadStockBadge();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -347,7 +350,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
+const VIEWS = { quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -380,6 +383,7 @@ function route() {
   if (view === 'contracts') loadContracts();
   if (view === 'deliveries') loadDeliveries();
   if (view === 'receivables') loadReceivables();
+  if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'order') openOrder(id);
   hideProductSuggest();
 }
@@ -1881,6 +1885,69 @@ document.addEventListener('click', async e => {
 
 // ----- chi tiết đơn
 const sales = { order: null, detail: null };
+// ----- Thông báo (Web Push như web cũ) + trang TỰ LÀM MỚI khi khách gửi báo giá / đặt hàng / hỏi tồn
+const notifier = setupNotifications({
+  api, root: $('#staff-bell'),
+  onNew(notes) {
+    for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
+    refreshData();
+  },
+  onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) go('#' + h); },
+});
+/** Tải lại dữ liệu đang xem (không đụng báo giá đang sửa dở). */
+function refreshData() {
+  loadQuotes(); loadStockBadge();
+  const [page, id] = location.hash.replace(/^#\/?/, '').split('/');
+  if (page === 'orders' && id) openOrder(id);
+  else if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') openEditor(id); }
+  else if (['orders', 'contracts', 'deliveries', 'receivables', 'stock-requests'].includes(page)) route();
+}
+
+// ----- Khách hỏi tồn kho: nhân viên phụ trách trả lời (khách nhận thông báo)
+let stockFilter = 'open';
+async function loadStockBadge() {
+  try { const n = (await api('/stock-requests?status=open')).requests.length; $('#nav-stock-count').hidden = !n; $('#nav-stock-count').textContent = n; } catch { /* bỏ qua */ }
+}
+async function loadStockRequests(focusId) {
+  const box = $('#stock-req-list'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
+  try {
+    const { requests } = await api('/stock-requests' + (stockFilter ? '?status=' + stockFilter : ''));
+    const skus = [...new Set(requests.flatMap(r => r.items.map(i => i.sku)))];
+    const stock = new Map();
+    for (let i = 0; i < skus.length; i += 200) { const d = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(d); for (const p of d.products) stock.set(p.sku, p); }
+    $('#stock-req-empty').hidden = requests.length > 0;
+    $('#nav-stock-count').hidden = stockFilter !== 'open' || !requests.length; $('#nav-stock-count').textContent = requests.length;
+    box.innerHTML = requests.map(r => `<article class="card stock-req ${r.id === focusId ? 'focus' : ''}" data-req="${esc(r.id)}">
+      <header><div><b>${esc(r.customerName)}</b> <span class="pill ${r.status === 'open' ? 'warn' : 'ok'}">${r.status === 'open' ? 'Chờ trả lời' : 'Đã trả lời'}</span>
+        <small class="muted">${esc(r.askedBy)} · ${new Date(r.createdAt).toLocaleString('vi-VN')}</small></div></header>
+      ${r.note ? `<p class="small"><b>Khách ghi chú:</b> ${esc(r.note)}</p>` : ''}
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th><th class="right">Tồn khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
+      ${r.items.map(i => { const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
+        return `<tr><td>${esc(i.name)}<small>${esc(i.sku)} · ${esc(i.unit || '')}</small></td><td class="right">${fmtNum(i.qty)}</td>
+          <td class="right ${av !== null && av < i.qty ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
+          <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
+          <td class="right">${r.status === 'open' ? `<input class="num-input" inputmode="decimal" data-sku="${esc(i.sku)}" value="${av === null ? '' : Math.max(0, Math.min(i.qty, av))}" aria-label="Đáp ứng ${esc(i.name)}">` : fmtNum(a?.available ?? 0)}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      ${r.status === 'open' ? `<label>Trả lời khách<textarea rows="2" maxlength="2000" data-answer placeholder="Ví dụ: Còn đủ hàng, giao được trong 2 ngày."></textarea></label>
+        <div class="row-gap end"><button type="button" class="btn primary" data-reply>Gửi trả lời cho khách</button></div>`
+        : `<p class="small"><b>Đã trả lời${r.answeredAt ? ' lúc ' + new Date(r.answeredAt).toLocaleString('vi-VN') : ''}:</b> ${esc(r.answer || '—')}</p>`}
+    </article>`).join('');
+    if (focusId) $(`[data-req="${CSS.escape(focusId)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (e) { box.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
+}
+$('#stock-req-filter').addEventListener('click', e => {
+  const b = e.target.closest('[data-status]'); if (!b) return;
+  stockFilter = b.dataset.status; $$('#stock-req-filter [data-status]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); loadStockRequests();
+});
+$('#stock-req-list').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-reply]'); if (!btn) return;
+  const card = btn.closest('[data-req]');
+  const items = $$('input[data-sku]', card).map(i => ({ sku: i.dataset.sku, available: parseNum(i.value || '0') }));
+  btn.disabled = true;
+  try { await api(`/stock-requests/${encodeURIComponent(card.dataset.req)}/answer`, 'POST', { items, answer: card.querySelector('[data-answer]').value }); toast('Đã gửi trả lời cho khách.'); loadStockRequests(); }
+  catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+});
+
 // ----- Tài khoản trang khách hàng: nhân viên cấp cho khách mình phụ trách; Manager đặt chiết khấu riêng theo nhãn.
 const DISCOUNT_LABELS = { minhLong: 'Minh Long', lys: 'Minh Long - Lys', lock: 'Lock&Lock' };
 let accCustomer = null;

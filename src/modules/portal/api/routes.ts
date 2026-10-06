@@ -18,7 +18,8 @@ import { customerDiscount, totals } from '../../quotes/domain/quote-math.ts';
 import { customerPayments, deliveries, paymentSchedules, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { createOrderFromQuote } from '../../sales/api/routes.ts';
 import { receivable, vietnamDate } from '../../sales/domain/sales.ts';
-import { customerAccounts } from '../schema.ts';
+import { customerAccounts, customerStockRequests } from '../schema.ts';
+import { notify } from '../../notifications/api/routes.ts';
 import { cleanDiscounts, nextQuoteNo, parseDiscounts, publicQuote } from '../domain/portal.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -145,17 +146,23 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
     const orderId = wantsOrder ? await createOrderFromQuote(db, quote, { createdBy: me.id, status: 'draft', note }) : null;
+    // Báo ngay cho nhân viên phụ trách (Web Push + trang của họ tự làm mới).
+    await notify(c.env, wantsOrder
+      ? { eventType: 'customer_order', title: 'Khách đặt hàng', body: `${customer.name} đặt ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/orders/${orderId}`, targetMemberId: account.ownerId, actorId: me.id, data: { orderId, quoteId: id } }
+      : { eventType: 'customer_quote', title: 'Khách gửi yêu cầu báo giá', body: `${customer.name} · ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/quotes/${id}`, targetMemberId: account.ownerId, actorId: me.id, data: { quoteId: id } });
     return json({ id, quoteNo: quote.quoteNo, orderId }, 201);
   }, 'customer-portal');
 
   /** Khách xác nhận đặt hàng từ báo giá ĐÃ DUYỆT → đơn "Chờ xác nhận" để nhân viên phụ trách xác nhận. */
   router.post('/portal/quotes/:id/order', async c => {
-    const { customer } = await myAccount(c), me = member(c);
+    const { customer, account } = await myAccount(c), me = member(c);
     const [q] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, c.params.id!), visibleQuotes(customer.id, me.id))).limit(1);
     if (!q) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (q.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá đang chờ nhân viên xác nhận, chưa đặt hàng được.', 'QUOTE_NOT_APPROVED');
     const body = await readJson(c.req, 4_000);
     const orderId = await createOrderFromQuote(c.env.db, q, { createdBy: me.id, status: 'draft', note: str(body.note, 2000) });
+    await notify(c.env, { eventType: 'customer_order', title: 'Khách xác nhận đặt hàng', body: `${customer.name} đặt hàng theo báo giá ${q.quoteNo}`, url: `/index.html#/orders/${orderId}`,
+      targetMemberId: q.assigneeId ?? account.ownerId, actorId: me.id, data: { orderId, quoteId: q.id } });
     return json({ orderId }, 201);
   }, 'customer-portal');
 
@@ -190,6 +197,56 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     if (!done.length) throw new AppError(409, 'Đơn đã được xác nhận hoặc không tồn tại, không huỷ được. Vui lòng liên hệ nhân viên phụ trách.');
     return json({ ok: true });
   }, 'customer-portal');
+
+  /** Khách hỏi tồn kho (khách không xem được số tồn): gửi mã + số lượng cần; nhân viên phụ trách nhận thông báo và trả lời. */
+  router.post('/portal/stock-requests', async c => {
+    const { account, customer } = await myAccount(c), me = member(c), db = c.env.db, body = await readJson(c.req, 40_000);
+    const items = Array.isArray(body.items) ? body.items as Record<string, unknown>[] : [];
+    if (!items.length || items.length > 100) throw new AppError(400, 'Chọn từ 1 đến 100 sản phẩm cần hỏi tồn.');
+    const want = new Map<string, number>();
+    for (const it of items) { const sku = str(it.sku, 500), qty = Number(it.qty); if (!sku || !(qty > 0 && qty <= 1e7)) throw new AppError(400, 'Mã hàng hoặc số lượng không hợp lệ.'); want.set(sku, qty); }
+    const found = await db.select({ sku: products.sku, name: products.name, unit: products.unit }).from(products).where(and(inArray(products.sku, [...want.keys()]), eq(products.active, true)));
+    if (found.length !== want.size) throw new AppError(400, 'Có mã hàng không còn trong danh mục.');
+    const list = [...want].map(([sku, qty]) => { const p = found.find(f => f.sku === sku)!; return { sku, name: p.name, unit: p.unit, qty }; });
+    const id = crypto.randomUUID(), note = str(body.note, 2000);
+    await db.insert(customerStockRequests).values({ id, memberId: me.id, customerId: customer.id, ownerId: account.ownerId, items: JSON.stringify(list), note, createdAt: nowIso() });
+    await notify(c.env, { eventType: 'customer_stock_request', title: 'Khách hỏi tồn kho', targetMemberId: account.ownerId, actorId: me.id, url: `/index.html#/stock-requests/${id}`,
+      body: `${customer.name}: ${list.slice(0, 3).map(l => `${l.name} × ${l.qty}`).join(', ')}${list.length > 3 ? ` và ${list.length - 3} mã khác` : ''}`, data: { requestId: id } });
+    return json({ id }, 201);
+  }, 'customer-portal');
+
+  router.get('/portal/stock-requests', async c => {
+    await myAccount(c);
+    const rows = await c.env.db.select().from(customerStockRequests).where(eq(customerStockRequests.memberId, member(c).id)).orderBy(desc(customerStockRequests.createdAt)).limit(100);
+    return json({ requests: rows.map(r => ({ id: r.id, items: JSON.parse(r.items), note: r.note, status: r.status, answerItems: JSON.parse(r.answerItems), answer: r.answer, answeredAt: r.answeredAt, createdAt: r.createdAt })) });
+  }, 'customer-portal');
+
+  // ======================= NHÂN VIÊN: trả lời khách hỏi tồn =======================
+  router.get('/stock-requests', async c => {
+    const me = member(c), status = c.url.searchParams.get('status');
+    const rows = await c.env.db.select({ r: customerStockRequests, customerName: customers.name, askedBy: employees.name }).from(customerStockRequests)
+      .innerJoin(customers, eq(customers.id, customerStockRequests.customerId)).innerJoin(employees, eq(employees.id, customerStockRequests.memberId))
+      .where(and(me.role === 'manager' ? undefined : eq(customerStockRequests.ownerId, me.id), status === 'open' || status === 'answered' ? eq(customerStockRequests.status, status) : undefined))
+      .orderBy(desc(customerStockRequests.createdAt)).limit(200);
+    return json({ requests: rows.map(({ r, customerName, askedBy }) => ({ id: r.id, customerName, askedBy, items: JSON.parse(r.items), note: r.note, status: r.status,
+      answerItems: JSON.parse(r.answerItems), answer: r.answer, answeredAt: r.answeredAt, createdAt: r.createdAt })) });
+  }, 'business');
+
+  router.post('/stock-requests/:id/answer', async c => {
+    const me = member(c), db = c.env.db, body = await readJson(c.req, 40_000);
+    const [r] = await db.select().from(customerStockRequests).where(eq(customerStockRequests.id, c.params.id!)).limit(1);
+    if (!r) throw new AppError(404, 'Không tìm thấy yêu cầu.');
+    if (me.role !== 'manager' && r.ownerId !== me.id) throw new AppError(403, 'Chỉ nhân viên phụ trách hoặc Manager trả lời được.');
+    const asked = JSON.parse(r.items) as { sku: string; name: string }[];
+    const answerItems = (Array.isArray(body.items) ? body.items as Record<string, unknown>[] : []).filter(x => asked.some(a => a.sku === x.sku))
+      .map(x => ({ sku: str(x.sku, 500), available: Math.max(0, Math.min(1e7, Number(x.available) || 0)) }));
+    const answer = str(body.answer, 2000);
+    if (!answer && !answerItems.length) throw new AppError(400, 'Nhập số lượng đáp ứng hoặc lời nhắn trả lời khách.');
+    await db.update(customerStockRequests).set({ status: 'answered', answerItems: JSON.stringify(answerItems), answer, answeredBy: me.id, answeredAt: nowIso() }).where(eq(customerStockRequests.id, r.id));
+    await notify(c.env, { eventType: 'stock_answer', title: 'Bách Ngân đã trả lời tồn kho', body: answer || asked.slice(0, 3).map(a => a.name).join(', '),
+      url: '/customer.html#stock', targetMemberId: r.memberId, actorId: me.id, data: { requestId: r.id } });
+    return json({ ok: true });
+  }, 'business');
 
   // ======================= NHÂN VIÊN: cấp & quản lý tài khoản khách =======================
   /** Tài khoản khách của một khách hàng. */

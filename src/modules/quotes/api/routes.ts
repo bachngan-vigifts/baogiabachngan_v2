@@ -9,6 +9,7 @@ import { quoteHeaderIndex, quoteLineRows } from '../domain/quote-index.ts';
 import { totals } from '../domain/quote-math.ts';
 import { quotations, quoteLines, quoteNotifications, quoteRevisions } from '../schema.ts';
 import { employees } from '../../staff/schema.ts';
+import { notify } from '../../notifications/api/routes.ts';
 
 const predicate = (scope: SqlScope) => {
   const fragments = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
@@ -73,6 +74,11 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const rows = await c.env.db.update(quotations).set({ approvalStatus: 'approved', approvedAt: now, approvedBy: viewer.id })
       .where(and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)))).returning({ id: quotations.id });
     if (!rows.length) throw new AppError(409, 'Báo giá đã thay đổi. Vui lòng mở lại trước khi duyệt.');
+    // Báo giá khách gửi: báo cho khách biết đã được xác nhận.
+    const [q] = await c.env.db.select({ quoteNo: quotations.quoteNo, creatorId: quotations.creatorId, role: employees.role }).from(quotations)
+      .innerJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.id, c.params.id!)).limit(1);
+    if (q?.role === 'customer') await notify(c.env, { eventType: 'quote_confirmed', title: 'Báo giá đã được xác nhận', body: `${q.quoteNo} đã được ${viewer.name} xác nhận. Quý khách có thể đặt hàng.`,
+      url: '/customer.html#quotes', targetMemberId: q.creatorId, actorId: viewer.id, data: { quoteId: c.params.id } });
     return json({ id: c.params.id, approvalStatus: 'approved', approvedAt: now, approvedByName: viewer.name });
   }, 'business');
   /** Manager xoá báo giá (như nút "Xoá báo giá" web cũ). Báo giá đã có đơn đặt hàng / HĐKT thì không xoá được. */

@@ -5,10 +5,10 @@ import * as schema from '../../src/db/schema.ts';
 import { openMigratedDb, tablesOf, tablesIn, columnsOf } from './helpers.ts';
 const declared = tablesIn(schema).map(t => getTableConfig(t).name).sort();
 
-test('PostgreSQL migration tạo đúng 72 bảng đã khai báo', async () => {
+test('PostgreSQL migration tạo đúng 74 bảng đã khai báo', async () => {
   const db = await openMigratedDb();
   assert.deepEqual(await tablesOf(db), declared);
-  assert.equal(declared.length, 72);
+  assert.equal(declared.length, 74);
 });
 
 test('mọi bảng PostgreSQL có khoá chính', async () => {

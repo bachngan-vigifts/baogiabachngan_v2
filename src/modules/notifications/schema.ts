@@ -31,3 +31,11 @@ export const webNotificationReads = pgTable('staff_web_notification_reads', {
   memberId: text('member_id').notNull().references(() => employees.id),
   readAt: text('read_at').notNull(),
 }, t => [primaryKey({columns: [t.notificationId, t.memberId]})]).enableRLS();
+
+/** Khoá VAPID của Web Push: máy chủ tự sinh lần đầu (không cần cài mã bí mật); khoá riêng mã hoá AES-GCM bằng SAPO_SYNC_TOKEN. */
+export const webPushKeys = pgTable('web_push_keys', {
+  id: text('id').primaryKey(),
+  publicKey: text('public_key').notNull(),
+  encryptedPrivateKey: text('encrypted_private_key').notNull(),
+  createdAt: text('created_at').notNull(),
+}).enableRLS();
