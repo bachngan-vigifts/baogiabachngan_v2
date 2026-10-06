@@ -414,12 +414,23 @@
 </dialog>
 
 <dialog id="picker-dialog" class="modal wide">
-  <div class="modal-head"><h2>Thêm sản phẩm vào báo giá</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-head"><div><span class="eyebrow">Danh mục Sapo</span><h2>Tìm nhanh sản phẩm</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body picker-body">
-    <div class="toolbar picker-tools">
-      <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="picker-search" type="search" placeholder="Tìm tên, mã SKU, thương hiệu…" aria-label="Tìm sản phẩm để thêm"></label>
-      <select id="picker-brand" aria-label="Thương hiệu"><option value="">Mọi thương hiệu</option></select>
+    <div class="catalog-options">
+      <label class="catalog-policy">Chính sách giá <select id="picker-policy" aria-label="Chính sách giá"></select></label>
+      <label class="catalog-scope"><input id="picker-all" type="checkbox"> Tìm trên tất cả sản phẩm</label>
     </div>
+    <p class="search-help" id="picker-snapshot"></p>
+    <div class="search-box"><span aria-hidden="true">⌕</span><input id="picker-search" type="search" autocomplete="off" placeholder="Nhập mã hoặc tên, ví dụ: chén cơm jas…" aria-label="Tìm sản phẩm để thêm"></div>
+    <p class="search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
+    <div class="catalog-filters">
+      <label><span>Nhóm sản phẩm</span><select id="picker-group"><option value="">Tất cả nhóm</option><option value="dinner">Bộ đồ ăn</option><option value="tea">Bộ trà</option><option value="thermalCup">Ly / cốc giữ nhiệt</option><option value="thermalBottle">Bình giữ nhiệt</option><option value="tableware">Chén, tô, đĩa</option><option value="vase">Bình hoa</option><option value="cookware">Nồi, chảo</option></select></label>
+      <label><span>Khoảng giá</span><select id="picker-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option><option value="custom">Tự nhập khoảng giá</option></select></label>
+      <label><span>Giá từ (đ)</span><input id="picker-min" type="number" min="0" step="1000" inputmode="numeric" placeholder="Ví dụ: 1000000"></label>
+      <label><span>Giá đến (đ)</span><input id="picker-max" type="number" min="0" step="1000" inputmode="numeric" placeholder="Ví dụ: 2000000"></label>
+      <button type="button" class="btn secondary" id="picker-clear">Xoá bộ lọc</button>
+    </div>
+    <p class="search-help" id="picker-status" aria-live="polite">Giá lọc theo chính sách đang chọn.</p>
     <ul class="picker-list" id="picker-list"></ul>
     <p class="muted small picker-empty" id="picker-empty" hidden></p>
     <div class="more-row" id="picker-more-row" hidden><button type="button" class="btn secondary small" id="picker-more">Xem thêm</button></div>
