@@ -16,6 +16,8 @@ export interface StaffEnv {
   nowSec?: () => number;
   /** Số vòng PBKDF2 khi tạo hash mới (mặc định 600.000; test hạ xuống cho nhanh). */
   passwordIterations?: number;
+  /** Mã bí mật cho luồng đồng bộ Sapo (secret SAPO_SYNC_TOKEN, ≥ 32 ký tự). Thiếu thì mọi yêu cầu đồng bộ bị từ chối. */
+  sapoSyncToken?: string;
 }
 type Ctx = RouteContext<StaffEnv>;
 export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }
@@ -34,12 +36,29 @@ async function limit(c: Ctx, key: string, max: number) {
 export async function authorizeRoute(c: Ctx): Promise<void> {
   const area = c.meta as Area;
   if (area === 'public') return;
+  if (area === 'sapo-sync') return checkSyncToken(c);
   const token = readSessionToken(c.req.headers.get('cookie'));
   const tokenHash = sha256Hex(token);
   const member = await repo.findSessionMember(c.env.db, tokenHash, now(c));
   if (!member) throw new AppError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   if (!canAccessArea(member, area)) throw new AppError(403, isSupplier(member) ? SUPPLIER_FORBIDDEN_MESSAGE : FORBIDDEN_MESSAGE[area]);
   c.state.session = { member, tokenHash } satisfies SessionState;
+}
+
+/**
+ * Luồng đồng bộ Sapo gửi mã bí mật theo một trong ba cách như web cũ: `Authorization: Bearer <mã>`,
+ * header `x-sapo-sync-token` (hoặc `x-sapo-inventory-token`), hay `?token=<mã>` (webhook Sapo không đặt được header).
+ * So sánh trên mã băm để thời gian không phụ thuộc nội dung.
+ */
+function checkSyncToken(c: Ctx): void {
+  const secret = c.env.sapoSyncToken ?? '';
+  if (secret.length < 32) throw new AppError(503, 'Chưa cấu hình đồng bộ Sapo.');
+  const h = c.req.headers, bearer = /^Bearer (.+)$/.exec(h.get('authorization') || '')?.[1] ?? '';
+  const want = sha256Hex(secret);
+  const ok = [bearer, h.get('x-sapo-sync-token') || '', h.get('x-sapo-inventory-token') || '', c.url.searchParams.get('token') || '']
+    .map(t => { const got = sha256Hex(t); let d = 0; for (let i = 0; i < want.length; i++) d |= want.charCodeAt(i) ^ got.charCodeAt(i); return d === 0; })
+    .some(Boolean);
+  if (!ok) throw new AppError(401, 'Không được phép đồng bộ.');
 }
 
 export function registerAuthRoutes(router: Router<StaffEnv>): void {
@@ -107,8 +126,15 @@ async function activationHash(body: Record<string, unknown>): Promise<string> {
 }
 
 /** Router của module staff: đã gắn chốt Origin/phương thức và chốt quyền; mọi route BẮT BUỘC khai báo khu vực. */
+/**
+ * Đường dẫn đồng bộ Sapo được gọi từ máy chủ khác (không có Origin) nên bỏ qua kiểm tra Origin chống CSRF:
+ * chúng không dùng cookie mà xác thực bằng mã bí mật. Test kiến trúc bắt buộc mọi route dưới đây thuộc khu vực 'sapo-sync'.
+ */
+export const SYNC_PREFIX = '/api/staff/integrations/';
+export const isSyncPath = (url: URL) => url.pathname.startsWith(SYNC_PREFIX);
+
 export function createStaffRouter(): Router<StaffEnv> {
-  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => checkMethodAndOrigin(req, url), authorize: authorizeRoute });
+  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: authorizeRoute });
   registerAuthRoutes(router);
   registerMemberRoutes(router);
   return router;

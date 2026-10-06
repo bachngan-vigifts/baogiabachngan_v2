@@ -271,7 +271,7 @@ $('#password-form').addEventListener('submit', async e => {
 async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
-  if (isManager()) jobs.push(loadMembers());
+  if (isManager()) jobs.push(loadMembers(), loadSapoSync());
   await Promise.all(jobs);
 }
 function showGlobalError(message) { const el = $('#global-error'); el.textContent = message; el.hidden = false; }
@@ -297,6 +297,17 @@ async function loadMembers() {
   try { const d = await api('/admin/members'); state.members = d.members; state.positions = d.positions; }
   catch (e) { state.members = state.members || []; if (e.status !== 401) showGlobalError(e.message); }
   renderMembers();
+}
+// Tình trạng đồng bộ Sapo → app (sản phẩm, khách hàng, nhân viên). Chỉ đọc; Sapo/luồng trung gian tự gửi dữ liệu lên.
+async function loadSapoSync() {
+  let d; try { d = await api('/admin/sapo-sync'); } catch { $('#sapo-sync').hidden = true; return; }
+  const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + new Date(iso).toLocaleString('vi-VN') : 'Chưa nhận dữ liệu';
+  $('#sapo-sync').hidden = false;
+  $('#sync-state').textContent = d.configured ? 'Đang bật' : 'Chưa bật';
+  $('#sync-note').textContent = d.configured ? 'Sapo tự gửi khi có thay đổi' : 'Cần cài mã SAPO_SYNC_TOKEN';
+  $('#sync-products').textContent = n(d.products.count); $('#sync-products-at').textContent = at(d.products.lastSyncedAt);
+  $('#sync-customers').textContent = n(d.customers.count); $('#sync-customers-at').textContent = at(d.customers.lastSyncedAt);
+  $('#sync-staff').textContent = n(d.staff.count); $('#sync-staff-note').textContent = d.staff.linked ? `+ ${n(d.staff.linked)} đã khớp tài khoản web` : 'Hồ sơ mới cần cấp liên kết';
 }
 
 // ---------------------------------------------------------------- điều hướng

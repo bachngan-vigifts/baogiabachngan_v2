@@ -5,8 +5,12 @@ import { createAppRouter } from '../../../src/app/router.ts';
 const ORIGINS = new Set(["https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site", "https://crm.minhlongonline.com",
   ...(Deno.env.get('ALLOWED_ORIGINS') || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(s => /^https:\/\/[^/]+$/.test(s))]);
 const router = createAppRouter();
+// Đồng bộ Sapo gọi từ máy chủ (webhook Sapo, luồng trung gian): không có Origin, xác thực bằng SAPO_SYNC_TOKEN trong router.
+const SYNC_PATH = '/api/staff/integrations/';
+const SYNC_ORIGIN = 'https://crm.minhlongonline.com';
 Deno.serve(async req => {
-  const incoming = new URL(req.url), origin = req.headers.get('origin') || '';
+  const incoming = new URL(req.url), sync = incoming.pathname.includes(SYNC_PATH);
+  const origin = sync ? SYNC_ORIGIN : req.headers.get('origin') || '';
   const ORIGIN = origin; // liên kết kích hoạt/đặt lại mật khẩu trỏ về đúng trang đã gửi yêu cầu
   const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store' };
   if (!ORIGINS.has(origin)) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
@@ -22,11 +26,13 @@ Deno.serve(async req => {
     const path = incoming.pathname.slice(incoming.pathname.indexOf('/api/staff'));
     if (!incoming.pathname.includes('/api/staff')) return new Response('{}',{status:404,headers:cors});
     const headers = new Headers(req.headers); headers.delete('cookie');
-    const token = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') || '')?.[1];
-    headers.delete('authorization');
-    if(token) headers.set('cookie', '__Host-bn-session=' + token);
+    if (!sync) { // phiên đăng nhập của giao diện: Bearer → cookie; đồng bộ Sapo giữ nguyên Authorization cho router kiểm mã bí mật
+      const token = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') || '')?.[1];
+      headers.delete('authorization');
+      if(token) headers.set('cookie', '__Host-bn-session=' + token);
+    }
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
-    const response = await router.handle(forwarded,{db});
+    const response = await router.handle(forwarded,{db,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || ''});
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');
     if(cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';
