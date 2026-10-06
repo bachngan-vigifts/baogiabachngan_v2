@@ -6,6 +6,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { sapoHealthMonitorState, sapoInventoryDocLines, sapoInventoryDocs, sapoRuntimeSessions } from '../schema.ts';
 import { SAPO_DOC_KINDS, SAPO_DOC_SOURCES, mapSapoDoc, type SapoDocKind } from '../domain/sapo-docs.ts';
+import { recordMovements } from '../../catalog/api/product-history.ts';
 import { cleanCookie, decryptCookie, encryptCookie } from '../domain/sapo-session.ts';
 import { mapSapoProduct, sapoModifiedAt } from '../domain/sapo-mapping.ts';
 import { sapoClient } from './sapo-client.ts';
@@ -112,6 +113,7 @@ async function readSince(api: ReturnType<typeof sapoClient>, path: string, key: 
   return { items, next };
 }
 
+const SAPO_MOVE_KIND = { purchase_order: 'purchase', stock_transfer: 'transfer', stock_adjustment: 'adjustment', order_return: 'customer_return', purchase_return: 'supplier_return' } as const;
 /** Ghi chứng từ kho Sapo: thêm mới hoặc cập nhật theo (loại, id Sapo); dòng hàng được thay toàn bộ. */
 export async function syncSapoDocs(db: AnyDb, kind: SapoDocKind, raws: Record<string, any>[], locations: Map<string, string>) {
   const docs = raws.map(r => mapSapoDoc(kind, r, locations)).filter(d => d !== null);
@@ -128,6 +130,15 @@ export async function syncSapoDocs(db: AnyDb, kind: SapoDocKind, raws: Record<st
       existing.has(d.id) ? r.updated++ : r.created++;
     }
   });
+  // Lịch sử sản phẩm: mỗi dòng chứng từ = một biến động của mã hàng (khoá `sapo:<chứng từ>:<dòng>`, đồng bộ lại thì cập nhật).
+  await recordMovements(db, docs.flatMap(d => d.lines.map(l => ({
+    refKey: `sapo:${d.id}:${l.lineNo}`, sku: l.sku, kind: SAPO_MOVE_KIND[d.kind], name: l.name, unitPrice: l.price,
+    // Cân bằng kho: số chênh lệch (có dấu) nếu Sapo trả; không có thì ghi số đếm thực tế kèm ghi chú.
+    qty: d.kind === 'stock_adjustment' && l.diffQty !== null ? l.diffQty : l.qty,
+    note: d.kind === 'stock_adjustment' && l.diffQty === null ? `Số lượng kiểm thực tế ${l.qty}` : '',
+    partner: d.partnerName, location: d.kind === 'stock_transfer' ? `${d.locationName} → ${d.toLocationName}` : d.locationName,
+    refCode: d.code, status: d.status, occurredAt: d.createdOn || now,
+  }))));
   return r;
 }
 

@@ -26,3 +26,18 @@
 - **Tải**:
   - **Tải bộ 3 file (.zip)**: file `HDKT_<số HĐKT>.zip` gồm `HDKT.docx`, `TAM_UNG.docx`, `BBNT.docx`.
   - Có thêm nút tải riêng file Word đang xem, và nút in hồ sơ đang xem.
+
+## Lịch sử sản phẩm (thẻ sản phẩm)
+- Mọi biến động của một mã hàng được ghi vào bảng `product_movements`. Mỗi mã chỉ giữ **20 giao dịch gần nhất** (`PRODUCT_HISTORY_LIMIT`).
+- Các loại giao dịch:
+  - **Bán**: dòng đơn đặt hàng khi đơn được xác nhận. Huỷ đơn thì xoá các dòng của đơn đó.
+  - **Xuất kho giao hàng**: khi phiếu giao chuyển sang *Đã giao*.
+  - **Nhập hàng**, **Chuyển kho**, **Cân bằng kho**: lấy từ chứng từ Sapo khi đồng bộ.
+  - **Khách trả hàng** (`/order_returns.json`) và **Trả hàng NCC** (`/purchase_returns.json`): cũng lấy từ Sapo. Hai endpoint này chưa kiểm chứng trên tài khoản thật; nếu Sapo báo lỗi thì chỉ hiện cảnh báo đồng bộ.
+- Đồng bộ lại cùng chứng từ thì cập nhật dòng cũ (khoá `ref_key`), không ghi trùng.
+- Migration `0020_product_movements.sql` tạo bảng và lấy lại lịch sử từ đơn đã xác nhận, phiếu đã giao và chứng từ Sapo có sẵn. Phân quyền ở `0021_supabase_access_product_movements.sql`.
+- Xem: bấm tên sản phẩm ở trang **Sản phẩm**, hoặc nút **Tồn kho · Lịch sử** ở từng dòng báo giá. Thẻ sản phẩm gồm:
+  - tồn các kho;
+  - thống kê giá bán (gần nhất, thấp nhất, cao nhất, trung bình);
+  - bảng 20 giao dịch, lọc được theo loại.
+- API: `GET /products/:sku/history`.

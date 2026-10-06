@@ -11,6 +11,7 @@ import { notify } from '../../notifications/api/routes.ts';
 import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
+import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
   addDays, compactCode, contractNumber, debtCounts, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
@@ -47,6 +48,14 @@ async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   ]);
   const today = vietnamDate().iso;
   return new Map(orderIds.map(id => [id, receivable(sch.filter(s => s.orderId === id), pay.filter(p => p.orderId === id), today)]));
+}
+/** Lịch sử sản phẩm: các dòng (có mã hàng) của đơn đã xác nhận → biến động "Bán" (khoá `sale:<đơn>:<dòng>`). */
+export async function recordSaleMovements(db: StaffEnv['db'] | Tx, orderId: string) {
+  const [order] = await db.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
+  if (!order || order.status === 'draft' || order.status === 'cancelled') return;
+  const lines = await db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
+  await recordMovements(db, lines.map(l => ({ refKey: `sale:${orderId}:${l.id}`, sku: l.sku, kind: 'sale', name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
+    partner: order.customerName, refCode: order.orderNo, link: `#/orders/${orderId}`, status: 'Đã xác nhận', occurredAt: order.createdAt })));
 }
 /** Ghi ngày giao dự kiến mới cho đơn; đơn do khách đặt thì báo khách ngày mới. */
 async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
@@ -95,6 +104,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
     await tx.insert(paymentSchedules).values({ id: crypto.randomUUID(), orderId: id, kind: 'balance', amount: t.total, dueDate: null, note: 'Thanh toán khi giao hàng', createdAt: now });
   });
+  if (o.status === 'confirmed') await recordSaleMovements(db, id);
   return id;
 }
 
@@ -168,6 +178,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         await tx.update(quotations).set({ approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: viewer(c).id })
           .where(and(eq(quotations.id, order.quoteId), eq(quotations.approvalStatus, 'pending')));
     });
+    // Lịch sử sản phẩm: thêm "Bán" khi xác nhận, bỏ khi huỷ.
+    if (status === 'confirmed') await recordSaleMovements(c.env.db, order.id);
+    else await removeMovements(c.env.db, `sale:${order.id}:`);
     // Đơn khách đặt từ trang khách hàng: báo cho khách.
     const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
@@ -318,6 +331,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         await tx.update(salesOrderLines).set({ deliveredQty: sql`LEAST(${salesOrderLines.qty}, ${salesOrderLines.deliveredQty} + ${l.qty})` }).where(eq(salesOrderLines.id, l.orderLineId));
       await refreshOrderStatus(tx, row.d.orderId, deliveredOn);
     });
+    // Lịch sử sản phẩm: chuyến "Đã giao" = xuất kho cho khách.
+    if (status === 'delivered') {
+      const [o] = await c.env.db.select().from(salesOrders).where(eq(salesOrders.id, row.d.orderId)).limit(1);
+      const lines = await c.env.db.select({ id: deliveryLines.orderLineId, qty: deliveryLines.qty, sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit, unitPrice: salesOrderLines.unitPrice })
+        .from(deliveryLines).innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId)).where(eq(deliveryLines.deliveryId, row.d.id));
+      await recordMovements(c.env.db, lines.map(l => ({ refKey: `delivery:${row.d.id}:${l.id}`, sku: l.sku, kind: 'delivery', name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
+        partner: o?.customerName ?? '', location: row.d.address, refCode: `${row.d.deliveryNo} · ${o?.orderNo ?? ''}`, link: `#/orders/${row.d.orderId}`, status: 'Đã giao', occurredAt: nowIso() })));
+    }
     return json({ ok: true });
   }, 'business');
 

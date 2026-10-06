@@ -4,6 +4,7 @@ import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
+import { syncSapoDocs } from '../../src/modules/integrations/api/sapo-pull.ts';
 import { contractNumber, legalCode, nextDocNo, orderLinesFromQuote, receivable, contractSchedules } from '../../src/modules/sales/domain/sales.ts';
 
 const origin = 'https://trial.test';
@@ -120,4 +121,47 @@ test('huỷ đơn chưa giao/chưa thu được; huỷ rồi tạo lại đơn t
   assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 200);
   assert.equal((await call('/receivables', emp)).data.receivables.length, 0);
   assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).status, 201);
+});
+
+test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sapo; giữ 20 giao dịch gần nhất mỗi mã; huỷ đơn thì bỏ', async () => {
+  const { db, call, emp, mgr } = await setup();
+  await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: '', phone: '', email: '', address: '1 Lê Lợi', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' });
+  const order = async (i: number) => {
+    const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: `B2B_H${i}`, customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8,
+      rows: [{ name: 'Bộ trà', sku: 'ML-TRA', unit: 'bộ', qty: i, price: 100000 + i * 1000, taxRate: 8 }, { name: 'Không mã', qty: 1, price: 5 }] });
+    await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+    return (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
+  };
+  const first = await order(1);
+  // Xuất kho giao hàng.
+  const g = await call('/deliveries', emp, 'POST', { orderId: first, plannedDate: '2026-10-07' });
+  await call('/deliveries/' + g.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-07' });
+  // Chứng từ kho Sapo: nhập hàng, cân bằng kho (chênh lệch có dấu), điều chuyển.
+  await syncSapoDocs(db, 'purchase_order', [{ id: 9, code: 'PON0009', status: 'completed', supplier: { name: 'Minh Long I' }, created_on: '2026-10-01T02:00:00Z', line_items: [{ sku: 'ML-TRA', quantity: 50, price: 80000 }] }], new Map());
+  await syncSapoDocs(db, 'stock_adjustment', [{ id: 3, code: 'KH0003', created_on: '2026-10-02T02:00:00Z', location_id: 1, line_items: [{ sku: 'ML-TRA', actual_quantity: 48, adjustment_quantity: -2 }] }], new Map([['1', 'Kho Cần Thơ']]));
+  await syncSapoDocs(db, 'stock_transfer', [{ id: 4, code: 'TRN0004', created_on: '2026-10-03T02:00:00Z', source_location_id: 1, destination_location_id: 2, line_items: [{ sku: 'ML-TRA', quantity: 5 }] }], new Map([['1', 'Kho Cần Thơ'], ['2', 'Kho Vigifts']]));
+  let h = (await call('/products/ML-TRA/history', emp)).data;
+  const kinds = h.history.map((x: any) => x.kind);
+  assert.deepEqual([...kinds].sort(), ['adjustment', 'delivery', 'purchase', 'sale', 'transfer']);
+  const by = (k: string) => h.history.find((x: any) => x.kind === k);
+  assert.deepEqual([by('purchase').qty, by('purchase').partner, by('purchase').refCode, by('purchase').unitPrice], [50, 'Minh Long I', 'PON0009', 80000]);
+  assert.deepEqual([by('adjustment').qty, by('adjustment').location], [-2, 'Kho Cần Thơ']);
+  assert.equal(by('transfer').location, 'Kho Cần Thơ → Kho Vigifts');
+  assert.deepEqual([by('delivery').qty, by('delivery').partner, by('delivery').link], [1, 'Công ty Hoàng Long', '#/orders/' + first]);
+  assert.deepEqual([by('sale').unitPrice, h.sales.last], [101000, 101000]);
+  // Đồng bộ lại cùng phiếu Sapo (đổi trạng thái) → cập nhật, không nhân đôi.
+  await syncSapoDocs(db, 'purchase_order', [{ id: 9, code: 'PON0009', status: 'cancelled', created_on: '2026-10-01T02:00:00Z', line_items: [{ sku: 'ML-TRA', quantity: 50 }] }], new Map());
+  h = (await call('/products/ML-TRA/history', emp)).data;
+  assert.deepEqual([h.history.filter((x: any) => x.kind === 'purchase').length, by('purchase') && h.history.find((x: any) => x.kind === 'purchase').status], [1, 'cancelled']);
+  // Nhiều đơn: chỉ giữ 20 giao dịch gần nhất; đơn huỷ bị bỏ khỏi lịch sử.
+  const ids: string[] = [];
+  for (let i = 2; i <= 20; i++) ids.push(await order(i));
+  h = (await call('/products/ML-TRA/history', emp)).data;
+  assert.equal(h.history.length, 20);
+  assert.equal(h.history[0].unitPrice, 120000, 'mới nhất đứng đầu');
+  assert.equal(h.history.some((x: any) => x.kind === 'purchase'), false, 'giao dịch cũ nhất bị bỏ');
+  assert.equal((await call('/products/' + encodeURIComponent('Không mã') + '/history', emp)).data.history.length, 0);
+  await call('/orders/' + ids.at(-1) + '/status', emp, 'PUT', { status: 'cancelled' });
+  h = (await call('/products/ML-TRA/history', emp)).data;
+  assert.deepEqual([h.history.length, h.history[0].unitPrice], [19, 119000]);
 });

@@ -1,5 +1,5 @@
-/** Loại chứng từ kho lấy từ Sapo: đơn nhập hàng, đơn điều chuyển, phiếu kiểm hàng. */
-export const SAPO_DOC_KINDS = ['purchase_order', 'stock_transfer', 'stock_adjustment'] as const;
+/** Loại chứng từ kho lấy từ Sapo: đơn nhập hàng, đơn điều chuyển, phiếu kiểm hàng, đơn khách trả hàng, phiếu trả hàng nhà cung cấp. */
+export const SAPO_DOC_KINDS = ['purchase_order', 'stock_transfer', 'stock_adjustment', 'order_return', 'purchase_return'] as const;
 export type SapoDocKind = typeof SAPO_DOC_KINDS[number];
 
 /** Đường dẫn danh sách Sapo admin và khoá mảng trong phản hồi của từng loại chứng từ. */
@@ -7,6 +7,9 @@ export const SAPO_DOC_SOURCES: Record<SapoDocKind, { path: string; key: string; 
   purchase_order: { path: '/purchase_orders.json', key: 'purchase_orders', label: 'Đơn nhập hàng' },
   stock_transfer: { path: '/stock_transfers.json', key: 'stock_transfers', label: 'Đơn điều chuyển' },
   stock_adjustment: { path: '/stock_adjustments.json', key: 'stock_adjustments', label: 'Phiếu kiểm hàng' },
+  // Trả hàng: đường dẫn theo quy ước Sapo admin; nếu Sapo không cho đọc thì lượt đồng bộ chỉ ghi cảnh báo.
+  order_return: { path: '/order_returns.json', key: 'order_returns', label: 'Đơn khách trả hàng' },
+  purchase_return: { path: '/purchase_returns.json', key: 'purchase_returns', label: 'Phiếu trả hàng nhà cung cấp' },
 };
 
 type Raw = Record<string, any>;
@@ -32,7 +35,7 @@ export function mapSapoDoc(kind: SapoDocKind, raw: Raw, locations: Map<string, s
   const fromObj = kind === 'stock_transfer' ? first(raw, 'source_location', 'from_location') : first(raw, 'location', 'branch');
   const toId = kind === 'stock_transfer' ? first(raw, 'destination_location_id', 'to_location_id', 'target_location_id') : undefined;
   const toObj = kind === 'stock_transfer' ? first(raw, 'destination_location', 'to_location', 'target_location') : undefined;
-  const items: Raw[] = (first(raw, 'line_items', 'items', 'stock_transfer_line_items', 'stock_adjustment_line_items', 'variants') as Raw[] | undefined) ?? [];
+  const items: Raw[] = (first(raw, 'line_items', 'items', 'stock_transfer_line_items', 'stock_adjustment_line_items', 'order_return_line_items', 'return_line_items', 'variants') as Raw[] | undefined) ?? [];
   const lines: SapoDocLine[] = (Array.isArray(items) ? items : []).map((it, i) => {
     const qty = num(kind === 'stock_adjustment'
       ? first(it, 'actual_quantity', 'after_quantity', 'real_quantity', 'counted_quantity', 'quantity')
@@ -50,7 +53,8 @@ export function mapSapoDoc(kind: SapoDocKind, raw: Raw, locations: Map<string, s
   return {
     id: `${kind}:${sapoId}`, kind, sapoId, code: str(first(raw, 'code', 'name', 'reference_number')) || sapoId, status: str(first(raw, 'status', 'state')),
     locationName: loc(fromId, fromObj), toLocationName: kind === 'stock_transfer' ? loc(toId, toObj) : '',
-    partnerName: kind === 'purchase_order' ? nameOf(first(raw, 'supplier', 'supplier_name', 'vendor')) : '',
+    partnerName: kind === 'purchase_order' || kind === 'purchase_return' ? nameOf(first(raw, 'supplier', 'supplier_name', 'vendor'))
+      : kind === 'order_return' ? nameOf(first(raw, 'customer', 'customer_name', 'billing_address')) : '',
     totalQty, totalAmount, note: str(first(raw, 'note', 'description')).slice(0, 4000),
     createdOn: str(first(raw, 'created_on', 'created_at', 'issued_on')) || null, modifiedOn: str(first(raw, 'modified_on', 'updated_at', 'modified_at')) || null,
     data, lines,

@@ -1,4 +1,4 @@
-// TIN NHẮN nội bộ giữa nhân viên: danh sách hội thoại (1-1 + nhóm) bên trái, khung chat bên phải.
+// TIN NHẮN nội bộ giữa nhân viên: nút chat nổi góc dưới phải mở khung chat (danh sách hội thoại 1-1 + nhóm bên trái, khung chat bên phải).
 // Cập nhật: khung đang mở hỏi tin mới mỗi 3 giây; danh sách mỗi 10 giây; huy hiệu menu mỗi 20 giây (+ Web Push khi có tin).
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = name => String(name || '?').trim().split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
@@ -18,7 +18,7 @@ const linkify = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" targe
 
 /**
  * Gắn khung Tin nhắn vào #view-chat. `api(path, method, body)`, `toast`, `userId()`, `isManager()`.
- * Trả về { open(id?), badge(), startBadge() }.
+ * Trả về { show(id?), hide(), toggle(), badge(), startBadge(), stop() }.
  */
 export function initChat({ api, toast, userId, isManager }) {
   const root = document.getElementById('view-chat'), q = s => root.querySelector(s);
@@ -35,7 +35,10 @@ export function initChat({ api, toast, userId, isManager }) {
 
   // ----- Danh sách hội thoại
   async function loadList() {
-    try { st.list = (await api('/chat/conversations')).conversations; } catch (e) { q('#chat-list').innerHTML = `<li class="error">${esc(e.message)}</li>`; return; }
+    try { st.list = (await api('/chat/conversations')).conversations; } catch (e) {
+      q('#chat-list').innerHTML = `<li class="chat-error"><b>Chưa tải được tin nhắn</b><small>${esc(e.message)}</small><button type="button" class="btn secondary small" data-chat-retry>Thử lại</button></li>`;
+      return;
+    }
     renderList();
   }
   function renderList() {
@@ -45,7 +48,7 @@ export function initChat({ api, toast, userId, isManager }) {
       <span class="chat-item-main"><span class="chat-item-top"><b>${esc(c.title)}</b><small>${when(c.last?.at || c.lastMessageAt)}</small></span>
       <span class="chat-item-last">${c.last ? (c.last.mine ? 'Bạn: ' : c.kind === 'group' && c.last.by ? esc(c.last.by.split(' ').pop()) + ': ' : '') + esc(c.last.body) : '<i>Chưa có tin nhắn</i>'}</span></span>
       ${c.unread ? `<span class="chat-unread">${c.unread}</span>` : ''}</button></li>`).join('')
-      : `<li class="chat-empty-list muted">${st.list.length ? 'Không tìm thấy.' : 'Chưa có cuộc trò chuyện. Bấm <b>＋ Nhắn tin</b> để bắt đầu.'}</li>`;
+      : `<li class="chat-empty-list muted">${st.list.length ? 'Không tìm thấy.' : 'Chưa có cuộc trò chuyện. Bấm <b>＋ Chat</b> để bắt đầu.'}</li>`;
   }
 
   // ----- Khung chat
@@ -81,7 +84,6 @@ export function initChat({ api, toast, userId, isManager }) {
       st.active = conversation; st.messages = m.messages; st.reads = m.reads; st.more = m.more;
     } catch (e) { toast(e.message, 'err'); st.active = null; renderThread(); return; }
     renderThread(); toBottom(); markRead(); loadList();
-    if (location.hash !== '#/chat/' + id) history.replaceState(null, '', '#/chat/' + id);
     q('#chat-input').focus();
     st.timers.push(setInterval(poll, 3_000), setInterval(() => { if (!root.hidden) loadList(); }, 10_000));
   }
@@ -114,7 +116,8 @@ export function initChat({ api, toast, userId, isManager }) {
   // ----- Hộp chọn người / tạo nhóm / quản lý nhóm
   async function people() { if (!st.people) st.people = (await api('/chat/people')).people; return st.people; }
   async function pickDialog({ title, multi, withTitle, initialTitle = '', exclude = [], ok }) {
-    const list = (await people()).filter(p => !exclude.includes(p.id));
+    let list;
+    try { list = (await people()).filter(p => !exclude.includes(p.id)); } catch (e) { toast('Không tải được danh sách nhân viên: ' + e.message, 'err'); return null; }
     const dlg = document.createElement('dialog'); dlg.className = 'modal narrow chat-pick';
     dlg.innerHTML = `<form method="dialog"><div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body">${withTitle ? `<label class="chat-field"><span>Tên nhóm</span><input name="title" maxlength="120" value="${esc(initialTitle)}" placeholder="Ví dụ: Đơn Tết 2027" required></label>` : ''}
@@ -169,9 +172,22 @@ export function initChat({ api, toast, userId, isManager }) {
   });
 
   // ----- Sự kiện
-  q('#chat-list').addEventListener('click', e => { const b = e.target.closest('[data-conv]'); if (b) open(b.dataset.conv); });
+  q('#chat-list').addEventListener('click', e => {
+    if (e.target.closest('[data-chat-retry]')) { loadList(); return; }
+    const b = e.target.closest('[data-conv]'); if (b) open(b.dataset.conv);
+  });
   q('#chat-search').addEventListener('input', e => { st.filter = e.target.value.trim(); renderList(); });
-  q('#chat-back').addEventListener('click', () => { st.active = null; stopThread(); renderThread(); history.replaceState(null, '', '#/chat'); });
+  q('#chat-back').addEventListener('click', () => { st.active = null; stopThread(); renderThread(); loadList(); });
+  // Mở / đóng khung chat nổi.
+  const launcher = document.getElementById('chat-launcher');
+  async function show(id) {
+    root.hidden = false; launcher.classList.add('active');
+    if (id) await open(id); else { renderThread(); await loadList(); if (!st.active && innerWidth > 860 && st.list[0]) open(st.list[0].id); else if (st.active) open(st.active.id); }
+  }
+  function hide() { root.hidden = true; launcher.classList.remove('active'); stopThread(); badge(); }
+  launcher.addEventListener('click', () => (root.hidden ? show() : hide()));
+  for (const id of ['chat-close', 'chat-close-2']) q('#' + id).addEventListener('click', hide);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !root.hidden && !document.querySelector('dialog[open]')) hide(); });
   q('#chat-form').addEventListener('submit', e => { e.preventDefault(); send(); });
   q('#chat-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
   q('#chat-input').addEventListener('input', autosize);
@@ -184,5 +200,5 @@ export function initChat({ api, toast, userId, isManager }) {
     } catch (ex) { toast(ex.message, 'err'); }
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !root.hidden && st.active) poll(); });
-  return { open, badge, startBadge, stop: stopThread };
+  return { show, hide, open, badge, startBadge, stop: stopThread };
 }

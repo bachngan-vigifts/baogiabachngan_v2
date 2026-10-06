@@ -179,7 +179,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 
 function showAuth(message = '') {
   state.user = null; saveToken('');
-  $('#workspace').hidden = true; $('#auth').hidden = false;
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   setTimeout(() => ($('#email').value ? $('#password') : $('#email')).focus(), 0);
@@ -277,7 +277,7 @@ async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadStockBadge(); tasksView().badge(); chatView().startBadge();
+  loadStockBadge(); tasksView().badge(); chatView().startBadge(); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -355,7 +355,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { chat: 'Tin nhắn', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -370,7 +370,12 @@ window.addEventListener('hashchange', async () => {
 });
 window.addEventListener('beforeunload', e => { if (editor.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
+let lastRoutedHash = '';
 function route() {
+  // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
+  const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
+  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || '#/quotes'); if (lastRoutedHash) return; }
+  lastRoutedHash = location.hash;
   const [page = 'quotes', id] = location.hash.replace(/^#\/?/, '').split('?')[0].split('/');
   let view = VIEWS[page] ? page : 'quotes';
   if (view === 'staff' && !isManager()) view = 'quotes';
@@ -390,7 +395,6 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'tasks') tasksView().load(id);
-  if (view === 'chat') chatView().open(id); else if (chatUi) chatUi.stop();
   if (view === 'order') openOrder(id);
   hideProductSuggest();
 }
@@ -625,7 +629,7 @@ function lineCell(r, i) {
     <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
     <td class="col-product" data-label="Sản phẩm">
       <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="Gõ tên hoặc mã để tìm sản phẩm…" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
-      <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock>Xem tồn kho</button>' : ''}</div>
+      <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>
       ${meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
       ${hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
       ${hrc ? '' : text('bundleContents', 'Bộ gồm', 'Ví dụ: 01 ly + 01 nắp') + text('printDescription', 'Mô tả in ấn', 'Ví dụ: in logo màu tại 01 vị trí') + text('packagingDescription', 'Đóng gói', PACKAGING_DEFAULT)}
@@ -718,7 +722,7 @@ $('#line-list').addEventListener('click', async e => {
   if (e.target.closest('[data-add-first]')) return $('#pick-products').click();
   const tr = e.target.closest('tr'); if (!tr) return;
   const i = Number(tr.dataset.i), rows = editor.rows;
-  if (e.target.closest('[data-stock]')) return showStock(rows[i]);
+  if (e.target.closest('[data-stock]')) return showProductCard(rows[i].sku, rows[i].name);
   if (e.target.closest('[data-image]')) return openImage(i);
   if (!e.target.closest('[data-del]')) return;
   const r = rows[i];
@@ -728,24 +732,61 @@ $('#line-list').addEventListener('click', async e => {
 });
 /** 4 kho xem nhanh trên báo giá, đúng thứ tự web cũ (`quoteWebWarehouses` trong lib/product-catalog.mjs). */
 const QUOTE_WAREHOUSES = ['MINH LONG - LOCKNLOCK CẦN THƠ', 'KHO VIGIFTS', 'NCC', 'Hàng chờ về'];
-async function showStock(r) {
-  $('#stock-title').textContent = r.name || 'Tồn kho sản phẩm';
-  $('#stock-body').innerHTML = '<p class="muted">Đang tải tồn kho…</p>';
-  $('#stock-dialog').showModal();
-  try {
-    const d = await api('/products?skus=' + encodeURIComponent(r.sku));
-    const p = d.products.find(x => normalize(x.sku) === normalize(r.sku));
-    if (!p) { $('#stock-body').innerHTML = '<p class="muted">Chưa tìm thấy mã hàng này trong dữ liệu tồn kho hiện tại.</p>'; return; }
-    const byName = new Map(d.warehouses.map(w => [normalize(w.name), w]));
-    // Đúng 4 kho như web cũ; nếu tên kho trên hệ thống không khớp kho nào thì hiện mọi kho để không mất số liệu.
-    const list = QUOTE_WAREHOUSES.some(n => byName.has(normalize(n))) ? QUOTE_WAREHOUSES.map(n => byName.get(normalize(n)) || { name: n }) : d.warehouses;
-    const rows = list.map(w => {
-      const v = w.id ? p.stock?.[w.id] : undefined;
-      return `<div><span>${esc(w.name)}</span><strong>${v === undefined || v === null ? 'Chưa có số liệu' : fmtNum(Number(v))}</strong></div>`;
-    }).join('');
-    const at = p.stockUpdatedAt || d.observedAt, updated = at ? new Date(at).toLocaleString('vi-VN') : 'Chưa có thời điểm cập nhật';
-    $('#stock-body').innerHTML = `<p class="inventory-sku">Mã hàng: <b>${esc(r.sku)}</b></p><div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(updated)}</p>`;
-  } catch (ex) { $('#stock-body').innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
+/** Tồn kho của một mã (đúng 4 kho xem nhanh như web cũ; tên kho không khớp thì hiện mọi kho). */
+async function stockHtml(sku) {
+  const d = await api('/products?skus=' + encodeURIComponent(sku));
+  const p = d.products.find(x => normalize(x.sku) === normalize(sku));
+  if (!p) return { html: '<p class="muted">Chưa tìm thấy mã hàng này trong dữ liệu tồn kho hiện tại.</p>', product: null };
+  const byName = new Map(d.warehouses.map(w => [normalize(w.name), w]));
+  const list = QUOTE_WAREHOUSES.some(n => byName.has(normalize(n))) ? QUOTE_WAREHOUSES.map(n => byName.get(normalize(n)) || { name: n }) : d.warehouses;
+  const rows = list.map(w => { const v = w.id ? p.stock?.[w.id] : undefined; return `<div><span>${esc(w.name)}</span><strong>${v === undefined || v === null ? 'Chưa có số liệu' : fmtNum(Number(v))}</strong></div>`; }).join('');
+  const at = p.stockUpdatedAt || d.observedAt;
+  return { product: p, html: `<div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(at ? new Date(at).toLocaleString('vi-VN') : 'Chưa có thời điểm cập nhật')}</p>` };
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-product-card]'); if (b) showProductCard(b.dataset.productCard, b.dataset.name); });
+/** Loại biến động trong lịch sử sản phẩm: nhãn, màu, chiều (+ nhập / − xuất). Cùng khoá với PRODUCT_MOVE_KINDS ở máy chủ. */
+const MOVE_UI = {
+  sale: ['Bán', 'order', ''], delivery: ['Xuất kho giao hàng', 'debt', '−'], purchase: ['Nhập hàng', 'stock', '+'], transfer: ['Điều chuyển', 'delivery', ''],
+  adjustment: ['Cân bằng kho', 'purchase', '±'], customer_return: ['Khách trả hàng', 'contract', '+'], supplier_return: ['Trả hàng NCC', 'quote', '−'],
+};
+/**
+ * Thẻ sản phẩm: tồn các kho + LỊCH SỬ SẢN PHẨM (20 giao dịch gần nhất: bán, xuất kho, nhập hàng, điều chuyển, cân bằng kho, trả hàng).
+ * Mở khi bấm vào sản phẩm ở trang Sản phẩm, hoặc "Tồn kho · Lịch sử" ở dòng báo giá.
+ */
+async function showProductCard(sku, name) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal wide product-card';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Sản phẩm · ${esc(sku)}</span><h2>${esc(name || sku)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><h3 class="pc-title">Tồn kho hiện tại</h3><div data-stock-box><p class="muted">Đang tải tồn kho…</p></div>
+      <div class="pc-head"><h3 class="pc-title">Lịch sử sản phẩm <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
+    <div class="modal-foot"><button type="button" class="btn navy" data-x>Đóng</button></div>`;
+  document.body.append(dlg); dlg.showModal();
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+  stockHtml(sku).then(r => { dlg.querySelector('[data-stock-box]').innerHTML = r.html; }).catch(ex => { dlg.querySelector('[data-stock-box]').innerHTML = `<p class="error">${esc(ex.message)}</p>`; });
+  const box = dlg.querySelector('[data-history]');
+  let d;
+  try { d = await api('/products/' + encodeURIComponent(sku) + '/history'); } catch (ex) { box.innerHTML = `<p class="error">${esc(ex.message)}</p>`; return; }
+  if (!d.history.length) { box.innerHTML = '<p class="muted">Chưa có giao dịch nào cho mã này (bán, xuất kho, nhập hàng, điều chuyển, cân bằng kho, trả hàng).</p>'; return; }
+  const kinds = [...new Set(d.history.map(h => h.kind))];
+  let filter = '';
+  const qtyCell = h => { const m = MOVE_UI[h.kind] || ['', '', '']; const sign = m[2] === '±' ? (h.qty > 0 ? '+' : h.qty < 0 ? '−' : '') : m[2]; const tone = sign === '+' ? 'paid-text' : sign === '−' ? 'danger-text' : '';
+    return `<b class="${tone}">${sign}${fmtNum(Math.abs(h.qty))}</b>${h.unit ? ' ' + esc(h.unit) : ''}`; };
+  const render = () => {
+    const rows = d.history.filter(h => !filter || h.kind === filter);
+    box.innerHTML = (d.sales ? `<div class="stats sh-stats">${[['Giá bán gần nhất', d.sales.last], ['Thấp nhất', d.sales.min], ['Cao nhất', d.sales.max], ['Trung bình', d.sales.avg]].map(([k, v]) => `<article class="stat"><small>${k}</small><strong>${money(v)}</strong></article>`).join('')}</div>` : '')
+      + `<div class="table-wrap"><table class="data-table pc-table"><thead><tr><th>Thời gian</th><th>Loại</th><th>Chứng từ</th><th>Khách / NCC · Kho</th><th class="right">Số lượng</th><th class="right">Đơn giá</th></tr></thead><tbody>
+      ${rows.map(h => `<tr><td>${fmtDate(h.occurredAt)}<small>${new Date(h.occurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</small></td>
+        <td><span class="pill src ${MOVE_UI[h.kind]?.[1] || ''}">${esc(MOVE_UI[h.kind]?.[0] || h.kind)}</span>${h.status ? `<small>${esc(h.status)}</small>` : ''}</td>
+        <td>${h.link ? `<a href="${esc(h.link)}" data-close-card>${esc(h.refCode)}</a>` : esc(h.refCode) || '—'}</td>
+        <td>${esc(h.partner) || '<span class="muted">—</span>'}${h.location ? `<small>${esc(h.location)}</small>` : ''}${h.note ? `<small>${esc(h.note)}</small>` : ''}</td>
+        <td class="right">${qtyCell(h)}</td><td class="right num">${h.unitPrice === null || h.unitPrice === undefined ? '—' : money(h.unitPrice)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Xuất kho: chuyến giao "Đã giao" · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
+    box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
+  };
+  const chipsBox = dlg.querySelector('[data-filter]');
+  chipsBox.innerHTML = kinds.length > 1 ? [['', 'Tất cả'], ...kinds.map(k => [k, MOVE_UI[k]?.[0] || k])].map(([k, l]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === filter}">${esc(l)}</button>`).join('') : '';
+  chipsBox.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; filter = b.dataset.k; chipsBox.querySelectorAll('[data-k]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render(); });
+  render();
 }
 // ----- hình của dòng (HRC: hình sản phẩm; B2B/VIGIFTS: maquette) – link ảnh hoặc tải ảnh lên, như web cũ
 let imageRow = -1, pendingImage = '';
@@ -1319,7 +1360,7 @@ function renderProducts() {
     const price = productPrice(p), stock = availableStock(p), sel = state.selected.has(p.sku);
     return `<tr>
       <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
-      <td class="first"><span class="prod-cell">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></span></td>
+      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>

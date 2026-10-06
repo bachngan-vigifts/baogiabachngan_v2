@@ -1,9 +1,9 @@
 # Tin nhắn nội bộ
 
-Trang **Tin nhắn** (`#/chat`) dùng để nhân viên nhắn cho nhau. Khách hàng và NCC không dùng được trang này.
+**Nút chat nổi** ở góc dưới bên phải mọi trang mở khung **Tin nhắn** để nhân viên nhắn cho nhau. Bấm thông báo tin nhắn (`#/chat/<id>`) mở đúng cuộc trò chuyện, trang đang xem giữ nguyên. Esc hoặc nút × để đóng. Khách hàng và NCC không dùng được.
 
 ## Dùng
-- **＋ Nhắn tin**: chọn một đồng nghiệp để nhắn 1-1. Mỗi cặp nhân viên chỉ có một cuộc trò chuyện.
+- **＋ Chat**: chọn một đồng nghiệp để nhắn 1-1. Mỗi cặp nhân viên chỉ có một cuộc trò chuyện.
 - **＋ Nhóm**: đặt tên nhóm và chọn thành viên.
 - **Quản lý nhóm** (nút **Thành viên**):
   - Người tạo nhóm hoặc Manager đổi được tên nhóm, thêm hoặc bớt người.
@@ -15,12 +15,12 @@ Trang **Tin nhắn** (`#/chat`) dùng để nhân viên nhắn cho nhau. Khách 
   - Tin chia nhóm theo ngày.
   - Tin liền nhau của cùng một người (cách nhau dưới 5 phút) gộp thành một cụm.
   - Chat 1-1 có dòng "Đã xem" dưới tin mình gửi khi người kia đã đọc.
-- **Tin chưa đọc**: số đỏ ở mục Tin nhắn trên menu, và số trên từng cuộc trò chuyện.
+- **Tin chưa đọc**: số đỏ trên nút chat nổi, và số trên từng cuộc trò chuyện.
 - **Thông báo**: tin mới được đẩy qua Web Push. Tin nhắn không hiện trong chuông thông báo vì đã có hộp thư riêng.
 - **Cập nhật tin mới**: lấy theo chu kỳ, không cần tải lại trang.
   - Cuộc trò chuyện đang mở: 3 giây một lần.
   - Danh sách cuộc trò chuyện: 10 giây một lần.
-  - Số trên menu: 20 giây một lần. Có Web Push thì cập nhật ngay.
+  - Số trên nút chat: 20 giây một lần. Có Web Push thì cập nhật ngay.
 
 ## Cấu trúc
 | Phần | File |
