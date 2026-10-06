@@ -2071,14 +2071,34 @@ async function openOrder(id) {
   // Ngày giao dự kiến nằm ngay ở Lịch giao hàng: nhân viên đổi ngày → đơn (và đơn khách xem) cập nhật theo.
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><label><span>Ngày giao dự kiến</span><input type="date" id="order-expected" value="${esc(o.expectedDeliveryDate || '')}"></label>
       ${duePill(o.expectedDeliveryDate, { fmt: fmtDate })}<button type="button" class="btn secondary small" id="order-expected-save" hidden>Lưu ngày giao</button></div>`)
-    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
+    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}<span class="row-gap">${deliveryButtons(x)}</span><span class="pack-slot" data-pack-slot="${esc(x.id)}" data-pack-status="${esc(x.status)}"></span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
+  loadPackingState(o.id);
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
   $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
   $('#order-payments').innerHTML = d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>';
 }
 document.addEventListener('input', e => { if (e.target.id === 'order-expected') document.getElementById('order-expected-save').hidden = e.target.value === (sales.order.expectedDeliveryDate || ''); });
+/** Ô Lịch giao hàng: tình trạng xuất kho / đóng hàng của từng chuyến (việc của nhóm Kho) + nút yêu cầu kho đóng hàng. */
+async function loadPackingState(orderId) {
+  let packing = [];
+  try { packing = (await api('/tasks/packing?orderId=' + encodeURIComponent(orderId))).packing; } catch { /* chưa có bảng công việc: chỉ ẩn phần này */ return; }
+  for (const slot of document.querySelectorAll('[data-pack-slot]')) {
+    const p = packing.find(x => x.deliveryId === slot.dataset.packSlot), planned = slot.dataset.packStatus === 'planned';
+    slot.innerHTML = p && p.status === 'done' ? `<span class="pill ok" title="${p.completedAt ? 'Lúc ' + new Date(p.completedAt).toLocaleString('vi-VN') : ''}">Kho đã đóng hàng ✓${p.by && !p.auto ? ' · ' + esc(p.by) : ''}</span>`
+      : p && (p.status === 'todo' || p.status === 'in_progress') ? `<a class="pill warn" href="#/tasks/${esc(p.taskId)}">${p.status === 'in_progress' ? 'Kho đang đóng hàng' + (p.by ? ' · ' + esc(p.by) : '') : 'Đã yêu cầu kho đóng hàng'}</a>`
+      : planned ? `<button type="button" class="btn secondary small" data-pack-request="${esc(slot.dataset.packSlot)}" title="Tạo việc Xuất kho & đóng hàng cho nhóm Kho (cả nhóm nhận thông báo)">📦 Yêu cầu kho đóng hàng</button>` : '';
+  }
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-pack-request]'); if (!b) return;
+  const note = prompt('Ghi chú cho kho (tuỳ chọn) – ví dụ: bọc chống sốc, dán tem, giao trước 9h:', '');
+  if (note === null) return;
+  b.disabled = true;
+  try { await api('/tasks/packing', 'POST', { deliveryId: b.dataset.packRequest, note }); toast('Đã gửi yêu cầu xuất kho & đóng hàng cho nhóm Kho.'); loadPackingState(sales.order.id); tasksView().badge(); }
+  catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
+});
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
 async function verifyAndConfirmOrder() {
   const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';

@@ -7,7 +7,8 @@ import { TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES } from './domain/task-conf
  * Công việc: việc TỰ SINH từ nghiệp vụ (báo giá chờ duyệt, check tồn, đơn chờ xác nhận, lên lịch giao, HĐKT chờ ký,
  * công nợ quá hạn, đơn nhập hàng…) và việc GIAO THỦ CÔNG giữa nhân viên.
  * - Việc tự sinh có `auto_key` (duy nhất) = quy tắc + id chứng từ; tự hoàn thành khi chứng từ hết cần xử lý.
- * - `assignee_id` = người nhận (trống = chưa giao, Manager thấy); `created_by` = người giao (trống = hệ thống).
+ * - `assignee_id` = người nhận; trống + `assignee_position` = giao cho nhóm (Kho, Kế toán…); trống cả hai = chưa giao (Manager thấy).
+ * - `created_by` = người giao (trống = hệ thống).
  */
 export const tasks = pgTable('tasks', {
   id: text('id').primaryKey(),
@@ -21,6 +22,8 @@ export const tasks = pgTable('tasks', {
   link: text('link').notNull().default(''),
   autoKey: text('auto_key'),
   assigneeId: text('assignee_id').references(() => employees.id),
+  /** Giao cho nhóm (id chức vụ, vd. `warehouse` = Kho) khi chưa có người nhận cụ thể; người trong nhóm bấm "Nhận việc". */
+  assigneePosition: text('assignee_position'),
   createdBy: text('created_by').references(() => employees.id),
   /** Hạn hoàn thành: ngày (YYYY-MM-DD) + giờ tuỳ chọn (HH:MM). */
   dueDate: text('due_date'),
@@ -34,6 +37,7 @@ export const tasks = pgTable('tasks', {
 }, t => [
   uniqueIndex('idx_tasks_auto_key').on(t.autoKey),
   index('idx_tasks_assignee').on(t.assigneeId, t.status, t.dueDate),
+  index('idx_tasks_team').on(t.assigneePosition, t.status),
   index('idx_tasks_creator').on(t.createdBy, t.status),
   index('idx_tasks_status_due').on(t.status, t.dueDate),
   index('idx_tasks_source').on(t.source, t.sourceId),
