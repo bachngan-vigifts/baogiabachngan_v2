@@ -1,0 +1,39 @@
+/** Quy tắc thuần của trang khách hàng (không DB/HTTP). */
+import { AppError } from '../../../core/errors.ts';
+import type { CustomerDiscounts } from '../../quotes/domain/quote-math.ts';
+
+export const DISCOUNT_KEYS = ['minhLong', 'lys', 'lock'] as const;
+export const DISCOUNT_LABELS: Record<typeof DISCOUNT_KEYS[number], string> = { minhLong: 'Minh Long', lys: 'Minh Long - Lys', lock: 'Lock&Lock' };
+
+/** Chiết khấu riêng theo nhãn hàng: mỗi nhãn 0..100%, bỏ trống = 0. */
+export function cleanDiscounts(v: unknown): CustomerDiscounts {
+  if (v === undefined || v === null) return {};
+  if (typeof v !== 'object' || Array.isArray(v)) throw new AppError(400, 'Chiết khấu không hợp lệ.');
+  const out: CustomerDiscounts = {};
+  for (const k of DISCOUNT_KEYS) {
+    const raw = (v as Record<string, unknown>)[k];
+    if (raw === undefined || raw === null || raw === '') continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 100) throw new AppError(400, `Chiết khấu ${DISCOUNT_LABELS[k]} phải từ 0 đến 100%.`);
+    if (n > 0) out[k] = Math.round(n * 100) / 100;
+  }
+  return out;
+}
+export const parseDiscounts = (s: string | null | undefined): CustomerDiscounts => { try { return cleanDiscounts(JSON.parse(s || '{}')); } catch { return {}; } };
+
+/** Trường chỉ nội bộ công ty, không bao giờ gửi cho khách (giá nhập, chi phí in gia công, ghi chú nội bộ...). */
+const PRIVATE_DOC_KEYS = ['printing', 'shipping', 'contractDocument', 'careStatus', 'careDueDate', 'careClosedAt', 'careNote', 'careAssigneeId', 'discountMode'];
+const PRIVATE_ROW_KEYS = ['purchaseDiscount', 'costPrice', 'printing', 'pricePolicy', 'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight'];
+export function publicQuote(data: Record<string, any>) {
+  const out: Record<string, any> = { ...data };
+  for (const k of PRIVATE_DOC_KEYS) delete out[k];
+  out.rows = (data.rows || []).map((r: Record<string, any>) => { const x = { ...r }; for (const k of PRIVATE_ROW_KEYS) delete x[k]; return x; });
+  return out;
+}
+
+/** Số báo giá kế tiếp `<prefix><yyyymmdd>_<nnn>` trong các số đã dùng. */
+export function nextQuoteNo(prefix: string, ymd: string, used: readonly string[]) {
+  const head = `${prefix}${ymd}_`;
+  const max = Math.max(0, ...used.filter(n => n.startsWith(head)).map(n => parseInt(n.slice(head.length), 10) || 0));
+  return head + String(max + 1).padStart(3, '0');
+}

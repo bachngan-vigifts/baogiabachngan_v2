@@ -5,6 +5,7 @@ import { registerCatalogRoutes } from '../modules/catalog/api/routes.ts';
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
+import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 export function createAppRouter() {
   const router = createStaffRouter();
   registerQuoteRoutes(router);
@@ -13,5 +14,6 @@ export function createAppRouter() {
   registerSapoSyncRoutes(router);
   registerSalesRoutes(router);
   registerPrintingRoutes(router);
+  registerPortalRoutes(router);
   return router;
 }

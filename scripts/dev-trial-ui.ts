@@ -36,6 +36,8 @@ await client.exec(`
   UPDATE products SET image_url = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAIAAAADnC86AAAAa0lEQVR4nO3WwQ3AIAxDUVbh3P136FbpBC1ORMFIP/LZTzkl7e7XljRgYGDgLXBErIPjff6CP8gCr8KiqtsSnFJF2xguqIoN7AKX1aHtujHwSrhmDzu94aytFNrfY4VP9Zzzc80KMDDw+fADM4kbDQFTe8YAAAAASUVORK5CYII=' WHERE sku = 'LHC4125';
   INSERT INTO product_prices (sku, policy_id, price) VALUES ('LHC4125', 'le', 185000), ('LHC4125', 'si', 166000), ('ML-LY-02', 'le', 320000), ('LYS-500', 'le', 145000);
   INSERT INTO product_stock (sku, warehouse_id, quantity, updated_at) VALUES ('LHC4125', 'q1', 120, now()::text), ('ML-LY-02', 'q1', 6, now()::text);
+  INSERT INTO sapo_customers (id, name, contact, phone, email, address, search, tax_code, customer_code, source_version, synced_at) VALUES
+    ('9001', 'Công ty Mẫu An Phát', 'Chị Mai', '0909000111', 'mai@anphat.test', '12 Nguyễn Huệ, Q1', 'cong ty mau an phat', '0300000001', 'AP01', 0, now()::text);
 `);
 const db = drizzle(client, { schema }) as unknown as AnyDb;
 const router = createAppRouter();
@@ -65,7 +67,7 @@ createServer(async (req, res) => {
   if (!file.startsWith(uiDir) || !existsSync(file)) { res.writeHead(404); res.end('Không tìm thấy'); return; }
   let body: string | Buffer = readFileSync(file);
   // Trỏ giao diện về API trên máy này thay cho Edge Function.
-  if (file.endsWith('index.html')) body = body.toString().replace('<head>', `<head><meta name="bn-api" content="${ORIGIN}/api/staff">`);
+  if (file.endsWith('.html')) body = body.toString().replace('<head>', `<head><meta name="bn-api" content="${ORIGIN}/api/staff">`);
   res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream' });
   res.end(body);
 }).listen(PORT, () => console.log(`Giao diện dùng thử: ${ORIGIN} (mgr@x.vn / mat-khau-12345)`));

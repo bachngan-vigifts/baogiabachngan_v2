@@ -3,8 +3,8 @@ import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
 import { Router, json, readJson, type RouteContext } from '../../../core/http/router.ts';
 import { checkMethodAndOrigin } from '../../../core/http/security.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
-import { FORBIDDEN_MESSAGE, SUPPLIER_FORBIDDEN_MESSAGE, canAccessArea, type Area } from '../domain/area-policy.ts';
-import { isSupplier } from '../domain/roles.ts';
+import { CUSTOMER_FORBIDDEN_MESSAGE, FORBIDDEN_MESSAGE, SUPPLIER_FORBIDDEN_MESSAGE, canAccessArea, type Area } from '../domain/area-policy.ts';
+import { isCustomer, isSupplier } from '../domain/roles.ts';
 import { RATE_LIMITS, SESSION_LIFETIME_SECONDS, clearedSessionCookie, isToken, newToken, publicMember, readSessionToken, sessionCookie, sha256Hex, tooManyAttempts, type MemberRow } from '../domain/session.ts';
 import * as repo from '../repo/auth-repo.ts';
 import { registerMemberRoutes } from './member-routes.ts';
@@ -44,7 +44,7 @@ export async function authorizeRoute(c: Ctx): Promise<void> {
   const tokenHash = sha256Hex(token);
   const member = await repo.findSessionMember(c.env.db, tokenHash, now(c));
   if (!member) throw new AppError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-  if (!canAccessArea(member, area)) throw new AppError(403, isSupplier(member) ? SUPPLIER_FORBIDDEN_MESSAGE : FORBIDDEN_MESSAGE[area]);
+  if (!canAccessArea(member, area)) throw new AppError(403, isSupplier(member) ? SUPPLIER_FORBIDDEN_MESSAGE : isCustomer(member) ? CUSTOMER_FORBIDDEN_MESSAGE : FORBIDDEN_MESSAGE[area]);
   c.state.session = { member, tokenHash } satisfies SessionState;
 }
 

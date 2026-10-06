@@ -36,6 +36,20 @@
       "when": 1791288233925,
       "tag": "0008_quote_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791291188243,
+      "tag": "0009_sapo_inventory_docs",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791292019176,
+      "tag": "0011_customer_accounts",
+      "breakpoints": true
     }
   ]
 }

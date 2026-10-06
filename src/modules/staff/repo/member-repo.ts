@@ -12,12 +12,15 @@ export async function listMembers(db: AnyDb) {
     id: employees.id, name: employees.name, email: employees.email, phone: employees.phone, role: employees.role,
     positionId: employees.positionId, active: employees.active,
     activated: sql<number>`CASE WHEN ${credentials.passwordHash} IS NULL THEN 0 ELSE 1 END`,
-  }).from(employees).leftJoin(credentials, eq(credentials.memberId, employees.id)).orderBy(asc(employees.id));
-  const list = await db.select({ id: positions.id, name: positions.name }).from(positions).orderBy(asc(positions.name));
+  }).from(employees).leftJoin(credentials, eq(credentials.memberId, employees.id)).where(ne(employees.role, 'customer')).orderBy(asc(employees.id));
+  // Tài khoản khách hàng quản lý ở trang Khách hàng, không nằm trong danh sách nhân viên / chức vụ chọn được.
+  const list = await db.select({ id: positions.id, name: positions.name }).from(positions).where(ne(positions.id, 'customer')).orderBy(asc(positions.name));
   return { members: members.map(m => ({ ...m, active: m.active ? 1 : 0 })), positions: list };
 }
 
 export const positionExists = async (db: AnyDb, id: string) => (await db.select({ id: positions.id }).from(positions).where(eq(positions.id, id)).limit(1)).length > 0;
+/** Tài khoản khách hàng (không sửa/xoá ở trang Nhân viên). */
+export const isCustomerMember = async (db: AnyDb, id: unknown) => typeof id === 'string' && (await db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, id), eq(employees.role, 'customer'))).limit(1)).length > 0;
 
 /** Email đã có người dùng chưa (không phân biệt hoa/thường như bản cũ), loại trừ một nhân viên khi sửa. */
 export async function emailTaken(db: AnyDb, email: string, excludeId?: string) {

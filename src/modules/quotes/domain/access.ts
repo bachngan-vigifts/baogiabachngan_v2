@@ -1,4 +1,4 @@
-import { isSupplier, type Role } from '../../staff/domain/roles.ts';
+import { isCustomer, isSupplier, type Role } from '../../staff/domain/roles.ts';
 
 /**
  * Phân quyền báo giá. Quy tắc (chốt 05/10/2026):
@@ -19,7 +19,8 @@ export interface QuoteOwnership { id: string; creatorId: string; assigneeId?: st
 export interface QuoteShareTarget { targetType: 'member' | 'position'; targetId: string; permission: 'view' | 'edit' }
 
 /** Người dùng không được chạm vào báo giá nào. */
-const barred = (v: Viewer | null | undefined): v is null | undefined => !v?.active || isSupplier(v);
+// NCC và khách hàng không dùng phạm vi báo giá của nhân viên (khách xem báo giá của mình qua API trang khách hàng).
+const barred = (v: Viewer | null | undefined): v is null | undefined => !v?.active || isSupplier(v) || isCustomer(v);
 
 const matches = (viewer: Viewer, s: QuoteShareTarget): boolean =>
   (s.targetType === 'member' && s.targetId === viewer.id)

@@ -27,7 +27,7 @@ export const sessionCookie = (value: string, maxAgeSeconds = SESSION_LIFETIME_SE
   `${SESSION_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
 export const clearedSessionCookie = (): string => sessionCookie('', 0);
 
-export interface MemberRow { id: string; name: string; phone: string | null; email: string; role: 'employee' | 'manager' | 'supplier'; positionId: string | null; positionName: string | null }
+export interface MemberRow { id: string; name: string; phone: string | null; email: string; role: 'employee' | 'manager' | 'supplier' | 'customer'; positionId: string | null; positionName: string | null }
 /** Hồ sơ trả cho trình duyệt (không có gì nhạy cảm). Cùng hình dạng bản cũ. */
 export const publicMember = (m: MemberRow) => ({ id: m.id, name: m.name, phone: m.phone || '', email: m.email, role: m.role, positionId: m.positionId, position: m.positionName });
 

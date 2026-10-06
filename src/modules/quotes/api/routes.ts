@@ -1,4 +1,4 @@
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -31,12 +31,14 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
   router.get('/quotes', async c => {
     const viewer = (c.state.session as SessionState).member;
     const rows = await c.env.db.select().from(quotations).where(predicate(quotationScope(viewer))).orderBy(desc(quotations.updatedAt)).limit(100);
+    const customerCreators = new Set(rows.length ? (await c.env.db.select({ id: employees.id }).from(employees)
+      .where(and(eq(employees.role, 'customer'), inArray(employees.id, [...new Set(rows.map(r => r.creatorId))])))).map(e => e.id) : []);
     return json({ quotes: rows.map(r => {
       const data = JSON.parse(r.data);
       return {
         id: r.id, quoteNo: r.quoteNo, customer: r.customer, quoteType: r.quoteType, revision: r.revision, updatedAt: r.updatedAt, total: totals(data).total,
         quoteDate: r.quoteDate, createdAt: r.createdAt, contact: data.contact || '', phone: data.phone || '', lineCount: data.rows.length, mine: r.creatorId === viewer.id,
-        approvalStatus: r.approvalStatus,
+        approvalStatus: r.approvalStatus, fromCustomer: customerCreators.has(r.creatorId),
       };
     }) });
   }, 'business');
@@ -51,13 +53,21 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const [row] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, c.params.id!), predicate(quotationScope(viewer)))).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy báo giá.');
     const [approver] = row.approvedBy ? await c.env.db.select({ name: employees.name }).from(employees).where(eq(employees.id, row.approvedBy)).limit(1) : [];
-    return json({ id: row.id, revision: row.revision, data: JSON.parse(row.data), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '' });
+    const [creator] = await c.env.db.select({ role: employees.role, name: employees.name }).from(employees).where(eq(employees.id, row.creatorId)).limit(1);
+    const fromCustomer = creator?.role === 'customer';
+    return json({ id: row.id, revision: row.revision, data: JSON.parse(row.data), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',
+      fromCustomer, canApprove: isManager(viewer) || (fromCustomer && row.assigneeId === viewer.id) });
   }, 'business');
   /** Manager duyệt đúng phiên bản đang xem (phiên bản đổi → 409). Duyệt không đổi nội dung nên không tăng `revision`. */
   router.post('/quotes/:id/approve', async c => {
     const viewer = (c.state.session as SessionState).member;
-    if (!isManager(viewer)) throw new AppError(403, 'Chỉ Manager được duyệt báo giá.');
     const body = await readJson(c.req, 1_024);
+    // Manager duyệt mọi báo giá; nhân viên phụ trách duyệt (xác nhận) báo giá do KHÁCH gửi từ trang khách hàng.
+    if (!isManager(viewer)) {
+      const [q] = await c.env.db.select({ assigneeId: quotations.assigneeId, creatorRole: employees.role }).from(quotations)
+        .innerJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.id, c.params.id!)).limit(1);
+      if (!q || q.creatorRole !== 'customer' || q.assigneeId !== viewer.id) throw new AppError(403, 'Chỉ Manager được duyệt báo giá.');
+    }
     if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
     const now = new Date().toISOString();
     const rows = await c.env.db.update(quotations).set({ approvalStatus: 'approved', approvedAt: now, approvedBy: viewer.id })

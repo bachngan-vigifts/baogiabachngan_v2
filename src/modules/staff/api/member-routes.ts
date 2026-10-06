@@ -3,11 +3,13 @@ import { Router, json, readJson, type RouteContext } from '../../../core/http/ro
 import { ACTIVATION_TTL_SECONDS, SELF_MESSAGES, activationLink, assertNotSelf, cleanMemberUpdate, cleanNewMember, cleanPhone, memberRole, newMemberId } from '../domain/members.ts';
 import { newToken, sha256Hex } from '../domain/session.ts';
 import * as repo from '../repo/member-repo.ts';
+import { CUSTOMER_POSITION_ID } from '../domain/roles.ts';
 import type { SessionState, StaffEnv } from './auth-routes.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const now = (c: Ctx) => (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))();
 const actor = (c: Ctx) => (c.state.session as SessionState).member;
+const CUSTOMER_MSG = 'Tài khoản khách hàng được tạo và quản lý ở trang Khách hàng.';
 
 /** Quản lý nhân viên – khu vực 'admin' (chỉ Manager; chốt quyền đã chạy trước handler). Port từ `/admin/member*` bản cũ. */
 export function registerMemberRoutes(router: Router<StaffEnv>): void {
@@ -16,6 +18,7 @@ export function registerMemberRoutes(router: Router<StaffEnv>): void {
   router.post('/admin/members', async c => {
     const body = await readJson(c.req, 4096);
     const input = cleanNewMember(body);
+    if (input.positionId === CUSTOMER_POSITION_ID) throw new AppError(400, CUSTOMER_MSG);
     if (!await repo.positionExists(c.env.db, input.positionId)) throw new AppError(400, 'Chức vụ không hợp lệ.');
     if (await repo.emailTaken(c.env.db, input.email)) throw new AppError(409, 'Email này đã có tài khoản. Vui lòng kiểm tra danh sách nhân viên.');
     const id = newMemberId(), token = newToken(), role = memberRole(input.positionId);
@@ -54,6 +57,7 @@ export function registerMemberRoutes(router: Router<StaffEnv>): void {
     if (await repo.isSapoLinked(c.env.db, body.id)) throw new AppError(409, 'Hồ sơ này đã hợp nhất. Vui lòng chỉnh hồ sơ web đang sử dụng.');
     assertNotSelf(actor(c).id, body.id, SELF_MESSAGES.update);
     const input = cleanMemberUpdate(body);
+    if (input.positionId === CUSTOMER_POSITION_ID || await repo.isCustomerMember(c.env.db, input.id)) throw new AppError(400, CUSTOMER_MSG);
     if (!await repo.positionExists(c.env.db, input.positionId)) throw new AppError(400, 'Chức vụ không hợp lệ.');
     if (await repo.emailTaken(c.env.db, input.email, input.id)) throw new AppError(409, 'Email này đã có tài khoản.');
     const role = memberRole(input.positionId);

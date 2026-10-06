@@ -59,6 +59,35 @@ async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string |
   }
 }
 
+type QuoteRow = typeof quotations.$inferSelect;
+/**
+ * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
+ * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
+ */
+export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string }) {
+  const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
+    .where(and(eq(salesOrders.quoteId, quote.id), ne(salesOrders.status, 'cancelled'))).limit(1);
+  if (existing) throw new AppError(409, `Báo giá này đã có đơn ${existing.orderNo}.`, 'ORDER_EXISTS');
+  const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
+  if (!lines.length) throw new AppError(400, 'Báo giá chưa có dòng sản phẩm nào có số lượng.');
+  const t = orderTotals(lines), today = vietnamDate().iso, now = nowIso(), id = crypto.randomUUID();
+  const customerId = data.customerId && (await db.select({ id: customers.id }).from(customers).where(eq(customers.id, data.customerId)).limit(1)).length ? data.customerId : null;
+  await db.transaction(async tx => {
+    const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
+    await tx.insert(salesOrders).values({
+      id, orderNo: nextDocNo('DH', today, used), quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
+      customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
+      taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
+      ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: today,
+      expectedDeliveryDate: isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note, 2000), createdAt: now, updatedAt: now,
+    });
+    await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
+    // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
+    await tx.insert(paymentSchedules).values({ id: crypto.randomUUID(), orderId: id, kind: 'balance', amount: t.total, dueDate: null, note: 'Thanh toán khi giao hàng', createdAt: now });
+  });
+  return id;
+}
+
 export function registerSalesRoutes(router: Router<StaffEnv>) {
   // ================= ĐƠN ĐẶT HÀNG =================
   router.get('/orders', async c => {
@@ -99,26 +128,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
-    const [existing] = await c.env.db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
-      .where(and(eq(salesOrders.quoteId, quoteId), ne(salesOrders.status, 'cancelled'))).limit(1);
-    if (existing) throw new AppError(409, `Báo giá này đã có đơn ${existing.orderNo}.`, 'ORDER_EXISTS');
-    const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
-    if (!lines.length) throw new AppError(400, 'Báo giá chưa có dòng sản phẩm nào có số lượng.');
-    const t = orderTotals(lines), today = vietnamDate().iso, now = nowIso(), id = crypto.randomUUID();
-    const customerId = data.customerId && (await c.env.db.select({ id: customers.id }).from(customers).where(eq(customers.id, data.customerId)).limit(1)).length ? data.customerId : null;
-    await c.env.db.transaction(async tx => {
-      const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
-      await tx.insert(salesOrders).values({
-        id, orderNo: nextDocNo('DH', today, used), quoteId, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
-        customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
-        taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
-        ownerId: quote.assigneeId ?? quote.creatorId, createdBy: me.id, orderDate: today,
-        expectedDeliveryDate: isDate(data.deliveryDate) ? data.deliveryDate : null, status: 'confirmed', ...t, note: '', createdAt: now, updatedAt: now,
-      });
-      await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
-      // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
-      await tx.insert(paymentSchedules).values({ id: crypto.randomUUID(), orderId: id, kind: 'balance', amount: t.total, dueDate: null, note: 'Thanh toán khi giao hàng', createdAt: now });
-    });
+    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'confirmed' });
     return json({ id }, 201);
   }, 'business');
 
@@ -131,7 +141,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
       if (Number(paid?.n) > 0 || lines.some(l => l.deliveredQty > 0)) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
     }
-    await c.env.db.update(salesOrders).set({ status, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+    if (status === 'confirmed' && order.status !== 'draft') throw new AppError(409, 'Chỉ xác nhận được đơn đang chờ xác nhận.');
+    await c.env.db.transaction(async tx => {
+      await tx.update(salesOrders).set({ status, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+      // Khách đặt hàng thẳng (báo giá chưa duyệt): nhân viên xác nhận đơn = duyệt luôn báo giá của đơn.
+      if (status === 'confirmed' && order.quoteId)
+        await tx.update(quotations).set({ approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: viewer(c).id })
+          .where(and(eq(quotations.id, order.quoteId), eq(quotations.approvalStatus, 'pending')));
+    });
     return json({ ok: true });
   }, 'business');
 

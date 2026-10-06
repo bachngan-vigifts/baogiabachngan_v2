@@ -81,7 +81,7 @@ export const SNAPSHOT_COLUMNS = ['sku', 'name', 'brand', 'pattern', 'unit', 'ima
   'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight', 'stockUpdatedAt'] as const;
 
 /** Phiên bản danh mục: đổi khi sản phẩm, giá hoặc tồn thay đổi (đồng bộ Sapo / nhập file). Tính bằng vài phép gộp, rất nhẹ. */
-async function snapshotVersion(db: StaffEnv['db']) {
+export async function snapshotVersion(db: StaffEnv['db']) {
   const [[p], [pr], [st], [ver]] = await Promise.all([
     db.select({ n: count(), at: sql<string>`coalesce(max(${products.updatedAt}), '')` }).from(products).where(eq(products.active, true)),
     db.select({ n: count(), sum: sql<string>`coalesce(sum(${productPrices.price}), 0)::text` }).from(productPrices),
