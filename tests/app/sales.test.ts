@@ -31,7 +31,7 @@ test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòn
   assert.deepEqual(lines, [{ lineNo: 1, sku: 'L1', name: 'Ly', unit: 'cái', qty: 10, unitPrice: 95000, taxRate: 10, amount: 950000 }]);
   // Phiếu thu trừ vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã qua hạn là quá hạn.
   const r = receivable([{ amount: 300, dueDate: '2026-10-01' }, { amount: 700, dueDate: null }], [{ amount: 100 }], '2026-10-06');
-  assert.deepEqual(r, { due: 1000, paid: 100, balance: 900, overdue: 200, nextDueDate: null, status: 'overdue' });
+  assert.deepEqual(r, { due: 1000, paid: 100, balance: 900, overdue: 200, nextDueDate: null, status: 'overdue', deposit: 0, depositPaid: 0, payState: 'overdue' });
   assert.deepEqual(contractSchedules(1000, 30, '2026-10-06').map(s => [s.kind, s.amount, s.dueDate]), [['deposit', 300, '2026-10-06'], ['balance', 700, null]]);
 });
 
@@ -53,7 +53,7 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.equal(d.order.customerId, '1001'); assert.equal(d.order.quoteNo, 'B2B_BG20261006_001');
   assert.equal(d.order.subtotal, 23_000_000); assert.equal(d.order.tax, 1_840_000); assert.equal(d.order.total, 24_840_000);
   assert.equal(d.lines.length, 2); assert.equal(d.lines[0].unitPrice, 180000);
-  assert.deepEqual(d.receivable, { due: 24_840_000, paid: 0, balance: 24_840_000, overdue: 0, nextDueDate: null, status: 'open' });
+  assert.deepEqual(d.receivable, { due: 24_840_000, paid: 0, balance: 24_840_000, overdue: 0, nextDueDate: null, status: 'open', deposit: 0, depositPaid: 0, payState: 'unpaid' });
   // Người khác (không phụ trách) không thấy; Manager thấy.
   const other = (await call('/login', '', 'POST', { email: 'new@x.vn', password: PASSWORD })).cookie; // chưa kích hoạt → không đăng nhập được
   assert.equal(other, '');
@@ -98,6 +98,11 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.equal(debts.receivables.length, 1);
   assert.equal(debts.receivables[0].paid, 7_452_000); assert.equal(debts.receivables[0].balance, 17_388_000);
   assert.equal(debts.totals.balance, 17_388_000);
+  // Danh sách đơn / HĐKT hiện trạng thái thanh toán + đặt cọc.
+  const listed = (await call('/orders', emp)).data.orders.find((x: any) => x.id === o.data.id);
+  assert.deepEqual([listed.debtCounts, listed.receivable.payState, listed.receivable.deposit, listed.receivable.depositPaid], [true, 'deposit_paid', 7_452_000, 7_452_000]);
+  const kList = (await call('/contracts', emp)).data.contracts.find((x: any) => x.orderId === o.data.id);
+  assert.deepEqual([kList.debtCounts, kList.receivable.payState, kList.receivable.balance], [true, 'deposit_paid', 17_388_000]);
   assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 409);
   assert.equal((await call('/orders?q=hoang long', emp)).data.orders[0].contract.contractNo, k.data.contractNo);
   assert.equal((await call('/orders', ncc)).status, 403);

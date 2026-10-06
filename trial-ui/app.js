@@ -1795,6 +1795,17 @@ const ORDER_STATUS = { draft: ['Chờ xác nhận', 'warn'], confirmed: ['Đã x
 const CONTRACT_STATUS = { draft: ['Chưa ký', 'warn'], signed: ['Đã ký', 'info'], completed: ['Hoàn tất', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
 const DELIVERY_STATUS = { planned: ['Chờ giao', 'warn'], in_transit: ['Đang giao', 'info'], delivered: ['Đã giao', 'ok'], failed: ['Giao lỗi', 'danger'], cancelled: ['Đã huỷ', 'muted'] };
 const DEBT_STATUS = { open: ['Còn nợ', 'warn'], overdue: ['Quá hạn', 'danger'], paid: ['Đã thu đủ', 'ok'], none: ['—', 'muted'] };
+/** Trạng thái thanh toán / đặt cọc của đơn (danh sách đơn và HĐKT). */
+const PAY_STATE = { unpaid: ['Chưa thanh toán', 'warn'], deposit_due: ['Chờ đặt cọc', 'warn'], deposit_paid: ['Đã cọc', 'info'], partial: ['Đã thu một phần', 'info'],
+  overdue: ['Quá hạn', 'danger'], paid: ['Đã thanh toán đủ', 'ok'], none: ['Chưa có kỳ thu', 'muted'] };
+function payCell(r, counts, orderStatus) {
+  if (orderStatus === 'cancelled') return '<span class="muted">Đơn đã huỷ</span>';
+  if (!counts) return '<span class="pill muted">Chưa phát sinh</span><small>Đơn chờ xác nhận</small>';
+  if (!r) return '—';
+  const sub = r.payState === 'paid' ? `Đã thu ${money(r.paid)}`
+    : [r.deposit > 0 ? `Cọc ${money(r.depositPaid)}/${money(r.deposit)}` : r.paid > 0 ? `Đã thu ${money(r.paid)}` : '', `Còn ${money(r.balance)}`].filter(Boolean).join(' · ');
+  return `${pill(PAY_STATE, r.payState)}<small>${sub}</small>${r.overdue ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}`;
+}
 const pill = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
 const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
 const debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
@@ -1815,19 +1826,19 @@ async function loadOrders() {
       <td>${pill(ORDER_STATUS, o.status)}</td>
       <td>${o.contract ? esc(o.contract.contractNo) + `<small>${pill(CONTRACT_STATUS, o.contract.status)}</small>` : '<span class="muted">Chưa có</span>'}</td>
       <td class="right num">${money(o.total)}</td>
-      <td class="right num">${o.receivable ? money(o.receivable.balance) : '—'}${o.receivable?.overdue ? `<small class="danger-text">Quá hạn ${money(o.receivable.overdue)}</small>` : ''}</td></tr>`),
+      <td>${payCell(o.receivable, o.debtCounts, o.status)}</td></tr>`),
       'Chưa có đơn đặt hàng. Mở một báo giá đã lưu và bấm "Tạo đơn đặt hàng".');
   } catch (e) { listError('orders', e); }
 }
 // ----- danh sách HĐKT
 async function loadContracts() {
-  $('#contracts-list').innerHTML = skeleton(7);
+  $('#contracts-list').innerHTML = skeleton(8);
   try {
     const d = await api('/contracts?q=' + encodeURIComponent($('#contracts-search').value));
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
       <td><b>${esc(k.contractNo)}</b></td><td>${esc(k.customerName)}<small>${orderLink(k.orderId, k.orderNo)}${k.quoteNo ? ' · ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td></tr>`),
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td></tr>`),
       'Chưa có HĐKT. Mở một đơn đặt hàng và bấm "Lập HĐKT".');
   } catch (e) { listError('contracts', e); }
 }

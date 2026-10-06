@@ -112,7 +112,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       receivableOf(c.env.db, ids),
       ids.length ? c.env.db.select({ orderId: salesContracts.orderId, id: salesContracts.id, contractNo: salesContracts.contractNo, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, ids)) : [],
     ]);
-    return json({ orders: rows.map(r => ({ ...r, receivable: debts.get(r.id), contract: contracts.find(x => x.orderId === r.id) ?? null })) });
+    return json({ orders: rows.map(r => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
+      // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
+      return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }) });
   }, 'business');
 
   router.get('/orders/:id', async c => {
@@ -170,11 +172,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
 
   // ================= HĐKT =================
   router.get('/contracts', async c => {
-    const rows = await c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo })
+    const rows = await c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
       .where(and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.orderNo, salesOrders.customerName), c.url.searchParams.get('q'))))
       .orderBy(desc(salesContracts.createdAt)).limit(200);
-    return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo })) });
+    const debts = await receivableOf(c.env.db, [...new Set(rows.map(r => r.contract.orderId))]);
+    return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo, orderStatus: r.orderStatus,
+      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })) });
   }, 'business');
 
   /** Lập HĐKT cho đơn: cấp số theo `contract_counters` (như web cũ), lập lại kỳ phải thu = cọc + phần còn lại. */
