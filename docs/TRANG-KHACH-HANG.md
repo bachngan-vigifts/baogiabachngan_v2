@@ -44,7 +44,7 @@ Các API trang khách hàng, khu vực `customer-portal`:
 | Route | Việc |
 | --- | --- |
 | `GET /portal/me` | Khách hàng, chiết khấu riêng, nhân viên phụ trách |
-| `GET /portal/catalog?v=` | Danh mục: giá bán lẻ và % chiết khấu theo nhãn, **không có tồn kho** |
+| `GET /portal/catalog?v=` | Danh mục: **chỉ thương hiệu Minh Long, Minh Long I, Minh Long - LYS, LYS, Lock&Lock** (thương hiệu khác bị chặn cả khi tạo báo giá / đặt hàng / check tồn); giá bán lẻ và % chiết khấu theo nhãn, **không có tồn kho** |
 | `GET /portal/quotes` · `GET /portal/quotes/:id` | Báo giá của khách, đã bỏ các trường nội bộ |
 | `POST /portal/quotes {items:[{sku,qty}], note, deliveryDate, order?}` | Yêu cầu báo giá; `order: true` là đặt hàng ngay |
 | `POST /portal/quotes/:id/order` | Xác nhận đặt hàng từ báo giá đã duyệt |

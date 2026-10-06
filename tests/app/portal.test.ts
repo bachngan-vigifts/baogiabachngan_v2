@@ -25,9 +25,11 @@ async function setup() {
   await db.insert(products).values([
     { sku: 'ML-01', name: 'Bộ trà Minh Long', brand: 'Minh Long', unit: 'bộ', taxable: true, taxOut: 8, updatedAt: t },
     { sku: 'LL-01', name: 'Bình giữ nhiệt', brand: 'Lock&Lock', unit: 'cái', taxable: true, taxOut: 10, updatedAt: t },
-    { sku: 'NOPRICE', name: 'Chưa có giá', brand: 'Khác', updatedAt: t },
+    { sku: 'NOPRICE', name: 'Chưa có giá', brand: 'Minh Long - LYS', updatedAt: t },
+    { sku: 'HC-01', name: 'Nồi Healthy Cook', brand: 'Healthy Cook', unit: 'cái', updatedAt: t },
+    { sku: 'LYS-01', name: 'Đĩa LYS', brand: 'LYS', unit: 'cái', updatedAt: t },
   ]);
-  await db.insert(productPrices).values([{ sku: 'ML-01', policyId: 'le', price: 1_000_000 }, { sku: 'ML-01', policyId: 'si', price: 800_000 }, { sku: 'LL-01', policyId: 'le', price: 200_000 }]);
+  await db.insert(productPrices).values([{ sku: 'ML-01', policyId: 'le', price: 1_000_000 }, { sku: 'ML-01', policyId: 'si', price: 800_000 }, { sku: 'LL-01', policyId: 'le', price: 200_000 }, { sku: 'HC-01', policyId: 'le', price: 300_000 }, { sku: 'LYS-01', policyId: 'le', price: 90_000 }]);
   await db.insert(productStock).values({ sku: 'ML-01', warehouseId: 'k1', quantity: 9, updatedAt: t });
   return { db, call, login, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
 }
@@ -71,6 +73,10 @@ test('tài khoản khách: nhân viên cấp (không đặt được CK), Manage
   assert.deepEqual([row('ML-01').price, row('ML-01').discount, row('LL-01').discount], [1_000_000, 10, 5]);
   assert.ok(!JSON.stringify(cat).includes('Kho Q1') && !cat.columns.includes('stock'), 'không lộ tồn kho');
   assert.equal((await call('/portal/catalog?v=' + cat.version, k.cookie)).data.unchanged, true);
+  // Chỉ thương hiệu Minh Long / Minh Long I / Minh Long - LYS / LYS / Lock&Lock; thương hiệu khác bị chặn cả khi gọi thẳng API.
+  assert.deepEqual(cat.products.map((p: any[]) => p[0]).sort(), ['LL-01', 'LYS-01', 'ML-01', 'NOPRICE']);
+  assert.equal((await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'HC-01', qty: 1 }] })).status, 400, 'thương hiệu bị chặn');
+  assert.equal((await call('/portal/stock-requests', k.cookie, 'POST', { items: [{ sku: 'HC-01', qty: 1 }] })).status, 400, 'không hỏi tồn thương hiệu bị chặn');
 
   // Khoá tài khoản: phiên bị huỷ.
   assert.equal((await call('/customer-accounts/' + k.memberId, emp, 'PUT', { active: false })).status, 200);

@@ -20,7 +20,7 @@ import { createOrderFromQuote } from '../../sales/api/routes.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { cleanDiscounts, nextQuoteNo, parseDiscounts, publicQuote } from '../domain/portal.ts';
+import { cleanDiscounts, nextQuoteNo, parseDiscounts, portalBrandAllowed, publicQuote } from '../domain/portal.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const member = (c: Ctx) => (c.state.session as SessionState).member;
@@ -62,10 +62,10 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     });
   }, 'customer-portal');
 
-  /** Danh mục cho khách: giá bán lẻ và chiết khấu riêng theo nhãn hàng. KHÔNG có tồn kho, giá nhập. */
+  /** Danh mục cho khách: chỉ các thương hiệu được phép, giá bán lẻ và chiết khấu riêng theo nhãn hàng. KHÔNG có tồn kho, giá nhập. */
   router.get('/portal/catalog', async c => {
     const { account, discounts } = await myAccount(c), db = c.env.db;
-    const version = (await snapshotVersion(db)).version + '.' + sha256Hex(account.discounts).slice(0, 8);
+    const version = (await snapshotVersion(db)).version + '.' + sha256Hex(account.discounts).slice(0, 8) + '.b1';
     if (c.url.searchParams.get('v') === version) return json({ version, unchanged: true });
     const policy = await retailPolicy(db);
     const [rows, prices] = await Promise.all([
@@ -76,7 +76,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const priceOf = new Map(prices.map(p => [p.sku, p.price]));
     return json({
       version, policy: policy?.name ?? '', columns: ['sku', 'name', 'brand', 'pattern', 'unit', 'imageUrl', 'taxOut', 'taxable', 'price', 'discount'],
-      products: rows.map(r => [r.sku, r.name, r.brand, r.pattern, r.unit, r.imageUrl, r.taxOut, r.taxable, priceOf.get(r.sku) ?? null, customerDiscount(r.brand, discounts)]),
+      products: rows.filter(r => portalBrandAllowed(r.brand)).map(r => [r.sku, r.name, r.brand, r.pattern, r.unit, r.imageUrl, r.taxOut, r.taxable, priceOf.get(r.sku) ?? null, customerDiscount(r.brand, discounts)]),
     });
   }, 'customer-portal');
 
@@ -116,7 +116,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       want.set(sku, (want.get(sku) ?? 0) + qty);
     }
     const policy = await retailPolicy(db);
-    const found = await db.select().from(products).where(and(inArray(products.sku, [...want.keys()]), eq(products.active, true)));
+    const found = (await db.select().from(products).where(and(inArray(products.sku, [...want.keys()]), eq(products.active, true)))).filter(p => portalBrandAllowed(p.brand));
     const prices = policy ? await db.select().from(productPrices).where(and(eq(productPrices.policyId, policy.id), inArray(productPrices.sku, [...want.keys()]))) : [];
     const missing = [...want.keys()].filter(s => !found.some(p => p.sku === s) || !Number.isFinite(prices.find(p => p.sku === s)?.price));
     if (missing.length) throw new AppError(400, `Sản phẩm chưa có giá hoặc đã ngừng bán: ${missing.slice(0, 5).join(', ')}. Vui lòng liên hệ nhân viên phụ trách.`);
@@ -207,7 +207,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     if (!items.length || items.length > 100) throw new AppError(400, 'Chọn từ 1 đến 100 sản phẩm cần hỏi tồn.');
     const want = new Map<string, number>();
     for (const it of items) { const sku = str(it.sku, 500), qty = Number(it.qty); if (!sku || !(qty > 0 && qty <= 1e7)) throw new AppError(400, 'Mã hàng hoặc số lượng không hợp lệ.'); want.set(sku, qty); }
-    const found = await db.select({ sku: products.sku, name: products.name, unit: products.unit }).from(products).where(and(inArray(products.sku, [...want.keys()]), eq(products.active, true)));
+    const found = (await db.select({ sku: products.sku, name: products.name, unit: products.unit, brand: products.brand }).from(products).where(and(inArray(products.sku, [...want.keys()]), eq(products.active, true)))).filter(p => portalBrandAllowed(p.brand));
     if (found.length !== want.size) throw new AppError(400, 'Có mã hàng không còn trong danh mục.');
     const list = [...want].map(([sku, qty]) => { const p = found.find(f => f.sku === sku)!; return { sku, name: p.name, unit: p.unit, qty }; });
     const id = crypto.randomUUID(), note = str(body.note, 2000);
