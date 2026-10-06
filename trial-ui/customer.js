@@ -25,7 +25,8 @@ $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dia
 // ----- API (cùng phiên đăng nhập với trang chính)
 let token = '';
 try { token = sessionStorage.getItem(SESSION_KEY) || ''; } catch { /* bỏ qua */ }
-const toLogin = () => location.replace('index.html');
+const saveToken = t => { token = t || ''; try { if (token) sessionStorage.setItem(SESSION_KEY, token); else sessionStorage.removeItem(SESSION_KEY); } catch { /* bỏ qua */ } };
+const toLogin = (note = '') => showAuth(note);
 async function api(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
   if (token) headers.authorization = 'Bearer ' + token;
@@ -33,7 +34,8 @@ async function api(path, method = 'GET', body) {
   try { res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw Object.assign(new Error('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.'), { status: 0 }); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  if (res.status === 401) { toLogin(); throw new Error('Phiên đăng nhập đã hết hạn.'); }
+  if (data.sessionToken !== undefined) saveToken(data.sessionToken);
+  if (res.status === 401 && !['/login', '/activate'].includes(path)) { toLogin('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); throw new Error('Phiên đăng nhập đã hết hạn.'); }
   if (!res.ok) throw Object.assign(new Error(data.error || 'Không thực hiện được thao tác.'), { status: res.status, code: data.code });
   return data;
 }
@@ -44,20 +46,51 @@ const pill = (map, s) => `<span class="pill ${map[s]?.[1] || ''}">${esc(map[s]?.
 const st = { me: null, items: [], cart: new Map(), catalogVersion: '' };
 
 // ----- khởi động: chỉ tài khoản khách hàng
+// ----- Đăng nhập / đặt mật khẩu ngay trên trang khách hàng (link kích hoạt: customer.html#email=…&token=…)
+const view = which => { $('#c-auth').hidden = which !== 'auth'; $('#c-staff').hidden = which !== 'staff'; $('#portal').hidden = $('#p-head').hidden = which !== 'portal'; };
+let activation = null;
+function showAuth(note = '') {
+  view('auth');
+  const h = new URLSearchParams(location.hash.slice(1)), tk = h.get('token');
+  activation = tk && /^[a-f0-9]{64}$/.test(tk) ? { token: tk, email: h.get('email') || '' } : null;
+  $('#c-auth-title').textContent = activation ? 'Đặt mật khẩu tài khoản khách hàng' : 'Đăng nhập khách hàng';
+  $('#c-auth-note').textContent = note || (activation ? 'Tạo mật khẩu (ít nhất 8 ký tự) để bắt đầu dùng trang khách hàng.' : 'Dùng email đã được nhân viên Bách Ngân cấp tài khoản.');
+  $('#c-password2-label').hidden = !activation; $('#c-login-button').textContent = activation ? 'Đặt mật khẩu & vào trang' : 'Đăng nhập';
+  if (activation) { $('#c-email').value = activation.email; $('#c-email').readOnly = true; $('#c-password').autocomplete = 'new-password'; }
+}
+$('#c-show-password').addEventListener('change', e => { $('#c-password').type = $('#c-password2').type = e.target.checked ? 'text' : 'password'; });
+$('#c-login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = $('#c-auth-error'), btn = $('#c-login-button'), email = $('#c-email').value.trim(), password = $('#c-password').value;
+  err.textContent = '';
+  if (!email || password.length < 8) { err.textContent = 'Nhập email và mật khẩu (ít nhất 8 ký tự).'; return; }
+  if (activation && password !== $('#c-password2').value) { err.textContent = 'Hai lần nhập mật khẩu chưa khớp.'; return; }
+  btn.disabled = true;
+  try {
+    if (activation) { await api('/activate', 'POST', { token: activation.token, password }); activation = null; history.replaceState(null, '', location.pathname + '#quotes'); }
+    await api('/login', 'POST', { email, password });
+    $('#c-login-form').reset(); $('#c-email').readOnly = false;
+    await boot();
+  } catch (ex) { err.textContent = ex.message; }
+  finally { btn.disabled = false; }
+});
+$('#c-staff-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth(); });
+
 async function boot() {
-  if (!token) return toLogin();
+  if (/token=[a-f0-9]{64}/.test(location.hash)) { saveToken(''); return showAuth(); } // mở link đặt mật khẩu
+  if (!token) return showAuth();
   const { user } = await api('/me');
-  if (user.role !== 'customer') { location.replace('index.html'); return; }
+  if (user.role !== 'customer') { $('#c-staff-name').textContent = user.name; view('staff'); return; }
+  view('portal');
   st.me = await api('/portal/me');
   $('#p-customer').textContent = st.me.customer.name; $('#p-user').textContent = `${st.me.user.name} · ${st.me.user.email}`;
   const o = st.me.owner, d = st.me.discounts || {}, ck = [['Minh Long', d.minhLong], ['Minh Long - Lys', d.lys], ['Lock&Lock', d.lock]].filter(([, v]) => v > 0);
   $('#p-owner').innerHTML = `<div><small class="muted">Nhân viên phụ trách</small><b>${esc(o?.name || '—')}</b>${o?.phone ? ` · <a href="tel:${esc(o.phone.replace(/[^\d+]/g, ''))}">${esc(o.phone)}</a>` : ''}${o?.email ? ` · ${esc(o.email)}` : ''}</div>`
     + (ck.length ? `<div><small class="muted">Chiết khấu riêng của quý khách</small><b>${ck.map(([k, v]) => `${k} ${fmtNum(v)}%`).join(' · ')}</b></div>` : '');
   document.title = st.me.customer.name + ' · Bách Ngân';
-  $('#portal').hidden = false;
   showTab(location.hash.replace('#', '') || 'quotes');
 }
-$('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } try { sessionStorage.removeItem(SESSION_KEY); } catch { /* bỏ qua */ } toLogin(); });
+$('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth('Đã đăng xuất.'); });
 
 function showTab(tab) {
   if (!['quotes', 'new', 'orders'].includes(tab)) tab = 'quotes';
@@ -67,7 +100,7 @@ function showTab(tab) {
   if (tab === 'quotes') loadQuotes(); else if (tab === 'orders') loadOrders(); else loadCatalog();
 }
 $$('[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
-addEventListener('hashchange', () => { if (st.me) showTab(location.hash.replace('#', '')); });
+addEventListener('hashchange', () => { if (st.me && !$('#portal').hidden) showTab(location.hash.replace('#', '')); });
 
 // ----- Báo giá
 async function loadQuotes() {
