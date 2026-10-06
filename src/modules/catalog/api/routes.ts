@@ -50,7 +50,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     );
     const [[{ total = 0 } = {}], rows, policies, stores, version] = await Promise.all([
       db.select({ total: count() }).from(products).where(where),
-      db.select().from(products).where(where).orderBy(asc(products.name), asc(products.sku)).limit(limit).offset(offset),
+      db.select().from(products).where(where).orderBy(asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(limit).offset(offset),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
       db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
       db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),

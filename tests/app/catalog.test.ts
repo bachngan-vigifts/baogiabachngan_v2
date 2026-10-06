@@ -64,12 +64,15 @@ test('khách hàng: tìm không dấu theo tên/điện thoại/MST, phân trang
     { id: 'a', name: 'Công ty Hoa Mai', phone: '0901 234 567', ...base, taxCode: '0312345678' },
     { id: 'b', name: 'Trường Ánh Dương', phone: '0909', ...base },
     ...Array.from({ length: 4 }, (_, i) => ({ id: 'z' + i, name: 'Zeta ' + i, phone: '', ...base })),
+    { id: 'u', name: 'Ủy ban phường', phone: '', ...base },
   ]);
+  // Sắp xếp theo tên bỏ dấu: "Ủy ban" đứng trước "Zeta", không bị đẩy xuống cuối.
+  assert.deepEqual((await call('/customers', emp)).data.customers.map((c: any) => c.id), ['a', 'b', 'u', 'z0', 'z1', 'z2', 'z3']);
   assert.deepEqual((await call('/customers?q=hoa%20mai', emp)).data.customers.map((c: any) => c.id), ['a']);
   assert.deepEqual((await call('/customers?q=anh%20duong', emp)).data.customers.map((c: any) => c.id), ['b']);
   assert.deepEqual((await call('/customers?q=0312345', emp)).data.customers.map((c: any) => c.id), ['a']);
   const page = await call('/customers?limit=2&offset=2', emp);
-  assert.equal(page.data.total, 6); assert.deepEqual(page.data.customers.map((c: any) => c.id), ['z0', 'z1']);
+  assert.equal(page.data.total, 7); assert.deepEqual(page.data.customers.map((c: any) => c.id), ['u', 'z0']);
   const created = await call('/customers', emp, 'POST', { name: 'Đại lý Phúc Lộc', phone: '0911' });
   const [row] = await db.select().from(customers).where((await import('drizzle-orm')).eq(customers.id, created.data.id));
   assert.equal(row!.search, 'dai ly phuc loc 0911');
@@ -98,4 +101,65 @@ test('nhập danh mục (Manager): tạo bảng giá/kho/sản phẩm; nhập l�
   list = (await call('/products', emp)).data;
   assert.deepEqual(list.products.map((x: any) => [x.sku, x.prices[0].price, x.stock]), [['A', 150, { 'legacy:Kho A': 7 }]]);
   assert.equal(list.total, 1); // B không còn trong file → ẩn
+});
+
+test('nhập lại danh mục: giá/tồn theo file mới, không sinh dòng trùng, ẩn rồi hiện lại sản phẩm, đổi thứ tự bảng giá/kho', async () => {
+  const { db, call, emp } = await setup();
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  const count = async (table: any) => (await db.select().from(table)).length;
+  const imp = async (warehouses: string[], pricePolicies: string[], products: object[]) => {
+    const r = await call('/admin/catalog-import', mgr, 'POST', { format: 'sapo-catalog-v1', observedAt: new Date().toISOString(), warehouses, pricePolicies, products });
+    assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data;
+  };
+  const prod = (sku: string, name: string, prices: (number | null)[], stock: (number | null)[]) => ({ sku, name, brand: 'B', pattern: '', unit: 'cái', image: '', taxBasis: '', taxable: false, taxIn: null, taxOut: null, prices, stock });
+
+  // Lần 1: 3 mã, 2 bảng giá, 2 kho.
+  await imp(['Kho A', 'Kho B'], ['Lẻ', 'Sỉ'], [prod('A', 'Áo', [100, 90], [1, 2]), prod('B', 'Bút', [200, null], [null, 5]), prod('C', 'Cốc', [300, 280], [0, 0])]);
+  assert.deepEqual([await count(products), await count(productPrices), await count(productStock), await count(pricePolicies), await count(warehouses)], [3, 6, 5, 2, 2]);
+
+  // Lần 2 (cùng file): không sinh thêm dòng nào.
+  await imp(['Kho A', 'Kho B'], ['Lẻ', 'Sỉ'], [prod('A', 'Áo', [100, 90], [1, 2]), prod('B', 'Bút', [200, null], [null, 5]), prod('C', 'Cốc', [300, 280], [0, 0])]);
+  assert.deepEqual([await count(products), await count(productPrices), await count(productStock), await count(pricePolicies), await count(warehouses)], [3, 6, 5, 2, 2]);
+  assert.equal((await db.select().from(catalogVersions)).filter(v => v.isCurrent).length, 1);
+  assert.equal(await count(catalogVersions), 2);
+
+  // Lần 3: đổi giá/tồn/tên, xoá tồn một kho (null), bỏ C, thêm D, đảo thứ tự bảng giá và kho, bỏ kho B, thêm kho C.
+  await imp(['Kho C', 'Kho A'], ['Sỉ', 'Lẻ'], [prod('A', 'Áo mới', [95, 110], [7, null]), prod('B', 'Bút', [null, 210], [3, 4]), prod('D', 'Dao', [50, 60], [null, 9])]);
+  const list = (await call('/products', emp)).data;
+  assert.deepEqual(list.policies.map((p: any) => p.name), ['Sỉ', 'Lẻ']);
+  assert.deepEqual(list.warehouses.map((w: any) => w.name), ['Kho C', 'Kho A']); // Kho B ngừng dùng
+  const bySku = Object.fromEntries(list.products.map((p: any) => [p.sku, p]));
+  assert.deepEqual(Object.keys(bySku).sort(), ['A', 'B', 'D']); // C bị ẩn
+  const price = (sku: string, name: string) => bySku[sku].prices.find((x: any) => x.policyId === list.policies.find((p: any) => p.name === name).id)?.price;
+  const stock = (sku: string, name: string) => bySku[sku].stock[list.warehouses.find((w: any) => w.name === name).id];
+  assert.equal(bySku.A.name, 'Áo mới');
+  assert.deepEqual([price('A', 'Sỉ'), price('A', 'Lẻ'), price('B', 'Sỉ'), price('B', 'Lẻ'), price('D', 'Lẻ')], [95, 110, null, 210, 60]);
+  assert.deepEqual([stock('A', 'Kho C'), stock('A', 'Kho A'), stock('B', 'Kho C'), stock('B', 'Kho A'), stock('D', 'Kho A')], [7, undefined, 3, 4, 9]);
+  assert.deepEqual(Object.keys(bySku.A.stock).length, 1); // không còn tồn cũ ở kho B
+  // Không trùng: mỗi (sku, bảng giá) và (sku, kho) đúng một dòng; bảng giá/kho không nhân bản theo tên.
+  assert.deepEqual([await count(products), await count(pricePolicies), await count(warehouses)], [4, 2, 3]);
+  const keys = (rows: any[], f: (r: any) => string) => new Set(rows.map(f)).size === rows.length;
+  assert.ok(keys(await db.select().from(productPrices), r => r.sku + '|' + r.policyId));
+  assert.ok(keys(await db.select().from(productStock), r => r.sku + '|' + r.warehouseId));
+  assert.equal((await call('/products/C', emp)).data.product.active, false);
+  assert.equal((await call('/products?q=coc', emp)).data.total, 0);
+
+  // Lần 4: C quay lại file → hiện lại với giá/tồn mới.
+  await imp(['Kho C', 'Kho A'], ['Sỉ', 'Lẻ'], [prod('A', 'Áo mới', [95, 110], [7, null]), prod('C', 'Cốc', [1, 2], [8, 0])]);
+  const again = (await call('/products', emp)).data;
+  assert.deepEqual(again.products.map((p: any) => p.sku), ['A', 'C']);
+  assert.equal((await call('/products?q=coc', emp)).data.products[0].prices.length, 2);
+});
+
+test('nhập danh mục lỗi giữa chừng không để lại dữ liệu dở dang', async () => {
+  const { db, call } = await setup();
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  const ok = await call('/admin/catalog-import', mgr, 'POST', { format: 'sapo-catalog-v1', warehouses: ['K'], pricePolicies: ['L'], products: [{ sku: 'A', name: 'A', prices: [1], stock: [1] }] });
+  assert.equal(ok.status, 200);
+  // Giá âm bị chặn ngay ở bước kiểm tra; file trùng mã cũng vậy → không đụng vào DB.
+  for (const bad of [[{ sku: 'B', name: 'B', prices: [-1], stock: [1] }], [{ sku: 'B', name: 'B', prices: [1], stock: [1] }, { sku: 'B', name: 'B2', prices: [1], stock: [1] }]]) {
+    const r = await call('/admin/catalog-import', mgr, 'POST', { format: 'sapo-catalog-v1', warehouses: ['K'], pricePolicies: ['L'], products: bad });
+    assert.equal(r.status, 400);
+  }
+  assert.deepEqual((await db.select().from(products)).map(p => [p.sku, p.active]), [['A', true]]);
 });

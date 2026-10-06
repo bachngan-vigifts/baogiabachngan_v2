@@ -13,7 +13,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const where = matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q'));
     const [[{ total = 0 } = {}], rows] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
-      c.env.db.select().from(customers).where(where).orderBy(asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
+      c.env.db.select().from(customers).where(where).orderBy(asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
     ]);
     return json({ customers: rows, total: Number(total), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
