@@ -19,6 +19,7 @@ Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy t
   - Nút **Đồng bộ ngay**.
   - Workflow `.github/workflows/sapo-pull.yml` chạy mỗi 30 phút (phút 7 và 37), gọi `POST …/integrations/sapo/pull` bằng `SAPO_SYNC_TOKEN`.
   - Khoá 5 phút chống hai lượt chạy chồng nhau.
+- **Giữ phiên tự động:** mỗi lần app gọi Sapo (đồng bộ, hoặc `POST …/integrations/sapo/keepalive`), cookie mới Sapo cấp qua `Set-Cookie` được gộp và lưu lại (mã hoá). Bản đã lưu chỉ bị ghi đè khi Manager chưa kết nối lại trong lúc đó. Phiên hỏng thì giữ nguyên bản đã lưu.
 - **Phiên hết hạn:** ô trạng thái báo *Phiên hết hạn*, Manager bấm **Kết nối lại**. Lịch tự động chỉ cảnh báo, không đánh đỏ liên tục.
 - **Đăng nhập bằng email/SĐT + mật khẩu Sapo ngay trên app:** chưa làm. Cần biết chính xác yêu cầu đăng nhập của Sapo: địa chỉ, tên trường, có mã chống bot ẩn hay không.
   Việc cho Codex: mở trang đăng nhập Sapo, F12 → Network, đăng nhập, rồi gửi Claude **địa chỉ, phương thức và tên các trường** của yêu cầu đăng nhập, kèm tên cookie trả về. **Không gửi mật khẩu.**

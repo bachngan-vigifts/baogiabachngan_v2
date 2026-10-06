@@ -11,7 +11,7 @@ import { sapoClient } from './sapo-client.ts';
 import { syncCustomers, syncProducts, syncStaff } from './sapo-sync-routes.ts';
 
 type Ctx = RouteContext<StaffEnv>;
-const SESSION_ID = 'active', STATE_ID = 'pull', LOCK_ID = 'pull-lock';
+const SESSION_ID = 'active', STATE_ID = 'pull', LOCK_ID = 'pull-lock', CHECK_ID = 'session-check';
 /** Mỗi lần chạy đọc tối đa ngần này trang (250 bản ghi/trang) cho mỗi loại để nằm trong giới hạn thời gian của Edge Function; lần sau đọc tiếp. */
 const MAX_PAGES = 12;
 const LOCK_SECONDS = 300;
@@ -35,14 +35,57 @@ export async function sessionInfo(db: AnyDb) {
   return row ?? null;
 }
 
-async function readCookie(c: Ctx): Promise<string> {
+async function readCookie(c: Ctx): Promise<{ cookie: string; savedAt: string }> {
   const [row] = await c.env.db.select().from(sapoRuntimeSessions).where(eq(sapoRuntimeSessions.id, SESSION_ID)).limit(1);
   if (!row) throw new AppError(409, 'Chưa kết nối Sapo. Manager cần đăng nhập Sapo trên trang Nhân viên.', 'SAPO_SESSION_MISSING');
   const cookie = await decryptCookie(c.env.sapoSyncToken ?? '', row.encryptedCookie);
   if (!cookie) throw new AppError(409, 'Không đọc được phiên Sapo đã lưu. Manager cần đăng nhập lại Sapo.', 'SAPO_SESSION_MISSING');
-  return cookie;
+  return { cookie, savedAt: row.updatedAt };
 }
 const client = (c: Ctx, cookie: string) => sapoClient({ cookie, base: c.env.sapoAdminBase, fetch: c.env.sapoFetch });
+type Api = ReturnType<typeof sapoClient>;
+
+/**
+ * Sapo gia hạn/đổi phiên qua Set-Cookie: lưu lại cookie mới (mã hoá). Chỉ ghi khi Manager chưa kết nối lại
+ * trong lúc đó (so `updated_at`), để không đè phiên mới hơn.
+ */
+async function saveRefreshed(c: Ctx, api: Api | undefined, savedAt: string) {
+  if (!api?.refreshed()) return false;
+  const enc = await encryptCookie(c.env.sapoSyncToken!, api.cookie());
+  const done = await c.env.db.update(sapoRuntimeSessions).set({ encryptedCookie: enc })
+    .where(and(eq(sapoRuntimeSessions.id, SESSION_ID), eq(sapoRuntimeSessions.updatedAt, savedAt))).returning({ id: sapoRuntimeSessions.id });
+  return done.length > 0;
+}
+
+interface SessionCheck { checkedAt: string; ok: boolean; code?: string; error?: string; refreshed?: boolean }
+async function readCheck(db: AnyDb): Promise<SessionCheck | null> {
+  const [row] = await db.select().from(sapoHealthMonitorState).where(eq(sapoHealthMonitorState.id, CHECK_ID)).limit(1);
+  try { return row ? JSON.parse(row.data) as SessionCheck : null; } catch { return null; }
+}
+
+/**
+ * Giữ phiên Sapo "đang dùng": gọi nhẹ Sapo (1 nhân viên) để Sapo gia hạn phiên, và lưu cookie mới nếu Sapo cấp.
+ * Lịch gọi mỗi 10 phút. Hết hạn thì ghi nhận để trang Nhân viên báo Manager kết nối lại.
+ */
+export async function keepAlive(c: Ctx): Promise<SessionCheck> {
+  requireKey(c);
+  const check: SessionCheck = { checkedAt: new Date().toISOString(), ok: false };
+  let api: Api | undefined, savedAt = '';
+  try {
+    const s = await readCookie(c); savedAt = s.savedAt;
+    api = client(c, s.cookie);
+    await api.get('/accounts.json?limit=1');
+    check.ok = true;
+  } catch (e) {
+    check.code = e instanceof AppError ? e.code : 'SAPO_CHECK_ERROR';
+    check.error = e instanceof AppError ? e.message : 'Lỗi khi kiểm tra phiên Sapo.';
+  }
+  check.refreshed = await saveRefreshed(c, api, savedAt);
+  const data = JSON.stringify(check);
+  await c.env.db.insert(sapoHealthMonitorState).values({ id: CHECK_ID, data, updatedAt: check.checkedAt })
+    .onConflictDoUpdate({ target: sapoHealthMonitorState.id, set: { data, updatedAt: check.checkedAt } });
+  return check;
+}
 const requireKey = (c: Ctx) => { if ((c.env.sapoSyncToken ?? '').length < 32) throw new AppError(503, 'Chưa cấu hình đồng bộ Sapo (thiếu SAPO_SYNC_TOKEN).'); };
 
 const add = (into: Record<string, number>, r: Record<string, unknown>) => { for (const [k, v] of Object.entries(r)) if (typeof v === 'number') into[k] = (into[k] ?? 0) + v; return into; };
@@ -75,8 +118,10 @@ export async function runPull(c: Ctx, trigger: string) {
   if (!lock.length) throw new AppError(409, 'Đang đồng bộ Sapo, vui lòng đợi vài phút.', 'SAPO_PULL_RUNNING');
   const runStart = Date.now(), previous = await readPullState(db);
   const state: PullState = { startedAt: nowIso, trigger, cursors: { ...previous.cursors }, results: {} };
+  let api: Api | undefined, savedAt = '';
   try {
-    const api = client(c, await readCookie(c));
+    const s = await readCookie(c); savedAt = s.savedAt;
+    api = client(c, s.cookie);
     // Nhân viên: danh sách nhỏ, đọc hết mỗi lần.
     const accounts = await api.list('/accounts.json', 'accounts', 1, 4);
     state.results!.staff = await syncStaff(db, { accounts: accounts.items });
@@ -112,6 +157,7 @@ export async function runPull(c: Ctx, trigger: string) {
     if (!(e instanceof AppError)) console.error('Sapo pull failed');
   } finally {
     state.finishedAt = new Date().toISOString();
+    await saveRefreshed(c, api, savedAt);
     await writePullState(db, state);
     await db.update(sapoHealthMonitorState).set({ updatedAt: '1970-01-01T00:00:00.000Z' }).where(and(eq(sapoHealthMonitorState.id, LOCK_ID), eq(sapoHealthMonitorState.updatedAt, nowIso)));
   }
@@ -147,11 +193,16 @@ export function registerSapoPullRoutes(router: Router<StaffEnv>) {
 
   // Lịch tự động (GitHub Actions mỗi 30 phút) gọi bằng mã bí mật; luôn trả 200 kèm ok=false để lịch không báo lỗi liên tục khi phiên hết hạn.
   router.post('/integrations/sapo/pull', async c => json(await runPull(c, 'schedule')), 'sapo-sync');
+  router.post('/integrations/sapo/keepalive', async c => json(await keepAlive(c)), 'sapo-sync');
 }
 
 /** Gộp vào trang tình trạng. */
 export async function pullStatus(db: AnyDb) {
-  const [session, state] = await Promise.all([sessionInfo(db), readPullState(db)]);
+  const [session, state, check] = await Promise.all([sessionInfo(db), readPullState(db), readCheck(db)]);
   const { cursors: _c, ...pull } = state;
-  return { session: session ? { connected: true, ...session, expired: state.code === 'SAPO_SESSION_EXPIRED' && (state.startedAt ?? '') > session.updatedAt } : { connected: false }, pull };
+  if (!session) return { session: { connected: false }, pull, check };
+  // Hết hạn = lần gọi Sapo gần nhất (đồng bộ hoặc giữ phiên) SAU lần kết nối báo phiên hết hạn.
+  const latest = [{ at: state.startedAt ?? '', code: state.code }, { at: check?.checkedAt ?? '', code: check?.code }]
+    .filter(x => x.at > session.updatedAt).sort((a, b) => b.at.localeCompare(a.at))[0];
+  return { session: { connected: true, ...session, expired: latest?.code === 'SAPO_SESSION_EXPIRED', checkedAt: check?.checkedAt ?? null }, pull, check };
 }

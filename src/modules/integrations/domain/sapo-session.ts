@@ -36,3 +36,21 @@ export function cleanCookie(raw: unknown): string {
   if (!value || value.length > 30_000 || /[\r\n]/.test(value)) return '';
   return /(^|;\s*)_admin_session_id=[^;\s]+/.test(value) ? value : '';
 }
+
+/**
+ * Gộp cookie Sapo trả về (Set-Cookie) vào chuỗi cookie đang dùng: cùng tên thì thay giá trị mới, tên mới thì thêm,
+ * cookie bị xoá (giá trị rỗng / Max-Age=0) thì bỏ. Nhờ vậy khi Sapo gia hạn hoặc đổi phiên, app giữ được phiên mới.
+ */
+export function mergeSetCookies(cookie: string, setCookies: string[]): string {
+  const jar = new Map<string, string>();
+  for (const part of cookie.split(';')) { const i = part.indexOf('='); if (i > 0) jar.set(part.slice(0, i).trim(), part.slice(i + 1).trim()); }
+  for (const header of setCookies) {
+    const [pair = '', ...attrs] = header.split(';'), i = pair.indexOf('=');
+    if (i <= 0) continue;
+    const name = pair.slice(0, i).trim(), value = pair.slice(i + 1).trim();
+    const removed = !value || attrs.some(a => /^\s*max-age\s*=\s*(0|-\d+)\s*$/i.test(a)) || attrs.some(a => { const m = /^\s*expires\s*=(.*)$/i.exec(a); return !!m && Date.parse(m[1]!) < Date.now(); });
+    if (!/^[\w.-]+$/.test(name) || /[\r\n;]/.test(value)) continue;
+    if (removed) jar.delete(name); else jar.set(name, value);
+  }
+  return [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+}
