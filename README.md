@@ -45,3 +45,13 @@ docs/              ROADMAP.md · DATA-MODEL.md (tự sinh)
 npm run bootstrap:manager -- --name "Họ tên" --email a@b.vn --phone 09xxxxxxxx --origin https://ten-mien.vn > manager.sql
 wrangler d1 execute DB --remote --file=manager.sql     # liên kết kích hoạt in ra STDERR, hiệu lực 24 giờ
 ```
+
+## Bản demo thao tác thử (`demo/`)
+
+Một trang web duy nhất, chạy hoàn toàn trong trình duyệt với dữ liệu mẫu (không cần cơ sở dữ liệu). Nó đóng gói **chính các hàm nghiệp vụ đã kiểm thử** (tính giá, phân quyền báo giá, chia sẻ, người phụ trách, kiểm tra dữ liệu, máy trạng thái đơn NCC) nên thao tác trên đó là logic thật, không phải mô phỏng.
+
+```bash
+npm run demo:build      # tạo demo/dist/demo.html (một file tự chứa)
+npm run demo:test       # build + 13 bài thử bằng jsdom (đăng nhập thử, tạo/chia sẻ/giao báo giá, đơn NCC từ đầu đến cuối...)
+npm run typecheck:demo
+```

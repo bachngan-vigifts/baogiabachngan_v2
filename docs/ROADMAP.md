@@ -33,7 +33,8 @@ Ký hiệu: ✅ xong · ⬜ chưa làm. "Xong" nghĩa là đạt hết mục *Ti
 - ⬜ Lắp ráp (`src/app`): worker nhận binding D1, tạo `createDb`, gắn `createStaffRouter()` vào vinext/Cloudflare Worker, chuyển hướng trang theo `pageRedirect`.
 - Khác bản cũ có chủ đích (xem `tests/legacy/staff-auth.legacy-diff.test.ts` cho phần giống hệt): đường dẫn không tồn tại trả 404 *trước* khi kiểm phiên (bản cũ trả 401 trước); sai phương thức trên route có sẵn trả 405 kèm `Allow` (bản cũ rơi xuống kiểm phiên).
 
-## Giai đoạn 3 – Module `quotes` (lõi) ⬜
+## Giai đoạn 3 – Module `quotes` (lõi) 🟡 làm dở
+_Bản demo thao tác thử (`demo/`) dùng các hàm thuần của giai đoạn này và 8 của giai đoạn NCC; xem README._
 1. ✅ `domain/quote-math.ts`: port `public/quote-math.js` (tính dòng, VAT theo dòng/chung, chiết khấu, phí in, lợi nhuận, giá vốn theo thương hiệu). Đã đối chiếu bản cũ/mới trên 5.000 ca ngẫu nhiên, giống hệt từng bit (`tests/quote-math.legacy-diff.test.ts`).
 2. ✅ `domain/quotation-schema.ts` (`cleanQuotation`): port nguyên văn `validateQuotation` bản cũ – hàng rào chặn dữ liệu rác (NaN, chuỗi thay số, âm, quá lớn, ảnh không HTTPS, ngày không tồn tại) trước khi vào `quote-math`. Đối chiếu trực tiếp hàm cũ trên 6.000 báo giá ngẫu nhiên (cùng nhận/từ chối, mã lỗi, thông báo, dữ liệu sạch; chạm >25 loại lỗi) + test ngưỡng kích thước từng byte; 14 phép phá thử đều bị bắt. `validDeliveryDate` giống bản cũ trên 4.000 mẫu ngày.
 2b. ✅ `domain/quote-index.ts`: cột tìm kiếm (`search_text`, `quote_date`, `contract_*`) và dòng hàng chuẩn hoá cho `quote_lines`; bất biến "tổng tiền/lợi nhuận từ các dòng chuẩn hoá == từ báo giá gốc".

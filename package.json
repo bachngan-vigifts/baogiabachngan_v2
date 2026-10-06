@@ -13,7 +13,10 @@
     "db:generate": "drizzle-kit generate",
     "docs:data-model": "node --import tsx scripts/gen-data-model-doc.ts",
     "docs:ncc": "node --import tsx scripts/gen-ncc-actions-doc.ts",
-    "bootstrap:manager": "node --import tsx scripts/bootstrap-manager.ts"
+    "bootstrap:manager": "node --import tsx scripts/bootstrap-manager.ts",
+    "demo:build": "node demo/build.mjs",
+    "demo:test": "node demo/build.mjs && node --test demo/smoke.test.mjs",
+    "typecheck:demo": "tsc -p demo --noEmit"
   },
   "dependencies": {
     "@noble/hashes": "^2.0.1",
@@ -23,6 +26,7 @@
   "devDependencies": {
     "@types/node": "22.19.19",
     "drizzle-kit": "0.31.10",
+    "jsdom": "^30.1.2",
     "tsx": "^4.19.0",
     "typescript": "5.9.3"
   }
