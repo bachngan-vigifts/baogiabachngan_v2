@@ -302,3 +302,22 @@ test('giữ phiên Sapo: gọi nhẹ, lưu cookie mới Sapo cấp; hết hạn 
   assert.equal((await call('/admin/sapo-sync', mgr)).data.session.expired, false);
   assert.equal((await call('/integrations/sapo/keepalive', '', 'POST', {}, {})).status, 401);
 });
+
+test('kết nối lại Sapo: lỗi của lần đồng bộ trước đó không còn hiện', async () => {
+  const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  const sapoFetch = (async () => Response.json({ accounts: [] })) as typeof globalThis.fetch;
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch };
+  const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', origin, cookie }, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
+  };
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  // Phiên lưu bằng mã cũ (không giải mã được) → lần đồng bộ báo lỗi.
+  await db.insert(sapoRuntimeSessions).values({ id: 'active', encryptedCookie: 'hong.hong', updatedAt: '2026-01-01T00:00:00.000Z', updatedBy: 'mgr' });
+  assert.equal((await call('/admin/sapo-pull', mgr, 'POST', {})).status, 409);
+  assert.equal((await call('/admin/sapo-sync', mgr)).data.pull.stale, false);
+  await new Promise(r => setTimeout(r, 5));
+  assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=moi' })).status, 200);
+  const st = (await call('/admin/sapo-sync', mgr)).data;
+  assert.equal(st.pull.ok, false); assert.equal(st.pull.stale, true, 'lỗi cũ được đánh dấu đã qua');
+});

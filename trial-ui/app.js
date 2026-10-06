@@ -303,14 +303,14 @@ const viTime = iso => new Date(iso).toLocaleString('vi-VN');
 async function loadSapoSync() {
   let d; try { d = await api('/admin/sapo-sync'); } catch { $('#sapo-sync').hidden = true; return; }
   const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + viTime(iso) : 'Chưa nhận dữ liệu';
-  const s = d.session || {}, p = d.pull || {};
+  const s = d.session || {}, p = d.pull || {}, pullFailed = p.ok === false && !p.stale;
   $('#sapo-sync').hidden = false;
-  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : p.ok === false ? 'Lỗi' : 'Đang chạy';
-  $('#sync-state').classList.toggle('warn', !!(s.expired || p.ok === false));
+  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : pullFailed ? 'Lỗi' : 'Đang chạy';
+  $('#sync-state').classList.toggle('warn', !!(s.expired || pullFailed));
   $('#sync-note').textContent = !d.configured ? 'Cần cài mã SAPO_SYNC_TOKEN'
     : !s.connected ? 'Bấm "Kết nối Sapo" để bắt đầu'
-    : s.expired || p.ok === false ? (p.error || 'Cần kết nối lại Sapo')
-    : p.finishedAt ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
+    : s.expired || pullFailed ? (p.error || 'Cần kết nối lại Sapo')
+    : p.finishedAt && !p.stale ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
   $('#sapo-connect').textContent = s.connected ? 'Kết nối lại' : 'Kết nối Sapo';
   $('#sapo-connect').hidden = !d.configured; $('#sapo-pull').hidden = !d.configured || !s.connected; $('#sapo-disconnect').hidden = !s.connected;
   $('#sync-products').textContent = n(d.products.count); $('#sync-products-at').textContent = at(d.products.lastSyncedAt);
@@ -463,21 +463,28 @@ $('#reset-notes').addEventListener('click', async () => {
 });
 const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
-function nextQuoteNo() {
-  const prefix = 'BG-' + todayIso().replaceAll('-', '') + '-';
+/** Số báo giá tự sinh: HRC_BG20261006_001, B2B_BG20261006_002, VG_BG20261006_001 (đếm theo loại + ngày). */
+const QUOTE_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG' };
+function nextQuoteNo(type = 'B2B', date = todayIso()) {
+  const prefix = `${QUOTE_PREFIX[type] || 'B2B'}_BG${String(date || todayIso()).replaceAll('-', '')}_`;
   const used = (state.quotes || []).map(q => q.quoteNo).filter(n => n?.startsWith(prefix)).map(n => parseInt(n.slice(prefix.length), 10) || 0);
   return prefix + String(Math.max(0, ...used) + 1).padStart(3, '0');
 }
-const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT });
+const isAutoQuoteNo = (no, type, date) => no === nextQuoteNo(type, date);
+/** Chiết khấu toàn bảng chọn lúc tạo báo giá: áp cho mọi dòng mới (vẫn sửa riêng từng dòng được). */
+const defaultLineDiscount = () => editor.defaultDiscount > 0 ? { discount: editor.defaultDiscount, discountType: 'percent' } : {};
+const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT, ...defaultLineDiscount() });
 function newQuoteData(extra = {}) {
-  const type = extra.type || 'B2B';
-  return { type, quoteNo: nextQuoteNo(), date: todayIso(), vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: defaultNotes(type), notesVersion: 2, rows: [blankRow()], ...extra };
+  const type = extra.type || 'B2B', date = extra.date || todayIso();
+  return { type, quoteNo: nextQuoteNo(type, date), date, vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: defaultNotes(type), notesVersion: 2, ...extra, rows: extra.rows || [blankRow()] };
 }
 
 async function openEditor(id) {
   $('#quote-error').textContent = ''; $('#conflict-banner').hidden = true;
   if (id === 'new') {
     const pending = editor.pending; editor.pending = null;
+    editor.defaultDiscount = Number(pending?.defaultDiscount) || 0;
+    if (pending) delete pending.defaultDiscount;
     fillEditor(null, 0, pending || newQuoteData());
     if (pending) markDirty();
     setTimeout(() => { if (!qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : field('customer')).focus(); }, 50);
@@ -534,6 +541,8 @@ function setType(type, dirty = true) {
   // Ghi chú còn là mặc định của loại cũ (hoặc trống) thì đổi theo loại mới, như web cũ.
   const notes = field('notes');
   if (dirty && (!notes.value.trim() || notes.value === defaultNotes(editor.type))) notes.value = defaultNotes(type);
+  // Báo giá chưa lưu còn số tự sinh của loại cũ thì đổi sang tiền tố của loại mới.
+  if (dirty && !editor.id && isAutoQuoteNo(field('quoteNo').value.trim(), editor.type, field('date').value)) field('quoteNo').value = nextQuoteNo(type, field('date').value);
   editor.type = type;
   $$('#type-seg button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
   $('#type-hint').textContent = type === 'HRC' ? 'Báo giá HRC: không có cột phí in.' : 'Phí in (F7) được cộng vào giá sau chiết khấu.';
@@ -762,6 +771,64 @@ function calculate() {
   return t;
 }
 
+// ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
+const nq = { type: 'HRC', customer: null, autoNo: '' };
+function nqSetType(type) {
+  const date = $('#nq-date').value || todayIso(), no = $('#nq-no');
+  const keepAuto = !no.value.trim() || no.value.trim() === nq.autoNo;
+  nq.type = type; $('#nq-type-name').textContent = type === 'VIGIFTS' ? 'Vigifts' : type;
+  $$('#nq-type button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
+  nq.autoNo = nextQuoteNo(type, date); if (keepAuto) no.value = nq.autoNo;
+}
+async function openNewQuote() {
+  if (editor.dirty && currentHash.startsWith('#/quotes/')) {
+    if (!await confirmBox('Báo giá đang sửa có thay đổi chưa lưu. Tạo báo giá mới sẽ bỏ các thay đổi này.', { title: 'Bỏ thay đổi chưa lưu?', ok: 'Tạo báo giá mới', danger: true })) return;
+    editor.dirty = false;
+  }
+  nq.customer = null; nq.autoNo = '';
+  $('#new-quote-form').reset(); $('#nq-error').textContent = '';
+  $('#nq-date').value = todayIso(); $('#nq-no').value = '';
+  nqSetType(nq.type);
+  $('#new-quote-dialog').showModal(); $('#nq-customer').focus();
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-new-quote]'); if (!a) return;
+  e.preventDefault(); openNewQuote();
+});
+$('#nq-type').addEventListener('click', e => { const b = e.target.closest('button'); if (b) nqSetType(b.dataset.value); });
+$('#nq-date').addEventListener('change', () => nqSetType(nq.type));
+{
+  const input = $('#nq-customer'), list = $('#nq-suggest'); let items = [], timer, req = 0;
+  const hide = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+  input.addEventListener('input', () => {
+    nq.customer = null; clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const r = ++req; let found = [];
+      try { found = (await api(`/customers?limit=8&q=${encodeURIComponent(input.value)}`)).customers; } catch { /* để trống */ }
+      if (r !== req || document.activeElement !== input) return;
+      items = found;
+      list.innerHTML = found.length ? found.map((c, i) => `<li role="option" data-i="${i}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · '))}</small></li>`).join('')
+        : `<li class="none">Không có trong danh bạ – vẫn tạo được, điền thông tin khách trong báo giá.</li>`;
+      list.hidden = false; input.setAttribute('aria-expanded', 'true');
+    }, 180);
+  });
+  input.addEventListener('blur', () => setTimeout(hide, 150));
+  list.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (!li) return; e.preventDefault(); nq.customer = items[li.dataset.i]; input.value = nq.customer.name; hide(); });
+}
+$('#new-quote-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const err = $('#nq-error'), date = $('#nq-date').value, no = $('#nq-no').value.trim(), discText = $('#nq-discount').value.trim(), disc = discText ? parseNum(discText) : 0;
+  err.textContent = '';
+  if (!date || !no) { err.textContent = 'Vui lòng nhập ngày và số báo giá.'; return; }
+  if (!(disc >= 0 && disc <= 100)) { err.textContent = 'Chiết khấu toàn bảng phải từ 0 đến 100%.'; return; }
+  const c = nq.customer, typed = $('#nq-customer').value.trim();
+  const customer = c ? { customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' } : typed ? { customer: typed } : {};
+  editor.defaultDiscount = disc;
+  editor.pending = { ...newQuoteData({ type: nq.type, date, quoteNo: no, ...customer, rows: [blankRow()] }), defaultDiscount: disc };
+  $('#new-quote-dialog').close();
+  if (location.hash === '#/quotes/new') route(); else go('#/quotes/new');
+});
+
 // ----- đóng thùng & phí vận chuyển (port Shipping.calculate của web cũ)
 const PACK_FIELDS = ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight'];
 function shippingCalc(rows, opt = {}) {
@@ -980,7 +1047,7 @@ document.addEventListener('keydown', e => {
 function cloneData(data) {
   const copy = structuredClone(data);
   delete copy.contractDocument; delete copy.careStatus; delete copy.careDueDate; delete copy.careClosedAt;
-  return { ...copy, quoteNo: nextQuoteNo(), date: todayIso(), rows: copy.rows.map(r => ({ ...r, id: uid() })) };
+  return { ...copy, quoteNo: nextQuoteNo(copy.type, todayIso()), date: todayIso(), rows: copy.rows.map(r => ({ ...r, id: uid() })) };
 }
 $('#duplicate-quote').addEventListener('click', async () => {
   if (editor.dirty && !await confirmBox('Báo giá hiện tại có thay đổi chưa lưu. Bản sao sẽ gồm cả các thay đổi này, còn báo giá gốc không được lưu.', { ok: 'Tiếp tục' })) return;
@@ -1254,10 +1321,16 @@ async function loadPicker(more = false) {
   if ((min !== '' && Number(min) < 0) || (max !== '' && Number(max) < 0) || (min !== '' && max !== '' && Number(min) > Number(max))) {
     $('#picker-status').textContent = 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.'; $('#picker-list').innerHTML = ''; $('#picker-more-row').hidden = true; return;
   }
+  if (!more) {
+    // Bộ lọc/loại báo giá đổi: ẩn kết quả cũ cho tới khi có kết quả mới.
+    pickerItems = []; $('#picker-list').innerHTML = ''; $('#picker-empty').hidden = true; $('#picker-more-row').hidden = true;
+    $('#picker-status').textContent = 'Đang lọc sản phẩm…'; $('#picker-list').setAttribute('aria-busy', 'true');
+  }
   let d;
   try { d = await api('/products?' + pickerQuery(offset)); }
-  catch (e) { $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; return; }
+  catch (e) { if (req === pickerReq) { $('#picker-status').textContent = ''; $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; } return; }
   if (req !== pickerReq) return;
+  $('#picker-list').removeAttribute('aria-busy');
   applyCatalogMeta(d); if (!$('#picker-policy').options.length) pickerPolicyOptions();
   $('#picker-snapshot').textContent = d.observedAt ? `Tồn kho chụp lúc ${new Date(d.observedAt).toLocaleString('vi-VN')} · Đơn giá báo giá chưa VAT.` : 'Đơn giá báo giá chưa VAT.';
   pickerItems = more ? [...pickerItems, ...d.products] : d.products; pickerTotal = d.total;

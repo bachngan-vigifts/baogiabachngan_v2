@@ -529,3 +529,15 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 .ship-rates { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
 .ship-summary { font-weight: 750; color: var(--brand-navy); font-size: 1.05rem; }
 @media (max-width: 720px) { .ship-rates { grid-template-columns: 1fr; } }
+
+/* Loại báo giá: 3 ô lớn, ô đang chọn nền navy (nổi bật hơn nút gạt cũ) */
+.type-pick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 14px; }
+.type-pick button { display: grid; gap: 1px; justify-items: center; padding: 10px 8px; border: 1.5px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink); cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s; }
+.type-pick b { font-size: 1rem; letter-spacing: .05em; }
+.type-pick small { font-size: .74rem; color: var(--muted); }
+.type-pick button:hover:not([aria-checked="true"]) { border-color: var(--blue); background: var(--blue-50); }
+.type-pick button[aria-checked="true"] { background: var(--brand-navy); border-color: var(--brand-navy); color: #fff; box-shadow: 0 4px 12px #102a5633; }
+.type-pick button[aria-checked="true"] small { color: #c9d6ee; }
+.type-pick.small button { padding: 8px; }
+#new-quote-dialog .modal-body > p { margin-top: 10px; }
+.form-grid + .form-grid { margin-top: 12px; }
