@@ -15,6 +15,8 @@ Project: `taceqfnsorewelsbdckg`. PostgreSQL thay D1; Supabase Storage thay R2.
 - Khi triển khai bản mới: tải lại toàn bộ `trial-ui/` (gồm `quote-math.js`) và deploy lại Edge Function (`DELETE` đã được thêm vào CORS cho thao tác khoá nhân viên; danh sách báo giá trả thêm `quoteDate`, `contact`, `phone`, `lineCount`, `mine`).
 - Đã nạp 2.099 khách hàng riêng biệt và 20 chiết khấu theo thương hiệu từ web cũ. Danh mục sản phẩm R2 cần nhập qua file JSON; chưa có quyền đọc kho file từ phiên này. Sapo nằm ngoài phạm vi bản dùng thử theo yêu cầu chủ dự án.
 
+Triển khai tự động không qua ChatGPT Sites (Cloudflare Pages + GitHub Actions): xem [TRIEN-KHAI.md](TRIEN-KHAI.md).
+
 Claude Code: xem [CLAUDE-SUPABASE.md](CLAUDE-SUPABASE.md) và cấu hình `.mcp.json` ở gốc repo.
 
 Kiểm tra: `npm run typecheck`, `npm test`. PostgreSQL được thử bằng PGlite; `tests/db/upgrade.test.ts` giữ kiểm tra lịch sử SQLite. Các test legacy yêu cầu checkout repo cũ qua `LEGACY_REPO`.

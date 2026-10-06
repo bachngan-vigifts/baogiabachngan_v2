@@ -1,12 +1,15 @@
 import { createDb, closeDb } from '../../../src/core/db/client.ts';
 import * as schema from '../../../src/db/schema.ts';
 import { createAppRouter } from '../../../src/app/router.ts';
-const ORIGIN = "https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site";
+// Trang giao diện được phép gọi API. Thêm địa chỉ mới (vd Cloudflare Pages) bằng secret ALLOWED_ORIGINS="https://a,https://b".
+const ORIGINS = new Set(["https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site",
+  ...(Deno.env.get('ALLOWED_ORIGINS') || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(s => /^https:\/\/[^/]+$/.test(s))]);
 const router = createAppRouter();
 Deno.serve(async req => {
-  const incoming = new URL(req.url), origin = req.headers.get('origin');
+  const incoming = new URL(req.url), origin = req.headers.get('origin') || '';
+  const ORIGIN = origin; // liên kết kích hoạt/đặt lại mật khẩu trỏ về đúng trang đã gửi yêu cầu
   const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store' };
-  if (origin !== ORIGIN) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
+  if (!ORIGINS.has(origin)) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
   if (req.method === 'OPTIONS') return new Response(null, {status:204,headers:cors});
   const url = Deno.env.get('SUPABASE_DB_URL');
   if (!url) return new Response(JSON.stringify({error:'Kết nối dữ liệu chưa sẵn sàng.'}), {status:503,headers:{...cors,'content-type':'application/json'}});

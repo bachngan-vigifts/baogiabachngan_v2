@@ -1,0 +1,37 @@
+# Tự triển khai Edge Function `baogia-v2-api` lên Supabase khi main thay đổi (sau khi test xanh).
+# Cần secret SUPABASE_ACCESS_TOKEN (Supabase → Account → Access Tokens). Biến APP_ORIGINS (tuỳ chọn):
+# danh sách địa chỉ giao diện được gọi API, vd "https://baogia-bachngan.pages.dev".
+name: Triển khai API
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'supabase/**', 'package-lock.json', '.github/workflows/deploy-api.yml']
+  workflow_dispatch:
+concurrency: deploy-api
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: taceqfnsorewelsbdckg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+      - name: Kiểm tra trước khi triển khai
+        run: npm ci && npm run typecheck && npm test
+      - name: Thiếu SUPABASE_ACCESS_TOKEN
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: echo "::warning::Chưa có secret SUPABASE_ACCESS_TOKEN – bỏ qua bước triển khai." 
+      - uses: supabase/setup-cli@v1
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        with:
+          version: latest
+      - name: Cập nhật danh sách trang được phép gọi API
+        if: env.SUPABASE_ACCESS_TOKEN != '' && vars.APP_ORIGINS != ''
+        run: supabase secrets set --project-ref "$PROJECT_REF" ALLOWED_ORIGINS="${{ vars.APP_ORIGINS }}"
+      - name: Triển khai Edge Function
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: supabase functions deploy baogia-v2-api --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
