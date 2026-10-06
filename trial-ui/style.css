@@ -559,6 +559,8 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 #picker-dialog { width: min(1040px, calc(100vw - 24px)); max-width: none; }
 .catalog-filters label span { display: block; font-size: .78rem; font-weight: 700; color: #49566a; margin-bottom: 5px; }
 .catalog-filters .btn { justify-self: start; }
+.catalog-filters .price-inputs span.row-gap { display: flex; flex-wrap: nowrap; gap: 6px; margin: 0; } .catalog-filters .price-inputs input { width: 100%; min-width: 0; text-align: right; }
+.portal .catalog-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } .portal .catalog-filters .price-inputs { grid-column: span 2; } .portal .catalog-filters .btn { margin-top: 22px; }
 @media (max-width: 900px) { .catalog-filters { grid-template-columns: 1fr 1fr; } }
 #picker-status { margin-bottom: 8px; }
 @media (max-width: 640px) {

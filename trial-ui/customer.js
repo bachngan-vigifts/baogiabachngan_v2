@@ -69,7 +69,7 @@ $('#c-login-form').addEventListener('submit', async e => {
   if (activation && password !== $('#c-password2').value) { err.textContent = 'Hai lần nhập mật khẩu chưa khớp.'; return; }
   btn.disabled = true;
   try {
-    if (activation) { await api('/activate', 'POST', { token: activation.token, password }); activation = null; history.replaceState(null, '', location.pathname + '#quotes'); }
+    if (activation) { await api('/activate', 'POST', { token: activation.token, password }); activation = null; history.replaceState(null, '', location.pathname + '#new'); }
     await api('/login', 'POST', { email, password });
     $('#c-login-form').reset(); $('#c-email').readOnly = false;
     await boot();
@@ -91,16 +91,19 @@ async function boot() {
     + (ck.length ? `<div><small class="muted">Chiết khấu riêng của quý khách</small><b>${ck.map(([k, v]) => `${k} ${fmtNum(v)}%`).join(' · ')}</b></div>` : '');
   document.title = st.me.customer.name + ' · Bách Ngân';
   notifier.start();
-  showTab(location.hash.replace('#', '') || 'quotes');
+  showTab(location.hash.replace('#', '') || 'new');
 }
 $('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth('Đã đăng xuất.'); });
 
+/** Thẻ: Tạo báo giá / Check tồn · Danh sách báo giá / Check tồn · Đơn đặt hàng / HĐKT · Công nợ. `#stock` (liên kết thông báo cũ) = danh sách, cuộn tới phần check tồn. */
 function showTab(tab) {
-  if (!['quotes', 'new', 'orders', 'debt', 'stock'].includes(tab)) tab = 'quotes';
+  const toStock = tab === 'stock'; if (toStock) tab = 'quotes';
+  if (!['quotes', 'new', 'orders', 'debt'].includes(tab)) tab = 'new';
   $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== tab);
-  history.replaceState(null, '', '#' + tab);
-  if (tab === 'quotes') loadQuotes(); else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else if (tab === 'stock') loadStock(); else loadCatalog();
+  history.replaceState(null, '', '#' + (toStock ? 'stock' : tab));
+  if (tab === 'quotes') { loadQuotes(); loadStock().then(() => { if (toStock) $('#p-stock-section').scrollIntoView({ behavior: 'smooth' }); }); }
+  else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else loadCatalog();
 }
 $$('[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 addEventListener('hashchange', () => { if (st.me && !$('#portal').hidden) showTab(location.hash.replace('#', '')); });
@@ -172,7 +175,7 @@ async function loadCatalog() {
           _hay: fold([p.sku, p.name, p.brand, p.pattern].map(v => v ?? '').join(' ')), _name: fold(p.name), _minhLong: ['minh long', 'healthy cook', 'su duong sinh'].some(w => label.includes(w)) };
       });
     }
-    fillInfo(); renderCart(); if ($('#p-picker').open) renderProducts();
+    fillBrands(); fillInfo(); renderCart(); if ($('#p-picker').open) renderProducts();
   } catch (e) { $('#p-search-status').textContent = e.message; }
 }
 const unitPrice = p => after({ price: p.price, discount: p.discount, discountType: 'percent' }, { type: 'B2B', vat: 8 });
@@ -185,11 +188,26 @@ function fillInfo() {
     .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
 }
 
+/** Thương hiệu gộp theo cách viết (bỏ dấu, hoa thường, ký tự nối); các kiểu Lock&Lock / LocknLock / Lock gộp một. */
+const brandKey = b => { const k = fold(b).replace(/[^a-z0-9]/g, ''); return /^lock(n?lock)?$/.test(k) ? 'lock' : k; };
+function fillBrands() {
+  const count = new Map();
+  for (const p of st.items) { const k = brandKey(p.brand); if (!k) continue; const m = count.get(k) ?? new Map(); m.set(p.brand.trim(), (m.get(p.brand.trim()) ?? 0) + 1); count.set(k, m); }
+  const opts = [...count].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1])[0][0], [...m.values()].reduce((a, b) => a + b, 0)]).sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  const sel = $('#p-brand'), cur = sel.value;
+  sel.innerHTML = '<option value="">Tất cả thương hiệu</option>' + opts.map(([k, label, n]) => `<option value="${esc(k)}">${esc(label)} (${fmtNum(n)})</option>`).join('');
+  sel.value = opts.some(o => o[0] === cur) ? cur : '';
+}
+const priceNum = v => { const d = String(v || '').replace(/\D/g, ''); return d ? Number(d) : ''; };
+
 let shown = 40;
 function renderProducts(more = false) {
   shown = more ? shown + 40 : 40;
-  const [min, max] = ($('#p-range').value || ':').split(':');
-  const found = (searchCatalog(st.items, { q: $('#p-search').value, group: $('#p-group').value, policy: CUSTOMER_POLICY, min, max }) || []).filter(p => p.customerPrice !== null);
+  const brand = $('#p-brand').value;
+  let min = priceNum($('#p-min').value), max = priceNum($('#p-max').value);
+  if (min !== '' && max !== '' && min > max) [min, max] = [max, min];
+  const found = (searchCatalog(st.items, { q: $('#p-search').value, group: $('#p-group').value, policy: CUSTOMER_POLICY, min, max }) || [])
+    .filter(p => p.customerPrice !== null && (!brand || brandKey(p.brand) === brand));
   $('#p-search-status').textContent = `${fmtNum(found.length)} sản phẩm phù hợp · Giá đã trừ chiết khấu riêng, chưa VAT.`;
   $('#p-products').innerHTML = found.slice(0, shown).map(p => { const has = st.cart.has(p.sku); return `<li class="${has ? 'added' : ''}">${imgTag(p.imageUrl)}
     <span class="prod-text"><b>${esc(p.name)}</b><small>Nhãn hiệu: ${esc(p.brand || '—')}</small><small>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · ${vatText(p)}</small></span>
@@ -203,8 +221,16 @@ let searchTimer, added = 0;
 $('#p-pick').addEventListener('click', () => { added = 0; $('#p-added').textContent = ''; $('#p-picker').showModal(); $('#p-search').focus(); renderProducts(); });
 $('#p-search').addEventListener('input', reRender);
 $('#p-group').addEventListener('change', reRender);
-$('#p-range').addEventListener('change', reRender);
-$('#p-clear').addEventListener('click', () => { $('#p-search').value = ''; $('#p-group').value = ''; $('#p-range').value = ''; renderProducts(); });
+$('#p-brand').addEventListener('change', reRender);
+// Khoảng giá có sẵn điền vào ô "từ – đến"; gõ tay vào ô thì chuyển sang "Tự nhập".
+$('#p-range').addEventListener('change', () => {
+  const v = $('#p-range').value; if (v === 'custom') { $('#p-min').focus(); return; }
+  const [lo, hi] = (v || ':').split(':'); $('#p-min').value = Number(lo) > 0 ? fmtNum(lo) : ''; $('#p-max').value = hi ? fmtNum(hi) : ''; reRender();
+});
+for (const id of ['#p-min', '#p-max']) $(id).addEventListener('input', e => {
+  const n = priceNum(e.target.value); e.target.value = n === '' ? '' : fmtNum(n); $('#p-range').value = $('#p-min').value || $('#p-max').value ? 'custom' : ''; reRender();
+});
+$('#p-clear').addEventListener('click', () => { for (const id of ['#p-search', '#p-group', '#p-brand', '#p-range', '#p-min', '#p-max']) $(id).value = ''; renderProducts(); });
 $('#p-more').addEventListener('click', () => renderProducts(true));
 $('#p-products').addEventListener('click', e => {
   const b = e.target.closest('[data-add]'); if (!b) return;
@@ -262,7 +288,7 @@ $('#p-send-order').addEventListener('click', () => send(true));
 // ----- Thông báo + tự làm mới: nhân viên xác nhận báo giá / đơn, trả lời tồn kho
 const notifier = setupNotifications({
   api, root: $('#p-bell'),
-  onNew(notes) { for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`); const tab = location.hash.replace('#', '') || 'quotes'; if (tab !== 'new') showTab(tab); },
+  onNew(notes) { for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`); const tab = location.hash.replace('#', '') || 'new'; if (tab !== 'new') showTab(tab); },
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) { if (location.hash === '#' + h) showTab(h); else location.hash = h; } },
 });
 
@@ -315,7 +341,8 @@ async function loadDebt() {
   } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="error">${esc(e.message)}</td></tr>`; }
 }
 
-// ----- Đơn hàng
+// ----- Đơn đặt hàng / HĐKT
+const CONTRACT_STATUS = { draft: ['HĐKT nháp', 'off'], signed: ['Đã ký', 'ok'], completed: ['Hoàn tất', 'ok'] };
 async function loadOrders() {
   const box = $('#p-orders'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
   try {
@@ -325,6 +352,7 @@ async function loadOrders() {
       <header><div><b>${esc(o.orderNo)}</b> ${pill(ORDER_STATUS, o.status)}<small>Ngày đặt ${fmtDate(o.orderDate)}${o.quoteNo ? ' · Báo giá ' + esc(o.quoteNo) : ''}${o.expectedDeliveryDate ? ' · Giao dự kiến ' + fmtDate(o.expectedDeliveryDate) : ''}</small></div>
         <strong>${money(o.total)}</strong></header>
       <ul class="plain-list">${o.lines.map(l => `<li><span>${esc(l.name)}<small>${esc(l.sku)}</small></span><span>${fmtNum(l.qty)} ${esc(l.unit)}${l.deliveredQty ? ` · đã giao ${fmtNum(l.deliveredQty)}` : ''}</span><b>${money(l.amount)}</b></li>`).join('')}</ul>
+      ${o.contract ? `<p class="small"><b>HĐKT ${esc(o.contract.contractNo)}</b> ${pill(CONTRACT_STATUS, o.contract.status)}${o.contract.signedDate ? ' · ký ngày ' + fmtDate(o.contract.signedDate) : ''}</p>` : ''}
       ${o.deliveries.length ? `<p class="small"><b>Lịch giao:</b> ${o.deliveries.map(d => `${fmtDate(d.plannedDate)} ${esc(d.timeSlot)} (${esc(DELIVERY_STATUS[d.status] || d.status)})`).join(' · ')}</p>` : ''}
       ${o.receivable && o.status !== 'draft' ? `<p class="small">Đã thanh toán ${money(o.receivable.paid)} · <b>Còn lại ${money(o.receivable.balance)}</b></p>` : ''}
       ${o.status === 'draft' ? '<button type="button" class="btn ghost small" data-cancel>Huỷ đơn</button>' : ''}

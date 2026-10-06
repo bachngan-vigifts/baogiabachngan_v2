@@ -28,6 +28,8 @@ Giá khách thấy = giá **"Giá bán lẻ"** − chiết khấu riêng theo nh
 - Sản phẩm chưa có giá bán lẻ thì không đặt được.
 
 ## Luồng
+
+Thẻ trên trang khách (theo thứ tự): **Tạo báo giá / Check tồn** (mặc định) · **Danh sách báo giá / Check tồn** · **Đơn đặt hàng / HĐKT** · **Công nợ**.
 1. **Khách gửi yêu cầu báo giá** → báo giá `B2B_BG…` ở trạng thái *Chờ duyệt*, giao cho nhân viên phụ trách. Trong danh sách báo giá của nhân viên, báo giá này có nhãn *Khách gửi*.
 2. **Nhân viên phụ trách** (hoặc Manager) bấm **Xác nhận báo giá khách** → báo giá thành *Đã duyệt*.
    - Nhân viên chỉ duyệt được báo giá do khách gửi; báo giá thường vẫn chỉ Manager duyệt.
@@ -86,7 +88,7 @@ Các sự kiện được thông báo:
 - **Đơn check tồn** (bảng `customer_stock_requests`, migration `0013`, phân quyền ở `0014`):
   - Khách chọn sản phẩm rồi bấm *Gửi check tồn* (cạnh nút *＋ Thêm sản phẩm*).
   - Nhân viên mở trang **Khách hỏi tồn**: xem tồn khả dụng, NCC và hàng chờ về; nhập số đáp ứng được và lời nhắn.
-  - Khách nhận thông báo và xem câu trả lời ở thẻ *Đơn check tồn*.
+  - Khách nhận thông báo và xem câu trả lời ở thẻ *Danh sách báo giá / Check tồn* (phần Đơn check tồn).
 - **API:**
   - Khu vực `self`: `/push/config`, `/push/subscribe`, `/push/unsubscribe`, `/notifications`, `/notifications/read`.
   - Khu vực `customer-portal`: `/portal/stock-requests`.

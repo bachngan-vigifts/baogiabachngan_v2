@@ -47,22 +47,21 @@
 <main class="portal-main" id="portal" hidden>
   <section class="card portal-owner" id="p-owner"></section>
   <nav class="chips portal-tabs" role="tablist">
-    <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="true">Báo giá</button>
-    <button type="button" class="chip" role="tab" data-tab="new" aria-selected="false">Tạo báo giá / Đặt hàng</button>
-    <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false">Đơn hàng</button>
-    <button type="button" class="chip" role="tab" data-tab="stock" aria-selected="false">Đơn check tồn</button>
+    <button type="button" class="chip" role="tab" data-tab="new" aria-selected="true">Tạo báo giá / Check tồn</button>
+    <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="false">Danh sách báo giá / Check tồn</button>
+    <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false">Đơn đặt hàng / HĐKT</button>
     <button type="button" class="chip" role="tab" data-tab="debt" aria-selected="false">Công nợ</button>
   </nav>
 
   <!-- Báo giá -->
-  <section class="card" data-panel="quotes">
-    <h2 class="card-title">Báo giá của công ty</h2>
+  <section class="card" data-panel="quotes" hidden>
+    <h2 class="card-title">Danh sách báo giá</h2>
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Số báo giá</th><th>Ngày</th><th class="right">Tổng (gồm VAT)</th><th>Trạng thái</th><th>Đơn hàng</th></tr></thead><tbody id="p-quotes"></tbody></table></div>
-    <p class="muted" id="p-quotes-empty" hidden>Chưa có báo giá. Vào "Tạo báo giá / Đặt hàng" để gửi yêu cầu.</p>
+    <p class="muted" id="p-quotes-empty" hidden>Chưa có báo giá. Vào "Tạo báo giá / Check tồn" để gửi yêu cầu.</p>
   </section>
 
   <!-- Tạo báo giá / đặt hàng: bố cục như trang báo giá của nhân viên -->
-  <section class="portal-new" data-panel="new" hidden>
+  <section class="portal-new" data-panel="new">
     <div class="editor-grid">
       <div class="card">
         <h2 class="card-title">Thông tin báo giá</h2>
@@ -113,8 +112,8 @@
   </section>
 
   <!-- Đơn check tồn: khách không xem tồn, gửi hỏi – nhân viên phụ trách trả lời -->
-  <section data-panel="stock" hidden>
-    <div class="card"><p class="muted small">Chọn sản phẩm ở thẻ "Tạo báo giá / Đặt hàng" rồi bấm <b>Gửi check tồn</b>. Nhân viên phụ trách nhận thông báo và trả lời số lượng đáp ứng được.</p></div>
+  <section data-panel="quotes" id="p-stock-section" hidden>
+    <div class="card"><h2 class="card-title">Đơn check tồn</h2><p class="muted small">Chọn sản phẩm ở thẻ "Tạo báo giá / Check tồn" rồi bấm <b>Gửi check tồn</b>. Nhân viên phụ trách nhận thông báo và trả lời số lượng đáp ứng được.</p></div>
     <div id="p-stock"></div>
     <p class="muted card" id="p-stock-empty" hidden>Quý khách chưa gửi đơn check tồn nào.</p>
   </section>
@@ -144,7 +143,9 @@
     <p class="search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
     <div class="catalog-filters">
       <label><span>Nhóm sản phẩm</span><select id="p-group"><option value="">Tất cả nhóm</option><option value="dinner">Bộ đồ ăn</option><option value="tea">Bộ trà</option><option value="thermalCup">Ly / cốc giữ nhiệt</option><option value="thermalBottle">Bình giữ nhiệt</option><option value="tableware">Chén, tô, đĩa</option><option value="vase">Bình hoa</option><option value="cookware">Nồi, chảo</option></select></label>
-      <label><span>Khoảng giá</span><select id="p-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option></select></label>
+      <label><span>Thương hiệu</span><select id="p-brand"><option value="">Tất cả thương hiệu</option></select></label>
+      <label><span>Khoảng giá</span><select id="p-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option><option value="custom">Tự nhập…</option></select></label>
+      <label class="price-inputs"><span>Giá từ – đến (đ)</span><span class="row-gap"><input id="p-min" inputmode="numeric" placeholder="Từ" aria-label="Giá từ"><input id="p-max" inputmode="numeric" placeholder="Đến" aria-label="Giá đến"></span></label>
       <button type="button" class="btn secondary" id="p-clear">Xoá bộ lọc</button>
     </div>
     <p class="search-help" id="p-search-status" aria-live="polite">Đang tải danh mục…</p>
