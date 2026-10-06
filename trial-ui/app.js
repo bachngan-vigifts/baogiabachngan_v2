@@ -1,6 +1,6 @@
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
-import { totals, after, discounted, profit, normalize } from './quote-math.js';
+import { totals, after, discounted, profit, normalize, netPrice, defaultCostDiscount, purchasePrice } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -794,12 +794,8 @@ const priceOf = (p, policyId) => {
   const v = Array.isArray(p.prices) ? p.prices.find(x => x.policyId === policyId)?.price : p.prices?.[policyId];
   return Number.isFinite(v) ? v : null;
 };
-function productPrice(p) {
-  const pick = priceOf(p, currentPolicy());
-  if (pick !== null) return pick;
-  for (const pol of state.policies) { const v = priceOf(p, pol.id); if (v !== null) return v; }
-  return null;
-}
+/** Giá niêm yết theo bảng giá đang chọn (null = bảng giá này chưa có giá, như bản cũ). */
+const productPrice = p => priceOf(p, currentPolicy());
 /** Tồn khả dụng = tổng các kho thật (không tính NCC và hàng chờ về). */
 const availableStock = p => state.warehouses.filter(w => w.kind === 'stock').reduce((s, w) => s + (Number(p.stock?.[w.id]) || 0), 0);
 const stockDetail = p => state.warehouses.filter(w => p.stock?.[w.id] !== undefined).map(w => `${w.name}: ${fmtNum(Number(p.stock[w.id]))}`).join('\n');
@@ -861,14 +857,26 @@ function renderSelection() {
   $('#product-selection').hidden = n === 0;
   $('#product-selection-text').textContent = `Đã chọn ${n} sản phẩm`;
 }
-/** Dòng báo giá từ một sản phẩm trong danh mục. */
+/**
+ * Dòng báo giá từ sản phẩm trong danh mục – port `catalogChoice`/`addProduct` của bản cũ:
+ * VAT dòng = thuế đầu ra (không chịu thuế → 0%); bảng giá có chữ "VAT" hoặc sản phẩm "Giá đã bao gồm thuế"
+ * thì quy về giá chưa thuế; Manager được điền sẵn giá vốn theo chiết khấu mua vào mặc định của thương hiệu.
+ * Trả null (kèm thông báo) nếu bảng giá chưa có giá hoặc sản phẩm chịu thuế mà chưa có thuế đầu ra.
+ */
 function rowFromProduct(p) {
-  const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price: productPrice(p) ?? 0 };
+  const policy = state.policies.find(x => x.id === currentPolicy()), raw = priceOf(p, currentPolicy());
+  if (raw === null) { toast(`${p.sku}: bảng giá "${policy?.name || ''}" chưa có giá. Chọn bảng giá khác.`, 'err'); return null; }
+  if (p.taxable && !Number.isFinite(p.taxOut)) { toast(`${p.sku}: chưa có thuế đầu ra. Cập nhật thuế trên Sapo trước.`, 'err'); return null; }
+  const tax = p.taxable ? p.taxOut : 0;
+  const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
+  const price = netPrice(raw, tax, included);
+  const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '' };
+  if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; row.costPrice = purchasePrice(price, d); } }
   if (p.imageUrl) row.image = p.imageUrl;
-  if (Number(p.perCarton) > 0) row.perCarton = Number(p.perCarton);
-  if (Number(p.cartonWeight) > 0) row.cartonWeight = Number(p.cartonWeight);
+  for (const k of ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) if (Number(p[k]) > 0) row[k] = Number(p[k]);
   return row;
 }
+const rowsFromProducts = list => list.map(rowFromProduct).filter(Boolean);
 let productTimer;
 $('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(() => loadProducts(), 250); });
 $('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; loadProducts(); });
@@ -882,12 +890,15 @@ $('#product-list').addEventListener('change', e => {
 });
 $('#product-list').addEventListener('click', e => {
   const b = e.target.closest('[data-quote-product]'); if (!b) return;
-  editor.pending = newQuoteData({ rows: [rowFromProduct(state.products.find(x => x.sku === b.dataset.quoteProduct))] });
-  go('#/quotes/new');
+  const rows = rowsFromProducts([state.products.find(x => x.sku === b.dataset.quoteProduct)]);
+  if (!rows.length) return;
+  editor.pending = newQuoteData({ rows }); go('#/quotes/new');
 });
 $('#product-clear').addEventListener('click', () => { state.selected.clear(); renderProducts(); });
 $('#product-to-quote').addEventListener('click', () => {
-  editor.pending = newQuoteData({ rows: [...state.selected.values()].map(rowFromProduct) });
+  const rows = rowsFromProducts([...state.selected.values()]);
+  if (!rows.length) return;
+  editor.pending = newQuoteData({ rows });
   state.selected.clear(); renderSelection(); go('#/quotes/new');
 });
 
@@ -901,11 +912,17 @@ $('#catalog-file').addEventListener('change', async e => {
   if (data?.format !== 'sapo-catalog-v1' || !n) { toast('Đây không phải file danh mục của web báo giá cũ (định dạng sapo-catalog-v1).', 'err'); return; }
   if (!await confirmBox(`Nhập ${n.toLocaleString('vi-VN')} sản phẩm, ${data.pricePolicies?.length || 0} bảng giá, ${data.warehouses?.length || 0} kho từ "${file.name}"? Giá và tồn kho sẽ được cập nhật theo file; sản phẩm không có trong file sẽ bị ẩn.`, { title: 'Nhập danh mục', ok: 'Nhập' })) return;
   const label = $('#catalog-import-label'); label.classList.add('busy');
+  // Gửi theo lô 500 mã; lô cuối kèm replaceAll + toàn bộ mã của file để ẩn sản phẩm không còn. Lỗi giữa chừng: chọn lại file chạy lại.
+  const BATCH = 500, allSkus = data.products.map(p => p?.sku).filter(x => typeof x === 'string').map(x => x.trim());
   try {
-    const res = await api('/admin/catalog-import', 'POST', data);
-    toast(res.message || 'Đã nhập danh mục.');
+    for (let i = 0; i < n; i += BATCH) {
+      const last = i + BATCH >= n;
+      await api('/admin/catalog-import', 'POST', { ...data, products: data.products.slice(i, i + BATCH), ...(last ? { replaceAll: true, allSkus } : {}) });
+      $('#product-count').textContent = `Đang nhập ${Math.min(i + BATCH, n).toLocaleString('vi-VN')}/${n.toLocaleString('vi-VN')}…`;
+    }
+    toast(`Đã nhập ${n.toLocaleString('vi-VN')} sản phẩm.`);
     brandsLoaded = false; state.selected.clear(); loadProducts();
-  } catch (ex) { toast(ex.message, 'err'); }
+  } catch (ex) { toast(ex.message + ' Chọn lại file để nhập tiếp.', 'err'); loadProducts(); }
   finally { label.classList.remove('busy'); }
 });
 
@@ -940,8 +957,9 @@ function searchProducts(input) {
 }
 function pickProduct(p) {
   const tr = pInput?.closest('tr'); if (!tr) return;
-  const i = Number(tr.dataset.i), old = editor.rows[i];
-  editor.rows[i] = { ...rowFromProduct(p), id: old.id, qty: old.qty || 1, discount: old.discount, discountType: old.discountType, printFee: old.printFee, ...(Number.isFinite(old.taxRate) ? { taxRate: old.taxRate } : {}), ...(old.costPrice !== undefined ? { costPrice: old.costPrice } : {}) };
+  const i = Number(tr.dataset.i), old = editor.rows[i], row = rowFromProduct(p);
+  if (!row) return;
+  editor.rows[i] = { ...row, id: old.id, qty: old.qty || 1, discount: old.discount, discountType: old.discountType, printFee: old.printFee };
   hideProductSuggest(); markDirty(); renderLines();
   $(`#line-list tr[data-i="${i}"] [data-k="qty"]`)?.focus();
 }
@@ -1005,7 +1023,8 @@ $('#picker-list').addEventListener('click', e => {
   const b = e.target.closest('[data-add]'); if (!b) return;
   const li = b.closest('li'), p = pickerItems[b.dataset.add], qty = parseNum(li.querySelector('input').value);
   if (!(qty > 0)) { li.querySelector('input').classList.add('invalid'); return; }
-  if (!addRowsToQuote([{ ...rowFromProduct(p), qty }])) return;
+  const row = rowFromProduct(p);
+  if (!row || !addRowsToQuote([{ ...row, qty }])) return;
   pickerAdded++; li.classList.add('added'); b.textContent = '✓ Đã thêm';
   $('#picker-added').textContent = `Đã thêm ${pickerAdded} sản phẩm vào báo giá`;
 });

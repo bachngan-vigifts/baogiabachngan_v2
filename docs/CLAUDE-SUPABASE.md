@@ -36,6 +36,6 @@ Gửi `Authorization: Bearer <sessionToken>` cho route riêng tư. Đây là phi
 
 ## Phần tiếp theo
 
-Nhánh `claude/demo` hiện dùng dữ liệu mẫu. Khi tích hợp, thay lớp dữ liệu mẫu bằng API ở trên, giữ các hàm tính giá và phân quyền đã kiểm thử. Bản đã xuất bản có đăng nhập, danh bạ, tạo/sửa báo giá và in PDF; cổng NCC và upload file chưa mở. Không tự áp lại migration vào project đã có schema; trước tiên kiểm tra trạng thái và xem `docs/SUPABASE.md`.
+Nhánh `claude/demo` hiện dùng dữ liệu mẫu. Khi tích hợp, thay lớp dữ liệu mẫu bằng API ở trên, giữ các hàm tính giá và phân quyền đã kiểm thử. Bản đã xuất bản có đăng nhập, danh bạ, tạo/sửa báo giá và in PDF; cổng NCC và upload file chưa mở. Khách hàng cũ đã được nạp; API `/products` và `/admin/catalog-import` phục vụ tìm/chọn và nhập danh mục JSON từ web cũ (xem `docs/NHAP-DU-LIEU.md`; nhập lại cập nhật giá/tồn, lô cuối `replaceAll` ẩn mã không còn). Danh mục sản phẩm chưa được nạp vì nguồn R2 chưa truy cập được. Không tự áp lại migration vào project đã có schema; trước tiên kiểm tra trạng thái và xem `docs/SUPABASE.md`.
 
 Kiểm tra backend: `npm run typecheck`, `npm test`. Kết quả trước xuất bản: 173 pass, 0 fail, 30 test legacy skipped. Kiểm tra thực tế giao diện cần tài khoản được kích hoạt riêng.

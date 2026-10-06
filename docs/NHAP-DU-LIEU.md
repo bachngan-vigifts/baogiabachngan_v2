@@ -33,6 +33,11 @@ Sản phẩm ngừng bán: đặt `active = false` (không xoá, báo giá cũ v
 
 API: `GET /api/staff/products?q=&brand=&limit=&offset=` (tìm không dấu theo SKU/tên/thương hiệu), `GET /api/staff/product-brands`, `GET /api/staff/products/:sku`.
 
+**Cách nhập khuyên dùng:** Manager bấm **Nhập danh mục** trên trang Sản phẩm và chọn file JSON lấy từ web cũ (`GET /api/staff/catalog`). Giao diện gọi `POST /api/staff/admin/catalog-import` theo lô 500 mã:
+- lô thường: ghi đè tên/giá/tồn của các mã trong lô (không tạo dòng trùng; bảng giá/kho trùng tên được dùng lại);
+- lô cuối: thêm `replaceAll: true` và `allSkus` (mọi mã trong file) → ẩn sản phẩm không còn trong file, ngừng dùng kho không còn, ghi `catalog_versions`.
+Lời gọi không có `replaceAll` không bao giờ ẩn sản phẩm. Lỗi giữa chừng: chọn lại file, chạy lại từ đầu (idempotent).
+
 ## Kiểm tra sau khi nhập
 
 1. Số dòng: `sapo_customers`, `products` khớp bản cũ; tổng `product_count` trong `catalog_versions`.

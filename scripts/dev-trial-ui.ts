@@ -29,10 +29,10 @@ await seedStaff({ sqlite: new PgFixture(client) });
 await client.exec(`
   INSERT INTO price_policies (id, name, sort_order) VALUES ('le', 'Giá bán lẻ', 0), ('si', 'Giá sỉ', 1);
   INSERT INTO warehouses (id, name, kind, sort_order) VALUES ('q1', 'Kho Quận 1', 'stock', 0), ('hcv', 'Hàng chờ về', 'incoming', 9);
-  INSERT INTO products (sku, name, brand, unit, updated_at) VALUES
-    ('LHC4125', 'Bình giữ nhiệt Lock&Lock 500ml', 'Lock&Lock', 'cái', now()::text),
-    ('ML-LY-02', 'Bộ ly sứ Minh Long 6 món', 'Minh Long', 'bộ', now()::text),
-    ('LYS-500', 'Bình nước thủy tinh LYS 500ml', 'LYS', 'cái', now()::text);
+  INSERT INTO products (sku, name, brand, unit, taxable, tax_out, updated_at) VALUES
+    ('LHC4125', 'Bình giữ nhiệt Lock&Lock 500ml', 'Lock&Lock', 'cái', true, 8, now()::text),
+    ('ML-LY-02', 'Bộ ly sứ Minh Long 6 món', 'Minh Long', 'bộ', true, 10, now()::text),
+    ('LYS-500', 'Bình nước thủy tinh LYS 500ml', 'LYS', 'cái', true, 8, now()::text);
   INSERT INTO product_prices (sku, policy_id, price) VALUES ('LHC4125', 'le', 185000), ('LHC4125', 'si', 166000), ('ML-LY-02', 'le', 320000), ('LYS-500', 'le', 145000);
   INSERT INTO product_stock (sku, warehouse_id, quantity, updated_at) VALUES ('LHC4125', 'q1', 120, now()::text), ('ML-LY-02', 'q1', 6, now()::text);
 `);

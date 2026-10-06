@@ -17,6 +17,17 @@ test('trial: customer CRUD, quote save/revision và chặn NCC/nhân viên khác
   const mgr = (await call('/login', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
   const ncc = (await call('/login', 'POST', { email: 'ncc@x.vn', password: PASSWORD })).cookie;
   assert.equal((await call('/customers', 'GET', undefined, ncc)).status, 403);
+  assert.equal((await call('/products', 'GET', undefined, ncc)).status, 403);
+  const catalog = { format:'sapo-catalog-v1', warehouses:['Kho thử'], pricePolicies:['Giá bán'], products:[{sku:'SKU-TEST',name:'Ly thử',prices:[12.5],stock:[null],taxOut:8}] };
+  assert.equal((await call('/admin/catalog-import', 'POST', catalog, emp)).status, 403);
+  assert.equal((await call('/admin/catalog-import', 'POST', catalog, mgr)).status, 200);
+  const productList = await call('/products?q=SKU-TEST', 'GET', undefined, emp);
+  assert.equal(productList.data.products.length, 1);
+  assert.equal(productList.data.products[0].prices[0].price, 12.5);
+  assert.equal((await call('/admin/catalog-import', 'POST', {...catalog,products:[{...catalog.products[0],prices:[99]}]}, mgr)).status,200);
+  // Nhập lại cập nhật giá theo file (yêu cầu chủ dự án 06/10/2026; trước đây giữ giá cũ).
+  assert.equal((await call('/products?q=SKU-TEST','GET',undefined,emp)).data.products[0].prices[0].price,99);
+  assert.equal((await call('/admin/catalog-import', 'POST', {...catalog,products:[catalog.products[0],catalog.products[0]]},mgr)).status,400);
   const c = await call('/customers', 'POST', { name: 'Khách thử', phone: '0900000000' }, emp);
   assert.equal(c.status, 201);
   assert.equal((await call('/customers/' + c.data.id, 'PUT', { name: 'Khách thử 2' }, emp)).status, 200);

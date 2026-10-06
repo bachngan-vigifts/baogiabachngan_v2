@@ -13,8 +13,10 @@ Project: `taceqfnsorewelsbdckg`. PostgreSQL thay D1; Supabase Storage thay R2.
 - Tiền trên giao diện tính bằng `trial-ui/quote-math.js`, **sinh tự động** từ `src/modules/quotes/domain/quote-math.ts` (`npm run ui:build`; test báo lỗi nếu file cũ) – không viết lại công thức ở frontend.
 - Chạy thử trên máy không cần Supabase: `npm run ui:dev` → http://localhost:8787 (PGlite trong bộ nhớ, `mgr@x.vn` / `mat-khau-12345`).
 - Khi triển khai bản mới: tải lại toàn bộ `trial-ui/` (gồm `quote-math.js`) và deploy lại Edge Function (`DELETE` đã được thêm vào CORS cho thao tác khoá nhân viên; danh sách báo giá trả thêm `quoteDate`, `contact`, `phone`, `lineCount`, `mine`).
-- Chưa chuyển dữ liệu thật từ repo cũ.
+- Đã nạp 2.099 khách hàng riêng biệt và 20 chiết khấu theo thương hiệu từ web cũ. Danh mục sản phẩm R2 cần nhập qua file JSON; chưa có quyền đọc kho file từ phiên này. Sapo nằm ngoài phạm vi bản dùng thử theo yêu cầu chủ dự án.
 
 Claude Code: xem [CLAUDE-SUPABASE.md](CLAUDE-SUPABASE.md) và cấu hình `.mcp.json` ở gốc repo.
 
 Kiểm tra: `npm run typecheck`, `npm test`. PostgreSQL được thử bằng PGlite; `tests/db/upgrade.test.ts` giữ kiểm tra lịch sử SQLite. Các test legacy yêu cầu checkout repo cũ qua `LEGACY_REPO`.
+
+Sản phẩm: `GET /products?q=&brand=&limit=&offset=`, `GET /product-brands`, `GET /products/:sku`. Manager nhập danh mục bằng nút **Nhập danh mục** trên trang Sản phẩm (gọi `POST /admin/catalog-import`). Nhập lại **cập nhật** tên/giá/tồn theo file, không tạo dòng trùng; giao diện gửi theo lô 500 sản phẩm và lô cuối mang `replaceAll` + danh sách mã của cả file để ẩn sản phẩm không còn trong file. Lô nào lỗi thì chọn lại file chạy lại (an toàn vì idempotent). Chi tiết: `docs/NHAP-DU-LIEU.md`.

@@ -42,7 +42,7 @@ function seed() {
   ];
   const policies = [{ id: 'le', name: 'Giá bán lẻ' }, { id: 'si', name: 'Giá sỉ' }];
   const warehouses = [{ id: 'q1', name: 'Kho Quận 1', kind: 'stock' }, { id: 'td', name: 'Kho Thủ Đức', kind: 'stock' }, { id: 'ncc', name: 'NCC', kind: 'supplier' }, { id: 'hcv', name: 'Hàng chờ về', kind: 'incoming' }];
-  const P = (sku, name, brand, unit, le, si, q1, td) => ({ sku, name, brand, unit, pattern: '', imageUrl: '', prices: { le, si }, stock: { q1, td, ncc: 0, hcv: 0 } });
+  const P = (sku, name, brand, unit, le, si, q1, td) => ({ sku, name, brand, unit, pattern: '', imageUrl: '', taxable: true, taxOut: 8, taxBasis: 'Giá chưa bao gồm thuế', prices: [{ policyId: 'le', price: le }, { policyId: 'si', price: si }], stock: { q1, td, ncc: 0, hcv: 0 } });
   const products = [
     P('LHC4125', 'Bình giữ nhiệt Lock&Lock Energetic 500ml', 'Lock&Lock', 'cái', 185000, 166000, 120, 40),
     P('LHC4131', 'Bình giữ nhiệt Lock&Lock Feather Light 450ml', 'Lock&Lock', 'cái', 245000, 220000, 35, 0),

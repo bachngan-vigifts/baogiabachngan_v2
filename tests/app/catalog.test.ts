@@ -81,7 +81,7 @@ test('khách hàng: tìm không dấu theo tên/điện thoại/MST, phân trang
 test('nhập danh mục (Manager): tạo bảng giá/kho/sản phẩm; nhập lại thì cập nhật giá/tồn và ẩn mã không còn', async () => {
   const { db, call, emp } = await setup();
   const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
-  const file = (products: object[]) => ({ format: 'sapo-catalog-v1', observedAt: '2026-10-06T01:00:00.000Z', warehouses: ['Kho A', 'NCC', 'Hàng chờ về'], pricePolicies: ['Giá bán lẻ', 'Giá sỉ'], products, extraField: 1 });
+  const file = (products: object[]) => ({ format: 'sapo-catalog-v1', observedAt: '2026-10-06T01:00:00.000Z', warehouses: ['Kho A', 'NCC', 'Hàng chờ về'], pricePolicies: ['Giá bán lẻ', 'Giá sỉ'], products, replaceAll: true, extraField: 1 });
   const p = (sku: string, le: number | null, stock: (number | null)[]) => ({ sku, name: 'SP ' + sku, brand: 'B', unit: 'cái', image: '', taxBasis: '', taxable: true, taxIn: 8, taxOut: 8, prices: [le, null], stock, incomingQuantity: 0 });
   assert.equal((await call('/admin/catalog-import', emp, 'POST', file([p('A', 1, [1, 0, 0])]))).status, 403);
   assert.equal((await call('/admin/catalog-import', mgr, 'POST', { format: 'khac' })).status, 400);
@@ -108,7 +108,7 @@ test('nhập lại danh mục: giá/tồn theo file mới, không sinh dòng tr�
   const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
   const count = async (table: any) => (await db.select().from(table)).length;
   const imp = async (warehouses: string[], pricePolicies: string[], products: object[]) => {
-    const r = await call('/admin/catalog-import', mgr, 'POST', { format: 'sapo-catalog-v1', observedAt: new Date().toISOString(), warehouses, pricePolicies, products });
+    const r = await call('/admin/catalog-import', mgr, 'POST', { format: 'sapo-catalog-v1', observedAt: new Date().toISOString(), warehouses, pricePolicies, products, replaceAll: true });
     assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data;
   };
   const prod = (sku: string, name: string, prices: (number | null)[], stock: (number | null)[]) => ({ sku, name, brand: 'B', pattern: '', unit: 'cái', image: '', taxBasis: '', taxable: false, taxIn: null, taxOut: null, prices, stock });
@@ -162,4 +162,27 @@ test('nhập danh mục lỗi giữa chừng không để lại dữ liệu dở
     assert.equal(r.status, 400);
   }
   assert.deepEqual((await db.select().from(products)).map(p => [p.sku, p.active]), [['A', true]]);
+});
+
+test('nhập theo lô: lô thường chỉ cập nhật (không ẩn), lô cuối replaceAll + allSkus mới ẩn mã vắng mặt', async () => {
+  const { db, call, emp } = await setup();
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  const base = { format: 'sapo-catalog-v1', warehouses: ['K'], pricePolicies: ['L'] };
+  const prod = (sku: string, price: number) => ({ sku, name: 'SP ' + sku, prices: [price], stock: [1] });
+  const post = (body: object) => call('/admin/catalog-import', mgr, 'POST', { ...base, ...body });
+  assert.equal((await post({ products: [prod('A', 1), prod('B', 1), prod('C', 1)], replaceAll: true })).status, 200);
+  // Giao diện cũ (không có replaceAll): gửi lô chỉ có A với giá mới → cập nhật A, KHÔNG ẩn B, C.
+  assert.equal((await post({ products: [prod('A', 5)] })).status, 200);
+  let list = (await call('/products', emp)).data;
+  assert.deepEqual(list.products.map((p: any) => [p.sku, p.prices[0].price]), [['A', 5], ['B', 1], ['C', 1]]);
+  assert.equal((await db.select().from(catalogVersions)).length, 1); // lô thường không ghi phiên bản
+  // File mới có A, B, D chia 2 lô: lô 1 (A, B) thường; lô cuối (D) replaceAll + allSkus.
+  assert.equal((await post({ products: [prod('A', 6), prod('B', 7)] })).status, 200);
+  assert.equal((await post({ products: [prod('D', 8)], replaceAll: true, allSkus: ['A', 'B', 'D'] })).status, 200);
+  list = (await call('/products', emp)).data;
+  assert.deepEqual(list.products.map((p: any) => [p.sku, p.prices[0].price]), [['A', 6], ['B', 7], ['D', 8]]);
+  const current = (await db.select().from(catalogVersions)).filter(v => v.isCurrent);
+  assert.equal(current.length, 1); assert.equal(current[0]!.productCount, 3);
+  // allSkus phải chứa mọi mã của lô.
+  assert.equal((await post({ products: [prod('E', 1)], replaceAll: true, allSkus: ['A'] })).status, 400);
 });

@@ -25,6 +25,9 @@ const catalogFile = z.object({
     perCarton: size, cartonWeight: size, cartonLength: size, cartonWidth: size, cartonHeight: size,
     prices: z.array(amount), stock: z.array(z.number().finite().min(-1e12).max(1e12).nullable()),
   })).min(1).max(50000),
+  /** true = đây là toàn bộ danh mục (hoặc lô cuối): ẩn sản phẩm/kho không có trong `allSkus` (mặc định = mã trong lô). */
+  replaceAll: z.boolean().default(false),
+  allSkus: z.array(z.string().trim().min(1).max(500)).max(50000).optional(),
 }).superRefine((data, ctx) => {
   if (new Set(data.products.map(p => p.sku)).size !== data.products.length ||
       new Set(data.warehouses).size !== data.warehouses.length ||
@@ -95,13 +98,16 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   /**
-   * Manager nhập file danh mục (thay toàn bộ catalog như `replaceCatalog` bản cũ): ghi đè giá/tồn theo file,
-   * sản phẩm không còn trong file chuyển `active = false` (báo giá cũ vẫn giữ dữ liệu của mình). Chạy lại được nhiều lần.
+   * Manager nhập file danh mục web cũ. Mỗi lần gọi ghi đè tên/giá/tồn của các mã gửi lên (không tạo dòng trùng,
+   * chạy lại được nhiều lần). Gửi theo lô được: chỉ lời gọi có `replaceAll: true` (toàn bộ file, hoặc lô cuối kèm
+   * `allSkus` = mọi mã của file) mới ẩn sản phẩm không còn trong file, ngừng dùng kho không còn và ghi `catalog_versions`.
+   * Lời gọi không có `replaceAll` (vd giao diện cũ gửi 100 mã/lần) chỉ cập nhật, không ẩn gì.
    */
   router.post('/admin/catalog-import', async c => {
     const parsed = catalogFile.safeParse(await readJson(c.req, 20_000_000));
     if (!parsed.success) throw new AppError(400, 'File danh mục không hợp lệ. Chọn file JSON danh mục từ web báo giá cũ.');
     const data = parsed.data, now = new Date().toISOString(), actor = (c.state.session as SessionState).member.id;
+    if (data.allSkus) { const all = new Set(data.allSkus); if (data.products.some(p => !all.has(p.sku))) throw new AppError(400, 'Danh sách mã của file không khớp lô đang nhập.'); }
     await c.env.db.transaction(async tx => {
       // Tên bảng giá/kho là duy nhất: dùng lại id đã có theo tên, chưa có thì tạo id 'legacy:<tên>'.
       const [oldPolicies, oldStores] = await Promise.all([tx.select().from(pricePolicies), tx.select().from(warehouses)]);
@@ -112,7 +118,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       for (const [i, name] of data.warehouses.entries())
         await tx.insert(warehouses).values({ id: warehouseIds[i]!, name, sortOrder: i, kind: warehouseKind(name), active: true })
           .onConflictDoUpdate({ target: warehouses.id, set: { name, sortOrder: i, kind: warehouseKind(name), active: true } });
-      const skus = data.products.map(p => p.sku);
+      const skus = data.products.map(p => p.sku), keepSkus = data.allSkus ?? skus;
       for (const part of chunks(data.products)) {
         await tx.insert(products).values(part.map(p => ({
           sku: p.sku, name: p.name, brand: p.brand, pattern: p.pattern, unit: p.unit, imageUrl: p.image, taxBasis: p.taxBasis,
@@ -134,11 +140,12 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       const stockRows = data.products.flatMap(p => p.stock.flatMap((q, i) => q === null ? [] : [{ sku: p.sku, warehouseId: warehouseIds[i]!, quantity: q, updatedAt: now }]));
       for (const part of chunks(priceRows)) await tx.insert(productPrices).values(part);
       for (const part of chunks(stockRows)) await tx.insert(productStock).values(part);
-      await tx.update(products).set({ active: false, updatedAt: now }).where(and(eq(products.active, true), notInArray(products.sku, skus)));
+      if (!data.replaceAll) return;
+      await tx.update(products).set({ active: false, updatedAt: now }).where(and(eq(products.active, true), notInArray(products.sku, keepSkus)));
       await tx.update(warehouses).set({ active: false }).where(notInArray(warehouses.id, warehouseIds));
       await tx.update(catalogVersions).set({ isCurrent: false }).where(eq(catalogVersions.isCurrent, true));
-      await tx.insert(catalogVersions).values({ id: crypto.randomUUID(), observedAt: data.observedAt || now, productCount: data.products.length, isCurrent: true, createdBy: actor, createdAt: now });
+      await tx.insert(catalogVersions).values({ id: crypto.randomUUID(), observedAt: data.observedAt || now, productCount: keepSkus.length, isCurrent: true, createdBy: actor, createdAt: now });
     });
-    return json({ count: data.products.length, policies: data.pricePolicies.length, warehouses: data.warehouses.length, message: `Đã nhập ${data.products.length} sản phẩm.` });
+    return json({ count: data.products.length, replaced: data.replaceAll, policies: data.pricePolicies.length, warehouses: data.warehouses.length, message: `Đã nhập ${data.products.length} sản phẩm.` });
   }, 'admin');
 }
