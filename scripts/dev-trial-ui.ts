@@ -33,6 +33,7 @@ await client.exec(`
     ('LHC4125', 'Bình giữ nhiệt Lock&Lock 500ml', 'Lock&Lock', 'cái', true, 8, now()::text),
     ('ML-LY-02', 'Bộ ly sứ Minh Long 6 món', 'Minh Long', 'bộ', true, 10, now()::text),
     ('LYS-500', 'Bình nước thủy tinh LYS 500ml', 'LYS', 'cái', true, 8, now()::text);
+  UPDATE products SET image_url = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAIAAAADnC86AAAAa0lEQVR4nO3WwQ3AIAxDUVbh3P136FbpBC1ORMFIP/LZTzkl7e7XljRgYGDgLXBErIPjff6CP8gCr8KiqtsSnFJF2xguqIoN7AKX1aHtujHwSrhmDzu94aytFNrfY4VP9Zzzc80KMDDw+fADM4kbDQFTe8YAAAAASUVORK5CYII=' WHERE sku = 'LHC4125';
   INSERT INTO product_prices (sku, policy_id, price) VALUES ('LHC4125', 'le', 185000), ('LHC4125', 'si', 166000), ('ML-LY-02', 'le', 320000), ('LYS-500', 'le', 145000);
   INSERT INTO product_stock (sku, warehouse_id, quantity, updated_at) VALUES ('LHC4125', 'q1', 120, now()::text), ('ML-LY-02', 'q1', 6, now()::text);
 `);

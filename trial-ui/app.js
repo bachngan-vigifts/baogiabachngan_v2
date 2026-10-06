@@ -41,6 +41,50 @@ function ago(iso) {
 const initials = name => String(name || '?').trim().split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase() || '?';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
 
+// ---------------------------------------------------------------- hình ảnh
+// Ảnh Google Drive: dùng ảnh thu nhỏ (link chia sẻ /file/d/<id> không hiển thị trực tiếp được), lỗi thì thử lh3.
+const driveId = v => (String(v || '').match(/\/d\/([\w-]{10,})/) || String(v || '').match(/[?&]id=([\w-]{10,})/) || [])[1] || '';
+const isDrive = v => { try { const h = new URL(v).hostname; return h === 'drive.google.com' || h === 'docs.google.com'; } catch { return false; } };
+const displayImage = v => { const s = String(v || '').trim(), id = isDrive(s) && driveId(s); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w600` : s; };
+const fallbackImage = v => { const id = isDrive(v) && driveId(v); return id ? `https://lh3.googleusercontent.com/d/${id}=w600` : ''; };
+const PLACEHOLDER = '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4 4 3-3 5 5 M15 9h.01"/></svg>';
+/** Ảnh được phép lưu trong báo giá (như máy chủ kiểm tra): https hoặc ảnh JPEG/PNG/WebP nhúng. */
+const savableImage = v => /^https:\/\//i.test(v || '') || /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(v || '');
+const imgTag = (url, cls = 'thumb') => url
+  ? `<img class="${cls}" src="${esc(displayImage(url))}" data-fallback="${esc(fallbackImage(url))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+  : `<span class="${cls}">${PLACEHOLDER}</span>`;
+// Ảnh lỗi: thử nguồn dự phòng một lần, sau đó thay bằng biểu tượng.
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb')) return;
+  if (img.dataset.fallback) { img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
+  const span = document.createElement('span'); span.className = img.className + ' broken'; span.title = 'Không tải được ảnh'; span.innerHTML = PLACEHOLDER;
+  img.replaceWith(span);
+}, true);
+/** Thu nhỏ ảnh tải lên thành JPEG (cạnh dài ≤ 800px, ≤ ~180 KB) để lưu trong báo giá. */
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Không đọc được file ảnh.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('File không phải ảnh hợp lệ.'));
+      img.onload = () => {
+        for (const [max, q] of [[800, .8], [640, .72], [480, .65], [360, .6]]) {
+          const scale = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          const url = c.toDataURL('image/jpeg', q);
+          if (url.length <= 240000) return resolve(url);
+        }
+        reject(new Error('Ảnh quá lớn. Vui lòng dùng link ảnh Google Drive.'));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /** Số tiền bằng chữ (đồng). */
 function moneyWords(value) {
   const n = Math.round(Math.abs(Number(value) || 0));
@@ -430,6 +474,7 @@ function fillEditor(id, revision, data) {
   $$('input, textarea', qf).forEach(i => i.classList.remove('invalid'));
   renderLines(); updateContactsButton();
   editor.dirty = false; $('#editor-dirty').hidden = true;
+  fillMissingImages();
 }
 function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; } }
 qf.addEventListener('input', e => {
@@ -489,7 +534,7 @@ function lineCell(r, i) {
   if (!hrc && r.packagingDescription === undefined) r.packagingDescription = PACKAGING_DEFAULT;
   return `<tr data-i="${i}">
     <td class="col-idx">${i + 1}</td>
-    <td class="col-img">${r.image ? `<img class="thumb" src="${esc(r.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4 4 3-3 5 5 M15 9h.01"/></svg></span>'}</td>
+    <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
     <td class="col-product" data-label="Sản phẩm">
       <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="Gõ tên hoặc mã để tìm sản phẩm…" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
       <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock>Xem tồn kho</button>' : ''}</div>
@@ -582,6 +627,7 @@ $('#line-list').addEventListener('click', async e => {
   const tr = e.target.closest('tr'); if (!tr) return;
   const i = Number(tr.dataset.i), rows = editor.rows;
   if (e.target.closest('[data-stock]')) return showStock(rows[i]);
+  if (e.target.closest('[data-image]')) return openImage(i);
   if (!e.target.closest('[data-del]')) return;
   if (rows.length === 1) rows[0] = blankRow();
   else {
@@ -601,6 +647,46 @@ async function showStock(r) {
     $('#stock-dialog').showModal();
   } catch (ex) { toast(ex.message, 'err'); }
 }
+// ----- hình của dòng (HRC: hình sản phẩm; B2B/VIGIFTS: maquette) – link ảnh hoặc tải ảnh lên, như web cũ
+let imageRow = -1, pendingImage = '';
+function drawImagePreview() { $('#image-preview').innerHTML = pendingImage ? imgTag(pendingImage, 'thumb big') : '<span class="muted">Chưa có ảnh</span>'; $('#image-remove').hidden = !pendingImage; }
+function openImage(i) {
+  imageRow = i; pendingImage = editor.rows[i].image || '';
+  $('#image-title').textContent = editor.type === 'HRC' ? 'Hình sản phẩm' : 'Maquette';
+  $('#image-url').value = pendingImage.startsWith('data:') ? '' : pendingImage; $('#image-error').textContent = '';
+  drawImagePreview(); $('#image-dialog').showModal();
+}
+$('#image-url').addEventListener('input', e => {
+  const v = e.target.value.trim(); $('#image-error').textContent = '';
+  if (!v) { pendingImage = ''; drawImagePreview(); return; }
+  if (!/^https:\/\//i.test(v)) { $('#image-error').textContent = 'Link ảnh phải bắt đầu bằng https://'; return; }
+  pendingImage = v; drawImagePreview();
+});
+$('#image-file').addEventListener('change', async e => {
+  const file = e.target.files?.[0]; e.target.value = ''; if (!file) return;
+  $('#image-error').textContent = 'Đang xử lý ảnh…';
+  try { pendingImage = await compressImage(file); $('#image-url').value = ''; $('#image-error').textContent = ''; drawImagePreview(); }
+  catch (ex) { $('#image-error').textContent = ex.message; }
+});
+$('#image-remove').addEventListener('click', () => { pendingImage = ''; $('#image-url').value = ''; drawImagePreview(); });
+$('#image-save').addEventListener('click', () => {
+  const r = editor.rows[imageRow]; if (!r) return;
+  if (pendingImage) r.image = pendingImage; else delete r.image;
+  $('#image-dialog').close(); markDirty(); renderLines();
+});
+/** Dòng có mã hàng nhưng chưa có ảnh (vd báo giá cũ): lấy ảnh từ danh mục, như imageMap của web cũ. */
+async function fillMissingImages() {
+  const skus = [...new Set(editor.rows.filter(r => r.sku && !r.image).map(r => r.sku))].slice(0, 300);
+  if (!skus.length) return;
+  try {
+    const d = await api('/products?skus=' + encodeURIComponent(skus.join(',')));
+    const bySku = new Map(d.products.filter(p => savableImage(p.imageUrl)).map(p => [p.sku, p.imageUrl]));
+    let changed = false;
+    for (const r of editor.rows) if (r.sku && !r.image && bySku.has(r.sku)) { r.image = bySku.get(r.sku); changed = true; }
+    if (changed) renderLines();
+  } catch { /* không có ảnh thì giữ nguyên */ }
+}
+
 function addLine() {
   if (editor.rows.length >= 300) return toast('Báo giá tối đa 300 dòng.', 'err');
   editor.rows.push(blankRow()); markDirty(); renderLines(editor.rows.length - 1);
@@ -806,7 +892,8 @@ $('#print-quote').addEventListener('click', () => {
   const showPrint = d.type !== 'HRC' && d.rows.some(r => Number(r.printFee) > 0);
   const showDisc = d.rows.some(r => Number(r.discount) > 0);
   const showTax = new Set(d.rows.map(r => Number.isFinite(r.taxRate) ? r.taxRate : d.vat)).size > 1;
-  const cols = 6 + (showDisc ? 1 : 0) + (showPrint ? 1 : 0) + (showTax ? 1 : 0);
+  const showImg = d.rows.some(r => r.image);
+  const cols = 6 + (showImg ? 1 : 0) + (showDisc ? 1 : 0) + (showPrint ? 1 : 0) + (showTax ? 1 : 0);
   $('#print-sheet').innerHTML = `
     <div class="ps-head">
       <div class="ps-brand"><span class="ps-mark">BN</span><div><b>BÁCH NGÂN</b><br><small>Quà tặng doanh nghiệp</small></div></div>
@@ -820,9 +907,9 @@ $('#print-quote').addEventListener('click', () => {
       ${d.customerAddress ? `<p style="grid-column:1/-1">Địa chỉ: ${esc(d.customerAddress)}</p>` : ''}
     </div>
     <table class="ps-table">
-      <thead><tr><th>STT</th><th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Đơn giá</th>${showDisc ? '<th>Chiết khấu</th>' : ''}${showPrint ? '<th>Phí in</th>' : ''}${showTax ? '<th>VAT</th>' : ''}<th>Thành tiền</th></tr></thead>
+      <thead><tr><th>STT</th>${showImg ? '<th>Hình ảnh</th>' : ''}<th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Đơn giá</th>${showDisc ? '<th>Chiết khấu</th>' : ''}${showPrint ? '<th>Phí in</th>' : ''}${showTax ? '<th>VAT</th>' : ''}<th>Thành tiền</th></tr></thead>
       <tbody>${d.rows.map((r, i) => `<tr>
-        <td class="c">${i + 1}</td><td>${esc(r.name)}${r.sku ? `<br><small>Mã: ${esc(r.sku)}</small>` : ''}</td><td class="c">${esc(r.unit)}</td>
+        <td class="c">${i + 1}</td>${showImg ? `<td class="c">${r.image ? `<img class="ps-img" src="${esc(displayImage(r.image))}" alt="" referrerpolicy="no-referrer">` : ''}</td>` : ''}<td>${esc(r.name)}${r.sku ? `<br><small>Mã: ${esc(r.sku)}</small>` : ''}</td><td class="c">${esc(r.unit)}</td>
         <td class="n">${fmtNum(Number(r.qty), 4)}</td><td class="n">${money(r.price)}</td>
         ${showDisc ? `<td class="n">${Number(r.discount) > 0 ? (r.discountType === 'amount' ? money(r.discount) : fmtNum(Number(r.discount)) + '%') : ''}</td>` : ''}
         ${showPrint ? `<td class="n">${Number(r.printFee) > 0 ? money(r.printFee) : ''}</td>` : ''}
@@ -858,7 +945,7 @@ const productPrice = p => priceOf(p, currentPolicy());
 /** Tồn khả dụng = tổng các kho thật (không tính NCC và hàng chờ về). */
 const availableStock = p => state.warehouses.filter(w => w.kind === 'stock').reduce((s, w) => s + (Number(p.stock?.[w.id]) || 0), 0);
 const stockDetail = p => state.warehouses.filter(w => p.stock?.[w.id] !== undefined).map(w => `${w.name}: ${fmtNum(Number(p.stock[w.id]))}`).join('\n');
-const thumb = p => p.imageUrl ? `<img class="thumb" src="${esc(p.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8"/></svg></span>';
+const thumb = p => imgTag(p.imageUrl);
 function applyCatalogMeta(d) {
   if (d.policies) state.policies = d.policies;
   if (d.warehouses) state.warehouses = d.warehouses;
@@ -931,7 +1018,7 @@ function rowFromProduct(p) {
   const price = netPrice(raw, tax, included);
   const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '', packagingDescription: PACKAGING_DEFAULT };
   if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; row.costPrice = purchasePrice(price, d); } }
-  if (p.imageUrl) row.image = p.imageUrl;
+  if (savableImage(p.imageUrl)) row.image = p.imageUrl;
   for (const k of ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) if (Number(p[k]) > 0) row[k] = Number(p[k]);
   return row;
 }

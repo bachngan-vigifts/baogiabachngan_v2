@@ -54,6 +54,8 @@ test('sản phẩm: tìm không dấu nhiều từ, lọc thương hiệu, phân
   assert.equal(page.data.total, 7); assert.equal(page.data.products.length, 3);
   assert.deepEqual((await call('/product-brands', emp)).data.brands, [{ name: 'Khác', count: 5 }, { name: 'Lock&Lock', count: 1 }, { name: 'Minh Long', count: 1 }]);
   assert.equal((await call('/products/ML-01', emp)).data.product.name, 'Bộ ly sứ Minh Long');
+  // skus=: lấy đúng các mã, kể cả mã đã ngừng bán (để bổ sung ảnh cho dòng báo giá cũ).
+  assert.deepEqual((await call('/products?skus=OLD,ML-01,KHONG-CO', emp)).data.products.map((p: any) => p.sku).sort(), ['ML-01', 'OLD']);
   assert.equal((await call('/products/KHONG-CO', emp)).status, 404);
 });
 

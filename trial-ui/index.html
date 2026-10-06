@@ -403,6 +403,17 @@
   <div class="modal-foot"><span class="muted small picker-added" id="picker-added"></span><button type="button" class="btn primary" data-close>Xong</button></div>
 </dialog>
 
+<dialog id="image-dialog" class="modal">
+  <div class="modal-head"><h2 id="image-title">Hình sản phẩm</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body form-grid">
+    <div class="image-preview" id="image-preview"></div>
+    <label>Link ảnh (https, Google Drive dán link chia sẻ được)<input id="image-url" inputmode="url" placeholder="https://drive.google.com/file/d/…"></label>
+    <label class="btn secondary file-btn">Tải ảnh từ máy<input type="file" id="image-file" accept="image/jpeg,image/png,image/webp" hidden></label>
+    <p class="error" id="image-error" role="alert"></p>
+  </div>
+  <div class="modal-foot"><button type="button" class="btn ghost danger-text" id="image-remove">Xoá hình</button><span class="spacer"></span><button type="button" class="btn secondary" data-close>Huỷ</button><button type="button" class="btn primary" id="image-save">Dùng hình này</button></div>
+</dialog>
+
 <dialog id="stock-dialog" class="modal narrow">
   <div class="modal-head"><h2 id="stock-title">Tồn kho</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body" id="stock-body"></div>

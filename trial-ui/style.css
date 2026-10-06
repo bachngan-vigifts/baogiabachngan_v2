@@ -352,6 +352,7 @@ table { width: 100%; border-collapse: collapse; }
 .ps-root .ps-table th { background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .ps-root .ps-table td.n { text-align: right; white-space: nowrap; }
 .ps-root .ps-table td.c { text-align: center; }
+.ps-root .ps-img { width: 64px; height: 64px; object-fit: contain; }
 .ps-root .ps-table tr { page-break-inside: avoid; }
 .ps-root .ps-total td { font-weight: 700; }
 .ps-root .ps-total.grand td { font-size: 11pt; }
@@ -468,3 +469,16 @@ label.btn.busy { opacity: .55; pointer-events: none; }
   .line-table .thumb { width: 56px; height: 56px; }
   .sub-field { grid-template-columns: 1fr; }
 }
+
+/* ---------- Hình ảnh ---------- */
+img.thumb { object-fit: cover; background: var(--surface-2); }
+.img-btn { border: 0; padding: 0; background: none; cursor: pointer; border-radius: 8px; display: block; }
+.img-btn:hover .thumb { border-color: var(--blue); }
+.thumb.add { display: grid; place-items: center; align-content: center; gap: 2px; color: var(--muted); border-style: dashed; }
+.thumb.add small { font-size: .62rem; font-weight: 700; }
+.thumb.broken { color: #b4232c; }
+.image-preview { min-height: 200px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); display: grid; place-items: center; padding: 10px; }
+.image-preview .thumb.big { width: auto; height: auto; max-width: 100%; max-height: 300px; border: 0; border-radius: 6px; }
+.image-preview span.thumb.big { width: 80px; height: 80px; }
+.file-btn { justify-self: start; }
+.modal-foot .spacer { flex: 1; }

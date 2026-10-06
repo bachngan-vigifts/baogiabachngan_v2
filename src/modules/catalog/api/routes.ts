@@ -44,9 +44,12 @@ const chunks = <T>(xs: T[], n = 500) => Array.from({ length: Math.ceil(xs.length
  */
 export function registerCatalogRoutes(router: Router<StaffEnv>) {
   router.get('/products', async c => {
-    const db = c.env.db, { limit, offset } = paging(c.url, 50, 200);
+    const db = c.env.db, paged = paging(c.url, 50, 200);
     const brand = c.url.searchParams.get('brand') || '';
-    const where = and(
+    // `skus=a,b,c`: lấy đúng các mã (kể cả đã ẩn) – dùng để bổ sung ảnh/thông tin cho dòng báo giá cũ.
+    const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 300);
+    const { limit, offset } = skuList.length ? { limit: skuList.length, offset: 0 } : paged;
+    const where = skuList.length ? inArray(products.sku, skuList) : and(
       eq(products.active, true),
       brand ? eq(products.brand, brand) : undefined,
       matchAllWords(foldSql(products.sku, products.name, products.brand, products.pattern), c.url.searchParams.get('q')),
