@@ -36,7 +36,13 @@ Deno.serve(async req => {
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');
     if(cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';
-    return new Response(JSON.stringify(payload),{status:response.status,headers:{...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff'}});
+    const body = JSON.stringify(payload), jsonHeaders = {...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff'};
+    // Phản hồi lớn (bản chụp danh mục ~3 MB) nén gzip còn ~0,5 MB khi trình duyệt hỗ trợ.
+    if (body.length > 100_000 && /\bgzip\b/.test(req.headers.get('accept-encoding') || '')) {
+      const gz = new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'));
+      return new Response(gz,{status:response.status,headers:{...jsonHeaders,'content-encoding':'gzip','vary':'Origin, Accept-Encoding'}});
+    }
+    return new Response(body,{status:response.status,headers:jsonHeaders});
   } catch(e) {
     console.error('API request failed');
     return new Response(JSON.stringify({error:'Không thể kết nối dữ liệu. Vui lòng thử lại.'}),{status:503,headers:{...cors,'content-type':'application/json'}});

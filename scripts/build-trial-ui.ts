@@ -9,17 +9,22 @@ import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
 export const QUOTE_MATH_OUT = join(root, 'trial-ui', 'quote-math.js');
+/** Bộ lọc "Tìm nhanh sản phẩm" chạy trên trình duyệt – cùng quy tắc với máy chủ. */
+export const PRODUCT_SEARCH_OUT = join(root, 'trial-ui', 'product-search.js');
 
-export function bundleQuoteMath(): string {
+function bundle(entry: string): string {
   const result = buildSync({
-    entryPoints: [join(root, 'src/modules/quotes/domain/quote-math.ts')],
+    entryPoints: [join(root, entry)],
     bundle: true, format: 'esm', target: 'es2020', write: false, legalComments: 'none',
   });
-  return '// TỰ SINH bởi `npm run ui:build` từ src/modules/quotes/domain/quote-math.ts – không sửa tay.\n' + result.outputFiles[0]!.text;
+  return `// TỰ SINH bởi \`npm run ui:build\` từ ${entry} – không sửa tay.\n` + result.outputFiles[0]!.text;
 }
+export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-math.ts');
+export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  const code = bundleQuoteMath();
-  if (readFileSync(QUOTE_MATH_OUT, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(QUOTE_MATH_OUT, code);
-  console.log('Đã ghi', QUOTE_MATH_OUT);
+  for (const [out, code] of [[QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()]] as const) {
+    if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
+    console.log('Đã ghi', out);
+  }
 }

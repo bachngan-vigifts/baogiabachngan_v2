@@ -1,5 +1,6 @@
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
+import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -268,6 +269,7 @@ async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
+  loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
 function showGlobalError(message) { const el = $('#global-error'); el.textContent = message; el.hidden = false; }
@@ -448,6 +450,8 @@ $('#type-filter').addEventListener('click', e => {
 });
 
 // ---------------------------------------------------------------- soạn báo giá
+/** Danh mục sản phẩm tải sẵn về trình duyệt (xem loadCatalogSnapshot). */
+const catalog = { version: '', observedAt: null, items: null, checkedAt: 0, loading: null };
 const editor = { id: null, revision: 0, base: {}, rows: [], type: 'B2B', dirty: false, customerId: '', pending: null, loading: false, approval: null };
 const qf = $('#quote-form');
 const field = name => qf.elements.namedItem(name);
@@ -1403,18 +1407,22 @@ function searchProducts(input) {
   if (q.length < 2) { hideProductSuggest(); return; }
   pTimer = setTimeout(async () => {
     const req = ++pReq;
-    let d;
-    try { d = await api(`/products?limit=8&q=${encodeURIComponent(q)}`); } catch { return; }
+    let found;
+    if (catalog.items) found = (searchCatalog(catalog.items, { q }) || []).slice(0, 8); // danh mục đã tải sẵn: lọc ngay
+    else {
+      let d;
+      try { d = await api(`/products?limit=8&q=${encodeURIComponent(q)}`); } catch { return; }
+      applyCatalogMeta(d); found = d.products;
+    }
     if (req !== pReq || document.activeElement !== input) return;
-    applyCatalogMeta(d);
-    pItems = d.products; pIndex = pItems.length ? 0 : -1;
+    pItems = found; pIndex = pItems.length ? 0 : -1;
     if (!pItems.length) { hideProductSuggest(); return; }
     pSuggest.innerHTML = pItems.map((p, i) => {
       const price = productPrice(p);
       return `<li role="option" data-i="${i}" aria-selected="${i === pIndex}"><span class="prod-opt">${thumb(p)}<span class="prod-text"><b>${esc(p.name)}</b><small>${esc([p.sku, p.brand, p.unit].filter(Boolean).join(' · '))} · tồn ${fmtNum(availableStock(p))}</small></span><span class="price">${price === null ? '' : money(price)}</span></span></li>`;
     }).join('');
     pSuggest.hidden = false; placeProductSuggest();
-  }, 200);
+  }, catalog.items ? 30 : 200);
 }
 function pickProduct(p) {
   const tr = pInput?.closest('tr'); if (!tr) return;
@@ -1455,11 +1463,64 @@ function pickerPolicyOptions() {
   $('#picker-policy').innerHTML = state.policies.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   $('#picker-policy').value = currentPolicy();
 }
+// ----- Danh mục tải sẵn về trình duyệt (như web cũ): gõ là lọc ngay, không phải hỏi máy chủ mỗi lần.
+const IDB = { db: 'bn-catalog', store: 'snapshot', key: 'current' };
+function idb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    try {
+      const open = indexedDB.open(IDB.db, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore(IDB.store);
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const tx = open.result.transaction(IDB.store, mode), req = fn(tx.objectStore(IDB.store));
+        tx.oncomplete = () => { open.result.close(); resolve(req?.result); };
+        tx.onerror = () => { open.result.close(); reject(tx.error); };
+      };
+    } catch (e) { reject(e); }
+  });
+}
+function useSnapshot(snap) {
+  catalog.version = snap.version; catalog.observedAt = snap.observedAt; catalog.items = hydrateSnapshot(snap);
+  applyCatalogMeta({ policies: snap.policies, warehouses: snap.warehouses });
+}
+/** Lấy bản chụp danh mục: bộ nhớ → IndexedDB (mở trang là có) → máy chủ (chỉ tải lại khi Sapo có thay đổi). */
+function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
+  if (catalog.loading) return catalog.loading;
+  if (catalog.items && Date.now() - catalog.checkedAt < maxAgeMs) return Promise.resolve(catalog.items);
+  catalog.loading = (async () => {
+    if (!catalog.items) { try { const saved = await idb('readonly', st => st.get(IDB.key)); if (saved?.version) useSnapshot(saved); } catch { /* trình duyệt chặn IndexedDB */ } }
+    try {
+      const d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      catalog.checkedAt = Date.now();
+      if (!d.unchanged) {
+        useSnapshot(d);
+        idb('readwrite', st => st.put(d, IDB.key)).catch(() => {});
+        if ($('#picker-dialog').open) loadPicker(); // đang mở hộp tìm thì cập nhật kết quả theo dữ liệu mới
+      }
+    } catch { /* lỗi mạng: dùng bản đang có, hoặc tìm qua máy chủ */ }
+    return catalog.items;
+  })().finally(() => { catalog.loading = null; });
+  return catalog.loading;
+}
+let pickerShown = 40;
+function pickerOptions() {
+  const v = id => $(id).value.trim();
+  return { q: v('#picker-search'), group: v('#picker-group'), policy: currentPolicy(), min: v('#picker-min'), max: v('#picker-max'),
+    scope: $('#picker-all').checked ? '' : editor.type === 'VIGIFTS' ? 'other' : 'minhlong' };
+}
 async function loadPicker(more = false) {
   const req = ++pickerReq, offset = more ? pickerItems.length : 0;
   const min = $('#picker-min').value, max = $('#picker-max').value;
   if ((min !== '' && Number(min) < 0) || (max !== '' && Number(max) < 0) || (min !== '' && max !== '' && Number(min) > Number(max))) {
     $('#picker-status').textContent = 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.'; $('#picker-list').innerHTML = ''; $('#picker-more-row').hidden = true; return;
+  }
+  if (catalog.items) { // lọc ngay trên máy
+    pickerShown = more ? pickerShown + 40 : 40;
+    const found = searchCatalog(catalog.items, pickerOptions()) || [];
+    pickerItems = found.slice(0, pickerShown); pickerTotal = found.length;
+    $('#picker-list').removeAttribute('aria-busy');
+    renderPicker(catalog.observedAt, min, max);
+    return;
   }
   if (!more) {
     // Bộ lọc/loại báo giá đổi: ẩn kết quả cũ cho tới khi có kết quả mới.
@@ -1469,11 +1530,15 @@ async function loadPicker(more = false) {
   let d;
   try { d = await api('/products?' + pickerQuery(offset)); }
   catch (e) { if (req === pickerReq) { $('#picker-status').textContent = ''; $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; } return; }
-  if (req !== pickerReq) return;
+  if (req !== pickerReq || catalog.items) return;
   $('#picker-list').removeAttribute('aria-busy');
-  applyCatalogMeta(d); if (!$('#picker-policy').options.length) pickerPolicyOptions();
-  $('#picker-snapshot').textContent = d.observedAt ? `Tồn kho chụp lúc ${new Date(d.observedAt).toLocaleString('vi-VN')} · Đơn giá báo giá chưa VAT.` : 'Đơn giá báo giá chưa VAT.';
+  applyCatalogMeta(d);
   pickerItems = more ? [...pickerItems, ...d.products] : d.products; pickerTotal = d.total;
+  renderPicker(d.observedAt, min, max);
+}
+function renderPicker(observedAt, min, max) {
+  if (!$('#picker-policy').options.length) pickerPolicyOptions();
+  $('#picker-snapshot').textContent = observedAt ? `Tồn kho chụp lúc ${new Date(observedAt).toLocaleString('vi-VN')} · Đơn giá báo giá chưa VAT.` : 'Đơn giá báo giá chưa VAT.';
   const inQuote = new Set(editor.rows.map(r => r.sku).filter(Boolean));
   const policy = state.policies.find(x => x.id === currentPolicy());
   $('#picker-list').innerHTML = pickerItems.map((p, i) => {
@@ -1490,10 +1555,10 @@ async function loadPicker(more = false) {
   }).join('');
   $('#picker-status').textContent = `${fmtNum(pickerTotal)} sản phẩm phù hợp · Giá theo chính sách "${policy?.name || ''}"${$('#picker-all').checked ? '' : editor.type === 'VIGIFTS' ? ' · Sản phẩm Vigifts' : ' · Sản phẩm Minh Long'}.`;
   $('#picker-empty').hidden = pickerItems.length > 0;
-  $('#picker-empty').textContent = pickerTotal || d.total ? '' : $('#picker-search').value || $('#picker-group').value || min || max ? 'Không tìm thấy sản phẩm phù hợp. Thử bỏ bớt bộ lọc hoặc tick "Tìm trên tất cả sản phẩm".' : 'Chưa có dữ liệu sản phẩm.';
+  $('#picker-empty').textContent = pickerTotal ? '' : $('#picker-search').value || $('#picker-group').value || min || max ? 'Không tìm thấy sản phẩm phù hợp. Thử bỏ bớt bộ lọc hoặc tick "Tìm trên tất cả sản phẩm".' : 'Chưa có dữ liệu sản phẩm.';
   $('#picker-more-row').hidden = pickerItems.length >= pickerTotal;
 }
-const reloadPicker = () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), 250); };
+const reloadPicker = () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), catalog.items ? 30 : 250); };
 /** Thêm dòng vào báo giá; dòng trống duy nhất (mới tạo) được thay luôn. */
 function addRowsToQuote(rows) {
   const blank = editor.rows.length === 1 && !editor.rows[0].name && !Number(editor.rows[0].price) && !editor.rows[0].sku;
@@ -1505,6 +1570,7 @@ $('#pick-products').addEventListener('click', () => {
   pickerAdded = 0; $('#picker-added').textContent = '';
   pickerPolicyOptions();
   $('#picker-dialog').showModal(); $('#picker-search').focus(); loadPicker();
+  loadCatalogSnapshot(); // kiểm tra nền: Sapo có dữ liệu mới thì cập nhật kết quả
 });
 $('#picker-search').addEventListener('input', reloadPicker);
 $('#picker-policy').addEventListener('change', e => {
