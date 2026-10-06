@@ -43,7 +43,7 @@ test('sản phẩm: tìm không dấu nhiều từ, lọc thương hiệu, phân
   const hit = await call('/products?q=' + encodeURIComponent('binh GIU'), emp);
   assert.equal(hit.status, 200, JSON.stringify(hit.data));
   assert.deepEqual(hit.data.products.map((p: any) => p.sku), ['LHC4125']);
-  assert.deepEqual(hit.data.products[0].prices, { le: 185000, si: null });
+  assert.deepEqual(hit.data.products[0].prices, [{ policyId: 'le', price: 185000 }, { policyId: 'si', price: null }]);
   assert.deepEqual(hit.data.products[0].stock, { k1: 12 });
   assert.deepEqual(hit.data.policies.map((p: any) => p.name), ['Giá bán lẻ', 'Giá sỉ']);
   assert.equal(hit.data.observedAt, t);
@@ -73,4 +73,29 @@ test('khách hàng: tìm không dấu theo tên/điện thoại/MST, phân trang
   const created = await call('/customers', emp, 'POST', { name: 'Đại lý Phúc Lộc', phone: '0911' });
   const [row] = await db.select().from(customers).where((await import('drizzle-orm')).eq(customers.id, created.data.id));
   assert.equal(row!.search, 'dai ly phuc loc 0911');
+});
+
+test('nhập danh mục (Manager): tạo bảng giá/kho/sản phẩm; nhập lại thì cập nhật giá/tồn và ẩn mã không còn', async () => {
+  const { db, call, emp } = await setup();
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  const file = (products: object[]) => ({ format: 'sapo-catalog-v1', observedAt: '2026-10-06T01:00:00.000Z', warehouses: ['Kho A', 'NCC', 'Hàng chờ về'], pricePolicies: ['Giá bán lẻ', 'Giá sỉ'], products, extraField: 1 });
+  const p = (sku: string, le: number | null, stock: (number | null)[]) => ({ sku, name: 'SP ' + sku, brand: 'B', unit: 'cái', image: '', taxBasis: '', taxable: true, taxIn: 8, taxOut: 8, prices: [le, null], stock, incomingQuantity: 0 });
+  assert.equal((await call('/admin/catalog-import', emp, 'POST', file([p('A', 1, [1, 0, 0])]))).status, 403);
+  assert.equal((await call('/admin/catalog-import', mgr, 'POST', { format: 'khac' })).status, 400);
+  assert.equal((await call('/admin/catalog-import', mgr, 'POST', file([{ ...p('A', 1, [1]), }]))).status, 400); // thiếu cột tồn
+  await db.insert(pricePolicies).values({ id: 'le', name: 'Giá bán lẻ', sortOrder: 5 }); // đã có sẵn cùng tên → dùng lại id
+  await db.insert(warehouses).values({ id: 'cu', name: 'Kho cũ', sortOrder: 0 }); // không có trong file → ngừng dùng
+  const first = await call('/admin/catalog-import', mgr, 'POST', file([p('A', 100, [5, null, 2]), p('B', 200, [null, null, null])]));
+  assert.equal(first.status, 200, JSON.stringify(first.data)); assert.equal(first.data.count, 2);
+  let list = (await call('/products', emp)).data;
+  assert.deepEqual(list.products.map((x: any) => [x.sku, x.prices, x.stock]), [
+    ['A', [{ policyId: 'le', price: 100 }, { policyId: 'legacy:Giá sỉ', price: null }], { 'legacy:Kho A': 5, 'legacy:Hàng chờ về': 2 }],
+    ['B', [{ policyId: 'le', price: 200 }, { policyId: 'legacy:Giá sỉ', price: null }], {}],
+  ]);
+  assert.deepEqual(list.warehouses.map((w: any) => [w.name, w.kind]), [['Kho A', 'stock'], ['NCC', 'supplier'], ['Hàng chờ về', 'incoming']]);
+  assert.equal(list.observedAt, '2026-10-06T01:00:00.000Z');
+  await call('/admin/catalog-import', mgr, 'POST', file([p('A', 150, [7, null, null])]));
+  list = (await call('/products', emp)).data;
+  assert.deepEqual(list.products.map((x: any) => [x.sku, x.prices[0].price, x.stock]), [['A', 150, { 'legacy:Kho A': 7 }]]);
+  assert.equal(list.total, 1); // B không còn trong file → ẩn
 });

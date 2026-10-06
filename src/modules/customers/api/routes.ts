@@ -15,7 +15,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       c.env.db.select({ total: count() }).from(customers).where(where),
       c.env.db.select().from(customers).where(where).orderBy(asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
     ]);
-    return json({ customers: rows, total: Number(total), limit, offset });
+    return json({ customers: rows, total: Number(total), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
   const save = async (c: Parameters<Parameters<Router<StaffEnv>['post']>[1]>[0], update: boolean) => {
     const body = await readJson(c.req, 16_384);

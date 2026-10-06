@@ -790,10 +790,14 @@ let preferredPolicy = '';
 try { preferredPolicy = localStorage.getItem(POLICY_KEY) || ''; } catch { /* bỏ qua */ }
 const currentPolicy = () => (state.policies.find(p => p.id === preferredPolicy) || state.policies[0])?.id || '';
 /** Giá theo bảng giá đang chọn; nếu trống thì lấy bảng giá đầu tiên có giá. */
+const priceOf = (p, policyId) => {
+  const v = Array.isArray(p.prices) ? p.prices.find(x => x.policyId === policyId)?.price : p.prices?.[policyId];
+  return Number.isFinite(v) ? v : null;
+};
 function productPrice(p) {
-  const pick = p.prices?.[currentPolicy()];
-  if (Number.isFinite(pick)) return pick;
-  for (const pol of state.policies) if (Number.isFinite(p.prices?.[pol.id])) return p.prices[pol.id];
+  const pick = priceOf(p, currentPolicy());
+  if (pick !== null) return pick;
+  for (const pol of state.policies) { const v = priceOf(p, pol.id); if (v !== null) return v; }
   return null;
 }
 /** Tồn khả dụng = tổng các kho thật (không tính NCC và hàng chờ về). */
@@ -885,6 +889,24 @@ $('#product-clear').addEventListener('click', () => { state.selected.clear(); re
 $('#product-to-quote').addEventListener('click', () => {
   editor.pending = newQuoteData({ rows: [...state.selected.values()].map(rowFromProduct) });
   state.selected.clear(); renderSelection(); go('#/quotes/new');
+});
+
+// ----- Manager nhập file danh mục (JSON từ web cũ: /api/staff/catalog)
+$('#catalog-file').addEventListener('change', async e => {
+  const file = e.target.files?.[0]; e.target.value = '';
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { toast('File không phải JSON hợp lệ.', 'err'); return; }
+  const n = Array.isArray(data?.products) ? data.products.length : 0;
+  if (data?.format !== 'sapo-catalog-v1' || !n) { toast('Đây không phải file danh mục của web báo giá cũ (định dạng sapo-catalog-v1).', 'err'); return; }
+  if (!await confirmBox(`Nhập ${n.toLocaleString('vi-VN')} sản phẩm, ${data.pricePolicies?.length || 0} bảng giá, ${data.warehouses?.length || 0} kho từ "${file.name}"? Giá và tồn kho sẽ được cập nhật theo file; sản phẩm không có trong file sẽ bị ẩn.`, { title: 'Nhập danh mục', ok: 'Nhập' })) return;
+  const label = $('#catalog-import-label'); label.classList.add('busy');
+  try {
+    const res = await api('/admin/catalog-import', 'POST', data);
+    toast(res.message || 'Đã nhập danh mục.');
+    brandsLoaded = false; state.selected.clear(); loadProducts();
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { label.classList.remove('busy'); }
 });
 
 // ----- tìm sản phẩm ngay trong dòng báo giá (gõ tên hoặc mã SKU)

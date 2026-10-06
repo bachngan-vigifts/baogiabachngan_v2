@@ -416,3 +416,6 @@ table { width: 100%; border-collapse: collapse; }
   .picker-list .pick-add { grid-column: 3; grid-row: 2; }
   .picker-list input { grid-column: 3; grid-row: 1; }
 }
+label.btn { display: inline-flex; grid-auto-flow: unset; color: var(--ink); font-size: .92rem; }
+label.btn.busy { opacity: .55; pointer-events: none; }
+@media (max-width: 900px) { .page-head label.btn { display: none; } }
