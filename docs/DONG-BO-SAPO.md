@@ -17,7 +17,10 @@ Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy t
   App đọc mỗi trang 250 dòng, tối đa 12 trang mỗi loại mỗi lần chạy, lần sau đọc tiếp. Từ lần thứ hai app chỉ lấy bản ghi sửa sau lần trước: gửi kèm `modified_on_min` và lọc lại phía app.
 - **Khi nào chạy:**
   - Nút **Đồng bộ ngay**.
-  - Workflow `.github/workflows/sapo-pull.yml` chạy mỗi 30 phút (phút 7 và 37), gọi `POST …/integrations/sapo/pull` bằng `SAPO_SYNC_TOKEN`.
+  - Lịch trong Supabase (`pg_cron` + `pg_net`, file `supabase/sapo-cron.sql`): **giữ phiên 10 phút/lần**, **lấy dữ liệu 30 phút/lần** (phút 7 và 37). Không tốn phút GitHub Actions.
+    - Chủ dự án tự chạy file này **một lần** trong Supabase → SQL Editor, sau khi thay chỗ `DAN_MA_BI_MAT_VAO_DAY` bằng giá trị `SAPO_SYNC_TOKEN`. Mã được lưu trong Supabase Vault.
+    - Đổi mã thì chạy lại file với mã mới.
+  - Workflow `.github/workflows/sapo-pull.yml` chỉ còn để chạy tay khi cần.
   - Khoá 5 phút chống hai lượt chạy chồng nhau.
 - **Giữ phiên tự động:** mỗi lần app gọi Sapo (đồng bộ, hoặc `POST …/integrations/sapo/keepalive`), cookie mới Sapo cấp qua `Set-Cookie` được gộp và lưu lại (mã hoá). Bản đã lưu chỉ bị ghi đè khi Manager chưa kết nối lại trong lúc đó. Phiên hỏng thì giữ nguyên bản đã lưu.
 - **Phiên hết hạn:** ô trạng thái báo *Phiên hết hạn*, Manager bấm **Kết nối lại**. Lịch tự động chỉ cảnh báo, không đánh đỏ liên tục.
