@@ -212,7 +212,7 @@ $('#p-products').addEventListener('click', e => {
   if (!(q > 0)) return toast('Số lượng phải lớn hơn 0.', 'err');
   if (!st.cart.has(b.dataset.add)) added++;
   st.cart.set(b.dataset.add, q); b.textContent = '✓ Đã thêm'; b.closest('li').classList.add('added');
-  $('#p-added').textContent = `Đã thêm ${added} sản phẩm vào báo giá`; renderCart();
+  $('#p-added').textContent = `Đã thêm ${added} sản phẩm vào báo giá`; $('#p-error').textContent = ''; renderCart();
 });
 
 // ----- Bảng sản phẩm của báo giá / đơn
@@ -266,14 +266,14 @@ const notifier = setupNotifications({
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) { if (location.hash === '#' + h) showTab(h); else location.hash = h; } },
 });
 
-// ----- Hỏi tồn kho
+// ----- Đơn check tồn
 async function loadStock() {
   const box = $('#p-stock'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
   try {
     const { requests } = await api('/portal/stock-requests');
     $('#p-stock-empty').hidden = requests.length > 0;
     box.innerHTML = requests.map(r => `<article class="card portal-order">
-      <header><div><b>Hỏi tồn ${new Date(r.createdAt).toLocaleString('vi-VN')}</b> ${r.status === 'answered' ? '<span class="pill ok">Đã trả lời</span>' : '<span class="pill warn">Đang chờ trả lời</span>'}${r.note ? `<small>Ghi chú: ${esc(r.note)}</small>` : ''}</div></header>
+      <header><div><b>Đơn check tồn ${new Date(r.createdAt).toLocaleString('vi-VN')}</b> ${r.status === 'answered' ? '<span class="pill ok">Đã trả lời</span>' : '<span class="pill warn">Đang chờ trả lời</span>'}${r.note ? `<small>Ghi chú: ${esc(r.note)}</small>` : ''}</div></header>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Đáp ứng được</th></tr></thead><tbody>
       ${r.items.map(i => { const a = r.answerItems.find(x => x.sku === i.sku); return `<tr><td>${esc(i.name)}<small>${esc(i.sku)}</small></td><td class="right">${fmtNum(i.qty)} ${esc(i.unit || '')}</td>
         <td class="right">${r.status === 'answered' ? (a ? `<b class="${a.available < i.qty ? 'danger-text' : ''}">${fmtNum(a.available)}</b>` : '—') : '…'}</td></tr>`; }).join('')}
@@ -284,11 +284,11 @@ async function loadStock() {
 }
 $('#p-ask-stock').addEventListener('click', async () => {
   const err = $('#p-error'); err.textContent = '';
-  if (!st.cart.size) { err.textContent = 'Chọn sản phẩm cần hỏi tồn trước.'; return; }
+  if (!st.cart.size) { err.textContent = 'Chọn sản phẩm cần check tồn trước.'; return; }
   const b = $('#p-ask-stock'); b.disabled = true;
   try {
     await api('/portal/stock-requests', 'POST', { items: [...st.cart].map(([sku, qty]) => ({ sku, qty })), note: $('#p-note').value });
-    toast('Đã gửi yêu cầu hỏi tồn. Nhân viên phụ trách sẽ trả lời sớm.'); showTab('stock');
+    toast('Đã gửi đơn check tồn. Nhân viên phụ trách sẽ trả lời sớm.'); showTab('stock');
   } catch (ex) { err.textContent = ex.message; } finally { b.disabled = false; }
 });
 
@@ -299,7 +299,7 @@ async function loadDebt() {
   const tbody = $('#p-debt'); tbody.innerHTML = '<tr><td colspan="6" class="muted">Đang tải…</td></tr>';
   try {
     const { orders } = await api('/portal/orders');
-    const list = orders.filter(o => o.receivable && o.status !== 'draft' && o.receivable.due > 0);
+    const list = orders.filter(o => o.receivable && o.receivable.due > 0); // máy chủ chỉ trả công nợ của đơn đã duyệt / HĐKT đã ký
     const sum = k => list.reduce((t, o) => t + (o.receivable[k] || 0), 0);
     const next = list.map(o => o.receivable.nextDueDate).filter(Boolean).sort()[0];
     $('#p-debt-stats').innerHTML = [['Tổng phải trả', sum('due'), ''], ['Đã thanh toán', sum('paid'), ''], ['Còn phải trả', sum('balance'), sum('balance') > 0 ? 'Hạn gần nhất ' + (fmtDate(next) || 'sau khi giao hàng') : 'Đã thanh toán đủ'], ['Quá hạn', sum('overdue'), sum('overdue') > 0 ? 'Vui lòng thanh toán sớm' : 'Không có']]
@@ -310,7 +310,7 @@ async function loadDebt() {
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num"><b>${money(r.balance)}</b></td>
       <td data-label="Hạn">${o.schedules.map(s => `<small>${esc(s.note || (s.kind === 'deposit' ? 'Đặt cọc' : 'Phần còn lại'))}: ${money(s.amount)} · ${s.dueDate ? 'hạn ' + fmtDate(s.dueDate) : 'sau khi giao hàng'}</small>`).join('')}</td>
       <td data-label="Tình trạng">${pill(DEBT_STATUS, r.status)}${r.overdue > 0 ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}</td></tr>`; }).join('');
-    const pays = orders.flatMap(o => o.payments.map(p => ({ ...p, orderNo: o.orderNo }))).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+    const pays = orders.filter(o => o.receivable).flatMap(o => o.payments.map(p => ({ ...p, orderNo: o.orderNo }))).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
     $('#p-pay-history').innerHTML = pays.length ? pays.map(p => `<li><span>${fmtDate(p.paidAt)} · ${esc(METHOD[p.method] || p.method)}<small>Đơn ${esc(p.orderNo)}</small></span><b>${money(p.amount)}</b></li>`).join('') : '<li class="muted">Chưa có lần thanh toán nào.</li>';
   } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="error">${esc(e.message)}</td></tr>`; }
 }

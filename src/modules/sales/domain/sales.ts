@@ -77,6 +77,12 @@ export function contractSchedules(total: number, depositRate: number, signedDate
 export const addDays = (iso: string, days: number) => new Date(Date.parse(iso.slice(0, 10) + 'T00:00:00Z') + days * 86_400_000).toISOString().slice(0, 10);
 
 export interface Receivable { due: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; status: 'paid' | 'overdue' | 'open' | 'none' }
+/** Công nợ chỉ tính khi đơn hàng đã được xác nhận (duyệt) hoặc HĐKT của đơn đã ký; đơn nháp / đã huỷ không phát sinh công nợ. */
+export function debtCounts(orderStatus: string, contractStatus?: string | null) {
+  if (orderStatus === 'cancelled') return false;
+  return orderStatus !== 'draft' || contractStatus === 'signed' || contractStatus === 'completed';
+}
+
 /**
  * Công nợ của một đơn: phải thu = tổng các kỳ; đã thu = tổng phiếu thu; quá hạn = phần chưa thu của các kỳ đã tới hạn
  * (phiếu thu trừ dần vào các kỳ theo hạn sớm nhất trước).

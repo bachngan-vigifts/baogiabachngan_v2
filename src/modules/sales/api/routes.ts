@@ -13,7 +13,7 @@ import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
-  addDays, compactCode, contractNumber, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
+  addDays, compactCode, contractNumber, debtCounts, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
   orderTotals, receivable, vietnamDate, type OrderStatus,
 } from '../domain/sales.ts';
 
@@ -290,14 +290,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   // ================= CÔNG NỢ =================
-  /** Công nợ theo đơn (đơn chưa huỷ). `?status=open|overdue|paid` lọc theo tình trạng. */
+  /** Công nợ theo đơn: chỉ đơn đã xác nhận hoặc có HĐKT đã ký (đơn nháp / huỷ không tính). `?status=open|overdue|paid` lọc theo tình trạng. */
   router.get('/receivables', async c => {
     const want = c.url.searchParams.get('status') || '';
     const rows = await c.env.db.select().from(salesOrders).where(and(orderScope(c), ne(salesOrders.status, 'cancelled'),
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.taxCode), c.url.searchParams.get('q'))))
       .orderBy(desc(salesOrders.orderDate)).limit(500);
-    const debts = await receivableOf(c.env.db, rows.map(r => r.id));
-    const list = rows.map(r => ({ orderId: r.id, orderNo: r.orderNo, customerId: r.customerId, customerName: r.customerName, phone: r.phone, orderDate: r.orderDate, orderStatus: r.status, ...debts.get(r.id)! }))
+    const contracts = rows.length ? await c.env.db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, rows.map(r => r.id))) : [];
+    const counted = rows.filter(r => debtCounts(r.status, contracts.find(x => x.orderId === r.id)?.status));
+    const debts = await receivableOf(c.env.db, counted.map(r => r.id));
+    const list = counted.map(r => ({ orderId: r.id, orderNo: r.orderNo, customerId: r.customerId, customerName: r.customerName, phone: r.phone, orderDate: r.orderDate, orderStatus: r.status, ...debts.get(r.id)! }))
       .filter(r => r.status !== 'none' && (!want || r.status === want || (want === 'open' && r.status === 'overdue')));
     const sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => list.reduce((s, r) => s + r[k], 0);
     return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue') } });
