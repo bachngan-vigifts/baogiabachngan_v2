@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { bundleQuoteMath, QUOTE_MATH_OUT } from '../../scripts/build-trial-ui.ts';
+import { bundleQuoteMath, bundleProductSearch, PRODUCT_SEARCH_OUT, QUOTE_MATH_OUT } from '../../scripts/build-trial-ui.ts';
 import * as math from '../../src/modules/quotes/domain/quote-math.ts';
 
 const ui = join(import.meta.dirname, '../../trial-ui');
 
 test('trial-ui/quote-math.js được sinh từ quote-math.ts và chưa cũ (chạy `npm run ui:build` nếu lỗi)', () => {
   assert.equal(readFileSync(QUOTE_MATH_OUT, 'utf8'), bundleQuoteMath());
+  assert.equal(readFileSync(PRODUCT_SEARCH_OUT, 'utf8'), bundleProductSearch());
 });
 
 test('giao diện tính tiền giống hệt máy chủ trên báo giá ngẫu nhiên', async () => {

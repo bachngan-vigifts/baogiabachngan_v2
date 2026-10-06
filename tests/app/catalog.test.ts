@@ -6,6 +6,8 @@ import { createAppRouter } from '../../src/app/router.ts';
 import { pricePolicies, productPrices, products, productStock, warehouses, catalogVersions } from '../../src/modules/catalog/schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { fold } from '../../src/core/text/fold.ts';
+import { hydrateSnapshot, searchProducts } from '../../src/modules/catalog/domain/product-search.ts';
+import { eq } from 'drizzle-orm';
 
 const origin = 'https://trial.test';
 async function setup() {
@@ -190,7 +192,7 @@ test('nhập theo lô: lô thường chỉ cập nhật (không ẩn), lô cuố
 });
 
 test('tìm nhanh sản phẩm như web cũ: nhóm, khoảng giá theo bảng giá, phạm vi theo loại báo giá, mã SKU chính xác', async () => {
-  const { db, call, emp } = await setup();
+  const { db, call, emp, ncc } = await setup();
   const t = '2026-10-06T00:00:00.000Z';
   await db.insert(pricePolicies).values([{ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 }, { id: 'si', name: 'Giá sỉ', sortOrder: 1 }]);
   await db.insert(products).values([
@@ -226,4 +228,27 @@ test('tìm nhanh sản phẩm như web cũ: nhóm, khoảng giá theo bảng gi�
   assert.deepEqual(await skus('policy=le&min=2000000'), ['HC-NOI']);
   assert.equal((await call('/products?policy=le&min=5&max=1', emp)).status, 400);
   assert.equal((await call('/products?policy=le&min=-1', emp)).status, 400);
+
+  // Lọc trên trình duyệt (bản chụp danh mục) phải ra ĐÚNG như máy chủ, cả thứ tự.
+  await db.insert(warehouses).values([{ id: 'k1', name: 'Kho Q1', sortOrder: 0 }]);
+  await db.insert(productStock).values([{ sku: 'LHC-LY', warehouseId: 'k1', quantity: 7, updatedAt: '2026-10-06T05:00:00.000Z' }]);
+  const snap = await call('/catalog-snapshot', emp);
+  assert.equal(snap.status, 200);
+  assert.equal((await call('/catalog-snapshot?v=' + snap.data.version, emp)).data.unchanged, true);
+  assert.equal((await call('/catalog-snapshot', ncc)).status, 403);
+  const items = hydrateSnapshot(snap.data);
+  const ly = items.find(p => p.sku === 'LHC-LY')!;
+  assert.deepEqual([ly.prices, ly.stock, ly.stockUpdatedAt], [{ le: 350000, si: 250000 }, { k1: 7 }, '2026-10-06T05:00:00.000Z']);
+  const cases = ['', 'q=binh', 'q=lhc-ly', 'q=LHC-LY&scope=minhlong', 'q=giu nhiet', 'q=minh long', 'q=031199000&scope=other', 'scope=minhlong', 'scope=other',
+    'group=thermalCup', 'group=tableware&scope=minhlong', 'group=tea', 'group=khong-co', 'policy=le&min=300000&max=1000000', 'policy=si&max=300000',
+    'policy=le&min=2000000', 'policy=le&max=30000&scope=minhlong', 'q=bo&group=tea&scope=minhlong'];
+  for (const qs of cases) {
+    const server = (await call('/products?limit=200&' + qs, emp)).data.products.map((p: any) => p.sku);
+    const o = Object.fromEntries(new URLSearchParams(qs));
+    assert.deepEqual(searchProducts(items, o)!.map(p => p.sku), server, qs);
+  }
+  assert.equal(searchProducts(items, { policy: 'le', min: 5, max: 1 }), null);
+  // Sản phẩm/giá/tồn đổi → phiên bản đổi.
+  await db.update(productStock).set({ quantity: 8 }).where(eq(productStock.sku, 'LHC-LY'));
+  assert.notEqual((await call('/catalog-snapshot?v=' + snap.data.version, emp)).data.version, snap.data.version);
 });

@@ -76,7 +76,56 @@ const exactSkuFirst = (q: string | null) => {
  * Danh mục sản phẩm. Dữ liệu được nạp từ bản cũ/Sapo vào các bảng catalog;
  * giá trả về theo thứ tự chính sách giá (`price_policies.sort_order`), tồn theo kho đang dùng.
  */
+/** Các cột của một sản phẩm trong bản chụp danh mục (theo đúng thứ tự); cuối mỗi dòng là mảng giá (theo `policies`) và mảng tồn (theo `warehouses`). */
+export const SNAPSHOT_COLUMNS = ['sku', 'name', 'brand', 'pattern', 'unit', 'imageUrl', 'taxBasis', 'taxIn', 'taxOut', 'taxable',
+  'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight', 'stockUpdatedAt'] as const;
+
+/** Phiên bản danh mục: đổi khi sản phẩm, giá hoặc tồn thay đổi (đồng bộ Sapo / nhập file). Tính bằng vài phép gộp, rất nhẹ. */
+async function snapshotVersion(db: StaffEnv['db']) {
+  const [[p], [pr], [st], [ver]] = await Promise.all([
+    db.select({ n: count(), at: sql<string>`coalesce(max(${products.updatedAt}), '')` }).from(products).where(eq(products.active, true)),
+    db.select({ n: count(), sum: sql<string>`coalesce(sum(${productPrices.price}), 0)::text` }).from(productPrices),
+    db.select({ n: count(), at: sql<string>`coalesce(max(${productStock.updatedAt}), '')`, sum: sql<string>`coalesce(sum(${productStock.quantity}), 0)::text` }).from(productStock),
+    db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),
+  ]);
+  const raw = [p?.n, p?.at, pr?.n, pr?.sum, st?.n, st?.at, st?.sum, ver?.observedAt ?? ''].join('|');
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)));
+  return { version: [...hash.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join(''), observedAt: ver?.observedAt ?? null };
+}
+
 export function registerCatalogRoutes(router: Router<StaffEnv>) {
+  /**
+   * Bản chụp toàn bộ danh mục cho "Tìm nhanh sản phẩm" lọc ngay trên trình duyệt như web cũ (`GET /api/staff/catalog` bản cũ).
+   * `?v=<phiên bản đang có>`: nếu chưa đổi thì chỉ trả `{ version, unchanged: true }`.
+   */
+  router.get('/catalog-snapshot', async c => {
+    const db = c.env.db, { version, observedAt } = await snapshotVersion(db);
+    if (c.url.searchParams.get('v') === version) return json({ version, unchanged: true });
+    const [rows, policies, stores, prices, stock] = await Promise.all([
+      db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.sku)),
+      db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
+      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
+      db.select({ sku: productPrices.sku, policyId: productPrices.policyId, price: productPrices.price }).from(productPrices),
+      db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock),
+    ]);
+    const index = new Map(rows.map((r, i) => [r.sku, i]));
+    const policyAt = new Map(policies.map((p, i) => [p.id, i])), storeAt = new Map(stores.map((w, i) => [w.id, i]));
+    const priceRows = rows.map(() => policies.map(() => null as number | null));
+    const stockRows = rows.map(() => stores.map(() => null as number | null)), stockAt = rows.map(() => '');
+    for (const p of prices) { const i = index.get(p.sku), j = policyAt.get(p.policyId); if (i !== undefined && j !== undefined) priceRows[i]![j] = p.price; }
+    for (const s of stock) {
+      const i = index.get(s.sku), j = storeAt.get(s.warehouseId); if (i === undefined || j === undefined) continue;
+      stockRows[i]![j] = s.quantity; if (s.updatedAt > stockAt[i]!) stockAt[i] = s.updatedAt;
+    }
+    return json({
+      version, observedAt, columns: SNAPSHOT_COLUMNS,
+      policies: policies.map(p => ({ id: p.id, name: p.name })),
+      warehouses: stores.map(w => ({ id: w.id, name: w.name, kind: w.kind })),
+      products: rows.map((r, i) => [r.sku, r.name, r.brand, r.pattern, r.unit, r.imageUrl, r.taxBasis, r.taxIn, r.taxOut, r.taxable,
+        r.perCarton, r.cartonWeight, r.cartonLength, r.cartonWidth, r.cartonHeight, stockAt[i] || null, priceRows[i], stockRows[i]]),
+    });
+  }, 'business');
+
   router.get('/products', async c => {
     const db = c.env.db, paged = paging(c.url, 50, 200);
     const brand = c.url.searchParams.get('brand') || '';
