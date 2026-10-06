@@ -38,6 +38,7 @@
     <nav class="side-nav" aria-label="Điều hướng chính">
       <span class="nav-label">Kinh doanh</span>
       <a class="nav" href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M3.5 6l1.5 1.5L7.5 5 M3.5 12l1.5 1.5L7.5 11 M3.5 18l1.5 1.5L7.5 17"/></svg><span>Công việc</span><b id="nav-task-count" class="badge" hidden>0</b></a>
+      <a class="nav" href="#/chat" data-nav="chat"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z M8 9h8 M8 12h5"/></svg><span>Tin nhắn</span><b id="nav-chat-count" class="badge danger" hidden>0</b></a>
       <a class="nav" href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg><span>Báo giá</span><b id="nav-quote-count" class="badge">0</b></a>
       <a class="nav" href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z M6 6 5 3H2 M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2 M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg><span>Đơn đặt hàng</span></a>
       <a class="nav" href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3 M15 17l1.5 1.5L19 16"/></svg><span>HĐKT</span></a>
@@ -376,6 +377,24 @@
 
     <!-- ---------- Công nợ ---------- -->
     <!-- Khách hỏi tồn kho từ trang khách hàng: nhân viên phụ trách trả lời -->
+    <!-- Tin nhắn nội bộ giữa nhân viên (trial-ui/chat.js) -->
+    <section class="view chat-view" id="view-chat" hidden>
+      <div class="chat-shell card">
+        <aside class="chat-side">
+          <div class="chat-side-head"><h1>Tin nhắn</h1><div class="row-gap"><button type="button" class="btn primary small" id="chat-new">＋ Nhắn tin</button><button type="button" class="btn secondary small" id="chat-new-group">＋ Nhóm</button></div></div>
+          <div class="search-box chat-search"><span aria-hidden="true">⌕</span><input id="chat-search" type="search" placeholder="Tìm cuộc trò chuyện…" aria-label="Tìm cuộc trò chuyện"></div>
+          <ul class="chat-list" id="chat-list"></ul>
+        </aside>
+        <section class="chat-main">
+          <div class="chat-placeholder" id="chat-placeholder"><div><b>Chọn một cuộc trò chuyện</b><p class="muted">hoặc bấm <b>＋ Nhắn tin</b> để nhắn cho đồng nghiệp, <b>＋ Nhóm</b> để tạo nhóm. Dán <code>#/orders/…</code> để gửi kèm liên kết đơn hàng.</p></div></div>
+          <div class="chat-thread" id="chat-thread" hidden>
+            <header class="chat-head"><button type="button" class="icon-btn chat-back" id="chat-back" aria-label="Quay lại danh sách">‹</button><div class="chat-title" id="chat-title"></div><button type="button" class="btn ghost small" id="chat-manage" hidden>Thành viên</button></header>
+            <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
+            <form class="chat-compose" id="chat-form"><textarea id="chat-input" rows="1" maxlength="4000" placeholder="Nhập tin nhắn…" title="Enter để gửi, Shift+Enter để xuống dòng" aria-label="Tin nhắn"></textarea><button type="submit" class="btn primary">Gửi</button></form>
+          </div>
+        </section>
+      </div>
+    </section>
     <!-- Công việc: việc tự sinh từ nghiệp vụ + giao việc thủ công (trial-ui/tasks.js) -->
     <section class="view" id="view-tasks" hidden>
       <div class="page-head">
@@ -482,6 +501,7 @@
     <a href="#/quotes/new" class="fab" data-new-quote aria-label="Tạo báo giá"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
     <a href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg>Giao hàng</a>
     <a href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg>Công nợ</a>
+    <a href="#/chat" data-nav="chat"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z M8 9h8 M8 12h5"/></svg>Tin nhắn</a>
     <a href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M3.5 6l1.5 1.5L7.5 5 M3.5 12l1.5 1.5L7.5 11 M3.5 18l1.5 1.5L7.5 17"/></svg>Công việc</a>
     <a href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg>Hỏi tồn</a>
     <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3"/></svg>HĐKT</a>

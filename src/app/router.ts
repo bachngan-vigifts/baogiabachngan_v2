@@ -8,6 +8,7 @@ import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes } from '../modules/tasks/api/routes.ts';
+import { registerChatRoutes } from '../modules/chat/api/routes.ts';
 export function createAppRouter() {
   const router = createStaffRouter();
   registerQuoteRoutes(router);
@@ -19,5 +20,6 @@ export function createAppRouter() {
   registerPortalRoutes(router);
   registerNotificationRoutes(router);
   registerTaskRoutes(router);
+  registerChatRoutes(router);
   return router;
 }

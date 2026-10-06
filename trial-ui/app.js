@@ -6,6 +6,7 @@ import { verifyBox, duePill, allocatePayments, installmentStatus } from './verif
 import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
+import { initChat } from './chat.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -276,7 +277,7 @@ async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadStockBadge(); tasksView().badge();
+  loadStockBadge(); tasksView().badge(); chatView().startBadge();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -354,7 +355,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
+const VIEWS = { chat: 'Tin nhắn', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -389,6 +390,7 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'tasks') tasksView().load(id);
+  if (view === 'chat') chatView().open(id); else if (chatUi) chatUi.stop();
   if (view === 'order') openOrder(id);
   hideProductSuggest();
 }
@@ -1914,9 +1916,12 @@ const notifier = setupNotifications({
 /** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
 function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id }); }
+/** Tin nhắn nội bộ (trial-ui/chat.js). */
+var chatUi = null; // eslint-disable-line no-var
+function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id }); }
 /** Tải lại dữ liệu đang xem (không đụng báo giá đang sửa dở). */
 function refreshData() {
-  loadQuotes(); loadStockBadge(); tasksView().badge();
+  loadQuotes(); loadStockBadge(); tasksView().badge(); chatView().badge();
   const [page, id] = location.hash.replace(/^#\/?/, '').split('/');
   if (page === 'orders' && id) openOrder(id);
   else if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') openEditor(id); }
@@ -2316,3 +2321,5 @@ $('#excel-quote').addEventListener('click', async () => {
   } catch (ex) { console.error(ex); toast(ex?.message || 'Không thể tạo file Excel. Vui lòng thử lại.', 'err'); }
   finally { excelBusy = false; }
 });
+// Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) chatView().badge(); });
