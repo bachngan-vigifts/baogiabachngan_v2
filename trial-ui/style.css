@@ -846,6 +846,7 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .chat-side-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 14px 8px; }
 .chat-side-head h1 { margin: 0; font-size: 1.25rem; }
 .chat-search { margin: 0 14px 8px; }
+.chat-error { display: grid; gap: 6px; justify-items: start; margin: 8px 4px; padding: 12px; border-radius: 10px; background: #fdecec; color: #8a1c22; } .chat-error small { color: #8a1c22; word-break: break-word; }
 .chat-list { list-style: none; margin: 0; padding: 4px 8px 12px; overflow: auto; flex: 1; }
 .chat-item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; border: 0; background: transparent; padding: 9px 8px; border-radius: 10px; text-align: left; cursor: pointer; font: inherit; color: inherit; }
 .chat-item:hover { background: #eef2f8; } .chat-item.active { background: var(--blue-50); }

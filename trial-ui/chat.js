@@ -35,7 +35,10 @@ export function initChat({ api, toast, userId, isManager }) {
 
   // ----- Danh sách hội thoại
   async function loadList() {
-    try { st.list = (await api('/chat/conversations')).conversations; } catch (e) { q('#chat-list').innerHTML = `<li class="error">${esc(e.message)}</li>`; return; }
+    try { st.list = (await api('/chat/conversations')).conversations; } catch (e) {
+      q('#chat-list').innerHTML = `<li class="chat-error"><b>Chưa tải được tin nhắn</b><small>${esc(e.message)}</small><button type="button" class="btn secondary small" data-chat-retry>Thử lại</button></li>`;
+      return;
+    }
     renderList();
   }
   function renderList() {
@@ -113,7 +116,8 @@ export function initChat({ api, toast, userId, isManager }) {
   // ----- Hộp chọn người / tạo nhóm / quản lý nhóm
   async function people() { if (!st.people) st.people = (await api('/chat/people')).people; return st.people; }
   async function pickDialog({ title, multi, withTitle, initialTitle = '', exclude = [], ok }) {
-    const list = (await people()).filter(p => !exclude.includes(p.id));
+    let list;
+    try { list = (await people()).filter(p => !exclude.includes(p.id)); } catch (e) { toast('Không tải được danh sách nhân viên: ' + e.message, 'err'); return null; }
     const dlg = document.createElement('dialog'); dlg.className = 'modal narrow chat-pick';
     dlg.innerHTML = `<form method="dialog"><div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body">${withTitle ? `<label class="chat-field"><span>Tên nhóm</span><input name="title" maxlength="120" value="${esc(initialTitle)}" placeholder="Ví dụ: Đơn Tết 2027" required></label>` : ''}
@@ -168,7 +172,10 @@ export function initChat({ api, toast, userId, isManager }) {
   });
 
   // ----- Sự kiện
-  q('#chat-list').addEventListener('click', e => { const b = e.target.closest('[data-conv]'); if (b) open(b.dataset.conv); });
+  q('#chat-list').addEventListener('click', e => {
+    if (e.target.closest('[data-chat-retry]')) { loadList(); return; }
+    const b = e.target.closest('[data-conv]'); if (b) open(b.dataset.conv);
+  });
   q('#chat-search').addEventListener('input', e => { st.filter = e.target.value.trim(); renderList(); });
   q('#chat-back').addEventListener('click', () => { st.active = null; stopThread(); renderThread(); loadList(); });
   // Mở / đóng khung chat nổi.
