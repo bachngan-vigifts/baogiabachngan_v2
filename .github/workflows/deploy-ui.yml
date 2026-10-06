@@ -31,6 +31,9 @@ jobs:
       - name: Tạo dự án Pages (lần đầu)
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npx --yes wrangler@3 pages project create "$PROJECT" --production-branch main || echo "Dự án đã có."
+      - name: Ghi số phiên bản (commit) vào giao diện
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: sed -i "s/__BUILD__/${GITHUB_SHA::7}/" trial-ui/index.html
       - name: Đưa giao diện lên
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npx --yes wrangler@3 pages deploy trial-ui --project-name "$PROJECT" --branch main --commit-dirty=true
