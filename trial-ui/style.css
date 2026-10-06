@@ -419,3 +419,52 @@ table { width: 100%; border-collapse: collapse; }
 label.btn { display: inline-flex; grid-auto-flow: unset; color: var(--ink); font-size: .92rem; }
 label.btn.busy { opacity: .55; pointer-events: none; }
 @media (max-width: 900px) { .page-head label.btn { display: none; } }
+
+/* ---------- Bảng sản phẩm báo giá (cột theo web cũ) ---------- */
+.btn.navy { background: var(--navy); color: #fff; }
+.btn.navy:hover:not(:disabled) { background: var(--navy-700); }
+#type-hint { display: block; margin-top: 2px; }
+.line-table { table-layout: fixed; min-width: 1080px; }
+.line-table:has(.col-pd) { min-width: 1280px; }
+.line-table th { vertical-align: middle; }
+.line-table .col-idx { width: 40px; } .line-table .col-img { width: 70px; } .line-table .col-product { width: auto; }
+.line-table .col-unit { width: 56px; } .line-table .col-qty { width: 76px; } .line-table .col-price { width: 120px; }
+.line-table .col-disc { width: 116px; } .line-table .col-print { width: 104px; } .line-table .col-after { width: 112px; }
+.line-table .col-total { width: 118px; } .line-table .col-pd { width: 92px; } .line-table .col-cost { width: 108px; } .line-table .col-act { width: 32px; }
+.line-table td { vertical-align: top; padding: 12px 8px; }
+.line-table td.col-idx { padding-top: 22px !important; text-align: center; }
+.line-table .thumb { width: 54px; height: 54px; border-radius: 6px; }
+.line-table .name-input { font-weight: 700; border-color: transparent; padding: 4px 6px; margin-left: -6px; background: transparent; }
+.line-table .name-input:hover { border-color: var(--line-strong); }
+.sku-line { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.line-table input.plain { border-color: transparent; background: transparent; padding: 3px 6px; margin-left: -6px; }
+.line-table input.plain:hover { border-color: var(--line-strong); }
+.sku-input { width: 150px; font-size: .84rem; color: #3a4860; }
+.link-btn { border: 0; background: none; color: var(--blue); font-weight: 700; font-size: .82rem; text-decoration: underline; cursor: pointer; padding: 0; white-space: nowrap; }
+.product-meta { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+.sub-field { display: grid; grid-template-columns: 86px 1fr; align-items: center; gap: 6px; margin-top: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }
+.line-table .sub-field input { padding: 4px 8px; font-size: .84rem; }
+.unit-field { display: flex; align-items: center; gap: 6px; }
+.unit-field input { flex: 1; min-width: 0; }
+.unit-field b { font-size: .8rem; color: #45536a; width: 12px; }
+.disc-head { display: inline-flex; align-items: center; gap: 6px; }
+.disc-head select { width: auto; padding: 4px 6px; font-size: .8rem; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.num-cell, .line-table .line-total { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; padding-top: 22px !important; white-space: nowrap; }
+.line-table td.line-actions { padding-top: 16px !important; text-align: center; }
+.line-keys { margin-top: 10px; }
+.type-hrc .print-key { display: none; }
+#reset-notes { margin-top: 8px; }
+#toggle-profit { margin-top: 16px; }
+@media (max-width: 680px) {
+  .line-table tr { grid-template-columns: 64px repeat(5, minmax(0, 1fr)); }
+  .line-table .col-img { grid-column: 1; grid-row: 1; }
+  .line-table .col-product { grid-column: 2 / -1; grid-row: 1; }
+  .line-table .col-unit { grid-column: 1 / span 2; } .line-table .col-qty { grid-column: span 2; } .line-table .col-price { grid-column: span 2; }
+  .line-table .col-disc { grid-column: 1 / span 3; } .line-table .col-print { grid-column: span 3; }
+  .line-table .col-after { grid-column: 1 / span 3; text-align: left; padding-top: 0 !important; }
+  .line-table .line-total { grid-column: span 3; text-align: left; }
+  .line-table .col-pd { grid-column: 1 / span 3; } .line-table .col-cost { grid-column: span 3; text-align: left; }
+  .line-table td.line-actions { grid-column: 1 / -1; text-align: right; border-top: 1px dashed var(--line); }
+  .line-table .thumb { width: 56px; height: 56px; }
+  .sub-field { grid-template-columns: 1fr; }
+}

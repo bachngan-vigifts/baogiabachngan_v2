@@ -1,6 +1,6 @@
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
-import { totals, after, discounted, profit, normalize, netPrice, defaultCostDiscount, purchasePrice } from './quote-math.js';
+import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -362,28 +362,29 @@ $('#type-filter').addEventListener('click', e => {
 const editor = { id: null, revision: 0, base: {}, rows: [], type: 'B2B', dirty: false, customerId: '', pending: null, loading: false };
 const qf = $('#quote-form');
 const field = name => qf.elements.namedItem(name);
-const NOTE_PRESETS = [
-  'Báo giá có hiệu lực trong 30 ngày.',
-  'Giá chưa bao gồm phí vận chuyển.',
-  'Thanh toán: đặt cọc 50%, phần còn lại khi giao hàng.',
-  'Thời gian giao hàng: 7–10 ngày làm việc kể từ khi xác nhận đơn.',
-];
-$('#note-presets').innerHTML = NOTE_PRESETS.map((t, i) => `<button type="button" class="chip" data-preset="${i}">＋ ${esc(t.split(':')[0].replace(/\.$/, ''))}</button>`).join('');
-$('#note-presets').addEventListener('click', e => {
-  const b = e.target.closest('[data-preset]'); if (!b) return;
-  const text = NOTE_PRESETS[b.dataset.preset], notes = field('notes');
-  if (notes.value.includes(text)) return;
-  notes.value = (notes.value.trim() ? notes.value.trimEnd() + '\n' : '') + text; markDirty();
+/** Ghi chú & điều kiện mặc định theo loại báo giá – lấy nguyên từ web báo giá cũ (`public/quote-notes.js`). */
+const QUOTE_NOTES = {
+  HRC: '- Tổng thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Báo giá có hiệu lực 7 ngày kể ngày ký.\n- Phương thức thanh toán: Chuyển khoản.\n- Đơn vị bán hàng: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN\n- Mã số thuế: 1801686576\n- Số tài khoản: 579268 tại Ngân hàng TMCP Á Châu - Chi Nhánh Cần Thơ\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Thanh toán: 100% giá trị hợp đồng trong vòng 30 ngày kể từ ngày nhận được hàng và hóa đơn GTGT.\nTrân trọng kính chào.',
+  B2B: '- Tổng giá trị thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Giá trên chỉ có hiệu lực trong 30 ngày.\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Phương thức thanh toán: Chuyển khoản.\n- Đơn vị bán hàng: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN\n- Mã số thuế: 1801686576\n- Số tài khoản: 579268 tại Ngân hàng TMCP Á Châu - Chi Nhánh Cần Thơ\n- Bên Mua sẽ tiến hành tạm ứng 30% trị giá hợp đồng ngay sau khi Hợp đồng ký kết.\n- 70% trị giá còn lại của hợp đồng sẽ thanh toán trước khi nhận hàng.\nHy vọng bảng chào giá đáp ứng được yêu cầu của Quý Khách hàng.\nTrân trọng kính chào.',
+  VIGIFTS: '- Tổng giá trị thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Giá trên chỉ có hiệu lực trong vòng 7 ngày kể từ ngày gửi chào giá.\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Phương thức thanh toán: Chuyển khoản.\nTài khoản: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS.\nSố tài khoản: 159063909 tại Ngân Hàng TMCP Á Châu, CN Cần Thơ.\n+ Bên Mua sẽ tiến hành tạm ứng 50% trị giá hợp đồng ngay sau khi Hợp đồng ký kết.\n+ 50% trị giá còn lại của hợp đồng sẽ thanh toán khi nhận đầy đủ hàng hoá và chứng từ kèm theo.\nHy vọng bảng chào giá đáp ứng được yêu cầu của Quý Khách hàng.\nTrân trọng kính chào,',
+};
+const defaultNotes = type => QUOTE_NOTES[type] || QUOTE_NOTES.HRC;
+$('#reset-notes').addEventListener('click', async () => {
+  const notes = field('notes');
+  if (notes.value.trim() && notes.value !== defaultNotes(editor.type) && !await confirmBox('Thay nội dung ghi chú hiện tại bằng ghi chú mặc định?', { ok: 'Thay' })) return;
+  notes.value = defaultNotes(editor.type); markDirty();
 });
+const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
 function nextQuoteNo() {
   const prefix = 'BG-' + todayIso().replaceAll('-', '') + '-';
   const used = (state.quotes || []).map(q => q.quoteNo).filter(n => n?.startsWith(prefix)).map(n => parseInt(n.slice(prefix.length), 10) || 0);
   return prefix + String(Math.max(0, ...used) + 1).padStart(3, '0');
 }
-const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: 'percent', printFee: 0 });
+const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT });
 function newQuoteData(extra = {}) {
-  return { type: 'B2B', quoteNo: nextQuoteNo(), date: todayIso(), vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: '', rows: [blankRow()], ...extra };
+  const type = extra.type || 'B2B';
+  return { type, quoteNo: nextQuoteNo(), date: todayIso(), vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: defaultNotes(type), notesVersion: 2, rows: [blankRow()], ...extra };
 }
 
 async function openEditor(id) {
@@ -419,8 +420,8 @@ function fillEditor(id, revision, data) {
   field('deliveryDate').value = data.deliveryDate || data.delivery_date || '';
   field('vat').value = fmtNum(Number(data.vat ?? 8));
   $('#customer-search-input').value = '';
-  $('#show-cost').checked = editor.rows.some(r => Number(r.costPrice) > 0);
-  qf.classList.toggle('show-cost', $('#show-cost').checked);
+  editor.discountMode = data.discountMode || editor.rows[0]?.discountType || 'percent';
+  setProfit(false);
   setType(editor.type, false);
   $('#editor-title').textContent = id ? data.quoteNo || 'Báo giá' : 'Tạo báo giá';
   $('#editor-revision').hidden = !id; $('#editor-revision').textContent = 'Phiên bản ' + revision;
@@ -432,7 +433,7 @@ function fillEditor(id, revision, data) {
 }
 function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; } }
 qf.addEventListener('input', e => {
-  if (e.target.id === 'customer-search-input' || e.target.id === 'show-cost') return;
+  if (e.target.id === 'customer-search-input') return;
   markDirty();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
   if (['customer', 'phone'].includes(e.target.name)) {
@@ -444,45 +445,74 @@ qf.addEventListener('input', e => {
 field('vat').addEventListener('blur', e => { const v = parseNum(e.target.value); if (v >= 0) e.target.value = fmtNum(v); });
 
 function setType(type, dirty = true) {
+  // Ghi chú còn là mặc định của loại cũ (hoặc trống) thì đổi theo loại mới, như web cũ.
+  const notes = field('notes');
+  if (dirty && (!notes.value.trim() || notes.value === defaultNotes(editor.type))) notes.value = defaultNotes(type);
   editor.type = type;
   $$('#type-seg button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
-  $('#type-hint').textContent = type === 'HRC' ? 'HRC: phí in không cộng vào giá bán.' : 'Phí in được cộng vào đơn giá sau chiết khấu.';
+  $('#type-hint').textContent = type === 'HRC' ? 'Báo giá HRC: không có cột phí in.' : 'Phí in (F7) được cộng vào giá sau chiết khấu.';
   qf.classList.toggle('type-hrc', type === 'HRC');
-  if (dirty) { markDirty(); renderLines(); }
+  if (dirty) { markDirty(); }
+  renderLines();
 }
 $('#type-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.value !== editor.type) setType(b.dataset.value); });
-$('#show-cost').addEventListener('change', e => { qf.classList.toggle('show-cost', e.target.checked); calculate(); });
+// Manager: "Xem lợi nhuận tạm tính" mở bảng lợi nhuận và 2 cột CK mua vào / Giá nhập (như web cũ).
+function setProfit(on) {
+  editor.showProfit = on && isManager();
+  $('#profit-card').hidden = !editor.showProfit;
+  $('#toggle-profit').textContent = editor.showProfit ? 'Ẩn lợi nhuận tạm tính' : 'Xem lợi nhuận tạm tính';
+  $('#toggle-profit').setAttribute('aria-expanded', String(editor.showProfit));
+}
+$('#toggle-profit').addEventListener('click', () => { setProfit(!editor.showProfit); renderLines(); });
 
-// ----- dòng sản phẩm
-const NUM_FIELDS = { qty: 4, price: 2, discount: 2, printFee: 2, taxRate: 2, costPrice: 2 };
-function lineCell(r, i) {
-  const n = (k, label, extra = '') => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${k === 'taxRate' && !Number.isFinite(r.taxRate) ? '' : fmtNum(Number(r[k] || 0), NUM_FIELDS[k])}" aria-label="${label} dòng ${i + 1}" ${extra}>`;
+// ----- dòng sản phẩm (cột theo web cũ: HRC không có Phí in; B2B/VIGIFTS có Phí in F7, Bộ gồm, Mô tả in ấn, Đóng gói)
+const NUM_FIELDS = { qty: 4, price: 2, discount: 2, printFee: 2, purchaseDiscount: 2 };
+const showCostCols = () => editor.showProfit && isManager();
+function lineHead() {
+  const modes = new Set(editor.rows.map(r => r.discountType || 'percent'));
+  const mode = modes.size > 1 ? 'mixed' : [...modes][0] || editor.discountMode || 'percent';
+  const disc = `<span class="disc-head">CK (F6)<select id="discount-mode" aria-label="Đơn vị chiết khấu cả cột">${mode === 'mixed' ? '<option value="mixed" selected disabled>Nhiều loại</option>' : ''}<option value="percent" ${mode === 'percent' ? 'selected' : ''}>%</option><option value="amount" ${mode === 'amount' ? 'selected' : ''}>đ/SP</option></select></span>`;
   const hrc = editor.type === 'HRC';
+  return `<tr><th class="col-idx">STT</th><th class="col-img">Hình ảnh</th><th class="col-product">${hrc ? 'Sản phẩm / Mã hàng' : 'Tên hàng / Mã hàng'}</th><th class="col-unit">ĐVT</th><th class="col-qty">Số lượng</th><th class="col-price">Đơn giá</th><th class="col-disc">${disc}</th>${hrc ? '' : '<th class="col-print">Phí in (F7)</th>'}<th class="col-after right">${hrc ? 'Đơn giá CK' : 'Giá sau CK'}</th><th class="col-total right">Thành tiền</th>${showCostCols() ? '<th class="col-pd">CK mua vào</th><th class="col-cost right">Giá nhập</th>' : ''}<th class="col-act"><span class="sr-only">Xoá</span></th></tr>`;
+}
+function packingSpec(r) {
+  const n = v => Number(v).toLocaleString('vi-VN', { maximumFractionDigits: 3 }), parts = [];
+  if (Number(r.perCarton) > 0) parts.push(`${n(r.perCarton)} ${r.unit || 'cái'}/thùng`);
+  if (Number(r.cartonWeight) > 0) parts.push(`nặng ${n(r.cartonWeight)} kg/thùng`);
+  return parts.join('; ');
+}
+function lineCell(r, i) {
+  const n = (k, label, extra = '') => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${k === 'purchaseDiscount' && !Number.isFinite(r[k]) ? '' : fmtNum(Number(r[k] || 0), NUM_FIELDS[k])}" aria-label="${label} dòng ${i + 1}" ${extra}>`;
+  const hrc = editor.type === 'HRC';
+  const meta = [r.brand, r.pattern, r.pricePolicy, Number.isFinite(r.taxRate) ? `VAT ${fmtNum(r.taxRate)}%` : ''].filter(Boolean).join(' · ');
+  const text = (k, label, ph) => `<label class="sub-field"><span>${label}</span><input data-k="${k}" value="${esc(r[k] ?? '')}" placeholder="${ph}" maxlength="2000"></label>`;
+  if (!hrc && r.packagingDescription === undefined) r.packagingDescription = PACKAGING_DEFAULT;
   return `<tr data-i="${i}">
     <td class="col-idx">${i + 1}</td>
+    <td class="col-img">${r.image ? `<img class="thumb" src="${esc(r.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4 4 3-3 5 5 M15 9h.01"/></svg></span>'}</td>
     <td class="col-product" data-label="Sản phẩm">
-      <input data-k="name" value="${esc(r.name)}" placeholder="Gõ tên hoặc mã để tìm sản phẩm…" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
-      <div class="sub"><input data-k="sku" value="${esc(r.sku)}" placeholder="Mã SKU" maxlength="4000" aria-label="SKU dòng ${i + 1}"></div>
+      <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="Gõ tên hoặc mã để tìm sản phẩm…" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
+      <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock>Xem tồn kho</button>' : ''}</div>
+      ${meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
+      ${hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
+      ${hrc ? '' : text('bundleContents', 'Bộ gồm', 'Ví dụ: 01 ly + 01 nắp') + text('printDescription', 'Mô tả in ấn', 'Ví dụ: in logo màu tại 01 vị trí') + text('packagingDescription', 'Đóng gói', PACKAGING_DEFAULT)}
     </td>
-    <td class="col-unit" data-label="ĐVT"><input data-k="unit" value="${esc(r.unit)}" placeholder="cái" maxlength="40" aria-label="Đơn vị tính dòng ${i + 1}"></td>
+    <td class="col-unit" data-label="ĐVT"><input class="plain" data-k="unit" value="${esc(r.unit)}" placeholder="—" maxlength="40" aria-label="Đơn vị tính dòng ${i + 1}"></td>
     <td class="col-qty" data-label="Số lượng">${n('qty', 'Số lượng')}</td>
-    <td class="col-price" data-label="Đơn giá">${n('price', 'Đơn giá')}</td>
-    <td class="col-disc" data-label="Chiết khấu"><div class="disc-field">${n('discount', 'Chiết khấu')}<button type="button" class="disc-mode" data-mode title="Đổi giữa % và số tiền">${r.discountType === 'amount' ? '₫' : '%'}</button></div></td>
-    <td class="col-print ${hrc ? 'print-off' : ''}" data-label="Phí in / sp">${n('printFee', 'Phí in', hrc ? 'title="HRC không cộng phí in vào giá bán"' : '')}</td>
-    <td class="col-tax" data-label="VAT %">${n('taxRate', 'VAT riêng', 'placeholder="–" title="Để trống = dùng VAT chung"')}</td>
-    <td class="col-cost cost-only" data-label="Giá vốn">${n('costPrice', 'Giá vốn')}</td>
+    <td class="col-price" data-label="Đơn giá"><div class="unit-field">${n('price', 'Đơn giá')}<b>đ</b></div></td>
+    <td class="col-disc" data-label="CK (F6)"><div class="unit-field">${n('discount', 'Chiết khấu')}<b>${r.discountType === 'amount' ? 'đ' : '%'}</b></div></td>
+    ${hrc ? '' : `<td class="col-print" data-label="Phí in (F7)"><div class="unit-field">${n('printFee', 'Phí in')}<b>đ</b></div></td>`}
+    <td class="col-after num-cell" data-label="${hrc ? 'Đơn giá CK' : 'Giá sau CK'}"></td>
     <td class="line-total" data-label="Thành tiền"></td>
-    <td class="line-actions"><div class="act-grid">
-      <button type="button" class="icon-btn" data-act="up" title="Chuyển lên" aria-label="Chuyển dòng ${i + 1} lên" ${i === 0 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg></button>
-      <button type="button" class="icon-btn" data-act="down" title="Chuyển xuống" aria-label="Chuyển dòng ${i + 1} xuống" ${i === editor.rows.length - 1 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
-      <button type="button" class="icon-btn" data-act="copy" title="Nhân đôi dòng" aria-label="Nhân đôi dòng ${i + 1}"><svg viewBox="0 0 24 24"><path d="M9 9h11v11H9z M5 15H4V4h11v1"/></svg></button>
-      <button type="button" class="icon-btn danger" data-act="del" title="Xoá dòng" aria-label="Xoá dòng ${i + 1}"><svg viewBox="0 0 24 24"><path d="M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13"/></svg></button>
-    </div></td>
+    ${showCostCols() ? `<td class="col-pd" data-label="CK mua vào"><div class="unit-field">${n('purchaseDiscount', 'Chiết khấu mua vào')}<b>%</b></div></td><td class="col-cost num-cell" data-label="Giá nhập"></td>` : ''}
+    <td class="line-actions"><button type="button" class="icon-btn danger" data-del title="Xoá dòng" aria-label="Xoá dòng ${i + 1}">×</button></td>
   </tr>`;
 }
 function renderLines(focus) {
+  $('#line-head').innerHTML = lineHead();
   $('#line-list').innerHTML = editor.rows.map(lineCell).join('');
   $('#line-count').textContent = `(${editor.rows.length})`;
+  qf.classList.toggle('type-hrc', editor.type === 'HRC');
   calculate();
   if (focus !== undefined) $(`#line-list tr[data-i="${focus}"] [data-k="name"]`)?.focus();
 }
@@ -490,59 +520,87 @@ function validateRowInput(input, r) {
   const k = input.dataset.k, v = parseNum(input.value);
   let ok = Number.isFinite(v) && v >= 0;
   if (k === 'discount') ok = ok && (r.discountType === 'amount' ? v <= Number(r.price || 0) : v <= 100);
-  if (k === 'taxRate') ok = input.value.trim() === '' || (ok && v <= 100);
+  if (k === 'purchaseDiscount') ok = input.value.trim() === '' || (ok && v <= 100);
   input.classList.toggle('invalid', !ok);
   return ok ? v : null;
 }
+/** Giá nhập = giá bán × (1 − CK mua vào), như `syncCostPrice` web cũ. */
+function syncCost(r) {
+  if (Number.isFinite(r.purchaseDiscount)) r.costPrice = purchasePrice(r.price, r.purchaseDiscount);
+}
+$('#line-head').addEventListener('change', e => {
+  if (e.target.id !== 'discount-mode') return;
+  const mode = e.target.value;
+  for (const r of editor.rows) {
+    if ((r.discountType || 'percent') === mode) continue;
+    const v = Number(r.discount) || 0;
+    r.discount = mode === 'amount' ? Number(r.price || 0) * v / 100 : (r.price ? v / r.price * 100 : 0);
+    r.discountType = mode;
+  }
+  editor.discountMode = mode; markDirty(); renderLines();
+});
 $('#line-list').addEventListener('input', e => {
   const input = e.target.closest('[data-k]'); if (!input) return;
   const r = editor.rows[input.closest('tr').dataset.i], k = input.dataset.k;
   if (k in NUM_FIELDS) {
     const v = validateRowInput(input, r);
-    if (k === 'taxRate') { if (input.value.trim() === '') delete r.taxRate; else if (v !== null) r.taxRate = v; }
+    if (k === 'purchaseDiscount') { if (input.value.trim() === '') { delete r.purchaseDiscount; delete r.costPrice; } else if (v !== null) r.purchaseDiscount = v; }
     else r[k] = v ?? 0;
     if (k === 'price') { const d = input.closest('tr').querySelector('[data-k="discount"]'); validateRowInput(d, r); }
+    syncCost(r);
   } else r[k] = input.value;
-  input.classList.remove('invalid-name');
-  calculate();
+  markDirty(); calculate();
 });
 $('#line-list').addEventListener('focusout', e => {
   const input = e.target.closest('[data-k]'); if (!input || !(input.dataset.k in NUM_FIELDS) || input.classList.contains('invalid')) return;
   const r = editor.rows[input.closest('tr').dataset.i], k = input.dataset.k;
-  if (k === 'taxRate' && !Number.isFinite(r.taxRate)) { input.value = ''; return; }
+  if (k === 'purchaseDiscount' && !Number.isFinite(r[k])) { input.value = ''; return; }
   input.value = fmtNum(Number(r[k] || 0), NUM_FIELDS[k]);
 });
-$('#line-list').addEventListener('focusin', e => { if (e.target.classList?.contains('num-input')) setTimeout(() => e.target.select(), 0); });
+let selectedLine = 0;
+$('#line-list').addEventListener('focusin', e => {
+  const tr = e.target.closest('tr[data-i]'); if (tr) selectedLine = Number(tr.dataset.i);
+  if (e.target.classList?.contains('num-input')) setTimeout(() => e.target.select(), 0);
+});
 $('#line-list').addEventListener('keydown', e => {
-  // Enter ở ô cuối của dòng cuối → thêm dòng mới
+  // Enter → xuống ô cùng cột ở dòng dưới; ở dòng cuối thì thêm dòng trống.
   if (e.key !== 'Enter' || !e.target.matches('input')) return;
   e.preventDefault();
   const tr = e.target.closest('tr'), i = Number(tr.dataset.i);
   if (i === editor.rows.length - 1) addLine(); else $(`#line-list tr[data-i="${i + 1}"] [data-k="${e.target.dataset.k}"]`)?.focus();
 });
+// F6: chiết khấu, F7: phí in của dòng đang chọn (như web cũ).
+document.addEventListener('keydown', e => {
+  if (!['F6', 'F7'].includes(e.key) || e.ctrlKey || e.altKey || e.metaKey || $('#view-editor').hidden || document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  const tr = $(`#line-list tr[data-i="${selectedLine}"]`) || $('#line-list tr');
+  const input = tr?.querySelector(`[data-k="${e.key === 'F6' ? 'discount' : 'printFee'}"]`);
+  if (!input) { toast(e.key === 'F7' ? 'Phí in có trên báo giá B2B và Vigifts.' : 'Thêm sản phẩm trước khi nhập chiết khấu.', 'err'); return; }
+  input.focus(); input.select(); input.scrollIntoView({ block: 'nearest' });
+});
 $('#line-list').addEventListener('click', async e => {
   const tr = e.target.closest('tr'); if (!tr) return;
   const i = Number(tr.dataset.i), rows = editor.rows;
-  if (e.target.closest('[data-mode]')) {
+  if (e.target.closest('[data-stock]')) return showStock(rows[i]);
+  if (!e.target.closest('[data-del]')) return;
+  if (rows.length === 1) rows[0] = blankRow();
+  else {
     const r = rows[i];
-    if (r.discountType === 'amount') { r.discountType = 'percent'; r.discount = r.price ? Math.min(100, Math.round(r.discount / r.price * 10000) / 100) : 0; }
-    else { r.discountType = 'amount'; r.discount = Math.round(Number(r.price || 0) * Number(r.discount || 0) / 100); }
-    markDirty(); renderLines(); return;
+    if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true })) return;
+    rows.splice(i, 1);
   }
-  const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
-  if (act === 'up' && i > 0) [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]];
-  else if (act === 'down' && i < rows.length - 1) [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]];
-  else if (act === 'copy') { if (rows.length >= 300) return toast('Báo giá tối đa 300 dòng.', 'err'); rows.splice(i + 1, 0, { ...structuredClone(rows[i]), id: uid() }); }
-  else if (act === 'del') {
-    if (rows.length === 1) { rows[0] = blankRow(); }
-    else {
-      const r = rows[i];
-      if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true })) return;
-      rows.splice(i, 1);
-    }
-  } else return;
   markDirty(); renderLines();
 });
+async function showStock(r) {
+  try {
+    const d = await api(`/products?limit=10&q=${encodeURIComponent(r.sku)}`);
+    const p = d.products.find(x => x.sku === r.sku);
+    const body = p ? `<p class="muted">Mã hàng: <b>${esc(r.sku)}</b></p><dl class="totals">${d.warehouses.map(w => `<div><dt>${esc(w.name)}</dt><dd>${p.stock?.[w.id] === undefined ? '<span class="muted">Chưa có số liệu</span>' : fmtNum(Number(p.stock[w.id]))}</dd></div>`).join('')}</dl>` : '<p class="muted">Chưa tìm thấy mã hàng này trong danh mục hiện tại.</p>';
+    $('#stock-title').textContent = r.name || 'Tồn kho sản phẩm';
+    $('#stock-body').innerHTML = body + (d.observedAt ? `<p class="muted small">Cập nhật: ${esc(new Date(d.observedAt).toLocaleString('vi-VN'))}</p>` : '');
+    $('#stock-dialog').showModal();
+  } catch (ex) { toast(ex.message, 'err'); }
+}
 function addLine() {
   if (editor.rows.length >= 300) return toast('Báo giá tối đa 300 dòng.', 'err');
   editor.rows.push(blankRow()); markDirty(); renderLines(editor.rows.length - 1);
@@ -555,17 +613,18 @@ function currentDoc() {
 function calculate() {
   const doc = currentDoc(), t = totals(doc);
   editor.rows.forEach((r, i) => {
-    const cell = $(`#line-list tr[data-i="${i}"] .line-total`); if (!cell) return;
-    const unit = after(r, doc), line = unit * Number(r.qty || 0);
-    const disc = Number(r.discount) > 0 ? discounted(r) : null;
-    cell.innerHTML = money(line) + (disc !== null || (Number(r.printFee) > 0 && doc.type !== 'HRC') ? `<small>${money(unit)}/sp</small>` : '');
+    const tr = $(`#line-list tr[data-i="${i}"]`); if (!tr) return;
+    const unit = after(r, doc);
+    tr.querySelector('.col-after').textContent = fmtNum(unit) + ' đ';
+    tr.querySelector('.line-total').textContent = money(unit * Number(r.qty || 0));
+    const cost = tr.querySelector('.col-cost'); if (cost) cost.textContent = Number.isFinite(r.purchaseDiscount) ? money(r.costPrice) : '—';
   });
   $('#sum-subtotal').textContent = money(t.subtotal);
   $('#sum-tax-label').textContent = t.label;
   $('#sum-tax').textContent = money(t.tax);
   $('#sum-total').textContent = $('#m-total').textContent = money(t.total);
   $('#words-total').textContent = t.total > 0 ? 'Bằng chữ: ' + moneyWords(t.total) + '.' : '';
-  if ($('#show-cost').checked) {
+  if (editor.showProfit) {
     const p = profit(doc);
     $('#sum-cost').textContent = money(p.cost);
     $('#sum-gross').textContent = money(p.gross); $('#sum-gross').className = p.gross >= 0 ? 'pos' : 'neg';
@@ -660,13 +719,13 @@ function collectQuote() {
   const data = { ...editor.base };
   delete data.delivery_date;
   Object.assign(data, {
-    type: editor.type, quoteNo: f('quoteNo'), date: f('date'), vat: parseNum(field('vat').value),
+    type: editor.type, discountMode: editor.discountMode === 'amount' ? 'amount' : 'percent', notesVersion: 2, quoteNo: f('quoteNo'), date: f('date'), vat: parseNum(field('vat').value),
     customer: f('customer'), customerId: editor.customerId || '', contact: f('contact'), phone: f('phone'), email: f('email'),
     customerTaxCode: f('customerTaxCode'), customerAddress: f('customerAddress'), owner: f('owner'), ownerPhone: f('ownerPhone'),
     notes: field('notes').value,
     rows: editor.rows.filter(r => (r.name || '').trim() || Number(r.price) || (r.sku || '').trim()).map(r => {
       const row = { ...r, name: (r.name || '').trim(), sku: (r.sku || '').trim(), unit: (r.unit || '').trim() };
-      if (!$('#show-cost').checked && !(Number(r.costPrice) > 0)) delete row.costPrice;
+      if (!(Number(r.costPrice) > 0)) delete row.costPrice;
       if (!Number.isFinite(row.taxRate)) delete row.taxRate;
       return row;
     }),
@@ -870,7 +929,7 @@ function rowFromProduct(p) {
   const tax = p.taxable ? p.taxOut : 0;
   const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
   const price = netPrice(raw, tax, included);
-  const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '' };
+  const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '', packagingDescription: PACKAGING_DEFAULT };
   if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; row.costPrice = purchasePrice(price, d); } }
   if (p.imageUrl) row.image = p.imageUrl;
   for (const k of ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) if (Number(p[k]) > 0) row[k] = Number(p[k]);

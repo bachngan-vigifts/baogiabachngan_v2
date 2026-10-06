@@ -153,7 +153,6 @@
               <div class="segmented" id="type-seg" role="radiogroup" aria-label="Loại báo giá">
                 <button type="button" data-value="B2B" role="radio">B2B</button><button type="button" data-value="HRC" role="radio">HRC</button><button type="button" data-value="VIGIFTS" role="radio">VIGIFTS</button>
               </div>
-              <small class="muted" id="type-hint"></small>
             </div>
             <div class="form-grid cols-2">
               <label>Người phụ trách (in trên báo giá)<input name="owner" maxlength="500"></label>
@@ -185,31 +184,27 @@
 
         <div class="card">
           <div class="card-title-row">
-            <h2 class="card-title">Sản phẩm <span class="muted" id="line-count"></span></h2>
+            <div><h2 class="card-title">Sản phẩm báo giá <span class="muted" id="line-count"></span></h2><small class="muted" id="type-hint"></small></div>
             <div class="row-gap">
-              <label class="switch"><input type="checkbox" id="show-cost"><span></span>Giá vốn &amp; lợi nhuận</label>
-              <button type="button" class="btn secondary small" id="pick-products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Chọn từ danh sách sản phẩm</button>
               <button type="button" class="btn ghost small" id="paste-lines">Dán từ Excel</button>
+              <button type="button" class="btn secondary small" id="add-line">＋ Thêm dòng trống</button>
+              <button type="button" class="btn navy small" id="pick-products">＋ Thêm sản phẩm</button>
             </div>
           </div>
           <div class="table-wrap lines-wrap">
             <table class="line-table" id="line-table">
-              <thead><tr>
-                <th class="col-idx">#</th><th class="col-product">Sản phẩm</th><th class="col-unit">ĐVT</th><th class="col-qty right">SL</th>
-                <th class="col-price right">Đơn giá</th><th class="col-disc right">Chiết khấu</th><th class="col-print right">Phí in</th>
-                <th class="col-tax right">VAT</th><th class="col-cost right cost-only">Giá vốn</th><th class="col-total right">Thành tiền</th><th class="col-act"><span class="sr-only">Thao tác</span></th>
-              </tr></thead>
+              <thead id="line-head"></thead>
               <tbody id="line-list"></tbody>
             </table>
           </div>
-          <button type="button" class="btn dashed block" id="add-line"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Thêm dòng sản phẩm</button>
+          <p class="muted small line-keys">F6: nhập chiết khấu · <span class="print-key">F7: nhập phí in · </span>Enter: xuống dòng</p>
         </div>
 
         <div class="editor-bottom">
           <div class="card">
             <h2 class="card-title">Ghi chú &amp; điều kiện</h2>
-            <textarea name="notes" rows="6" maxlength="20000" placeholder="Điều kiện thanh toán, thời gian giao hàng, hiệu lực báo giá…"></textarea>
-            <div class="note-presets" id="note-presets"></div>
+            <textarea name="notes" rows="10" maxlength="20000" placeholder="Điều kiện thanh toán, thời gian giao hàng, hiệu lực báo giá…"></textarea>
+            <button type="button" class="btn ghost small" id="reset-notes">Dùng lại ghi chú mặc định của loại báo giá</button>
           </div>
           <div class="card totals-card">
             <h2 class="card-title">Tổng cộng</h2>
@@ -218,7 +213,8 @@
               <div><dt id="sum-tax-label">Thuế VAT</dt><dd id="sum-tax">0 ₫</dd></div>
               <div class="grand"><dt>Tổng thanh toán</dt><dd id="sum-total">0 ₫</dd></div>
             </dl>
-            <dl class="totals profit cost-only">
+            <button type="button" class="btn navy block manager-only" id="toggle-profit" aria-expanded="false">Xem lợi nhuận tạm tính</button>
+            <dl class="totals profit" id="profit-card" hidden>
               <div><dt>Giá vốn</dt><dd id="sum-cost">0 ₫</dd></div>
               <div><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div>
               <div><dt>Biên lợi nhuận</dt><dd id="sum-margin">0%</dd></div>
@@ -405,6 +401,12 @@
     <div class="more-row" id="picker-more-row" hidden><button type="button" class="btn secondary small" id="picker-more">Xem thêm</button></div>
   </div>
   <div class="modal-foot"><span class="muted small picker-added" id="picker-added"></span><button type="button" class="btn primary" data-close>Xong</button></div>
+</dialog>
+
+<dialog id="stock-dialog" class="modal narrow">
+  <div class="modal-head"><h2 id="stock-title">Tồn kho</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body" id="stock-body"></div>
+  <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button></div>
 </dialog>
 
 <dialog id="confirm-dialog" class="modal narrow">
