@@ -560,7 +560,7 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 }
 
 /* Tính đóng thùng & phí vận chuyển */
-.shipping-card { margin-top: 16px; }
+.shipping-card { margin-top: 12px; }
 .shipping-card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
 .shipping-card > summary::-webkit-details-marker { display: none; }
 .shipping-card > summary::before { content: '▸'; color: var(--brand-navy); font-size: 1rem; transition: transform .15s; }

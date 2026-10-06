@@ -201,22 +201,6 @@
           <p class="muted small line-keys">F6: nhập chiết khấu · <span class="print-key">F7: nhập phí in · </span>Enter: xuống dòng</p>
         </div>
 
-        <details class="card shipping-card" id="shipping-card">
-          <summary><h2 class="card-title">Tính đóng thùng &amp; phí vận chuyển</h2></summary>
-          <button type="button" class="btn secondary small" id="fill-packing">Điền quy cách còn thiếu từ danh mục</button>
-          <p class="muted small">Quy cách lấy từ danh mục theo SKU. Nhập bổ sung ô trống; kích thước tính bằng cm. Mỗi mã đóng riêng. Số thùng hiển thị dạng lẻ theo số lượng / SP thùng.</p>
-          <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>Mã / sản phẩm</th><th>Số lượng</th><th>SP/thùng</th><th>Kg/thùng đầy</th><th>Dài (cm)</th><th>Rộng (cm)</th><th>Cao (cm)</th></tr></thead><tbody id="ship-rows"></tbody></table></div>
-          <div class="form-grid ship-rates">
-            <label>Hệ số quy đổi cm³/kg<input id="ship-divisor" type="number" min="1" step="any" inputmode="decimal"></label>
-            <label>Cước nhập tay (đ/kg)<input id="ship-rate" type="number" min="0" step="any" inputmode="decimal"></label>
-            <label>Phụ phí (đ)<input id="ship-extra" type="number" min="0" step="any" inputmode="decimal"></label>
-          </div>
-          <p class="muted small">Kg tính cước mỗi dòng = số thùng lẻ × số lớn hơn giữa kg/thùng và Dài × Rộng × Cao / hệ số. Hệ số mặc định 5.000; chỉnh theo nhà vận chuyển. Nhập đơn giá 0đ và điền cước trọn gói vào Phụ phí (ví dụ 100.000đ). Cước dự toán không cộng vào tiền báo giá.</p>
-          <p class="ship-summary" id="ship-summary"></p>
-          <p class="muted small">Cước dự toán: <b id="ship-fee"></b></p>
-          <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>SKU</th><th>Số lượng</th><th>Số thùng</th><th>Ghi chú đóng thùng</th><th>D × R × C (cm)</th><th>Kg/thùng dự toán</th></tr></thead><tbody id="ship-groups"></tbody></table></div>
-        </details>
-
         <!-- Như web cũ: Tổng cộng → nút xem lợi nhuận → Lợi nhuận nhanh → Ghi chú, xếp dọc toàn chiều rộng. -->
         <div class="editor-bottom">
           <div class="card totals-card">
@@ -257,6 +241,22 @@
             <button type="button" class="btn ghost small" id="reset-notes">Dùng lại ghi chú mặc định của loại báo giá</button>
           </div>
         </div>
+        <!-- Như web cũ: phần tính đóng thùng & phí vận chuyển ở dưới cùng trang báo giá. -->
+        <details class="card shipping-card" id="shipping-card">
+          <summary><h2 class="card-title">Tính đóng thùng &amp; phí vận chuyển</h2></summary>
+          <button type="button" class="btn secondary small" id="fill-packing">Điền quy cách còn thiếu từ danh mục</button>
+          <p class="muted small">Quy cách lấy từ danh mục theo SKU. Nhập bổ sung ô trống; kích thước tính bằng cm. Mỗi mã đóng riêng. Số thùng hiển thị dạng lẻ theo số lượng / SP thùng.</p>
+          <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>Mã / sản phẩm</th><th>Số lượng</th><th>SP/thùng</th><th>Kg/thùng đầy</th><th>Dài (cm)</th><th>Rộng (cm)</th><th>Cao (cm)</th></tr></thead><tbody id="ship-rows"></tbody></table></div>
+          <div class="form-grid ship-rates">
+            <label>Hệ số quy đổi cm³/kg<input id="ship-divisor" type="number" min="1" step="any" inputmode="decimal"></label>
+            <label>Cước nhập tay (đ/kg)<input id="ship-rate" type="number" min="0" step="any" inputmode="decimal"></label>
+            <label>Phụ phí (đ)<input id="ship-extra" type="number" min="0" step="any" inputmode="decimal"></label>
+          </div>
+          <p class="muted small">Kg tính cước mỗi dòng = số thùng lẻ × số lớn hơn giữa kg/thùng và Dài × Rộng × Cao / hệ số. Hệ số mặc định 5.000; chỉnh theo nhà vận chuyển. Nhập đơn giá 0đ và điền cước trọn gói vào Phụ phí (ví dụ 100.000đ). Cước dự toán không cộng vào tiền báo giá.</p>
+          <p class="ship-summary" id="ship-summary"></p>
+          <p class="muted small">Cước dự toán: <b id="ship-fee"></b></p>
+          <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>SKU</th><th>Số lượng</th><th>Số thùng</th><th>Ghi chú đóng thùng</th><th>D × R × C (cm)</th><th>Kg/thùng dự toán</th></tr></thead><tbody id="ship-groups"></tbody></table></div>
+        </details>
         <p id="quote-error" class="error" role="alert"></p>
         <div class="mobile-savebar">
           <div><small class="muted">Tổng thanh toán</small><strong id="m-total">0 ₫</strong></div>
