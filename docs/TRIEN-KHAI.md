@@ -1,9 +1,9 @@
 # Triển khai trực tiếp từ GitHub (không qua ChatGPT Sites)
 
-Địa chỉ chính thức: **https://baogia.minhlongonline.com**
+Địa chỉ chính thức: **https://crm.minhlongonline.com**
 
 Sau khi cài một lần, mỗi lần `main` thay đổi GitHub Actions tự làm:
-- **Giao diện** (`trial-ui/`) → **Cloudflare Pages** (`.github/workflows/deploy-ui.yml`), tự tạo dự án `baogia-bachngan` và gắn tên miền.
+- **Giao diện** (`trial-ui/`) → **Cloudflare Pages** (`.github/workflows/deploy-ui.yml`), tự tạo dự án `crm-minhlong` và gắn tên miền.
 - **API** (Edge Function `baogia-v2-api`) → **Supabase** (`.github/workflows/deploy-api.yml`), chỉ sau khi typecheck + test xanh.
 - Mỗi PR được kiểm tra tự động (`.github/workflows/ci.yml`).
 
@@ -21,13 +21,14 @@ GitHub repo → **Settings → Secrets and variables → Actions → New reposit
 
 Sau đó: **Actions** → chạy **Triển khai giao diện** và **Triển khai API** (nút *Run workflow*, nhánh `main`).
 
-## Tên miền baogia.minhlongonline.com
+## Tên miền crm.minhlongonline.com
 - Nếu `minhlongonline.com` quản lý trên Cloudflare: workflow tự tạo bản ghi DNS, chờ vài phút là vào được.
-- Nếu quản lý ở nơi khác (Mắt Bão, PA Việt Nam, …): vào trang quản lý DNS ở đó thêm **CNAME** `baogia` → `baogia-bachngan.pages.dev`. HTTPS do Cloudflare cấp tự động.
-- Chỉ dùng tên miền con `baogia.`: **không** đổi bản ghi của `minhlongonline.com` / `www` để không ảnh hưởng website đang chạy.
-- Địa chỉ dự phòng luôn có: `https://baogia-bachngan.pages.dev`. Muốn cho địa chỉ này gọi API, thêm *repository variable* `APP_ORIGINS` = `https://baogia-bachngan.pages.dev` (tab Variables) rồi chạy lại **Triển khai API**.
+- Nếu quản lý ở nơi khác (Mắt Bão, PA Việt Nam, …): vào trang quản lý DNS ở đó thêm **CNAME** `crm` → `crm-minhlong.pages.dev`. HTTPS do Cloudflare cấp tự động.
+- Chỉ dùng tên miền con `crm.`: **không** đổi bản ghi của `minhlongonline.com`, `www`, `baogia` (đang dùng cho việc khác) để không ảnh hưởng các trang đang chạy.
+- Nếu Cloudflare báo tên `crm-minhlong.pages.dev` đã có người dùng, nó tự thêm hậu tố; workflow in ra địa chỉ thật ở bước *Gắn tên miền* – dùng đúng địa chỉ đó cho CNAME.
+- Địa chỉ dự phòng luôn có: `https://crm-minhlong.pages.dev`. Muốn cho địa chỉ này gọi API, thêm *repository variable* `APP_ORIGINS` = `https://crm-minhlong.pages.dev` (tab Variables) rồi chạy lại **Triển khai API**.
 
 ## Ghi chú
 - Liên kết kích hoạt / đặt lại mật khẩu trỏ về đúng trang mà Manager đang dùng khi tạo.
-- Quay lại bản trước: Cloudflare → Workers & Pages → `baogia-bachngan` → Deployments → *Rollback*; API: Actions → chọn lần chạy cũ → *Re-run*.
+- Quay lại bản trước: Cloudflare → Workers & Pages → `crm-minhlong` → Deployments → *Rollback*; API: Actions → chọn lần chạy cũ → *Re-run*.
 - Thay đổi schema (migration) **không** tự áp; vẫn làm có kiểm soát theo `docs/SUPABASE.md`.

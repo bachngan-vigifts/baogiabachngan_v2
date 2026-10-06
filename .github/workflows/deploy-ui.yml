@@ -1,4 +1,4 @@
-# Tự đưa giao diện (trial-ui/) lên Cloudflare Pages và gắn tên miền baogia.minhlongonline.com.
+# Tự đưa giao diện (trial-ui/) lên Cloudflare Pages và gắn tên miền crm.minhlongonline.com.
 # Chỉ cần 2 secret: CLOUDFLARE_API_TOKEN (quyền: Account › Cloudflare Pages › Edit; thêm Zone › DNS › Edit nếu
 # minhlongonline.com nằm trên Cloudflare) và CLOUDFLARE_ACCOUNT_ID. Thiếu secret thì bỏ qua, không lỗi.
 name: Triển khai giao diện
@@ -9,8 +9,9 @@ on:
   workflow_dispatch:
 concurrency: deploy-ui
 env:
-  PROJECT: baogia-bachngan
-  DOMAIN: baogia.minhlongonline.com
+  PROJECT: crm-minhlong
+  DOMAIN: crm.minhlongonline.com
+  SUBDOMAIN: crm
   ZONE: minhlongonline.com
 jobs:
   deploy:
@@ -33,21 +34,25 @@ jobs:
       - name: Đưa giao diện lên
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npx --yes wrangler@3 pages deploy trial-ui --project-name "$PROJECT" --branch main --commit-dirty=true
-      - name: Gắn tên miền baogia.minhlongonline.com
+      - name: Gắn tên miền crm.minhlongonline.com
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: |
           api() { curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" "$@"; }
           # 1) gắn tên miền vào dự án Pages (đã gắn thì Cloudflare báo trùng – bỏ qua)
           api -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT/domains" -d "{\"name\":\"$DOMAIN\"}" | head -c 400; echo
-          # 2) nếu minhlongonline.com nằm trên Cloudflare và token có quyền DNS: tạo CNAME baogia → <dự án>.pages.dev
+          # 2) địa chỉ *.pages.dev thật của dự án (Cloudflare thêm hậu tố nếu tên đã có người dùng)
+          PAGES_HOST=$(api "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT" | jq -r '.result.subdomain // empty')
+          PAGES_HOST=${PAGES_HOST:-$PROJECT.pages.dev}
+          echo "Địa chỉ Pages: https://$PAGES_HOST"
+          # 3) nếu minhlongonline.com nằm trên Cloudflare và token có quyền DNS: tạo CNAME crm → <dự án>.pages.dev
           ZONE_ID=$(api "https://api.cloudflare.com/client/v4/zones?name=$ZONE" | jq -r '.result[0].id // empty')
           if [ -z "$ZONE_ID" ]; then
-            echo "::notice::Không thấy $ZONE trên Cloudflare (hoặc token không có quyền DNS). Hãy tạo bản ghi CNAME: baogia → $PROJECT.pages.dev tại nơi quản lý tên miền."
+            echo "::notice::Không thấy $ZONE trên Cloudflare (hoặc token không có quyền DNS). Hãy tạo bản ghi CNAME: $SUBDOMAIN → $PAGES_HOST tại nơi quản lý tên miền."
             exit 0
           fi
           EXISTS=$(api "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DOMAIN" | jq -r '.result | length')
           if [ "$EXISTS" = "0" ]; then
-            api -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" -d "{\"type\":\"CNAME\",\"name\":\"baogia\",\"content\":\"$PROJECT.pages.dev\",\"proxied\":true}" | jq -c '{success, errors}'
+            api -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" -d "{\"type\":\"CNAME\",\"name\":\"$SUBDOMAIN\",\"content\":\"$PAGES_HOST\",\"proxied\":true}" | jq -c '{success, errors}'
           else
-            echo "Bản ghi DNS $DOMAIN đã có – giữ nguyên."
+            echo "::warning::Bản ghi DNS $DOMAIN đã có – giữ nguyên, không ghi đè. Kiểm tra nó đang trỏ về $PAGES_HOST."
           fi
