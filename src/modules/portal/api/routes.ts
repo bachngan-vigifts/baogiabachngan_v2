@@ -65,7 +65,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
   /** Danh mục cho khách: chỉ các thương hiệu được phép, giá bán lẻ và chiết khấu riêng theo nhãn hàng. KHÔNG có tồn kho, giá nhập. */
   router.get('/portal/catalog', async c => {
     const { account, discounts } = await myAccount(c), db = c.env.db;
-    const version = (await snapshotVersion(db)).version + '.' + sha256Hex(account.discounts).slice(0, 8) + '.b1';
+    const version = (await snapshotVersion(db)).version + '.' + sha256Hex(account.discounts).slice(0, 8) + '.b2';
     if (c.url.searchParams.get('v') === version) return json({ version, unchanged: true });
     const policy = await retailPolicy(db);
     const [rows, prices] = await Promise.all([

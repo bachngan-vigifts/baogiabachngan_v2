@@ -26,7 +26,7 @@ async function setup() {
     { sku: 'ML-01', name: 'Bộ trà Minh Long', brand: 'Minh Long', unit: 'bộ', taxable: true, taxOut: 8, updatedAt: t },
     { sku: 'LL-01', name: 'Bình giữ nhiệt', brand: 'Lock&Lock', unit: 'cái', taxable: true, taxOut: 10, updatedAt: t },
     { sku: 'NOPRICE', name: 'Chưa có giá', brand: 'Minh Long - LYS', updatedAt: t },
-    { sku: 'HC-01', name: 'Nồi Healthy Cook', brand: 'Healthy Cook', unit: 'cái', updatedAt: t },
+    { sku: 'HC-01', name: 'Nồi Gốm Bát Tràng', brand: 'Bát Tràng', unit: 'cái', updatedAt: t },
     { sku: 'LYS-01', name: 'Đĩa LYS', brand: 'LYS', unit: 'cái', updatedAt: t },
   ]);
   await db.insert(productPrices).values([{ sku: 'ML-01', policyId: 'le', price: 1_000_000 }, { sku: 'ML-01', policyId: 'si', price: 800_000 }, { sku: 'LL-01', policyId: 'le', price: 200_000 }, { sku: 'HC-01', policyId: 'le', price: 300_000 }, { sku: 'LYS-01', policyId: 'le', price: 90_000 }]);

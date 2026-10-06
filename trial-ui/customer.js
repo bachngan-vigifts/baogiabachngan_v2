@@ -188,12 +188,15 @@ function fillInfo() {
     .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
 }
 
-/** Thương hiệu gộp theo cách viết (bỏ dấu, hoa thường, ký tự nối); các kiểu Lock&Lock / LocknLock / Lock gộp một. */
-const brandKey = b => { const k = fold(b).replace(/[^a-z0-9]/g, ''); return /^lock(n?lock)?$/.test(k) ? 'lock' : k; };
+/** Nhóm thương hiệu: Minh Long + Minh Long I = Minh Long; Lock / Lock&Lock / LocknLock = Lock&Lock; Healthy Cook = Sứ dưỡng sinh. */
+const BRAND_ALIAS = { minhlongi: 'minhlong', locklock: 'lock', locknlock: 'lock', suduongsinh: 'healthycook', minhlongsuduongsinh: 'healthycook' };
+const BRAND_LABEL = { minhlong: 'Minh Long', minhlonglys: 'Minh Long - LYS', lys: 'LYS', lock: 'Lock&Lock', healthycook: 'Healthy Cook (Sứ dưỡng sinh)' };
+const brandKey = b => { const k = fold(b).replace(/[^a-z0-9]/g, ''); return BRAND_ALIAS[k] || k; };
+const brandLabel = (k, fallback) => BRAND_LABEL[k] || fallback;
 function fillBrands() {
   const count = new Map();
   for (const p of st.items) { const k = brandKey(p.brand); if (!k) continue; const m = count.get(k) ?? new Map(); m.set(p.brand.trim(), (m.get(p.brand.trim()) ?? 0) + 1); count.set(k, m); }
-  const opts = [...count].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1])[0][0], [...m.values()].reduce((a, b) => a + b, 0)]).sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  const opts = [...count].map(([k, m]) => [k, brandLabel(k, [...m].sort((a, b) => b[1] - a[1])[0][0]), [...m.values()].reduce((a, b) => a + b, 0)]).sort((a, b) => a[1].localeCompare(b[1], 'vi'));
   const sel = $('#p-brand'), cur = sel.value;
   sel.innerHTML = '<option value="">Tất cả thương hiệu</option>' + opts.map(([k, label, n]) => `<option value="${esc(k)}">${esc(label)} (${fmtNum(n)})</option>`).join('');
   sel.value = opts.some(o => o[0] === cur) ? cur : '';
