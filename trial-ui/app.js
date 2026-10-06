@@ -5,6 +5,7 @@ import { setupNotifications } from './notify.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
 import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
+import { initTasks } from './tasks.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -275,7 +276,7 @@ async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadStockBadge();
+  loadStockBadge(); tasksView().badge();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -353,7 +354,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -387,6 +388,7 @@ function route() {
   if (view === 'deliveries') loadDeliveries();
   if (view === 'receivables') loadReceivables();
   if (view === 'stock-requests') loadStockRequests(id);
+  if (view === 'tasks') tasksView().load(id);
   if (view === 'order') openOrder(id);
   hideProductSuggest();
 }
@@ -1908,13 +1910,16 @@ const notifier = setupNotifications({
   },
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) go('#' + h); },
 });
+/** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
+var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
+function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id }); }
 /** Tải lại dữ liệu đang xem (không đụng báo giá đang sửa dở). */
 function refreshData() {
-  loadQuotes(); loadStockBadge();
+  loadQuotes(); loadStockBadge(); tasksView().badge();
   const [page, id] = location.hash.replace(/^#\/?/, '').split('/');
   if (page === 'orders' && id) openOrder(id);
   else if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') openEditor(id); }
-  else if (['orders', 'contracts', 'deliveries', 'receivables', 'stock-requests'].includes(page)) route();
+  else if (['orders', 'contracts', 'deliveries', 'receivables', 'stock-requests', 'tasks'].includes(page)) route();
 }
 
 // ----- Khách hỏi tồn kho: nhân viên phụ trách trả lời (khách nhận thông báo)

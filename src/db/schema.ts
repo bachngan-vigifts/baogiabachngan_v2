@@ -13,3 +13,4 @@ export * from '../modules/notifications/schema.ts';
 export * from '../modules/integrations/schema.ts';
 export * from '../modules/sales/schema.ts';
 export * from '../modules/portal/schema.ts';
+export * from '../modules/tasks/schema.ts';

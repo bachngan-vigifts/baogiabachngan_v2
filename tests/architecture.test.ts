@@ -12,7 +12,8 @@ const ALLOWED: Record<string, string[]> = {
   staff: [], customers: ['staff'], catalog: ['staff'], contracts: [], printing: ['staff', 'quotes'], integrations: ['staff', 'customers', 'catalog'], crm: [],
   sales: ['staff', 'customers', 'quotes', 'contracts', 'notifications'],
   portal: ['staff', 'customers', 'catalog', 'quotes', 'sales', 'notifications'],
-  quotes: ['staff', 'notifications'], work: ['staff'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
+  quotes: ['staff', 'notifications'], work: ['staff'],
+  tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
 };
 
 test('schema của mỗi module chỉ import module được phép', () => {

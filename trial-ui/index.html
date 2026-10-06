@@ -37,6 +37,7 @@
     <div class="brand light"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ &amp; CRM</small></div></div>
     <nav class="side-nav" aria-label="Điều hướng chính">
       <span class="nav-label">Kinh doanh</span>
+      <a class="nav" href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M3.5 6l1.5 1.5L7.5 5 M3.5 12l1.5 1.5L7.5 11 M3.5 18l1.5 1.5L7.5 17"/></svg><span>Công việc</span><b id="nav-task-count" class="badge" hidden>0</b></a>
       <a class="nav" href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg><span>Báo giá</span><b id="nav-quote-count" class="badge">0</b></a>
       <a class="nav" href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z M6 6 5 3H2 M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2 M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg><span>Đơn đặt hàng</span></a>
       <a class="nav" href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3 M15 17l1.5 1.5L19 16"/></svg><span>HĐKT</span></a>
@@ -375,6 +376,31 @@
 
     <!-- ---------- Công nợ ---------- -->
     <!-- Khách hỏi tồn kho từ trang khách hàng: nhân viên phụ trách trả lời -->
+    <!-- Công việc: việc tự sinh từ nghiệp vụ + giao việc thủ công (trial-ui/tasks.js) -->
+    <section class="view" id="view-tasks" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Điều hành</span><h1>Công việc</h1><p class="muted">Việc tự sinh từ báo giá, check tồn, đơn hàng, giao hàng, HĐKT, công nợ, nhập hàng – tự hoàn thành khi xử lý xong. Giao việc cho nhau ngay ở ô bên dưới. Phím tắt: <kbd>N</kbd> thêm việc, <kbd>/</kbd> tìm.</p></div>
+      </div>
+      <div class="stats task-stats" id="tasks-stats"></div>
+      <div class="card task-board">
+        <form class="task-quick" id="tasks-quick" autocomplete="off">
+          <input name="title" placeholder="＋ Thêm việc mới… (Enter để lưu)" maxlength="300" aria-label="Tên công việc">
+          <select name="assigneeId" id="tasks-quick-assignee" aria-label="Người nhận"></select>
+          <select name="priority" aria-label="Ưu tiên"><option value="normal">Bình thường</option><option value="high">Cao</option><option value="urgent">Khẩn</option><option value="low">Thấp</option></select>
+          <span class="task-due-quick"><input type="date" name="dueDate" aria-label="Hạn"><button type="button" class="chip" data-due="0">Hôm nay</button><button type="button" class="chip" data-due="1">Mai</button><button type="button" class="chip" data-due="7">+7 ngày</button></span>
+          <button type="submit" class="btn primary">Thêm</button>
+        </form>
+        <div class="task-filters">
+          <div class="chips" id="tasks-view" role="group" aria-label="Nhóm việc"><button type="button" class="chip" data-v="mine" aria-pressed="true">Tôi nhận</button><button type="button" class="chip" data-v="created" aria-pressed="false">Tôi giao</button><button type="button" class="chip" data-v="unassigned" aria-pressed="false">Chưa giao</button><button type="button" class="chip" data-v="all" aria-pressed="false">Tất cả</button></div>
+          <div class="chips" id="tasks-status" role="group" aria-label="Trạng thái"><button type="button" class="chip" data-v="open" aria-pressed="true">Đang mở</button><button type="button" class="chip" data-v="done" aria-pressed="false">Đã xong</button><button type="button" class="chip" data-v="all" aria-pressed="false">Tất cả</button></div>
+          <select id="tasks-priority" aria-label="Lọc ưu tiên"><option value="">Mọi mức ưu tiên</option><option value="urgent">Khẩn</option><option value="high">Cao</option><option value="normal">Bình thường</option><option value="low">Thấp</option></select>
+          <select id="tasks-source" aria-label="Lọc nguồn"><option value="">Mọi nguồn</option><option value="manual">Giao việc</option><option value="quote">Báo giá</option><option value="stock_request">Check tồn</option><option value="order">Đơn hàng</option><option value="delivery">Giao hàng</option><option value="contract">HĐKT</option><option value="receivable">Công nợ</option><option value="purchase">Nhập hàng</option></select>
+          <div class="search-box"><span aria-hidden="true">⌕</span><input id="tasks-search" type="search" placeholder="Tìm việc…" aria-label="Tìm việc"></div>
+        </div>
+        <div class="table-wrap"><table class="data-table task-table"><thead><tr><th class="task-check"><span class="sr-only">Xong</span></th><th>Công việc</th><th>Ưu tiên</th><th>Giao → Nhận</th><th>Hạn</th><th>Trạng thái</th><th><span class="sr-only">Mở</span></th></tr></thead><tbody id="tasks-list"></tbody></table></div>
+        <p class="muted task-empty" id="tasks-empty" hidden><span id="tasks-empty-text"></span></p>
+      </div>
+    </section>
     <section class="view" id="view-stock-requests" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Khách hàng</span><h1>Khách hỏi tồn</h1><p class="muted">Khách gửi từ trang khách hàng (khách không xem được tồn kho). Nhập số đáp ứng được và lời nhắn – khách nhận thông báo ngay.</p></div>
@@ -456,6 +482,7 @@
     <a href="#/quotes/new" class="fab" data-new-quote aria-label="Tạo báo giá"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
     <a href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg>Giao hàng</a>
     <a href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg>Công nợ</a>
+    <a href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M3.5 6l1.5 1.5L7.5 5 M3.5 12l1.5 1.5L7.5 11 M3.5 18l1.5 1.5L7.5 17"/></svg>Công việc</a>
     <a href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg>Hỏi tồn</a>
     <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3"/></svg>HĐKT</a>
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
