@@ -514,3 +514,18 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
   .catalog-policy { max-width: none; }
   .catalog-filters { grid-template-columns: 1fr; }
 }
+
+/* Tính đóng thùng & phí vận chuyển */
+.shipping-card { margin-top: 16px; }
+.shipping-card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.shipping-card > summary::-webkit-details-marker { display: none; }
+.shipping-card > summary::before { content: '▸'; color: var(--brand-navy); font-size: 1rem; transition: transform .15s; }
+.shipping-card[open] > summary::before { transform: rotate(90deg); }
+.shipping-card > summary .card-title { margin: 0; }
+.shipping-card[open] > summary { margin-bottom: 12px; }
+.shipping-card > p { margin: 10px 0; }
+.ship-table td { vertical-align: middle; }
+.ship-table input { width: 100px; }
+.ship-rates { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
+.ship-summary { font-weight: 750; color: var(--brand-navy); font-size: 1.05rem; }
+@media (max-width: 720px) { .ship-rates { grid-template-columns: 1fr; } }
