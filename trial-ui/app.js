@@ -1,6 +1,6 @@
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
-import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice } from './quote-math.js';
+import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -506,6 +506,8 @@ async function openEditor(id) {
 }
 
 function fillEditor(id, revision, data) {
+  // Lưu xong (cùng báo giá) thì giữ nguyên mục lợi nhuận / cột giá nhập đang mở; mở báo giá khác thì đóng lại.
+  const keepProfit = !!id && (editor.id === id || (!editor.id && saving));
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : '';
@@ -516,7 +518,8 @@ function fillEditor(id, revision, data) {
   field('deliveryDate').value = data.deliveryDate || data.delivery_date || '';
   field('vat').value = fmtNum(Number(data.vat ?? 8));
   editor.discountMode = data.discountMode || editor.rows[0]?.discountType || 'percent';
-  setProfit(false);
+  if (!keepProfit) editor.showCostFields = false;
+  setProfit(keepProfit && editor.showProfit);
   setType(editor.type, false);
   $('#editor-title').textContent = id ? data.quoteNo || 'Báo giá' : 'Tạo báo giá';
   $('#editor-revision').hidden = !id; $('#editor-revision').textContent = 'Phiên bản ' + revision;
@@ -554,18 +557,28 @@ function setType(type, dirty = true) {
   renderLines();
 }
 $('#type-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.value !== editor.type) setType(b.dataset.value); });
-// Manager: "Xem lợi nhuận tạm tính" mở bảng lợi nhuận và 2 cột CK mua vào / Giá nhập (như web cũ).
+// Manager: "Xem lợi nhuận tạm tính" mở mục "Lợi nhuận nhanh" như web cũ; nút "Xem giá nhập" trong mục đó mới hiện 2 cột CK mua vào / Giá nhập.
 function setProfit(on) {
   editor.showProfit = on && isManager();
   $('#profit-card').hidden = !editor.showProfit;
   $('#toggle-profit').textContent = editor.showProfit ? 'Ẩn lợi nhuận tạm tính' : 'Xem lợi nhuận tạm tính';
   $('#toggle-profit').setAttribute('aria-expanded', String(editor.showProfit));
+  refreshCostToggle();
+}
+function refreshCostToggle() {
+  const b = $('#toggle-cost-fields');
+  b.textContent = editor.showCostFields ? 'Ẩn giá nhập' : 'Xem giá nhập'; b.setAttribute('aria-pressed', String(!!editor.showCostFields));
 }
 $('#toggle-profit').addEventListener('click', () => { setProfit(!editor.showProfit); renderLines(); });
+$('#toggle-cost-fields').addEventListener('click', () => {
+  if (!isManager()) return;
+  editor.showCostFields = !editor.showCostFields; refreshCostToggle(); renderLines();
+  toast(editor.showCostFields ? 'Đã hiện cột giá nhập' : 'Đã ẩn cột giá nhập');
+});
 
 // ----- dòng sản phẩm (cột theo web cũ: HRC không có Phí in; B2B/VIGIFTS có Phí in F7, Bộ gồm, Mô tả in ấn, Đóng gói)
 const NUM_FIELDS = { qty: 4, price: 2, discount: 2, printFee: 2, purchaseDiscount: 2 };
-const showCostCols = () => editor.showProfit && isManager();
+const showCostCols = () => !!editor.showCostFields && isManager();
 function lineHead() {
   const modes = new Set(editor.rows.map(r => r.discountType || 'percent'));
   const mode = modes.size > 1 ? 'mixed' : [...modes][0] || editor.discountMode || 'percent';
@@ -765,14 +778,112 @@ function calculate() {
   $('#sum-tax').textContent = money(t.tax);
   $('#sum-total').textContent = $('#m-total').textContent = money(t.total);
   $('#words-total').textContent = t.total > 0 ? 'Bằng chữ: ' + moneyWords(t.total) + '.' : '';
-  if (editor.showProfit) {
-    const p = profit(doc);
-    $('#sum-cost').textContent = money(p.cost);
-    $('#sum-gross').textContent = money(p.gross); $('#sum-gross').className = p.gross >= 0 ? 'pos' : 'neg';
-    $('#sum-margin').textContent = fmtNum(p.margin, 1) + '%';
-  }
+  if (editor.showProfit) renderProfit(doc);
   return t;
 }
+
+// ----- Lợi nhuận tạm tính (port refreshProfit / refreshPrintingCosts / updatePurchaseCosts của web cũ)
+let workshopList = DEFAULT_WORKSHOPS.map(name => ({ name })), workshopLoad = null, workshopTarget = '';
+function renderProfit(doc = currentDoc()) {
+  const ship = shippingCalc(editor.rows, shipOpts()), p = profit(doc, ship.fee), payer = shipOpts().payer || 'receiver';
+  renderPrintingCosts(doc);
+  $('#sum-revenue').textContent = money(p.revenue);
+  $('#sum-cost').textContent = money(p.cost);
+  $('#sum-shipping').textContent = ship.fee === null ? 'Chưa có cước dự toán' : money(ship.fee);
+  $$('input[name="profitShippingPayer"]').forEach(i => { i.checked = i.value === payer; });
+  $('#profit-shipping-hint').hidden = payer !== 'sender' || ship.fee !== null;
+  $('#sum-gross').textContent = money(p.gross); $('#sum-gross').className = p.gross < 0 ? 'neg' : '';
+  $('#sum-margin').textContent = fmtNum(p.margin, 1) + '%'; $('#sum-margin').classList.toggle('neg', p.margin < 0);
+}
+/** Mỗi dòng có `printing` {xưởng, đơn giá in}; báo giá cũ chỉ có tổng chi phí in thì dồn vào dòng đầu (như initializePrintingLines). */
+function initPrintingLines() {
+  const rows = editor.rows, legacy = editor.base.printing, first = rows.find(r => Number(r.qty) > 0), hasLines = rows.some(r => r.printing);
+  for (const r of rows) {
+    if (!r.printing) r.printing = { unitPrice: !hasLines && r === first && legacy?.totalCost > 0 ? legacy.totalCost / r.qty : 0, workshop: legacy?.workshop || '', workshopExplicit: legacy?.workshopExplicit === true };
+    if (!r.printing.workshopExplicit) r.printing.workshop = printingInfo({ type: editor.type, rows: [{ ...r, qty: 1, printFee: 1 }] }).defaultWorkshop;
+  }
+}
+function loadWorkshops() {
+  if (workshopLoad || !isManager()) return;
+  workshopLoad = api('/printing-workshops').then(d => { workshopList = d.workshops || workshopList; if (editor.showProfit) renderPrintingCosts(); })
+    .catch(() => { $('#printing-status').textContent = 'Chưa tải được danh sách xưởng dùng chung. Có thể chọn các xưởng mặc định hoặc thêm xưởng mới.'; });
+}
+function workshopOptions(selected) {
+  const names = [...new Set([...workshopList.map(w => w.name), selected].filter(Boolean))];
+  return '<option value="__add__">+ Thêm xưởng in mới</option>' + names.map(n => `<option value="${esc(n)}" ${n === selected ? 'selected' : ''}>${esc(n)}</option>`).join('');
+}
+function renderPrintingCosts(doc = currentDoc()) {
+  const section = $('#profit-printing');
+  section.hidden = !isManager() || !printingInfo(doc).enabled; if (section.hidden) return;
+  initPrintingLines(); loadWorkshops();
+  const host = $('#printing-rows'), multiple = editor.rows.length >= 2;
+  // Đang gõ đơn giá in thì chỉ cập nhật cột tổng, không vẽ lại ô đang nhập.
+  if (host.contains(document.activeElement) && document.activeElement.matches('[data-printing-unit]')) {
+    host.querySelectorAll('[data-printing-total]').forEach(el => { const r = editor.rows.find(x => x.id === el.dataset.printingTotal); if (r) el.textContent = money(Math.round(r.printing.unitPrice * r.qty)); });
+    return;
+  }
+  $('#printing-head').innerHTML = `<tr>${multiple ? '<th>Mã hàng</th>' : ''}<th>Xưởng in</th><th>SL</th><th>Đơn giá in (đ/SP)</th><th class="right">Tổng chi phí in</th></tr>`;
+  host.innerHTML = editor.rows.map((r, i) => `<tr data-printing-id="${esc(r.id)}">${multiple ? `<td><b>${esc(r.sku || 'Chưa có mã')}</b><br><small class="muted">${esc(r.name || 'Dòng ' + (i + 1))}</small></td>` : ''}<td><select data-printing-workshop aria-label="Xưởng in dòng ${i + 1}">${workshopOptions(r.printing.workshop)}</select></td><td>${fmtNum(Number(r.qty || 0))}</td><td><input class="num-input" type="number" inputmode="decimal" min="0" max="1000000000000" step="any" data-printing-unit aria-label="Đơn giá in dòng ${i + 1}" value="${r.printing.unitPrice || ''}" placeholder="0"></td><td class="right"><b data-printing-total="${esc(r.id)}">${money(Math.round(r.printing.unitPrice * r.qty))}</b></td></tr>`).join('');
+}
+$('#printing-rows').addEventListener('input', e => {
+  if (!e.target.matches('[data-printing-unit]')) return;
+  const r = editor.rows.find(x => x.id === e.target.closest('tr').dataset.printingId); if (!r) return;
+  r.printing = { ...r.printing, unitPrice: Math.min(1e12, Math.max(0, Number(e.target.value) || 0)) };
+  markDirty(); renderProfit();
+});
+$('#printing-rows').addEventListener('change', e => {
+  if (!e.target.matches('[data-printing-workshop]')) return;
+  const r = editor.rows.find(x => x.id === e.target.closest('tr').dataset.printingId); if (!r) return;
+  if (e.target.value === '__add__') {
+    workshopTarget = r.id; $('#workshop-form').reset(); $('#workshop-error').textContent = '';
+    e.target.value = r.printing.workshop; $('#workshop-dialog').showModal(); $('#workshop-form [name=name]').focus(); return;
+  }
+  r.printing = { ...r.printing, workshop: e.target.value, workshopExplicit: true };
+  markDirty(); renderProfit();
+});
+$('#workshop-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target, btn = form.querySelector('button.primary'); btn.disabled = true; $('#workshop-error').textContent = '';
+  try {
+    const { workshop } = await api('/printing-workshops', 'POST', Object.fromEntries(new FormData(form)));
+    workshopList = [...workshopList.filter(w => w.id !== workshop.id), workshop];
+    const r = editor.rows.find(x => x.id === workshopTarget);
+    if (r) { r.printing = { ...r.printing, workshop: workshop.name, workshopExplicit: true }; markDirty(); }
+    $('#workshop-dialog').close(); renderProfit(); toast('Đã thêm xưởng in vào danh sách dùng chung');
+  } catch (err) { $('#workshop-error').textContent = err.message || 'Chưa lưu được xưởng in.'; }
+  finally { btn.disabled = false; }
+});
+$$('input[name="profitShippingPayer"]').forEach(i => i.addEventListener('change', () => {
+  if (!isManager() || !i.checked) return;
+  editor.base.shipping = { divisor: 5000, rate: 0, extra: 0, ...shipOpts(), payer: i.value };
+  markDirty(); renderProfit();
+}));
+/** "Cập nhật CK mua vào": tự điền CK nhập theo nhóm hàng (Healthy Cook 15, Lys 19, Lock&Lock 58, Minh Long 25), rồi lưu báo giá. */
+$('#refresh-profit-costs').addEventListener('click', async e => {
+  const btn = e.currentTarget; if (!isManager() || btn.disabled) return;
+  btn.disabled = true; btn.textContent = 'Đang lưu CK…';
+  try {
+    const skus = [...new Set(editor.rows.map(r => (r.sku || '').trim()).filter(Boolean))], found = [];
+    try { for (let i = 0; i < skus.length; i += 200) found.push(...(await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(',')))).products); } catch { /* dùng thông tin trên dòng */ }
+    const bySku = new Map(found.map(p => [normalize(p.sku), p])), missing = []; let updated = 0;
+    for (const r of editor.rows) {
+      if (!(r.name || r.sku)) continue;
+      const d = defaultCostDiscount(bySku.get(normalize(r.sku)) || r);
+      if (d === null) { missing.push(r); continue; }
+      r.purchaseDiscount = d; r.costPrice = purchasePrice(r.price, d); updated++;
+    }
+    if (missing.length) editor.showCostFields = true;
+    refreshCostToggle(); markDirty(); renderLines();
+    await saveQuote();
+    if (editor.dirty) throw new Error('Chưa lưu được CK mua vào lên hệ thống.');
+    if (missing.length) {
+      const list = missing.slice(0, 12).map((r, i) => `${i + 1}. ${r.sku || 'Chưa có SKU'} - ${r.name || 'Chưa có tên'}`).join('\n'), more = missing.length > 12 ? `\n... và ${missing.length - 12} dòng khác` : '';
+      alert(`Có ${missing.length} sản phẩm chưa xác định được CK nhập rõ ràng. Vui lòng nhập thủ công ở cột CK mua vào rồi bấm Lưu báo giá.\n\n${list}${more}`);
+      toast(`Đã lưu ${updated} dòng CK, còn ${missing.length} dòng cần nhập thủ công`);
+    } else toast(`Đã cập nhật và lưu CK mua vào cho ${updated} dòng`);
+  } catch (err) { toast(err.message || 'Chưa lưu được CK mua vào.', 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Cập nhật CK mua vào'; }
+});
 
 // ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
 const nq = { type: 'HRC', customer: null, autoNo: '' };
