@@ -6,6 +6,8 @@ import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { customers } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
+import { employees } from '../../staff/schema.ts';
+import { notify } from '../../notifications/api/routes.ts';
 import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
@@ -149,6 +151,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         await tx.update(quotations).set({ approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: viewer(c).id })
           .where(and(eq(quotations.id, order.quoteId), eq(quotations.approvalStatus, 'pending')));
     });
+    // Đơn khách đặt từ trang khách hàng: báo cho khách.
+    const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
+    if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
+      title: status === 'confirmed' ? 'Đơn hàng đã được xác nhận' : 'Đơn hàng đã bị huỷ', body: `${order.orderNo} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
     return json({ ok: true });
   }, 'business');
 

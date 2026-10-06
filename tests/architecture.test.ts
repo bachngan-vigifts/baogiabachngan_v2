@@ -10,9 +10,9 @@ import { join, resolve, dirname, relative, sep } from 'node:path';
 const modulesDir = join(import.meta.dirname, '..', 'src', 'modules');
 const ALLOWED: Record<string, string[]> = {
   staff: [], customers: ['staff'], catalog: ['staff'], contracts: [], printing: ['staff', 'quotes'], integrations: ['staff', 'customers', 'catalog'], crm: [],
-  sales: ['staff', 'customers', 'quotes', 'contracts'],
-  portal: ['staff', 'customers', 'catalog', 'quotes', 'sales'],
-  quotes: ['staff'], work: ['staff'], notifications: ['staff'], suppliers: ['staff'],
+  sales: ['staff', 'customers', 'quotes', 'contracts', 'notifications'],
+  portal: ['staff', 'customers', 'catalog', 'quotes', 'sales', 'notifications'],
+  quotes: ['staff', 'notifications'], work: ['staff'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
 };
 
 test('schema của mỗi module chỉ import module được phép', () => {

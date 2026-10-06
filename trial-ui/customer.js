@@ -2,6 +2,7 @@
 // Tính tiền dùng đúng hàm của máy chủ (quote-math.js sinh từ src/modules/quotes/domain/quote-math.ts).
 import { totals, after } from './quote-math.js';
 import { searchProducts as searchCatalog } from './product-search.js';
+import { setupNotifications } from './notify.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -89,16 +90,17 @@ async function boot() {
   $('#p-owner').innerHTML = `<div><small class="muted">Nhân viên phụ trách</small><b>${esc(o?.name || '—')}</b>${o?.phone ? ` · <a href="tel:${esc(o.phone.replace(/[^\d+]/g, ''))}">${esc(o.phone)}</a>` : ''}${o?.email ? ` · ${esc(o.email)}` : ''}</div>`
     + (ck.length ? `<div><small class="muted">Chiết khấu riêng của quý khách</small><b>${ck.map(([k, v]) => `${k} ${fmtNum(v)}%`).join(' · ')}</b></div>` : '');
   document.title = st.me.customer.name + ' · Bách Ngân';
+  notifier.start();
   showTab(location.hash.replace('#', '') || 'quotes');
 }
 $('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth('Đã đăng xuất.'); });
 
 function showTab(tab) {
-  if (!['quotes', 'new', 'orders', 'debt'].includes(tab)) tab = 'quotes';
+  if (!['quotes', 'new', 'orders', 'debt', 'stock'].includes(tab)) tab = 'quotes';
   $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== tab);
   history.replaceState(null, '', '#' + tab);
-  if (tab === 'quotes') loadQuotes(); else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else loadCatalog();
+  if (tab === 'quotes') loadQuotes(); else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else if (tab === 'stock') loadStock(); else loadCatalog();
 }
 $$('[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 addEventListener('hashchange', () => { if (st.me && !$('#portal').hidden) showTab(location.hash.replace('#', '')); });
@@ -256,6 +258,39 @@ async function send(order) {
 }
 $('#p-send-quote').addEventListener('click', () => send(false));
 $('#p-send-order').addEventListener('click', () => send(true));
+
+// ----- Thông báo + tự làm mới: nhân viên xác nhận báo giá / đơn, trả lời tồn kho
+const notifier = setupNotifications({
+  api, root: $('#p-bell'),
+  onNew(notes) { for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`); const tab = location.hash.replace('#', '') || 'quotes'; if (tab !== 'new') showTab(tab); },
+  onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) { if (location.hash === '#' + h) showTab(h); else location.hash = h; } },
+});
+
+// ----- Hỏi tồn kho
+async function loadStock() {
+  const box = $('#p-stock'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
+  try {
+    const { requests } = await api('/portal/stock-requests');
+    $('#p-stock-empty').hidden = requests.length > 0;
+    box.innerHTML = requests.map(r => `<article class="card portal-order">
+      <header><div><b>Hỏi tồn ${new Date(r.createdAt).toLocaleString('vi-VN')}</b> ${r.status === 'answered' ? '<span class="pill ok">Đã trả lời</span>' : '<span class="pill warn">Đang chờ trả lời</span>'}${r.note ? `<small>Ghi chú: ${esc(r.note)}</small>` : ''}</div></header>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Đáp ứng được</th></tr></thead><tbody>
+      ${r.items.map(i => { const a = r.answerItems.find(x => x.sku === i.sku); return `<tr><td>${esc(i.name)}<small>${esc(i.sku)}</small></td><td class="right">${fmtNum(i.qty)} ${esc(i.unit || '')}</td>
+        <td class="right">${r.status === 'answered' ? (a ? `<b class="${a.available < i.qty ? 'danger-text' : ''}">${fmtNum(a.available)}</b>` : '—') : '…'}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      ${r.answer ? `<p class="small"><b>Nhân viên trả lời:</b> ${esc(r.answer)}</p>` : ''}
+    </article>`).join('');
+  } catch (e) { box.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
+}
+$('#p-ask-stock').addEventListener('click', async () => {
+  const err = $('#p-error'); err.textContent = '';
+  if (!st.cart.size) { err.textContent = 'Chọn sản phẩm cần hỏi tồn trước.'; return; }
+  const b = $('#p-ask-stock'); b.disabled = true;
+  try {
+    await api('/portal/stock-requests', 'POST', { items: [...st.cart].map(([sku, qty]) => ({ sku, qty })), note: $('#p-note').value });
+    toast('Đã gửi yêu cầu hỏi tồn. Nhân viên phụ trách sẽ trả lời sớm.'); showTab('stock');
+  } catch (ex) { err.textContent = ex.message; } finally { b.disabled = false; }
+});
 
 // ----- Công nợ: tổng phải trả, đã trả, còn lại, quá hạn; theo từng đơn và lịch sử thanh toán
 const DEBT_STATUS = { paid: ['Đã thanh toán đủ', 'ok'], overdue: ['Quá hạn', 'danger'], open: ['Chưa đến hạn', 'blue'], none: ['—', 'off'] };

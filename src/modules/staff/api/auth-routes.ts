@@ -21,6 +21,8 @@ export interface StaffEnv {
   /** Địa chỉ Sapo admin (mặc định cửa hàng Bách Ngân) và hàm fetch gọi Sapo (test truyền Sapo giả). */
   sapoAdminBase?: string;
   sapoFetch?: typeof fetch;
+  /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */
+  pushFetch?: typeof fetch;
 }
 type Ctx = RouteContext<StaffEnv>;
 export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }
