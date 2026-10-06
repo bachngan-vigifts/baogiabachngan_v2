@@ -127,8 +127,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       db.select().from(customerPayments).where(eq(customerPayments.orderId, order.id)).orderBy(asc(customerPayments.paidAt)),
     ]);
     const shipLines = ships.length ? await db.select().from(deliveryLines).where(inArray(deliveryLines.deliveryId, ships.map(s => s.id))) : [];
+    // Cho bản in đơn đặt hàng: mã khách hàng, người phụ trách, người soạn.
+    const [cust] = order.customerId ? await db.select({ code: customers.customerCode }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
+    const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees).where(inArray(employees.id, [order.ownerId, order.createdBy]));
+    const person = (id: string) => people.find(p => p.id === id);
     return json({
-      order, lines, contract: contract[0] ? { ...contract[0], data: JSON.parse(contract[0].data) } : null,
+      order: { ...order, customerCode: cust?.code ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
+        createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer' }, lines, contract: contract[0] ? { ...contract[0], data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id) })),
       schedules, payments, receivable: receivable(schedules, payments, vietnamDate().iso),
     });
@@ -228,7 +233,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.put('/contracts/:id', async c => {
-    const body = await readJson(c.req, 64_000);
+    // Có thể kèm thông tin điền mẫu + các đoạn đã sửa trực tiếp của 3 hồ sơ Word.
+    const body = await readJson(c.req, 600_000);
     const [row] = await c.env.db.select({ contract: salesContracts }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
       .where(and(eq(salesContracts.id, c.params.id!), orderScope(c))).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy HĐKT.');
