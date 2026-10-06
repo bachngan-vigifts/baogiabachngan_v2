@@ -647,14 +647,25 @@ a.flow-step:hover { border-color: var(--blue); }
 .portal-owner small { display: block; }
 .portal-tabs { display: flex; gap: 8px; }
 .portal-tabs .chip[aria-selected="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
-.portal-new { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.portal-new { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.portal-new .editor-grid, .portal-new .editor-bottom { margin: 0; }
+.portal-lines { min-width: 900px; }
+.portal-lines .col-idx { width: 44px; } .portal-lines .col-img { width: 78px; } .portal-lines .col-unit { width: 64px; } .portal-lines .col-qty { width: 92px; }
+.portal-lines .col-price, .portal-lines .col-after, .portal-lines .col-total { width: 120px; } .portal-lines .col-disc { width: 60px; } .portal-lines .col-act { width: 40px; }
+.portal-lines .thumb { width: 60px; height: 60px; }
+.portal-submit { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.portal-submit p { margin: 0; flex: 1; min-width: 220px; }
+/* Ảnh sản phẩm hiện trọn (không cắt) trên trang khách hàng */
+.portal img.thumb { object-fit: contain; background: #fff; }
+.portal .picker-list .thumb { width: 52px; height: 52px; }
+.portal .picker-list li.added { background: var(--green-50); }
+.portal td small { display: block; color: var(--muted); }
 .portal-new input[type=search] { width: 100%; }
 .portal-products { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 70vh; overflow: auto; }
 .portal-products li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .portal-products .prod-text { display: grid; min-width: 0; }
 .portal-products .prod-text small, .portal-products .price small { color: var(--muted); display: block; }
 .portal-products .price { text-align: right; font-weight: 700; white-space: nowrap; }
-.portal-cart { position: sticky; top: 76px; }
 .portal-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .portal-order header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 8px; }
 .portal-order header small { display: block; color: var(--muted); }
@@ -662,11 +673,17 @@ a.flow-step:hover { border-color: var(--blue); }
 .pre { white-space: pre-wrap; }
 @media (max-width: 860px) {
   .portal-new { grid-template-columns: 1fr; }
-  .portal-cart { position: static; }
   .portal-head { padding: 10px 14px; gap: 10px; }
   .portal-brand div, .portal-who small { display: none; }
   .portal-tabs { overflow-x: auto; padding-bottom: 2px; } .portal-tabs .chip { flex: none; }
   .portal-products li { grid-template-columns: 40px minmax(0, 1fr) auto; }
   .portal-products li .btn { grid-column: 2 / -1; justify-self: end; }
+  /* Dòng sản phẩm của khách thành thẻ: ảnh + tên; ĐVT · SL · đơn giá; CK · giá sau CK · thành tiền */
+  .portal-lines .col-img { grid-column: span 1; } .portal-lines .col-product { grid-column: span 5; }
+  .portal-lines .col-disc, .portal-lines .col-after, .portal-lines .line-total { grid-column: span 2; }
+  .portal-lines td.right { text-align: left; }
+  .portal-lines .thumb { width: 52px; height: 52px; }
+  .portal-lines .line-actions { text-align: right; }
+  .portal-submit .portal-actions { width: 100%; } .portal-submit .portal-actions .btn { flex: 1; }
 }
 .portal-cart .num-input { width: 72px; text-align: right; }

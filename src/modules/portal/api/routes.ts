@@ -169,12 +169,16 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       db.select({ orderId: deliveries.orderId, deliveryNo: deliveries.deliveryNo, plannedDate: deliveries.plannedDate, timeSlot: deliveries.timeSlot, status: deliveries.status })
         .from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))).orderBy(asc(deliveries.plannedDate)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
-      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount }).from(customerPayments).where(inArray(customerPayments.orderId, ids)),
+      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(inArray(customerPayments.orderId, ids)).orderBy(asc(customerPayments.paidAt)),
     ]) : [[], [], [], []];
     const today = vietnamDate().iso;
     return json({ orders: orders.map(o => ({
       ...o, lines: lines.filter(l => l.orderId === o.id), deliveries: ships.filter(d => d.orderId === o.id),
       receivable: o.status === 'cancelled' ? null : receivable(sch.filter(s => s.orderId === o.id), pay.filter(p => p.orderId === o.id), today),
+      // Công nợ cho khách: các kỳ phải trả (cọc / phần còn lại, hạn) và các lần đã thanh toán.
+      schedules: o.status === 'cancelled' ? [] : sch.filter(s => s.orderId === o.id).map(s => ({ kind: s.kind, amount: s.amount, dueDate: s.dueDate, note: s.note }))
+        .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999')),
+      payments: pay.filter(p => p.orderId === o.id).map(p => ({ amount: p.amount, paidAt: p.paidAt, method: p.method })),
     })) });
   }, 'customer-portal');
 
