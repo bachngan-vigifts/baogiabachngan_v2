@@ -24,6 +24,8 @@ export function contractDetails(detail) {
     representativeName: o.contact || '', representativeTitle: '', signedDate: k?.signedDate || todayIso(), depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
     deliveryTime: o.expectedDeliveryDate ? 'Giao hàng ngày ' + dmy(o.expectedDeliveryDate) : 'Theo thỏa thuận của hai bên.', deliveryAddress: k?.deliveryAddress || o.address || '',
     paymentMethod: k?.paymentMethod || 'Chuyển khoản.', ...saved,
+    // Tỉ lệ cọc và số ngày thanh toán phần còn lại luôn theo HĐKT đã lập (khớp kỳ công nợ), không lấy bản lưu cũ.
+    depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
   };
 }
 
@@ -64,7 +66,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const dlg = document.createElement('dialog'); dlg.className = 'modal xwide contract-docs';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">HĐKT ${esc(k.contractNo)}</span><h2>Xem, chỉnh sửa và tải hồ sơ HĐKT</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body cd-body">
-      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Khi đã sửa chữ trực tiếp trên trang, cần <b>Dựng lại</b> hồ sơ đó để nhận thông tin mới.</p>
+      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. Tỉ lệ đặt cọc và số ngày thanh toán lấy theo HĐKT đã lập. Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Khi đã sửa chữ trực tiếp trên trang, cần <b>Dựng lại</b> hồ sơ đó để nhận thông tin mới.</p>
         ${FIELDS.map(([f, label, type]) => `<label><span>${label}</span>${type === 'area' ? `<textarea rows="2" data-d="${f}"></textarea>` : `<input data-d="${f}" type="${type || 'text'}" ${type === 'number' ? 'min="0"' : ''}>`}</label>`).join('')}
         <button type="button" class="btn secondary small" data-refresh>Cập nhật bản xem</button></aside>
       <section class="cd-preview"><div class="cd-tabs chips" role="tablist">${DOCS.map(([t, label], i) => `<button type="button" class="chip" role="tab" data-doc="${t}" aria-selected="${i === 0}">${label}</button>`).join('')}</div>
@@ -77,7 +79,11 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const $d = s => dlg.querySelector(s), status = t => { $d('[data-status]').textContent = t; };
   const details = contractDetails(detail), edits = { HDKT: [], TAM_UNG: [], BBNT: [], ...(k.data?.edits || {}) };
   let current = 'HDKT', dirty = false, quoteRows = null, renderSeq = 0;
-  for (const el of dlg.querySelectorAll('[data-d]')) { el.value = details[el.dataset.d] ?? ''; el.addEventListener('input', () => { details[el.dataset.d] = el.value; markDirty(); }); }
+  for (const el of dlg.querySelectorAll('[data-d]')) {
+    el.value = details[el.dataset.d] ?? '';
+    if (['depositRate', 'paymentDays'].includes(el.dataset.d)) { el.readOnly = true; el.title = 'Theo HĐKT đã lập (khớp kỳ công nợ)'; continue; }
+    el.addEventListener('input', () => { details[el.dataset.d] = el.value; markDirty(); });
+  }
   const markDirty = () => { dirty = true; $d('[data-dirty]').textContent = 'Có thay đổi chưa lưu'; };
   const close = () => { if (dirty && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });

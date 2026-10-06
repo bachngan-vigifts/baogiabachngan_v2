@@ -21,6 +21,7 @@
 - **Thông tin điền mẫu** (dùng chung cho 3 hồ sơ): người đại diện, chức vụ, ngày ký, % tạm ứng, số ngày thanh toán, thời gian giao, địa điểm giao, phương thức thanh toán.
 - **Sửa trực tiếp**: bấm vào đoạn văn hoặc ô bảng để gõ (`contract-word-edit.js` của web cũ). Mỗi đoạn sửa lưu theo mã băm của đoạn gốc.
   - Khi đổi thông tin điền mẫu, cần **Dựng lại** những hồ sơ đã sửa trực tiếp.
+- **Tỉ lệ cọc và số ngày thanh toán** luôn lấy theo HĐKT đã lập (khớp kỳ công nợ). Điều khoản thanh toán: cọc 100% → "thanh toán 100% giá trị hợp đồng trước khi giao hàng"; cọc 0% → "thanh toán 100% giá trị hợp đồng sau N ngày kể từ ngày giao hàng" (N = 0 → ngay sau khi giao hàng); cọc X% → X% ngay sau khi ký, phần còn lại trong vòng N ngày kể từ ngày giao hàng. Áp dụng cho cả mẫu Bách Ngân và VIGIFTS (đề nghị tạm ứng VIGIFTS không còn cố định 30%). MST Bách Ngân: 1801686576. Nhãn "VAT (8%)" theo thuế suất thật của các dòng.
 - **Lưu chỉnh sửa**: ghi `{ details, edits: { HDKT, TAM_UNG, BBNT } }` vào cột `sales_contracts.data` qua `PUT /contracts/:id`. Không cần migration.
 - **Tải**:
   - **Tải bộ 3 file (.zip)**: file `HDKT_<số HĐKT>.zip` gồm `HDKT.docx`, `TAM_UNG.docx`, `BBNT.docx`.

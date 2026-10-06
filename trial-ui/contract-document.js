@@ -81,13 +81,16 @@ globalThis.ContractDocument = (() => {
     const total = Number(quote.total) || 0;
     const deposit = Math.round(total * depositRate / 100);
     const remaining = total - deposit;
-    return {depositRate, deposit, remaining, paymentText: paymentLines.join('\n') || 'Theo thỏa thuận của hai bên.', deadline: Number(details.paymentDays) > 0 ? `trong ${details.paymentDays} ngày` : (paymentLines.find(line => /(thời hạn|trong vòng|ngày)/i.test(line)) || '')};
+    return {depositRate, deposit, remaining, days: details.paymentDays, paymentText: paymentLines.join('\n') || 'Theo thỏa thuận của hai bên.', deadline: Number(details.paymentDays) > 0 ? `trong ${details.paymentDays} ngày` : (paymentLines.find(line => /(thời hạn|trong vòng|ngày)/i.test(line)) || '')};
   };
+  // Điều khoản thanh toán theo ô nhập (tỉ lệ cọc + số ngày thanh toán phần còn lại):
+  // 100% → thanh toán 100% trước khi giao hàng; 0% → thanh toán 100% sau N ngày kể từ ngày giao hàng; X% → cọc X% khi ký, phần còn lại trong N ngày kể từ ngày giao hàng.
   const paymentClause = payment => {
-    const deadline = payment.deadline ? `, chậm nhất ${payment.deadline}` : '';
-    if (payment.depositRate === 100) return `Thanh toán trước 100% giá trị hợp đồng trước khi giao hàng${deadline}.`;
-    if (payment.depositRate === 0) return `Thanh toán 100% giá trị hợp đồng sau khi giao hàng và nhận đủ chứng từ thanh toán${deadline}.`;
-    return `Bên A thanh toán cho Bên B ${money(payment.depositRate)}% giá trị của hợp đồng tương ứng với số tiền là ${money(payment.deposit)} đồng (Bằng chữ: ${amountInWords(payment.deposit)}) ngay sau khi ký hợp đồng. Thanh toán ${money(100 - payment.depositRate)}% giá trị còn lại tương ứng ${money(payment.remaining)} đồng (Bằng chữ: ${amountInWords(payment.remaining)}) ngay sau khi nhận hàng${deadline}.`;
+    const days = Math.max(0, parseInt(payment.days, 10) || 0);
+    const after = days > 0 ? `trong vòng ${days} ngày kể từ ngày giao hàng` : 'ngay sau khi giao hàng';
+    if (payment.depositRate === 100) return `Bên A thanh toán 100% giá trị hợp đồng tương ứng với số tiền là ${money(payment.deposit)} đồng (Bằng chữ: ${amountInWords(payment.deposit)}) trước khi giao hàng.`;
+    if (payment.depositRate === 0) return `Bên A thanh toán 100% giá trị hợp đồng tương ứng với số tiền là ${money(payment.remaining)} đồng (Bằng chữ: ${amountInWords(payment.remaining)}) ${days > 0 ? `sau ${days} ngày kể từ ngày giao hàng` : 'ngay sau khi giao hàng'}.`;
+    return `Bên A thanh toán cho Bên B ${money(payment.depositRate)}% giá trị của hợp đồng tương ứng với số tiền là ${money(payment.deposit)} đồng (Bằng chữ: ${amountInWords(payment.deposit)}) ngay sau khi ký hợp đồng. Thanh toán ${money(100 - payment.depositRate)}% giá trị còn lại tương ứng ${money(payment.remaining)} đồng (Bằng chữ: ${amountInWords(payment.remaining)}) ${after}.`;
   };
   const withoutRepeatedName = item => {
     const description = String(item.description || '').trim();
@@ -119,6 +122,8 @@ globalThis.ContractDocument = (() => {
   };
   const itemValues = (item, index) => ({'Start: [Related Chi tiết đơn hàngs]': '', End: '', '[STT]': index + 1, '[Sản phẩm].[Tên sản phẩm]': item.name || '', '[Mô tả sản phẩm]': productDescription(item), '[Số lượng]': money(item.quantity), '[đơn giá bán]': unitMoney(contractUnitPrice(item)), '[Đơn giá bán]': unitMoney(contractUnitPrice(item)), '[Thành tiền (-VAT)]': money(item.line_total), '[Thành tiền (+VAT)]': money(Number(item.line_total) * (1 + (Number(item.tax_percent) || 0) / 100)), '[Đóng gói]': packing(item)});
   const expandItems = (source, items) => source.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, row => row.includes('Related Chi tiết đơn hàngs') ? items.map((item, index) => replaceTokens(row, itemValues(item, index))).join('') : row);
+  // Nhãn dòng thuế: cùng một thuế suất → "VAT (8%)"; nhiều thuế suất → "VAT".
+  const vatLabel = items => { const rates = [...new Set(items.map(i => Number(i.tax_percent) || 0))]; return rates.length === 1 ? ` (${money(rates[0])}%)` : ''; };
   const buildXml = (source, quote, contractNumber) => {
     const lines = noteLines(quote.notes), payment = paymentDetails(quote, quote.contractDetails), date = dateParts(quote.quote_date);
     const deliveryTime = quote.contractDetails?.deliveryTime || noteValue(lines, 'Thời gian giao hàng') || noteValue(lines, 'Giao hàng') || 'Theo thỏa thuận của hai bên.';
@@ -127,7 +132,7 @@ globalThis.ContractDocument = (() => {
     const customer = quote.customer || {};
     const paymentText = paymentClause(payment);
     const partyAName = customer.contact_name || customer.contact || '';
-    const values = {'[Số HĐ]': contractNumber, '[dấu thời gian]': `${date.day}/${date.month}/${date.year}`, '[Ngày ký]': `${date.day}/${date.month}/${date.year}`, '[KH_NDP].[TênKH]': customer.name || '', '[KH_NDP].[dia chi]': customer.address || '', '[KH_NDP].[Dia Chi]': customer.address || '', '[KH_NDP].[Ma So Thue]': customer.tax_code || '', '[Bên A]': partyAName, '[Bên A ký tên]': upper(partyAName), '[Chức vụ]': quote.contractTitle || '', '[Thời gian giao hàng]': deliveryTime, '[Địa điểm giao hàng]': deliveryPlace, '[Phương thức thanh toán]': paymentMethod, '[Thời hạn thanh toán]': paymentText, '[hình thức thanh toán]': paymentText, '[Tỉ lệ cọc]': money(payment.depositRate), '[số tiền tạm ứng]': money(payment.deposit), '[bằng chữ tạm ứng]': amountInWords(payment.deposit), '[Thành Tiền (-Thuế)]': money(quote.subtotal), '[Tiền thuế]': money(quote.vat_amount), '[Thành tiền (+thuế)]': money(quote.total), '[Số tiền bằng chữ]': amountInWords(quote.total)};
+    const values = {'[Số HĐ]': contractNumber, '[dấu thời gian]': `${date.day}/${date.month}/${date.year}`, '[Ngày ký]': `${date.day}/${date.month}/${date.year}`, '[KH_NDP].[TênKH]': customer.name || '', '[KH_NDP].[dia chi]': customer.address || '', '[KH_NDP].[Dia Chi]': customer.address || '', '[KH_NDP].[Ma So Thue]': customer.tax_code || '', '[Bên A]': partyAName, '[Bên A ký tên]': upper(partyAName), '[Chức vụ]': quote.contractTitle || '', '[Thời gian giao hàng]': deliveryTime, '[Địa điểm giao hàng]': deliveryPlace, '[Phương thức thanh toán]': paymentMethod, '[Thời hạn thanh toán]': paymentText, '[hình thức thanh toán]': paymentText, '[Tỉ lệ cọc]': money(payment.depositRate), '[số tiền tạm ứng]': money(payment.deposit), '[bằng chữ tạm ứng]': amountInWords(payment.deposit), '[Thành Tiền (-Thuế)]': money(quote.subtotal), '[Tiền thuế]': money(quote.vat_amount), '[Thành tiền (+thuế)]': money(quote.total), '[Số tiền bằng chữ]': amountInWords(quote.total), '[Nhãn VAT]': vatLabel(quote.items || [])};
     let result = replaceTokens(expandItems(source, quote.items || []), values);
     result = result.replace('Hôm nay, ngày      tháng      năm 2025, chúng tôi gồm:', `Hôm nay, ngày ${date.day} tháng ${date.month} năm ${date.year}, chúng tôi gồm:`);
     result = result.replace('TP Cần Thơ, ngày 04 tháng 06 năm 2025', `TP Cần Thơ, ngày ${date.day} tháng ${date.month} năm ${date.year}`);
