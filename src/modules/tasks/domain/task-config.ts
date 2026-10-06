@@ -5,7 +5,7 @@
  */
 export const TASK_STATUSES = ['todo', 'in_progress', 'done', 'cancelled'] as const;
 export const TASK_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;
-export const TASK_SOURCES = ['manual', 'quote', 'stock_request', 'order', 'delivery', 'contract', 'receivable', 'purchase'] as const;
+export const TASK_SOURCES = ['manual', 'quote', 'stock_request', 'order', 'delivery', 'packing', 'contract', 'receivable', 'purchase'] as const;
 
 export type TaskStatus = typeof TASK_STATUSES[number];
 export type TaskPriority = typeof TASK_PRIORITIES[number];
@@ -14,8 +14,16 @@ export type TaskSource = typeof TASK_SOURCES[number];
 export const STATUS_LABEL: Record<TaskStatus, string> = { todo: 'Cần làm', in_progress: 'Đang làm', done: 'Hoàn thành', cancelled: 'Đã huỷ' };
 export const PRIORITY_LABEL: Record<TaskPriority, string> = { low: 'Thấp', normal: 'Bình thường', high: 'Cao', urgent: 'Khẩn' };
 export const SOURCE_LABEL: Record<TaskSource, string> = {
-  manual: 'Giao việc', quote: 'Báo giá', stock_request: 'Check tồn', order: 'Đơn hàng', delivery: 'Giao hàng', contract: 'HĐKT', receivable: 'Công nợ', purchase: 'Nhập hàng',
+  manual: 'Giao việc', quote: 'Báo giá', stock_request: 'Check tồn', order: 'Đơn hàng', delivery: 'Giao hàng', packing: 'Xuất kho / đóng hàng', contract: 'HĐKT', receivable: 'Công nợ', purchase: 'Nhập hàng',
 };
+
+/**
+ * Nhóm nhận việc (theo chức vụ nhân viên): việc giao cho nhóm thì mọi người trong nhóm thấy, một người bấm "Nhận việc" để làm.
+ * Khoá = id chức vụ (staff positions).
+ */
+export const TASK_TEAMS = { warehouse: 'Kho', accounting: 'Kế toán', 'sale-admin': 'Sale Admin' } as const;
+export type TaskTeam = keyof typeof TASK_TEAMS;
+export const isTeam = (v: unknown): v is TaskTeam => typeof v === 'string' && Object.hasOwn(TASK_TEAMS, v);
 
 export const OPEN_STATUSES: readonly TaskStatus[] = ['todo', 'in_progress'];
 export const isOpen = (s: string) => (OPEN_STATUSES as readonly string[]).includes(s);

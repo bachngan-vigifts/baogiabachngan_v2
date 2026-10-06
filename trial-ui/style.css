@@ -829,3 +829,7 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .task-filters select { width: auto; min-width: 170px; }
 .task-due-quick .chip, .due-date { white-space: nowrap; }
 .row-actions { white-space: nowrap; } .row-actions .btn + .btn { margin-left: 6px; }
+.pill.src.packing { background: #fff4e0; color: #9a5b00; }
+.team-tag { display: inline-block; background: #fff4e0; color: #9a5b00; border-radius: 6px; padding: 0 6px; font-size: .86em; }
+.claim-btn { margin-top: 4px; padding: 3px 9px; }
+.pack-slot:empty { display: none; } .pack-slot .pill { text-decoration: none; }

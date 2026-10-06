@@ -8,7 +8,8 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify } from '../../notifications/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
 import { reconcileAutoTasks } from './auto-tasks.ts';
-import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, dueBucket, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
+import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
+import { deliveries, deliveryLines, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Task = typeof tasks.$inferSelect;
@@ -16,6 +17,7 @@ const me = (c: Ctx) => (c.state.session as SessionState).member;
 const nowIso = () => new Date().toISOString();
 const str = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z'));
+const addDays = (iso: string, n: number) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86_400_000).toISOString().slice(0, 10);
 const isTime = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 /** Việc tự sinh được đồng bộ tối đa mỗi 15 giây / phiên chạy (mở bảng việc liên tục không quét lại toàn bộ). `?refresh=1` ép đồng bộ ngay. */
@@ -26,10 +28,32 @@ async function syncAuto(c: Ctx) {
   try { await reconcileAutoTasks(c.env.db); } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
 }
 
-/** Ai thấy việc: Manager thấy tất cả; nhân viên thấy việc mình nhận hoặc mình giao. */
-const visible = (c: Ctx): SQL | undefined => { const m = me(c); return m.role === 'manager' ? undefined : or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id)); };
-const canSee = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'manager' || t.assigneeId === m.id || t.createdBy === m.id; };
+/** Nhóm của tôi (theo chức vụ): Kho, Kế toán, Sale Admin… – null nếu chức vụ không phải nhóm nhận việc. */
+const myTeam = (c: Ctx) => { const p = (me(c) as { positionId?: string | null }).positionId; return isTeam(p) ? p : null; };
+/** Việc giao cho nhóm, chưa ai nhận. */
+const teamOpen = (t: Pick<Task, 'assigneeId' | 'assigneePosition'>) => !t.assigneeId && !!t.assigneePosition;
+/** Ai thấy việc: Manager thấy tất cả; nhân viên thấy việc mình nhận, mình giao, và việc giao cho nhóm của mình chưa ai nhận. */
+const visible = (c: Ctx): SQL | undefined => {
+  const m = me(c), team = myTeam(c);
+  if (m.role === 'manager') return undefined;
+  return or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined);
+};
+const inMyTeam = (c: Ctx, t: Task) => teamOpen(t) && t.assigneePosition === myTeam(c);
+const canSee = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'manager' || t.assigneeId === m.id || t.createdBy === m.id || inMyTeam(c, t); };
 const canManage = (c: Ctx, t: Task) => me(c).role === 'manager' || (t.createdBy !== null && t.createdBy === me(c).id);
+const teamName = (pos: string | null) => (pos && isTeam(pos) ? TASK_TEAMS[pos] : '');
+
+/** Người nhận: id nhân viên, hoặc `team:<chức vụ>` = giao cho cả nhóm, hoặc '' = chưa giao. */
+function parseAssignee(v: unknown): { assigneeId: string | null; assigneePosition: string | null } {
+  const raw = str(v, 80);
+  if (raw.startsWith('team:')) { const team = raw.slice(5); if (!isTeam(team)) throw new AppError(400, 'Nhóm nhận việc không hợp lệ.'); return { assigneeId: null, assigneePosition: team }; }
+  return { assigneeId: raw || null, assigneePosition: null };
+}
+/** Báo cho mọi người đang hoạt động trong nhóm. */
+async function notifyTeam(c: Ctx, team: string, n: Omit<Parameters<typeof notify>[1], 'targetMemberId'>) {
+  const members = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.positionId, team), eq(employees.active, true)));
+  for (const x of members) if (x.id !== me(c).id) await notify(c.env, { ...n, targetMemberId: x.id });
+}
 
 async function loadTask(c: Ctx, id: string) {
   const [t] = await c.env.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
@@ -67,25 +91,29 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   /** Đếm cho huy hiệu menu: việc của tôi đang mở / quá hạn / hôm nay; Manager thêm số việc chưa giao. */
   router.get('/tasks/summary', async c => {
     await syncAuto(c);
-    const m = me(c), today = vietnamDate().iso;
-    const rows = await c.env.db.select({ assigneeId: tasks.assigneeId, dueDate: tasks.dueDate }).from(tasks)
-      .where(and(inArray(tasks.status, [...OPEN_STATUSES]), m.role === 'manager' ? or(eq(tasks.assigneeId, m.id), isNull(tasks.assigneeId)) : eq(tasks.assigneeId, m.id)));
-    const mine = rows.filter(r => r.assigneeId === m.id);
+    const m = me(c), team = myTeam(c), today = vietnamDate().iso;
+    const rows = await c.env.db.select({ assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate }).from(tasks)
+      .where(and(inArray(tasks.status, [...OPEN_STATUSES]), or(eq(tasks.assigneeId, m.id), m.role === 'manager' ? isNull(tasks.assigneeId) : team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : sql`false`)));
+    // "Của tôi" = việc tôi nhận + việc nhóm tôi chưa ai nhận.
+    const mine = rows.filter(r => r.assigneeId === m.id || (!r.assigneeId && r.assigneePosition && r.assigneePosition === team));
     return json({ open: mine.length, overdue: mine.filter(r => dueBucket(r.dueDate, today) === 'overdue').length, today: mine.filter(r => dueBucket(r.dueDate, today) === 'today').length,
-      unassigned: rows.filter(r => r.assigneeId === null).length });
+      team: rows.filter(r => !r.assigneeId && r.assigneePosition && (m.role === 'manager' || r.assigneePosition === team)).length,
+      unassigned: m.role === 'manager' ? rows.filter(r => !r.assigneeId && !r.assigneePosition).length : 0 });
   }, 'business');
 
   /**
-   * Danh sách việc. `view`: mine (tôi nhận) · created (tôi giao) · unassigned (chưa giao, Manager) · all.
+   * Danh sách việc. `view`: mine (tôi nhận + nhóm tôi chưa ai nhận) · created (tôi giao) · team (việc giao cho nhóm, chưa ai nhận) · unassigned (chưa giao, Manager) · all.
    * `status`: open (mặc định) · done · all. Lọc thêm `priority`, `source`, `q`.
    */
   router.get('/tasks', async c => {
     await syncAuto(c);
     const m = me(c), p = c.url.searchParams, view = p.get('view') || 'mine', status = p.get('status') || 'open', q = str(p.get('q'), 100).toLowerCase();
     const where: (SQL | undefined)[] = [visible(c)];
-    if (view === 'mine') where.push(eq(tasks.assigneeId, m.id));
+    const team = myTeam(c);
+    if (view === 'mine') where.push(or(eq(tasks.assigneeId, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined));
     else if (view === 'created') where.push(eq(tasks.createdBy, m.id));
-    else if (view === 'unassigned') where.push(isNull(tasks.assigneeId));
+    else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`));
+    else if (view === 'unassigned') where.push(and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)));
     if (status === 'open') where.push(inArray(tasks.status, [...OPEN_STATUSES]));
     else if (status === 'done') where.push(inArray(tasks.status, ['done', 'cancelled']));
     const priority = p.get('priority'), source = p.get('source');
@@ -101,7 +129,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const today = vietnamDate().iso;
     // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
-    return json({ today, tasks: sorted.map(t => ({ ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    return json({ today, tasks: sorted.map(t => ({ ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), comments: Number(counts.find(x => x.taskId === t.id)?.n ?? 0), due: dueBucket(t.dueDate, today),
       canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t) })) });
   }, 'business');
@@ -110,14 +138,15 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   router.post('/tasks', async c => {
     const m = me(c), b = await readJson(c.req, 20_000), f = readFields(b);
     if (!f.title) throw new AppError(400, 'Nhập tên công việc.');
-    const assigneeId = b.assigneeId === undefined ? m.id : (str(b.assigneeId, 80) || null);
-    if (assigneeId !== m.id && m.role !== 'manager' && !assigneeId) throw new AppError(400, 'Chọn người nhận việc.');
+    const { assigneeId, assigneePosition } = b.assigneeId === undefined ? { assigneeId: m.id, assigneePosition: null } : parseAssignee(b.assigneeId);
+    if (!assigneeId && !assigneePosition && m.role !== 'manager') throw new AppError(400, 'Chọn người hoặc nhóm nhận việc.');
     await assertAssignee(c, assigneeId);
     const id = crypto.randomUUID(), now = nowIso();
     await c.env.db.insert(tasks).values({ id, title: f.title, description: f.description ?? '', priority: f.priority ?? 'normal', status: 'todo', source: 'manual', link: f.link ?? '',
-      assigneeId, createdBy: m.id, dueDate: f.dueDate ?? null, dueTime: f.dueTime ?? null, createdAt: now, updatedAt: now });
+      assigneeId, assigneePosition, createdBy: m.id, dueDate: f.dueDate ?? null, dueTime: f.dueTime ?? null, createdAt: now, updatedAt: now });
     if (assigneeId && assigneeId !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc mới', body: `${m.name}: ${f.title}`, url: `/index.html#/tasks/${id}`,
       targetMemberId: assigneeId, actorId: m.id, data: { taskId: id } });
+    if (assigneePosition) await notifyTeam(c, assigneePosition, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(assigneePosition)}`, body: `${m.name}: ${f.title}`, url: `/index.html#/tasks/${id}`, actorId: m.id, data: { taskId: id } });
     return json({ id }, 201);
   }, 'business');
 
@@ -128,18 +157,23 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   router.put('/tasks/:id', async c => {
     const m = me(c), b = await readJson(c.req, 20_000), t = await loadTask(c, c.params.id!);
     if (b.revision !== undefined && Number(b.revision) !== t.revision) throw new AppError(409, 'Công việc vừa được người khác cập nhật. Tải lại để xem bản mới.', 'REVISION_CONFLICT');
-    const manage = canManage(c, t), isAssignee = t.assigneeId === m.id, f = readFields(b);
+    // Người trong nhóm được giao (chưa ai nhận) làm như người nhận: bấm "Nhận việc" hoặc đổi trạng thái là nhận luôn.
+    const manage = canManage(c, t), isAssignee = t.assigneeId === m.id || inMyTeam(c, t), f = readFields(b);
     if (t.autoKey) { delete f.title; delete f.description; delete f.link; }
     if (!manage && (f.title !== undefined || f.description !== undefined || f.link !== undefined)) throw new AppError(403, 'Chỉ người giao việc hoặc Manager sửa được nội dung.');
     if (!manage && !isAssignee) throw new AppError(403, 'Bạn không được sửa công việc này.');
     const set: Partial<typeof tasks.$inferInsert> = { ...f, updatedAt: nowIso() };
     let reassigned: string | null = null;
+    let toTeam: string | null = null;
     if (b.assigneeId !== undefined) {
-      const to = str(b.assigneeId, 80) || null;
+      const { assigneeId: to, assigneePosition } = parseAssignee(b.assigneeId);
       if (!manage && !isAssignee) throw new AppError(403, 'Bạn không được giao lại việc này.');
-      if (!to && m.role !== 'manager') throw new AppError(400, 'Chọn người nhận việc.');
+      if (!to && !assigneePosition && m.role !== 'manager') throw new AppError(400, 'Chọn người hoặc nhóm nhận việc.');
       await assertAssignee(c, to);
-      if (to !== t.assigneeId) { set.assigneeId = to; reassigned = to; }
+      if (to !== t.assigneeId || assigneePosition !== t.assigneePosition) { set.assigneeId = to; set.assigneePosition = assigneePosition; reassigned = to; toTeam = assigneePosition !== t.assigneePosition ? assigneePosition : null; }
+    } else if (teamOpen(t) && inMyTeam(c, t) && b.status !== undefined && b.status !== 'todo') {
+      // Người trong nhóm bắt đầu làm / hoàn thành việc của nhóm → tự nhận việc.
+      set.assigneeId = m.id; set.assigneePosition = null;
     }
     if (b.status !== undefined) {
       if (!TASK_STATUSES.includes(b.status as TaskStatus)) throw new AppError(400, 'Trạng thái không hợp lệ.');
@@ -149,9 +183,48 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     await c.env.db.update(tasks).set({ ...set, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id));
     if (reassigned && reassigned !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc', body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`,
       targetMemberId: reassigned, actorId: m.id, data: { taskId: t.id } });
+    if (toTeam) await notifyTeam(c, toTeam, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(toTeam)}`, body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });
     if (b.status === 'done' && t.status !== 'done' && t.createdBy && t.createdBy !== m.id) await notify(c.env, { eventType: 'task_done', title: 'Việc đã hoàn thành', body: `${m.name}: ${t.title}`,
       url: `/index.html#/tasks/${t.id}`, targetMemberId: t.createdBy, actorId: m.id, data: { taskId: t.id } });
     return json({ ok: true });
+  }, 'business');
+
+  /**
+   * Nhân viên phụ trách bấm "Yêu cầu kho đóng hàng" cho một chuyến giao → việc "Xuất kho & đóng hàng" giao cho nhóm Kho
+   * (cả nhóm nhận thông báo). Kho làm xong → người yêu cầu được báo. Chuyến đã đi / đã giao / huỷ thì việc tự hoàn thành.
+   */
+  router.post('/tasks/packing', async c => {
+    const m = me(c), b = await readJson(c.req, 4_000), deliveryId = str(b.deliveryId, 80), note = str(b.note, 1000);
+    const [row] = await c.env.db.select({ d: deliveries, o: salesOrders }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, deliveryId)).limit(1);
+    if (!row || (m.role !== 'manager' && row.o.ownerId !== m.id && row.o.createdBy !== m.id)) throw new AppError(404, 'Không tìm thấy chuyến giao.');
+    if (row.d.status !== 'planned') throw new AppError(409, 'Chỉ yêu cầu đóng hàng cho chuyến đang chờ giao.');
+    const key = `pack:${row.d.id}`, [old] = await c.env.db.select().from(tasks).where(eq(tasks.autoKey, key)).limit(1);
+    if (old && (old.status === 'todo' || old.status === 'in_progress')) throw new AppError(409, 'Đã yêu cầu kho đóng hàng cho chuyến này.', 'PACK_EXISTS');
+    const lines = await c.env.db.select({ name: salesOrderLines.name, unit: salesOrderLines.unit, qty: deliveryLines.qty }).from(deliveryLines)
+      .innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId)).where(eq(deliveryLines.deliveryId, row.d.id));
+    const today = vietnamDate().iso, now = nowIso();
+    const description = [`Đơn ${row.o.orderNo} · giao ${row.d.plannedDate.split('-').reverse().join('/')}${row.d.timeSlot ? ' ' + row.d.timeSlot : ''}`, `Địa chỉ: ${row.d.address || row.o.address}`,
+      ...lines.map(l => `- ${l.name}: ${new Intl.NumberFormat('vi-VN').format(l.qty)} ${l.unit}`), note ? `Ghi chú: ${note}` : ''].filter(Boolean).join('\n');
+    const values = { title: `Xuất kho & đóng hàng ${row.d.deliveryNo} – ${row.o.customerName}`, description, status: 'todo' as const, priority: row.d.plannedDate <= addDays(today, 1) ? 'urgent' as const : 'high' as const,
+      source: 'packing' as const, sourceId: row.o.id, link: '', // kho không mở được đơn (đơn chỉ NV phụ trách / Manager xem) – nội dung việc đã ghi đủ hàng cần xuất
+      assigneeId: null, assigneePosition: 'warehouse', createdBy: m.id, dueDate: row.d.plannedDate, dueTime: null,
+      startedAt: null, completedAt: null, completedBy: null, updatedAt: now };
+    const id = old?.id ?? crypto.randomUUID();
+    if (old) await c.env.db.update(tasks).set({ ...values, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, id));
+    else await c.env.db.insert(tasks).values({ id, autoKey: key, createdAt: now, ...values });
+    await notifyTeam(c, 'warehouse', { eventType: 'task_assigned', title: 'Kho: yêu cầu xuất kho & đóng hàng', body: `${row.d.deliveryNo} – ${row.o.customerName} (giao ${row.d.plannedDate.split('-').reverse().join('/')})`,
+      url: `/index.html#/tasks/${id}`, actorId: m.id, data: { taskId: id } });
+    return json({ id }, 201);
+  }, 'business');
+
+  /** Tình trạng đóng hàng của các chuyến giao trong một đơn (hiện ở ô Lịch giao hàng). */
+  router.get('/tasks/packing', async c => {
+    const orderId = str(c.url.searchParams.get('orderId'), 80);
+    const rows = await c.env.db.select({ t: tasks, name: employees.name }).from(tasks).leftJoin(employees, eq(employees.id, sql`coalesce(${tasks.completedBy}, ${tasks.assigneeId})`))
+      .where(and(eq(tasks.source, 'packing'), eq(tasks.sourceId, orderId))).limit(100);
+    // Chỉ là tình trạng đóng hàng của chuyến (ai làm, lúc nào) – người xem được đơn đều thấy.
+    return json({ packing: rows.map(({ t, name }) => ({ deliveryId: t.autoKey?.slice(5) ?? '', taskId: t.id, status: t.status,
+      by: name ?? '', completedAt: t.completedAt, auto: t.status === 'done' && !t.completedBy })) });
   }, 'business');
 
   router.get('/tasks/:id', async c => {
@@ -159,7 +232,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const ids = [t.assigneeId, t.createdBy, t.completedBy].filter(Boolean) as string[];
     const people = ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
     const name = (id: string | null) => id ? people.find(x => x.id === id)?.name ?? '' : '';
-    return json({ task: { ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    return json({ task: { ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (me(c).role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), due: dueBucket(t.dueDate, vietnamDate().iso), canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t) } });
   }, 'business');
 

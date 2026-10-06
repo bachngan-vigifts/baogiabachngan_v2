@@ -21,6 +21,8 @@ import { addDaysIso, isOpen, type TaskPriority, type TaskSource } from '../domai
 export interface AutoTask {
   autoKey: string; source: TaskSource; sourceId: string; title: string; description?: string; link: string;
   assigneeId: string | null; priority: TaskPriority; dueDate: string | null;
+  /** Giao cho nhóm (id chức vụ, vd. 'warehouse') khi không có người nhận cụ thể. */
+  assigneePosition?: string | null;
 }
 type Db = StaffEnv['db'];
 type Rule = (db: Db, today: string) => Promise<AutoTask[]>;
@@ -110,7 +112,28 @@ export const RULES: Record<string, Rule> = {
     const rows = await db.select().from(sapoInventoryDocs).where(and(eq(sapoInventoryDocs.kind, 'purchase_order'), gte(sapoInventoryDocs.createdOn, addDaysIso(today, -60)))).limit(500);
     return rows.filter(d => !/(complet|finish|cancel|received|closed|hoàn|huỷ|hủy)/i.test(d.status)).map(d => ({ autoKey: `purchase:${d.id}`, source: 'purchase' as const, sourceId: d.id,
       title: `Nhận hàng nhập ${d.code}${d.partnerName ? ' – ' + d.partnerName : ''}`, description: `${new Intl.NumberFormat('vi-VN').format(d.totalQty)} sản phẩm${d.locationName ? ' · ' + d.locationName : ''}${d.status ? ' · Sapo: ' + d.status : ''}`,
-      link: '', assigneeId: null, priority: 'normal' as const, dueDate: d.createdOn ? addDaysIso(day(d.createdOn)!, 7) : null }));
+      link: '', assigneeId: null, assigneePosition: 'warehouse', priority: 'normal' as const, dueDate: d.createdOn ? addDaysIso(day(d.createdOn)!, 7) : null }));
+  },
+  /** Đơn đến hạn giao (hôm nay / ngày mai / đã trễ) mà chưa giao xong → nhân viên phụ trách. */
+  async orderDue(db, today) {
+    const rows = await db.select().from(salesOrders)
+      .where(and(inArray(salesOrders.status, ['confirmed', 'delivering']), isNotNull(salesOrders.expectedDeliveryDate), lte(salesOrders.expectedDeliveryDate, addDaysIso(today, 1)))).limit(500);
+    return rows.map(o => {
+      const late = o.expectedDeliveryDate! < today;
+      return { autoKey: `order-due:${o.id}`, source: 'delivery' as const, sourceId: o.id, title: `${late ? 'Trễ hạn giao' : 'Đến hạn giao'} đơn ${o.orderNo} – ${o.customerName}`,
+        description: `Hạn giao ${fmt(o.expectedDeliveryDate)}. Kiểm tra hàng, yêu cầu kho đóng hàng và giao cho khách.`, link: `#/orders/${o.id}`, assigneeId: o.ownerId,
+        priority: late ? 'urgent' as const : 'high' as const, dueDate: o.expectedDeliveryDate };
+    });
+  },
+  /**
+   * Xuất kho / đóng hàng: KHÔNG tự tạo – sinh khi nhân viên bấm "Yêu cầu kho đóng hàng" (POST /tasks/packing).
+   * Quy tắc này chỉ giữ việc còn mở khi chuyến giao vẫn đang chờ giao; chuyến đã đi / đã giao / huỷ thì việc tự hoàn thành.
+   */
+  async packing(db) {
+    const open = await db.select({ t: tasks, status: deliveries.status }).from(tasks).innerJoin(deliveries, eq(sql`'pack:' || ${deliveries.id}`, tasks.autoKey))
+      .where(and(eq(tasks.source, 'packing'), inArray(tasks.status, ['todo', 'in_progress']))).limit(500);
+    return open.filter(r => r.status === 'planned').map(({ t }) => ({ autoKey: t.autoKey!, source: 'packing' as const, sourceId: t.sourceId ?? '', title: t.title, description: t.description,
+      link: t.link, assigneeId: t.assigneeId, assigneePosition: t.assigneePosition, priority: t.priority, dueDate: t.dueDate }));
   },
 };
 
@@ -121,21 +144,21 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
   for (const [name, rule] of Object.entries(RULES)) {
     try { for (const t of await rule(db, today)) wanted.set(t.autoKey, t); } catch (e) { console.error('auto task rule failed', name, e instanceof Error ? e.message : e); }
   }
-  const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, assigneeId: tasks.assigneeId, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
+  const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
     .from(tasks).where(isNotNull(tasks.autoKey));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
   const fresh = [...wanted.values()].filter(t => !byKey.has(t.autoKey));
   if (fresh.length) await db.insert(tasks).values(fresh.map(t => ({ id: crypto.randomUUID(), title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
-    sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing();
+    sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing();
   let closed = 0, updated = 0;
   for (const t of existing) {
     if (!isOpen(t.status)) continue;
     const w = wanted.get(t.autoKey!);
     if (!w) { await db.update(tasks).set({ status: 'done', completedAt: stamp, completedBy: null, updatedAt: stamp, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id)); closed++; continue; }
-    // Mức ưu tiên chỉ đặt lúc tạo (nhân viên có thể nâng / hạ). Giữ người nhận đã được giao tay cho việc "chưa giao" (Manager tự phân công); còn lại theo chứng từ.
-    const assigneeId = w.assigneeId ?? t.assigneeId;
-    if (assigneeId !== t.assigneeId || w.dueDate !== t.dueDate || w.title !== t.title || (w.description ?? '') !== t.description) {
-      await db.update(tasks).set({ assigneeId, dueDate: w.dueDate, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
+    // Mức ưu tiên chỉ đặt lúc tạo (nhân viên có thể nâng / hạ). Việc "chưa giao" / giao cho nhóm mà đã có người nhận (giao tay / bấm Nhận việc) thì giữ người đó.
+    const assigneeId = w.assigneeId ?? t.assigneeId, assigneePosition = assigneeId ? null : (w.assigneePosition ?? null);
+    if (assigneeId !== t.assigneeId || assigneePosition !== t.assigneePosition || w.dueDate !== t.dueDate || w.title !== t.title || (w.description ?? '') !== t.description) {
+      await db.update(tasks).set({ assigneeId, assigneePosition, dueDate: w.dueDate, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
     }
   }
   return { created: fresh.length, closed, updated };
