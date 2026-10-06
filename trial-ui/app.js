@@ -1821,7 +1821,7 @@ const listError = (key, e) => { $(`#${key}-list`).innerHTML = ''; $(`#${key}-emp
 
 // ----- danh sách đơn
 async function loadOrders() {
-  $('#orders-list').innerHTML = skeleton(6);
+  $('#orders-list').innerHTML = skeleton(7);
   try {
     const d = await api('/orders?q=' + encodeURIComponent($('#orders-search').value));
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
@@ -1830,7 +1830,8 @@ async function loadOrders() {
       <td>${pill(ORDER_STATUS, o.status)}</td>
       <td>${o.contract ? esc(o.contract.contractNo) + `<small>${pill(CONTRACT_STATUS, o.contract.status)}</small>` : '<span class="muted">Chưa có</span>'}</td>
       <td class="right num">${money(o.total)}</td>
-      <td>${payCell(o.receivable, o.debtCounts, o.status)}</td></tr>`),
+      <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
+      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.contract ? `<button type="button" class="btn secondary small" data-contract-docs-for="${esc(o.id)}" title="Xem, sửa, tải bộ 3 file Word HĐKT">HĐKT</button>` : ''}</td></tr>`),
       'Chưa có đơn đặt hàng. Mở một báo giá đã lưu và bấm "Tạo đơn đặt hàng".');
   } catch (e) { listError('orders', e); }
 }
@@ -1842,7 +1843,7 @@ async function loadContracts() {
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
       <td><b>${esc(k.contractNo)}</b></td><td>${esc(k.customerName)}<small>${orderLink(k.orderId, k.orderNo)}${k.quoteNo ? ' · ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Hồ sơ</button></td></tr>`),
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button></td></tr>`),
       'Chưa có HĐKT. Mở một đơn đặt hàng và bấm "Lập HĐKT".');
   } catch (e) { listError('contracts', e); }
 }
@@ -2066,7 +2067,7 @@ async function openOrder(id) {
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
     <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${k.status === 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
-    : '<p class="muted">Chưa lập HĐKT. Lập HĐKT để cấp số hợp đồng và chia kỳ thanh toán (cọc + phần còn lại).</p>';
+    : '<p class="muted">Chưa lập HĐKT. Bấm <b>＋ Lập HĐKT</b> để cấp số hợp đồng, chia kỳ thanh toán (cọc + phần còn lại); sau đó nút <b>Xem / sửa / tải hồ sơ HĐKT</b> hiện ở đây.</p>';
   // Ngày giao dự kiến nằm ngay ở Lịch giao hàng: nhân viên đổi ngày → đơn (và đơn khách xem) cập nhật theo.
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><label><span>Ngày giao dự kiến</span><input type="date" id="order-expected" value="${esc(o.expectedDeliveryDate || '')}"></label>
       ${duePill(o.expectedDeliveryDate, { fmt: fmtDate })}<button type="button" class="btn secondary small" id="order-expected-save" hidden>Lưu ngày giao</button></div>`)
@@ -2101,8 +2102,8 @@ async function verifyAndConfirmOrder() {
   } catch (ex) { toast(ex.message, 'err'); }
 }
 /** Xem trước đơn đặt hàng (mẫu đơn Minh Long), sửa trực tiếp trên phiếu rồi in / lưu PDF hoặc tải Excel. */
-function openOrderPrint() {
-  const p = orderPrintData(sales.detail, state.user?.name || '');
+function openOrderPrint(detail = sales.detail) {
+  const p = orderPrintData(detail, state.user?.name || '');
   const dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Đơn đặt hàng</span><h2>In / Tải ${esc(p.orderNo)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body"><div class="row-gap print-tools"><label class="check"><input type="checkbox" data-prices> Hiện đơn giá, thành tiền</label><span class="muted small">Bấm vào chữ trên phiếu để sửa trước khi in / tải.</span></div>
@@ -2129,6 +2130,11 @@ function openOrderPrint() {
 }
 document.addEventListener('click', async e => {
   if (e.target.closest('#order-print')) openOrderPrint();
+  const listPrint = e.target.closest('[data-order-print-for]');
+  if (listPrint) {
+    e.stopPropagation();
+    try { openOrderPrint(await api('/orders/' + encodeURIComponent(listPrint.dataset.orderPrintFor))); } catch (ex) { toast(ex.message, 'err'); }
+  }
   if (e.target.closest('[data-contract-docs]')) openContractDocs({ detail: sales.detail, api, toast, onSaved: () => openOrder(sales.order.id) });
   const listDocs = e.target.closest('[data-contract-docs-for]');
   if (listDocs) {
