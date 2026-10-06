@@ -11,6 +11,7 @@ const modulesDir = join(import.meta.dirname, '..', 'src', 'modules');
 const ALLOWED: Record<string, string[]> = {
   staff: [], customers: ['staff'], catalog: ['staff'], contracts: [], printing: ['staff', 'quotes'], integrations: ['staff', 'customers', 'catalog'], crm: [],
   sales: ['staff', 'customers', 'quotes', 'contracts'],
+  portal: ['staff', 'customers', 'catalog', 'quotes', 'sales'],
   quotes: ['staff'], work: ['staff'], notifications: ['staff'], suppliers: ['staff'],
 };
 

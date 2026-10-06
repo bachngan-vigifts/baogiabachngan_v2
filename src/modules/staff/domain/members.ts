@@ -14,6 +14,7 @@ export const DEFAULT_POSITIONS: readonly { id: string; name: string }[] = [
   { id: 'manager', name: 'Manager' }, { id: 'sale', name: 'Sale' }, { id: 'sale-admin', name: 'Sale Admin' },
   { id: 'sales-ml', name: 'NVBH ML' }, { id: 'sales-lock', name: 'NVBH LOCK' }, { id: 'warehouse', name: 'Kho' },
   { id: 'accounting', name: 'Kế toán' }, { id: 'supplier', name: 'NCC' },
+  // Chức vụ 'customer' (tài khoản khách hàng) do migration postgres 0011 tạo, không chọn được ở trang Nhân viên.
 ];
 
 const bad = (status: number, message: string) => new AppError(status, message);

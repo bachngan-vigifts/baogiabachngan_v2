@@ -489,6 +489,13 @@ label.btn.busy { opacity: .55; pointer-events: none; }
 .inventory-list { display: grid; gap: 8px; }
 .inventory-list > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
 .inventory-list strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Tài khoản trang khách hàng */
+.account-list li { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.account-list li small { display: block; color: var(--muted); }
+.copy-row { display: flex; gap: 8px; } .copy-row input { flex: 1; min-width: 0; }
+.discount-fields { border: 1px dashed var(--line); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.discount-fields legend { font-size: .8rem; font-weight: 700; color: var(--muted); padding: 0 4px; }
+@media (max-width: 640px) { .discount-fields { grid-template-columns: 1fr; } }
 .link-btn { border: 0; background: none; color: var(--blue); font-weight: 700; font-size: .82rem; text-decoration: underline; cursor: pointer; padding: 0; white-space: nowrap; }
 .product-meta { font-size: .8rem; color: var(--muted); margin-top: 2px; }
 .sub-field { display: grid; grid-template-columns: 86px 1fr; align-items: center; gap: 6px; margin-top: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }
@@ -625,3 +632,41 @@ a.flow-step:hover { border-color: var(--blue); }
   .bottom-nav { grid-auto-columns: minmax(68px, 1fr); overflow-x: auto; scrollbar-width: none; }
   .bottom-nav::-webkit-scrollbar { display: none; }
 }
+
+/* ===================== Trang khách hàng (customer.html) ===================== */
+.portal { background: var(--bg, #f4f6fa); min-height: 100vh; }
+.portal-head { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--navy); color: #fff; }
+.portal-brand { display: flex; align-items: center; gap: 10px; }
+.portal-brand .logo { width: 36px; height: 36px; border-radius: 9px; background: #c8102e; display: grid; place-items: center; font-weight: 800; }
+.portal-brand small, .portal-who small { display: block; opacity: .75; font-size: .75rem; }
+.portal-who { margin-left: auto; text-align: right; min-width: 0; }
+.portal-who b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-head .btn.ghost { color: #fff; border-color: rgba(255,255,255,.35); }
+.portal-main { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+.portal-owner { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.portal-owner small { display: block; }
+.portal-tabs { display: flex; gap: 8px; }
+.portal-tabs .chip[aria-selected="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
+.portal-new { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.portal-new input[type=search] { width: 100%; }
+.portal-products { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 70vh; overflow: auto; }
+.portal-products li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.portal-products .prod-text { display: grid; min-width: 0; }
+.portal-products .prod-text small, .portal-products .price small { color: var(--muted); display: block; }
+.portal-products .price { text-align: right; font-weight: 700; white-space: nowrap; }
+.portal-cart { position: sticky; top: 76px; }
+.portal-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.portal-order header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 8px; }
+.portal-order header small { display: block; color: var(--muted); }
+.portal-order + .portal-order { margin-top: 12px; }
+.pre { white-space: pre-wrap; }
+@media (max-width: 860px) {
+  .portal-new { grid-template-columns: 1fr; }
+  .portal-cart { position: static; }
+  .portal-head { padding: 10px 14px; gap: 10px; }
+  .portal-brand div, .portal-who small { display: none; }
+  .portal-tabs { overflow-x: auto; padding-bottom: 2px; } .portal-tabs .chip { flex: none; }
+  .portal-products li { grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .portal-products li .btn { grid-column: 2 / -1; justify-self: end; }
+}
+.portal-cart .num-input { width: 72px; text-align: right; }

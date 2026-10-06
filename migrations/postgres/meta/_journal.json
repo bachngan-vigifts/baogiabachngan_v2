@@ -43,6 +43,13 @@
       "when": 1791291188243,
       "tag": "0009_sapo_inventory_docs",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791292019176,
+      "tag": "0011_customer_accounts",
+      "breakpoints": true
     }
   ]
 }

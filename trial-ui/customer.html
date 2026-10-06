@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Bách Ngân · Trang khách hàng</title>
+<meta name="description" content="Trang khách hàng Bách Ngân: xem và tạo báo giá, đặt hàng, theo dõi đơn hàng.">
+<meta name="theme-color" content="#152238">
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="portal">
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+<header class="portal-head">
+  <div class="portal-brand"><span class="logo">BN</span><div><b>BÁCH NGÂN</b><small>Trang khách hàng</small></div></div>
+  <div class="portal-who"><b id="p-customer">Đang tải…</b><small id="p-user"></small></div>
+  <button type="button" class="btn ghost small" id="p-logout">Đăng xuất</button>
+</header>
+<main class="portal-main" id="portal" hidden>
+  <section class="card portal-owner" id="p-owner"></section>
+  <nav class="chips portal-tabs" role="tablist">
+    <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="true">Báo giá</button>
+    <button type="button" class="chip" role="tab" data-tab="new" aria-selected="false">Tạo báo giá / Đặt hàng</button>
+    <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false">Đơn hàng</button>
+  </nav>
+
+  <!-- Báo giá -->
+  <section class="card" data-panel="quotes">
+    <h2 class="card-title">Báo giá của công ty</h2>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Số báo giá</th><th>Ngày</th><th class="right">Tổng (gồm VAT)</th><th>Trạng thái</th><th>Đơn hàng</th></tr></thead><tbody id="p-quotes"></tbody></table></div>
+    <p class="muted" id="p-quotes-empty" hidden>Chưa có báo giá. Vào "Tạo báo giá / Đặt hàng" để gửi yêu cầu.</p>
+  </section>
+
+  <!-- Tạo báo giá / đặt hàng -->
+  <section class="portal-new" data-panel="new" hidden>
+    <div class="card">
+      <h2 class="card-title">Chọn sản phẩm</h2>
+      <input type="search" id="p-search" placeholder="Gõ tên hoặc mã sản phẩm…" autocomplete="off">
+      <p class="muted small" id="p-search-status">Đang tải danh mục…</p>
+      <ul class="portal-products" id="p-products"></ul>
+    </div>
+    <div class="card portal-cart">
+      <h2 class="card-title">Sản phẩm đã chọn <span class="muted" id="p-cart-count">(0)</span></h2>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đơn giá</th><th class="right">CK</th><th class="right">Thành tiền</th><th></th></tr></thead><tbody id="p-cart"></tbody></table></div>
+      <p class="muted" id="p-cart-empty">Chưa chọn sản phẩm nào.</p>
+      <dl class="totals"><div><dt>Tạm tính</dt><dd id="p-subtotal">0 ₫</dd></div><div><dt id="p-tax-label">Thuế VAT</dt><dd id="p-tax">0 ₫</dd></div><div class="grand"><dt>Tổng thanh toán</dt><dd id="p-total">0 ₫</dd></div></dl>
+      <div class="form-grid cols-2">
+        <label>Ngày cần giao<input type="date" id="p-delivery"></label>
+        <label class="span-2">Ghi chú cho nhân viên phụ trách<textarea id="p-note" rows="3" maxlength="2000" placeholder="Ví dụ: in logo, giao trước ngày…"></textarea></label>
+      </div>
+      <p class="error" id="p-error" role="alert"></p>
+      <div class="portal-actions">
+        <button type="button" class="btn secondary" id="p-send-quote">Gửi yêu cầu báo giá</button>
+        <button type="button" class="btn primary" id="p-send-order">Đặt hàng ngay</button>
+      </div>
+      <p class="muted small">Giá đã trừ chiết khấu riêng của quý khách, chưa gồm VAT. Báo giá / đơn hàng được nhân viên phụ trách kiểm tra và xác nhận.</p>
+    </div>
+  </section>
+
+  <!-- Đơn hàng -->
+  <section data-panel="orders" hidden>
+    <div id="p-orders"></div>
+    <p class="muted card" id="p-orders-empty" hidden>Chưa có đơn hàng.</p>
+  </section>
+</main>
+
+<dialog id="p-quote-dialog" class="modal">
+  <div class="modal-head"><div><span class="eyebrow">Báo giá</span><h2 id="pq-title">Báo giá</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body" id="pq-body"></div>
+  <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button><button type="button" class="btn primary" id="pq-order" hidden>Xác nhận đặt hàng</button></div>
+</dialog>
+<script type="module" src="customer.js"></script>
+</body>
+</html>

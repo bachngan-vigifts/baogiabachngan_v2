@@ -11,7 +11,7 @@ export const employees = pgTable('staff_members', {
   phone: text('phone').notNull().default(''),
   email: text('email').notNull(),
   name: text('name').notNull(),
-  role: text('role', { enum: ['employee', 'manager', 'supplier'] }).notNull().default('employee'),
+  role: text('role', { enum: ['employee', 'manager', 'supplier', 'customer'] }).notNull().default('employee'),
   positionId: text('position_id').references(() => positions.id),
   active: boolean('active').notNull().default(true),
   createdAt: text('created_at').notNull(),

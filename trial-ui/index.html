@@ -552,6 +552,44 @@
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary">Lưu xưởng in</button></div>
   </form>
 </dialog>
+<!-- Tài khoản trang khách hàng (mỗi khách có tài khoản riêng, chiết khấu riêng theo nhãn hàng) -->
+<dialog id="accounts-dialog" class="modal">
+  <div class="modal-head"><div><span class="eyebrow">Tài khoản trang khách hàng</span><h2 id="accounts-title">Khách hàng</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body">
+    <p class="muted small">Khách đăng nhập để xem và tạo báo giá, đặt hàng, theo dõi đơn. Khách không thấy tồn kho, giá nhập. Báo giá và đơn khách gửi chuyển cho nhân viên phụ trách xác nhận.</p>
+    <ul class="plain-list account-list" id="accounts-list"></ul>
+    <div class="banner" id="account-link" hidden>
+      <p><b>Gửi link này cho khách</b> để khách tự đặt mật khẩu (hiệu lực 15 phút):</p>
+      <div class="copy-row"><input id="account-link-url" readonly><button type="button" class="btn secondary small" id="account-link-copy">Chép link</button></div>
+    </div>
+    <form id="account-form" class="form-grid cols-2" novalidate>
+      <h3 class="span-2">Tạo tài khoản mới</h3>
+      <label>Tên người dùng<input name="name" required maxlength="200" placeholder="Ví dụ: Chị Lan – phòng mua hàng"></label>
+      <label>Email đăng nhập<input name="email" type="email" required maxlength="254"></label>
+      <label>Điện thoại<input name="phone" maxlength="40"></label>
+      <fieldset class="span-2 manager-only discount-fields"><legend>Chiết khấu riêng theo nhãn hàng (%) – chỉ Manager</legend>
+        <label>Minh Long<input name="d_minhLong" inputmode="decimal" placeholder="0"></label>
+        <label>Minh Long - Lys<input name="d_lys" inputmode="decimal" placeholder="0"></label>
+        <label>Lock&amp;Lock<input name="d_lock" inputmode="decimal" placeholder="0"></label>
+      </fieldset>
+      <p class="error span-2" id="account-error" role="alert"></p>
+      <div class="span-2"><button class="btn primary">Tạo tài khoản &amp; lấy link</button></div>
+    </form>
+  </div>
+</dialog>
+<dialog id="discount-dialog" class="modal narrow">
+  <form id="discount-form" novalidate>
+    <div class="modal-head"><div><span class="eyebrow">Chiết khấu riêng</span><h2 id="discount-name">Khách hàng</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid">
+      <label>Minh Long (%)<input name="d_minhLong" inputmode="decimal" placeholder="0"></label>
+      <label>Minh Long - Lys (%)<input name="d_lys" inputmode="decimal" placeholder="0"></label>
+      <label>Lock&amp;Lock (%)<input name="d_lock" inputmode="decimal" placeholder="0"></label>
+      <p class="muted small">Áp dụng cho báo giá / đơn khách tạo sau khi lưu. Giá khách thấy = giá bán lẻ − chiết khấu.</p>
+      <p class="error" id="discount-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary">Lưu chiết khấu</button></div>
+  </form>
+</dialog>
 <dialog id="new-quote-dialog" class="modal">
   <form id="new-quote-form" novalidate>
     <div class="modal-head"><div><span class="eyebrow">Tạo báo giá mới</span><h2>Tạo báo giá <span id="nq-type-name">HRC</span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
