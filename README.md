@@ -1,7 +1,9 @@
 # Bách Ngân – Báo giá & CRM (v2)
 
 Viết lại từ `bachngan-vigifts/bach-ngan-bao-gia` theo kiến trúc module. Giữ nền tảng:
-Cloudflare Workers + vinext, D1 (+ Neon, R2), Drizzle, shadcn/ui.
+Cloudflare Workers + vinext, Supabase PostgreSQL + Storage, Drizzle, shadcn/ui.
+
+Bản dùng thử và hướng dẫn kết nối: [docs/SUPABASE.md](docs/SUPABASE.md).
 
 ## Chạy
 
@@ -23,7 +25,7 @@ src/
   core/            hạ tầng dùng chung (db, lỗi, tiền tệ...) – không biết gì về nghiệp vụ
   db/schema.ts     điểm tập hợp schema cho drizzle-kit
   modules/<tên>/   mỗi module tự chứa: schema.ts · domain/ (hàm thuần) · repo/ (truy vấn Drizzle) · api/ (route) · ui/ · *.test.ts
-migrations/        SQL do drizzle-kit sinh; riêng 0001 (trigger) viết tay. KHÔNG xoá cả thư mục để sinh lại – thêm migration mới
+migrations/        lịch sử SQLite; migrations/postgres/ dùng cho Supabase; riêng 0001 (trigger) viết tay. KHÔNG xoá cả thư mục để sinh lại – thêm migration mới
 tests/             test xuyên module (schema, tương thích bản cũ, kiến trúc)
 docs/              ROADMAP.md · DATA-MODEL.md (tự sinh)
 ```
@@ -43,5 +45,5 @@ docs/              ROADMAP.md · DATA-MODEL.md (tự sinh)
 
 ```bash
 npm run bootstrap:manager -- --name "Họ tên" --email a@b.vn --phone 09xxxxxxxx --origin https://ten-mien.vn > manager.sql
-wrangler d1 execute DB --remote --file=manager.sql     # liên kết kích hoạt in ra STDERR, hiệu lực 24 giờ
+# Áp manager.sql trong Supabase SQL Editor; liên kết kích hoạt in ra STDERR, hiệu lực 24 giờ
 ```

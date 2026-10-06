@@ -5,7 +5,7 @@ import type { Role } from '../domain/roles.ts';
 
 /** Truy vấn quản lý nhân viên. Mọi câu UPDATE kèm điều kiện "người thao tác là Manager đang hoạt động" (phòng thủ nhiều lớp, như bản cũ). */
 const actorIsManager = (actorId: string) =>
-  sql`EXISTS (SELECT 1 FROM staff_members actor WHERE actor.id = ${actorId} AND actor.active = 1 AND actor.role = 'manager')`;
+  sql`EXISTS (SELECT 1 FROM staff_members actor WHERE actor.id = ${actorId} AND actor.active = true AND actor.role = 'manager')`;
 
 export async function listMembers(db: AnyDb) {
   const members = await db.select({
@@ -21,21 +21,21 @@ export const positionExists = async (db: AnyDb, id: string) => (await db.select(
 
 /** Email đã có người dùng chưa (không phân biệt hoa/thường như bản cũ), loại trừ một nhân viên khi sửa. */
 export async function emailTaken(db: AnyDb, email: string, excludeId?: string) {
-  const same = sql`${employees.email} = ${email} COLLATE NOCASE`;
+  const same = sql`lower(${employees.email}) = lower(${email})`;
   const rows = await db.select({ id: employees.id }).from(employees).where(excludeId === undefined ? same : and(same, ne(employees.id, excludeId))).limit(1);
   return rows.length > 0;
 }
 
 export const isUniqueViolation = (e: unknown): boolean => {
-  const err = e as { message?: string; cause?: { message?: string } };
-  return /UNIQUE constraint/i.test(`${err?.message ?? ''} ${err?.cause?.message ?? ''}`);
+  const err = e as { code?: string; cause?: { code?: string } };
+  return err?.code === '23505' || err?.cause?.code === '23505';
 };
 
 export async function createMember(db: AnyDb, p: { id: string; email: string; name: string; phone: string; role: Role; positionId: string; createdAt: string; tokenHash: string; expires: number }) {
-  await db.batch([
-    db.insert(employees).values({ id: p.id, email: p.email, name: p.name, role: p.role, positionId: p.positionId, active: true, createdAt: p.createdAt, phone: p.phone }),
-    db.insert(credentials).values({ memberId: p.id, activationHash: p.tokenHash, activationExpires: p.expires, version: 0 }),
-  ]);
+  await db.transaction(async tx => {
+    await tx.insert(employees).values({ id: p.id, email: p.email, name: p.name, role: p.role, positionId: p.positionId, active: true, createdAt: p.createdAt, phone: p.phone });
+    await tx.insert(credentials).values({ memberId: p.id, activationHash: p.tokenHash, activationExpires: p.expires, version: 0 });
+  });
 }
 
 export const findActiveMember = async (db: AnyDb, id: unknown) =>
@@ -47,31 +47,32 @@ export const isSapoLinked = async (db: AnyDb, sapoId: unknown) =>
 
 /** Sửa hồ sơ + chức vụ + khoá/mở, đồng thời huỷ mọi phiên của người đó (quyền đổi thì phải đăng nhập lại). Trả về số dòng đã sửa. */
 export async function updateMember(db: AnyDb, actorId: string, p: { id: string; name: string; email: string; phone: string; role: Role; positionId: string; active: boolean }): Promise<number> {
-  const [res] = await db.batch([
-    db.update(employees).set({ name: p.name, email: p.email, phone: p.phone, role: p.role, positionId: p.positionId, active: p.active })
-      .where(and(eq(employees.id, p.id), actorIsManager(actorId))),
-    db.delete(sessions).where(eq(sessions.memberId, p.id)),
-  ]);
-  return res.meta.changes;
+  return db.transaction(async tx => {
+    const rows = await tx.update(employees).set({ name: p.name, email: p.email, phone: p.phone, role: p.role, positionId: p.positionId, active: p.active })
+      .where(and(eq(employees.id, p.id), actorIsManager(actorId))).returning({ id: employees.id });
+    if (rows.length) await tx.delete(sessions).where(eq(sessions.memberId, p.id));
+    return rows.length;
+  });
 }
 
 /** "Xoá" nhân viên = khoá tài khoản (không xoá dữ liệu vì báo giá, đơn... còn tham chiếu) + huỷ mọi phiên. */
 export async function deactivateMember(db: AnyDb, actorId: string, id: string): Promise<number> {
-  const [res] = await db.batch([
-    db.update(employees).set({ active: false }).where(and(eq(employees.id, id), ne(employees.id, actorId), actorIsManager(actorId))),
-    db.delete(sessions).where(eq(sessions.memberId, id)),
-  ]);
-  return res.meta.changes;
+  return db.transaction(async tx => {
+    const rows = await tx.update(employees).set({ active: false })
+      .where(and(eq(employees.id, id), ne(employees.id, actorId), actorIsManager(actorId))).returning({ id: employees.id });
+    if (rows.length) await tx.delete(sessions).where(eq(sessions.memberId, id));
+    return rows.length;
+  });
 }
 
 /** Cấp lại liên kết kích hoạt: xoá mật khẩu, tăng phiên bản (huỷ phiên cũ ngay cả khi chưa bị xoá) và xoá mọi phiên. */
 export async function resetCredentials(db: AnyDb, memberId: string, tokenHash: string, expires: number) {
-  await db.batch([
-    db.update(credentials).set({ activationHash: tokenHash, activationExpires: expires, passwordHash: null, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, memberId)),
-    db.delete(sessions).where(eq(sessions.memberId, memberId)),
-  ]);
+  await db.transaction(async tx => {
+    await tx.update(credentials).set({ activationHash: tokenHash, activationExpires: expires, passwordHash: null, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, memberId));
+    await tx.delete(sessions).where(eq(sessions.memberId, memberId));
+  });
 }
 
 export async function updatePhone(db: AnyDb, id: string, phone: string): Promise<number> {
-  return (await db.update(employees).set({ phone }).where(eq(employees.id, id)).run()).meta.changes;
+  return (await db.update(employees).set({ phone }).where(eq(employees.id, id)).returning({ id: employees.id })).length;
 }

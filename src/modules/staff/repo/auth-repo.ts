@@ -4,7 +4,7 @@ import { authAttempts, credentials, employees, positions, sessions } from '../sc
 import { RATE_WINDOW_SECONDS, sha256Hex, type MemberRow } from '../domain/session.ts';
 
 /**
- * Truy vấn xác thực. Mỗi hàm là một thao tác nhỏ; những chuỗi cần nguyên tử dùng `db.batch` (D1 không có transaction).
+ * Truy vấn xác thực. Mỗi hàm là một thao tác nhỏ; những chuỗi cần nguyên tử dùng transaction PostgreSQL.
  * `now` là giây Unix, truyền vào để test điều khiển được thời gian.
  */
 const memberColumns = {
@@ -48,14 +48,14 @@ export async function findLoginRow(db: AnyDb, email: string) {
 
 /** Tạo phiên mới và dọn phiên/lần thử đã hết hạn trong cùng một lô. */
 export async function createSession(db: AnyDb, p: { tokenHash: string; memberId: string; version: number; now: number; lifetime: number }) {
-  await db.batch([
-    db.insert(sessions).values({ hash: p.tokenHash, memberId: p.memberId, version: p.version, expires: p.now + p.lifetime }),
-    db.delete(sessions).where(lte(sessions.expires, p.now)),
-    db.delete(authAttempts).where(lte(authAttempts.expires, p.now)),
-  ]);
+  await db.transaction(async tx => {
+    await tx.insert(sessions).values({ hash: p.tokenHash, memberId: p.memberId, version: p.version, expires: p.now + p.lifetime });
+    await tx.delete(sessions).where(lte(sessions.expires, p.now));
+    await tx.delete(authAttempts).where(lte(authAttempts.expires, p.now));
+  });
 }
 
-export const deleteSession = (db: AnyDb, tokenHash: string) => db.delete(sessions).where(eq(sessions.hash, tokenHash)).run();
+export const deleteSession = (db: AnyDb, tokenHash: string) => db.delete(sessions).where(eq(sessions.hash, tokenHash)).execute();
 
 export async function findActivation(db: AnyDb, tokenHash: string, now: number) {
   const rows = await db.select({ memberId: credentials.memberId, email: employees.email, expires: credentials.activationExpires })
@@ -69,15 +69,16 @@ export async function findActivation(db: AnyDb, tokenHash: string, now: number) 
  * nên hai người bấm cùng lúc thì chỉ một người thắng. Trả về false nếu liên kết đã bị dùng.
  */
 export async function completeActivation(db: AnyDb, p: { memberId: string; email: string; tokenHash: string; passwordHash: string; now: number }): Promise<boolean> {
-  const res = await db.update(credentials)
-    .set({ passwordHash: p.passwordHash, activationHash: null, activationExpires: null, version: sql`${credentials.version} + 1` })
-    .where(and(eq(credentials.memberId, p.memberId), eq(credentials.activationHash, p.tokenHash), gt(credentials.activationExpires, p.now))).run();
-  if (!res.meta.changes) return false;
-  await db.batch([
-    db.delete(sessions).where(eq(sessions.memberId, p.memberId)),
-    db.delete(authAttempts).where(eq(authAttempts.key, sha256Hex('email:' + p.email))),
-  ]);
-  return true;
+  return db.transaction(async tx => {
+    const rows = await tx.update(credentials)
+      .set({ passwordHash: p.passwordHash, activationHash: null, activationExpires: null, version: sql`${credentials.version} + 1` })
+      .where(and(eq(credentials.memberId, p.memberId), eq(credentials.activationHash, p.tokenHash), gt(credentials.activationExpires, p.now)))
+      .returning({ memberId: credentials.memberId });
+    if (!rows.length) return false;
+    await tx.delete(sessions).where(eq(sessions.memberId, p.memberId));
+    await tx.delete(authAttempts).where(eq(authAttempts.key, sha256Hex('email:' + p.email)));
+    return true;
+  });
 }
 
 export async function getPasswordHash(db: AnyDb, memberId: string): Promise<string | null> {
@@ -87,8 +88,8 @@ export async function getPasswordHash(db: AnyDb, memberId: string): Promise<stri
 
 /** Đổi mật khẩu: tăng phiên bản và xoá MỌI phiên của người đó (kể cả phiên hiện tại – phải đăng nhập lại). */
 export async function changePassword(db: AnyDb, memberId: string, passwordHash: string) {
-  await db.batch([
-    db.update(credentials).set({ passwordHash, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, memberId)),
-    db.delete(sessions).where(eq(sessions.memberId, memberId)),
-  ]);
+  await db.transaction(async tx => {
+    await tx.update(credentials).set({ passwordHash, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, memberId));
+    await tx.delete(sessions).where(eq(sessions.memberId, memberId));
+  });
 }

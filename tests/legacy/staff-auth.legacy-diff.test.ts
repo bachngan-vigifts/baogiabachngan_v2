@@ -16,9 +16,9 @@ async function observe(d: Driver, steps: (rec: (label: string, p: Promise<any>) 
   const rec = async (label: string, p: Promise<any>) => { const r = await p; log.push({ label, status: r.status, body: r.body, cookie: mask(r.cookie) }); return r; };
   await steps(rec, d);
   const q = d.d1.sqlite;
-  log.push({ label: 'DB', attempts: q.prepare('SELECT key, count FROM staff_auth_attempts ORDER BY key').all().map(r => ({ ...r })),
-    sessions: q.prepare('SELECT member_id, COUNT(*) n FROM staff_sessions GROUP BY member_id ORDER BY member_id').all().map(r => ({ ...r })),
-    creds: q.prepare('SELECT member_id, version, password_hash IS NOT NULL pw, activation_hash IS NOT NULL act FROM staff_credentials ORDER BY member_id').all().map(r => ({ ...r })) });
+  log.push({ label: 'DB', attempts: (await q.prepare('SELECT key, count FROM staff_auth_attempts ORDER BY key').all()).map(r => ({ ...r })),
+    sessions: (await q.prepare('SELECT member_id, COUNT(*) n FROM staff_sessions GROUP BY member_id ORDER BY member_id').all()).map(r => ({ ...r })),
+    creds: (await q.prepare('SELECT member_id, version, password_hash IS NOT NULL pw, activation_hash IS NOT NULL act FROM staff_credentials ORDER BY member_id').all()).map(r => ({ ...r })) });
   return log;
 }
 
@@ -76,13 +76,13 @@ test('GIỚI HẠN THỬ ↔ bản cũ: cùng ngưỡng 10 lần/email, chặn c
   });
   await compare('giới hạn IP', async (rec, d) => {
     const key = sha256Hex('ip:unknown');
-    d.d1.sqlite.prepare('INSERT INTO staff_auth_attempts (key,count,expires) VALUES (?,99,?)').run(key, T.now + 900); // đã dùng 99/100
+    (await d.d1.sqlite.prepare('INSERT INTO staff_auth_attempts (key,count,expires) VALUES (?,99,?)').run(key, T.now + 900)); // đã dùng 99/100
     await rec('lần 100', login(d, 'emp@x.vn'));
     await rec('lần 101', login(d, 'mgr@x.vn'));
     await rec('IP khác', login(d, 'mgr@x.vn', PASSWORD, '5.5.5.5'));
   });
   await compare('hết cửa sổ đếm', async (rec, d) => {
-    d.d1.sqlite.prepare('INSERT INTO staff_auth_attempts (key,count,expires) VALUES (?,50,?)').run(sha256Hex('email:emp@x.vn'), T.now - 5); // đã hết hạn
+    (await d.d1.sqlite.prepare('INSERT INTO staff_auth_attempts (key,count,expires) VALUES (?,50,?)').run(sha256Hex('email:emp@x.vn'), T.now - 5)); // đã hết hạn
     await rec('đếm lại từ đầu', login(d, 'emp@x.vn', 'sai-sai-sai'));
   });
 });
@@ -95,14 +95,14 @@ test('PHIÊN ↔ bản cũ: /me, hết hạn, khoá tài khoản, đổi phiên 
     const emp = cookieOf(await rec('login emp', login(d, 'emp@x.vn')));
     await rec('/me ok', d.call('/me', { cookie: emp }));
     await rec('/me cookie lẫn cookie khác', d.call('/me', { cookie: `a=1; ${emp}; b=2` }));
-    d.d1.sqlite.prepare("UPDATE staff_sessions SET expires = ? WHERE member_id='emp'").run(T.now - 1);
+    (await d.d1.sqlite.prepare("UPDATE staff_sessions SET expires = ? WHERE member_id='emp'").run(T.now - 1));
     await rec('/me hết hạn', d.call('/me', { cookie: emp }));
     const mgr = cookieOf(await rec('login mgr', login(d, 'mgr@x.vn')));
-    d.d1.sqlite.prepare("UPDATE staff_members SET active=0 WHERE id='mgr'").run();
+    (await d.d1.sqlite.prepare("UPDATE staff_members SET active=0 WHERE id='mgr'").run());
     await rec('/me bị khoá', d.call('/me', { cookie: mgr }));
-    d.d1.sqlite.prepare("UPDATE staff_members SET active=1 WHERE id='mgr'").run();
+    (await d.d1.sqlite.prepare("UPDATE staff_members SET active=1 WHERE id='mgr'").run());
     await rec('/me mở khoá lại', d.call('/me', { cookie: mgr }));
-    d.d1.sqlite.prepare("UPDATE staff_credentials SET version=version+1 WHERE member_id='mgr'").run();
+    (await d.d1.sqlite.prepare("UPDATE staff_credentials SET version=version+1 WHERE member_id='mgr'").run());
     await rec('/me đổi phiên bản', d.call('/me', { cookie: mgr }));
     const emp2 = cookieOf(await rec('login emp lần 2', login(d, 'emp@x.vn')));
     await rec('logout', d.call('/logout', { body: {}, cookie: emp2 }));

@@ -1,7 +1,10 @@
 // Sinh docs/DATA-MODEL.md từ schema thật. Chạy: npm run docs:data-model
 import { writeFileSync } from 'node:fs';
-import { getTableConfig } from 'drizzle-orm/sqlite-core';
-import { tablesIn } from '../tests/db/helpers.ts';
+import { getTableConfig, PgTable, type AnyPgTable } from 'drizzle-orm/pg-core';
+import { is } from 'drizzle-orm';
+import { getTableConfig as getLegacyConfig, SQLiteTable, type AnySQLiteTable } from 'drizzle-orm/sqlite-core';
+const tablesIn = (mod: Record<string, unknown>) => Object.values(mod).filter(v => is(v, PgTable)) as AnyPgTable[];
+const legacyTablesIn = (mod: Record<string, unknown>) => Object.values(mod).filter(v => is(v, SQLiteTable)) as AnySQLiteTable[];
 import * as legacy from '../tests/db/fixtures/legacy-schema.ts';
 import { legacyRuntimeDdl } from '../tests/db/fixtures/legacy-runtime-ddl.ts';
 import * as staff from '../src/modules/staff/schema.ts';
@@ -23,7 +26,7 @@ const mods: [string, Record<string, unknown>, string][] = [
   ['suppliers', suppliers, 'Hàng sắp về và đơn nhà cung cấp'], ['printing', printing, 'Xưởng in'], ['crm', crm, 'CRM và bản sao AppSheet VIGIFTS'],
   ['work', work, 'Báo cáo công việc, ca, tiền mặt'], ['notifications', notifications, 'Thông báo web/push'], ['integrations', integrations, 'Sapo'],
 ];
-const legacyCols = new Map(tablesIn(legacy).map(getTableConfig).map(t => [t.name, new Set(t.columns.map(c => c.name))]));
+const legacyCols = new Map(legacyTablesIn(legacy).map(getLegacyConfig).map(t => [t.name, new Set(t.columns.map(c => c.name))]));
 const runtime = new Set(Object.keys(legacyRuntimeDdl));
 
 let total = 0;

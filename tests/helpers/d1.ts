@@ -2,8 +2,6 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createDb } from '../../src/core/db/client.ts';
-import * as schema from '../../src/db/schema.ts';
 
 /**
  * Giả lập Cloudflare D1 trên node:sqlite, đủ trung thực để chạy ĐÚNG đường code production (`drizzle-orm/d1`):
@@ -51,11 +49,4 @@ export class TestD1 {
       for (const st of readFileSync(join(dir, f), 'utf8').split('--> statement-breakpoint')) if (st.trim()) this.sqlite.exec(st);
     return this;
   }
-}
-
-const migrationsDir = join(import.meta.dirname, '..', '..', 'migrations');
-/** DB thử nghiệm với schema v2 đã migrate, kèm kết nối Drizzle D1 giống production. */
-export function createTestDb() {
-  const d1 = new TestD1().migrate(migrationsDir);
-  return { d1, db: createDb(d1, schema) };
 }

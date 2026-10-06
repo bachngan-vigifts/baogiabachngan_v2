@@ -1,19 +1,18 @@
-import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
+import postgres from 'postgres';
+import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-/** Kiểu cơ sở dữ liệu mà các repo nhận vào: Drizzle trên D1 (có `batch`). Repo không cần biết schema tổng. */
+// Schema được truyền từ nơi lắp ráp ứng dụng; core không phụ thuộc module nghiệp vụ.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyDb = DrizzleD1Database<any>;
+export type AnyDb = PostgresJsDatabase<any>;
 
-/** Phần của Cloudflare D1 mà ứng dụng dùng (khai báo tối thiểu để không phụ thuộc @cloudflare/workers-types). */
-export interface D1Like {
-  prepare(sql: string): unknown;
-  batch(statements: unknown[]): Promise<unknown[]>;
+/** Tạo một kết nối cho mỗi request trên Workers, dùng Supabase transaction pooler. */
+export function createDb<S extends Record<string, unknown>>(databaseUrl: string, schema: S) {
+  if (!databaseUrl) throw new Error('Thiếu DATABASE_URL cho Supabase.');
+  const client = postgres(databaseUrl, {
+    prepare: false, max: 1, ssl: 'require', idle_timeout: 20, connect_timeout: 10,
+  });
+  return drizzle(client, { schema });
 }
 
-/**
- * Tạo kết nối Drizzle trên D1. `schema` do nơi lắp ráp ứng dụng truyền vào (src/app) – lõi không import module nào.
- * Ghi nhiều câu lệnh nguyên tử: dùng `db.batch([...])` (D1 không hỗ trợ `db.transaction`).
- */
-export function createDb<S extends Record<string, unknown>>(d1: D1Like, schema: S) {
-  return drizzle(d1 as never, { schema });
-}
+/** Gọi trong finally (hoặc ctx.waitUntil) sau khi xử lý request để đóng kết nối. */
+export const closeDb = (db: AnyDb & { $client: postgres.Sql }) => db.$client.end({ timeout: 5 });

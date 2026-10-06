@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { employees } from '../staff/schema.ts';
 import { enumCheck } from '../../core/db/enum-check.ts';
 
@@ -12,7 +12,7 @@ import { enumCheck } from '../../core/db/enum-check.ts';
  *   supplier_accounts  tài khoản đăng nhập NCC thuộc NCC nào → quyết định tài khoản đó thấy đơn nào
  * Không xoá NCC (đã có đơn tham chiếu): ngừng hoạt động bằng `active = 0`.
  */
-export const suppliers = sqliteTable('suppliers', {
+export const suppliers = pgTable('suppliers', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   /** Tên đã chuẩn hoá (bỏ dấu, hạ chữ, gộp khoảng trắng) do ứng dụng tính bằng JS – tránh lower() ASCII của SQLite. */
@@ -22,7 +22,7 @@ export const suppliers = sqliteTable('suppliers', {
   phone: text('phone').notNull().default(''),
   email: text('email').notNull().default(''),
   note: text('note').notNull().default(''),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  active: boolean('active').notNull().default(true),
   createdAt: text('created_at').notNull(),
   createdBy: text('created_by').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -31,9 +31,9 @@ export const suppliers = sqliteTable('suppliers', {
   uniqueIndex('idx_suppliers_name_key').on(t.nameKey),
   index('idx_suppliers_active').on(t.active, t.name),
   check('chk_suppliers_name', sql`length(trim(${t.name})) > 0 AND length(${t.nameKey}) > 0`),
-]);
+]).enableRLS();
 
-export const supplierContacts = sqliteTable('supplier_contacts', {
+export const supplierContacts = pgTable('supplier_contacts', {
   id: text('id').primaryKey(),
   supplierId: text('supplier_id').notNull().references(() => suppliers.id, { onDelete: 'cascade' }),
   /** order = nhận đơn (To), cc = đồng gửi. */
@@ -46,18 +46,18 @@ export const supplierContacts = sqliteTable('supplier_contacts', {
   uniqueIndex('idx_supplier_contacts_once').on(t.supplierId, t.kind, sql`lower(${t.email})`),
   enumCheck('chk_supplier_contacts_kind', t.kind, ['order', 'cc']),
   check('chk_supplier_contacts_email', sql`${t.email} LIKE '%_@_%._%' AND ${t.email} NOT LIKE '% %'`),
-]);
+]).enableRLS();
 
 /**
  * Tài khoản đăng nhập NCC thuộc NCC nào. Mỗi tài khoản thuộc đúng MỘT NCC (khoá chính = member_id);
  * một NCC có nhiều tài khoản. Ứng dụng chỉ cho gắn tài khoản NCC (chức vụ `supplier`) đang hoạt động.
  */
-export const supplierAccounts = sqliteTable('supplier_accounts', {
+export const supplierAccounts = pgTable('supplier_accounts', {
   memberId: text('member_id').primaryKey().references(() => employees.id, { onDelete: 'cascade' }),
   supplierId: text('supplier_id').notNull().references(() => suppliers.id),
   createdAt: text('created_at').notNull(),
   createdBy: text('created_by').notNull(),
-}, t => [index('idx_supplier_accounts_supplier').on(t.supplierId)]);
+}, t => [index('idx_supplier_accounts_supplier').on(t.supplierId)]).enableRLS();
 
 /*
  * Hàng sắp về + đơn đặt hàng NCC.
@@ -74,7 +74,7 @@ export const supplierAccounts = sqliteTable('supplier_accounts', {
  * Các số tổng (subtotal, vat, total, depositAmount, remainingAmount) là DỮ LIỆU SUY RA từ dòng hàng
  * – tính trong domain, không lưu cột để khỏi lệch.
  */
-export const incomingShipments = sqliteTable('incoming_shipments', {
+export const incomingShipments = pgTable('incoming_shipments', {
   id: text('id').primaryKey(),
   ticketNumber: text('ticket_number').notNull(),
   source: text('source', { enum: ['incoming-stock', 'supplier-order', 'supplier-delivery-note'] }).notNull().default('incoming-stock'),
@@ -99,11 +99,11 @@ export const incomingShipments = sqliteTable('incoming_shipments', {
   approvedBy: text('approved_by'),
 
   /** Tỷ lệ cọc %, chỉ có với đơn NCC (mặc định 30). */
-  depositRate: real('deposit_rate'),
+  depositRate: doublePrecision('deposit_rate'),
   depositRequestedAt: text('deposit_requested_at'),
   depositRequestedBy: text('deposit_requested_by'),
   /** Số tiền đã thanh toán. Bản cũ lưu trùng hai tên `paidAmount` và `depositPaidAmount`; gộp thành một cột. */
-  paidAmount: integer('paid_amount').notNull().default(0),
+  paidAmount: doublePrecision('paid_amount').notNull().default(0),
   depositPaidAt: text('deposit_paid_at'),
   depositPaidBy: text('deposit_paid_by'),
 
@@ -151,46 +151,46 @@ export const incomingShipments = sqliteTable('incoming_shipments', {
   enumCheck('chk_incoming_shipments_ready_mode', t.deliveryReadyMode, ['full', 'partial']),
   check('chk_incoming_shipments_deposit', sql`${t.depositRate} IS NULL OR (${t.depositRate} >= 0 AND ${t.depositRate} <= 100)`),
   check('chk_incoming_shipments_paid', sql`${t.paidAmount} >= 0`),
-]);
+]).enableRLS();
 
-export const incomingShipmentLines = sqliteTable('incoming_shipment_lines', {
+export const incomingShipmentLines = pgTable('incoming_shipment_lines', {
   id: text('id').primaryKey(),
   shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id, { onDelete: 'cascade' }),
-  lineNo: integer('line_no').notNull(),
+  lineNo: bigint('line_no', { mode: 'number' }).notNull(),
   sku: text('sku').notNull(),
   name: text('name').notNull().default(''),
   unit: text('unit').notNull().default(''),
-  quantity: real('quantity').notNull(),
+  quantity: doublePrecision('quantity').notNull(),
 
   /** Đơn giá niêm yết / VAT / phí in – chỉ bắt buộc với đơn NCC. */
-  price: integer('price'),
-  manualPrice: integer('manual_price', { mode: 'boolean' }).notNull().default(false),
-  taxRate: real('tax_rate'),
+  price: doublePrecision('price'),
+  manualPrice: boolean('manual_price').notNull().default(false),
+  taxRate: doublePrecision('tax_rate'),
   printDescription: text('print_description').notNull().default(''),
-  printFee: integer('print_fee').notNull().default(0),
+  printFee: doublePrecision('print_fee').notNull().default(0),
   /** Khoá R2 hoặc URL https. Bản cũ có thể lưu cả ảnh base64 (tới ~950 KB) trong JSON; chuyển dữ liệu phải đưa ảnh đó lên R2. */
   designImage: text('design_image').notNull().default(''),
 
   /** Quy cách đóng gói tại thời điểm tạo phiếu (ảnh chụp, không đổi theo catalog). */
-  perCarton: real('per_carton'),
-  cartonWeight: real('carton_weight'),
-  cartonLength: real('carton_length'),
-  cartonWidth: real('carton_width'),
-  cartonHeight: real('carton_height'),
-  cartons: real('cartons'),
-  weightKg: real('weight_kg'),
-  volumeM3: real('volume_m3'),
+  perCarton: doublePrecision('per_carton'),
+  cartonWeight: doublePrecision('carton_weight'),
+  cartonLength: doublePrecision('carton_length'),
+  cartonWidth: doublePrecision('carton_width'),
+  cartonHeight: doublePrecision('carton_height'),
+  cartons: doublePrecision('cartons'),
+  weightKg: doublePrecision('weight_kg'),
+  volumeM3: doublePrecision('volume_m3'),
 
   /** % chiết khấu mua vào do manager nhập khi duyệt (itemDiscounts). */
-  purchaseDiscount: real('purchase_discount'),
+  purchaseDiscount: doublePrecision('purchase_discount'),
   /** Phần NCC xác nhận (supplierConfirmations): có thể ghi đè chiết khấu, hẹn ngày giao, ghi chú. */
-  supplierConfirmed: integer('supplier_confirmed', { mode: 'boolean' }).notNull().default(false),
-  confirmedPurchaseDiscount: real('confirmed_purchase_discount'),
+  supplierConfirmed: boolean('supplier_confirmed').notNull().default(false),
+  confirmedPurchaseDiscount: doublePrecision('confirmed_purchase_discount'),
   promisedDate: text('promised_date').notNull().default(''),
   supplierNote: text('supplier_note').notNull().default(''),
   /** Số lượng NCC báo sẵn sàng giao (supplierDeliveryReadyRows) và số lượng đã giao thực tế. */
-  deliveryReadyQuantity: real('delivery_ready_quantity'),
-  deliveredQuantity: real('delivered_quantity'),
+  deliveryReadyQuantity: doublePrecision('delivery_ready_quantity'),
+  deliveredQuantity: doublePrecision('delivered_quantity'),
   stockSyncedAt: text('stock_synced_at'),
 }, t => [
   uniqueIndex('idx_incoming_shipment_lines_order').on(t.shipmentId, t.lineNo),
@@ -203,20 +203,20 @@ export const incomingShipmentLines = sqliteTable('incoming_shipment_lines', {
   check('chk_incoming_lines_print_fee', sql`${t.printFee} >= 0`),
   check('chk_incoming_lines_discount', sql`${t.purchaseDiscount} IS NULL OR (${t.purchaseDiscount} >= 0 AND ${t.purchaseDiscount} <= 100)`),
   check('chk_incoming_lines_confirmed_discount', sql`${t.confirmedPurchaseDiscount} IS NULL OR (${t.confirmedPurchaseDiscount} >= 0 AND ${t.confirmedPurchaseDiscount} <= 100)`),
-]);
+]).enableRLS();
 
 /**
  * File đính kèm của phiếu (hiện chỉ có bản ký xác nhận của NCC). Bản cũ lưu thành object `supplierSignatureFile`
  * trong JSON; mỗi phiếu có tối đa một file, tải lên lại thì thay. Nội dung nằm trên R2 (khoá `r2_key`).
  */
-export const incomingShipmentFiles = sqliteTable('incoming_shipment_files', {
+export const incomingShipmentFiles = pgTable('incoming_shipment_files', {
   id: text('id').primaryKey(),
   shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id, { onDelete: 'cascade' }),
   kind: text('kind', { enum: ['signature'] }).notNull().default('signature'),
   r2Key: text('r2_key').notNull(),
   fileName: text('file_name').notNull(),
   mimeType: text('mime_type', { enum: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] }).notNull(),
-  sizeBytes: integer('size_bytes').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
   uploadedAt: text('uploaded_at').notNull(),
   uploadedBy: text('uploaded_by').notNull(),
   downloadedAt: text('downloaded_at'),
@@ -227,10 +227,10 @@ export const incomingShipmentFiles = sqliteTable('incoming_shipment_files', {
   enumCheck('chk_incoming_shipment_files_mime', t.mimeType, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']),
   // Giới hạn 6 MB như bản cũ.
   check('chk_incoming_shipment_files_size', sql`${t.sizeBytes} > 0 AND ${t.sizeBytes} <= 6291456`),
-]);
+]).enableRLS();
 
 /** Yêu cầu xin hàng của NCC (bản cũ: mảng `supplierStockRequests` trong cùng file index). */
-export const supplierStockRequests = sqliteTable('supplier_stock_requests', {
+export const supplierStockRequests = pgTable('supplier_stock_requests', {
   id: text('id').primaryKey(),
   status: text('status', { enum: ['pending', 'accepted', 'rejected'] }).notNull().default('pending'),
   supplierName: text('supplier_name').notNull().default(''),
@@ -243,21 +243,21 @@ export const supplierStockRequests = sqliteTable('supplier_stock_requests', {
   respondedAt: text('responded_at'),
   respondedBy: text('responded_by'),
   responseNote: text('response_note').notNull().default(''),
-}, t => [index('idx_supplier_stock_requests_status').on(t.status, t.createdAt), enumCheck('chk_supplier_stock_requests_status', t.status, ['pending', 'accepted', 'rejected'])]);
+}, t => [index('idx_supplier_stock_requests_status').on(t.status, t.createdAt), enumCheck('chk_supplier_stock_requests_status', t.status, ['pending', 'accepted', 'rejected'])]).enableRLS();
 
-export const supplierStockRequestLines = sqliteTable('supplier_stock_request_lines', {
+export const supplierStockRequestLines = pgTable('supplier_stock_request_lines', {
   requestId: text('request_id').notNull().references(() => supplierStockRequests.id, { onDelete: 'cascade' }),
-  lineNo: integer('line_no').notNull(),
+  lineNo: bigint('line_no', { mode: 'number' }).notNull(),
   shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id, { onDelete: 'cascade' }),
   sku: text('sku').notNull(),
   name: text('name').notNull().default(''),
   unit: text('unit').notNull().default(''),
-  quantity: real('quantity').notNull(),
+  quantity: doublePrecision('quantity').notNull(),
   /** Số lượng tối đa có thể xin (còn lại trên đơn). */
-  maxQuantity: real('max_quantity').notNull(),
+  maxQuantity: doublePrecision('max_quantity').notNull(),
   arrivalDate: text('arrival_date').notNull().default(''),
 }, t => [
   primaryKey({ columns: [t.requestId, t.lineNo] }),
   index('idx_supplier_stock_request_lines_shipment').on(t.shipmentId),
   check('chk_stock_request_qty', sql`${t.quantity} > 0 AND ${t.quantity} <= ${t.maxQuantity}`),
-]);
+]).enableRLS();

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { TestD1, createTestDb } from '../helpers/d1.ts';
+import { TestD1 } from '../helpers/d1.ts';
+import { createTestDb, type PgFixture } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createStaffRouter, type StaffEnv } from '../../src/modules/staff/api/auth-routes.ts';
 import { json } from '../../src/core/http/router.ts';
@@ -9,7 +10,7 @@ import { legacyMigrationsDir } from './harness.ts';
 export const O = 'https://staff.test';
 export interface Call { method?: string; body?: unknown; raw?: string; cookie?: string; origin?: string | null; type?: string | null; ip?: string }
 export interface Result { status: number; body: any; cookie: string | null }
-export interface Driver { d1: TestD1; call(path: string, c?: Call): Promise<Result> }
+export interface Driver { d1: TestD1 | { sqlite: PgFixture }; call(path: string, c?: Call): Promise<Result> }
 
 export const req = (path: string, c: Call = {}) => {
   const method = c.method ?? (c.body !== undefined || c.raw !== undefined ? 'POST' : 'GET');
@@ -29,7 +30,7 @@ export async function legacyDriver(staffApi: (req: Request, env: unknown) => Pro
   return { d1, call: async (p, c) => read(await staffApi(req(p, c), { DB: d1 })) };
 }
 export async function newDriver(): Promise<Driver> {
-  const { d1, db } = createTestDb(); await seedStaff(d1);
+  const { d1, db } = (await createTestDb()); await seedStaff(d1);
   const router = createStaffRouter();
   router.get('/customers', () => json({ ok: true }), 'business'); // đại diện một route nghiệp vụ để so quyền NCC
   const env: StaffEnv = { db, passwordIterations: 1000 };

@@ -1,10 +1,10 @@
-import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
+import { pgTable, text, index } from 'drizzle-orm/pg-core';
 
 /**
  * Nhật ký thao tác dùng chung cho mọi module (duyệt báo giá, đổi giá, sao lưu...).
  * `work_audit` của module work được giữ nguyên vì có luồng riêng.
  */
-export const auditLogs = sqliteTable('audit_logs', {
+export const auditLogs = pgTable('audit_logs', {
   id: text('id').primaryKey(),
   actorId: text('actor_id'),
   module: text('module').notNull(),
@@ -16,4 +16,4 @@ export const auditLogs = sqliteTable('audit_logs', {
 }, t => [
   index('idx_audit_logs_entity').on(t.entityType, t.entityId, t.createdAt),
   index('idx_audit_logs_actor').on(t.actorId, t.createdAt),
-]);
+]).enableRLS();

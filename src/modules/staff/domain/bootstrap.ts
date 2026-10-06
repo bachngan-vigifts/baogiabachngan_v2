@@ -3,7 +3,7 @@ import { newToken, sha256Hex } from './session.ts';
 
 /**
  * Tạo Manager đầu tiên khi DB còn trống (bản cũ nạp danh sách nhân viên thật ngay trong mã nguồn – bản mới thì không).
- * Trả về các câu SQL để chạy bằng `wrangler d1 execute` và liên kết kích hoạt để gửi cho người đó.
+ * Trả về các câu SQL để chạy bằng `Supabase SQL Editor` và liên kết kích hoạt để gửi cho người đó.
  * Liên kết hiệu lực `ttlSeconds` (mặc định 24 giờ vì được phát tay, không phải bấm ngay như liên kết tạo trên trang quản lý).
  */
 export const sqlLiteral = (v: string | number): string => typeof v === 'number' ? String(v) : `'${v.replace(/'/g, "''")}'`;
@@ -17,7 +17,7 @@ export function buildManagerBootstrap(i: BootstrapInput): { sql: string[]; url: 
   return {
     id, url: activationLink(i.origin, email, token),
     sql: [
-      `INSERT INTO staff_members (id,email,name,role,position_id,active,created_at,phone) VALUES (${q(id)},${q(email)},${q(name)},${q(memberRole('manager'))},'manager',1,${q(new Date(i.nowSec * 1000).toISOString())},${q(phone)});`,
+      `INSERT INTO staff_members (id,email,name,role,position_id,active,created_at,phone) VALUES (${q(id)},${q(email)},${q(name)},${q(memberRole('manager'))},'manager',true,${q(new Date(i.nowSec * 1000).toISOString())},${q(phone)});`,
       `INSERT INTO staff_credentials (member_id,activation_hash,activation_expires,version) VALUES (${q(id)},${q(sha256Hex(token))},${expires},0);`,
     ],
   };

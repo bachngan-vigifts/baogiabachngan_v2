@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { searchText, quoteHeaderIndex, quoteLineRows } from './quote-index.ts';
 import { cleanQuotation } from './quotation-schema.ts';
 import { totals, profit, type QuoteDoc, type QuoteRow } from './quote-math.ts';
-import { createTestDb } from '../../../../tests/helpers/d1.ts';
+import { createTestDb } from '../../../../tests/helpers/postgres.ts';
 
 const raw = (o: object = {}): any => ({ type: 'B2B', quoteNo: 'BG-1', date: '2026-10-05', customer: 'Công ty Đông Á', vat: 8,
   rows: [{ sku: 'A1', name: 'Nồi Đa Năng', qty: 2, price: 100000, discount: 10, taxRate: 5, printFee: 2000, costPrice: 50000, brand: 'Lock', unit: 'cái', deliveryDate: '20/10/2026' },
@@ -50,11 +50,11 @@ test('BẤT BIẾN: tổng tiền/lợi nhuận tính từ các dòng đã chu�
 });
 
 test('dòng hàng chuẩn hoá ghi được vào bảng quote_lines (đủ ràng buộc), kể cả giá lẻ và số lượng lẻ', async () => {
-  const { d1 } = createTestDb();
-  d1.sqlite.exec("INSERT INTO staff_members (id,email,name,created_at) VALUES ('m1','a@b.vn','An','2026-01-01')");
-  d1.sqlite.exec("INSERT INTO staff_quotations (id,creator_id,quote_no,quote_type,customer,data,created_at,updated_at) VALUES ('q1','m1','BG-1','B2B','K','{}','2026-01-01','2026-01-01')");
+  const { d1 } = (await createTestDb());
+  (await d1.sqlite.exec("INSERT INTO staff_members (id,email,name,created_at) VALUES ('m1','a@b.vn','An','2026-01-01')"));
+  (await d1.sqlite.exec("INSERT INTO staff_quotations (id,creator_id,quote_no,quote_type,customer,data,created_at,updated_at) VALUES ('q1','m1','BG-1','B2B','K','{}','2026-01-01','2026-01-01')"));
   const ins = d1.sqlite.prepare('INSERT INTO quote_lines (id,quote_id,line_no,sku,name,brand,unit,qty,price,discount,discount_type,tax_rate,print_fee,cost_price,delivery_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-  for (const l of quoteLineRows('q1', cleanQuotation(raw()))) ins.run(l.id, l.quoteId, l.lineNo, l.sku, l.name, l.brand, l.unit, l.qty, l.price, l.discount, l.discountType, l.taxRate, l.printFee, l.costPrice, l.deliveryDate);
-  const row = d1.sqlite.prepare("SELECT qty, price FROM quote_lines WHERE sku='B2'").get() as any;
+  for (const l of quoteLineRows('q1', cleanQuotation(raw()))) await ins.run(l.id, l.quoteId, l.lineNo, l.sku, l.name, l.brand, l.unit, l.qty, l.price, l.discount, l.discountType, l.taxRate, l.printFee, l.costPrice, l.deliveryDate);
+  const row = (await d1.sqlite.prepare("SELECT qty, price FROM quote_lines WHERE sku='B2'").get()) as any;
   assert.deepEqual({ ...row }, { qty: 1.5, price: 12.5 }); // không bị cắt về số nguyên
 });

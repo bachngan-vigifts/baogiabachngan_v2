@@ -1,7 +1,7 @@
-import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
+import { pgTable, text, bigint, boolean, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 import { employees } from '../staff/schema.ts';
 
-export const webPushSubscriptions = sqliteTable('staff_web_push_subscriptions', {
+export const webPushSubscriptions = pgTable('staff_web_push_subscriptions', {
   id: text('id').primaryKey(),
   memberId: text('member_id').notNull().references(() => employees.id),
   endpoint: text('endpoint').notNull(),
@@ -12,9 +12,9 @@ export const webPushSubscriptions = sqliteTable('staff_web_push_subscriptions', 
   updatedAt: text('updated_at').notNull(),
   lastSeenAt: text('last_seen_at'),
   disabledAt: text('disabled_at'),
-  failureCount: integer('failure_count').notNull().default(0),
-}, t => [uniqueIndex('idx_web_push_endpoint').on(t.endpoint), index('idx_web_push_member').on(t.memberId, t.disabledAt)]);
-export const webNotifications = sqliteTable('staff_web_notifications', {
+  failureCount: bigint('failure_count', { mode: 'number' }).notNull().default(0),
+}, t => [uniqueIndex('idx_web_push_endpoint').on(t.endpoint), index('idx_web_push_member').on(t.memberId, t.disabledAt)]).enableRLS();
+export const webNotifications = pgTable('staff_web_notifications', {
   id: text('id').primaryKey(),
   eventType: text('event_type').notNull(),
   title: text('title').notNull(),
@@ -25,9 +25,9 @@ export const webNotifications = sqliteTable('staff_web_notifications', {
   actorId: text('actor_id').references(() => employees.id),
   dataJson: text('data_json').notNull().default('{}'),
   createdAt: text('created_at').notNull(),
-}, t => [index('idx_web_notifications_created').on(t.createdAt), index('idx_web_notifications_target').on(t.targetRole, t.targetMemberId, t.createdAt)]);
-export const webNotificationReads = sqliteTable('staff_web_notification_reads', {
+}, t => [index('idx_web_notifications_created').on(t.createdAt), index('idx_web_notifications_target').on(t.targetRole, t.targetMemberId, t.createdAt)]).enableRLS();
+export const webNotificationReads = pgTable('staff_web_notification_reads', {
   notificationId: text('notification_id').notNull().references(() => webNotifications.id),
   memberId: text('member_id').notNull().references(() => employees.id),
   readAt: text('read_at').notNull(),
-}, t => [primaryKey({columns: [t.notificationId, t.memberId]})]);
+}, t => [primaryKey({columns: [t.notificationId, t.memberId]})]).enableRLS();
