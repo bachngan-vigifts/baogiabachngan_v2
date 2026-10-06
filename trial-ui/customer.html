@@ -49,6 +49,7 @@
     <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="true">Báo giá</button>
     <button type="button" class="chip" role="tab" data-tab="new" aria-selected="false">Tạo báo giá / Đặt hàng</button>
     <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false">Đơn hàng</button>
+    <button type="button" class="chip" role="tab" data-tab="debt" aria-selected="false">Công nợ</button>
   </nav>
 
   <!-- Báo giá -->
@@ -58,30 +59,68 @@
     <p class="muted" id="p-quotes-empty" hidden>Chưa có báo giá. Vào "Tạo báo giá / Đặt hàng" để gửi yêu cầu.</p>
   </section>
 
-  <!-- Tạo báo giá / đặt hàng -->
+  <!-- Tạo báo giá / đặt hàng: bố cục như trang báo giá của nhân viên -->
   <section class="portal-new" data-panel="new" hidden>
-    <div class="card">
-      <h2 class="card-title">Chọn sản phẩm</h2>
-      <input type="search" id="p-search" placeholder="Gõ tên hoặc mã sản phẩm…" autocomplete="off">
-      <p class="muted small" id="p-search-status">Đang tải danh mục…</p>
-      <ul class="portal-products" id="p-products"></ul>
+    <div class="editor-grid">
+      <div class="card">
+        <h2 class="card-title">Thông tin báo giá</h2>
+        <div class="form-grid cols-2">
+          <label>Ngày báo giá<input id="p-date" type="date" disabled></label>
+          <label>Ngày cần giao<input id="p-delivery" type="date"></label>
+          <label class="span-2">Nhân viên phụ trách<input id="p-owner-name" disabled></label>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="card-title">Khách hàng</h2>
+        <dl class="kv" id="p-cust-info"></dl>
+      </div>
     </div>
-    <div class="card portal-cart">
-      <h2 class="card-title">Sản phẩm đã chọn <span class="muted" id="p-cart-count">(0)</span></h2>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đơn giá</th><th class="right">CK</th><th class="right">Thành tiền</th><th></th></tr></thead><tbody id="p-cart"></tbody></table></div>
-      <p class="muted" id="p-cart-empty">Chưa chọn sản phẩm nào.</p>
-      <dl class="totals"><div><dt>Tạm tính</dt><dd id="p-subtotal">0 ₫</dd></div><div><dt id="p-tax-label">Thuế VAT</dt><dd id="p-tax">0 ₫</dd></div><div class="grand"><dt>Tổng thanh toán</dt><dd id="p-total">0 ₫</dd></div></dl>
-      <div class="form-grid cols-2">
-        <label>Ngày cần giao<input type="date" id="p-delivery"></label>
-        <label class="span-2">Ghi chú cho nhân viên phụ trách<textarea id="p-note" rows="3" maxlength="2000" placeholder="Ví dụ: in logo, giao trước ngày…"></textarea></label>
+
+    <div class="card">
+      <div class="card-title-row">
+        <div><h2 class="card-title">Sản phẩm báo giá <span class="muted" id="p-cart-count">(0)</span></h2><small class="muted">Giá đã trừ chiết khấu riêng của quý khách, chưa gồm VAT.</small></div>
+        <div class="row-gap"><button type="button" class="btn navy small" id="p-pick">＋ Thêm sản phẩm</button></div>
+      </div>
+      <div class="table-wrap lines-wrap">
+        <table class="line-table portal-lines">
+          <thead><tr><th class="col-idx">STT</th><th class="col-img">Hình ảnh</th><th class="col-product">Tên hàng / Mã hàng</th><th class="col-unit">ĐVT</th><th class="col-qty">Số lượng</th><th class="col-price right">Đơn giá</th><th class="col-disc right">CK</th><th class="col-after right">Giá sau CK</th><th class="col-total right">Thành tiền</th><th class="col-act"><span class="sr-only">Xoá</span></th></tr></thead>
+          <tbody id="p-cart"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="editor-bottom">
+      <div class="card totals-card">
+        <dl class="totals">
+          <div><dt>Tạm tính</dt><dd id="p-subtotal">0 ₫</dd></div>
+          <div><dt id="p-tax-label">Thuế VAT</dt><dd id="p-tax">0 ₫</dd></div>
+          <div class="grand"><dt>Tổng thanh toán</dt><dd id="p-total">0 ₫</dd></div>
+        </dl>
+      </div>
+      <div class="card">
+        <h2 class="card-title">Ghi chú gửi nhân viên phụ trách</h2>
+        <textarea id="p-note" rows="4" maxlength="2000" placeholder="Ví dụ: in logo công ty, giao trước ngày…, xuất hoá đơn…"></textarea>
       </div>
       <p class="error" id="p-error" role="alert"></p>
-      <div class="portal-actions">
-        <button type="button" class="btn secondary" id="p-send-quote">Gửi yêu cầu báo giá</button>
-        <button type="button" class="btn primary" id="p-send-order">Đặt hàng ngay</button>
+      <div class="card portal-submit">
+        <p class="muted small">Báo giá / đơn hàng được nhân viên phụ trách kiểm tra và xác nhận. Quý khách theo dõi ở thẻ "Báo giá" và "Đơn hàng".</p>
+        <div class="portal-actions">
+          <button type="button" class="btn secondary" id="p-send-quote">Gửi yêu cầu báo giá</button>
+          <button type="button" class="btn primary" id="p-send-order">Đặt hàng ngay</button>
+        </div>
       </div>
-      <p class="muted small">Giá đã trừ chiết khấu riêng của quý khách, chưa gồm VAT. Báo giá / đơn hàng được nhân viên phụ trách kiểm tra và xác nhận.</p>
     </div>
+  </section>
+
+  <!-- Công nợ -->
+  <section data-panel="debt" hidden>
+    <div class="stats" id="p-debt-stats"></div>
+    <div class="card">
+      <h2 class="card-title">Công nợ theo đơn hàng</h2>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn hàng</th><th class="right">Giá trị đơn</th><th class="right">Đã thanh toán</th><th class="right">Còn phải trả</th><th>Hạn thanh toán</th><th>Tình trạng</th></tr></thead><tbody id="p-debt"></tbody></table></div>
+      <p class="muted" id="p-debt-empty" hidden>Quý khách chưa có công nợ.</p>
+    </div>
+    <div class="card"><h2 class="card-title">Lịch sử thanh toán</h2><ul class="plain-list" id="p-pay-history"></ul></div>
   </section>
 
   <!-- Đơn hàng -->
@@ -91,6 +130,22 @@
   </section>
 </main>
 
+<dialog id="p-picker" class="modal wide">
+  <div class="modal-head"><div><span class="eyebrow">Danh mục sản phẩm</span><h2>Tìm nhanh sản phẩm</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body picker-body">
+    <div class="search-box"><span aria-hidden="true">⌕</span><input id="p-search" type="search" autocomplete="off" placeholder="Nhập mã hoặc tên, ví dụ: chén cơm jas…" aria-label="Tìm sản phẩm"></div>
+    <p class="search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
+    <div class="catalog-filters">
+      <label><span>Nhóm sản phẩm</span><select id="p-group"><option value="">Tất cả nhóm</option><option value="dinner">Bộ đồ ăn</option><option value="tea">Bộ trà</option><option value="thermalCup">Ly / cốc giữ nhiệt</option><option value="thermalBottle">Bình giữ nhiệt</option><option value="tableware">Chén, tô, đĩa</option><option value="vase">Bình hoa</option><option value="cookware">Nồi, chảo</option></select></label>
+      <label><span>Khoảng giá</span><select id="p-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option></select></label>
+      <button type="button" class="btn secondary" id="p-clear">Xoá bộ lọc</button>
+    </div>
+    <p class="search-help" id="p-search-status" aria-live="polite">Đang tải danh mục…</p>
+    <ul class="picker-list" id="p-products"></ul>
+    <div class="more-row" id="p-more-row" hidden><button type="button" class="btn secondary small" id="p-more">Xem thêm</button></div>
+  </div>
+  <div class="modal-foot"><span class="muted small" id="p-added"></span><button type="button" class="btn primary" data-close>Xong</button></div>
+</dialog>
 <dialog id="p-quote-dialog" class="modal">
   <div class="modal-head"><div><span class="eyebrow">Báo giá</span><h2 id="pq-title">Báo giá</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body" id="pq-body"></div>

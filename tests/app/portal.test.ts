@@ -108,9 +108,15 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   let orders = (await call('/portal/orders', k.cookie)).data.orders;
   assert.deepEqual([orders.length, orders[0].status, orders[0].total, orders[0].lines.length], [1, 'draft', 2_400_000 + 144_000 + 60_000, 2]);
   assert.ok(!JSON.stringify(orders).includes('costPrice'));
+  // Công nợ cho khách: kỳ phải trả + lịch sử thanh toán.
+  assert.deepEqual(orders[0].schedules.map((x: any) => [x.kind, x.amount, x.dueDate]), [['balance', 2_604_000, null]]);
+  assert.deepEqual(orders[0].payments, []);
   assert.equal((await call('/orders/' + o.data.orderId, emp)).data.order.status, 'draft');
   assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed' })).status, 200);
   assert.equal((await call('/portal/orders/' + o.data.orderId + '/cancel', k.cookie, 'POST', {})).status, 409, 'đã xác nhận thì khách không huỷ');
+  assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.orderId, amount: 1_000_000, paidAt: '2026-10-06', method: 'transfer' })).status, 201);
+  const paid = (await call('/portal/orders', k.cookie)).data.orders.find((x: any) => x.id === o.data.orderId);
+  assert.deepEqual([paid.receivable.paid, paid.receivable.balance, paid.payments[0].amount, paid.payments[0].method], [1_000_000, 1_604_000, 1_000_000, 'transfer']);
   assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed' })).status, 409);
 
   // Đặt hàng thẳng từ danh mục: báo giá chờ + đơn chờ xác nhận; nhân viên xác nhận đơn = duyệt luôn báo giá.
