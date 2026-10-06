@@ -37,6 +37,13 @@ Thẻ trên trang khách (theo thứ tự): **Tạo báo giá / Check tồn** (m
 4. **Nhân viên bấm "Xác nhận đơn"** trên trang đơn → *Đã xác nhận*. Từ đây đơn đi tiếp như thường: HĐKT, giao hàng, công nợ.
    - **Công nợ** (thẻ *Công nợ* của khách và trang *Công nợ* của nhân viên) chỉ tính đơn đã xác nhận hoặc đơn có HĐKT đã ký; đơn đang chờ xác nhận chưa phát sinh công nợ.
 5. **Đặt hàng ngay** (từ danh mục, không qua bước báo giá): tạo cùng lúc báo giá chờ duyệt và đơn *Chờ xác nhận*. Nhân viên xác nhận đơn thì báo giá của đơn cũng được duyệt luôn.
+6. **Bước xác thực**:
+   - Mọi cách khách gửi đơn (đặt hàng ngay, đặt theo báo giá, đặt từ đơn check tồn) đều mở hộp xác nhận: thông tin công ty, MST, người nhận, địa chỉ giao, sản phẩm, tổng tiền, ngày giao mong muốn. Khách phải đánh dấu đủ các mục. Máy chủ từ chối đơn thiếu `confirmed: true` (`CONFIRM_REQUIRED`).
+   - Nhân viên bấm *Xác nhận đơn* cũng phải đánh dấu đủ 5 mục: thông tin khách, sản phẩm/giá, tồn kho, ngày giao, điều kiện thanh toán. Máy chủ yêu cầu `verified: true` (`VERIFY_REQUIRED`).
+7. **Ngày giao dự kiến**:
+   - Trang đơn của nhân viên tô màu theo hạn: trễ hoặc hôm nay đỏ, ≤ 3 ngày cam, ≤ 7 ngày xanh dương, xa hơn xanh lá.
+   - Ô *Lịch giao hàng* có ô chọn ngày giao dự kiến (`PUT /orders/:id/delivery-date`). Lên lịch giao một ngày khác cũng đổi ngày dự kiến theo.
+   - Đơn do khách đặt thì khách thấy ngày mới ở thẻ *Đơn đặt hàng / HĐKT* và nhận thông báo (`order_delivery_date`).
 
 Khách huỷ được đơn khi đơn chưa được xác nhận. Báo giá nhân viên lập cho khách chỉ hiện với khách khi đã được duyệt.
 

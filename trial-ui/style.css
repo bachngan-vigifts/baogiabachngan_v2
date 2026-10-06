@@ -712,3 +712,21 @@ a.flow-step:hover { border-color: var(--blue); }
 .stock-req .num-input { width: 90px; text-align: right; }
 .row-gap.end { justify-content: flex-end; }
 .portal-order td .num-input { width: 96px; text-align: right; }
+/* Hạn giao: tô màu theo số ngày còn lại */
+.due-date { display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: .9em; }
+.due-date small { font-weight: 600; }
+.due-date.danger { background: var(--red-50); color: var(--red); } .due-date.warn { background: var(--amber-50); color: var(--amber); }
+.due-date.info { background: var(--blue-50); color: var(--blue); } .due-date.ok { background: var(--green-50); color: var(--green); }
+.due-date.muted { background: #f1f3f6; color: #7b8494; }
+.expected-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+.expected-row label span { display: block; font-size: .78rem; font-weight: 700; color: #49566a; margin-bottom: 4px; }
+.expected-row .due-date { margin-bottom: 8px; }
+/* Hộp xác thực trước khi duyệt / gửi đơn */
+.verify-summary { padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius-sm); margin-bottom: 12px; }
+.verify-field { display: block; margin-bottom: 12px; } .verify-field span { display: block; font-size: .8rem; font-weight: 700; margin-bottom: 4px; color: #49566a; }
+.verify-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.verify-checks label { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+.verify-checks label:has(input:checked) { border-color: var(--green); background: var(--green-50); }
+.verify-checks input { margin-top: 3px; width: 17px; height: 17px; flex: none; }
+.verify-dialog .modal-foot [data-left] { margin-right: auto; }
+.verify-dialog .modal-body { max-height: 70vh; overflow: auto; }

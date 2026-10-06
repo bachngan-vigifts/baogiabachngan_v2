@@ -123,6 +123,8 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const [owner] = await db.select({ name: employees.name, phone: employees.phone }).from(employees).where(eq(employees.id, account.ownerId)).limit(1);
     const today = vietnamDate().iso, ymd = today.replaceAll('-', ''), deliveryDate = /^\d{4}-\d{2}-\d{2}$/.test(str(body.deliveryDate)) ? str(body.deliveryDate) : undefined;
     const note = str(body.note, 2000), wantsOrder = body.order === true;
+    // Khách gửi đơn đặt hàng phải qua bước xác thực thông tin (công ty, địa chỉ, sản phẩm, ngày giao).
+    if (wantsOrder && body.confirmed !== true) throw new AppError(400, 'Vui lòng kiểm tra và xác nhận thông tin đơn hàng trước khi gửi.', 'CONFIRM_REQUIRED');
     const rows = [...want].map(([sku, qty]) => {
       const p = found.find(x => x.sku === sku)!;
       return { sku, name: p.name, unit: p.unit, brand: p.brand, pattern: p.pattern, image: p.imageUrl, qty, price: prices.find(x => x.sku === sku)!.price!,
@@ -160,7 +162,9 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     if (!q) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (q.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá đang chờ nhân viên xác nhận, chưa đặt hàng được.', 'QUOTE_NOT_APPROVED');
     const body = await readJson(c.req, 4_000);
-    const orderId = await createOrderFromQuote(c.env.db, q, { createdBy: me.id, status: 'draft', note: str(body.note, 2000) });
+    if (body.confirmed !== true) throw new AppError(400, 'Vui lòng kiểm tra và xác nhận thông tin đơn hàng trước khi gửi.', 'CONFIRM_REQUIRED');
+    const deliveryDate = /^\d{4}-\d{2}-\d{2}$/.test(str(body.deliveryDate)) ? str(body.deliveryDate) : null;
+    const orderId = await createOrderFromQuote(c.env.db, q, { createdBy: me.id, status: 'draft', note: str(body.note, 2000), deliveryDate });
     await notify(c.env, { eventType: 'customer_order', title: 'Khách xác nhận đặt hàng', body: `${customer.name} đặt hàng theo báo giá ${q.quoteNo}`, url: `/index.html#/orders/${orderId}`,
       targetMemberId: q.assigneeId ?? account.ownerId, actorId: me.id, data: { orderId, quoteId: q.id } });
     return json({ orderId }, 201);

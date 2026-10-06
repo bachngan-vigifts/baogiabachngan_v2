@@ -76,7 +76,16 @@ export function contractSchedules(total: number, depositRate: number, signedDate
 }
 export const addDays = (iso: string, days: number) => new Date(Date.parse(iso.slice(0, 10) + 'T00:00:00Z') + days * 86_400_000).toISOString().slice(0, 10);
 
-export interface Receivable { due: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; status: 'paid' | 'overdue' | 'open' | 'none' }
+/**
+ * Trạng thái thanh toán / đặt cọc hiển thị ở danh sách đơn và HĐKT:
+ * none = chưa có kỳ phải thu · unpaid = chưa thu · deposit_due = chờ đặt cọc · deposit_paid = đã cọc · partial = đã thu một phần · overdue = quá hạn · paid = đã thu đủ.
+ */
+export type PayState = 'none' | 'unpaid' | 'deposit_due' | 'deposit_paid' | 'partial' | 'overdue' | 'paid';
+export interface Receivable {
+  due: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; status: 'paid' | 'overdue' | 'open' | 'none';
+  /** Tiền cọc phải thu (kỳ `deposit`) và phần cọc đã thu. */
+  deposit: number; depositPaid: number; payState: PayState;
+}
 /** Công nợ chỉ tính khi đơn hàng đã được xác nhận (duyệt) hoặc HĐKT của đơn đã ký; đơn nháp / đã huỷ không phát sinh công nợ. */
 export function debtCounts(orderStatus: string, contractStatus?: string | null) {
   if (orderStatus === 'cancelled') return false;
@@ -87,7 +96,7 @@ export function debtCounts(orderStatus: string, contractStatus?: string | null) 
  * Công nợ của một đơn: phải thu = tổng các kỳ; đã thu = tổng phiếu thu; quá hạn = phần chưa thu của các kỳ đã tới hạn
  * (phiếu thu trừ dần vào các kỳ theo hạn sớm nhất trước).
  */
-export function receivable(schedules: readonly { amount: number; dueDate: string | null }[], payments: readonly { amount: number }[], today: string): Receivable {
+export function receivable(schedules: readonly { amount: number; dueDate: string | null; kind?: string }[], payments: readonly { amount: number }[], today: string): Receivable {
   const due = schedules.reduce((s, x) => s + x.amount, 0), paid = payments.reduce((s, x) => s + x.amount, 0), balance = due - paid;
   let left = paid, overdue = 0, nextDueDate: string | null = null;
   const sorted = [...schedules].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'));
@@ -99,5 +108,8 @@ export function receivable(schedules: readonly { amount: number; dueDate: string
     else if (s.dueDate && (!nextDueDate || s.dueDate < nextDueDate)) nextDueDate = s.dueDate;
   }
   const status = due === 0 ? 'none' : balance <= 0 ? 'paid' : overdue > 0 ? 'overdue' : 'open';
-  return { due, paid, balance, overdue, nextDueDate, status };
+  const deposit = schedules.filter(x => x.kind === 'deposit').reduce((s, x) => s + x.amount, 0), depositPaid = Math.min(paid, deposit);
+  const payState: PayState = status === 'none' || status === 'paid' || status === 'overdue' ? status
+    : deposit > 0 ? (paid >= deposit ? 'deposit_paid' : 'deposit_due') : paid > 0 ? 'partial' : 'unpaid';
+  return { due, paid, balance, overdue, nextDueDate, status, deposit, depositPaid, payState };
 }

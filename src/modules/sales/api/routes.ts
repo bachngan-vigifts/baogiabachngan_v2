@@ -48,6 +48,14 @@ async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   const today = vietnamDate().iso;
   return new Map(orderIds.map(id => [id, receivable(sch.filter(s => s.orderId === id), pay.filter(p => p.orderId === id), today)]));
 }
+/** Ghi ngày giao dự kiến mới cho đơn; đơn do khách đặt thì báo khách ngày mới. */
+async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
+  if (order.expectedDeliveryDate === date) return;
+  await c.env.db.update(salesOrders).set({ expectedDeliveryDate: date, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+  const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
+  if (by?.role === 'customer') await notify(c.env, { eventType: 'order_delivery_date', targetMemberId: order.createdBy, actorId: viewer(c).id, title: 'Đổi ngày giao dự kiến',
+    body: `${order.orderNo}: giao dự kiến ${date.split('-').reverse().join('/')}`, url: '/customer.html#orders', data: { orderId: order.id, date } });
+}
 /** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán. */
 async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
@@ -66,7 +74,7 @@ type QuoteRow = typeof quotations.$inferSelect;
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
  */
-export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string }) {
+export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string; deliveryDate?: string | null }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
     .where(and(eq(salesOrders.quoteId, quote.id), ne(salesOrders.status, 'cancelled'))).limit(1);
   if (existing) throw new AppError(409, `Báo giá này đã có đơn ${existing.orderNo}.`, 'ORDER_EXISTS');
@@ -81,7 +89,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
       taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
       ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: today,
-      expectedDeliveryDate: isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note, 2000), createdAt: now, updatedAt: now,
+      expectedDeliveryDate: isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note, 2000), createdAt: now, updatedAt: now,
     });
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
@@ -104,7 +112,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       receivableOf(c.env.db, ids),
       ids.length ? c.env.db.select({ orderId: salesContracts.orderId, id: salesContracts.id, contractNo: salesContracts.contractNo, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, ids)) : [],
     ]);
-    return json({ orders: rows.map(r => ({ ...r, receivable: debts.get(r.id), contract: contracts.find(x => x.orderId === r.id) ?? null })) });
+    return json({ orders: rows.map(r => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
+      // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
+      return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }) });
   }, 'business');
 
   router.get('/orders/:id', async c => {
@@ -144,6 +154,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (Number(paid?.n) > 0 || lines.some(l => l.deliveredQty > 0)) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
     }
     if (status === 'confirmed' && order.status !== 'draft') throw new AppError(409, 'Chỉ xác nhận được đơn đang chờ xác nhận.');
+    // Bước xác thực: nhân viên phải đánh dấu đã kiểm tra các thông tin quan trọng trước khi duyệt đơn.
+    if (status === 'confirmed' && body.verified !== true) throw new AppError(400, 'Kiểm tra và đánh dấu đủ các thông tin quan trọng trước khi xác nhận đơn.', 'VERIFY_REQUIRED');
     await c.env.db.transaction(async tx => {
       await tx.update(salesOrders).set({ status, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Khách đặt hàng thẳng (báo giá chưa duyệt): nhân viên xác nhận đơn = duyệt luôn báo giá của đơn.
@@ -160,11 +172,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
 
   // ================= HĐKT =================
   router.get('/contracts', async c => {
-    const rows = await c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo })
+    const rows = await c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
       .where(and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.orderNo, salesOrders.customerName), c.url.searchParams.get('q'))))
       .orderBy(desc(salesContracts.createdAt)).limit(200);
-    return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo })) });
+    const debts = await receivableOf(c.env.db, [...new Set(rows.map(r => r.contract.orderId))]);
+    return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo, orderStatus: r.orderStatus,
+      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })) });
   }, 'business');
 
   /** Lập HĐKT cho đơn: cấp số theo `contract_counters` (như web cũ), lập lại kỳ phải thu = cọc + phần còn lại. */
@@ -238,6 +252,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   /** Lên lịch giao: số lượng mỗi dòng không vượt phần còn lại (đã trừ hàng đã giao và các chuyến đang chờ giao). */
+  /** Đổi ngày giao dự kiến của đơn (nhân viên chọn ở ô Lịch giao hàng). Đơn khách đặt: khách thấy ngày mới và nhận thông báo. */
+  router.put('/orders/:id/delivery-date', async c => {
+    const body = await readJson(c.req, 1_024), date = String(body.date || '');
+    if (!isDate(date)) throw new AppError(400, 'Chọn ngày giao hợp lệ.');
+    const order = await loadOrder(c, c.params.id!);
+    if (order.status === 'cancelled' || order.status === 'delivered') throw new AppError(409, 'Đơn đã huỷ hoặc đã giao xong, không đổi ngày giao được.');
+    await setExpectedDeliveryDate(c, order, date);
+    return json({ ok: true, expectedDeliveryDate: date });
+  }, 'business');
+
   router.post('/deliveries', async c => {
     const body = await readJson(c.req, 64_000), me = viewer(c);
     const order = await loadOrder(c, text(body.orderId, 80));
@@ -267,6 +291,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       });
       await tx.insert(deliveryLines).values(picks.map(p => ({ deliveryId: id, orderLineId: p.line!.id, qty: p.qty })));
     });
+    // Ngày lên lịch giao trở thành ngày giao dự kiến của đơn (đơn của khách cũng cập nhật theo).
+    await setExpectedDeliveryDate(c, order, plannedDate);
     return json({ id }, 201);
   }, 'business');
 

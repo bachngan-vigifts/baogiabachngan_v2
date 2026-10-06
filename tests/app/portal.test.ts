@@ -108,9 +108,12 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.equal((await call('/quotes/' + q.data.id, emp)).data.canApprove, true);
   assert.equal((await call('/quotes/' + q.data.id + '/approve', emp, 'POST', { revision: 1 })).status, 200);
   // Khách xác nhận đặt hàng → đơn "Chờ xác nhận"; nhân viên xác nhận đơn.
-  const o = await call('/portal/quotes/' + q.data.id + '/order', k.cookie, 'POST', { note: 'OK' });
+  assert.equal((await call('/portal/quotes/' + q.data.id + '/order', k.cookie, 'POST', { note: 'OK' })).data.code, 'CONFIRM_REQUIRED', 'khách phải xác thực thông tin trước khi gửi đơn');
+  assert.equal((await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'LL-01', qty: 1 }], order: true })).data.code, 'CONFIRM_REQUIRED');
+  const o = await call('/portal/quotes/' + q.data.id + '/order', k.cookie, 'POST', { note: 'OK', confirmed: true, deliveryDate: '2026-10-20' });
   assert.equal(o.status, 201, JSON.stringify(o.data));
-  assert.equal((await call('/portal/quotes/' + q.data.id + '/order', k.cookie, 'POST', {})).data.code, 'ORDER_EXISTS');
+  assert.equal((await call('/orders/' + o.data.orderId, emp)).data.order.expectedDeliveryDate, '2026-10-20', 'ngày giao khách chọn khi gửi đơn');
+  assert.equal((await call('/portal/quotes/' + q.data.id + '/order', k.cookie, 'POST', { confirmed: true })).data.code, 'ORDER_EXISTS');
   let orders = (await call('/portal/orders', k.cookie)).data.orders;
   assert.deepEqual([orders.length, orders[0].status, orders[0].total, orders[0].lines.length], [1, 'draft', 2_400_000 + 144_000 + 60_000, 2]);
   assert.ok(!JSON.stringify(orders).includes('costPrice'));
@@ -118,7 +121,15 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.deepEqual([orders[0].receivable, orders[0].schedules], [null, []]);
   assert.equal((await call('/receivables', emp)).data.receivables.length, 0);
   assert.equal((await call('/orders/' + o.data.orderId, emp)).data.order.status, 'draft');
-  assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed' })).status, 200);
+  assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed' })).data.code, 'VERIFY_REQUIRED', 'nhân viên phải xác thực trước khi duyệt');
+  assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed', verified: true })).status, 200);
+  // Nhân viên đổi ngày giao dự kiến (ô Lịch giao hàng) → đơn của khách cập nhật + khách nhận thông báo; lên lịch giao ngày khác cũng đổi theo.
+  assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', emp, 'PUT', { date: 'x' })).status, 400);
+  assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', emp, 'PUT', { date: '2026-10-25' })).status, 200);
+  assert.equal((await call('/portal/orders', k.cookie)).data.orders[0].expectedDeliveryDate, '2026-10-25');
+  assert.equal((await call('/notifications', k.cookie)).data.notifications[0].eventType, 'order_delivery_date');
+  assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.orderId, plannedDate: '2026-10-27' })).status, 201);
+  assert.equal((await call('/portal/orders', k.cookie)).data.orders[0].expectedDeliveryDate, '2026-10-27');
   // Đã xác nhận: kỳ phải trả + lịch sử thanh toán.
   orders = (await call('/portal/orders', k.cookie)).data.orders;
   assert.deepEqual(orders[0].schedules.map((x: any) => [x.kind, x.amount, x.dueDate]), [['balance', 2_604_000, null]]);
@@ -128,17 +139,17 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.orderId, amount: 1_000_000, paidAt: '2026-10-06', method: 'transfer' })).status, 201);
   const paid = (await call('/portal/orders', k.cookie)).data.orders.find((x: any) => x.id === o.data.orderId);
   assert.deepEqual([paid.receivable.paid, paid.receivable.balance, paid.payments[0].amount, paid.payments[0].method], [1_000_000, 1_604_000, 1_000_000, 'transfer']);
-  assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed' })).status, 409);
+  assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed', verified: true })).status, 409);
 
   // Đặt hàng thẳng từ danh mục: báo giá chờ + đơn chờ xác nhận; nhân viên xác nhận đơn = duyệt luôn báo giá.
-  const direct = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'LL-01', qty: 1 }], order: true });
+  const direct = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'LL-01', qty: 1 }], order: true, confirmed: true });
   assert.equal(direct.status, 201); assert.ok(direct.data.orderId); assert.match(direct.data.quoteNo, /_002$/);
   orders = (await call('/portal/orders', k.cookie)).data.orders;
   assert.equal(orders.find((x: any) => x.id === direct.data.orderId).status, 'draft');
-  assert.equal((await call('/orders/' + direct.data.orderId + '/status', emp, 'PUT', { status: 'confirmed' })).status, 200);
+  assert.equal((await call('/orders/' + direct.data.orderId + '/status', emp, 'PUT', { status: 'confirmed', verified: true })).status, 200);
   assert.equal((await call('/quotes/' + direct.data.id, emp)).data.approvalStatus, 'approved');
   // Khách huỷ đơn chưa xác nhận.
-  const third = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'ML-01', qty: 1 }], order: true });
+  const third = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'ML-01', qty: 1 }], order: true, confirmed: true });
   assert.equal((await call('/portal/orders/' + third.data.orderId + '/cancel', other.cookie, 'POST', {})).status, 409, 'khách khác không huỷ được');
   assert.equal((await call('/portal/orders/' + third.data.orderId + '/cancel', k.cookie, 'POST', {})).status, 200);
 

@@ -52,7 +52,7 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   const kh = await login('lan@hl.vn', 'khach-hang-123');
 
   // Khách đặt hàng → push tới cả 2 thiết bị của nhân viên phụ trách, nội dung mã hoá đúng chuẩn.
-  const o = await call('/portal/quotes', kh, 'POST', { items: [{ sku: 'ML-01', qty: 2 }], order: true });
+  const o = await call('/portal/quotes', kh, 'POST', { items: [{ sku: 'ML-01', qty: 2 }], order: true, confirmed: true });
   assert.equal(o.status, 201);
   assert.equal(pushed.length, 2);
   assert.equal(pushed[0]!.headers['Content-Encoding'], 'aes128gcm'); assert.match(pushed[0]!.headers.Authorization!, /^vapid t=.+, k=/);
@@ -92,7 +92,7 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   assert.deepEqual([khNotes[0].eventType, khNotes[0].url], ['stock_answer', '/customer.html#stock']);
 
   // Nhân viên xác nhận đơn / báo giá của khách → khách nhận thông báo.
-  await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed' });
+  await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed', verified: true });
   assert.equal((await call('/notifications', kh)).data.notifications[0].eventType, 'order_confirmed');
   const qid = (await call('/portal/quotes', kh)).data.quotes.find((x: any) => !x.order)?.id;
   await call('/quotes/' + qid + '/approve', emp, 'POST', { revision: 1 });
