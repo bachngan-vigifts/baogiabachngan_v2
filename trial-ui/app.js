@@ -705,15 +705,26 @@ $('#line-list').addEventListener('click', async e => {
   rows.splice(i, 1);
   markDirty(); renderLines();
 });
+/** 4 kho xem nhanh trên báo giá, đúng thứ tự web cũ (`quoteWebWarehouses` trong lib/product-catalog.mjs). */
+const QUOTE_WAREHOUSES = ['MINH LONG - LOCKNLOCK CẦN THƠ', 'KHO VIGIFTS', 'NCC', 'Hàng chờ về'];
 async function showStock(r) {
+  $('#stock-title').textContent = r.name || 'Tồn kho sản phẩm';
+  $('#stock-body').innerHTML = '<p class="muted">Đang tải tồn kho…</p>';
+  $('#stock-dialog').showModal();
   try {
-    const d = await api(`/products?limit=10&q=${encodeURIComponent(r.sku)}`);
-    const p = d.products.find(x => x.sku === r.sku);
-    const body = p ? `<p class="muted">Mã hàng: <b>${esc(r.sku)}</b></p><dl class="totals">${d.warehouses.map(w => `<div><dt>${esc(w.name)}</dt><dd>${p.stock?.[w.id] === undefined ? '<span class="muted">Chưa có số liệu</span>' : fmtNum(Number(p.stock[w.id]))}</dd></div>`).join('')}</dl>` : '<p class="muted">Chưa tìm thấy mã hàng này trong danh mục hiện tại.</p>';
-    $('#stock-title').textContent = r.name || 'Tồn kho sản phẩm';
-    $('#stock-body').innerHTML = body + (d.observedAt ? `<p class="muted small">Cập nhật: ${esc(new Date(d.observedAt).toLocaleString('vi-VN'))}</p>` : '');
-    $('#stock-dialog').showModal();
-  } catch (ex) { toast(ex.message, 'err'); }
+    const d = await api('/products?skus=' + encodeURIComponent(r.sku));
+    const p = d.products.find(x => normalize(x.sku) === normalize(r.sku));
+    if (!p) { $('#stock-body').innerHTML = '<p class="muted">Chưa tìm thấy mã hàng này trong dữ liệu tồn kho hiện tại.</p>'; return; }
+    const byName = new Map(d.warehouses.map(w => [normalize(w.name), w]));
+    // Đúng 4 kho như web cũ; nếu tên kho trên hệ thống không khớp kho nào thì hiện mọi kho để không mất số liệu.
+    const list = QUOTE_WAREHOUSES.some(n => byName.has(normalize(n))) ? QUOTE_WAREHOUSES.map(n => byName.get(normalize(n)) || { name: n }) : d.warehouses;
+    const rows = list.map(w => {
+      const v = w.id ? p.stock?.[w.id] : undefined;
+      return `<div><span>${esc(w.name)}</span><strong>${v === undefined || v === null ? 'Chưa có số liệu' : fmtNum(Number(v))}</strong></div>`;
+    }).join('');
+    const at = p.stockUpdatedAt || d.observedAt, updated = at ? new Date(at).toLocaleString('vi-VN') : 'Chưa có thời điểm cập nhật';
+    $('#stock-body').innerHTML = `<p class="inventory-sku">Mã hàng: <b>${esc(r.sku)}</b></p><div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(updated)}</p>`;
+  } catch (ex) { $('#stock-body').innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
 }
 // ----- hình của dòng (HRC: hình sản phẩm; B2B/VIGIFTS: maquette) – link ảnh hoặc tải ảnh lên, như web cũ
 let imageRow = -1, pendingImage = '';

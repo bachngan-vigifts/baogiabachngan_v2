@@ -482,6 +482,11 @@ label.btn.busy { opacity: .55; pointer-events: none; }
 .line-empty td { padding: 18px 12px !important; text-align: left; }
 .add-first { border: 1px dashed var(--blue); background: var(--blue-50); color: var(--blue); font: inherit; font-weight: 700; border-radius: var(--radius-sm); padding: 10px 16px; cursor: pointer; }
 .add-first:hover { background: var(--blue); color: #fff; }
+/* Popup "Tồn kho hiện tại" như web cũ. */
+.inventory-sku { color: var(--muted); margin: 0 0 10px; }
+.inventory-list { display: grid; gap: 8px; }
+.inventory-list > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.inventory-list strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .link-btn { border: 0; background: none; color: var(--blue); font-weight: 700; font-size: .82rem; text-decoration: underline; cursor: pointer; padding: 0; white-space: nowrap; }
 .product-meta { font-size: .8rem; color: var(--muted); margin-top: 2px; }
 .sub-field { display: grid; grid-template-columns: 86px 1fr; align-items: center; gap: 6px; margin-top: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }

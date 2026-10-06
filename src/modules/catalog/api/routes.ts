@@ -98,7 +98,11 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     ]) : [[], []];
     const priceMap = new Map<string, Record<string, number | null>>(), stockMap = new Map<string, Record<string, number>>();
     for (const p of prices) (priceMap.get(p.sku) ?? priceMap.set(p.sku, {}).get(p.sku)!)[p.policyId] = p.price;
-    for (const s of stock) (stockMap.get(s.sku) ?? stockMap.set(s.sku, {}).get(s.sku)!)[s.warehouseId] = s.quantity;
+    const stockAt = new Map<string, string>();
+    for (const s of stock) {
+      (stockMap.get(s.sku) ?? stockMap.set(s.sku, {}).get(s.sku)!)[s.warehouseId] = s.quantity;
+      if (s.updatedAt > (stockAt.get(s.sku) ?? '')) stockAt.set(s.sku, s.updatedAt);
+    }
     return json({
       total: Number(total), limit, offset, observedAt: version[0]?.observedAt ?? null,
       policies: policies.map(p => ({ id: p.id, name: p.name })),
@@ -109,6 +113,8 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
         ...r,
         prices: policies.filter(p => p.id in (priceMap.get(r.sku) ?? {})).map(p => ({ policyId: p.id, price: priceMap.get(r.sku)![p.id] ?? null })),
         stock: stockMap.get(r.sku) ?? {},
+        /** Lần cập nhật tồn gần nhất của mã này (đồng bộ Sapo / nhập file). */
+        stockUpdatedAt: stockAt.get(r.sku) ?? null,
       })),
     });
   }, 'business');
