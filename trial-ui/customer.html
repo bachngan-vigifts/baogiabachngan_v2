@@ -11,11 +11,38 @@
 </head>
 <body class="portal">
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
-<header class="portal-head">
+<header class="portal-head" id="p-head" hidden>
   <div class="portal-brand"><span class="logo">BN</span><div><b>BÁCH NGÂN</b><small>Trang khách hàng</small></div></div>
   <div class="portal-who"><b id="p-customer">Đang tải…</b><small id="p-user"></small></div>
   <button type="button" class="btn ghost small" id="p-logout">Đăng xuất</button>
 </header>
+<!-- Đăng nhập / đặt mật khẩu riêng của khách hàng (không qua trang nhân viên) -->
+<section id="c-auth" class="auth" hidden>
+  <main class="auth-card">
+    <div class="auth-logo"><img src="brand-strip.jpeg" alt="VIGIFTS – Cung cấp quà tặng · Bách Ngân – Cam kết chất lượng" width="1139" height="188"></div>
+    <p class="eyebrow auth-brand-name">Trang khách hàng Bách Ngân - Vigifts</p>
+    <h1 id="c-auth-title">Đăng nhập khách hàng</h1>
+    <p id="c-auth-note">Dùng email đã được nhân viên Bách Ngân cấp tài khoản.</p>
+    <form id="c-login-form" novalidate>
+      <label>Email<input id="c-email" type="email" autocomplete="username" maxlength="254" required></label>
+      <label>Mật khẩu<input id="c-password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+      <label id="c-password2-label" hidden>Nhập lại mật khẩu<input id="c-password2" type="password" autocomplete="new-password" minlength="8" maxlength="128"></label>
+      <label class="show-password"><input id="c-show-password" type="checkbox"> Hiện mật khẩu</label>
+      <p id="c-auth-error" class="error" role="alert"></p>
+      <button class="btn primary block" id="c-login-button">Đăng nhập</button>
+    </form>
+    <p class="auth-help">Quên mật khẩu hoặc link đã hết hạn? Liên hệ nhân viên phụ trách để nhận link đặt mật khẩu mới.</p>
+  </main>
+</section>
+<!-- Đang đăng nhập bằng tài khoản nhân viên -->
+<section id="c-staff" class="auth" hidden>
+  <main class="auth-card">
+    <h1>Trang dành cho khách hàng</h1>
+    <p>Anh/chị đang đăng nhập bằng tài khoản <b>nhân viên</b> (<span id="c-staff-name"></span>). Trang này chỉ dùng được với tài khoản khách hàng.</p>
+    <p class="muted small">Muốn xem thử như khách: mở trang này trong cửa sổ ẩn danh và đăng nhập bằng tài khoản khách hàng.</p>
+    <div class="portal-actions"><a class="btn secondary" href="index.html">Về trang làm việc</a><button type="button" class="btn primary" id="c-staff-logout">Đăng xuất để đăng nhập tài khoản khách</button></div>
+  </main>
+</section>
 <main class="portal-main" id="portal" hidden>
   <section class="card portal-owner" id="p-owner"></section>
   <nav class="chips portal-tabs" role="tablist">

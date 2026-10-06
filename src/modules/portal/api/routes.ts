@@ -5,7 +5,7 @@ import { AppError } from '../../../core/errors.ts';
 import { fold } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { credentials, employees, sessions } from '../../staff/schema.ts';
-import { activationLink, ACTIVATION_TTL_SECONDS } from '../../staff/domain/members.ts';
+import { ACTIVATION_TTL_SECONDS } from '../../staff/domain/members.ts';
 import { newToken, sha256Hex } from '../../staff/domain/session.ts';
 import { CUSTOMER_POSITION_ID } from '../../staff/domain/roles.ts';
 import { customers } from '../../customers/schema.ts';
@@ -25,6 +25,8 @@ type Ctx = RouteContext<StaffEnv>;
 const member = (c: Ctx) => (c.state.session as SessionState).member;
 const nowIso = () => new Date().toISOString();
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Liên kết đặt mật khẩu của khách: mở thẳng trang khách hàng (token sau dấu #, không đi qua máy chủ/log). */
+const customerLink = (origin: string, email: string, token: string) => `${origin}/customer.html#email=${encodeURIComponent(email)}&token=${token}`;
 const str = (v: unknown, max = 500) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v)).trim().slice(0, max);
 
 /** Tài khoản khách đang đăng nhập + khách hàng Sapo gắn với nó. */
@@ -221,7 +223,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       await tx.insert(credentials).values({ memberId: id, activationHash: sha256Hex(token), activationExpires: nowSec + ACTIVATION_TTL_SECONDS, version: 0 });
       await tx.insert(customerAccounts).values({ memberId: id, customerId, ownerId, discounts: JSON.stringify(discounts), createdBy: me.id, createdAt: now, updatedAt: now });
     });
-    return json({ memberId: id, url: activationLink(c.url.origin, email, token) }, 201);
+    return json({ memberId: id, url: customerLink(c.url.origin, email, token) }, 201);
   }, 'business');
 
   async function manageable(c: Ctx) {
@@ -259,6 +261,6 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       await tx.update(credentials).set({ activationHash: sha256Hex(token), activationExpires: nowSec + ACTIVATION_TTL_SECONDS, passwordHash: null, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, row.memberId));
       await tx.delete(sessions).where(eq(sessions.memberId, row.memberId));
     });
-    return json({ url: activationLink(c.url.origin, m!.email, token) });
+    return json({ url: customerLink(c.url.origin, m!.email, token) });
   }, 'business');
 }
