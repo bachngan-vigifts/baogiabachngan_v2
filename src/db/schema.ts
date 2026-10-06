@@ -11,3 +11,4 @@ export * from '../modules/crm/schema.ts';
 export * from '../modules/work/schema.ts';
 export * from '../modules/notifications/schema.ts';
 export * from '../modules/integrations/schema.ts';
+export * from '../modules/sales/schema.ts';
