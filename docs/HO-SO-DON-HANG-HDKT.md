@@ -26,3 +26,12 @@
 - **Tải**:
   - **Tải bộ 3 file (.zip)**: file `HDKT_<số HĐKT>.zip` gồm `HDKT.docx`, `TAM_UNG.docx`, `BBNT.docx`.
   - Có thêm nút tải riêng file Word đang xem, và nút in hồ sơ đang xem.
+
+## Lịch sử bán theo mã hàng
+- Mỗi dòng (có mã hàng) của đơn đặt hàng **đã xác nhận** được ghi vào bảng `product_sales_history`. Mỗi mã chỉ giữ **10 lần bán gần nhất** (`SALES_HISTORY_PER_SKU`).
+- Khi huỷ đơn, các dòng của đơn đó bị xoá khỏi lịch sử.
+- Migration `0020_product_sales_history.sql` lấy lại lịch sử từ các đơn đã xác nhận có sẵn. Phân quyền ở `0021_supabase_access_product_sales_history.sql`.
+- Xem: nút **Lịch sử bán** ở từng dòng báo giá (cạnh *Xem tồn kho*) và ở trang Sản phẩm.
+  - Hiện giá bán gần nhất, thấp nhất, cao nhất, trung bình.
+  - Từng lần bán: ngày, khách hàng, NV phụ trách, đơn hàng, số lượng, đơn giá (sau CK, chưa VAT), VAT.
+- API: `GET /products/:sku/sales-history`.

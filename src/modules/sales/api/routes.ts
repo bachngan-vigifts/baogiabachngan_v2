@@ -10,10 +10,10 @@ import { employees } from '../../staff/schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
 import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
-import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
+import { customerPayments, deliveries, deliveryLines, paymentSchedules, productSalesHistory, salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
-  addDays, compactCode, contractNumber, debtCounts, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
+  SALES_HISTORY_PER_SKU, addDays, compactCode, contractNumber, debtCounts, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
   orderTotals, receivable, vietnamDate, type OrderStatus,
 } from '../domain/sales.ts';
 
@@ -47,6 +47,23 @@ async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   ]);
   const today = vietnamDate().iso;
   return new Map(orderIds.map(id => [id, receivable(sch.filter(s => s.orderId === id), pay.filter(p => p.orderId === id), today)]));
+}
+/**
+ * Lịch sử bán theo mã: ghi các dòng (có mã hàng) của đơn đã xác nhận, rồi mỗi mã chỉ giữ SALES_HISTORY_PER_SKU lần bán gần nhất.
+ * Gọi khi đơn được xác nhận (nhân viên tạo đơn / xác nhận đơn khách). Đơn huỷ → xoá khỏi lịch sử.
+ */
+export async function recordSalesHistory(db: StaffEnv['db'] | Tx, orderId: string) {
+  const [order] = await db.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
+  if (!order || order.status === 'draft' || order.status === 'cancelled') return;
+  const lines = (await db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId))).filter(l => l.sku.trim());
+  if (!lines.length) return;
+  const now = nowIso();
+  await db.insert(productSalesHistory).values(lines.map(l => ({ id: crypto.randomUUID(), sku: l.sku.trim(), orderId, orderLineId: l.id, orderNo: order.orderNo, customerId: order.customerId,
+    customerName: order.customerName, ownerId: order.ownerId, name: l.name, unit: l.unit, qty: l.qty, unitPrice: l.unitPrice, taxRate: l.taxRate, soldOn: order.orderDate, recordedAt: now }))).onConflictDoNothing();
+  for (const sku of new Set(lines.map(l => l.sku.trim()))) {
+    await db.execute(sql`DELETE FROM ${productSalesHistory} WHERE ${productSalesHistory.sku} = ${sku} AND ${productSalesHistory.id} NOT IN (
+      SELECT ${productSalesHistory.id} FROM ${productSalesHistory} WHERE ${productSalesHistory.sku} = ${sku} ORDER BY ${productSalesHistory.soldOn} DESC, ${productSalesHistory.recordedAt} DESC LIMIT ${SALES_HISTORY_PER_SKU})`);
+  }
 }
 /** Ghi ngày giao dự kiến mới cho đơn; đơn do khách đặt thì báo khách ngày mới. */
 async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
@@ -95,6 +112,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
     await tx.insert(paymentSchedules).values({ id: crypto.randomUUID(), orderId: id, kind: 'balance', amount: t.total, dueDate: null, note: 'Thanh toán khi giao hàng', createdAt: now });
   });
+  if (o.status === 'confirmed') await recordSalesHistory(db, id);
   return id;
 }
 
@@ -168,6 +186,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         await tx.update(quotations).set({ approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: viewer(c).id })
           .where(and(eq(quotations.id, order.quoteId), eq(quotations.approvalStatus, 'pending')));
     });
+    // Lịch sử bán theo mã: thêm khi xác nhận, bỏ khi huỷ.
+    if (status === 'confirmed') await recordSalesHistory(c.env.db, order.id);
+    else await c.env.db.delete(productSalesHistory).where(eq(productSalesHistory.orderId, order.id));
     // Đơn khách đặt từ trang khách hàng: báo cho khách.
     const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
@@ -319,6 +340,17 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       await refreshOrderStatus(tx, row.d.orderId, deliveredOn);
     });
     return json({ ok: true });
+  }, 'business');
+
+  /** 10 lần bán gần nhất của một mã hàng (giá bán sau CK, chưa VAT; khách; số lượng; đơn). */
+  router.get('/products/:sku/sales-history', async c => {
+    const sku = decodeURIComponent(c.params.sku!).trim().slice(0, 500);
+    const rows = await c.env.db.select({ h: productSalesHistory, ownerName: employees.name }).from(productSalesHistory).leftJoin(employees, eq(employees.id, productSalesHistory.ownerId))
+      .where(eq(productSalesHistory.sku, sku)).orderBy(desc(productSalesHistory.soldOn), desc(productSalesHistory.recordedAt)).limit(SALES_HISTORY_PER_SKU);
+    const prices = rows.map(r => r.h.unitPrice);
+    return json({ sku, history: rows.map(({ h, ownerName }) => ({ orderId: h.orderId, orderNo: h.orderNo, customerName: h.customerName, ownerName: ownerName ?? '', name: h.name, unit: h.unit,
+      qty: h.qty, unitPrice: h.unitPrice, taxRate: h.taxRate, soldOn: h.soldOn })),
+      summary: prices.length ? { count: prices.length, last: prices[0], min: Math.min(...prices), max: Math.max(...prices), avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) } : null });
   }, 'business');
 
   // ================= CÔNG NỢ =================

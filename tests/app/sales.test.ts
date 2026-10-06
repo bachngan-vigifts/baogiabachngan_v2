@@ -121,3 +121,25 @@ test('huỷ đơn chưa giao/chưa thu được; huỷ rồi tạo lại đơn t
   assert.equal((await call('/receivables', emp)).data.receivables.length, 0);
   assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).status, 201);
 });
+
+test('lịch sử bán theo mã: ghi khi đơn xác nhận, giữ 10 lần gần nhất, bỏ khi huỷ đơn', async () => {
+  const { db, call, emp, mgr } = await setup();
+  await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: '', phone: '', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' });
+  const orders: string[] = [];
+  for (let i = 1; i <= 11; i++) {
+    const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: `B2B_H${i}`, customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8,
+      rows: [{ name: 'Bộ trà', sku: 'ML-TRA', unit: 'bộ', qty: i, price: 100000 + i * 1000, taxRate: 8 }, { name: 'Không mã', qty: 1, price: 5 }] });
+    await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+    orders.push((await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id);
+  }
+  const h = (await call('/products/ML-TRA/sales-history', emp)).data;
+  assert.equal(h.history.length, 10, 'chỉ giữ 10 lần bán gần nhất');
+  assert.deepEqual([h.history[0].qty, h.history[0].unitPrice, h.history[0].customerName], [11, 111000, 'Công ty Hoàng Long']);
+  assert.equal(h.history.some((x: any) => x.qty === 1), false, 'lần bán cũ nhất bị bỏ');
+  assert.deepEqual([h.summary.count, h.summary.min, h.summary.max, h.summary.last], [10, 102000, 111000, 111000]);
+  assert.equal((await call('/products/' + encodeURIComponent('Không mã') + '/sales-history', emp)).data.history.length, 0, 'dòng không có mã hàng không ghi');
+  // Huỷ đơn mới nhất → bỏ khỏi lịch sử.
+  assert.equal((await call('/orders/' + orders[10] + '/status', emp, 'PUT', { status: 'cancelled' })).status, 200);
+  const after = (await call('/products/ML-TRA/sales-history', emp)).data.history;
+  assert.deepEqual([after.length, after[0].qty], [9, 10]);
+});

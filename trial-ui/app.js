@@ -179,7 +179,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 
 function showAuth(message = '') {
   state.user = null; saveToken('');
-  $('#workspace').hidden = true; $('#auth').hidden = false;
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   setTimeout(() => ($('#email').value ? $('#password') : $('#email')).focus(), 0);
@@ -277,7 +277,7 @@ async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadStockBadge(); tasksView().badge(); chatView().startBadge();
+  loadStockBadge(); tasksView().badge(); chatView().startBadge(); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -355,7 +355,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { chat: 'Tin nhắn', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -370,7 +370,12 @@ window.addEventListener('hashchange', async () => {
 });
 window.addEventListener('beforeunload', e => { if (editor.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
+let lastRoutedHash = '';
 function route() {
+  // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
+  const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
+  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || '#/quotes'); if (lastRoutedHash) return; }
+  lastRoutedHash = location.hash;
   const [page = 'quotes', id] = location.hash.replace(/^#\/?/, '').split('?')[0].split('/');
   let view = VIEWS[page] ? page : 'quotes';
   if (view === 'staff' && !isManager()) view = 'quotes';
@@ -390,7 +395,6 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'tasks') tasksView().load(id);
-  if (view === 'chat') chatView().open(id); else if (chatUi) chatUi.stop();
   if (view === 'order') openOrder(id);
   hideProductSuggest();
 }
@@ -625,7 +629,7 @@ function lineCell(r, i) {
     <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
     <td class="col-product" data-label="Sản phẩm">
       <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="Gõ tên hoặc mã để tìm sản phẩm…" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
-      <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock>Xem tồn kho</button>' : ''}</div>
+      <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock>Xem tồn kho</button><button type="button" class="link-btn" data-sales-history-row>Lịch sử bán</button>' : ''}</div>
       ${meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
       ${hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
       ${hrc ? '' : text('bundleContents', 'Bộ gồm', 'Ví dụ: 01 ly + 01 nắp') + text('printDescription', 'Mô tả in ấn', 'Ví dụ: in logo màu tại 01 vị trí') + text('packagingDescription', 'Đóng gói', PACKAGING_DEFAULT)}
@@ -719,6 +723,7 @@ $('#line-list').addEventListener('click', async e => {
   const tr = e.target.closest('tr'); if (!tr) return;
   const i = Number(tr.dataset.i), rows = editor.rows;
   if (e.target.closest('[data-stock]')) return showStock(rows[i]);
+  if (e.target.closest('[data-sales-history-row]')) return showSalesHistory(rows[i].sku, rows[i].name);
   if (e.target.closest('[data-image]')) return openImage(i);
   if (!e.target.closest('[data-del]')) return;
   const r = rows[i];
@@ -747,6 +752,28 @@ async function showStock(r) {
     $('#stock-body').innerHTML = `<p class="inventory-sku">Mã hàng: <b>${esc(r.sku)}</b></p><div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(updated)}</p>`;
   } catch (ex) { $('#stock-body').innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
 }
+/** Lịch sử bán của mã hàng: 10 lần bán gần nhất (ngày, khách, đơn, SL, đơn giá sau CK chưa VAT) + giá thấp / cao / gần nhất. */
+async function showSalesHistory(sku, name) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal wide sales-history';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Lịch sử bán · 10 lần gần nhất</span><h2>${esc(name || sku)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><p class="inventory-sku">Mã hàng: <b>${esc(sku)}</b></p><div data-body><p class="muted">Đang tải…</p></div></div>
+    <div class="modal-foot"><button type="button" class="btn navy" data-x>Đóng</button></div>`;
+  document.body.append(dlg); dlg.showModal();
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+  const body = dlg.querySelector('[data-body]');
+  try {
+    const d = await api('/products/' + encodeURIComponent(sku) + '/sales-history'), s = d.summary;
+    if (!d.history.length) { body.innerHTML = '<p class="muted">Mã này chưa có lần bán nào (chỉ tính đơn đặt hàng đã xác nhận).</p>'; return; }
+    body.innerHTML = `<div class="stats sh-stats">${[['Giá bán gần nhất', s.last], ['Thấp nhất', s.min], ['Cao nhất', s.max], ['Trung bình', s.avg]].map(([k, v]) => `<article class="stat"><small>${k}</small><strong>${money(v)}</strong></article>`).join('')}</div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày</th><th>Khách hàng</th><th>Đơn hàng</th><th class="right">SL</th><th class="right">Đơn giá*</th><th class="right">VAT</th></tr></thead><tbody>
+      ${d.history.map(h => `<tr><td>${fmtDate(h.soldOn)}</td><td>${esc(h.customerName)}${h.ownerName ? `<small>NV: ${esc(h.ownerName)}</small>` : ''}</td><td><a href="#/orders/${esc(h.orderId)}" data-x-link>${esc(h.orderNo)}</a></td>
+        <td class="right">${fmtNum(h.qty)} ${esc(h.unit)}</td><td class="right num"><b>${money(h.unitPrice)}</b></td><td class="right">${fmtNum(h.taxRate)}%</td></tr>`).join('')}</tbody></table></div>
+      <p class="muted small">* Đơn giá bán sau chiết khấu, chưa VAT. Chỉ tính đơn đặt hàng đã xác nhận; đơn huỷ được bỏ khỏi lịch sử.</p>`;
+    body.querySelectorAll('[data-x-link]').forEach(a => a.addEventListener('click', close));
+  } catch (ex) { body.innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-sales-history]'); if (b) showSalesHistory(b.dataset.salesHistory, b.dataset.name); });
 // ----- hình của dòng (HRC: hình sản phẩm; B2B/VIGIFTS: maquette) – link ảnh hoặc tải ảnh lên, như web cũ
 let imageRow = -1, pendingImage = '';
 function drawImagePreview() { $('#image-preview').innerHTML = pendingImage ? imgTag(pendingImage, 'thumb big') : '<span class="muted">Chưa có ảnh</span>'; $('#image-remove').hidden = !pendingImage; }
@@ -1324,7 +1351,7 @@ function renderProducts() {
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
       <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}">${fmtNum(stock)}</td>
-      <td class="actions-cell"><div class="row-actions"><button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button></div></td>
+      <td class="actions-cell"><div class="row-actions"><button class="btn ghost small" data-sales-history="${esc(p.sku)}" data-name="${esc(p.name)}" title="10 lần bán gần nhất của mã này">Lịch sử bán</button><button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button></div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;

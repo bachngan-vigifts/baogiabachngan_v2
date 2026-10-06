@@ -187,3 +187,26 @@ export const customerPayments = pgTable('customer_payments', {
   enumCheck('chk_customer_payments_method', t.method, PAYMENT_METHODS),
   check('chk_customer_payments_amount', sql`${t.amount} > 0`),
 ]).enableRLS();
+
+/**
+ * Lịch sử bán của từng mã hàng: mỗi dòng đơn đã xác nhận (không tính đơn nháp / đã huỷ) ghi một bản,
+ * chỉ giữ 10 lần bán gần nhất mỗi mã (`SALES_HISTORY_PER_SKU`) – xem nhanh khi báo giá (giá đã bán, cho ai, bao nhiêu).
+ */
+export const productSalesHistory = pgTable('product_sales_history', {
+  id: text('id').primaryKey(),
+  sku: text('sku').notNull(),
+  orderId: text('order_id').notNull().references(() => salesOrders.id, { onDelete: 'cascade' }),
+  orderLineId: text('order_line_id').notNull().references(() => salesOrderLines.id, { onDelete: 'cascade' }),
+  orderNo: text('order_no').notNull(),
+  customerId: text('customer_id').references(() => customers.id),
+  customerName: text('customer_name').notNull(),
+  ownerId: text('owner_id').references(() => employees.id),
+  name: text('name').notNull().default(''),
+  unit: text('unit').notNull().default(''),
+  qty: doublePrecision('qty').notNull(),
+  /** Đơn giá bán (sau chiết khấu, đã cộng phí in, chưa VAT) và thuế suất của dòng. */
+  unitPrice: doublePrecision('unit_price').notNull(),
+  taxRate: doublePrecision('tax_rate').notNull().default(0),
+  soldOn: text('sold_on').notNull(),
+  recordedAt: text('recorded_at').notNull(),
+}, t => [uniqueIndex('idx_product_sales_line').on(t.orderLineId), index('idx_product_sales_sku').on(t.sku, t.soldOn)]).enableRLS();
