@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTestDb } from '../../../../tests/helpers/d1.ts';
+import { createTestDb } from '../../../../tests/helpers/postgres.ts';
 import { seedStaff, PASSWORD, token, T } from '../../../../tests/helpers/staff-fixture.ts';
 import { createStaffRouter, type StaffEnv } from './auth-routes.ts';
 import { json } from '../../../core/http/router.ts';
@@ -9,7 +9,7 @@ import { RATE_LIMITS, SESSION_COOKIE } from '../domain/session.ts';
 
 const O = 'https://staff.test';
 async function world() {
-  const { db, d1 } = createTestDb(); await seedStaff(d1);
+  const { db, d1 } = (await createTestDb()); await seedStaff(d1);
   const clock = { t: T.now };
   const env: StaffEnv = { db, nowSec: () => clock.t, passwordIterations: 1000 };
   const router = createStaffRouter();
@@ -64,7 +64,7 @@ test('liên kết kích hoạt chỉ dùng được MỘT lần, kể cả khi h
   const results = await Promise.all([1, 2, 3, 4].map(() => w.call('/activate', { body: { token: token(1), password: PASSWORD }, ip: '1.1.1.1' })));
   assert.equal(results.filter(r => r.status === 200).length, 1, JSON.stringify(results.map(r => r.status)));
   assert.ok(results.filter(r => r.status !== 200).every(r => r.status === 400));
-  const row = w.d1.sqlite.prepare("SELECT version, activation_hash h FROM staff_credentials WHERE member_id='new'").get() as any;
+  const row = (await w.d1.sqlite.prepare("SELECT version, activation_hash h FROM staff_credentials WHERE member_id='new'").get()) as any;
   assert.deepEqual([row.version, row.h], [1, null]); // phiên bản tăng đúng một lần
 });
 
@@ -112,22 +112,22 @@ test('giới hạn theo IP: quá 100 lần/IP bị chặn dù đổi email', asy
 test('đếm lần thử là nguyên tử: 25 yêu cầu song song cho đúng 25 lần đếm, không sót', async () => {
   const w = await world();
   await Promise.all(Array.from({ length: 25 }, () => w.call('/login', { body: { email: 'emp@x.vn', password: 'sai-sai-sai' }, ip: '7.7.7.7' })));
-  const c = (w.d1.sqlite.prepare('SELECT count FROM staff_auth_attempts ORDER BY count DESC').all() as any[]).map(r => r.count);
+  const c = ((await w.d1.sqlite.prepare('SELECT count FROM staff_auth_attempts ORDER BY count DESC').all()) as any[]).map(r => r.count);
   assert.equal(c[0], 25);
 });
 
 test('phiên: hết hạn, tài khoản bị khoá, đổi phiên bản thông tin đăng nhập → 401', async () => {
   const w = await world();
   const expired = await w.login('emp@x.vn');
-  w.d1.sqlite.prepare('UPDATE staff_sessions SET expires = ?').run(w.clock.t - 1);
+  (await w.d1.sqlite.prepare('UPDATE staff_sessions SET expires = ?').run(w.clock.t - 1));
   assert.equal((await w.call('/me', { cookie: expired.cookie })).body.error, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   const locked = await w.login('mgr@x.vn');
   assert.equal((await w.call('/me', { cookie: locked.cookie })).status, 200);
-  w.d1.sqlite.prepare("UPDATE staff_members SET active=0 WHERE id='mgr'").run();
+  (await w.d1.sqlite.prepare("UPDATE staff_members SET active=0 WHERE id='mgr'").run());
   assert.equal((await w.call('/me', { cookie: locked.cookie })).status, 401);
-  w.d1.sqlite.prepare("UPDATE staff_members SET active=1 WHERE id='mgr'").run();
+  (await w.d1.sqlite.prepare("UPDATE staff_members SET active=1 WHERE id='mgr'").run());
   assert.equal((await w.call('/me', { cookie: locked.cookie })).status, 200);
-  w.d1.sqlite.prepare("UPDATE staff_credentials SET version=version+1 WHERE member_id='mgr'").run();
+  (await w.d1.sqlite.prepare("UPDATE staff_credentials SET version=version+1 WHERE member_id='mgr'").run());
   assert.equal((await w.call('/me', { cookie: locked.cookie })).status, 401);
 });
 
@@ -142,7 +142,7 @@ test('cookie thiếu / hỏng / token lạ: 401 đúng thông báo', async () =>
 test('token phiên không lưu thô trong DB (chỉ lưu băm)', async () => {
   const w = await world();
   const l = await w.login('emp@x.vn'); const raw = l.cookie.split('=')[1]!;
-  const rows = w.d1.sqlite.prepare('SELECT hash FROM staff_sessions').all() as any[];
+  const rows = (await w.d1.sqlite.prepare('SELECT hash FROM staff_sessions').all()) as any[];
   assert.equal(rows.length, 1); assert.notEqual(rows[0].hash, raw); assert.match(rows[0].hash, /^[a-f0-9]{64}$/);
 });
 
@@ -182,7 +182,7 @@ test('KHU VỰC: NCC chỉ vào self + cổng NCC; nhân viên không vào cổn
 
 test('NCC lệch vai trò (vai trò nhân viên nhưng chức vụ NCC) vẫn bị giới hạn như NCC', async () => {
   const w = await world();
-  w.d1.sqlite.prepare("UPDATE staff_members SET role='employee' WHERE id='ncc'").run();
+  (await w.d1.sqlite.prepare("UPDATE staff_members SET role='employee' WHERE id='ncc'").run());
   const l = await w.login('ncc@x.vn');
   assert.equal((await w.call('/biz', { cookie: l.cookie })).status, 403);
   assert.equal((await w.call('/portal', { cookie: l.cookie })).status, 200);

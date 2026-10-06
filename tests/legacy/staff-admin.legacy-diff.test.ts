@@ -16,9 +16,9 @@ async function observe(d: Driver, steps: (rec: (label: string, p: Promise<Result
   await steps(rec, d);
   const q = d.d1.sqlite;
   log.push({ label: 'DB',
-    members: q.prepare('SELECT email, name, phone, role, position_id, active FROM staff_members ORDER BY email').all().map(r => ({ ...r })),
-    creds: q.prepare('SELECT m.email, c.version, c.password_hash IS NOT NULL pw, c.activation_hash IS NOT NULL act FROM staff_credentials c JOIN staff_members m ON m.id=c.member_id ORDER BY m.email').all().map(r => ({ ...r })),
-    sessions: q.prepare('SELECT m.email, COUNT(*) n FROM staff_sessions s JOIN staff_members m ON m.id=s.member_id GROUP BY m.email ORDER BY m.email').all().map(r => ({ ...r })) });
+    members: (await q.prepare('SELECT email, name, phone, role, position_id, active FROM staff_members ORDER BY email').all()).map(r => ({ ...r })),
+    creds: (await q.prepare('SELECT m.email, c.version, c.password_hash IS NOT NULL pw, c.activation_hash IS NOT NULL act FROM staff_credentials c JOIN staff_members m ON m.id=c.member_id ORDER BY m.email').all()).map(r => ({ ...r })),
+    sessions: (await q.prepare('SELECT m.email, COUNT(*) n FROM staff_sessions s JOIN staff_members m ON m.id=s.member_id GROUP BY m.email ORDER BY m.email').all()).map(r => ({ ...r })) });
   return log;
 }
 async function compare(name: string, steps: Parameters<typeof observe>[1]) {
@@ -63,19 +63,19 @@ test('TẠO NHÂN VIÊN ↔ bản cũ: mọi lỗi nhập liệu, trùng email, 
     const l = await rec('đăng nhập nhân viên mới', login(d, 'a.moi@x.vn'));
     await rec('/me nhân viên mới', d.call('/me', { cookie: cookieOf(l) }));
     // hiệu lực liên kết 15 phút
-    d.d1.sqlite.prepare("UPDATE staff_credentials SET activation_hash=?, activation_expires=? WHERE member_id IN (SELECT id FROM staff_members WHERE email='ncc.moi@x.vn')").run('0'.repeat(64), T.now + 899);
+    (await d.d1.sqlite.prepare("UPDATE staff_credentials SET activation_hash=?, activation_expires=? WHERE member_id IN (SELECT id FROM staff_members WHERE email='ncc.moi@x.vn')").run('0'.repeat(64), T.now + 899));
   });
 });
 
 test('SỬA NHÂN VIÊN ↔ bản cũ: tự sửa, hồ sơ đã hợp nhất, mọi lỗi nhập liệu, vai trò suy từ chức vụ, huỷ phiên của người bị sửa', opts, async () => {
   await compare('sửa', async (rec, d) => {
     const m = await as(d, 'mgr@x.vn');
-    const id = (email: string) => (d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email) as any).id as string;
-    const emp = id('emp@x.vn'), mgr = id('mgr@x.vn');
-    const base = { id: emp, name: 'Tên mới', email: 'emp@x.vn', phone: '0922222222', role: 'employee', positionId: 'sale', active: true };
+    const id = async (email: string) => ((await d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email)) as any).id as string;
+    const emp = (await id('emp@x.vn')), mgr = (await id('mgr@x.vn'));
+    const base = { id: await emp, name: 'Tên mới', email: 'emp@x.vn', phone: '0922222222', role: 'employee', positionId: 'sale', active: true };
     const put = (label: string, b: object) => rec(label, post(d, '/admin/member', b, m, 'PUT'));
-    await put('tự sửa', { ...base, id: mgr });
-    d.d1.sqlite.prepare("INSERT INTO staff_sapo_links (sapo_id, member_id, created_at, evidence) VALUES ('SAPO-1', ?, '2026-01-01T00:00:00.000Z', 'test')").run(emp);
+    await put('tự sửa', { ...base, id: await mgr });
+    (await d.d1.sqlite.prepare("INSERT INTO staff_sapo_links (sapo_id, member_id, created_at, evidence) VALUES ('SAPO-1', ?, '2026-01-01T00:00:00.000Z', 'test')").run(await emp));
     await put('hồ sơ đã hợp nhất (id Sapo)', { ...base, id: 'SAPO-1' });
     await put('role lạ', { ...base, role: 'admin' });
     await put('active không phải boolean', { ...base, active: 'true' });
@@ -99,15 +99,15 @@ test('SỬA NHÂN VIÊN ↔ bản cũ: tự sửa, hồ sơ đã hợp nhất, m
 test('KHOÁ (XOÁ) NHÂN VIÊN ↔ bản cũ: không tự xoá, không tìm thấy, huỷ phiên, không đăng nhập lại được', opts, async () => {
   await compare('khoá', async (rec, d) => {
     const m = await as(d, 'mgr@x.vn');
-    const id = (email: string) => (d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email) as any).id as string;
+    const id = async (email: string) => ((await d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email)) as any).id as string;
     const del = (label: string, b: object) => rec(label, post(d, '/admin/member', b, m, 'DELETE'));
-    await del('tự xoá', { id: id('mgr@x.vn') });
+    await del('tự xoá', { id: (await id('mgr@x.vn')) });
     await del('id không tồn tại', { id: 'NV-khong-co' });
     const sess = cookieOf(await login(d, 'emp@x.vn'));
-    await del('xoá thành công', { id: id('emp@x.vn') });
+    await del('xoá thành công', { id: (await id('emp@x.vn')) });
     await rec('phiên của người bị khoá', d.call('/me', { cookie: sess }));
     await rec('đăng nhập lại', login(d, 'emp@x.vn'));
-    await del('xoá lần hai (đã khoá)', { id: id('emp@x.vn') });
+    await del('xoá lần hai (đã khoá)', { id: (await id('emp@x.vn')) });
     await rec('danh sách sau khi khoá', d.call('/admin/members', { cookie: m }));
   });
 });
@@ -115,19 +115,19 @@ test('KHOÁ (XOÁ) NHÂN VIÊN ↔ bản cũ: không tự xoá, không tìm th�
 test('CẤP LẠI LIÊN KẾT ↔ bản cũ: không tự đặt lại, không tìm thấy/đã khoá, huỷ mật khẩu + phiên, liên kết dùng được', opts, async () => {
   await compare('đặt lại', async (rec, d) => {
     const m = await as(d, 'mgr@x.vn');
-    const id = (email: string) => (d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email) as any).id as string;
+    const id = async (email: string) => ((await d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email)) as any).id as string;
     const reset = (label: string, b: object) => rec(label, post(d, '/admin/reset', b, m));
-    await reset('tự đặt lại', { id: id('mgr@x.vn') });
+    await reset('tự đặt lại', { id: (await id('mgr@x.vn')) });
     await reset('không tồn tại', { id: 'NV-khong-co' });
-    await reset('tài khoản đã khoá', { id: id('off@x.vn') });
+    await reset('tài khoản đã khoá', { id: (await id('off@x.vn')) });
     const sess = cookieOf(await login(d, 'emp@x.vn'));
-    const r = await reset('thành công', { id: id('emp@x.vn') });
+    const r = await reset('thành công', { id: (await id('emp@x.vn')) });
     await rec('phiên cũ bị huỷ', d.call('/me', { cookie: sess }));
     await rec('mật khẩu cũ hết dùng', login(d, 'emp@x.vn'));
     const t = tokenFromUrl(r);
     await rec('kích hoạt bằng liên kết mới', d.call('/activate', { body: { token: t, password: 'mat-khau-moi-2' } }));
     await rec('đăng nhập mật khẩu mới', login(d, 'emp@x.vn', 'mat-khau-moi-2'));
-    await reset('đặt lại lần hai (liên kết cũ thay thế)', { id: id('emp@x.vn') });
+    await reset('đặt lại lần hai (liên kết cũ thay thế)', { id: (await id('emp@x.vn')) });
     await rec('liên kết thứ nhất hết hiệu lực', d.call('/activation-info', { body: { token: t } }));
   });
 });
@@ -135,12 +135,12 @@ test('CẤP LẠI LIÊN KẾT ↔ bản cũ: không tự đặt lại, không t�
 test('ĐỔI SỐ ĐIỆN THOẠI ↔ bản cũ', opts, async () => {
   await compare('điện thoại', async (rec, d) => {
     const m = await as(d, 'mgr@x.vn');
-    const id = (email: string) => (d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email) as any).id as string;
+    const id = async (email: string) => ((await d.d1.sqlite.prepare('SELECT id FROM staff_members WHERE email=?').get(email)) as any).id as string;
     const phone = (label: string, b: object) => rec(label, post(d, '/admin/member-phone', b, m, 'PUT'));
-    await phone('hợp lệ', { id: id('emp@x.vn'), phone: '  0933333333 ' });
-    await phone('rỗng (được phép)', { id: id('emp@x.vn'), phone: '' });
-    await phone('quá dài', { id: id('emp@x.vn'), phone: '9'.repeat(41) });
-    await phone('không phải chuỗi', { id: id('emp@x.vn'), phone: 123 });
+    await phone('hợp lệ', { id: (await id('emp@x.vn')), phone: '  0933333333 ' });
+    await phone('rỗng (được phép)', { id: (await id('emp@x.vn')), phone: '' });
+    await phone('quá dài', { id: (await id('emp@x.vn')), phone: '9'.repeat(41) });
+    await phone('không phải chuỗi', { id: (await id('emp@x.vn')), phone: 123 });
     await phone('không tồn tại', { id: 'NV-khong-co', phone: '0900' });
   });
 });

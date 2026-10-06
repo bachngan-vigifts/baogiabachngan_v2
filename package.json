@@ -8,21 +8,28 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test \"tests/**/*.test.ts\" \"src/**/*.test.ts\"",
-    "test:db": "node --import tsx --test \"tests/db/*.test.ts\"",
+    "test": "node --import tsx --test --test-concurrency=2 \"tests/**/*.test.ts\" \"src/**/*.test.ts\"",
+    "test:db": "node --import tsx --test --test-concurrency=2 \"tests/db/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
     "docs:data-model": "node --import tsx scripts/gen-data-model-doc.ts",
     "docs:ncc": "node --import tsx scripts/gen-ncc-actions-doc.ts",
-    "bootstrap:manager": "node --import tsx scripts/bootstrap-manager.ts"
+    "bootstrap:manager": "node --import tsx scripts/bootstrap-manager.ts",
+    "ui:build": "node --import tsx scripts/build-trial-ui.ts",
+    "ui:dev": "node --import tsx scripts/dev-trial-ui.ts",
+    "ui:demo": "node --import tsx scripts/build-trial-demo.ts"
   },
   "dependencies": {
     "@noble/hashes": "^2.0.1",
+    "@supabase/supabase-js": "2.117.2",
     "drizzle-orm": "0.45.2",
+    "postgres": "3.4.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@types/node": "22.19.19",
     "drizzle-kit": "0.31.10",
+    "esbuild": "0.25.12",
     "tsx": "^4.19.0",
     "typescript": "5.9.3"
   }

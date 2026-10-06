@@ -1,6 +1,6 @@
 // Tạo Manager đầu tiên. Dùng:
 //   npm run bootstrap:manager -- --name "Họ tên" --email a@b.vn --phone 09xxxxxxxx --origin https://ten-mien.vn > manager.sql
-//   wrangler d1 execute DB --remote --file=manager.sql
+//   Áp manager.sql trong Supabase SQL Editor (sau khi kiểm tra dữ liệu).
 // Liên kết kích hoạt in ra STDERR (không lẫn vào file SQL). Gửi liên kết cho người đó; hiệu lực 24 giờ.
 import { buildManagerBootstrap } from '../src/modules/staff/domain/bootstrap.ts';
 
