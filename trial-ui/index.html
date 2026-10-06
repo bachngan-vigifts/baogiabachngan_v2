@@ -188,6 +188,7 @@
             <h2 class="card-title">Sản phẩm <span class="muted" id="line-count"></span></h2>
             <div class="row-gap">
               <label class="switch"><input type="checkbox" id="show-cost"><span></span>Giá vốn &amp; lợi nhuận</label>
+              <button type="button" class="btn secondary small" id="pick-products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Chọn từ danh sách sản phẩm</button>
               <button type="button" class="btn ghost small" id="paste-lines">Dán từ Excel</button>
             </div>
           </div>
@@ -389,6 +390,20 @@
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="paste-apply">Thêm vào báo giá</button></div>
   </form>
+</dialog>
+
+<dialog id="picker-dialog" class="modal wide">
+  <div class="modal-head"><h2>Thêm sản phẩm vào báo giá</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body picker-body">
+    <div class="toolbar picker-tools">
+      <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="picker-search" type="search" placeholder="Tìm tên, mã SKU, thương hiệu…" aria-label="Tìm sản phẩm để thêm"></label>
+      <select id="picker-brand" aria-label="Thương hiệu"><option value="">Mọi thương hiệu</option></select>
+    </div>
+    <ul class="picker-list" id="picker-list"></ul>
+    <p class="muted small picker-empty" id="picker-empty" hidden></p>
+    <div class="more-row" id="picker-more-row" hidden><button type="button" class="btn secondary small" id="picker-more">Xem thêm</button></div>
+  </div>
+  <div class="modal-foot"><span class="muted small picker-added" id="picker-added"></span><button type="button" class="btn primary" data-close>Xong</button></div>
 </dialog>
 
 <dialog id="confirm-dialog" class="modal narrow">

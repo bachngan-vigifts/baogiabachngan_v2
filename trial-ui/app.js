@@ -937,6 +937,58 @@ $('#line-list').addEventListener('keydown', e => {
 pSuggest.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pickProduct(pItems[li.dataset.i]); } });
 addEventListener('resize', () => { if (!pSuggest.hidden) placeProductSuggest(); });
 
+// ----- chọn sản phẩm từ danh mục ngay trong báo giá
+let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
+async function loadPicker(more = false) {
+  const req = ++pickerReq, offset = more ? pickerItems.length : 0;
+  const q = $('#picker-search').value, brand = $('#picker-brand').value;
+  let d;
+  try { d = await api(`/products?limit=40&offset=${offset}&q=${encodeURIComponent(q)}&brand=${encodeURIComponent(brand)}`); }
+  catch (e) { $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; return; }
+  if (req !== pickerReq) return;
+  applyCatalogMeta(d);
+  pickerItems = more ? [...pickerItems, ...d.products] : d.products; pickerTotal = d.total;
+  $('#picker-list').innerHTML = pickerItems.map((p, i) => {
+    const price = productPrice(p);
+    return `<li data-i="${i}">${thumb(p)}
+      <span class="prod-text"><b>${esc(p.name)}</b><small>${esc([p.sku, p.brand, p.unit].filter(Boolean).join(' · '))}</small></span>
+      <span class="price">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}<small>Tồn ${fmtNum(availableStock(p))}</small></span>
+      <input class="num-input" inputmode="decimal" value="1" aria-label="Số lượng ${esc(p.name)}">
+      <button type="button" class="btn secondary small pick-add" data-add="${i}">＋ Thêm</button>
+    </li>`;
+  }).join('');
+  $('#picker-empty').hidden = pickerItems.length > 0;
+  $('#picker-empty').textContent = q || brand ? 'Không tìm thấy sản phẩm phù hợp.' : 'Chưa có dữ liệu sản phẩm. Danh mục sẽ hiện sau khi nhập dữ liệu từ web cũ.';
+  $('#picker-more-row').hidden = pickerItems.length >= pickerTotal;
+  if (!more && !$('#picker-brand').options[1]) api('/product-brands').then(b => {
+    $('#picker-brand').innerHTML = '<option value="">Mọi thương hiệu</option>' + b.brands.map(x => `<option value="${esc(x.name)}">${esc(x.name)} (${x.count})</option>`).join('');
+    $('#picker-brand').value = brand;
+  }).catch(() => {});
+}
+/** Thêm dòng vào báo giá; dòng trống duy nhất (mới tạo) được thay luôn. */
+function addRowsToQuote(rows) {
+  const blank = editor.rows.length === 1 && !editor.rows[0].name && !Number(editor.rows[0].price) && !editor.rows[0].sku;
+  const base = blank ? [] : editor.rows;
+  if (base.length + rows.length > 300) { toast('Báo giá tối đa 300 dòng.', 'err'); return false; }
+  editor.rows = [...base, ...rows]; markDirty(); renderLines(); return true;
+}
+$('#pick-products').addEventListener('click', () => {
+  pickerAdded = 0; $('#picker-added').textContent = '';
+  $('#picker-dialog').showModal(); $('#picker-search').focus(); loadPicker();
+});
+$('#picker-search').addEventListener('input', () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), 250); });
+$('#picker-brand').addEventListener('change', () => loadPicker());
+$('#picker-more').addEventListener('click', () => loadPicker(true));
+$('#picker-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-add]'); if (!b) return;
+  const li = b.closest('li'), p = pickerItems[b.dataset.add], qty = parseNum(li.querySelector('input').value);
+  if (!(qty > 0)) { li.querySelector('input').classList.add('invalid'); return; }
+  if (!addRowsToQuote([{ ...rowFromProduct(p), qty }])) return;
+  pickerAdded++; li.classList.add('added'); b.textContent = '✓ Đã thêm';
+  $('#picker-added').textContent = `Đã thêm ${pickerAdded} sản phẩm vào báo giá`;
+});
+$('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });
+
 // ---------------------------------------------------------------- khách hàng
 let customerId = null;
 function quoteCountByCustomer() {
