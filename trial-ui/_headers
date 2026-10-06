@@ -1,6 +1,8 @@
 # Cloudflare Pages: header bảo mật cho giao diện.
+# Cache-Control no-cache: trình duyệt luôn hỏi lại máy chủ (304 nếu chưa đổi) nên bản giao diện mới lên là dùng ngay, không giữ JS/CSS cũ.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Cache-Control: no-cache
