@@ -3,6 +3,7 @@
 import { totals, after } from './quote-math.js';
 import { searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
+import { verifyBox, duePill } from './verify.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -121,11 +122,11 @@ async function loadQuotes() {
       <td data-label="Đơn hàng">${q.order ? `${esc(q.order.orderNo)} ${pill(ORDER_STATUS, q.order.status)}` : q.approvalStatus === 'approved' ? '<span class="muted">Chưa đặt hàng</span>' : '—'}</td></tr>`).join('');
   } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="error">${esc(e.message)}</td></tr>`; }
 }
-let openQuoteId = '';
+let openQuoteId = '', openQuote = null;
 $('#p-quotes').addEventListener('click', async e => {
   const tr = e.target.closest('[data-quote]'); if (!tr) return;
   try {
-    const q = await api('/portal/quotes/' + encodeURIComponent(tr.dataset.quote)); openQuoteId = q.id;
+    const q = await api('/portal/quotes/' + encodeURIComponent(tr.dataset.quote)); openQuoteId = q.id; openQuote = q;
     const d = q.data, t = q.totals;
     $('#pq-title').textContent = q.quoteNo;
     $('#pq-body').innerHTML = `<p>${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã xác nhận</span>' : '<span class="pill warn">Chờ nhân viên xác nhận</span>'} · Ngày ${fmtDate(d.date)}${d.deliveryDate ? ' · Giao dự kiến ' + fmtDate(d.deliveryDate) : ''}</p>
@@ -140,8 +141,12 @@ $('#p-quotes').addEventListener('click', async e => {
   } catch (ex) { toast(ex.message, 'err'); }
 });
 $('#pq-order').addEventListener('click', async () => {
+  const q = openQuote; if (!q) return;
+  $('#p-quote-dialog').close();
+  const v = await confirmOrder({ items: q.data.rows.map(r => ({ name: r.name, unit: r.unit, qty: r.qty })), total: q.totals.total, deliveryDate: q.data.deliveryDate || '' });
+  if (!v) return $('#p-quote-dialog').showModal();
   const btn = $('#pq-order'); btn.disabled = true;
-  try { await api(`/portal/quotes/${encodeURIComponent(openQuoteId)}/order`, 'POST', {}); $('#p-quote-dialog').close(); toast('Đã gửi đơn đặt hàng. Nhân viên phụ trách sẽ xác nhận.'); showTab('orders'); }
+  try { await api(`/portal/quotes/${encodeURIComponent(openQuoteId)}/order`, 'POST', { confirmed: true, deliveryDate: v.deliveryDate }); toast('Đã gửi đơn đặt hàng. Nhân viên phụ trách sẽ xác nhận.'); showTab('orders'); }
   catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
 });
 
@@ -274,12 +279,37 @@ $('#p-cart').addEventListener('click', e => {
   if (e.target.closest('[data-add-first]')) return $('#p-pick').click();
   const tr = e.target.closest('tr[data-sku]'); if (tr && e.target.closest('[data-remove]')) { st.cart.delete(tr.dataset.sku); renderCart(); }
 });
+/**
+ * Bước xác thực trước khi khách gửi đơn: xem lại thông tin công ty, địa chỉ giao, sản phẩm, tổng tiền và chọn ngày giao mong muốn.
+ * Trả về { deliveryDate } hoặc null nếu khách quay lại kiểm tra.
+ */
+const parseMoney = t => Number(String(t || '').replace(/[^\d]/g, '')) || 0;
+async function confirmOrder({ items, total, deliveryDate = '' }) {
+  const c = st.me.customer, val = v => v ? esc(v) : '';
+  const today = new Date(), iso = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return verifyBox({
+    title: 'Xác nhận gửi đơn đặt hàng', eyebrow: 'Kiểm tra trước khi gửi',
+    intro: 'Quý khách vui lòng kiểm tra lại thông tin. Đơn chỉ có hiệu lực sau khi nhân viên phụ trách xác nhận.',
+    rows: [['Công ty', val(c.name)], ['MST', val(c.taxCode)], ['Người nhận / SĐT', val([c.contact, c.phone].filter(Boolean).join(' · '))], ['Địa chỉ giao', val(c.address)],
+      ['Sản phẩm', items.map(i => `${esc(i.name)} × ${fmtNum(i.qty)} ${esc(i.unit || '')}`).join('<br>')], ...(total !== undefined ? [['Tổng thanh toán (dự kiến)', `<b>${money(total)}</b>`]] : [])],
+    fields: `<label class="verify-field"><span>Ngày giao mong muốn</span><input type="date" name="deliveryDate" value="${esc(deliveryDate)}" min="${iso}"></label>`,
+    checks: ['Tên công ty, MST, người nhận, số điện thoại và địa chỉ giao hàng chính xác', 'Sản phẩm và số lượng đúng nhu cầu đặt hàng',
+      'Ngày giao mong muốn đã chọn đúng', 'Tôi hiểu đơn hàng chỉ có hiệu lực khi nhân viên phụ trách xác nhận'],
+    validate: v => v.deliveryDate ? '' : 'Vui lòng chọn ngày giao mong muốn.', ok: 'Gửi đơn đặt hàng',
+  });
+}
 async function send(order) {
   const err = $('#p-error'); err.textContent = '';
   if (!st.cart.size) { err.textContent = 'Chọn ít nhất một sản phẩm.'; return; }
+  let deliveryDate = $('#p-delivery').value || undefined;
+  if (order) {
+    const items = [...st.cart].map(([sku, qty]) => { const p = st.items.find(x => x.sku === sku); return { name: p?.name || sku, unit: p?.unit, qty }; });
+    const v = await confirmOrder({ items, total: parseMoney($('#p-total').textContent), deliveryDate: deliveryDate || '' }); if (!v) return;
+    deliveryDate = v.deliveryDate; $('#p-delivery').value = deliveryDate;
+  }
   const btns = [$('#p-send-quote'), $('#p-send-order')]; btns.forEach(b => b.disabled = true);
   try {
-    const r = await api('/portal/quotes', 'POST', { items: [...st.cart].map(([sku, qty]) => ({ sku, qty })), note: $('#p-note').value, deliveryDate: $('#p-delivery').value || undefined, order });
+    const r = await api('/portal/quotes', 'POST', { items: [...st.cart].map(([sku, qty]) => ({ sku, qty })), note: $('#p-note').value, deliveryDate, order, confirmed: order || undefined });
     st.cart.clear(); $('#p-note').value = ''; $('#p-delivery').value = '';
     toast(order ? `Đã gửi đơn hàng (${r.quoteNo}). Nhân viên phụ trách sẽ xác nhận.` : `Đã gửi yêu cầu báo giá ${r.quoteNo}. Nhân viên phụ trách sẽ xác nhận.`);
     showTab(order ? 'orders' : 'quotes');
@@ -309,7 +339,7 @@ async function loadStock() {
         const want = avail === null || !Number.isFinite(avail) ? i.qty : Math.max(0, Math.min(i.qty, avail));
         return `<tr><td>${esc(i.name)}<small>${esc(i.sku)}</small></td><td class="right">${fmtNum(i.qty)} ${esc(i.unit || '')}</td>
         <td class="right">${done ? (a ? `<b class="${a.available < i.qty ? 'danger-text' : ''}">${fmtNum(a.available)}</b>` : '—') : '…'}</td>
-        ${done ? `<td class="right"><input class="num-input" inputmode="decimal" data-order-sku="${esc(i.sku)}" value="${want}" aria-label="Số lượng đặt ${esc(i.name)}"></td>` : ''}</tr>`; }).join('')}
+        ${done ? `<td class="right"><input class="num-input" inputmode="decimal" data-order-sku="${esc(i.sku)}" data-unit="${esc(i.unit || '')}" value="${want}" aria-label="Số lượng đặt ${esc(i.name)}"></td>` : ''}</tr>`; }).join('')}
       </tbody></table></div>
       ${r.answer ? `<p class="small"><b>Nhân viên trả lời:</b> ${esc(r.answer)}</p>` : ''}
       ${done ? '<div class="portal-actions"><button type="button" class="btn primary small" data-stock-order>Đặt hàng ngay</button></div>' : ''}
@@ -324,10 +354,12 @@ $('#p-stock').addEventListener('click', async e => {
   if (items.some(i => !(i.qty >= 0))) return toast('Số lượng đặt không hợp lệ.', 'err');
   const chosen = items.filter(i => i.qty > 0);
   if (!chosen.length) return toast('Nhập số lượng đặt cho ít nhất một sản phẩm.', 'err');
-  if (!confirm(`Đặt hàng ${chosen.length} sản phẩm theo đơn check tồn này?`)) return;
+  const names = Object.fromEntries([...art.querySelectorAll('[data-order-sku]')].map(inp => [inp.dataset.orderSku, inp.closest('tr').querySelector('td').firstChild.textContent]));
+  const units = Object.fromEntries([...art.querySelectorAll('[data-order-sku]')].map(inp => [inp.dataset.orderSku, inp.dataset.unit || '']));
+  const v = await confirmOrder({ items: chosen.map(i => ({ name: names[i.sku] || i.sku, unit: units[i.sku], qty: i.qty })) }); if (!v) return;
   b.disabled = true;
   try {
-    await api('/portal/quotes', 'POST', { items: chosen, order: true, note: `Đặt theo đơn check tồn ${new Date(art.dataset.created).toLocaleString('vi-VN')}` });
+    await api('/portal/quotes', 'POST', { items: chosen, order: true, confirmed: true, deliveryDate: v.deliveryDate, note: `Đặt theo đơn check tồn ${new Date(art.dataset.created).toLocaleString('vi-VN')}` });
     toast('Đã gửi đơn đặt hàng. Nhân viên phụ trách sẽ xác nhận.'); showTab('orders');
   } catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
 });
@@ -372,7 +404,7 @@ async function loadOrders() {
     const { orders } = await api('/portal/orders');
     $('#p-orders-empty').hidden = orders.length > 0;
     box.innerHTML = orders.map(o => `<article class="card portal-order" data-order="${esc(o.id)}">
-      <header><div><b>${esc(o.orderNo)}</b> ${pill(ORDER_STATUS, o.status)}<small>Ngày đặt ${fmtDate(o.orderDate)}${o.quoteNo ? ' · Báo giá ' + esc(o.quoteNo) : ''}${o.expectedDeliveryDate ? ' · Giao dự kiến ' + fmtDate(o.expectedDeliveryDate) : ''}</small></div>
+      <header><div><b>${esc(o.orderNo)}</b> ${pill(ORDER_STATUS, o.status)}<small>Ngày đặt ${fmtDate(o.orderDate)}${o.quoteNo ? ' · Báo giá ' + esc(o.quoteNo) : ''}</small>${o.expectedDeliveryDate && o.status !== 'cancelled' ? `<span class="small">Giao dự kiến ${duePill(o.expectedDeliveryDate, { done: o.status === 'delivered', fmt: fmtDate })}</span>` : ''}</div>
         <strong>${money(o.total)}</strong></header>
       <ul class="plain-list">${o.lines.map(l => `<li><span>${esc(l.name)}<small>${esc(l.sku)}</small></span><span>${fmtNum(l.qty)} ${esc(l.unit)}${l.deliveredQty ? ` · đã giao ${fmtNum(l.deliveredQty)}` : ''}</span><b>${money(l.amount)}</b></li>`).join('')}</ul>
       ${o.contract ? `<p class="small"><b>HĐKT ${esc(o.contract.contractNo)}</b> ${pill(CONTRACT_STATUS, o.contract.status)}${o.contract.signedDate ? ' · ký ngày ' + fmtDate(o.contract.signedDate) : ''}</p>` : ''}

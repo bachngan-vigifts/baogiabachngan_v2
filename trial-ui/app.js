@@ -2,6 +2,7 @@
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
+import { verifyBox, duePill } from './verify.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -2030,8 +2031,11 @@ async function openOrder(id) {
   ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
   $('#order-actions').innerHTML = (o.status === 'draft' ? '<button class="btn ok" id="order-confirm" title="Khách đặt hàng từ trang khách hàng: kiểm tra rồi xác nhận">Xác nhận đơn</button>' : '')
     + (o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '');
-  $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)], ['Giao dự kiến', fmtDate(o.expectedDeliveryDate)]]
-    .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
+  const shipDone = o.status === 'delivered' || o.status === 'cancelled';
+  $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)]]
+    .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')
+    // Giao dự kiến tô màu theo hạn: trễ/hôm nay đỏ, ≤3 ngày cam, ≤7 ngày xanh dương, xa hơn xanh lá.
+    + `<dt>Giao dự kiến</dt><dd>${duePill(o.expectedDeliveryDate, { done: shipDone, fmt: fmtDate })}</dd>`;
   $('#order-debt').innerHTML = `<dl class="totals"><div><dt>Giá trị đơn (gồm VAT)</dt><dd>${money(o.total)}</dd></div><div><dt>Đã thu</dt><dd>${money(r.paid)}</dd></div>
     <div class="grand"><dt>Còn phải thu</dt><dd>${money(r.balance)}</dd></div>${r.overdue ? `<div><dt class="danger-text">Quá hạn</dt><dd class="danger-text">${money(r.overdue)}</dd></div>` : ''}</dl>
     <ul class="plain-list">${d.schedules.map(s => `<li><span>${esc(s.note || s.kind)}</span><b>${money(s.amount)}</b><small>${s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
@@ -2043,16 +2047,44 @@ async function openOrder(id) {
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>${k.status === 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}`
     : '<p class="muted">Chưa lập HĐKT. Lập HĐKT để cấp số hợp đồng và chia kỳ thanh toán (cọc + phần còn lại).</p>';
-  $('#order-deliveries').innerHTML = d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
-    : '<p class="muted">Chưa có lịch giao.</p>';
+  // Ngày giao dự kiến nằm ngay ở Lịch giao hàng: nhân viên đổi ngày → đơn (và đơn khách xem) cập nhật theo.
+  $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><label><span>Ngày giao dự kiến</span><input type="date" id="order-expected" value="${esc(o.expectedDeliveryDate || '')}"></label>
+      ${duePill(o.expectedDeliveryDate, { fmt: fmtDate })}<button type="button" class="btn secondary small" id="order-expected-save" hidden>Lưu ngày giao</button></div>`)
+    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
+    : '<p class="muted">Chưa có lịch giao.</p>');
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
   $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
   $('#order-payments').innerHTML = d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>';
 }
+document.addEventListener('input', e => { if (e.target.id === 'order-expected') document.getElementById('order-expected-save').hidden = e.target.value === (sales.order.expectedDeliveryDate || ''); });
+/** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
+async function verifyAndConfirmOrder() {
+  const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
+  const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
+  const v = await verifyBox({
+    title: 'Xác nhận đơn ' + o.orderNo, eyebrow: 'Kiểm tra trước khi duyệt',
+    intro: 'Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được đơn.',
+    rows: [['Khách hàng', dash(o.customerName)], ['MST', dash(o.taxCode)], ['Người nhận / SĐT', dash([o.contact, o.phone].filter(Boolean).join(' · '))], ['Địa chỉ giao', dash(o.address)],
+      ['Sản phẩm', items], ['Giá trị đơn (gồm VAT)', `<b>${money(o.total)}</b>`], ['Ghi chú của khách', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
+    fields: `<label class="verify-field"><span>Ngày giao dự kiến</span><input type="date" name="deliveryDate" value="${esc(o.expectedDeliveryDate || '')}" min="${todayIso()}"></label>`,
+    checks: ['Thông tin khách hàng (tên công ty, MST, người nhận, số điện thoại, địa chỉ giao) chính xác',
+      'Sản phẩm, số lượng, đơn giá và VAT đúng với yêu cầu của khách', 'Đã kiểm tra tồn kho / khả năng đáp ứng đủ số lượng',
+      'Ngày giao dự kiến khả thi và đã thống nhất với khách', 'Điều kiện thanh toán (đặt cọc / thanh toán khi giao) đã thống nhất với khách'],
+    validate: x => x.deliveryDate ? '' : 'Chọn ngày giao dự kiến.', ok: 'Xác nhận đơn',
+  });
+  if (!v) return;
+  try {
+    if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
+    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true });
+    toast('Đã xác nhận đơn của khách.'); openOrder(o.id);
+  } catch (ex) { toast(ex.message, 'err'); }
+}
 document.addEventListener('click', async e => {
-  if (e.target.closest('#order-confirm')) {
-    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'confirmed' }); toast('Đã xác nhận đơn của khách.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
+  if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
+  if (e.target.closest('#order-expected-save')) {
+    const date = document.getElementById('order-expected').value; if (!date) return toast('Chọn ngày giao.', 'err');
+    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/delivery-date`, 'PUT', { date }); toast('Đã đổi ngày giao dự kiến.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-cancel')) {
     if (!await confirmBox('Huỷ đơn này? Đơn huỷ không còn tính công nợ; báo giá có thể tạo đơn mới.', { title: 'Huỷ đơn', ok: 'Huỷ đơn', danger: true })) return;
