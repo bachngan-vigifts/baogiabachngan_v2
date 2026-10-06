@@ -1,10 +1,11 @@
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, inArray, lt } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { sapoHealthMonitorState, sapoRuntimeSessions } from '../schema.ts';
+import { sapoHealthMonitorState, sapoInventoryDocLines, sapoInventoryDocs, sapoRuntimeSessions } from '../schema.ts';
+import { SAPO_DOC_KINDS, SAPO_DOC_SOURCES, mapSapoDoc, type SapoDocKind } from '../domain/sapo-docs.ts';
 import { cleanCookie, decryptCookie, encryptCookie } from '../domain/sapo-session.ts';
 import { mapSapoProduct, sapoModifiedAt } from '../domain/sapo-mapping.ts';
 import { sapoClient } from './sapo-client.ts';
@@ -14,12 +15,18 @@ type Ctx = RouteContext<StaffEnv>;
 const SESSION_ID = 'active', STATE_ID = 'pull', LOCK_ID = 'pull-lock', CHECK_ID = 'session-check';
 /** Mỗi lần chạy đọc tối đa ngần này trang (250 bản ghi/trang) cho mỗi loại để nằm trong giới hạn thời gian của Edge Function; lần sau đọc tiếp. */
 const MAX_PAGES = 12;
+/** Quét tồn kho xoay vòng toàn bộ sản phẩm (bán/nhập hàng làm đổi tồn nhưng Sapo không đổi ngày sửa sản phẩm). */
+const STOCK_SWEEP_PAGES = 6;
+/** Chứng từ kho (đơn nhập, điều chuyển, kiểm hàng): mỗi loại tối đa ngần này trang mỗi lần chạy. */
+const DOC_PAGES = 4;
 const LOCK_SECONDS = 300;
 
 export interface Cursor { since?: string; page?: number }
 export interface PullState {
   startedAt?: string; finishedAt?: string; ok?: boolean; error?: string; code?: string; trigger?: string;
   results?: Record<string, Record<string, number>>;
+  /** Phần không đọc được nhưng không làm hỏng lượt chạy (vd tài khoản Sapo thiếu quyền xem phiếu kiểm hàng). */
+  warnings?: string[];
   cursors?: Record<string, Cursor>;
 }
 
@@ -91,18 +98,56 @@ const requireKey = (c: Ctx) => { if ((c.env.sapoSyncToken ?? '').length < 32) th
 const add = (into: Record<string, number>, r: Record<string, unknown>) => { for (const [k, v] of Object.entries(r)) if (typeof v === 'number') into[k] = (into[k] ?? 0) + v; return into; };
 
 /** Đọc một loại dữ liệu theo con trỏ: chỉ lấy bản ghi sửa sau `since` (lọc ở Sapo nếu hỗ trợ, và lọc lại ở đây). */
-async function readSince(api: ReturnType<typeof sapoClient>, path: string, key: string, cursor: Cursor, runStart: number) {
+async function readSince(api: ReturnType<typeof sapoClient>, path: string, key: string, cursor: Cursor, runStart: number, maxPages = MAX_PAGES) {
   const since = cursor.since ? Date.parse(cursor.since) : NaN, page = cursor.page ?? 1;
   let res;
   if (Number.isFinite(since)) {
-    try { res = await api.list(`${path}?modified_on_min=${encodeURIComponent(cursor.since!)}`, key, page, MAX_PAGES); }
+    try { res = await api.list(`${path}?modified_on_min=${encodeURIComponent(cursor.since!)}`, key, page, maxPages); }
     catch (e) { if (!(e instanceof AppError && /^SAPO_HTTP_4/.test(e.code ?? ''))) throw e; } // Sapo không nhận bộ lọc: đọc cả danh sách
   }
-  res ??= await api.list(path, key, page, MAX_PAGES);
+  res ??= await api.list(path, key, page, maxPages);
   const items = Number.isFinite(since) ? res.items.filter(r => !(sapoModifiedAt(r) < since)) : res.items;
   // Đọc hết thì con trỏ mới = lúc bắt đầu chạy (lùi 10 phút cho chắc); chưa hết thì lần sau đọc tiếp từ trang kế.
   const next: Cursor = res.nextPage ? { ...cursor, page: res.nextPage } : { since: new Date(runStart - 600_000).toISOString(), page: 1 };
   return { items, next };
+}
+
+/** Ghi chứng từ kho Sapo: thêm mới hoặc cập nhật theo (loại, id Sapo); dòng hàng được thay toàn bộ. */
+export async function syncSapoDocs(db: AnyDb, kind: SapoDocKind, raws: Record<string, any>[], locations: Map<string, string>) {
+  const docs = raws.map(r => mapSapoDoc(kind, r, locations)).filter(d => d !== null);
+  const r = { received: raws.length, created: 0, updated: 0, skipped: raws.length - docs.length };
+  if (!docs.length) return r;
+  const now = new Date().toISOString();
+  await db.transaction(async tx => {
+    const existing = new Set((await tx.select({ id: sapoInventoryDocs.id }).from(sapoInventoryDocs).where(inArray(sapoInventoryDocs.id, docs.map(d => d.id)))).map(x => x.id));
+    for (const { lines, ...d } of docs) {
+      const row = { ...d, syncedAt: now };
+      await tx.insert(sapoInventoryDocs).values(row).onConflictDoUpdate({ target: sapoInventoryDocs.id, set: row });
+      await tx.delete(sapoInventoryDocLines).where(eq(sapoInventoryDocLines.docId, d.id));
+      if (lines.length) await tx.insert(sapoInventoryDocLines).values(lines.map(l => ({ ...l, docId: d.id })));
+      existing.has(d.id) ? r.updated++ : r.created++;
+    }
+  });
+  return r;
+}
+
+/** Ghi sản phẩm (giá, tồn) theo lô ≤ 400 mã như luồng nhận đẩy. */
+async function syncProductPages(db: AnyDb, items: Record<string, any>[], locations: Map<string, string>, unknown: { policies: Set<string>; warehouses: Set<string> }) {
+  const pr: Record<string, number> = {};
+  let batch: unknown[] = [], count = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    const r = await syncProducts(db, { products: batch }, locations) as Record<string, unknown>;
+    add(pr, r); for (const n of (r.unknownPolicies as string[] ?? [])) unknown.policies.add(n); for (const n of (r.unknownWarehouses as string[] ?? [])) unknown.warehouses.add(n);
+    batch = []; count = 0;
+  };
+  for (const p of items) {
+    const n = mapSapoProduct(p, locations).variants.length; if (!n) continue;
+    if (count + n > 400) await flush();
+    batch.push(p); count += n;
+  }
+  await flush();
+  return pr;
 }
 
 /**
@@ -133,22 +178,25 @@ export async function runPull(c: Ctx, trigger: string) {
     // Sản phẩm: tên chi nhánh để ghép tồn kho; gửi theo lô ≤ 400 mã.
     const locations = new Map<string, string>();
     try { for (const l of (await api.list('/locations.json', 'locations', 1, 2)).items) locations.set(String(l.id), String(l.name ?? l.label ?? '')); } catch { /* không bắt buộc */ }
+    const unknown = { policies: new Set<string>(), warehouses: new Set<string>() };
     const prod = await readSince(api, '/products.json', 'products', state.cursors!.products ?? {}, runStart);
-    const pr: Record<string, number> = {}, unknown = { policies: new Set<string>(), warehouses: new Set<string>() };
-    let batch: unknown[] = [], count = 0;
-    const flush = async () => {
-      if (!batch.length) return;
-      const r = await syncProducts(db, { products: batch }, locations) as Record<string, unknown>;
-      add(pr, r); for (const n of (r.unknownPolicies as string[] ?? [])) unknown.policies.add(n); for (const n of (r.unknownWarehouses as string[] ?? [])) unknown.warehouses.add(n);
-      batch = []; count = 0;
-    };
-    for (const p of prod.items) {
-      const n = mapSapoProduct(p, locations).variants.length; if (!n) continue;
-      if (count + n > 400) await flush();
-      batch.push(p); count += n;
+    state.results!.products = await syncProductPages(db, prod.items, locations, unknown); state.cursors!.products = prod.next;
+    // Tồn kho: quét xoay vòng mọi sản phẩm (không lọc ngày sửa), mỗi lần vài trang, hết vòng thì quay lại trang 1.
+    const sweepFrom = state.cursors!.stock?.page ?? 1, sweep = await api.list('/products.json', 'products', sweepFrom, STOCK_SWEEP_PAGES);
+    state.results!.stock = { ...await syncProductPages(db, sweep.items, locations, unknown), fromPage: sweepFrom, wrapped: sweep.nextPage ? 0 : 1 };
+    state.cursors!.stock = { page: sweep.nextPage ?? 1 };
+    // Chứng từ kho: đơn nhập hàng, đơn điều chuyển, phiếu kiểm hàng (mới/đổi). Loại nào Sapo không cho đọc thì ghi nhận, không làm hỏng lượt chạy.
+    for (const kind of SAPO_DOC_KINDS) {
+      const src = SAPO_DOC_SOURCES[kind];
+      try {
+        const docs = await readSince(api, src.path, src.key, state.cursors![kind] ?? {}, runStart, DOC_PAGES);
+        state.results![kind] = await syncSapoDocs(db, kind, docs.items, locations); state.cursors![kind] = docs.next;
+      } catch (e) {
+        if (!(e instanceof AppError) || /^SAPO_SESSION_/.test(e.code ?? '')) throw e;
+        state.results![kind] = { unavailable: 1 };
+        (state.warnings ??= []).push(`${src.label}: ${e.message}`);
+      }
     }
-    await flush();
-    state.results!.products = pr; state.cursors!.products = prod.next;
     Object.assign(state, { ok: true, unknownPolicies: [...unknown.policies], unknownWarehouses: [...unknown.warehouses] });
   } catch (e) {
     state.ok = false;

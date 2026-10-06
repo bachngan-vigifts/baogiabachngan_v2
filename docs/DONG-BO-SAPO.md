@@ -91,3 +91,22 @@ Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùn
 ## Chưa làm (đề xuất bước sau)
 - Webhook **tồn kho** riêng (`inventory`) và đơn hàng Sapo.
 - Nút **"Đồng bộ ngay"** để app tự kéo từ Sapo. Việc này cần cách đăng nhập Sapo ổn định (web cũ dùng cookie phiên admin, hết hạn sau vài giờ), nên cần chủ dự án chọn cách trước.
+
+## Tồn kho xoay vòng và chứng từ kho (đơn nhập, điều chuyển, kiểm hàng)
+
+Mỗi lần **Đồng bộ ngay** hoặc chạy theo lịch tự động, ngoài nhân viên, khách hàng mới/đổi và sản phẩm mới/đổi, app còn làm thêm hai việc.
+
+- **Quét tồn kho xoay vòng:**
+  - Mỗi lần đọc 6 trang `products.json`, tức 1.500 sản phẩm, không lọc theo ngày sửa, và cập nhật giá cùng tồn. Lần sau đọc tiếp từ trang kế; hết danh mục thì quay lại trang 1.
+  - Lý do: bán hàng, nhập hàng hay điều chuyển làm đổi tồn kho nhưng Sapo không đổi ngày sửa của sản phẩm, nên nếu chỉ lọc theo ngày sửa thì tồn sẽ bị cũ.
+- **Chứng từ kho**, chỉ đọc từ Sapo (mới/đổi theo `modified_on_min`, tối đa 4 trang mỗi loại mỗi lần):
+
+  | Loại | Đường dẫn Sapo |
+  | --- | --- |
+  | Đơn nhập hàng | `/admin/purchase_orders.json` |
+  | Đơn điều chuyển | `/admin/stock_transfers.json` |
+  | Phiếu kiểm hàng | `/admin/stock_adjustments.json` |
+
+  - Dữ liệu lưu vào bảng `sapo_inventory_docs` (đầu phiếu) và `sapo_inventory_doc_lines` (dòng hàng), qua migration `0009`, phân quyền ở `0010`.
+  - Bản gốc Sapo được giữ trong cột `data`.
+  - Loại nào Sapo không cho đọc (404/403, ví dụ tài khoản thiếu quyền) thì được ghi vào `warnings`; các phần khác vẫn đồng bộ bình thường.

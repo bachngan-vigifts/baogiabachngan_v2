@@ -175,7 +175,7 @@ test('ánh xạ Sapo: trạng thái nhân viên dạng chuỗi, khách lẻ, bi�
 });
 
 // ---------------- Kéo dữ liệu từ Sapo bằng phiên Manager ----------------
-import { sapoRuntimeSessions, sapoHealthMonitorState } from '../../src/modules/integrations/schema.ts';
+import { sapoRuntimeSessions, sapoHealthMonitorState, sapoInventoryDocs, sapoInventoryDocLines } from '../../src/modules/integrations/schema.ts';
 
 function fakeSapo(data: Record<string, any[]>, opts: { expired?: boolean } = {}) {
   const calls: string[] = [];
@@ -200,6 +200,10 @@ test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, l
     customers: [{ id: 501, name: 'Công ty C', tax_code: '0312345678', modified_on: '2026-10-06T00:00:00Z' }, ...Array.from({ length: 300 }, (_, i) => ({ id: 600 + i, name: 'Khách lẻ ' + i }))],
     locations: [{ id: 7, name: 'Kho Q1' }],
     products: [{ id: 9, name: 'Nồi', variants: [{ sku: 'N-24', price: 420000, inventories: [{ location_id: 7, available: 5 }] }] }],
+    purchase_orders: [{ id: 31, code: 'PON001', status: 'active', location_id: 7, supplier: { name: 'Minh Long I' }, created_on: '2026-10-05T02:00:00Z',
+      line_items: [{ variant_id: 90, sku: 'N-24', variant_name: 'Nồi 24', quantity: 10, price: 300000 }] }],
+    stock_transfers: [{ id: 41, code: 'TRN001', status: 'shipped', source_location_id: 7, destination_location_id: 8, line_items: [{ sku: 'N-24', quantity: 3 }] }],
+    stock_adjustments: [{ id: 51, code: 'ADJ001', location: { name: 'Kho Q1' }, line_items: [{ sku: 'N-24', actual_quantity: 4, adjustment_quantity: -1 }] }],
   });
   const expiredSapo = fakeSapo({}, { expired: true });
   let fake = sapo;
@@ -227,12 +231,22 @@ test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, l
   assert.equal(run.data.results.products.created, 1);
   assert.equal((await db.select().from(productStock)).find(s => s.sku === 'N-24')!.quantity, 5, 'ghép tồn theo location_id');
   assert.ok(sapo.calls.some(u => u.startsWith('/admin/customers.json?limit=250&page=2')), 'đọc đủ các trang');
+  // Chứng từ kho: đơn nhập, điều chuyển, kiểm hàng; quét tồn kho xoay vòng.
+  assert.deepEqual([run.data.results.purchase_order.created, run.data.results.stock_transfer.created, run.data.results.stock_adjustment.created], [1, 1, 1]);
+  assert.equal(run.data.results.stock.wrapped, 1, 'quét hết vòng tồn kho');
+  const docs = await db.select().from(sapoInventoryDocs);
+  const po = docs.find(d => d.kind === 'purchase_order')!, tr = docs.find(d => d.kind === 'stock_transfer')!, adj = docs.find(d => d.kind === 'stock_adjustment')!;
+  assert.deepEqual([po.code, po.partnerName, po.locationName, po.totalQty, po.totalAmount], ['PON001', 'Minh Long I', 'Kho Q1', 10, 3_000_000]);
+  assert.deepEqual([tr.locationName, tr.toLocationName, tr.totalQty], ['Kho Q1', '8', 3]);
+  const adjLines = await db.select().from(sapoInventoryDocLines).where(eq(sapoInventoryDocLines.docId, adj.id));
+  assert.deepEqual([adj.locationName, adjLines[0]!.qty, adjLines[0]!.diffQty], ['Kho Q1', 4, -1]);
   // Lần sau chỉ lấy bản ghi sửa sau lần trước (gửi kèm bộ lọc modified_on_min).
   sapo.calls.length = 0;
   const cron = await call('/integrations/sapo/pull', '', 'POST', {}, { authorization: 'Bearer ' + SECRET });
   assert.equal(cron.status, 200); assert.equal(cron.data.ok, true);
   assert.ok(sapo.calls.some(u => u.includes('modified_on_min=')));
   assert.equal(cron.data.results.customers.applied ?? 0, 0, 'không có gì mới'); assert.equal(cron.data.results.customers.received, 300, 'bản ghi thiếu mốc thời gian vẫn được xét lại');
+  assert.equal((await db.select().from(sapoInventoryDocs)).length, 3, 'đồng bộ lại không tạo trùng chứng từ');
   assert.equal((await call('/integrations/sapo/pull', '', 'POST', {}, {})).status, 401);
 
   // Phiên hết hạn: báo rõ cho Manager; trang tình trạng hiện "hết hạn"; cookie không bao giờ trả về.
@@ -320,4 +334,27 @@ test('kết nối lại Sapo: lỗi của lần đồng bộ trước đó khôn
   assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=moi' })).status, 200);
   const st = (await call('/admin/sapo-sync', mgr)).data;
   assert.equal(st.pull.ok, false); assert.equal(st.pull.stale, true, 'lỗi cũ được đánh dấu đã qua');
+});
+
+test('kéo từ Sapo: loại chứng từ Sapo không cho đọc (404/403) thì ghi cảnh báo, các phần khác vẫn đồng bộ', async () => {
+  const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  const sapoFetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input)), key = url.pathname.replace(/^\/admin\//, '').replace(/\.json$/, '');
+    if (key === 'stock_adjustments') return new Response('', { status: 404 });
+    if (key === 'stock_transfers') return new Response('', { status: 403 });
+    return Response.json({ [key]: key === 'purchase_orders' ? [{ id: 1, code: 'PO1', line_items: [] }] : [] });
+  }) as typeof globalThis.fetch;
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch };
+  const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', cookie, origin }, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
+  };
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=abc' });
+  const run = await call('/admin/sapo-pull', mgr, 'POST', {});
+  assert.equal(run.status, 200, JSON.stringify(run.data));
+  assert.equal(run.data.results.purchase_order.created, 1);
+  assert.equal(run.data.results.stock_adjustment.unavailable, 1);
+  assert.equal(run.data.results.stock_transfer.unavailable, 1);
+  assert.equal(run.data.warnings.length, 2);
 });

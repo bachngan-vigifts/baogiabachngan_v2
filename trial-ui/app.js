@@ -314,6 +314,9 @@ async function loadSapoSync() {
   $('#sync-products').textContent = n(d.products.count); $('#sync-products-at').textContent = at(d.products.lastSyncedAt);
   $('#sync-customers').textContent = n(d.customers.count); $('#sync-customers-at').textContent = at(d.customers.lastSyncedAt);
   $('#sync-staff').textContent = n(d.staff.count); $('#sync-staff-note').textContent = d.staff.linked ? `+ ${n(d.staff.linked)} đã khớp tài khoản web` : 'Hồ sơ mới cần cấp liên kết';
+  const docs = d.docs || {}, dc = k => n(docs[k]?.count);
+  $('#sync-docs').textContent = n(['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + Number(docs[k]?.count || 0), 0));
+  $('#sync-docs-note').textContent = `Nhập hàng ${dc('purchase_order')} · Điều chuyển ${dc('stock_transfer')} · Kiểm hàng ${dc('stock_adjustment')}` + (p.warnings?.length && !p.stale ? ' · Chưa đọc được: ' + p.warnings.map(w => w.split(':')[0]).join(', ') : '');
 }
 $('#sapo-connect').addEventListener('click', () => { $('#sapo-form').reset(); $('#sapo-error').textContent = ''; $('#sapo-dialog').showModal(); });
 $('#sapo-form').addEventListener('submit', async e => {
@@ -334,7 +337,9 @@ $('#sapo-pull').addEventListener('click', async () => {
   const btn = $('#sapo-pull'); btn.disabled = true; btn.textContent = 'Đang đồng bộ…';
   try {
     const r = await api('/admin/sapo-pull', 'POST', {}), x = r.results || {};
-    toast(`Đã đồng bộ: ${(x.products?.created || 0) + (x.products?.updated || 0)} sản phẩm, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới.`);
+    const docs = ['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + (x[k]?.created || 0) + (x[k]?.updated || 0), 0);
+    toast(`Đã đồng bộ: ${(x.products?.created || 0) + (x.products?.updated || 0)} sản phẩm, tồn kho ${(x.stock?.created || 0) + (x.stock?.updated || 0)} mã, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới, ${docs} chứng từ kho (nhập hàng, điều chuyển, kiểm hàng).`
+      + (r.warnings?.length ? ' Chưa đọc được: ' + r.warnings.join('; ') : ''));
     loadMembers(); state.products = null; loadCustomers();
   } catch (ex) { toast(ex.message, 'error'); }
   finally { btn.disabled = false; btn.textContent = 'Đồng bộ ngay'; loadSapoSync(); }

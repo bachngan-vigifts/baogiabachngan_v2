@@ -8,6 +8,7 @@ import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { credentials, employees, sessions, staffSapoLinks } from '../../staff/schema.ts';
 import { customers } from '../../customers/schema.ts';
 import { pricePolicies, productPrices, products, productStock, warehouses } from '../../catalog/schema.ts';
+import { sapoInventoryDocs } from '../schema.ts';
 import { registerSapoPullRoutes, pullStatus } from './sapo-pull.ts';
 import { isEligibleSapoCustomer, mapSapoCustomer, mapSapoProduct, mapSapoStaff, records, type SapoCustomer, type SapoVariant } from '../domain/sapo-mapping.ts';
 
@@ -32,11 +33,12 @@ export function registerSapoSyncRoutes(router: Router<StaffEnv>) {
   // Manager xem tình trạng đồng bộ (không bao giờ trả mã bí mật).
   router.get('/admin/sapo-sync', async c => {
     const db = c.env.db;
-    const [[cus], [prod], [staff], [links]] = await Promise.all([
+    const [[cus], [prod], [staff], [links], docs] = await Promise.all([
       db.select({ n: count(), last: max(customers.syncedAt) }).from(customers).where(sql`${customers.id} ~ '^[0-9]+$'`),
       db.select({ n: count(), last: max(products.updatedAt) }).from(products).where(isNotNull(products.sapoProductId)),
       db.select({ n: count() }).from(employees).where(like(employees.id, 'SAPO-%')),
       db.select({ n: count() }).from(staffSapoLinks),
+      db.select({ kind: sapoInventoryDocs.kind, n: count(), last: max(sapoInventoryDocs.syncedAt) }).from(sapoInventoryDocs).groupBy(sapoInventoryDocs.kind),
     ]);
     return json({
       ...(await pullStatus(db)),
@@ -45,6 +47,8 @@ export function registerSapoSyncRoutes(router: Router<StaffEnv>) {
       customers: { count: Number(cus?.n ?? 0), lastSyncedAt: cus?.last ?? null },
       products: { count: Number(prod?.n ?? 0), lastSyncedAt: prod?.last ?? null },
       staff: { count: Number(staff?.n ?? 0), linked: Number(links?.n ?? 0) },
+      // Chứng từ kho Sapo: đơn nhập hàng, đơn điều chuyển, phiếu kiểm hàng.
+      docs: Object.fromEntries(docs.map(d => [d.kind, { count: Number(d.n), lastSyncedAt: d.last }])),
     });
   }, 'admin');
   router.post(SAPO_SYNC_PATHS.customers, async c => json(await syncCustomers(c.env.db, await readJson(c.req, 2_000_000))), 'sapo-sync');
