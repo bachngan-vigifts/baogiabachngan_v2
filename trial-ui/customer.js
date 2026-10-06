@@ -175,7 +175,7 @@ async function loadCatalog() {
           _hay: fold([p.sku, p.name, p.brand, p.pattern].map(v => v ?? '').join(' ')), _name: fold(p.name), _minhLong: ['minh long', 'healthy cook', 'su duong sinh'].some(w => label.includes(w)) };
       });
     }
-    fillInfo(); renderCart(); if ($('#p-picker').open) renderProducts();
+    fillBrands(); fillInfo(); renderCart(); if ($('#p-picker').open) renderProducts();
   } catch (e) { $('#p-search-status').textContent = e.message; }
 }
 const unitPrice = p => after({ price: p.price, discount: p.discount, discountType: 'percent' }, { type: 'B2B', vat: 8 });
@@ -188,11 +188,26 @@ function fillInfo() {
     .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
 }
 
+/** Thương hiệu gộp theo cách viết (bỏ dấu, hoa thường, ký tự nối); các kiểu Lock&Lock / LocknLock / Lock gộp một. */
+const brandKey = b => { const k = fold(b).replace(/[^a-z0-9]/g, ''); return /^lock(n?lock)?$/.test(k) ? 'lock' : k; };
+function fillBrands() {
+  const count = new Map();
+  for (const p of st.items) { const k = brandKey(p.brand); if (!k) continue; const m = count.get(k) ?? new Map(); m.set(p.brand.trim(), (m.get(p.brand.trim()) ?? 0) + 1); count.set(k, m); }
+  const opts = [...count].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1])[0][0], [...m.values()].reduce((a, b) => a + b, 0)]).sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  const sel = $('#p-brand'), cur = sel.value;
+  sel.innerHTML = '<option value="">Tất cả thương hiệu</option>' + opts.map(([k, label, n]) => `<option value="${esc(k)}">${esc(label)} (${fmtNum(n)})</option>`).join('');
+  sel.value = opts.some(o => o[0] === cur) ? cur : '';
+}
+const priceNum = v => { const d = String(v || '').replace(/\D/g, ''); return d ? Number(d) : ''; };
+
 let shown = 40;
 function renderProducts(more = false) {
   shown = more ? shown + 40 : 40;
-  const [min, max] = ($('#p-range').value || ':').split(':');
-  const found = (searchCatalog(st.items, { q: $('#p-search').value, group: $('#p-group').value, policy: CUSTOMER_POLICY, min, max }) || []).filter(p => p.customerPrice !== null);
+  const brand = $('#p-brand').value;
+  let min = priceNum($('#p-min').value), max = priceNum($('#p-max').value);
+  if (min !== '' && max !== '' && min > max) [min, max] = [max, min];
+  const found = (searchCatalog(st.items, { q: $('#p-search').value, group: $('#p-group').value, policy: CUSTOMER_POLICY, min, max }) || [])
+    .filter(p => p.customerPrice !== null && (!brand || brandKey(p.brand) === brand));
   $('#p-search-status').textContent = `${fmtNum(found.length)} sản phẩm phù hợp · Giá đã trừ chiết khấu riêng, chưa VAT.`;
   $('#p-products').innerHTML = found.slice(0, shown).map(p => { const has = st.cart.has(p.sku); return `<li class="${has ? 'added' : ''}">${imgTag(p.imageUrl)}
     <span class="prod-text"><b>${esc(p.name)}</b><small>Nhãn hiệu: ${esc(p.brand || '—')}</small><small>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · ${vatText(p)}</small></span>
@@ -206,8 +221,16 @@ let searchTimer, added = 0;
 $('#p-pick').addEventListener('click', () => { added = 0; $('#p-added').textContent = ''; $('#p-picker').showModal(); $('#p-search').focus(); renderProducts(); });
 $('#p-search').addEventListener('input', reRender);
 $('#p-group').addEventListener('change', reRender);
-$('#p-range').addEventListener('change', reRender);
-$('#p-clear').addEventListener('click', () => { $('#p-search').value = ''; $('#p-group').value = ''; $('#p-range').value = ''; renderProducts(); });
+$('#p-brand').addEventListener('change', reRender);
+// Khoảng giá có sẵn điền vào ô "từ – đến"; gõ tay vào ô thì chuyển sang "Tự nhập".
+$('#p-range').addEventListener('change', () => {
+  const v = $('#p-range').value; if (v === 'custom') { $('#p-min').focus(); return; }
+  const [lo, hi] = (v || ':').split(':'); $('#p-min').value = Number(lo) > 0 ? fmtNum(lo) : ''; $('#p-max').value = hi ? fmtNum(hi) : ''; reRender();
+});
+for (const id of ['#p-min', '#p-max']) $(id).addEventListener('input', e => {
+  const n = priceNum(e.target.value); e.target.value = n === '' ? '' : fmtNum(n); $('#p-range').value = $('#p-min').value || $('#p-max').value ? 'custom' : ''; reRender();
+});
+$('#p-clear').addEventListener('click', () => { for (const id of ['#p-search', '#p-group', '#p-brand', '#p-range', '#p-min', '#p-max']) $(id).value = ''; renderProducts(); });
 $('#p-more').addEventListener('click', () => renderProducts(true));
 $('#p-products').addEventListener('click', e => {
   const b = e.target.closest('[data-add]'); if (!b) return;

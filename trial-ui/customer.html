@@ -143,7 +143,9 @@
     <p class="search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
     <div class="catalog-filters">
       <label><span>Nhóm sản phẩm</span><select id="p-group"><option value="">Tất cả nhóm</option><option value="dinner">Bộ đồ ăn</option><option value="tea">Bộ trà</option><option value="thermalCup">Ly / cốc giữ nhiệt</option><option value="thermalBottle">Bình giữ nhiệt</option><option value="tableware">Chén, tô, đĩa</option><option value="vase">Bình hoa</option><option value="cookware">Nồi, chảo</option></select></label>
-      <label><span>Khoảng giá</span><select id="p-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option></select></label>
+      <label><span>Thương hiệu</span><select id="p-brand"><option value="">Tất cả thương hiệu</option></select></label>
+      <label><span>Khoảng giá</span><select id="p-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option><option value="custom">Tự nhập…</option></select></label>
+      <label class="price-inputs"><span>Giá từ – đến (đ)</span><span class="row-gap"><input id="p-min" inputmode="numeric" placeholder="Từ" aria-label="Giá từ"><input id="p-max" inputmode="numeric" placeholder="Đến" aria-label="Giá đến"></span></label>
       <button type="button" class="btn secondary" id="p-clear">Xoá bộ lọc</button>
     </div>
     <p class="search-help" id="p-search-status" aria-live="polite">Đang tải danh mục…</p>
