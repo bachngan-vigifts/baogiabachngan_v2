@@ -117,12 +117,23 @@
             <h1 id="editor-title">Tạo báo giá</h1>
             <span class="pill" id="editor-revision" hidden></span>
             <span class="pill warn" id="editor-dirty" hidden>Chưa lưu</span>
+            <span class="pill" id="editor-approval" hidden></span>
           </div>
-          <div class="editor-actions">
+          <!-- Như web cũ: chỉ báo giá ĐÃ DUYỆT mới Sinh HĐKT / Tạo đơn hàng / Tải báo giá. Duyệt, Xoá: chỉ Manager. -->
+          <div class="editor-actions quote-actions">
+            <button type="button" class="btn secondary" id="quote-contract" hidden>Sinh HĐKT</button>
+            <button type="button" class="btn secondary" id="quote-to-order" hidden>Tạo đơn hàng</button>
+            <span class="menu-wrap">
+              <button type="button" class="btn secondary" id="quote-download" aria-haspopup="menu" aria-expanded="false">Tải báo giá ▾</button>
+              <span class="menu" id="download-menu" role="menu" hidden>
+                <button type="button" role="menuitem" id="print-quote">PDF A4 theo mẫu</button>
+                <button type="button" role="menuitem" id="excel-quote">Excel (báo giá + phí vận chuyển)</button>
+              </span>
+            </span>
             <button type="button" class="btn secondary" id="duplicate-quote" hidden title="Tạo bản sao với số báo giá mới">Nhân bản</button>
-            <button type="button" class="btn secondary" id="quote-to-order" hidden title="Tạo đơn đặt hàng từ báo giá đã lưu">Tạo đơn đặt hàng</button>
-            <button type="button" class="btn secondary" id="print-quote"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6 M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M7 14h10v7H7z"/></svg>In / PDF</button>
             <button class="btn primary" id="save-quote" title="Ctrl + S">Lưu báo giá</button>
+            <button type="button" class="btn ok" id="approve-quote" hidden>Duyệt</button>
+            <button type="button" class="btn danger-outline" id="delete-quote" hidden>Xoá báo giá</button>
           </div>
         </div>
         <div id="conflict-banner" class="banner warn-banner" role="alert" hidden>
@@ -673,6 +684,7 @@
 
 <ul id="product-suggest" class="suggest floating" role="listbox" hidden></ul>
 <div id="print-sheet" class="print-sheet ps-root" aria-hidden="true"></div>
-<script type="module" src="app.js"></script>
+<script src="excel-export.js" defer></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

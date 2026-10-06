@@ -42,8 +42,10 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
     rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 100, price: 200000, discount: 10, printFee: 0, taxRate: 8 }, { name: 'Hộp quà', sku: 'HQ', unit: 'hộp', qty: 50, price: 100000, taxRate: 8 }] };
   const quote = await call('/quotes', emp, 'POST', doc); assert.equal(quote.status, 201);
 
-  // Đơn đặt hàng từ báo giá.
+  // Đơn đặt hàng từ báo giá: phải được Manager duyệt trước.
   assert.equal((await call('/orders', ncc, 'POST', { quoteId: quote.data.id })).status, 403);
+  assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).data.code, 'QUOTE_NOT_APPROVED');
+  assert.equal((await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 })).status, 200);
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id }); assert.equal(o.status, 201, JSON.stringify(o.data));
   assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).data.code, 'ORDER_EXISTS');
   let d = (await call('/orders/' + o.data.id, emp)).data;
@@ -102,8 +104,9 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
 });
 
 test('huỷ đơn chưa giao/chưa thu được; huỷ rồi tạo lại đơn từ cùng báo giá', async () => {
-  const { call, emp } = await setup();
+  const { call, emp, mgr } = await setup();
   const quote = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_1', customer: 'Khách lẻ A', vat: 8, rows: [{ name: 'Nồi', qty: 2, price: 500000, printFee: 99 }] });
+  await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
   assert.equal((await call('/orders/' + o.data.id, emp)).data.lines[0].unitPrice, 500000, 'HRC không cộng phí in');
   assert.equal((await call('/contracts', emp, 'POST', { orderId: o.data.id, legalEntity: 'BN' })).status, 400, 'khách chưa có MST/mã KH');

@@ -414,7 +414,7 @@ function renderQuotes() {
   renderStats();
   tbody.innerHTML = list.map(q => `
     <tr class="clickable" data-open="${esc(q.id)}">
-      <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)}${q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
+      <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
       <td data-label="Khách">${esc(q.customer) || '<span class="muted">—</span>'}${q.contact || q.phone ? `<small>${esc([q.contact, q.phone].filter(Boolean).join(' · '))}</small>` : ''}</td>
       <td><span class="pill type-${esc(q.quoteType)}">${esc(q.quoteType)}</span></td>
       <td data-label="Ngày">${fmtDate(q.quoteDate) || '—'}</td>
@@ -448,7 +448,7 @@ $('#type-filter').addEventListener('click', e => {
 });
 
 // ---------------------------------------------------------------- soạn báo giá
-const editor = { id: null, revision: 0, base: {}, rows: [], type: 'B2B', dirty: false, customerId: '', pending: null, loading: false };
+const editor = { id: null, revision: 0, base: {}, rows: [], type: 'B2B', dirty: false, customerId: '', pending: null, loading: false, approval: null };
 const qf = $('#quote-form');
 const field = name => qf.elements.namedItem(name);
 /** Ghi chú & điều kiện mặc định theo loại báo giá – lấy nguyên từ web báo giá cũ (`public/quote-notes.js`). */
@@ -498,16 +498,17 @@ async function openEditor(id) {
   qf.inert = true;
   try {
     const q = await api('/quotes/' + encodeURIComponent(id));
-    fillEditor(q.id, q.revision, q.data);
+    fillEditor(q.id, q.revision, q.data, q);
   } catch (e) {
     toast(e.message, 'err');
     if (e.status !== 401) { editor.dirty = false; go('#/quotes'); }
   } finally { editor.loading = false; qf.inert = false; }
 }
 
-function fillEditor(id, revision, data) {
+function fillEditor(id, revision, data, meta = {}) {
   // Lưu xong (cùng báo giá) thì giữ nguyên mục lợi nhuận / cột giá nhập đang mở; mở báo giá khác thì đóng lại.
   const keepProfit = !!id && (editor.id === id || (!editor.id && saving));
+  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '' } : null;
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : '';
@@ -524,14 +525,14 @@ function fillEditor(id, revision, data) {
   $('#editor-title').textContent = id ? data.quoteNo || 'Báo giá' : 'Tạo báo giá';
   $('#editor-revision').hidden = !id; $('#editor-revision').textContent = 'Phiên bản ' + revision;
   $('#duplicate-quote').hidden = !id;
-  $('#quote-to-order').hidden = !id;
   $('#breadcrumb').textContent = id ? data.quoteNo || 'Sửa báo giá' : 'Tạo báo giá';
   $$('input, textarea', qf).forEach(i => i.classList.remove('invalid'));
   renderLines(); updateContactsButton();
   editor.dirty = false; $('#editor-dirty').hidden = true;
+  updateQuoteActions();
   fillMissingImages();
 }
-function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; } }
+function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; updateQuoteActions(); } }
 qf.addEventListener('input', e => {
   markDirty();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
@@ -1134,15 +1135,20 @@ async function saveQuote() {
   const err = $('#quote-error'); err.textContent = '';
   const data = collectQuote(), problem = validateQuote(data);
   if (problem) { err.textContent = problem; toast(problem, 'err'); qf.querySelector('.invalid')?.focus(); return; }
+  if (editor.id && !isManager() && editor.approval?.status === 'approved' && editor.dirty
+    && !await confirmBox('Báo giá này đã được duyệt. Lưu thay đổi sẽ chuyển báo giá về "Chờ duyệt" và phải được Manager duyệt lại. Tiếp tục lưu?', { ok: 'Lưu và gửi duyệt lại' })) return;
   saving = true; $('#save-quote').disabled = $('#save-quote-m').disabled = true;
   try {
     const saved = editor.id
       ? await api('/quotes/' + encodeURIComponent(editor.id), 'PUT', { revision: editor.revision, data })
       : await api('/quotes', 'POST', data);
     const wasNew = !editor.id;
-    fillEditor(saved.id, saved.revision, saved.data);
+    const keepApproval = !wasNew && saved.approvalStatus === 'approved' ? { approvedAt: editor.approval?.at, approvedByName: editor.approval?.by } : {};
+    fillEditor(saved.id, saved.revision, saved.data, { ...keepApproval, approvalStatus: saved.approvalStatus });
     if (wasNew) { suppressHash = true; location.hash = '#/quotes/' + encodeURIComponent(saved.id); currentHash = location.hash; }
-    toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
+    if (saved.approvalRevoked) toast('Đã lưu. Báo giá chuyển về "Chờ duyệt", cần Manager duyệt lại.');
+    else if (saved.approvalStatus === 'pending') toast((wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · đang đợi Manager duyệt.');
+    else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
     loadQuotes();
   } catch (e) {
     if (e.status === 409) {
@@ -1183,6 +1189,7 @@ async function duplicateFromList(id) {
 
 // ----- in / PDF
 $('#print-quote').addEventListener('click', () => {
+  const block = approvalBlock(); if (block) return toast(block, 'err');
   const d = collectQuote();
   if (!d.rows.length) { toast('Chưa có sản phẩm để in.', 'err'); return; }
   const doc = { type: d.type, vat: d.vat, rows: d.rows }, t = totals(doc);
@@ -1794,6 +1801,8 @@ async function openOrder(id) {
   let d;
   try { d = await api('/orders/' + encodeURIComponent(id)); } catch (e) { toast(e.message, 'err'); if (e.status !== 401) go('#/orders'); return; }
   sales.order = d.order; sales.detail = d;
+  const wantContract = sales.openContract === id; sales.openContract = null;
+  if (wantContract) setTimeout(() => { const b = $('#order-contract-action button'); if (b) b.click(); else toast('Đơn này đã có HĐKT.'); }, 0);
   const o = d.order, r = d.receivable;
   $('#order-title').textContent = o.orderNo; $('#breadcrumb').textContent = o.orderNo; document.title = o.orderNo + ' · Bách Ngân';
   $('#order-status').outerHTML = `<span class="pill ${ORDER_STATUS[o.status]?.[1] || ''}" id="order-status">${esc(ORDER_STATUS[o.status]?.[0] || o.status)}</span>`;
@@ -1881,13 +1890,99 @@ $('#payment-form').addEventListener('submit', async e => {
     $('#payment-dialog').close(); toast('Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; }
 });
-// ----- từ báo giá đã lưu: tạo đơn đặt hàng (đã có đơn thì mở đơn đó)
-$('#quote-to-order').addEventListener('click', async () => {
-  if (editor.dirty) return toast('Lưu báo giá trước khi tạo đơn đặt hàng.', 'err');
-  const btn = $('#quote-to-order'); btn.disabled = true;
-  try { const r = await api('/orders', 'POST', { quoteId: editor.id }); toast('Đã tạo đơn đặt hàng.'); go('#/orders/' + r.id); }
+// ----- Thanh nút báo giá như web cũ: Sinh HĐKT · Tạo đơn hàng · Tải báo giá · Lưu · Duyệt · Xoá
+/** Lý do chưa dùng được các nút cần báo giá đã duyệt (null = dùng được). */
+function approvalBlock() {
+  if (!editor.id) return 'Lưu báo giá trước.';
+  if (editor.dirty) return 'Lưu thay đổi trước.';
+  if (editor.approval?.status !== 'approved') return 'Báo giá đang đợi Manager duyệt.';
+  return null;
+}
+function updateQuoteActions() {
+  const saved = !!editor.id, approved = editor.approval?.status === 'approved', mgr = isManager(), block = approvalBlock();
+  const pill = $('#editor-approval');
+  pill.hidden = !saved; pill.className = 'pill ' + (approved ? 'ok' : 'warn');
+  pill.textContent = approved ? 'Đã duyệt' : 'Chờ duyệt';
+  pill.title = approved && editor.approval.by ? `Duyệt bởi ${editor.approval.by}${editor.approval.at ? ' lúc ' + new Date(editor.approval.at).toLocaleString('vi-VN') : ''}` : approved ? '' : 'Manager cần duyệt trước khi tải file, tạo đơn hàng, sinh HĐKT.';
+  for (const id of ['#quote-contract', '#quote-to-order']) { const b = $(id); b.hidden = !saved; b.disabled = !!block; b.title = block || ''; }
+  const dl = $('#quote-download'); dl.disabled = !!block; dl.title = block || ''; if (block) closeDownloadMenu();
+  const ap = $('#approve-quote'); ap.hidden = !mgr || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : 'Duyệt';
+  $('#delete-quote').hidden = !mgr || !saved;
+}
+function closeDownloadMenu() { $('#download-menu').hidden = true; $('#quote-download').setAttribute('aria-expanded', 'false'); }
+$('#quote-download').addEventListener('click', e => {
+  e.stopPropagation();
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  const open = $('#download-menu').hidden; $('#download-menu').hidden = !open; $('#quote-download').setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) closeDownloadMenu(); });
+$('#download-menu').addEventListener('click', () => closeDownloadMenu());
+/** Đơn của báo giá đang mở: có đơn đang hiệu lực thì dùng, chưa có thì tạo. */
+async function ensureOrderForQuote() {
+  try { const r = await api('/orders', 'POST', { quoteId: editor.id }); toast('Đã tạo đơn đặt hàng.'); return r.id; }
   catch (ex) {
-    if (ex.code === 'ORDER_EXISTS') { const found = (await api('/orders?q=' + encodeURIComponent(field('quoteNo').value))).orders.find(o => o.quoteId === editor.id && o.status !== 'cancelled'); if (found) { go('#/orders/' + found.id); return; } }
-    toast(ex.message, 'err');
-  } finally { btn.disabled = false; }
+    if (ex.code !== 'ORDER_EXISTS') throw ex;
+    const found = (await api('/orders?q=' + encodeURIComponent(field('quoteNo').value))).orders.find(o => o.quoteId === editor.id && o.status !== 'cancelled');
+    if (!found) throw ex;
+    return found.id;
+  }
+}
+$('#quote-to-order').addEventListener('click', async () => {
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  const btn = $('#quote-to-order'); btn.disabled = true;
+  try { go('#/orders/' + await ensureOrderForQuote()); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+});
+$('#quote-contract').addEventListener('click', async () => {
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  const btn = $('#quote-contract'); btn.disabled = true;
+  try { const id = await ensureOrderForQuote(); sales.openContract = id; go('#/orders/' + id); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+});
+$('#approve-quote').addEventListener('click', async () => {
+  if (!isManager() || !editor.id) return;
+  const btn = $('#approve-quote'); btn.disabled = true;
+  try {
+    if (editor.dirty) { await saveQuote(); if (editor.dirty) return; }
+    const r = await api('/quotes/' + encodeURIComponent(editor.id) + '/approve', 'POST', { revision: editor.revision });
+    editor.approval = { status: 'approved', at: r.approvedAt, by: r.approvedByName };
+    toast('Đã duyệt báo giá. Có thể tải file, tạo đơn hàng, sinh HĐKT.'); loadQuotes();
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { updateQuoteActions(); }
+});
+$('#delete-quote').addEventListener('click', async () => {
+  if (!isManager() || !editor.id) return;
+  if (!await confirmBox(`Xoá báo giá ${field('quoteNo').value} · ${field('customer').value || 'Chưa nhập khách hàng'} khỏi hệ thống? Thao tác này không thể hoàn tác.`, { ok: 'Xoá báo giá', danger: true })) return;
+  try {
+    await api('/quotes/' + encodeURIComponent(editor.id), 'DELETE', { revision: editor.revision });
+    editor.dirty = false; editor.id = null; toast('Đã xoá báo giá.'); go('#/quotes'); loadQuotes();
+  } catch (ex) { toast(ex.message, 'err'); }
+});
+// Excel theo mẫu web cũ (excel-export.js): ảnh sản phẩm + letterhead, 2 sheet báo giá và phí vận chuyển.
+// excel-export.js (chép từ web cũ) gọi QuoteMath.totals và HrcPdf.amountInWords.
+globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals };
+globalThis.HrcPdf = { ...(globalThis.HrcPdf || {}), amountInWords: n => moneyWords(n) };
+function loadCanvasImage(src, timeoutMs = 15000) {
+  return new Promise(resolve => {
+    if (!src) return resolve(null);
+    const img = new Image(); let done = false;
+    const finish = v => { if (!done) { done = true; clearTimeout(t); resolve(v); } }, t = setTimeout(() => finish(null), timeoutMs);
+    img.crossOrigin = 'anonymous'; img.referrerPolicy = 'no-referrer';
+    img.onload = () => finish(img); img.onerror = () => finish(null); img.src = src;
+  });
+}
+let excelBusy = false;
+$('#excel-quote').addEventListener('click', async () => {
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  if (excelBusy) return;
+  const d = collectQuote(); if (!d.rows.length) return toast('Chưa có sản phẩm để xuất Excel.', 'err');
+  if (!globalThis.QuoteExcel) return toast('Chưa tải được bộ tạo Excel. Vui lòng tải lại trang.', 'err');
+  excelBusy = true; toast('Đang tạo file Excel…');
+  try {
+    const images = [];
+    for (let i = 0; i < d.rows.length; i += 6) images.push(...await Promise.all(d.rows.slice(i, i + 6).map(r => loadCanvasImage(r.image))));
+    const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
+    await QuoteExcel.download(d, { images, banner });
+    const missing = d.rows.filter((r, i) => r.image && !images[i]).length;
+    toast('Đã tải file Excel gồm báo giá và phí vận chuyển' + (missing ? ` (${missing} ảnh không tải được nên để trống)` : '') + '.');
+  } catch (ex) { console.error(ex); toast(ex?.message || 'Không thể tạo file Excel. Vui lòng thử lại.', 'err'); }
+  finally { excelBusy = false; }
 });

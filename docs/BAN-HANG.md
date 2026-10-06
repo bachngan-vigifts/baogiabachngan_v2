@@ -19,6 +19,28 @@ Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[L�
   - **Lịch giao hàng**: lọc theo khoảng ngày; đổi trạng thái chuyến ngay trên danh sách.
   - **Công nợ**: tổng phải thu, đã thu, còn lại, quá hạn.
 
+## Duyệt báo giá (như web cũ; migration `0008_quote_approval.sql`)
+
+- Cột mới trên `staff_quotations`: `approval_status` (`pending` / `approved`), `approved_at`, `approved_by`.
+  - Báo giá chuyển từ web cũ được tính là đã duyệt nếu dữ liệu cũ ghi `approvalStatus: "approved"` hoặc đã có PDF lưu (`pdfKey`).
+- **Ai tạo:**
+  - Manager tạo → tự động đã duyệt.
+  - Nhân viên tạo → *Chờ duyệt*.
+- **Sửa báo giá:**
+  - Nhân viên sửa **nội dung** báo giá đã duyệt → về *Chờ duyệt*, phải được duyệt lại. Trước khi lưu, giao diện hỏi xác nhận.
+  - Lưu mà không đổi gì thì vẫn giữ trạng thái duyệt.
+  - Manager sửa thì giữ nguyên trạng thái.
+- **Chỉ báo giá đã duyệt** (và đã lưu hết thay đổi) mới:
+  - Tải báo giá (PDF A4, Excel theo mẫu cũ).
+  - Tạo đơn hàng: máy chủ chặn bằng `409 QUOTE_NOT_APPROVED`.
+  - Sinh HĐKT: máy chủ chặn khi báo giá của đơn đang đợi duyệt lại.
+- **Thanh nút** trên trang báo giá: Sinh HĐKT · Tạo đơn hàng · Tải báo giá ▾ · Nhân bản · Lưu báo giá · Duyệt (Manager) · Xoá báo giá (Manager).
+  - *Sinh HĐKT* tạo đơn nếu chưa có, rồi mở hộp lập HĐKT của đơn.
+- **API:**
+  - `POST /quotes/:id/approve {revision}`: Manager duyệt đúng phiên bản đang xem; duyệt không tăng phiên bản.
+  - `GET /quotes/pending-count`: số báo giá đang chờ duyệt.
+  - `DELETE /quotes/:id {revision}`: Manager xoá. Báo giá đã có đơn hàng hoặc HĐKT thì trả 409.
+
 ## Bảng dữ liệu (migration `0006_sales_orders.sql`, quyền `0007_supabase_access_sales.sql`)
 
 | Bảng | Ý nghĩa | Liên kết |

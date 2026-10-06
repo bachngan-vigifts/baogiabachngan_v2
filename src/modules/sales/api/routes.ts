@@ -98,6 +98,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const body = await readJson(c.req, 8_192), me = viewer(c), quoteId = text(body.quoteId, 80);
     const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
+    if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
     const [existing] = await c.env.db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
       .where(and(eq(salesOrders.quoteId, quoteId), ne(salesOrders.status, 'cancelled'))).limit(1);
     if (existing) throw new AppError(409, `Báo giá này đã có đơn ${existing.orderNo}.`, 'ORDER_EXISTS');
@@ -148,6 +149,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const body = await readJson(c.req, 64_000), me = viewer(c);
     const order = await loadOrder(c, text(body.orderId, 80));
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn đã huỷ.');
+    if (order.quoteId) {
+      const [q] = await c.env.db.select({ s: quotations.approvalStatus }).from(quotations).where(eq(quotations.id, order.quoteId)).limit(1);
+      if (q && q.s !== 'approved') throw new AppError(409, 'Báo giá của đơn đang đợi duyệt lại. Chỉ báo giá đã duyệt mới sinh được HĐKT.', 'QUOTE_NOT_APPROVED');
+    }
     const entity = legalCode(body.legalEntity);
     if (!entity) throw new AppError(400, 'Chọn pháp nhân bên bán: Bách Ngân (BN), Vigifts (VG) hoặc QTV.');
     const depositRate = Number(body.depositRate ?? 0), paymentDays = Number(body.paymentDays ?? 0);
