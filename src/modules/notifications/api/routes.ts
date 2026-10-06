@@ -31,6 +31,8 @@ export interface NotifyInput {
   /** Gửi cho đúng một tài khoản (nhân viên phụ trách / khách). Bỏ trống = theo vai trò `targetRole`. */
   targetMemberId?: string | null; targetRole?: 'manager' | 'employee' | 'customer' | 'all';
   actorId?: string | null; data?: Record<string, unknown>;
+  /** false = chỉ đẩy Web Push, không lưu vào chuông thông báo (vd. tin nhắn chat – có hộp thư riêng). */
+  persist?: boolean;
 }
 
 /**
@@ -43,7 +45,7 @@ export async function notify(env: StaffEnv, n: NotifyInput) {
     targetRole: n.targetMemberId ? null : (n.targetRole ?? 'manager'), targetMemberId: n.targetMemberId ?? null, actorId: n.actorId ?? null,
     dataJson: JSON.stringify(n.data ?? {}), createdAt: nowIso(),
   };
-  try { await env.db.insert(webNotifications).values(note); } catch (e) { console.error('notify insert failed'); return { ok: false, sent: 0 }; }
+  if (n.persist !== false) { try { await env.db.insert(webNotifications).values(note); } catch (e) { console.error('notify insert failed'); return { ok: false, sent: 0 }; } }
   let sent = 0;
   try {
     const keys = await vapidKeys(env); if (!keys) return { ok: true, sent };

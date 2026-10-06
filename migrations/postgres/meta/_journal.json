@@ -71,6 +71,13 @@
       "when": 1791308757422,
       "tag": "0017_tasks_teams",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791310236495,
+      "tag": "0018_chat",
+      "breakpoints": true
     }
   ]
 }
