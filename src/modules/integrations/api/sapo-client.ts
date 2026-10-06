@@ -1,4 +1,5 @@
 import { AppError } from '../../../core/errors.ts';
+import { mergeSetCookies } from '../domain/sapo-session.ts';
 
 /** Cửa hàng Sapo của Bách Ngân (đổi bằng env SAPO_ADMIN_BASE nếu cần). */
 export const DEFAULT_SAPO_BASE = 'https://bachngankiengiang.mysapogo.com/admin';
@@ -13,6 +14,7 @@ const expired = () => new AppError(503, 'Phiên Sapo đã hết hạn. Manager c
  * Phân loại lỗi như bản cũ: chuyển về trang đăng nhập / 401 → phiên hết hạn; 403 → thiếu quyền.
  */
 export function sapoClient(o: SapoClientOptions) {
+  let cookie = o.cookie;
   const base = (o.base || DEFAULT_SAPO_BASE).replace(/\/+$/, ''), origin = base.replace(/\/admin$/, ''), doFetch = o.fetch ?? fetch;
   async function get(path: string): Promise<Record<string, any>> {
     let res: Response;
@@ -20,12 +22,15 @@ export function sapoClient(o: SapoClientOptions) {
       res = await doFetch(base + path, {
         method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(o.timeoutMs ?? 20_000),
         headers: {
-          cookie: o.cookie, accept: 'application/json', 'x-requested-with': 'XMLHttpRequest',
+          cookie, accept: 'application/json', 'x-requested-with': 'XMLHttpRequest',
           'x-sapo-client': 'sapo-frontend-v3', 'x-sapo-serviceid': 'sapo-frontend-v3', origin, referer: base, 'accept-language': 'vi',
         },
       });
     } catch { throw new AppError(504, 'Sapo chưa phản hồi. Vui lòng thử lại sau.', 'SAPO_UNREACHABLE'); }
     const text = await res.text();
+    // Sapo gia hạn/đổi phiên qua Set-Cookie: giữ lại để lưu (chỉ khi phiên vẫn hợp lệ, kiểm tra bên dưới).
+    const fresh = res.headers.getSetCookie?.() ?? [];
+    const nextCookie = fresh.length ? mergeSetCookies(cookie, fresh) : cookie;
     const location = res.headers.get('location') || '';
     if (res.status === 401 || (res.status >= 300 && res.status < 400) || /\/login/i.test(location)) throw expired();
     if (res.status === 403) throw new AppError(403, 'Tài khoản Sapo đang kết nối chưa đủ quyền xem dữ liệu này.', 'SAPO_PERMISSION_DENIED');
@@ -33,6 +38,7 @@ export function sapoClient(o: SapoClientOptions) {
     let body: unknown;
     try { body = JSON.parse(text); } catch { throw /<html|đăng nhập|login/i.test(text.slice(0, 2000)) ? expired() : new AppError(502, 'Sapo trả dữ liệu không hợp lệ.'); }
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AppError(502, 'Sapo trả dữ liệu không hợp lệ.');
+    if (/(^|;\s*)_admin_session_id=/.test(nextCookie)) cookie = nextCookie;
     return body as Record<string, any>;
   }
   /**
@@ -51,5 +57,6 @@ export function sapoClient(o: SapoClientOptions) {
     }
     return { items, nextPage: fromPage + maxPages };
   }
-  return { get, list };
+  /** Cookie hiện tại (đã gộp Set-Cookie của Sapo) và có khác bản ban đầu không. */
+  return { get, list, cookie: () => cookie, refreshed: () => cookie !== o.cookie };
 }

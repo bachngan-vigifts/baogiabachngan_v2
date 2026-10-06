@@ -252,3 +252,53 @@ test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, l
   await db.update(sapoHealthMonitorState).set({ updatedAt: new Date().toISOString() }).where(eq(sapoHealthMonitorState.id, 'pull-lock'));
   assert.equal((await call('/admin/sapo-pull', mgr, 'POST', {})).status, 409);
 });
+
+import { mergeSetCookies, decryptCookie } from '../../src/modules/integrations/domain/sapo-session.ts';
+
+test('gộp Set-Cookie của Sapo: thay giá trị, thêm mới, bỏ cookie bị xoá', () => {
+  assert.equal(mergeSetCookies('_admin_session_id=old; a=1; b=2', [
+    '_admin_session_id=new; Path=/; HttpOnly', 'c=3; Path=/', 'b=; Max-Age=0', 'a=9; Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+  ]), '_admin_session_id=new; c=3');
+  assert.equal(mergeSetCookies('_admin_session_id=x', ['bad name=1', 'evil=1\r\nx']), '_admin_session_id=x');
+});
+
+test('giữ phiên Sapo: gọi nhẹ, lưu cookie mới Sapo cấp; hết hạn thì báo; không đè phiên Manager vừa kết nối lại', async () => {
+  const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  let mode: 'renew' | 'same' | 'expired' = 'renew';
+  const sapoFetch = (async (_: string | URL | Request, init?: RequestInit) => {
+    assert.equal(init?.method, 'GET');
+    if (mode === 'expired') return new Response('', { status: 302, headers: { location: '/admin/login' } });
+    const res = Response.json({ accounts: [] });
+    if (mode === 'renew') res.headers.append('set-cookie', '_admin_session_id=moi; Path=/; HttpOnly');
+    return res;
+  }) as typeof globalThis.fetch;
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch };
+  const call = async (path: string, cookie = '', method = 'GET', body?: object, headers: Record<string, string> = { origin }) => {
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', cookie, ...headers }, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
+  };
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  mode = 'same';
+  assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=cu; khac=1' })).status, 200);
+  const stored = async () => decryptCookie(SECRET, (await db.select().from(sapoRuntimeSessions))[0]!.encryptedCookie);
+  const ping = () => call('/integrations/sapo/keepalive', '', 'POST', {}, { authorization: 'Bearer ' + SECRET });
+
+  mode = 'renew';
+  const r1 = await ping();
+  assert.equal(r1.status, 200); assert.equal(r1.data.ok, true); assert.equal(r1.data.refreshed, true);
+  assert.equal(await stored(), '_admin_session_id=moi; khac=1');
+  mode = 'same';
+  assert.equal((await ping()).data.refreshed, false);
+
+  mode = 'expired';
+  const r2 = await ping();
+  assert.equal(r2.data.ok, false); assert.equal(r2.data.code, 'SAPO_SESSION_EXPIRED');
+  assert.equal((await call('/admin/sapo-sync', mgr)).data.session.expired, true);
+  assert.equal(await stored(), '_admin_session_id=moi; khac=1', 'phiên hỏng thì giữ nguyên bản đã lưu');
+  // Manager kết nối lại: hết báo hết hạn.
+  mode = 'same';
+  await new Promise(r => setTimeout(r, 5));
+  assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=lan2' })).status, 200);
+  assert.equal((await call('/admin/sapo-sync', mgr)).data.session.expired, false);
+  assert.equal((await call('/integrations/sapo/keepalive', '', 'POST', {}, {})).status, 401);
+});
