@@ -217,44 +217,44 @@
           <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>SKU</th><th>Số lượng</th><th>Số thùng</th><th>Ghi chú đóng thùng</th><th>D × R × C (cm)</th><th>Kg/thùng dự toán</th></tr></thead><tbody id="ship-groups"></tbody></table></div>
         </details>
 
+        <!-- Như web cũ: Tổng cộng → nút xem lợi nhuận → Lợi nhuận nhanh → Ghi chú, xếp dọc toàn chiều rộng. -->
         <div class="editor-bottom">
-          <div class="card">
-            <h2 class="card-title">Ghi chú &amp; điều kiện</h2>
-            <textarea name="notes" rows="10" maxlength="20000" placeholder="Điều kiện thanh toán, thời gian giao hàng, hiệu lực báo giá…"></textarea>
-            <button type="button" class="btn ghost small" id="reset-notes">Dùng lại ghi chú mặc định của loại báo giá</button>
-          </div>
           <div class="card totals-card">
-            <h2 class="card-title">Tổng cộng</h2>
             <dl class="totals">
               <div><dt>Tạm tính</dt><dd id="sum-subtotal">0 ₫</dd></div>
               <div><dt id="sum-tax-label">Thuế VAT</dt><dd id="sum-tax">0 ₫</dd></div>
               <div class="grand"><dt>Tổng thanh toán</dt><dd id="sum-total">0 ₫</dd></div>
             </dl>
-            <button type="button" class="btn navy block manager-only" id="toggle-profit" aria-expanded="false">Xem lợi nhuận tạm tính</button>
-            <!-- Lợi nhuận tạm tính (chỉ Manager) – y như web cũ: doanh thu trước VAT − giá nhập − cước người gửi trả − phí in gia công. -->
-            <div class="profit-card" id="profit-card" hidden>
-              <div class="profit-head"><span>Lợi nhuận nhanh</span>
-                <div class="profit-head-actions"><button type="button" id="refresh-profit-costs">Cập nhật CK mua vào</button><button type="button" id="toggle-cost-fields" aria-pressed="false">Xem giá nhập</button></div>
-                <b id="sum-margin">0%</b></div>
-              <dl class="totals profit">
-                <div><dt>Doanh thu trước VAT</dt><dd id="sum-revenue">0 ₫</dd></div>
-                <div><dt>Giá nhập</dt><dd id="sum-cost">0 ₫</dd></div>
-                <div><dt>Cước vận chuyển</dt><dd id="sum-shipping">Chưa có cước dự toán</dd></div>
-              </dl>
-              <section class="profit-printing" id="profit-printing" hidden>
-                <h3>Phí in gia công</h3>
-                <div class="table-wrap"><table class="data-table printing-table"><thead id="printing-head"></thead><tbody id="printing-rows"></tbody></table></div>
-                <p class="muted small" id="printing-status" role="status"></p>
-              </section>
-              <fieldset class="profit-payer"><legend>Bên thanh toán cước</legend>
-                <label><input type="radio" name="profitShippingPayer" value="sender"> Người gửi trả</label>
-                <label><input type="radio" name="profitShippingPayer" value="receiver" checked> Người nhận trả</label>
-              </fieldset>
-              <p class="muted small" id="profit-shipping-hint" hidden>Chưa có cước dự toán nên lợi nhuận chưa trừ chi phí vận chuyển.</p>
-              <dl class="totals"><div class="grand"><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div></dl>
-              <p class="muted small">Chỉ Manager thấy mục này. Bấm cập nhật CK mua vào để tự điền giá nhập theo nhóm hàng.</p>
-            </div>
             <p class="muted small" id="words-total"></p>
+          </div>
+          <button type="button" class="btn navy block manager-only" id="toggle-profit" aria-expanded="false">Xem lợi nhuận tạm tính</button>
+          <!-- Lợi nhuận tạm tính (chỉ Manager) – y như web cũ: doanh thu trước VAT − giá nhập − cước người gửi trả − phí in gia công. -->
+          <div class="card profit-card" id="profit-card" hidden>
+            <div class="profit-head"><span>Lợi nhuận nhanh</span>
+              <div class="profit-head-actions"><button type="button" id="refresh-profit-costs">Cập nhật CK mua vào</button><button type="button" id="toggle-cost-fields" aria-pressed="false">Xem giá nhập</button></div>
+              <b id="sum-margin">0%</b></div>
+            <dl class="totals profit">
+              <div><dt>Doanh thu trước VAT</dt><dd id="sum-revenue">0 ₫</dd></div>
+              <div><dt>Giá nhập</dt><dd id="sum-cost">0 ₫</dd></div>
+              <div><dt>Cước vận chuyển</dt><dd id="sum-shipping">Chưa có cước dự toán</dd></div>
+            </dl>
+            <section class="profit-printing" id="profit-printing" hidden>
+              <h3>Phí in gia công</h3>
+              <div class="table-wrap"><table class="data-table printing-table"><thead id="printing-head"></thead><tbody id="printing-rows"></tbody></table></div>
+              <p class="muted small" id="printing-status" role="status"></p>
+            </section>
+            <fieldset class="profit-payer"><legend>Bên thanh toán cước</legend>
+              <label><input type="radio" name="profitShippingPayer" value="sender"> Người gửi trả</label>
+              <label><input type="radio" name="profitShippingPayer" value="receiver" checked> Người nhận trả</label>
+            </fieldset>
+            <p class="muted small" id="profit-shipping-hint" hidden>Chưa có cước dự toán nên lợi nhuận chưa trừ chi phí vận chuyển.</p>
+            <dl class="totals"><div class="grand"><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div></dl>
+            <p class="muted small">Chỉ Manager thấy mục này. Bấm cập nhật CK mua vào để tự điền giá nhập theo nhóm hàng.</p>
+          </div>
+          <div class="card">
+            <h2 class="card-title">Ghi chú báo giá</h2>
+            <textarea name="notes" rows="10" maxlength="20000" placeholder="Điều kiện thanh toán, thời gian giao hàng, hiệu lực báo giá…"></textarea>
+            <button type="button" class="btn ghost small" id="reset-notes">Dùng lại ghi chú mặc định của loại báo giá</button>
           </div>
         </div>
         <p id="quote-error" class="error" role="alert"></p>
