@@ -480,7 +480,7 @@ async function openEditor(id) {
     const pending = editor.pending; editor.pending = null;
     fillEditor(null, 0, pending || newQuoteData());
     if (pending) markDirty();
-    setTimeout(() => { if (!qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : $('#customer-search-input')).focus(); }, 50);
+    setTimeout(() => { if (!qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : field('customer')).focus(); }, 50);
     return;
   }
   if (editor.id === id && !editor.loading && editor.dirty) return; // quay lại đúng báo giá đang sửa
@@ -506,7 +506,6 @@ function fillEditor(id, revision, data) {
     field(name).value = data[name] ?? '';
   field('deliveryDate').value = data.deliveryDate || data.delivery_date || '';
   field('vat').value = fmtNum(Number(data.vat ?? 8));
-  $('#customer-search-input').value = '';
   editor.discountMode = data.discountMode || editor.rows[0]?.discountType || 'percent';
   setProfit(false);
   setType(editor.type, false);
@@ -521,7 +520,6 @@ function fillEditor(id, revision, data) {
 }
 function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; } }
 qf.addEventListener('input', e => {
-  if (e.target.id === 'customer-search-input') return;
   markDirty();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
   if (['customer', 'phone'].includes(e.target.name)) {
@@ -600,6 +598,7 @@ function renderLines(focus) {
   $('#line-head').innerHTML = lineHead();
   $('#line-list').innerHTML = editor.rows.map(lineCell).join('');
   $('#line-count').textContent = `(${editor.rows.length})`;
+  if ($('#shipping-card').open) renderShippingRows();
   qf.classList.toggle('type-hrc', editor.type === 'HRC');
   calculate();
   if (focus !== undefined) $(`#line-list tr[data-i="${focus}"] [data-k="name"]`)?.focus();
@@ -748,6 +747,7 @@ function calculate() {
     tr.querySelector('.line-total').textContent = money(unit * Number(r.qty || 0));
     const cost = tr.querySelector('.col-cost'); if (cost) cost.textContent = Number.isFinite(r.purchaseDiscount) ? money(r.costPrice) : '—';
   });
+  if ($('#shipping-card').open) renderShippingSummary();
   $('#sum-subtotal').textContent = money(t.subtotal);
   $('#sum-tax-label').textContent = t.label;
   $('#sum-tax').textContent = money(t.tax);
@@ -762,8 +762,73 @@ function calculate() {
   return t;
 }
 
+// ----- đóng thùng & phí vận chuyển (port Shipping.calculate của web cũ)
+const PACK_FIELDS = ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight'];
+function shippingCalc(rows, opt = {}) {
+  const groups = []; let cartons = 0, kg = 0, m3 = 0, billable = 0, missing = 0;
+  const divisor = Number(opt.divisor) || 5000;
+  for (const r of rows) {
+    const qty = Number(r.qty); if (!(qty > 0)) continue;
+    const n = Number(r.perCarton), w = Number(r.cartonWeight), l = Number(r.cartonLength), b = Number(r.cartonWidth), h = Number(r.cartonHeight);
+    if (!Number.isInteger(n) || n <= 0) { missing++; continue; } // có SP/thùng là đếm được thùng; kg và kích thước chỉ ảnh hưởng cước
+    const hasW = w > 0, hasDim = [l, b, h].every(v => v > 0);
+    const full = Math.floor(qty / n), rest = qty - full * n, count = qty / n, unit = String(r.unit || 'cái').trim() || 'cái';
+    const note = [full ? `${full} thùng x ${n} ${unit}` : '', rest ? `lẻ ${fmtNum(rest)} ${unit}` : ''].filter(Boolean).join(' + ');
+    groups.push({ sku: r.sku, name: r.name, qty, count, note, kg: hasW ? w : null, dims: hasDim ? [l, b, h] : null });
+    cartons += count;
+    if (hasW) kg += count * w;
+    if (hasDim) m3 += count * l * b * h / 1e6;
+    if (hasW || hasDim) billable += count * Math.max(hasW ? w : 0, hasDim ? l * b * h / divisor : 0);
+    if (!hasW || !hasDim) missing++;
+  }
+  const rate = Number(opt.rate) || 0, extra = Number(opt.extra) || 0;
+  // Đơn giá 0đ + phụ phí = cước trọn gói, không cần kg/kích thước.
+  const fee = rate === 0 && extra > 0 ? Math.ceil(extra) : !missing && cartons && rate > 0 ? Math.ceil(billable * rate + extra) : null;
+  return { groups, cartons, kg, m3, billable, missing, fee };
+}
+const shipOpts = () => editor.base.shipping || {};
+function renderShippingRows() {
+  $('#ship-rows').innerHTML = editor.rows.map((r, i) => (r.name || r.sku) ? `<tr><td>${esc(r.sku || '—')}<br><small class="muted">${esc(r.name || '')}</small></td><td>${fmtNum(Number(r.qty) || 0)}</td>${PACK_FIELDS.map(k =>
+    `<td><input class="num-input" type="number" min="0" step="${k === 'perCarton' ? 1 : 'any'}" data-pack="${k}" data-i="${i}" value="${Number(r[k]) > 0 ? r[k] : ''}" placeholder="Chưa có" aria-label="${k} ${esc(r.sku || r.name || '')}"></td>`).join('')}</tr>` : '').join('')
+    || '<tr><td colspan="7" class="muted">Chưa có sản phẩm.</td></tr>';
+  const o = shipOpts();
+  $('#ship-divisor').value = o.divisor || 5000; $('#ship-rate').value = Number(o.rate) > 0 ? o.rate : ''; $('#ship-extra').value = Number(o.extra) > 0 ? o.extra : '';
+  renderShippingSummary();
+}
+function renderShippingSummary() {
+  const c = shippingCalc(editor.rows, shipOpts()), shown = v => v > 0 ? fmtNum(v, 3) : '—';
+  $('#ship-summary').textContent = `${fmtNum(c.cartons, 3)} thùng · ${fmtNum(c.kg, 3)} kg dự toán · ${fmtNum(c.m3, 3)} m³ · ${fmtNum(c.billable, 3)} kg tính cước${c.missing ? ` · ${c.missing} dòng còn thiếu dữ liệu cước` : ''}`;
+  $('#ship-fee').textContent = c.fee === null ? 'Chưa đủ dữ liệu hoặc chưa nhập đơn giá' : money(c.fee);
+  $('#ship-groups').innerHTML = c.groups.map(g => `<tr><td>${esc(g.sku || '—')}<br><small class="muted">${esc(g.name || '')}</small></td><td>${fmtNum(g.qty)}</td><td>${fmtNum(g.count, 3)}</td><td>${esc(g.note)}</td><td>${g.dims ? g.dims.map(shown).join(' × ') : '— × — × —'}</td><td>${shown(g.kg)}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">Nhập SP/thùng để tính số thùng.</td></tr>';
+}
+$('#ship-rows').addEventListener('change', e => {
+  const el = e.target.closest('[data-pack]'); if (!el) return;
+  let v = Number(el.value);
+  if (el.value === '' || !Number.isFinite(v) || v < 0 || v > 1e6 || (el.dataset.pack === 'perCarton' && !Number.isInteger(v))) { if (el.value !== '') toast('Quy cách không hợp lệ (SP/thùng phải là số nguyên).', 'err'); el.value = ''; v = 0; }
+  editor.rows[Number(el.dataset.i)][el.dataset.pack] = v; markDirty(); renderShippingSummary();
+});
+for (const [id, key] of [['#ship-divisor', 'divisor'], ['#ship-rate', 'rate'], ['#ship-extra', 'extra']]) $(id).addEventListener('change', e => {
+  let v = Number(e.target.value); if (!Number.isFinite(v) || v < 0 || v > 1e12) v = 0;
+  if (key === 'divisor') v = Math.max(1, v || 5000);
+  editor.base.shipping = { divisor: 5000, rate: 0, extra: 0, payer: 'receiver', ...shipOpts(), [key]: v };
+  markDirty(); renderShippingSummary();
+});
+$('#shipping-card').addEventListener('toggle', e => { if (e.target.open) renderShippingRows(); });
+$('#fill-packing').addEventListener('click', async () => {
+  const skus = [...new Set(editor.rows.map(r => (r.sku || '').trim()).filter(Boolean))];
+  if (!skus.length) return toast('Báo giá chưa có mã sản phẩm để tra quy cách.', 'err');
+  let found = [];
+  try { for (let i = 0; i < skus.length; i += 200) found.push(...(await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(',')))).products); }
+  catch (e) { return toast(e.message, 'err'); }
+  const bySku = new Map(found.map(p => [p.sku, p])); let count = 0;
+  for (const r of editor.rows) { const p = bySku.get((r.sku || '').trim()); if (!p) continue; for (const k of PACK_FIELDS) if (!(Number(r[k]) > 0) && Number(p[k]) > 0) { r[k] = Number(p[k]); count++; } }
+  if (count) markDirty();
+  renderShippingRows(); toast(count ? `Đã điền ${count} ô quy cách từ danh mục.` : 'Danh mục không có thêm quy cách cho các mã này.');
+});
+
 // ----- khách hàng trong báo giá
-const suggest = $('#customer-suggest'), searchInput = $('#customer-search-input');
+const suggest = $('#customer-suggest'), searchInput = field('customer');
 let suggestIndex = -1, suggestItems = [];
 let suggestTimer, suggestReq = 0;
 function showSuggest() {
@@ -776,7 +841,7 @@ function showSuggest() {
     suggestItems = items; suggestIndex = items.length ? 0 : -1;
     suggest.innerHTML = items.length
       ? items.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === suggestIndex}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · ') || c.address || '')}</small></li>`).join('')
-      : `<li class="none">${searchInput.value.trim() ? 'Không tìm thấy. Nhập thông tin bên dưới rồi bấm "Lưu vào danh bạ".' : 'Danh bạ đang trống.'}</li>`;
+      : `<li class="none">${searchInput.value.trim() ? 'Không có trong danh bạ. Điền tiếp thông tin bên dưới, rồi bấm "Lưu vào danh bạ".' : 'Danh bạ đang trống.'}</li>`;
     suggest.hidden = false; searchInput.setAttribute('aria-expanded', 'true');
   }, 180);
 }
@@ -786,10 +851,10 @@ function pickCustomer(c) {
   field('customer').value = c.name; field('contact').value = c.contact || ''; field('phone').value = c.phone || '';
   field('email').value = c.email || ''; field('customerTaxCode').value = c.taxCode || ''; field('customerAddress').value = c.address || '';
   editor.base.customerCode = c.customerCode || '';
-  searchInput.value = ''; hideSuggest(); markDirty(); updateContactsButton();
+  hideSuggest(); markDirty(); updateContactsButton();
   toast('Đã điền thông tin ' + c.name);
 }
-searchInput.addEventListener('focus', showSuggest);
+searchInput.addEventListener('focus', () => { if (!editor.customerId) showSuggest(); });
 searchInput.addEventListener('input', showSuggest);
 searchInput.addEventListener('blur', () => { clearTimeout(suggestTimer); suggestReq++; setTimeout(hideSuggest, 150); });
 searchInput.addEventListener('keydown', e => {

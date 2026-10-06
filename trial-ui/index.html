@@ -165,14 +165,13 @@
               <h2 class="card-title">Khách hàng</h2>
               <button type="button" class="btn ghost small" id="save-to-contacts" hidden>＋ Lưu vào danh bạ</button>
             </div>
-            <label class="picker-label">Tìm trong danh bạ
-              <span class="combo">
-                <input id="customer-search-input" placeholder="Gõ tên hoặc số điện thoại khách…" role="combobox" aria-expanded="false" aria-controls="customer-suggest" aria-autocomplete="list">
-                <ul id="customer-suggest" class="suggest" role="listbox" hidden></ul>
-              </span>
-            </label>
             <div class="form-grid cols-2">
-              <label class="span-2">Tên khách hàng / công ty<input name="customer" required maxlength="500"></label>
+              <label class="span-2">Tên khách hàng / công ty
+                <span class="combo">
+                  <input name="customer" required maxlength="500" autocomplete="off" placeholder="Gõ tên hoặc số điện thoại để tìm trong danh bạ…" role="combobox" aria-expanded="false" aria-controls="customer-suggest" aria-autocomplete="list">
+                  <ul id="customer-suggest" class="suggest" role="listbox" hidden></ul>
+                </span>
+              </label>
               <label>Người liên hệ<input name="contact" maxlength="500"></label>
               <label>Điện thoại<input name="phone" maxlength="500" inputmode="tel"></label>
               <label>Email<input name="email" type="email" maxlength="500"></label>
@@ -199,6 +198,22 @@
           </div>
           <p class="muted small line-keys">F6: nhập chiết khấu · <span class="print-key">F7: nhập phí in · </span>Enter: xuống dòng</p>
         </div>
+
+        <details class="card shipping-card" id="shipping-card">
+          <summary><h2 class="card-title">Tính đóng thùng &amp; phí vận chuyển</h2></summary>
+          <button type="button" class="btn secondary small" id="fill-packing">Điền quy cách còn thiếu từ danh mục</button>
+          <p class="muted small">Quy cách lấy từ danh mục theo SKU. Nhập bổ sung ô trống; kích thước tính bằng cm. Mỗi mã đóng riêng. Số thùng hiển thị dạng lẻ theo số lượng / SP thùng.</p>
+          <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>Mã / sản phẩm</th><th>Số lượng</th><th>SP/thùng</th><th>Kg/thùng đầy</th><th>Dài (cm)</th><th>Rộng (cm)</th><th>Cao (cm)</th></tr></thead><tbody id="ship-rows"></tbody></table></div>
+          <div class="form-grid ship-rates">
+            <label>Hệ số quy đổi cm³/kg<input id="ship-divisor" type="number" min="1" step="any" inputmode="decimal"></label>
+            <label>Cước nhập tay (đ/kg)<input id="ship-rate" type="number" min="0" step="any" inputmode="decimal"></label>
+            <label>Phụ phí (đ)<input id="ship-extra" type="number" min="0" step="any" inputmode="decimal"></label>
+          </div>
+          <p class="muted small">Kg tính cước mỗi dòng = số thùng lẻ × số lớn hơn giữa kg/thùng và Dài × Rộng × Cao / hệ số. Hệ số mặc định 5.000; chỉnh theo nhà vận chuyển. Nhập đơn giá 0đ và điền cước trọn gói vào Phụ phí (ví dụ 100.000đ). Cước dự toán không cộng vào tiền báo giá.</p>
+          <p class="ship-summary" id="ship-summary"></p>
+          <p class="muted small">Cước dự toán: <b id="ship-fee"></b></p>
+          <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>SKU</th><th>Số lượng</th><th>Số thùng</th><th>Ghi chú đóng thùng</th><th>D × R × C (cm)</th><th>Kg/thùng dự toán</th></tr></thead><tbody id="ship-groups"></tbody></table></div>
+        </details>
 
         <div class="editor-bottom">
           <div class="card">
