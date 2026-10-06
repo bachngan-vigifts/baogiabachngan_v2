@@ -69,7 +69,7 @@ $('#c-login-form').addEventListener('submit', async e => {
   if (activation && password !== $('#c-password2').value) { err.textContent = 'Hai lần nhập mật khẩu chưa khớp.'; return; }
   btn.disabled = true;
   try {
-    if (activation) { await api('/activate', 'POST', { token: activation.token, password }); activation = null; history.replaceState(null, '', location.pathname + '#quotes'); }
+    if (activation) { await api('/activate', 'POST', { token: activation.token, password }); activation = null; history.replaceState(null, '', location.pathname + '#new'); }
     await api('/login', 'POST', { email, password });
     $('#c-login-form').reset(); $('#c-email').readOnly = false;
     await boot();
@@ -91,16 +91,19 @@ async function boot() {
     + (ck.length ? `<div><small class="muted">Chiết khấu riêng của quý khách</small><b>${ck.map(([k, v]) => `${k} ${fmtNum(v)}%`).join(' · ')}</b></div>` : '');
   document.title = st.me.customer.name + ' · Bách Ngân';
   notifier.start();
-  showTab(location.hash.replace('#', '') || 'quotes');
+  showTab(location.hash.replace('#', '') || 'new');
 }
 $('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth('Đã đăng xuất.'); });
 
+/** Thẻ: Tạo báo giá / Check tồn · Danh sách báo giá / Check tồn · Đơn đặt hàng / HĐKT · Công nợ. `#stock` (liên kết thông báo cũ) = danh sách, cuộn tới phần check tồn. */
 function showTab(tab) {
-  if (!['quotes', 'new', 'orders', 'debt', 'stock'].includes(tab)) tab = 'quotes';
+  const toStock = tab === 'stock'; if (toStock) tab = 'quotes';
+  if (!['quotes', 'new', 'orders', 'debt'].includes(tab)) tab = 'new';
   $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== tab);
-  history.replaceState(null, '', '#' + tab);
-  if (tab === 'quotes') loadQuotes(); else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else if (tab === 'stock') loadStock(); else loadCatalog();
+  history.replaceState(null, '', '#' + (toStock ? 'stock' : tab));
+  if (tab === 'quotes') { loadQuotes(); loadStock().then(() => { if (toStock) $('#p-stock-section').scrollIntoView({ behavior: 'smooth' }); }); }
+  else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else loadCatalog();
 }
 $$('[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 addEventListener('hashchange', () => { if (st.me && !$('#portal').hidden) showTab(location.hash.replace('#', '')); });
@@ -262,7 +265,7 @@ $('#p-send-order').addEventListener('click', () => send(true));
 // ----- Thông báo + tự làm mới: nhân viên xác nhận báo giá / đơn, trả lời tồn kho
 const notifier = setupNotifications({
   api, root: $('#p-bell'),
-  onNew(notes) { for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`); const tab = location.hash.replace('#', '') || 'quotes'; if (tab !== 'new') showTab(tab); },
+  onNew(notes) { for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`); const tab = location.hash.replace('#', '') || 'new'; if (tab !== 'new') showTab(tab); },
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) { if (location.hash === '#' + h) showTab(h); else location.hash = h; } },
 });
 
@@ -315,7 +318,8 @@ async function loadDebt() {
   } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="error">${esc(e.message)}</td></tr>`; }
 }
 
-// ----- Đơn hàng
+// ----- Đơn đặt hàng / HĐKT
+const CONTRACT_STATUS = { draft: ['HĐKT nháp', 'off'], signed: ['Đã ký', 'ok'], completed: ['Hoàn tất', 'ok'] };
 async function loadOrders() {
   const box = $('#p-orders'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
   try {
@@ -325,6 +329,7 @@ async function loadOrders() {
       <header><div><b>${esc(o.orderNo)}</b> ${pill(ORDER_STATUS, o.status)}<small>Ngày đặt ${fmtDate(o.orderDate)}${o.quoteNo ? ' · Báo giá ' + esc(o.quoteNo) : ''}${o.expectedDeliveryDate ? ' · Giao dự kiến ' + fmtDate(o.expectedDeliveryDate) : ''}</small></div>
         <strong>${money(o.total)}</strong></header>
       <ul class="plain-list">${o.lines.map(l => `<li><span>${esc(l.name)}<small>${esc(l.sku)}</small></span><span>${fmtNum(l.qty)} ${esc(l.unit)}${l.deliveredQty ? ` · đã giao ${fmtNum(l.deliveredQty)}` : ''}</span><b>${money(l.amount)}</b></li>`).join('')}</ul>
+      ${o.contract ? `<p class="small"><b>HĐKT ${esc(o.contract.contractNo)}</b> ${pill(CONTRACT_STATUS, o.contract.status)}${o.contract.signedDate ? ' · ký ngày ' + fmtDate(o.contract.signedDate) : ''}</p>` : ''}
       ${o.deliveries.length ? `<p class="small"><b>Lịch giao:</b> ${o.deliveries.map(d => `${fmtDate(d.plannedDate)} ${esc(d.timeSlot)} (${esc(DELIVERY_STATUS[d.status] || d.status)})`).join(' · ')}</p>` : ''}
       ${o.receivable && o.status !== 'draft' ? `<p class="small">Đã thanh toán ${money(o.receivable.paid)} · <b>Còn lại ${money(o.receivable.balance)}</b></p>` : ''}
       ${o.status === 'draft' ? '<button type="button" class="btn ghost small" data-cancel>Huỷ đơn</button>' : ''}

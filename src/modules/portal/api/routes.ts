@@ -177,11 +177,11 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
         .from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))).orderBy(asc(deliveries.plannedDate)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
       db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(inArray(customerPayments.orderId, ids)).orderBy(asc(customerPayments.paidAt)),
-      db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
+      db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo, status: salesContracts.status, signedDate: salesContracts.signedDate, value: salesContracts.value }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]) : [[], [], [], [], []];
     const today = vietnamDate().iso;
-    return json({ orders: orders.map(o => { const counts = debtCounts(o.status, cts.find(x => x.orderId === o.id)?.status); return {
-      ...o, lines: lines.filter(l => l.orderId === o.id), deliveries: ships.filter(d => d.orderId === o.id),
+    return json({ orders: orders.map(o => { const k = cts.find(x => x.orderId === o.id), counts = debtCounts(o.status, k?.status); return {
+      ...o, contract: k && k.status !== 'cancelled' ? { contractNo: k.contractNo, status: k.status, signedDate: k.signedDate, value: k.value } : null, lines: lines.filter(l => l.orderId === o.id), deliveries: ships.filter(d => d.orderId === o.id),
       // Công nợ chỉ tính khi đơn đã được xác nhận hoặc HĐKT đã ký.
       receivable: counts ? receivable(sch.filter(s => s.orderId === o.id), pay.filter(p => p.orderId === o.id), today) : null,
       // Công nợ cho khách: các kỳ phải trả (cọc / phần còn lại, hạn) và các lần đã thanh toán.
