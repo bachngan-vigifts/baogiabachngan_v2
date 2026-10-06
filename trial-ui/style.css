@@ -730,3 +730,7 @@ a.flow-step:hover { border-color: var(--blue); }
 .verify-checks input { margin-top: 3px; width: 17px; height: 17px; flex: none; }
 .verify-dialog .modal-foot [data-left] { margin-right: auto; }
 .verify-dialog .modal-body { max-height: 70vh; overflow: auto; }
+/* Số tiền đã thu / kỳ đã thu đủ: xanh lá */
+.paid-text { color: var(--green) !important; font-weight: 700; }
+.warn-text { color: var(--amber); font-weight: 600; }
+.plain-list li.installment-paid > b { color: var(--green); text-decoration: line-through; text-decoration-color: #12805c66; }

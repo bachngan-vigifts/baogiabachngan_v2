@@ -50,3 +50,19 @@ export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '
     dlg.showModal();
   });
 }
+
+/**
+ * Chia số đã thu vào từng kỳ phải thu như máy chủ (`receivable()`): kỳ có hạn sớm trước, kỳ "sau khi giao" sau cùng.
+ * Trả về các kỳ kèm `covered` (đã thu cho kỳ này) và `left` (còn phải thu của kỳ).
+ */
+export function allocatePayments(schedules, paid) {
+  let rest = Number(paid) || 0;
+  const order = [...schedules].map((s, i) => ({ s, i })).sort((a, b) => (a.s.dueDate ?? '9999').localeCompare(b.s.dueDate ?? '9999'));
+  const out = [];
+  for (const { s, i } of order) { const covered = Math.min(rest, s.amount); rest -= covered; out[i] = { ...s, covered, left: s.amount - covered }; }
+  return out;
+}
+/** Nhãn thanh toán của một kỳ: Đã thu đủ (xanh lá) · Đã thu một phần · Chưa thu. */
+export function installmentStatus(x) {
+  return x.left <= 0 ? '<span class="paid-text">✓ Đã thu đủ</span>' : x.covered > 0 ? `<span class="warn-text">Đã thu ${new Intl.NumberFormat('vi-VN').format(x.covered)} ₫ · còn ${new Intl.NumberFormat('vi-VN').format(x.left)} ₫</span>` : '<span class="muted">Chưa thu</span>';
+}
