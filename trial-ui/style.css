@@ -711,3 +711,4 @@ a.flow-step:hover { border-color: var(--blue); }
 .stock-req td small { display: block; color: var(--muted); }
 .stock-req .num-input { width: 90px; text-align: right; }
 .row-gap.end { justify-content: flex-end; }
+.portal-order td .num-input { width: 96px; text-align: right; }
