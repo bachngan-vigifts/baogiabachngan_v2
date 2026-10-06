@@ -130,6 +130,16 @@ function toast(text, kind = 'ok') {
   $('#toasts').append(el);
   setTimeout(() => el.remove(), kind === 'err' ? 6000 : 3500);
 }
+// Lỗi giao diện ngoài dự kiến: hiện lên màn hình để người dùng chụp gửi lại (không im lặng).
+let lastUiError = '';
+function reportUiError(err) {
+  const msg = String(err?.message || err || 'Lỗi không rõ');
+  if (msg === lastUiError || /ResizeObserver|Script error/i.test(msg)) return;
+  lastUiError = msg; setTimeout(() => { lastUiError = ''; }, 5000);
+  toast('Lỗi giao diện: ' + msg, 'err');
+}
+window.addEventListener('error', e => { if (e.error || e.message) reportUiError(e.error || e.message); });
+window.addEventListener('unhandledrejection', e => reportUiError(e.reason));
 function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = false } = {}) {
   const dlg = $('#confirm-dialog');
   $('#confirm-title').textContent = title; $('#confirm-text').textContent = text;
