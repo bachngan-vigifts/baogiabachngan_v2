@@ -3,7 +3,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=v=>new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:0}).format(v||0);
 const date=v=>new Date(v).toLocaleDateString('vi-VN');
-let token=sessionStorage.getItem('bn-v2-session')||'', user=null, quotes=[],customers=[],page='quotes',quote=null,customerId=null,rows=[];
+let token=sessionStorage.getItem('bn-v2-session')||'', user=null, quotes=[],customers=[],page='quotes',quote=null,customerId=null,rows=[],foundProducts=[],pricePolicies=[];
 let activation=new URLSearchParams(location.hash.slice(1)).get('token');
 $('#today').textContent=new Date().toLocaleDateString('vi-VN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 async function api(path,method='GET',body){
@@ -18,14 +18,14 @@ function toast(text){$('#toast').textContent=text;$('#toast').style.display='blo
 function showAuth(){user=null;token='';sessionStorage.removeItem('bn-v2-session');$('#auth').hidden=false;$('#workspace').hidden=true;}
 async function load(){
  $('#load-error').textContent='';
- try{const [q,c]=await Promise.all([api('/quotes'),api('/customers')]);quotes=q.quotes;customers=c.customers;renderQuotes();renderCustomers();}
+ try{const q=await api('/quotes');quotes=q.quotes;customers=[];let offset=0;do{const c=await api('/customers?offset='+offset);customers.push(...c.customers);offset=c.nextOffset;}while(offset!==null);renderQuotes();renderCustomers();}
  catch(e){$('#load-error').textContent=e.message;}
 }
 async function enter(){
  user=(await api('/me')).user;
  if(user.role==='supplier'||user.positionId==='supplier')throw new Error('Bản dùng thử này dành cho nhân viên và Manager. Cổng NCC đang được hoàn thiện.');
  $('#auth').hidden=true;$('#workspace').hidden=false;$('#user-name').textContent=user.name;$('#user-role').textContent=user.role==='manager'?'Manager':'Nhân viên';
- await load();
+ $('#catalog-import').hidden=user.role!=='manager';await load();
 }
 $('#login-form').addEventListener('submit',async e=>{
  e.preventDefault();const b=$('#login-button');b.disabled=true;$('#auth-error').textContent='';
@@ -58,7 +58,7 @@ async function openQuote(id){
  try{quote=id?await api('/quotes/'+encodeURIComponent(id)):null;
  const data=quote?.data||{quoteNo:'BG-'+new Date().toISOString().slice(0,10).replaceAll('-','')+'-'+String(quotes.length+1).padStart(3,'0'),type:'B2B',date:new Date().toISOString().slice(0,10),vat:8,customer:'',notes:''};
  qf.reset();fillForm(qf,data);rows=(data.rows||[{id:crypto.randomUUID(),name:'',sku:'',qty:1,price:0,discount:0,printFee:0}]).map(r=>({...r}));
- $('#quote-dialog-title').textContent=id?'Sửa báo giá '+data.quoteNo:'Tạo báo giá';$('#customer-picker').innerHTML='<option value="">Nhập khách hàng thủ công</option>'+customers.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('#customer-picker').value=data.customerId||'';renderLines();$('#quote-dialog').showModal();
+ $('#quote-dialog-title').textContent=id?'Sửa báo giá '+data.quoteNo:'Tạo báo giá';$('#customer-picker').innerHTML='<option value="">Nhập khách hàng thủ công</option>'+customers.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('#customer-picker').value=data.customerId||'';renderLines();$('#quote-dialog').showModal();await searchProducts();
  }catch(e){toast(e.message);}
 }
 function renderLines(){
@@ -74,3 +74,19 @@ qf.onsubmit=async e=>{e.preventDefault();$('#save-quote').disabled=true;$('#quot
 $('#print-quote').onclick=()=>{if(!qf.reportValidity())return;const d=quoteData(),t=calculate();$('#print-sheet').innerHTML=`<strong>BÁCH NGÂN</strong><h1>BÁO GIÁ</h1><p>Số: ${esc(d.quoteNo)} · Ngày: ${esc(d.date)}<br>Khách hàng: ${esc(d.customer)}<br>Liên hệ: ${esc(d.contact)} · ${esc(d.phone)}<br>Địa chỉ: ${esc(d.customerAddress)}</p><table><thead><tr><th>STT</th><th>Sản phẩm</th><th>SL</th><th>Đơn giá</th><th>CK</th><th>Phí in</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.name)}<br>${esc(r.sku)}</td><td>${r.qty}</td><td>${money(r.price)}</td><td>${r.discountType==='amount'?money(r.discount):r.discount+'%'}</td><td>${money(r.printFee)}</td></tr>`).join('')}</tbody></table><p class="print-total">Trước thuế: ${money(t.subtotal)}<br>VAT: ${money(t.tax)}<br><strong>Tổng cộng: ${money(t.total)}</strong></p><p>${esc(d.notes)}</p>`;window.print();};
 function openCustomer(id){customerId=id||null;$('#customer-form').reset();$('#customer-error').textContent='';if(id)fillForm($('#customer-form'),customers.find(c=>c.id===id)||{});$('#customer-dialog-title').textContent=id?'Sửa khách hàng':'Thêm khách hàng';$('#customer-dialog').showModal();}
 $('#customer-form').onsubmit=async e=>{e.preventDefault();$('#save-customer').disabled=true;$('#customer-error').textContent='';try{const data=Object.fromEntries(new FormData(e.target));await api(customerId?'/customers/'+encodeURIComponent(customerId):'/customers',customerId?'PUT':'POST',data);$('#customer-dialog').close();await load();toast('Đã lưu khách hàng.');}catch(e){$('#customer-error').textContent=e.message;}finally{$('#save-customer').disabled=false;}};
+
+let productSearchVersion=0,productSearchTimer;
+async function searchProducts(){
+ const version=++productSearchVersion;$('#product-status').textContent='Đang tìm sản phẩm…';
+ try{const result=await api('/products?q='+encodeURIComponent($('#product-search').value));if(version!==productSearchVersion)return;foundProducts=result.products;const old=$('#price-policy').value;pricePolicies=result.pricePolicies;$('#price-policy').innerHTML=pricePolicies.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');if(pricePolicies.some(p=>p.id===old))$('#price-policy').value=old;renderProductChoices();$('#product-status').textContent=foundProducts.length?'Chọn sản phẩm để thêm vào báo giá.':'Chưa có sản phẩm phù hợp. Manager có thể nhập danh mục từ web cũ.';}catch(e){$('#product-status').textContent=e.message;}
+}
+function renderProductChoices(){
+ const policyId=$('#price-policy').value;
+ $('#product-results').innerHTML=foundProducts.map((p,i)=>{const price=p.prices.find(v=>v.policyId===policyId)?.price;return `<button type="button" class="secondary" data-product="${i}">${esc(p.sku)} · ${esc(p.name)} · ${price==null?'Chưa có giá':money(price)}</button>`;}).join('');
+ $$('[data-product]').forEach(b=>b.onclick=()=>{const p=foundProducts[Number(b.dataset.product)];const price=p.prices.find(v=>v.policyId===policyId)?.price;if(price==null){toast('Sản phẩm chưa có giá theo chính sách này. Vui lòng chọn chính sách khác.');return;}const row={id:crypto.randomUUID(),sku:p.sku,name:p.name,brand:p.brand,unit:p.unit,qty:1,price,discount:0,printFee:0,taxRate:p.taxOut??Number(field('vat').value||0)};if(rows.length===1&&!rows[0].name&&!rows[0].sku)rows[0]=row;else{if(rows.length>=300){toast('Báo giá tối đa 300 dòng.');return;}rows.push(row);}renderLines();});
+}
+$('#product-search').oninput=()=>{clearTimeout(productSearchTimer);productSearchTimer=setTimeout(searchProducts,250);};$('#price-policy').onchange=renderProductChoices;
+$('#catalog-file').onchange=async e=>{
+ const file=e.target.files[0];if(!file)return;const status=$('#catalog-import-status');status.textContent='Đang đọc danh mục…';
+ try{if(file.size>20000000)throw Error('File vượt quá 20 MB.');const data=JSON.parse(await file.text());if(data.format!=='sapo-catalog-v1'||!Array.isArray(data.products))throw Error('Chọn file JSON danh mục từ web báo giá cũ.');let count=0;for(let i=0;i<data.products.length;i+=100){const result=await api('/admin/catalog-import','POST',{...data,products:data.products.slice(i,i+100)});count+=result.count;status.textContent='Đã xử lý '+count+'/'+data.products.length+' sản phẩm…';}status.textContent='Đã nhập '+count+' sản phẩm.';await searchProducts();}catch(e){status.textContent=e.message;}finally{$('#catalog-file').value='';}
+};

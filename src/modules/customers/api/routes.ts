@@ -6,7 +6,12 @@ import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { customers } from '../schema.ts';
 
 export function registerCustomerRoutes(router: Router<StaffEnv>) {
-  router.get('/customers', async c => json({ customers: await c.env.db.select().from(customers).orderBy(asc(customers.name)).limit(200) }), 'business');
+  router.get('/customers', async c => {
+    const raw = Number(new URL(c.req.url).searchParams.get('offset') || 0);
+    const offset = Number.isSafeInteger(raw) && raw >= 0 ? raw : 0;
+    const rows = await c.env.db.select().from(customers).orderBy(asc(customers.name),asc(customers.id)).offset(offset).limit(200);
+    return json({customers:rows,nextOffset:rows.length===200?offset+200:null});
+  }, 'business');
   const save = async (c: Parameters<Parameters<Router<StaffEnv>['post']>[1]>[0], update: boolean) => {
     const body = await readJson(c.req, 16_384);
     const text = (key: string, max = 500) => {
