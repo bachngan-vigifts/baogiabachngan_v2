@@ -1,0 +1,97 @@
+/**
+ * Quy tắc thuần của luồng bán hàng sau báo giá (không đụng DB/HTTP).
+ * Báo giá → Đơn đặt hàng → HĐKT → Lịch giao → Công nợ.
+ */
+import { after, rate, type QuoteDoc, type QuoteRow } from '../../quotes/domain/quote-math.ts';
+
+const round = (n: number) => Math.round(n);
+const str = (v: unknown) => (v === undefined || v === null ? '' : String(v)).trim();
+
+// ---------------- Số chứng từ ----------------
+const ymd = (date: string) => date.replaceAll('-', '').slice(0, 8);
+/** Số tiếp theo dạng `<PREFIX>_<yyyymmdd>_<nnn>` (DH = đơn hàng, GH = giao hàng), đếm trong các số đã dùng cùng ngày. */
+export function nextDocNo(prefix: 'DH' | 'GH', date: string, used: readonly string[]): string {
+  const head = `${prefix}_${ymd(date)}_`;
+  const max = Math.max(0, ...used.filter(n => n.startsWith(head)).map(n => parseInt(n.slice(head.length), 10) || 0));
+  return head + String(max + 1).padStart(3, '0');
+}
+
+/** Pháp nhân bên bán → mã trên số HĐKT (port `normalizeLegalCode` bản cũ). */
+export function legalCode(value: unknown): 'BN' | 'VG' | 'QTV' | null {
+  const v = str(value).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toUpperCase();
+  if (v === 'BN' || v.includes('BACH')) return 'BN';
+  if (v === 'VG' || v.includes('VIGIFTS')) return 'VG';
+  if (v.includes('QTV')) return 'QTV';
+  return null;
+}
+export const compactCode = (v: unknown) => str(v).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 20);
+
+/** Ngày giờ Việt Nam (để số HĐKT đúng ngày ký ở VN dù máy chủ chạy UTC). */
+export function vietnamDate(now = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).formatToParts(now).filter(x => x.type !== 'literal').map(x => [x.type, x.value]));
+  return { day: p.day!, month: p.month!, year: p.year!, iso: `${p.year}-${p.month}-${p.day}` };
+}
+
+/** Số HĐKT đúng định dạng web cũ: `MM-SS/DDMMYYYY/HĐKT/<pháp nhân>-<mã KH hoặc MST>`. */
+export function contractNumber(entity: string, customerCode: string, sequence: number, now = new Date()): string {
+  const { day, month, year } = vietnamDate(now);
+  return `${month}-${String(sequence).padStart(2, '0')}/${day}${month}${year}/HĐKT/${entity}-${compactCode(customerCode)}`;
+}
+
+// ---------------- Đơn từ báo giá ----------------
+export interface OrderLineDraft { lineNo: number; sku: string; name: string; unit: string; qty: number; unitPrice: number; taxRate: number; amount: number }
+
+/** Dòng đơn từ dữ liệu báo giá: đơn giá = giá sau CK (+ phí in nếu B2B/VIGIFTS), chưa VAT; bỏ dòng trống/số lượng 0. */
+export function orderLinesFromQuote(doc: QuoteDoc): OrderLineDraft[] {
+  const rows = (doc.rows || []) as (QuoteRow & { sku?: string; name?: string; unit?: string })[];
+  return rows.filter(r => str(r.name) && Number(r.qty) > 0).map((r, i) => {
+    const qty = Number(r.qty), unitPrice = round(after(r, doc));
+    return { lineNo: i + 1, sku: str(r.sku), name: str(r.name), unit: str(r.unit), qty, unitPrice, taxRate: rate(r, doc), amount: round(unitPrice * qty) };
+  });
+}
+export function orderTotals(lines: readonly Pick<OrderLineDraft, 'amount' | 'taxRate'>[]) {
+  const subtotal = lines.reduce((s, l) => s + l.amount, 0), tax = round(lines.reduce((s, l) => s + l.amount * l.taxRate / 100, 0));
+  return { subtotal, tax, total: subtotal + tax };
+}
+
+// ---------------- Giao hàng ----------------
+export type OrderStatus = 'draft' | 'confirmed' | 'delivering' | 'delivered' | 'cancelled';
+/** Trạng thái đơn theo số đã giao (giữ nguyên nếu đơn đã huỷ/nháp). */
+export function orderStatusFromLines(current: OrderStatus, lines: readonly { qty: number; deliveredQty: number }[]): OrderStatus {
+  if (current === 'cancelled' || current === 'draft') return current;
+  const delivered = lines.reduce((s, l) => s + l.deliveredQty, 0);
+  if (lines.length && lines.every(l => l.deliveredQty >= l.qty)) return 'delivered';
+  return delivered > 0 ? 'delivering' : 'confirmed';
+}
+
+// ---------------- Công nợ ----------------
+export interface ScheduleDraft { kind: 'deposit' | 'installment' | 'balance'; amount: number; dueDate: string | null; note: string }
+/** Kỳ phải thu theo HĐKT: cọc (đến hạn ngày ký) + phần còn lại (đến hạn sau khi giao xong + số ngày thanh toán). */
+export function contractSchedules(total: number, depositRate: number, signedDate: string): ScheduleDraft[] {
+  const deposit = round(total * depositRate / 100), rest = total - deposit;
+  return [
+    ...(deposit > 0 ? [{ kind: 'deposit' as const, amount: deposit, dueDate: signedDate, note: `Đặt cọc ${depositRate}%` }] : []),
+    ...(rest > 0 ? [{ kind: 'balance' as const, amount: rest, dueDate: null, note: 'Thanh toán phần còn lại sau khi giao hàng' }] : []),
+  ];
+}
+export const addDays = (iso: string, days: number) => new Date(Date.parse(iso.slice(0, 10) + 'T00:00:00Z') + days * 86_400_000).toISOString().slice(0, 10);
+
+export interface Receivable { due: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; status: 'paid' | 'overdue' | 'open' | 'none' }
+/**
+ * Công nợ của một đơn: phải thu = tổng các kỳ; đã thu = tổng phiếu thu; quá hạn = phần chưa thu của các kỳ đã tới hạn
+ * (phiếu thu trừ dần vào các kỳ theo hạn sớm nhất trước).
+ */
+export function receivable(schedules: readonly { amount: number; dueDate: string | null }[], payments: readonly { amount: number }[], today: string): Receivable {
+  const due = schedules.reduce((s, x) => s + x.amount, 0), paid = payments.reduce((s, x) => s + x.amount, 0), balance = due - paid;
+  let left = paid, overdue = 0, nextDueDate: string | null = null;
+  const sorted = [...schedules].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'));
+  for (const s of sorted) {
+    const covered = Math.min(left, s.amount); left -= covered;
+    const open = s.amount - covered;
+    if (open <= 0) continue;
+    if (s.dueDate && s.dueDate < today) overdue += open;
+    else if (s.dueDate && (!nextDueDate || s.dueDate < nextDueDate)) nextDueDate = s.dueDate;
+  }
+  const status = due === 0 ? 'none' : balance <= 0 ? 'paid' : overdue > 0 ? 'overdue' : 'open';
+  return { due, paid, balance, overdue, nextDueDate, status };
+}

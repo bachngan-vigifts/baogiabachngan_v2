@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Bách Ngân · Báo giá</title>
 <meta name="description" content="Lập báo giá, quản lý khách hàng và nhân viên Bách Ngân.">
 <meta name="theme-color" content="#152238">
@@ -38,6 +38,10 @@
     <nav class="side-nav" aria-label="Điều hướng chính">
       <span class="nav-label">Kinh doanh</span>
       <a class="nav" href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg><span>Báo giá</span><b id="nav-quote-count" class="badge">0</b></a>
+      <a class="nav" href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z M6 6 5 3H2 M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2 M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg><span>Đơn đặt hàng</span></a>
+      <a class="nav" href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3 M15 17l1.5 1.5L19 16"/></svg><span>HĐKT</span></a>
+      <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg><span>Lịch giao hàng</span></a>
+      <a class="nav" href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg><span>Công nợ</span></a>
       <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg><span>Sản phẩm</span></a>
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
       <span class="nav-label manager-only">Quản trị</span>
@@ -116,6 +120,7 @@
           </div>
           <div class="editor-actions">
             <button type="button" class="btn secondary" id="duplicate-quote" hidden title="Tạo bản sao với số báo giá mới">Nhân bản</button>
+            <button type="button" class="btn secondary" id="quote-to-order" hidden title="Tạo đơn đặt hàng từ báo giá đã lưu">Tạo đơn đặt hàng</button>
             <button type="button" class="btn secondary" id="print-quote"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6 M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M7 14h10v7H7z"/></svg>In / PDF</button>
             <button class="btn primary" id="save-quote" title="Ctrl + S">Lưu báo giá</button>
           </div>
@@ -288,6 +293,91 @@
       </div>
     </section>
 
+
+    <!-- ---------- Đơn đặt hàng ---------- -->
+    <section class="view" id="view-orders" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Bán hàng</span><h1>Đơn đặt hàng</h1><p class="muted">Đơn tạo từ báo giá; theo dõi HĐKT, giao hàng và thu tiền của từng đơn.</p></div>
+      </div>
+      
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="orders-search" type="search" placeholder="Tìm số đơn, số báo giá, khách hàng, SĐT…" aria-label="Tìm"></label>
+          <span id="orders-filters"></span>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn hàng</th><th>Khách hàng</th><th>Trạng thái</th><th>HĐKT</th><th class="right">Giá trị</th><th class="right">Còn phải thu</th></tr></thead><tbody id="orders-list"></tbody></table></div>
+        <div id="orders-empty" class="empty" hidden><p class="muted" id="orders-empty-text"></p></div>
+      </div>
+    </section>
+
+    <!-- ---------- Hợp đồng kinh tế ---------- -->
+    <section class="view" id="view-contracts" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Bán hàng</span><h1>Hợp đồng kinh tế</h1><p class="muted">HĐKT lập từ đơn đặt hàng; số HĐKT cấp tự động theo pháp nhân như web cũ.</p></div>
+      </div>
+      
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số đơn, khách hàng…" aria-label="Tìm"></label>
+          <span id="contracts-filters"></span>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Đơn</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
+        <div id="contracts-empty" class="empty" hidden><p class="muted" id="contracts-empty-text"></p></div>
+      </div>
+    </section>
+
+    <!-- ---------- Lịch giao hàng ---------- -->
+    <section class="view" id="view-deliveries" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Các chuyến giao theo ngày; bấm vào chuyến để mở đơn.</p></div>
+      </div>
+      <div class="row-gap delivery-range"><label>Từ ngày<input type="date" id="deliveries-from"></label><label>Đến ngày<input type="date" id="deliveries-to"></label></div>
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="deliveries-search" type="search" placeholder="Lọc theo khách hàng, số đơn…" aria-label="Tìm"></label>
+          <span id="deliveries-filters"></span>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
+        <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
+      </div>
+    </section>
+
+    <!-- ---------- Công nợ ---------- -->
+    <section class="view" id="view-receivables" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Bán hàng</span><h1>Công nợ</h1><p class="muted">Phải thu theo đơn: tổng các kỳ (cọc, phần còn lại) trừ số đã thu.</p></div>
+      </div>
+      <div class="stats" id="receivable-stats"></div>
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="receivables-search" type="search" placeholder="Tìm khách hàng, số đơn, MST…" aria-label="Tìm"></label>
+          <span id="receivables-filters"></span>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn</th><th>Tình trạng</th><th>Hạn gần nhất</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
+        <div id="receivables-empty" class="empty" hidden><p class="muted" id="receivables-empty-text"></p></div>
+      </div>
+    </section>
+
+    <!-- ---------- Chi tiết đơn đặt hàng ---------- -->
+    <section class="view" id="view-order" hidden>
+      <div class="editor-head">
+        <div class="editor-title"><a class="btn ghost small" href="#/orders">‹ Đơn đặt hàng</a><h1 id="order-title">Đơn đặt hàng</h1><span class="pill" id="order-status"></span></div>
+        <div class="editor-actions" id="order-actions"></div>
+      </div>
+      <div class="flow-steps" id="order-flow"></div>
+      <div class="editor-grid">
+        <div class="card"><h2 class="card-title">Khách hàng</h2><dl class="kv" id="order-customer"></dl></div>
+        <div class="card"><h2 class="card-title">Công nợ</h2><div id="order-debt"></div></div>
+      </div>
+      <div class="card"><div class="card-title-row"><h2 class="card-title">Hàng trong đơn</h2></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đã giao</th><th class="right">Đơn giá</th><th class="right">VAT</th><th class="right">Thành tiền</th></tr></thead><tbody id="order-lines"></tbody></table></div>
+      </div>
+      <div class="editor-grid">
+        <div class="card"><div class="card-title-row"><h2 class="card-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><button class="btn secondary small" id="order-new-delivery">＋ Lên lịch giao</button></div><div id="order-deliveries"></div></div>
+      </div>
+      <div class="card"><div class="card-title-row"><h2 class="card-title">Thanh toán</h2><button class="btn secondary small" id="order-new-payment">＋ Ghi nhận thanh toán</button></div><div id="order-payments"></div></div>
+    </section>
     <!-- ---------- Nhân viên (Manager) ---------- -->
     <section class="view" id="view-staff" hidden>
       <div class="page-head">
@@ -321,9 +411,13 @@
 
   <nav class="bottom-nav" aria-label="Điều hướng">
     <a href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg>Báo giá</a>
-    <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>
-    <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
+    <a href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z M6 6 5 3H2 M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2 M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg>Đơn hàng</a>
     <a href="#/quotes/new" class="fab" data-new-quote aria-label="Tạo báo giá"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
+    <a href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg>Giao hàng</a>
+    <a href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg>Công nợ</a>
+    <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3"/></svg>HĐKT</a>
+    <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
+    <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>
     <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Nhân viên</a>
   </nav>
 </div>
@@ -438,6 +532,56 @@
       <p class="error" id="nq-error" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="nq-create">Tạo báo giá</button></div>
+  </form>
+</dialog>
+
+<dialog id="contract-dialog" class="modal">
+  <form id="contract-form" novalidate>
+    <div class="modal-head"><div><span class="eyebrow">Lập hợp đồng kinh tế</span><h2>HĐKT cho <span id="contract-order-no"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid cols-2">
+      <label class="span-2">Pháp nhân bên bán<select name="legalEntity"><option value="BN">Bách Ngân (BN)</option><option value="VG">Vigifts (VG)</option><option value="QTV">QTV</option></select></label>
+      <label>Đặt cọc (%)<input name="depositRate" inputmode="decimal" value="30"></label>
+      <label>Hạn thanh toán còn lại (ngày sau giao)<input name="paymentDays" inputmode="numeric" value="15"></label>
+      <label>Ngày ký<input name="signedDate" type="date"></label>
+      <label>Hình thức thanh toán<input name="paymentMethod" value="Chuyển khoản"></label>
+      <label class="span-2">Địa chỉ giao hàng<input name="deliveryAddress"></label>
+      <p class="muted small span-2">Số HĐKT cấp tự động: tháng-số thứ tự/ngày/HĐKT/pháp nhân-mã khách. Kỳ phải thu được lập lại = cọc + phần còn lại.</p>
+      <p class="error span-2" id="contract-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary">Lập HĐKT</button></div>
+  </form>
+</dialog>
+
+<dialog id="delivery-dialog" class="modal">
+  <form id="delivery-form" novalidate>
+    <div class="modal-head"><div><span class="eyebrow">Lên lịch giao hàng</span><h2>Giao cho <span id="delivery-order-no"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid cols-2">
+      <label>Ngày giao<input name="plannedDate" type="date" required></label>
+      <label>Buổi / giờ<input name="timeSlot" placeholder="Ví dụ: Sáng, 14h–16h"></label>
+      <label>Người nhận<input name="receiverName"></label>
+      <label>Điện thoại<input name="receiverPhone" inputmode="tel"></label>
+      <label class="span-2">Địa chỉ<input name="address"></label>
+      <label>Đơn vị giao<input name="carrier" placeholder="Xe công ty, Lalamove…"></label>
+      <label>Phí giao (đ)<input name="shippingFee" inputmode="numeric"></label>
+      <div class="span-2"><span class="field-label">Số lượng giao</span><div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Còn lại</th><th class="right">Giao lần này</th></tr></thead><tbody id="delivery-lines"></tbody></table></div></div>
+      <label class="span-2">Ghi chú<input name="note"></label>
+      <p class="error span-2" id="delivery-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary">Lên lịch</button></div>
+  </form>
+</dialog>
+
+<dialog id="payment-dialog" class="modal narrow">
+  <form id="payment-form" novalidate>
+    <div class="modal-head"><div><span class="eyebrow">Ghi nhận thanh toán</span><h2 id="payment-title">Phiếu thu</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid">
+      <label>Số tiền (đ)<input name="amount" inputmode="numeric" required></label>
+      <label>Ngày thu<input name="paidAt" type="date" required></label>
+      <label>Hình thức<select name="method"><option value="transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label>
+      <label>Số chứng từ / ghi chú<input name="reference" placeholder="Ví dụ: UNC 0123"></label>
+      <p class="error" id="payment-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary">Lưu phiếu thu</button></div>
   </form>
 </dialog>
 

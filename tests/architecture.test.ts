@@ -10,6 +10,7 @@ import { join, resolve, dirname, relative, sep } from 'node:path';
 const modulesDir = join(import.meta.dirname, '..', 'src', 'modules');
 const ALLOWED: Record<string, string[]> = {
   staff: [], customers: ['staff'], catalog: ['staff'], contracts: [], printing: [], integrations: ['staff', 'customers', 'catalog'], crm: [],
+  sales: ['staff', 'customers', 'quotes', 'contracts'],
   quotes: ['staff'], work: ['staff'], notifications: ['staff'], suppliers: ['staff'],
 };
 

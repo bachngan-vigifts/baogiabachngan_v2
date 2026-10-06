@@ -550,3 +550,31 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
   .type-pick button { padding: 9px 4px; min-width: 0; }
   input[type="date"] { -webkit-appearance: none; appearance: none; min-height: 44px; display: block; text-align: left; }
 }
+
+/* ---------- Bán hàng: đơn đặt hàng · HĐKT · lịch giao · công nợ ---------- */
+.pill.info { background: var(--blue-50); color: var(--blue); }
+.pill.danger { background: var(--red-50); color: var(--red); }
+.pill.muted { background: #f1f3f6; color: #8a95a6; }
+.danger-text { color: var(--red) !important; }
+.flow-steps { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
+.flow-step { flex: 1 1 140px; display: grid; gap: 2px; padding: 10px 12px; border: 1.5px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink); text-decoration: none; min-width: 0; }
+.flow-step small { color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-step.done { border-color: var(--brand-navy); background: var(--blue-50); }
+.flow-step.done b::before { content: '✓ '; color: var(--green); }
+a.flow-step:hover { border-color: var(--blue); }
+.flow-arrow { align-self: center; color: var(--muted); font-size: 1.3rem; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+.kv dt { color: var(--muted); font-size: .86rem; } .kv dd { margin: 0; }
+.plain-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+.plain-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.plain-list li:last-child { border-bottom: 0; }
+.plain-list small { display: block; color: var(--muted); font-size: .8rem; }
+.delivery-range { margin-bottom: 12px; gap: 12px; }
+.delivery-range label { display: grid; gap: 4px; font-size: .82rem; font-weight: 600; }
+@media (max-width: 680px) {
+  .flow-arrow { display: none; }
+  .flow-step { flex-basis: calc(50% - 6px); }
+  /* Menu dưới cùng vuốt ngang được khi nhiều mục */
+  .bottom-nav { grid-auto-columns: minmax(68px, 1fr); overflow-x: auto; scrollbar-width: none; }
+  .bottom-nav::-webkit-scrollbar { display: none; }
+}
