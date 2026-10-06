@@ -18,7 +18,13 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
   router.get('/quotes', async c => {
     const viewer = (c.state.session as SessionState).member;
     const rows = await c.env.db.select().from(quotations).where(predicate(quotationScope(viewer))).orderBy(desc(quotations.updatedAt)).limit(100);
-    return json({ quotes: rows.map(r => ({ id: r.id, quoteNo: r.quoteNo, customer: r.customer, quoteType: r.quoteType, revision: r.revision, updatedAt: r.updatedAt, total: totals(JSON.parse(r.data)).total })) });
+    return json({ quotes: rows.map(r => {
+      const data = JSON.parse(r.data);
+      return {
+        id: r.id, quoteNo: r.quoteNo, customer: r.customer, quoteType: r.quoteType, revision: r.revision, updatedAt: r.updatedAt, total: totals(data).total,
+        quoteDate: r.quoteDate, createdAt: r.createdAt, contact: data.contact || '', phone: data.phone || '', lineCount: data.rows.length, mine: r.creatorId === viewer.id,
+      };
+    }) });
   }, 'business');
   router.get('/quotes/:id', async c => {
     const viewer = (c.state.session as SessionState).member;

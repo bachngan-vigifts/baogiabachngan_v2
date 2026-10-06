@@ -24,6 +24,8 @@ test('trial: customer CRUD, quote save/revision và chặn NCC/nhân viên khác
   const q = await call('/quotes', 'POST', doc, emp); assert.equal(q.status, 201, JSON.stringify(q.data));
   const other = await call('/quotes', 'POST', { ...doc, quoteNo: 'BG-MGR' }, mgr);
   assert.equal((await call('/quotes/' + other.data.id, 'GET', undefined, emp)).status, 404);
+  const list = (await call('/quotes', 'GET', undefined, emp)).data.quotes;
+  assert.deepEqual(list.map((x: any) => [x.quoteNo, x.mine, x.lineCount, x.total]), [['BG-TEST', true, 1, 1.5 * 12.5 * 1.08]]);
   const saved = await call('/quotes/' + q.data.id, 'PUT', { revision: 1, data: { ...q.data.data, customer: 'Sửa' } }, emp);
   assert.equal(saved.status, 200, JSON.stringify(saved.data)); assert.equal(saved.data.revision, 2);
   assert.equal((await call('/quotes/' + q.data.id, 'PUT', { revision: 1, data: q.data.data }, emp)).status, 409);

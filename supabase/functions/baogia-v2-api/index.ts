@@ -5,7 +5,7 @@ const ORIGIN = "https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site";
 const router = createAppRouter();
 Deno.serve(async req => {
   const incoming = new URL(req.url), origin = req.headers.get('origin');
-  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store' };
+  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store' };
   if (origin !== ORIGIN) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
   if (req.method === 'OPTIONS') return new Response(null, {status:204,headers:cors});
   const url = Deno.env.get('SUPABASE_DB_URL');

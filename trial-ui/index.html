@@ -1,12 +1,369 @@
 <!doctype html>
-<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Bách Ngân · Báo giá v2</title><meta name="description" content="Quản lý báo giá và khách hàng Bách Ngân."><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"></head>
-<body><div id="toast" role="status" aria-live="polite"></div>
-<section id="auth" class="auth"><div class="auth-card"><div class="brand"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ & CRM</small></div></div><span class="tag">Bản dùng thử v2</span><h1 id="auth-title">Đăng nhập</h1><p id="auth-note">Báo giá và khách hàng trong một không gian làm việc.</p><form id="login-form"><label>Email<input id="email" type="email" autocomplete="username" required></label><label id="password-label">Mật khẩu<input id="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label><p id="auth-error" class="error" role="alert"></p><button class="primary" id="login-button">Đăng nhập</button></form><small class="muted">Dữ liệu được lưu trên Supabase. Sapo chưa được kết nối.</small></div></section>
-<div id="workspace" class="workspace" hidden><aside><div class="brand"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ & CRM</small></div></div><span class="aside-label">KHÔNG GIAN LÀM VIỆC</span><nav><button class="nav active" data-page="quotes">▤ <span>Báo giá</span><span id="quote-count" class="badge">0</span></button><button class="nav" data-page="customers">♙ <span>Khách hàng</span></button><button class="nav" data-page="sapo">◎ <span>Kết nối Sapo</span></button></nav><div class="aside-bottom"><span class="version">DÙNG THỬ V2</span><div class="account"><span class="avatar">BN</span><div><strong id="user-name"></strong><small id="user-role"></small></div></div><button id="logout" class="logout">Đăng xuất</button></div></aside>
-<main><header><span>Bách Ngân <span class="slash">/</span> <b id="breadcrumb">Báo giá</b></span><span id="today" class="muted"></span></header><div class="content"><div class="page-heading"><div><span class="eyebrow">KINH DOANH</span><h1 id="page-title">Báo giá</h1><p id="page-description">Tạo báo giá, theo dõi phiên bản và chuẩn bị gửi khách hàng.</p></div><button id="new-record" class="primary">＋ Tạo báo giá</button></div>
-<section id="quotes-page"><div class="stats"><article><small>Báo giá đã tạo</small><strong id="stat-count">0</strong><span>Trong danh sách hiện tại</span></article><article><small>Tổng giá trị báo giá</small><strong id="stat-value">0 ₫</strong><span>Đã bao gồm VAT</span></article><article><small>Khách hàng</small><strong id="stat-customers">0</strong><span>Danh bạ dùng chung</span></article></div><div class="panel"><div class="panel-top"><h2>Danh sách báo giá</h2><label class="search">⌕ <input id="quote-search" placeholder="Tìm số báo giá, tên khách hàng" aria-label="Tìm báo giá"></label></div><div class="table-wrap"><table><thead><tr><th>Số báo giá</th><th>Khách hàng</th><th>Loại</th><th class="right">Giá trị</th><th>Cập nhật</th><th></th></tr></thead><tbody id="quote-list"></tbody></table></div><div id="quote-empty" class="empty" hidden><span>▤</span><h3>Chưa có báo giá</h3><p>Tạo báo giá đầu tiên để bắt đầu làm việc.</p><button class="secondary" id="first-quote">Tạo báo giá</button></div></div></section>
-<section id="customers-page" hidden><div class="panel"><div class="panel-top"><h2>Danh bạ khách hàng</h2><label class="search">⌕ <input id="customer-search" placeholder="Tìm tên, số điện thoại" aria-label="Tìm khách hàng"></label></div><div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Liên hệ</th><th>Điện thoại</th><th>Email</th><th></th></tr></thead><tbody id="customer-list"></tbody></table></div><div id="customer-empty" class="empty" hidden><span>♙</span><h3>Chưa có khách hàng</h3><p>Thêm khách hàng để chọn nhanh khi lập báo giá.</p></div></div></section>
-<section id="sapo-page" hidden><div class="panel connection"><span class="connection-icon">◎</span><h2>Kết nối Sapo</h2><span class="tag">Chờ cấu hình</span><p>Bản dùng thử hiện lưu báo giá và khách hàng trên Supabase. Đồng bộ Sapo sẽ được mở khi cấu hình thông tin đăng nhập cửa hàng.</p></div></section><p id="load-error" class="error" role="alert"></p></div></main></div>
-<dialog id="quote-dialog"><form id="quote-form"><div class="dialog-head"><div><span class="eyebrow">BÁCH NGÂN</span><h2 id="quote-dialog-title">Tạo báo giá</h2></div><button type="button" class="icon close" aria-label="Đóng">×</button></div><div class="dialog-body"><div class="form-grid"><label>Số báo giá<input name="quoteNo" required maxlength="500"></label><label>Ngày báo giá<input name="date" type="date" required></label><label>Loại báo giá<select name="type"><option value="B2B">B2B</option><option value="HRC">HRC</option><option value="VIGIFTS">VIGIFTS</option></select></label><label>VAT (%)<input name="vat" type="number" min="0" max="100" step="0.01" value="8"></label></div><div class="form-grid two"><label>Chọn từ danh bạ<select id="customer-picker"><option value="">Nhập khách hàng thủ công</option></select></label><label>Tên khách hàng<input name="customer" required maxlength="500"></label><label>Người liên hệ<input name="contact" maxlength="500"></label><label>Điện thoại<input name="phone" maxlength="40"></label><label class="wide">Địa chỉ<input name="customerAddress" maxlength="500"></label></div><div class="items-heading"><h3>Sản phẩm</h3><button type="button" id="add-line" class="secondary">＋ Thêm dòng</button></div><div class="table-wrap"><table class="line-table"><thead><tr><th>Sản phẩm / SKU</th><th>SL</th><th>Đơn giá</th><th>CK (%)</th><th>Phí in</th><th>Thành tiền</th><th></th></tr></thead><tbody id="line-list"></tbody></table></div><div class="quote-bottom"><label>Ghi chú<textarea name="notes" rows="3" maxlength="20000" placeholder="Điều kiện thanh toán, thời gian giao hàng…"></textarea></label><div class="totals"><div><span>Trước thuế</span><b id="subtotal"></b></div><div><span>VAT</span><b id="tax"></b></div><div class="grand"><span>Tổng cộng</span><b id="total"></b></div></div></div><p id="quote-error" class="error" role="alert"></p></div><div class="dialog-foot"><button type="button" id="print-quote" class="secondary">In / Lưu PDF</button><div><button type="button" class="secondary close">Đóng</button><button class="primary" id="save-quote">Lưu báo giá</button></div></div></form></dialog>
-<dialog id="customer-dialog"><form id="customer-form"><div class="dialog-head"><h2 id="customer-dialog-title">Thêm khách hàng</h2><button type="button" class="icon close" aria-label="Đóng">×</button></div><div class="dialog-body form-grid two"><label class="wide">Tên khách hàng<input name="name" required maxlength="500"></label><label>Người liên hệ<input name="contact" maxlength="500"></label><label>Điện thoại<input name="phone" maxlength="40"></label><label>Email<input name="email" type="email" maxlength="500"></label><label>Mã số thuế<input name="taxCode" maxlength="500"></label><label class="wide">Địa chỉ<textarea name="address" rows="2" maxlength="2000"></textarea></label><p class="error wide" id="customer-error" role="alert"></p></div><div class="dialog-foot"><span></span><div><button type="button" class="secondary close">Đóng</button><button class="primary" id="save-customer">Lưu khách hàng</button></div></div></form></dialog>
-<div id="print-sheet"></div><script type="module" src="/app.js"></script></body></html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bách Ngân · Báo giá</title>
+<meta name="description" content="Lập báo giá, quản lý khách hàng và nhân viên Bách Ngân.">
+<meta name="theme-color" content="#152238">
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<!-- ============ ĐĂNG NHẬP / KÍCH HOẠT ============ -->
+<section id="auth" class="auth" hidden>
+  <div class="auth-side">
+    <div class="brand light"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ &amp; CRM</small></div></div>
+    <div class="auth-pitch">
+      <h2>Báo giá nhanh, chính xác, đúng người phụ trách.</h2>
+      <ul>
+        <li>Tính VAT, chiết khấu, phí in tự động</li>
+        <li>In hoặc lưu PDF gửi khách ngay</li>
+        <li>Không lo ghi đè khi nhiều người cùng sửa</li>
+      </ul>
+    </div>
+    <small class="auth-foot">Bản dùng thử v2</small>
+  </div>
+  <div class="auth-main">
+    <div class="auth-card">
+      <div class="brand mobile-only"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ &amp; CRM</small></div></div>
+      <h1 id="auth-title">Đăng nhập</h1>
+      <p id="auth-note" class="muted">Dùng email công ty và mật khẩu của anh/chị.</p>
+      <form id="login-form" novalidate>
+        <label>Email<input id="email" type="email" autocomplete="username" required placeholder="ten@congty.vn"></label>
+        <label>Mật khẩu
+          <span class="pw-field"><input id="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required><button type="button" class="pw-toggle" data-toggle-pw="password" aria-label="Hiện mật khẩu">Hiện</button></span>
+        </label>
+        <label id="password2-label" hidden>Nhập lại mật khẩu<input id="password2" type="password" autocomplete="new-password" minlength="8" maxlength="128"></label>
+        <p id="auth-error" class="error" role="alert"></p>
+        <button class="btn primary block" id="login-button">Đăng nhập</button>
+      </form>
+      <p class="muted small">Quên mật khẩu? Nhờ Manager cấp lại liên kết đặt mật khẩu.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ KHÔNG GIAN LÀM VIỆC ============ -->
+<div id="workspace" class="workspace" hidden>
+  <aside class="sidebar">
+    <div class="brand light"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ &amp; CRM</small></div></div>
+    <nav class="side-nav" aria-label="Điều hướng chính">
+      <span class="nav-label">Kinh doanh</span>
+      <a class="nav" href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg><span>Báo giá</span><b id="nav-quote-count" class="badge">0</b></a>
+      <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
+      <span class="nav-label manager-only">Quản trị</span>
+      <a class="nav manager-only" href="#/staff" data-nav="staff"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Nhân viên</span></a>
+    </nav>
+    <div class="side-foot">
+      <button class="account" id="account-button" aria-haspopup="menu" aria-expanded="false">
+        <span class="avatar" id="user-avatar">BN</span>
+        <span class="account-text"><strong id="user-name"></strong><small id="user-role"></small></span>
+        <svg viewBox="0 0 24 24" class="chev"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div>
+  </aside>
+  <div class="account-menu" id="account-menu" role="menu" hidden>
+    <div class="account-menu-head"><strong id="menu-name"></strong><small id="menu-email"></small></div>
+    <button role="menuitem" id="change-password">Đổi mật khẩu</button>
+    <button role="menuitem" id="logout" class="danger-text">Đăng xuất</button>
+  </div>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="crumbs"><span class="muted">Bách Ngân</span><span class="slash">/</span><b id="breadcrumb">Báo giá</b></div>
+      <div class="topbar-right">
+        <span id="today" class="muted hide-sm"></span>
+        <button class="avatar small mobile-only" id="account-button-m" aria-label="Tài khoản">BN</button>
+      </div>
+    </header>
+    <div id="global-error" class="banner error-banner" role="alert" hidden></div>
+
+    <!-- ---------- Danh sách báo giá ---------- -->
+    <section class="view" id="view-quotes" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Kinh doanh</span><h1>Báo giá</h1><p class="muted">Tạo, sửa và in báo giá gửi khách hàng.</p></div>
+        <a class="btn primary" href="#/quotes/new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Tạo báo giá</a>
+      </div>
+      <div class="stats">
+        <article class="stat"><small>Báo giá</small><strong id="stat-count">–</strong><span id="stat-count-note" class="muted">Đang hiển thị</span></article>
+        <article class="stat"><small>Tổng giá trị</small><strong id="stat-value">–</strong><span class="muted">Đã gồm VAT</span></article>
+        <article class="stat"><small>Tháng này</small><strong id="stat-month">–</strong><span id="stat-month-value" class="muted"></span></article>
+        <article class="stat"><small>Khách hàng</small><strong id="stat-customers">–</strong><span class="muted">Trong danh bạ</span></article>
+      </div>
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="quote-search" type="search" placeholder="Tìm số báo giá, khách hàng, số điện thoại…" aria-label="Tìm báo giá"></label>
+          <div class="chips" id="type-filter" role="group" aria-label="Lọc theo loại">
+            <button class="chip active" data-type="">Tất cả</button><button class="chip" data-type="B2B">B2B</button><button class="chip" data-type="HRC">HRC</button><button class="chip" data-type="VIGIFTS">VIGIFTS</button>
+          </div>
+          <select id="quote-owner" aria-label="Người tạo" hidden><option value="">Mọi người tạo</option><option value="mine">Của tôi</option><option value="others">Người khác</option></select>
+          <select id="quote-sort" aria-label="Sắp xếp">
+            <option value="updated">Mới cập nhật</option><option value="date">Ngày báo giá</option><option value="value">Giá trị cao nhất</option><option value="no">Số báo giá</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="quote-table">
+            <thead><tr><th>Số báo giá</th><th>Khách hàng</th><th>Loại</th><th>Ngày</th><th class="right">Giá trị</th><th>Cập nhật</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <tbody id="quote-list"></tbody>
+          </table>
+        </div>
+        <div id="quote-empty" class="empty" hidden>
+          <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5"/></svg></div>
+          <h3 id="quote-empty-title">Chưa có báo giá</h3><p class="muted" id="quote-empty-text">Tạo báo giá đầu tiên để bắt đầu.</p>
+          <a class="btn primary" href="#/quotes/new" id="quote-empty-action">Tạo báo giá</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Soạn báo giá ---------- -->
+    <section class="view editor" id="view-editor" hidden>
+      <form id="quote-form" novalidate autocomplete="off">
+        <div class="editor-head">
+          <a href="#/quotes" class="btn ghost back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Báo giá</a>
+          <div class="editor-title">
+            <h1 id="editor-title">Tạo báo giá</h1>
+            <span class="pill" id="editor-revision" hidden></span>
+            <span class="pill warn" id="editor-dirty" hidden>Chưa lưu</span>
+          </div>
+          <div class="editor-actions">
+            <button type="button" class="btn secondary" id="duplicate-quote" hidden title="Tạo bản sao với số báo giá mới">Nhân bản</button>
+            <button type="button" class="btn secondary" id="print-quote"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6 M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M7 14h10v7H7z"/></svg>In / PDF</button>
+            <button class="btn primary" id="save-quote" title="Ctrl + S">Lưu báo giá</button>
+          </div>
+        </div>
+        <div id="conflict-banner" class="banner warn-banner" role="alert" hidden>
+          <span id="conflict-text"></span>
+          <button type="button" class="btn secondary small" id="reload-quote">Tải bản mới nhất</button>
+        </div>
+
+        <div class="editor-grid">
+          <div class="card">
+            <h2 class="card-title">Thông tin báo giá</h2>
+            <div class="form-grid cols-2">
+              <label>Số báo giá<input name="quoteNo" required maxlength="500"></label>
+              <label>Ngày báo giá<input name="date" type="date" required></label>
+              <label>Ngày giao dự kiến<input name="deliveryDate" type="date"></label>
+              <label>VAT chung (%)<input name="vat" inputmode="decimal" data-num="percent" required></label>
+            </div>
+            <div class="field-row">
+              <span class="field-label">Loại báo giá</span>
+              <div class="segmented" id="type-seg" role="radiogroup" aria-label="Loại báo giá">
+                <button type="button" data-value="B2B" role="radio">B2B</button><button type="button" data-value="HRC" role="radio">HRC</button><button type="button" data-value="VIGIFTS" role="radio">VIGIFTS</button>
+              </div>
+              <small class="muted" id="type-hint"></small>
+            </div>
+            <div class="form-grid cols-2">
+              <label>Người phụ trách (in trên báo giá)<input name="owner" maxlength="500"></label>
+              <label>Điện thoại người phụ trách<input name="ownerPhone" maxlength="500" inputmode="tel"></label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title-row">
+              <h2 class="card-title">Khách hàng</h2>
+              <button type="button" class="btn ghost small" id="save-to-contacts" hidden>＋ Lưu vào danh bạ</button>
+            </div>
+            <label class="picker-label">Tìm trong danh bạ
+              <span class="combo">
+                <input id="customer-search-input" placeholder="Gõ tên hoặc số điện thoại khách…" role="combobox" aria-expanded="false" aria-controls="customer-suggest" aria-autocomplete="list">
+                <ul id="customer-suggest" class="suggest" role="listbox" hidden></ul>
+              </span>
+            </label>
+            <div class="form-grid cols-2">
+              <label class="span-2">Tên khách hàng / công ty<input name="customer" required maxlength="500"></label>
+              <label>Người liên hệ<input name="contact" maxlength="500"></label>
+              <label>Điện thoại<input name="phone" maxlength="500" inputmode="tel"></label>
+              <label>Email<input name="email" type="email" maxlength="500"></label>
+              <label>Mã số thuế<input name="customerTaxCode" maxlength="500"></label>
+              <label class="span-2">Địa chỉ<input name="customerAddress" maxlength="500"></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Sản phẩm <span class="muted" id="line-count"></span></h2>
+            <div class="row-gap">
+              <label class="switch"><input type="checkbox" id="show-cost"><span></span>Giá vốn &amp; lợi nhuận</label>
+              <button type="button" class="btn ghost small" id="paste-lines">Dán từ Excel</button>
+            </div>
+          </div>
+          <div class="table-wrap lines-wrap">
+            <table class="line-table" id="line-table">
+              <thead><tr>
+                <th class="col-idx">#</th><th class="col-product">Sản phẩm</th><th class="col-unit">ĐVT</th><th class="col-qty right">SL</th>
+                <th class="col-price right">Đơn giá</th><th class="col-disc right">Chiết khấu</th><th class="col-print right">Phí in</th>
+                <th class="col-tax right">VAT</th><th class="col-cost right cost-only">Giá vốn</th><th class="col-total right">Thành tiền</th><th class="col-act"><span class="sr-only">Thao tác</span></th>
+              </tr></thead>
+              <tbody id="line-list"></tbody>
+            </table>
+          </div>
+          <button type="button" class="btn dashed block" id="add-line"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Thêm dòng sản phẩm</button>
+        </div>
+
+        <div class="editor-bottom">
+          <div class="card">
+            <h2 class="card-title">Ghi chú &amp; điều kiện</h2>
+            <textarea name="notes" rows="6" maxlength="20000" placeholder="Điều kiện thanh toán, thời gian giao hàng, hiệu lực báo giá…"></textarea>
+            <div class="note-presets" id="note-presets"></div>
+          </div>
+          <div class="card totals-card">
+            <h2 class="card-title">Tổng cộng</h2>
+            <dl class="totals">
+              <div><dt>Tạm tính</dt><dd id="sum-subtotal">0 ₫</dd></div>
+              <div><dt id="sum-tax-label">Thuế VAT</dt><dd id="sum-tax">0 ₫</dd></div>
+              <div class="grand"><dt>Tổng thanh toán</dt><dd id="sum-total">0 ₫</dd></div>
+            </dl>
+            <dl class="totals profit cost-only">
+              <div><dt>Giá vốn</dt><dd id="sum-cost">0 ₫</dd></div>
+              <div><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div>
+              <div><dt>Biên lợi nhuận</dt><dd id="sum-margin">0%</dd></div>
+            </dl>
+            <p class="muted small" id="words-total"></p>
+          </div>
+        </div>
+        <p id="quote-error" class="error" role="alert"></p>
+        <div class="mobile-savebar">
+          <div><small class="muted">Tổng thanh toán</small><strong id="m-total">0 ₫</strong></div>
+          <button class="btn primary" id="save-quote-m">Lưu</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ---------- Khách hàng ---------- -->
+    <section class="view" id="view-customers" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Kinh doanh</span><h1>Khách hàng</h1><p class="muted">Danh bạ dùng chung để lập báo giá nhanh hơn.</p></div>
+        <button class="btn primary" id="new-customer"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Thêm khách hàng</button>
+      </div>
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="customer-search" type="search" placeholder="Tìm tên, người liên hệ, số điện thoại, MST…" aria-label="Tìm khách hàng"></label>
+          <span class="muted small" id="customer-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="customer-table">
+            <thead><tr><th>Khách hàng</th><th>Người liên hệ</th><th>Điện thoại</th><th>Email · MST</th><th class="right">Báo giá</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <tbody id="customer-list"></tbody>
+          </table>
+        </div>
+        <div id="customer-empty" class="empty" hidden>
+          <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg></div>
+          <h3 id="customer-empty-title">Chưa có khách hàng</h3><p class="muted" id="customer-empty-text">Thêm khách hàng để chọn nhanh khi lập báo giá.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Nhân viên (Manager) ---------- -->
+    <section class="view" id="view-staff" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Quản trị</span><h1>Nhân viên</h1><p class="muted">Tạo tài khoản, phân chức vụ, cấp lại liên kết đặt mật khẩu.</p></div>
+        <button class="btn primary" id="new-member"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Thêm nhân viên</button>
+      </div>
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="member-search" type="search" placeholder="Tìm tên, email, số điện thoại…" aria-label="Tìm nhân viên"></label>
+          <div class="chips" id="member-filter" role="group" aria-label="Lọc trạng thái">
+            <button class="chip active" data-status="">Tất cả</button><button class="chip" data-status="active">Đang hoạt động</button><button class="chip" data-status="pending">Chờ kích hoạt</button><button class="chip" data-status="locked">Đã khoá</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="member-table">
+            <thead><tr><th>Nhân viên</th><th>Điện thoại</th><th>Chức vụ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <tbody id="member-list"></tbody>
+          </table>
+        </div>
+        <div id="member-empty" class="empty" hidden><h3>Không có nhân viên phù hợp</h3></div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Điều hướng">
+    <a href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg>Báo giá</a>
+    <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
+    <a href="#/quotes/new" class="fab" aria-label="Tạo báo giá"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
+    <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Nhân viên</a>
+  </nav>
+</div>
+
+<!-- ============ HỘP THOẠI ============ -->
+<dialog id="customer-dialog" class="modal">
+  <form id="customer-form" novalidate>
+    <div class="modal-head"><h2 id="customer-dialog-title">Thêm khách hàng</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid cols-2">
+      <label class="span-2">Tên khách hàng / công ty<input name="name" required maxlength="500"></label>
+      <label>Người liên hệ<input name="contact" maxlength="500"></label>
+      <label>Điện thoại<input name="phone" maxlength="40" inputmode="tel"></label>
+      <label>Email<input name="email" type="email" maxlength="500"></label>
+      <label>Mã số thuế<input name="taxCode" maxlength="500"></label>
+      <label>Mã khách hàng<input name="customerCode" maxlength="500"></label>
+      <label class="span-2">Địa chỉ<textarea name="address" rows="2" maxlength="2000"></textarea></label>
+      <p class="error span-2" id="customer-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-customer">Lưu khách hàng</button></div>
+  </form>
+</dialog>
+
+<dialog id="member-dialog" class="modal">
+  <form id="member-form" novalidate>
+    <div class="modal-head"><h2 id="member-dialog-title">Thêm nhân viên</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid cols-2">
+      <label class="span-2">Họ tên<input name="name" required maxlength="200"></label>
+      <label>Email<input name="email" type="email" required maxlength="254"></label>
+      <label>Điện thoại<input name="phone" required maxlength="40" inputmode="tel"></label>
+      <label class="span-2">Chức vụ<select name="positionId" id="member-position" required></select></label>
+      <label class="switch span-2" id="member-active-row"><input type="checkbox" name="active"><span></span>Cho phép đăng nhập</label>
+      <p class="muted small span-2" id="member-note">Sau khi tạo, gửi liên kết đặt mật khẩu cho nhân viên (hiệu lực 15 phút).</p>
+      <p class="error span-2" id="member-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-member">Tạo tài khoản</button></div>
+  </form>
+</dialog>
+
+<dialog id="link-dialog" class="modal">
+  <div class="modal-head"><h2 id="link-title">Liên kết đặt mật khẩu</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body">
+    <p class="muted" id="link-text">Gửi liên kết này cho nhân viên. Liên kết chỉ dùng được một lần và hết hạn sau 15 phút.</p>
+    <div class="copy-field"><input id="link-value" readonly><button type="button" class="btn primary" id="copy-link">Sao chép</button></div>
+  </div>
+  <div class="modal-foot"><button type="button" class="btn secondary" data-close>Xong</button></div>
+</dialog>
+
+<dialog id="password-dialog" class="modal">
+  <form id="password-form" novalidate>
+    <div class="modal-head"><h2>Đổi mật khẩu</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid">
+      <label>Mật khẩu hiện tại<input name="currentPassword" type="password" autocomplete="current-password" required maxlength="128"></label>
+      <label>Mật khẩu mới (từ 8 ký tự)<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+      <label>Nhập lại mật khẩu mới<input name="password2" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+      <p class="muted small">Sau khi đổi, anh/chị cần đăng nhập lại.</p>
+      <p class="error" id="password-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-password">Đổi mật khẩu</button></div>
+  </form>
+</dialog>
+
+<dialog id="paste-dialog" class="modal wide">
+  <form id="paste-form" novalidate>
+    <div class="modal-head"><h2>Dán sản phẩm từ Excel</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body">
+      <p class="muted">Sao chép các cột theo thứ tự: <b>Tên sản phẩm · Mã SKU · ĐVT · Số lượng · Đơn giá</b> (có thể thiếu cột cuối). Mỗi dòng Excel là một sản phẩm.</p>
+      <textarea id="paste-text" rows="8" placeholder="Bình giữ nhiệt 500ml&#9;LYS-500&#9;cái&#9;100&#9;185000"></textarea>
+      <p class="muted small" id="paste-preview"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="paste-apply">Thêm vào báo giá</button></div>
+  </form>
+</dialog>
+
+<dialog id="confirm-dialog" class="modal narrow">
+  <div class="modal-head"><h2 id="confirm-title">Xác nhận</h2></div>
+  <div class="modal-body"><p id="confirm-text"></p></div>
+  <div class="modal-foot"><button type="button" class="btn secondary" id="confirm-cancel">Huỷ</button><button type="button" class="btn primary" id="confirm-ok">Đồng ý</button></div>
+</dialog>
+
+<div id="print-sheet" class="print-sheet" aria-hidden="true"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
