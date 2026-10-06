@@ -6,12 +6,12 @@ export const DISCOUNT_KEYS = ['minhLong', 'lys', 'lock'] as const;
 export const DISCOUNT_LABELS: Record<typeof DISCOUNT_KEYS[number], string> = { minhLong: 'Minh Long', lys: 'Minh Long - Lys', lock: 'Lock&Lock' };
 
 /**
- * Thương hiệu khách được xem / đặt: Minh Long, Minh Long I, Minh Long - LYS, LYS, Lock&Lock. Thương hiệu khác bị chặn ở máy chủ.
+ * Thương hiệu khách được xem / đặt: Minh Long, Minh Long I, Minh Long - LYS, LYS, Lock&Lock, Healthy Cook (Sứ dưỡng sinh). Thương hiệu khác bị chặn ở máy chủ.
  * So khớp bỏ dấu, hoa thường, khoảng trắng và ký tự nối (vd. "MINH LONG - LYS", "LocknLock", "Lock & Lock").
  */
-const PORTAL_BRANDS = new Set(['minhlong', 'minhlongi', 'minhlonglys', 'lys', 'lock', 'locklock', 'locknlock']);
+const PORTAL_BRANDS = new Set(['minhlong', 'minhlongi', 'minhlonglys', 'lys', 'lock', 'locklock', 'locknlock', 'healthycook', 'suduongsinh', 'minhlongsuduongsinh']);
 export const portalBrandAllowed = (brand: unknown) =>
-  PORTAL_BRANDS.has(String(brand ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+  PORTAL_BRANDS.has(String(brand ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/đ/g, 'd').replace(/[^a-z0-9]/g, ''));
 
 /** Chiết khấu riêng theo nhãn hàng: mỗi nhãn 0..100%, bỏ trống = 0. */
 export function cleanDiscounts(v: unknown): CustomerDiscounts {

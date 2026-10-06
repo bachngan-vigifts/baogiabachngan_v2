@@ -188,12 +188,15 @@ function fillInfo() {
     .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
 }
 
-/** Thương hiệu gộp theo cách viết (bỏ dấu, hoa thường, ký tự nối); các kiểu Lock&Lock / LocknLock / Lock gộp một. */
-const brandKey = b => { const k = fold(b).replace(/[^a-z0-9]/g, ''); return /^lock(n?lock)?$/.test(k) ? 'lock' : k; };
+/** Nhóm thương hiệu: Minh Long + Minh Long I = Minh Long; Lock / Lock&Lock / LocknLock = Lock&Lock; Healthy Cook = Sứ dưỡng sinh. */
+const BRAND_ALIAS = { minhlongi: 'minhlong', locklock: 'lock', locknlock: 'lock', suduongsinh: 'healthycook', minhlongsuduongsinh: 'healthycook' };
+const BRAND_LABEL = { minhlong: 'Minh Long', minhlonglys: 'Minh Long - LYS', lys: 'LYS', lock: 'Lock&Lock', healthycook: 'Healthy Cook (Sứ dưỡng sinh)' };
+const brandKey = b => { const k = fold(b).replace(/[^a-z0-9]/g, ''); return BRAND_ALIAS[k] || k; };
+const brandLabel = (k, fallback) => BRAND_LABEL[k] || fallback;
 function fillBrands() {
   const count = new Map();
   for (const p of st.items) { const k = brandKey(p.brand); if (!k) continue; const m = count.get(k) ?? new Map(); m.set(p.brand.trim(), (m.get(p.brand.trim()) ?? 0) + 1); count.set(k, m); }
-  const opts = [...count].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1])[0][0], [...m.values()].reduce((a, b) => a + b, 0)]).sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  const opts = [...count].map(([k, m]) => [k, brandLabel(k, [...m].sort((a, b) => b[1] - a[1])[0][0]), [...m.values()].reduce((a, b) => a + b, 0)]).sort((a, b) => a[1].localeCompare(b[1], 'vi'));
   const sel = $('#p-brand'), cur = sel.value;
   sel.innerHTML = '<option value="">Tất cả thương hiệu</option>' + opts.map(([k, label, n]) => `<option value="${esc(k)}">${esc(label)} (${fmtNum(n)})</option>`).join('');
   sel.value = opts.some(o => o[0] === cur) ? cur : '';
@@ -298,16 +301,36 @@ async function loadStock() {
   try {
     const { requests } = await api('/portal/stock-requests');
     $('#p-stock-empty').hidden = requests.length > 0;
-    box.innerHTML = requests.map(r => `<article class="card portal-order">
-      <header><div><b>Đơn check tồn ${new Date(r.createdAt).toLocaleString('vi-VN')}</b> ${r.status === 'answered' ? '<span class="pill ok">Đã trả lời</span>' : '<span class="pill warn">Đang chờ trả lời</span>'}${r.note ? `<small>Ghi chú: ${esc(r.note)}</small>` : ''}</div></header>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Đáp ứng được</th></tr></thead><tbody>
-      ${r.items.map(i => { const a = r.answerItems.find(x => x.sku === i.sku); return `<tr><td>${esc(i.name)}<small>${esc(i.sku)}</small></td><td class="right">${fmtNum(i.qty)} ${esc(i.unit || '')}</td>
-        <td class="right">${r.status === 'answered' ? (a ? `<b class="${a.available < i.qty ? 'danger-text' : ''}">${fmtNum(a.available)}</b>` : '—') : '…'}</td></tr>`; }).join('')}
+    box.innerHTML = requests.map(r => { const done = r.status === 'answered'; return `<article class="card portal-order" data-stock-req="${esc(r.id)}" data-created="${esc(r.createdAt)}">
+      <header><div><b>Đơn check tồn ${new Date(r.createdAt).toLocaleString('vi-VN')}</b> ${done ? '<span class="pill ok">Đã trả lời</span>' : '<span class="pill warn">Đang chờ trả lời</span>'}${r.note ? `<small>Ghi chú: ${esc(r.note)}</small>` : ''}</div></header>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Đáp ứng được</th>${done ? '<th class="right">Số lượng đặt</th>' : ''}</tr></thead><tbody>
+      ${r.items.map(i => { const a = r.answerItems.find(x => x.sku === i.sku), avail = a ? Number(a.available) : null;
+        // Đặt mặc định = số cần, không vượt số nhân viên báo đáp ứng được.
+        const want = avail === null || !Number.isFinite(avail) ? i.qty : Math.max(0, Math.min(i.qty, avail));
+        return `<tr><td>${esc(i.name)}<small>${esc(i.sku)}</small></td><td class="right">${fmtNum(i.qty)} ${esc(i.unit || '')}</td>
+        <td class="right">${done ? (a ? `<b class="${a.available < i.qty ? 'danger-text' : ''}">${fmtNum(a.available)}</b>` : '—') : '…'}</td>
+        ${done ? `<td class="right"><input class="num-input" inputmode="decimal" data-order-sku="${esc(i.sku)}" value="${want}" aria-label="Số lượng đặt ${esc(i.name)}"></td>` : ''}</tr>`; }).join('')}
       </tbody></table></div>
       ${r.answer ? `<p class="small"><b>Nhân viên trả lời:</b> ${esc(r.answer)}</p>` : ''}
-    </article>`).join('');
+      ${done ? '<div class="portal-actions"><button type="button" class="btn primary small" data-stock-order>Đặt hàng ngay</button></div>' : ''}
+    </article>`; }).join('');
   } catch (e) { box.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
 }
+/** Đặt hàng thẳng từ đơn check tồn đã được trả lời: đơn "Chờ xác nhận" như Đặt hàng ngay. */
+$('#p-stock').addEventListener('click', async e => {
+  const b = e.target.closest('[data-stock-order]'); if (!b) return;
+  const art = b.closest('[data-stock-req]');
+  const items = [...art.querySelectorAll('[data-order-sku]')].map(inp => ({ sku: inp.dataset.orderSku, qty: Number(String(inp.value).replace(',', '.')) }));
+  if (items.some(i => !(i.qty >= 0))) return toast('Số lượng đặt không hợp lệ.', 'err');
+  const chosen = items.filter(i => i.qty > 0);
+  if (!chosen.length) return toast('Nhập số lượng đặt cho ít nhất một sản phẩm.', 'err');
+  if (!confirm(`Đặt hàng ${chosen.length} sản phẩm theo đơn check tồn này?`)) return;
+  b.disabled = true;
+  try {
+    await api('/portal/quotes', 'POST', { items: chosen, order: true, note: `Đặt theo đơn check tồn ${new Date(art.dataset.created).toLocaleString('vi-VN')}` });
+    toast('Đã gửi đơn đặt hàng. Nhân viên phụ trách sẽ xác nhận.'); showTab('orders');
+  } catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
+});
 $('#p-ask-stock').addEventListener('click', async () => {
   const err = $('#p-error'); err.textContent = '';
   if (!st.cart.size) { err.textContent = 'Chọn sản phẩm cần check tồn trước.'; return; }
