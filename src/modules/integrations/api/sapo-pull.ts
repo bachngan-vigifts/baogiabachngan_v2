@@ -204,5 +204,7 @@ export async function pullStatus(db: AnyDb) {
   // Hết hạn = lần gọi Sapo gần nhất (đồng bộ hoặc giữ phiên) SAU lần kết nối báo phiên hết hạn.
   const latest = [{ at: state.startedAt ?? '', code: state.code }, { at: check?.checkedAt ?? '', code: check?.code }]
     .filter(x => x.at > session.updatedAt).sort((a, b) => b.at.localeCompare(a.at))[0];
-  return { session: { connected: true, ...session, expired: latest?.code === 'SAPO_SESSION_EXPIRED', checkedAt: check?.checkedAt ?? null }, pull, check };
+  // Lần đồng bộ trước khi Manager kết nối lại là chuyện cũ: không hiện lỗi của nó nữa.
+  const stale = !!pull.startedAt && pull.startedAt <= session.updatedAt;
+  return { session: { connected: true, ...session, expired: latest?.code === 'SAPO_SESSION_EXPIRED', checkedAt: check?.checkedAt ?? null }, pull: { ...pull, stale }, check };
 }

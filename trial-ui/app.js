@@ -303,14 +303,14 @@ const viTime = iso => new Date(iso).toLocaleString('vi-VN');
 async function loadSapoSync() {
   let d; try { d = await api('/admin/sapo-sync'); } catch { $('#sapo-sync').hidden = true; return; }
   const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + viTime(iso) : 'Chưa nhận dữ liệu';
-  const s = d.session || {}, p = d.pull || {};
+  const s = d.session || {}, p = d.pull || {}, pullFailed = p.ok === false && !p.stale;
   $('#sapo-sync').hidden = false;
-  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : p.ok === false ? 'Lỗi' : 'Đang chạy';
-  $('#sync-state').classList.toggle('warn', !!(s.expired || p.ok === false));
+  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : pullFailed ? 'Lỗi' : 'Đang chạy';
+  $('#sync-state').classList.toggle('warn', !!(s.expired || pullFailed));
   $('#sync-note').textContent = !d.configured ? 'Cần cài mã SAPO_SYNC_TOKEN'
     : !s.connected ? 'Bấm "Kết nối Sapo" để bắt đầu'
-    : s.expired || p.ok === false ? (p.error || 'Cần kết nối lại Sapo')
-    : p.finishedAt ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
+    : s.expired || pullFailed ? (p.error || 'Cần kết nối lại Sapo')
+    : p.finishedAt && !p.stale ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
   $('#sapo-connect').textContent = s.connected ? 'Kết nối lại' : 'Kết nối Sapo';
   $('#sapo-connect').hidden = !d.configured; $('#sapo-pull').hidden = !d.configured || !s.connected; $('#sapo-disconnect').hidden = !s.connected;
   $('#sync-products').textContent = n(d.products.count); $('#sync-products-at').textContent = at(d.products.lastSyncedAt);
