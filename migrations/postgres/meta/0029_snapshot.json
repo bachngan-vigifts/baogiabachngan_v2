@@ -1,5 +1,5 @@
 {
-  "id": "a752284a-e21f-4138-a8b9-ce3b82cad9e8",
+  "id": "f895dbcb-f6fc-42f6-99f9-a490d3fdaa0f",
   "prevId": "20a2a20a-8801-478a-9484-83ce9e6d0132",
   "version": "7",
   "dialect": "postgresql",
@@ -10070,7 +10070,7 @@
       "checkConstraints": {
         "chk_hr_adjustments_kind": {
           "name": "chk_hr_adjustments_kind",
-          "value": "\"hr_adjustments\".\"kind\" IN ('bonus', 'allowance', 'deduction', 'advance', 'phone_advance')"
+          "value": "\"hr_adjustments\".\"kind\" IN ('bonus', 'allowance', 'deduction', 'advance')"
         },
         "chk_hr_adjustments_amount": {
           "name": "chk_hr_adjustments_amount",
@@ -10169,6 +10169,90 @@
       },
       "isRLSEnabled": true
     },
+    "public.hr_month_inputs": {
+      "name": "hr_month_inputs",
+      "schema": "",
+      "columns": {
+        "member_id": {
+          "name": "member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "month": {
+          "name": "month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hr_month_inputs_member_id_staff_members_id_fk": {
+          "name": "hr_month_inputs_member_id_staff_members_id_fk",
+          "tableFrom": "hr_month_inputs",
+          "tableTo": "staff_members",
+          "columnsFrom": [
+            "member_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "hr_month_inputs_updated_by_staff_members_id_fk": {
+          "name": "hr_month_inputs_updated_by_staff_members_id_fk",
+          "tableFrom": "hr_month_inputs",
+          "tableTo": "staff_members",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "hr_month_inputs_member_id_month_pk": {
+          "name": "hr_month_inputs_member_id_month_pk",
+          "columns": [
+            "member_id",
+            "month"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_hr_month_inputs_month": {
+          "name": "chk_hr_month_inputs_month",
+          "value": "\"hr_month_inputs\".\"month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "public.hr_payslips": {
       "name": "hr_payslips",
       "schema": "",
@@ -10192,6 +10276,84 @@
           "notNull": true,
           "default": "'confirmed'"
         },
+        "standard_days": {
+          "name": "standard_days",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worked_days": {
+          "name": "worked_days",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_salary": {
+          "name": "base_salary",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "salary_by_days": {
+          "name": "salary_by_days",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allowance": {
+          "name": "allowance",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revenue": {
+          "name": "revenue",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commission_rate": {
+          "name": "commission_rate",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commission": {
+          "name": "commission",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bonus": {
+          "name": "bonus",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extra_allowance": {
+          "name": "extra_allowance",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deduction": {
+          "name": "deduction",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "advance": {
+          "name": "advance",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "insurance": {
+          "name": "insurance",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
         "gross": {
           "name": "gross",
           "type": "double precision",
@@ -10203,6 +10365,20 @@
           "type": "double precision",
           "primaryKey": false,
           "notNull": true
+        },
+        "scheme": {
+          "name": "scheme",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'basic'"
+        },
+        "lines": {
+          "name": "lines",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'"
         },
         "note": {
           "name": "note",
@@ -10296,6 +10472,10 @@
         "chk_hr_payslips_status": {
           "name": "chk_hr_payslips_status",
           "value": "\"hr_payslips\".\"status\" IN ('confirmed', 'paid')"
+        },
+        "chk_hr_payslips_scheme": {
+          "name": "chk_hr_payslips_scheme",
+          "value": "\"hr_payslips\".\"scheme\" IN ('basic', 'sale', 'bachngan', 'lock')"
         }
       },
       "isRLSEnabled": true
@@ -10323,8 +10503,29 @@
           "notNull": true,
           "default": 0
         },
+        "allowance": {
+          "name": "allowance",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "standard_days": {
+          "name": "standard_days",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 26
+        },
         "revenue_target": {
           "name": "revenue_target",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "commission_rate": {
+          "name": "commission_rate",
           "type": "double precision",
           "primaryKey": false,
           "notNull": true,
@@ -10336,6 +10537,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "scheme": {
+          "name": "scheme",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'basic'"
+        },
+        "params": {
+          "name": "params",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
         },
         "note": {
           "name": "note",
@@ -10398,13 +10613,21 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "chk_hr_salary_scheme": {
+          "name": "chk_hr_salary_scheme",
+          "value": "\"hr_salary_profiles\".\"scheme\" IN ('basic', 'sale', 'bachngan', 'lock')"
+        },
         "chk_hr_salary_month": {
           "name": "chk_hr_salary_month",
           "value": "\"hr_salary_profiles\".\"effective_month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
         },
         "chk_hr_salary_money": {
           "name": "chk_hr_salary_money",
-          "value": "\"hr_salary_profiles\".\"base_salary\" >= 0 AND \"hr_salary_profiles\".\"revenue_target\" >= 0 AND \"hr_salary_profiles\".\"insurance\" >= 0"
+          "value": "\"hr_salary_profiles\".\"base_salary\" >= 0 AND \"hr_salary_profiles\".\"allowance\" >= 0 AND \"hr_salary_profiles\".\"revenue_target\" >= 0 AND \"hr_salary_profiles\".\"insurance\" >= 0"
+        },
+        "chk_hr_salary_rates": {
+          "name": "chk_hr_salary_rates",
+          "value": "\"hr_salary_profiles\".\"standard_days\" > 0 AND \"hr_salary_profiles\".\"standard_days\" <= 31 AND \"hr_salary_profiles\".\"commission_rate\" >= 0 AND \"hr_salary_profiles\".\"commission_rate\" <= 100"
         }
       },
       "isRLSEnabled": true

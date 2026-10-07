@@ -1787,7 +1787,7 @@ const payrollBoard = () => payrollUi ||= initPayroll({ api, toast, esc, money, p
 /** Trang chi tiết nhân viên (trial-ui/member-detail.js): KPI, khách, báo giá, đơn, HĐKT, giao dịch, công nợ, ngày công, lương. */
 var memberUi = null; // eslint-disable-line no-var
 function memberDetail() {
-  return memberUi ||= initMemberDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, initials, ORDER_STATUS, CONTRACT_STATUS,
+  return memberUi ||= initMemberDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, initials, ORDER_STATUS, CONTRACT_STATUS, moneyWords,
     onEdit: async m => { if (!state.members?.some(x => x.id === m.id)) await loadMembers(); openMember(m.id); },
     onPhoto: async m => {
       const key = await uploadAvatar(m.id === state.user.id ? '/avatar' : `/admin/members/${encodeURIComponent(m.id)}/avatar`); if (!key) return false;

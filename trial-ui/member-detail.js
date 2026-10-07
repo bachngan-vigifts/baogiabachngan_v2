@@ -3,6 +3,7 @@
 // Thêm một mục mới = thêm một phần tử vào TABS (key, nhãn, đếm số, hàm vẽ). Công thức lương ở src/modules/hr/domain/payroll.ts.
 // Manager: sửa lương, chấm công (bấm vào ngày), thêm thưởng / khấu trừ, chốt lương. Nhân viên: chỉ xem hồ sơ của mình.
 import { avAttr } from './avatars.js';
+import { printPayslip } from './payroll-ui.js';
 
 const ATT = { // khớp ATTENDANCE_STATUSES (hr/domain/payroll.ts)
   present: { label: 'Đủ công', short: '1', cls: 'att-present' }, half: { label: 'Nửa công', short: '½', cls: 'att-half' },
@@ -105,8 +106,8 @@ export function initMemberDetail(deps) {
         </tbody></table>
         ${s.status === 'estimate' ? `<p class="muted small">Tạm tính theo dữ liệu hiện tại; số liệu cố định khi Manager chốt lương.${hasProfile ? '' : ' <b>Chưa có hồ sơ lương</b> – đang tính theo mặc định.'}</p>`
           : `<p class="muted small">Chốt ${esc(fmtDate(s.confirmedAt))}${s.paidAt ? ` · Đã trả ${esc(fmtDate(s.paidAt))}` : ''}${s.note ? ' · ' + esc(s.note) : ''}</p>`}
-        ${can() ? `<div class="row-actions">${s.status === 'estimate' && hasProfile ? '<button type="button" class="btn primary small" data-act="confirm-slip">Chốt lương tháng</button>' : ''}
-          ${s.status === 'confirmed' ? '<button type="button" class="btn primary small" data-act="paid-slip">Đánh dấu đã trả</button><button type="button" class="btn ghost small" data-act="reopen-slip">Mở lại</button>' : ''}</div>` : ''}
+        <div class="row-actions"><button type="button" class="btn secondary small" data-act="print-slip">In phiếu lương</button>${can() && s.status === 'estimate' && hasProfile ? '<button type="button" class="btn primary small" data-act="confirm-slip">Chốt lương tháng</button>' : ''}
+          ${can() && s.status === 'confirmed' ? '<button type="button" class="btn primary small" data-act="paid-slip">Đánh dấu đã trả</button><button type="button" class="btn ghost small" data-act="reopen-slip">Mở lại</button>' : ''}</div>
         ${k ? `<div class="md-kpi"><div class="card-title-row"><h3>KPI công việc</h3>${pill(KPI_TIER, k.tier)}</div>
           <table class="md-slip-table"><tbody>
             <tr><td>KH mới <small>${inp.kpiNewCustomers ?? '—'} KH</small></td><td class="right num">${pctTxt(k.points.newCustomers)}</td></tr>
@@ -349,6 +350,7 @@ export function initMemberDetail(deps) {
       else if (act === 'salary') editSalary();
       else if (act === 'add-adj') addAdjustment();
       else if (act === 'inputs') editInputs();
+      else if (act === 'print-slip') printPayslip({ member: m, month: st.month, slip: st.d.payroll.payslip, standardDays: st.d.payroll.params.standardDays, words: deps.moneyWords });
       else if (act === 'fill-days') {
         const done = new Set(st.d.payroll.attendance.map(a => a.date)), days = {};
         for (let i = 1; i <= st.d.payroll.attendanceSummary.daysInMonth; i++) {

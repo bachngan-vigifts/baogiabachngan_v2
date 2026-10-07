@@ -1,6 +1,6 @@
 {
-  "id": "5c3a2436-3aa2-4c97-b493-cc02288950c9",
-  "prevId": "a752284a-e21f-4138-a8b9-ce3b82cad9e8",
+  "id": "c8646500-3646-4c49-bdd8-4a5627d30618",
+  "prevId": "f895dbcb-f6fc-42f6-99f9-a490d3fdaa0f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10169,346 +10169,6 @@
       },
       "isRLSEnabled": true
     },
-    "public.hr_payroll_inputs": {
-      "name": "hr_payroll_inputs",
-      "schema": "",
-      "columns": {
-        "member_id": {
-          "name": "member_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "month": {
-          "name": "month",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "work_days": {
-          "name": "work_days",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "overtime_hours": {
-          "name": "overtime_hours",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "revenue": {
-          "name": "revenue",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "output_qty": {
-          "name": "output_qty",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "kpi_new_customers": {
-          "name": "kpi_new_customers",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kpi_transactions": {
-          "name": "kpi_transactions",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kpi_contracts": {
-          "name": "kpi_contracts",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kpi_revenue": {
-          "name": "kpi_revenue",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kpi_merch_days": {
-          "name": "kpi_merch_days",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "kpi_trip_days": {
-          "name": "kpi_trip_days",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "kpi_override": {
-          "name": "kpi_override",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "health_insurance": {
-          "name": "health_insurance",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "income_tax": {
-          "name": "income_tax",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "quarter_bonus": {
-          "name": "quarter_bonus",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_hr_inputs_month": {
-          "name": "idx_hr_inputs_month",
-          "columns": [
-            {
-              "expression": "month",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "hr_payroll_inputs_member_id_staff_members_id_fk": {
-          "name": "hr_payroll_inputs_member_id_staff_members_id_fk",
-          "tableFrom": "hr_payroll_inputs",
-          "tableTo": "staff_members",
-          "columnsFrom": [
-            "member_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "hr_payroll_inputs_updated_by_staff_members_id_fk": {
-          "name": "hr_payroll_inputs_updated_by_staff_members_id_fk",
-          "tableFrom": "hr_payroll_inputs",
-          "tableTo": "staff_members",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "hr_payroll_inputs_member_id_month_pk": {
-          "name": "hr_payroll_inputs_member_id_month_pk",
-          "columns": [
-            "member_id",
-            "month"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_hr_inputs_month": {
-          "name": "chk_hr_inputs_month",
-          "value": "\"hr_payroll_inputs\".\"month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
-        },
-        "chk_hr_inputs_values": {
-          "name": "chk_hr_inputs_values",
-          "value": "coalesce(\"hr_payroll_inputs\".\"work_days\", 0) >= 0 AND \"hr_payroll_inputs\".\"overtime_hours\" >= 0 AND coalesce(\"hr_payroll_inputs\".\"revenue\", 0) >= 0 AND \"hr_payroll_inputs\".\"output_qty\" >= 0 AND \"hr_payroll_inputs\".\"health_insurance\" >= 0 AND \"hr_payroll_inputs\".\"income_tax\" >= 0 AND coalesce(\"hr_payroll_inputs\".\"quarter_bonus\", 0) >= 0"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.hr_payroll_months": {
-      "name": "hr_payroll_months",
-      "schema": "",
-      "columns": {
-        "month": {
-          "name": "month",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "bn_revenue": {
-          "name": "bn_revenue",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "bn_avg_revenue": {
-          "name": "bn_avg_revenue",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "lock_revenue": {
-          "name": "lock_revenue",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "pay_quarter_bonus": {
-          "name": "pay_quarter_bonus",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "hr_payroll_months_updated_by_staff_members_id_fk": {
-          "name": "hr_payroll_months_updated_by_staff_members_id_fk",
-          "tableFrom": "hr_payroll_months",
-          "tableTo": "staff_members",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_hr_months_month": {
-          "name": "chk_hr_months_month",
-          "value": "\"hr_payroll_months\".\"month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
-        },
-        "chk_hr_months_money": {
-          "name": "chk_hr_months_money",
-          "value": "\"hr_payroll_months\".\"bn_revenue\" >= 0 AND \"hr_payroll_months\".\"bn_avg_revenue\" >= 0 AND \"hr_payroll_months\".\"lock_revenue\" >= 0"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.hr_payroll_settings": {
-      "name": "hr_payroll_settings",
-      "schema": "",
-      "columns": {
-        "effective_month": {
-          "name": "effective_month",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "params": {
-          "name": "params",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "hr_payroll_settings_updated_by_staff_members_id_fk": {
-          "name": "hr_payroll_settings_updated_by_staff_members_id_fk",
-          "tableFrom": "hr_payroll_settings",
-          "tableTo": "staff_members",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_hr_settings_month": {
-          "name": "chk_hr_settings_month",
-          "value": "\"hr_payroll_settings\".\"effective_month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
-        }
-      },
-      "isRLSEnabled": true
-    },
     "public.hr_payslips": {
       "name": "hr_payslips",
       "schema": "",
@@ -10532,45 +10192,17 @@
           "notNull": true,
           "default": "'confirmed'"
         },
-        "payroll_group": {
-          "name": "payroll_group",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'sale'"
-        },
-        "work_days": {
-          "name": "work_days",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "gross": {
           "name": "gross",
           "type": "double precision",
           "primaryKey": false,
           "notNull": true
         },
-        "deduction_total": {
-          "name": "deduction_total",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "net": {
           "name": "net",
           "type": "double precision",
           "primaryKey": false,
           "notNull": true
-        },
-        "data": {
-          "name": "data",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
         },
         "note": {
           "name": "note",
@@ -10664,10 +10296,6 @@
         "chk_hr_payslips_status": {
           "name": "chk_hr_payslips_status",
           "value": "\"hr_payslips\".\"status\" IN ('confirmed', 'paid')"
-        },
-        "chk_hr_payslips_group": {
-          "name": "chk_hr_payslips_group",
-          "value": "\"hr_payslips\".\"payroll_group\" IN ('sale', 'bn', 'lock')"
         }
       },
       "isRLSEnabled": true
@@ -10688,85 +10316,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "payroll_group": {
-          "name": "payroll_group",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'sale'"
-        },
-        "position_label": {
-          "name": "position_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
         "base_salary": {
           "name": "base_salary",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "capacity_coef": {
-          "name": "capacity_coef",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "responsibility_mode": {
-          "name": "responsibility_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'fixed'"
-        },
-        "responsibility": {
-          "name": "responsibility",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "meal_allowance": {
-          "name": "meal_allowance",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "phone_allowance": {
-          "name": "phone_allowance",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "attendance_bonus": {
-          "name": "attendance_bonus",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "kpi_enabled": {
-          "name": "kpi_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "team_bonus": {
-          "name": "team_bonus",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "output_rate": {
-          "name": "output_rate",
           "type": "double precision",
           "primaryKey": false,
           "notNull": true,
@@ -10785,27 +10336,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "bank_code": {
-          "name": "bank_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "bank_account": {
-          "name": "bank_account",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "bank_holder": {
-          "name": "bank_holder",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
         },
         "note": {
           "name": "note",
@@ -10875,18 +10405,6 @@
         "chk_hr_salary_money": {
           "name": "chk_hr_salary_money",
           "value": "\"hr_salary_profiles\".\"base_salary\" >= 0 AND \"hr_salary_profiles\".\"revenue_target\" >= 0 AND \"hr_salary_profiles\".\"insurance\" >= 0"
-        },
-        "chk_hr_salary_extra": {
-          "name": "chk_hr_salary_extra",
-          "value": "\"hr_salary_profiles\".\"capacity_coef\" >= 0 AND \"hr_salary_profiles\".\"responsibility\" >= 0 AND \"hr_salary_profiles\".\"phone_allowance\" >= 0 AND \"hr_salary_profiles\".\"attendance_bonus\" >= 0 AND \"hr_salary_profiles\".\"output_rate\" >= 0"
-        },
-        "chk_hr_salary_group": {
-          "name": "chk_hr_salary_group",
-          "value": "\"hr_salary_profiles\".\"payroll_group\" IN ('sale', 'bn', 'lock')"
-        },
-        "chk_hr_salary_resp_mode": {
-          "name": "chk_hr_salary_resp_mode",
-          "value": "\"hr_salary_profiles\".\"responsibility_mode\" IN ('fixed', 'prorated', 'per_day')"
         }
       },
       "isRLSEnabled": true

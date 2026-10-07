@@ -93,14 +93,16 @@ Công thức lấy đúng file Excel mẫu và đã đối chiếu từng đồn
 3. **＋ Thêm khoản:** thưởng khác / tuyên dương, công tác, vi phạm, tạm ứng, tạm ứng điện thoại (mỗi khoản có lý do).
 4. **Bảng lương → Chốt lương:** chốt cả bảng, hoặc chốt từng người ở trang nhân viên. Phiếu đã chốt lưu bản chụp toàn bộ chi tiết; sửa tham số hay dữ liệu sau đó không làm đổi phiếu. Tháng đã chốt thì khoá số liệu.
 5. **Xuất Excel:** gồm các sheet Tổng hợp, Lương Sale, Lương Bách Ngân, Lương Lock, Chuyển khoản (có link VietQR).
+6. **In phiếu lương:** nút "In phiếu lương" ở tab Lương & thưởng (Manager và chính nhân viên đó). Phiếu A4 dọc, lưu được PDF, có số tiền bằng chữ và chỗ ký. Phiếu đã chốt in đúng từng khoản lúc chốt.
 
 ## Cấu trúc dữ liệu
 Migration theo thứ tự:
 - `0027_hr_payroll`
 - `0028_supabase_access_hr_payroll`
-- `0029_hr_payroll_reshape` (bỏ cột của công thức cũ)
-- `0030_hr_payroll_template`
-- `0031_supabase_access_hr_payroll_template`
+- `0029_hr_payroll_schemes`, `0030_supabase_access_hr_month_inputs`: bản tích hợp trước (PR #38), đã thay bằng bản này
+- `0031_hr_payroll_reshape`: bỏ `hr_month_inputs`, `scheme`, `params`, `lines` và các cột của công thức cũ
+- `0032_hr_payroll_template`
+- `0033_supabase_access_hr_payroll_template`
 
 | Bảng | Khoá | Nội dung |
 |---|---|---|

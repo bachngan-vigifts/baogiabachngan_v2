@@ -2,7 +2,7 @@
 
 > File này được **sinh tự động** từ schema (`npm run docs:data-model`). Đừng sửa tay.
 
-Tổng: **62 bảng**.
+Tổng: **69 bảng**.
 
 Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = bản cũ có, đã thêm/bỏ cột · **hợp thức hoá** = bản cũ tự tạo lúc chạy, nay có migration · **mới** = chưa có ở bản cũ.
 
@@ -17,8 +17,9 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | Bảng | Số cột | Trạng thái | Ghi chú |
 |---|---|---|---|
 | `staff_auth_attempts` | 3 | giữ nguyên |  |
+| `staff_avatars` | 4 | mới |  |
 | `staff_credentials` | 5 | giữ nguyên |  |
-| `staff_members` | 9 | giữ nguyên |  |
+| `staff_members` | 11 | đổi | thêm: deleted_at, avatar_key |
 | `staff_positions` | 2 | giữ nguyên |  |
 | `staff_sapo_links` | 4 | giữ nguyên |  |
 | `staff_sessions` | 4 | giữ nguyên |  |
@@ -29,8 +30,10 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | Bảng | Số cột | Trạng thái | Ghi chú |
 |---|---|---|---|
 | `customer_brand_discounts` | 3 | mới |  |
+| `customer_contacts` | 11 | mới |  |
 | `customer_contract_profiles` | 3 | giữ nguyên |  |
-| `sapo_customers` | 12 | đổi | bỏ: discounts |
+| `customer_staff` | 5 | mới |  |
+| `sapo_customers` | 16 | đổi | thêm: approval_status, created_by, approved_by, approved_at; bỏ: discounts |
 
 ## catalog — Sản phẩm, giá, kho, tồn kho
 
@@ -39,9 +42,10 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `catalog_versions` | 7 | mới |  |
 | `price_policies` | 3 | mới |  |
 | `product_edits` | 5 | giữ nguyên |  |
+| `product_movements` | 16 | mới |  |
 | `product_prices` | 3 | mới |  |
 | `product_stock` | 4 | mới |  |
-| `products` | 18 | mới |  |
+| `products` | 22 | mới |  |
 | `stock_import_lines` | 4 | mới |  |
 | `stock_imports` | 7 | giữ nguyên |  |
 | `warehouses` | 5 | mới |  |
@@ -55,7 +59,7 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `quote_revisions` | 6 | mới |  |
 | `quote_shares` | 7 | mới |  |
 | `staff_notification_reads` | 3 | giữ nguyên |  |
-| `staff_quotations` | 15 | đổi | thêm: assignee_id |
+| `staff_quotations` | 18 | đổi | thêm: assignee_id, approval_status, approved_at, approved_by |
 | `staff_quote_notifications` | 7 | giữ nguyên |  |
 
 ## contracts — Hợp đồng
@@ -119,11 +123,14 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `staff_web_notification_reads` | 3 | giữ nguyên |  |
 | `staff_web_notifications` | 10 | giữ nguyên |  |
 | `staff_web_push_subscriptions` | 11 | giữ nguyên |  |
+| `web_push_keys` | 4 | mới |  |
 
 ## integrations — Sapo
 
 | Bảng | Số cột | Trạng thái | Ghi chú |
 |---|---|---|---|
 | `sapo_health_monitor_state` | 3 | hợp thức hoá |  |
+| `sapo_inventory_doc_lines` | 8 | mới |  |
+| `sapo_inventory_docs` | 15 | mới |  |
 | `sapo_order_statuses` | 9 | giữ nguyên |  |
 | `sapo_runtime_sessions` | 4 | hợp thức hoá |  |
