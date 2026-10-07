@@ -4,7 +4,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { customers } from '../../customers/schema.ts';
+import { customers, customerStaff } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { employees } from '../../staff/schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
@@ -26,11 +26,14 @@ const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.te
 const text = (v: unknown, max = 500) => { if (v !== undefined && v !== null && typeof v !== 'string') throw new AppError(400, 'Dữ liệu không hợp lệ.'); return String(v ?? '').trim().slice(0, max); };
 const money = (v: unknown, what: string) => { const n = Number(v); if (!Number.isFinite(n) || n < 0 || n > 1e13) throw new AppError(400, `${what} không hợp lệ.`); return Math.round(n); };
 
-/** Ai thấy đơn: Manager thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo. Mọi bảng con theo quyền của đơn. */
-const orderScope = (c: Ctx): SQL | undefined => {
-  const m = viewer(c);
-  return m.role === 'manager' ? undefined : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id));
-};
+/**
+ * Ai thấy đơn: Manager thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
+ * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
+ */
+export const orderScopeFor = (m: { id: string; role: string }): SQL | undefined => m.role === 'manager' ? undefined
+  : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id),
+    sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
+const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
 const quotePredicate = (scope: SqlScope) => {
   const parts = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
   return sql.join(parts.flatMap((p, i) => i < scope.bindings.length ? [sql.raw(p), sql`${scope.bindings[i]}`] : [sql.raw(p)]), sql.raw(''));
@@ -103,6 +106,12 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
     await tx.insert(paymentSchedules).values({ id: crypto.randomUUID(), orderId: id, kind: 'balance', amount: t.total, dueDate: null, note: 'Thanh toán khi giao hàng', createdAt: now });
+    // Khách chưa có nhân viên phụ trách: người phụ trách đơn đầu tiên thành người phụ trách khách.
+    if (customerId) await tx.execute(sql`INSERT INTO ${customerStaff} (customer_id, member_id, role, created_by, created_at)
+      SELECT ${customerId}, ${quote.assigneeId ?? quote.creatorId}, 'owner', ${o.createdBy}, ${now}
+      WHERE NOT EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${customerId} AND ${customerStaff.role} = 'owner')
+        AND EXISTS (SELECT 1 FROM ${employees} WHERE ${employees.id} = ${quote.assigneeId ?? quote.creatorId} AND ${employees.role} IN ('employee', 'manager'))
+      ON CONFLICT DO NOTHING`);
   });
   if (o.status === 'confirmed') await recordSaleMovements(db, id);
   return id;

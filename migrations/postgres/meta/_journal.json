@@ -85,6 +85,13 @@
       "when": 1791311523952,
       "tag": "0020_product_movements",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791352014524,
+      "tag": "0022_customer_staff_contacts",
+      "breakpoints": true
     }
   ]
 }

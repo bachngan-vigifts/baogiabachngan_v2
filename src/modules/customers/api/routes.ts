@@ -1,38 +1,197 @@
-import { asc, count, eq } from 'drizzle-orm';
-import type { Router } from '../../../core/http/router.ts';
+import { and, asc, count, desc, eq, exists, inArray, ne, sql } from 'drizzle-orm';
+import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
-import type { StaffEnv } from '../../staff/api/auth-routes.ts';
-import { customers } from '../schema.ts';
+import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
+import { employees } from '../../staff/schema.ts';
+import { customerContacts, customers, customerStaff } from '../schema.ts';
+import { CUSTOMER_LIMITS } from '../domain/customer-config.ts';
+
+type Ctx = RouteContext<StaffEnv>;
+type Db = StaffEnv['db'];
+type Viewer = { id: string; role: string };
+const viewer = (c: Ctx) => (c.state.session as SessionState).member;
+const nowIso = () => new Date().toISOString();
+
+/** Nhân viên phụ trách + được chia sẻ của nhiều khách (một lượt truy vấn). */
+export async function customerStaffOf(db: Db, customerIds: string[]) {
+  const out = new Map<string, { owner: { id: string; name: string } | null; shared: { id: string; name: string }[] }>();
+  for (const id of customerIds) out.set(id, { owner: null, shared: [] });
+  if (!customerIds.length) return out;
+  const rows = await db.select({ customerId: customerStaff.customerId, role: customerStaff.role, id: employees.id, name: employees.name })
+    .from(customerStaff).innerJoin(employees, eq(employees.id, customerStaff.memberId))
+    .where(inArray(customerStaff.customerId, customerIds)).orderBy(asc(employees.name));
+  for (const r of rows) {
+    const s = out.get(r.customerId)!;
+    if (r.role === 'owner') s.owner = { id: r.id, name: r.name }; else s.shared.push({ id: r.id, name: r.name });
+  }
+  return out;
+}
+
+/**
+ * Quyền của một người với một khách:
+ *  - Manager, người phụ trách, người được chia sẻ: xem mọi báo giá / đơn / HĐKT / công nợ của khách (`canSeeAll`);
+ *  - Manager: đổi người phụ trách; Manager hoặc người phụ trách: đổi danh sách người được chia sẻ.
+ */
+export async function customerAccess(db: Db, customerId: string, who: Viewer) {
+  const [row] = await db.select({ role: customerStaff.role }).from(customerStaff)
+    .where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.memberId, who.id))).limit(1);
+  const manager = who.role === 'manager', owner = row?.role === 'owner', shared = row?.role === 'shared';
+  return { manager, owner, shared, canSeeAll: manager || owner || shared, canManageStaff: manager || owner, canChangeOwner: manager };
+}
+
+/** Nhân viên / Manager đang hoạt động (người gán cho khách được). */
+async function activeStaff(db: Db, ids: string[]) {
+  if (!ids.length) return [];
+  return (await db.select({ id: employees.id }).from(employees)
+    .where(and(inArray(employees.id, ids), eq(employees.active, true), inArray(employees.role, ['employee', 'manager'])))).map(r => r.id);
+}
+
+async function loadCustomer(db: Db, id: string) {
+  const [row] = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
+  if (!row) throw new AppError(404, 'Không tìm thấy khách hàng.');
+  return row;
+}
+
+/** Hồ sơ khách: thông tin, người phụ trách, người được chia sẻ, người liên hệ, quyền của người xem. */
+export async function customerProfile(db: Db, id: string, who: Viewer) {
+  const [customer, staff, contacts, access] = await Promise.all([
+    loadCustomer(db, id),
+    customerStaffOf(db, [id]),
+    db.select({ id: customerContacts.id, name: customerContacts.name, title: customerContacts.title, phone: customerContacts.phone, email: customerContacts.email,
+      note: customerContacts.note, isPrimary: customerContacts.isPrimary, updatedAt: customerContacts.updatedAt })
+      .from(customerContacts).where(eq(customerContacts.customerId, id)).orderBy(desc(customerContacts.isPrimary), asc(customerContacts.createdAt)),
+    customerAccess(db, id, who),
+  ]);
+  const { search: _s, sourceVersion: _v, ...info } = customer;
+  return { customer: { ...info, fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, access };
+}
 
 export function registerCustomerRoutes(router: Router<StaffEnv>) {
   // Tìm không dấu theo tên, người liên hệ, điện thoại, email, MST, mã KH; phân trang (?q=&limit=&offset=).
+  // `?mine=1`: chỉ khách mình phụ trách hoặc được chia sẻ. Mỗi dòng kèm người phụ trách.
   router.get('/customers', async c => {
-    const { limit, offset } = paging(c.url, 100, 500);
-    const where = matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q'));
+    const { limit, offset } = paging(c.url, 100, 500), me = viewer(c);
+    const mine = c.url.searchParams.get('mine') === '1'
+      ? exists(c.env.db.select({ x: sql`1` }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id), eq(customerStaff.memberId, me.id))))
+      : undefined;
+    const where = and(matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine);
     const [[{ total = 0 } = {}], rows] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
       c.env.db.select().from(customers).where(where).orderBy(asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
     ]);
-    return json({ customers: rows, total: Number(total), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
+    const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));
+    return json({ customers: rows.map(r => ({ ...r, owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
+      total: Number(total), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
-  const save = async (c: Parameters<Parameters<Router<StaffEnv>['post']>[1]>[0], update: boolean) => {
-    const body = await readJson(c.req, 16_384);
+
+  const save = async (c: Ctx, update: boolean) => {
+    const body = await readJson(c.req, 16_384), me = viewer(c);
     const text = (key: string, max = 500) => {
       const v = body[key] ?? '';
       if (typeof v !== 'string' || v.length > max) throw new AppError(400, 'Thông tin khách hàng không hợp lệ.');
       return v.trim();
     };
     const name = text('name'); if (!name) throw new AppError(400, 'Vui lòng nhập tên khách hàng.');
-    const now = new Date().toISOString(), id = update ? c.params.id! : crypto.randomUUID();
+    const now = nowIso(), id = update ? c.params.id! : crypto.randomUUID();
     const fields = { name, contact: text('contact'), phone: text('phone', 40), email: text('email'), address: text('address', 2000), taxCode: text('taxCode'), customerCode: text('customerCode') };
     const row = { ...fields, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
     if (update) {
       if (!(await c.env.db.update(customers).set(row).where(eq(customers.id, id)).returning({ id: customers.id })).length) throw new AppError(404, 'Không tìm thấy khách hàng.');
-    } else await c.env.db.insert(customers).values({ id, createdAt: now, ...row });
-    return json({ id }, update ? 200 : 201);
+      return json({ id });
+    }
+    // Khách mới: người tạo là người phụ trách (Manager chọn được người khác qua `ownerId`).
+    const wanted = me.role === 'manager' && typeof body.ownerId === 'string' && body.ownerId ? body.ownerId : me.id;
+    const [ownerId] = await activeStaff(c.env.db, [wanted]);
+    await c.env.db.transaction(async tx => {
+      await tx.insert(customers).values({ id, createdAt: now, ...row });
+      if (ownerId) await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
+    });
+    return json({ id }, 201);
   };
   router.post('/customers', c => save(c, false), 'business');
   router.put('/customers/:id', c => save(c, true), 'business');
+
+  router.get('/customers/:id', async c => json(await customerProfile(c.env.db, c.params.id!, viewer(c))), 'business');
+
+  /**
+   * Đổi người phụ trách (`ownerId`, chỉ Manager; `null` = bỏ trống) và/hoặc danh sách người được chia sẻ
+   * (`sharedIds`, Manager hoặc người phụ trách). Danh sách gửi lên thay toàn bộ danh sách cũ.
+   */
+  router.put('/customers/:id/staff', async c => {
+    const db = c.env.db, me = viewer(c), id = c.params.id!, body = await readJson(c.req, 8_000);
+    await loadCustomer(db, id);
+    const access = await customerAccess(db, id, me), now = nowIso();
+    const changeOwner = body.ownerId !== undefined, changeShared = body.sharedIds !== undefined;
+    if (changeOwner && !access.canChangeOwner) throw new AppError(403, 'Chỉ Manager đổi được nhân viên phụ trách.');
+    if (changeShared && !access.canManageStaff) throw new AppError(403, 'Chỉ Manager hoặc nhân viên phụ trách chia sẻ được khách hàng.');
+    let ownerId: string | null | undefined;
+    if (changeOwner) {
+      if (body.ownerId === null || body.ownerId === '') ownerId = null;
+      else if (typeof body.ownerId !== 'string' || !(ownerId = (await activeStaff(db, [body.ownerId]))[0])) throw new AppError(400, 'Nhân viên phụ trách không hợp lệ.');
+    }
+    let sharedIds: string[] | undefined;
+    if (changeShared) {
+      if (!Array.isArray(body.sharedIds) || body.sharedIds.some(x => typeof x !== 'string')) throw new AppError(400, 'Danh sách chia sẻ không hợp lệ.');
+      const wanted = [...new Set(body.sharedIds as string[])];
+      if (wanted.length > CUSTOMER_LIMITS.shared) throw new AppError(400, `Chia sẻ tối đa ${CUSTOMER_LIMITS.shared} nhân viên.`);
+      sharedIds = await activeStaff(db, wanted);
+      if (sharedIds.length !== wanted.length) throw new AppError(400, 'Có nhân viên không hợp lệ trong danh sách chia sẻ.');
+    }
+    await db.transaction(async tx => {
+      if (ownerId !== undefined) {
+        await tx.delete(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.role, 'owner')));
+        if (ownerId) {
+          await tx.delete(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.memberId, ownerId)));
+          await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
+        }
+      }
+      if (sharedIds) {
+        const [owner] = await tx.select({ id: customerStaff.memberId }).from(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.role, 'owner'))).limit(1);
+        await tx.delete(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.role, 'shared')));
+        const rows = sharedIds.filter(x => x !== owner?.id).map(memberId => ({ customerId: id, memberId, role: 'shared' as const, createdBy: me.id, createdAt: now }));
+        if (rows.length) await tx.insert(customerStaff).values(rows);
+      }
+    });
+    return json(await customerProfile(db, id, me));
+  }, 'business');
+
+  // ----- Người liên hệ
+  const contactFields = (body: Record<string, unknown>) => {
+    const t = (k: string, max: number) => { const v = body[k] ?? ''; if (typeof v !== 'string' || v.length > max) throw new AppError(400, 'Thông tin người liên hệ không hợp lệ.'); return v.trim(); };
+    const name = t('name', CUSTOMER_LIMITS.contactName);
+    if (!name) throw new AppError(400, 'Nhập tên người liên hệ.');
+    const email = t('email', 200);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'Email người liên hệ không hợp lệ.');
+    return { name, title: t('title', CUSTOMER_LIMITS.contactTitle), phone: t('phone', 40), email, note: t('note', CUSTOMER_LIMITS.contactNote), isPrimary: body.isPrimary === true };
+  };
+  router.post('/customers/:id/contacts', async c => {
+    const db = c.env.db, id = c.params.id!, f = contactFields(await readJson(c.req, 8_000)), now = nowIso();
+    await loadCustomer(db, id);
+    const [{ n = 0 } = {}] = await db.select({ n: count() }).from(customerContacts).where(eq(customerContacts.customerId, id));
+    if (Number(n) >= CUSTOMER_LIMITS.contacts) throw new AppError(400, `Mỗi khách tối đa ${CUSTOMER_LIMITS.contacts} người liên hệ.`);
+    const contactId = crypto.randomUUID();
+    await db.transaction(async tx => {
+      if (f.isPrimary) await tx.update(customerContacts).set({ isPrimary: false }).where(eq(customerContacts.customerId, id));
+      await tx.insert(customerContacts).values({ id: contactId, customerId: id, ...f, createdBy: viewer(c).id, createdAt: now, updatedAt: now });
+    });
+    return json({ id: contactId }, 201);
+  }, 'business');
+  router.put('/customers/:id/contacts/:contactId', async c => {
+    const db = c.env.db, id = c.params.id!, f = contactFields(await readJson(c.req, 8_000));
+    const done = await db.transaction(async tx => {
+      if (f.isPrimary) await tx.update(customerContacts).set({ isPrimary: false }).where(and(eq(customerContacts.customerId, id), ne(customerContacts.id, c.params.contactId!)));
+      return tx.update(customerContacts).set({ ...f, updatedAt: nowIso() })
+        .where(and(eq(customerContacts.id, c.params.contactId!), eq(customerContacts.customerId, id))).returning({ id: customerContacts.id });
+    });
+    if (!done.length) throw new AppError(404, 'Không tìm thấy người liên hệ.');
+    return json({ ok: true });
+  }, 'business');
+  router.delete('/customers/:id/contacts/:contactId', async c => {
+    const done = await c.env.db.delete(customerContacts)
+      .where(and(eq(customerContacts.id, c.params.contactId!), eq(customerContacts.customerId, c.params.id!))).returning({ id: customerContacts.id });
+    if (!done.length) throw new AppError(404, 'Không tìm thấy người liên hệ.');
+    return json({ ok: true });
+  }, 'business');
 }

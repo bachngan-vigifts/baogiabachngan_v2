@@ -304,17 +304,18 @@
     <!-- ---------- Khách hàng ---------- -->
     <section class="view" id="view-customers" hidden>
       <div class="page-head">
-        <div><span class="eyebrow">Kinh doanh</span><h1>Khách hàng</h1><p class="muted">Danh bạ dùng chung để lập báo giá nhanh hơn.</p></div>
-        <button class="btn primary" id="new-customer"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Thêm khách hàng</button>
+        <div><span class="eyebrow">Kinh doanh</span><h1>Khách hàng</h1><p class="muted">Bấm vào khách để xem báo giá, đơn hàng, HĐKT, công nợ, lịch sử mua, người liên hệ.</p></div>
+        <button type="button" class="btn-add" id="new-customer" title="Thêm khách hàng" aria-label="Thêm khách hàng"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="panel">
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="customer-search" type="search" placeholder="Tìm tên, người liên hệ, số điện thoại, MST…" aria-label="Tìm khách hàng"></label>
+          <label class="chip-check"><input type="checkbox" id="customer-mine"> Khách của tôi</label>
           <span class="muted small" id="customer-count"></span>
         </div>
         <div class="table-wrap">
           <table class="data-table" id="customer-table">
-            <thead><tr><th>Khách hàng</th><th>Người liên hệ</th><th>Điện thoại</th><th>Email · MST</th><th class="right">Báo giá</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <thead><tr><th>Khách hàng</th><th>Người liên hệ</th><th>Điện thoại</th><th>Email · MST</th><th>Phụ trách</th><th class="right">Báo giá</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
             <tbody id="customer-list"></tbody>
           </table>
         </div>
@@ -326,6 +327,9 @@
       </div>
     </section>
 
+
+    <!-- ---------- Chi tiết khách hàng (trial-ui/customer-detail.js) ---------- -->
+    <section class="view" id="view-customer" hidden><div id="customer-detail"></div></section>
 
     <!-- ---------- Đơn đặt hàng ---------- -->
     <section class="view" id="view-orders" hidden>
@@ -377,8 +381,6 @@
 
     <!-- ---------- Công nợ ---------- -->
     <!-- Khách hỏi tồn kho từ trang khách hàng: nhân viên phụ trách trả lời -->
-      </div>
-    </section>
     <!-- Công việc: việc tự sinh từ nghiệp vụ + giao việc thủ công (trial-ui/tasks.js) -->
     <section class="view" id="view-tasks" hidden>
       <div class="page-head">
@@ -776,7 +778,9 @@
             <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
             <form class="chat-compose" id="chat-form"><textarea id="chat-input" rows="1" maxlength="4000" placeholder="Nhập tin nhắn…" title="Enter để gửi, Shift+Enter để xuống dòng" aria-label="Tin nhắn"></textarea><button type="submit" class="btn primary">Gửi</button></form>
           </div>
-        </div>
+        </section>
+      </div>
+    </div>
 <div id="print-sheet" class="print-sheet ps-root" aria-hidden="true"></div>
 <script src="excel-export.js" defer></script>
   <script type="module" src="app.js"></script>

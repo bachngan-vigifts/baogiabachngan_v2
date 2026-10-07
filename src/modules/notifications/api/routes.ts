@@ -89,6 +89,14 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
     return json({ ok: true });
   }, 'self');
 
+  /** Gửi một thông báo thử tới mọi thiết bị đã bật thông báo của chính mình (tự kiểm tra máy có nhận push không). */
+  router.post('/push/test', async c => {
+    const me = (c.state.session as SessionState).member;
+    const [d] = await c.env.db.select({ n: sql<number>`count(*)` }).from(webPushSubscriptions).where(and(eq(webPushSubscriptions.memberId, me.id), isNull(webPushSubscriptions.disabledAt)));
+    const r = await notify(c.env, { eventType: 'push_test', title: 'Thông báo thử', body: 'Máy này đã nhận được thông báo đẩy từ Bách Ngân.', url: '/index.html', targetMemberId: me.id, actorId: me.id, persist: false });
+    return json({ devices: Number(d?.n ?? 0), sent: r.sent });
+  }, 'self');
+
   router.post('/push/unsubscribe', async c => {
     const me = (c.state.session as SessionState).member, endpoint = clean((await readJson(c.req, 4_000)).endpoint, 2000);
     if (endpoint) await c.env.db.update(webPushSubscriptions).set({ disabledAt: nowIso(), updatedAt: nowIso() }).where(and(eq(webPushSubscriptions.endpoint, endpoint), eq(webPushSubscriptions.memberId, me.id)));
