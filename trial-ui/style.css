@@ -365,23 +365,26 @@ table { width: 100%; border-collapse: collapse; }
   .data-table td.actions-cell .row-actions { flex-wrap: nowrap; gap: 6px; justify-content: flex-end; align-items: center; }
   .data-table td.actions-cell .btn, .data-table td.row-actions .btn { padding: 5px 10px; }
   .data-table td.actions-cell .icon-btn { width: 32px; height: 32px; }
-  /* Dòng sản phẩm thành thẻ */
-  .line-table thead { display: none; }
-  .line-table, .line-table tbody { display: block; }
-  .line-table tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 8px; padding: 12px; border-bottom: 1px solid var(--line); }
-  .line-table td { display: block; border: 0; padding: 0 !important; width: auto !important; min-width: 0; }
-  .line-table td[data-label]::before { content: attr(data-label); display: block; font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 3px; }
-  .line-table .col-idx { display: none; }
-  .line-table .col-product { grid-column: 1 / -1; min-width: 0; }
-  .line-table .col-unit { grid-column: span 2; } .line-table .col-qty { grid-column: span 2; } .line-table .col-price { grid-column: span 2; }
-  .line-table .col-disc { grid-column: span 3; } .line-table .col-print { grid-column: span 3; }
-  .line-table .col-tax { grid-column: span 2; } .line-table .col-cost { grid-column: span 2; }
-  .line-table .line-total { grid-column: span 4; text-align: left; align-self: end; }
-  .show-cost .line-table .line-total { grid-column: span 2; }
-  .line-table { min-width: 0 !important; }
-  .line-table .act-grid { display: flex; }
-  .line-table .line-actions { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 6px !important; }
-  .lines-wrap { border: 0; }
+  /* Dòng sản phẩm ở cổng khách thành thẻ; trang soạn báo giá giữ bảng vuốt ngang như web cũ (mỗi sản phẩm một hàng) */
+  .portal-lines thead { display: none; }
+  .portal-lines, .portal-lines tbody { display: block; }
+  .portal-lines tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 8px; padding: 12px; border-bottom: 1px solid var(--line); }
+  .portal-lines td { display: block; border: 0; padding: 0 !important; width: auto !important; min-width: 0; }
+  .portal-lines td[data-label]::before { content: attr(data-label); display: block; font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 3px; }
+  .portal-lines .col-idx { display: none; }
+  .portal-lines .col-product { grid-column: 1 / -1; min-width: 0; }
+  .portal-lines .col-unit { grid-column: span 2; } .portal-lines .col-qty { grid-column: span 2; } .portal-lines .col-price { grid-column: span 2; }
+  .portal-lines .col-disc { grid-column: span 3; } .portal-lines .col-print { grid-column: span 3; }
+  .portal-lines .col-tax { grid-column: span 2; } .portal-lines .col-cost { grid-column: span 2; }
+  .portal-lines .line-total { grid-column: span 4; text-align: left; align-self: end; }
+  .show-cost .portal-lines .line-total { grid-column: span 2; }
+  .portal-lines { min-width: 0 !important; }
+  .portal-lines .act-grid { display: flex; }
+  .portal-lines .line-actions { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 6px !important; }
+  .lines-wrap:has(.portal-lines) { border: 0; }
+  /* Bảng sản phẩm báo giá: vuốt ngang, cột tên rộng hơn để "Bộ gồm / Mô tả in ấn / Đóng gói" nằm gọn trên một hàng */
+  #line-table { min-width: 1160px; } #line-table:has(.col-pd) { min-width: 1360px; }
+  .lines-wrap:has(#line-table) { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
   .modal { max-width: 100vw; width: 100vw !important; margin: auto 0 0; border-radius: 16px 16px 0 0; }
   .modal-foot { border-radius: 0; }
   .toasts { left: 12px; right: 12px; bottom: 140px; }
@@ -538,17 +541,17 @@ label.btn.busy { opacity: .55; pointer-events: none; }
 #reset-notes { margin-top: 8px; }
 #toggle-profit { margin: 0; }
 @media (max-width: 680px) {
-  .line-table tr { grid-template-columns: 64px repeat(5, minmax(0, 1fr)); }
-  .line-table .col-img { grid-column: 1; grid-row: 1; }
-  .line-table .col-product { grid-column: 2 / -1; grid-row: 1; }
-  .line-table .col-unit { grid-column: 1 / span 2; } .line-table .col-qty { grid-column: span 2; } .line-table .col-price { grid-column: span 2; }
-  .line-table .col-disc { grid-column: 1 / span 3; } .line-table .col-print { grid-column: span 3; }
-  .line-table .col-after { grid-column: 1 / span 3; text-align: left; padding-top: 0 !important; }
-  .line-table .line-total { grid-column: span 3; text-align: left; }
-  .line-table .col-pd { grid-column: 1 / span 3; } .line-table .col-cost { grid-column: span 3; text-align: left; }
-  .line-table td.line-actions { grid-column: 1 / -1; text-align: right; border-top: 1px dashed var(--line); }
-  .line-table .thumb { width: 56px; height: 56px; }
-  .sub-field { grid-template-columns: 1fr; }
+  .portal-lines tr { grid-template-columns: 64px repeat(5, minmax(0, 1fr)); }
+  .portal-lines .col-img { grid-column: 1; grid-row: 1; }
+  .portal-lines .col-product { grid-column: 2 / -1; grid-row: 1; }
+  .portal-lines .col-unit { grid-column: 1 / span 2; } .portal-lines .col-qty { grid-column: span 2; } .portal-lines .col-price { grid-column: span 2; }
+  .portal-lines .col-disc { grid-column: 1 / span 3; } .portal-lines .col-print { grid-column: span 3; }
+  .portal-lines .col-after { grid-column: 1 / span 3; text-align: left; padding-top: 0 !important; }
+  .portal-lines .line-total { grid-column: span 3; text-align: left; }
+  .portal-lines .col-pd { grid-column: 1 / span 3; } .portal-lines .col-cost { grid-column: span 3; text-align: left; }
+  .portal-lines td.line-actions { grid-column: 1 / -1; text-align: right; border-top: 1px dashed var(--line); }
+  .portal-lines .thumb { width: 56px; height: 56px; }
+  .portal-lines .sub-field { grid-template-columns: 1fr; }
 }
 
 /* ---------- Hình ảnh ---------- */
