@@ -40,10 +40,12 @@ export function initChat({ api, toast, userId, isManager }) {
   // ----- Danh sách hội thoại
   async function loadList() {
     try { st.list = (await api('/chat/conversations')).conversations; } catch (e) {
+      // Lượt làm mới định kỳ lỗi (mạng chập chờn, máy chủ bận) mà danh sách đã có: giữ danh sách cũ, lần sau thử lại.
+      if (st.listLoaded) return;
       q('#chat-list').innerHTML = `<li class="chat-error"><b>Chưa tải được tin nhắn</b><small>${esc(e.message)}</small><button type="button" class="btn secondary small" data-chat-retry>Thử lại</button></li>`;
       return;
     }
-    renderList();
+    st.listLoaded = true; renderList();
   }
   function renderList() {
     const f = st.filter.toLowerCase(), items = st.list.filter(c => !f || c.title.toLowerCase().includes(f) || c.members.some(m => m.name.toLowerCase().includes(f)));
@@ -116,7 +118,7 @@ export function initChat({ api, toast, userId, isManager }) {
       if (seq === openSeq) applyThread(m);
     } catch (e) { if (seq !== openSeq) return; toast(e.message, 'err'); st.active = null; st.loading = false; renderThread(); }
   }
-  // Khi khung chat mở: hỏi tin mới của hội thoại đang xem mỗi 3 giây, làm mới danh sách mỗi 6 giây
+  // Khi khung chat mở: hỏi tin mới của hội thoại đang xem mỗi 3 giây, làm mới danh sách mỗi 9 giây
   // (kể cả khi chưa chọn hội thoại nào, vd trên điện thoại đang ở danh sách).
   function startTimers() {
     if (st.timers.length) return;
@@ -124,7 +126,7 @@ export function initChat({ api, toast, userId, isManager }) {
     st.timers.push(setInterval(() => {
       if (root.hidden) { stopThread(); return; }
       if (document.visibilityState !== 'visible') return;
-      tick++; poll(); if (tick % 2 === 0) loadList();
+      tick++; poll(); if (tick % 3 === 0) loadList();
     }, 3_000));
   }
   function stopThread() { st.timers.forEach(clearInterval); st.timers = []; }

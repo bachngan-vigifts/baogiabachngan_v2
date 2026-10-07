@@ -18,7 +18,7 @@
 - **Tin chưa đọc**: số đỏ trên nút chat nổi, và số trên từng cuộc trò chuyện.
 - **Thông báo**: tin mới được đẩy qua Web Push. Tin nhắn không hiện trong chuông thông báo vì đã có hộp thư riêng.
 - **Cập nhật tin mới**: lấy theo chu kỳ, không cần tải lại trang.
-  - Khi khung chat mở: cuộc trò chuyện đang xem 3 giây một lần; danh sách cuộc trò chuyện 6 giây một lần, kể cả khi chưa chọn cuộc nào (điện thoại).
+  - Khi khung chat mở: cuộc trò chuyện đang xem 3 giây một lần; danh sách cuộc trò chuyện 9 giây một lần, kể cả khi chưa chọn cuộc nào (điện thoại).
   - Khi khung chat đóng: số trên nút chat 15 giây một lần; có tin mới thì hiện thông báo "Có N tin nhắn mới". Có Web Push thì cập nhật ngay.
   - Lượt hỏi lùi mốc 2 phút và bỏ trùng theo id, để không sót tin hai người gửi cùng lúc.
 - **Tốc độ**:
@@ -27,7 +27,10 @@
   - `POST /chat/direct` trả luôn tin nhắn + thông tin hội thoại, nên chọn người xong chỉ tốn một lượt gọi.
   - Danh bạ nhân viên được nạp sẵn khi mở khung chat, nên bấm "＋ Chat" là hiện danh sách ngay.
   - Gửi tin trả lời ngay; Web Push cho người nhận chạy nền (`EdgeRuntime.waitUntil`).
-  - Edge Function dùng chung kết nối CSDL trong cả isolate (không mở kết nối mới mỗi request).
+  - Edge Function dùng chung kết nối CSDL trong cả isolate, không mở kết nối mới mỗi request.
+    - CSDL chỉ có 60 kết nối và `SUPABASE_DB_URL` là kết nối trực tiếp, nên mỗi isolate giữ tối đa 1 kết nối, nhả sau 10 giây rảnh.
+    - CSDL báo hết chỗ kết nối thì chờ rồi thử lại tối đa 4 lần, lâu dần: 0,25 · 0,5 · 1 · 2 giây.
+  - Lượt làm mới danh sách bị lỗi mà danh sách đã có thì giữ danh sách cũ, không hiện khung lỗi.
 
 ## Cấu trúc
 | Phần | File |
