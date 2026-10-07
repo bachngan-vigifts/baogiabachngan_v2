@@ -3,6 +3,7 @@
 // Thêm một mục mới = thêm một phần tử vào TABS (key, nhãn, đếm số, hàm vẽ). Công thức lương ở src/modules/hr/domain/payroll.ts.
 // Manager: sửa lương, chấm công (bấm vào ngày), thêm thưởng / khấu trừ, chốt lương. Nhân viên: chỉ xem hồ sơ của mình.
 import { avAttr } from './avatars.js';
+import { SCHEME_LABEL, printPayslip, slipLines } from './payroll-ui.js';
 
 const ATT = { // khớp ATTENDANCE_STATUSES (hr/domain/payroll.ts)
   present: { label: 'Đủ công', short: '1', cls: 'att-present' }, half: { label: 'Nửa công', short: '½', cls: 'att-half' },
@@ -11,6 +12,7 @@ const ATT = { // khớp ATTENDANCE_STATUSES (hr/domain/payroll.ts)
 };
 const ATT_CYCLE = ['present', 'half', 'paid_leave', 'unpaid_leave', 'absent', ''];
 const ADJ = { bonus: ['Thưởng', 'ok'], allowance: ['Phụ cấp thêm', 'blue'], deduction: ['Khấu trừ / phạt', 'danger'], advance: ['Tạm ứng', 'warn'] };
+const RESP_MODE = { fixed: '/ tháng', per_day: '/ ngày công', prorated: '× ngày công / công chuẩn' };
 const SLIP = { estimate: ['Tạm tính', 'muted'], confirmed: ['Đã chốt', 'info'], paid: ['Đã trả', 'ok'] };
 const ROLE = { owner: ['Phụ trách', 'blue'], shared: ['Được chia sẻ', 'ok'], order: ['Có đơn', 'muted'] };
 const QUOTE_STATUS = { pending: ['Chờ duyệt', 'warn'], approved: ['Đã duyệt', 'ok'] };
@@ -88,20 +90,16 @@ export function initMemberDetail(deps) {
     return `<div class="md-pay-grid">
       <div class="md-slip">
         <div class="card-title-row"><h3>Phiếu lương ${esc(monthLabel(d.month).toLowerCase())}</h3>${pill(SLIP, s.status)}</div>
+        <p class="muted small md-scheme">${esc(SCHEME_LABEL[s.scheme] || SCHEME_LABEL.basic)}${s.kpiCv != null ? ` · KPI CV ${(s.kpiCv * 100).toFixed(1).replace('.0', '')}%` : ''}</p>
         <table class="md-slip-table"><tbody>
-          ${line('Lương theo ngày công', money(s.salaryByDays), '', `${money(s.baseSalary)} × ${s.workedDays} / ${s.standardDays} công`)}
-          ${line('Phụ cấp cố định', money(s.allowance))}
-          ${line('Phụ cấp thêm', money(s.extraAllowance))}
-          ${line('Thưởng', money(s.bonus))}
-          ${line('Hoa hồng', money(s.commission), '', `${s.commissionRate}% × doanh số ${money(s.revenue)}`)}
+          ${slipLines(s).filter(l => l.type === 'income').map(l => line(l.label, money(l.amount), '', l.note || '')).join('')}
           ${line('Tổng thu nhập', money(s.gross), 'sum')}
-          ${line('Khấu trừ / phạt', '−' + money(s.deduction), 'minus')}
-          ${line('Bảo hiểm (NV đóng)', '−' + money(s.insurance), 'minus')}
-          ${line('Tạm ứng', '−' + money(s.advance), 'minus')}
+          ${slipLines(s).filter(l => l.type === 'deduction').map(l => line(l.label, '−' + money(l.amount), 'minus', l.note || '')).join('')}
           ${line('Thực lĩnh', money(s.net), 'net')}
         </tbody></table>
         ${s.status === 'estimate' ? '<p class="muted small">Tạm tính theo dữ liệu hiện tại; số liệu cố định khi Manager chốt lương.</p>'
           : `<p class="muted small">Chốt ${esc(fmtDate(s.confirmedAt))}${s.paidAt ? ` · Đã trả ${esc(fmtDate(s.paidAt))}` : ''}${s.note ? ' · ' + esc(s.note) : ''}</p>`}
+        <div class="row-actions"><button type="button" class="btn secondary small" data-act="print-slip">In phiếu lương</button>${can() && pr.scheme !== 'basic' && edit ? '<button type="button" class="btn secondary small" data-act="inputs">Nhập số liệu tháng</button>' : ''}</div>
         ${can() ? `<div class="row-actions">${s.status === 'estimate' ? '<button type="button" class="btn primary small" data-act="confirm-slip">Chốt lương tháng</button>' : ''}
           ${s.status === 'confirmed' ? '<button type="button" class="btn primary small" data-act="paid-slip">Đánh dấu đã trả</button><button type="button" class="btn ghost small" data-act="reopen-slip">Mở lại</button>' : ''}</div>` : ''}
       </div>
@@ -112,7 +110,9 @@ export function initMemberDetail(deps) {
             ${edit ? `<button class="icon-btn" data-del-adj="${esc(a.id)}" title="Xoá" aria-label="Xoá khoản"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button>` : ''}</li>`).join('')}</ul>`
           : '<p class="muted cd-empty">Chưa có khoản nào trong tháng.</p>'}
         <div class="card-title-row md-gap"><h3>Mức lương áp dụng</h3>${can() ? '<button type="button" class="btn secondary small" data-act="salary">Sửa mức lương</button>' : ''}</div>
-        ${pr.effectiveMonth ? `<dl class="kv"><dt>Từ tháng</dt><dd>${esc(monthLabel(pr.effectiveMonth))}</dd><dt>Lương cơ bản</dt><dd class="num">${money(pr.baseSalary)}</dd>
+        ${pr.effectiveMonth ? `<dl class="kv"><dt>Từ tháng</dt><dd>${esc(monthLabel(pr.effectiveMonth))}</dd><dt>Cách tính</dt><dd>${esc(SCHEME_LABEL[pr.scheme] || SCHEME_LABEL.basic)}</dd><dt>Lương cơ bản</dt><dd class="num">${money(pr.baseSalary)}</dd>
+          ${pr.scheme !== 'basic' ? `<dt>Hệ số năng lực</dt><dd>${pr.params.capabilityCoef}</dd><dt>Trách nhiệm</dt><dd class="num">${money(pr.params.responsibility)}${RESP_MODE[pr.params.responsibilityMode] ? ' ' + RESP_MODE[pr.params.responsibilityMode] : ''}</dd>
+          <dt>Cơm + xăng</dt><dd>${pr.params.meal ? 'Có' : 'Không'}</dd>${pr.params.outputRate ? `<dt>Đơn giá sản lượng</dt><dd>${pr.params.outputRate < 1 ? (pr.params.outputRate * 100) + '%' : money(pr.params.outputRate)}</dd>` : ''}` : ''}
           <dt>Phụ cấp cố định</dt><dd class="num">${money(pr.allowance)}</dd><dt>Ngày công chuẩn</dt><dd>${pr.standardDays}</dd>
           <dt>Chỉ tiêu doanh số</dt><dd class="num">${pr.revenueTarget ? money(pr.revenueTarget) : '—'}</dd><dt>Hoa hồng</dt><dd>${pr.commissionRate}%</dd>
           <dt>Bảo hiểm NV đóng</dt><dd class="num">${money(pr.insurance)}</dd>${pr.note ? `<dt>Ghi chú</dt><dd>${esc(pr.note)}</dd>` : ''}</dl>`
@@ -219,19 +219,52 @@ export function initMemberDetail(deps) {
   const moneyInput = (name, label, v) => `<label>${esc(label)}<input name="${name}" data-money inputmode="numeric" value="${v ? Number(v).toLocaleString('vi-VN') : ''}" placeholder="0"></label>`;
 
   function editSalary() {
-    const p = st.d.payroll.profile;
+    const p = st.d.payroll.profile, params = p.params || {};
     dialog('Mức lương ' + st.d.member.name, `
       <label>Áp dụng từ tháng<input name="effectiveMonth" type="month" required value="${esc(st.month)}"></label>
       <label>Ngày công chuẩn<input name="standardDays" type="number" min="1" max="31" step="0.5" value="${p.standardDays || 26}"></label>
       ${moneyInput('baseSalary', 'Lương cơ bản', p.baseSalary)}${moneyInput('allowance', 'Phụ cấp cố định / tháng', p.allowance)}
       ${moneyInput('revenueTarget', 'Chỉ tiêu doanh số / tháng', p.revenueTarget)}
       <label>Hoa hồng (% doanh số)<input name="commissionRate" type="number" min="0" max="100" step="0.1" value="${p.commissionRate || 0}"></label>
-      ${moneyInput('insurance', 'Bảo hiểm NV đóng / tháng', p.insurance)}
+      ${moneyInput('insurance', 'Bảo hiểm (BHXH) NV đóng / tháng', p.insurance)}
+      <label class="span-2">Cách tính lương<select name="scheme">${Object.entries(SCHEME_LABEL).map(([k, t]) => `<option value="${k}"${(p.scheme || 'basic') === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+      <fieldset class="span-2 form-grid cols-2 md-scheme-box"><legend>Bảng lương Sale / Bách Ngân / Lock</legend>
+        <label>Hệ số năng lực<input name="capabilityCoef" type="number" min="0" step="0.5" value="${params.capabilityCoef || 0}"></label>
+        <label>Trách nhiệm tính theo<select name="responsibilityMode">${Object.entries(RESP_MODE).map(([k, t]) => `<option value="${k}"${params.responsibilityMode === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+        ${moneyInput('responsibility', 'Trách nhiệm (số tiền)', params.responsibility)}
+        <label>Đơn giá / tỷ lệ thưởng sản lượng<input name="outputRate" type="number" min="0" step="any" value="${params.outputRate || 0}" placeholder="VD 15000 hoặc 0.005"></label>
+        <label class="check span-2"><input name="meal" type="checkbox"${params.meal ? ' checked' : ''}> Hưởng phụ cấp cơm + xăng</label>
+      </fieldset>
       <label class="span-2">Ghi chú<input name="note" maxlength="500" value="${esc(p.note || '')}"></label>
       <p class="muted small span-2">Mức lương áp dụng từ tháng đã chọn cho tới khi có mức mới. Các tháng đã chốt lương không đổi.</p>`, 'Lưu mức lương', f =>
       api(base() + '/salary', 'PUT', { effectiveMonth: f.effectiveMonth.value, standardDays: Number(f.standardDays.value), baseSalary: digits(f.baseSalary.value),
-        allowance: digits(f.allowance.value), revenueTarget: digits(f.revenueTarget.value), commissionRate: Number(f.commissionRate.value), insurance: digits(f.insurance.value), note: f.note.value })
+        allowance: digits(f.allowance.value), revenueTarget: digits(f.revenueTarget.value), commissionRate: Number(f.commissionRate.value), insurance: digits(f.insurance.value), note: f.note.value,
+        scheme: f.scheme.value, params: { capabilityCoef: Number(f.capabilityCoef.value) || 0, responsibility: digits(f.responsibility.value), responsibilityMode: f.responsibilityMode.value, meal: f.meal.checked, outputRate: Number(f.outputRate.value) || 0 } })
         .then(() => toast('Đã lưu mức lương.')));
+  }
+  // Số liệu nhập mỗi tháng cho bảng lương Sale / Bách Ngân / Lock (KPI, DS, tăng ca…); để trống = không có.
+  const INPUT_FIELDS = {
+    sale: [['kpiOverride', 'KPI CV chốt (%)', 'pct'], ['kpiNewCustomers', 'KH mới thực hiện'], ['kpiTransactions', 'Giao dịch thực hiện'], ['kpiContracts', 'Số hợp đồng thực hiện'], ['kpiHangDays', 'Ngày làm hàng / công tác'],
+      ['revenue', 'DS tháng (để trống = doanh số hệ thống)', 'money'], ['outputQty', 'Sản lượng tháng (đơn / lượt / DS web)'], ['quarterBonus', 'Thưởng quý', 'money'], ['otherBonus', 'Thưởng khác', 'money'],
+      ['overtimeHours', 'Giờ tăng ca'], ['businessTrip', 'Công tác phí', 'money'], ['phone', 'Phụ cấp điện thoại', 'money'], ['phoneAdvance', 'Tạm ứng điện thoại', 'money'], ['violation', 'Vi phạm (trừ)', 'money'], ['mealDeductDays', 'Số ngày trừ cơm']],
+    bachngan: [['revenue', 'DS thực hiện trong tháng (để trống = doanh số hệ thống)', 'money'], ['avgRevenue6', 'DS trung bình 6 tháng', 'money'], ['attendanceBonus', 'Chuyên cần', 'money'], ['otherBonus', 'Thưởng khác', 'money'],
+      ['overtimeHours', 'Giờ làm thêm'], ['phone', 'Phụ cấp điện thoại', 'money'], ['bhyt', 'BHYT', 'money'], ['tncn', 'TNCN', 'money'], ['mealDeductDays', 'Số ngày trừ cơm']],
+    lock: [['revenue', 'DS thực hiện trong tháng của team (để trống = doanh số hệ thống)', 'money'], ['attendanceBonus', 'Chuyên cần', 'money'], ['businessTrip', 'Công tác phí', 'money'], ['otherBonus', 'Thưởng khác', 'money'],
+      ['overtimeHours', 'Giờ làm thêm'], ['bhyt', 'BHYT', 'money'], ['tncn', 'TNCN', 'money'], ['mealDeductDays', 'Số ngày trừ cơm']],
+  };
+  function editInputs() {
+    const scheme = st.d.payroll.profile.scheme, fields = INPUT_FIELDS[scheme] || [], cur = st.d.payroll.inputs || {};
+    const field = ([k, label, kind]) => kind === 'money' ? moneyInput(k, label, cur[k])
+      : `<label>${esc(label)}<input name="${k}" type="number" min="0" step="any" value="${cur[k] === undefined ? '' : kind === 'pct' ? Math.round(cur[k] * 10000) / 100 : cur[k]}"></label>`;
+    dialog(`Số liệu ${monthLabel(st.month).toLowerCase()} · ${st.d.member.name}`, fields.map(field).join('') +
+      '<p class="muted small span-2">Ngày công lấy từ chấm công, thưởng / phạt / tạm ứng lấy từ mục bên cạnh. Chỉ nhập các khoản có phát sinh; để trống là không có.</p>', 'Lưu số liệu', f => {
+      const inputs = {};
+      for (const [k, , kind] of fields) {
+        const raw = f[k].value.trim(); if (raw === '') continue;
+        inputs[k] = kind === 'money' ? digits(raw) : kind === 'pct' ? Number(raw) / 100 : Number(raw);
+      }
+      return api(`${base()}/inputs/${st.month}`, 'PUT', { inputs }).then(() => toast('Đã lưu số liệu tháng.'));
+    });
   }
   function addAdjustment() {
     dialog('Thêm khoản ' + monthLabel(st.month).toLowerCase(), `
@@ -273,6 +306,8 @@ export function initMemberDetail(deps) {
       else if (act === 'photo') { if (await deps.onPhoto(m)) reload(); }
       else if (act === 'salary') editSalary();
       else if (act === 'add-adj') addAdjustment();
+      else if (act === 'inputs') editInputs();
+      else if (act === 'print-slip') printPayslip({ member: m, month: st.month, slip: st.d.payroll.payslip, words: deps.moneyWords });
       else if (act === 'fill-days') {
         const done = new Set(st.d.payroll.attendance.map(a => a.date)), days = {};
         for (let i = 1; i <= st.d.payroll.attendanceSummary.daysInMonth; i++) {

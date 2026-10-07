@@ -48,13 +48,39 @@ Thực lĩnh           = Tổng thu nhập − Khấu trừ − Bảo hiểm (NV
 - **Mức lương theo tháng áp dụng:** tháng X dùng bản có `effective_month` mới nhất ≤ X. Tăng lương thì thêm bản mới, các tháng cũ không đổi.
 - **Chốt lương:** lưu một bản chụp số liệu vào `hr_payslips` và khoá ngày công / thưởng phạt của tháng. Muốn sửa thì "Mở lại" (chỉ khi chưa trả). "Đánh dấu đã trả" thì không mở lại được nữa.
 
-## Cấu trúc dữ liệu (migration `0027_hr_payroll.sql`, phân quyền `0028_supabase_access_hr_payroll.sql`)
+## Bảng lương Sale / Bách Ngân / Lock (`computePayroll` trong `payroll.ts`)
+Mỗi mức lương áp dụng có **cách tính** (`scheme`): `basic` (như trên, mặc định), `sale`, `bachngan`, `lock`. Công thức chuyển từ 3 sheet LƯƠNG SALE / BÁCH NGÂN / LOCK của file Excel; mọi mức và tỷ lệ nằm trong hằng `PAY` (một chỗ sửa). `payroll.test.ts` đối chiếu từng số "Thực nhận" tháng 9/2026 với file Excel.
+
+| Khoản | Công thức |
+|---|---|
+| Lương theo công | Lương cơ bản × ngày công ÷ công chuẩn (ngày công lấy từ chấm công) |
+| Phụ cấp năng lực | Hệ số năng lực × 200.000 |
+| Trách nhiệm | Cố định / đơn giá × ngày công (20.000 ở Bách Ngân, Lock) / số tiền × ngày công ÷ công chuẩn |
+| Cơm + xăng | 50.000 × (ngày công − ngày trừ cơm); chỉ người được đánh dấu hưởng. Ngày trừ cơm mặc định: Sale 0, Bách Ngân 1, Lock 0 |
+| Thưởng Sale | KPI CV ≥ 90%: DS × 1,2%; 60–<90%: DS × 0,5%; <60%: 0 |
+| Thưởng Bách Ngân | DS tháng > 300tr: ≥100% DS TB 6 tháng → 1%; ≥85% → 0,5%; chia 2 |
+| Thưởng Lock | DS team < 85% × 300tr → 0; ≥ 310tr → 1,5%; còn lại 1%; chia 2 |
+| Thưởng sản lượng | Sản lượng × đơn giá (kho 15.000, TK 30.000) hoặc × tỷ lệ (IT-Web 0,5%) |
+| Tăng ca | Lương cơ bản ÷ 24 ÷ 8 × giờ × 2 (Lock tính trên lương theo công) |
+| Khấu trừ | BHXH (mức lương), BHYT, TNCN, vi phạm, tạm ứng; Sale: cấn trừ điện thoại = số lớn hơn giữa phụ cấp ĐT và tạm ứng ĐT |
+
+KPI CV của Sale (sheet KPI CV): KH mới (vượt 96 → 20%), giao dịch (tối đa 30%), số HĐ (tối đa 10%), DS cá nhân 415tr (50%, không giới hạn); mỗi ngày làm hàng / công tác cộng 4 KH mới và 10 giao dịch. Manager có thể nhập số thực hiện (hệ thống tính KPI) hoặc chốt thẳng KPI CV.
+
+**Số liệu nhập theo tháng** (nút *Nhập số liệu tháng* ở tab Lương & thưởng, chỉ Manager, khoá khi đã chốt): KPI, DS tháng (để trống = doanh số hệ thống), DS trung bình 6 tháng, sản lượng, thưởng quý / khác, giờ tăng ca, chuyên cần, công tác phí, điện thoại, vi phạm, BHYT, TNCN, số ngày trừ cơm. Thưởng / phụ cấp thêm / khấu trừ / tạm ứng nhập ở mục bên cạnh vẫn được cộng vào.
+
+## In phiếu lương và tải bảng lương tổng
+- **In phiếu lương:** nút ở tab *Lương & thưởng* (Manager và chính nhân viên đó). Mở hộp thoại in của trình duyệt (A4 dọc, lưu được PDF). Phiếu đã chốt in đúng từng dòng lúc chốt.
+- **Tải bảng lương tổng:** trang *Nhân viên* (Manager) → chọn tháng → *Tải bảng lương tổng*. File Excel, mỗi nhân viên một dòng, mỗi khoản một cột, tổng cộng bằng công thức SUM. Chỉ gồm nhân viên đang làm đã được đặt mức lương; phiếu đã chốt lấy số chốt, chưa chốt lấy số tạm tính.
+- API: `GET /hr/payroll/:month` (Manager), `PUT /hr/members/:id/inputs/:month`.
+
+## Cấu trúc dữ liệu (migration `0027_hr_payroll.sql`, phân quyền `0028_supabase_access_hr_payroll.sql`; bảng lương theo nhóm: `0029_hr_payroll_schemes.sql`, `0030_supabase_access_hr_month_inputs.sql`)
 | Bảng | Khoá | Nội dung |
 |---|---|---|
-| `hr_salary_profiles` | (member_id, effective_month) | Lương cơ bản, phụ cấp cố định, ngày công chuẩn, chỉ tiêu doanh số, % hoa hồng, bảo hiểm NV đóng |
+| `hr_salary_profiles` | (member_id, effective_month) | Lương cơ bản, phụ cấp cố định, ngày công chuẩn, chỉ tiêu doanh số, % hoa hồng, bảo hiểm NV đóng, cách tính (`scheme`), tham số bảng lương (`params` JSON) |
+| `hr_month_inputs` | (member_id, month) | Số liệu nhập theo tháng cho bảng lương Sale / Bách Ngân / Lock (JSON) |
 | `hr_attendance` | (member_id, work_date) | Trạng thái ngày công, người chấm |
 | `hr_adjustments` | id | Thưởng / phụ cấp thêm / khấu trừ / tạm ứng theo tháng, lý do, người nhập |
-| `hr_payslips` | (member_id, month) | Phiếu lương đã chốt (mọi con số) + trạng thái đã chốt / đã trả |
+| `hr_payslips` | (member_id, month) | Phiếu lương đã chốt (mọi con số + cách tính + từng dòng `lines`) + trạng thái đã chốt / đã trả |
 
 Mọi bảng tham chiếu `staff_members`. Giá trị trạng thái và loại khoản có ràng buộc CHECK ở DB.
 

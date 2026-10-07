@@ -469,7 +469,10 @@
     <section class="view" id="view-staff" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Quản trị</span><h1>Nhân viên</h1><p class="muted">Tạo tài khoản, phân chức vụ, cấp lại liên kết đặt mật khẩu.</p></div>
-        <button class="btn primary" id="new-member"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Thêm nhân viên</button>
+        <div class="row-gap head-actions">
+          <span class="payroll-export" title="Tải bảng lương tổng (Excel) của tháng"><input type="month" id="payroll-month" aria-label="Tháng bảng lương"><button type="button" class="btn secondary" id="payroll-download">Tải bảng lương tổng</button></span>
+          <button class="btn primary" id="new-member"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Thêm nhân viên</button>
+        </div>
       </div>
       <div class="stats" id="sapo-sync" aria-label="Đồng bộ từ Sapo">
         <article class="stat"><small>Đồng bộ Sapo</small><strong id="sync-state">–</strong><span class="muted" id="sync-note"></span>

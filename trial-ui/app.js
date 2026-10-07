@@ -11,6 +11,7 @@ import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
+import { downloadPayrollExcel } from './payroll-ui.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -1782,7 +1783,7 @@ async function reviewCustomer(id, approve) {
 /** Trang chi tiết nhân viên (trial-ui/member-detail.js): KPI, khách, báo giá, đơn, HĐKT, giao dịch, công nợ, ngày công, lương. */
 var memberUi = null; // eslint-disable-line no-var
 function memberDetail() {
-  return memberUi ||= initMemberDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, initials, ORDER_STATUS, CONTRACT_STATUS,
+  return memberUi ||= initMemberDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, initials, ORDER_STATUS, CONTRACT_STATUS, moneyWords,
     onEdit: async m => { if (!state.members?.some(x => x.id === m.id)) await loadMembers(); openMember(m.id); },
     onPhoto: async m => {
       const key = await uploadAvatar(m.id === state.user.id ? '/avatar' : `/admin/members/${encodeURIComponent(m.id)}/avatar`); if (!key) return false;
@@ -1852,6 +1853,19 @@ function renderMembers() {
   $('#member-empty').hidden = list.length > 0;
   $('#member-table').hidden = list.length === 0;
 }
+// Manager tải bảng lương tổng (Excel) của tháng chọn: mọi nhân viên, phiếu đã chốt hoặc tạm tính.
+const payrollMonth = $('#payroll-month');
+payrollMonth.value ||= new Date().toISOString().slice(0, 7);
+$('#payroll-download').addEventListener('click', async e => {
+  const btn = e.currentTarget, month = payrollMonth.value;
+  if (!/^\d{4}-\d{2}$/.test(month)) return toast('Chọn tháng cần tải.', 'err');
+  btn.disabled = true;
+  try {
+    const data = await api('/hr/payroll/' + month);
+    if (!data.rows.length) return toast('Tháng này chưa có nhân viên nào được đặt mức lương.', 'err');
+    await downloadPayrollExcel(data); toast(`Đã tải bảng lương tháng ${Number(month.slice(5))}/${month.slice(0, 4)}.`);
+  } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+});
 $('#member-search').addEventListener('input', e => { state.memberQuery = e.target.value; renderMembers(); });
 $('#member-filter').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
