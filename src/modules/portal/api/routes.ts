@@ -279,8 +279,9 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const customerId = str(body.customerId, 80), name = str(body.name, 200), email = str(body.email, 254).toLowerCase();
     if (!name || !EMAIL.test(email)) throw new AppError(400, 'Nhập tên và email hợp lệ của người dùng phía khách hàng.');
     const phone = await loginPhone(db, body.phone);
-    const [cust] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, customerId)).limit(1);
+    const [cust] = await db.select({ id: customers.id, approvalStatus: customers.approvalStatus }).from(customers).where(eq(customers.id, customerId)).limit(1);
     if (!cust) throw new AppError(404, 'Không tìm thấy khách hàng.');
+    if (cust.approvalStatus === 'pending') throw new AppError(409, 'Khách hàng đang chờ Manager duyệt, chưa cấp tài khoản được.', 'CUSTOMER_PENDING');
     const ownerId = mgr && body.ownerId ? str(body.ownerId, 80) : me.id;
     const [owner] = await db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, ownerId), eq(employees.active, true), inArray(employees.role, ['manager', 'employee']))).limit(1);
     if (!owner) throw new AppError(400, 'Nhân viên phụ trách không hợp lệ.');

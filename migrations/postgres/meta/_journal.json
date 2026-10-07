@@ -92,6 +92,20 @@
       "when": 1791352014524,
       "tag": "0022_customer_staff_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791369276663,
+      "tag": "0024_approvals_member_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791370307521,
+      "tag": "0025_staff_avatars",
+      "breakpoints": true
     }
   ]
 }

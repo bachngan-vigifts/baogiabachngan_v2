@@ -93,7 +93,10 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
   if (!lines.length) throw new AppError(400, 'Báo giá chưa có dòng sản phẩm nào có số lượng.');
   const t = orderTotals(lines), today = vietnamDate().iso, now = nowIso(), id = crypto.randomUUID();
-  const customerId = data.customerId && (await db.select({ id: customers.id }).from(customers).where(eq(customers.id, data.customerId)).limit(1)).length ? data.customerId : null;
+  const [cust] = data.customerId ? await db.select({ id: customers.id, name: customers.name, approvalStatus: customers.approvalStatus }).from(customers).where(eq(customers.id, data.customerId)).limit(1) : [];
+  // Khách mới do nhân viên tạo phải được Manager duyệt mới đặt hàng được.
+  if (cust?.approvalStatus === 'pending') throw new AppError(409, `Khách hàng "${cust.name}" đang chờ Manager duyệt, chưa tạo đơn được.`, 'CUSTOMER_PENDING');
+  const customerId = cust ? cust.id : null;
   await db.transaction(async tx => {
     const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
     await tx.insert(salesOrders).values({

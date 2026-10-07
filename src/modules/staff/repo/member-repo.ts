@@ -1,4 +1,4 @@
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { credentials, employees, positions, sessions, staffSapoLinks } from '../schema.ts';
 import type { Role } from '../domain/roles.ts';
@@ -10,9 +10,9 @@ const actorIsManager = (actorId: string) =>
 export async function listMembers(db: AnyDb) {
   const members = await db.select({
     id: employees.id, name: employees.name, email: employees.email, phone: employees.phone, role: employees.role,
-    positionId: employees.positionId, active: employees.active,
+    positionId: employees.positionId, active: employees.active, avatar: employees.avatarKey,
     activated: sql<number>`CASE WHEN ${credentials.passwordHash} IS NULL THEN 0 ELSE 1 END`,
-  }).from(employees).leftJoin(credentials, eq(credentials.memberId, employees.id)).where(ne(employees.role, 'customer')).orderBy(asc(employees.id));
+  }).from(employees).leftJoin(credentials, eq(credentials.memberId, employees.id)).where(and(ne(employees.role, 'customer'), isNull(employees.deletedAt))).orderBy(asc(employees.id));
   // Tài khoản khách hàng quản lý ở trang Khách hàng, không nằm trong danh sách nhân viên / chức vụ chọn được.
   const list = await db.select({ id: positions.id, name: positions.name }).from(positions).where(ne(positions.id, 'customer')).orderBy(asc(positions.name));
   return { members: members.map(m => ({ ...m, active: m.active ? 1 : 0 })), positions: list };
@@ -64,6 +64,22 @@ export async function deactivateMember(db: AnyDb, actorId: string, id: string): 
     const rows = await tx.update(employees).set({ active: false })
       .where(and(eq(employees.id, id), ne(employees.id, actorId), actorIsManager(actorId))).returning({ id: employees.id });
     if (rows.length) await tx.delete(sessions).where(eq(sessions.memberId, id));
+    return rows.length;
+  });
+}
+
+/**
+ * Xoá nhân viên khỏi danh sách: khoá, đăng xuất mọi nơi, đánh dấu đã xoá và giải phóng email (đổi thành địa chỉ nội bộ)
+ * để tạo lại tài khoản cùng email được. Giữ dòng để báo giá / đơn / lịch sử cũ vẫn hiện đúng tên người làm.
+ */
+export async function deleteMember(db: AnyDb, actorId: string, id: string, now: string): Promise<number> {
+  return db.transaction(async tx => {
+    const rows = await tx.update(employees).set({ active: false, deletedAt: now, email: sql`'da-xoa+' || ${employees.id} || '@bachngan.invalid'` })
+      .where(and(eq(employees.id, id), ne(employees.id, actorId), ne(employees.role, 'customer'), isNull(employees.deletedAt), actorIsManager(actorId))).returning({ id: employees.id });
+    if (rows.length) {
+      await tx.delete(sessions).where(eq(sessions.memberId, id));
+      await tx.update(credentials).set({ passwordHash: null, activationHash: null, activationExpires: null, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, id));
+    }
     return rows.length;
   });
 }

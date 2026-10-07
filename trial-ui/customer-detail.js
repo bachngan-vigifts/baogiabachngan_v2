@@ -58,7 +58,7 @@ export function initCustomerDetail(deps) {
 
   // ----- Vẽ
   function render() {
-    const d = st.d, c = d.customer, s = d.stats, a = d.access;
+    const d = st.d, c = d.customer, s = d.stats, a = d.access, pending = c.approvalStatus === 'pending';
     const contacts = d.contacts.map(x => `<li class="cd-contact"><span><b>${esc(x.name)}</b>${x.isPrimary ? ' <span class="pill blue">Liên hệ chính</span>' : ''}
         <small>${esc([x.title, x.phone, x.email].filter(Boolean).join(' · ')) || '—'}</small>${x.note ? `<small class="muted">${esc(x.note)}</small>` : ''}</span>
         <span class="row-actions"><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
@@ -67,9 +67,12 @@ export function initCustomerDetail(deps) {
     root.innerHTML = `
       <div class="editor-head">
         <div class="editor-title"><a class="btn ghost small" href="#/customers">‹ Khách hàng</a><h1>${esc(c.name)}</h1>
-          <span class="pill ${c.fromSapo ? 'blue' : 'off'}">${c.fromSapo ? 'Sapo' : 'Tạo trên web'}</span></div>
-        <div class="editor-actions"><button class="btn secondary" data-act="edit">Sửa thông tin</button><button class="btn primary" data-act="quote">＋ Báo giá</button></div>
+          <span class="pill ${c.fromSapo ? 'blue' : 'off'}">${c.fromSapo ? 'Sapo' : 'Tạo trên web'}</span>${pending ? '<span class="pill warn">Chờ duyệt</span>' : ''}</div>
+        <div class="editor-actions"><button class="btn secondary" data-act="edit">Sửa thông tin</button>${pending ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
       </div>
+      ${pending ? `<div class="approval-box"><div class="approval-head"><b>Khách hàng mới đang chờ Manager duyệt</b><small class="muted">Chưa lập báo giá, đặt hàng hay cấp tài khoản cho khách này được tới khi được duyệt.</small></div>
+        <div class="row-actions">${deps.isManager() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt khách hàng</button>' : ''}
+        <button type="button" class="btn ghost small danger-text" data-act="reject">${deps.isManager() ? 'Từ chối' : 'Xoá'}</button></div></div>` : ''}
       <div class="stats cd-stats">
         <article class="stat"><small>Doanh số</small><strong>${money(s.revenue)}</strong><span class="muted">${s.orders} đơn đã xác nhận</span></article>
         <article class="stat"><small>Đã thu</small><strong class="paid-text">${money(s.paid)}</strong><span class="muted">Phải thu ${money(s.due)}</span></article>
@@ -175,6 +178,7 @@ export function initCustomerDetail(deps) {
     const act = t.closest('[data-act]')?.dataset.act, c = st.d?.customer;
     if (act === 'edit') return deps.onEdit(c);
     if (act === 'quote') return deps.onQuote(c);
+    if (act === 'approve' || act === 'reject') return deps.onReview(c.id, act === 'approve');
     if (act === 'accounts') return deps.onAccounts(c);
     if (act === 'contact') return contactDialog(null);
     if (act === 'staff') return staffDialog();

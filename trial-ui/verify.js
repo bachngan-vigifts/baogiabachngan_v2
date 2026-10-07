@@ -1,6 +1,6 @@
 // Bước xác thực dùng chung (trang nhân viên + trang khách): hiện tóm tắt các thông tin quan trọng kèm danh sách ô kiểm;
 // chỉ bấm được nút đồng ý khi đã đánh dấu đủ tất cả. Trả về giá trị các ô nhập thêm (vd. ngày giao) hoặc null nếu huỷ.
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /** Hạn giao theo số ngày còn lại: quá hạn / hôm nay (đỏ), ≤ 3 ngày (cam), ≤ 7 ngày (xanh dương), xa hơn (xanh lá); đã giao = xám. */
 export function dueInfo(date, today = new Date()) {

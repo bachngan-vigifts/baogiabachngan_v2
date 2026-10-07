@@ -15,6 +15,10 @@ export const employees = pgTable('staff_members', {
   positionId: text('position_id').references(() => positions.id),
   active: boolean('active').notNull().default(true),
   createdAt: text('created_at').notNull(),
+  /** Đã xoá khỏi danh sách nhân viên (giữ dòng để lịch sử báo giá / đơn vẫn hiện đúng tên). */
+  deletedAt: text('deleted_at'),
+  /** Mã ảnh đại diện hiện tại (đổi mỗi lần tải ảnh mới → trình duyệt tự lấy ảnh mới); null = dùng chữ viết tắt. */
+  avatarKey: text('avatar_key'),
 }, t => [uniqueIndex('idx_members_email').on(sql`lower(${t.email})`), uniqueIndex('idx_members_identity').on(t.identityId), index('idx_members_position').on(t.positionId)]).enableRLS();
 export const credentials = pgTable('staff_credentials', {
   memberId: text('member_id').primaryKey().references(() => employees.id),
@@ -38,3 +42,10 @@ export const setup = pgTable('staff_setup', { id: text('id').primaryKey() }).ena
 export const staffSapoLinks = pgTable('staff_sapo_links', {
  sapoId:text('sapo_id').primaryKey(),memberId:text('member_id').notNull().references(()=>employees.id),createdAt:text('created_at').notNull(),evidence:text('evidence').notNull(),
 },t=>[uniqueIndex('idx_staff_sapo_member').on(t.memberId)]).enableRLS();
+/** Ảnh đại diện nhân viên (đã thu nhỏ ở trình duyệt, ~10 KB): một ảnh / người, `key` khớp `staff_members.avatar_key`. */
+export const staffAvatars = pgTable('staff_avatars', {
+  memberId: text('member_id').primaryKey().references(() => employees.id),
+  key: text('key').notNull(),
+  dataUrl: text('data_url').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [uniqueIndex('idx_staff_avatars_key').on(t.key)]).enableRLS();

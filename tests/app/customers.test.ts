@@ -66,6 +66,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   const doc = { type: 'B2B', quoteNo: 'B2B_BG20261007_001', customer: 'Công ty Hoàng Long', customerId: k.data.id, vat: 8,
     rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8 }] };
   const q = await call('/quotes', emp, 'POST', doc);
+  assert.equal((await call(`/customers/${k.data.id}/approve`, mgr, 'POST', {})).status, 200, 'khách nhân viên tạo: Manager duyệt mới lập đơn được');
   await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
 

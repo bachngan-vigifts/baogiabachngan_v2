@@ -1,11 +1,12 @@
 // TIN NHẮN nội bộ giữa nhân viên: nút chat nổi góc dưới phải mở khung chat (danh sách hội thoại 1-1 + nhóm bên trái, khung chat bên phải).
 // Cập nhật: khung đang mở hỏi tin mới mỗi 3 giây; danh sách mỗi 10 giây; huy hiệu menu mỗi 20 giây (+ Web Push khi có tin).
 import { ding, setBadgePart } from './alert.js';
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { avAttr } from './avatars.js';
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = name => String(name || '?').trim().split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
 const AVATAR = ['#2459a9', '#12805c', '#a86400', '#6b3fb4', '#0e6a91', '#b4232c', '#4338ca', '#0f766e'];
 const color = id => AVATAR[[...String(id)].reduce((s, ch) => s + ch.charCodeAt(0), 0) % AVATAR.length];
-const avatar = (id, name, group) => `<span class="chat-avatar ${group ? 'group' : ''}" style="background:${group ? '#3c4a63' : color(id)}">${group ? '👥' : esc(initials(name))}</span>`;
+const avatar = (id, name, group, key) => `<span class="chat-avatar ${group ? 'group' : ''}"${group ? '' : avAttr(key)} style="background-color:${group ? '#3c4a63' : color(id)}">${group ? '👥' : esc(initials(name))}</span>`;
 const vnDay = iso => new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso));
 const vnTime = iso => new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 function when(iso) {
@@ -22,6 +23,8 @@ const linkify = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" targe
  * Trả về { show(id?), hide(), open(id), badge(), refresh(), startBadge(), stop() }.
  */
 export function initChat({ api, toast, userId, isManager }) {
+  /** Người còn lại trong chat 1-1 (để lấy màu + ảnh đại diện). */
+  const other = c => c.members.find(m => m.id !== userId()) || { id: c.id };
   const root = document.getElementById('view-chat'), q = s => root.querySelector(s);
   const st = { list: [], active: null, messages: [], reads: [], last: null, people: null, filter: '', timers: [], loading: false, cache: new Map() };
 
@@ -52,7 +55,7 @@ export function initChat({ api, toast, userId, isManager }) {
   function renderList() {
     const f = st.filter.toLowerCase(), items = st.list.filter(c => !f || c.title.toLowerCase().includes(f) || c.members.some(m => m.name.toLowerCase().includes(f)));
     q('#chat-list').innerHTML = items.length ? items.map(c => `<li><button type="button" class="chat-item ${c.id === st.active?.id ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-conv="${esc(c.id)}">
-      ${avatar(c.members.find(m => m.id !== userId())?.id || c.id, c.title, c.kind === 'group')}
+      ${avatar(other(c).id, c.title, c.kind === 'group', other(c).avatar)}
       <span class="chat-item-main"><span class="chat-item-top"><b>${esc(c.title)}</b><small>${when(c.last?.at || c.lastMessageAt)}</small></span>
       <span class="chat-item-last">${c.last ? (c.last.mine ? 'Bạn: ' : c.kind === 'group' && c.last.by ? esc(c.last.by.split(' ').pop()) + ': ' : '') + esc(c.last.body) : '<i>Chưa có tin nhắn</i>'}</span></span>
       ${c.unread ? `<span class="chat-unread">${c.unread}</span>` : ''}</button></li>`).join('')
@@ -64,7 +67,7 @@ export function initChat({ api, toast, userId, isManager }) {
     const c = st.active, box = q('#chat-messages');
     if (!c) { q('#chat-thread').hidden = true; q('#chat-placeholder').hidden = false; root.classList.remove('thread-open'); return; }
     q('#chat-thread').hidden = false; q('#chat-placeholder').hidden = true; root.classList.add('thread-open');
-    q('#chat-title').innerHTML = `${avatar(c.members.find(m => m.id !== userId())?.id || c.id, c.title, c.kind === 'group')}<span><b>${esc(c.title)}</b><small>${c.kind === 'group' ? `${c.members.length} thành viên` : 'Tin nhắn riêng'}</small></span>`;
+    q('#chat-title').innerHTML = `${avatar(other(c).id, c.title, c.kind === 'group', other(c).avatar)}<span><b>${esc(c.title)}</b><small>${c.kind === 'group' ? `${c.members.length} thành viên` : 'Tin nhắn riêng'}</small></span>`;
     q('#chat-manage').hidden = c.kind !== 'group';
     const me = userId(); let day = '', prev = null;
     const lastMine = [...st.messages].reverse().find(m => m.memberId === me);
@@ -77,7 +80,7 @@ export function initChat({ api, toast, userId, isManager }) {
       if (system) { prev = null; return html + `<div class="chat-system">${esc(m.body)} · ${vnTime(m.createdAt)}</div>`; }
       // Tin liền nhau (cùng người, cách < 5 phút) gộp thành một cụm: chỉ tin đầu hiện ảnh + tên.
       const grouped = prev && prev.memberId === m.memberId && vnDay(prev.createdAt) === d && Date.parse(m.createdAt) - Date.parse(prev.createdAt) < 5 * 60_000; prev = m;
-      return html + `<div class="chat-msg ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''}">${!mine && !grouped ? avatar(m.memberId, m.name) : '<span class="chat-avatar-space"></span>'}
+      return html + `<div class="chat-msg ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''}">${!mine && !grouped ? avatar(m.memberId, m.name, false, m.avatar) : '<span class="chat-avatar-space"></span>'}
         <div class="chat-bubble-wrap">${!mine && !grouped && c.kind === 'group' ? `<small class="chat-name">${esc(m.name)}</small>` : ''}<div class="chat-bubble" title="${esc(new Date(m.createdAt).toLocaleString('vi-VN'))}">${linkify(m.body)}<small>${vnTime(m.createdAt)}</small></div>
         ${seen && m === lastMine ? '<small class="chat-seen">Đã xem</small>' : ''}</div></div>`;
     }).join('');
@@ -176,7 +179,7 @@ export function initChat({ api, toast, userId, isManager }) {
     dlg.innerHTML = `<form method="dialog"><div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body">${withTitle ? `<label class="chat-field"><span>Tên nhóm</span><input name="title" maxlength="120" value="${esc(initialTitle)}" placeholder="Ví dụ: Đơn Tết 2027" required></label>` : ''}
         <input type="search" class="chat-pick-search" placeholder="Tìm nhân viên…" aria-label="Tìm nhân viên">
-        <ul class="chat-pick-list">${list.map(p => `<li><label>${multi ? `<input type="checkbox" value="${esc(p.id)}">` : ''}${avatar(p.id, p.name)}<span>${esc(p.name)}</span>${multi ? '' : `<button type="button" class="btn secondary small" data-pick="${esc(p.id)}">Nhắn</button>`}</label></li>`).join('') || '<li class="muted">Không còn ai để thêm.</li>'}</ul></div>
+        <ul class="chat-pick-list">${list.map(p => `<li><label>${multi ? `<input type="checkbox" value="${esc(p.id)}">` : ''}${avatar(p.id, p.name, false, p.avatar)}<span>${esc(p.name)}</span>${multi ? '' : `<button type="button" class="btn secondary small" data-pick="${esc(p.id)}">Nhắn</button>`}</label></li>`).join('') || '<li class="muted">Không còn ai để thêm.</li>'}</ul></div>
       ${multi ? `<div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button type="submit" class="btn primary">${esc(ok)}</button></div>` : ''}</form>`;
     document.body.append(dlg); dlg.showModal();
     return new Promise(resolve => {
@@ -207,7 +210,7 @@ export function initChat({ api, toast, userId, isManager }) {
     const dlg = document.createElement('dialog'); dlg.className = 'modal narrow chat-pick';
     const canEdit = c.createdBy === userId() || isManager();
     dlg.innerHTML = `<div class="modal-head"><h2>Nhóm: ${esc(c.title)}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
-      <div class="modal-body"><ul class="chat-pick-list">${c.members.map(m => `<li><label>${avatar(m.id, m.name)}<span>${esc(m.name)}${m.id === c.createdBy ? ' <small class="muted">(tạo nhóm)</small>' : ''}</span>${canEdit && m.id !== c.createdBy ? `<button type="button" class="btn ghost small danger-text" data-remove="${esc(m.id)}">Bớt</button>` : ''}</label></li>`).join('')}</ul></div>
+      <div class="modal-body"><ul class="chat-pick-list">${c.members.map(m => `<li><label>${avatar(m.id, m.name, false, m.avatar)}<span>${esc(m.name)}${m.id === c.createdBy ? ' <small class="muted">(tạo nhóm)</small>' : ''}</span>${canEdit && m.id !== c.createdBy ? `<button type="button" class="btn ghost small danger-text" data-remove="${esc(m.id)}">Bớt</button>` : ''}</label></li>`).join('')}</ul></div>
       <div class="modal-foot"><button type="button" class="btn ghost danger-text" data-leave>Rời nhóm</button><span class="grow"></span>${canEdit ? '<button type="button" class="btn secondary" data-rename>Đổi tên</button><button type="button" class="btn primary" data-add>＋ Thêm người</button>' : ''}</div>`;
     document.body.append(dlg); dlg.showModal();
     const close = () => { dlg.close(); dlg.remove(); };

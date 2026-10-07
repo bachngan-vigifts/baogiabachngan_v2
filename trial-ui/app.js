@@ -8,6 +8,8 @@ import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initChat } from './chat.js';
 import { initCustomerDetail } from './customer-detail.js';
+import { initProductAdmin } from './product-admin.js';
+import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -17,7 +19,7 @@ const SESSION_KEY = 'bn-v2-session';
 // ---------------------------------------------------------------- tiện ích
 const $ = s => document.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const vnd = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
 const money = v => vnd.format(Math.round(Number(v) || 0));
 const shortMoney = v => {
@@ -177,6 +179,8 @@ async function api(path, method = 'GET', body) {
   return data;
 }
 
+initAvatars(api); // ô nào có data-av tự hiện ảnh đại diện
+
 // ---------------------------------------------------------------- trạng thái
 const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
@@ -241,6 +245,7 @@ async function enter() {
   $('#menu-email').textContent = user.email;
   $('#user-role').textContent = user.position || (user.role === 'manager' ? 'Manager' : 'Nhân viên');
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
+  showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
   if (!/^#\//.test(location.hash)) history.replaceState(null, '', location.pathname + '#/quotes');
   currentHash = location.hash;
@@ -264,6 +269,23 @@ $('#logout').addEventListener('click', async () => {
   try { await api('/logout', 'POST', {}); } catch { /* vẫn thoát */ }
   state.quotes = state.customers = state.members = state.products = null;
   showAuth(); $('#auth-note').textContent = 'Đã đăng xuất.';
+});
+function showOwnAvatar(key) { for (const el of [$('#user-avatar'), $('#account-button-m')]) { if (key) el.dataset.av = key; else delete el.dataset.av; } }
+/** Chọn ảnh → thu nhỏ → gửi lên; trả mã ảnh mới (null nếu bỏ chọn). */
+async function uploadAvatar(path) {
+  const image = await pickAvatar(); if (!image) return null;
+  const { avatar } = await api(path, 'PUT', { image });
+  primeAvatar(avatar, image);
+  return avatar;
+}
+$('#change-avatar').addEventListener('click', async () => {
+  toggleAccountMenu(false);
+  try {
+    const key = await uploadAvatar('/avatar'); if (!key) return;
+    state.user.avatar = key; showOwnAvatar(key);
+    const me = state.members?.find(m => m.id === state.user.id); if (me) { me.avatar = key; renderMembers(); }
+    toast('Đã đổi ảnh đại diện.');
+  } catch (ex) { toast(ex.message, 'err'); }
 });
 $('#change-password').addEventListener('click', () => {
   toggleAccountMenu(false);
@@ -305,11 +327,12 @@ let customerReq = 0;
 async function loadCustomers(more = false) {
   const req = ++customerReq, offset = more ? (state.customers || []).length : 0;
   try {
-    const d = await api(`/customers?limit=100&offset=${offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}`);
+    const d = await api(`/customers?limit=100&offset=${offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}${$('#customer-pending').checked ? '&status=pending' : ''}`);
     if (req !== customerReq) return;
     state.customers = more ? [...state.customers, ...d.customers] : d.customers;
     state.customerTotal = d.total ?? d.customers.length;
-    if (!state.customerQuery && !$('#customer-mine').checked) state.customerGrandTotal = state.customerTotal;
+    if (!state.customerQuery && !$('#customer-mine').checked && !$('#customer-pending').checked) state.customerGrandTotal = state.customerTotal;
+    $('#customer-pending-count').textContent = d.pendingCount || 0; $('#customer-pending-chip').hidden = !d.pendingCount && !$('#customer-pending').checked;
   } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
   renderCustomers(); renderStats();
 }
@@ -403,6 +426,7 @@ function route() {
   window.scrollTo(0, 0);
   if (view === 'editor') openEditor(id);
   if (view === 'products' && !state.products) loadProducts();
+  if (view === 'products') productAdmin().loadPending();
   if (view === 'orders') loadOrders();
   if (view === 'contracts') loadContracts();
   if (view === 'deliveries') loadDeliveries();
@@ -1011,7 +1035,7 @@ const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy
     nq.customer = null; clearTimeout(timer); comboBusy(input, true);
     timer = setTimeout(async () => {
       const r = ++req; let found = [];
-      try { found = (await api(`/customers?limit=8&q=${encodeURIComponent(input.value)}`)).customers; } catch { /* để trống */ }
+      try { found = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(input.value)}`)).customers; } catch { /* để trống */ }
       if (r !== req) return;
       comboBusy(input, false);
       if (document.activeElement !== input) return;
@@ -1112,7 +1136,7 @@ function showSuggest() {
   suggestTimer = setTimeout(async () => {
     const req = ++suggestReq;
     let items = [];
-    try { items = (await api(`/customers?limit=8&q=${encodeURIComponent(searchInput.value)}`)).customers; } catch { /* hiện thông báo trống */ }
+    try { items = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(searchInput.value)}`)).customers; } catch { /* hiện thông báo trống */ }
     if (req !== suggestReq) return;
     comboBusy(searchInput, false);
     if (document.activeElement !== searchInput) return;
@@ -1366,6 +1390,12 @@ async function loadProducts(more = false) {
     }).catch(() => { brandsLoaded = false; });
   }
 }
+/** Thêm sản phẩm + duyệt sản phẩm mới (trial-ui/product-admin.js). */
+var productAdminUi = null; // eslint-disable-line no-var
+function productAdmin() {
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
+}
+$('#new-product').addEventListener('click', () => productAdmin().openCreate());
 function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
@@ -1689,14 +1719,15 @@ function renderCustomers() {
   $('#customer-more-row').hidden = list.length >= state.customerTotal;
   tbody.innerHTML = list.map(c => `
     <tr class="clickable" data-href="#/customers/${esc(encodeURIComponent(c.id))}">
-      <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
+      <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.approvalStatus === 'pending' ? ' <span class="pill warn">Chờ duyệt</span>' : ''}${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
       <td data-label="Liên hệ">${esc(c.contact) || '—'}</td>
       <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
       <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
       <td class="right" data-label="Báo giá">${counts.get(normalize(c.name)) || 0}</td>
       <td class="actions-cell"><div class="row-actions">
-        <button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>
+        ${c.approvalStatus === 'pending' ? `${isManager() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
+        <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${isManager() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
@@ -1720,15 +1751,32 @@ $('#customer-list').addEventListener('click', e => {
   const accBtn = e.target.closest('[data-accounts-for]'); if (accBtn) return openAccounts(state.customers.find(x => x.id === accBtn.dataset.accountsFor));
   const qb = e.target.closest('[data-quote-for]');
   if (qb) return quoteForCustomer(state.customers.find(x => x.id === qb.dataset.quoteFor));
+  const ap = e.target.closest('[data-approve-customer]'), rj = e.target.closest('[data-reject-customer]');
+  if (ap || rj) return reviewCustomer(ap ? ap.dataset.approveCustomer : rj.dataset.rejectCustomer, !!ap);
   // Bấm vào dòng: mở trang chi tiết khách hàng.
   const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
 });
 $('#customer-mine').addEventListener('change', () => loadCustomers());
+$('#customer-pending').addEventListener('change', () => loadCustomers());
+/** Manager duyệt khách mới; từ chối (hoặc người tạo xoá) khách đang chờ duyệt. */
+async function reviewCustomer(id, approve) {
+  const c = state.customers?.find(x => x.id === id);
+  try {
+    if (approve) { await api(`/customers/${encodeURIComponent(id)}/approve`, 'POST', {}); toast('Đã duyệt khách hàng.'); }
+    else {
+      if (!await confirmBox(`Xoá khách hàng chờ duyệt "${c?.name || ''}"?`, { ok: 'Xoá', danger: true })) return;
+      await api(`/customers/${encodeURIComponent(id)}`, 'DELETE'); toast('Đã xoá khách hàng chờ duyệt.');
+      if (location.hash.startsWith('#/customers/')) go('#/customers');
+    }
+    await loadCustomers();
+    if (approve && location.hash.startsWith('#/customers/')) customerDetail().reload();
+  } catch (ex) { toast(ex.message, 'err'); }
+}
 /** Trang chi tiết khách hàng (trial-ui/customer-detail.js). */
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
   return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
-    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts });
+    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, isManager, onReview: reviewCustomer });
 }
 function openCustomer(id, known) {
   customerId = id || null;
@@ -1748,7 +1796,7 @@ $('#customer-form').addEventListener('submit', async e => {
   const btn = $('#save-customer'); btn.disabled = true;
   try {
     const saved = await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);
-    $('#customer-dialog').close(); toast(customerId ? 'Đã cập nhật khách hàng.' : 'Đã thêm ' + data.name + '.');
+    $('#customer-dialog').close(); toast(customerId ? 'Đã cập nhật khách hàng.' : saved.approvalStatus === 'pending' ? `Đã thêm ${data.name} – chờ Manager duyệt.` : 'Đã thêm ' + data.name + '.');
     // Khách mới: mở luôn trang chi tiết để thêm người liên hệ / phân công; đang ở trang chi tiết thì tải lại.
     if (!customerId) go('#/customers/' + encodeURIComponent(saved.id));
     else if (location.hash.startsWith('#/customers/')) customerDetail().reload();
@@ -1768,7 +1816,7 @@ function renderMembers() {
   tbody.innerHTML = list.map(m => {
     const self = m.id === state.user.id, st = memberStatus(m);
     return `<tr>
-      <td class="first"><span class="row-gap"><span class="avatar">${esc(initials(m.name))}</span><span><span class="strong">${esc(m.name)}</span>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
+      <td class="first"><span class="row-gap"><span class="avatar"${avAttr(m.avatar)}>${esc(initials(m.name))}</span><span><button type="button" class="name-btn strong" data-edit-member="${esc(m.id)}">${esc(m.name)}</button>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
       <td data-label="ĐT">${esc(m.phone) || '—'}</td>
       <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}</td>
       <td>${STATUS_PILL[st]}</td>
@@ -1777,7 +1825,8 @@ function renderMembers() {
         <button class="icon-btn" data-edit-member="${esc(m.id)}" title="Sửa" aria-label="Sửa ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
         ${st === 'locked'
           ? `<button class="btn ghost small" data-unlock="${esc(m.id)}">Mở khoá</button>`
-          : `<button class="icon-btn danger" data-lock="${esc(m.id)}" title="Khoá tài khoản" aria-label="Khoá ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M6 11h12v9H6z M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>`}`}
+          : `<button class="icon-btn danger" data-lock="${esc(m.id)}" title="Khoá tài khoản" aria-label="Khoá ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M6 11h12v9H6z M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>`}
+        <button class="icon-btn danger" data-delete-member="${esc(m.id)}" title="Xoá nhân viên" aria-label="Xoá ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button>`}
       </div></td>
     </tr>`;
   }).join('');
@@ -1800,10 +1849,31 @@ function openMember(id) {
   else form.elements.positionId.value = state.positions.find(p => p.id === 'sale')?.id || state.positions[0]?.id || '';
   $('#member-active-row').hidden = !m;
   $('#member-note').hidden = !!m;
-  $('#member-dialog-title').textContent = m ? 'Sửa nhân viên' : 'Thêm nhân viên';
+  $('#member-photo-row').hidden = !m;
+  $('#save-member').hidden = m?.id === state.user.id; // tài khoản của mình: chỉ đổi ảnh (thông tin do Manager khác sửa)
+  if (m) showMemberPhoto(m);
+  $('#member-dialog-title').textContent = m ? 'Chi tiết nhân viên' : 'Thêm nhân viên';
   $('#save-member').textContent = m ? 'Lưu thay đổi' : 'Tạo tài khoản';
   $('#member-dialog').showModal();
 }
+function showMemberPhoto(m) {
+  const el = $('#member-photo'); el.textContent = initials(m.name);
+  if (m.avatar) el.dataset.av = m.avatar; else delete el.dataset.av;
+  $('#member-photo-remove').hidden = !m.avatar;
+}
+/** Ảnh đại diện nhân viên đang mở: Manager tải lên / xoá (chính mình thì dùng đường /avatar). */
+async function changeMemberPhoto(remove) {
+  const m = state.members.find(x => x.id === memberId); if (!m) return;
+  const path = m.id === state.user.id ? '/avatar' : `/admin/members/${encodeURIComponent(m.id)}/avatar`;
+  try {
+    if (remove) { if (!await confirmBox(`Xoá ảnh đại diện của ${m.name}?`, { ok: 'Xoá ảnh', danger: true })) return; await api(path, 'DELETE'); m.avatar = null; }
+    else { const key = await uploadAvatar(path); if (!key) return; m.avatar = key; }
+    if (m.id === state.user.id) { state.user.avatar = m.avatar; showOwnAvatar(m.avatar); }
+    showMemberPhoto(m); renderMembers(); toast(remove ? 'Đã xoá ảnh đại diện.' : 'Đã cập nhật ảnh đại diện.');
+  } catch (ex) { toast(ex.message, 'err'); }
+}
+$('#member-photo-upload').addEventListener('click', () => changeMemberPhoto(false));
+$('#member-photo-remove').addEventListener('click', () => changeMemberPhoto(true));
 $('#new-member').addEventListener('click', () => openMember());
 $('#member-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -1828,8 +1898,8 @@ $('#member-form').addEventListener('submit', async e => {
   finally { btn.disabled = false; }
 });
 $('#member-list').addEventListener('click', async e => {
-  const t = e.target.closest('[data-edit-member],[data-reset],[data-lock],[data-unlock]'); if (!t) return;
-  const id = t.dataset.editMember || t.dataset.reset || t.dataset.lock || t.dataset.unlock, m = state.members.find(x => x.id === id);
+  const t = e.target.closest('[data-edit-member],[data-reset],[data-lock],[data-unlock],[data-delete-member]'); if (!t) return;
+  const id = t.dataset.editMember || t.dataset.reset || t.dataset.lock || t.dataset.unlock || t.dataset.deleteMember, m = state.members.find(x => x.id === id);
   if (t.dataset.editMember) return openMember(id);
   try {
     if (t.dataset.reset) {
@@ -1839,6 +1909,9 @@ $('#member-list').addEventListener('click', async e => {
     } else if (t.dataset.lock) {
       if (!await confirmBox(`Khoá tài khoản ${m.name}? Người này sẽ bị đăng xuất và không đăng nhập được nữa.`, { title: 'Khoá tài khoản', ok: 'Khoá', danger: true })) return;
       await api('/admin/member', 'DELETE', { id }); toast('Đã khoá ' + m.name + '.');
+    } else if (t.dataset.deleteMember) {
+      if (!await confirmBox(`Xoá ${m.name} khỏi danh sách nhân viên? Tài khoản bị đăng xuất, không đăng nhập được nữa và email được giải phóng (tạo lại được). Báo giá, đơn… cũ vẫn giữ tên ${m.name}. Không hoàn tác được.`, { title: 'Xoá nhân viên', ok: 'Xoá nhân viên', danger: true })) return;
+      await api(`/admin/members/${encodeURIComponent(id)}`, 'DELETE'); toast('Đã xoá ' + m.name + '.');
     } else if (t.dataset.unlock) {
       await api('/admin/member', 'PUT', { id, name: m.name, email: m.email, phone: m.phone, positionId: m.positionId, role: m.role, active: true });
       toast('Đã mở khoá ' + m.name + '.');

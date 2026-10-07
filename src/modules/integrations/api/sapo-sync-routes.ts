@@ -164,7 +164,7 @@ export async function syncProducts(db: AnyDb, body: Record<string, unknown>, loc
         name: v.name, brand: keep(v.brand, products.brand), pattern: keep(v.pattern, products.pattern), unit: keep(v.unit, products.unit),
         imageUrl: keep(v.imageUrl, products.imageUrl), taxBasis: keep(v.taxBasis, products.taxBasis), taxable: keep(v.taxable, products.taxable),
         taxIn: keep(v.taxIn, products.taxIn), taxOut: keep(v.taxOut, products.taxOut), sapoProductId: keep(v.productId, products.sapoProductId),
-        active: true, updatedAt: now,
+        active: true, updatedAt: now, approvalStatus: 'approved', // có trên Sapo = đã có hiệu lực
       } });
       existing.has(v.sku) ? result.updated++ : result.created++;
       existing.add(v.sku);

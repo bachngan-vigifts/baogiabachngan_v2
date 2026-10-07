@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, exists, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -21,7 +21,7 @@ export async function customerStaffOf(db: Db, customerIds: string[]) {
   if (!customerIds.length) return out;
   const rows = await db.select({ customerId: customerStaff.customerId, role: customerStaff.role, id: employees.id, name: employees.name })
     .from(customerStaff).innerJoin(employees, eq(employees.id, customerStaff.memberId))
-    .where(inArray(customerStaff.customerId, customerIds)).orderBy(asc(employees.name));
+    .where(and(inArray(customerStaff.customerId, customerIds), isNull(employees.deletedAt))).orderBy(asc(employees.name));
   for (const r of rows) {
     const s = out.get(r.customerId)!;
     if (r.role === 'owner') s.owner = { id: r.id, name: r.name }; else s.shared.push({ id: r.id, name: r.name });
@@ -45,7 +45,7 @@ export async function customerAccess(db: Db, customerId: string, who: Viewer) {
 async function activeStaff(db: Db, ids: string[]) {
   if (!ids.length) return [];
   return (await db.select({ id: employees.id }).from(employees)
-    .where(and(inArray(employees.id, ids), eq(employees.active, true), inArray(employees.role, ['employee', 'manager'])))).map(r => r.id);
+    .where(and(inArray(employees.id, ids), eq(employees.active, true), isNull(employees.deletedAt), inArray(employees.role, ['employee', 'manager'])))).map(r => r.id);
 }
 
 async function loadCustomer(db: Db, id: string) {
@@ -76,14 +76,18 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const mine = c.url.searchParams.get('mine') === '1'
       ? exists(c.env.db.select({ x: sql`1` }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id), eq(customerStaff.memberId, me.id))))
       : undefined;
-    const where = and(matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine);
-    const [[{ total = 0 } = {}], rows] = await Promise.all([
+    // `?status=pending`: khách chờ Manager duyệt; `?usable=1`: chỉ khách đã duyệt (chọn cho báo giá / đơn).
+    const status = c.url.searchParams.get('status'), usable = c.url.searchParams.get('usable') === '1';
+    const approval = status === 'pending' || status === 'approved' ? eq(customers.approvalStatus, status) : usable ? eq(customers.approvalStatus, 'approved') : undefined;
+    const where = and(matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval);
+    const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}]] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
       c.env.db.select().from(customers).where(where).orderBy(asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
+      c.env.db.select({ pending: count() }).from(customers).where(eq(customers.approvalStatus, 'pending')),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));
     return json({ customers: rows.map(r => ({ ...r, owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
-      total: Number(total), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
+      total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
 
   const save = async (c: Ctx, update: boolean) => {
@@ -104,14 +108,36 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     // Khách mới: người tạo là người phụ trách (Manager chọn được người khác qua `ownerId`).
     const wanted = me.role === 'manager' && typeof body.ownerId === 'string' && body.ownerId ? body.ownerId : me.id;
     const [ownerId] = await activeStaff(c.env.db, [wanted]);
+    // Khách nhân viên tạo chờ Manager duyệt mới dùng được cho báo giá / đơn; Manager tạo thì có hiệu lực ngay.
+    const mgr = me.role === 'manager';
     await c.env.db.transaction(async tx => {
-      await tx.insert(customers).values({ id, createdAt: now, ...row });
+      await tx.insert(customers).values({ id, createdAt: now, ...row, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null });
       if (ownerId) await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
     });
-    return json({ id }, 201);
+    return json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
   };
   router.post('/customers', c => save(c, false), 'business');
   router.put('/customers/:id', c => save(c, true), 'business');
+
+  /** Manager duyệt khách mới. */
+  router.post('/customers/:id/approve', async c => {
+    const me = viewer(c);
+    if (me.role !== 'manager') throw new AppError(403, 'Chỉ Manager duyệt được khách hàng mới.');
+    const now = nowIso();
+    const done = await c.env.db.update(customers).set({ approvalStatus: 'approved', approvedBy: me.id, approvedAt: now })
+      .where(and(eq(customers.id, c.params.id!), eq(customers.approvalStatus, 'pending'))).returning({ id: customers.id });
+    if (!done.length) throw new AppError(404, 'Không tìm thấy khách hàng đang chờ duyệt.');
+    return json({ ok: true });
+  }, 'business');
+  /** Từ chối (xoá) khách đang chờ duyệt: Manager hoặc người tạo. Khách đã duyệt không xoá được ở đây. */
+  router.delete('/customers/:id', async c => {
+    const me = viewer(c), db = c.env.db;
+    const [row] = await db.select({ approvalStatus: customers.approvalStatus, createdBy: customers.createdBy }).from(customers).where(eq(customers.id, c.params.id!)).limit(1);
+    if (!row || row.approvalStatus !== 'pending') throw new AppError(404, 'Chỉ xoá được khách hàng đang chờ duyệt.');
+    if (me.role !== 'manager' && row.createdBy !== me.id) throw new AppError(403, 'Chỉ Manager hoặc người tạo xoá được khách hàng này.');
+    await db.delete(customers).where(and(eq(customers.id, c.params.id!), eq(customers.approvalStatus, 'pending')));
+    return json({ ok: true });
+  }, 'business');
 
   router.get('/customers/:id', async c => json(await customerProfile(c.env.db, c.params.id!, viewer(c))), 'business');
 

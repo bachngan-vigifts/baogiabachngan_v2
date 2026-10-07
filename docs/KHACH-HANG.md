@@ -53,3 +53,10 @@
 | `GET /customers/:id/overview` | Trang chi tiết, gom trong một lượt (module `customer-hub`): hồ sơ, `stats`, `quotes`, `orders` (kèm công nợ), `contracts`, `payments`, `deliveries`, `purchases`, `stockRequests`, `accounts`. |
 
 Module `customer-hub` chỉ đọc. Module này được import `staff`, `customers`, `quotes`, `sales`, `portal` (xem `tests/architecture.test.ts`).
+
+## Duyệt khách hàng mới
+- Nhân viên thêm khách → `approval_status = 'pending'` ("Chờ duyệt"). Manager thêm → `approved` ngay.
+- Khách chờ duyệt: không có trong ô chọn khách khi lập báo giá (`GET /customers?usable=1`), không lập đơn được và không cấp tài khoản khách được (409 `CUSTOMER_PENDING`).
+- `POST /customers/:id/approve`: chỉ Manager. `DELETE /customers/:id`: từ chối / xoá khách **đang chờ duyệt** (Manager hoặc người tạo).
+- `GET /customers?status=pending` lọc khách chờ duyệt; mọi phản hồi danh sách kèm `pendingCount`.
+- Khách đồng bộ từ Sapo luôn là `approved`. Cột: `approval_status`, `created_by`, `approved_by`, `approved_at` (migration `0024_approvals_member_delete.sql`).

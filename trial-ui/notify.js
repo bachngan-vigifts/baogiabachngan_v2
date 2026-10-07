@@ -4,7 +4,7 @@
 //  - trang TỰ LÀM MỚI: khi có thông báo mới (qua push hoặc kiểm tra định kỳ 30 giây) gọi `onNew` để tải lại dữ liệu.
 import { ding, setBadgePart, setSound, soundOn } from './alert.js';
 const b64ToBytes = s => { const t = (s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(t), c => c.charCodeAt(0)); };
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ago = iso => { const s = (Date.now() - Date.parse(iso)) / 1000; return s < 60 ? 'vừa xong' : s < 3600 ? Math.floor(s / 60) + ' phút trước' : s < 86400 ? Math.floor(s / 3600) + ' giờ trước' : new Date(iso).toLocaleDateString('vi-VN'); };
 
 export function setupNotifications({ api, root, onNew, onOpen }) {

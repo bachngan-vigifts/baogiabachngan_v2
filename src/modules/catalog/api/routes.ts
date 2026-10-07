@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -8,6 +8,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { catalogVersions, pricePolicies, productPrices, products, productStock, warehouses } from '../schema.ts';
 import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../domain/product-filters.ts';
 import { historyOf } from './product-history.ts';
+import { registerProductAdminRoutes } from './product-admin.ts';
 import { PRODUCT_HISTORY_LIMIT } from '../domain/product-history.ts';
 
 const amount = z.number().finite().min(0).max(1e12).nullable();
@@ -96,6 +97,7 @@ export async function snapshotVersion(db: StaffEnv['db']) {
 }
 
 export function registerCatalogRoutes(router: Router<StaffEnv>) {
+  registerProductAdminRoutes(router);
   /**
    * Bản chụp toàn bộ danh mục cho "Tìm nhanh sản phẩm" lọc ngay trên trình duyệt như web cũ (`GET /api/staff/catalog` bản cũ).
    * `?v=<phiên bản đang có>`: nếu chưa đổi thì chỉ trả `{ version, unchanged: true }`.
@@ -231,6 +233,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
           taxBasis: sql`excluded.tax_basis`, taxIn: sql`excluded.tax_in`, taxOut: sql`excluded.tax_out`, taxable: sql`excluded.taxable`,
           perCarton: sql`excluded.per_carton`, cartonWeight: sql`excluded.carton_weight`, cartonLength: sql`excluded.carton_length`,
           cartonWidth: sql`excluded.carton_width`, cartonHeight: sql`excluded.carton_height`, active: sql`true`, updatedAt: sql`excluded.updated_at`,
+          approvalStatus: sql`'approved'`, // mã có trong file danh mục = đã có hiệu lực
         } });
       }
       // Giá và tồn lấy đúng theo file: xoá của các mã trong file rồi ghi lại.
@@ -243,7 +246,8 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       for (const part of chunks(priceRows)) await tx.insert(productPrices).values(part);
       for (const part of chunks(stockRows)) await tx.insert(productStock).values(part);
       if (!data.replaceAll) return;
-      await tx.update(products).set({ active: false, updatedAt: now }).where(and(eq(products.active, true), notInArray(products.sku, keepSkus)));
+      // Sản phẩm tạo trên web (`created_by` khác null) không nằm trong file danh mục: không ẩn.
+      await tx.update(products).set({ active: false, updatedAt: now }).where(and(eq(products.active, true), isNull(products.createdBy), notInArray(products.sku, keepSkus)));
       await tx.update(warehouses).set({ active: false }).where(notInArray(warehouses.id, warehouseIds));
       await tx.update(catalogVersions).set({ isCurrent: false }).where(eq(catalogVersions.isCurrent, true));
       await tx.insert(catalogVersions).values({ id: crypto.randomUUID(), observedAt: data.observedAt || now, productCount: keepSkus.length, isCurrent: true, createdBy: actor, createdAt: now });

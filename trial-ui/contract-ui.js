@@ -2,7 +2,7 @@
 // Bộ tải về là 1 file .zip gồm 3 file Word: HDKT.docx (hợp đồng), TAM_UNG.docx (đề nghị tạm ứng), BBNT.docx (biên bản nghiệm thu).
 // Dựng file: contract-document.js (chép web cũ, mẫu .docx + thay <<[Trường]>>). Chỉnh trực tiếp: contract-word-edit.js (lưu theo đoạn văn).
 // Xem trước: docx-preview (+ jszip) chạy trong khung iframe cùng nguồn. Thông tin điền mẫu và các đoạn đã sửa lưu vào HĐKT (`data`).
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const loaded = new Map();
 const script = src => loaded.get(src) || loaded.set(src, new Promise((resolve, reject) => {
   const s = document.createElement('script'); s.src = src; s.onload = resolve; s.onerror = () => { loaded.delete(src); reject(Error('Không tải được ' + src + '. Vui lòng tải lại trang.')); }; document.head.append(s);

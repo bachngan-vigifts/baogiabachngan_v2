@@ -37,7 +37,7 @@ async function conversationsOf(c: Ctx, onlyId?: string) {
   if (!mine.length) return [];
   const ids = mine.map(r => r.conv.id);
   const [members, lasts, unread] = await Promise.all([
-    db.select({ conversationId: chatMembers.conversationId, id: employees.id, name: employees.name, position: employees.positionId }).from(chatMembers)
+    db.select({ conversationId: chatMembers.conversationId, id: employees.id, name: employees.name, position: employees.positionId, avatar: employees.avatarKey }).from(chatMembers)
       .innerJoin(employees, eq(employees.id, chatMembers.memberId)).where(inArray(chatMembers.conversationId, ids)),
     db.selectDistinctOn([chatMessages.conversationId], { conversationId: chatMessages.conversationId, body: chatMessages.body, createdAt: chatMessages.createdAt, memberId: chatMessages.memberId })
       .from(chatMessages).where(inArray(chatMessages.conversationId, ids)).orderBy(chatMessages.conversationId, desc(chatMessages.createdAt)),
@@ -50,7 +50,7 @@ async function conversationsOf(c: Ctx, onlyId?: string) {
     const people = members.filter(x => x.conversationId === conv.id), others = people.filter(x => x.id !== m.id), last = lasts.find(x => x.conversationId === conv.id);
     return {
       id: conv.id, kind: conv.kind, title: conv.kind === 'direct' ? (others[0]?.name ?? 'Đã rời đi') : conv.title, createdBy: conv.createdBy,
-      members: people.map(x => ({ id: x.id, name: x.name })), lastMessageAt: conv.lastMessageAt ?? conv.createdAt,
+      members: people.map(x => ({ id: x.id, name: x.name, avatar: x.avatar })), lastMessageAt: conv.lastMessageAt ?? conv.createdAt,
       last: last ? { body: last.body.slice(0, 140), at: last.createdAt, mine: last.memberId === m.id, by: people.find(x => x.id === last.memberId)?.name ?? '' } : null,
       unread: Number(unread.find(x => x.conversationId === conv.id)?.n ?? 0),
     };
@@ -61,7 +61,7 @@ async function conversationsOf(c: Ctx, onlyId?: string) {
 async function threadPayload(c: Ctx, convId: string, { after, before, full }: { after?: string | null; before?: string | null; full?: boolean } = {}) {
   const m = me(c);
   const [rows, reads, conv] = await Promise.all([
-    c.env.db.select({ id: chatMessages.id, memberId: chatMessages.memberId, body: chatMessages.body, createdAt: chatMessages.createdAt, name: employees.name })
+    c.env.db.select({ id: chatMessages.id, memberId: chatMessages.memberId, body: chatMessages.body, createdAt: chatMessages.createdAt, name: employees.name, avatar: employees.avatarKey })
       .from(chatMessages).innerJoin(employees, eq(employees.id, chatMessages.memberId))
       .where(and(eq(chatMessages.conversationId, convId), after ? gt(chatMessages.createdAt, after) : undefined, before ? lt(chatMessages.createdAt, before) : undefined))
       .orderBy(desc(chatMessages.createdAt)).limit(CHAT_LIMITS.page),
@@ -85,7 +85,7 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
 
   /** Danh bạ: nhân viên có thể nhắn (trừ chính mình). */
   router.get('/chat/people', async c => {
-    const rows = await c.env.db.select({ id: employees.id, name: employees.name, positionId: employees.positionId }).from(employees)
+    const rows = await c.env.db.select({ id: employees.id, name: employees.name, positionId: employees.positionId, avatar: employees.avatarKey }).from(employees)
       .where(and(eq(employees.active, true), notInArray(employees.role, ['customer', 'supplier']), ne(employees.id, me(c).id))).orderBy(asc(employees.name));
     return json({ people: rows });
   }, 'business');

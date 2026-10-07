@@ -1,7 +1,7 @@
 // Bản in / tải ĐƠN ĐẶT HÀNG theo mẫu đơn của Minh Long (BM đơn đặt hàng): đầu trang công ty + "ĐƠN ĐẶT HÀNG",
 // thông tin đơn, bảng hàng (STT, Mã hàng, Chủng loại, ĐVT, SL đặt, SL giao, Ngày giao, Ghi chú), tổng cộng, ghi chú và 4 chữ ký.
 // Dùng chung cho xem trước (HTML), in / lưu PDF (trình duyệt) và tải Excel (exceljs).
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = v => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(Number(v) || 0);
 const vnd = v => new Intl.NumberFormat('vi-VN').format(Math.round(Number(v) || 0)) + ' đ';
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
