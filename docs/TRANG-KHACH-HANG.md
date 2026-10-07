@@ -83,7 +83,12 @@ Các sự kiện được thông báo:
 | Khách hỏi tồn kho (`customer_stock_request`) | Nhân viên phụ trách |
 | Nhân viên xác nhận báo giá (`quote_confirmed`), xác nhận hoặc huỷ đơn (`order_confirmed` / `order_cancelled`), trả lời tồn kho (`stock_answer`) | Khách |
 
-- **Bật thông báo:** chuông thông báo trên đầu trang → **Bật thông báo trên máy này**.
+- **Tự bật thông báo** (`trial-ui/notify.js`, không cần vào chuông):
+  - Đã cho phép trên máy này: mỗi lần mở trang tự đăng ký lại và lưu lên máy chủ (máy mới, đăng ký hết hạn đều tự khắc phục).
+  - Chưa hỏi quyền: lần chạm hoặc bấm đầu tiên trên trang sẽ hiện hộp "Cho phép thông báo" của trình duyệt. Trình duyệt chỉ cho hỏi khi người dùng có thao tác. Từ chối hoặc bỏ qua thì 3 ngày sau mới hỏi lại.
+  - iPhone mở bằng Safari thường (không hỗ trợ push): hiện thanh nhắc "Chia sẻ → Thêm vào MH chính". Đóng thanh thì 7 ngày sau mới nhắc lại.
+  - Đã chặn thông báo thì web không tự mở lại được; người dùng phải cho phép trong cài đặt trình duyệt.
+- **Bật thông báo thủ công (dự phòng):** chuông thông báo trên đầu trang → **Bật thông báo trên máy này**.
   - Trình duyệt đăng ký nhận qua service worker `push-sw.js`; app lưu đăng ký vào `staff_web_push_subscriptions`.
   - Trên iPhone, phải thêm trang vào Màn hình chính trước thì mới bật được.
 - **Gửi thông báo thử:** đã bật rồi thì chuông có thêm nút **Gửi thông báo thử** (`POST /push/test`).
