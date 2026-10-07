@@ -39,3 +39,17 @@ test('trang dùng thử: mọi id mà app.js tra cứu đều có trong index.ht
   assert.deepEqual(used.filter(id => !ids.has(id)), []);
   assert.match(readFileSync(join(ui, 'login.html'), 'utf8'), /location\.replace\('index\.html' \+ location\.hash\)/);
 });
+
+test('index.html: thẻ mở / đóng khớp nhau và mọi trang (.view) nằm trong <main> (thừa thẻ đóng làm trang bị đẩy xuống dưới)', () => {
+  const html = readFileSync(join(ui, 'index.html'), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+  const body = html.slice(html.indexOf('<body'));
+  for (const tag of ['div', 'section', 'main', 'aside', 'nav', 'dialog', 'form', 'ul', 'table', 'label'])
+    assert.equal((body.match(new RegExp(`<${tag}\\b`, 'g')) ?? []).length, (body.match(new RegExp(`</${tag}>`, 'g')) ?? []).length, `<${tag}> mở / đóng không khớp`);
+  // Duyệt thẻ theo thứ tự: mỗi <section class="view"> phải nằm bên trong <main class="main">.
+  const stack: string[] = [];
+  for (const m of body.matchAll(/<(\/?)(div|section|main|aside|nav|dialog|form)\b([^>]*)>/g)) {
+    if (m[1]) { assert.equal(stack.pop()?.split(' ')[0], m[2], `thẻ đóng </${m[2]}> sai chỗ`); continue; }
+    if (m[2] === 'section' && /class="view\b/.test(m[3]!)) assert.ok(stack.includes('main main'), `${/id="([^"]+)"/.exec(m[3]!)?.[1]} nằm ngoài <main>`);
+    stack.push(`${m[2]} ${/class="([\w-]+)/.exec(m[3]!)?.[1] ?? ''}`);
+  }
+});
