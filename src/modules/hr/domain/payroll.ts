@@ -1,28 +1,62 @@
 /**
- * Nhân sự – lương, thưởng, ngày công: cấu hình + công thức (một chỗ duy nhất để sửa, hàm thuần, test không cần DB).
+ * BẢNG LƯƠNG (theo file "Bảng lương mẫu" – 3 bảng: Sale & VP, Bách Ngân, Lock). Hàm thuần, test không cần DB.
+ * Tham số công ty ở ./params.ts, KPI công việc ở ./kpi-cv.ts. Từng khoản lương có KHOÁ cố định (LINE_LABEL) để
+ * phiếu lương, bảng tổng hợp và file Excel dùng chung.
  *
- *   Lương theo ngày công = Lương cơ bản × Ngày công thực tế / Ngày công chuẩn
- *   Hoa hồng            = Doanh số tháng (đơn đã xác nhận, gồm VAT) × % hoa hồng
- *   Tổng thu nhập       = Lương theo ngày công + Phụ cấp cố định + Phụ cấp thêm + Thưởng + Hoa hồng
- *   Thực lĩnh           = Tổng thu nhập − Khấu trừ − Bảo hiểm (phần NV đóng) − Tạm ứng
+ *  Chung 3 bảng
+ *   Lương theo công   = LCB × ngày làm ÷ công chuẩn            (LCB trống → LCB vùng = LCB/ngày × công chuẩn)
+ *   Phụ cấp năng lực  = hệ số năng lực × đơn giá 1 hệ số
+ *   Trách nhiệm       = cố định / theo tỷ lệ ngày làm / theo ngày (Bách Ngân, Lock: 20.000 × ngày làm)
+ *   Cơm + xăng        = (cơm + xăng / ngày) × MAX(0, ngày làm − ngày trừ cơm của nhóm)   (chỉ người được hưởng; thử việc không)
+ *   Tăng ca           = LCB ÷ 24 ÷ 8 × giờ × 2
+ *  Sale & VP
+ *   Thưởng KPI DS     = DS tháng × (KPI CV ≥ 90% → 1,2%; ≥ 60% → 0,5%; còn lại 0)
+ *   Thưởng sản lượng  = sản lượng × đơn giá / tỷ lệ (kho 15.000/đơn, TK 30.000/lượt, IT-Web 0,5% DS web)
+ *   Thực nhận         = Tổng thu nhập − BHXH − vi phạm − MAX(tạm ứng điện thoại, PC điện thoại) − tạm ứng
+ *  Bách Ngân  Thưởng DS = (DS > 300tr: DS/DS TB 6 tháng ≥ 100% → 1%; ≥ 85% → 0,5%) × DS ÷ 2
+ *  Lock       Thưởng DS = DS team < 85% × 300tr → 0; ≥ 310tr → 1,5% × DS ÷ 2; còn lại 1% × DS ÷ 2
+ *  Bách Ngân, Lock  Thực nhận = Tổng lương − BHXH − BHYT − TNCN − vi phạm − tạm ứng điện thoại − tạm ứng
  */
+import { minWageMonth, type PayrollParams } from './params.ts';
+import { computeKpiCv, type KpiCvInput, type KpiCvResult } from './kpi-cv.ts';
+
+// ---------------- Nhóm bảng lương
+export const PAYROLL_GROUPS = ['sale', 'bn', 'lock'] as const;
+export type PayrollGroup = typeof PAYROLL_GROUPS[number];
+export const GROUP_LABEL: Record<PayrollGroup, string> = { sale: 'Sale & Văn phòng', bn: 'Bách Ngân', lock: 'Lock' };
+export const RESPONSIBILITY_MODES = ['fixed', 'prorated', 'per_day'] as const;
+export type ResponsibilityMode = typeof RESPONSIBILITY_MODES[number];
+export const RESPONSIBILITY_LABEL: Record<ResponsibilityMode, string> = { fixed: 'Cố định / tháng', prorated: 'Theo tỷ lệ ngày làm', per_day: 'Theo ngày (tham số / ngày)' };
+
+// ---------------- Ngày công
 export const ATTENDANCE_STATUSES = ['present', 'half', 'paid_leave', 'unpaid_leave', 'absent'] as const;
 export type AttendanceStatus = typeof ATTENDANCE_STATUSES[number];
-/** Số công của mỗi trạng thái. */
+/** Số công của mỗi trạng thái (thứ 7 làm nửa ngày → chấm "nửa công"). */
 export const ATTENDANCE_CREDIT: Record<AttendanceStatus, number> = { present: 1, half: 0.5, paid_leave: 1, unpaid_leave: 0, absent: 0 };
 export const ATTENDANCE_LABEL: Record<AttendanceStatus, string> = { present: 'Đủ công', half: 'Nửa công', paid_leave: 'Nghỉ có lương', unpaid_leave: 'Nghỉ không lương', absent: 'Vắng' };
+export interface AttendanceSummary { worked: number; present: number; half: number; paidLeave: number; unpaidLeave: number; absent: number; recorded: number }
+export function summarizeAttendance(rows: readonly { status: string }[]): AttendanceSummary {
+  const s: AttendanceSummary = { worked: 0, present: 0, half: 0, paidLeave: 0, unpaidLeave: 0, absent: 0, recorded: 0 };
+  for (const r of rows) {
+    const st = r.status as AttendanceStatus;
+    if (!(st in ATTENDANCE_CREDIT)) continue;
+    s.worked += ATTENDANCE_CREDIT[st]; s.recorded++;
+    if (st === 'present') s.present++; else if (st === 'half') s.half++; else if (st === 'paid_leave') s.paidLeave++; else if (st === 'unpaid_leave') s.unpaidLeave++; else s.absent++;
+  }
+  return s;
+}
 
-/** Khoản cộng / trừ trong tháng ngoài lương cơ bản. */
-export const ADJUSTMENT_KINDS = ['bonus', 'allowance', 'deduction', 'advance'] as const;
+// ---------------- Khoản cộng / trừ nhập theo tháng (nhiều dòng, có lý do)
+export const ADJUSTMENT_KINDS = ['bonus', 'allowance', 'deduction', 'advance', 'phone_advance'] as const;
 export type AdjustmentKind = typeof ADJUSTMENT_KINDS[number];
-export const ADJUSTMENT_LABEL: Record<AdjustmentKind, string> = { bonus: 'Thưởng', allowance: 'Phụ cấp thêm', deduction: 'Khấu trừ / phạt', advance: 'Tạm ứng' };
+export const ADJUSTMENT_LABEL: Record<AdjustmentKind, string> = {
+  bonus: 'Thưởng khác / tuyên dương', allowance: 'Công tác / phụ cấp khác', deduction: 'Vi phạm / khấu trừ', advance: 'Tạm ứng', phone_advance: 'Tạm ứng điện thoại',
+};
 
 /** Phiếu lương đã chốt (`confirmed`) → đã trả (`paid`). Chưa chốt = tạm tính, không lưu. */
 export const PAYSLIP_STATUSES = ['confirmed', 'paid'] as const;
 export type PayslipStatus = typeof PAYSLIP_STATUSES[number];
-
-export const DEFAULT_STANDARD_DAYS = 26;
-export const HR_LIMITS = { maxSalary: 10_000_000_000, maxAmount: 10_000_000_000, reason: 500, note: 500 } as const;
+export const HR_LIMITS = { maxSalary: 10_000_000_000, maxAmount: 10_000_000_000, reason: 500, note: 500, text: 120 } as const;
 
 // ---------------- Tháng
 export const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -38,42 +72,159 @@ export function shiftMonth(month: string, delta: number) {
   const [y, m] = month.split('-').map(Number), d = new Date(Date.UTC(y!, m! - 1 + delta, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
-export const inMonth = (date: string | null | undefined, month: string) => !!date && date.slice(0, 7) === month;
-
-// ---------------- Ngày công
-export interface AttendanceSummary { worked: number; present: number; half: number; paidLeave: number; unpaidLeave: number; absent: number; recorded: number }
-export function summarizeAttendance(rows: readonly { status: string }[]): AttendanceSummary {
-  const s: AttendanceSummary = { worked: 0, present: 0, half: 0, paidLeave: 0, unpaidLeave: 0, absent: 0, recorded: 0 };
-  for (const r of rows) {
-    const st = r.status as AttendanceStatus;
-    if (!(st in ATTENDANCE_CREDIT)) continue;
-    s.worked += ATTENDANCE_CREDIT[st]; s.recorded++;
-    if (st === 'present') s.present++; else if (st === 'half') s.half++; else if (st === 'paid_leave') s.paidLeave++; else if (st === 'unpaid_leave') s.unpaidLeave++; else s.absent++;
-  }
-  return s;
+/** Ba tháng của quý chứa `month` (cũ → mới) và tháng có phải cuối quý không. */
+export function quarterMonths(month: string) {
+  const m = Number(month.slice(5)), first = m - (m - 1) % 3;
+  const months = [0, 1, 2].map(i => `${month.slice(0, 4)}-${String(first + i).padStart(2, '0')}`);
+  return { quarter: Math.ceil(m / 3), months, isQuarterEnd: m % 3 === 0 };
 }
 
-// ---------------- Lương
-export interface SalaryProfile { baseSalary: number; allowance: number; standardDays: number; revenueTarget: number; commissionRate: number; insurance: number }
-export const EMPTY_PROFILE: SalaryProfile = { baseSalary: 0, allowance: 0, standardDays: DEFAULT_STANDARD_DAYS, revenueTarget: 0, commissionRate: 0, insurance: 0 };
-
-export interface PayslipFigures {
-  standardDays: number; workedDays: number; baseSalary: number; salaryByDays: number; allowance: number;
-  revenue: number; commissionRate: number; commission: number;
-  bonus: number; extraAllowance: number; deduction: number; advance: number; insurance: number; gross: number; net: number;
+// ---------------- Hồ sơ lương từng người (áp dụng từ tháng)
+export interface SalaryProfile {
+  payrollGroup: PayrollGroup; positionLabel: string;
+  /** Lương cơ bản / thoả thuận; 0 = LCB vùng (tham số). */
+  baseSalary: number; capacityCoef: number;
+  responsibilityMode: ResponsibilityMode; responsibility: number;
+  mealAllowance: boolean; phoneAllowance: number; attendanceBonus: number;
+  /** Sale: tính KPI công việc + thưởng KPI DS. Bách Ngân / Lock: hưởng thưởng DS của nhóm. */
+  kpiEnabled: boolean; teamBonus: boolean;
+  outputRate: number; revenueTarget: number; insurance: number;
+  bankCode: string; bankAccount: string; bankHolder: string;
 }
+export const EMPTY_PROFILE: SalaryProfile = {
+  payrollGroup: 'sale', positionLabel: '', baseSalary: 0, capacityCoef: 0, responsibilityMode: 'fixed', responsibility: 0,
+  mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, outputRate: 0, revenueTarget: 0, insurance: 0,
+  bankCode: '', bankAccount: '', bankHolder: '',
+};
+
+// ---------------- Số liệu nhập theo tháng (một dòng / người / tháng)
+export interface PayrollInput extends KpiCvInput {
+  /** Ngày làm việc; null = lấy từ chấm công. */
+  workDays: number | null;
+  overtimeHours: number;
+  /** DS tháng cá nhân (Sale – tính thưởng KPI DS); null = DS đơn hàng trên hệ thống. */
+  revenue: number | null;
+  /** Sản lượng: số đơn (kho), số lượt (thiết kế), DS web (IT). */
+  outputQty: number;
+  healthInsurance: number; incomeTax: number;
+  /** Thưởng quý; null = tự tính (tháng cuối quý, khi bật "chi trả thưởng quý"). */
+  quarterBonus: number | null;
+}
+export const EMPTY_INPUT: PayrollInput = {
+  workDays: null, overtimeHours: 0, revenue: null, outputQty: 0, healthInsurance: 0, incomeTax: 0, quarterBonus: null,
+  kpiNewCustomers: null, kpiTransactions: null, kpiContracts: null, kpiRevenue: null, kpiMerchDays: 0, kpiTripDays: 0, kpiOverride: null,
+};
+
+/** Số liệu chung của nhóm trong tháng (doanh số cửa hàng / team, thưởng quý). */
+export interface GroupMonth { bnRevenue: number; bnAvgRevenue: number; lockRevenue: number; payQuarterBonus: boolean }
+export const EMPTY_GROUP_MONTH: GroupMonth = { bnRevenue: 0, bnAvgRevenue: 0, lockRevenue: 0, payQuarterBonus: false };
+
+// ---------------- Phiếu lương
+export const LINE_LABEL = {
+  salaryByDays: 'Lương theo công', capacity: 'Phụ cấp năng lực', responsibility: 'Trách nhiệm', kpiBonus: 'Thưởng KPI DS',
+  outputBonus: 'Thưởng sản lượng', quarterBonus: 'Thưởng quý', salesBonus: 'Thưởng DS', otherBonus: 'Thưởng khác',
+  meal: 'Cơm + xăng', phone: 'Điện thoại', attendanceBonus: 'Chuyên cần', trip: 'Công tác / phụ cấp khác', overtime: 'Tăng ca',
+  socialInsurance: 'BHXH', healthInsurance: 'BHYT', incomeTax: 'Thuế TNCN', violation: 'Vi phạm / khấu trừ',
+  phoneDeduction: 'Điện thoại (tạm ứng / hoàn PC)', advance: 'Tạm ứng',
+} as const;
+export type LineKey = keyof typeof LINE_LABEL;
+export interface PayLine { key: LineKey; label: string; amount: number; note: string }
+/** Cột thu nhập / khấu trừ của từng bảng (thứ tự như file Excel). */
+export const GROUP_INCOME: Record<PayrollGroup, LineKey[]> = {
+  sale: ['salaryByDays', 'capacity', 'responsibility', 'kpiBonus', 'outputBonus', 'quarterBonus', 'otherBonus', 'meal', 'phone', 'trip', 'overtime'],
+  bn: ['salaryByDays', 'capacity', 'responsibility', 'salesBonus', 'otherBonus', 'meal', 'phone', 'attendanceBonus', 'trip', 'overtime'],
+  lock: ['salaryByDays', 'capacity', 'responsibility', 'salesBonus', 'otherBonus', 'meal', 'attendanceBonus', 'trip', 'overtime'],
+};
+export const GROUP_DEDUCTION: Record<PayrollGroup, LineKey[]> = {
+  sale: ['socialInsurance', 'violation', 'phoneDeduction', 'advance'],
+  bn: ['socialInsurance', 'healthInsurance', 'incomeTax', 'violation', 'phoneDeduction', 'advance'],
+  lock: ['socialInsurance', 'healthInsurance', 'incomeTax', 'violation', 'phoneDeduction', 'advance'],
+};
+
+export interface PayslipCalc {
+  group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
+  income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
+  kpi: KpiCvResult | null;
+}
+
 const round = (n: number) => Math.round(n);
-export function computePayslip(input: { profile: SalaryProfile; workedDays: number; revenue: number; adjustments: readonly { kind: string; amount: number }[] }): PayslipFigures {
-  const p = input.profile, std = p.standardDays > 0 ? p.standardDays : DEFAULT_STANDARD_DAYS;
-  const sum = (k: AdjustmentKind) => input.adjustments.filter(a => a.kind === k).reduce((s, a) => s + a.amount, 0);
-  const salaryByDays = round(p.baseSalary * input.workedDays / std), commission = round(input.revenue * p.commissionRate / 100);
-  const bonus = sum('bonus'), extraAllowance = sum('allowance'), deduction = sum('deduction'), advance = sum('advance');
-  const gross = salaryByDays + p.allowance + extraAllowance + bonus + commission;
-  return {
-    standardDays: std, workedDays: input.workedDays, baseSalary: p.baseSalary, salaryByDays, allowance: p.allowance,
-    revenue: input.revenue, commissionRate: p.commissionRate, commission, bonus, extraAllowance, deduction, advance, insurance: p.insurance,
-    gross, net: gross - deduction - p.insurance - advance,
+const vnd = (n: number) => Math.round(n).toLocaleString('vi-VN');
+const pct = (r: number) => `${Math.round(r * 1000) / 10}%`;
+
+/** Thưởng DS cửa hàng Bách Ngân (đã chia số người). */
+export function bnSalesBonus(p: PayrollParams, revenue: number, avg: number) {
+  if (revenue <= p.bnMinRevenue || avg <= 0) return 0;
+  const r = revenue / avg, rate = r >= p.bnLevel1 ? p.bnLevel1Rate : r >= p.bnLevel2 ? p.bnLevel2Rate : 0;
+  return revenue * rate / p.bnSplit;
+}
+/** Thưởng DS team Lock (đã chia số người). */
+export function lockSalesBonus(p: PayrollParams, revenue: number) {
+  if (revenue < p.lockFloor * p.lockTarget) return 0;
+  return revenue * (revenue >= p.lockHigh ? p.lockHighRate : p.lockRate) / p.lockSplit;
+}
+/** Tỷ lệ thưởng KPI DS (Sale) theo KPI CV. */
+export const kpiBonusRate = (p: PayrollParams, kpi: number | null) => kpi === null ? 0 : kpi >= p.kpiHigh ? p.kpiHighRate : kpi >= p.kpiLow ? p.kpiLowRate : 0;
+
+export function computePayslip(a: {
+  profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
+  /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
+  attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;
+}): PayslipCalc {
+  const { profile: f, params: p, input: inp, groupMonth: gm } = a, g = f.payrollGroup;
+  const adj = (k: AdjustmentKind) => a.adjustments.filter(x => x.kind === k).reduce((s, x) => s + x.amount, 0);
+  const days = inp.workDays ?? a.attendanceDays, lcb = f.baseSalary > 0 ? f.baseSalary : minWageMonth(p);
+  const revenue = inp.revenue ?? a.systemRevenue;
+  const kpi = g === 'sale' && f.kpiEnabled ? computeKpiCv(inp, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
+  const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
+    : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
+  const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;
+  const salesBonus = !f.teamBonus ? 0 : g === 'bn' ? bnSalesBonus(p, gm.bnRevenue, gm.bnAvgRevenue) : g === 'lock' ? lockSalesBonus(p, gm.lockRevenue) : 0;
+  const rate = kpiBonusRate(p, kpi?.used ?? null), phone = g === 'lock' ? 0 : f.phoneAllowance, phoneAdvance = adj('phone_advance');
+  const amounts: Record<LineKey, [number, string]> = {
+    salaryByDays: [lcb * days / p.standardDays, `${vnd(lcb)} × ${days} ngày ÷ ${p.standardDays}`],
+    capacity: [f.capacityCoef * p.capacityUnit, f.capacityCoef ? `Hệ số ${f.capacityCoef} × ${vnd(p.capacityUnit)}` : ''],
+    responsibility: [responsibility, f.responsibilityMode === 'per_day' ? `${vnd(p.responsibilityDay)} × ${days} ngày` : f.responsibilityMode === 'prorated' ? `${vnd(f.responsibility)} × ${days} ÷ ${p.standardDays}` : ''],
+    kpiBonus: [revenue * rate, kpi ? `KPI CV ${pct(kpi.used)} → ${pct(rate)} × DS ${vnd(revenue)}` : ''],
+    outputBonus: [inp.outputQty * f.outputRate, inp.outputQty ? `${inp.outputQty.toLocaleString('vi-VN')} × ${f.outputRate < 1 ? pct(f.outputRate) : vnd(f.outputRate)}` : ''],
+    quarterBonus: [inp.quarterBonus ?? a.quarterBonusAuto, inp.quarterBonus === null && a.quarterBonusAuto ? 'Tự tính theo DS quý của team' : ''],
+    salesBonus: [salesBonus, salesBonus ? (g === 'bn' ? `DS cửa hàng ${vnd(gm.bnRevenue)} (TB 6 tháng ${vnd(gm.bnAvgRevenue)}) ÷ ${p.bnSplit}` : `DS team ${vnd(gm.lockRevenue)} ÷ ${p.lockSplit}`) : ''],
+    otherBonus: [adj('bonus'), ''],
+    meal: [f.mealAllowance ? (p.mealDay + p.fuelDay) * Math.max(0, days - mealOff) : 0, f.mealAllowance ? `${vnd(p.mealDay + p.fuelDay)} × ${Math.max(0, days - mealOff)} ngày` : 'Không hưởng'],
+    phone: [phone, ''],
+    attendanceBonus: [g === 'sale' ? 0 : f.attendanceBonus, ''],
+    trip: [adj('allowance'), ''],
+    overtime: [lcb / p.overtimeDays / p.hoursPerDay * inp.overtimeHours * p.overtimeRate, inp.overtimeHours ? `${inp.overtimeHours} giờ × hệ số ${p.overtimeRate}` : ''],
+    socialInsurance: [f.insurance, ''],
+    healthInsurance: [g === 'sale' ? 0 : inp.healthInsurance, ''],
+    incomeTax: [g === 'sale' ? 0 : inp.incomeTax, ''],
+    violation: [adj('deduction'), ''],
+    // Sale: PC điện thoại thực chất là hoàn tạm ứng → trừ lại MAX(tạm ứng ĐT, PC ĐT) như file gốc.
+    phoneDeduction: [g === 'sale' ? Math.max(phoneAdvance, phone) : phoneAdvance, g === 'sale' && phone ? `MAX(tạm ứng ĐT ${vnd(phoneAdvance)}, PC ${vnd(phone)})` : ''],
+    advance: [adj('advance'), ''],
   };
+  const line = (key: LineKey): PayLine => ({ key, label: LINE_LABEL[key], amount: round(amounts[key][0]), note: amounts[key][1] });
+  const income = GROUP_INCOME[g].map(line), deductions = GROUP_DEDUCTION[g].map(line);
+  const gross = income.reduce((s, l) => s + l.amount, 0), deductionTotal = deductions.reduce((s, l) => s + l.amount, 0);
+  return { group: g, positionLabel: f.positionLabel, workDays: days, baseSalary: lcb, revenue, income, deductions, gross, deductionTotal, net: gross - deductionTotal, kpi };
+}
+
+// ---------------- Thưởng quý – team Sale (sheet "Thưởng quý")
+export interface QuarterMember { memberId: string; target: number; revenues: number[] }
+export function computeQuarterBonus(members: readonly QuarterMember[], p: PayrollParams) {
+  const rows = members.map(m => { const revenue = m.revenues.reduce((s, x) => s + x, 0); return { memberId: m.memberId, target: m.target, revenue, percent: m.target > 0 ? revenue / m.target : null }; });
+  const teamRevenue = rows.reduce((s, r) => s + r.revenue, 0), teamTarget = rows.reduce((s, r) => s + r.target, 0);
+  const teamPercent = teamTarget > 0 ? teamRevenue / teamTarget : 0;
+  const teamOk = teamTarget > 0 && teamPercent >= p.quarterTeamMin;
+  const membersOk = rows.length > 0 && rows.every(r => r.percent !== null && r.percent >= p.quarterMemberMin);
+  const fund = teamOk && membersOk ? p.quarterRate * teamRevenue : 0;
+  return { teamRevenue, teamTarget, teamPercent, teamOk, membersOk, fund,
+    rows: rows.map(r => ({ ...r, share: teamRevenue > 0 ? r.revenue / teamRevenue : 0, bonus: teamRevenue > 0 ? round(fund * r.revenue / teamRevenue) : 0 })) };
+}
+
+/** Link ảnh mã VietQR chuyển khoản lương (như sheet "Chuyển khoản"). */
+export function vietQrUrl(bankCode: string, account: string, amount: number, month: string) {
+  if (!bankCode || !account || amount <= 0) return '';
+  return `https://img.vietqr.io/image/${encodeURIComponent(bankCode.toLowerCase())}-${encodeURIComponent(account)}.png?amount=${Math.round(amount)}&addInfo=${encodeURIComponent('Luong T' + Number(month.slice(5)))}`;
 }
 
 /** % hoàn thành chỉ tiêu doanh số (null = chưa đặt chỉ tiêu). */

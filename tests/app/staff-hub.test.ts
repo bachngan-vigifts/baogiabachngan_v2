@@ -36,8 +36,12 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   assert.equal((await call('/members/khong-co/overview', mgr)).status, 404);
 
   // Manager đặt lương, chấm công, thưởng / tạm ứng.
-  assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, baseSalary: 10_400_000, allowance: 1_000_000, standardDays: 26, revenueTarget: 4_320_000, commissionRate: 5, insurance: 500_000 })).status, 200);
-  assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, baseSalary: 1, commissionRate: 120 })).status, 400);
+  assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, payrollGroup: 'sale', positionLabel: 'sale', baseSalary: 10_400_000, capacityCoef: 1,
+    mealAllowance: false, kpiEnabled: true, revenueTarget: 4_320_000, insurance: 500_000, bankCode: 'VCB', bankAccount: '0123 456', bankHolder: 'Ten emp' })).status, 200);
+  assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, payrollGroup: 'khac' })).status, 400);
+  assert.equal((await call(`/hr/members/emp/inputs/${month}`, emp, 'PUT', { kpiOverride: 0.95 })).status, 403);
+  assert.equal((await call(`/hr/members/emp/inputs/${month}`, mgr, 'PUT', { kpiOverride: 0.95 })).status, 200, 'KPI chốt 95% → thưởng mức cao 1,2% DS');
+  assert.equal((await call(`/hr/members/emp/inputs/${month}`, mgr, 'PUT', { overtimeHours: -1 })).status, 400);
   assert.equal((await call(`/hr/members/emp/attendance/${month}`, mgr, 'PUT', { days: { [day(1)]: 'present', [day(2)]: 'present', [day(3)]: 'half', [day(4)]: 'absent' } })).status, 200);
   assert.equal((await call(`/hr/members/emp/attendance/${month}`, mgr, 'PUT', { days: { [day(4)]: '' } })).status, 200, 'xoá chấm công một ngày');
   assert.equal((await call(`/hr/members/emp/attendance/${month}`, mgr, 'PUT', { days: { '2020-01-01': 'present' } })).status, 400, 'ngày ngoài tháng');
@@ -61,8 +65,12 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   assert.equal(d.trend.length, 6); assert.equal(d.trend.at(-1).month, month); assert.equal(d.trend.at(-1).revenue, 2_160_000);
   const p = d.payroll.payslip;
   assert.equal(p.status, 'estimate');
-  assert.equal(p.salaryByDays, 1_000_000); assert.equal(p.commission, 108_000);
-  assert.equal(p.gross, 1_000_000 + 1_000_000 + 500_000 + 108_000); assert.equal(p.net, p.gross - 500_000 - 1_000_000);
+  const line = (k: string) => [...p.income, ...p.deductions].find((l: any) => l.key === k).amount;
+  assert.equal(p.group, 'sale'); assert.equal(p.workDays, 2.5, 'ngày công theo chấm công');
+  assert.equal(line('salaryByDays'), 1_000_000); assert.equal(line('capacity'), 200_000); assert.equal(line('kpiBonus'), 25_920, '1,2% × DS hệ thống 2.160.000');
+  assert.equal(line('otherBonus'), 500_000); assert.equal(line('meal'), 0, 'không hưởng cơm-xăng');
+  assert.equal(p.gross, 1_725_920); assert.equal(line('socialInsurance'), 500_000); assert.equal(line('advance'), 1_000_000); assert.equal(p.net, 225_920);
+  assert.equal(d.payroll.profile.bankCode, 'vcb'); assert.equal(d.payroll.profile.bankAccount, '0123456'); assert.equal(d.payroll.profile.positionLabel, 'SALE');
   assert.equal(d.payroll.attendance.length, 3); assert.equal(d.payroll.adjustments.length, 2);
 
   // Chốt lương: tháng bị khoá; mở lại được khi chưa trả; đã trả thì không mở lại.

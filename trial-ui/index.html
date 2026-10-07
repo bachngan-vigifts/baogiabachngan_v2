@@ -58,6 +58,7 @@
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
       <span class="nav-label manager-only">Quản trị</span>
       <a class="nav manager-only" href="#/staff" data-nav="staff"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Nhân viên</span></a>
+      <a class="nav manager-only" href="#/payroll" data-nav="payroll"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M12 9v6 M9.5 10.5a2.5 1.5 0 0 1 5 0c0 1.5-5 1.5-5 3a2.5 1.5 0 0 0 5 0"/></svg><span>Bảng lương</span></a>
     </nav>
     <div class="side-foot">
       <button class="account" id="account-button" aria-haspopup="menu" aria-expanded="false">
@@ -346,6 +347,7 @@
     <!-- ---------- Chi tiết khách hàng (trial-ui/customer-detail.js) ---------- -->
     <section class="view" id="view-customer" hidden><div id="customer-detail"></div></section>
     <section class="view" id="view-member" hidden><div id="member-detail"></div></section>
+    <section class="view" id="view-payroll" hidden><div id="payroll-board"></div></section>
 
     <!-- ---------- Đơn đặt hàng ---------- -->
     <section class="view" id="view-orders" hidden>
@@ -509,6 +511,7 @@
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
     <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>
     <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Nhân viên</a>
+    <a href="#/payroll" data-nav="payroll" class="manager-only"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M12 9v6 M9.5 10.5a2.5 1.5 0 0 1 5 0c0 1.5-5 1.5-5 3a2.5 1.5 0 0 0 5 0"/></svg>Bảng lương</a>
   </nav>
 </div>
 
