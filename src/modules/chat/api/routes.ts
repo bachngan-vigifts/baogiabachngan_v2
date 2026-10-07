@@ -134,16 +134,21 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
 
   /**
    * Tin nhắn của hội thoại. `after=<createdAt>` = chỉ tin mới (hỏi định kỳ khi đang mở); `before=<createdAt>` = tải tin cũ hơn.
-   * Trả kèm thông tin hội thoại và mốc "đã xem" của người khác (hiện "Đã xem").
+   * Trả kèm mốc "đã xem" của người khác (hiện "Đã xem"). `full=1`: kèm thông tin hội thoại (mở lần đầu, đỡ một lượt gọi);
+   * `read=1`: đánh dấu đã đọc luôn (đỡ một lượt gọi /read).
    */
   router.get('/chat/:id/messages', async c => {
-    const { conv } = await myConversation(c, c.params.id!), p = c.url.searchParams, after = p.get('after'), before = p.get('before');
-    const rows = await c.env.db.select({ id: chatMessages.id, memberId: chatMessages.memberId, body: chatMessages.body, createdAt: chatMessages.createdAt, name: employees.name })
-      .from(chatMessages).innerJoin(employees, eq(employees.id, chatMessages.memberId))
-      .where(and(eq(chatMessages.conversationId, conv.id), after ? gt(chatMessages.createdAt, after) : undefined, before ? lt(chatMessages.createdAt, before) : undefined))
-      .orderBy(desc(chatMessages.createdAt)).limit(CHAT_LIMITS.page);
-    const reads = await c.env.db.select({ memberId: chatMembers.memberId, lastReadAt: chatMembers.lastReadAt }).from(chatMembers).where(eq(chatMembers.conversationId, conv.id));
-    return json({ messages: rows.reverse(), more: rows.length === CHAT_LIMITS.page && !after, reads: reads.filter(r => r.memberId !== me(c).id) });
+    const m = me(c), { conv } = await myConversation(c, c.params.id!), p = c.url.searchParams, after = p.get('after'), before = p.get('before');
+    if (p.get('read') === '1') await c.env.db.update(chatMembers).set({ lastReadAt: nowIso() }).where(and(eq(chatMembers.conversationId, conv.id), eq(chatMembers.memberId, m.id)));
+    const [rows, reads, full] = await Promise.all([
+      c.env.db.select({ id: chatMessages.id, memberId: chatMessages.memberId, body: chatMessages.body, createdAt: chatMessages.createdAt, name: employees.name })
+        .from(chatMessages).innerJoin(employees, eq(employees.id, chatMessages.memberId))
+        .where(and(eq(chatMessages.conversationId, conv.id), after ? gt(chatMessages.createdAt, after) : undefined, before ? lt(chatMessages.createdAt, before) : undefined))
+        .orderBy(desc(chatMessages.createdAt)).limit(CHAT_LIMITS.page),
+      c.env.db.select({ memberId: chatMembers.memberId, lastReadAt: chatMembers.lastReadAt }).from(chatMembers).where(eq(chatMembers.conversationId, conv.id)),
+      p.get('full') === '1' ? conversationsOf(c, conv.id) : Promise.resolve(null),
+    ]);
+    return json({ messages: rows.reverse(), more: rows.length === CHAT_LIMITS.page && !after, reads: reads.filter(r => r.memberId !== m.id), ...(full ? { conversation: full[0] } : {}) });
   }, 'business');
 
   /** Gửi tin. Người còn lại trong hội thoại nhận Web Push (không lưu vào chuông – tin nhắn có hộp thư riêng). */
@@ -154,9 +159,13 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
     await c.env.db.insert(chatMessages).values({ id, conversationId: conv.id, memberId: m.id, body, createdAt: now });
     await c.env.db.update(chatConversations).set({ lastMessageAt: now }).where(eq(chatConversations.id, conv.id));
     await c.env.db.update(chatMembers).set({ lastReadAt: now }).where(and(eq(chatMembers.conversationId, conv.id), eq(chatMembers.memberId, m.id)));
-    const others = (await c.env.db.select({ id: chatMembers.memberId }).from(chatMembers).where(and(eq(chatMembers.conversationId, conv.id), ne(chatMembers.memberId, m.id)))).map(r => r.id);
-    for (const to of others) await notify(c.env, { eventType: 'chat_message', title: conv.kind === 'group' ? `${conv.title} · ${m.name}` : m.name, body: body.slice(0, 160),
-      url: `/index.html#/chat/${conv.id}`, targetMemberId: to, actorId: m.id, data: { conversationId: conv.id }, persist: false });
+    // Web Push cho người nhận chạy nền: người gửi thấy "đã gửi" ngay, không phải chờ dịch vụ push.
+    const push = (async () => {
+      const others = (await c.env.db.select({ id: chatMembers.memberId }).from(chatMembers).where(and(eq(chatMembers.conversationId, conv.id), ne(chatMembers.memberId, m.id)))).map(r => r.id);
+      await Promise.all(others.map(to => notify(c.env, { eventType: 'chat_message', title: conv.kind === 'group' ? `${conv.title} · ${m.name}` : m.name, body: body.slice(0, 160),
+        url: `/index.html#/chat/${conv.id}`, targetMemberId: to, actorId: m.id, data: { conversationId: conv.id }, persist: false })));
+    })().catch(() => console.error('chat push failed'));
+    if (c.env.waitUntil) c.env.waitUntil(push); else await push;
     return json({ id, createdAt: now }, 201);
   }, 'business');
 

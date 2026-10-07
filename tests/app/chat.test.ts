@@ -59,3 +59,23 @@ test('chat nội bộ: 1-1, nhóm, chưa đọc, đã xem, chỉ thành viên đ
   list = (await call('/chat/conversations', mgr)).data.conversations;
   assert.equal(list[0].title, 'Đơn Tết'); assert.match(list[0].last.body, /rời nhóm/);
 });
+
+test('chat: mở hội thoại một lượt gọi (full=1&read=1), Web Push chạy nền qua waitUntil', async () => {
+  const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  const router = createAppRouter(), background: Promise<unknown>[] = [];
+  const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }),
+      { db, passwordIterations: 1000, waitUntil: p => { background.push(p); } });
+    return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
+  };
+  const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
+  const emp = await login('emp@x.vn'), mgr = await login('mgr@x.vn');
+  const d = await call('/chat/direct', emp, 'POST', { memberId: 'mgr' });
+  assert.equal((await call(`/chat/${d.data.id}/messages`, emp, 'POST', { body: 'Có hàng chưa anh?' })).status, 201);
+  assert.equal(background.length, 1, 'gửi push không chặn phản hồi'); await Promise.all(background);
+  assert.equal((await call('/chat/unread', mgr)).data.unread, 1);
+  const opened = (await call(`/chat/${d.data.id}/messages?full=1&read=1`, mgr)).data;
+  assert.equal(opened.conversation.id, d.data.id); assert.equal(opened.conversation.title, 'Tên emp'); assert.equal(opened.messages.length, 1);
+  assert.equal((await call('/chat/unread', mgr)).data.unread, 0, 'read=1 đánh dấu đã đọc');
+  assert.equal((await call(`/chat/${d.data.id}/messages`, mgr)).data.conversation, undefined, 'không full thì không kèm hội thoại');
+});

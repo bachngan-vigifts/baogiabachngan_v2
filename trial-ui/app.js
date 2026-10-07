@@ -2373,4 +2373,4 @@ $('#excel-quote').addEventListener('click', async () => {
   finally { excelBusy = false; }
 });
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
-if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) chatView().badge(); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) chatView().refresh(); });
