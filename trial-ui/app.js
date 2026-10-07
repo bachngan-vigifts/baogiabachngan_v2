@@ -10,6 +10,7 @@ import { initChat } from './chat.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
+import { initMemberDetail } from './member-detail.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -278,6 +279,7 @@ async function uploadAvatar(path) {
   primeAvatar(avatar, image);
   return avatar;
 }
+$('#my-profile').addEventListener('click', () => { toggleAccountMenu(false); go('#/members/' + encodeURIComponent(state.user.id)); });
 $('#change-avatar').addEventListener('click', async () => {
   toggleAccountMenu(false);
   try {
@@ -391,7 +393,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -412,18 +414,20 @@ function route() {
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
   if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || '#/quotes'); if (lastRoutedHash) return; }
   lastRoutedHash = location.hash;
-  const [page = 'quotes', id] = location.hash.replace(/^#\/?/, '').split('?')[0].split('/');
-  let view = VIEWS[page] ? page : 'quotes';
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [page = 'quotes', id] = path.split('/');
+  // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
+  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
   if (view === 'staff' && !isManager()) view = 'quotes';
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
   if (view === 'customers' && id) view = 'customer';
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
-  const navKey = view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view;
+  const navKey = view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : VIEWS[view];
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
-  window.scrollTo(0, 0);
+  window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
   if (view === 'products' && !state.products) loadProducts();
   if (view === 'products') productAdmin().loadPending();
@@ -435,6 +439,7 @@ function route() {
   if (view === 'tasks') tasksView().load(id);
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
+  if (view === 'member') memberDetail().open(decodeURIComponent(id), new URLSearchParams(query).get('month') || '');
   hideProductSuggest();
 }
 const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -1501,8 +1506,9 @@ function hideProductSuggest() { pSuggest.hidden = true; pItems = []; pIndex = -1
 function placeProductSuggest() {
   if (!pInput) return;
   const r = pInput.getBoundingClientRect();
-  pSuggest.style.left = Math.max(8, Math.min(r.left + scrollX, scrollX + innerWidth - pSuggest.offsetWidth - 8)) + 'px';
-  pSuggest.style.top = r.bottom + scrollY + 4 + 'px';
+  // position: fixed → toạ độ theo màn hình (đúng cả khi trang cuộn hay chỉ vùng nội dung cuộn trên điện thoại).
+  pSuggest.style.left = Math.max(8, Math.min(r.left, innerWidth - pSuggest.offsetWidth - 8)) + 'px';
+  pSuggest.style.top = r.bottom + 4 + 'px';
 }
 function searchProducts(input) {
   pInput = input; clearTimeout(pTimer);
@@ -1548,6 +1554,7 @@ $('#line-list').addEventListener('keydown', e => {
 }, true);
 pSuggest.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pickProduct(pItems[li.dataset.i]); } });
 addEventListener('resize', () => { if (!pSuggest.hidden) placeProductSuggest(); });
+addEventListener('scroll', () => { if (!pSuggest.hidden) placeProductSuggest(); }, true); // cuộn bất kỳ vùng nào: ô gợi ý đi theo ô nhập
 
 // ----- chọn sản phẩm từ danh mục ngay trong báo giá
 let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
@@ -1772,6 +1779,18 @@ async function reviewCustomer(id, approve) {
     if (approve && location.hash.startsWith('#/customers/')) customerDetail().reload();
   } catch (ex) { toast(ex.message, 'err'); }
 }
+/** Trang chi tiết nhân viên (trial-ui/member-detail.js): KPI, khách, báo giá, đơn, HĐKT, giao dịch, công nợ, ngày công, lương. */
+var memberUi = null; // eslint-disable-line no-var
+function memberDetail() {
+  return memberUi ||= initMemberDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, initials, ORDER_STATUS, CONTRACT_STATUS,
+    onEdit: async m => { if (!state.members?.some(x => x.id === m.id)) await loadMembers(); openMember(m.id); },
+    onPhoto: async m => {
+      const key = await uploadAvatar(m.id === state.user.id ? '/avatar' : `/admin/members/${encodeURIComponent(m.id)}/avatar`); if (!key) return false;
+      if (m.id === state.user.id) { state.user.avatar = key; showOwnAvatar(key); }
+      const row = state.members?.find(x => x.id === m.id); if (row) { row.avatar = key; renderMembers(); }
+      toast('Đã cập nhật ảnh đại diện.'); return true;
+    } });
+}
 /** Trang chi tiết khách hàng (trial-ui/customer-detail.js). */
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
@@ -1816,7 +1835,7 @@ function renderMembers() {
   tbody.innerHTML = list.map(m => {
     const self = m.id === state.user.id, st = memberStatus(m);
     return `<tr>
-      <td class="first"><span class="row-gap"><span class="avatar"${avAttr(m.avatar)}>${esc(initials(m.name))}</span><span><button type="button" class="name-btn strong" data-edit-member="${esc(m.id)}">${esc(m.name)}</button>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
+      <td class="first"><span class="row-gap"><span class="avatar"${avAttr(m.avatar)}>${esc(initials(m.name))}</span><span><a class="name-btn strong" href="#/members/${esc(encodeURIComponent(m.id))}">${esc(m.name)}</a>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
       <td data-label="ĐT">${esc(m.phone) || '—'}</td>
       <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}</td>
       <td>${STATUS_PILL[st]}</td>
@@ -1888,6 +1907,7 @@ $('#member-form').addEventListener('submit', async e => {
       const m = state.members.find(x => x.id === memberId);
       await api('/admin/member', 'PUT', { id: memberId, ...body, role: m.role, active: form.elements.active.checked });
       $('#member-dialog').close(); toast('Đã cập nhật ' + body.name + '.');
+      if (location.hash.startsWith('#/members/')) memberDetail().reload();
     } else {
       const res = await api('/admin/members', 'POST', body);
       $('#member-dialog').close();

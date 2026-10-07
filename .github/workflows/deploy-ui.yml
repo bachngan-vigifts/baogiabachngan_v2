@@ -34,6 +34,10 @@ jobs:
       - name: Ghi số phiên bản (commit) vào giao diện
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: sed -i "s/__BUILD__/${GITHUB_SHA::7}/" trial-ui/index.html
+      # app.js?v=<commit>, import './x.js?v=<commit>'…: bản mới có URL mới, máy người dùng không dùng lẫn file JS / CSS cũ.
+      - name: Gắn phiên bản vào đường dẫn JS / CSS
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: node --experimental-strip-types scripts/stamp-ui-version.ts "${GITHUB_SHA::7}"
       - name: Đưa giao diện lên
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npx --yes wrangler@3 pages deploy trial-ui --project-name "$PROJECT" --branch main --commit-dirty=true

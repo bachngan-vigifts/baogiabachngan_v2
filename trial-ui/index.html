@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi">
+<html lang="vi" class="app-shell">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -69,6 +69,7 @@
   </aside>
   <div class="account-menu" id="account-menu" role="menu" hidden>
     <div class="account-menu-head"><strong id="menu-name"></strong><small id="menu-email"></small></div>
+    <button role="menuitem" id="my-profile">Hồ sơ của tôi</button>
     <button role="menuitem" id="change-avatar">Đổi ảnh đại diện</button>
     <button role="menuitem" id="change-password">Đổi mật khẩu</button>
     <button role="menuitem" id="logout" class="danger-text">Đăng xuất</button>
@@ -344,6 +345,7 @@
 
     <!-- ---------- Chi tiết khách hàng (trial-ui/customer-detail.js) ---------- -->
     <section class="view" id="view-customer" hidden><div id="customer-detail"></div></section>
+    <section class="view" id="view-member" hidden><div id="member-detail"></div></section>
 
     <!-- ---------- Đơn đặt hàng ---------- -->
     <section class="view" id="view-orders" hidden>
