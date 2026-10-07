@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { createDb } from '../../../src/core/db/client.ts';
 import * as schema from '../../../src/db/schema.ts';
 import { createAppRouter } from '../../../src/app/router.ts';
@@ -5,10 +6,26 @@ import { createAppRouter } from '../../../src/app/router.ts';
 const ORIGINS = new Set(["https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site", "https://crm.minhlongonline.com",
   ...(Deno.env.get('ALLOWED_ORIGINS') || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(s => /^https:\/\/[^/]+$/.test(s))]);
 const router = createAppRouter();
-// Một client CSDL dùng chung cho cả isolate: các request sau dùng lại kết nối sẵn có (không mở kết nối mới mỗi lần → nhanh hơn nhiều,
-// nhất là tin nhắn hỏi định kỳ). Kết nối rảnh 60 giây thì tự đóng; isolate bị thu hồi thì kết nối đóng theo.
+// Một client CSDL dùng chung cho cả isolate: các request sau dùng lại kết nối sẵn có (không bắt tay TLS lại mỗi lần).
+// CSDL chỉ có 60 kết nối và SUPABASE_DB_URL là kết nối trực tiếp (không qua pooler), mà Edge chạy nhiều isolate cùng lúc:
+// mỗi isolate giữ TỐI ĐA 1 kết nối và nhả sau 10 giây rảnh, để tổng số kết nối không vượt giới hạn.
 let sharedDb: ReturnType<typeof createDb> | null = null;
-const dbFor = (url: string) => (sharedDb ||= createDb(url, schema, { max: 4, idleTimeout: 60 }));
+// Có secret SUPABASE_POOLER_URL (chuỗi kết nối Supavisor, chế độ transaction, cổng 6543) thì dùng pooler: nhiều kết nối hơn an toàn.
+const POOLER_URL = Deno.env.get('SUPABASE_POOLER_URL') || '';
+const dbFor = (url: string) => (sharedDb ||= POOLER_URL ? createDb(POOLER_URL, schema, { max: 3, idleTimeout: 20 }) : createDb(url, schema, { max: 1, idleTimeout: 10 }));
+/**
+ * Chắc chắn có kết nối trước khi xử lý: CSDL hết chỗ kết nối (lúc đông) thì chờ rồi thử lại vài lần thay vì báo lỗi ngay.
+ * Kết nối vừa dùng (< 5 giây) thì bỏ qua bước kiểm tra.
+ */
+let lastOk = 0;
+const isFull = (e: unknown) => /remaining connection slots|too many connections|53300|53400/i.test(String((e as { code?: string })?.code ?? '') + ' ' + String((e as Error)?.message ?? e) + ' ' + String((e as { cause?: Error })?.cause?.message ?? ''));
+async function ready(db: ReturnType<typeof createDb>) {
+  if (Date.now() - lastOk < 5_000) return;
+  for (let i = 0; ; i++) {
+    try { await db.execute(sql`select 1`); lastOk = Date.now(); return; }
+    catch (e) { if (i >= 4 || !isFull(e)) throw e; await new Promise(r => setTimeout(r, 250 * 2 ** i)); }
+  }
+}
 // Việc chạy nền sau khi đã trả lời (vd gửi Web Push): Supabase Edge giữ isolate sống tới khi xong.
 // deno-lint-ignore no-explicit-any
 const waitUntil = (p: Promise<unknown>) => { const rt = (globalThis as any).EdgeRuntime; if (rt?.waitUntil) rt.waitUntil(p); else p.catch(() => {}); };
@@ -26,6 +43,7 @@ Deno.serve(async req => {
   if (!url) return new Response(JSON.stringify({error:'Kết nối dữ liệu chưa sẵn sàng.'}), {status:503,headers:{...cors,'content-type':'application/json'}});
   const db = dbFor(url);
   try {
+    await ready(db);
     if (incoming.pathname.endsWith('/health')) {
       await db.select({id:schema.positions.id}).from(schema.positions).limit(1);
       return new Response(JSON.stringify({ok:true}), {headers:{...cors,'content-type':'application/json'}});
@@ -40,6 +58,7 @@ Deno.serve(async req => {
     }
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
     const response = await router.handle(forwarded,{db,waitUntil,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined});
+    if (response.status < 500) lastOk = Date.now();
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');
     if(cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';

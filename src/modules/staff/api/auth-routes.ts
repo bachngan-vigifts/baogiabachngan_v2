@@ -5,7 +5,8 @@ import { checkMethodAndOrigin } from '../../../core/http/security.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { CUSTOMER_FORBIDDEN_MESSAGE, FORBIDDEN_MESSAGE, SUPPLIER_FORBIDDEN_MESSAGE, canAccessArea, type Area } from '../domain/area-policy.ts';
 import { isCustomer, isSupplier } from '../domain/roles.ts';
-import { RATE_LIMITS, SESSION_LIFETIME_SECONDS, clearedSessionCookie, isToken, newToken, publicMember, readSessionToken, sessionCookie, sha256Hex, tooManyAttempts, type MemberRow } from '../domain/session.ts';
+import { parseLoginId } from '../domain/login-id.ts';
+import { RATE_LIMITS, SESSION_LIFETIME_SECONDS, shouldRenewSession, clearedSessionCookie, isToken, newToken, publicMember, readSessionToken, sessionCookie, sha256Hex, tooManyAttempts, type MemberRow } from '../domain/session.ts';
 import * as repo from '../repo/auth-repo.ts';
 import { registerMemberRoutes } from './member-routes.ts';
 
@@ -48,6 +49,7 @@ export async function authorizeRoute(c: Ctx): Promise<void> {
   const tokenHash = sha256Hex(token);
   const member = await repo.findSessionMember(c.env.db, tokenHash, now(c));
   if (!member) throw new AppError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  if (shouldRenewSession(member.sessionExpires, now(c))) await repo.extendSession(c.env.db, tokenHash, now(c) + SESSION_LIFETIME_SECONDS);
   if (!canAccessArea(member, area)) throw new AppError(403, isSupplier(member) ? SUPPLIER_FORBIDDEN_MESSAGE : isCustomer(member) ? CUSTOMER_FORBIDDEN_MESSAGE : FORBIDDEN_MESSAGE[area]);
   c.state.session = { member, tokenHash } satisfies SessionState;
 }
@@ -94,13 +96,14 @@ export function registerAuthRoutes(router: Router<StaffEnv>): void {
 
   router.post('/login', async c => {
     const body = await readJson(c.req, 4096);
-    const email = String(body.email || '').trim().toLowerCase();
+    // Email (mọi tài khoản) hoặc số điện thoại (tài khoản khách hàng). Giới hạn thử tính theo định danh đã chuẩn hoá.
+    const id = parseLoginId(body.email ?? body.login);
     await limit(c, 'ip:' + (c.req.headers.get('cf-connecting-ip') || 'unknown'), RATE_LIMITS.ip);
-    await limit(c, 'email:' + email, RATE_LIMITS.email);
-    const row = await repo.findLoginRow(c.env.db, email);
+    await limit(c, 'email:' + id.value, RATE_LIMITS.email);
+    const row = id.kind === 'phone' ? await repo.findLoginRowByPhone(c.env.db, id.value) : await repo.findLoginRow(c.env.db, id.value);
     // Luôn tốn thời gian băm như nhau dù email có tồn tại hay không (verifyPassword dùng hash giả khi thiếu).
     const valid = await verifyPassword(body.password, row?.passwordHash, c.env.passwordIterations);
-    if (!valid || !row?.active) throw new AppError(401, 'Email hoặc mật khẩu không đúng, hoặc tài khoản chưa được kích hoạt.');
+    if (!valid || !row?.active) throw new AppError(401, id.kind === 'email' ? 'Email hoặc mật khẩu không đúng, hoặc tài khoản chưa được kích hoạt.' : 'Số điện thoại / email hoặc mật khẩu không đúng, hoặc tài khoản chưa được kích hoạt.');
     const token = newToken();
     await repo.createSession(c.env.db, { tokenHash: sha256Hex(token), memberId: row.id, version: row.version, now: now(c), lifetime: SESSION_LIFETIME_SECONDS });
     return json({ user: publicMember(row) }, 200, { 'set-cookie': sessionCookie(token) });

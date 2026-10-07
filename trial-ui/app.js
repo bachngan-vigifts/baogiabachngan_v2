@@ -156,8 +156,10 @@ $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dia
 
 // ---------------------------------------------------------------- gọi API
 let token = '';
-try { token = sessionStorage.getItem(SESSION_KEY) || ''; } catch { /* trình duyệt chặn lưu trữ */ }
-const saveToken = t => { token = t || ''; try { if (token) sessionStorage.setItem(SESSION_KEY, token); else sessionStorage.removeItem(SESSION_KEY); } catch { /* bỏ qua */ } };
+// Giữ đăng nhập sau khi đóng app / tab: lưu ở localStorage (sessionStorage bị xoá mỗi lần đóng, nhất là app trên iPhone).
+// Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
+try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
+const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
 
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 async function api(path, method = 'GET', body) {
@@ -188,8 +190,8 @@ const isManager = () => state.user?.role === 'manager';
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
 let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('token') : null;
 
-function showAuth(message = '') {
-  state.user = null; saveToken('');
+function showAuth(message = '', { keepToken = false } = {}) {
+  state.user = null; if (!keepToken) saveToken('');
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
@@ -1859,8 +1861,22 @@ $('#copy-link').addEventListener('click', async () => {
 $('#today').textContent = new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 renderQuotes(); renderCustomers();
 if (activation) { setupActivationForm(); showAuth(); }
-else if (token) enter().catch(e => showAuth(e.status === 401 ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' : e.message));
+else if (token) resume();
 else showAuth();
+/**
+ * Mở lại app khi đã có phiên: chỉ đăng xuất khi máy chủ báo phiên hết hạn (401). Mất mạng / máy chủ chưa sẵn sàng thì
+ * GIỮ phiên, hiện nút "Thử lại" (tự thử lại khi có mạng) thay vì bắt đăng nhập lại.
+ */
+function resume() {
+  enter().catch(e => {
+    if (e.status === 401) return showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    showAuth(e.message, { keepToken: true });
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn secondary small'; retry.textContent = 'Thử lại';
+    retry.style.marginLeft = '8px'; retry.addEventListener('click', () => { $('#auth-error').textContent = 'Đang kết nối lại…'; resume(); });
+    $('#auth-error').append(retry);
+    window.addEventListener('online', () => { if (!state.user && token) resume(); }, { once: true });
+  });
+}
 
 
 // ================================================================ BÁN HÀNG: đơn đặt hàng · HĐKT · lịch giao · công nợ
@@ -2057,9 +2073,10 @@ async function drawAccounts() {
     const { accounts } = await api('/customers/' + encodeURIComponent(accCustomer.id) + '/accounts');
     list.innerHTML = accounts.length ? accounts.map(a => `<li data-member="${esc(a.memberId)}">
       <div><b>${esc(a.name)}</b> <span class="pill ${a.active ? (a.activated ? 'ok' : 'warn') : 'muted'}">${a.active ? (a.activated ? 'Đang dùng' : 'Chưa đặt mật khẩu') : 'Đã khoá'}</span>
-        <small>${esc(a.email)} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
+        <small>${esc(a.email)}${a.phone ? ' · ĐT ' + esc(a.phone) : ''} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
         <small>CK riêng: ${Object.keys(DISCOUNT_LABELS).map(k => `${DISCOUNT_LABELS[k]} ${fmtNum(a.discounts[k] || 0)}%`).join(' · ')}</small></div>
       ${a.canManage ? `<div class="row-actions">${isManager() ? '<button type="button" class="btn ghost small" data-acc-discount>Đặt CK</button>' : ''}
+        <button type="button" class="btn ghost small" data-acc-phone>${a.phone ? 'Đổi SĐT' : 'Thêm SĐT'}</button>
         <button type="button" class="btn ghost small" data-acc-reset>Cấp lại link</button>
         <button type="button" class="btn ghost small" data-acc-active="${a.active ? 0 : 1}">${a.active ? 'Khoá' : 'Mở khoá'}</button></div>` : ''}
     </li>`).join('') : '<li class="muted">Khách này chưa có tài khoản. Tạo tài khoản bên dưới rồi gửi link cho khách tự đặt mật khẩu.</li>';
@@ -2083,6 +2100,12 @@ $('#accounts-list').addEventListener('click', async e => {
   const li = e.target.closest('li[data-member]'); if (!li) return;
   const id = li.dataset.member, a = $('#accounts-list')._accounts.find(x => x.memberId === id);
   try {
+    if (e.target.closest('[data-acc-phone]')) {
+      const cur = a?.phone || '';
+      const phone = prompt('Số điện thoại đăng nhập của tài khoản này (để trống = bỏ đăng nhập bằng số):', cur);
+      if (phone === null) return;
+      await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { phone: phone.trim() }); toast('Đã cập nhật số điện thoại.'); return drawAccounts();
+    }
     if (e.target.closest('[data-acc-reset]')) { showAccountLink((await api(`/customer-accounts/${encodeURIComponent(id)}/reset`, 'POST', {})).url); return drawAccounts(); }
     const act = e.target.closest('[data-acc-active]');
     if (act) { await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { active: act.dataset.accActive === '1' }); toast(act.dataset.accActive === '1' ? 'Đã mở khoá tài khoản.' : 'Đã khoá tài khoản.'); return drawAccounts(); }

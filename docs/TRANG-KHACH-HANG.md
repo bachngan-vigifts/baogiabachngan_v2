@@ -10,6 +10,12 @@ Khách **chỉ** vào được trang này. Khách **không** thấy tồn kho, g
 
 ## Tài khoản
 - Tài khoản khách là một `staff_members` có vai trò `customer` (chức vụ `customer`). Đăng nhập, kích hoạt và phiên dùng chung cơ chế với nhân viên.
+- **Đăng nhập bằng email hoặc số điện thoại** (`staff/domain/login-id.ts`):
+  - Ô đăng nhập nhận cả hai. Có "@" thì là email; còn lại đọc như số điện thoại và chuẩn hoá về `0xxxxxxxxx` (bỏ dấu cách, chấm, gạch; `+84` / `84` thành `0`).
+  - Chỉ tài khoản khách hàng đăng nhập được bằng số. Nhân viên vẫn dùng email.
+  - Số điện thoại của tài khoản khách không được trùng với tài khoản khách khác (409). Số không đọc được vẫn lưu nguyên nhưng không dùng để đăng nhập.
+  - Nhân viên đặt số khi cấp tài khoản, hoặc bấm **Thêm SĐT / Đổi SĐT** trong hộp Tài khoản (`PUT /customer-accounts/:id { phone }`).
+  - Liên kết đặt mật khẩu vẫn gửi theo email.
 - Bảng `customer_accounts` gắn tài khoản với khách hàng Sapo, nhân viên phụ trách và chiết khấu riêng.
   - Migration `0011_customer_accounts.sql` tạo bảng này và thêm chức vụ "Khách hàng".
   - Migration `0012_supabase_access_customer_accounts.sql` thu hồi quyền truy cập trực tiếp của `anon` và `authenticated`.
