@@ -14,7 +14,7 @@ self.addEventListener('push', event => {
     } catch { /* bỏ qua */ }
     await self.registration.showNotification(note.title || 'Có cập nhật mới', {
       body: note.body || 'Mở để xem chi tiết.', tag: note.id || 'bach-ngan', renotify: true,
-      icon: 'favicon.svg', badge: 'favicon.svg', data: { url: note.url || '/', id: note.id || '' },
+      icon: 'icons/icon-192.png', badge: 'icons/badge-96.png', data: { url: note.url || '/', id: note.id || '' },
     });
   })());
 });
