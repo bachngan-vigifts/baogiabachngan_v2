@@ -11,7 +11,7 @@ const SESSION_KEY = 'bn-v2-session';
 
 const $ = s => document.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const vnd = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
 const money = v => vnd.format(Math.round(Number(v) || 0));
 const fmtNum = v => Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });

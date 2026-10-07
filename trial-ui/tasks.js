@@ -12,7 +12,7 @@ export const TASK_UI = {
   teams: { warehouse: 'Kho', accounting: 'Kế toán', 'sale-admin': 'Sale Admin' },
   groups: [['overdue', 'Quá hạn'], ['today', 'Hôm nay'], ['upcoming', 'Sắp tới'], ['none', 'Chưa đặt hạn']],
 };
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
 // "Hôm nay" theo giờ Việt Nam (khớp máy chủ), không theo múi giờ của máy đang mở.
 const todayIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());

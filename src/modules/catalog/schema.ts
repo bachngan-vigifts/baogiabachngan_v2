@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { PRODUCT_MOVE_KINDS } from './domain/product-history.ts';
+import { PRODUCT_APPROVAL_STATUSES } from './domain/product-approval.ts';
 
 export const stockImports = pgTable('stock_imports', {
   revision: bigint('revision', { mode: 'number' }).primaryKey(),
@@ -62,7 +63,14 @@ export const products = pgTable('products', {
   sapoProductId: text('sapo_product_id'),
   active: boolean('active').notNull().default(true),
   updatedAt: text('updated_at').notNull(),
+  /** Sản phẩm tạo trên web: người tạo (khác null = sản phẩm web, nhập file danh mục không ẩn) và trạng thái duyệt. */
+  createdBy: text('created_by'),
+  approvalStatus: text('approval_status', { enum: PRODUCT_APPROVAL_STATUSES }).notNull().default('approved'),
+  approvedBy: text('approved_by'),
+  approvedAt: text('approved_at'),
 }, t => [
+  index('idx_products_approval').on(t.approvalStatus),
+  enumCheck('chk_products_approval', t.approvalStatus, PRODUCT_APPROVAL_STATUSES),
   index('idx_products_brand').on(t.brand),
   index('idx_products_name').on(t.name),
   check('chk_products_tax_in', sql`${t.taxIn} IS NULL OR (${t.taxIn} >= 0 AND ${t.taxIn} <= 100)`),

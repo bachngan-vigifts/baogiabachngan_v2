@@ -40,3 +40,11 @@
 | Giới hạn, khoá hội thoại 1-1 | `src/modules/chat/domain/chat-config.ts` |
 | API `/chat/*` | `src/modules/chat/api/routes.ts` |
 | Giao diện | `trial-ui/chat.js` + mục "Tin nhắn" trong `style.css` |
+
+## Ảnh đại diện
+- Mỗi người tự đổi ảnh ở menu tài khoản → "Đổi ảnh đại diện". Manager đổi / xoá ảnh của nhân viên trong "Chi tiết nhân viên" (bấm tên hoặc nút sửa ở trang Nhân viên).
+- Trình duyệt cắt vuông, thu nhỏ 160 px JPEG (~10 KB) rồi gửi data URL; máy chủ chỉ nhận JPEG / PNG / WebP, kiểm tra chữ ký file, tối đa ~90 KB.
+- Lưu ở bảng `staff_avatars` (một ảnh / người); `staff_members.avatar_key` là mã ảnh hiện tại, đổi mỗi lần thay ảnh (migration `0025_staff_avatars.sql`, phân quyền `0026_supabase_access_staff_avatars.sql`).
+- API: `PUT/DELETE /avatar` (chính mình), `PUT/DELETE /admin/members/:id/avatar` (Manager), `GET /avatars?keys=a,b` (lấy nhiều ảnh một lượt).
+- `/me`, `/admin/members`, `/chat/people`, thành viên hội thoại và tin nhắn đều trả `avatar` (mã ảnh hoặc `null`).
+- Giao diện: `trial-ui/avatars.js`. Ô avatar nào có `data-av="<mã>"` tự được phủ ảnh; ảnh lưu đệm trong máy theo mã. Không có ảnh thì hiện chữ viết tắt.

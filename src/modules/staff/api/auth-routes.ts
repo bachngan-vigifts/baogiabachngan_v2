@@ -9,6 +9,7 @@ import { parseLoginId } from '../domain/login-id.ts';
 import { RATE_LIMITS, SESSION_LIFETIME_SECONDS, shouldRenewSession, clearedSessionCookie, isToken, newToken, publicMember, readSessionToken, sessionCookie, sha256Hex, tooManyAttempts, type MemberRow } from '../domain/session.ts';
 import * as repo from '../repo/auth-repo.ts';
 import { registerMemberRoutes } from './member-routes.ts';
+import { registerAvatarRoutes } from './avatar-routes.ts';
 
 /** Môi trường mà các route của `staff` cần. Nơi lắp ráp ứng dụng (src/app) tạo ra từ bindings của Cloudflare. */
 export interface StaffEnv {
@@ -147,5 +148,6 @@ export function createStaffRouter(): Router<StaffEnv> {
   const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: authorizeRoute });
   registerAuthRoutes(router);
   registerMemberRoutes(router);
+  registerAvatarRoutes(router);
   return router;
 }

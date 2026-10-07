@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
-import { CUSTOMER_STAFF_ROLES } from './domain/customer-config.ts';
+import { APPROVAL_STATUSES, CUSTOMER_STAFF_ROLES } from './domain/customer-config.ts';
 
 export const customers = pgTable('sapo_customers', {
   createdAt: text('created_at').notNull().default(''),
@@ -17,7 +17,13 @@ export const customers = pgTable('sapo_customers', {
   search: text('search').notNull(),
   sourceVersion: bigint('source_version', { mode: 'number' }).notNull(),
   syncedAt: text('synced_at').notNull(),
-}, t => [index('idx_sapo_customers_name').on(t.name)]).enableRLS();
+  /** Duyệt: khách nhân viên tạo chờ Manager duyệt mới dùng được (`APPROVAL_STATUSES`). Khách Sapo / dữ liệu cũ = approved. */
+  approvalStatus: text('approval_status', { enum: APPROVAL_STATUSES }).notNull().default('approved'),
+  createdBy: text('created_by'),
+  approvedBy: text('approved_by'),
+  approvedAt: text('approved_at'),
+}, t => [index('idx_sapo_customers_name').on(t.name), index('idx_sapo_customers_approval').on(t.approvalStatus),
+  enumCheck('chk_sapo_customers_approval', t.approvalStatus, APPROVAL_STATUSES)]).enableRLS();
 export const customerContractProfiles = pgTable('customer_contract_profiles', {
   customerId: text('customer_id').primaryKey().references(() => customers.id),
   data: text('data').notNull().default('{}'),

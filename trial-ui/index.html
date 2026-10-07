@@ -14,6 +14,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Bách Ngân">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -66,6 +69,7 @@
   </aside>
   <div class="account-menu" id="account-menu" role="menu" hidden>
     <div class="account-menu-head"><strong id="menu-name"></strong><small id="menu-email"></small></div>
+    <button role="menuitem" id="change-avatar">Đổi ảnh đại diện</button>
     <button role="menuitem" id="change-password">Đổi mật khẩu</button>
     <button role="menuitem" id="logout" class="danger-text">Đăng xuất</button>
     <small class="menu-version">Phiên bản <span id="app-version">__BUILD__</span></small>
@@ -281,7 +285,9 @@
       <div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Sản phẩm</h1><p class="muted" id="product-sub">Danh mục, giá bán và tồn kho để chọn nhanh khi lập báo giá.</p></div>
         <label class="btn secondary manager-only" id="catalog-import-label" title="Chọn file JSON danh mục lấy từ web báo giá cũ"><svg viewBox="0 0 24 24"><path d="M12 15V3 M7 8l5-5 5 5 M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Nhập danh mục<input type="file" id="catalog-file" accept=".json,application/json" hidden></label>
+        <button type="button" class="btn-add" id="new-product" title="Thêm sản phẩm" aria-label="Thêm sản phẩm"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
+      <div class="approval-box" id="product-pending" hidden></div>
       <div class="panel">
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="product-search" type="search" placeholder="Tìm tên, mã SKU, thương hiệu… (gõ không dấu được)" aria-label="Tìm sản phẩm"></label>
@@ -318,6 +324,7 @@
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="customer-search" type="search" placeholder="Tìm tên, người liên hệ, số điện thoại, MST…" aria-label="Tìm khách hàng"></label>
           <label class="chip-check"><input type="checkbox" id="customer-mine"> Khách của tôi</label>
+          <label class="chip-check" id="customer-pending-chip" hidden><input type="checkbox" id="customer-pending"> Chờ duyệt <b id="customer-pending-count">0</b></label>
           <span class="muted small" id="customer-count"></span>
         </div>
         <div class="table-wrap">
@@ -525,6 +532,11 @@
   <form id="member-form" novalidate>
     <div class="modal-head"><h2 id="member-dialog-title">Thêm nhân viên</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body form-grid cols-2">
+      <div class="member-photo span-2" id="member-photo-row" hidden>
+        <span class="avatar large" id="member-photo">BN</span>
+        <div><b>Ảnh đại diện</b><p class="muted small">Hiện ở tin nhắn và danh sách nhân viên.</p>
+          <div class="actions"><button type="button" class="btn secondary small" id="member-photo-upload">Tải ảnh lên</button><button type="button" class="btn ghost small danger-text" id="member-photo-remove" hidden>Xoá ảnh</button></div></div>
+      </div>
       <label class="span-2">Họ tên<input name="name" required maxlength="200"></label>
       <label>Email<input name="email" type="email" required maxlength="254"></label>
       <label>Điện thoại<input name="phone" required maxlength="40" inputmode="tel"></label>

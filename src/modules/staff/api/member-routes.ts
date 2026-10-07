@@ -52,6 +52,15 @@ export function registerMemberRoutes(router: Router<StaffEnv>): void {
     return json({ ok: true });
   }, 'admin');
 
+  /** Xoá hẳn nhân viên khỏi danh sách (khác "Khoá": khoá thì còn trong danh sách và mở lại được). */
+  router.delete('/admin/members/:id', async c => {
+    const id = c.params.id!;
+    assertNotSelf(actor(c).id, id, SELF_MESSAGES.remove);
+    if (await repo.isCustomerMember(c.env.db, id)) throw new AppError(400, CUSTOMER_MSG);
+    if (!await repo.deleteMember(c.env.db, actor(c).id, id, new Date().toISOString())) throw new AppError(404, 'Không tìm thấy nhân viên.');
+    return json({ ok: true });
+  }, 'admin');
+
   router.put('/admin/member', async c => {
     const body = await readJson(c.req, 4096);
     if (await repo.isSapoLinked(c.env.db, body.id)) throw new AppError(409, 'Hồ sơ này đã hợp nhất. Vui lòng chỉnh hồ sơ web đang sử dụng.');
