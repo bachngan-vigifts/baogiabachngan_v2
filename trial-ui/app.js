@@ -427,7 +427,7 @@ function route() {
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : VIEWS[view];
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
-  window.scrollTo(0, 0);
+  window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
   if (view === 'products' && !state.products) loadProducts();
   if (view === 'products') productAdmin().loadPending();
@@ -1506,8 +1506,9 @@ function hideProductSuggest() { pSuggest.hidden = true; pItems = []; pIndex = -1
 function placeProductSuggest() {
   if (!pInput) return;
   const r = pInput.getBoundingClientRect();
-  pSuggest.style.left = Math.max(8, Math.min(r.left + scrollX, scrollX + innerWidth - pSuggest.offsetWidth - 8)) + 'px';
-  pSuggest.style.top = r.bottom + scrollY + 4 + 'px';
+  // position: fixed → toạ độ theo màn hình (đúng cả khi trang cuộn hay chỉ vùng nội dung cuộn trên điện thoại).
+  pSuggest.style.left = Math.max(8, Math.min(r.left, innerWidth - pSuggest.offsetWidth - 8)) + 'px';
+  pSuggest.style.top = r.bottom + 4 + 'px';
 }
 function searchProducts(input) {
   pInput = input; clearTimeout(pTimer);
@@ -1553,6 +1554,7 @@ $('#line-list').addEventListener('keydown', e => {
 }, true);
 pSuggest.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pickProduct(pItems[li.dataset.i]); } });
 addEventListener('resize', () => { if (!pSuggest.hidden) placeProductSuggest(); });
+addEventListener('scroll', () => { if (!pSuggest.hidden) placeProductSuggest(); }, true); // cuộn bất kỳ vùng nào: ô gợi ý đi theo ô nhập
 
 // ----- chọn sản phẩm từ danh mục ngay trong báo giá
 let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
