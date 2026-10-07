@@ -79,6 +79,11 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal((await call(`/orders/${o.data.id}`, old)).status, 200, 'được chia sẻ khách → mở được đơn của khách');
   ov = (await call(`/customers/${k.data.id}/overview`, other)).data;
   assert.equal(ov.access.canSeeAll, false); assert.equal(ov.orders.length, 0); assert.equal(ov.quotes.length, 0);
+  // Tài khoản trang khách (email đăng nhập) chỉ người phụ trách / được chia sẻ / Manager thấy.
+  assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: k.data.id, name: 'Chị Lan', email: 'lan@hoanglong.vn' })).status, 201);
+  assert.deepEqual((await call(`/customers/${k.data.id}/overview`, emp)).data.accounts.map((a: any) => a.email), ['lan@hoanglong.vn']);
+  assert.deepEqual((await call(`/customers/${k.data.id}/overview`, other)).data.accounts, [], 'người không phụ trách không thấy tài khoản khách');
+  assert.equal((await call('/customers/%E0/overview', emp)).status, 400, 'URL hỏng → 400, không phải 500');
   assert.equal((await call(`/orders/${o.data.id}`, other)).status, 404);
 
   // Manager đổi người phụ trách sang old: old không còn trong danh sách chia sẻ; bỏ trống người phụ trách được.

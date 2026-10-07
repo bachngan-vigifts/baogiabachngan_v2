@@ -1034,15 +1034,35 @@ label.check { display: flex; align-items: center; gap: 8px; }
   .md-kpis .stat strong { font-size: 1.2rem; } .md-trend { height: 140px; gap: 6px; }
   .att-grid { gap: 4px; } .att-day { border-radius: 7px; } .att-day b { font-size: .7rem; } }
 
-/* ---------- Phiếu lương: bản in + nút tải bảng lương tổng ---------- */
-.payroll-export { display: inline-flex; gap: 8px; align-items: center; }
-.payroll-export input[type="month"] { height: 38px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; }
-.md-scheme { margin: -4px 0 8px; }
-.md-scheme-box { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin: 0; }
-.md-scheme-box legend { padding: 0 6px; font-size: .82rem; color: var(--muted); }
+/* ---------- Bảng lương công ty (payroll.js) ---------- */
+.pr-actions { flex-wrap: wrap; align-items: center; gap: 8px; }
+.pr-wide { overflow-x: auto; }
+.pr-table th { white-space: normal; min-width: 92px; font-size: .7rem; line-height: 1.25; vertical-align: bottom; }
+.pr-table th:nth-child(1) { min-width: 36px; } .pr-table th:nth-child(2) { min-width: 170px; }
+.pr-table td { white-space: nowrap; font-size: .86rem; padding: 9px 12px; }
+.pr-table tfoot td { background: var(--surface-2); font-weight: 700; border-top: 2px solid var(--line-strong); padding: 10px 12px; }
+.pr-table .pr-net { color: var(--brand-navy); }
+.pr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.pr-grid .card { margin: 0; } .pr-grid h3 { margin: 0 0 10px; font-size: 1rem; }
+.pr-month { display: grid; gap: 10px; align-content: start; } .pr-month label { display: grid; gap: 4px; font-weight: 600; font-size: .86rem; }
+.pr-month .btn { justify-self: start; }
+.pr-params .modal-body { max-height: 72vh; overflow: auto; }
+.pr-params fieldset { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 14px 12px; margin: 0 0 12px; }
+.pr-params legend { font-weight: 700; color: var(--brand-navy); padding: 0 6px; }
+.pr-params .form-grid { align-items: start; } .pr-params label small { display: block; font-weight: 400; margin-top: 2px; }
+.pr-eff { display: grid; gap: 4px; font-weight: 600; max-width: 240px; margin-bottom: 4px; }
+.md-kpi { border-top: 1px dashed var(--line-strong); padding-top: 10px; } .md-kpi h3 { margin: 0; font-size: .95rem; }
+.md-inputs dd small { margin-left: 4px; }
+@media (max-width: 900px) { .pr-grid { grid-template-columns: 1fr; } }
+@media (max-width: 680px) {
+  .pr-table tfoot { display: none; }
+  .pr-table td { white-space: normal; }
+}
+
+/* ---------- Phiếu lương in A4 (payroll-ui.js) ---------- */
 .slip-sheet { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11pt; max-width: 720px; margin: 0 auto; }
 .slip-sheet .slip-top { display: grid; gap: 2px; font-size: 10pt; }
-.slip-sheet h1 { text-align: center; font-size: 17pt; letter-spacing: .06em; margin: 14px 0 12px; }
+.slip-sheet h1 { text-align: center; font-size: 17pt; letter-spacing: .06em; margin: 14px 0 12px; color: #111; }
 .slip-sheet .slip-info { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 12px; }
 .slip-sheet .slip-info span { display: inline-block; min-width: 82px; color: #555; }
 .slip-sheet .slip-table { width: 100%; border-collapse: collapse; }

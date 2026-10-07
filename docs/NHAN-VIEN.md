@@ -37,63 +37,101 @@ Trang `#/members/<id>?month=YYYY-MM`. Manager mở từ trang Nhân viên (bấm
 - **Công nợ đang giữ:** phần còn phải thu của mọi đơn nhân viên phụ trách (không riêng tháng).
 - **Khách mới:** khách do nhân viên tạo trong tháng.
 
-## Lương (`src/modules/hr/domain/payroll.ts`)
-```
-Lương theo ngày công = Lương cơ bản × Ngày công thực tế / Ngày công chuẩn
-Hoa hồng            = Doanh số tháng × % hoa hồng
-Tổng thu nhập       = Lương theo ngày công + Phụ cấp cố định + Phụ cấp thêm + Thưởng + Hoa hồng
-Thực lĩnh           = Tổng thu nhập − Khấu trừ − Bảo hiểm (NV đóng) − Tạm ứng
-```
-- **Ngày công:** đủ công = 1, nửa công = 0,5, nghỉ có lương = 1, nghỉ không lương = 0, vắng = 0.
-- **Mức lương theo tháng áp dụng:** tháng X dùng bản có `effective_month` mới nhất ≤ X. Tăng lương thì thêm bản mới, các tháng cũ không đổi.
-- **Chốt lương:** lưu một bản chụp số liệu vào `hr_payslips` và khoá ngày công / thưởng phạt của tháng. Muốn sửa thì "Mở lại" (chỉ khi chưa trả). "Đánh dấu đã trả" thì không mở lại được nữa.
+## Lương – theo file "Bảng lương mẫu T9/2026"
+Công thức lấy đúng file Excel mẫu và đã đối chiếu từng đồng với các dòng trong file (test `src/modules/hr/domain/payroll.test.ts`).
 
-## Bảng lương Sale / Bách Ngân / Lock (`computePayroll` trong `payroll.ts`)
-Mỗi mức lương áp dụng có **cách tính** (`scheme`): `basic` (như trên, mặc định), `sale`, `bachngan`, `lock`. Công thức chuyển từ 3 sheet LƯƠNG SALE / BÁCH NGÂN / LOCK của file Excel; mọi mức và tỷ lệ nằm trong hằng `PAY` (một chỗ sửa). `payroll.test.ts` đối chiếu từng số "Thực nhận" tháng 9/2026 với file Excel.
+| Phần file Excel | Trong app | Code |
+|---|---|---|
+| Sheet "Tham số" | Bảng lương → **Tham số** (lưu theo "áp dụng từ tháng") | `hr/domain/params.ts` (`PARAM_FIELDS`) |
+| "Lương Sale", "Lương Bách Ngân", "Lương Lock" | Mỗi người thuộc 1 **bảng lương** (hồ sơ lương) → tab trong Bảng lương | `hr/domain/payroll.ts` (`computePayslip`) |
+| "KPI CV" | Số liệu tháng của nhân viên Sale (KH mới, giao dịch, HĐ, DS cá nhân, ngày làm hàng / công tác, KPI chốt) | `hr/domain/kpi-cv.ts` |
+| "Thưởng quý" | Tự tính tháng cuối quý khi bật "Chi trả thưởng quý" | `computeQuarterBonus` |
+| "Phiếu lương" | Tab **Lương & thưởng** ở trang nhân viên (nhân viên tự xem phiếu của mình) | `member-detail.js` |
+| "DS tổng hợp", "Tổng hợp" | Bảng lương → **Tổng hợp** | `payroll.js` |
+| "Chuyển khoản" (VietQR) | Bảng lương → **Chuyển khoản** + cột trong file Excel xuất ra | `vietQrUrl` |
+| "Chỉ tiêu DS" | Chỉ tiêu DS cá nhân / tháng trong hồ sơ lương (mặc định 415tr ở Tham số) | – |
 
-| Khoản | Công thức |
-|---|---|
-| Lương theo công | Lương cơ bản × ngày công ÷ công chuẩn (ngày công lấy từ chấm công) |
-| Phụ cấp năng lực | Hệ số năng lực × 200.000 |
-| Trách nhiệm | Cố định / đơn giá × ngày công (20.000 ở Bách Ngân, Lock) / số tiền × ngày công ÷ công chuẩn |
-| Cơm + xăng | 50.000 × (ngày công − ngày trừ cơm); chỉ người được đánh dấu hưởng. Ngày trừ cơm mặc định: Sale 0, Bách Ngân 1, Lock 0 |
-| Thưởng Sale | KPI CV ≥ 90%: DS × 1,2%; 60–<90%: DS × 0,5%; <60%: 0 |
-| Thưởng Bách Ngân | DS tháng > 300tr: ≥100% DS TB 6 tháng → 1%; ≥85% → 0,5%; chia 2 |
-| Thưởng Lock | DS team < 85% × 300tr → 0; ≥ 310tr → 1,5%; còn lại 1%; chia 2 |
-| Thưởng sản lượng | Sản lượng × đơn giá (kho 15.000, TK 30.000) hoặc × tỷ lệ (IT-Web 0,5%) |
-| Tăng ca | Lương cơ bản ÷ 24 ÷ 8 × giờ × 2 (Lock tính trên lương theo công) |
-| Khấu trừ | BHXH (mức lương), BHYT, TNCN, vi phạm, tạm ứng; Sale: cấn trừ điện thoại = số lớn hơn giữa phụ cấp ĐT và tạm ứng ĐT |
+### Công thức
+**Chung cả 3 bảng:**
+- Lương theo công = LCB × ngày làm ÷ công chuẩn. LCB trống thì lấy LCB vùng = LCB/ngày × công chuẩn.
+- Năng lực = hệ số × 200.000.
+- Trách nhiệm: cố định (Sale), theo tỷ lệ ngày làm (VD kho làm 18/26 ngày), hoặc theo ngày (Bách Ngân, Lock: 20.000 × ngày làm).
+- Cơm + xăng = 50.000 × MAX(0, ngày làm − ngày trừ cơm của nhóm). Thử việc: bỏ chọn "hưởng cơm + xăng".
+- Tăng ca = LCB ÷ 24 ÷ 8 × giờ × 2.
 
-KPI CV của Sale (sheet KPI CV): KH mới (vượt 96 → 20%), giao dịch (tối đa 30%), số HĐ (tối đa 10%), DS cá nhân 415tr (50%, không giới hạn); mỗi ngày làm hàng / công tác cộng 4 KH mới và 10 giao dịch. Manager có thể nhập số thực hiện (hệ thống tính KPI) hoặc chốt thẳng KPI CV.
+**Sale & VP:**
+- Thưởng KPI DS = DS tháng × (KPI CV ≥ 90% → 1,2%; ≥ 60% → 0,5%).
+- Thưởng sản lượng = sản lượng × đơn giá / tỷ lệ (kho 15.000/đơn, TK 30.000/lượt, IT 0,005 × DS web).
+- Thực nhận = Tổng − BHXH − vi phạm − MAX(tạm ứng ĐT, PC điện thoại) − tạm ứng.
 
-**Số liệu nhập theo tháng** (nút *Nhập số liệu tháng* ở tab Lương & thưởng, chỉ Manager, khoá khi đã chốt): KPI, DS tháng (để trống = doanh số hệ thống), DS trung bình 6 tháng, sản lượng, thưởng quý / khác, giờ tăng ca, chuyên cần, công tác phí, điện thoại, vi phạm, BHYT, TNCN, số ngày trừ cơm. Thưởng / phụ cấp thêm / khấu trừ / tạm ứng nhập ở mục bên cạnh vẫn được cộng vào.
+**Bách Ngân:** thưởng DS cửa hàng
+- DS > 300tr: DS/DS TB 6 tháng ≥ 100% → 1%, ≥ 85% → 0,5%.
+- Rồi ÷ 2, chỉ cho người được chọn "hưởng thưởng DS nhóm".
 
-## In phiếu lương và tải bảng lương tổng
-- **In phiếu lương:** nút ở tab *Lương & thưởng* (Manager và chính nhân viên đó). Mở hộp thoại in của trình duyệt (A4 dọc, lưu được PDF). Phiếu đã chốt in đúng từng dòng lúc chốt.
-- **Tải bảng lương tổng:** trang *Nhân viên* (Manager) → chọn tháng → *Tải bảng lương tổng*. File Excel, mỗi nhân viên một dòng, mỗi khoản một cột, tổng cộng bằng công thức SUM. Chỉ gồm nhân viên đang làm đã được đặt mức lương; phiếu đã chốt lấy số chốt, chưa chốt lấy số tạm tính.
-- API: `GET /hr/payroll/:month` (Manager), `PUT /hr/members/:id/inputs/:month`.
+**Lock:** thưởng DS team
+- DS < 85% × 300tr → 0.
+- DS ≥ 310tr → 1,5%.
+- Còn lại → 1%.
+- Kết quả ÷ 2.
 
-## Cấu trúc dữ liệu (migration `0027_hr_payroll.sql`, phân quyền `0028_supabase_access_hr_payroll.sql`; bảng lương theo nhóm: `0029_hr_payroll_schemes.sql`, `0030_supabase_access_hr_month_inputs.sql`)
+**Bách Ngân / Lock:** Thực nhận = Tổng − BHXH − BHYT − TNCN − vi phạm − tạm ứng ĐT − tạm ứng.
+
+**Làm tròn:** mỗi khoản được làm tròn tới đồng, nên tổng có thể lệch tối đa vài đồng so với Excel (Excel giữ số lẻ).
+
+### Chỗ chuẩn hoá so với file gốc (theo sheet "Cách tính")
+- Tăng ca: cả 3 bảng dùng một công thức là LCB ÷ 24 ÷ 8 × giờ × 2. Bảng Lock trong file mẫu lấy "lương theo công" thay vì LCB; app dùng LCB như sheet "Cách tính" ghi.
+- Các điểm lệch chính sách (1,2% hay 1%, 85% hay 80%, mức BHXH) để nguyên như file mẫu và sửa được ở **Tham số**.
+
+### Nhập liệu hằng tháng
+1. **Bảng lương → Số liệu chung:** DS cửa hàng Bách Ngân, DS trung bình 6 tháng, DS team Lock. Tháng cuối quý thì bật "Chi trả thưởng quý".
+2. **Trang nhân viên → Lương & thưởng → Nhập số liệu tháng:**
+   - Ngày làm việc (trống = theo chấm công) và giờ tăng ca.
+   - DS tháng (trống = DS đơn hàng trên hệ thống) và sản lượng.
+   - KPI CV.
+   - BHYT / TNCN.
+   - Thưởng quý (trống = tự tính).
+3. **＋ Thêm khoản:** thưởng khác / tuyên dương, công tác, vi phạm, tạm ứng, tạm ứng điện thoại (mỗi khoản có lý do).
+4. **Bảng lương → Chốt lương:** chốt cả bảng, hoặc chốt từng người ở trang nhân viên. Phiếu đã chốt lưu bản chụp toàn bộ chi tiết; sửa tham số hay dữ liệu sau đó không làm đổi phiếu. Tháng đã chốt thì khoá số liệu.
+5. **Xuất Excel:** gồm các sheet Tổng hợp, Lương Sale, Lương Bách Ngân, Lương Lock, Chuyển khoản (có link VietQR).
+6. **In phiếu lương:** nút "In phiếu lương" ở tab Lương & thưởng (Manager và chính nhân viên đó). Phiếu A4 dọc, lưu được PDF, có số tiền bằng chữ và chỗ ký. Phiếu đã chốt in đúng từng khoản lúc chốt.
+
+## Cấu trúc dữ liệu
+Migration theo thứ tự:
+- `0027_hr_payroll`
+- `0028_supabase_access_hr_payroll`
+- `0029_hr_payroll_schemes`, `0030_supabase_access_hr_month_inputs`: bản tích hợp trước (PR #38), đã thay bằng bản này
+- `0031_hr_payroll_reshape`: bỏ `hr_month_inputs`, `scheme`, `params`, `lines` và các cột của công thức cũ
+- `0032_hr_payroll_template`
+- `0033_supabase_access_hr_payroll_template`
+
 | Bảng | Khoá | Nội dung |
 |---|---|---|
-| `hr_salary_profiles` | (member_id, effective_month) | Lương cơ bản, phụ cấp cố định, ngày công chuẩn, chỉ tiêu doanh số, % hoa hồng, bảo hiểm NV đóng, cách tính (`scheme`), tham số bảng lương (`params` JSON) |
-| `hr_month_inputs` | (member_id, month) | Số liệu nhập theo tháng cho bảng lương Sale / Bách Ngân / Lock (JSON) |
-| `hr_attendance` | (member_id, work_date) | Trạng thái ngày công, người chấm |
-| `hr_adjustments` | id | Thưởng / phụ cấp thêm / khấu trừ / tạm ứng theo tháng, lý do, người nhập |
-| `hr_payslips` | (member_id, month) | Phiếu lương đã chốt (mọi con số + cách tính + từng dòng `lines`) + trạng thái đã chốt / đã trả |
-
-Mọi bảng tham chiếu `staff_members`. Giá trị trạng thái và loại khoản có ràng buộc CHECK ở DB.
+| `hr_payroll_settings` | effective_month | Tham số công ty (JSON theo `PARAM_FIELDS`; thiếu khoá → mặc định file mẫu) |
+| `hr_payroll_months` | month | DS Bách Ngân, DS TB 6 tháng, DS team Lock, chi thưởng quý |
+| `hr_salary_profiles` | (member_id, effective_month) | Bảng lương, vị trí, LCB, hệ số năng lực, trách nhiệm (cách tính + tiền), cơm-xăng, điện thoại, chuyên cần, KPI, thưởng nhóm, đơn giá sản lượng, chỉ tiêu DS, BHXH, ngân hàng |
+| `hr_attendance` | (member_id, work_date) | Chấm công từng ngày |
+| `hr_payroll_inputs` | (member_id, month) | Số liệu tháng (null = lấy tự động) |
+| `hr_adjustments` | id | Thưởng khác, công tác, vi phạm, tạm ứng, tạm ứng ĐT |
+| `hr_payslips` | (member_id, month) | Phiếu đã chốt: bảng, ngày công, tổng thu nhập, khấu trừ, thực nhận + chi tiết JSON |
 
 ## Module
-- `hr` (chỉ phụ thuộc `staff`): bảng, công thức, API ghi `/hr/*` (Manager). Hoa hồng cần doanh số: hàm `revenueOf` được truyền vào từ `src/app/router.ts`, nên `hr` không phụ thuộc module bán hàng.
-- `staff-hub` (chỉ đọc; phụ thuộc staff, customers, quotes, sales, tasks, hr): `GET /members/:id/overview?month=` gom mọi thứ trong một lượt.
-- Giao diện: `trial-ui/member-detail.js`. Thêm mục mới = thêm một phần tử vào `TABS`.
+- **`hr`** (chỉ phụ thuộc `staff`):
+  - `domain/` gồm tham số, KPI CV, công thức lương.
+  - `api/payroll-data.ts`: một hàm `buildPayroll` tính lương cho trang nhân viên, bảng lương công ty và lúc chốt.
+  - `api/routes.ts`: các API `/hr/*` (chỉ Manager).
+  - DS đơn hàng (`revenueOf`) được truyền vào từ `src/app/router.ts`, nên `hr` không phụ thuộc module bán hàng.
+- **`staff-hub`** (chỉ đọc): `GET /members/:id/overview?month=`.
+- **Giao diện:** `trial-ui/member-detail.js` (hồ sơ nhân viên) và `trial-ui/payroll.js` (bảng lương công ty, `#/payroll`).
 
 ## API
 | Route | Việc |
 |---|---|
-| `GET /members/:id/overview?month=YYYY-MM` | Trang chi tiết (Manager: mọi người; nhân viên: chính mình) |
-| `PUT /hr/members/:id/salary` | Mức lương áp dụng từ `effectiveMonth` |
-| `PUT /hr/members/:id/attendance/:month` | `{ days: { 'YYYY-MM-DD': 'present' \| 'half' \| 'paid_leave' \| 'unpaid_leave' \| 'absent' \| '' } }` (`''` = xoá) |
-| `POST /hr/members/:id/adjustments` · `DELETE /hr/adjustments/:id` | Thưởng / phụ cấp / khấu trừ / tạm ứng |
-| `POST /hr/members/:id/payslips/:month` · `POST …/paid` · `DELETE …` | Chốt lương · đã trả · mở lại |
+| `GET /members/:id/overview?month=YYYY-MM` | Trang chi tiết nhân viên (Manager: mọi người; nhân viên: chính mình) |
+| `GET/PUT /hr/settings` | Tham số lương (áp dụng từ tháng) |
+| `PUT /hr/months/:month` | Số liệu chung của nhóm |
+| `GET /hr/payroll/:month` · `POST /hr/payroll/:month/confirm` | Bảng lương công ty · chốt cả bảng |
+| `PUT /hr/members/:id/salary` | Hồ sơ lương áp dụng từ `effectiveMonth` |
+| `PUT /hr/members/:id/inputs/:month` | Số liệu tháng |
+| `PUT /hr/members/:id/attendance/:month` | `{ days: { 'YYYY-MM-DD': 'present' \| 'half' \| 'paid_leave' \| 'unpaid_leave' \| 'absent' \| '' } }` |
+| `POST /hr/members/:id/adjustments` · `DELETE /hr/adjustments/:id` | Khoản cộng / trừ |
+| `POST /hr/members/:id/payslips/:month` · `POST …/paid` · `DELETE …` | Chốt · đã trả · mở lại |

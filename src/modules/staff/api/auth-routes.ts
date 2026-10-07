@@ -37,6 +37,16 @@ const session = (c: Ctx) => c.state.session as SessionState;
 async function limit(c: Ctx, key: string, max: number) {
   if (await repo.countAttempt(c.env.db, key, now(c)) > max) throw tooManyAttempts();
 }
+/**
+ * IP người gửi để giới hạn thử: `cf-connecting-ip` do Cloudflare (đứng trước Supabase Edge) ghi đè bằng IP thật – trình duyệt
+ * không giả được. Thiếu thì lấy phần tử CUỐI của x-forwarded-for (do proxy gần nhất thêm; phần đầu trình duyệt tự ghi được).
+ */
+export function clientIp(h: Headers): string {
+  const cf = h.get('cf-connecting-ip')?.trim();
+  if (cf) return cf;
+  const xff = (h.get('x-forwarded-for') || '').split(',').map(x => x.trim()).filter(Boolean);
+  return xff.at(-1) || 'unknown';
+}
 
 /**
  * Chốt quyền cho MỌI route (gắn vào Router qua `authorize`): route 'public' đi thẳng; còn lại phải có phiên hợp lệ
@@ -75,7 +85,7 @@ export function registerAuthRoutes(router: Router<StaffEnv>): void {
   // ---- Công khai ----
   router.post('/activation-info', async c => {
     const body = await readJson(c.req, 4096);
-    await limit(c, 'ip:' + (c.req.headers.get('cf-connecting-ip') || 'unknown'), RATE_LIMITS.ip);
+    await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
     const hash = await activationHash(body);
     const found = await repo.findActivation(c.env.db, hash, now(c));
     if (!found) throw expiredLink();
@@ -84,7 +94,7 @@ export function registerAuthRoutes(router: Router<StaffEnv>): void {
 
   router.post('/activate', async c => {
     const body = await readJson(c.req, 4096);
-    await limit(c, 'ip:' + (c.req.headers.get('cf-connecting-ip') || 'unknown'), RATE_LIMITS.ip);
+    await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
     const hash = await activationHash(body);
     const found = await repo.findActivation(c.env.db, hash, now(c));
     if (!found) throw expiredLink();
@@ -99,12 +109,14 @@ export function registerAuthRoutes(router: Router<StaffEnv>): void {
     const body = await readJson(c.req, 4096);
     // Email (mọi tài khoản) hoặc số điện thoại (tài khoản khách hàng). Giới hạn thử tính theo định danh đã chuẩn hoá.
     const id = parseLoginId(body.email ?? body.login);
-    await limit(c, 'ip:' + (c.req.headers.get('cf-connecting-ip') || 'unknown'), RATE_LIMITS.ip);
+    await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
     await limit(c, 'email:' + id.value, RATE_LIMITS.email);
     const row = id.kind === 'phone' ? await repo.findLoginRowByPhone(c.env.db, id.value) : await repo.findLoginRow(c.env.db, id.value);
     // Luôn tốn thời gian băm như nhau dù email có tồn tại hay không (verifyPassword dùng hash giả khi thiếu).
     const valid = await verifyPassword(body.password, row?.passwordHash, c.env.passwordIterations);
     if (!valid || !row?.active) throw new AppError(401, id.kind === 'email' ? 'Email hoặc mật khẩu không đúng, hoặc tài khoản chưa được kích hoạt.' : 'Số điện thoại / email hoặc mật khẩu không đúng, hoặc tài khoản chưa được kích hoạt.');
+    // Đăng nhập đúng: xoá bộ đếm của tài khoản – chỉ các lần SAI liên tiếp mới dẫn tới khoá 15 phút.
+    await repo.clearAttempts(c.env.db, 'email:' + id.value);
     const token = newToken();
     await repo.createSession(c.env.db, { tokenHash: sha256Hex(token), memberId: row.id, version: row.version, now: now(c), lifetime: SESSION_LIFETIME_SECONDS });
     return json({ user: publicMember(row) }, 200, { 'set-cookie': sessionCookie(token) });

@@ -34,10 +34,23 @@ async function ordersOf(db: AnyDb, memberId: string, from?: string, to?: string)
   return { orders: orders.map(o => ({ ...o, counted: debtCounts(o.status, active(o.id)?.status), contract: active(o.id) ?? null })), contracts };
 }
 
-/** Doanh số tháng của nhân viên – dùng để tính hoa hồng khi chốt lương (bơm vào module hr). */
-export async function memberMonthRevenue(db: AnyDb, memberId: string, month: string) {
-  const r = monthRange(month);
-  return revenueIn((await ordersOf(db, memberId, r.from, r.next)).orders, month).revenue;
+/**
+ * Doanh số theo người phụ trách và tháng (cùng định nghĩa KPI: đơn đã tính công nợ, gồm VAT) – bơm vào module hr
+ * cho thưởng KPI DS / thưởng quý. Map<memberId, { 'YYYY-MM': số tiền }>.
+ */
+export async function memberRevenues(db: AnyDb, months: readonly string[]) {
+  const sorted = [...months].sort(), from = monthRange(sorted[0]!).from, to = monthRange(sorted.at(-1)!).next;
+  const orders = await db.select({ id: salesOrders.id, ownerId: salesOrders.ownerId, orderDate: salesOrders.orderDate, status: salesOrders.status, total: salesOrders.total })
+    .from(salesOrders).where(and(gte(salesOrders.orderDate, from), lt(salesOrders.orderDate, to)));
+  const contracts = orders.length ? await db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts)
+    .where(inArray(salesContracts.orderId, orders.map(o => o.id))) : [];
+  const out = new Map<string, Record<string, number>>();
+  for (const o of orders) {
+    const k = contracts.find(x => x.orderId === o.id && x.status !== 'cancelled'), m = monthOf(o.orderDate);
+    if (!months.includes(m) || !debtCounts(o.status, k?.status)) continue;
+    const rec = out.get(o.ownerId) ?? {}; rec[m] = (rec[m] ?? 0) + o.total; out.set(o.ownerId, rec);
+  }
+  return out;
 }
 
 /**
@@ -95,8 +108,8 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
     // ----- KPI tháng
     const sales = revenueIn(orderList, month), wonQuotes = new Set(orders.filter(o => o.status !== 'cancelled' && o.quoteId).map(o => o.quoteId));
     const collected = payments.filter(p => monthOf(p.paidAt) === month).reduce((s, p) => s + p.amount, 0);
-    const payroll = await payrollOf(db, id, month, sales.revenue);
-    const target = payroll.profile.revenueTarget;
+    const payroll = await payrollOf(db, id, month, memberRevenues);
+    const target = payroll.profile.revenueTarget || (payroll.profile.kpiEnabled ? payroll.params.kpiRevenue : 0);
     const kpi = {
       revenue: sales.revenue, orders: sales.orders, avgOrder: sales.orders ? Math.round(sales.revenue / sales.orders) : 0,
       revenueTarget: target, targetPercent: targetPercent(sales.revenue, target),
@@ -107,7 +120,7 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
       debt: { balance: debtors.reduce((s, o) => s + o.receivable!.balance, 0), overdue: debtors.reduce((s, o) => s + o.receivable!.overdue, 0), orders: debtors.length },
       tasks: { done: taskRows.filter(t => t.status === 'done').length, open: taskRows.filter(t => t.status !== 'done').length,
         overdue: taskRows.filter(t => t.status !== 'done' && t.dueDate && t.dueDate < today).length },
-      workedDays: payroll.attendanceSummary.worked, standardDays: payroll.attendanceSummary.standardDays,
+      workedDays: payroll.payslip?.workDays ?? payroll.attendanceSummary.worked, standardDays: payroll.attendanceSummary.standardDays,
     };
     const months = Array.from({ length: STAFF_HUB_LIMITS.trendMonths }, (_, i) => shiftMonth(month, i - STAFF_HUB_LIMITS.trendMonths + 1));
 

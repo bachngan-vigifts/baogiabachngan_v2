@@ -1,98 +1,95 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeKpiCv, computePayroll, computePayslip, monthRange, parseMonthInputs, parseParams, shiftMonth, summarizeAttendance, targetPercent, EMPTY_PROFILE, EMPTY_PARAMS, type MonthInputs, type PayScheme, type SchemeParams } from './payroll.ts';
+import {
+  EMPTY_GROUP_MONTH, EMPTY_INPUT, EMPTY_PROFILE, bnSalesBonus, computePayslip, computeQuarterBonus, lockSalesBonus, monthRange, quarterMonths,
+  shiftMonth, summarizeAttendance, targetPercent, vietQrUrl, type PayrollInput, type SalaryProfile,
+} from './payroll.ts';
+import { computeKpiCv } from './kpi-cv.ts';
+import { DEFAULT_PARAMS, mergeParams, validateParams } from './params.ts';
 
-test('tháng: số ngày, đầu / cuối tháng, cộng trừ tháng qua năm', () => {
+// Số liệu đối chiếu lấy từ file "Bảng lương mẫu T9/2026" (tên người đã bỏ). Kết quả phải khớp từng đồng (làm tròn từng khoản).
+const P = DEFAULT_PARAMS;
+const run = (profile: Partial<SalaryProfile>, input: Partial<PayrollInput> = {}, extra: { adjustments?: { kind: string; amount: number }[]; days?: number; revenue?: number; gm?: Partial<typeof EMPTY_GROUP_MONTH> } = {}) =>
+  computePayslip({ profile: { ...EMPTY_PROFILE, ...profile }, params: P, input: { ...EMPTY_INPUT, ...input }, adjustments: extra.adjustments ?? [],
+    attendanceDays: extra.days ?? 0, systemRevenue: extra.revenue ?? 0, groupMonth: { ...EMPTY_GROUP_MONTH, ...extra.gm }, quarterBonusAuto: 0 });
+const amount = (r: ReturnType<typeof run>, key: string) => [...r.income, ...r.deductions].find(l => l.key === key)!.amount;
+
+test('tháng / quý / ngày công', () => {
   assert.deepEqual(monthRange('2024-02'), { from: '2024-02-01', to: '2024-02-29', next: '2024-03-01', days: 29 });
-  assert.equal(monthRange('2026-12').next, '2027-01-01');
   assert.equal(shiftMonth('2026-01', -1), '2025-12');
-  assert.equal(shiftMonth('2026-10', -5), '2026-05');
+  assert.deepEqual(quarterMonths('2026-08'), { quarter: 3, months: ['2026-07', '2026-08', '2026-09'], isQuarterEnd: false });
+  assert.equal(quarterMonths('2026-09').isQuarterEnd, true);
+  assert.equal(summarizeAttendance([{ status: 'present' }, { status: 'half' }, { status: 'paid_leave' }, { status: 'absent' }]).worked, 2.5);
 });
 
-test('ngày công: đủ công 1, nửa công 0,5, nghỉ có lương 1, nghỉ không lương / vắng 0', () => {
-  const s = summarizeAttendance([{ status: 'present' }, { status: 'present' }, { status: 'half' }, { status: 'paid_leave' }, { status: 'unpaid_leave' }, { status: 'absent' }, { status: 'la' }]);
-  assert.deepEqual(s, { worked: 3.5, present: 2, half: 1, paidLeave: 1, unpaidLeave: 1, absent: 1, recorded: 6 });
+test('Sale – nhân viên kinh doanh (KPI CV chốt 115,72%, DS 568.184.000): thu nhập 15.060.208, thực nhận 14.251.959', () => {
+  const r = run({ payrollGroup: 'sale', capacityCoef: 7, responsibility: 1_000_000, kpiEnabled: true, phoneAllowance: 250_000, insurance: 496_650 },
+    { workDays: 24, revenue: 568_184_000, kpiOverride: 1.1572 }, { adjustments: [{ kind: 'phone_advance', amount: 311_599 }] });
+  assert.equal(r.baseSalary, 4_758_000, 'LCB trống → LCB vùng 183.000 × 26');
+  assert.equal(amount(r, 'salaryByDays'), 4_392_000); assert.equal(amount(r, 'capacity'), 1_400_000);
+  assert.equal(amount(r, 'kpiBonus'), 6_818_208); assert.equal(amount(r, 'meal'), 1_200_000);
+  assert.equal(r.gross, 15_060_208);
+  assert.equal(amount(r, 'phoneDeduction'), 311_599, 'trừ MAX(tạm ứng ĐT, PC điện thoại)');
+  assert.equal(r.net, 14_251_959);
 });
 
-test('phiếu lương: lương theo ngày công + phụ cấp + thưởng + hoa hồng − khấu trừ − bảo hiểm − tạm ứng', () => {
-  const p = computePayslip({
-    profile: { ...EMPTY_PROFILE, baseSalary: 10_400_000, allowance: 1_000_000, standardDays: 26, revenueTarget: 100_000_000, commissionRate: 2, insurance: 500_000 },
-    workedDays: 24.5, revenue: 50_000_000,
-    adjustments: [{ kind: 'bonus', amount: 300_000 }, { kind: 'bonus', amount: 200_000 }, { kind: 'allowance', amount: 100_000 }, { kind: 'deduction', amount: 50_000 }, { kind: 'advance', amount: 2_000_000 }],
-  });
-  assert.equal(p.salaryByDays, 9_800_000);
-  assert.equal(p.commission, 1_000_000);
-  assert.equal(p.gross, 9_800_000 + 1_000_000 + 100_000 + 500_000 + 1_000_000);
-  assert.equal(p.net, p.gross - 50_000 - 500_000 - 2_000_000);
-  assert.equal(computePayslip({ profile: { ...EMPTY_PROFILE, standardDays: 0 }, workedDays: 0, revenue: 0, adjustments: [] }).standardDays, 26, 'ngày công chuẩn 0 → mặc định 26');
+test('Sale – admin tăng ca 1,5 giờ, thưởng khác; kho trách nhiệm theo tỷ lệ + sản lượng; IT-Web 0,5% DS web; thử việc', () => {
+  const admin = run({ capacityCoef: 2, responsibility: 1_000_000, insurance: 496_650 }, { workDays: 25, overtimeHours: 1.5 }, { adjustments: [{ kind: 'bonus', amount: 1_000_000 }] });
+  assert.equal(amount(admin, 'overtime'), 74_344); assert.equal(admin.gross, 8_299_344); assert.equal(admin.net, 7_802_694);
+  const kho = run({ capacityCoef: 4, responsibilityMode: 'prorated', responsibility: 1_000_000, outputRate: 15_000, insurance: 496_650 }, { workDays: 18, outputQty: 11 }, { adjustments: [{ kind: 'bonus', amount: 1_000_000 }] });
+  assert.equal(amount(kho, 'responsibility'), 692_308); assert.equal(amount(kho, 'outputBonus'), 165_000); assert.equal(kho.gross, 6_851_308);
+  assert.equal(amount(run({ outputRate: 0.005 }, { outputQty: 80_702_409 }), 'outputBonus'), 403_512);
+  const tv = run({ baseSalary: 5_000_000, mealAllowance: false, outputRate: 15_000 }, { workDays: 22, outputQty: 4 });
+  assert.equal(tv.gross, 4_290_769); assert.equal(amount(tv, 'meal'), 0);
 });
 
-test('% hoàn thành chỉ tiêu', () => {
-  assert.equal(targetPercent(45_000_000, 60_000_000), 75);
-  assert.equal(targetPercent(1, 3), 33.3);
-  assert.equal(targetPercent(10, 0), null);
+test('Sale – ngày công lấy từ chấm công khi không nhập tay; KPI CV tính từ số liệu; không đạt ngưỡng thì không thưởng', () => {
+  const r = run({ kpiEnabled: true }, { kpiNewCustomers: 7, kpiTransactions: 52, kpiContracts: 2, kpiRevenue: 541_830_000 }, { days: 20, revenue: 300_000_000 });
+  assert.equal(r.workDays, 20);
+  assert.ok(Math.abs(r.kpi!.total - 0.745098895582329) < 1e-12, 'khớp ô M15 sheet KPI CV');
+  assert.equal(r.kpi!.tier, 'low'); assert.equal(amount(r, 'kpiBonus'), 1_500_000, 'KPI 74,5% → 0,5% × DS hệ thống 300tr');
+  assert.equal(amount(run({ kpiEnabled: true }, { kpiOverride: 0.5, revenue: 1e9 }), 'kpiBonus'), 0);
+  assert.equal(amount(run({ kpiEnabled: false }, { kpiOverride: 1, revenue: 1e9 }), 'kpiBonus'), 0, 'không bật KPI → không thưởng KPI DS');
 });
 
-
-// ---------------- Đối chiếu với file Excel bảng lương tháng 9/2026 (số "Thực nhận" trong file; lệch tối đa 1 đồng do làm tròn từng khoản)
-const LCB = 4_758_000;
-function slip(scheme: PayScheme, base: number, worked: number, params: Partial<SchemeParams>, inputs: MonthInputs, bhxh = 0, adjustments: { kind: string; amount: number }[] = []) {
-  return computePayroll({ profile: { ...EMPTY_PROFILE, scheme, baseSalary: base, insurance: bhxh, params: { ...EMPTY_PARAMS, ...params } }, workedDays: worked, revenue: 0, adjustments, inputs });
-}
-const near = (a: number, b: number, msg: string) => assert.ok(Math.abs(a - b) <= 1, `${msg}: ${a} ≠ ${b}`);
-
-test('bảng lương Sale khớp file Excel', () => {
-  const ngoc = slip('sale', LCB, 24, { capabilityCoef: 7, responsibility: 1_000_000, meal: true }, { kpiOverride: 1.1572, revenue: 568_184_000, phone: 250_000, phoneAdvance: 311_599 }, 496_650);
-  near(ngoc.gross, 15_060_208, 'Ngọc tổng thu nhập'); near(ngoc.net, 14_251_959, 'Ngọc thực nhận'); assert.equal(ngoc.commission, 6_818_208);
-  near(slip('sale', LCB, 26, { capabilityCoef: 11, responsibility: 1_000_000, meal: true }, { otherBonus: 2_000_000 }, 496_650).net, 10_761_350, 'Thủy');
-  near(slip('sale', LCB, 25, { capabilityCoef: 2, responsibility: 1_000_000, meal: true }, { otherBonus: 1_000_000, overtimeHours: 1.5 }, 496_650).net, 7_802_693.75, 'Tiên (tăng ca 1,5 giờ)');
-  near(slip('sale', LCB, 18, { capabilityCoef: 4, responsibility: 1_000_000, responsibilityMode: 'prorated', meal: true, outputRate: 15_000 }, { outputQty: 11, otherBonus: 1_000_000 }, 496_650).net, 6_354_657.69, 'Tâm (trách nhiệm theo ngày công, 11 đơn kho)');
-  near(slip('sale', LCB, 26, { capabilityCoef: 3, responsibility: 800_000, meal: true, outputRate: 0.005 }, { outputQty: 80_702_409, otherBonus: 1_000_000 }, 496_650).net, 8_364_862.05, 'Lợi (0,5% DS web)');
-  near(slip('sale', 5_000_000, 22, { outputRate: 15_000 }, { outputQty: 4 }).net, 4_290_769.23, 'Thử việc, không cơm xăng');
+test('KPI CV: vượt chỉ tiêu KH mới được 20%, giao dịch tối đa 30%, ngày làm hàng / công tác được cộng', () => {
+  const k = computeKpiCv({ ...EMPTY_INPUT, kpiNewCustomers: 90, kpiTransactions: 300, kpiContracts: 10, kpiMerchDays: 2 }, P, 415_000_000, 0);
+  assert.equal(k.points.newCustomers, 0.2); assert.equal(k.points.transactions, 0.3); assert.equal(k.points.contracts, 0.1);
 });
 
-test('KPI CV Sale: KH mới, giao dịch, HĐ, DS; thưởng theo mức KPI', () => {
-  near(Math.round(computeKpiCv({ newCustomers: 7, transactions: 52, contracts: 2, revenue: 541_830_000, hangDays: 0 }) * 10000), 7451, 'KPI Ngọc từ số thực hiện');
-  assert.equal(computeKpiCv({ newCustomers: 97, transactions: 261, contracts: 9, revenue: 0, hangDays: 0 }), 0.2 + 0.3 + 0.1, 'vượt chỉ tiêu: KH mới 20%, giao dịch 30%, HĐ 10%');
-  assert.equal(computeKpiCv({ newCustomers: 0, transactions: 0, contracts: 0, revenue: 0, hangDays: 1 }), 4 / 96 * 0.1 + 10 / 260 * 0.3, 'mỗi ngày làm hàng cộng 4 KH mới, 10 giao dịch');
-  const reward = (kpi: number) => slip('sale', LCB, 26, {}, { kpiOverride: kpi, revenue: 100_000_000 }).commission;
-  assert.deepEqual([reward(0.95), reward(0.9), reward(0.6), reward(0.59)], [1_200_000, 1_200_000, 500_000, 0]);
-  assert.equal(slip('sale', LCB, 26, {}, { revenue: 100_000_000 }).commission, 0, 'chưa có KPI thì chưa thưởng');
+test('Bách Ngân – NVBH (trừ 1 ngày cơm, trách nhiệm theo ngày, tăng ca 24 giờ): 5.134.500 → 4.637.850; thưởng DS cửa hàng', () => {
+  const r = run({ payrollGroup: 'bn', responsibilityMode: 'per_day', attendanceBonus: 200_000, insurance: 496_650, teamBonus: true },
+    { workDays: 15, overtimeHours: 24 }, { gm: { bnRevenue: 188_288_191, bnAvgRevenue: 0 } });
+  assert.equal(amount(r, 'meal'), 700_000); assert.equal(amount(r, 'responsibility'), 300_000); assert.equal(amount(r, 'overtime'), 1_189_500);
+  assert.equal(amount(r, 'salesBonus'), 0, 'DS ≤ 300tr: không thưởng');
+  assert.equal(r.gross, 5_134_500); assert.equal(r.net, 4_637_850);
+  assert.equal(bnSalesBonus(P, 400_000_000, 380_000_000), 2_000_000, '≥ 100% DS TB → 1% ÷ 2');
+  assert.equal(bnSalesBonus(P, 400_000_000, 450_000_000), 1_000_000, '≥ 85% → 0,5% ÷ 2');
+  assert.equal(bnSalesBonus(P, 400_000_000, 500_000_000), 0);
 });
 
-test('bảng lương Bách Ngân khớp file Excel; thưởng DS theo DS trung bình 6 tháng', () => {
-  const ngan = slip('bachngan', LCB, 15, { responsibility: 20_000, responsibilityMode: 'per_day', meal: true }, { attendanceBonus: 200_000, overtimeHours: 24, revenue: 188_288_191 }, 496_650);
-  near(ngan.gross, 5_134_500, 'Kim Ngân tổng lương'); near(ngan.net, 4_637_850, 'Kim Ngân thực nhận (24 giờ tăng ca = LCB ÷ 24 ÷ 8 × giờ × 2)');
-  near(slip('bachngan', LCB, 7, { capabilityCoef: 1, responsibility: 20_000, responsibilityMode: 'per_day', meal: true }, { attendanceBonus: 200_000, overtimeHours: 0.5 }, 496_650).net, 1_649_131.25, 'Yến');
-  const bonus = (revenue: number, avg: number) => slip('bachngan', LCB, 26, {}, { revenue, avgRevenue6: avg }).commission;
-  assert.deepEqual([bonus(400_000_000, 400_000_000), bonus(350_000_000, 400_000_000), bonus(300_000_000, 250_000_000), bonus(320_000_000, 400_000_000), bonus(500_000_000, 0)], [2_000_000, 875_000, 0, 0, 0]);
+test('Lock – NVBH (DS team 310.252.962 ≥ 310tr → 1,5% ÷ 2): 9.557.897 → 9.061.247; người không hưởng thưởng nhóm', () => {
+  const gm = { lockRevenue: 310_252_962 };
+  const r = run({ payrollGroup: 'lock', capacityCoef: 1, responsibilityMode: 'per_day', attendanceBonus: 200_000, insurance: 496_650, teamBonus: true }, { workDays: 27 }, { gm });
+  assert.equal(amount(r, 'salesBonus'), 2_326_897); assert.equal(r.gross, 9_557_897); assert.equal(r.net, 9_061_247);
+  assert.equal(amount(run({ payrollGroup: 'lock', teamBonus: false }, { workDays: 22 }, { gm }), 'salesBonus'), 0);
+  assert.equal(lockSalesBonus(P, 250_000_000), 0, 'dưới sàn 85% × 300tr'); assert.equal(lockSalesBonus(P, 300_000_000), 1_500_000);
+  assert.ok(!r.income.some(l => l.key === 'phone'), 'bảng Lock không có cột điện thoại');
 });
 
-test('bảng lương Lock khớp file Excel; thưởng theo DS team', () => {
-  const p = { responsibility: 20_000, responsibilityMode: 'per_day' as const, meal: true };
-  near(slip('lock', LCB, 27, { ...p, capabilityCoef: 1 }, { attendanceBonus: 200_000, revenue: 310_252_962 }, 496_650).net, 9_061_247.22, 'Huỳnh Châu Quan');
-  near(slip('lock', 5_000_000, 26, { meal: true }, { attendanceBonus: 200_000, revenue: 310_252_962 }, 496_650).net, 8_330_247.22, 'Cao Mỵ Nương');
-  near(slip('lock', 5_000_000, 22, {}, {}).net, 4_230_769.23, 'Đặng Võ Bảo Trân (thử việc)');
-  const bonus = (revenue: number) => slip('lock', LCB, 26, {}, { revenue }).commission;
-  assert.deepEqual([bonus(254_999_999), bonus(255_000_000), bonus(263_500_000), bonus(309_999_999), bonus(310_000_000)], [0, 1_275_000, 1_317_500, 1_550_000, 2_325_000]);
+test('Thưởng quý team Sale: đạt 98,8% (≥ 90%) và mọi người ≥ 60% → 0,5% DS quý chia theo tỷ trọng; không đạt → 0', () => {
+  const q = computeQuarterBonus([{ memberId: 'a', target: 1_245_000_000, revenues: [400_000_000, 420_000_000, 410_000_000] }], P);
+  assert.equal(q.fund, 6_150_000); assert.equal(q.rows[0]!.bonus, 6_150_000);
+  const two = computeQuarterBonus([{ memberId: 'a', target: 600, revenues: [600, 0, 0] }, { memberId: 'b', target: 600, revenues: [300, 0, 0] }], P);
+  assert.equal(two.membersOk, false, 'b đạt 50% < 60%'); assert.equal(two.fund, 0);
 });
 
-test('phiếu lương nhiều khoản: dòng chi tiết cộng đúng, thưởng/phạt/tạm ứng của hệ thống được cộng vào', () => {
-  const r = slip('lock', LCB, 26, { meal: true }, { revenue: 0, bhyt: 71_370, tncn: 10_000 }, 496_650, [{ kind: 'bonus', amount: 100_000 }, { kind: 'allowance', amount: 50_000 }, { kind: 'deduction', amount: 20_000 }, { kind: 'advance', amount: 1_000_000 }]);
-  const income = r.lines.filter(l => l.type === 'income').reduce((s, l) => s + l.amount, 0), out = r.lines.filter(l => l.type === 'deduction').reduce((s, l) => s + l.amount, 0);
-  assert.equal(r.gross, income); assert.equal(r.net, income - out);
-  assert.equal(r.net, r.gross - r.deduction - r.insurance - r.advance, 'khớp công thức thực lĩnh cũ');
-  assert.equal(r.insurance, 496_650 + 71_370 + 10_000);
-});
-
-test('cách tính cũ (basic) vẫn như trước và có dòng chi tiết để in', () => {
-  const r = computePayroll({ profile: { ...EMPTY_PROFILE, baseSalary: 10_400_000, allowance: 1_000_000, commissionRate: 2, insurance: 500_000 }, workedDays: 26, revenue: 50_000_000, adjustments: [{ kind: 'advance', amount: 1_000_000 }] });
-  assert.equal(r.scheme, 'basic'); assert.equal(r.net, 10_400_000 + 1_000_000 + 1_000_000 - 500_000 - 1_000_000);
-  assert.deepEqual(r.lines.map(l => l.key), ['salary', 'allowance', 'commission', 'insurance', 'advance']);
-});
-
-test('đọc tham số / dữ liệu tháng lưu JSON: bỏ khoá lạ, số âm, chuỗi hỏng', () => {
-  assert.deepEqual(parseParams('{"capabilityCoef":7,"meal":true,"responsibilityMode":"per_day","responsibility":20000,"x":1}'), { capabilityCoef: 7, responsibility: 20_000, responsibilityMode: 'per_day', meal: true, outputRate: 0 });
-  assert.deepEqual(parseParams('không phải json'), EMPTY_PARAMS);
-  assert.deepEqual(parseMonthInputs('{"revenue":5,"phone":-1,"bhyt":"abc","tncn":"","hack":9,"kpiOverride":1.15}'), { revenue: 5, kpiOverride: 1.15 });
+test('tham số: ghép với mặc định, từ chối giá trị sai; link VietQR', () => {
+  assert.equal(mergeParams({ kpiHighRate: 0.01, standardDays: 0, la: 5 }).kpiHighRate, 0.01);
+  assert.equal(mergeParams({ standardDays: 0 }).standardDays, 26, 'số chia = 0 → giữ mặc định');
+  assert.match(validateParams({ kpiHighRate: 1.2 })!, /tỷ lệ/);
+  assert.equal(validateParams({ standardDays: 24 }), null);
+  assert.equal(vietQrUrl('VCB', '0123', 10_761_350, '2026-09'), 'https://img.vietqr.io/image/vcb-0123.png?amount=10761350&addInfo=Luong%20T9');
+  assert.equal(vietQrUrl('', '0123', 1, '2026-09'), '');
+  assert.equal(targetPercent(45, 60), 75);
 });

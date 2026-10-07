@@ -11,7 +11,7 @@ import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
-import { downloadPayrollExcel } from './payroll-ui.js';
+import { initPayroll } from './payroll.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -394,7 +394,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -419,7 +419,7 @@ function route() {
   const [page = 'quotes', id] = path.split('/');
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
-  if (view === 'staff' && !isManager()) view = 'quotes';
+  if ((view === 'staff' || view === 'payroll') && !isManager()) view = 'quotes';
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
   if (view === 'customers' && id) view = 'customer';
@@ -440,7 +440,8 @@ function route() {
   if (view === 'tasks') tasksView().load(id);
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
-  if (view === 'member') memberDetail().open(decodeURIComponent(id), new URLSearchParams(query).get('month') || '');
+  if (view === 'member') memberDetail().open(decodeURIComponent(id), new URLSearchParams(query).get('month') || '', new URLSearchParams(query).get('tab') || '');
+  if (view === 'payroll') payrollBoard().open(new URLSearchParams(query).get('month') || '');
   hideProductSuggest();
 }
 const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -1780,6 +1781,9 @@ async function reviewCustomer(id, approve) {
     if (approve && location.hash.startsWith('#/customers/')) customerDetail().reload();
   } catch (ex) { toast(ex.message, 'err'); }
 }
+/** Bảng lương công ty (trial-ui/payroll.js) – Manager. */
+var payrollUi = null; // eslint-disable-line no-var
+const payrollBoard = () => payrollUi ||= initPayroll({ api, toast, esc, money, pill, confirmBox });
 /** Trang chi tiết nhân viên (trial-ui/member-detail.js): KPI, khách, báo giá, đơn, HĐKT, giao dịch, công nợ, ngày công, lương. */
 var memberUi = null; // eslint-disable-line no-var
 function memberDetail() {
@@ -1853,19 +1857,6 @@ function renderMembers() {
   $('#member-empty').hidden = list.length > 0;
   $('#member-table').hidden = list.length === 0;
 }
-// Manager tải bảng lương tổng (Excel) của tháng chọn: mọi nhân viên, phiếu đã chốt hoặc tạm tính.
-const payrollMonth = $('#payroll-month');
-payrollMonth.value ||= new Date().toISOString().slice(0, 7);
-$('#payroll-download').addEventListener('click', async e => {
-  const btn = e.currentTarget, month = payrollMonth.value;
-  if (!/^\d{4}-\d{2}$/.test(month)) return toast('Chọn tháng cần tải.', 'err');
-  btn.disabled = true;
-  try {
-    const data = await api('/hr/payroll/' + month);
-    if (!data.rows.length) return toast('Tháng này chưa có nhân viên nào được đặt mức lương.', 'err');
-    await downloadPayrollExcel(data); toast(`Đã tải bảng lương tháng ${Number(month.slice(5))}/${month.slice(0, 4)}.`);
-  } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
-});
 $('#member-search').addEventListener('input', e => { state.memberQuery = e.target.value; renderMembers(); });
 $('#member-filter').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
