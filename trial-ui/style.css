@@ -329,7 +329,10 @@ table { width: 100%; border-collapse: collapse; }
   .page-head .btn-add, .page-head .head-actions { align-self: flex-start; }
   .page-head .head-actions { flex-wrap: nowrap; flex: none; }
   .editor .editor-actions .btn.primary { display: none; }
-  .mobile-savebar { display: flex; position: fixed; left: 0; right: 0; bottom: calc(62px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); padding: 10px 16px; justify-content: space-between; align-items: center; z-index: 35; box-shadow: 0 -4px 14px #0f1d3312; }
+  .mobile-savebar { display: flex; position: fixed; left: 0; right: 0; bottom: var(--nav-h, calc(62px + env(safe-area-inset-bottom))); background: var(--surface); border-top: 1px solid var(--line); padding: 10px 16px; justify-content: space-between; align-items: center; z-index: 35; box-shadow: 0 -4px 14px #0f1d3312; }
+  /* Nút chat nổi: luôn nằm trên menu dưới; ở trang soạn báo giá thì nằm trên cả thanh "Tổng thanh toán / Lưu" */
+  body .chat-launcher { right: 14px; bottom: calc(var(--nav-h, calc(62px + env(safe-area-inset-bottom))) + 12px); }
+  body:has(#view-editor:not([hidden])) .chat-launcher { bottom: calc(var(--nav-h, calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h, 68px) + 12px); }
   .mobile-savebar strong { display: block; font-size: 1.1rem; color: var(--red); }
   .view.editor { padding-bottom: 180px; }
 }
@@ -910,7 +913,7 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .chat-pick-list label > span:not(.chat-avatar) { flex: 1; min-width: 0; } .chat-pick .grow { flex: 1; }
 @media (max-width: 860px) {
   .chat-panel { right: 0; bottom: 0; width: 100vw; height: 100dvh; } .chat-view .chat-shell { grid-template-columns: 1fr; border-radius: 0; }
-  .chat-launcher { bottom: 84px; right: 14px; } .chat-panel:not([hidden]) ~ .chat-launcher, .chat-launcher.active { display: none; }
+  .chat-panel:not([hidden]) ~ .chat-launcher, .chat-launcher.active { display: none; }
   .chat-view.thread-open .chat-side { display: none; } .chat-view:not(.thread-open) .chat-main { display: none; }
   .chat-back { display: inline-grid; } .chat-msg { max-width: 90%; }
 }
