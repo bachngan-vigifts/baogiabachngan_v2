@@ -13,7 +13,7 @@ export function initPayroll(deps) {
   const root = document.getElementById('payroll-board');
   const st = { month: '', d: null, tab: 'summary', seq: 0 };
   const TABS = [['summary', 'Tổng hợp'], ['sale', 'Sale & VP'], ['bn', 'Bách Ngân'], ['lock', 'Lock'], ['transfer', 'Chuyển khoản']];
-  const memberLink = (r, text) => `<a href="#/members/${encodeURIComponent(r.member.id)}?month=${st.month}&tab=payroll">${esc(text)}</a>`;
+  const memberLink = (r, text) => `<a href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">${esc(text)}</a>`;
   const line = (p, key) => [...p.income, ...p.deductions].find(l => l.key === key)?.amount ?? 0;
   const withProfile = () => st.d.rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
 

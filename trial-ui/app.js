@@ -62,7 +62,8 @@ const fallbackImage = v => { const id = isDrive(v) && driveId(v); return id ? `h
 const PLACEHOLDER = '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4 4 3-3 5 5 M15 9h.01"/></svg>';
 /** Ảnh được phép lưu trong báo giá (như máy chủ kiểm tra): https hoặc ảnh JPEG/PNG/WebP nhúng. */
 const savableImage = v => /^https:\/\//i.test(v || '') || /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(v || '');
-const imgTag = (url, cls = 'thumb') => url
+// Chỉ nhận ảnh https:// hoặc data:image (như trang khách) – ảnh từ Sapo / file nhập có thể là URL bất kỳ.
+const imgTag = (url, cls = 'thumb') => /^(https:\/\/|data:image\/)/i.test(url || '')
   ? `<img class="${cls}" src="${esc(displayImage(url))}" data-fallback="${esc(fallbackImage(url))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
   : `<span class="${cls}">${PLACEHOLDER}</span>`;
 // Ảnh lỗi: thử nguồn dự phòng một lần, sau đó thay bằng biểu tượng.
@@ -830,7 +831,7 @@ async function showProductCard(sku, name) {
     box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
   };
   const chipsBox = dlg.querySelector('[data-filter]');
-  chipsBox.innerHTML = kinds.length > 1 ? [['', 'Tất cả'], ...kinds.map(k => [k, MOVE_UI[k]?.[0] || k])].map(([k, l]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === filter}">${esc(l)}</button>`).join('') : '';
+  chipsBox.innerHTML = kinds.length > 1 ? [['', 'Tất cả'], ...kinds.map(k => [k, MOVE_UI[k]?.[0] || k])].map(([k, l]) => `<button type="button" class="chip" data-k="${esc(k)}" aria-pressed="${k === filter}">${esc(l)}</button>`).join('') : '';
   chipsBox.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; filter = b.dataset.k; chipsBox.querySelectorAll('[data-k]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render(); });
   render();
 }
@@ -2233,7 +2234,7 @@ async function openOrder(id) {
   $('#order-title').textContent = o.orderNo; $('#breadcrumb').textContent = o.orderNo; document.title = o.orderNo + ' · Bách Ngân';
   $('#order-status').outerHTML = `<span class="pill ${ORDER_STATUS[o.status]?.[1] || ''}" id="order-status">${esc(ORDER_STATUS[o.status]?.[0] || o.status)}</span>`;
   // Liên kết các bước của đơn
-  const step = (done, label, sub, href) => `<${href ? `a href="${href}"` : 'div'} class="flow-step ${done ? 'done' : ''}"><b>${label}</b><small>${sub}</small></${href ? 'a' : 'div'}>`;
+  const step = (done, label, sub, href) => `<${href ? `a href="${href}"` : 'div'} class="flow-step ${done ? 'done' : ''}"><b>${esc(label)}</b><small>${esc(sub)}</small></${href ? 'a' : 'div'}>`;
   const shipped = d.lines.reduce((s, l) => s + l.deliveredQty, 0), totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
   $('#order-flow').innerHTML = [
     step(!!o.quoteId, 'Báo giá', o.quoteNo || 'Không có', o.quoteId ? `#/quotes/${encodeURIComponent(o.quoteId)}` : ''),
