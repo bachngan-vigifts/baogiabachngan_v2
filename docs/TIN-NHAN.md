@@ -30,6 +30,7 @@
   - Edge Function dùng chung kết nối CSDL trong cả isolate, không mở kết nối mới mỗi request.
     - CSDL chỉ có 60 kết nối và `SUPABASE_DB_URL` là kết nối trực tiếp, nên mỗi isolate giữ tối đa 1 kết nối, nhả sau 10 giây rảnh.
     - CSDL báo hết chỗ kết nối thì chờ rồi thử lại tối đa 4 lần, lâu dần: 0,25 · 0,5 · 1 · 2 giây.
+    - Tuỳ chọn: đặt secret `SUPABASE_POOLER_URL` (chuỗi kết nối Supavisor, chế độ *Transaction*, cổng 6543; lấy ở Supabase → Connect) thì Edge dùng pooler, mỗi isolate tối đa 3 kết nối.
   - Lượt làm mới danh sách bị lỗi mà danh sách đã có thì giữ danh sách cũ, không hiện khung lỗi.
 
 ## Cấu trúc

@@ -10,7 +10,9 @@ const router = createAppRouter();
 // CSDL chỉ có 60 kết nối và SUPABASE_DB_URL là kết nối trực tiếp (không qua pooler), mà Edge chạy nhiều isolate cùng lúc:
 // mỗi isolate giữ TỐI ĐA 1 kết nối và nhả sau 10 giây rảnh, để tổng số kết nối không vượt giới hạn.
 let sharedDb: ReturnType<typeof createDb> | null = null;
-const dbFor = (url: string) => (sharedDb ||= createDb(url, schema, { max: 1, idleTimeout: 10 }));
+// Có secret SUPABASE_POOLER_URL (chuỗi kết nối Supavisor, chế độ transaction, cổng 6543) thì dùng pooler: nhiều kết nối hơn an toàn.
+const POOLER_URL = Deno.env.get('SUPABASE_POOLER_URL') || '';
+const dbFor = (url: string) => (sharedDb ||= POOLER_URL ? createDb(POOLER_URL, schema, { max: 3, idleTimeout: 20 }) : createDb(url, schema, { max: 1, idleTimeout: 10 }));
 /**
  * Chắc chắn có kết nối trước khi xử lý: CSDL hết chỗ kết nối (lúc đông) thì chờ rồi thử lại vài lần thay vì báo lỗi ngay.
  * Kết nối vừa dùng (< 5 giây) thì bỏ qua bước kiểm tra.
