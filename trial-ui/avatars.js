@@ -62,8 +62,14 @@ export function primeAvatar(key, url) { if (key && url) { cache.set(key, url); r
 /** Mở chọn ảnh → data URL JPEG vuông 160 px; null nếu bỏ chọn. */
 export function pickAvatar() {
   return new Promise((resolve, reject) => {
+    // iPhone (Safari / app trên màn hình chính) chỉ mở hộp chọn ảnh khi ô chọn file nằm trong trang.
     const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' });
+    input.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0';
+    document.body.append(input);
+    const done = () => setTimeout(() => input.remove(), 0);
+    input.addEventListener('cancel', () => { done(); resolve(null); });
     input.addEventListener('change', async () => {
+      done();
       const file = input.files?.[0];
       if (!file) return resolve(null);
       if (!file.type.startsWith('image/')) return reject(new Error('Vui lòng chọn file ảnh.'));

@@ -4,6 +4,7 @@
 
 Sau khi cài một lần, mỗi lần `main` thay đổi GitHub Actions tự làm:
 - **Giao diện** (`trial-ui/`) → **Cloudflare Pages** (`.github/workflows/deploy-ui.yml`), tự tạo dự án `crm-minhlong` và gắn tên miền.
+  - Lúc triển khai, mọi đường dẫn JS / CSS được gắn số phiên bản (`app.js?v=<commit>`, kể cả `import` giữa các module; `scripts/stamp-ui-version.ts`). Bản mới luôn có URL mới nên máy người dùng không chạy lẫn file cũ và mới. Trong repo vẫn để đường dẫn gốc (chạy thử trên máy không cần bước này).
 - **API** (Edge Function `baogia-v2-api`) → **Supabase** (`.github/workflows/deploy-api.yml`), chỉ sau khi typecheck + test xanh.
 - Mỗi PR được kiểm tra tự động (`.github/workflows/ci.yml`).
 
