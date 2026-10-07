@@ -324,8 +324,11 @@ table { width: 100%; border-collapse: collapse; }
   .bottom-nav a { display: grid; justify-items: center; gap: 2px; font-size: .7rem; font-weight: 600; color: var(--muted); padding: 4px 0; }
   .bottom-nav a.active { color: var(--red); }
   .bottom-nav svg { width: 21px; height: 21px; }
-  .bottom-nav .fab { background: var(--red); color: #fff; width: 48px; height: 48px; border-radius: 50%; place-items: center; align-self: center; justify-self: center; margin-top: -18px; box-shadow: 0 6px 16px #c8212b55; }
   .page-head .btn.primary { display: none; }
+  /* Nút ＋ tròn góc trên phải thay cho nút ＋ ở thanh menu dưới */
+  .page-head .btn.primary.head-new { display: grid; place-items: center; flex: none; align-self: flex-start; width: 44px; height: 44px; padding: 0; border-radius: 50%; box-shadow: 0 6px 16px #0f1d3340; }
+  .page-head .btn.primary.head-new span { display: none; }
+  .page-head .btn.primary.head-new svg { width: 24px; height: 24px; stroke-width: 2.6; margin: 0; }
   .editor .editor-actions .btn.primary { display: none; }
   .mobile-savebar { display: flex; position: fixed; left: 0; right: 0; bottom: calc(62px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); padding: 10px 16px; justify-content: space-between; align-items: center; z-index: 35; box-shadow: 0 -4px 14px #0f1d3312; }
   .mobile-savebar strong { display: block; font-size: 1.1rem; color: var(--red); }
