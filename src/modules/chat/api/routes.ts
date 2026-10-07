@@ -57,6 +57,20 @@ async function conversationsOf(c: Ctx, onlyId?: string) {
   });
 }
 
+/** Tin của một hội thoại (mới nhất trước khi đảo) + mốc "đã xem" của người khác; `full` kèm thông tin hội thoại. */
+async function threadPayload(c: Ctx, convId: string, { after, before, full }: { after?: string | null; before?: string | null; full?: boolean } = {}) {
+  const m = me(c);
+  const [rows, reads, conv] = await Promise.all([
+    c.env.db.select({ id: chatMessages.id, memberId: chatMessages.memberId, body: chatMessages.body, createdAt: chatMessages.createdAt, name: employees.name })
+      .from(chatMessages).innerJoin(employees, eq(employees.id, chatMessages.memberId))
+      .where(and(eq(chatMessages.conversationId, convId), after ? gt(chatMessages.createdAt, after) : undefined, before ? lt(chatMessages.createdAt, before) : undefined))
+      .orderBy(desc(chatMessages.createdAt)).limit(CHAT_LIMITS.page),
+    c.env.db.select({ memberId: chatMembers.memberId, lastReadAt: chatMembers.lastReadAt }).from(chatMembers).where(eq(chatMembers.conversationId, convId)),
+    full ? conversationsOf(c, convId) : Promise.resolve(null),
+  ]);
+  return { messages: rows.reverse(), more: rows.length === CHAT_LIMITS.page && !after, reads: reads.filter(r => r.memberId !== m.id), ...(conv ? { conversation: conv[0] } : {}) };
+}
+
 export function registerChatRoutes(router: Router<StaffEnv>) {
   /** Tổng tin chưa đọc (huy hiệu menu, hỏi định kỳ). */
   router.get('/chat/unread', async c => {
@@ -86,9 +100,10 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
       const id = crypto.randomUUID();
       await db.insert(chatConversations).values({ id, kind: 'direct', title: '', directKey: key, createdBy: m.id, createdAt: now }).onConflictDoNothing();
       [conv] = await db.select().from(chatConversations).where(eq(chatConversations.directKey, key)).limit(1);
+      await db.insert(chatMembers).values([m.id, other].map(memberId => ({ conversationId: conv!.id, memberId, joinedAt: now }))).onConflictDoNothing();
     }
-    await db.insert(chatMembers).values([m.id, other].map(memberId => ({ conversationId: conv!.id, memberId, joinedAt: now }))).onConflictDoNothing();
-    return json({ id: conv!.id });
+    // Trả luôn tin nhắn + thông tin hội thoại: giao diện mở khung chat ngay, không cần gọi thêm lượt nữa.
+    return json({ id: conv!.id, ...(await threadPayload(c, conv!.id, { full: true })) });
   }, 'business');
 
   /** Tạo nhóm chat (người tạo tự là thành viên). */
@@ -138,17 +153,9 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
    * `read=1`: đánh dấu đã đọc luôn (đỡ một lượt gọi /read).
    */
   router.get('/chat/:id/messages', async c => {
-    const m = me(c), { conv } = await myConversation(c, c.params.id!), p = c.url.searchParams, after = p.get('after'), before = p.get('before');
+    const m = me(c), { conv } = await myConversation(c, c.params.id!), p = c.url.searchParams;
     if (p.get('read') === '1') await c.env.db.update(chatMembers).set({ lastReadAt: nowIso() }).where(and(eq(chatMembers.conversationId, conv.id), eq(chatMembers.memberId, m.id)));
-    const [rows, reads, full] = await Promise.all([
-      c.env.db.select({ id: chatMessages.id, memberId: chatMessages.memberId, body: chatMessages.body, createdAt: chatMessages.createdAt, name: employees.name })
-        .from(chatMessages).innerJoin(employees, eq(employees.id, chatMessages.memberId))
-        .where(and(eq(chatMessages.conversationId, conv.id), after ? gt(chatMessages.createdAt, after) : undefined, before ? lt(chatMessages.createdAt, before) : undefined))
-        .orderBy(desc(chatMessages.createdAt)).limit(CHAT_LIMITS.page),
-      c.env.db.select({ memberId: chatMembers.memberId, lastReadAt: chatMembers.lastReadAt }).from(chatMembers).where(eq(chatMembers.conversationId, conv.id)),
-      p.get('full') === '1' ? conversationsOf(c, conv.id) : Promise.resolve(null),
-    ]);
-    return json({ messages: rows.reverse(), more: rows.length === CHAT_LIMITS.page && !after, reads: reads.filter(r => r.memberId !== m.id), ...(full ? { conversation: full[0] } : {}) });
+    return json(await threadPayload(c, conv.id, { after: p.get('after'), before: p.get('before'), full: p.get('full') === '1' }));
   }, 'business');
 
   /** Gửi tin. Người còn lại trong hội thoại nhận Web Push (không lưu vào chuông – tin nhắn có hộp thư riêng). */
