@@ -8,7 +8,7 @@ import { quotations } from '../../quotes/schema.ts';
 import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { customerPayments, deliveries, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { orderScopeFor } from '../../sales/api/routes.ts';
-import { debtCounts, orderLinesFromQuote, orderTotals, receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, quoteTotal, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../../portal/schema.ts';
 import { HUB_LIMITS, purchaseHistory } from '../domain/overview.ts';
 
@@ -19,7 +19,6 @@ const quotePredicate = (scope: SqlScope) => {
   const parts = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
   return sql.join(parts.flatMap((p, i) => i < scope.bindings.length ? [sql.raw(p), sql`${scope.bindings[i]}`] : [sql.raw(p)]), sql.raw(''));
 };
-const safeTotal = (data: string) => { try { return orderTotals(orderLinesFromQuote(JSON.parse(data))).total; } catch { return 0; } };
 
 /**
  * Trang chi tiết khách hàng: gom một lượt mọi thứ liên quan tới khách
@@ -65,7 +64,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
     const counted = orderList.filter(o => o.counted), sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => counted.reduce((s, o) => s + (o.receivable?.[k] ?? 0), 0);
     const confirmedIds = new Set(counted.map(o => o.id));
     const quotes = quoteRows.map(({ q, assigneeName }) => ({ id: q.id, quoteNo: q.quoteNo, quoteType: q.quoteType, quoteDate: q.quoteDate, approvalStatus: q.approvalStatus,
-      total: safeTotal(q.data), assigneeName, updatedAt: q.updatedAt, orderId: orders.find(r => r.o.quoteId === q.id && r.o.status !== 'cancelled')?.o.id ?? null }));
+      total: quoteTotal(q.data), assigneeName, updatedAt: q.updatedAt, orderId: orders.find(r => r.o.quoteId === q.id && r.o.status !== 'cancelled')?.o.id ?? null }));
     const lastOrder = counted[0]?.orderDate ?? null;
     return json({
       ...profile,

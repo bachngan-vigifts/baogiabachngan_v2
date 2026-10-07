@@ -39,6 +39,10 @@ export function contractNumber(entity: string, customerCode: string, sequence: n
 }
 
 // ---------------- Đơn từ báo giá ----------------
+/** Tổng tiền (gồm VAT) của báo giá từ JSON `staff_quotations.data`; dữ liệu hỏng → 0. */
+export function quoteTotal(data: string): number {
+  try { return orderTotals(orderLinesFromQuote(JSON.parse(data))).total; } catch { return 0; }
+}
 export interface OrderLineDraft { lineNo: number; sku: string; name: string; unit: string; qty: number; unitPrice: number; taxRate: number; amount: number }
 
 /** Dòng đơn từ dữ liệu báo giá: đơn giá = giá sau CK (+ phí in nếu B2B/VIGIFTS), chưa VAT; bỏ dòng trống/số lượng 0. */
