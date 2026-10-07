@@ -138,3 +138,20 @@ test('đơn đến hạn giao → việc cho NV phụ trách; bấm "Yêu cầu 
   assert.equal(mine.find((t: any) => t.id === pack.data.id).status, 'done');
   assert.equal(mine.find((t: any) => t.title.startsWith('Đến hạn giao')).status, 'done');
 });
+
+test('việc tự sinh của nhân viên đã khoá / đã xoá chuyển về "chưa giao" để Manager thấy và giao lại', async () => {
+  const { call, emp, mgr } = await setup();
+  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_9', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', sku: 'L', unit: 'cái', qty: 1, price: 100000 }] });
+  await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
+  const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
+  const plan = () => call('/tasks?view=all&refresh=1', mgr).then(r => r.data.tasks.find((t: any) => t.source === 'delivery' && t.link === `#/orders/${o.data.id}`));
+  assert.equal((await plan()).assigneeId, 'emp');
+  // Khoá tài khoản người phụ trách đơn → việc đang mở về "chưa giao".
+  assert.equal((await call('/admin/member', mgr, 'DELETE', { id: 'emp' })).status, 200);
+  const t = await plan();
+  assert.equal(t.assigneeId, null);
+  assert.ok((await call('/tasks?view=unassigned&refresh=1', mgr)).data.tasks.some((x: any) => x.id === t.id), 'Manager thấy ở mục chưa giao');
+  // Manager giao lại cho người khác → giữ nguyên người đó ở các lần đồng bộ sau.
+  assert.equal((await call('/tasks/' + t.id, mgr, 'PUT', { assigneeId: 'old' })).status, 200);
+  assert.equal((await plan()).assigneeId, 'old');
+});
