@@ -47,6 +47,13 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   assert.equal((await call('/push/subscribe', emp, 'POST', { subscription: { endpoint: 'http://x', keys: {} } })).status, 400);
   assert.equal((await call('/push/subscribe', emp, 'POST', { subscription: phone.subscription })).status, 200);
   assert.equal((await call('/push/subscribe', emp, 'POST', { subscription: pc.subscription })).status, 200);
+  // Tự gửi thông báo thử: tới đúng các thiết bị của mình, không lưu vào chuông.
+  const tp = await call('/push/test', emp, 'POST', {});
+  assert.deepEqual(tp.data, { devices: 2, sent: 2 });
+  assert.equal((await phone.read(pushed.find(p => p.endpoint.includes('phone'))!.body)).title, 'Thông báo thử');
+  assert.equal((await call('/notifications', emp)).data.notifications.length, 0, 'thông báo thử không vào chuông');
+  assert.deepEqual((await call('/push/test', mgr, 'POST', {})).data, { devices: 0, sent: 0 });
+  pushed.length = 0;
   const acc = await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Chị Lan', email: 'lan@hl.vn' });
   await call('/activate', '', 'POST', { token: /token=([a-f0-9]{64})/.exec(acc.data.url)![1], password: 'khach-hang-123' });
   const kh = await login('lan@hl.vn', 'khach-hang-123');

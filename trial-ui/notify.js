@@ -10,9 +10,10 @@ export function setupNotifications({ api, root, onNew, onOpen }) {
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z M10 20a2 2 0 0 0 4 0"/></svg><b class="bell-badge" hidden>0</b></button>
     <div class="bell-panel" hidden><div class="bell-head"><b>Thông báo</b><button type="button" class="link-btn" data-read-all>Đánh dấu đã đọc</button></div>
       <button type="button" class="btn secondary small block" data-enable-push hidden>Bật thông báo trên máy này</button>
+      <button type="button" class="btn ghost small block" data-test-push hidden>Gửi thông báo thử</button>
       <p class="muted small" data-push-note hidden></p><ul class="bell-list"></ul></div>`;
   const btn = root.querySelector('.bell'), panel = root.querySelector('.bell-panel'), badge = root.querySelector('.bell-badge'), list = root.querySelector('.bell-list');
-  const pushBtn = root.querySelector('[data-enable-push]'), pushNote = root.querySelector('[data-push-note]');
+  const pushBtn = root.querySelector('[data-enable-push]'), pushNote = root.querySelector('[data-push-note]'), testBtn = root.querySelector('[data-test-push]');
   let notes = [], newest = '', timer = null, started = false;
 
   const draw = () => {
@@ -39,7 +40,7 @@ export function setupNotifications({ api, root, onNew, onOpen }) {
     if (!pushSupported) { pushBtn.hidden = true; pushNote.hidden = false; pushNote.textContent = 'Trình duyệt này chưa hỗ trợ thông báo đẩy (iPhone: thêm trang vào Màn hình chính trước). Trang vẫn tự cập nhật khi đang mở.'; return; }
     const reg = await navigator.serviceWorker.getRegistration('push-sw.js').catch(() => null) || await navigator.serviceWorker.getRegistration().catch(() => null);
     const sub = reg && await reg.pushManager.getSubscription().catch(() => null);
-    pushBtn.hidden = !!sub && Notification.permission === 'granted';
+    pushBtn.hidden = !!sub && Notification.permission === 'granted'; testBtn.hidden = !pushBtn.hidden;
     pushNote.hidden = !(Notification.permission === 'denied');
     if (Notification.permission === 'denied') pushNote.textContent = 'Thông báo đang bị chặn. Mở cài đặt trang web của trình duyệt để cho phép.';
   }
@@ -55,6 +56,18 @@ export function setupNotifications({ api, root, onNew, onOpen }) {
       pushNote.hidden = false; pushNote.textContent = 'Đã bật thông báo trên máy này.';
     } catch (e) { pushNote.hidden = false; pushNote.textContent = e.message || 'Chưa bật được thông báo.'; }
     refreshPushButton();
+  });
+  // Tự kiểm tra: máy chủ gửi push tới mọi thiết bị đã bật của tài khoản này.
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true; pushNote.hidden = false; pushNote.textContent = 'Đang gửi…';
+    try {
+      const r = await api('/push/test', 'POST', {});
+      pushNote.textContent = r.sent
+        ? `Đã gửi tới ${r.sent}/${r.devices} thiết bị. Thông báo "Thông báo thử" sẽ hiện trong vài giây (trên điện thoại: thoát web hoặc khoá màn hình để thấy rõ).`
+        : `Không gửi được tới thiết bị nào (${r.devices} thiết bị đã bật). Bấm "Bật thông báo trên máy này" lại trên máy cần nhận.`;
+      if (!r.sent) pushBtn.hidden = false;
+    } catch (e) { pushNote.textContent = e.message || 'Chưa gửi được thông báo thử.'; }
+    testBtn.disabled = false;
   });
   if (pushSupported) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification') check(); });
 

@@ -86,6 +86,9 @@ Các sự kiện được thông báo:
 - **Bật thông báo:** chuông thông báo trên đầu trang → **Bật thông báo trên máy này**.
   - Trình duyệt đăng ký nhận qua service worker `push-sw.js`; app lưu đăng ký vào `staff_web_push_subscriptions`.
   - Trên iPhone, phải thêm trang vào Màn hình chính trước thì mới bật được.
+- **Gửi thông báo thử:** đã bật rồi thì chuông có thêm nút **Gửi thông báo thử** (`POST /push/test`).
+  - Máy chủ gửi push "Thông báo thử" tới mọi thiết bị đã bật của chính tài khoản đó. Thông báo này không lưu vào chuông.
+  - Trang báo đã gửi tới bao nhiêu trên bao nhiêu thiết bị. Gửi được 0 thiết bị thì hiện lại nút **Bật thông báo trên máy này**.
 - **Nội dung thông báo được mã hoá gửi kèm** (RFC 8291 `aes128gcm`, VAPID RFC 8292).
   - Web cũ gửi push rỗng rồi service worker tự gọi API bằng cookie. Web mới đăng nhập bằng mã phiên trong tab nên service worker không tự gọi được.
   - **Khoá VAPID máy chủ tự sinh lần đầu**, lưu ở bảng `web_push_keys`, khoá riêng được mã hoá bằng `SAPO_SYNC_TOKEN`. Không cần cài thêm mã bí mật.
