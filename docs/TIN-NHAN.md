@@ -23,6 +23,9 @@
   - Lượt hỏi lùi mốc 2 phút và bỏ trùng theo id, để không sót tin hai người gửi cùng lúc.
 - **Tốc độ**:
   - Mở một cuộc trò chuyện chỉ một lượt gọi `GET /chat/:id/messages?full=1&read=1` (tin + thông tin hội thoại + đánh dấu đã đọc).
+  - Bấm vào cuộc trò chuyện hoặc chọn người ở "＋ Chat": khung chat hiện ngay (dùng dữ liệu danh sách / lần mở trước), tin nhắn nạp sau.
+  - `POST /chat/direct` trả luôn tin nhắn + thông tin hội thoại, nên chọn người xong chỉ tốn một lượt gọi.
+  - Danh bạ nhân viên được nạp sẵn khi mở khung chat, nên bấm "＋ Chat" là hiện danh sách ngay.
   - Gửi tin trả lời ngay; Web Push cho người nhận chạy nền (`EdgeRuntime.waitUntil`).
   - Edge Function dùng chung kết nối CSDL trong cả isolate (không mở kết nối mới mỗi request).
 

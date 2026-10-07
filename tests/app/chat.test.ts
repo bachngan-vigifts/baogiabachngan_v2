@@ -78,4 +78,6 @@ test('chat: mở hội thoại một lượt gọi (full=1&read=1), Web Push ch�
   assert.equal(opened.conversation.id, d.data.id); assert.equal(opened.conversation.title, 'Tên emp'); assert.equal(opened.messages.length, 1);
   assert.equal((await call('/chat/unread', mgr)).data.unread, 0, 'read=1 đánh dấu đã đọc');
   assert.equal((await call(`/chat/${d.data.id}/messages`, mgr)).data.conversation, undefined, 'không full thì không kèm hội thoại');
+  const again = (await call('/chat/direct', mgr, 'POST', { memberId: 'emp' })).data;
+  assert.equal(again.id, d.data.id); assert.equal(again.conversation.title, 'Tên emp'); assert.equal(again.messages.length, 1, '/chat/direct trả luôn tin nhắn để mở khung chat một lượt');
 });
