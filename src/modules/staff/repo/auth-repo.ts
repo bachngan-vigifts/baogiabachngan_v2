@@ -29,8 +29,8 @@ export async function countAttempt(db: AnyDb, key: string, now: number): Promise
 }
 
 /** Phiên hợp lệ: chưa hết hạn, tài khoản còn hoạt động, và phiên cùng "phiên bản" với thông tin đăng nhập (đổi mật khẩu = huỷ mọi phiên cũ). */
-export async function findSessionMember(db: AnyDb, tokenHash: string, now: number): Promise<(MemberRow & { active: boolean }) | null> {
-  const rows = await db.select(memberColumns).from(sessions)
+export async function findSessionMember(db: AnyDb, tokenHash: string, now: number): Promise<(MemberRow & { active: boolean; sessionExpires: number }) | null> {
+  const rows = await db.select({ ...memberColumns, sessionExpires: sessions.expires }).from(sessions)
     .innerJoin(employees, eq(employees.id, sessions.memberId))
     .innerJoin(credentials, eq(credentials.memberId, employees.id))
     .leftJoin(positions, eq(positions.id, employees.positionId))
@@ -47,6 +47,11 @@ export async function findLoginRow(db: AnyDb, email: string) {
 }
 
 /** Tạo phiên mới và dọn phiên/lần thử đã hết hạn trong cùng một lô. */
+/** Gia hạn phiên đang dùng (phiên "trượt"): đặt lại hạn = bây giờ + thời hạn phiên. */
+export async function extendSession(db: AnyDb, tokenHash: string, expires: number) {
+  await db.update(sessions).set({ expires }).where(eq(sessions.hash, tokenHash));
+}
+
 export async function createSession(db: AnyDb, p: { tokenHash: string; memberId: string; version: number; now: number; lifetime: number }) {
   await db.transaction(async tx => {
     await tx.insert(sessions).values({ hash: p.tokenHash, memberId: p.memberId, version: p.version, expires: p.now + p.lifetime });

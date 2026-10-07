@@ -27,8 +27,10 @@ $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dia
 
 // ----- API (cùng phiên đăng nhập với trang chính)
 let token = '';
-try { token = sessionStorage.getItem(SESSION_KEY) || ''; } catch { /* bỏ qua */ }
-const saveToken = t => { token = t || ''; try { if (token) sessionStorage.setItem(SESSION_KEY, token); else sessionStorage.removeItem(SESSION_KEY); } catch { /* bỏ qua */ } };
+// Giữ đăng nhập sau khi đóng app / tab: lưu ở localStorage (sessionStorage bị xoá mỗi lần đóng, nhất là app trên iPhone).
+// Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
+try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
+const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
 const toLogin = (note = '') => showAuth(note);
 async function api(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };

@@ -4,6 +4,12 @@ import { AppError, unauthorized } from '../../../core/errors.ts';
 /** Phiên đăng nhập. Hằng số và định dạng cookie giữ NGUYÊN như bản cũ để phiên đang có vẫn dùng được. */
 export const SESSION_COOKIE = '__Host-bn-session';
 export const SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * Phiên "trượt": còn dùng thì không bao giờ bị đá ra. Mỗi khi phiên đã trôi qua quá 1 ngày kể từ lần gia hạn trước,
+ * hạn được đẩy lại thành bây giờ + 30 ngày (tối đa một lần ghi mỗi ngày cho mỗi phiên). Bỏ app quá 30 ngày mới phải đăng nhập lại.
+ */
+export const SESSION_RENEW_AFTER_SECONDS = 24 * 60 * 60;
+export const shouldRenewSession = (expires: number, now: number) => expires - now < SESSION_LIFETIME_SECONDS - SESSION_RENEW_AFTER_SECONDS;
 /** Cửa sổ đếm số lần thử (đăng nhập, kích hoạt, đổi mật khẩu). */
 export const RATE_WINDOW_SECONDS = 900;
 export const RATE_LIMITS = { ip: 100, email: 10, activation: 10, password: 10 } as const;

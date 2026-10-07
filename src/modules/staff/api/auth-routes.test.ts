@@ -5,7 +5,7 @@ import { createTestDb } from '../../../../tests/helpers/postgres.ts';
 import { seedStaff, PASSWORD, token, T } from '../../../../tests/helpers/staff-fixture.ts';
 import { createStaffRouter, type StaffEnv } from './auth-routes.ts';
 import { json } from '../../../core/http/router.ts';
-import { RATE_LIMITS, SESSION_COOKIE } from '../domain/session.ts';
+import { RATE_LIMITS, SESSION_COOKIE, shouldRenewSession, SESSION_LIFETIME_SECONDS } from '../domain/session.ts';
 
 const O = 'https://staff.test';
 async function world() {
@@ -186,4 +186,21 @@ test('NCC lệch vai trò (vai trò nhân viên nhưng chức vụ NCC) vẫn b�
   const l = await w.login('ncc@x.vn');
   assert.equal((await w.call('/biz', { cookie: l.cookie })).status, 403);
   assert.equal((await w.call('/portal', { cookie: l.cookie })).status, 200);
+});
+
+test('phiên trượt: còn dùng thì tự gia hạn 30 ngày (tối đa 1 lần/ngày); bỏ không dùng quá 30 ngày mới hết hạn', async () => {
+  const { login, call, clock } = await world();
+  const DAY = 86_400, { cookie } = await login('emp@x.vn');
+  // Dùng đều đặn mỗi 20 ngày trong 100 ngày: không bao giờ bị đá ra.
+  for (let i = 0; i < 5; i++) { clock.t += 20 * DAY; assert.equal((await call('/me', { cookie })).status, 200, `ngày ${(i + 1) * 20}`); }
+  // Bỏ app 31 ngày: phiên hết hạn.
+  clock.t += 31 * DAY;
+  assert.equal((await call('/me', { cookie })).status, 401);
+});
+
+test('gia hạn phiên chỉ khi đã trôi qua hơn 1 ngày từ lần gia hạn trước (không ghi DB mỗi request)', () => {
+  const now = 1_000_000;
+  assert.equal(shouldRenewSession(now + SESSION_LIFETIME_SECONDS, now), false);
+  assert.equal(shouldRenewSession(now + SESSION_LIFETIME_SECONDS - 3600, now), false);
+  assert.equal(shouldRenewSession(now + SESSION_LIFETIME_SECONDS - 86_401, now), true);
 });
