@@ -2,6 +2,7 @@
 //  - Web Push TỰ BẬT: đã cho phép thì tự đăng ký lại mỗi lần mở trang; chưa hỏi thì hỏi quyền ở lần chạm đầu tiên
 //    (trình duyệt chỉ cho hỏi khi người dùng thao tác). Vẫn còn nút chuông → "Bật thông báo trên máy này" dự phòng;
 //  - trang TỰ LÀM MỚI: khi có thông báo mới (qua push hoặc kiểm tra định kỳ 30 giây) gọi `onNew` để tải lại dữ liệu.
+import { ding, setBadgePart, setSound, soundOn } from './alert.js';
 const b64ToBytes = s => { const t = (s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(t), c => c.charCodeAt(0)); };
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ago = iso => { const s = (Date.now() - Date.parse(iso)) / 1000; return s < 60 ? 'vừa xong' : s < 3600 ? Math.floor(s / 60) + ' phút trước' : s < 86400 ? Math.floor(s / 3600) + ' giờ trước' : new Date(iso).toLocaleDateString('vi-VN'); };
@@ -12,14 +13,21 @@ export function setupNotifications({ api, root, onNew, onOpen }) {
     <div class="bell-panel" hidden><div class="bell-head"><b>Thông báo</b><button type="button" class="link-btn" data-read-all>Đánh dấu đã đọc</button></div>
       <button type="button" class="btn secondary small block" data-enable-push hidden>Bật thông báo trên máy này</button>
       <button type="button" class="btn ghost small block" data-test-push hidden>Gửi thông báo thử</button>
-      <p class="muted small" data-push-note hidden></p><ul class="bell-list"></ul></div>`;
+      <p class="muted small" data-push-note hidden></p>
+      <button type="button" class="btn ghost small block" data-sound></button><ul class="bell-list"></ul></div>`;
   const btn = root.querySelector('.bell'), panel = root.querySelector('.bell-panel'), badge = root.querySelector('.bell-badge'), list = root.querySelector('.bell-list');
   const pushBtn = root.querySelector('[data-enable-push]'), pushNote = root.querySelector('[data-push-note]'), testBtn = root.querySelector('[data-test-push]');
   let notes = [], newest = '', timer = null, started = false;
+  // Âm báo + rung khi có việc mới lúc app đang mở (trial-ui/alert.js); bật / tắt ngay trong chuông.
+  const soundBtn = root.querySelector('[data-sound]');
+  const drawSound = () => { soundBtn.textContent = soundOn() ? '🔔 Âm báo & rung: Bật (bấm để tắt)' : '🔕 Âm báo & rung: Tắt (bấm để bật)'; };
+  drawSound();
+  soundBtn.addEventListener('click', e => { e.stopPropagation(); setSound(!soundOn()); drawSound(); });
 
   const draw = () => {
     const unread = notes.filter(n => !n.readAt).length;
     badge.hidden = !unread; badge.textContent = unread > 99 ? '99+' : String(unread);
+    setBadgePart('notifications', unread); // số đỏ trên icon app
     list.innerHTML = notes.length ? notes.map(n => `<li class="${n.readAt ? '' : 'unread'}" data-id="${esc(n.id)}"><b>${esc(n.title)}</b><span>${esc(n.body)}</span><small>${esc(ago(n.createdAt))}</small></li>`).join('')
       : '<li class="muted">Chưa có thông báo.</li>';
   };
@@ -29,7 +37,7 @@ export function setupNotifications({ api, root, onNew, onOpen }) {
       const fresh = d.notifications.filter(n => !notes.some(x => x.id === n.id));
       if (fresh.length) {
         notes = [...fresh, ...notes].slice(0, 30); newest = notes[0].createdAt; draw();
-        if (!initial) onNew(fresh); // có việc mới → trang tự làm mới
+        if (!initial) { onNew(fresh); if (fresh.some(n => !n.readAt)) ding(); } // có việc mới → trang tự làm mới + kêu
       } else if (initial) draw();
     } catch { /* mất mạng: lần sau thử lại */ }
   }

@@ -1,5 +1,6 @@
 // TIN NHẮN nội bộ giữa nhân viên: nút chat nổi góc dưới phải mở khung chat (danh sách hội thoại 1-1 + nhóm bên trái, khung chat bên phải).
 // Cập nhật: khung đang mở hỏi tin mới mỗi 3 giây; danh sách mỗi 10 giây; huy hiệu menu mỗi 20 giây (+ Web Push khi có tin).
+import { ding, setBadgePart } from './alert.js';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = name => String(name || '?').trim().split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
 const AVATAR = ['#2459a9', '#12805c', '#a86400', '#6b3fb4', '#0e6a91', '#b4232c', '#4338ca', '#0f766e'];
@@ -29,8 +30,9 @@ export function initChat({ api, toast, userId, isManager }) {
     try {
       const { unread } = await api('/chat/unread'), b = document.getElementById('nav-chat-count');
       b.hidden = !unread; b.textContent = unread > 99 ? '99+' : unread;
-      // Khung chat đang đóng mà có tin mới: báo ngay, không chỉ đổi số trên nút.
-      if (lastUnread !== null && unread > lastUnread && root.hidden) toast(`Có ${unread - lastUnread} tin nhắn mới`);
+      setBadgePart('chat', unread); // số đỏ trên icon app
+      // Khung chat đang đóng mà có tin mới: báo ngay (thông báo + tiếng), không chỉ đổi số trên nút.
+      if (lastUnread !== null && unread > lastUnread && root.hidden) { toast(`Có ${unread - lastUnread} tin nhắn mới`); ding(); }
       lastUnread = unread;
     } catch { /* bỏ qua */ }
   }
@@ -146,7 +148,7 @@ export function initChat({ api, toast, userId, isManager }) {
       st.reads = m.reads;
       if (fresh.length) { const done = st.messages.filter(x => !x.pending).concat(fresh).sort((a, b) => a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0); st.messages = done.concat(st.messages.filter(x => x.pending)); }
       if (fresh.length || readsChanged) { remember(); renderThread(); if (keep) toBottom(); }
-      if (fresh.some(x => x.memberId !== userId())) markRead();
+      if (fresh.some(x => x.memberId !== userId())) { markRead(); ding(); }
     } catch { /* mạng chập chờn: lần sau thử lại */ } finally { polling = false; }
   }
   async function send() {

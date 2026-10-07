@@ -94,6 +94,14 @@ Các sự kiện được thông báo:
   - Chưa hỏi quyền: lần chạm hoặc bấm đầu tiên trên trang sẽ hiện hộp "Cho phép thông báo" của trình duyệt. Trình duyệt chỉ cho hỏi khi người dùng có thao tác. Từ chối hoặc bỏ qua thì 3 ngày sau mới hỏi lại.
   - iPhone mở bằng Safari thường (không hỗ trợ push): hiện thanh nhắc "Chia sẻ → Thêm vào MH chính". Đóng thanh thì 7 ngày sau mới nhắc lại.
   - Đã chặn thông báo thì web không tự mở lại được; người dùng phải cho phép trong cài đặt trình duyệt.
+- **Âm báo, rung, số trên icon app** (`trial-ui/alert.js`):
+  - **App đang mở:** có thông báo mới hoặc tin nhắn mới thì phát tiếng "ting–ting" riêng của Bách Ngân và rung (Android). Tiếng được tạo bằng Web Audio, không cần file âm thanh.
+    - Bật / tắt bằng nút **🔔 Âm báo & rung** trong chuông. Lựa chọn lưu ở `localStorage` `bn-sound`.
+    - Trình duyệt chỉ cho phát tiếng sau lần chạm / bấm đầu tiên trên trang.
+  - **App đang đóng:** thông báo đẩy dùng âm thanh mặc định của máy. Web không chọn được tiếng chuông riêng; Android đổi được trong cài đặt thông báo của trình duyệt / app.
+  - **Số đỏ trên icon app:** tổng thông báo chưa đọc và tin nhắn chưa đọc (`navigator.setAppBadge`).
+    - iPhone hỗ trợ từ iOS 16.4 khi đã thêm vào màn hình chính; Android và máy tính hỗ trợ khi đã cài app.
+    - Service worker lưu con số trong IndexedDB và cộng thêm 1 mỗi lần nhận thông báo đẩy lúc app đóng. Mở app thì số được đặt lại đúng theo máy chủ.
 - **Bật thông báo thủ công (dự phòng):** chuông thông báo trên đầu trang → **Bật thông báo trên máy này**.
   - Trình duyệt đăng ký nhận qua service worker `push-sw.js`; app lưu đăng ký vào `staff_web_push_subscriptions`.
   - Trên iPhone, phải thêm trang vào Màn hình chính trước thì mới bật được.
