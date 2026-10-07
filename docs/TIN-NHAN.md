@@ -18,9 +18,13 @@
 - **Tin chưa đọc**: số đỏ trên nút chat nổi, và số trên từng cuộc trò chuyện.
 - **Thông báo**: tin mới được đẩy qua Web Push. Tin nhắn không hiện trong chuông thông báo vì đã có hộp thư riêng.
 - **Cập nhật tin mới**: lấy theo chu kỳ, không cần tải lại trang.
-  - Cuộc trò chuyện đang mở: 3 giây một lần.
-  - Danh sách cuộc trò chuyện: 10 giây một lần.
-  - Số trên nút chat: 20 giây một lần. Có Web Push thì cập nhật ngay.
+  - Khi khung chat mở: cuộc trò chuyện đang xem 3 giây một lần; danh sách cuộc trò chuyện 6 giây một lần, kể cả khi chưa chọn cuộc nào (điện thoại).
+  - Khi khung chat đóng: số trên nút chat 15 giây một lần; có tin mới thì hiện thông báo "Có N tin nhắn mới". Có Web Push thì cập nhật ngay.
+  - Lượt hỏi lùi mốc 2 phút và bỏ trùng theo id, để không sót tin hai người gửi cùng lúc.
+- **Tốc độ**:
+  - Mở một cuộc trò chuyện chỉ một lượt gọi `GET /chat/:id/messages?full=1&read=1` (tin + thông tin hội thoại + đánh dấu đã đọc).
+  - Gửi tin trả lời ngay; Web Push cho người nhận chạy nền (`EdgeRuntime.waitUntil`).
+  - Edge Function dùng chung kết nối CSDL trong cả isolate (không mở kết nối mới mỗi request).
 
 ## Cấu trúc
 | Phần | File |

@@ -21,6 +21,8 @@ export interface StaffEnv {
   /** Địa chỉ Sapo admin (mặc định cửa hàng Bách Ngân) và hàm fetch gọi Sapo (test truyền Sapo giả). */
   sapoAdminBase?: string;
   sapoFetch?: typeof fetch;
+  /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
+  waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */
   pushFetch?: typeof fetch;
 }

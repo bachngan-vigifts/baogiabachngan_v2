@@ -18,20 +18,24 @@ const linkify = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" targe
 
 /**
  * Gắn khung Tin nhắn vào #view-chat. `api(path, method, body)`, `toast`, `userId()`, `isManager()`.
- * Trả về { show(id?), hide(), toggle(), badge(), startBadge(), stop() }.
+ * Trả về { show(id?), hide(), open(id), badge(), refresh(), startBadge(), stop() }.
  */
 export function initChat({ api, toast, userId, isManager }) {
   const root = document.getElementById('view-chat'), q = s => root.querySelector(s);
   const st = { list: [], active: null, messages: [], reads: [], last: null, people: null, filter: '', timers: [] };
 
+  let lastUnread = null;
   async function badge() {
     try {
       const { unread } = await api('/chat/unread'), b = document.getElementById('nav-chat-count');
       b.hidden = !unread; b.textContent = unread > 99 ? '99+' : unread;
+      // Khung chat đang đóng mà có tin mới: báo ngay, không chỉ đổi số trên nút.
+      if (lastUnread !== null && unread > lastUnread && root.hidden) toast(`Có ${unread - lastUnread} tin nhắn mới`);
+      lastUnread = unread;
     } catch { /* bỏ qua */ }
   }
   let badgeTimer = null;
-  const startBadge = () => { if (!badgeTimer) { badge(); badgeTimer = setInterval(() => { if (document.visibilityState === 'visible') badge(); }, 20_000); } };
+  const startBadge = () => { if (!badgeTimer) { badge(); badgeTimer = setInterval(() => { if (document.visibilityState === 'visible' && root.hidden) badge(); }, 15_000); } };
 
   // ----- Danh sách hội thoại
   async function loadList() {
@@ -77,29 +81,45 @@ export function initChat({ api, toast, userId, isManager }) {
   const toBottom = () => { const b = q('#chat-messages'); b.scrollTop = b.scrollHeight; };
 
   async function open(id) {
-    stopThread();
     if (!id) { st.active = null; renderThread(); await loadList(); return; }
     try {
-      const [{ conversation }, m] = await Promise.all([api('/chat/' + encodeURIComponent(id)), api(`/chat/${encodeURIComponent(id)}/messages`)]);
-      st.active = conversation; st.messages = m.messages; st.reads = m.reads; st.more = m.more;
+      // Một lượt gọi: tin nhắn + thông tin hội thoại + đánh dấu đã đọc.
+      const m = await api(`/chat/${encodeURIComponent(id)}/messages?full=1&read=1`);
+      st.active = m.conversation; st.messages = m.messages; st.reads = m.reads; st.more = m.more;
     } catch (e) { toast(e.message, 'err'); st.active = null; renderThread(); return; }
-    renderThread(); toBottom(); markRead(); loadList();
+    renderThread(); toBottom(); loadList(); badge();
     q('#chat-input').focus();
-    st.timers.push(setInterval(poll, 3_000), setInterval(() => { if (!root.hidden) loadList(); }, 10_000));
+    startTimers();
+  }
+  // Khi khung chat mở: hỏi tin mới của hội thoại đang xem mỗi 3 giây, làm mới danh sách mỗi 6 giây
+  // (kể cả khi chưa chọn hội thoại nào, vd trên điện thoại đang ở danh sách).
+  function startTimers() {
+    if (st.timers.length) return;
+    let tick = 0;
+    st.timers.push(setInterval(() => {
+      if (root.hidden) { stopThread(); return; }
+      if (document.visibilityState !== 'visible') return;
+      tick++; poll(); if (tick % 2 === 0) loadList();
+    }, 3_000));
   }
   function stopThread() { st.timers.forEach(clearInterval); st.timers = []; }
   async function markRead() { if (!st.active) return; try { await api(`/chat/${encodeURIComponent(st.active.id)}/read`, 'POST', {}); badge(); } catch { /* bỏ qua */ } }
+  let polling = false;
   async function poll() {
-    if (root.hidden || !st.active || document.visibilityState !== 'visible') { if (root.hidden) stopThread(); return; }
-    const after = st.messages.at(-1)?.createdAt;
+    if (root.hidden || !st.active || polling) return;
+    // Lùi mốc 2 phút (bỏ trùng theo id): không sót tin người khác gửi cùng lúc với tin của mình.
+    const lastAt = st.messages.filter(x => !x.pending).at(-1)?.createdAt;
+    const after = lastAt ? new Date(Date.parse(lastAt) - 120_000).toISOString() : '';
+    polling = true;
     try {
       const m = await api(`/chat/${encodeURIComponent(st.active.id)}/messages` + (after ? '?after=' + encodeURIComponent(after) : ''));
       const fresh = m.messages.filter(x => !st.messages.some(y => y.id === x.id)), keep = atBottom();
       const readsChanged = JSON.stringify(m.reads) !== JSON.stringify(st.reads);
       st.reads = m.reads;
-      if (fresh.length || readsChanged) { st.messages.push(...fresh); renderThread(); if (keep) toBottom(); }
+      if (fresh.length) { const done = st.messages.filter(x => !x.pending).concat(fresh).sort((a, b) => a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0); st.messages = done.concat(st.messages.filter(x => x.pending)); }
+      if (fresh.length || readsChanged) { renderThread(); if (keep) toBottom(); }
       if (fresh.some(x => x.memberId !== userId())) markRead();
-    } catch { /* mạng chập chờn: lần sau thử lại */ }
+    } catch { /* mạng chập chờn: lần sau thử lại */ } finally { polling = false; }
   }
   async function send() {
     const inp = q('#chat-input'), body = inp.value.trim(); if (!body || !st.active) return;
@@ -108,7 +128,10 @@ export function initChat({ api, toast, userId, isManager }) {
     st.messages.push(temp); renderThread(); toBottom();
     try {
       const r = await api(`/chat/${encodeURIComponent(st.active.id)}/messages`, 'POST', { body });
-      Object.assign(temp, { id: r.id, createdAt: r.createdAt, pending: false }); loadList();
+      // Lượt hỏi định kỳ có thể đã kéo về chính tin này: bỏ bản tạm để khỏi hiện hai lần.
+      if (st.messages.some(x => x.id === r.id)) { st.messages = st.messages.filter(x => x !== temp); renderThread(); }
+      else Object.assign(temp, { id: r.id, createdAt: r.createdAt, pending: false });
+      loadList();
     } catch (e) { st.messages = st.messages.filter(x => x !== temp); renderThread(); inp.value = body; toast(e.message, 'err'); }
   }
   const autosize = () => { const t = q('#chat-input'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; };
@@ -177,11 +200,11 @@ export function initChat({ api, toast, userId, isManager }) {
     const b = e.target.closest('[data-conv]'); if (b) open(b.dataset.conv);
   });
   q('#chat-search').addEventListener('input', e => { st.filter = e.target.value.trim(); renderList(); });
-  q('#chat-back').addEventListener('click', () => { st.active = null; stopThread(); renderThread(); loadList(); });
+  q('#chat-back').addEventListener('click', () => { st.active = null; renderThread(); loadList(); });
   // Mở / đóng khung chat nổi.
   const launcher = document.getElementById('chat-launcher');
   async function show(id) {
-    root.hidden = false; launcher.classList.add('active');
+    root.hidden = false; launcher.classList.add('active'); startTimers();
     if (id) await open(id); else { renderThread(); await loadList(); if (!st.active && innerWidth > 860 && st.list[0]) open(st.list[0].id); else if (st.active) open(st.active.id); }
   }
   function hide() { root.hidden = true; launcher.classList.remove('active'); stopThread(); badge(); }
@@ -200,5 +223,7 @@ export function initChat({ api, toast, userId, isManager }) {
     } catch (ex) { toast(ex.message, 'err'); }
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !root.hidden && st.active) poll(); });
-  return { show, hide, open, badge, startBadge, stop: stopThread };
+  /** Có thông báo đẩy (tin mới): làm mới ngay thay vì chờ lượt hỏi kế tiếp. */
+  function refresh() { if (root.hidden) badge(); else { poll(); loadList(); } }
+  return { show, hide, open, badge, refresh, startBadge, stop: stopThread };
 }
