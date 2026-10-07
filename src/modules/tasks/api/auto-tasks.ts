@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNotNull, lte, ne, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -144,6 +144,12 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
   for (const [name, rule] of Object.entries(RULES)) {
     try { for (const t of await rule(db, today)) wanted.set(t.autoKey, t); } catch (e) { console.error('auto task rule failed', name, e instanceof Error ? e.message : e); }
   }
+  // Người nhận phải là nhân viên còn làm việc (chưa khoá / chưa xoá, không phải NCC / khách). Người phụ trách chứng từ
+  // đã nghỉ thì việc về "chưa giao" để Manager thấy và giao lại – không để việc nằm ở tài khoản không ai đăng nhập.
+  const usable = new Set((await db.select({ id: employees.id }).from(employees)
+    .where(and(eq(employees.active, true), isNull(employees.deletedAt), notInArray(employees.role, ['customer', 'supplier'])))).map(e => e.id));
+  const who = (id: string | null | undefined) => (id && usable.has(id) ? id : null);
+  for (const t of wanted.values()) t.assigneeId = who(t.assigneeId);
   const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
     .from(tasks).where(isNotNull(tasks.autoKey));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
@@ -156,7 +162,7 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
     const w = wanted.get(t.autoKey!);
     if (!w) { await db.update(tasks).set({ status: 'done', completedAt: stamp, completedBy: null, updatedAt: stamp, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id)); closed++; continue; }
     // Mức ưu tiên chỉ đặt lúc tạo (nhân viên có thể nâng / hạ). Việc "chưa giao" / giao cho nhóm mà đã có người nhận (giao tay / bấm Nhận việc) thì giữ người đó.
-    const assigneeId = w.assigneeId ?? t.assigneeId, assigneePosition = assigneeId ? null : (w.assigneePosition ?? null);
+    const assigneeId = w.assigneeId ?? who(t.assigneeId), assigneePosition = assigneeId ? null : (w.assigneePosition ?? null);
     if (assigneeId !== t.assigneeId || assigneePosition !== t.assigneePosition || w.dueDate !== t.dueDate || w.title !== t.title || (w.description ?? '') !== t.description) {
       await db.update(tasks).set({ assigneeId, assigneePosition, dueDate: w.dueDate, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
     }

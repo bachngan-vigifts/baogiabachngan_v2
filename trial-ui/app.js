@@ -312,6 +312,13 @@ $('#password-form').addEventListener('submit', async e => {
 });
 
 // ---------------------------------------------------------------- tải dữ liệu
+// Điện thoại: đo chiều cao thật của menu dưới và thanh "Tổng thanh toán / Lưu" (đổi theo cỡ chữ, vùng an toàn iPhone)
+// để thanh lưu nằm sát trên menu và nút chat nổi không đè lên nút nào.
+if ('ResizeObserver' in window) {
+  const rootStyle = document.documentElement.style;
+  const track = (sel, name) => { const el = document.querySelector(sel); if (el) new ResizeObserver(() => { if (el.offsetHeight) rootStyle.setProperty(name, el.offsetHeight + 'px'); }).observe(el); };
+  track('.bottom-nav', '--nav-h'); track('.mobile-savebar', '--savebar-h');
+}
 async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
