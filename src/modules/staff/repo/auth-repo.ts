@@ -39,6 +39,20 @@ export async function findSessionMember(db: AnyDb, tokenHash: string, now: numbe
   return rows[0] ?? null;
 }
 
+/** Chuẩn hoá số điện thoại ngay trong SQL (cùng quy tắc `normalizePhone`) để so khớp số đã lưu ở mọi dạng. */
+export const phoneKeySql = (col: unknown) => sql`regexp_replace(regexp_replace(${col}, '[^0-9]', '', 'g'), '^84([0-9]{9,10})$', '0\\1')`;
+
+/**
+ * Đăng nhập bằng số điện thoại: chỉ tài khoản khách hàng, và số phải thuộc đúng MỘT tài khoản
+ * (trùng số thì không cho đăng nhập bằng số, phải dùng email).
+ */
+export async function findLoginRowByPhone(db: AnyDb, phone: string) {
+  const rows = await db.select({ ...memberColumns, passwordHash: credentials.passwordHash, version: credentials.version })
+    .from(employees).innerJoin(credentials, eq(credentials.memberId, employees.id)).leftJoin(positions, eq(positions.id, employees.positionId))
+    .where(and(eq(employees.role, 'customer'), sql`${phoneKeySql(employees.phone)} = ${phone}`)).limit(2);
+  return rows.length === 1 ? rows[0]! : null;
+}
+
 export async function findLoginRow(db: AnyDb, email: string) {
   const rows = await db.select({ ...memberColumns, passwordHash: credentials.passwordHash, version: credentials.version })
     .from(employees).innerJoin(credentials, eq(credentials.memberId, employees.id)).leftJoin(positions, eq(positions.id, employees.positionId))

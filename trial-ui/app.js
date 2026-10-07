@@ -2073,9 +2073,10 @@ async function drawAccounts() {
     const { accounts } = await api('/customers/' + encodeURIComponent(accCustomer.id) + '/accounts');
     list.innerHTML = accounts.length ? accounts.map(a => `<li data-member="${esc(a.memberId)}">
       <div><b>${esc(a.name)}</b> <span class="pill ${a.active ? (a.activated ? 'ok' : 'warn') : 'muted'}">${a.active ? (a.activated ? 'Đang dùng' : 'Chưa đặt mật khẩu') : 'Đã khoá'}</span>
-        <small>${esc(a.email)} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
+        <small>${esc(a.email)}${a.phone ? ' · ĐT ' + esc(a.phone) : ''} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
         <small>CK riêng: ${Object.keys(DISCOUNT_LABELS).map(k => `${DISCOUNT_LABELS[k]} ${fmtNum(a.discounts[k] || 0)}%`).join(' · ')}</small></div>
       ${a.canManage ? `<div class="row-actions">${isManager() ? '<button type="button" class="btn ghost small" data-acc-discount>Đặt CK</button>' : ''}
+        <button type="button" class="btn ghost small" data-acc-phone>${a.phone ? 'Đổi SĐT' : 'Thêm SĐT'}</button>
         <button type="button" class="btn ghost small" data-acc-reset>Cấp lại link</button>
         <button type="button" class="btn ghost small" data-acc-active="${a.active ? 0 : 1}">${a.active ? 'Khoá' : 'Mở khoá'}</button></div>` : ''}
     </li>`).join('') : '<li class="muted">Khách này chưa có tài khoản. Tạo tài khoản bên dưới rồi gửi link cho khách tự đặt mật khẩu.</li>';
@@ -2099,6 +2100,12 @@ $('#accounts-list').addEventListener('click', async e => {
   const li = e.target.closest('li[data-member]'); if (!li) return;
   const id = li.dataset.member, a = $('#accounts-list')._accounts.find(x => x.memberId === id);
   try {
+    if (e.target.closest('[data-acc-phone]')) {
+      const cur = a?.phone || '';
+      const phone = prompt('Số điện thoại đăng nhập của tài khoản này (để trống = bỏ đăng nhập bằng số):', cur);
+      if (phone === null) return;
+      await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { phone: phone.trim() }); toast('Đã cập nhật số điện thoại.'); return drawAccounts();
+    }
     if (e.target.closest('[data-acc-reset]')) { showAccountLink((await api(`/customer-accounts/${encodeURIComponent(id)}/reset`, 'POST', {})).url); return drawAccounts(); }
     const act = e.target.closest('[data-acc-active]');
     if (act) { await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { active: act.dataset.accActive === '1' }); toast(act.dataset.accActive === '1' ? 'Đã mở khoá tài khoản.' : 'Đã khoá tài khoản.'); return drawAccounts(); }

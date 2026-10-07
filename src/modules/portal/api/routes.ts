@@ -8,6 +8,8 @@ import { credentials, employees, sessions } from '../../staff/schema.ts';
 import { ACTIVATION_TTL_SECONDS } from '../../staff/domain/members.ts';
 import { newToken, sha256Hex } from '../../staff/domain/session.ts';
 import { CUSTOMER_POSITION_ID } from '../../staff/domain/roles.ts';
+import { normalizePhone } from '../../staff/domain/login-id.ts';
+import { phoneKeySql } from '../../staff/repo/auth-repo.ts';
 import { customers } from '../../customers/schema.ts';
 import { pricePolicies, productPrices, products } from '../../catalog/schema.ts';
 import { snapshotVersion } from '../../catalog/api/routes.ts';
@@ -274,8 +276,9 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
    */
   router.post('/customer-accounts', async c => {
     const body = await readJson(c.req, 8_000), me = member(c), mgr = me.role === 'manager', db = c.env.db;
-    const customerId = str(body.customerId, 80), name = str(body.name, 200), email = str(body.email, 254).toLowerCase(), phone = str(body.phone, 40);
+    const customerId = str(body.customerId, 80), name = str(body.name, 200), email = str(body.email, 254).toLowerCase();
     if (!name || !EMAIL.test(email)) throw new AppError(400, 'Nhập tên và email hợp lệ của người dùng phía khách hàng.');
+    const phone = await loginPhone(db, body.phone);
     const [cust] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, customerId)).limit(1);
     if (!cust) throw new AppError(404, 'Không tìm thấy khách hàng.');
     const ownerId = mgr && body.ownerId ? str(body.ownerId, 80) : me.id;
@@ -292,6 +295,21 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     });
     return json({ memberId: id, url: customerLink(c.url.origin, email, token) }, 201);
   }, 'business');
+
+  /**
+   * Số điện thoại của tài khoản khách. Số di động / cố định hợp lệ được chuẩn hoá về 0xxxxxxxxx và dùng để đăng nhập,
+   * nên không được trùng tài khoản khách khác. Số không đọc được (ghi chú, số lẻ) vẫn lưu nguyên nhưng không đăng nhập bằng số đó.
+   */
+  async function loginPhone(db: StaffEnv['db'], raw: unknown, exceptId?: string) {
+    const text = str(raw, 40);
+    if (!text) return '';
+    const phone = normalizePhone(text);
+    if (!phone) return text;
+    const [dup] = await db.select({ id: employees.id }).from(employees)
+      .where(and(eq(employees.role, 'customer'), sql`${phoneKeySql(employees.phone)} = ${phone}`, exceptId ? ne(employees.id, exceptId) : undefined)).limit(1);
+    if (dup) throw new AppError(409, 'Số điện thoại này đã dùng cho một tài khoản khách khác.');
+    return phone;
+  }
 
   async function manageable(c: Ctx) {
     const [row] = await c.env.db.select().from(customerAccounts).where(eq(customerAccounts.memberId, c.params.memberId!)).limit(1);
@@ -310,8 +328,10 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       if (!o) throw new AppError(400, 'Nhân viên phụ trách không hợp lệ.');
       set.ownerId = o.id;
     }
+    const phone = body.phone !== undefined ? await loginPhone(db, body.phone, row.memberId) : undefined;
     await db.transaction(async tx => {
       await tx.update(customerAccounts).set(set).where(eq(customerAccounts.memberId, row.memberId));
+      if (phone !== undefined) await tx.update(employees).set({ phone }).where(eq(employees.id, row.memberId));
       if (typeof body.active === 'boolean') {
         await tx.update(employees).set({ active: body.active }).where(eq(employees.id, row.memberId));
         if (!body.active) await tx.delete(sessions).where(eq(sessions.memberId, row.memberId));
