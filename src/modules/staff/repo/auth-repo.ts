@@ -12,6 +12,11 @@ const memberColumns = {
   positionId: employees.positionId, positionName: positions.name, active: employees.active, avatarKey: employees.avatarKey,
 };
 
+/** Xoá bộ đếm thử của một khoá (vd đăng nhập đúng thì xoá bộ đếm của tài khoản). */
+export async function clearAttempts(db: AnyDb, key: string): Promise<void> {
+  await db.delete(authAttempts).where(eq(authAttempts.key, sha256Hex(key)));
+}
+
 /**
  * Đếm một lần thử và trả về tổng số lần trong cửa sổ hiện tại. MỘT câu lệnh duy nhất (upsert có RETURNING)
  * nên hai yêu cầu đồng thời không đếm sót. Khoá được băm SHA-256 trước khi lưu (không lưu email/IP thô).

@@ -96,7 +96,9 @@ export class Router<Env = unknown> {
         if (!m) continue;
         if (r.method !== req.method) { allowed.add(r.method); continue; }
         const params: Record<string, string> = {};
-        r.keys.forEach((k, i) => { params[k] = decodeURIComponent(m[i + 1]!); });
+        // URL hỏng (vd %E0) → 400 thay vì lỗi máy chủ 500.
+        try { r.keys.forEach((k, i) => { params[k] = decodeURIComponent(m[i + 1]!); }); }
+        catch { throw new AppError(400, 'Đường dẫn không hợp lệ.'); }
         const ctx: RouteContext<Env> = { req, url, params, env, state: {}, meta: r.meta };
         await this.options.authorize?.(ctx);
         return await r.handler(ctx);

@@ -39,8 +39,9 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       db.select({ id: customerStockRequests.id, status: customerStockRequests.status, items: customerStockRequests.items, note: customerStockRequests.note, createdAt: customerStockRequests.createdAt, answeredAt: customerStockRequests.answeredAt })
         .from(customerStockRequests).where(and(eq(customerStockRequests.customerId, id), all ? undefined : eq(customerStockRequests.ownerId, me.id)))
         .orderBy(desc(customerStockRequests.createdAt)).limit(HUB_LIMITS.stockRequests),
-      db.select({ memberId: customerAccounts.memberId, name: employees.name, email: employees.email, active: employees.active, ownerId: customerAccounts.ownerId })
-        .from(customerAccounts).innerJoin(employees, eq(employees.id, customerAccounts.memberId)).where(eq(customerAccounts.customerId, id)).orderBy(asc(employees.name)),
+      // Tài khoản trang khách (tên, email đăng nhập): chỉ Manager / người phụ trách / người được chia sẻ khách mới xem.
+      all ? db.select({ memberId: customerAccounts.memberId, name: employees.name, email: employees.email, active: employees.active, ownerId: customerAccounts.ownerId })
+        .from(customerAccounts).innerJoin(employees, eq(employees.id, customerAccounts.memberId)).where(eq(customerAccounts.customerId, id)).orderBy(asc(employees.name)) : Promise.resolve([]),
     ]);
     const ids = orders.map(r => r.o.id);
     const [lines, ships, sch, pays, cts] = ids.length ? await Promise.all([

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { createDb } from '../../../src/core/db/client.ts';
 import * as schema from '../../../src/db/schema.ts';
 import { createAppRouter } from '../../../src/app/router.ts';
+import { SYNC_PREFIX } from '../../../src/modules/staff/api/auth-routes.ts';
 // Trang giao diện được phép gọi API. Thêm địa chỉ mới (vd Cloudflare Pages) bằng secret ALLOWED_ORIGINS="https://a,https://b".
 const ORIGINS = new Set(["https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site", "https://crm.minhlongonline.com",
   ...(Deno.env.get('ALLOWED_ORIGINS') || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(s => /^https:\/\/[^/]+$/.test(s))]);
@@ -30,10 +31,12 @@ async function ready(db: ReturnType<typeof createDb>) {
 // deno-lint-ignore no-explicit-any
 const waitUntil = (p: Promise<unknown>) => { const rt = (globalThis as any).EdgeRuntime; if (rt?.waitUntil) rt.waitUntil(p); else p.catch(() => {}); };
 // Đồng bộ Sapo gọi từ máy chủ (webhook Sapo, luồng trung gian): không có Origin, xác thực bằng SAPO_SYNC_TOKEN trong router.
-const SYNC_PATH = '/api/staff/integrations/';
 const SYNC_ORIGIN = 'https://crm.minhlongonline.com';
 Deno.serve(async req => {
-  const incoming = new URL(req.url), sync = incoming.pathname.includes(SYNC_PATH);
+  const incoming = new URL(req.url);
+  // Đường dẫn API (bỏ tiền tố /functions/v1/baogia-v2-api). Nhận diện luồng đồng bộ ĐÚNG như router (bắt đầu bằng SYNC_PREFIX),
+  // không dùng "có chứa" – tránh đường dẫn lắt léo được coi là đồng bộ (bỏ qua kiểm tra Origin).
+  const at = incoming.pathname.indexOf('/api/staff'), path = at < 0 ? '' : incoming.pathname.slice(at), sync = path.startsWith(SYNC_PREFIX);
   const origin = sync ? SYNC_ORIGIN : req.headers.get('origin') || '';
   const ORIGIN = origin; // liên kết kích hoạt/đặt lại mật khẩu trỏ về đúng trang đã gửi yêu cầu
   const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store' };
@@ -48,8 +51,7 @@ Deno.serve(async req => {
       await db.select({id:schema.positions.id}).from(schema.positions).limit(1);
       return new Response(JSON.stringify({ok:true}), {headers:{...cors,'content-type':'application/json'}});
     }
-    const path = incoming.pathname.slice(incoming.pathname.indexOf('/api/staff'));
-    if (!incoming.pathname.includes('/api/staff')) return new Response('{}',{status:404,headers:cors});
+    if (!path) return new Response('{}',{status:404,headers:cors});
     const headers = new Headers(req.headers); headers.delete('cookie');
     if (!sync) { // phiên đăng nhập của giao diện: Bearer → cookie; đồng bộ Sapo giữ nguyên Authorization cho router kiểm mã bí mật
       const token = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') || '')?.[1];

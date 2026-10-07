@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../../../../tests/helpers/postgres.ts';
 import { seedStaff, PASSWORD, token, T } from '../../../../tests/helpers/staff-fixture.ts';
-import { createStaffRouter, type StaffEnv } from './auth-routes.ts';
+import { clientIp, createStaffRouter, type StaffEnv } from './auth-routes.ts';
 import { json } from '../../../core/http/router.ts';
 import { RATE_LIMITS, SESSION_COOKIE, shouldRenewSession, SESSION_LIFETIME_SECONDS } from '../domain/session.ts';
 
@@ -99,6 +99,22 @@ test('giới hạn thử: quá 10 lần/email trong 15 phút bị chặn 429 (k�
   assert.equal((await w.login('mgr@x.vn')).status, 200); // email khác không bị ảnh hưởng
   w.clock.t += 901;
   assert.equal((await w.login('emp@x.vn')).status, 200);
+});
+
+test('đăng nhập đúng xoá bộ đếm của tài khoản: đăng nhập đúng nhiều lần không bị khoá; sai 9 lần rồi đúng thì đếm lại từ đầu', async () => {
+  const w = await world();
+  for (let i = 0; i < RATE_LIMITS.email + 3; i++) assert.equal((await w.login('emp@x.vn')).status, 200, `lần ${i + 1}`);
+  for (let i = 0; i < RATE_LIMITS.email - 1; i++) await w.call('/login', { body: { email: 'emp@x.vn', password: 'sai-sai-sai' } });
+  assert.equal((await w.login('emp@x.vn')).status, 200);
+  const codes: number[] = [];
+  for (let i = 0; i < RATE_LIMITS.email + 1; i++) codes.push((await w.call('/login', { body: { email: 'emp@x.vn', password: 'sai-sai-sai' } })).status);
+  assert.deepEqual(codes, [...Array(RATE_LIMITS.email).fill(401), 429], 'bộ đếm đã về 0 sau lần đăng nhập đúng');
+});
+
+test('IP giới hạn thử: cf-connecting-ip (Cloudflare ghi đè); thiếu thì phần tử CUỐI của x-forwarded-for (phần đầu trình duyệt giả được)', () => {
+  assert.equal(clientIp(new Headers({ 'cf-connecting-ip': '1.1.1.1', 'x-forwarded-for': '6.6.6.6' })), '1.1.1.1');
+  assert.equal(clientIp(new Headers({ 'x-forwarded-for': '6.6.6.6, 2.2.2.2' })), '2.2.2.2');
+  assert.equal(clientIp(new Headers()), 'unknown');
 });
 
 test('giới hạn theo IP: quá 100 lần/IP bị chặn dù đổi email', async () => {
