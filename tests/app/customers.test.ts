@@ -1,0 +1,94 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createTestDb } from '../helpers/postgres.ts';
+import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
+import { createAppRouter } from '../../src/app/router.ts';
+import { purchaseHistory } from '../../src/modules/customer-hub/domain/overview.ts';
+
+const origin = 'https://trial.test';
+async function setup() {
+  const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  // new / old trong bộ mẫu chưa đặt mật khẩu: dùng chung mật khẩu của emp để đăng nhập.
+  await d1.sqlite.prepare("UPDATE staff_credentials SET password_hash = (SELECT password_hash FROM staff_credentials WHERE member_id = 'emp'), activation_hash = NULL WHERE member_id IN ('new', 'old')").run();
+  const router = createAppRouter();
+  const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000 });
+    return { status: res.status, data: await res.json() as any };
+  };
+  const login = async (email: string) => (await router.handle(new Request(origin + '/api/staff/login', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: PASSWORD }) }), { db, passwordIterations: 1000 }))
+    .headers.get('set-cookie')!.split(';')[0]!;
+  return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), other: await login('new@x.vn'), old: await login('old@x.vn') };
+}
+
+test('lịch sử mua hàng: gộp theo mã, số đơn, lần mua gần nhất', () => {
+  const rows = purchaseHistory([
+    { sku: 'a1', name: 'Ly cũ', unit: 'cái', qty: 2, unitPrice: 100, amount: 200, orderId: 'o1', orderDate: '2026-01-01' },
+    { sku: 'A1', name: 'Ly', unit: 'cái', qty: 3, unitPrice: 90, amount: 270, orderId: 'o2', orderDate: '2026-03-01' },
+    { sku: '', name: 'Hộp quà', unit: 'hộp', qty: 1, unitPrice: 50, amount: 50, orderId: 'o1', orderDate: '2026-01-01' },
+  ]);
+  assert.deepEqual(rows.map(r => [r.name, r.qty, r.amount, r.orders, r.lastDate, r.lastPrice]), [['Ly', 5, 470, 2, '2026-03-01', 90], ['Hộp quà', 1, 50, 1, '2026-01-01', 50]]);
+});
+
+test('khách hàng: thêm mới (người tạo phụ trách), người liên hệ, phụ trách / chia sẻ, trang chi tiết đúng quyền', async () => {
+  const { call, emp, mgr, other, old } = await setup();
+  // Thêm khách: nhân viên tạo → mình phụ trách; Manager chọn được người phụ trách.
+  const k = await call('/customers', emp, 'POST', { name: 'Công ty Hoàng Long', phone: '0901', taxCode: '0101234567' });
+  assert.equal(k.status, 201);
+  const k2 = await call('/customers', mgr, 'POST', { name: 'Công ty An Phát', ownerId: 'new' });
+  let p = (await call(`/customers/${k.data.id}`, emp)).data;
+  assert.equal(p.owner.id, 'emp'); assert.deepEqual(p.shared, []); assert.equal(p.customer.fromSapo, false);
+  assert.deepEqual([p.access.canSeeAll, p.access.canManageStaff, p.access.canChangeOwner], [true, true, false]);
+  assert.equal((await call(`/customers/${k2.data.id}`, mgr)).data.owner.id, 'new');
+  // Danh sách: kèm người phụ trách; ?mine=1 chỉ khách của mình.
+  const list = (await call('/customers', emp)).data.customers;
+  assert.equal(list.find((x: any) => x.id === k.data.id).owner.name, 'Tên emp');
+  assert.deepEqual((await call('/customers?mine=1', emp)).data.customers.map((x: any) => x.id), [k.data.id]);
+  assert.equal((await call('/customers/nope', emp)).status, 404);
+
+  // Người liên hệ: thêm / sửa / xoá; một người liên hệ chính.
+  assert.equal((await call(`/customers/${k.data.id}/contacts`, emp, 'POST', { name: '' })).status, 400);
+  assert.equal((await call(`/customers/${k.data.id}/contacts`, emp, 'POST', { name: 'Chị Lan', email: 'sai' })).status, 400);
+  const c1 = await call(`/customers/${k.data.id}/contacts`, emp, 'POST', { name: 'Chị Lan', title: 'Kế toán', phone: '0902', isPrimary: true });
+  const c2 = await call(`/customers/${k.data.id}/contacts`, emp, 'POST', { name: 'Anh Minh', title: 'Mua hàng', email: 'minh@hl.vn' });
+  assert.equal((await call(`/customers/${k.data.id}/contacts/${c2.data.id}`, emp, 'PUT', { name: 'Anh Minh', title: 'Trưởng phòng mua hàng', isPrimary: true })).status, 200);
+  p = (await call(`/customers/${k.data.id}`, emp)).data;
+  assert.deepEqual(p.contacts.map((x: any) => [x.name, x.title, x.isPrimary]), [['Anh Minh', 'Trưởng phòng mua hàng', true], ['Chị Lan', 'Kế toán', false]]);
+  assert.equal((await call(`/customers/${k.data.id}/contacts/${c1.data.id}`, emp, 'DELETE')).status, 200);
+  assert.equal((await call(`/customers/${k2.data.id}/contacts/${c2.data.id}`, emp, 'DELETE')).status, 404, 'không xoá chéo khách');
+
+  // Phụ trách / chia sẻ: chỉ Manager đổi người phụ trách; người phụ trách chia sẻ được; người ngoài không.
+  assert.equal((await call(`/customers/${k.data.id}/staff`, emp, 'PUT', { ownerId: 'old' })).status, 403);
+  assert.equal((await call(`/customers/${k.data.id}/staff`, other, 'PUT', { sharedIds: ['new'] })).status, 403);
+  assert.equal((await call(`/customers/${k.data.id}/staff`, emp, 'PUT', { sharedIds: ['ncc'] })).status, 400, 'NCC không được chia sẻ');
+  assert.equal((await call(`/customers/${k.data.id}/staff`, emp, 'PUT', { sharedIds: ['old'] })).data.shared[0].id, 'old');
+
+  // Báo giá → đơn của khách (do emp phụ trách).
+  const doc = { type: 'B2B', quoteNo: 'B2B_BG20261007_001', customer: 'Công ty Hoàng Long', customerId: k.data.id, vat: 8,
+    rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8 }] };
+  const q = await call('/quotes', emp, 'POST', doc);
+  await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
+  const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
+
+  // Trang chi tiết: người phụ trách thấy đủ; người được chia sẻ (old) thấy đơn và mở được đơn; người ngoài (new) không thấy.
+  let ov = (await call(`/customers/${k.data.id}/overview`, emp)).data;
+  assert.equal(ov.quotes.length, 1); assert.equal(ov.quotes[0].total, 2_160_000); assert.equal(ov.quotes[0].orderId, o.data.id);
+  assert.equal(ov.orders.length, 1); assert.equal(ov.stats.orders, 1); assert.equal(ov.stats.revenue, 2_160_000); assert.equal(ov.stats.balance, 2_160_000);
+  assert.deepEqual(ov.purchases.map((x: any) => [x.sku, x.qty, x.orders]), [['LHC', 10, 1]]);
+  assert.equal((await call(`/customers/${k.data.id}/overview`, old)).data.orders.length, 1);
+  assert.equal((await call(`/orders/${o.data.id}`, old)).status, 200, 'được chia sẻ khách → mở được đơn của khách');
+  ov = (await call(`/customers/${k.data.id}/overview`, other)).data;
+  assert.equal(ov.access.canSeeAll, false); assert.equal(ov.orders.length, 0); assert.equal(ov.quotes.length, 0);
+  assert.equal((await call(`/orders/${o.data.id}`, other)).status, 404);
+
+  // Manager đổi người phụ trách sang old: old không còn trong danh sách chia sẻ; bỏ trống người phụ trách được.
+  p = (await call(`/customers/${k.data.id}/staff`, mgr, 'PUT', { ownerId: 'old' })).data;
+  assert.equal(p.owner.id, 'old'); assert.deepEqual(p.shared, []);
+  assert.equal((await call(`/customers/${k.data.id}/staff`, mgr, 'PUT', { ownerId: null })).data.owner, null);
+  assert.equal((await call(`/customers/${k.data.id}/staff`, mgr, 'PUT', { ownerId: 'off' })).status, 400, 'nhân viên đã nghỉ');
+
+  // Khách chưa có người phụ trách: đơn đầu tiên gán người phụ trách đơn làm người phụ trách khách.
+  const q2 = await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_BG20261007_002' });
+  await call(`/quotes/${q2.data.id}/approve`, mgr, 'POST', { revision: 1 });
+  assert.equal((await call('/orders', emp, 'POST', { quoteId: q2.data.id })).status, 201);
+  assert.equal((await call(`/customers/${k.data.id}`, mgr)).data.owner.id, 'emp');
+});

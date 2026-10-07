@@ -14,6 +14,7 @@ const ALLOWED: Record<string, string[]> = {
   portal: ['staff', 'customers', 'catalog', 'quotes', 'sales', 'notifications'],
   quotes: ['staff', 'notifications'], work: ['staff'],
   tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
+  'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal'],
 };
 
 test('schema của mỗi module chỉ import module được phép', () => {

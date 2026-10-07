@@ -7,6 +7,7 @@ import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel } from '.
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initChat } from './chat.js';
+import { initCustomerDetail } from './customer-detail.js';
 import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -302,11 +303,11 @@ let customerReq = 0;
 async function loadCustomers(more = false) {
   const req = ++customerReq, offset = more ? (state.customers || []).length : 0;
   try {
-    const d = await api(`/customers?limit=100&offset=${offset}&q=${encodeURIComponent(state.customerQuery)}`);
+    const d = await api(`/customers?limit=100&offset=${offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}`);
     if (req !== customerReq) return;
     state.customers = more ? [...state.customers, ...d.customers] : d.customers;
     state.customerTotal = d.total ?? d.customers.length;
-    if (!state.customerQuery) state.customerGrandTotal = state.customerTotal;
+    if (!state.customerQuery && !$('#customer-mine').checked) state.customerGrandTotal = state.customerTotal;
   } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
   renderCustomers(); renderStats();
 }
@@ -365,7 +366,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -391,8 +392,9 @@ function route() {
   if (view === 'staff' && !isManager()) view = 'quotes';
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
+  if (view === 'customers' && id) view = 'customer';
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
-  const navKey = view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view;
+  const navKey = view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : VIEWS[view];
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
@@ -406,6 +408,7 @@ function route() {
   if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'tasks') tasksView().load(id);
   if (view === 'order') openOrder(id);
+  if (view === 'customer') customerDetail().open(decodeURIComponent(id));
   hideProductSuggest();
 }
 const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -1678,16 +1681,17 @@ function quoteCountByCustomer() {
 }
 function renderCustomers() {
   const tbody = $('#customer-list');
-  if (!state.customers) { tbody.innerHTML = skeleton(6); return; }
+  if (!state.customers) { tbody.innerHTML = skeleton(7); return; }
   const counts = quoteCountByCustomer(), list = state.customers;
   $('#customer-count').textContent = `${list.length.toLocaleString('vi-VN')}/${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
   $('#customer-more-row').hidden = list.length >= state.customerTotal;
   tbody.innerHTML = list.map(c => `
-    <tr>
-      <td class="first"><span class="strong">${esc(c.name)}</span>${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
+    <tr class="clickable" data-href="#/customers/${esc(encodeURIComponent(c.id))}">
+      <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
       <td data-label="Liên hệ">${esc(c.contact) || '—'}</td>
       <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
       <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
+      <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
       <td class="right" data-label="Báo giá">${counts.get(normalize(c.name)) || 0}</td>
       <td class="actions-cell"><div class="row-actions">
         <button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>
@@ -1704,20 +1708,30 @@ function renderCustomers() {
 let customerTimer;
 $('#customer-search').addEventListener('input', e => { state.customerQuery = e.target.value; clearTimeout(customerTimer); customerTimer = setTimeout(() => loadCustomers(), 250); });
 $('#customer-more').addEventListener('click', () => loadCustomers(true));
+/** Tạo báo giá mới điền sẵn thông tin khách. */
+function quoteForCustomer(c) {
+  editor.pending = newQuoteData({ customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' });
+  go('#/quotes/new');
+}
 $('#customer-list').addEventListener('click', e => {
   const edit = e.target.closest('[data-edit-customer]'); if (edit) return openCustomer(edit.dataset.editCustomer);
   const accBtn = e.target.closest('[data-accounts-for]'); if (accBtn) return openAccounts(state.customers.find(x => x.id === accBtn.dataset.accountsFor));
   const qb = e.target.closest('[data-quote-for]');
-  if (qb) {
-    const c = state.customers.find(x => x.id === qb.dataset.quoteFor);
-    editor.pending = newQuoteData({ customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' });
-    go('#/quotes/new');
-  }
+  if (qb) return quoteForCustomer(state.customers.find(x => x.id === qb.dataset.quoteFor));
+  // Bấm vào dòng: mở trang chi tiết khách hàng.
+  const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
 });
-function openCustomer(id) {
+$('#customer-mine').addEventListener('change', () => loadCustomers());
+/** Trang chi tiết khách hàng (trial-ui/customer-detail.js). */
+var customerUi = null; // eslint-disable-line no-var
+function customerDetail() {
+  return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
+    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts });
+}
+function openCustomer(id, known) {
   customerId = id || null;
   const form = $('#customer-form'); form.reset(); $('#customer-error').textContent = '';
-  const c = id ? state.customers.find(x => x.id === id) : null;
+  const c = id ? known || state.customers?.find(x => x.id === id) : null;
   if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address']) form.elements.namedItem(k).value = c[k] || '';
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
@@ -1731,8 +1745,11 @@ $('#customer-form').addEventListener('submit', async e => {
   if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) { err.textContent = 'Email chưa đúng định dạng.'; return; }
   const btn = $('#save-customer'); btn.disabled = true;
   try {
-    await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);
+    const saved = await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);
     $('#customer-dialog').close(); toast(customerId ? 'Đã cập nhật khách hàng.' : 'Đã thêm ' + data.name + '.');
+    // Khách mới: mở luôn trang chi tiết để thêm người liên hệ / phân công; đang ở trang chi tiết thì tải lại.
+    if (!customerId) go('#/customers/' + encodeURIComponent(saved.id));
+    else if (location.hash.startsWith('#/customers/')) customerDetail().reload();
     await loadCustomers();
   } catch (ex) { err.textContent = ex.message; }
   finally { btn.disabled = false; }

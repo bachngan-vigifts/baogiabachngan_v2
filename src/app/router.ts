@@ -9,6 +9,7 @@ import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes } from '../modules/tasks/api/routes.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
+import { registerCustomerHubRoutes } from '../modules/customer-hub/api/routes.ts';
 export function createAppRouter() {
   const router = createStaffRouter();
   registerQuoteRoutes(router);
@@ -21,5 +22,6 @@ export function createAppRouter() {
   registerNotificationRoutes(router);
   registerTaskRoutes(router);
   registerChatRoutes(router);
+  registerCustomerHubRoutes(router);
   return router;
 }
