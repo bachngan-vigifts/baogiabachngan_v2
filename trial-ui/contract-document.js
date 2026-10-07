@@ -29,7 +29,7 @@ globalThis.ContractDocument = (() => {
     const body = Array.from(String(key)).map(char => /\s/.test(char) ? xmlGap : `${escapeRegExp(char)}${xmlGap}`).join('');
     return new RegExp(`&lt;${xmlGap}&lt;${xmlGap}${body}&gt;${xmlGap}&gt;`, 'g');
   };
-  const replaceToken = (source, key, value) => source.replaceAll(token(key), xmlText(value)).replace(tokenPattern(key), xmlText(value));
+  const replaceToken = (source, key, value) => source.replaceAll(token(key), () => xmlText(value)).replace(tokenPattern(key), () => xmlText(value)) /* hàm thay thế: $&, $` trong dữ liệu không bị hiểu là mẫu */;
   const replaceTokens = (source, values) => Object.entries(values).reduce((result, [key, value]) => replaceToken(result, key, value), source);
   const removeLeftoverTokens = source => source.replace(new RegExp(`&lt;${xmlGap}&lt;${xmlGap}[\\s\\S]{0,240}?&gt;${xmlGap}&gt;`, 'g'), '');
   const dateParts = value => {
@@ -138,7 +138,7 @@ globalThis.ContractDocument = (() => {
     result = result.replace('TP Cần Thơ, ngày 04 tháng 06 năm 2025', `TP Cần Thơ, ngày ${date.day} tháng ${date.month} năm ${date.year}`);
     result = result.replace('ký ngày  07  tháng 05  năm 2025', `ký ngày ${date.day} tháng ${date.month} năm ${date.year}`);
     result = result.replace('5.2   Địa điểm giao hàng: Theo thoả thuận của từng khách hàng (bắt buộc sửa lại).', `5.2   Địa điểm giao hàng: ${deliveryPlace}`);
-    result = result.replace('Phương thức thanh toán: Chuyển khoản.', xml(`Phương thức thanh toán: ${paymentMethod}`));
+    result = result.replace('Phương thức thanh toán: Chuyển khoản.', () => xml(`Phương thức thanh toán: ${paymentMethod}`));
     return removeLeftoverTokens(result);
   };
   const templateMark = (quote, documentType = 'HDKT') => `${quote.quote_type === 'VIGIFTS' ? 'VG' : 'BN'}-${documentType}-20261002`;
