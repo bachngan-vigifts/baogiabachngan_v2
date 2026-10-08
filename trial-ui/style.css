@@ -1235,3 +1235,15 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   .print-sheet.canvas-pages canvas:last-child { break-after: auto; page-break-after: auto; }
 }
 .pack-ship { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; display: grid; gap: 10px; } .pack-ship legend { font-weight: 700; padding: 0 6px; } .ship-to { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Form giao dịch chăm sóc (giống CRM đang dùng): một cột, nút chọn nhanh. */
+.care-dialog .care-form { grid-template-columns: 1fr; gap: 14px; }
+.care-field { display: grid; gap: 6px; } .care-field > span { font-size: .85rem; font-weight: 600; }
+.care-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.care-seg label { flex: 1 1 auto; position: relative; }
+.care-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.care-seg span { display: block; text-align: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2, #f3f5f9); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.care-seg input:checked + span { background: var(--navy, #13294b); border-color: transparent; color: #fff; }
+.care-seg input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 2px; }
+.care-money { display: flex; align-items: center; gap: 6px; } .care-money input { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
+.care-static { font-weight: 700; padding: 6px 0; }
+.care-dialog { width: min(560px, calc(100vw - 24px)); }

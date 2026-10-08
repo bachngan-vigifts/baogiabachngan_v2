@@ -2262,7 +2262,7 @@ const notifier = setupNotifications({
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
 /** Chăm sóc khách hàng (trial-ui/care.js). */
 var careUi = null; // eslint-disable-line no-var
-function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, root: $('#view-care') }); }
+function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
 function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var

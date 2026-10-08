@@ -52,7 +52,7 @@ test('file SQL xoá dữ liệu chạy thử: xoá đúng bảng, giữ dữ li�
   await reconcileAutoTasks(db);
   const t = (await call('/tasks?view=mine', mgr)).data.tasks[0];
   await call(`/tasks/${t.id}/comments`, mgr, 'POST', { body: 'Đã xem' });
-  assert.equal((await call('/care', emp, 'POST', { customerId: '1001', type: 'call', subject: 'Gọi thử' })).status, 201);
+  assert.equal((await call('/care', emp, 'POST', { customerId: '1001', type: 'call', content: 'Gọi thử', contactName: 'Chị Lan', result: 'consulting', nextAt: new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), remindBefore: '1d' })).status, 201);
   const chat = await call('/chat/direct', emp, 'POST', { memberId: 'mgr' });
   await call(`/chat/${chat.data.id}/messages`, emp, 'POST', { body: 'Chào anh' });
 

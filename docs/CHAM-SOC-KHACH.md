@@ -1,5 +1,19 @@
 # Chăm sóc khách hàng (nhật ký giao dịch CRM)
 
+> **Form "Giao dịch"** (từ migration 0045, theo form CRM đang dùng):
+> - Thời gian tạo (ngày).
+> - Nhân viên phụ trách: Manager chọn được người khác.
+> - Khách hàng\*.
+> - Người liên hệ\*: gợi ý từ danh bạ của khách.
+> - Nội dung\*.
+> - Loại giao dịch\*: Gọi điện thoại / Zalo / Email / Gặp trực tiếp / Báo giá.
+> - Doanh số dự kiến.
+> - Kết quả\*: Đang tư vấn / Đã gửi báo giá / Đang thương lượng / Đã chốt HĐ / Đã rớt đơn.
+> - Chăm sóc lần sau\*.
+> - Nhắc tôi trước\*: 1 Tháng / 1 Tuần / 1 Ngày.
+>
+> Việc nhắc hiện ở Công việc từ ngày *chăm sóc lần sau − nhắc trước* (`remindFrom`, quy tắc `careFollowUps`).
+
 Ghi lại mỗi lần nhân viên trao đổi với khách: gọi điện, Zalo, gặp mặt, đến thăm, email, SMS, ghi chú.
 Mỗi lần ghi gồm kết quả và (tuỳ chọn) **lịch hẹn chăm sóc tiếp**.
 

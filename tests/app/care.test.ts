@@ -5,7 +5,7 @@ import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
-import { cleanCare, followUpState } from '../../src/modules/care/domain/care.ts';
+import { cleanCare, followUpState, remindFrom } from '../../src/modules/care/domain/care.ts';
 import { vnToday } from '../../src/modules/care/api/routes.ts';
 import { reconcileAutoTasks } from '../../src/modules/tasks/api/auto-tasks.ts';
 
@@ -30,45 +30,54 @@ async function setup() {
   return { db, call, emp: await login('emp@x.vn'), emp2: await login('emp2@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc@x.vn') };
 }
 
-test('kiểm tra dữ liệu chăm sóc: bắt buộc / giới hạn / ngày hẹn', () => {
+test('kiểm tra dữ liệu giao dịch chăm sóc (form như CRM): bắt buộc / giới hạn / ngày / nhắc trước', () => {
   const today = '2026-10-08', now = new Date('2026-10-08T03:00:00Z');
-  const ok = cleanCare({ customerId: 'K1', type: 'call', subject: ' Hỏi nhu cầu Tết ', nextAt: '2026-10-10', nextAction: 'Gửi báo giá' }, today, now);
-  assert.deepEqual([ok.subject, ok.result, ok.occurredAt, ok.nextAt], ['Hỏi nhu cầu Tết', 'none', now.toISOString(), '2026-10-10']);
-  const bad = (raw: Record<string, unknown>, re: RegExp) => assert.throws(() => cleanCare({ customerId: 'K1', type: 'call', subject: 'x', ...raw }, today, now), re);
+  const base = { customerId: 'K1', contactName: 'Chị Ngọc – 0907123456', content: 'Gọi hỏi thăm quà cuối năm', type: 'call', result: 'consulting', nextAt: '2026-10-15', remindBefore: '1d' };
+  const ok = cleanCare({ ...base, occurredAt: '2026-10-08', expectedRevenue: '300000000' }, today, now);
+  assert.deepEqual([ok.content, ok.result, ok.nextAt, ok.remindBefore, ok.expectedRevenue], ['Gọi hỏi thăm quà cuối năm', 'consulting', '2026-10-15', '1d', 300_000_000]);
+  assert.equal(ok.occurredAt, '2026-10-08T05:00:00.000Z', 'ngày tạo → giữa trưa giờ VN');
+  const bad = (raw: Record<string, unknown>, re: RegExp) => assert.throws(() => cleanCare({ ...base, ...raw }, today, now), re);
   bad({ customerId: '' }, /Chọn khách hàng/);
-  bad({ type: 'fax' }, /hình thức/);
-  bad({ result: 'won' }, /Kết quả/);
-  bad({ subject: '', content: '  ' }, /tiêu đề hoặc nội dung/);
-  bad({ subject: 'x'.repeat(201) }, /tối đa 200/);
-  bad({ occurredAt: '2026-10-20T00:00:00Z' }, /tương lai/);
-  bad({ occurredAt: 'hôm qua' }, /không hợp lệ/);
+  bad({ contactName: '' }, /người liên hệ/);
+  bad({ content: '  ' }, /Nhập nội dung/);
+  bad({ type: 'fax' }, /loại giao dịch/);
+  bad({ result: 'ordered' }, /kết quả/);
+  bad({ remindBefore: '2d' }, /Nhắc tôi trước|nhắc tôi trước/);
+  bad({ nextAt: '' }, /chăm sóc lần sau/);
   bad({ nextAt: '2026-10-07' }, /từ hôm nay/);
   bad({ nextAt: '2026-02-30' }, /không hợp lệ/);
-  bad({ nextAction: 'Gọi lại' }, /Chọn ngày hẹn/);
+  bad({ occurredAt: '2026-10-20' }, /tương lai/);
+  bad({ occurredAt: 'hôm qua' }, /không hợp lệ/);
+  bad({ expectedRevenue: -1 }, /Doanh số/);
   bad({ content: 123 }, /không hợp lệ/);
+  assert.deepEqual([remindFrom('2026-10-15', '1d'), remindFrom('2026-10-15', '1w'), remindFrom('2026-11-07', '1m')], ['2026-10-14', '2026-10-08', '2026-10-08']);
   assert.deepEqual(['2026-10-07', '2026-10-08', '2026-10-09'].map(d => followUpState(d, null, today)), ['overdue', 'today', 'upcoming']);
   assert.equal(followUpState('2026-10-07', '2026-10-07T10:00:00Z', today), 'done');
-  assert.equal(followUpState(null, null, today), 'none');
 });
 
-test('chăm sóc khách: ghi / sửa / xoá, nhân viên chỉ thấy của mình, Manager thấy tất cả; hẹn đến hạn → việc; xong việc ↔ xong hẹn', async () => {
+test('giao dịch chăm sóc: ghi / sửa / xoá, chỉ thấy của mình, Manager thấy tất cả + chọn người phụ trách; tới mốc nhắc → việc; xong việc ↔ xong hẹn', async () => {
   const { db, call, emp, emp2, mgr, ncc } = await setup();
   const today = vnToday();
   assert.equal((await call('/care', ncc)).status, 403, 'NCC không vào được');
   assert.equal((await call('/care')).status, 401);
   const cfg = (await call('/care/config', emp)).data;
-  assert.ok(cfg.types.some((t: any) => t.key === 'zalo') && cfg.results.some((r: any) => r.key === 'ordered'));
+  assert.deepEqual(cfg.types.map((t: any) => t.label), ['Gọi điện thoại', 'Zalo', 'Email', 'Gặp trực tiếp', 'Báo giá']);
+  assert.deepEqual(cfg.results.map((t: any) => t.label), ['Đang tư vấn', 'Đã gửi báo giá', 'Đang thương lượng', 'Đã chốt HĐ', 'Đã rớt đơn']);
+  assert.deepEqual(cfg.reminds.map((t: any) => t.label), ['1 Tháng', '1 Tuần', '1 Ngày']);
+  const form = (x: Record<string, unknown>) => ({ contactName: 'Anh Long – 0901', type: 'call', result: 'consulting', remindBefore: '1d', ...x });
 
-  // Ghi chăm sóc.
-  assert.equal((await call('/care', emp, 'POST', { customerId: 'KHONG_CO', type: 'call', subject: 'x' })).status, 400);
-  const a1 = await call('/care', emp, 'POST', { customerId: 'K1', type: 'call', contactName: 'Anh Long', subject: 'Hỏi nhu cầu quà Tết', content: 'Cần 200 bộ chén', result: 'quote_requested',
-    nextAt: addDays(today, 1), nextAction: 'Gửi báo giá bộ chén' });
+  assert.equal((await call('/care', emp, 'POST', form({ customerId: 'KHONG_CO', content: 'x', nextAt: today }))).status, 400);
+  // Nhân viên không chọn người phụ trách khác được; Manager thì được.
+  assert.equal((await call('/care', emp, 'POST', form({ customerId: 'K1', content: 'x', nextAt: today, ownerId: 'emp2' }))).status, 403);
+  const a1 = await call('/care', emp, 'POST', form({ customerId: 'K1', content: 'Hỏi nhu cầu quà Tết, cần 200 bộ chén', result: 'quote_sent', expectedRevenue: 300_000_000, nextAt: addDays(today, 1) }));
   assert.equal(a1.status, 201, JSON.stringify(a1.data));
-  assert.deepEqual([a1.data.activity.customerName, a1.data.activity.ownerId, a1.data.activity.typeLabel, a1.data.activity.followUp, a1.data.activity.canEdit],
-    ['Công ty Hoàng Long', 'emp', 'Gọi điện', 'upcoming', true]);
+  assert.deepEqual([a1.data.activity.customerName, a1.data.activity.ownerId, a1.data.activity.typeLabel, a1.data.activity.resultLabel, a1.data.activity.expectedRevenue, a1.data.activity.followUp],
+    ['Công ty Hoàng Long', 'emp', 'Gọi điện thoại', 'Đã gửi báo giá', 300_000_000, 'upcoming']);
   const id1 = a1.data.activity.id;
-  const a2 = (await call('/care', emp2, 'POST', { customerId: 'K1', type: 'zalo', subject: 'Gửi catalogue', nextAt: today, nextAction: 'Hỏi lại' })).data.activity;
-  await call('/care', emp, 'POST', { customerId: 'K2', type: 'meeting', content: 'Gặp chủ nhà hàng', result: 'interested' });
+  const a2 = (await call('/care', mgr, 'POST', form({ customerId: 'K1', type: 'zalo', content: 'Gửi catalogue', nextAt: today, ownerId: 'emp2' }))).data.activity;
+  assert.equal(a2.ownerId, 'emp2', 'Manager giao cho nhân viên khác');
+  // Hẹn xa, nhắc trước 1 tuần → chưa tới mốc nhắc.
+  await call('/care', emp, 'POST', form({ customerId: 'K2', type: 'meeting', content: 'Gặp chủ nhà hàng', result: 'negotiating', nextAt: addDays(today, 20), remindBefore: '1w' }));
 
   // Phạm vi xem.
   const list = async (who: string, qs = '') => (await call('/care' + qs, who)).data;
@@ -77,38 +86,33 @@ test('chăm sóc khách: ghi / sửa / xoá, nhân viên chỉ thấy của mìn
   assert.equal((await list(mgr)).total, 3);
   assert.equal((await list(mgr, '?owner=emp2')).total, 1, 'Manager lọc theo nhân viên');
   assert.equal((await list(emp, '?owner=emp2')).total, 2, 'nhân viên không lọc sang người khác được');
-  assert.equal((await call(`/care/${a2.id}`, emp)).status, 404, 'không xem được lần chăm sóc của người khác');
-  assert.equal((await call(`/care/${a2.id}`, mgr)).status, 200);
-  // Lọc.
+  assert.equal((await call(`/care/${a2.id}`, emp)).status, 404, 'không xem được giao dịch của người khác');
   assert.equal((await list(emp, '?q=hoang long')).total, 1, 'tìm không dấu theo tên khách');
   assert.equal((await list(emp, '?q=bo chen')).total, 1, 'tìm theo nội dung');
   assert.equal((await list(emp, '?type=meeting')).total, 1);
-  assert.equal((await list(emp, '?result=quote_requested')).total, 1);
+  assert.equal((await list(emp, '?result=quote_sent')).total, 1);
   assert.equal((await list(emp, '?customerId=K2')).total, 1);
   assert.equal((await list(emp, `?from=${addDays(today, 1)}`)).total, 0);
   assert.equal((await list(emp, `?from=${today}&to=${today}`)).total, 2);
   const fu = await list(emp2, '?view=follow-ups');
   assert.deepEqual([fu.total, fu.counts.today, fu.counts.overdue], [1, 1, 0]);
-
-  // Trang chi tiết khách: cùng phạm vi.
   assert.equal((await call('/customers/K1/overview', emp)).data.care.length, 1);
   assert.equal((await call('/customers/K1/overview', mgr)).data.care.length, 2);
 
-  // Sửa: người ghi hoặc Manager; chống ghi đè theo revision.
-  assert.equal((await call(`/care/${id1}`, emp2, 'PUT', { customerId: 'K1', type: 'call', subject: 'sửa' })).status, 404);
-  const base = { customerId: 'K1', type: 'call', subject: 'Hỏi nhu cầu quà Tết (sửa)', result: 'follow_up', nextAt: addDays(today, 1), nextAction: 'Gửi báo giá bộ chén' };
+  // Sửa: người phụ trách hoặc Manager; chống ghi đè theo revision.
+  assert.equal((await call(`/care/${id1}`, emp2, 'PUT', form({ customerId: 'K1', content: 'sửa', nextAt: today }))).status, 404);
+  const base = form({ customerId: 'K1', content: 'Hỏi nhu cầu quà Tết (sửa)', result: 'negotiating', nextAt: addDays(today, 1), expectedRevenue: 250_000_000 });
   assert.equal((await call(`/care/${id1}`, emp, 'PUT', { ...base, revision: 99 })).status, 409);
   const ed = await call(`/care/${id1}`, emp, 'PUT', { ...base, revision: 1 });
-  assert.deepEqual([ed.status, ed.data.activity.subject, ed.data.activity.revision], [200, 'Hỏi nhu cầu quà Tết (sửa)', 2]);
-  assert.equal((await call(`/care/${id1}`, mgr, 'PUT', { ...base, content: 'Manager bổ sung' })).data.activity.ownerId, 'emp', 'Manager sửa không đổi người ghi');
+  assert.deepEqual([ed.status, ed.data.activity.content, ed.data.activity.expectedRevenue, ed.data.activity.revision], [200, 'Hỏi nhu cầu quà Tết (sửa)', 250_000_000, 2]);
 
-  // Hẹn đến hạn (hôm nay / ngày mai) → việc cho người ghi; đánh dấu xong ở trang chăm sóc → việc tự hoàn thành.
+  // Tới mốc "nhắc trước" → việc cho nhân viên phụ trách; hẹn xa nhắc 1 tuần chưa có việc.
   await reconcileAutoTasks(db);
   const careTasks = async (who: string) => (await call('/tasks?view=mine&refresh=1', who)).data.tasks.filter((t: any) => t.source === 'care');
   let t1 = await careTasks(emp);
-  assert.equal(t1.length, 1); assert.match(t1[0].title, /^Chăm sóc lại Công ty Hoàng Long: Gửi báo giá bộ chén/); assert.equal(t1[0].link, `#/care/${id1}`);
-  assert.equal(t1[0].dueDate, addDays(today, 1));
-  assert.equal((await careTasks(emp2)).length, 1);
+  assert.equal(t1.length, 1, 'chỉ hẹn ngày mai (nhắc trước 1 ngày) – hẹn 20 ngày nữa nhắc trước 1 tuần thì chưa');
+  assert.match(t1[0].title, /^Chăm sóc lại Công ty Hoàng Long – Anh Long/); assert.equal(t1[0].link, `#/care/${id1}`); assert.equal(t1[0].dueDate, addDays(today, 1));
+  assert.equal((await careTasks(emp2)).length, 1, 'việc về nhân viên được Manager giao phụ trách');
   assert.equal((await call(`/care/${id1}/done`, emp, 'POST', {})).data.activity.followUp, 'done');
   await reconcileAutoTasks(db);
   t1 = await careTasks(emp); assert.equal(t1.filter((t: any) => t.status !== 'done').length, 0, 'xong hẹn → việc tự hoàn thành');
