@@ -47,6 +47,8 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.deepEqual(p.lines.map((l: any) => l.left), [0, 0], 'đã đưa hết vào phiếu');
   const wh = p.slips.find((s: any) => s.source === 'warehouse');
+  assert.deepEqual([wh.shipTo, wh.shipName, wh.carrierName], ['customer', 'Khách P', ''], 'không phí in, không chọn → giao thẳng cho khách');
+  assert.equal(p.delivery.hasPrintFee, false);
   assert.deepEqual([wh.status, wh.totalQty, wh.totalWeight, wh.lines.length], ['draft', 60, null, 2], 'hộp quà chưa có quy cách → tổng cân để trống');
   const sup = p.slips.find((s: any) => s.source === 'supplier');
   assert.deepEqual([sup.totalWeight, sup.lines[0].cartonSize, sup.sourceLabel], [10, '60×40×30 cm', 'Nhập từ NCC']);
@@ -86,4 +88,29 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   assert.equal((await call('/orders', kho)).data.orders.length, 0);
   assert.equal((await call('/receivables', kho)).data.receivables.length, 0);
   assert.deepEqual((await call('/packing?q=khach p', emp)).data.slips.map((x: any) => x.status).sort(), ['cancelled', 'draft', 'packed'], 'nhân viên thấy phiếu của đơn mình');
+});
+
+test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xưởng in; nhà xe / xưởng mới gõ trong ô tự vào danh sách', async () => {
+  const { call, emp, mgr } = await setup();
+  const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_P2', customer: 'Khách In', customerAddress: '12 Lê Lợi, Cần Thơ', vat: 8,
+    rows: [{ name: 'Ly sứ in logo', sku: 'LY1', unit: 'cái', qty: 50, price: 50000, printFee: 5000 }] });
+  await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+  const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
+  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  const p = (await call(`/orders/${orderId}/packing`, emp)).data;
+  assert.equal(p.delivery.hasPrintFee, true, 'có phí in logo');
+  assert.ok(p.delivery.workshops.some((w: any) => w.name === 'Trọng Tín'), 'xưởng in mặc định');
+  assert.deepEqual(p.delivery.customer, { name: 'Khách In', address: '12 Lê Lợi, Cần Thơ', phone: '' });
+  const line = p.lines[0];
+  assert.equal((await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [{ orderLineId: line.id, qty: 50, source: 'warehouse' }], delivery: { to: 'workshop' } })).status, 400, 'giao xưởng phải chọn xưởng');
+  const made = await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [{ orderLineId: line.id, qty: 50, source: 'warehouse' }],
+    delivery: { to: 'workshop', name: 'Xưởng in Phúc Lộc', address: '5 Trần Phú, Q.5', phone: '0909 111 222', carrierName: 'Nhà xe Phương Trang', carrierPhone: '1900 6067' } });
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  const slip = (await call(`/packing/${made.data.slips[0].id}`, emp)).data.slip;
+  assert.deepEqual([slip.shipTo, slip.shipName, slip.shipAddress, slip.shipPhone, slip.carrierName, slip.carrierPhone],
+    ['workshop', 'Xưởng in Phúc Lộc', '5 Trần Phú, Q.5', '0909 111 222', 'Nhà xe Phương Trang', '1900 6067']);
+  // Xưởng / nhà xe mới đã vào danh sách chọn nhanh.
+  const again = (await call(`/orders/${orderId}/packing`, emp)).data.delivery;
+  assert.ok(again.workshops.some((w: any) => w.name === 'Xưởng in Phúc Lộc' && w.address === '5 Trần Phú, Q.5'));
+  assert.deepEqual((await call('/shipping-carriers', emp)).data.carriers, [{ name: 'Nhà xe Phương Trang', phone: '1900 6067' }]);
 });

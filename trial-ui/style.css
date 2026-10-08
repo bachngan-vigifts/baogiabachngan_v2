@@ -1234,3 +1234,4 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   .print-sheet.canvas-pages canvas { display: block; width: 210mm; height: 297mm; break-after: page; page-break-after: always; }
   .print-sheet.canvas-pages canvas:last-child { break-after: auto; page-break-after: auto; }
 }
+.pack-ship { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; display: grid; gap: 10px; } .pack-ship legend { font-weight: 700; padding: 0 6px; } .ship-to { display: flex; flex-wrap: wrap; gap: 8px; }

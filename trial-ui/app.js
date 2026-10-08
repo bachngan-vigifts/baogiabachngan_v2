@@ -2550,9 +2550,12 @@ async function loadOrderPacking(orderId) {
   if (!live.length) return;
   box.innerHTML = `<div class="pack-slips"><div class="card-title-row"><b>Phiếu đóng gói</b>${drafts.length > 1 ? `<button type="button" class="btn primary small" data-slip-send-all>Gửi kho ${drafts.length} phiếu nháp</button>` : ''}</div>
     <ul class="plain-list">${live.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}
-      <small>${x.lines.map(l => `${esc(l.name)}: ${fmtNum(l.qty)} ${esc(l.unit)}`).join(' · ')}${x.totalWeight ? ' · ' + kg(x.totalWeight) : ''}${x.photoCount ? ` · ${x.photoCount} ảnh` : ''}</small></span>
+      <small>${x.lines.map(l => `${esc(l.name)}: ${fmtNum(l.qty)} ${esc(l.unit)}`).join(' · ')}${x.totalWeight ? ' · ' + kg(x.totalWeight) : ''}${x.photoCount ? ` · ${x.photoCount} ảnh` : ''}</small>
+      <small>${shipText(x)}</small></span>
       <span class="row-gap">${pill(PACK_STATUS, x.status)}${x.status === 'draft' ? `<button type="button" class="btn secondary small" data-slip-send="${esc(x.id)}">Gửi kho</button>` : ''}${x.status === 'draft' || x.status === 'sent' ? `<button type="button" class="btn ghost small" data-slip-cancel="${esc(x.id)}">Huỷ</button>` : ''}</span></li>`).join('')}</ul></div>`;
 }
+/** Giao tới + gửi xe của phiếu đóng gói (một dòng). */
+const shipText = k => `${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in: ' + esc(k.shipName) : '🏠 Giao thẳng cho khách'}${k.carrierName ? ` · 🚚 Gửi xe ${esc(k.carrierName)}${k.carrierPhone ? ' (' + esc(k.carrierPhone) + ')' : ''}` : ''}`;
 /** Một dòng nguồn khác kho (cửa hàng / NCC / đại lý…) trong hộp yêu cầu đóng gói. */
 const packSourceRow = (qty = '') => `<div class="pack-src"><select data-src aria-label="Nguồn hàng">${Object.entries(PACK_SOURCES).filter(([k]) => k !== 'warehouse').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
   <input data-src-note maxlength="200" placeholder="Tên cửa hàng / NCC / đại lý" aria-label="Lấy từ đâu"><input class="num-input" inputmode="decimal" data-src-qty value="${qty === '' ? '' : fmtNum(qty)}" placeholder="SL" aria-label="Số lượng">
@@ -2579,8 +2582,38 @@ $('#order-pack').addEventListener('click', async () => {
         <div data-srcs>${short > 1e-9 ? packSourceRow(short) : ''}</div>
         <button type="button" class="btn ghost small" data-src-add>＋ Thêm nguồn hàng</button></div>`;
     }).join('');
+    fillPackShip(d.delivery);
     $('#pack-dialog').showModal();
   } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+});
+/** Phần "Giao hàng" của hộp đóng gói: có phí in → mặc định về xưởng in; chọn xưởng / nhà xe trong danh sách tự điền địa chỉ, SĐT. */
+let packShip = { workshops: [], carriers: [] };
+function fillPackShip(dv = {}) {
+  const f = $('#pack-form'); packShip = { workshops: dv.workshops || [], carriers: dv.carriers || [] };
+  const opts = list => list.map(x => `<option value="${esc(x.name)}">${esc([x.phone, x.address].filter(Boolean).join(' · '))}</option>`).join('');
+  $('#pack-ws-list').innerHTML = opts(packShip.workshops); $('#pack-carrier-list').innerHTML = opts(packShip.carriers);
+  for (const k of ['wsName', 'wsPhone', 'wsAddress', 'carrierName', 'carrierPhone']) f[k].value = '';
+  f.custAddress.value = dv.customer?.address || ''; f.custPhone.value = dv.customer?.phone || '';
+  f.querySelector(`[name=shipTo][value=${dv.hasPrintFee ? 'workshop' : 'customer'}]`).checked = true;
+  $('#pack-ship-hint').textContent = dv.hasPrintFee ? 'Đơn có phí in logo: mặc định giao về xưởng in để in trước khi giao khách.' : 'Đơn không có phí in: giao thẳng cho khách theo địa chỉ giao hàng.';
+  showPackShip();
+}
+function showPackShip() {
+  const to = $('#pack-form').querySelector('[name=shipTo]:checked')?.value || 'customer';
+  $$('[data-ship]', $('#pack-form')).forEach(el => el.hidden = el.dataset.ship !== to);
+}
+function readPackShip() {
+  const f = $('#pack-form'), to = f.querySelector('[name=shipTo]:checked')?.value || 'customer';
+  const ship = to === 'workshop' ? { to, name: f.wsName.value.trim(), address: f.wsAddress.value.trim(), phone: f.wsPhone.value.trim() }
+    : { to, address: f.custAddress.value.trim(), phone: f.custPhone.value.trim() };
+  if (to === 'workshop' && !ship.name) throw new Error('Chọn hoặc gõ tên xưởng in nhận hàng.');
+  return { ...ship, carrierName: f.carrierName.value.trim(), carrierPhone: f.carrierPhone.value.trim() };
+}
+$('#pack-form').addEventListener('change', e => { if (e.target.name === 'shipTo') showPackShip(); });
+$('#pack-form').addEventListener('input', e => {
+  const f = $('#pack-form'), pick = (list, v) => list.find(x => normalize(x.name) === normalize(v));
+  if (e.target.name === 'wsName') { const w = pick(packShip.workshops, e.target.value); if (w) { f.wsAddress.value = w.address || f.wsAddress.value; f.wsPhone.value = w.phone || f.wsPhone.value; } }
+  if (e.target.name === 'carrierName') { const c = pick(packShip.carriers, e.target.value); if (c) f.carrierPhone.value = c.phone || f.carrierPhone.value; }
 });
 /** Kiểm tra từng dòng: kho + các nguồn khác = số cần đóng; nguồn khác phải ghi rõ. Trả về danh sách phân bổ hoặc ném lỗi. */
 function readPackForm() {
@@ -2618,10 +2651,10 @@ $('#pack-lines').addEventListener('input', e => {
 });
 $('#pack-form').addEventListener('submit', async e => {
   e.preventDefault();
-  let allocations; try { allocations = readPackForm(); } catch (ex) { $('#pack-error').textContent = ex.message; return; }
+  let allocations, delivery; try { allocations = readPackForm(); delivery = readPackShip(); } catch (ex) { $('#pack-error').textContent = ex.message; return; }
   const btn = $('#pack-save'); btn.disabled = true;
   try {
-    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/packing`, 'POST', { allocations, note: $('#pack-form').note.value });
+    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/packing`, 'POST', { allocations, delivery, note: $('#pack-form').note.value });
     $('#pack-dialog').close(); toast(`Đã sinh ${r.slips.length} phiếu đóng gói. Kiểm tra rồi bấm "Gửi kho".`); loadOrderPacking(sales.order.id);
   } catch (ex) { $('#pack-error').textContent = ex.message; } finally { btn.disabled = false; }
 });
@@ -2660,8 +2693,10 @@ async function openPacking(id) {
   $('#packing-actions').innerHTML = '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
   const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
   body.innerHTML = `<div class="editor-grid">
-    <div class="card"><h2 class="card-title">Giao cho khách</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>Đơn</dt><dd>${esc(o.orderNo)}</dd>
-      ${o.contact || o.phone ? `<dt>Người nhận</dt><dd>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</dd>` : ''}${o.address ? `<dt>Địa chỉ</dt><dd>${esc(o.address)}</dd>` : ''}
+    <div class="card"><h2 class="card-title">${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in' : '🏠 Giao thẳng cho khách'}</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>Đơn</dt><dd>${esc(o.orderNo)}</dd>
+      ${k.shipTo === 'workshop' ? `<dt>Xưởng in</dt><dd><b>${esc(k.shipName)}</b></dd>${k.shipPhone ? `<dt>SĐT xưởng</dt><dd>${esc(k.shipPhone)}</dd>` : ''}${k.shipAddress ? `<dt>Địa chỉ xưởng</dt><dd>${esc(k.shipAddress)}</dd>` : ''}`
+        : `${k.shipPhone || o.contact || o.phone ? `<dt>Người nhận</dt><dd>${esc(k.shipPhone || [o.contact, o.phone].filter(Boolean).join(' · '))}</dd>` : ''}${k.shipAddress || o.address ? `<dt>Địa chỉ</dt><dd>${esc(k.shipAddress || o.address)}</dd>` : ''}`}
+      ${k.carrierName ? `<dt>Gửi xe</dt><dd><b>${esc(k.carrierName)}</b>${k.carrierPhone ? ` · <a href="tel:${esc(k.carrierPhone.replace(/[^\d+]/g, ''))}">${esc(k.carrierPhone)}</a>` : ''}</dd>` : ''}
       <dt>Giao dự kiến</dt><dd>${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { done: k.status === 'packed', fmt: fmtDate }) : '—'}</dd></dl></div>
     <div class="card"><h2 class="card-title">Phiếu</h2><dl class="kv"><dt>Nguồn hàng</dt><dd><b>${esc(k.sourceLabel)}</b>${k.sourceNote ? ': ' + esc(k.sourceNote) : ''}</dd>
       <dt>Lập</dt><dd>${esc(k.createdByName)} · ${at(k.createdAt)}</dd>${k.sentAt ? `<dt>Gửi kho</dt><dd>${esc(k.sentByName)} · ${at(k.sentAt)}</dd>` : ''}
@@ -2808,7 +2843,9 @@ function printFromSlip(kind) {
   const seller = (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN).short, me = state.user?.name || '';
   openSlipPrint({ kind, choices: [], initial: '', build: () => kind === 'packing'
     ? packingPrintData({ seller, order: d.order, slip: d.slip, lines: d.lines }, me)
-    : deliveryPrintData({ seller, order: d.order, lines: d.lines.map(l => ({ ...l, ordered: '' })) }, me) });
+    : deliveryPrintData({ seller, order: d.order, delivery: { deliveryNo: d.slip.slipNo, address: d.slip.shipAddress || d.order.address,
+        receiverName: d.slip.shipTo === 'workshop' ? d.slip.shipName : '', receiverPhone: d.slip.shipPhone, carrier: [d.slip.carrierName, d.slip.carrierPhone].filter(Boolean).join(' · ') },
+        lines: d.lines.map(l => ({ ...l, ordered: '' })) }, me) });
 }
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-pack-print-for], [data-ship-print-for], [data-slip-print]'); if (!b) return;

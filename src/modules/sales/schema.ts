@@ -4,7 +4,7 @@ import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
 import { quotations } from '../quotes/schema.ts';
-import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS } from './domain/statuses.ts';
+import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS, SHIP_TO } from './domain/statuses.ts';
 
 /*
  * Bán hàng sau báo giá: Báo giá → Đơn đặt hàng → (HĐKT) → Lịch giao hàng → Công nợ.
@@ -227,10 +227,21 @@ export const packingSlips = pgTable('packing_slips', {
   packedAt: text('packed_at'),
   packedBy: text('packed_by').references(() => employees.id),
   packedNote: text('packed_note').notNull().default(''),
+  /**
+   * Giao tới: 'customer' = giao thẳng cho khách (địa chỉ giao của đơn) · 'workshop' = giao về xưởng in (đơn có phí in logo).
+   * Tên / địa chỉ / SĐT nơi nhận chụp lại lúc lập phiếu; gửi xe nào (nhà xe + SĐT) nếu đi xe khách / chành.
+   */
+  shipTo: text('ship_to', { enum: SHIP_TO }).notNull().default('customer'),
+  shipName: text('ship_name').notNull().default(''),
+  shipAddress: text('ship_address').notNull().default(''),
+  shipPhone: text('ship_phone').notNull().default(''),
+  carrierName: text('carrier_name').notNull().default(''),
+  carrierPhone: text('carrier_phone').notNull().default(''),
   revision: bigint('revision', { mode: 'number' }).notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, t => [
+  enumCheck('chk_packing_slips_ship_to', t.shipTo, SHIP_TO),
   uniqueIndex('idx_packing_slips_no').on(t.slipNo),
   index('idx_packing_slips_order').on(t.orderId),
   index('idx_packing_slips_status').on(t.status, t.updatedAt),
@@ -267,3 +278,14 @@ export const packingSlipPhotos = pgTable('packing_slip_photos', {
   createdBy: text('created_by').notNull().references(() => employees.id),
   createdAt: text('created_at').notNull(),
 }, t => [index('idx_packing_slip_photos_slip').on(t.slipId)]).enableRLS();
+
+/** Nhà xe / chành xe hay gửi hàng (danh sách chọn nhanh trong "Yêu cầu đóng gói - Giao hàng", nhân viên thêm ngay trong ô). */
+export const shippingCarriers = pgTable('shipping_carriers', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  /** Tên không dấu, chữ thường – chống trùng. */
+  nameKey: text('name_key').notNull(),
+  phone: text('phone').notNull().default(''),
+  createdBy: text('created_by').references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+}, t => [uniqueIndex('idx_shipping_carriers_name_key').on(t.nameKey)]).enableRLS();

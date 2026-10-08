@@ -169,6 +169,13 @@
       "when": 1791441006571,
       "tag": "0040_customer_care",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791451175564,
+      "tag": "0043_packing_delivery",
+      "breakpoints": true
     }
   ]
 }
