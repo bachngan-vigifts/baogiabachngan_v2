@@ -1258,3 +1258,11 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .care-dialog { width: min(560px, calc(100vw - 24px)); }
 .bell-panel [data-push-note] { white-space: pre-line; }
 .push-devices td small { display: block; color: var(--muted, #6b7280); } .push-devices h3 { margin: 18px 0 8px; font-size: 1rem; }
+/* Điện thoại: menu (vd. "Tải báo giá") hiện thành tấm đáy rộng hết màn hình, không tràn ra ngoài cạnh trái. */
+@media (max-width: 640px) {
+  .menu { position: fixed; left: 12px; right: 12px; top: auto; bottom: calc(84px + env(safe-area-inset-bottom)); min-width: 0; z-index: 1000; padding: 6px; max-height: 70vh; overflow-y: auto; }
+  .menu button { padding: 14px 14px; font-size: 1rem; white-space: normal; }
+  .menu button + button { border-top: 1px solid var(--line); border-radius: 0; }
+  /* Menu nằm trong vùng nội dung (lớp xếp riêng) nên không đè được nút chat nổi: tạm ẩn nút chat khi menu mở. */
+  body:has(.menu:not([hidden])) .chat-launcher { display: none; }
+}
