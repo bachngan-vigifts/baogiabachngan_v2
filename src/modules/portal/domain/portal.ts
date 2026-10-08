@@ -45,3 +45,12 @@ export function nextQuoteNo(prefix: string, ymd: string, used: readonly string[]
   const max = Math.max(0, ...used.filter(n => n.startsWith(head)).map(n => parseInt(n.slice(head.length), 10) || 0));
   return head + String(max + 1).padStart(3, '0');
 }
+
+/**
+ * Khách không có email: tài khoản đăng nhập bằng số di động; cột email (bắt buộc, duy nhất) giữ một địa chỉ nội bộ
+ * `kh-…@sdt.invalid` (tên miền .invalid không bao giờ nhận thư) – giao diện không hiện địa chỉ này.
+ */
+export const PHONE_ONLY_DOMAIN = '@sdt.invalid';
+export const isPhoneOnly = (email: string) => email.endsWith(PHONE_ONLY_DOMAIN);
+/** Hiện cho người dùng: tài khoản chỉ có SĐT thì để trống email. */
+export const shownEmail = (email: string) => (isPhoneOnly(email) ? '' : email);

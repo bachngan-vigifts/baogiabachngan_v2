@@ -1352,16 +1352,16 @@ async function downloadQuotePdf(hideDiscount) {
   try {
     await loadPdfTools();
     const state = { ...d, ...(d.type === 'HRC' ? { hideHrcDiscountColumn: !!hideDiscount } : {}), ...(d.type === 'B2B' ? { hideB2bDiscountColumn: !!hideDiscount } : {}) };
-    const images = [];
-    for (let i = 0; i < d.rows.length; i += 6) images.push(...await Promise.all(d.rows.slice(i, i + 6).map(r => loadCanvasImage(r.image))));
+    const images = await loadQuoteImages(d.rows);
     const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
     const bytes = await globalThis.EditableQuotePdf.create({ state, images, banner });
+    const missingImg = d.rows.filter((r, i) => r.image && !images[i]).length;
     // Tên file không dấu: vài trình duyệt / máy bỏ tên có dấu và lưu thành "download".
     const clean = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, c => c === 'đ' ? 'd' : 'D').replace(/[\\/:*?"<>|]+/g, ' ').trim();
     const name = `${clean(d.quoteNo)} - ${clean(d.customer)} - ${(d.date || todayIso()).split('-').reverse().join('-')}.pdf`;
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     if (tab && !tab.closed) { tab.location.href = url; toast('Đã mở PDF – bấm Chia sẻ để lưu hoặc gửi.'); }
-    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.'); }
+    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.' + (missingImg ? ` ${missingImg} ảnh không tải được nên để trống.` : '')); }
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (ex) { console.error(ex); if (tab && !tab.closed) tab.close(); toast(ex?.message || 'Không thể tạo PDF. Vui lòng thử lại.', 'err'); }
   finally { pdfBusy = false; }
@@ -1863,7 +1863,7 @@ function memberDetail() {
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
   return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
-    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, isManager, onReview: reviewCustomer });
+    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, isManager, onReview: reviewCustomer });
 }
 function openCustomer(id, known) {
   customerId = id || null;
@@ -2233,6 +2233,8 @@ async function openAccounts(c) {
   $$('.manager-only', $('#accounts-dialog')).forEach(el => el.hidden = !isManager());
   $('#accounts-dialog').showModal(); await drawAccounts();
 }
+// Đóng hộp tài khoản khi đang ở trang chi tiết khách → tải lại thẻ "Tài khoản" (CK, SĐT, trạng thái có thể đã đổi).
+$('#accounts-dialog').addEventListener('close', () => { if (customerUi && location.hash.startsWith('#/customers/')) customerUi.reload(); });
 async function drawAccounts() {
   const list = $('#accounts-list'); list.innerHTML = '<li class="muted">Đang tải…</li>';
   try {
@@ -2276,17 +2278,21 @@ $('#accounts-list').addEventListener('click', async e => {
     if (e.target.closest('[data-acc-reset]')) { showAccountLink((await api(`/customer-accounts/${encodeURIComponent(id)}/reset`, 'POST', {})).url); return drawAccounts(); }
     const act = e.target.closest('[data-acc-active]');
     if (act) { await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { active: act.dataset.accActive === '1' }); toast(act.dataset.accActive === '1' ? 'Đã mở khoá tài khoản.' : 'Đã khoá tài khoản.'); return drawAccounts(); }
-    if (e.target.closest('[data-acc-discount]')) {
-      const f = $('#discount-form'); $('#discount-name').textContent = a.name; f.dataset.member = id;
-      for (const k of Object.keys(DISCOUNT_LABELS)) f.elements['d_' + k].value = a.discounts[k] || '';
-      $('#discount-error').textContent = ''; $('#discount-dialog').showModal();
-    }
+    if (e.target.closest('[data-acc-discount]')) openDiscount(a, drawAccounts);
   } catch (ex) { toast(ex.message, 'err'); }
 });
+/** Hộp đặt chiết khấu riêng của 1 tài khoản khách (Manager) – mở từ "Quản lý tài khoản" hoặc trang chi tiết khách; lưu xong gọi `after`. */
+let discountAfter = null;
+function openDiscount(a, after) {
+  if (!isManager()) return toast('Chỉ Manager mới đặt được chiết khấu riêng.', 'err');
+  const f = $('#discount-form'); $('#discount-name').textContent = a.name; f.dataset.member = a.memberId; discountAfter = after;
+  for (const k of Object.keys(DISCOUNT_LABELS)) f.elements['d_' + k].value = a.discounts?.[k] || '';
+  $('#discount-error').textContent = ''; $('#discount-dialog').showModal();
+}
 $('#discount-form').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
-  try { await api(`/customer-accounts/${encodeURIComponent(f.dataset.member)}`, 'PUT', { discounts: readDiscounts(f) }); $('#discount-dialog').close(); toast('Đã lưu chiết khấu riêng.'); drawAccounts(); }
+  try { await api(`/customer-accounts/${encodeURIComponent(f.dataset.member)}`, 'PUT', { discounts: readDiscounts(f) }); $('#discount-dialog').close(); toast('Đã lưu chiết khấu riêng.'); discountAfter?.(); }
   catch (ex) { $('#discount-error').textContent = ex.message; }
 });
 $('#account-link-copy').addEventListener('click', () => { $('#account-link-url').select(); navigator.clipboard?.writeText($('#account-link-url').value).then(() => toast('Đã chép link.')).catch(() => document.execCommand('copy')); });
@@ -2853,6 +2859,20 @@ function loadCanvasImage(src, timeoutMs = 15000) {
     img.onload = () => finish(img); img.onerror = () => finish(null); img.src = src;
   });
 }
+/**
+ * Ảnh dòng báo giá cho PDF / Excel: link ngoài (Sapo CDN, link dán tay) thường không bật CORS nên trình duyệt không vẽ vào canvas được
+ * → tải trực tiếp trước, không được thì nhờ máy chủ tải hộ (POST /images/fetch trả data URL). Mỗi link chỉ tải 1 lần mỗi lượt xuất file.
+ */
+function loadQuoteImages(rows) {
+  const cache = new Map();
+  const one = src => {
+    if (!src) return Promise.resolve(null);
+    if (!cache.has(src)) cache.set(src, (async () => (await loadCanvasImage(src, 8000))
+      || (/^https:\/\//i.test(src) ? await api('/images/fetch', 'POST', { url: src }).then(r => loadCanvasImage(r.dataUrl), () => null) : null))());
+    return cache.get(src);
+  };
+  return (async () => { const out = []; for (let i = 0; i < rows.length; i += 6) out.push(...await Promise.all(rows.slice(i, i + 6).map(r => one(r.image)))); return out; })();
+}
 let excelBusy = false;
 $('#excel-quote').addEventListener('click', async () => {
   const block = approvalBlock(); if (block) return toast(block, 'err');
@@ -2861,8 +2881,7 @@ $('#excel-quote').addEventListener('click', async () => {
   if (!globalThis.QuoteExcel) return toast('Chưa tải được bộ tạo Excel. Vui lòng tải lại trang.', 'err');
   excelBusy = true; toast('Đang tạo file Excel…');
   try {
-    const images = [];
-    for (let i = 0; i < d.rows.length; i += 6) images.push(...await Promise.all(d.rows.slice(i, i + 6).map(r => loadCanvasImage(r.image))));
+    const images = await loadQuoteImages(d.rows);
     const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
     await QuoteExcel.download(d, { images, banner });
     const missing = d.rows.filter((r, i) => r.image && !images[i]).length;

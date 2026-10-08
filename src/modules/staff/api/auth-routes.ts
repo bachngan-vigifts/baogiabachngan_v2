@@ -30,6 +30,8 @@ export interface StaffEnv {
   pushFetch?: typeof fetch;
   /** Kho file (đính kèm tin nhắn): Supabase Storage ở Edge, bộ nhớ trong khi test. Thiếu thì không gửi được file. */
   files?: FileStore;
+  /** Hàm fetch tải ảnh ngoài cho PDF / Excel báo giá (test truyền máy chủ ảnh giả). */
+  imageFetch?: typeof fetch;
 }
 type Ctx = RouteContext<StaffEnv>;
 export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }
