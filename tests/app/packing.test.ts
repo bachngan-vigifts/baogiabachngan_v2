@@ -73,5 +73,12 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.deepEqual(p.lines.map((l: any) => l.left), [50, 10]);
   assert.equal((await call('/packing?status=packed', kho)).data.slips.length, 1);
+  // Lịch giao hàng: kho xem / đổi trạng thái mọi chuyến giao nhưng không xem được đơn, công nợ.
+  const g = await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2026-10-20' });
+  assert.equal(g.status, 201);
+  assert.deepEqual((await call('/deliveries?from=2026-10-01&to=2026-10-31', kho)).data.deliveries.map((x: any) => x.id), [g.data.id]);
+  assert.equal((await call(`/deliveries/${g.data.id}/status`, kho, 'PUT', { status: 'in_transit' })).status, 200);
+  assert.equal((await call('/orders', kho)).data.orders.length, 0);
+  assert.equal((await call('/receivables', kho)).data.receivables.length, 0);
   assert.deepEqual((await call('/packing?q=khach p', emp)).data.slips.map((x: any) => x.status).sort(), ['cancelled', 'draft', 'packed'], 'nhân viên thấy phiếu của đơn mình');
 });

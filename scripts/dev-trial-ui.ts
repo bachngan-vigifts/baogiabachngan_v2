@@ -28,6 +28,13 @@ for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort(
   for (const stmt of readFileSync(join(migrations, file), 'utf8').split('--> statement-breakpoint')) if (stmt.trim()) await client.exec(stmt);
 }
 await seedStaff({ sqlite: new PgFixture(client) });
+// Tài khoản Kho để chạy thử (chức vụ warehouse): kho@x.vn / mat-khau-12345.
+{
+  const { hashPassword } = await import('../src/core/auth/password.ts');
+  const fx = new PgFixture(client);
+  await fx.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('kho','kho@x.vn','Thủ kho','0900','employee','warehouse',1,'2026-01-01T00:00:00.000Z')").run();
+  await fx.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run('kho', await hashPassword('mat-khau-12345', 1000));
+}
 // Vài sản phẩm mẫu để thử trang Sản phẩm và ô tìm sản phẩm (dữ liệu thật do bước nhập dữ liệu nạp vào Supabase).
 await client.exec(`
   INSERT INTO price_policies (id, name, sort_order) VALUES ('le', 'Giá bán lẻ', 0), ('si', 'Giá sỉ', 1);

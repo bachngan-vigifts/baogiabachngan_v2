@@ -192,6 +192,9 @@ const state = {
   products: null, productTotal: 0, productQuery: '', productBrand: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
+/** Tài khoản Kho (chức vụ "warehouse"): chỉ các trang cần cho kho – Công việc, Lịch giao hàng, Phiếu đóng gói, Sản phẩm, Tin nhắn. */
+const isWarehouse = () => state.user?.role === 'employee' && state.user?.positionId === 'warehouse';
+const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers']);
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -250,7 +253,11 @@ async function enter() {
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
   showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
-  if (!/^#\//.test(location.hash)) history.replaceState(null, '', location.pathname + '#/quotes');
+  // Kho: ẩn các trang bán hàng (báo giá, đơn hàng, HĐKT, công nợ, khách hàng…); hiện mục Phiếu đóng gói (cả Manager).
+  $$('[data-nav]').forEach(el => { if (WAREHOUSE_HIDDEN.has(el.dataset.nav)) el.hidden = isWarehouse(); });
+  $$('.packing-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
+  document.body.classList.toggle('role-warehouse', isWarehouse());
+  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/quotes/.test(location.hash))) history.replaceState(null, '', location.pathname + (isWarehouse() ? '#/tasks' : '#/quotes'));
   currentHash = location.hash;
   route();
   loadAll();
@@ -421,18 +428,20 @@ let lastRoutedHash = '';
 function route() {
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
-  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || '#/quotes'); if (lastRoutedHash) return; }
+  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || (isWarehouse() ? '#/tasks' : '#/quotes')); if (lastRoutedHash) return; }
   lastRoutedHash = location.hash;
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = 'quotes', id] = path.split('/');
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
-  if ((view === 'staff' || view === 'payroll') && !isManager()) view = 'quotes';
+  if ((view === 'staff' || view === 'payroll') && !isManager()) view = isWarehouse() ? 'tasks' : 'quotes';
+  // Kho mở nhầm trang bán hàng (link cũ, thông báo…): về Công việc.
+  if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', '#/tasks'); return route(); }
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
   if (view === 'customers' && id) view = 'customer';
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
-  const navKey = view === 'packing' ? 'tasks' : view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
+  const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : VIEWS[view];
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
@@ -2100,7 +2109,7 @@ async function loadDeliveries() {
     const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${orderLink(x.orderId, x.orderNo)}</small></td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.orderNo) : orderLink(x.orderId, x.orderNo)}</small></td>
       <td>${esc([x.receiverName, x.receiverPhone].filter(Boolean).join(' · '))}<small>${esc(x.address)}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');

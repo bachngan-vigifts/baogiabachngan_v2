@@ -38,6 +38,8 @@ export const orderScopeFor = (m: { id: string; role: string; positionId?: string
   : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id),
     sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
+/** Lịch giao hàng: nhóm Kho (chức vụ `warehouse`) xem và đổi trạng thái mọi chuyến giao (không xem được đơn / công nợ). */
+const deliveryScope = (c: Ctx): SQL | undefined => { const m = viewer(c); return m.role === 'employee' && m.positionId === 'warehouse' ? undefined : orderScope(c); };
 const quotePredicate = (scope: SqlScope) => {
   const parts = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
   return sql.join(parts.flatMap((p, i) => i < scope.bindings.length ? [sql.raw(p), sql`${scope.bindings[i]}`] : [sql.raw(p)]), sql.raw(''));
@@ -338,7 +340,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const from = c.url.searchParams.get('from'), to = c.url.searchParams.get('to'), status = c.url.searchParams.get('status') || '';
     const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
-      .where(and(orderScope(c), isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
+      .where(and(deliveryScope(c), isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
         status ? eq(deliveries.status, status as never) : undefined))
       .orderBy(asc(deliveries.plannedDate), asc(deliveries.timeSlot)).limit(500);
     return json({ deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, customerName: r.customerName })) });
@@ -394,7 +396,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const body = await readJson(c.req, 1_024), status = body.status as typeof DELIVERY_STATUSES[number];
     if (!DELIVERY_STATUSES.includes(status)) throw new AppError(400, 'Trạng thái giao hàng không hợp lệ.');
     const [row] = await c.env.db.select({ d: deliveries }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
-      .where(and(eq(deliveries.id, c.params.id!), orderScope(c))).limit(1);
+      .where(and(eq(deliveries.id, c.params.id!), deliveryScope(c))).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy lịch giao.');
     if (row.d.status === 'delivered') throw new AppError(409, 'Chuyến này đã giao xong, không đổi trạng thái được.');
     const deliveredOn = status === 'delivered' ? (isDate(body.deliveredOn) ? String(body.deliveredOn) : vietnamDate().iso) : null;
