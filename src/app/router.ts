@@ -1,5 +1,6 @@
 import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
 import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
+import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
 import { registerCustomerRoutes } from '../modules/customers/api/routes.ts';
 import { registerCatalogRoutes } from '../modules/catalog/api/routes.ts';
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
@@ -16,6 +17,7 @@ import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api
 export function createAppRouter() {
   const router = createStaffRouter();
   registerQuoteRoutes(router);
+  registerImageFetchRoutes(router);
   registerCustomerRoutes(router);
   registerCatalogRoutes(router);
   registerSapoSyncRoutes(router);
