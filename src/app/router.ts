@@ -12,6 +12,7 @@ import { registerNotificationRoutes } from '../modules/notifications/api/routes.
 import { registerTaskRoutes } from '../modules/tasks/api/routes.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
 import { registerCustomerHubRoutes } from '../modules/customer-hub/api/routes.ts';
+import { registerCareRoutes } from '../modules/care/api/routes.ts';
 import { registerHrRoutes } from '../modules/hr/api/routes.ts';
 import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api/routes.ts';
 export function createAppRouter() {
@@ -29,6 +30,7 @@ export function createAppRouter() {
   registerTaskRoutes(router);
   registerChatRoutes(router);
   registerCustomerHubRoutes(router);
+  registerCareRoutes(router);
   registerHrRoutes(router, { revenueOf: memberRevenues }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerStaffHubRoutes(router);
   return router;

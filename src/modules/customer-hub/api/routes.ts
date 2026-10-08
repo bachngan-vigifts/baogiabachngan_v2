@@ -12,6 +12,9 @@ import { debtCounts, quoteTotal, receivable, vietnamDate } from '../../sales/dom
 import { customerAccounts, customerStockRequests } from '../../portal/schema.ts';
 import { HUB_LIMITS, purchaseHistory } from '../domain/overview.ts';
 import { parseDiscounts, shownEmail } from '../../portal/domain/portal.ts';
+import { customerActivities } from '../../care/schema.ts';
+import { careScope } from '../../care/api/routes.ts';
+import { CARE_RESULT_LABEL, CARE_TYPE_LABEL } from '../../care/domain/care.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
@@ -31,7 +34,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, me = viewer(c), id = c.params.id!;
     const profile = await customerProfile(db, id, me), all = profile.access.canSeeAll;
     const quoteWhere = and(sql`(${quotations.data}::jsonb ->> 'customerId') = ${id}`, all ? undefined : quotePredicate(quotationScope(me)));
-    const [orders, quoteRows, stockRows, accountRows] = await Promise.all([
+    const [orders, quoteRows, stockRows, accountRows, careRows] = await Promise.all([
       db.select({ o: salesOrders, ownerName: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId))
         .where(and(eq(salesOrders.customerId, id), all ? undefined : orderScopeFor(me)))
         .orderBy(desc(salesOrders.orderDate), desc(salesOrders.orderNo)).limit(HUB_LIMITS.orders),
@@ -43,6 +46,9 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       // Tài khoản trang khách (tên, email / SĐT đăng nhập, chiết khấu riêng): chỉ Manager / người phụ trách / người được chia sẻ khách mới xem.
       all ? db.select({ memberId: customerAccounts.memberId, name: employees.name, email: employees.email, phone: employees.phone, active: employees.active, discounts: customerAccounts.discounts })
         .from(customerAccounts).innerJoin(employees, eq(employees.id, customerAccounts.memberId)).where(eq(customerAccounts.customerId, id)).orderBy(asc(employees.name)) : Promise.resolve([]),
+      // Nhật ký chăm sóc: nhân viên chỉ thấy lần mình ghi, Manager thấy tất cả (như trang Chăm sóc KH).
+      db.select({ a: customerActivities, ownerName: employees.name }).from(customerActivities).innerJoin(employees, eq(employees.id, customerActivities.ownerId))
+        .where(and(eq(customerActivities.customerId, id), careScope(me))).orderBy(desc(customerActivities.occurredAt)).limit(HUB_LIMITS.care),
     ]);
     const ids = orders.map(r => r.o.id);
     const [lines, ships, sch, pays, cts] = ids.length ? await Promise.all([
@@ -82,6 +88,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       payments: pays.map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '' })),
       purchases: purchaseHistory(lines.filter(l => confirmedIds.has(l.orderId)).map(l => ({ ...l, orderDate: orders.find(r => r.o.id === l.orderId)!.o.orderDate }))),
       stockRequests: stockRows.map(r => { let items: unknown[] = []; try { items = JSON.parse(r.items); } catch { /* bỏ qua */ } return { ...r, items: Array.isArray(items) ? items.length : 0 }; }),
+      care: careRows.map(({ a, ownerName }) => ({ ...a, ownerName, typeLabel: CARE_TYPE_LABEL[a.type], resultLabel: CARE_RESULT_LABEL[a.result], canEdit: me.role === 'manager' || a.ownerId === me.id })),
       accounts: accountRows.map(a => ({ memberId: a.memberId, name: a.name, email: shownEmail(a.email), phone: a.phone ?? '', active: a.active, discounts: parseDiscounts(a.discounts) })),
     });
   }, 'business');

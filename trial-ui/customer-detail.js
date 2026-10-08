@@ -1,10 +1,12 @@
 // Trang chi tiết khách hàng (#/customers/<id>): một lượt gọi GET /customers/:id/overview rồi vẽ theo từng mục.
 // Cấu trúc: HEAD (tên + thao tác) → STATS (doanh số, công nợ…) → HỒ SƠ (thông tin · phụ trách / chia sẻ · người liên hệ) → TABS.
 // Thêm một mục mới = thêm một phần tử vào TABS (key, nhãn, đếm số, hàm vẽ) – không phải sửa chỗ khác.
+import { careResult, careSummary, careType, followUpCell } from './care.js';
 
 /**
  * @param deps { api, toast, esc, money, fmtDate, pill, payCell, confirmBox, go, isManager, onDiscount,
- *               ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS, onEdit(customer), onQuote(customer), onAccounts(customer) }
+ *               ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS, onEdit(customer), onQuote(customer), onAccounts(customer),
+ *               onCare(customer, activity | null, onSaved) – ghi / sửa lần chăm sóc (trial-ui/care.js) }
  */
 export function initCustomerDetail(deps) {
   const { api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS } = deps;
@@ -16,6 +18,7 @@ export function initCustomerDetail(deps) {
   const METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
   const ENTITY = { BN: 'Bách Ngân', VG: 'Vigifts', QTV: 'QTV' };
   const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
+  const when = iso => iso ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)) : '';
   const DISCOUNT_LABELS = { minhLong: 'Minh Long', lys: 'Minh Long - Lys', lock: 'Lock&Lock' };
   const discountText = ds => Object.keys(DISCOUNT_LABELS).filter(k => ds?.[k]).map(k => `${DISCOUNT_LABELS[k]} <b>${ds[k]}%</b>`).join('<br>') || '<span class="muted">Chưa đặt</span>';
   const table = (head, rows, empty) => rows.length
@@ -53,6 +56,12 @@ export function initCustomerDetail(deps) {
         <td>${esc(x.deliveryNo)}</td><td>${fmtDate(x.plannedDate)}${x.timeSlot ? `<small>${esc(x.timeSlot)}</small>` : ''}</td><td>${pill(DELIVERY_STATUS, x.status)}</td><td>${orderLink(x.orderId, x.orderNo)}</td></tr>`), 'Chưa có chuyến giao.') },
     { key: 'stock', label: 'Hỏi tồn', count: d => d.stockRequests.length, html: d => table(['Ngày gửi', 'Số mã', 'Tình trạng', 'Ghi chú'], d.stockRequests.map(r => `<tr class="clickable" data-href="#/stock-requests/${esc(r.id)}">
         <td>${fmtDate(r.createdAt)}</td><td>${r.items}</td><td>${pill(STOCK_STATUS, r.status)}</td><td>${esc(r.note) || '<span class="muted">—</span>'}</td></tr>`), 'Khách chưa gửi đơn check tồn.') },
+    { key: 'care', label: 'Chăm sóc', count: d => d.care.length, html: d => `<div class="row-gap"><button type="button" class="btn primary small" data-act="care-new">＋ Ghi chăm sóc</button>
+      <a class="btn ghost small" href="#/care">Mở trang Chăm sóc KH</a></div>
+      ${table(['Thời gian', 'Hình thức', 'Nội dung', 'Kết quả', 'Hẹn tiếp', 'Người ghi', ''], d.care.map(a => `<tr><td>${esc(when(a.occurredAt))}</td><td>${careType(a)}</td>
+        <td class="care-text">${careSummary(a)}</td><td>${careResult(a)}</td><td>${followUpCell(a)}</td><td>${esc(a.ownerName)}</td>
+        <td>${a.canEdit ? `<button type="button" class="btn ghost small" data-act="care-edit" data-care="${esc(a.id)}">Sửa</button>` : ''}</td></tr>`),
+        deps.isManager() ? 'Chưa có lần chăm sóc nào với khách này.' : 'Bạn chưa ghi lần chăm sóc nào với khách này.')}` },
     { key: 'accounts', label: 'Tài khoản', count: d => d.accounts.length, html: d => `${table(['Tên', 'Đăng nhập', 'Chiết khấu riêng', 'Trạng thái', ''], d.accounts.map(a => `<tr><td>${esc(a.name)}</td>
       <td>${[a.email, a.phone].filter(Boolean).map(esc).join('<br>') || '—'}</td>
       <td>${discountText(a.discounts)}</td>
@@ -186,6 +195,8 @@ export function initCustomerDetail(deps) {
     if (act === 'quote') return deps.onQuote(c);
     if (act === 'approve' || act === 'reject') return deps.onReview(c.id, act === 'approve');
     if (act === 'accounts') return deps.onAccounts(c);
+    if (act === 'care-new') return deps.onCare(c, null, reload);
+    if (act === 'care-edit') { const a = st.d.care.find(x => x.id === t.closest('[data-care]').dataset.care); return deps.onCare(c, a && { ...a, customerName: c.name }, reload); }
     if (act === 'discount') return deps.onDiscount(st.d.accounts.find(a => a.memberId === t.closest('[data-member]').dataset.member), reload);
     if (act === 'contact') return contactDialog(null);
     if (act === 'staff') return staffDialog();

@@ -83,10 +83,12 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
         cartonWidth: products.cartonWidth, cartonHeight: products.cartonHeight }).from(products).where(inArray(products.sku, [...new Set(lines.map(l => l.sku).filter(Boolean))])) : [],
     ]);
     return json({
-      slips: slips.map(s => ({ ...s, sourceLabel: PACKING_SOURCE_LABEL[s.source], lines: slipLines.filter(l => l.slipId === s.id), photoCount: Number(photos.find(p => p.slipId === s.id)?.n ?? 0) })),
-      lines: lines.map(l => { const packed = allocated.get(l.id) ?? 0, c = cartons.find(x => x.sku === l.sku);
+      slips: slips.map(s => ({ ...s, sourceLabel: PACKING_SOURCE_LABEL[s.source], photoCount: Number(photos.find(p => p.slipId === s.id)?.n ?? 0),
+        lines: slipLines.filter(l => l.slipId === s.id).map(l => ({ ...l, suggestion: packingSuggestion(l.qty, l.unit, { perCarton: l.perCarton, cartonWeight: l.cartonWeight }).text })) })),
+      // suggestion / cartonSize / weight: cho bản in phiếu đóng gói cả đơn (chưa chia phiếu).
+      lines: lines.map(l => { const packed = allocated.get(l.id) ?? 0, c = cartons.find(x => x.sku === l.sku), s = packingSuggestion(l.qty, l.unit, c);
         return { id: l.id, sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty, packed, left: Math.max(0, Math.round((l.qty - packed) * 1000) / 1000),
-          perCarton: c?.perCarton ?? null, cartonWeight: c?.cartonWeight ?? null }; }),
+          perCarton: c?.perCarton ?? null, cartonWeight: c?.cartonWeight ?? null, suggestion: s.text, cartonSize: s.cartonSize, weight: s.weight }; }),
       canRequest: order.status !== 'cancelled' && order.status !== 'draft',
     });
   }, 'business');
@@ -154,7 +156,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       slip: { ...slip, sourceLabel: PACKING_SOURCE_LABEL[slip.source], createdByName: name(slip.createdBy), sentByName: name(slip.sentBy), packedByName: name(slip.packedBy) },
       lines: lines.map(l => ({ ...l, suggestion: packingSuggestion(l.qty, l.unit, { perCarton: l.perCarton, cartonWeight: l.cartonWeight }).text })), photos,
       // Kho không xem được đơn: chỉ đưa thông tin cần để đóng & giao.
-      order: { id: order.id, orderNo: order.orderNo, customerName: order.customerName, contact: order.contact, phone: order.phone, address: order.address, expectedDeliveryDate: order.expectedDeliveryDate },
+      order: { id: order.id, orderNo: order.orderNo, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, address: order.address, expectedDeliveryDate: order.expectedDeliveryDate },
       canOpenOrder: manage, canSend: manage && slip.status === 'draft', canCancel: manage && (slip.status === 'draft' || slip.status === 'sent'), canConfirm: canConfirm(m, slip.status),
     });
   }, 'business');

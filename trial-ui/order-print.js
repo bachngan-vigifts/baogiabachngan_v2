@@ -54,6 +54,72 @@ export function orderSheetHtml(p, { prices = false, edit = false } = {}) {
   </div>`;
 }
 
+/*
+ * PHIẾU ĐÓNG GÓI / PHIẾU GIAO HÀNG: cùng khuôn mẫu đơn đặt hàng (đầu trang công ty, khối thông tin, bảng hàng, ghi chú, 4 chữ ký).
+ * Dữ liệu bản in: { kind, seller, department, info: [[nhãn, giá trị]…], cols: [{ h, k, num?, sum? }], lines: [{…}], note, signDate, signers, names }.
+ */
+const toNum = v => typeof v === 'number' ? v : Number(String(v ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+const showNum = v => typeof v === 'number' ? (v ? num(v) : '') : String(v ?? '');
+const signDateText = () => { const t = new Date(); return `Ngày ${String(t.getDate()).padStart(2, '0')} Tháng ${String(t.getMonth() + 1).padStart(2, '0')} Năm ${t.getFullYear()}`; };
+export const SLIP_KINDS = {
+  packing: { title: 'PHIẾU ĐÓNG GÓI', file: 'Phieu-dong-goi', signers: ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra'] },
+  delivery: { title: 'PHIẾU GIAO HÀNG', file: 'Phieu-giao-hang', signers: ['Người nhận hàng', 'Người giao hàng', 'Thủ kho', 'Người lập phiếu'] },
+};
+const contactOf = o => [o.contact, o.phone].filter(Boolean).join(' · ');
+
+/**
+ * Phiếu đóng gói. `order` = { orderNo, customerName, contact, phone, address, expectedDeliveryDate }, `slip` (tuỳ chọn) = phiếu đã lập,
+ * `lines` = [{ sku, name, unit, qty, suggestion, cartonSize, weight }].
+ */
+export function packingPrintData({ seller, order, slip = null, lines }, me = '') {
+  return {
+    kind: 'packing', seller, department: 'Kho', docNo: slip?.slipNo || order.orderNo,
+    info: [['Số phiếu', slip?.slipNo || ''], ['Số ĐH', order.orderNo], ['Tên khách hàng', order.customerName], ['Ngày lập', dmy(slip?.createdAt || new Date().toISOString())],
+      ['Nguồn hàng', slip ? [slip.sourceLabel, slip.sourceNote].filter(Boolean).join(': ') : ''], ['Ngày giao', dmy(order.expectedDeliveryDate)],
+      ['Địa chỉ giao', order.address || ''], ['Liên hệ', contactOf(order)]],
+    cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL', k: 'qty', num: true, sum: true },
+      { h: 'Quy cách đóng gói', k: 'spec' }, { h: 'Cân nặng (kg)', k: 'weight', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
+    lines: lines.map(l => ({ sku: l.sku || '', name: l.name, unit: l.unit || '', qty: Number(l.qty) || 0,
+      spec: [l.suggestion, l.cartonSize ? `Thùng ${l.cartonSize}` : ''].filter(Boolean).join(' · '), weight: Number(l.weight) || 0, note: '' })),
+    note: slip?.note || '', signDate: signDateText(), names: [slip?.createdByName || me, '', slip?.packedByName || '', ''],
+  };
+}
+
+/**
+ * Phiếu giao hàng. `delivery` (tuỳ chọn) = chuyến giao { deliveryNo, plannedDate, address, receiverName, receiverPhone };
+ * `lines` = [{ sku, name, unit, ordered, qty }] (ordered = SL đặt, qty = SL giao chuyến này).
+ */
+export function deliveryPrintData({ seller, order, delivery = null, lines }, me = '') {
+  const receiver = delivery && (delivery.receiverName || delivery.receiverPhone) ? [delivery.receiverName, delivery.receiverPhone].filter(Boolean).join(' · ') : contactOf(order);
+  return {
+    kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || order.orderNo,
+    info: [['Số phiếu', delivery?.deliveryNo || ''], ['Số ĐH', order.orderNo], ['Tên khách hàng', order.customerName], ['Ngày giao', dmy(delivery?.plannedDate || order.expectedDeliveryDate)],
+      ['Địa chỉ giao', delivery?.address || order.address || ''], ['MST', order.taxCode || ''], ['Người nhận', receiver], ['Thời gian', delivery?.timeSlot || '']],
+    cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
+      { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
+    lines: lines.map(l => ({ sku: l.sku || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
+    note: order.note || '', signDate: signDateText(), names: [delivery?.receiverName || order.contact || '', '', '', me],
+  };
+}
+
+/** HTML phiếu đóng gói / giao hàng (cùng kiểu mẫu đơn đặt hàng). */
+export function slipSheetHtml(p, { edit = false } = {}) {
+  const ce = f => edit ? ` contenteditable="true" data-f="${f}"` : '', kind = SLIP_KINDS[p.kind];
+  const first = p.cols.findIndex(c => c.sum);
+  return `<div class="ddh">
+    <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
+    <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
+    <table class="ddh-table"><thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
+      ${p.lines.map((l, i) => `<tr><td class="c">${i + 1}</td>${p.cols.map(c => `<td${c.num ? ' class="n"' : c.c ? ' class="c"' : ''}${ce(`lines.${i}.${c.k}`)}>${esc(c.num ? showNum(l[c.k]) : l[c.k])}</td>`).join('')}</tr>`).join('')}
+      <tr class="ddh-sum"><td colspan="${first + 1}" class="c"><b>Tổng cộng</b></td>${p.cols.slice(first).map(c => c.sum
+        ? `<td class="n"><b>${showNum(Math.round(p.lines.reduce((s, l) => s + toNum(l[c.k]), 0) * 10) / 10)}</b></td>` : '<td></td>').join('')}</tr>
+    </tbody></table>
+    <div class="ddh-note"><b>Ghi chú:</b> <span${ce('note')}>${esc(p.note)}</span></div>
+    <p class="ddh-date"${ce('signDate')}>${esc(p.signDate)}</p>
+    <div class="ddh-sign">${kind.signers.map((t, i) => `<div><b>${t}</b><div class="space"></div><span${ce(`names.${i}`)}>${esc(p.names[i])}</span></div>`).join('')}</div>
+  </div>`;
+}
+
 /** Ghi các ô đã sửa (contenteditable) trở lại dữ liệu bản in. */
 export function readEdits(root, p) {
   for (const el of root.querySelectorAll('[data-f]')) {

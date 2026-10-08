@@ -8,6 +8,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify } from '../../notifications/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
 import { reconcileAutoTasks } from './auto-tasks.ts';
+import { completeFollowUp } from '../../care/api/routes.ts';
 import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 
@@ -181,6 +182,8 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       Object.assign(set, statusPatch(b.status as TaskStatus, m.id, t));
     }
     await c.env.db.update(tasks).set({ ...set, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id));
+    // Việc hẹn chăm sóc khách hoàn thành ở "Công việc" → lịch hẹn bên nhật ký chăm sóc cũng xong (khoá việc = care:<id>:<ngày hẹn>).
+    if (b.status === 'done' && t.source === 'care' && t.sourceId && t.autoKey) await completeFollowUp(c.env.db, t.sourceId, t.autoKey.split(':')[2] ?? '');
     if (reassigned && reassigned !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc', body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`,
       targetMemberId: reassigned, actorId: m.id, data: { taskId: t.id } });
     if (toTeam) await notifyTeam(c, toTeam, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(toTeam)}`, body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });

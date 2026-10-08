@@ -1,5 +1,5 @@
 /** Trang chi tiết khách hàng: số dòng tối đa mỗi mục (một chỗ để sửa). */
-export const HUB_LIMITS = { orders: 300, quotes: 200, stockRequests: 50, purchases: 300 } as const;
+export const HUB_LIMITS = { orders: 300, quotes: 200, stockRequests: 50, purchases: 300, care: 100 } as const;
 
 export interface PurchaseLine { sku: string; name: string; unit: string; qty: number; unitPrice: number; amount: number; orderId: string; orderDate: string }
 export interface PurchaseRow { sku: string; name: string; unit: string; qty: number; amount: number; orders: number; lastDate: string; lastPrice: number }
