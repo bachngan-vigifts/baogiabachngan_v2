@@ -4,7 +4,7 @@ import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
 import { quotations } from '../quotes/schema.ts';
-import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS } from './domain/statuses.ts';
+import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS } from './domain/statuses.ts';
 
 /*
  * Bán hàng sau báo giá: Báo giá → Đơn đặt hàng → (HĐKT) → Lịch giao hàng → Công nợ.
@@ -55,6 +55,10 @@ export const salesOrders = pgTable('sales_orders', {
   /** null khi yêu cầu tự động (giao xong). */
   invoiceRequestedBy: text('invoice_requested_by').references(() => employees.id),
   invoiceRequestNote: text('invoice_request_note').notNull().default(''),
+  /** Email nhận hoá đơn (mặc định email khách trên đơn, sửa được khi yêu cầu). */
+  invoiceEmail: text('invoice_email').notNull().default(''),
+  /** `issue` = phát hành chính thức; `draft` = gửi bản nháp cho khách kiểm tra trước. */
+  invoiceMode: text('invoice_mode', { enum: INVOICE_MODES }).notNull().default('issue'),
   invoiceNo: text('invoice_no').notNull().default(''),
   invoiceDate: text('invoice_date'),
   invoiceIssuedAt: text('invoice_issued_at'),
@@ -71,6 +75,7 @@ export const salesOrders = pgTable('sales_orders', {
   index('idx_sales_orders_status').on(t.status, t.orderDate),
   enumCheck('chk_sales_orders_status', t.status, ORDER_STATUSES),
   enumCheck('chk_sales_orders_invoice_status', t.invoiceStatus, INVOICE_STATUSES),
+  enumCheck('chk_sales_orders_invoice_mode', t.invoiceMode, INVOICE_MODES),
   index('idx_sales_orders_invoice').on(t.invoiceStatus).where(sql`${t.invoiceStatus} = 'requested'`),
   enumCheck('chk_sales_orders_type', t.quoteType, ['HRC', 'B2B', 'VIGIFTS']),
   check('chk_sales_orders_total', sql`${t.total} >= 0`),

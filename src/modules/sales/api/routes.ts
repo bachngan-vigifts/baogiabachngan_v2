@@ -80,7 +80,7 @@ async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string |
   if (status !== order!.status) await tx.update(salesOrders).set({ status, updatedAt: nowIso() }).where(eq(salesOrders.id, orderId));
   // Giao xong mà chưa ai yêu cầu xuất hoá đơn → tự yêu cầu (sinh việc cho nhóm Kế toán).
   if (status === 'delivered' && order!.invoiceStatus === 'none')
-    await tx.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: null, invoiceRequestNote: 'Tự động: đơn đã giao xong.' }).where(eq(salesOrders.id, orderId));
+    await tx.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: null, invoiceRequestNote: 'Tự động: đơn đã giao xong.', invoiceEmail: order!.invoiceEmail || order!.email, invoiceMode: 'issue' }).where(eq(salesOrders.id, orderId));
   if (status === 'delivered' && deliveredOn) {
     const [contract] = await tx.select().from(salesContracts).where(eq(salesContracts.orderId, orderId)).limit(1);
     await tx.update(paymentSchedules).set({ dueDate: addDays(deliveredOn, contract?.paymentDays ?? 0) })
@@ -161,12 +161,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     ]);
     const shipLines = ships.length ? await db.select().from(deliveryLines).where(inArray(deliveryLines.deliveryId, ships.map(s => s.id))) : [];
     // Cho bản in đơn đặt hàng: mã khách hàng, người phụ trách, người soạn.
-    const [cust] = order.customerId ? await db.select({ code: customers.customerCode }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
+    const [cust] = order.customerId ? await db.select({ code: customers.customerCode, email: customers.email }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
     const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
       .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy].filter((x): x is string => !!x)));
     const person = (id: string) => people.find(p => p.id === id);
     return json({
-      order: { ...order, customerCode: cust?.code ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
+      order: { ...order, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
         canIssueInvoice: canIssueInvoice(viewer(c)) }, lines, contract: contract[0] ? { ...contract[0], data: JSON.parse(contract[0].data) } : null,
@@ -220,8 +220,18 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const body = await readJson(c.req, 4_096), order = await loadOrder(c, c.params.id!);
     if (order.status === 'cancelled' || order.status === 'draft') throw new AppError(409, 'Đơn chưa xác nhận hoặc đã huỷ, chưa yêu cầu xuất hoá đơn được.');
     if (order.invoiceStatus === 'issued') throw new AppError(409, `Đơn đã xuất hoá đơn ${order.invoiceNo}.`, 'INVOICE_ISSUED');
-    if (order.invoiceStatus === 'requested') return json({ ok: true, already: true });
-    await c.env.db.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: viewer(c).id, invoiceRequestNote: text(body.note, 1000),
+    // Email nhận hoá đơn: một hoặc nhiều địa chỉ (cách nhau bởi dấu phẩy / chấm phẩy). Phát hành chính thức hay gửi bản nháp.
+    const emails = text(body.email, 500).split(/[,;\s]+/).filter(Boolean);
+    if (emails.some(e => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) || emails.length > 5) throw new AppError(400, 'Email nhận hoá đơn không hợp lệ.');
+    const mode = body.mode === 'draft' ? 'draft' as const : body.mode === undefined || body.mode === 'issue' ? 'issue' as const : null;
+    if (!mode) throw new AppError(400, 'Chọn phát hành hoá đơn hoặc gửi bản nháp.');
+    const fields = { invoiceRequestNote: text(body.note, 1000), invoiceEmail: emails.join(', '), invoiceMode: mode };
+    // Đã yêu cầu (vd tự động khi giao xong) mà kế toán chưa xuất: cập nhật email / ghi chú / cách xuất.
+    if (order.invoiceStatus === 'requested') {
+      await c.env.db.update(salesOrders).set({ ...fields, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(and(eq(salesOrders.id, order.id), eq(salesOrders.invoiceStatus, 'requested')));
+      return json({ ok: true, updated: true });
+    }
+    await c.env.db.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: viewer(c).id, ...fields,
       updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(and(eq(salesOrders.id, order.id), eq(salesOrders.invoiceStatus, 'none')));
     return json({ ok: true });
   }, 'business');

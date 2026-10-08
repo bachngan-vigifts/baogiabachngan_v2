@@ -35,7 +35,11 @@ Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[L�
   - `invoice_no`, `invoice_date`, `invoice_issued_at` / `_by`.
 - **Yêu cầu xuất hoá đơn:**
   - *Tự động* khi đơn giao xong (người yêu cầu để trống, ghi chú "Tự động: đơn đã giao xong.").
-  - Hoặc nhân viên phụ trách bấm **🧾 Yêu cầu xuất hoá đơn** ở ô *Hoá đơn* của đơn (`POST /orders/:id/invoice-request {note}`).
+  - Hoặc nhân viên phụ trách bấm **🧾 Yêu cầu xuất hoá đơn** ở ô *Hoá đơn* của đơn (`POST /orders/:id/invoice-request {email, mode, note}`). Hộp yêu cầu có:
+    - **email nhận**: mặc định email trên đơn / của khách, sửa được, nhiều email thì cách nhau bởi dấu phẩy;
+    - **cách xuất**: *Phát hành hoá đơn* (`issue`) hoặc *Gửi bản nháp* cho khách kiểm tra trước (`draft`);
+    - **ghi chú** cho kế toán.
+  - Đơn đã yêu cầu mà chưa xuất: bấm *Sửa yêu cầu* để đổi email / cách xuất / ghi chú. Hai cột `invoice_email`, `invoice_mode` (migration `0039_invoice_email_mode.sql`).
   - Đơn giao xong **trước** bản này không tự yêu cầu; nhân viên bấm tay nếu cần.
 - **Việc tự sinh "Xuất hoá đơn"** (nguồn `invoice`) giao cho **nhóm Kế toán** (chức vụ `accounting`), dẫn tới trang đơn.
 - **Kế toán hoặc Manager nhập số hoá đơn** (`PUT /orders/:id/invoice {invoiceNo, invoiceDate}`). Khi đó việc tự hoàn thành. Nhập nhầm thì bấm "Sửa số hoá đơn".

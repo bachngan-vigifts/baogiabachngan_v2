@@ -1168,3 +1168,12 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .chat-find-results button { width: 100%; text-align: left; display: grid; gap: 2px; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 10px; font: inherit; cursor: pointer; }
 .chat-ref-list button { width: 100%; text-align: left; display: grid; gap: 2px; border: 0; background: none; padding: 8px; border-radius: 8px; font: inherit; cursor: pointer; } .chat-ref-list button:hover { background: var(--surface-2); }
 .chat-ref-list small { color: var(--muted); }
+/* Hộp yêu cầu xuất hoá đơn */
+.form-grid.one-col { grid-template-columns: 1fr; }
+.invoice-mode { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.invoice-mode legend { font-size: .85rem; font-weight: 700; margin-bottom: 6px; }
+.mode-opt { display: flex !important; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; font-weight: 400 !important; }
+.mode-opt input { width: 18px; height: 18px; margin-top: 2px; }
+.mode-opt small { display: block; color: var(--muted); }
+.mode-opt:has(input:checked) { border-color: var(--green); background: #12805c0d; }
+.chat-pick-list { overflow-x: hidden; } .chat-pick-list label > span:not(.chat-avatar) { overflow-wrap: anywhere; }

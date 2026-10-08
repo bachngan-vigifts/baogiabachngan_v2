@@ -151,8 +151,8 @@ export const RULES: Record<string, Rule> = {
     const rows = await db.select({ o: salesOrders, contractNo: salesContracts.contractNo }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
       .where(and(eq(salesOrders.invoiceStatus, 'requested'), ne(salesOrders.status, 'cancelled'))).limit(500);
     return rows.map(({ o, contractNo }) => ({ autoKey: `invoice:${o.id}`, source: 'invoice' as const, sourceId: o.id,
-      title: `Xuất hoá đơn ${contractNo ? 'HĐKT ' + contractNo : 'đơn ' + o.orderNo} – ${o.customerName}`,
-      description: `${contractNo ? `Đơn ${o.orderNo} · ` : ''}${vnd(o.total)}${o.taxCode ? ' · MST ' + o.taxCode : ''}${o.invoiceRequestNote ? ' · ' + o.invoiceRequestNote : ''}. Nhập số hoá đơn vào đơn sau khi xuất.`,
+      title: `${o.invoiceMode === 'draft' ? 'Gửi nháp hoá đơn' : 'Xuất hoá đơn'} ${contractNo ? 'HĐKT ' + contractNo : 'đơn ' + o.orderNo} – ${o.customerName}`,
+      description: `${contractNo ? `Đơn ${o.orderNo} · ` : ''}${vnd(o.total)}${o.taxCode ? ' · MST ' + o.taxCode : ''}${o.invoiceMode === 'draft' ? ' · GỬI BẢN NHÁP cho khách kiểm tra' : ' · Phát hành chính thức'}${o.invoiceEmail ? ' · Gửi tới: ' + o.invoiceEmail : ''}${o.invoiceRequestNote ? ' · ' + o.invoiceRequestNote : ''}. Nhập số hoá đơn vào đơn sau khi xuất.`,
       link: `#/orders/${o.id}`, assigneeId: null, assigneePosition: 'accounting', priority: 'normal' as const, dueDate: o.invoiceRequestedAt ? addDaysIso(day(o.invoiceRequestedAt)!, 1) : null }));
   },
   /**

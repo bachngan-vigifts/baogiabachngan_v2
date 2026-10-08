@@ -2356,23 +2356,42 @@ function renderInvoice(o) {
       <label>Số hoá đơn<input name="invoiceNo" required maxlength="200" value="${esc(o.invoiceNo || '')}" placeholder="Ví dụ: 0000123" autocomplete="off"></label>
       <label>Ngày hoá đơn<input type="date" name="invoiceDate" value="${esc(o.invoiceDate || todayIso())}"></label>
       <button class="btn primary small">${label}</button></form>` : '';
-  const requested = o.invoiceRequestedAt ? `<dt>Yêu cầu</dt><dd>${o.invoiceRequestedBy ? esc(o.invoiceRequestedByName) : 'Tự động khi giao xong'} · ${at(o.invoiceRequestedAt)}${o.invoiceRequestNote ? `<small>${esc(o.invoiceRequestNote)}</small>` : ''}</dd>` : '';
+  const requested = o.invoiceRequestedAt ? `<dt>Yêu cầu</dt><dd>${o.invoiceRequestedBy ? esc(o.invoiceRequestedByName) : 'Tự động khi giao xong'} · ${at(o.invoiceRequestedAt)}${o.invoiceRequestNote ? `<small>${esc(o.invoiceRequestNote)}</small>` : ''}</dd>
+    <dt>Cách xuất</dt><dd>${o.invoiceMode === 'draft' ? '<span class="pill warn">Gửi bản nháp</span>' : '<span class="pill info">Phát hành</span>'}</dd>
+    <dt>Email nhận</dt><dd>${o.invoiceEmail ? esc(o.invoiceEmail) : '<span class="muted">Chưa có</span>'}</dd>` : '';
   $('#order-invoice').innerHTML = !st ? '<p class="muted">Đơn đã huỷ.</p>'
     : st === 'issued' ? `<dl class="kv"><dt>Số hoá đơn</dt><dd><b>${esc(o.invoiceNo)}</b></dd><dt>Ngày hoá đơn</dt><dd>${fmtDate(o.invoiceDate) || '—'}</dd>
         <dt>Kế toán nhập</dt><dd>${esc(o.invoiceIssuedByName || '—')} · ${at(o.invoiceIssuedAt)}</dd>${requested}</dl>
         ${o.canIssueInvoice ? '<button type="button" class="btn ghost small" id="invoice-edit">Sửa số hoá đơn</button>' : ''}${form('Lưu số hoá đơn')}`
-    : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Kế toán nhập số hoá đơn vào đây sau khi xuất.</p>${form('Đã xuất – lưu số hoá đơn')}`
+    : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Kế toán nhập số hoá đơn vào đây sau khi xuất.</p>
+       <button type="button" class="btn ghost small" id="invoice-request" title="Đổi email nhận, cách xuất hoặc ghi chú">Sửa yêu cầu</button>${form('Đã xuất – lưu số hoá đơn')}`
     : `<p class="muted">Chưa yêu cầu xuất hoá đơn. Khi đơn giao xong, hệ thống tự yêu cầu và giao việc cho nhóm Kế toán.</p>
        ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>'}${form('Lưu số hoá đơn')}`;
 }
 document.addEventListener('click', async e => {
   if (e.target.id === 'invoice-edit') { const f = document.getElementById('invoice-form'); f.hidden = false; e.target.hidden = true; f.invoiceNo.focus(); return; }
   if (e.target.id !== 'invoice-request') return;
-  const note = prompt('Ghi chú cho kế toán (tuỳ chọn) – ví dụ: xuất theo tên công ty mẹ, gửi hoá đơn qua email…', '');
-  if (note === null) return;
-  e.target.disabled = true;
-  try { await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice-request`, 'POST', { note }); toast('Đã yêu cầu xuất hoá đơn – nhóm Kế toán nhận việc.'); openOrder(sales.order.id); tasksView().badge(); }
-  catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
+  // Hộp yêu cầu xuất hoá đơn của app: email nhận (mặc định email trên đơn / của khách, sửa được), cách xuất, ghi chú.
+  const o = sales.order, f = $('#invoice-req-form');
+  $('#invoice-req-order').textContent = `${o.orderNo} · ${o.customerName}`; $('#invoice-req-error').textContent = '';
+  f.email.value = o.invoiceEmail || o.email || o.customerEmail || '';
+  $('#invoice-req-email-hint').textContent = f.email.value ? 'Lấy từ thông tin khách hàng – sửa lại nếu khách muốn nhận ở email khác.' : 'Khách chưa có email – nhập email nhận hoá đơn.';
+  f.note.value = o.invoiceStatus === 'requested' ? o.invoiceRequestNote || '' : '';
+  f.querySelector(`[name=mode][value="${o.invoiceMode === 'draft' && o.invoiceStatus === 'requested' ? 'draft' : 'issue'}"]`).checked = true;
+  $('#invoice-req-save').textContent = o.invoiceStatus === 'requested' ? 'Lưu thay đổi' : 'Gửi yêu cầu cho kế toán';
+  $('#invoice-req-dialog').showModal(); f.email.focus();
+});
+$('#invoice-req-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, btn = $('#invoice-req-save'), email = f.email.value.trim();
+  const bad = email.split(/[,;\s]+/).filter(Boolean).find(x => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
+  if (bad) { $('#invoice-req-error').textContent = `Email "${bad}" chưa đúng.`; f.email.focus(); return; }
+  if (!email && !confirm('Chưa có email nhận hoá đơn. Vẫn gửi yêu cầu?')) return;
+  btn.disabled = true;
+  try {
+    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice-request`, 'POST', { email, note: f.note.value, mode: f.mode.value });
+    $('#invoice-req-dialog').close(); toast(r.updated ? 'Đã cập nhật yêu cầu xuất hoá đơn.' : 'Đã yêu cầu xuất hoá đơn – nhóm Kế toán nhận việc.'); openOrder(sales.order.id); tasksView().badge();
+  } catch (ex) { $('#invoice-req-error').textContent = ex.message; } finally { btn.disabled = false; }
 });
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'invoice-form') return;
