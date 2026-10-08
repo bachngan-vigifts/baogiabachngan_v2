@@ -2,6 +2,7 @@
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
+import { printSheet } from './print-page.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
 import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
@@ -1386,10 +1387,9 @@ async function printQuoteTemplate(state) {
   const banner = await loadCanvasImage(state.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
   const data = state.type === 'HRC' ? { ...state, rows: globalThis.EditableQuotePdf.hrcRows(state) } : state;
   const pages = globalThis.HrcPdf.createPages({ state: data, images, banner, createCanvas: (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h }) });
-  const out = $('#print-sheet'); out.replaceChildren(...pages); out.classList.add('canvas-pages');
-  const title = document.title; document.title = `${state.quoteNo || 'Bao-gia'}`.replace(/[^\w.-]+/g, '-');
-  window.print(); document.title = title;
-  setTimeout(() => out.classList.remove('canvas-pages'), 1000);
+  $('#print-sheet').replaceChildren(...pages);
+  // Mỗi canvas đã là một trang A4 đủ lề → in lề 0; canvas co theo vùng in (Safari vẫn giữ lề riêng thì cũng không bị cắt).
+  printSheet({ page: { size: 'A4', margin: '0' }, cls: 'canvas-pages', title: `${state.quoteNo || 'Bao-gia'}`.replace(/[^\w.-]+/g, '-') });
 }
 async function downloadQuotePdf(hideDiscount) {
   const block = approvalBlock(); if (block) return toast(block, 'err');
@@ -1470,8 +1470,7 @@ $('#print-quote').addEventListener('click', () => {
       <div><p><b>NGƯỜI LẬP BÁO GIÁ</b></p><p><i>(Ký, ghi rõ họ tên)</i></p><div class="space"></div><p><b>${esc(d.owner)}</b>${d.ownerPhone ? `<br>${esc(d.ownerPhone)}` : ''}</p></div></div>`;
   // Bản demo chạy trong khung không cho mở hộp thoại in → xem trước bản in trên màn hình.
   if (window.BN_DEMO) { $('#print-preview-body').innerHTML = $('#print-sheet').innerHTML; $('#print-preview').showModal(); return; }
-  const title = document.title; document.title = `Bao-gia-${d.quoteNo}`.replace(/[^\w.-]+/g, '-');
-  window.print(); document.title = title;
+  printSheet({ title: `Bao-gia-${d.quoteNo}`.replace(/[^\w.-]+/g, '-') });
 });
 
 // ---------------------------------------------------------------- sản phẩm
@@ -2780,9 +2779,8 @@ function openOrderPrint(detail = sales.detail) {
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
   dlg.querySelector('[data-print]').addEventListener('click', () => {
     readEdits(sheet, p);
-    const out = $('#print-sheet'); out.innerHTML = orderSheetHtml(p, { prices: prices() }); out.classList.add('landscape');
-    const title = document.title; document.title = `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-');
-    window.print(); document.title = title; out.classList.remove('landscape');
+    $('#print-sheet').innerHTML = orderSheetHtml(p, { prices: prices() });
+    printSheet({ page: { size: 'A4 landscape', margin: '10mm' }, cls: 'landscape', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
   });
   dlg.querySelector('[data-xlsx]').addEventListener('click', async e => {
     readEdits(sheet, p); e.target.disabled = true;
@@ -2816,9 +2814,10 @@ function openSlipPrint({ kind, choices, initial, build }) {
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
   dlg.querySelector('[data-print]').addEventListener('click', () => {
     readEdits(sheet, p);
-    const out = $('#print-sheet'), cls = 'slip-' + orient.value; out.innerHTML = slipSheetHtml(p); out.classList.add(cls);
-    const title = document.title; document.title = `${k.file}-${p.docNo}`.replace(/[^\w.-]+/g, '-');
-    window.print(); document.title = title; out.classList.remove(cls);
+    $('#print-sheet').innerHTML = slipSheetHtml(p);
+    // Phiếu: lề trên 2 cm, trái phải 0,8 cm; khổ A4 dọc / ngang theo lựa chọn.
+    printSheet({ page: { size: orient.value === 'landscape' ? 'A4 landscape' : 'A4 portrait', margin: '20mm 8mm 10mm 8mm' }, cls: 'slip-' + orient.value,
+      title: `${k.file}-${p.docNo}`.replace(/[^\w.-]+/g, '-') });
   });
   dlg.showModal();
 }
