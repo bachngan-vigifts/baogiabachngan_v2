@@ -653,8 +653,8 @@
     <form id="account-form" class="form-grid cols-2" novalidate>
       <h3 class="span-2">Tạo tài khoản mới</h3>
       <label>Tên người dùng<input name="name" required maxlength="200" placeholder="Ví dụ: Chị Lan – phòng mua hàng"></label>
-      <label>Email đăng nhập<input name="email" type="email" required maxlength="254"></label>
-      <label>Điện thoại (khách đăng nhập được bằng số di động này)<input name="phone" maxlength="40" inputmode="tel" placeholder="0901234567"></label>
+      <label>Số di động đăng nhập<input name="phone" maxlength="40" inputmode="tel" placeholder="0901234567"><small class="muted">Khách đăng nhập bằng số này.</small></label>
+      <label>Email <small class="muted">(không bắt buộc)</small><input name="email" type="text" inputmode="email" autocapitalize="none" maxlength="254" placeholder="Bỏ trống nếu khách không có email"><small class="muted">Có email thì khách đăng nhập được bằng cả email.</small></label>
       <fieldset class="span-2 manager-only discount-fields"><legend>Chiết khấu riêng theo nhãn hàng (%) – chỉ Manager</legend>
         <label>Minh Long<input name="d_minhLong" inputmode="decimal" placeholder="0"></label>
         <label>Minh Long - Lys<input name="d_lys" inputmode="decimal" placeholder="0"></label>

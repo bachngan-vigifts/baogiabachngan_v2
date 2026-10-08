@@ -30,6 +30,16 @@ const nowIso = () => new Date().toISOString();
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Liên kết đặt mật khẩu của khách: mở thẳng trang khách hàng (token sau dấu #, không đi qua máy chủ/log). */
 const customerLink = (origin: string, email: string, token: string) => `${origin}/customer.html#email=${encodeURIComponent(email)}&token=${token}`;
+/**
+ * Khách không có email: tài khoản đăng nhập bằng số di động; cột email (bắt buộc, duy nhất) giữ một địa chỉ nội bộ
+ * `kh-…@sdt.invalid` (tên miền .invalid không bao giờ nhận thư) – giao diện không hiện địa chỉ này.
+ */
+export const PHONE_ONLY_DOMAIN = '@sdt.invalid';
+const isPhoneOnly = (email: string) => email.endsWith(PHONE_ONLY_DOMAIN);
+/** Hiện cho người dùng: tài khoản chỉ có SĐT thì để trống email. */
+const shownEmail = (email: string) => (isPhoneOnly(email) ? '' : email);
+/** Định danh đăng nhập ghi trong link đặt mật khẩu: email thật, hoặc số di động. */
+const loginIdOf = (email: string, phone: string | null) => (isPhoneOnly(email) ? phone || '' : email);
 const str = (v: unknown, max = 500) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v)).trim().slice(0, max);
 
 /** Tài khoản khách đang đăng nhập + khách hàng Sapo gắn với nó. */
@@ -58,7 +68,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const { account, customer, discounts } = await myAccount(c);
     const [owner] = await c.env.db.select({ name: employees.name, phone: employees.phone, email: employees.email }).from(employees).where(eq(employees.id, account.ownerId)).limit(1);
     return json({
-      user: { name: member(c).name, email: member(c).email },
+      user: { name: member(c).name, email: shownEmail(member(c).email), phone: member(c).phone ?? '' },
       customer: { id: customer.id, name: customer.name, contact: customer.contact, phone: customer.phone, email: customer.email, address: customer.address, taxCode: customer.taxCode },
       discounts, owner: owner ?? null,
     });
@@ -264,7 +274,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       .where(eq(customerAccounts.customerId, c.params.id!)).orderBy(asc(customerAccounts.createdAt));
     const owners = rows.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, rows.map(r => r.account.ownerId))) : [];
     return json({ accounts: rows.map(r => ({
-      memberId: r.account.memberId, name: r.name, email: r.email, phone: r.phone, active: r.active, activated: !!r.passwordHash,
+      memberId: r.account.memberId, name: r.name, email: shownEmail(r.email), phone: r.phone, active: r.active, activated: !!r.passwordHash,
       owner: owners.find(o => o.id === r.account.ownerId) ?? { id: r.account.ownerId, name: '' }, discounts: parseDiscounts(r.account.discounts),
       canManage: member(c).role === 'manager' || r.account.ownerId === member(c).id,
     })) });
@@ -276,9 +286,16 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
    */
   router.post('/customer-accounts', async c => {
     const body = await readJson(c.req, 8_000), me = member(c), mgr = me.role === 'manager', db = c.env.db;
-    const customerId = str(body.customerId, 80), name = str(body.name, 200), email = str(body.email, 254).toLowerCase();
-    if (!name || !EMAIL.test(email)) throw new AppError(400, 'Nhập tên và email hợp lệ của người dùng phía khách hàng.');
-    const phone = await loginPhone(db, body.phone);
+    const customerId = str(body.customerId, 80), name = str(body.name, 200);
+    let email = str(body.email, 254).toLowerCase(), phoneRaw: unknown = body.phone;
+    // Ô email nhập số điện thoại: hiểu là đăng nhập bằng số di động.
+    if (email && !email.includes('@') && normalizePhone(email)) { if (!str(phoneRaw)) phoneRaw = email; email = ''; }
+    const phone = await loginPhone(db, phoneRaw);
+    if (!name) throw new AppError(400, 'Nhập tên người dùng phía khách hàng.');
+    if (email && !EMAIL.test(email)) throw new AppError(400, 'Email không hợp lệ.');
+    if (!email && !(phone && normalizePhone(phone))) throw new AppError(400, 'Nhập email hoặc số di động để khách đăng nhập.');
+    // Không có email: đăng nhập bằng số di động.
+    if (!email) email = `kh-${crypto.randomUUID().slice(0, 12)}${PHONE_ONLY_DOMAIN}`;
     const [cust] = await db.select({ id: customers.id, approvalStatus: customers.approvalStatus }).from(customers).where(eq(customers.id, customerId)).limit(1);
     if (!cust) throw new AppError(404, 'Không tìm thấy khách hàng.');
     if (cust.approvalStatus === 'pending') throw new AppError(409, 'Khách hàng đang chờ Manager duyệt, chưa cấp tài khoản được.', 'CUSTOMER_PENDING');
@@ -294,7 +311,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       await tx.insert(credentials).values({ memberId: id, activationHash: sha256Hex(token), activationExpires: nowSec + ACTIVATION_TTL_SECONDS, version: 0 });
       await tx.insert(customerAccounts).values({ memberId: id, customerId, ownerId, discounts: JSON.stringify(discounts), createdBy: me.id, createdAt: now, updatedAt: now });
     });
-    return json({ memberId: id, url: customerLink(c.url.origin, email, token) }, 201);
+    return json({ memberId: id, url: customerLink(c.url.origin, loginIdOf(email, phone), token) }, 201);
   }, 'business');
 
   /**
@@ -330,6 +347,11 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       set.ownerId = o.id;
     }
     const phone = body.phone !== undefined ? await loginPhone(db, body.phone, row.memberId) : undefined;
+    if (phone !== undefined && !(phone && normalizePhone(phone))) {
+      // Tài khoản chỉ đăng nhập bằng số di động thì không bỏ / đổi sang số không đăng nhập được (khách sẽ mất cách vào).
+      const [m] = await db.select({ email: employees.email }).from(employees).where(eq(employees.id, row.memberId)).limit(1);
+      if (m && isPhoneOnly(m.email)) throw new AppError(400, 'Tài khoản này đăng nhập bằng số di động – nhập số di động hợp lệ.');
+    }
     await db.transaction(async tx => {
       await tx.update(customerAccounts).set(set).where(eq(customerAccounts.memberId, row.memberId));
       if (phone !== undefined) await tx.update(employees).set({ phone }).where(eq(employees.id, row.memberId));
@@ -344,11 +366,11 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
   /** Cấp lại liên kết đặt mật khẩu cho khách (quên mật khẩu / link hết hạn). */
   router.post('/customer-accounts/:memberId/reset', async c => {
     const row = await manageable(c), db = c.env.db, token = newToken(), nowSec = (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))();
-    const [m] = await db.select({ email: employees.email }).from(employees).where(eq(employees.id, row.memberId)).limit(1);
+    const [m] = await db.select({ email: employees.email, phone: employees.phone }).from(employees).where(eq(employees.id, row.memberId)).limit(1);
     await db.transaction(async tx => {
       await tx.update(credentials).set({ activationHash: sha256Hex(token), activationExpires: nowSec + ACTIVATION_TTL_SECONDS, passwordHash: null, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, row.memberId));
       await tx.delete(sessions).where(eq(sessions.memberId, row.memberId));
     });
-    return json({ url: customerLink(c.url.origin, m!.email, token) });
+    return json({ url: customerLink(c.url.origin, loginIdOf(m!.email, m!.phone), token) });
   }, 'business');
 }

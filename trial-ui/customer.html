@@ -25,7 +25,15 @@
   <div class="portal-brand"><span class="logo">BN</span><div><b>BÁCH NGÂN</b><small>Trang khách hàng</small></div></div>
   <div class="portal-who"><b id="p-customer">Đang tải…</b><small id="p-user"></small></div>
   <div class="bell-wrap" id="p-bell"></div>
-  <button type="button" class="btn ghost small" id="p-logout">Đăng xuất</button>
+  <!-- Mục Tài khoản: thông tin đăng nhập, chiết khấu riêng (không để lộ ngoài trang), đăng xuất -->
+  <div class="account-wrap">
+    <button type="button" class="btn ghost small" id="p-account-btn" aria-haspopup="true" aria-expanded="false">👤 Tài khoản</button>
+    <div class="account-pop" id="p-account-pop" hidden>
+      <div class="account-pop-who"><b id="p-acc-name"></b><small id="p-acc-login"></small><small id="p-acc-company"></small></div>
+      <div class="account-pop-ck" id="p-acc-ck" hidden><small class="muted">Chiết khấu riêng của quý khách</small><b id="p-acc-ck-text"></b></div>
+      <button type="button" class="btn secondary small" id="p-logout">Đăng xuất</button>
+    </div>
+  </div>
 </header>
 <!-- Đăng nhập / đặt mật khẩu riêng của khách hàng (không qua trang nhân viên) -->
 <section id="c-auth" class="auth" hidden>
@@ -57,10 +65,11 @@
 <main class="portal-main" id="portal" hidden>
   <section class="card portal-owner" id="p-owner"></section>
   <nav class="chips portal-tabs" role="tablist">
-    <button type="button" class="chip" role="tab" data-tab="new" aria-selected="true">Tạo báo giá / Check tồn</button>
-    <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="false">Danh sách báo giá / Check tồn</button>
-    <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false">Đơn đặt hàng / HĐKT</button>
-    <button type="button" class="chip" role="tab" data-tab="debt" aria-selected="false">Công nợ</button>
+    <button type="button" class="chip" role="tab" data-tab="new" aria-selected="true"><span aria-hidden="true">✏️</span>Tạo báo giá / Check tồn</button>
+    <button type="button" class="chip" role="tab" data-tab="quotes" aria-selected="false"><span aria-hidden="true">📄</span>Danh sách báo giá / Check tồn</button>
+    <button type="button" class="chip" role="tab" data-tab="orders" aria-selected="false"><span aria-hidden="true">🛒</span>Đơn đặt hàng / HĐKT</button>
+    <button type="button" class="chip" role="tab" data-tab="debt" aria-selected="false"><span aria-hidden="true">💳</span>Công nợ</button>
+    <button type="button" class="chip" role="tab" data-tab="sales" aria-selected="false"><span aria-hidden="true">📈</span>Doanh số</button>
   </nav>
 
   <!-- Báo giá -->
@@ -129,6 +138,17 @@
   </section>
 
   <!-- Công nợ -->
+  <!-- Doanh số mua hàng của khách (đơn đã xác nhận / HĐKT): theo năm, theo tháng, sản phẩm mua nhiều -->
+  <section data-panel="sales" hidden>
+    <div class="card-title-row sales-head"><h2 class="card-title">Doanh số mua hàng</h2><label class="sales-year">Năm<select id="p-sales-year" aria-label="Năm"></select></label></div>
+    <div class="stats" id="p-sales-stats"></div>
+    <div class="card"><h2 class="card-title">Theo tháng</h2><div class="sales-bars" id="p-sales-months"></div></div>
+    <div class="card"><h2 class="card-title">Sản phẩm mua nhiều</h2>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Số lượng</th><th class="right">Giá trị (chưa VAT)</th></tr></thead><tbody id="p-sales-products"></tbody></table></div>
+      <p class="muted" id="p-sales-empty" hidden>Chưa có đơn hàng nào trong năm này.</p>
+      <p class="muted small">Tính các đơn đã được xác nhận / đang giao / đã giao; không tính đơn chờ xác nhận và đơn đã huỷ.</p></div>
+  </section>
+
   <section data-panel="debt" hidden>
     <div class="stats" id="p-debt-stats"></div>
     <div class="card">

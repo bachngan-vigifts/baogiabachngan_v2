@@ -2229,7 +2229,7 @@ let accCustomer = null;
 async function openAccounts(c) {
   if (!c) return;
   accCustomer = c; $('#accounts-title').textContent = c.name; $('#account-form').reset(); $('#account-error').textContent = ''; $('#account-link').hidden = true;
-  $('#account-form').email.value = c.email || ''; $('#account-form').name.value = c.contact || '';
+  $('#account-form').email.value = c.email || ''; $('#account-form').name.value = c.contact || ''; $('#account-form').phone.value = c.phone || '';
   $$('.manager-only', $('#accounts-dialog')).forEach(el => el.hidden = !isManager());
   $('#accounts-dialog').showModal(); await drawAccounts();
 }
@@ -2239,7 +2239,7 @@ async function drawAccounts() {
     const { accounts } = await api('/customers/' + encodeURIComponent(accCustomer.id) + '/accounts');
     list.innerHTML = accounts.length ? accounts.map(a => `<li data-member="${esc(a.memberId)}">
       <div><b>${esc(a.name)}</b> <span class="pill ${a.active ? (a.activated ? 'ok' : 'warn') : 'muted'}">${a.active ? (a.activated ? 'Đang dùng' : 'Chưa đặt mật khẩu') : 'Đã khoá'}</span>
-        <small>${esc(a.email)}${a.phone ? ' · ĐT ' + esc(a.phone) : ''} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
+        <small>${[a.email ? esc(a.email) : '', a.phone ? 'ĐT ' + esc(a.phone) : ''].filter(Boolean).join(' · ')}${!a.email ? ' (đăng nhập bằng số di động)' : ''} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
         <small>CK riêng: ${Object.keys(DISCOUNT_LABELS).map(k => `${DISCOUNT_LABELS[k]} ${fmtNum(a.discounts[k] || 0)}%`).join(' · ')}</small></div>
       ${a.canManage ? `<div class="row-actions">${isManager() ? '<button type="button" class="btn ghost small" data-acc-discount>Đặt CK</button>' : ''}
         <button type="button" class="btn ghost small" data-acc-phone>${a.phone ? 'Đổi SĐT' : 'Thêm SĐT'}</button>
@@ -2258,6 +2258,7 @@ $('#account-form').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target, err = $('#account-error'); err.textContent = '';
   const body = { customerId: accCustomer.id, name: f.name.value.trim(), email: f.email.value.trim(), phone: f.phone.value.trim() };
+  if (!body.email && !body.phone) { err.textContent = 'Nhập số di động (hoặc email) để khách đăng nhập.'; f.phone.focus(); return; }
   if (isManager()) body.discounts = readDiscounts(f);
   try { const r = await api('/customer-accounts', 'POST', body); showAccountLink(r.url); f.reset(); await drawAccounts(); }
   catch (ex) { err.textContent = ex.message; }
