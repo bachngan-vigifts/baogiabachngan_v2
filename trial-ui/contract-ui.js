@@ -110,12 +110,18 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
         const p = doc.getElementById('bnword_' + info.index)?.closest('p'); if (!p) continue;
         p.contentEditable = 'plaintext-only'; p.dataset.wordIndex = String(info.index);
         if (edits[current].some(e => e.index === info.index)) p.classList.add('edited');
-        p.addEventListener('input', () => {
+        const record = () => {
           edits[current] = [...edits[current].filter(e => e.index !== info.index), { index: info.index, hash: info.hash, text: p.innerText }].sort((a, b) => a.index - b.index);
           p.classList.add('edited'); markDirty();
-        });
+        };
+        p.addEventListener('input', record);
+        // Xoá hết chữ của một dòng (không nằm trong ô bảng) = xoá hẳn dòng đó: ẩn ngay, file Word bỏ đoạn này (ContractWordEdit).
+        const dropIfEmpty = () => { if (p.innerText.trim() || p.closest('td')) return false; p.textContent = ''; record(); p.style.display = 'none'; return true; };
+        p.addEventListener('keydown', e => { if ((e.key === 'Backspace' || e.key === 'Delete') && !p.innerText.trim() && dropIfEmpty()) e.preventDefault(); });
+        p.addEventListener('blur', () => { if (p.classList.contains('edited')) dropIfEmpty(); });
+        if (!p.innerText.trim() && p.classList.contains('edited') && !p.closest('td')) p.style.display = 'none';
       }
-      status('Bấm vào đoạn văn hoặc ô bảng để sửa trực tiếp. Sửa chữ không tự tính lại giá / thuế. Ngắt trang có thể khác Microsoft Word.' + (edits[current].length ? ` · Hồ sơ này có ${edits[current].length} đoạn đã sửa.` : ''));
+      status('Bấm vào đoạn văn hoặc ô bảng để sửa trực tiếp; xoá hết chữ một dòng rồi bấm Backspace để bỏ hẳn dòng đó. Sửa chữ không tự tính lại giá / thuế. Ngắt trang có thể khác Microsoft Word.' + (edits[current].length ? ` · Hồ sơ này có ${edits[current].length} đoạn đã sửa.` : ''));
     } catch (e) { if (seq === renderSeq) status(e.message); }
   }
   dlg.querySelectorAll('[data-doc]').forEach(b => b.addEventListener('click', () => {

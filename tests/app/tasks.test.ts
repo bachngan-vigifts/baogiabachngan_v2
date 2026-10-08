@@ -48,6 +48,7 @@ test('bảng công việc: việc tự sinh từ báo giá / đơn / HĐKT tự 
   const done = (await call('/tasks?view=all&status=done&refresh=1', mgr)).data.tasks.find((t: any) => t.id === approveTask.id);
   assert.equal(done.status, 'done');
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   let mine = (await call('/tasks?refresh=1', emp)).data.tasks;
   const plan = mine.find((t: any) => t.source === 'delivery');
   assert.ok(plan && plan.link === `#/orders/${o.data.id}`, JSON.stringify(mine));
@@ -101,6 +102,7 @@ test('đơn đến hạn giao → việc cho NV phụ trách; bấm "Yêu cầu 
   const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_2', customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8, deliveryDate: today, rows: [{ name: 'Ly sứ', sku: 'L', unit: 'cái', qty: 10, price: 100000, taxRate: 8 }] });
   await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   let mine = (await call('/tasks?refresh=1', emp)).data.tasks;
   const due = mine.find((t: any) => t.title.startsWith('Đến hạn giao'));
   assert.ok(due, JSON.stringify(mine.map((t: any) => t.title))); assert.equal(due.priority, 'high');
@@ -144,6 +146,7 @@ test('việc tự sinh của nhân viên đã khoá / đã xoá chuyển về "c
   const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_9', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', sku: 'L', unit: 'cái', qty: 1, price: 100000 }] });
   await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   const plan = () => call('/tasks?view=all&refresh=1', mgr).then(r => r.data.tasks.find((t: any) => t.source === 'delivery' && t.link === `#/orders/${o.data.id}`));
   assert.equal((await plan()).assigneeId, 'emp');
   // Khoá tài khoản người phụ trách đơn → việc đang mở về "chưa giao".

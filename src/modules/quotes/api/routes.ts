@@ -17,6 +17,14 @@ const predicate = (scope: SqlScope) => {
 };
 
 const isManager = (m: { role: string }) => m.role === 'manager';
+type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
+type QuoteRow = typeof quotations.$inferSelect;
+/**
+ * Điểm móc khi lưu báo giá (chạy trong cùng giao dịch) – module bán hàng đăng ký (đảo phụ thuộc: quotes không import sales):
+ *  - `beforeSave`: chặn sửa (vd đơn hàng của báo giá đã được Manager duyệt);
+ *  - `afterSave`: đồng bộ chứng từ sinh từ báo giá (đơn / HĐKT còn nháp nhận số lượng, giá mới).
+ */
+export const quoteSaveHooks: { beforeSave: ((tx: Tx, old: QuoteRow) => Promise<void>)[]; afterSave: ((tx: Tx, saved: QuoteRow) => Promise<void>)[] } = { beforeSave: [], afterSave: [] };
 /** Nội dung để so "có sửa không": chuẩn hoá lại và bỏ `id` dòng (mỗi lần lưu dòng được cấp id mới, như bản cũ). */
 const contentKey = (data: unknown) => {
   try {
@@ -122,6 +130,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), predicate(quotationEditScope(viewer)));
       const [old] = await tx.select().from(quotations).where(condition).limit(1);
       if (!old) throw new AppError(409, 'Báo giá đã thay đổi hoặc anh không có quyền sửa. Vui lòng tải lại.');
+      for (const h of quoteSaveHooks.beforeSave) await h(tx, old);
       const next = old.revision + 1, encoded = JSON.stringify(data);
       // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, phải gửi duyệt lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
       const revoke = !isManager(viewer) && old.approvalStatus === 'approved' && contentKey(data) !== contentKey(old.data);
@@ -131,6 +140,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       await tx.insert(quoteRevisions).values({ id: crypto.randomUUID(), quoteId: old.id, revision: old.revision, data: old.data, changedBy: viewer.id, createdAt: now });
       await tx.delete(quoteLines).where(eq(quoteLines.quoteId, old.id));
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(old.id, data));
+      const [fresh] = await tx.select().from(quotations).where(eq(quotations.id, old.id)).limit(1);
+      for (const h of quoteSaveHooks.afterSave) await h(tx, fresh!);
       return { revision: next, approvalStatus: revoke ? 'pending' : old.approvalStatus, revoked: revoke };
     });
     return json({ id: c.params.id, revision: saved.revision, data, approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });

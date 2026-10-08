@@ -30,6 +30,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_P1', customer: 'Khách P', vat: 8, rows: [{ name: 'Dĩa 31 cm', sku: 'DIA31', unit: 'cái', qty: 100, price: 100000 }, { name: 'Hộp quà', unit: 'hộp', qty: 10, price: 5000 }] });
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
+  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   let p = (await call(`/orders/${orderId}/packing`, emp)).data;
   const [dia, hop] = p.lines;
   assert.deepEqual([dia.left, dia.perCarton, hop.left], [100, 24, 10]);
