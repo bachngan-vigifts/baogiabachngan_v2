@@ -35,14 +35,14 @@ const vnd = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n)) 
 
 export const RULES: Record<string, Rule> = {
   /**
-   * Hẹn chăm sóc khách (nhật ký chăm sóc) đến hạn trong 1 ngày tới → việc cho người ghi. Khoá gồm ngày hẹn: dời hẹn = việc mới;
+   * Hẹn chăm sóc khách (nhật ký chăm sóc) tới mốc "nhắc tôi trước" (1 ngày / 1 tuần / 1 tháng trước ngày hẹn) → việc cho nhân viên phụ trách. Khoá gồm ngày hẹn: dời hẹn = việc mới;
    * bấm "Đã chăm sóc" ở trang Chăm sóc KH → việc tự hoàn thành.
    */
   async careFollowUps(db, today) {
-    const rows = await dueFollowUps(db, addDaysIso(today, 1));
+    const rows = await dueFollowUps(db, today);
     return rows.map(r => ({ autoKey: `care:${r.id}:${r.nextAt}`, source: 'care' as const, sourceId: r.id,
-      title: `Chăm sóc lại ${r.customerName}${r.nextAction ? ': ' + r.nextAction : ''}`.slice(0, 200),
-      description: `Hẹn từ lần ${CARE_TYPE_LABEL[r.type].toLowerCase()}${r.subject ? ` "${r.subject}"` : ''}.`,
+      title: `Chăm sóc lại ${r.customerName}${r.contactName ? ' – ' + r.contactName : ''}`.slice(0, 200),
+      description: `Lần trước (${CARE_TYPE_LABEL[r.type].toLowerCase()}): ${(r.nextAction || r.content || r.subject).slice(0, 300)}`,
       link: `#/care/${r.id}`, assigneeId: r.ownerId, priority: r.nextAt! < today ? 'high' as const : 'normal' as const, dueDate: r.nextAt }));
   },
   /** Báo giá chờ duyệt: khách gửi → nhân viên phụ trách duyệt; nhân viên lập → Manager duyệt (chưa giao người). */
@@ -197,7 +197,8 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
     .from(tasks).where(isNotNull(tasks.autoKey));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
   const fresh = [...wanted.values()].filter(t => !byKey.has(t.autoKey));
-  if (fresh.length) await db.insert(tasks).values(fresh.map(t => ({ id: crypto.randomUUID(), title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
+  const created = fresh.map(t => ({ ...t, id: crypto.randomUUID() }));
+  if (created.length) await db.insert(tasks).values(created.map(t => ({ id: t.id, title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
     sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing();
   let closed = 0, updated = 0;
   for (const t of existing) {
@@ -210,5 +211,6 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
       await db.update(tasks).set({ assigneeId, assigneePosition, dueDate: w.dueDate, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
     }
   }
-  return { created: fresh.length, closed, updated };
+  // `fresh`: việc vừa tự sinh (để đẩy thông báo cho người / nhóm nhận).
+  return { created: fresh.length, closed, updated, fresh: created };
 }

@@ -14,7 +14,7 @@ import { HUB_LIMITS, purchaseHistory } from '../domain/overview.ts';
 import { parseDiscounts, shownEmail } from '../../portal/domain/portal.ts';
 import { customerActivities } from '../../care/schema.ts';
 import { careScope } from '../../care/api/routes.ts';
-import { CARE_RESULT_LABEL, CARE_TYPE_LABEL } from '../../care/domain/care.ts';
+import { CARE_REMIND_LABEL, CARE_RESULT_LABEL, CARE_TYPE_LABEL } from '../../care/domain/care.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
@@ -88,7 +88,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       payments: pays.map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '' })),
       purchases: purchaseHistory(lines.filter(l => confirmedIds.has(l.orderId)).map(l => ({ ...l, orderDate: orders.find(r => r.o.id === l.orderId)!.o.orderDate }))),
       stockRequests: stockRows.map(r => { let items: unknown[] = []; try { items = JSON.parse(r.items); } catch { /* bỏ qua */ } return { ...r, items: Array.isArray(items) ? items.length : 0 }; }),
-      care: careRows.map(({ a, ownerName }) => ({ ...a, ownerName, typeLabel: CARE_TYPE_LABEL[a.type], resultLabel: CARE_RESULT_LABEL[a.result], canEdit: me.role === 'manager' || a.ownerId === me.id })),
+      care: careRows.map(({ a, ownerName }) => ({ ...a, ownerName, typeLabel: CARE_TYPE_LABEL[a.type], resultLabel: CARE_RESULT_LABEL[a.result], remindLabel: CARE_REMIND_LABEL[a.remindBefore], canEdit: me.role === 'manager' || a.ownerId === me.id })),
       accounts: accountRows.map(a => ({ memberId: a.memberId, name: a.name, email: shownEmail(a.email), phone: a.phone ?? '', active: a.active, discounts: parseDiscounts(a.discounts) })),
     });
   }, 'business');

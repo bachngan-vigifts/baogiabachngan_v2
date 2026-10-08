@@ -5,7 +5,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
 import { reconcileAutoTasks } from './auto-tasks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
@@ -26,7 +26,17 @@ let lastReconcile = 0;
 async function syncAuto(c: Ctx) {
   if (c.url.searchParams.get('refresh') !== '1' && Date.now() - lastReconcile < 15_000) return;
   lastReconcile = Date.now();
-  try { await reconcileAutoTasks(c.env.db); } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
+  let fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'] = [];
+  try { fresh = (await reconcileAutoTasks(c.env.db)).fresh; } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
+  if (!fresh.length) return;
+  // Việc tự sinh mới → thông báo người nhận; việc của nhóm → cả nhóm; chưa giao ai → Manager. Tối đa 30 việc mỗi lượt (tránh dồn dập).
+  const job = Promise.all(fresh.slice(0, 30).map(t => {
+    const n = { eventType: 'task_assigned', title: 'Việc mới', body: t.title, url: `/index.html#/tasks/${t.id}`, data: { taskId: t.id } };
+    return t.assigneeId ? notify(c.env, { ...n, targetMemberId: t.assigneeId })
+      : t.assigneePosition ? notifyTeam(c, t.assigneePosition, { ...n, title: `Việc mới cho nhóm ${teamName(t.assigneePosition)}` })
+      : notifyMany(c.env, 'managers', n);
+  })).catch(e => console.error('notify auto tasks failed', e instanceof Error ? e.message : e));
+  if (c.env.waitUntil) c.env.waitUntil(job); else await job;
 }
 
 /** Nhóm của tôi (theo chức vụ): Kho, Kế toán, Sale Admin… – null nếu chức vụ không phải nhóm nhận việc. */
@@ -187,8 +197,13 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     if (reassigned && reassigned !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc', body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`,
       targetMemberId: reassigned, actorId: m.id, data: { taskId: t.id } });
     if (toTeam) await notifyTeam(c, toTeam, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(toTeam)}`, body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });
-    if (b.status === 'done' && t.status !== 'done' && t.createdBy && t.createdBy !== m.id) await notify(c.env, { eventType: 'task_done', title: 'Việc đã hoàn thành', body: `${m.name}: ${t.title}`,
-      url: `/index.html#/tasks/${t.id}`, targetMemberId: t.createdBy, actorId: m.id, data: { taskId: t.id } });
+    // Người giao việc (việc tự sinh: Manager) được báo khi có người NHẬN việc / BẮT ĐẦU làm / HOÀN THÀNH.
+    const boss = t.createdBy ? [t.createdBy] : 'managers' as const;
+    const claimed = set.assigneeId === m.id && t.assigneeId !== m.id, started = b.status === 'in_progress' && t.status === 'todo';
+    if (b.status === 'done' && t.status !== 'done') await notifyMany(c.env, boss, { eventType: 'task_done', title: 'Việc đã hoàn thành', body: `${m.name}: ${t.title}`,
+      url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });
+    else if (claimed || started) await notifyMany(c.env, boss, { eventType: 'task_claimed', title: claimed ? 'Đã có người nhận việc' : 'Bắt đầu làm việc', body: `${m.name}: ${t.title}`,
+      url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });
     return json({ ok: true });
   }, 'business');
 

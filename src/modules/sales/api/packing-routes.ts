@@ -7,7 +7,10 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { products } from '../../catalog/schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders } from '../schema.ts';
+import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, shippingCarriers } from '../schema.ts';
+import { quotations } from '../../quotes/schema.ts';
+import { printingWorkshops as DEFAULT_WORKSHOPS } from '../../quotes/domain/quote-math.ts';
+import { printingWorkshops } from '../../printing/schema.ts';
 import { PACKING_SOURCES, PACKING_STATUSES } from '../domain/statuses.ts';
 import { PACKING_SOURCE_LABEL, packingSuggestion, type PackingSource } from '../domain/packing.ts';
 import { nextDocNo, vietnamDate } from '../domain/sales.ts';
@@ -66,7 +69,54 @@ async function notifyWarehouse(c: Ctx, title: string, body: string, url: string)
   for (const t of team) await notify(c.env, { eventType: 'packing', title, body, url, targetMemberId: t.id, actorId: viewer(c).id });
 }
 
+/** Khoá so trùng tên (không dấu, chữ thường, gộp khoảng trắng) – như xưởng in. */
+const nameKey = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim().replace(/\s+/g, ' ');
+/** Đơn có phí in logo (dòng báo giá có printFee > 0) → mặc định giao về xưởng in. */
+async function hasPrintFee(db: StaffEnv['db'], quoteId: string | null) {
+  if (!quoteId) return false;
+  const [q] = await db.select({ data: quotations.data }).from(quotations).where(eq(quotations.id, quoteId)).limit(1);
+  try { return (JSON.parse(q?.data ?? '{}').rows ?? []).some((r: { printFee?: unknown }) => Number(r?.printFee) > 0); } catch { return false; }
+}
+async function workshopList(db: StaffEnv['db']) {
+  const rows = await db.select({ name: printingWorkshops.name, address: printingWorkshops.address, phone: printingWorkshops.phone }).from(printingWorkshops).orderBy(asc(printingWorkshops.name));
+  const keys = new Set(rows.map(r => nameKey(r.name)));
+  return [...DEFAULT_WORKSHOPS.filter(n => !keys.has(nameKey(n))).map(name => ({ name, address: '', phone: '' })), ...rows];
+}
+/**
+ * Thông tin giao hàng của phiếu: giao thẳng cho khách (địa chỉ giao của đơn) hoặc về xưởng in; gửi xe nào (tuỳ chọn).
+ * Tên xưởng / nhà xe mới gõ trong ô → tự thêm vào danh sách (cập nhật địa chỉ / SĐT nếu đã có mà còn trống).
+ */
+async function readDelivery(c: Ctx, raw: unknown, order: typeof salesOrders.$inferSelect) {
+  const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>, me = viewer(c), now = nowIso();
+  const shipTo = d.to === 'workshop' ? 'workshop' as const : 'customer' as const;
+  const carrierName = text(d.carrierName, 120), carrierPhone = text(d.carrierPhone, 40);
+  let shipName = text(d.name, 180), shipAddress = text(d.address, 1000), shipPhone = text(d.phone, 40);
+  if (shipTo === 'workshop') {
+    if (!shipName) throw new AppError(400, 'Chọn hoặc nhập xưởng in nhận hàng.');
+    const key = nameKey(shipName), [old] = await c.env.db.select().from(printingWorkshops).where(eq(printingWorkshops.nameKey, key)).limit(1);
+    if (!old) await c.env.db.insert(printingWorkshops).values({ id: crypto.randomUUID(), name: shipName, nameKey: key, address: shipAddress, phone: shipPhone, createdAt: now, createdBy: me.id }).onConflictDoNothing();
+    else if ((!old.address && shipAddress) || (!old.phone && shipPhone)) await c.env.db.update(printingWorkshops).set({ address: old.address || shipAddress, phone: old.phone || shipPhone }).where(eq(printingWorkshops.id, old.id));
+  } else {
+    shipName = shipName || order.customerName; shipAddress = shipAddress || order.address; shipPhone = shipPhone || [order.contact, order.phone].filter(Boolean).join(' · ');
+  }
+  if (carrierName) {
+    const key = nameKey(carrierName), [old] = await c.env.db.select().from(shippingCarriers).where(eq(shippingCarriers.nameKey, key)).limit(1);
+    if (!old) await c.env.db.insert(shippingCarriers).values({ id: crypto.randomUUID(), name: carrierName, nameKey: key, phone: carrierPhone, createdBy: me.id, createdAt: now }).onConflictDoNothing();
+    else if (carrierPhone && carrierPhone !== old.phone) await c.env.db.update(shippingCarriers).set({ phone: carrierPhone }).where(eq(shippingCarriers.id, old.id));
+  }
+  return { shipTo, shipName, shipAddress, shipPhone, carrierName, carrierPhone };
+}
+
+/** Đơn đã lên lịch giao (có chuyến chưa huỷ) mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng được. */
+export async function hasDeliverySchedule(db: StaffEnv['db'], orderId: string) {
+  return (await db.select({ id: deliveries.id }).from(deliveries).where(and(eq(deliveries.orderId, orderId), ne(deliveries.status, 'cancelled'))).limit(1)).length > 0;
+}
+export const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
+
 export function registerPackingRoutes(router: Router<StaffEnv>) {
+  /** Danh sách nhà xe (chọn nhanh khi lập phiếu giao). */
+  router.get('/shipping-carriers', async c => json({ carriers: await c.env.db.select({ name: shippingCarriers.name, phone: shippingCarriers.phone }).from(shippingCarriers).orderBy(asc(shippingCarriers.name)) }), 'business');
+
   /** Phiếu đóng gói của đơn + số lượng còn lại chưa đưa vào phiếu của từng dòng (cho hộp "Yêu cầu đóng gói"). */
   router.get('/orders/:id/packing', async c => {
     const db = c.env.db, order = await loadOrder(c, c.params.id!);
@@ -89,7 +139,11 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       lines: lines.map(l => { const packed = allocated.get(l.id) ?? 0, c = cartons.find(x => x.sku === l.sku), s = packingSuggestion(l.qty, l.unit, c);
         return { id: l.id, sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty, packed, left: Math.max(0, Math.round((l.qty - packed) * 1000) / 1000),
           perCarton: c?.perCarton ?? null, cartonWeight: c?.cartonWeight ?? null, suggestion: s.text, cartonSize: s.cartonSize, weight: s.weight }; }),
+      scheduled: await hasDeliverySchedule(db, order.id),
       canRequest: order.status !== 'cancelled' && order.status !== 'draft',
+      // Hộp "Yêu cầu đóng gói - Giao hàng": có phí in → mặc định giao về xưởng in; không thì giao thẳng cho khách.
+      delivery: { hasPrintFee: await hasPrintFee(db, order.quoteId), customer: { name: order.customerName, address: order.address, phone: [order.contact, order.phone].filter(Boolean).join(' · ') },
+        workshops: await workshopList(db), carriers: await db.select({ name: shippingCarriers.name, phone: shippingCarriers.phone }).from(shippingCarriers).orderBy(asc(shippingCarriers.name)) },
     });
   }, 'business');
 
@@ -100,6 +154,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   router.post('/orders/:id/packing', async c => {
     const body = await readJson(c.req, 64_000), me = viewer(c), order = await loadOrder(c, c.params.id!);
     if (order.status === 'cancelled' || order.status === 'draft') throw new AppError(409, 'Đơn chưa xác nhận hoặc đã huỷ, chưa yêu cầu đóng gói được.');
+    if (!await hasDeliverySchedule(c.env.db, order.id)) throw new AppError(409, NO_SCHEDULE, 'NO_DELIVERY_SCHEDULE');
     if (!Array.isArray(body.allocations) || !body.allocations.length || body.allocations.length > 500) throw new AppError(400, 'Chưa có dòng hàng nào để đóng gói.');
     const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
     const allocated = await allocatedByLine(c.env.db, order.id);
@@ -118,6 +173,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       const line = lines.find(l => l.id === id)!, left = line.qty - (allocated.get(id) ?? 0);
       if (qty > left + EPS) throw new AppError(400, `"${line.name}" chỉ còn ${left} ${line.unit} chưa đóng gói.`);
     }
+    const ship = await readDelivery(c, body.delivery, order);
     const skus = [...new Set(items.map(i => i.line.sku).filter(Boolean))];
     const cartons = skus.length ? await c.env.db.select({ sku: products.sku, perCarton: products.perCarton, cartonWeight: products.cartonWeight, cartonLength: products.cartonLength,
       cartonWidth: products.cartonWidth, cartonHeight: products.cartonHeight }).from(products).where(inArray(products.sku, skus)) : [];
@@ -132,7 +188,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
           return { id: crypto.randomUUID(), slipId: id, orderLineId: i.line.id, sku: i.line.sku, name: i.line.name, unit: i.line.unit, qty: i.qty,
             perCarton: s.perCarton, cartonWeight: s.cartonWeight, cartonSize: s.cartonSize, weight: s.weight }; });
         const weights = rows.map(r => r.weight);
-        await tx.insert(packingSlips).values({ id, slipNo, orderId: order.id, source: group[0]!.source, sourceNote: group[0]!.sourceNote, status: 'draft', note,
+        await tx.insert(packingSlips).values({ id, slipNo, orderId: order.id, source: group[0]!.source, sourceNote: group[0]!.sourceNote, status: 'draft', note, ...ship,
           totalQty: rows.reduce((s, r) => s + r.qty, 0), totalWeight: weights.every(w => w !== null) ? Math.round(weights.reduce((s, w) => s + w!, 0) * 10) / 10 : null,
           createdBy: me.id, createdAt: now, updatedAt: now });
         await tx.insert(packingSlipLines).values(rows);

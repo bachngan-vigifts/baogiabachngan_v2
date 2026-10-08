@@ -7,7 +7,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { customers } from '../../customers/schema.ts';
 import { customerActivities } from '../schema.ts';
-import { CARE_RESULT_LABEL, CARE_RESULTS, CARE_TYPE_LABEL, CARE_TYPES, cleanCare, followUpState } from '../domain/care.ts';
+import { CARE_REMIND, CARE_REMIND_LABEL, CARE_RESULT_LABEL, CARE_RESULTS, CARE_TYPE_LABEL, CARE_TYPES, cleanCare, followUpState, remindFrom } from '../domain/care.ts';
 
 /*
  * API CHĂM SÓC KHÁCH HÀNG (/care):
@@ -41,7 +41,7 @@ const columns = {
 type Row = { a: typeof customerActivities.$inferSelect; customerName: string; customerPhone: string; ownerName: string };
 const present = (r: Row, me: Viewer, today: string) => ({
   ...r.a, customerName: r.customerName, customerPhone: r.customerPhone, ownerName: r.ownerName,
-  typeLabel: CARE_TYPE_LABEL[r.a.type], resultLabel: CARE_RESULT_LABEL[r.a.result],
+  typeLabel: CARE_TYPE_LABEL[r.a.type], resultLabel: CARE_RESULT_LABEL[r.a.result], remindLabel: CARE_REMIND_LABEL[r.a.remindBefore],
   followUp: followUpState(r.a.nextAt, r.a.nextDoneAt, today), canEdit: isManager(me) || r.a.ownerId === me.id,
 });
 const baseQuery = (c: Ctx) => c.env.db.select(columns).from(customerActivities)
@@ -54,6 +54,15 @@ async function loadOne(c: Ctx, id: string) {
   if (!row) throw new AppError(404, 'Không tìm thấy lần chăm sóc này.');
   return row;
 }
+/** Nhân viên phụ trách giao dịch: nhân viên = chính mình; Manager chọn được nhân viên khác (đang làm việc). */
+async function ownerFor(c: Ctx, raw: unknown, fallback: string) {
+  const me = viewer(c), want = typeof raw === 'string' && raw ? raw : fallback;
+  if (want === fallback) return fallback;
+  if (!isManager(me)) throw new AppError(403, 'Chỉ Manager được chọn nhân viên phụ trách khác.');
+  const [e] = await c.env.db.select({ id: employees.id, role: employees.role, active: employees.active }).from(employees).where(eq(employees.id, want)).limit(1);
+  if (!e || !e.active || e.role === 'customer' || e.role === 'supplier') throw new AppError(400, 'Nhân viên phụ trách không hợp lệ.');
+  return e.id;
+}
 async function ensureCustomer(c: Ctx, id: string) {
   const [k] = await c.env.db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
   if (!k) throw new AppError(400, 'Không tìm thấy khách hàng.');
@@ -62,6 +71,7 @@ async function ensureCustomer(c: Ctx, id: string) {
 export function registerCareRoutes(router: Router<StaffEnv>) {
   router.get('/care/config', () => json({
     types: CARE_TYPES.map(k => ({ key: k, label: CARE_TYPE_LABEL[k] })), results: CARE_RESULTS.map(k => ({ key: k, label: CARE_RESULT_LABEL[k] })),
+    reminds: (['1m', '1w', '1d'] as const).map(k => ({ key: k, label: CARE_REMIND_LABEL[k] })),
   }), 'business');
 
   router.get('/care', async c => {
@@ -95,10 +105,10 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
   router.get('/care/:id', async c => json({ activity: present(await loadOne(c, c.params.id!), viewer(c), vnToday()) }), 'business');
 
   router.post('/care', async c => {
-    const me = viewer(c), today = vnToday(), v = cleanCare(await readJson(c.req, 20_000), today);
+    const me = viewer(c), today = vnToday(), body = await readJson(c.req, 20_000), v = cleanCare(body, today);
     await ensureCustomer(c, v.customerId);
-    const id = crypto.randomUUID(), now = new Date().toISOString();
-    await c.env.db.insert(customerActivities).values({ id, ...v, ownerId: me.id, nextDoneAt: null, createdAt: now, updatedAt: now });
+    const id = crypto.randomUUID(), now = new Date().toISOString(), ownerId = await ownerFor(c, body.ownerId, me.id);
+    await c.env.db.insert(customerActivities).values({ id, ...v, ownerId, nextDoneAt: null, createdAt: now, updatedAt: now });
     return json({ activity: present(await loadOne(c, id), me, today) }, 201);
   }, 'business');
 
@@ -110,8 +120,8 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
     const v = cleanCare(body, keepOld && old.nextAt! < today ? old.nextAt! : today);
     if (v.customerId !== old.customerId) await ensureCustomer(c, v.customerId);
     const now = new Date().toISOString();
-    const nextDoneAt = v.nextAt && v.nextAt === old.nextAt ? old.nextDoneAt : null;
-    await c.env.db.update(customerActivities).set({ ...v, nextDoneAt, revision: old.revision + 1, updatedAt: now })
+    const nextDoneAt = v.nextAt && v.nextAt === old.nextAt ? old.nextDoneAt : null, ownerId = await ownerFor(c, body.ownerId, old.ownerId);
+    await c.env.db.update(customerActivities).set({ ...v, ownerId, nextDoneAt, revision: old.revision + 1, updatedAt: now })
       .where(and(eq(customerActivities.id, old.id), eq(customerActivities.revision, old.revision)));
     return json({ activity: present(await loadOne(c, old.id), me, today) });
   }, 'business');
@@ -138,10 +148,13 @@ export async function completeFollowUp(db: StaffEnv['db'], activityId: string, n
     .where(and(eq(customerActivities.id, activityId), eq(customerActivities.nextAt, nextAt), isNull(customerActivities.nextDoneAt)));
 }
 
-/** Lịch hẹn chưa xong có ngày hẹn đến hết `lastDay` (cho việc tự sinh). */
-export async function dueFollowUps(db: StaffEnv['db'], lastDay: string) {
-  return db.select({ id: customerActivities.id, customerId: customerActivities.customerId, ownerId: customerActivities.ownerId, nextAt: customerActivities.nextAt,
-    nextAction: customerActivities.nextAction, subject: customerActivities.subject, type: customerActivities.type, customerName: customers.name })
+/** Lịch hẹn chưa xong đã tới mốc nhắc (ngày chăm sóc lần sau − "nhắc tôi trước") tính đến `today` – cho việc tự sinh. */
+export async function dueFollowUps(db: StaffEnv['db'], today: string) {
+  const horizon = new Date(Date.parse(today + 'T00:00:00Z') + 31 * 86_400_000).toISOString().slice(0, 10);
+  const rows = await db.select({ id: customerActivities.id, customerId: customerActivities.customerId, ownerId: customerActivities.ownerId, nextAt: customerActivities.nextAt,
+    nextAction: customerActivities.nextAction, subject: customerActivities.subject, content: customerActivities.content, type: customerActivities.type,
+    remindBefore: customerActivities.remindBefore, contactName: customerActivities.contactName, customerName: customers.name })
     .from(customerActivities).innerJoin(customers, eq(customers.id, customerActivities.customerId))
-    .where(and(isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt), lte(customerActivities.nextAt, lastDay))).limit(1000);
+    .where(and(isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt), lte(customerActivities.nextAt, horizon))).limit(2000);
+  return rows.filter(r => remindFrom(r.nextAt!, r.remindBefore) <= today);
 }

@@ -1,9 +1,9 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, bigint, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, doublePrecision, index, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
-import { CARE_RESULTS, CARE_TYPES } from './domain/care.ts';
+import { CARE_REMIND, CARE_RESULTS, CARE_TYPES } from './domain/care.ts';
 
 /**
  * Nhật ký chăm sóc khách hàng (giao dịch CRM): mỗi dòng = một lần trao đổi với khách + lịch hẹn chăm sóc tiếp (tuỳ chọn).
@@ -15,7 +15,9 @@ export const customerActivities = pgTable('customer_activities', {
   customerId: text('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
   ownerId: text('owner_id').notNull().references(() => employees.id),
   type: text('type', { enum: CARE_TYPES }).notNull(),
-  result: text('result', { enum: CARE_RESULTS }).notNull().default('none'),
+  result: text('result', { enum: CARE_RESULTS }).notNull().default('consulting'),
+  /** Doanh số dự kiến (đồng) của giao dịch. */
+  expectedRevenue: doublePrecision('expected_revenue').notNull().default(0),
   /** Thời điểm trao đổi (ISO, UTC). */
   occurredAt: text('occurred_at').notNull(),
   /** Người bên khách đã trao đổi (tự do; gợi ý từ danh bạ khách). */
@@ -26,6 +28,8 @@ export const customerActivities = pgTable('customer_activities', {
   nextAt: text('next_at'),
   nextAction: text('next_action').notNull().default(''),
   nextDoneAt: text('next_done_at'),
+  /** Nhắc tôi trước ngày chăm sóc lần sau: 1d / 1w / 1m → việc nhắc hiện từ ngày đó. */
+  remindBefore: text('remind_before', { enum: CARE_REMIND }).notNull().default('1d'),
   revision: bigint('revision', { mode: 'number' }).notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -35,5 +39,7 @@ export const customerActivities = pgTable('customer_activities', {
   index('idx_customer_activities_follow_up').on(t.ownerId, t.nextAt).where(sql`${t.nextAt} IS NOT NULL AND ${t.nextDoneAt} IS NULL`),
   enumCheck('chk_customer_activities_type', t.type, CARE_TYPES),
   enumCheck('chk_customer_activities_result', t.result, CARE_RESULTS),
+  enumCheck('chk_customer_activities_remind', t.remindBefore, CARE_REMIND),
+  check('chk_customer_activities_revenue', sql`${t.expectedRevenue} >= 0`),
   check('chk_customer_activities_text', sql`length(trim(${t.subject})) > 0 OR length(trim(${t.content})) > 0`),
 ]).enableRLS();

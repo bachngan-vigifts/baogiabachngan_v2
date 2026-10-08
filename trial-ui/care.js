@@ -13,8 +13,8 @@ const when = iso => iso ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_
 const toLocalInput = iso => new Date(Date.parse(iso) + 7 * 3600e3).toISOString().slice(0, 16);
 const fromLocalInput = v => v ? new Date(v + ':00+07:00').toISOString() : '';
 /** Màu theo kết quả (lớp .pill). */
-const RESULT_TONE = { none: 'muted', interested: 'info', quote_requested: 'warn', ordered: 'ok', follow_up: 'info', no_answer: 'off', not_interested: 'off', complaint: 'danger' };
-const TYPE_ICON = { call: '📞', zalo: '💬', meeting: '🤝', visit: '🚗', email: '✉️', sms: '📱', note: '📝' };
+const RESULT_TONE = { consulting: 'info', quote_sent: 'warn', negotiating: 'warn', won: 'ok', lost: 'off' };
+const TYPE_ICON = { call: '📞', zalo: '💬', email: '✉️', meeting: '🤝', quote: '📄' };
 
 /** Ô hẹn chăm sóc tiếp: ngày + trạng thái (quá hạn / hôm nay / còn n ngày / đã xong). */
 export function followUpCell(a) {
@@ -22,12 +22,12 @@ export function followUpCell(a) {
   const days = Math.round((Date.parse(a.nextAt) - Date.parse(todayIso())) / 864e5), done = !!a.nextDoneAt;
   const tone = done ? 'muted' : days < 0 ? 'danger' : days === 0 ? 'warn' : days <= 2 ? 'info' : 'ok';
   const note = done ? 'đã xong ✓' : days < 0 ? `trễ ${-days} ngày` : days === 0 ? 'hôm nay' : days === 1 ? 'ngày mai' : `còn ${days} ngày`;
-  return `<span class="due-date ${tone}"><b>${dmy(a.nextAt)}</b><small>${note}</small></span>${a.nextAction ? `<small class="care-next">${esc(a.nextAction)}</small>` : ''}`;
+  return `<span class="due-date ${tone}"><b>${dmy(a.nextAt)}</b><small>${note}</small></span>${a.remindLabel && !done ? `<small class="care-next">Nhắc trước ${esc(a.remindLabel.toLowerCase())}</small>` : ''}${a.nextAction ? `<small class="care-next">${esc(a.nextAction)}</small>` : ''}`;
 }
 /** Nội dung một lần chăm sóc (tiêu đề + nội dung + người liên hệ) dùng chung cho bảng ở trang Chăm sóc và trang chi tiết khách. */
 export const careSummary = a => `${a.subject ? `<b>${esc(a.subject)}</b>` : ''}${a.content ? `<small class="care-content">${esc(a.content)}</small>` : ''}${a.contactName ? `<small>Trao đổi với: ${esc(a.contactName)}</small>` : ''}`;
 export const careType = a => `<span class="care-type">${TYPE_ICON[a.type] || ''} ${esc(a.typeLabel || a.type)}</span>`;
-export const careResult = a => `<span class="pill ${RESULT_TONE[a.result] || ''}">${esc(a.resultLabel || a.result)}</span>`;
+export const careResult = a => `<span class="pill ${RESULT_TONE[a.result] || ''}">${esc(a.resultLabel || a.result)}</span>${a.expectedRevenue ? `<small class="care-next">DS dự kiến ${new Intl.NumberFormat('vi-VN').format(a.expectedRevenue)} đ</small>` : ''}`;
 
 /**
  * @param deps { api, toast, confirmBox, isManager, go, root (phần tử #view-care) }
@@ -109,37 +109,47 @@ export function initCare(deps) {
     if (id) { try { openForm({ activity: (await api('/care/' + encodeURIComponent(id))).activity }, refresh); } catch (ex) { toast(ex.message, 'err'); } }
   }
 
-  // ----- hộp ghi / sửa
+  // ----- hộp ghi / sửa (bố cục như form "Giao dịch" của CRM đang dùng: một cột, chọn nhanh bằng nút)
+  const money = n => n ? new Intl.NumberFormat('vi-VN').format(n) : '';
+  const parseMoney = v => Number(String(v || '').replace(/[^\d]/g, '')) || 0;
+  const seg = (name, list, sel) => `<div class="care-seg" role="radiogroup">${list.map(x => `<label><input type="radio" name="${name}" value="${esc(x.key)}"${x.key === sel ? ' checked' : ''}><span>${esc(x.label)}</span></label>`).join('')}</div>`;
   /** `customer` = khách chọn sẵn (từ trang chi tiết khách), `activity` = lần chăm sóc cần sửa. */
   async function openForm({ customer = null, activity = null } = {}, onSaved) {
-    try { await loadConfig(); } catch (ex) { return toast(ex.message, 'err'); }
+    try { await loadConfig(); if (isManager() && !people) people = (await api('/tasks/people')).people; } catch (ex) { return toast(ex.message, 'err'); }
     const a = activity, today = todayIso();
-    let picked = a ? { id: a.customerId, name: a.customerName, contact: a.contactName } : customer;
+    let picked = a ? { id: a.customerId, name: a.customerName } : customer;
+    const me = deps.userId?.() || '', owner = a?.ownerId || me;
     const dlg = document.createElement('dialog'); dlg.className = 'modal care-dialog';
     dlg.innerHTML = `<form method="dialog" autocomplete="off">
-      <div class="modal-head"><div><span class="eyebrow">Chăm sóc khách hàng</span><h2>${a ? 'Sửa lần chăm sóc' : 'Ghi chăm sóc'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+      <div class="modal-head"><div><span class="eyebrow">Chăm sóc khách hàng</span><h2>${a ? 'Sửa giao dịch' : 'Giao dịch mới'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body care-form">
-        <label class="span2">Khách hàng *<span class="care-pick">${picked && (customer || a) ? `<b>${esc(picked.name)}</b>` : `<input name="customerQ" placeholder="Gõ tên / SĐT / MST khách…" aria-label="Tìm khách hàng"><span class="care-suggest" data-suggest hidden></span>`}</span></label>
-        <fieldset class="span2 care-types"><legend>Hình thức *</legend>${config.types.map(x => `<label class="chip-check"><input type="radio" name="type" value="${x.key}"${(a?.type || 'call') === x.key ? ' checked' : ''}> ${TYPE_ICON[x.key] || ''} ${esc(x.label)}</label>`).join('')}</fieldset>
-        <label>Thời điểm<input type="datetime-local" name="occurredAt" value="${toLocalInput(a?.occurredAt || new Date().toISOString())}"></label>
-        <label>Trao đổi với<input name="contactName" maxlength="120" list="care-contacts" value="${esc(a?.contactName ?? picked?.contact ?? '')}" placeholder="Tên người bên khách"><datalist id="care-contacts"></datalist></label>
-        <label class="span2">Tiêu đề<input name="subject" maxlength="200" value="${esc(a?.subject || '')}" placeholder="Ví dụ: Hỏi nhu cầu quà Tết"></label>
-        <label class="span2">Nội dung trao đổi<textarea name="content" rows="4" maxlength="4000" placeholder="Khách cần gì, giá / số lượng, phản hồi…">${esc(a?.content || '')}</textarea></label>
-        <label>Kết quả<select name="result">${options(config.results, a?.result || 'none')}</select></label>
-        <div class="care-next-box span2"><b>Hẹn chăm sóc tiếp</b>
-          <div class="row-gap"><input type="date" name="nextAt" min="${a?.nextAt && a.nextAt < today ? a.nextAt : today}" value="${esc(a?.nextAt || '')}" aria-label="Ngày hẹn">
-            ${[[1, 'Mai'], [3, '+3 ngày'], [7, '+1 tuần'], [30, '+1 tháng']].map(([n, t]) => `<button type="button" class="btn ghost small" data-plus="${n}">${t}</button>`).join('')}
-            <button type="button" class="btn ghost small" data-plus="0" title="Bỏ hẹn">Không hẹn</button></div>
-          <input name="nextAction" maxlength="300" value="${esc(a?.nextAction || '')}" placeholder="Việc cần làm: gọi lại, gửi báo giá, gửi mẫu…"></div>
-        <p class="error span2" data-err></p>
+        <label>Thời gian tạo<input type="date" name="occurredAt" max="${today}" value="${esc((a ? toLocalInput(a.occurredAt) : today).slice(0, 10))}"></label>
+        <label>Nhân viên phụ trách${isManager() && people
+          ? `<select name="ownerId">${people.filter(x => x.role !== 'customer' && x.role !== 'supplier').map(x => `<option value="${esc(x.id)}"${x.id === owner ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`
+          : `<b class="care-static">${esc(a?.ownerName || deps.userName?.() || '')}</b>`}</label>
+        <label>Khách hàng *<span class="care-pick">${picked && (customer || a) ? `<b class="care-static">${esc(picked.name)}</b>` : `<input name="customerQ" placeholder="Gõ tên / SĐT / MST khách…" aria-label="Tìm khách hàng"><span class="care-suggest" data-suggest hidden></span>`}</span></label>
+        <label>Người liên hệ *<input name="contactName" maxlength="160" list="care-contacts" value="${esc(a?.contactName || '')}" placeholder="Chọn người liên hệ của khách hoặc gõ tên – SĐT"><datalist id="care-contacts"></datalist></label>
+        <label>Nội dung *<input name="content" maxlength="2000" value="${esc(a ? (a.content || a.subject) : '')}" placeholder="Ví dụ: Gọi hỏi thăm quà cuối năm"></label>
+        <div class="care-field"><span>Loại giao dịch *</span>${seg('type', config.types, a?.type || 'call')}</div>
+        <label>Doanh số dự kiến<span class="care-money"><button type="button" class="icon-btn" data-step="-1" aria-label="Giảm">−</button><input name="expectedRevenue" inputmode="numeric" value="${money(a?.expectedRevenue)}" placeholder="0"><button type="button" class="icon-btn" data-step="1" aria-label="Tăng">+</button></span></label>
+        <div class="care-field"><span>Kết quả *</span>${seg('result', config.results, a?.result || 'consulting')}</div>
+        <label>Chăm sóc lần sau *<input type="date" name="nextAt" min="${a?.nextAt && a.nextAt < today ? a.nextAt : today}" value="${esc(a?.nextAt || addDays(today, 7))}"></label>
+        <div class="care-field"><span>Nhắc tôi trước *</span>${seg('remindBefore', config.reminds, a?.remindBefore || '1d')}</div>
+        <p class="error" data-err></p>
       </div>
-      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary" data-save>${a ? 'Lưu' : 'Ghi chăm sóc'}</button></div></form>`;
+      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary" data-save>Lưu</button></div></form>`;
     document.body.append(dlg);
     const form = dlg.querySelector('form'), f = form.elements, err = dlg.querySelector('[data-err]'), sug = dlg.querySelector('[data-suggest]');
     const close = () => { dlg.close(); dlg.remove(); };
     dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+    // Người liên hệ: liên hệ chính + danh bạ của khách (tên – SĐT – chức vụ).
     const fillContacts = async id => {
-      try { const d = await api(`/customers/${encodeURIComponent(id)}/overview`); dlg.querySelector('#care-contacts').innerHTML = [d.customer?.contact, ...(d.contacts || []).map(x => x.name)].filter(Boolean).map(n => `<option value="${esc(n)}">`).join(''); } catch { /* không bắt buộc */ }
+      try {
+        const d = await api(`/customers/${encodeURIComponent(id)}/overview`), k = d.customer || {};
+        const list = [[k.contact, k.phone], ...(d.contacts || []).map(x => [x.name, x.phone, x.title])].filter(x => x[0]).map(x => x.filter(Boolean).join(' – '));
+        dlg.querySelector('#care-contacts').innerHTML = [...new Set(list)].map(n => `<option value="${esc(n)}">`).join('');
+        if (!f.contactName.value && list.length) f.contactName.value = list[0];
+      } catch { /* không bắt buộc */ }
     };
     if (picked?.id) fillContacts(picked.id);
     // Tìm khách (khi chưa chọn sẵn).
@@ -150,34 +160,33 @@ export function initCare(deps) {
       st2 = setTimeout(async () => {
         try {
           const { customers } = await api('/customers?limit=8&q=' + encodeURIComponent(q));
-          sug.innerHTML = customers.length ? customers.map(k => `<button type="button" data-pick="${esc(k.id)}" data-name="${esc(k.name)}" data-contact="${esc(k.contact)}"><b>${esc(k.name)}</b><small>${esc([k.contact, k.phone].filter(Boolean).join(' · '))}</small></button>`).join('') : '<span class="muted small">Không thấy khách phù hợp.</span>';
+          sug.innerHTML = customers.length ? customers.map(k => `<button type="button" data-pick="${esc(k.id)}" data-name="${esc(k.name)}"><b>${esc(k.name)}</b><small>${esc([k.contact, k.phone].filter(Boolean).join(' · '))}</small></button>`).join('') : '<span class="muted small">Không thấy khách phù hợp.</span>';
           sug.hidden = false;
         } catch (ex) { sug.innerHTML = `<span class="error">${esc(ex.message)}</span>`; sug.hidden = false; }
       }, 250);
     });
     sug?.addEventListener('click', e => {
       const b = e.target.closest('[data-pick]'); if (!b) return;
-      picked = { id: b.dataset.pick, name: b.dataset.name, contact: b.dataset.contact };
-      f.customerQ.value = picked.name; sug.hidden = true;
-      if (!f.contactName.value) f.contactName.value = picked.contact || '';
-      fillContacts(picked.id);
+      picked = { id: b.dataset.pick, name: b.dataset.name }; f.customerQ.value = picked.name; sug.hidden = true;
+      f.contactName.value = ''; fillContacts(picked.id);
     });
-    dlg.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', () => {
-      const n = Number(b.dataset.plus); f.nextAt.value = n ? addDays(today, n) : ''; if (!n) f.nextAction.value = '';
-    }));
+    // Doanh số dự kiến: − / + mỗi lần 1 triệu, tự thêm dấu chấm ngăn cách.
+    dlg.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => { f.expectedRevenue.value = money(Math.max(0, parseMoney(f.expectedRevenue.value) + Number(b.dataset.step) * 1_000_000)); }));
+    f.expectedRevenue.addEventListener('input', () => { const v = parseMoney(f.expectedRevenue.value); f.expectedRevenue.value = money(v); });
     form.addEventListener('submit', async e => {
       e.preventDefault(); err.textContent = '';
       if (!picked?.id) { err.textContent = 'Chọn khách hàng trong danh sách gợi ý.'; f.customerQ?.focus(); return; }
-      const body = { customerId: picked.id, type: f.type.value, occurredAt: fromLocalInput(f.occurredAt.value), contactName: f.contactName.value, subject: f.subject.value,
-        content: f.content.value, result: f.result.value, nextAt: f.nextAt.value, nextAction: f.nextAction.value, ...(a ? { revision: a.revision } : {}) };
+      const body = { customerId: picked.id, ownerId: f.ownerId?.value || undefined, occurredAt: f.occurredAt.value, contactName: f.contactName.value, content: f.content.value,
+        type: f.type.value, expectedRevenue: parseMoney(f.expectedRevenue.value), result: f.result.value, nextAt: f.nextAt.value, remindBefore: f.remindBefore.value,
+        ...(a ? { subject: '', nextAction: a.nextAction || '', revision: a.revision } : {}) };
       const btn = dlg.querySelector('[data-save]'); btn.disabled = true;
       try {
         await api(a ? `/care/${encodeURIComponent(a.id)}` : '/care', a ? 'PUT' : 'POST', body);
-        close(); toast(a ? 'Đã lưu.' : 'Đã ghi chăm sóc.' + (body.nextAt ? ' Lịch hẹn sẽ hiện ở Công việc khi đến hạn.' : '')); onSaved?.();
+        close(); toast(a ? 'Đã lưu.' : 'Đã ghi giao dịch. Đến hạn nhắc sẽ hiện ở Công việc.'); onSaved?.();
       } catch (ex) { err.textContent = ex.message; } finally { btn.disabled = false; }
     });
     dlg.showModal();
-    (f.customerQ || f.subject).focus();
+    (f.customerQ || f.content).focus();
   }
 
   /** Huy hiệu menu: số hẹn chăm sóc quá hạn + hôm nay của tôi (Manager: của mọi người). */
