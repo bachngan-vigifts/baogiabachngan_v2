@@ -1,4 +1,5 @@
 import { AppError } from '../../../core/errors.ts';
+import type { FileStore } from '../../../core/storage/file-store.ts';
 import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
 import { Router, json, readJson, type RouteContext } from '../../../core/http/router.ts';
 import { checkMethodAndOrigin } from '../../../core/http/security.ts';
@@ -27,6 +28,8 @@ export interface StaffEnv {
   waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */
   pushFetch?: typeof fetch;
+  /** Kho file (đính kèm tin nhắn): Supabase Storage ở Edge, bộ nhớ trong khi test. Thiếu thì không gửi được file. */
+  files?: FileStore;
 }
 type Ctx = RouteContext<StaffEnv>;
 export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }

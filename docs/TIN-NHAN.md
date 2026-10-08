@@ -33,12 +33,35 @@
     - Tuỳ chọn: đặt secret `SUPABASE_POOLER_URL` (chuỗi kết nối Supavisor, chế độ *Transaction*, cổng 6543; lấy ở Supabase → Connect) thì Edge dùng pooler, mỗi isolate tối đa 3 kết nối.
   - Lượt làm mới danh sách bị lỗi mà danh sách đã có thì giữ danh sách cũ, không hiện khung lỗi.
 
+## Thu hồi, tìm tin cũ, file, biểu tượng, tác vụ nhanh (migration `0037_chat_recall_files.sql`, `0038_supabase_access_chat_files.sql`)
+- **Thu hồi:**
+  - người gửi bấm ↩ trên tin của mình, trong vòng **4 giờ** (`POST /chat/:id/messages/:messageId/recall`);
+  - nội dung, liên kết và file bị xoá (file xoá khỏi kho);
+  - mọi người thấy "Tin nhắn đã được thu hồi". Khung đang mở của người khác nhận id tin bị thu hồi qua `recalledSince` khi hỏi tin mới.
+- **Tìm tin cũ:** nút 🔍 ở danh sách hội thoại.
+  - Tìm theo chữ (không dấu cũng được) và/hoặc khoảng ngày (giờ Việt Nam).
+  - Tìm trong mọi hội thoại của mình hoặc chỉ hội thoại đang mở (`GET /chat/search?q=&from=&to=&conversationId=`); bỏ qua tin đã thu hồi.
+  - Bấm kết quả thì mở hội thoại ngay quanh tin đó (`GET /chat/:id/messages?around=<thời điểm>`), tin được tô viền, có nút "Về tin mới nhất".
+- **File đính kèm 📎:**
+  - nhận ảnh, PDF, Excel, Word, CSV, TXT, ZIP; tối đa 3 file / tin, ≤ 6 MB / file;
+  - ảnh chụp được nén trước khi gửi; dán ảnh chụp màn hình vào ô nhập cũng gửi được;
+  - file lưu ở bucket **private** `baogiabachngan-v2-files` của Supabase Storage (khoá `chat/<hội thoại>/<tin>/…`), bảng `chat_attachments`;
+  - người trong hội thoại nhận link tải ký tên có hạn 1 giờ;
+  - Edge Function dùng `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` có sẵn của Supabase, không cần thêm secret;
+  - migration 0038 cho bucket nhận thêm loại file Excel / Word / CSV / TXT / ZIP / GIF.
+- **Biểu tượng 😊:** bảng biểu tượng hay dùng, chèn vào chỗ con trỏ.
+- **Tác vụ nhanh ⚡:**
+  - **Giao việc**: tạo việc cho người đang nhắn (nhóm: chọn người), kèm liên kết việc trong tin;
+  - **gửi liên kết** đơn hàng, HĐKT, báo giá, phiếu đóng gói / xuất kho (cột `chat_messages.ref_json`);
+  - người nhận bấm để mở; vẫn phải có quyền xem chứng từ đó.
+
 ## Cấu trúc
 | Phần | File |
 |---|---|
-| Bảng `chat_conversations`, `chat_members` (có `last_read_at` để đếm tin chưa đọc), `chat_messages` | `src/modules/chat/schema.ts` (migration `0018_chat.sql`, phân quyền `0019_supabase_access_chat.sql`) |
+| Bảng `chat_conversations`, `chat_members` (có `last_read_at` để đếm tin chưa đọc), `chat_messages` (có `ref_json`, `recalled_at`), `chat_attachments` | `src/modules/chat/schema.ts` (migration `0018_chat.sql`, phân quyền `0019_supabase_access_chat.sql`) |
 | Giới hạn, khoá hội thoại 1-1 | `src/modules/chat/domain/chat-config.ts` |
 | API `/chat/*` | `src/modules/chat/api/routes.ts` |
+| Kho file (Supabase Storage qua REST; bộ nhớ trong khi test / chạy thử) | `src/core/storage/file-store.ts` |
 | Giao diện | `trial-ui/chat.js` + mục "Tin nhắn" trong `style.css` |
 
 ## Ảnh đại diện

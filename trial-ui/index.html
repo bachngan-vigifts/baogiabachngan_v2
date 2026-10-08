@@ -845,16 +845,32 @@
     <div class="chat-panel chat-view" id="view-chat" role="dialog" aria-label="Tin nhắn" hidden>
       <div class="chat-shell card">
         <aside class="chat-side">
-          <div class="chat-side-head"><h1>Tin nhắn</h1><div class="row-gap"><button type="button" class="btn primary small" id="chat-new" title="Nhắn tin cho một đồng nghiệp">＋ Chat</button><button type="button" class="btn secondary small" id="chat-new-group">＋ Nhóm</button><button type="button" class="icon-btn chat-close" id="chat-close" aria-label="Đóng tin nhắn">×</button></div></div>
+          <div class="chat-side-head"><h1>Tin nhắn</h1><div class="row-gap"><button type="button" class="btn primary small" id="chat-new" title="Nhắn tin cho một đồng nghiệp">＋ Chat</button><button type="button" class="btn secondary small" id="chat-new-group">＋ Nhóm</button><button type="button" class="icon-btn" id="chat-find" title="Tìm tin nhắn cũ (theo chữ, theo ngày)" aria-label="Tìm tin nhắn cũ">🔍</button><button type="button" class="icon-btn chat-close" id="chat-close" aria-label="Đóng tin nhắn">×</button></div></div>
           <div class="search-box chat-search"><span aria-hidden="true">⌕</span><input id="chat-search" type="search" placeholder="Tìm cuộc trò chuyện…" aria-label="Tìm cuộc trò chuyện"></div>
+          <form class="chat-find" id="chat-find-form" hidden>
+            <input name="q" type="search" placeholder="Tìm trong tin nhắn…" aria-label="Chữ cần tìm" autocomplete="off">
+            <div class="chat-find-dates"><label>Từ ngày<input name="from" type="date"></label><label>Đến ngày<input name="to" type="date"></label></div>
+            <label class="check"><input type="checkbox" name="here"> Chỉ trong cuộc trò chuyện đang mở</label>
+            <div class="row-gap"><button class="btn primary small">Tìm</button><button type="button" class="btn ghost small" id="chat-find-close">Đóng</button></div>
+            <ul class="chat-find-results" id="chat-find-results"></ul>
+          </form>
           <ul class="chat-list" id="chat-list"></ul>
         </aside>
         <section class="chat-main">
-          <div class="chat-placeholder" id="chat-placeholder"><div><b>Chọn một cuộc trò chuyện</b><p class="muted">hoặc bấm <b>＋ Chat</b> để nhắn cho đồng nghiệp, <b>＋ Nhóm</b> để tạo nhóm. Dán <code>#/orders/…</code> để gửi kèm liên kết đơn hàng.</p></div></div>
+          <div class="chat-placeholder" id="chat-placeholder"><div><b>Chọn một cuộc trò chuyện</b><p class="muted">hoặc bấm <b>＋ Chat</b> để nhắn cho đồng nghiệp, <b>＋ Nhóm</b> để tạo nhóm. Bấm ⚡ để giao việc hoặc gửi đơn hàng, HĐKT, báo giá, phiếu đóng gói; 📎 để gửi file; 🔍 để tìm tin cũ.</p></div></div>
           <div class="chat-thread" id="chat-thread" hidden>
             <header class="chat-head"><button type="button" class="icon-btn chat-back" id="chat-back" aria-label="Quay lại danh sách">‹</button><div class="chat-title" id="chat-title"></div><button type="button" class="btn ghost small" id="chat-manage" hidden>Thành viên</button><button type="button" class="icon-btn chat-close-thread" id="chat-close-2" aria-label="Đóng tin nhắn">×</button></header>
             <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
-            <form class="chat-compose" id="chat-form"><textarea id="chat-input" rows="1" maxlength="4000" placeholder="Nhập tin nhắn…" title="Enter để gửi, Shift+Enter để xuống dòng" aria-label="Tin nhắn"></textarea><button type="submit" class="btn primary">Gửi</button></form>
+            <div class="chat-pending" id="chat-pending" hidden></div>
+            <form class="chat-compose" id="chat-form"><div class="chat-tools">
+              <label class="icon-btn" title="Đính kèm file (ảnh, PDF, Excel, Word…, ≤ 6 MB)" aria-label="Đính kèm file">📎<input type="file" id="chat-file" multiple hidden accept="image/*,.pdf,.xlsx,.xls,.docx,.doc,.csv,.txt,.zip"></label>
+              <button type="button" class="icon-btn" id="chat-emoji" title="Biểu tượng cảm xúc" aria-label="Biểu tượng cảm xúc">😊</button>
+              <button type="button" class="icon-btn" id="chat-quick" title="Tác vụ nhanh: giao việc, gửi đơn hàng, HĐKT, báo giá, phiếu đóng gói" aria-label="Tác vụ nhanh">⚡</button>
+              <div class="chat-pop" id="chat-emoji-pop" hidden></div>
+              <div class="chat-pop chat-quick-menu" id="chat-quick-menu" hidden>
+                <button type="button" data-quick="task">✅ Giao việc</button><button type="button" data-quick="order">🛒 Gửi đơn hàng</button><button type="button" data-quick="contract">📝 Gửi HĐKT</button>
+                <button type="button" data-quick="quote">📄 Gửi báo giá</button><button type="button" data-quick="packing">📦 Gửi phiếu đóng gói / xuất kho</button>
+              </div></div><textarea id="chat-input" rows="1" maxlength="4000" placeholder="Nhập tin nhắn…" title="Enter để gửi, Shift+Enter để xuống dòng" aria-label="Tin nhắn"></textarea><button type="submit" class="btn primary">Gửi</button></form>
           </div>
         </section>
       </div>
