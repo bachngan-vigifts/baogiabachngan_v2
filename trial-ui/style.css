@@ -827,7 +827,7 @@ a.flow-step:hover { border-color: var(--blue); }
 .pill.prio.normal { background: var(--blue-50); color: var(--blue); } .pill.prio.low { background: #f1f2f4; color: #7b8494; }
 .pill.src { font-weight: 600; } .pill.src.manual { background: #eef1f6; color: #3c4a63; } .pill.src.quote { background: #e9eefb; color: #1f3f8a; }
 .pill.src.stock { background: #e3f6f4; color: #0f766e; } .pill.src.order { background: #f1ebfb; color: #6b3fb4; } .pill.src.delivery { background: #e6f4fb; color: #0e6a91; }
-.pill.src.contract { background: #eceafd; color: #4338ca; } .pill.src.debt { background: #fdecee; color: #a61b25; } .pill.src.purchase { background: #f6efe6; color: #8a5a1c; }
+.pill.src.contract { background: #eceafd; color: #4338ca; } .pill.src.debt { background: #fdecee; color: #a61b25; } .pill.src.purchase { background: #f6efe6; color: #8a5a1c; } .pill.src.invoice { background: #e7f6ef; color: #0e6b4c; }
 .task-status { border-radius: 999px; padding: 4px 26px 4px 10px; font-size: .82rem; font-weight: 600; border: 1px solid var(--line); min-width: 118px; }
 .task-status.st-in_progress { background: var(--blue-50); color: var(--blue); border-color: #c9d9f2; } .task-status.st-done { background: var(--green-50); color: var(--green); border-color: #bfe3d3; }
 .task-status.st-cancelled { background: #f1f2f4; color: #7b8494; }
@@ -1085,3 +1085,34 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .slip-sheet .slip-sign { display: grid; grid-template-columns: 1fr 1fr; text-align: center; margin-top: 26px; page-break-inside: avoid; }
 .slip-sheet .slip-sign p { margin: 0; font-weight: 700; }
 .slip-sheet .slip-sign .space { height: 80px; }
+
+/* Sinh Đơn hàng / HĐKT: chọn 1 trong 2 luồng; ＋ tạo nhanh từ báo giá đã duyệt; ô Hoá đơn của đơn */
+.flow-pick { display: grid; gap: 10px; }
+.flow-pick button { display: grid; gap: 4px; text-align: left; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink, inherit); font: inherit; cursor: pointer; }
+.flow-pick button:hover, .flow-pick button:focus-visible { border-color: var(--green); background: #12805c0d; }
+.flow-pick b { font-size: 1rem; } .flow-pick small { color: var(--muted); line-height: 1.4; }
+.pick-list { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+.pick-list button { width: 100%; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); font: inherit; cursor: pointer; }
+.pick-list button:hover { border-color: var(--green); }
+.pick-list button small { grid-column: 1 / -1; color: var(--muted); }
+.invoice-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 10px; }
+.invoice-form label { display: grid; gap: 4px; font-size: .82rem; font-weight: 600; flex: 1 1 140px; }
+.modal-foot .grow { flex: 1; }
+.kv dd small { display: block; color: var(--muted); }
+
+/* Phiếu đóng gói: hộp yêu cầu (chia nguồn hàng), danh sách phiếu trong ô Lịch giao hàng, ảnh kho xác nhận */
+.pack-line { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 10px; display: grid; gap: 8px; }
+.pack-head small { display: block; color: var(--muted); }
+.pack-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pack-grid label { display: grid; gap: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }
+.pack-av { font-size: 1rem; font-weight: 700; color: var(--ink); padding: 7px 0; } .pack-av.danger-text { color: var(--red); }
+.pack-warn { margin: 0; color: #a15c00; font-size: .85rem; font-weight: 600; }
+.pack-src { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 90px 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.pack-line [data-src-add] { justify-self: start; }
+.pack-slips { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.pack-slips .plain-list li { align-items: center; }
+.pack-photos { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.pack-photos img { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.pack-photo { position: relative; } .pack-photo .icon-btn { position: absolute; top: 4px; right: 4px; background: #fff; }
+.pick-photo { cursor: pointer; }
+@media (max-width: 680px) { .pack-grid { grid-template-columns: 1fr 1fr; } .pack-grid label:first-child { grid-column: 1 / -1; } .pack-src { grid-template-columns: 1fr 90px 32px; } .pack-src [data-src-note] { grid-column: 1 / -1; grid-row: 2; } }

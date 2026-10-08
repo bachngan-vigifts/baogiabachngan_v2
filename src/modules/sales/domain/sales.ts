@@ -10,7 +10,7 @@ const str = (v: unknown) => (v === undefined || v === null ? '' : String(v)).tri
 // ---------------- Số chứng từ ----------------
 const ymd = (date: string) => date.replaceAll('-', '').slice(0, 8);
 /** Số tiếp theo dạng `<PREFIX>_<yyyymmdd>_<nnn>` (DH = đơn hàng, GH = giao hàng), đếm trong các số đã dùng cùng ngày. */
-export function nextDocNo(prefix: 'DH' | 'GH', date: string, used: readonly string[]): string {
+export function nextDocNo(prefix: 'DH' | 'GH' | 'DG', date: string, used: readonly string[]): string {
   const head = `${prefix}_${ymd(date)}_`;
   const max = Math.max(0, ...used.filter(n => n.startsWith(head)).map(n => parseInt(n.slice(head.length), 10) || 0));
   return head + String(max + 1).padStart(3, '0');

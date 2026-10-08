@@ -124,7 +124,52 @@ globalThis.ContractDocument = (() => {
   const expandItems = (source, items) => source.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, row => row.includes('Related Chi tiết đơn hàngs') ? items.map((item, index) => replaceTokens(row, itemValues(item, index))).join('') : row);
   // Nhãn dòng thuế: cùng một thuế suất → "VAT (8%)"; nhiều thuế suất → "VAT".
   const vatLabel = items => { const rates = [...new Set(items.map(i => Number(i.tax_percent) || 0))]; return rates.length === 1 ? ` (${money(rates[0])}%)` : ''; };
-  const buildXml = (source, quote, contractNumber) => {
+  // Khối chữ ký cuối văn bản: bảng 2 cột bằng nhau, rộng hết khổ chữ và không trôi (mẫu cũ lệch trái), để 2 cụm "Đại diện" cân đối với trang.
+  // Tên người ký bên A luôn in hoa (<<[Bên A ký tên]>>); mẫu chưa có ô tên / chưa có khối chữ ký thì thêm vào.
+  const textWidth = source => {
+    const page = source.match(/<w:pgSz\b[^>]*w:w="([\d.]+)"/), margin = source.match(/<w:pgMar\b[^>]*>/)?.[0] || '';
+    const side = name => Number(margin.match(new RegExp(`w:${name}="([\\d.]+)"`))?.[1] || 0);
+    return Math.round((Number(page?.[1]) || 11906) - side('left') - side('right'));
+  };
+  const SIGN_A = token('[Bên A ký tên]');
+  const signRun = (text, bold = true) => `<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>${bold ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const signCell = (width, text) => `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:widowControl w:val="0"/><w:jc w:val="center"/></w:pPr>${text ? signRun(text) : ''}</w:p></w:tc>`;
+  const signTable = (width, [left, right], [leftName, rightName]) => {
+    const col = Math.floor(width / 2), row = (a, b, height = '') => `<w:tr>${height ? `<w:trPr><w:trHeight w:val="${height}"/></w:trPr>` : ''}${signCell(col, a)}${signCell(col, b)}</w:tr>`;
+    return `<w:tbl><w:tblPr><w:tblW w:w="${col * 2}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblLook w:val="0600" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/></w:tblPr><w:tblGrid><w:gridCol w:w="${col}"/><w:gridCol w:w="${col}"/></w:tblGrid>${row(left, right)}${row('', '', 1560)}${row(leftName, rightName)}</w:tbl>`;
+  };
+  const tidySignature = (source, quote, documentType) => {
+    const width = textWidth(source), col = Math.floor(width / 2);
+    let found = false;
+    const result = source.replace(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g, table => {
+      if (!/ĐẠI DIỆN BÊN A/.test(table)) return table;
+      found = true;
+      let out = table.replace(/<w:tblpPr\b[^>]*\/>/, '')
+        .replace(/<w:tblW\b[^>]*\/>/, `<w:tblW w:w="${col * 2}" w:type="dxa"/>`)
+        .replace(/<w:tblInd\b[^>]*\/>/, '')
+        .replace(/<w:tblPr>[\s\S]*?<\/w:tblPr>/, pr => pr.replace(/<w:jc\b[^>]*\/>/, '').replace(/<w:tblW\b[^>]*\/>/, m => `${m}<w:jc w:val="center"/>`))
+        .replace(/<w:gridCol\b[^>]*\/>/g, `<w:gridCol w:w="${col}"/>`)
+        .replace(/<w:tcW\b[^>]*\/>/g, `<w:tcW w:w="${col}" w:type="dxa"/>`)
+        .replaceAll(token('[Bên A]'), SIGN_A)
+        .replace(/(<w:t\b[^>]*>)\s*([^<]*?)\s*(<\/w:t>)/g, '$1$2$3'); // bỏ dấu cách thừa làm lệch chữ khi căn giữa
+      if (!out.includes(SIGN_A)) { // ô tên bên A (hàng cuối, cột đầu) còn trống → điền chỗ tên
+        const rows = out.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) || [], last = rows[rows.length - 1];
+        const cell = last?.match(/<w:tc>[\s\S]*?<\/w:tc>/)?.[0];
+        if (cell && !/<w:t[^>]*>[^<]*\S[^<]*<\/w:t>/.test(cell)) {
+          const filled = /<w:t\b[^>]*>[^<]*<\/w:t>/.test(cell) ? cell.replace(/<w:t\b[^>]*>[^<]*<\/w:t>/, `<w:t>${SIGN_A}</w:t>`) : cell.replace('</w:p>', `${signRun(SIGN_A)}</w:p>`);
+          out = out.replace(last, last.replace(cell, filled));
+        }
+      }
+      return out;
+    });
+    if (found || documentType !== 'BBNT') return result;
+    // Biên bản nghiệm thu Bách Ngân: mẫu cũ không có khối chữ ký → thêm (bên nhận = khách bên trái, bên giao = công ty bên phải).
+    const companySigner = quote.quote_type === 'VIGIFTS' ? 'HUỲNH CHÂU YẾN' : 'LÊ MINH THÁI';
+    const block = signTable(width, ['ĐẠI DIỆN BÊN NHẬN', 'ĐẠI DIỆN BÊN GIAO'], [SIGN_A, companySigner]);
+    const at = result.lastIndexOf('<w:sectPr');
+    return at < 0 ? result : `${result.slice(0, at)}${block}<w:p/>${result.slice(at)}`;
+  };
+  const buildXml = (source, quote, contractNumber, documentType = 'HDKT') => {
     const lines = noteLines(quote.notes), payment = paymentDetails(quote, quote.contractDetails), date = dateParts(quote.quote_date);
     const deliveryTime = quote.contractDetails?.deliveryTime || noteValue(lines, 'Thời gian giao hàng') || noteValue(lines, 'Giao hàng') || 'Theo thỏa thuận của hai bên.';
     const deliveryPlace = quote.contractDetails?.deliveryAddress || noteValue(lines, 'Địa điểm giao hàng') || 'Theo thỏa thuận của hai bên.';
@@ -133,7 +178,7 @@ globalThis.ContractDocument = (() => {
     const paymentText = paymentClause(payment);
     const partyAName = customer.contact_name || customer.contact || '';
     const values = {'[Số HĐ]': contractNumber, '[dấu thời gian]': `${date.day}/${date.month}/${date.year}`, '[Ngày ký]': `${date.day}/${date.month}/${date.year}`, '[KH_NDP].[TênKH]': customer.name || '', '[KH_NDP].[dia chi]': customer.address || '', '[KH_NDP].[Dia Chi]': customer.address || '', '[KH_NDP].[Ma So Thue]': customer.tax_code || '', '[Bên A]': partyAName, '[Bên A ký tên]': upper(partyAName), '[Chức vụ]': quote.contractTitle || '', '[Thời gian giao hàng]': deliveryTime, '[Địa điểm giao hàng]': deliveryPlace, '[Phương thức thanh toán]': paymentMethod, '[Thời hạn thanh toán]': paymentText, '[hình thức thanh toán]': paymentText, '[Tỉ lệ cọc]': money(payment.depositRate), '[số tiền tạm ứng]': money(payment.deposit), '[bằng chữ tạm ứng]': amountInWords(payment.deposit), '[Thành Tiền (-Thuế)]': money(quote.subtotal), '[Tiền thuế]': money(quote.vat_amount), '[Thành tiền (+thuế)]': money(quote.total), '[Số tiền bằng chữ]': amountInWords(quote.total), '[Nhãn VAT]': vatLabel(quote.items || [])};
-    let result = replaceTokens(expandItems(source, quote.items || []), values);
+    let result = replaceTokens(expandItems(tidySignature(source, quote, documentType), quote.items || []), values);
     result = result.replace('Hôm nay, ngày      tháng      năm 2025, chúng tôi gồm:', `Hôm nay, ngày ${date.day} tháng ${date.month} năm ${date.year}, chúng tôi gồm:`);
     result = result.replace('TP Cần Thơ, ngày 04 tháng 06 năm 2025', `TP Cần Thơ, ngày ${date.day} tháng ${date.month} năm ${date.year}`);
     result = result.replace('ký ngày  07  tháng 05  năm 2025', `ký ngày ${date.day} tháng ${date.month} năm ${date.year}`);
@@ -173,7 +218,7 @@ globalThis.ContractDocument = (() => {
     const files = unzipSync(new Uint8Array(templateBytes)), path = 'word/document.xml';
     if (!files[path]) throw new Error('Mẫu HĐKT không hợp lệ.');
     const filledQuote = {...quote,...(documentType==='HDKT'&&details?.signedDate?{quote_date:details.signedDate}:{}), contractDetails: details || {}, customer: {...(quote.customer || {}), contact_name: details?.representativeName || quote.customer?.contact_name || quote.customer?.contact || ''}, contractTitle: details?.representativeTitle || ''};
-    files[path] = strToU8(buildXml(strFromU8(files[path]), filledQuote, contractNumber));
+    files[path] = strToU8(buildXml(strFromU8(files[path]), filledQuote, contractNumber, documentType));
     addWebSourceFooter(files, quote, documentType);
     const output=zipSync(files, {level: 6});
     const edits=documentType==='HDKT'?quote.contract_word_edits:quote.contract_document_edits?.[documentType];

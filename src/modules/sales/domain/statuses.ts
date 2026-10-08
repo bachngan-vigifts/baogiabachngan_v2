@@ -5,3 +5,9 @@ export const DELIVERY_STATUSES = ['planned', 'in_transit', 'delivered', 'failed'
 export const SCHEDULE_KINDS = ['deposit', 'installment', 'balance'] as const;
 export const PAYMENT_METHODS = ['transfer', 'cash', 'other'] as const;
 export const LEGAL_ENTITIES = ['BN', 'VG', 'QTV'] as const;
+/** Xuất hoá đơn của đơn hàng / HĐKT: chưa yêu cầu → đã yêu cầu (tự động khi giao xong, hoặc nhân viên bấm) → kế toán đã xuất (có số hoá đơn). */
+export const INVOICE_STATUSES = ['none', 'requested', 'issued'] as const;
+/** Phiếu đóng gói (xuất kho): nháp → đã gửi kho → kho đã đóng (có ảnh) / huỷ. */
+export const PACKING_STATUSES = ['draft', 'sent', 'packed', 'cancelled'] as const;
+/** Nguồn hàng của phiếu đóng gói: kho, điều chuyển từ cửa hàng, nhập từ NCC, đại lý, khác. */
+export const PACKING_SOURCES = ['warehouse', 'store', 'supplier', 'agent', 'other'] as const;

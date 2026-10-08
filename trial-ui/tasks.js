@@ -6,7 +6,7 @@ export const TASK_UI = {
   priority: { urgent: ['Khẩn', 'urgent'], high: ['Cao', 'high'], normal: ['Bình thường', 'normal'], low: ['Thấp', 'low'] },
   source: {
     manual: ['Giao việc', 'manual'], quote: ['Báo giá', 'quote'], stock_request: ['Check tồn', 'stock'], order: ['Đơn hàng', 'order'], delivery: ['Giao hàng', 'delivery'],
-    packing: ['Xuất kho / đóng hàng', 'packing'], contract: ['HĐKT', 'contract'], receivable: ['Công nợ', 'debt'], purchase: ['Nhập hàng', 'purchase'],
+    packing: ['Xuất kho / đóng hàng', 'packing'], contract: ['HĐKT', 'contract'], receivable: ['Công nợ', 'debt'], purchase: ['Nhập hàng', 'purchase'], invoice: ['Xuất hoá đơn', 'invoice'],
   },
   /** Nhóm nhận việc (id chức vụ) – cùng danh sách TASK_TEAMS ở máy chủ. */
   teams: { warehouse: 'Kho', accounting: 'Kế toán', 'sale-admin': 'Sale Admin' },
