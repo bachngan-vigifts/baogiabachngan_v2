@@ -197,7 +197,8 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
     .from(tasks).where(isNotNull(tasks.autoKey));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
   const fresh = [...wanted.values()].filter(t => !byKey.has(t.autoKey));
-  if (fresh.length) await db.insert(tasks).values(fresh.map(t => ({ id: crypto.randomUUID(), title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
+  const created = fresh.map(t => ({ ...t, id: crypto.randomUUID() }));
+  if (created.length) await db.insert(tasks).values(created.map(t => ({ id: t.id, title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
     sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing();
   let closed = 0, updated = 0;
   for (const t of existing) {
@@ -210,5 +211,6 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
       await db.update(tasks).set({ assigneeId, assigneePosition, dueDate: w.dueDate, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
     }
   }
-  return { created: fresh.length, closed, updated };
+  // `fresh`: việc vừa tự sinh (để đẩy thông báo cho người / nhóm nhận).
+  return { created: fresh.length, closed, updated, fresh: created };
 }

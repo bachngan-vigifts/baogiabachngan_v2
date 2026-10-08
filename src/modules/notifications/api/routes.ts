@@ -36,6 +36,19 @@ export interface NotifyInput {
 }
 
 /**
+ * Gửi cùng một thông báo cho nhiều người (mỗi người một bản ghi + Web Push), bỏ trùng và bỏ chính người thao tác (`actorId`).
+ * `ids` = 'managers' → mọi Manager đang làm việc.
+ */
+export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>) {
+  const list = ids === 'managers'
+    ? (await env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'manager'), eq(employees.active, true), isNull(employees.deletedAt)))).map(r => r.id)
+    : ids;
+  const targets = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId))];
+  await Promise.all(targets.map(id => notify(env, { ...n, targetMemberId: id })));
+  return targets.length;
+}
+
+/**
  * Tạo thông báo (lưu lại để trang tự làm mới + chuông thông báo) và đẩy Web Push tới các trình duyệt đã bật thông báo.
  * Không bao giờ làm hỏng thao tác chính: lỗi đẩy chỉ ghi nhận trên subscription.
  */

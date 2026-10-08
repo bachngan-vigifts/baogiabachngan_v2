@@ -9,7 +9,7 @@ import { quoteHeaderIndex, quoteLineRows } from '../domain/quote-index.ts';
 import { totals } from '../domain/quote-math.ts';
 import { quotations, quoteLines, quoteNotifications, quoteRevisions } from '../schema.ts';
 import { employees } from '../../staff/schema.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 
 const predicate = (scope: SqlScope) => {
   const fragments = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
@@ -83,10 +83,13 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       .where(and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)))).returning({ id: quotations.id });
     if (!rows.length) throw new AppError(409, 'Báo giá đã thay đổi. Vui lòng mở lại trước khi duyệt.');
     // Báo giá khách gửi: báo cho khách biết đã được xác nhận.
-    const [q] = await c.env.db.select({ quoteNo: quotations.quoteNo, creatorId: quotations.creatorId, role: employees.role }).from(quotations)
+    const [q] = await c.env.db.select({ quoteNo: quotations.quoteNo, customer: quotations.customer, creatorId: quotations.creatorId, assigneeId: quotations.assigneeId, role: employees.role }).from(quotations)
       .innerJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.id, c.params.id!)).limit(1);
     if (q?.role === 'customer') await notify(c.env, { eventType: 'quote_confirmed', title: 'Báo giá đã được xác nhận', body: `${q.quoteNo} đã được ${viewer.name} xác nhận. Quý khách có thể đặt hàng.`,
       url: '/customer.html#quotes', targetMemberId: q.creatorId, actorId: viewer.id, data: { quoteId: c.params.id } });
+    // Báo giá nhân viên lập: người lập / phụ trách nhận thông báo đã được duyệt.
+    if (q) await notifyMany(c.env, [q.role === 'customer' ? null : q.creatorId, q.assigneeId], { eventType: 'quote_approved', title: 'Báo giá đã được duyệt',
+      body: `${q.quoteNo} – ${q.customer} · ${viewer.name} duyệt`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     return json({ id: c.params.id, approvalStatus: 'approved', approvedAt: now, approvedByName: viewer.name });
   }, 'business');
   /** Manager xoá báo giá (như nút "Xoá báo giá" web cũ). Báo giá đã có đơn đặt hàng / HĐKT thì không xoá được. */
@@ -119,6 +122,9 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       await tx.insert(quotations).values({ id, creatorId: viewer.id, assigneeId: viewer.id, quoteNo: data.quoteNo, quoteType: data.type, customer: data.customer, ...quoteHeaderIndex(data), data: JSON.stringify(data), revision: 1, ...approval, createdAt: now, updatedAt: now });
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
+    // Nhân viên tạo báo giá mới → Manager nhận thông báo để duyệt.
+    if (approval.approvalStatus === 'pending') await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá mới chờ duyệt',
+      body: `${viewer.name}: ${data.quoteNo} – ${data.customer || 'Chưa nhập khách'}`, url: `/index.html#/quotes/${id}`, actorId: viewer.id, data: { quoteId: id } });
     return json({ id, revision: 1, data, approvalStatus: approval.approvalStatus }, 201);
   }, 'business');
   router.put('/quotes/:id', async c => {
@@ -144,6 +150,9 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       for (const h of quoteSaveHooks.afterSave) await h(tx, fresh!);
       return { revision: next, approvalStatus: revoke ? 'pending' : old.approvalStatus, revoked: revoke };
     });
+    // Nhân viên sửa báo giá đã duyệt → mất duyệt → Manager nhận thông báo duyệt lại.
+    if (saved.revoked) await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá sửa lại, chờ duyệt lại',
+      body: `${viewer.name}: ${data.quoteNo} – ${data.customer || ''}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     return json({ id: c.params.id, revision: saved.revision, data, approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
   }, 'business');
 }

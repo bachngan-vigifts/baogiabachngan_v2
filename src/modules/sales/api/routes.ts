@@ -8,7 +8,7 @@ import { customers, customerStaff } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
@@ -226,6 +226,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft' });
+    const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
+    await notifyMany(c.env, 'managers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
+      url: `/index.html#/orders/${id}`, actorId: me.id, data: { orderId: id } });
     return json({ id }, 201);
   }, 'business');
 
@@ -254,6 +257,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     else await removeMovements(c.env.db, `sale:${order.id}:`);
     // Đơn khách đặt từ trang khách hàng: báo cho khách.
     const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
+    // Người phụ trách / người lập đơn (nhân viên) nhận thông báo đơn đã duyệt / bị huỷ.
+    await notifyMany(c.env, [order.ownerId, by?.role === 'customer' ? null : order.createdBy], { eventType: status === 'confirmed' ? 'order_approved' : 'order_cancelled',
+      title: status === 'confirmed' ? 'Đơn hàng đã được duyệt' : 'Đơn hàng đã bị huỷ', body: `${order.orderNo} – ${order.customerName} · ${viewer(c).name}`,
+      url: `/index.html#/orders/${order.id}`, actorId: viewer(c).id, data: { orderId: order.id } });
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
       title: status === 'confirmed' ? 'Đơn hàng đã được xác nhận' : 'Đơn hàng đã bị huỷ', body: `${order.orderNo} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
     return json({ ok: true });
@@ -361,6 +368,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if ((e as { code?: string; cause?: { code?: string } }).code === '23505' || (e as { cause?: { code?: string } }).cause?.code === '23505') throw new AppError(409, 'Đơn này đã có HĐKT.', 'CONTRACT_EXISTS');
       throw e;
     }
+    await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: order.status === 'draft' ? 'HĐKT mới chờ duyệt' : 'HĐKT mới',
+      body: `${me.name}: ${contractNo} – ${order.customerName}`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id, contractId: id } });
     return json({ id, contractNo }, 201);
   }, 'business');
 
