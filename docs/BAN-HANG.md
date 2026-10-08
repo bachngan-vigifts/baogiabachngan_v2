@@ -42,6 +42,31 @@ Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[L�
 - **Kế toán xem được mọi đơn / HĐKT** để nhập số hoá đơn.
 - Danh sách Đơn hàng và HĐKT có cột **Hoá đơn**. Lọc đơn chờ xuất: `GET /orders?invoice=requested`.
 
+## Phiếu đóng gói (migration `0035_packing_slips.sql`, quyền `0036_supabase_access_packing_slips.sql`)
+
+- **Ô *Lịch giao hàng* của đơn có nút 📦 Yêu cầu đóng gói.** Hộp mở ra liệt kê từng dòng còn chưa có phiếu:
+  - **Cần đóng**: mặc định bằng phần còn lại của dòng trong đơn.
+  - **Lấy từ kho**: mặc định bằng tồn khả dụng (số liệu giống trang *Khách hỏi tồn*), tối đa bằng số cần đóng.
+  - **Kho không đủ:** hiện cảnh báo và thêm sẵn một dòng nguồn khác cho phần còn lại. Nguồn khác gồm: điều chuyển từ cửa hàng, nhập từ NCC, đại lý, khác. Mỗi nguồn khác phải ghi rõ tên cửa hàng / NCC / đại lý.
+  - Tổng kho + các nguồn khác phải đúng bằng số cần đóng.
+- **Lưu**: mỗi (nguồn, tên nguồn) sinh **một phiếu** `DG_<yyyymmdd>_<nnn>`, ở trạng thái nháp.
+  - Mỗi dòng của phiếu có **gợi ý quy cách** (số thùng chẵn + lẻ, kích thước thùng) và **cân nặng ước tính**, lấy từ thông tin thùng của sản phẩm trong danh mục.
+- **Gửi kho** (nhân viên phụ trách / Manager):
+  - phiếu chuyển sang *Đã gửi kho*;
+  - việc tự sinh **"Đóng gói …" cho nhóm Kho** (chức vụ `warehouse`), dẫn tới trang phiếu `#/packing/<id>`;
+  - cả nhóm Kho nhận thông báo.
+- **Kho xác nhận đã đóng** trên trang phiếu:
+  - bắt buộc **1–3 ảnh**, tự nén ở trình duyệt (cạnh dài ≤ 1280px, ≤ ~330 KB), lưu trong `packing_slip_photos`;
+  - việc tự hoàn thành;
+  - người gửi phiếu được báo.
+- **Huỷ phiếu** (nháp / đã gửi) thì số lượng trả lại để lập phiếu khác. Phiếu đã đóng không huỷ được.
+- **Quyền:** nhóm Kho xem và xác nhận mọi phiếu nhưng không xem được đơn. Danh sách phiếu chờ đóng: `#/packing`.
+- **API:**
+  - `GET/POST /orders/:id/packing`;
+  - `GET /packing?status=`, `GET /packing/:id`;
+  - `POST /packing/:id/send | cancel | confirm {photos[], note}`.
+- Nút cũ "Yêu cầu kho đóng hàng" theo từng chuyến giao được bỏ. Việc cũ đã tạo vẫn hiện tình trạng.
+
 ## Kiểm tồn báo giá
 
 - Nút **Kiểm tồn** trên báo giá: so số lượng từng mã với tồn khả dụng, tồn NCC và hàng chờ về, giống trang *Khách hỏi tồn*. Mã thiếu được đánh dấu đỏ.

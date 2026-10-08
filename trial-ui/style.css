@@ -1099,3 +1099,20 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .invoice-form label { display: grid; gap: 4px; font-size: .82rem; font-weight: 600; flex: 1 1 140px; }
 .modal-foot .grow { flex: 1; }
 .kv dd small { display: block; color: var(--muted); }
+
+/* Phiếu đóng gói: hộp yêu cầu (chia nguồn hàng), danh sách phiếu trong ô Lịch giao hàng, ảnh kho xác nhận */
+.pack-line { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 10px; display: grid; gap: 8px; }
+.pack-head small { display: block; color: var(--muted); }
+.pack-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pack-grid label { display: grid; gap: 4px; font-size: .78rem; font-weight: 600; color: var(--muted); }
+.pack-av { font-size: 1rem; font-weight: 700; color: var(--ink); padding: 7px 0; } .pack-av.danger-text { color: var(--red); }
+.pack-warn { margin: 0; color: #a15c00; font-size: .85rem; font-weight: 600; }
+.pack-src { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 90px 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.pack-line [data-src-add] { justify-self: start; }
+.pack-slips { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.pack-slips .plain-list li { align-items: center; }
+.pack-photos { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.pack-photos img { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.pack-photo { position: relative; } .pack-photo .icon-btn { position: absolute; top: 4px; right: 4px; background: #fff; }
+.pick-photo { cursor: pointer; }
+@media (max-width: 680px) { .pack-grid { grid-template-columns: 1fr 1fr; } .pack-grid label:first-child { grid-column: 1 / -1; } .pack-src { grid-template-columns: 1fr 90px 32px; } .pack-src [data-src-note] { grid-column: 1 / -1; grid-row: 2; } }

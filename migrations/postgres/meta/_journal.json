@@ -141,6 +141,13 @@
       "when": 1791416693658,
       "tag": "0034_invoice_request",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791418575455,
+      "tag": "0035_packing_slips",
+      "breakpoints": true
     }
   ]
 }

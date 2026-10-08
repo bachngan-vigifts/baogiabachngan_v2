@@ -4,7 +4,7 @@ import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
 import { quotations } from '../quotes/schema.ts';
-import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS } from './domain/statuses.ts';
+import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS } from './domain/statuses.ts';
 
 /*
  * Bán hàng sau báo giá: Báo giá → Đơn đặt hàng → (HĐKT) → Lịch giao hàng → Công nợ.
@@ -199,3 +199,66 @@ export const customerPayments = pgTable('customer_payments', {
   enumCheck('chk_customer_payments_method', t.method, PAYMENT_METHODS),
   check('chk_customer_payments_amount', sql`${t.amount} > 0`),
 ]).enableRLS();
+
+/**
+ * Phiếu đóng gói (xuất kho) của đơn. Nhân viên phụ trách bấm "Yêu cầu đóng gói": mỗi nguồn hàng (kho, điều chuyển cửa hàng,
+ * NCC, đại lý…) một phiếu. Gửi kho → việc cho nhóm Kho; kho đóng xong xác nhận kèm 1–3 ảnh.
+ */
+export const packingSlips = pgTable('packing_slips', {
+  id: text('id').primaryKey(),
+  slipNo: text('slip_no').notNull(),
+  orderId: text('order_id').notNull().references(() => salesOrders.id),
+  source: text('source', { enum: PACKING_SOURCES }).notNull().default('warehouse'),
+  /** Tên cửa hàng / NCC / đại lý cụ thể. */
+  sourceNote: text('source_note').notNull().default(''),
+  status: text('status', { enum: PACKING_STATUSES }).notNull().default('draft'),
+  note: text('note').notNull().default(''),
+  totalQty: doublePrecision('total_qty').notNull().default(0),
+  /** Cân nặng ước tính (kg) theo quy cách thùng của sản phẩm; null = chưa có số liệu. */
+  totalWeight: doublePrecision('total_weight'),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  sentAt: text('sent_at'),
+  sentBy: text('sent_by').references(() => employees.id),
+  packedAt: text('packed_at'),
+  packedBy: text('packed_by').references(() => employees.id),
+  packedNote: text('packed_note').notNull().default(''),
+  revision: bigint('revision', { mode: 'number' }).notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('idx_packing_slips_no').on(t.slipNo),
+  index('idx_packing_slips_order').on(t.orderId),
+  index('idx_packing_slips_status').on(t.status, t.updatedAt),
+  enumCheck('chk_packing_slips_status', t.status, PACKING_STATUSES),
+  enumCheck('chk_packing_slips_source', t.source, PACKING_SOURCES),
+  check('chk_packing_slips_qty', sql`${t.totalQty} >= 0`),
+]).enableRLS();
+
+/** Dòng hàng của phiếu đóng gói, kèm gợi ý quy cách (thùng) và cân nặng lấy từ danh mục sản phẩm lúc lập phiếu. */
+export const packingSlipLines = pgTable('packing_slip_lines', {
+  id: text('id').primaryKey(),
+  slipId: text('slip_id').notNull().references(() => packingSlips.id, { onDelete: 'cascade' }),
+  orderLineId: text('order_line_id').notNull().references(() => salesOrderLines.id),
+  sku: text('sku').notNull().default(''),
+  name: text('name').notNull(),
+  unit: text('unit').notNull().default(''),
+  qty: doublePrecision('qty').notNull(),
+  perCarton: doublePrecision('per_carton'),
+  cartonWeight: doublePrecision('carton_weight'),
+  cartonSize: text('carton_size').notNull().default(''),
+  weight: doublePrecision('weight'),
+}, t => [
+  index('idx_packing_slip_lines_slip').on(t.slipId),
+  index('idx_packing_slip_lines_order_line').on(t.orderLineId),
+  check('chk_packing_slip_lines_qty', sql`${t.qty} > 0`),
+]).enableRLS();
+
+/** Ảnh kho chụp khi xác nhận đã đóng hàng (đã nén ở trình duyệt, lưu dạng data URL). */
+export const packingSlipPhotos = pgTable('packing_slip_photos', {
+  id: text('id').primaryKey(),
+  slipId: text('slip_id').notNull().references(() => packingSlips.id, { onDelete: 'cascade' }),
+  dataUrl: text('data_url').notNull(),
+  bytes: bigint('bytes', { mode: 'number' }).notNull().default(0),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+}, t => [index('idx_packing_slip_photos_slip').on(t.slipId)]).enableRLS();

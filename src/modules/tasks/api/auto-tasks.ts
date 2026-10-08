@@ -4,7 +4,8 @@ import { employees } from '../../staff/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { customerStockRequests } from '../../portal/schema.ts';
 import { customers } from '../../customers/schema.ts';
-import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { customerPayments, deliveries, deliveryLines, packingSlipLines, packingSlips, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { PACKING_SOURCE_LABEL } from '../../sales/domain/packing.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
@@ -124,6 +125,23 @@ export const RULES: Record<string, Rule> = {
         description: `Hạn giao ${fmt(o.expectedDeliveryDate)}. Kiểm tra hàng, yêu cầu kho đóng hàng và giao cho khách.`, link: `#/orders/${o.id}`, assigneeId: o.ownerId,
         priority: late ? 'urgent' as const : 'high' as const, dueDate: o.expectedDeliveryDate };
     });
+  },
+  /**
+   * Phiếu đóng gói đã gửi kho → việc "Đóng gói" cho nhóm Kho (mở trang phiếu #/packing/<id>, kho không cần quyền xem đơn).
+   * Kho xác nhận đã đóng (kèm ảnh) hoặc phiếu bị huỷ thì việc tự hoàn thành.
+   */
+  async packingSlips(db, today) {
+    const rows = await db.select({ s: packingSlips, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, due: salesOrders.expectedDeliveryDate })
+      .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).where(eq(packingSlips.status, 'sent')).limit(500);
+    if (!rows.length) return [];
+    const lines = await db.select().from(packingSlipLines).where(inArray(packingSlipLines.slipId, rows.map(r => r.s.id)));
+    const n = (v: number) => new Intl.NumberFormat('vi-VN').format(v);
+    return rows.map(({ s, orderNo, customerName, due }) => ({ autoKey: `slip:${s.id}`, source: 'packing' as const, sourceId: s.id,
+      title: `Đóng gói ${s.slipNo} – ${customerName}`,
+      description: [`Đơn ${orderNo} · ${PACKING_SOURCE_LABEL[s.source]}${s.sourceNote ? ': ' + s.sourceNote : ''}${s.totalWeight ? ` · ~${n(s.totalWeight)} kg` : ''}`,
+        ...lines.filter(l => l.slipId === s.id).map(l => `- ${l.name}: ${n(l.qty)} ${l.unit}`), s.note ? `Ghi chú: ${s.note}` : '', 'Đóng xong: mở phiếu, chụp 1–3 ảnh và xác nhận.'].filter(Boolean).join('\n'),
+      link: `#/packing/${s.id}`, assigneeId: null, assigneePosition: 'warehouse', priority: due && due <= addDaysIso(today, 1) ? 'urgent' as const : 'high' as const,
+      dueDate: due ? addDaysIso(due, -1) : null }));
   },
   /**
    * Xuất hoá đơn: đơn / HĐKT đã được yêu cầu (tự động khi giao xong, hoặc nhân viên phụ trách bấm) → nhóm Kế toán.

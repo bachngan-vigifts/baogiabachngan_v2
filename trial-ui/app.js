@@ -74,8 +74,8 @@ document.addEventListener('error', e => {
   const span = document.createElement('span'); span.className = img.className + ' broken'; span.title = 'Không tải được ảnh'; span.innerHTML = PLACEHOLDER;
   img.replaceWith(span);
 }, true);
-/** Thu nhỏ ảnh tải lên thành JPEG (cạnh dài ≤ 800px, ≤ ~180 KB) để lưu trong báo giá. */
-function compressImage(file) {
+/** Thu nhỏ ảnh tải lên thành JPEG (mặc định cạnh dài ≤ 800px, ≤ ~180 KB) để lưu trong báo giá. */
+function compressImage(file, steps = [[800, .8], [640, .72], [480, .65], [360, .6]], limit = 240000, tooBig = 'Ảnh quá lớn. Vui lòng dùng link ảnh Google Drive.') {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Không đọc được file ảnh.'));
@@ -83,14 +83,14 @@ function compressImage(file) {
       const img = new Image();
       img.onerror = () => reject(new Error('File không phải ảnh hợp lệ.'));
       img.onload = () => {
-        for (const [max, q] of [[800, .8], [640, .72], [480, .65], [360, .6]]) {
+        for (const [max, q] of steps) {
           const scale = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
           c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
           c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
           const url = c.toDataURL('image/jpeg', q);
-          if (url.length <= 240000) return resolve(url);
+          if (url.length <= limit) return resolve(url);
         }
-        reject(new Error('Ảnh quá lớn. Vui lòng dùng link ảnh Google Drive.'));
+        reject(new Error(tooBig));
       };
       img.src = reader.result;
     };
@@ -402,7 +402,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -432,7 +432,7 @@ function route() {
   if (view === 'orders' && id) view = 'order';
   if (view === 'customers' && id) view = 'customer';
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
-  const navKey = view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
+  const navKey = view === 'packing' ? 'tasks' : view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : VIEWS[view];
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
@@ -450,6 +450,7 @@ function route() {
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
   if (view === 'member') memberDetail().open(decodeURIComponent(id), new URLSearchParams(query).get('month') || '', new URLSearchParams(query).get('tab') || '');
   if (view === 'payroll') payrollBoard().open(new URLSearchParams(query).get('month') || '');
+  if (view === 'packing') openPacking(id ? decodeURIComponent(id) : '');
   hideProductSuggest();
 }
 const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -2317,19 +2318,26 @@ async function openOrder(id) {
   $('#order-lines').innerHTML = d.lines.map(l => `<tr><td>${esc(l.name)}<small>${esc([l.sku, l.unit].filter(Boolean).join(' · '))}</small></td><td class="right">${fmtNum(l.qty)}</td>
     <td class="right">${fmtNum(l.deliveredQty)}</td><td class="right num">${money(l.unitPrice)}</td><td class="right">${fmtNum(l.taxRate)}%</td><td class="right num">${money(l.amount)}</td></tr>`).join('');
   const k = d.contract;
-  $('#order-contract-action').innerHTML = !k && o.status !== 'cancelled' ? '<button class="btn secondary small" id="order-new-contract">＋ Lập HĐKT</button>' : '';
+  // Đơn hàng và HĐKT là 2 luồng: đơn không có HĐKT (khách có HĐ nguyên tắc) hiện ô "Đơn hàng" thay cho ô HĐKT.
+  $('#order-contract-title').textContent = k ? 'HĐKT' : 'Đơn hàng';
+  $('#order-contract-action').innerHTML = !k && o.status !== 'cancelled' ? '<button class="btn ghost small" id="order-new-contract" title="Chỉ khi đơn này cần HĐKT riêng">＋ Lập HĐKT</button>' : '';
   $('#order-contract').innerHTML = k ? `<dl class="kv"><dt>Số HĐKT</dt><dd><b>${esc(k.contractNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(CONTRACT_STATUS, k.status)}</dd>
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
     <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${k.status === 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
-    : '<p class="muted">Đơn hàng cho khách đã có HĐ nguyên tắc – không cần lập HĐKT riêng. Nếu cần HĐKT cho đơn này, bấm <b>＋ Lập HĐKT</b>.</p>';
+    : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(ORDER_STATUS, o.status)}</dd>
+    <dt>Ngày đặt</dt><dd>${fmtDate(o.orderDate)}</dd>${o.quoteNo ? `<dt>Từ báo giá</dt><dd>${o.quoteId ? `<a href="#/quotes/${encodeURIComponent(o.quoteId)}">${esc(o.quoteNo)}</a>` : esc(o.quoteNo)}</dd>` : ''}
+    <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd><dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
+    <dt>Thanh toán</dt><dd>Theo HĐ nguyên tắc với khách</dd></dl>
+    <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
   renderInvoice(o);
   // Ngày giao dự kiến nằm ngay ở Lịch giao hàng: nhân viên đổi ngày → đơn (và đơn khách xem) cập nhật theo.
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><label><span>Ngày giao dự kiến</span><input type="date" id="order-expected" value="${esc(o.expectedDeliveryDate || '')}"></label>
       ${duePill(o.expectedDeliveryDate, { fmt: fmtDate })}<button type="button" class="btn secondary small" id="order-expected-save" hidden>Lưu ngày giao</button></div>`)
     + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}<span class="row-gap">${deliveryButtons(x)}</span><span class="pack-slot" data-pack-slot="${esc(x.id)}" data-pack-status="${esc(x.status)}"></span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
-  loadPackingState(o.id);
+  loadPackingState(o.id); loadOrderPacking(o.id);
+  $('#order-pack').hidden = o.status === 'cancelled' || o.status === 'draft';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
   $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
   $('#order-payments').innerHTML = d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
@@ -2374,10 +2382,10 @@ async function loadPackingState(orderId) {
   let packing = [];
   try { packing = (await api('/tasks/packing?orderId=' + encodeURIComponent(orderId))).packing; } catch { /* chưa có bảng công việc: chỉ ẩn phần này */ return; }
   for (const slot of document.querySelectorAll('[data-pack-slot]')) {
-    const p = packing.find(x => x.deliveryId === slot.dataset.packSlot), planned = slot.dataset.packStatus === 'planned';
+    const p = packing.find(x => x.deliveryId === slot.dataset.packSlot);
     slot.innerHTML = p && p.status === 'done' ? `<span class="pill ok" title="${p.completedAt ? 'Lúc ' + new Date(p.completedAt).toLocaleString('vi-VN') : ''}">Kho đã đóng hàng ✓${p.by && !p.auto ? ' · ' + esc(p.by) : ''}</span>`
       : p && (p.status === 'todo' || p.status === 'in_progress') ? `<a class="pill warn" href="#/tasks/${esc(p.taskId)}">${p.status === 'in_progress' ? 'Kho đang đóng hàng' + (p.by ? ' · ' + esc(p.by) : '') : 'Đã yêu cầu kho đóng hàng'}</a>`
-      : planned ? `<button type="button" class="btn secondary small" data-pack-request="${esc(slot.dataset.packSlot)}" title="Tạo việc Xuất kho & đóng hàng cho nhóm Kho (cả nhóm nhận thông báo)">📦 Yêu cầu kho đóng hàng</button>` : '';
+      : ''; // yêu cầu đóng gói giờ làm theo phiếu (nút "📦 Yêu cầu đóng gói" của ô Lịch giao hàng)
   }
 }
 document.addEventListener('click', async e => {
@@ -2387,6 +2395,170 @@ document.addEventListener('click', async e => {
   b.disabled = true;
   try { await api('/tasks/packing', 'POST', { deliveryId: b.dataset.packRequest, note }); toast('Đã gửi yêu cầu xuất kho & đóng hàng cho nhóm Kho.'); loadPackingState(sales.order.id); tasksView().badge(); }
   catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
+});
+// ----- Phiếu đóng gói: "📦 Yêu cầu đóng gói" chia số lượng theo nguồn hàng → mỗi nguồn một phiếu → gửi kho → kho xác nhận kèm 1–3 ảnh.
+const PACK_SOURCES = { warehouse: 'Kho', store: 'Điều chuyển từ cửa hàng', supplier: 'Nhập từ NCC', agent: 'Lấy từ đại lý', other: 'Nguồn khác' };
+const PACK_STATUS = { draft: ['Nháp – chưa gửi kho', 'warn'], sent: ['Đã gửi kho', 'info'], packed: ['Kho đã đóng ✓', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
+const kg = v => v === null || v === undefined ? '' : `~${fmtNum(v)} kg`;
+const packing = { lines: [], orderId: '' };
+async function loadOrderPacking(orderId) {
+  const box = $('#order-packing'); box.innerHTML = '';
+  let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
+  if (sales.order?.id !== orderId) return;
+  packing.lines = d.lines; packing.orderId = orderId;
+  const live = d.slips.filter(x => x.status !== 'cancelled'), drafts = live.filter(x => x.status === 'draft');
+  if (!live.length) return;
+  box.innerHTML = `<div class="pack-slips"><div class="card-title-row"><b>Phiếu đóng gói</b>${drafts.length > 1 ? `<button type="button" class="btn primary small" data-slip-send-all>Gửi kho ${drafts.length} phiếu nháp</button>` : ''}</div>
+    <ul class="plain-list">${live.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}
+      <small>${x.lines.map(l => `${esc(l.name)}: ${fmtNum(l.qty)} ${esc(l.unit)}`).join(' · ')}${x.totalWeight ? ' · ' + kg(x.totalWeight) : ''}${x.photoCount ? ` · ${x.photoCount} ảnh` : ''}</small></span>
+      <span class="row-gap">${pill(PACK_STATUS, x.status)}${x.status === 'draft' ? `<button type="button" class="btn secondary small" data-slip-send="${esc(x.id)}">Gửi kho</button>` : ''}${x.status === 'draft' || x.status === 'sent' ? `<button type="button" class="btn ghost small" data-slip-cancel="${esc(x.id)}">Huỷ</button>` : ''}</span></li>`).join('')}</ul></div>`;
+}
+/** Một dòng nguồn khác kho (cửa hàng / NCC / đại lý…) trong hộp yêu cầu đóng gói. */
+const packSourceRow = (qty = '') => `<div class="pack-src"><select data-src aria-label="Nguồn hàng">${Object.entries(PACK_SOURCES).filter(([k]) => k !== 'warehouse').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+  <input data-src-note maxlength="200" placeholder="Tên cửa hàng / NCC / đại lý" aria-label="Lấy từ đâu"><input class="num-input" inputmode="decimal" data-src-qty value="${qty === '' ? '' : fmtNum(qty)}" placeholder="SL" aria-label="Số lượng">
+  <button type="button" class="icon-btn danger" data-src-del title="Bỏ nguồn này" aria-label="Bỏ nguồn này">×</button></div>`;
+$('#order-pack').addEventListener('click', async () => {
+  const o = sales.order; if (!o) return;
+  const btn = $('#order-pack'); btn.disabled = true;
+  try {
+    const d = await api(`/orders/${encodeURIComponent(o.id)}/packing`); packing.lines = d.lines;
+    const todo = d.lines.filter(l => l.left > 1e-9);
+    if (!todo.length) return toast('Mọi dòng hàng đã có phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.', 'err');
+    // Tồn khả dụng của kho (như trang Khách hỏi tồn): mặc định lấy từ kho tối đa bằng tồn, phần thiếu bắt buộc nhập nguồn khác.
+    const skus = [...new Set(todo.map(l => l.sku).filter(Boolean))], stock = new Map();
+    try { for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); } } catch { /* không có số liệu tồn: để kho = đủ */ }
+    $('#pack-order').textContent = `${o.orderNo} · ${o.customerName}`; $('#pack-error').textContent = ''; $('#pack-form').note.value = '';
+    $('#pack-lines').innerHTML = todo.map(l => {
+      const p = l.sku ? stock.get(l.sku) : null, av = p ? Math.max(0, availableStock(p)) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock;
+      return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}">
+        <div class="pack-head"><b>${esc(l.name)}</b><small>${esc(l.sku || 'Chưa có mã')} · ${esc(l.unit || '')} · đơn ${fmtNum(l.qty)}${l.packed ? ` · đã có phiếu ${fmtNum(l.packed)}` : ''}</small></div>
+        <div class="pack-grid"><label>Cần đóng<input class="num-input" inputmode="decimal" data-need value="${fmtNum(l.left)}"></label>
+          <label>Tồn kho<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? 'Chưa có số liệu' : fmtNum(av)}</span></label>
+          <label>Lấy từ kho<input class="num-input" inputmode="decimal" data-wh value="${fmtNum(fromStock)}"></label></div>
+        <p class="pack-warn" ${short > 1e-9 ? '' : 'hidden'}>⚠️ Kho không đủ – nhập phần còn lại lấy từ đâu.</p>
+        <div data-srcs>${short > 1e-9 ? packSourceRow(short) : ''}</div>
+        <button type="button" class="btn ghost small" data-src-add>＋ Thêm nguồn hàng</button></div>`;
+    }).join('');
+    $('#pack-dialog').showModal();
+  } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+});
+/** Kiểm tra từng dòng: kho + các nguồn khác = số cần đóng; nguồn khác phải ghi rõ. Trả về danh sách phân bổ hoặc ném lỗi. */
+function readPackForm() {
+  const out = [];
+  for (const row of $$('.pack-line', $('#pack-lines'))) {
+    const line = packing.lines.find(l => l.id === row.dataset.line), name = line?.name || '';
+    const need = parseNum(row.querySelector('[data-need]').value || '0'), wh = parseNum(row.querySelector('[data-wh]').value || '0');
+    if (need < 0 || wh < 0) throw new Error(`Số lượng của "${name}" không hợp lệ.`);
+    if (need > line.left + 1e-9) throw new Error(`"${name}" chỉ còn ${fmtNum(line.left)} chưa đóng gói.`);
+    if (need <= 0) continue;
+    const av = row.dataset.av === '' ? null : Number(row.dataset.av);
+    if (av !== null && wh > av + 1e-9 && !confirm(`"${name}": lấy từ kho ${fmtNum(wh)} nhưng tồn kho chỉ ${fmtNum(av)}. Vẫn lưu?`)) throw new Error('Sửa lại số lấy từ kho.');
+    const srcs = $$('.pack-src', row).map(r => ({ source: r.querySelector('[data-src]').value, sourceNote: r.querySelector('[data-src-note]').value.trim(), qty: parseNum(r.querySelector('[data-src-qty]').value || '0') })).filter(x => x.qty > 0);
+    const total = wh + srcs.reduce((t, x) => t + x.qty, 0);
+    if (Math.abs(total - need) > 1e-9) throw new Error(`"${name}": kho ${fmtNum(wh)} + nguồn khác ${fmtNum(total - wh)} = ${fmtNum(total)}, chưa khớp số cần đóng ${fmtNum(need)}.`);
+    const missing = srcs.find(x => !x.sourceNote); if (missing) throw new Error(`"${name}": ghi rõ ${PACK_SOURCES[missing.source].toLowerCase()} nào.`);
+    if (wh > 0) out.push({ orderLineId: line.id, qty: wh, source: 'warehouse' });
+    for (const x of srcs) out.push({ orderLineId: line.id, ...x });
+  }
+  if (!out.length) throw new Error('Chưa có dòng hàng nào để đóng gói.');
+  return out;
+}
+$('#pack-lines').addEventListener('click', e => {
+  const row = e.target.closest('.pack-line'); if (!row) return;
+  if (e.target.closest('[data-src-add]')) { row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow()); row.querySelector('.pack-src:last-child [data-src-note]').focus(); }
+  if (e.target.closest('[data-src-del]')) e.target.closest('.pack-src').remove();
+});
+$('#pack-lines').addEventListener('input', e => {
+  // Đổi số cần đóng / lấy từ kho → cảnh báo khi kho không đủ.
+  const row = e.target.closest('.pack-line'); if (!row || !e.target.matches('[data-need], [data-wh]')) return;
+  const need = parseNum(row.querySelector('[data-need]').value || '0'), wh = parseNum(row.querySelector('[data-wh]').value || '0');
+  row.querySelector('.pack-warn').hidden = !(wh < need - 1e-9);
+  // Kho thiếu mà chưa có dòng nguồn khác → thêm sẵn một dòng với phần còn lại.
+  if (wh < need - 1e-9 && !row.querySelector('.pack-src')) row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow(need - wh));
+});
+$('#pack-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  let allocations; try { allocations = readPackForm(); } catch (ex) { $('#pack-error').textContent = ex.message; return; }
+  const btn = $('#pack-save'); btn.disabled = true;
+  try {
+    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/packing`, 'POST', { allocations, note: $('#pack-form').note.value });
+    $('#pack-dialog').close(); toast(`Đã sinh ${r.slips.length} phiếu đóng gói. Kiểm tra rồi bấm "Gửi kho".`); loadOrderPacking(sales.order.id);
+  } catch (ex) { $('#pack-error').textContent = ex.message; } finally { btn.disabled = false; }
+});
+async function sendSlip(id) { await api(`/packing/${encodeURIComponent(id)}/send`, 'POST', {}); }
+document.addEventListener('click', async e => {
+  const send = e.target.closest('[data-slip-send]'), all = e.target.closest('[data-slip-send-all]'), cancel = e.target.closest('[data-slip-cancel]');
+  if (!send && !all && !cancel) return;
+  const b = send || all || cancel; b.disabled = true;
+  try {
+    if (cancel) { if (!await confirmBox('Huỷ phiếu đóng gói này? Số lượng trả lại để lập phiếu khác.', { ok: 'Huỷ phiếu', danger: true })) return; await api(`/packing/${encodeURIComponent(cancel.dataset.slipCancel)}/cancel`, 'POST', {}); toast('Đã huỷ phiếu.'); }
+    else if (send) { await sendSlip(send.dataset.slipSend); toast('Đã gửi kho – nhóm Kho nhận việc đóng gói.'); }
+    else { const ids = $$('[data-slip-send]').map(x => x.dataset.slipSend); for (const id of ids) await sendSlip(id); toast(`Đã gửi kho ${ids.length} phiếu.`); }
+    if (location.hash.startsWith('#/packing/')) openPacking(location.hash.slice(10)); else if (sales.order) loadOrderPacking(sales.order.id);
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+});
+/** Trang phiếu đóng gói (#/packing/<id>): kho xem hàng cần đóng, quy cách gợi ý, cân nặng; xác nhận kèm 1–3 ảnh. Không id: danh sách phiếu chờ đóng. */
+const slipPhotos = [];
+async function openPacking(id) {
+  const body = $('#packing-body'); body.innerHTML = '<p class="muted card">Đang tải…</p>'; $('#packing-actions').innerHTML = ''; $('#packing-status').innerHTML = '';
+  if (!id) {
+    $('#packing-title').textContent = 'Phiếu chờ đóng gói'; $('#packing-back').href = '#/tasks';
+    try {
+      const { slips } = await api('/packing?status=sent');
+      body.innerHTML = slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
+        : '<p class="muted card">Không có phiếu nào chờ đóng gói.</p>';
+    } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
+    return;
+  }
+  let d; try { d = await api('/packing/' + encodeURIComponent(id)); } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; return; }
+  const k = d.slip, o = d.order; slipPhotos.length = 0;
+  $('#packing-title').textContent = k.slipNo; $('#breadcrumb').textContent = k.slipNo; document.title = k.slipNo + ' · Bách Ngân';
+  $('#packing-status').innerHTML = pill(PACK_STATUS, k.status);
+  $('#packing-back').href = d.canOpenOrder ? `#/orders/${encodeURIComponent(o.id)}` : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? '‹ Đơn hàng' : '‹ Công việc';
+  $('#packing-actions').innerHTML = (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
+  const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
+  body.innerHTML = `<div class="editor-grid">
+    <div class="card"><h2 class="card-title">Giao cho khách</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>Đơn</dt><dd>${esc(o.orderNo)}</dd>
+      ${o.contact || o.phone ? `<dt>Người nhận</dt><dd>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</dd>` : ''}${o.address ? `<dt>Địa chỉ</dt><dd>${esc(o.address)}</dd>` : ''}
+      <dt>Giao dự kiến</dt><dd>${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { done: k.status === 'packed', fmt: fmtDate }) : '—'}</dd></dl></div>
+    <div class="card"><h2 class="card-title">Phiếu</h2><dl class="kv"><dt>Nguồn hàng</dt><dd><b>${esc(k.sourceLabel)}</b>${k.sourceNote ? ': ' + esc(k.sourceNote) : ''}</dd>
+      <dt>Lập</dt><dd>${esc(k.createdByName)} · ${at(k.createdAt)}</dd>${k.sentAt ? `<dt>Gửi kho</dt><dd>${esc(k.sentByName)} · ${at(k.sentAt)}</dd>` : ''}
+      ${k.packedAt ? `<dt>Kho đóng</dt><dd>${esc(k.packedByName)} · ${at(k.packedAt)}${k.packedNote ? `<small>${esc(k.packedNote)}</small>` : ''}</dd>` : ''}
+      ${k.note ? `<dt>Ghi chú</dt><dd>${esc(k.note)}</dd>` : ''}</dl></div></div>
+    <div class="card"><h2 class="card-title">Hàng cần đóng</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">SL</th><th>Quy cách gợi ý</th><th class="right">Cân nặng</th></tr></thead><tbody>
+      ${d.lines.map(l => `<tr><td>${esc(l.name)}<small>${esc(l.sku || '')}</small></td><td class="right">${fmtNum(l.qty)} ${esc(l.unit)}</td>
+        <td>${l.suggestion ? esc(l.suggestion) : '<span class="muted">Chưa có quy cách thùng</span>'}${l.cartonSize ? `<small>Thùng ${esc(l.cartonSize)}${l.cartonWeight ? ' · ' + fmtNum(l.cartonWeight) + ' kg/thùng' : ''}</small>` : ''}</td>
+        <td class="right">${l.weight ? kg(l.weight) : '—'}</td></tr>`).join('')}
+      <tr><td><b>Tổng</b></td><td class="right"><b>${fmtNum(k.totalQty)}</b></td><td></td><td class="right"><b>${k.totalWeight ? kg(k.totalWeight) : '—'}</b></td></tr></tbody></table></div></div>
+    ${d.photos.length ? `<div class="card"><h2 class="card-title">Ảnh hàng đã đóng</h2><div class="pack-photos">${d.photos.map(p => `<img src="${esc(p.dataUrl)}" alt="Ảnh hàng đã đóng" loading="lazy">`).join('')}</div></div>` : ''}
+    ${d.canConfirm ? `<div class="card"><h2 class="card-title">Xác nhận đã đóng hàng</h2>
+      <p class="muted small">Chụp 1–3 ảnh hàng đã đóng (ảnh tự nén nhỏ để không đầy bộ nhớ).</p>
+      <label class="btn secondary pick-photo">📷 Chụp / chọn ảnh<input type="file" id="slip-photo-input" accept="image/*" capture="environment" multiple hidden></label>
+      <div class="pack-photos" id="slip-photo-preview"></div>
+      <label>Ghi chú (tuỳ chọn)<input id="slip-confirm-note" maxlength="1000" placeholder="Ví dụ: 3 thùng, đã dán tem"></label>
+      <div class="row-gap end"><button class="btn primary" id="slip-confirm" disabled>Xác nhận đã đóng hàng</button></div></div>` : ''}`;
+}
+function drawSlipPhotos() {
+  const box = document.getElementById('slip-photo-preview'); if (!box) return;
+  box.innerHTML = slipPhotos.map((u, i) => `<span class="pack-photo"><img src="${esc(u)}" alt="Ảnh ${i + 1}"><button type="button" class="icon-btn danger" data-photo-del="${i}" aria-label="Bỏ ảnh ${i + 1}">×</button></span>`).join('');
+  document.getElementById('slip-confirm').disabled = !slipPhotos.length;
+}
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'slip-photo-input') return;
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) {
+    if (slipPhotos.length >= 3) { toast('Tối đa 3 ảnh.', 'err'); break; }
+    try { slipPhotos.push(await compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.')); } catch (ex) { toast(ex.message, 'err'); }
+  }
+  drawSlipPhotos();
+});
+document.addEventListener('click', async e => {
+  const del = e.target.closest('[data-photo-del]');
+  if (del) { slipPhotos.splice(Number(del.dataset.photoDel), 1); drawSlipPhotos(); return; }
+  if (e.target.id !== 'slip-confirm') return;
+  const id = location.hash.slice(10); e.target.disabled = true;
+  try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value }); toast('Đã xác nhận đóng hàng.'); tasksView().badge(); openPacking(id); }
+  catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
 });
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
 async function verifyAndConfirmOrder() {
@@ -2438,7 +2610,7 @@ function openOrderPrint(detail = sales.detail) {
   dlg.showModal();
 }
 document.addEventListener('click', async e => {
-  if (e.target.closest('#order-print')) openOrderPrint();
+  if (e.target.closest('#order-print, #order-print-card')) openOrderPrint();
   const listPrint = e.target.closest('[data-order-print-for]');
   if (listPrint) {
     e.stopPropagation();

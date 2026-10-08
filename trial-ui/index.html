@@ -451,6 +451,15 @@
       </div>
     </section>
 
+    <!-- ---------- Phiếu đóng gói (kho mở từ việc "Đóng gói") ---------- -->
+    <section class="view" id="view-packing" hidden>
+      <div class="editor-head">
+        <div class="editor-title"><a class="btn ghost small" href="#/tasks" id="packing-back">‹ Công việc</a><h1 id="packing-title">Phiếu đóng gói</h1><span id="packing-status"></span></div>
+        <div class="editor-actions" id="packing-actions"></div>
+      </div>
+      <div id="packing-body"></div>
+    </section>
+
     <!-- ---------- Chi tiết đơn đặt hàng ---------- -->
     <section class="view" id="view-order" hidden>
       <div class="editor-head">
@@ -466,8 +475,8 @@
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đã giao</th><th class="right">Đơn giá</th><th class="right">VAT</th><th class="right">Thành tiền</th></tr></thead><tbody id="order-lines"></tbody></table></div>
       </div>
       <div class="editor-grid">
-        <div class="card"><div class="card-title-row"><h2 class="card-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
-        <div class="card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><button class="btn secondary small" id="order-new-delivery">＋ Lên lịch giao</button></div><div id="order-deliveries"></div></div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title" id="order-contract-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><span class="row-gap"><button class="btn secondary small" id="order-pack" title="Lập phiếu đóng gói theo nguồn hàng (kho / cửa hàng / NCC / đại lý) rồi gửi kho">📦 Yêu cầu đóng gói</button><button class="btn secondary small" id="order-new-delivery">＋ Lên lịch giao</button></span></div><div id="order-deliveries"></div><div id="order-packing"></div></div>
       </div>
       <div class="editor-grid">
         <div class="card"><div class="card-title-row"><h2 class="card-title">Hoá đơn</h2><span id="order-invoice-pill"></span></div><div id="order-invoice"></div></div>
@@ -676,6 +685,19 @@
   <div class="modal-head"><div><span class="eyebrow">Kiểm tồn</span><h2 id="stock-check-title">Báo giá</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body"><div id="stock-check-body"></div></div>
   <div class="modal-foot"><span class="muted small grow" id="stock-check-note"></span><button type="button" class="btn secondary" data-close>Đóng</button></div>
+</dialog>
+<!-- Yêu cầu đóng gói: chia số lượng từng dòng theo nguồn hàng → mỗi nguồn một phiếu -->
+<dialog id="pack-dialog" class="modal wide">
+  <form id="pack-form" novalidate>
+    <div class="modal-head"><div><span class="eyebrow" id="pack-order">Đơn hàng</span><h2>Yêu cầu đóng gói</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body">
+      <p class="muted small">Mặc định lấy đủ số lượng trong đơn từ kho. Kho không đủ thì nhập phần còn lại lấy từ đâu (điều chuyển cửa hàng, NCC, đại lý…). Mỗi nguồn hàng sinh một phiếu đóng gói.</p>
+      <div id="pack-lines"></div>
+      <label>Ghi chú cho kho<textarea name="note" rows="2" maxlength="1000" placeholder="Ví dụ: bọc chống sốc, dán tem, giao trước 9h"></textarea></label>
+      <p class="error" id="pack-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="pack-save">Lưu – sinh phiếu đóng gói</button></div>
+  </form>
 </dialog>
 <dialog id="discount-dialog" class="modal narrow">
   <form id="discount-form" novalidate>
