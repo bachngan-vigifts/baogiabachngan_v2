@@ -2002,6 +2002,10 @@ function payCell(r, counts, orderStatus) {
     : [r.deposit > 0 ? `Cọc ${money(r.depositPaid)}/${money(r.deposit)}` : r.paid > 0 ? `Đã thu ${money(r.paid)}` : '', `Còn ${money(r.balance)}`].filter(Boolean).join(' · ');
   return `${pill(PAY_STATE, r.payState)}<small>${sub}</small>${r.overdue ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}`;
 }
+/** Xuất hoá đơn của đơn / HĐKT. */
+const INVOICE_STATUS = { none: ['Chưa yêu cầu', 'muted'], requested: ['Chờ xuất HĐ', 'warn'], issued: ['Đã xuất HĐ', 'ok'] };
+const invoiceCell = (status, no, orderStatus) => orderStatus === 'cancelled' ? '<span class="muted">—</span>'
+  : status === 'issued' ? `${pill(INVOICE_STATUS, 'issued')}<small>Số ${esc(no)}</small>` : pill(INVOICE_STATUS, status || 'none');
 const pill = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
 const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
 const debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
@@ -2015,16 +2019,17 @@ const listError = (key, e) => { $(`#${key}-list`).innerHTML = ''; $(`#${key}-emp
 async function loadOrders() {
   $('#orders-list').innerHTML = skeleton(7);
   try {
-    const d = await api('/orders?q=' + encodeURIComponent($('#orders-search').value));
+    // Đơn hàng và HĐKT là 2 luồng song song: trang này chỉ hiện đơn không có HĐKT.
+    const d = await api('/orders?flow=order&q=' + encodeURIComponent($('#orders-search').value));
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
       <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.quoteNo || 'Không từ báo giá')} · ${fmtDate(o.orderDate)}</small></td>
       <td>${esc(o.customerName)}<small>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</small></td>
       <td>${pill(ORDER_STATUS, o.status)}</td>
-      <td>${o.contract ? esc(o.contract.contractNo) + `<small>${pill(CONTRACT_STATUS, o.contract.status)}</small>` : '<span class="muted">Chưa có</span>'}</td>
+      <td>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</td>
       <td class="right num">${money(o.total)}</td>
       <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
       <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.contract ? `<button type="button" class="btn secondary small" data-contract-docs-for="${esc(o.id)}" title="Xem, sửa, tải bộ 3 file Word HĐKT">HĐKT</button>` : ''}</td></tr>`),
-      'Chưa có đơn đặt hàng. Mở một báo giá đã lưu và bấm "Tạo đơn đặt hàng".');
+      'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
   } catch (e) { listError('orders', e); }
 }
 // ----- danh sách HĐKT
@@ -2035,8 +2040,8 @@ async function loadContracts() {
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
       <td><b>${esc(k.contractNo)}</b></td><td>${esc(k.customerName)}<small>${orderLink(k.orderId, k.orderNo)}${k.quoteNo ? ' · ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button></td></tr>`),
-      'Chưa có HĐKT. Mở một đơn đặt hàng và bấm "Lập HĐKT".');
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button></td></tr>`),
+      'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
   } catch (e) { listError('contracts', e); }
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
@@ -2239,6 +2244,9 @@ async function openOrder(id) {
   if (wantContract) setTimeout(() => { const b = $('#order-contract-action button'); if (b) b.click(); else toast('Đơn này đã có HĐKT.'); }, 0);
   const o = d.order, r = d.receivable;
   $('#order-title').textContent = o.orderNo; $('#breadcrumb').textContent = o.orderNo; document.title = o.orderNo + ' · Bách Ngân';
+  // Đơn hàng và HĐKT là 2 luồng: đơn có HĐKT quay về trang HĐKT.
+  $('#order-back').href = d.contract ? '#/contracts' : '#/orders'; $('#order-back').textContent = d.contract ? '‹ HĐKT' : '‹ Đơn đặt hàng';
+  $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (d.contract ? 'contracts' : 'orders')));
   $('#order-status').outerHTML = `<span class="pill ${ORDER_STATUS[o.status]?.[1] || ''}" id="order-status">${esc(ORDER_STATUS[o.status]?.[0] || o.status)}</span>`;
   // Liên kết các bước của đơn
   const step = (done, label, sub, href) => `<${href ? `a href="${href}"` : 'div'} class="flow-step ${done ? 'done' : ''}"><b>${esc(label)}</b><small>${esc(sub)}</small></${href ? 'a' : 'div'}>`;
@@ -2269,7 +2277,8 @@ async function openOrder(id) {
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
     <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${k.status === 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
-    : '<p class="muted">Chưa lập HĐKT. Bấm <b>＋ Lập HĐKT</b> để cấp số hợp đồng, chia kỳ thanh toán (cọc + phần còn lại); sau đó nút <b>Xem / sửa / tải hồ sơ HĐKT</b> hiện ở đây.</p>';
+    : '<p class="muted">Đơn hàng cho khách đã có HĐ nguyên tắc – không cần lập HĐKT riêng. Nếu cần HĐKT cho đơn này, bấm <b>＋ Lập HĐKT</b>.</p>';
+  renderInvoice(o);
   // Ngày giao dự kiến nằm ngay ở Lịch giao hàng: nhân viên đổi ngày → đơn (và đơn khách xem) cập nhật theo.
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><label><span>Ngày giao dự kiến</span><input type="date" id="order-expected" value="${esc(o.expectedDeliveryDate || '')}"></label>
       ${duePill(o.expectedDeliveryDate, { fmt: fmtDate })}<button type="button" class="btn secondary small" id="order-expected-save" hidden>Lưu ngày giao</button></div>`)
@@ -2281,6 +2290,39 @@ async function openOrder(id) {
   $('#order-payments').innerHTML = d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>';
 }
+/** Ô Hoá đơn của đơn: yêu cầu xuất (tự động khi giao xong / nhân viên bấm) → nhóm Kế toán nhập số hoá đơn. */
+function renderInvoice(o) {
+  const st = o.status === 'cancelled' ? null : o.invoiceStatus || 'none', at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
+  $('#order-invoice-pill').innerHTML = st ? pill(INVOICE_STATUS, st) : '';
+  const form = (label) => o.canIssueInvoice ? `<form class="invoice-form" id="invoice-form"${st === 'issued' ? ' hidden' : ''}>
+      <label>Số hoá đơn<input name="invoiceNo" required maxlength="200" value="${esc(o.invoiceNo || '')}" placeholder="Ví dụ: 0000123" autocomplete="off"></label>
+      <label>Ngày hoá đơn<input type="date" name="invoiceDate" value="${esc(o.invoiceDate || todayIso())}"></label>
+      <button class="btn primary small">${label}</button></form>` : '';
+  const requested = o.invoiceRequestedAt ? `<dt>Yêu cầu</dt><dd>${o.invoiceRequestedBy ? esc(o.invoiceRequestedByName) : 'Tự động khi giao xong'} · ${at(o.invoiceRequestedAt)}${o.invoiceRequestNote ? `<small>${esc(o.invoiceRequestNote)}</small>` : ''}</dd>` : '';
+  $('#order-invoice').innerHTML = !st ? '<p class="muted">Đơn đã huỷ.</p>'
+    : st === 'issued' ? `<dl class="kv"><dt>Số hoá đơn</dt><dd><b>${esc(o.invoiceNo)}</b></dd><dt>Ngày hoá đơn</dt><dd>${fmtDate(o.invoiceDate) || '—'}</dd>
+        <dt>Kế toán nhập</dt><dd>${esc(o.invoiceIssuedByName || '—')} · ${at(o.invoiceIssuedAt)}</dd>${requested}</dl>
+        ${o.canIssueInvoice ? '<button type="button" class="btn ghost small" id="invoice-edit">Sửa số hoá đơn</button>' : ''}${form('Lưu số hoá đơn')}`
+    : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Kế toán nhập số hoá đơn vào đây sau khi xuất.</p>${form('Đã xuất – lưu số hoá đơn')}`
+    : `<p class="muted">Chưa yêu cầu xuất hoá đơn. Khi đơn giao xong, hệ thống tự yêu cầu và giao việc cho nhóm Kế toán.</p>
+       ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>'}${form('Lưu số hoá đơn')}`;
+}
+document.addEventListener('click', async e => {
+  if (e.target.id === 'invoice-edit') { const f = document.getElementById('invoice-form'); f.hidden = false; e.target.hidden = true; f.invoiceNo.focus(); return; }
+  if (e.target.id !== 'invoice-request') return;
+  const note = prompt('Ghi chú cho kế toán (tuỳ chọn) – ví dụ: xuất theo tên công ty mẹ, gửi hoá đơn qua email…', '');
+  if (note === null) return;
+  e.target.disabled = true;
+  try { await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice-request`, 'POST', { note }); toast('Đã yêu cầu xuất hoá đơn – nhóm Kế toán nhận việc.'); openOrder(sales.order.id); tasksView().badge(); }
+  catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
+});
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'invoice-form') return;
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector('button'); btn.disabled = true;
+  try { await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice`, 'PUT', { invoiceNo: f.invoiceNo.value, invoiceDate: f.invoiceDate.value }); toast('Đã lưu số hoá đơn.'); openOrder(sales.order.id); tasksView().badge(); }
+  catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
+});
 document.addEventListener('input', e => { if (e.target.id === 'order-expected') document.getElementById('order-expected-save').hidden = e.target.value === (sales.order.expectedDeliveryDate || ''); });
 /** Ô Lịch giao hàng: tình trạng xuất kho / đóng hàng của từng chuyến (việc của nhóm Kho) + nút yêu cầu kho đóng hàng. */
 async function loadPackingState(orderId) {
@@ -2434,7 +2476,7 @@ function updateQuoteActions() {
   pill.hidden = !saved; pill.className = 'pill ' + (approved ? 'ok' : 'warn');
   pill.textContent = approved ? 'Đã duyệt' : 'Chờ duyệt';
   pill.title = approved && editor.approval.by ? `Duyệt bởi ${editor.approval.by}${editor.approval.at ? ' lúc ' + new Date(editor.approval.at).toLocaleString('vi-VN') : ''}` : approved ? '' : 'Manager cần duyệt trước khi tải file, tạo đơn hàng, sinh HĐKT.';
-  for (const id of ['#quote-contract', '#quote-to-order']) { const b = $(id); b.hidden = !saved; b.disabled = !!block; b.title = block || ''; }
+  { const b = $('#quote-make'); b.hidden = !saved; b.disabled = !!block; b.title = block || 'Chọn tạo Đơn hàng (khách có HĐ nguyên tắc) hoặc HĐKT'; }
   const dl = $('#quote-download'); dl.disabled = !!block; dl.title = block || ''; if (block) closeDownloadMenu();
   // Manager duyệt mọi báo giá; nhân viên phụ trách xác nhận báo giá khách gửi từ trang khách hàng.
   const canApprove = mgr || !!editor.approval?.canApprove;
@@ -2459,15 +2501,73 @@ async function ensureOrderForQuote() {
     return found.id;
   }
 }
-$('#quote-to-order').addEventListener('click', async () => {
-  const block = approvalBlock(); if (block) return toast(block, 'err');
-  const btn = $('#quote-to-order'); btn.disabled = true;
-  try { go('#/orders/' + await ensureOrderForQuote()); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+// Kiểm tồn cả báo giá (giống trang Khách hỏi tồn): tồn khả dụng, tồn NCC, hàng chờ về so với số lượng báo giá.
+$('#quote-stock').addEventListener('click', async () => {
+  const d = collectQuote(), need = new Map();
+  for (const r of d.rows) if (r.name || r.sku) { const k = (r.sku || '').trim() || '#' + need.size; const x = need.get(k) || { sku: (r.sku || '').trim(), name: r.name, unit: r.unit, qty: 0 }; x.qty += Number(r.qty) || 0; need.set(k, x); }
+  if (!need.size) return toast('Báo giá chưa có sản phẩm để kiểm tồn.', 'err');
+  $('#stock-check-title').textContent = `${d.quoteNo || 'Báo giá'}${d.customer ? ' · ' + d.customer : ''}`;
+  $('#stock-check-body').innerHTML = '<p class="muted">Đang kiểm tồn…</p>'; $('#stock-check-note').textContent = ''; $('#stock-check-dialog').showModal();
+  try {
+    const skus = [...new Set([...need.values()].map(x => x.sku).filter(Boolean))], stock = new Map();
+    for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); }
+    let short = 0;
+    const rows = [...need.values()].map(i => {
+      const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p) : null, miss = av === null ? null : Math.max(0, i.qty - av);
+      if (miss) short++;
+      return `<tr><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
+        <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
+        <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
+        <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
+    });
+    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-note').textContent = short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.';
+  } catch (e) { $('#stock-check-body').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
 });
-$('#quote-contract').addEventListener('click', async () => {
+/** Hộp chọn luồng: 'order' (khách đã có HĐ nguyên tắc) hoặc 'contract' (lập HĐKT); null = huỷ. */
+function chooseFlow(label) {
+  const dlg = $('#flow-dialog'); $('#flow-quote').textContent = label || 'Báo giá';
+  return new Promise(resolve => {
+    let picked = null;
+    dlg.onclick = e => { const b = e.target.closest('[data-flow]'); if (b) { picked = b.dataset.flow; dlg.close(); } };
+    dlg.onclose = () => { dlg.onclick = dlg.onclose = null; resolve(picked); };
+    dlg.showModal();
+  });
+}
+/** Tạo đơn của báo giá theo luồng đã chọn rồi mở đơn (luồng HĐKT: mở luôn hộp lập HĐKT). */
+async function makeFromQuote(flow, createOrder) {
+  const id = await createOrder();
+  if (flow === 'contract') sales.openContract = id;
+  go('#/orders/' + id);
+}
+$('#quote-make').addEventListener('click', async () => {
   const block = approvalBlock(); if (block) return toast(block, 'err');
-  const btn = $('#quote-contract'); btn.disabled = true;
-  try { const id = await ensureOrderForQuote(); sales.openContract = id; go('#/orders/' + id); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+  const flow = await chooseFlow(`${field('quoteNo').value} · ${field('customer').value || ''}`); if (!flow) return;
+  const btn = $('#quote-make'); btn.disabled = true;
+  try { await makeFromQuote(flow, ensureOrderForQuote); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+});
+// ＋ ở trang Đơn hàng / HĐKT: chọn một báo giá đã duyệt (chưa có đơn) → tạo đơn / lập HĐKT.
+let quotePickFlow = 'order';
+async function drawQuotePick() {
+  const box = $('#quote-pick-list'); box.innerHTML = '<li class="muted">Đang tải…</li>';
+  try {
+    const { quotes } = await api('/order-quote-candidates?q=' + encodeURIComponent($('#quote-pick-search').value));
+    box.innerHTML = quotes.length ? quotes.map(q => `<li><button type="button" data-pick-quote="${esc(q.id)}"><b>${esc(q.quoteNo)}</b><span>${esc(q.customer)}</span><small>${esc(q.quoteType)}${q.quoteDate ? ' · ' + fmtDate(q.quoteDate) : ''}</small></button></li>`).join('')
+      : '<li class="muted">Không có báo giá đã duyệt nào chưa có đơn.</li>';
+  } catch (e) { box.innerHTML = `<li class="error">${esc(e.message)}</li>`; }
+}
+function openQuotePick(flow) {
+  quotePickFlow = flow; $('#quote-pick-title').textContent = flow === 'contract' ? 'Lập HĐKT' : 'Tạo đơn hàng';
+  $('#quote-pick-search').value = ''; $('#quote-pick-dialog').showModal(); drawQuotePick();
+}
+$('#orders-new').addEventListener('click', () => openQuotePick('order'));
+$('#contracts-new').addEventListener('click', () => openQuotePick('contract'));
+$('#quote-pick-search').addEventListener('input', debounce(drawQuotePick));
+$('#quote-pick-list').addEventListener('click', async e => {
+  const b = e.target.closest('[data-pick-quote]'); if (!b) return;
+  b.disabled = true;
+  try { await makeFromQuote(quotePickFlow, async () => (await api('/orders', 'POST', { quoteId: b.dataset.pickQuote })).id); $('#quote-pick-dialog').close(); toast(quotePickFlow === 'contract' ? 'Đã tạo đơn – điền thông tin để lập HĐKT.' : 'Đã tạo đơn hàng.'); }
+  catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
 });
 $('#approve-quote').addEventListener('click', async () => {
   if (!(isManager() || editor.approval?.canApprove) || !editor.id) return;

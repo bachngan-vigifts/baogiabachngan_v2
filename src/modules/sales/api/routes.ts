@@ -26,11 +26,15 @@ const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.te
 const text = (v: unknown, max = 500) => { if (v !== undefined && v !== null && typeof v !== 'string') throw new AppError(400, 'Dữ liệu không hợp lệ.'); return String(v ?? '').trim().slice(0, max); };
 const money = (v: unknown, what: string) => { const n = Number(v); if (!Number.isFinite(n) || n < 0 || n > 1e13) throw new AppError(400, `${what} không hợp lệ.`); return Math.round(n); };
 
+/** Kế toán (chức vụ `accounting`): xem mọi đơn / HĐKT để nhập số hoá đơn, theo dõi công nợ. */
+export const isAccountant = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'accounting';
+/** Ai nhập được số hoá đơn: Manager và Kế toán. */
+export const canIssueInvoice = (m: { role: string; positionId?: string | null }) => m.role === 'manager' || isAccountant(m);
 /**
- * Ai thấy đơn: Manager thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
+ * Ai thấy đơn: Manager và Kế toán thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
  */
-export const orderScopeFor = (m: { id: string; role: string }): SQL | undefined => m.role === 'manager' ? undefined
+export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) ? undefined
   : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id),
     sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
@@ -74,6 +78,9 @@ async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string |
   const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   const status = orderStatusFromLines(order!.status as OrderStatus, lines);
   if (status !== order!.status) await tx.update(salesOrders).set({ status, updatedAt: nowIso() }).where(eq(salesOrders.id, orderId));
+  // Giao xong mà chưa ai yêu cầu xuất hoá đơn → tự yêu cầu (sinh việc cho nhóm Kế toán).
+  if (status === 'delivered' && order!.invoiceStatus === 'none')
+    await tx.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: null, invoiceRequestNote: 'Tự động: đơn đã giao xong.' }).where(eq(salesOrders.id, orderId));
   if (status === 'delivered' && deliveredOn) {
     const [contract] = await tx.select().from(salesContracts).where(eq(salesContracts.orderId, orderId)).limit(1);
     await tx.update(paymentSchedules).set({ dueDate: addDays(deliveredOn, contract?.paymentDays ?? 0) })
@@ -123,10 +130,14 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
 export function registerSalesRoutes(router: Router<StaffEnv>) {
   // ================= ĐƠN ĐẶT HÀNG =================
   router.get('/orders', async c => {
-    const q = c.url.searchParams.get('q'), status = c.url.searchParams.get('status') || '';
+    const q = c.url.searchParams.get('q'), status = c.url.searchParams.get('status') || '', flow = c.url.searchParams.get('flow') || '';
+    const invoice = c.url.searchParams.get('invoice') || '';
     const rows = await c.env.db.select().from(salesOrders).where(and(
       orderScope(c),
       status ? eq(salesOrders.status, status as OrderStatus) : undefined,
+      // Đơn hàng và HĐKT là 2 luồng song song: trang Đơn hàng (flow=order) chỉ hiện đơn KHÔNG có HĐKT (khách đã có HĐ nguyên tắc).
+      flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined,
+      invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined,
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.quoteNo, salesOrders.customerName, salesOrders.phone), q),
     )).orderBy(desc(salesOrders.orderDate), desc(salesOrders.createdAt)).limit(200);
     const ids = rows.map(r => r.id);
@@ -151,11 +162,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const shipLines = ships.length ? await db.select().from(deliveryLines).where(inArray(deliveryLines.deliveryId, ships.map(s => s.id))) : [];
     // Cho bản in đơn đặt hàng: mã khách hàng, người phụ trách, người soạn.
     const [cust] = order.customerId ? await db.select({ code: customers.customerCode }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
-    const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees).where(inArray(employees.id, [order.ownerId, order.createdBy]));
+    const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
+      .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy].filter((x): x is string => !!x)));
     const person = (id: string) => people.find(p => p.id === id);
     return json({
       order: { ...order, customerCode: cust?.code ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
-        createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer' }, lines, contract: contract[0] ? { ...contract[0], data: JSON.parse(contract[0].data) } : null,
+        createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
+        invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
+        canIssueInvoice: canIssueInvoice(viewer(c)) }, lines, contract: contract[0] ? { ...contract[0], data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id) })),
       schedules, payments, receivable: receivable(schedules, payments, vietnamDate().iso),
     });
@@ -200,14 +214,52 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({ ok: true });
   }, 'business');
 
+  // ================= XUẤT HOÁ ĐƠN =================
+  /** Nhân viên phụ trách (người xem được đơn) yêu cầu xuất hoá đơn → sinh việc cho nhóm Kế toán. Giao xong thì tự yêu cầu. */
+  router.post('/orders/:id/invoice-request', async c => {
+    const body = await readJson(c.req, 4_096), order = await loadOrder(c, c.params.id!);
+    if (order.status === 'cancelled' || order.status === 'draft') throw new AppError(409, 'Đơn chưa xác nhận hoặc đã huỷ, chưa yêu cầu xuất hoá đơn được.');
+    if (order.invoiceStatus === 'issued') throw new AppError(409, `Đơn đã xuất hoá đơn ${order.invoiceNo}.`, 'INVOICE_ISSUED');
+    if (order.invoiceStatus === 'requested') return json({ ok: true, already: true });
+    await c.env.db.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: viewer(c).id, invoiceRequestNote: text(body.note, 1000),
+      updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(and(eq(salesOrders.id, order.id), eq(salesOrders.invoiceStatus, 'none')));
+    return json({ ok: true });
+  }, 'business');
+
+  /** Kế toán / Manager nhập số hoá đơn (sửa lại được khi nhập nhầm). Việc "Xuất hoá đơn" tự hoàn thành. */
+  router.put('/orders/:id/invoice', async c => {
+    if (!canIssueInvoice(viewer(c))) throw new AppError(403, 'Chỉ Kế toán hoặc Manager nhập được số hoá đơn.');
+    const body = await readJson(c.req, 4_096), order = await loadOrder(c, c.params.id!);
+    if (order.status === 'cancelled') throw new AppError(409, 'Đơn đã huỷ.');
+    const invoiceNo = text(body.invoiceNo, 200), invoiceDate = body.invoiceDate ? String(body.invoiceDate) : vietnamDate().iso;
+    if (!invoiceNo) throw new AppError(400, 'Nhập số hoá đơn.');
+    if (!isDate(invoiceDate)) throw new AppError(400, 'Ngày hoá đơn không hợp lệ.');
+    const now = nowIso();
+    await c.env.db.update(salesOrders).set({ invoiceStatus: 'issued', invoiceNo, invoiceDate, invoiceIssuedAt: now, invoiceIssuedBy: viewer(c).id,
+      invoiceRequestedAt: order.invoiceRequestedAt ?? now, updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+    return json({ ok: true });
+  }, 'business');
+
+  /** Báo giá đã duyệt, chưa có đơn đang hiệu lực (để bấm ＋ ở trang Đơn hàng / HĐKT tạo nhanh). */
+  router.get('/order-quote-candidates', async c => {
+    const rows = await c.env.db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, quoteType: quotations.quoteType, quoteDate: quotations.quoteDate })
+      .from(quotations).where(and(quotePredicate(quotationScope(viewer(c))), eq(quotations.approvalStatus, 'approved'),
+        sql`NOT EXISTS (SELECT 1 FROM ${salesOrders} WHERE ${salesOrders.quoteId} = ${quotations.id} AND ${salesOrders.status} <> 'cancelled')`,
+        matchAllWords(foldSql(quotations.quoteNo, quotations.customer), c.url.searchParams.get('q'))))
+      .orderBy(desc(quotations.updatedAt)).limit(30);
+    return json({ quotes: rows });
+  }, 'business');
+
   // ================= HĐKT =================
   router.get('/contracts', async c => {
-    const rows = await c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status })
+    const rows = await c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
+      invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
       .where(and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.orderNo, salesOrders.customerName), c.url.searchParams.get('q'))))
       .orderBy(desc(salesContracts.createdAt)).limit(200);
     const debts = await receivableOf(c.env.db, [...new Set(rows.map(r => r.contract.orderId))]);
     return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo, orderStatus: r.orderStatus,
+      invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo,
       receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })) });
   }, 'business');
 

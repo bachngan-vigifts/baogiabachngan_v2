@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
+import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { syncSapoDocs } from '../../src/modules/integrations/api/sapo-pull.ts';
@@ -10,13 +11,16 @@ import { contractNumber, legalCode, nextDocNo, orderLinesFromQuote, receivable, 
 const origin = 'https://trial.test';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  // Kế toán (chức vụ "accounting" = nhóm Kế toán).
+  await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('kt','kt@x.vn','Kế toán','0900','employee','accounting',1,'2026-01-01T00:00:00.000Z')").run();
+  await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run('kt', await hashPassword(PASSWORD, 1000));
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000 });
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc@x.vn'), kt: await login('kt@x.vn') };
 }
 
 test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòng đơn từ báo giá, công nợ', () => {
@@ -164,4 +168,57 @@ test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sa
   await call('/orders/' + ids.at(-1) + '/status', emp, 'PUT', { status: 'cancelled' });
   h = (await call('/products/ML-TRA/history', emp)).data;
   assert.deepEqual([h.history.length, h.history[0].unitPrice], [19, 119000]);
+});
+
+test('xuất hoá đơn: giao xong tự yêu cầu / nhân viên bấm yêu cầu → việc cho nhóm Kế toán; kế toán nhập số hoá đơn thì việc xong', async () => {
+  const { call, emp, mgr, kt } = await setup();
+  const order = async (no: string) => {
+    const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: no, customer: 'Khách ' + no, vat: 8, rows: [{ name: 'Nồi', sku: 'N1', qty: 2, price: 500000 }] });
+    await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+    return (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
+  };
+  const a = await order('HRC_A'), b = await order('HRC_B');
+  // Đơn A: giao xong → tự yêu cầu xuất hoá đơn.
+  const g = await call('/deliveries', emp, 'POST', { orderId: a, plannedDate: '2026-10-07' });
+  await call('/deliveries/' + g.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-07' });
+  let A = (await call('/orders/' + a, emp)).data.order;
+  assert.deepEqual([A.invoiceStatus, A.invoiceRequestedBy], ['requested', null]);
+  assert.equal(A.canIssueInvoice, false);
+  // Đơn B: nhân viên phụ trách bấm yêu cầu (chưa giao).
+  assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { note: 'Khách cần hoá đơn trước khi giao' })).status, 200);
+  const B = (await call('/orders/' + b, emp)).data.order;
+  assert.deepEqual([B.invoiceStatus, B.invoiceRequestNote, B.invoiceRequestedByName], ['requested', 'Khách cần hoá đơn trước khi giao', 'Tên emp']);
+  // Việc "Xuất hoá đơn" cho nhóm Kế toán: kế toán thấy, nhân viên sale không.
+  let team = (await call('/tasks?view=mine&refresh=1', kt)).data.tasks.filter((t: any) => t.source === 'invoice');
+  assert.equal(team.length, 2); assert.ok(team.every((t: any) => t.assigneePosition === 'accounting' && /^#\/orders\//.test(t.link)));
+  // Kế toán xem được mọi đơn (dù không phụ trách) và là người duy nhất (cùng Manager) nhập số hoá đơn.
+  assert.equal((await call('/orders/' + a, kt)).status, 200);
+  assert.equal((await call('/orders/' + a + '/invoice', emp, 'PUT', { invoiceNo: '0000123' })).status, 403);
+  assert.equal((await call('/orders/' + a + '/invoice', kt, 'PUT', { invoiceNo: '' })).status, 400);
+  assert.equal((await call('/orders/' + a + '/invoice', kt, 'PUT', { invoiceNo: '0000123', invoiceDate: '2026-10-08' })).status, 200);
+  A = (await call('/orders/' + a, emp)).data.order;
+  assert.deepEqual([A.invoiceStatus, A.invoiceNo, A.invoiceDate, A.invoiceIssuedByName], ['issued', '0000123', '2026-10-08', 'Kế toán']);
+  assert.equal((await call('/orders/' + a + '/invoice-request', emp, 'POST', {})).data.code, 'INVOICE_ISSUED');
+  team = (await call('/tasks?view=mine&refresh=1', kt)).data.tasks.filter((t: any) => t.source === 'invoice' && t.status !== 'done');
+  assert.deepEqual(team.map((t: any) => t.sourceId), [b], 'việc của đơn đã có số hoá đơn tự hoàn thành');
+  assert.deepEqual((await call('/orders?invoice=requested', kt)).data.orders.map((o: any) => o.id), [b]);
+});
+
+test('đơn hàng và HĐKT là 2 luồng: trang Đơn hàng (flow=order) bỏ đơn đã có HĐKT; ＋ tạo nhanh chọn báo giá đã duyệt chưa có đơn', async () => {
+  const { db, call, emp, mgr } = await setup();
+  await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: '', phone: '', email: '', address: '', search: '', taxCode: '0101234567', customerCode: 'HL01', sourceVersion: 0, syncedAt: '' });
+  const quote = async (no: string, approve = true) => {
+    const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: no, customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8, rows: [{ name: 'Ly', qty: 1, price: 100 }] });
+    if (approve) await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+    return q.data.id as string;
+  };
+  const q1 = await quote('B2B_1'), q2 = await quote('B2B_2'); await quote('B2B_3', false);
+  assert.deepEqual((await call('/order-quote-candidates', emp)).data.quotes.map((q: any) => q.quoteNo).sort(), ['B2B_1', 'B2B_2'], 'chỉ báo giá đã duyệt');
+  const o1 = (await call('/orders', emp, 'POST', { quoteId: q1 })).data.id, o2 = (await call('/orders', emp, 'POST', { quoteId: q2 })).data.id;
+  assert.deepEqual((await call('/order-quote-candidates?q=b2b', emp)).data.quotes, [], 'báo giá đã có đơn thì không hiện');
+  await call('/contracts', emp, 'POST', { orderId: o2, legalEntity: 'BN' });
+  assert.deepEqual((await call('/orders?flow=order', emp)).data.orders.map((o: any) => o.id), [o1]);
+  assert.equal((await call('/orders', emp)).data.orders.length, 2);
+  const k = (await call('/contracts', emp)).data.contracts;
+  assert.deepEqual([k.length, k[0].orderId, k[0].invoiceStatus], [1, o2, 'none']);
 });

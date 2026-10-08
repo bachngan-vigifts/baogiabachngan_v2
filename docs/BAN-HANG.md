@@ -19,6 +19,33 @@ Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[L�
   - **Lịch giao hàng**: lọc theo khoảng ngày; đổi trạng thái chuyến ngay trên danh sách.
   - **Công nợ**: tổng phải thu, đã thu, còn lại, quá hạn.
 
+## Hai luồng song song: Đơn hàng và HĐKT (migration `0034_invoice_request.sql`)
+
+- Trên báo giá đã duyệt có một nút **Sinh Đơn hàng / HĐKT**. Bấm vào thì hiện hộp cho nhân viên chọn 1 trong 2:
+  - **Đơn hàng**: cho khách đã có HĐ nguyên tắc. Chỉ tạo đơn (giao hàng, xuất hoá đơn, công nợ), không sinh HĐKT.
+  - **HĐKT**: tạo đơn rồi mở luôn hộp lập HĐKT (cấp số, cọc, hồ sơ Word).
+- **Trang Đơn hàng** (`GET /orders?flow=order`) chỉ hiện đơn **không có HĐKT**. **Trang HĐKT** hiện các HĐKT. Mỗi trang có nút ＋ để chọn một báo giá đã duyệt chưa có đơn (`GET /order-quote-candidates?q=`) rồi tạo nhanh.
+- Bên dưới, HĐKT vẫn gắn với một đơn (`sales_orders`) để dùng chung lịch giao, công nợ và hoá đơn. Trang chi tiết đơn có HĐKT thì nút quay lại dẫn về trang HĐKT.
+
+## Xuất hoá đơn
+
+- **Cột mới trên `sales_orders`:**
+  - `invoice_status`: `none` / `requested` / `issued`;
+  - `invoice_requested_at` / `_by` / `invoice_request_note`;
+  - `invoice_no`, `invoice_date`, `invoice_issued_at` / `_by`.
+- **Yêu cầu xuất hoá đơn:**
+  - *Tự động* khi đơn giao xong (người yêu cầu để trống, ghi chú "Tự động: đơn đã giao xong.").
+  - Hoặc nhân viên phụ trách bấm **🧾 Yêu cầu xuất hoá đơn** ở ô *Hoá đơn* của đơn (`POST /orders/:id/invoice-request {note}`).
+  - Đơn giao xong **trước** bản này không tự yêu cầu; nhân viên bấm tay nếu cần.
+- **Việc tự sinh "Xuất hoá đơn"** (nguồn `invoice`) giao cho **nhóm Kế toán** (chức vụ `accounting`), dẫn tới trang đơn.
+- **Kế toán hoặc Manager nhập số hoá đơn** (`PUT /orders/:id/invoice {invoiceNo, invoiceDate}`). Khi đó việc tự hoàn thành. Nhập nhầm thì bấm "Sửa số hoá đơn".
+- **Kế toán xem được mọi đơn / HĐKT** để nhập số hoá đơn.
+- Danh sách Đơn hàng và HĐKT có cột **Hoá đơn**. Lọc đơn chờ xuất: `GET /orders?invoice=requested`.
+
+## Kiểm tồn báo giá
+
+- Nút **Kiểm tồn** trên báo giá: so số lượng từng mã với tồn khả dụng, tồn NCC và hàng chờ về, giống trang *Khách hỏi tồn*. Mã thiếu được đánh dấu đỏ.
+
 ## Duyệt báo giá (như web cũ; migration `0008_quote_approval.sql`)
 
 - Cột mới trên `staff_quotations`: `approval_status` (`pending` / `approved`), `approved_at`, `approved_by`.
@@ -34,8 +61,8 @@ Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[L�
   - Tải báo giá (PDF A4, Excel theo mẫu cũ).
   - Tạo đơn hàng: máy chủ chặn bằng `409 QUOTE_NOT_APPROVED`.
   - Sinh HĐKT: máy chủ chặn khi báo giá của đơn đang đợi duyệt lại.
-- **Thanh nút** trên trang báo giá: Sinh HĐKT · Tạo đơn hàng · Tải báo giá ▾ · Nhân bản · Lưu báo giá · Duyệt (Manager) · Xoá báo giá (Manager).
-  - *Sinh HĐKT* tạo đơn nếu chưa có, rồi mở hộp lập HĐKT của đơn.
+- **Thanh nút** trên trang báo giá: Kiểm tồn · Sinh Đơn hàng / HĐKT · Tải báo giá ▾ · Nhân bản · Lưu báo giá · Duyệt (Manager) · Xoá báo giá (Manager).
+  - *Sinh Đơn hàng / HĐKT* hỏi chọn luồng; chọn HĐKT thì tạo đơn nếu chưa có rồi mở hộp lập HĐKT.
 - **API:**
   - `POST /quotes/:id/approve {revision}`: Manager duyệt đúng phiên bản đang xem; duyệt không tăng phiên bản.
   - `GET /quotes/pending-count`: số báo giá đang chờ duyệt.
@@ -79,7 +106,7 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
   - Phiếu thu trừ dần vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã quá hạn tính là *quá hạn*.
   - Không thu vượt số còn lại.
 - **Huỷ đơn:** chỉ huỷ được khi chưa giao và chưa thu tiền. Đơn huỷ không tính công nợ.
-- **Quyền:** Manager thấy tất cả. Nhân viên thấy đơn mình phụ trách hoặc mình tạo; HĐKT, chuyến giao, công nợ theo quyền của đơn. NCC không vào được.
+- **Quyền:** Manager và Kế toán thấy tất cả. Nhân viên thấy đơn mình phụ trách hoặc mình tạo; HĐKT, chuyến giao, công nợ theo quyền của đơn. NCC không vào được.
 
 ## API (khu vực `business`)
 

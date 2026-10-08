@@ -136,10 +136,10 @@
             <span class="pill warn" id="editor-dirty" hidden>Chưa lưu</span>
             <span class="pill" id="editor-approval" hidden></span>
           </div>
-          <!-- Như web cũ: chỉ báo giá ĐÃ DUYỆT mới Sinh HĐKT / Tạo đơn hàng / Tải báo giá. Duyệt, Xoá: chỉ Manager. -->
+          <!-- Như web cũ: chỉ báo giá ĐÃ DUYỆT mới Sinh Đơn hàng / HĐKT, Tải báo giá. Duyệt, Xoá: chỉ Manager. -->
           <div class="editor-actions quote-actions">
-            <button type="button" class="btn secondary" id="quote-contract" hidden>Sinh HĐKT</button>
-            <button type="button" class="btn secondary" id="quote-to-order" hidden>Tạo đơn hàng</button>
+            <button type="button" class="btn secondary" id="quote-stock" title="Kiểm tồn khả dụng, NCC, hàng chờ về cho cả báo giá">Kiểm tồn</button>
+            <button type="button" class="btn secondary" id="quote-make" hidden>Sinh Đơn hàng / HĐKT</button>
             <span class="menu-wrap">
               <button type="button" class="btn secondary" id="quote-download" aria-haspopup="menu" aria-expanded="false">Tải báo giá ▾</button>
               <span class="menu" id="download-menu" role="menu" hidden>
@@ -352,7 +352,8 @@
     <!-- ---------- Đơn đặt hàng ---------- -->
     <section class="view" id="view-orders" hidden>
       <div class="page-head">
-        <div><span class="eyebrow">Bán hàng</span><h1>Đơn đặt hàng</h1><p class="muted">Đơn tạo từ báo giá; theo dõi HĐKT, giao hàng và thu tiền của từng đơn.</p></div>
+        <div><span class="eyebrow">Bán hàng</span><h1>Đơn đặt hàng</h1><p class="muted">Đơn cho khách đã có HĐ nguyên tắc (không lập HĐKT riêng); theo dõi giao hàng, hoá đơn và thu tiền.</p></div>
+        <button type="button" class="btn-add" id="orders-new" title="Tạo đơn hàng từ báo giá đã duyệt" aria-label="Tạo đơn hàng"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       
       <div class="panel">
@@ -360,7 +361,7 @@
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="orders-search" type="search" placeholder="Tìm số đơn, số báo giá, khách hàng, SĐT…" aria-label="Tìm"></label>
           <span id="orders-filters"></span>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn hàng</th><th>Khách hàng</th><th>Trạng thái</th><th>HĐKT</th><th class="right">Giá trị</th><th>Thanh toán / Đặt cọc</th><th>In / Tải</th></tr></thead><tbody id="orders-list"></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn hàng</th><th>Khách hàng</th><th>Trạng thái</th><th>Hoá đơn</th><th class="right">Giá trị</th><th>Thanh toán / Đặt cọc</th><th>In / Tải</th></tr></thead><tbody id="orders-list"></tbody></table></div>
         <div id="orders-empty" class="empty" hidden><p class="muted" id="orders-empty-text"></p></div>
       </div>
     </section>
@@ -368,7 +369,8 @@
     <!-- ---------- Hợp đồng kinh tế ---------- -->
     <section class="view" id="view-contracts" hidden>
       <div class="page-head">
-        <div><span class="eyebrow">Bán hàng</span><h1>Hợp đồng kinh tế</h1><p class="muted">HĐKT lập từ đơn đặt hàng; số HĐKT cấp tự động theo pháp nhân như web cũ.</p></div>
+        <div><span class="eyebrow">Bán hàng</span><h1>Hợp đồng kinh tế</h1><p class="muted">HĐKT lập từ báo giá đã duyệt; số HĐKT cấp tự động theo pháp nhân như web cũ.</p></div>
+        <button type="button" class="btn-add" id="contracts-new" title="Lập HĐKT từ báo giá đã duyệt" aria-label="Lập HĐKT"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       
       <div class="panel">
@@ -376,7 +378,7 @@
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số đơn, khách hàng…" aria-label="Tìm"></label>
           <span id="contracts-filters"></span>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Đơn</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Đơn</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hoá đơn</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
         <div id="contracts-empty" class="empty" hidden><p class="muted" id="contracts-empty-text"></p></div>
       </div>
     </section>
@@ -450,7 +452,7 @@
     <!-- ---------- Chi tiết đơn đặt hàng ---------- -->
     <section class="view" id="view-order" hidden>
       <div class="editor-head">
-        <div class="editor-title"><a class="btn ghost small" href="#/orders">‹ Đơn đặt hàng</a><h1 id="order-title">Đơn đặt hàng</h1><span class="pill" id="order-status"></span></div>
+        <div class="editor-title"><a class="btn ghost small" href="#/orders" id="order-back">‹ Đơn đặt hàng</a><h1 id="order-title">Đơn đặt hàng</h1><span class="pill" id="order-status"></span></div>
         <div class="editor-actions" id="order-actions"></div>
       </div>
       <div class="flow-steps" id="order-flow"></div>
@@ -465,7 +467,10 @@
         <div class="card"><div class="card-title-row"><h2 class="card-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
         <div class="card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><button class="btn secondary small" id="order-new-delivery">＋ Lên lịch giao</button></div><div id="order-deliveries"></div></div>
       </div>
-      <div class="card"><div class="card-title-row"><h2 class="card-title">Thanh toán</h2><button class="btn secondary small" id="order-new-payment">＋ Ghi nhận thanh toán</button></div><div id="order-payments"></div></div>
+      <div class="editor-grid">
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Hoá đơn</h2><span id="order-invoice-pill"></span></div><div id="order-invoice"></div></div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Thanh toán</h2><button class="btn secondary small" id="order-new-payment">＋ Ghi nhận thanh toán</button></div><div id="order-payments"></div></div>
+      </div>
     </section>
     <!-- ---------- Nhân viên (Manager) ---------- -->
     <section class="view" id="view-staff" hidden>
@@ -505,11 +510,11 @@
   <nav class="bottom-nav" aria-label="Điều hướng">
     <a href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg>Báo giá</a>
     <a href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z M6 6 5 3H2 M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2 M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg>Đơn hàng</a>
+    <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3"/></svg>HĐKT</a>
     <a href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg>Giao hàng</a>
     <a href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg>Công nợ</a>
     <a href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M3.5 6l1.5 1.5L7.5 5 M3.5 12l1.5 1.5L7.5 11 M3.5 18l1.5 1.5L7.5 17"/></svg>Công việc</a>
     <a href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg>Hỏi tồn</a>
-    <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3"/></svg>HĐKT</a>
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
     <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>
     <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Nhân viên</a>
@@ -646,6 +651,29 @@
       <div class="span-2"><button class="btn primary">Tạo tài khoản &amp; lấy link</button></div>
     </form>
   </div>
+</dialog>
+<!-- Sinh Đơn hàng / HĐKT từ báo giá: 2 luồng song song, nhân viên chọn 1 -->
+<dialog id="flow-dialog" class="modal narrow">
+  <div class="modal-head"><div><span class="eyebrow" id="flow-quote">Báo giá</span><h2>Sinh Đơn hàng / HĐKT</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body flow-pick">
+    <button type="button" data-flow="order"><b>📦 Đơn hàng</b><small>Khách đã có HĐ nguyên tắc – chỉ tạo đơn để giao hàng, xuất hoá đơn, theo dõi công nợ. Không sinh HĐKT.</small></button>
+    <button type="button" data-flow="contract"><b>📝 HĐKT</b><small>Lập hợp đồng kinh tế: cấp số HĐKT, đặt cọc, tải bộ 3 file Word (HĐKT, đề nghị tạm ứng, biên bản nghiệm thu).</small></button>
+  </div>
+</dialog>
+<!-- ＋ ở trang Đơn hàng / HĐKT: chọn báo giá đã duyệt (chưa có đơn) để tạo nhanh -->
+<dialog id="quote-pick-dialog" class="modal">
+  <div class="modal-head"><div><span class="eyebrow">Chọn báo giá đã duyệt</span><h2 id="quote-pick-title">Tạo đơn hàng</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body">
+    <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="quote-pick-search" type="search" placeholder="Tìm số báo giá, khách hàng…" aria-label="Tìm báo giá" autocomplete="off"></label>
+    <ul class="pick-list" id="quote-pick-list"></ul>
+    <p class="muted small">Chỉ hiện báo giá đã duyệt và chưa có đơn. Báo giá chưa duyệt: mở báo giá, nhờ Manager duyệt trước.</p>
+  </div>
+</dialog>
+<!-- Kiểm tồn cả báo giá (giống trang Khách hỏi tồn) -->
+<dialog id="stock-check-dialog" class="modal wide">
+  <div class="modal-head"><div><span class="eyebrow">Kiểm tồn</span><h2 id="stock-check-title">Báo giá</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body"><div id="stock-check-body"></div></div>
+  <div class="modal-foot"><span class="muted small grow" id="stock-check-note"></span><button type="button" class="btn secondary" data-close>Đóng</button></div>
 </dialog>
 <dialog id="discount-dialog" class="modal narrow">
   <form id="discount-form" novalidate>

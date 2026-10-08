@@ -126,6 +126,18 @@ export const RULES: Record<string, Rule> = {
     });
   },
   /**
+   * Xuất hoá đơn: đơn / HĐKT đã được yêu cầu (tự động khi giao xong, hoặc nhân viên phụ trách bấm) → nhóm Kế toán.
+   * Kế toán nhập số hoá đơn vào đơn (PUT /orders/:id/invoice) thì việc tự hoàn thành.
+   */
+  async invoiceIssue(db) {
+    const rows = await db.select({ o: salesOrders, contractNo: salesContracts.contractNo }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
+      .where(and(eq(salesOrders.invoiceStatus, 'requested'), ne(salesOrders.status, 'cancelled'))).limit(500);
+    return rows.map(({ o, contractNo }) => ({ autoKey: `invoice:${o.id}`, source: 'invoice' as const, sourceId: o.id,
+      title: `Xuất hoá đơn ${contractNo ? 'HĐKT ' + contractNo : 'đơn ' + o.orderNo} – ${o.customerName}`,
+      description: `${contractNo ? `Đơn ${o.orderNo} · ` : ''}${vnd(o.total)}${o.taxCode ? ' · MST ' + o.taxCode : ''}${o.invoiceRequestNote ? ' · ' + o.invoiceRequestNote : ''}. Nhập số hoá đơn vào đơn sau khi xuất.`,
+      link: `#/orders/${o.id}`, assigneeId: null, assigneePosition: 'accounting', priority: 'normal' as const, dueDate: o.invoiceRequestedAt ? addDaysIso(day(o.invoiceRequestedAt)!, 1) : null }));
+  },
+  /**
    * Xuất kho / đóng hàng: KHÔNG tự tạo – sinh khi nhân viên bấm "Yêu cầu kho đóng hàng" (POST /tasks/packing).
    * Quy tắc này chỉ giữ việc còn mở khi chuyến giao vẫn đang chờ giao; chuyến đã đi / đã giao / huỷ thì việc tự hoàn thành.
    */

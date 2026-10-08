@@ -4,7 +4,7 @@ import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
 import { quotations } from '../quotes/schema.ts';
-import { CONTRACT_STATUSES, DELIVERY_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS } from './domain/statuses.ts';
+import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS } from './domain/statuses.ts';
 
 /*
  * Bán hàng sau báo giá: Báo giá → Đơn đặt hàng → (HĐKT) → Lịch giao hàng → Công nợ.
@@ -49,6 +49,16 @@ export const salesOrders = pgTable('sales_orders', {
   /** Liên kết đơn Sapo khi đã chuyển sang Sapo (để sau). */
   sapoOrderId: text('sapo_order_id'),
   sapoOrderCode: text('sapo_order_code'),
+  /** Xuất hoá đơn: yêu cầu (tự động khi giao xong / nhân viên bấm) → việc cho nhóm Kế toán → kế toán nhập số hoá đơn. */
+  invoiceStatus: text('invoice_status', { enum: INVOICE_STATUSES }).notNull().default('none'),
+  invoiceRequestedAt: text('invoice_requested_at'),
+  /** null khi yêu cầu tự động (giao xong). */
+  invoiceRequestedBy: text('invoice_requested_by').references(() => employees.id),
+  invoiceRequestNote: text('invoice_request_note').notNull().default(''),
+  invoiceNo: text('invoice_no').notNull().default(''),
+  invoiceDate: text('invoice_date'),
+  invoiceIssuedAt: text('invoice_issued_at'),
+  invoiceIssuedBy: text('invoice_issued_by').references(() => employees.id),
   revision: bigint('revision', { mode: 'number' }).notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -60,6 +70,8 @@ export const salesOrders = pgTable('sales_orders', {
   index('idx_sales_orders_owner').on(t.ownerId, t.updatedAt),
   index('idx_sales_orders_status').on(t.status, t.orderDate),
   enumCheck('chk_sales_orders_status', t.status, ORDER_STATUSES),
+  enumCheck('chk_sales_orders_invoice_status', t.invoiceStatus, INVOICE_STATUSES),
+  index('idx_sales_orders_invoice').on(t.invoiceStatus).where(sql`${t.invoiceStatus} = 'requested'`),
   enumCheck('chk_sales_orders_type', t.quoteType, ['HRC', 'B2B', 'VIGIFTS']),
   check('chk_sales_orders_total', sql`${t.total} >= 0`),
 ]).enableRLS();
