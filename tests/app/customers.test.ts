@@ -69,6 +69,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal((await call(`/customers/${k.data.id}/approve`, mgr, 'POST', {})).status, 200, 'khách nhân viên tạo: Manager duyệt mới lập đơn được');
   await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
 
   // Trang chi tiết: người phụ trách thấy đủ; người được chia sẻ (old) thấy đơn và mở được đơn; người ngoài (new) không thấy.
   let ov = (await call(`/customers/${k.data.id}/overview`, emp)).data;

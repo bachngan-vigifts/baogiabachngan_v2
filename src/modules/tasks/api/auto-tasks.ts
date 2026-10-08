@@ -63,11 +63,11 @@ export const RULES: Record<string, Rule> = {
     return rows.map(({ r, customerName }) => ({ autoKey: `stock:${r.id}`, source: 'stock_request' as const, sourceId: r.id, title: `Trả lời check tồn của ${customerName}`,
       description: `${(JSON.parse(r.items) as unknown[]).length} sản phẩm cần kiểm tra tồn kho.`, link: `#/stock-requests/${r.id}`, assigneeId: r.ownerId, priority: 'high' as const, dueDate: day(r.createdAt) }));
   },
-  /** Đơn khách đặt chờ xác nhận. */
+  /** Đơn / HĐKT nháp (nhân viên, Manager hay khách tạo) chờ Manager duyệt – việc chưa giao người: Manager thấy và duyệt. */
   async orderConfirm(db) {
     const rows = await db.select().from(salesOrders).where(eq(salesOrders.status, 'draft')).limit(500);
-    return rows.map(o => ({ autoKey: `order-confirm:${o.id}`, source: 'order' as const, sourceId: o.id, title: `Xác nhận đơn ${o.orderNo} – ${o.customerName}`,
-      description: `Đơn ${vnd(o.total)} chờ xác nhận.`, link: `#/orders/${o.id}`, assigneeId: o.ownerId, priority: 'urgent' as const, dueDate: addDaysIso(o.orderDate, 1) }));
+    return rows.map(o => ({ autoKey: `order-confirm:${o.id}`, source: 'order' as const, sourceId: o.id, title: `Duyệt đơn ${o.orderNo} – ${o.customerName}`,
+      description: `Đơn ${vnd(o.total)} chờ Manager duyệt.`, link: `#/orders/${o.id}`, assigneeId: null, priority: 'urgent' as const, dueDate: addDaysIso(o.orderDate, 1) }));
   },
   /** Đơn đã xác nhận còn hàng chưa lên lịch giao. */
   async deliverySchedule(db) {
