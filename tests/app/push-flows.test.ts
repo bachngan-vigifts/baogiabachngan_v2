@@ -35,8 +35,19 @@ test('đẩy thông báo: báo giá mới → Manager; duyệt → người lậ
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_N1', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ name: 'Bộ trà', qty: 10, price: 100000 }] });
   assert.equal(q.status, 201);
   assert.ok(await has(mgr, 'quote_pending')); assert.ok(!(await has(emp, 'quote_pending')));
+  // Việc "Duyệt báo giá" tự sinh NGAY khi lưu (không đợi ai mở trang Công việc) và Manager được báo.
+  assert.ok(await has(mgr, 'task_assigned'), 'việc chờ duyệt mới → báo Manager');
+  // Nhân viên sửa báo giá đang chờ duyệt → Manager được báo bản cập nhật; lưu không đổi gì thì không báo.
+  const count = async (who: string, type: string) => (await events(who)).filter((x: string) => x === type).length;
+  const pendingBefore = await count(mgr, 'quote_pending');
+  const qd = (await call(`/quotes/${q.data.id}`, emp)).data;
+  assert.equal((await call(`/quotes/${q.data.id}`, emp, 'PUT', { revision: qd.revision, data: { ...qd.data, rows: [{ name: 'Bộ trà', qty: 12, price: 100000 }] } })).status, 200);
+  assert.equal(await count(mgr, 'quote_pending'), pendingBefore + 1, 'sửa báo giá chờ duyệt → báo Manager');
+  const qd2 = (await call(`/quotes/${q.data.id}`, emp)).data;
+  await call(`/quotes/${q.data.id}`, emp, 'PUT', { revision: qd2.revision, data: qd2.data });
+  assert.equal(await count(mgr, 'quote_pending'), pendingBefore + 1, 'lưu không đổi gì thì không báo');
   // Manager duyệt → người lập nhận "đã duyệt".
-  await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
+  await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: (await call(`/quotes/${q.data.id}`, mgr)).data.revision });
   assert.ok(await has(emp, 'quote_approved')); assert.ok(!(await has(mgr, 'quote_approved')), 'Manager không tự nhận');
 
   // Sinh đơn hàng + HĐKT → Manager nhận "đơn / HĐKT chờ duyệt"; duyệt đơn → nhân viên phụ trách nhận.

@@ -6,6 +6,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
+import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
 import { reconcileAutoTasks } from './auto-tasks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
@@ -23,21 +24,27 @@ const isTime = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 /** Việc tự sinh được đồng bộ tối đa mỗi 15 giây / phiên chạy (mở bảng việc liên tục không quét lại toàn bộ). `?refresh=1` ép đồng bộ ngay. */
 let lastReconcile = 0;
-async function syncAuto(c: Ctx) {
-  if (c.url.searchParams.get('refresh') !== '1' && Date.now() - lastReconcile < 15_000) return;
+const syncAuto = (c: Ctx) => syncAutoTasks(c.env, c.url.searchParams.get('refresh') === '1', me(c).id);
+/**
+ * Đồng bộ việc tự sinh rồi thông báo (chuông + Web Push) cho việc mới: người nhận; việc của nhóm → cả nhóm; chưa giao ai → Manager.
+ * Tối đa 30 việc mỗi lượt (tránh dồn dập). Gọi từ trang Công việc và ngay sau khi lưu báo giá chờ duyệt.
+ */
+export async function syncAutoTasks(env: StaffEnv, force = false, actorId: string | null = null) {
+  if (!force && Date.now() - lastReconcile < 15_000) return;
   lastReconcile = Date.now();
   let fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'] = [];
-  try { fresh = (await reconcileAutoTasks(c.env.db)).fresh; } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
+  try { fresh = (await reconcileAutoTasks(env.db)).fresh; } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
   if (!fresh.length) return;
-  // Việc tự sinh mới → thông báo người nhận; việc của nhóm → cả nhóm; chưa giao ai → Manager. Tối đa 30 việc mỗi lượt (tránh dồn dập).
   const job = Promise.all(fresh.slice(0, 30).map(t => {
     const n = { eventType: 'task_assigned', title: 'Việc mới', body: t.title, url: `/index.html#/tasks/${t.id}`, data: { taskId: t.id } };
-    return t.assigneeId ? notify(c.env, { ...n, targetMemberId: t.assigneeId })
-      : t.assigneePosition ? notifyTeam(c, t.assigneePosition, { ...n, title: `Việc mới cho nhóm ${teamName(t.assigneePosition)}` })
-      : notifyMany(c.env, 'managers', n);
+    return t.assigneeId ? notify(env, { ...n, targetMemberId: t.assigneeId })
+      : t.assigneePosition ? notifyTeam(env, t.assigneePosition, { ...n, title: `Việc mới cho nhóm ${teamName(t.assigneePosition)}`, actorId })
+      : notifyMany(env, 'managers', n);
   })).catch(e => console.error('notify auto tasks failed', e instanceof Error ? e.message : e));
-  if (c.env.waitUntil) c.env.waitUntil(job); else await job;
+  if (env.waitUntil) env.waitUntil(job); else await job;
 }
+// Lưu báo giá chờ duyệt → tạo ngay việc "Duyệt báo giá" cho Manager và báo, không đợi ai mở trang Công việc.
+quoteSaveHooks.afterCommit.push(env => syncAutoTasks(env, true));
 
 /** Nhóm của tôi (theo chức vụ): Kho, Kế toán, Sale Admin… – null nếu chức vụ không phải nhóm nhận việc. */
 const myTeam = (c: Ctx) => { const p = (me(c) as { positionId?: string | null }).positionId; return isTeam(p) ? p : null; };
@@ -61,9 +68,9 @@ function parseAssignee(v: unknown): { assigneeId: string | null; assigneePositio
   return { assigneeId: raw || null, assigneePosition: null };
 }
 /** Báo cho mọi người đang hoạt động trong nhóm. */
-async function notifyTeam(c: Ctx, team: string, n: Omit<Parameters<typeof notify>[1], 'targetMemberId'>) {
-  const members = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.positionId, team), eq(employees.active, true)));
-  for (const x of members) if (x.id !== me(c).id) await notify(c.env, { ...n, targetMemberId: x.id });
+async function notifyTeam(env: StaffEnv, team: string, n: Omit<Parameters<typeof notify>[1], 'targetMemberId'>) {
+  const members = await env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.positionId, team), eq(employees.active, true)));
+  for (const x of members) if (x.id !== n.actorId) await notify(env, { ...n, targetMemberId: x.id });
 }
 
 async function loadTask(c: Ctx, id: string) {
@@ -157,7 +164,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       assigneeId, assigneePosition, createdBy: m.id, dueDate: f.dueDate ?? null, dueTime: f.dueTime ?? null, createdAt: now, updatedAt: now });
     if (assigneeId && assigneeId !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc mới', body: `${m.name}: ${f.title}`, url: `/index.html#/tasks/${id}`,
       targetMemberId: assigneeId, actorId: m.id, data: { taskId: id } });
-    if (assigneePosition) await notifyTeam(c, assigneePosition, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(assigneePosition)}`, body: `${m.name}: ${f.title}`, url: `/index.html#/tasks/${id}`, actorId: m.id, data: { taskId: id } });
+    if (assigneePosition) await notifyTeam(c.env, assigneePosition, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(assigneePosition)}`, body: `${m.name}: ${f.title}`, url: `/index.html#/tasks/${id}`, actorId: m.id, data: { taskId: id } });
     return json({ id }, 201);
   }, 'business');
 
@@ -196,7 +203,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     if (b.status === 'done' && t.source === 'care' && t.sourceId && t.autoKey) await completeFollowUp(c.env.db, t.sourceId, t.autoKey.split(':')[2] ?? '');
     if (reassigned && reassigned !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc', body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`,
       targetMemberId: reassigned, actorId: m.id, data: { taskId: t.id } });
-    if (toTeam) await notifyTeam(c, toTeam, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(toTeam)}`, body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });
+    if (toTeam) await notifyTeam(c.env, toTeam, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(toTeam)}`, body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });
     // Người giao việc (việc tự sinh: Manager) được báo khi có người NHẬN việc / BẮT ĐẦU làm / HOÀN THÀNH.
     const boss = t.createdBy ? [t.createdBy] : 'managers' as const;
     const claimed = set.assigneeId === m.id && t.assigneeId !== m.id, started = b.status === 'in_progress' && t.status === 'todo';
@@ -230,7 +237,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const id = old?.id ?? crypto.randomUUID();
     if (old) await c.env.db.update(tasks).set({ ...values, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, id));
     else await c.env.db.insert(tasks).values({ id, autoKey: key, createdAt: now, ...values });
-    await notifyTeam(c, 'warehouse', { eventType: 'task_assigned', title: 'Kho: yêu cầu xuất kho & đóng hàng', body: `${row.d.deliveryNo} – ${row.o.customerName} (giao ${row.d.plannedDate.split('-').reverse().join('/')})`,
+    await notifyTeam(c.env, 'warehouse', { eventType: 'task_assigned', title: 'Kho: yêu cầu xuất kho & đóng hàng', body: `${row.d.deliveryNo} – ${row.o.customerName} (giao ${row.d.plannedDate.split('-').reverse().join('/')})`,
       url: `/index.html#/tasks/${id}`, actorId: m.id, data: { taskId: id } });
     return json({ id }, 201);
   }, 'business');

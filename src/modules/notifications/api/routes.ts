@@ -1,11 +1,11 @@
-import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { decryptCookie, encryptCookie } from '../../integrations/domain/sapo-session.ts';
-import { webNotificationReads, webNotifications, webPushKeys, webPushSubscriptions } from '../schema.ts';
+import { webNotificationReads, webNotifications, webPushAttempts, webPushKeys, webPushSubscriptions } from '../schema.ts';
 import { encryptPushPayload, generateVapidKeys, vapidAuthorization, type VapidKeys } from '../domain/web-push.ts';
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -48,37 +48,84 @@ export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)
   return targets.length;
 }
 
+/** Kết quả gửi tới một thiết bị (trả cho /push/test và ghi nhật ký). */
+export interface PushResult { subscriptionId: string | null; memberId: string | null; status: number | null; error: string }
+const NO_KEYS = 'Máy chủ chưa bật thông báo đẩy (thiếu secret SAPO_SYNC_TOKEN ≥ 32 ký tự).';
+const NO_DEVICE = 'Người nhận chưa bật thông báo trên thiết bị nào.';
+/** Tên thiết bị dễ đọc từ user-agent: "iPhone · Safari", "Windows · Chrome"… */
+export function deviceLabel(ua: string) {
+  const os = /iPhone|iPod/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Khác';
+  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera/.test(ua) ? 'Opera' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+  return br ? `${os} · ${br}` : os;
+}
+const host = (url: string) => { try { return new URL(url).host; } catch { return '?'; } };
+
+/** Ghi nhật ký gửi push (không bao giờ làm hỏng thao tác chính). Thỉnh thoảng xoá dòng cũ hơn 30 ngày. */
+async function logAttempts(env: StaffEnv, notificationId: string, eventType: string, rows: PushResult[]) {
+  if (!rows.length) return;
+  const at = nowIso();
+  try {
+    await env.db.insert(webPushAttempts).values(rows.map(r => ({ id: crypto.randomUUID(), notificationId, eventType, memberId: r.memberId, subscriptionId: r.subscriptionId,
+      status: r.status, error: r.error.slice(0, 500), createdAt: at })));
+    if (Math.random() < 0.02) await env.db.delete(webPushAttempts).where(lt(webPushAttempts.createdAt, new Date(Date.now() - 30 * 86_400_000).toISOString()));
+  } catch (e) { console.error('web push log failed', e instanceof Error ? e.message : e); }
+}
+
 /**
  * Tạo thông báo (lưu lại để trang tự làm mới + chuông thông báo) và đẩy Web Push tới các trình duyệt đã bật thông báo.
- * Không bao giờ làm hỏng thao tác chính: lỗi đẩy chỉ ghi nhận trên subscription.
+ * Không bao giờ làm hỏng thao tác chính. Mọi lần gửi (kể cả không gửi được) đều ghi vào `web_push_attempts`
+ * và trạng thái gần nhất của từng thiết bị (`last_status`, `last_error`), để kiểm tra máy có nhận được không.
  */
-export async function notify(env: StaffEnv, n: NotifyInput) {
+export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boolean; sent: number; id?: string; results: PushResult[] }> {
   const note = {
     id: crypto.randomUUID(), eventType: clean(n.eventType, 80), title: clean(n.title, 180), body: clean(n.body, 500), url: clean(n.url || '/', 500),
     targetRole: n.targetMemberId ? null : (n.targetRole ?? 'manager'), targetMemberId: n.targetMemberId ?? null, actorId: n.actorId ?? null,
     dataJson: JSON.stringify(n.data ?? {}), createdAt: nowIso(),
   };
-  if (n.persist !== false) { try { await env.db.insert(webNotifications).values(note); } catch (e) { console.error('notify insert failed'); return { ok: false, sent: 0 }; } }
-  let sent = 0;
+  if (n.persist !== false) {
+    try { await env.db.insert(webNotifications).values(note); }
+    catch (e) { console.error('notify insert failed', note.eventType, e instanceof Error ? e.message : e); return { ok: false, sent: 0, results: [] }; }
+  }
+  const results: PushResult[] = [];
   try {
-    const keys = await vapidKeys(env); if (!keys) return { ok: true, sent };
-    const subs = await env.db.select({ id: webPushSubscriptions.id, endpoint: webPushSubscriptions.endpoint, p256dh: webPushSubscriptions.p256dh, auth: webPushSubscriptions.auth })
-      .from(webPushSubscriptions).innerJoin(employees, and(eq(employees.id, webPushSubscriptions.memberId), eq(employees.active, true)))
-      .where(and(isNull(webPushSubscriptions.disabledAt), note.targetMemberId ? eq(webPushSubscriptions.memberId, note.targetMemberId)
-        : note.targetRole === 'all' ? undefined : eq(employees.role, note.targetRole as 'manager')));
-    const payload = JSON.stringify({ id: note.id, eventType: note.eventType, title: note.title, body: note.body, url: note.url, data: n.data ?? {} });
-    const doFetch = env.pushFetch ?? fetch;
-    await Promise.all(subs.map(async s => {
-      try {
-        const res = await doFetch(s.endpoint, { method: 'POST', body: await encryptPushPayload(payload, s.p256dh, s.auth) as BodyInit,
-          headers: { Authorization: await vapidAuthorization(s.endpoint, keys, SUBJECT), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'high' } });
-        if (res.status === 404 || res.status === 410) await env.db.update(webPushSubscriptions).set({ disabledAt: nowIso(), updatedAt: nowIso(), failureCount: sql`${webPushSubscriptions.failureCount} + 1` }).where(eq(webPushSubscriptions.id, s.id));
-        else if (res.ok) { sent++; await env.db.update(webPushSubscriptions).set({ lastSeenAt: nowIso(), failureCount: 0, updatedAt: nowIso() }).where(eq(webPushSubscriptions.id, s.id)); }
-        else await env.db.update(webPushSubscriptions).set({ failureCount: sql`${webPushSubscriptions.failureCount} + 1`, updatedAt: nowIso() }).where(eq(webPushSubscriptions.id, s.id));
-      } catch { /* mạng lỗi: bỏ qua, lần sau gửi lại */ }
-    }));
-  } catch { console.error('web push dispatch failed'); }
-  return { ok: true, sent, id: note.id };
+    const keys = await vapidKeys(env);
+    if (!keys) {
+      console.error('web push skipped:', NO_KEYS);
+      results.push({ subscriptionId: null, memberId: note.targetMemberId, status: null, error: NO_KEYS });
+    } else {
+      const subs = await env.db.select({ id: webPushSubscriptions.id, memberId: webPushSubscriptions.memberId, endpoint: webPushSubscriptions.endpoint, p256dh: webPushSubscriptions.p256dh, auth: webPushSubscriptions.auth })
+        .from(webPushSubscriptions).innerJoin(employees, and(eq(employees.id, webPushSubscriptions.memberId), eq(employees.active, true)))
+        .where(and(isNull(webPushSubscriptions.disabledAt), note.targetMemberId ? eq(webPushSubscriptions.memberId, note.targetMemberId)
+          : note.targetRole === 'all' ? undefined : eq(employees.role, note.targetRole as 'manager')));
+      if (!subs.length) results.push({ subscriptionId: null, memberId: note.targetMemberId, status: null, error: NO_DEVICE });
+      const payload = JSON.stringify({ id: note.id, eventType: note.eventType, title: note.title, body: note.body, url: note.url, data: n.data ?? {} });
+      const doFetch = env.pushFetch ?? fetch;
+      results.push(...await Promise.all(subs.map(async (s): Promise<PushResult> => {
+        let status = 0, error = '';
+        try {
+          const res = await doFetch(s.endpoint, { method: 'POST', body: await encryptPushPayload(payload, s.p256dh, s.auth) as BodyInit,
+            headers: { Authorization: await vapidAuthorization(s.endpoint, keys, SUBJECT), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'high' } });
+          status = res.status;
+          if (!res.ok) error = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 300) || `HTTP ${res.status}`;
+        } catch (e) { error = e instanceof Error ? e.message : String(e); }
+        const at = nowIso(), ok = status >= 200 && status < 300, gone = status === 404 || status === 410;
+        if (!ok) console.error('web push failed', note.eventType, status, host(s.endpoint), error);
+        try {
+          await env.db.update(webPushSubscriptions).set({ lastStatus: status, lastError: ok ? '' : error.slice(0, 500), lastAttemptAt: at, updatedAt: at,
+            ...(ok ? { lastOkAt: at, lastSeenAt: at, failureCount: 0 } : { failureCount: sql`${webPushSubscriptions.failureCount} + 1` }),
+            ...(gone ? { disabledAt: at } : {}) }).where(eq(webPushSubscriptions.id, s.id));
+        } catch (e) { console.error('web push status update failed', e instanceof Error ? e.message : e); }
+        return { subscriptionId: s.id, memberId: s.memberId, status, error };
+      })));
+    }
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error('web push dispatch failed', note.eventType, error);
+    results.push({ subscriptionId: null, memberId: note.targetMemberId, status: 0, error });
+  }
+  await logAttempts(env, note.id, note.eventType, results);
+  const sent = results.filter(r => r.status !== null && r.status >= 200 && r.status < 300).length;
+  return { ok: true, sent, id: note.id, results };
 }
 
 /** Thông báo của một người: gửi đích danh, hoặc theo vai trò của họ. */
@@ -107,8 +154,33 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
     const me = (c.state.session as SessionState).member;
     const [d] = await c.env.db.select({ n: sql<number>`count(*)` }).from(webPushSubscriptions).where(and(eq(webPushSubscriptions.memberId, me.id), isNull(webPushSubscriptions.disabledAt)));
     const r = await notify(c.env, { eventType: 'push_test', title: 'Thông báo thử', body: 'Máy này đã nhận được thông báo đẩy từ Bách Ngân.', url: '/index.html', targetMemberId: me.id, actorId: me.id, persist: false });
-    return json({ devices: Number(d?.n ?? 0), sent: r.sent });
+    const devs = r.results.some(x => x.subscriptionId) ? await c.env.db.select({ id: webPushSubscriptions.id, userAgent: webPushSubscriptions.userAgent }).from(webPushSubscriptions)
+      .where(inArray(webPushSubscriptions.id, r.results.map(x => x.subscriptionId).filter((x): x is string => !!x))) : [];
+    return json({ devices: Number(d?.n ?? 0), sent: r.sent,
+      results: r.results.map(x => ({ device: deviceLabel(devs.find(v => v.id === x.subscriptionId)?.userAgent ?? ''), status: x.status, ok: x.status !== null && x.status >= 200 && x.status < 300, error: x.error })) });
   }, 'self');
+
+  /**
+   * Manager kiểm tra Web Push: máy chủ đã bật chưa, thiết bị của từng người (lần gửi gần nhất: mã trả về / lỗi),
+   * và nhật ký gửi gần đây (`?member=<id>` lọc theo người nhận).
+   */
+  router.get('/push/devices', async c => {
+    const me = (c.state.session as SessionState).member;
+    if (me.role !== 'manager') throw new AppError(403, 'Chỉ Manager xem được trạng thái thông báo đẩy.');
+    const member = clean(c.url.searchParams.get('member'), 80);
+    const [keys] = await c.env.db.select({ id: webPushKeys.id }).from(webPushKeys).limit(1);
+    const devices = await c.env.db.select({ s: webPushSubscriptions, name: employees.name, role: employees.role, active: employees.active }).from(webPushSubscriptions)
+      .innerJoin(employees, eq(employees.id, webPushSubscriptions.memberId)).where(member ? eq(webPushSubscriptions.memberId, member) : undefined)
+      .orderBy(asc(employees.name), desc(webPushSubscriptions.updatedAt)).limit(200);
+    const attempts = await c.env.db.select({ a: webPushAttempts, name: employees.name }).from(webPushAttempts).leftJoin(employees, eq(employees.id, webPushAttempts.memberId))
+      .where(member ? eq(webPushAttempts.memberId, member) : undefined).orderBy(desc(webPushAttempts.createdAt)).limit(100);
+    return json({
+      serverEnabled: (c.env.sapoSyncToken ?? '').length >= 32, keysCreated: !!keys,
+      devices: devices.map(({ s, name, role, active }) => ({ id: s.id, memberId: s.memberId, name, role, memberActive: active, device: deviceLabel(s.userAgent), pushHost: host(s.endpoint),
+        createdAt: s.createdAt, disabledAt: s.disabledAt, failureCount: s.failureCount, lastStatus: s.lastStatus, lastError: s.lastError, lastAttemptAt: s.lastAttemptAt, lastOkAt: s.lastOkAt })),
+      attempts: attempts.map(({ a, name }) => ({ at: a.createdAt, eventType: a.eventType, memberId: a.memberId, name: name ?? '', subscriptionId: a.subscriptionId, status: a.status, error: a.error })),
+    });
+  }, 'business');
 
   router.post('/push/unsubscribe', async c => {
     const me = (c.state.session as SessionState).member, endpoint = clean((await readJson(c.req, 4_000)).endpoint, 2000);

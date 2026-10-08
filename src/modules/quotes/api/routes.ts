@@ -24,7 +24,14 @@ type QuoteRow = typeof quotations.$inferSelect;
  *  - `beforeSave`: chặn sửa (vd đơn hàng của báo giá đã được Manager duyệt);
  *  - `afterSave`: đồng bộ chứng từ sinh từ báo giá (đơn / HĐKT còn nháp nhận số lượng, giá mới).
  */
-export const quoteSaveHooks: { beforeSave: ((tx: Tx, old: QuoteRow) => Promise<void>)[]; afterSave: ((tx: Tx, saved: QuoteRow) => Promise<void>)[] } = { beforeSave: [], afterSave: [] };
+export const quoteSaveHooks: {
+  beforeSave: ((tx: Tx, old: QuoteRow) => Promise<void>)[]; afterSave: ((tx: Tx, saved: QuoteRow) => Promise<void>)[];
+  /** Sau khi tạo / lưu báo giá xong (ngoài giao dịch): vd. tasks tạo ngay việc "Duyệt báo giá" + thông báo, không đợi ai mở trang Công việc. */
+  afterCommit: ((env: StaffEnv) => Promise<void>)[];
+} = { beforeSave: [], afterSave: [], afterCommit: [] };
+const runAfterCommit = async (env: StaffEnv) => {
+  for (const h of quoteSaveHooks.afterCommit) { try { await h(env); } catch (e) { console.error('quote afterCommit hook failed', e instanceof Error ? e.message : e); } }
+};
 /** Nội dung để so "có sửa không": chuẩn hoá lại và bỏ `id` dòng (mỗi lần lưu dòng được cấp id mới, như bản cũ). */
 const contentKey = (data: unknown) => {
   try {
@@ -125,6 +132,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     // Nhân viên tạo báo giá mới → Manager nhận thông báo để duyệt.
     if (approval.approvalStatus === 'pending') await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá mới chờ duyệt',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || 'Chưa nhập khách'}`, url: `/index.html#/quotes/${id}`, actorId: viewer.id, data: { quoteId: id } });
+    if (approval.approvalStatus === 'pending') await runAfterCommit(c.env);
     return json({ id, revision: 1, data, approvalStatus: approval.approvalStatus }, 201);
   }, 'business');
   router.put('/quotes/:id', async c => {
@@ -139,7 +147,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       for (const h of quoteSaveHooks.beforeSave) await h(tx, old);
       const next = old.revision + 1, encoded = JSON.stringify(data);
       // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, phải gửi duyệt lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
-      const revoke = !isManager(viewer) && old.approvalStatus === 'approved' && contentKey(data) !== contentKey(old.data);
+      const changed = contentKey(data) !== contentKey(old.data);
+      const revoke = !isManager(viewer) && old.approvalStatus === 'approved' && changed;
       const approval = revoke ? { approvalStatus: 'pending' as const, approvedAt: null, approvedBy: null } : {};
       const rows = await tx.update(quotations).set({ quoteNo: data.quoteNo, quoteType: data.type, customer: data.customer, ...quoteHeaderIndex(data), data: encoded, revision: next, ...approval, updatedAt: now }).where(condition).returning({ id: quotations.id });
       if (!rows.length) throw new AppError(409, 'Báo giá vừa được sửa ở nơi khác. Vui lòng tải lại.');
@@ -148,11 +157,15 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(old.id, data));
       const [fresh] = await tx.select().from(quotations).where(eq(quotations.id, old.id)).limit(1);
       for (const h of quoteSaveHooks.afterSave) await h(tx, fresh!);
-      return { revision: next, approvalStatus: revoke ? 'pending' : old.approvalStatus, revoked: revoke };
+      // Nhân viên sửa nội dung báo giá còn đang chờ duyệt → Manager được báo bản mới (lưu mà không đổi gì thì không báo).
+      const pendingEdit = !isManager(viewer) && old.approvalStatus === 'pending' && changed;
+      return { revision: next, approvalStatus: revoke ? 'pending' : old.approvalStatus, revoked: revoke, pendingEdit };
     });
-    // Nhân viên sửa báo giá đã duyệt → mất duyệt → Manager nhận thông báo duyệt lại.
-    if (saved.revoked) await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá sửa lại, chờ duyệt lại',
+    // Nhân viên sửa báo giá đã duyệt → mất duyệt → Manager nhận thông báo duyệt lại; sửa báo giá đang chờ duyệt → báo bản cập nhật.
+    if (saved.revoked || saved.pendingEdit) await notifyMany(c.env, 'managers', { eventType: 'quote_pending',
+      title: saved.revoked ? 'Báo giá sửa lại, chờ duyệt lại' : 'Báo giá chờ duyệt vừa được sửa',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || ''}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
+    if (saved.revoked) await runAfterCommit(c.env);
     return json({ id: c.params.id, revision: saved.revision, data, approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
   }, 'business');
 }
