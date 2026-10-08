@@ -9,6 +9,13 @@ globalThis.EditableQuotePdf=(()=>{
  const wrap=(font,value,size,width)=>{const lines=[];for(const paragraph of String(value??'').split('\n')){let line='';for(const word of paragraph.split(/\s+/).filter(Boolean)){const next=line?line+' '+word:word;if(font.widthOfTextAtSize(next,size)<=width){line=next;continue}if(line)lines.push(line);line=word;}lines.push(line);}return lines.length?lines:[''];};
  // Use the approved HRC layout for geometry, but draw into PDF vector primitives.
  // Canvas coordinates retain the original template's margins and pagination.
+ // HRC: thêm dòng "Đóng gói: … /thùng; nặng … kg/thùng" dưới tên (dùng chung cho PDF và bản in canvas).
+ const hrcRows=state=>state.rows.map(row=>{
+  const parts=[];
+  if(Number(row.perCarton)>0)parts.push(`${Number(row.perCarton).toLocaleString('vi-VN')} ${row.unit||'cái'}/thùng`);
+  if(Number(row.cartonWeight)>0)parts.push(`nặng ${Number(row.cartonWeight).toLocaleString('vi-VN')} kg/thùng`);
+  return {...row,name:[row.name,parts.length?`Đóng gói: ${parts.join('; ')}`:''].filter(Boolean).join('\n')};
+ });
  function createHrcVector({pdf,regular,bold,state,images,banner,imageAssets,bannerAsset}) {
   const sourceWidth=1240, sourceHeight=1754, scale=W/sourceWidth;
   const assets=new Map(images.map((image,index)=>[image,imageAssets[index]]));
@@ -31,12 +38,7 @@ globalThis.EditableQuotePdf=(()=>{
    };
    return {width:sourceWidth,height:sourceHeight,getContext:()=>context};
   }
-  const rows=state.rows.map(row=>{
-   const parts=[];
-   if(Number(row.perCarton)>0)parts.push(`${Number(row.perCarton).toLocaleString('vi-VN')} ${row.unit||'cái'}/thùng`);
-   if(Number(row.cartonWeight)>0)parts.push(`nặng ${Number(row.cartonWeight).toLocaleString('vi-VN')} kg/thùng`);
-   return {...row,name:[row.name,parts.length?`Đóng gói: ${parts.join('; ')}`:''].filter(Boolean).join('\n')};
-  });
+  const rows=hrcRows(state);
   HrcPdf.createPages({state:{...state,rows},images,banner,createCanvas,width:sourceWidth,height:sourceHeight});
   return pdf.save();
  }
@@ -70,5 +72,5 @@ globalThis.EditableQuotePdf=(()=>{
   }
   const totals=QuoteMath.totals(state),lastWidth=widths[widths.length-1],labelWidth=widths.slice(0,-1).reduce((sum,width)=>sum+width,0),totalRowHeight=isB2b?15:24;if(y+totalRowHeight*3+10>H-80){title(true);}for(const [label,value] of [['Tổng thành tiền',totals.subtotal],[totals.label,totals.tax],['Tổng thanh toán',totals.total]]){cell(label,M,y,labelWidth,totalRowHeight,{size:8,bold:true,align:'right'});cell(number(value),M+labelWidth,y,lastWidth,totalRowHeight,{size:8,bold:true,align:'right'});y+=totalRowHeight;}y+=10;const amountWords=globalThis.HrcPdf.amountInWords(totals.total),noteWidth=W-M*2,noteSize=9.8,noteLineHeight=13;for(const text of wrap(regular,'Số tiền bằng chữ: '+amountWords+'.',9,noteWidth)){write(text,M,y,{size:9,bold:true});y+=12;}y+=7;for(const note of String(state.notes||'').split('\n').filter(Boolean)){for(const text of wrap(regular,note,noteSize,noteWidth)){if(y+noteLineHeight>H-45){title(true);}write(text,M,y,{size:noteSize,bold:/hiệu lực|thời gian giao hàng|địa chỉ giao hàng|thanh toán|tạm ứng|số tài khoản/i.test(text)});y+=noteLineHeight;}}write('Phụ trách kinh doanh',W-145,Math.min(y+32,H-(isVigifts?H*10/297+8:26)),{size:8,bold:true});return await pdf.save();
  }
- return {create};
+ return {create,hrcRows};
 })();

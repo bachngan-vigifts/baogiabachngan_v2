@@ -1227,3 +1227,10 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 }
 .lines-wrap.hide-subs .sub-field { display: none; }
 .legacy-images { grid-template-columns: 1fr auto; align-items: center; } .legacy-images small { display: block; color: var(--muted); } .legacy-images small.error { color: var(--red); }
+/* Bản in theo mẫu web cũ vẽ bằng canvas (printQuoteTemplate): mỗi canvas là một trang A4 đủ lề. */
+@page quote-canvas { size: A4; margin: 0; }
+@media print {
+  .print-sheet.canvas-pages { page: quote-canvas; padding: 0; margin: 0; }
+  .print-sheet.canvas-pages canvas { display: block; width: 210mm; height: 297mm; break-after: page; page-break-after: always; }
+  .print-sheet.canvas-pages canvas:last-child { break-after: auto; page-break-after: auto; }
+}
