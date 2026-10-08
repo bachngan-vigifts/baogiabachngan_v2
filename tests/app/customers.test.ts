@@ -82,6 +82,14 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   // Tài khoản trang khách (email đăng nhập) chỉ người phụ trách / được chia sẻ / Manager thấy.
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: k.data.id, name: 'Chị Lan', email: 'lan@hoanglong.vn' })).status, 201);
   assert.deepEqual((await call(`/customers/${k.data.id}/overview`, emp)).data.accounts.map((a: any) => a.email), ['lan@hoanglong.vn']);
+  // Thẻ "Tài khoản" có chiết khấu riêng (Manager sửa ngay tại trang chi tiết) và SĐT; tài khoản chỉ có SĐT không lộ email nội bộ.
+  const lan = (await call(`/customers/${k.data.id}/overview`, emp)).data.accounts[0];
+  assert.deepEqual(lan.discounts, {});
+  assert.equal((await call(`/customer-accounts/${lan.memberId}`, mgr, 'PUT', { discounts: { minhLong: 12, lock: 5 } })).status, 200);
+  assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: k.data.id, name: 'Anh Tú', phone: '0987654321' })).status, 201);
+  const accs = (await call(`/customers/${k.data.id}/overview`, emp)).data.accounts;
+  assert.deepEqual(accs.find((a: any) => a.memberId === lan.memberId).discounts, { minhLong: 12, lock: 5 });
+  assert.deepEqual(accs.filter((a: any) => a.name === 'Anh Tú').map((a: any) => [a.email, a.phone]), [['', '0987654321']]);
   assert.deepEqual((await call(`/customers/${k.data.id}/overview`, other)).data.accounts, [], 'người không phụ trách không thấy tài khoản khách');
   assert.equal((await call('/customers/%E0/overview', emp)).status, 400, 'URL hỏng → 400, không phải 500');
   assert.equal((await call(`/orders/${o.data.id}`, other)).status, 404);

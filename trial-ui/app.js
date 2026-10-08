@@ -1863,7 +1863,7 @@ function memberDetail() {
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
   return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
-    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, isManager, onReview: reviewCustomer });
+    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, isManager, onReview: reviewCustomer });
 }
 function openCustomer(id, known) {
   customerId = id || null;
@@ -2233,6 +2233,8 @@ async function openAccounts(c) {
   $$('.manager-only', $('#accounts-dialog')).forEach(el => el.hidden = !isManager());
   $('#accounts-dialog').showModal(); await drawAccounts();
 }
+// Đóng hộp tài khoản khi đang ở trang chi tiết khách → tải lại thẻ "Tài khoản" (CK, SĐT, trạng thái có thể đã đổi).
+$('#accounts-dialog').addEventListener('close', () => { if (customerUi && location.hash.startsWith('#/customers/')) customerUi.reload(); });
 async function drawAccounts() {
   const list = $('#accounts-list'); list.innerHTML = '<li class="muted">Đang tải…</li>';
   try {
@@ -2276,17 +2278,21 @@ $('#accounts-list').addEventListener('click', async e => {
     if (e.target.closest('[data-acc-reset]')) { showAccountLink((await api(`/customer-accounts/${encodeURIComponent(id)}/reset`, 'POST', {})).url); return drawAccounts(); }
     const act = e.target.closest('[data-acc-active]');
     if (act) { await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { active: act.dataset.accActive === '1' }); toast(act.dataset.accActive === '1' ? 'Đã mở khoá tài khoản.' : 'Đã khoá tài khoản.'); return drawAccounts(); }
-    if (e.target.closest('[data-acc-discount]')) {
-      const f = $('#discount-form'); $('#discount-name').textContent = a.name; f.dataset.member = id;
-      for (const k of Object.keys(DISCOUNT_LABELS)) f.elements['d_' + k].value = a.discounts[k] || '';
-      $('#discount-error').textContent = ''; $('#discount-dialog').showModal();
-    }
+    if (e.target.closest('[data-acc-discount]')) openDiscount(a, drawAccounts);
   } catch (ex) { toast(ex.message, 'err'); }
 });
+/** Hộp đặt chiết khấu riêng của 1 tài khoản khách (Manager) – mở từ "Quản lý tài khoản" hoặc trang chi tiết khách; lưu xong gọi `after`. */
+let discountAfter = null;
+function openDiscount(a, after) {
+  if (!isManager()) return toast('Chỉ Manager mới đặt được chiết khấu riêng.', 'err');
+  const f = $('#discount-form'); $('#discount-name').textContent = a.name; f.dataset.member = a.memberId; discountAfter = after;
+  for (const k of Object.keys(DISCOUNT_LABELS)) f.elements['d_' + k].value = a.discounts?.[k] || '';
+  $('#discount-error').textContent = ''; $('#discount-dialog').showModal();
+}
 $('#discount-form').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
-  try { await api(`/customer-accounts/${encodeURIComponent(f.dataset.member)}`, 'PUT', { discounts: readDiscounts(f) }); $('#discount-dialog').close(); toast('Đã lưu chiết khấu riêng.'); drawAccounts(); }
+  try { await api(`/customer-accounts/${encodeURIComponent(f.dataset.member)}`, 'PUT', { discounts: readDiscounts(f) }); $('#discount-dialog').close(); toast('Đã lưu chiết khấu riêng.'); discountAfter?.(); }
   catch (ex) { $('#discount-error').textContent = ex.message; }
 });
 $('#account-link-copy').addEventListener('click', () => { $('#account-link-url').select(); navigator.clipboard?.writeText($('#account-link-url').value).then(() => toast('Đã chép link.')).catch(() => document.execCommand('copy')); });

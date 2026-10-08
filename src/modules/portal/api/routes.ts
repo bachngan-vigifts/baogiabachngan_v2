@@ -22,7 +22,7 @@ import { createOrderFromQuote } from '../../sales/api/routes.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { cleanDiscounts, nextQuoteNo, parseDiscounts, portalBrandAllowed, publicQuote } from '../domain/portal.ts';
+import { cleanDiscounts, isPhoneOnly, nextQuoteNo, parseDiscounts, PHONE_ONLY_DOMAIN, portalBrandAllowed, publicQuote, shownEmail } from '../domain/portal.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const member = (c: Ctx) => (c.state.session as SessionState).member;
@@ -30,14 +30,6 @@ const nowIso = () => new Date().toISOString();
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Liên kết đặt mật khẩu của khách: mở thẳng trang khách hàng (token sau dấu #, không đi qua máy chủ/log). */
 const customerLink = (origin: string, email: string, token: string) => `${origin}/customer.html#email=${encodeURIComponent(email)}&token=${token}`;
-/**
- * Khách không có email: tài khoản đăng nhập bằng số di động; cột email (bắt buộc, duy nhất) giữ một địa chỉ nội bộ
- * `kh-…@sdt.invalid` (tên miền .invalid không bao giờ nhận thư) – giao diện không hiện địa chỉ này.
- */
-export const PHONE_ONLY_DOMAIN = '@sdt.invalid';
-const isPhoneOnly = (email: string) => email.endsWith(PHONE_ONLY_DOMAIN);
-/** Hiện cho người dùng: tài khoản chỉ có SĐT thì để trống email. */
-const shownEmail = (email: string) => (isPhoneOnly(email) ? '' : email);
 /** Định danh đăng nhập ghi trong link đặt mật khẩu: email thật, hoặc số di động. */
 const loginIdOf = (email: string, phone: string | null) => (isPhoneOnly(email) ? phone || '' : email);
 const str = (v: unknown, max = 500) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v)).trim().slice(0, max);

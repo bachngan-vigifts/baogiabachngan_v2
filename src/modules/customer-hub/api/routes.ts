@@ -11,6 +11,7 @@ import { orderScopeFor } from '../../sales/api/routes.ts';
 import { debtCounts, quoteTotal, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../../portal/schema.ts';
 import { HUB_LIMITS, purchaseHistory } from '../domain/overview.ts';
+import { parseDiscounts, shownEmail } from '../../portal/domain/portal.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
@@ -39,8 +40,8 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       db.select({ id: customerStockRequests.id, status: customerStockRequests.status, items: customerStockRequests.items, note: customerStockRequests.note, createdAt: customerStockRequests.createdAt, answeredAt: customerStockRequests.answeredAt })
         .from(customerStockRequests).where(and(eq(customerStockRequests.customerId, id), all ? undefined : eq(customerStockRequests.ownerId, me.id)))
         .orderBy(desc(customerStockRequests.createdAt)).limit(HUB_LIMITS.stockRequests),
-      // Tài khoản trang khách (tên, email đăng nhập): chỉ Manager / người phụ trách / người được chia sẻ khách mới xem.
-      all ? db.select({ memberId: customerAccounts.memberId, name: employees.name, email: employees.email, active: employees.active, ownerId: customerAccounts.ownerId })
+      // Tài khoản trang khách (tên, email / SĐT đăng nhập, chiết khấu riêng): chỉ Manager / người phụ trách / người được chia sẻ khách mới xem.
+      all ? db.select({ memberId: customerAccounts.memberId, name: employees.name, email: employees.email, phone: employees.phone, active: employees.active, discounts: customerAccounts.discounts })
         .from(customerAccounts).innerJoin(employees, eq(employees.id, customerAccounts.memberId)).where(eq(customerAccounts.customerId, id)).orderBy(asc(employees.name)) : Promise.resolve([]),
     ]);
     const ids = orders.map(r => r.o.id);
@@ -81,7 +82,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       payments: pays.map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '' })),
       purchases: purchaseHistory(lines.filter(l => confirmedIds.has(l.orderId)).map(l => ({ ...l, orderDate: orders.find(r => r.o.id === l.orderId)!.o.orderDate }))),
       stockRequests: stockRows.map(r => { let items: unknown[] = []; try { items = JSON.parse(r.items); } catch { /* bỏ qua */ } return { ...r, items: Array.isArray(items) ? items.length : 0 }; }),
-      accounts: accountRows.map(a => ({ memberId: a.memberId, name: a.name, email: a.email, active: a.active })),
+      accounts: accountRows.map(a => ({ memberId: a.memberId, name: a.name, email: shownEmail(a.email), phone: a.phone ?? '', active: a.active, discounts: parseDiscounts(a.discounts) })),
     });
   }, 'business');
 }

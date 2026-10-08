@@ -3,7 +3,7 @@
 // Thêm một mục mới = thêm một phần tử vào TABS (key, nhãn, đếm số, hàm vẽ) – không phải sửa chỗ khác.
 
 /**
- * @param deps { api, toast, esc, money, fmtDate, pill, payCell, confirmBox, go, isManager,
+ * @param deps { api, toast, esc, money, fmtDate, pill, payCell, confirmBox, go, isManager, onDiscount,
  *               ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS, onEdit(customer), onQuote(customer), onAccounts(customer) }
  */
 export function initCustomerDetail(deps) {
@@ -16,6 +16,8 @@ export function initCustomerDetail(deps) {
   const METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
   const ENTITY = { BN: 'Bách Ngân', VG: 'Vigifts', QTV: 'QTV' };
   const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
+  const DISCOUNT_LABELS = { minhLong: 'Minh Long', lys: 'Minh Long - Lys', lock: 'Lock&Lock' };
+  const discountText = ds => Object.keys(DISCOUNT_LABELS).filter(k => ds?.[k]).map(k => `${DISCOUNT_LABELS[k]} <b>${ds[k]}%</b>`).join('<br>') || '<span class="muted">Chưa đặt</span>';
   const table = (head, rows, empty) => rows.length
     ? `<div class="table-wrap"><table class="data-table"><thead><tr>${head.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<p class="muted cd-empty">${esc(empty)}</p>`;
@@ -51,9 +53,13 @@ export function initCustomerDetail(deps) {
         <td>${esc(x.deliveryNo)}</td><td>${fmtDate(x.plannedDate)}${x.timeSlot ? `<small>${esc(x.timeSlot)}</small>` : ''}</td><td>${pill(DELIVERY_STATUS, x.status)}</td><td>${orderLink(x.orderId, x.orderNo)}</td></tr>`), 'Chưa có chuyến giao.') },
     { key: 'stock', label: 'Hỏi tồn', count: d => d.stockRequests.length, html: d => table(['Ngày gửi', 'Số mã', 'Tình trạng', 'Ghi chú'], d.stockRequests.map(r => `<tr class="clickable" data-href="#/stock-requests/${esc(r.id)}">
         <td>${fmtDate(r.createdAt)}</td><td>${r.items}</td><td>${pill(STOCK_STATUS, r.status)}</td><td>${esc(r.note) || '<span class="muted">—</span>'}</td></tr>`), 'Khách chưa gửi đơn check tồn.') },
-    { key: 'accounts', label: 'Tài khoản', count: d => d.accounts.length, html: d => `${table(['Tên', 'Email', 'Trạng thái'], d.accounts.map(a => `<tr><td>${esc(a.name)}</td><td>${esc(a.email)}</td>
-        <td>${a.active ? '<span class="pill ok">Đang hoạt động</span>' : '<span class="pill off">Đã khoá</span>'}</td></tr>`), 'Chưa có tài khoản trang khách hàng.')}
-        <button type="button" class="btn secondary small" data-act="accounts">Quản lý tài khoản</button>` },
+    { key: 'accounts', label: 'Tài khoản', count: d => d.accounts.length, html: d => `${table(['Tên', 'Đăng nhập', 'Chiết khấu riêng', 'Trạng thái', ''], d.accounts.map(a => `<tr><td>${esc(a.name)}</td>
+      <td>${[a.email, a.phone].filter(Boolean).map(esc).join('<br>') || '—'}</td>
+      <td>${discountText(a.discounts)}</td>
+      <td>${a.active ? '<span class="pill ok">Đang hoạt động</span>' : '<span class="pill off">Đã khoá</span>'}</td>
+      <td>${deps.isManager() ? `<button type="button" class="btn ghost small" data-act="discount" data-member="${esc(a.memberId)}">Sửa CK</button>` : ''}</td></tr>`), 'Chưa có tài khoản trang khách hàng.')}
+      ${d.accounts.length && !deps.isManager() ? '<p class="muted">Chiết khấu riêng do Manager đặt.</p>' : ''}
+      <button type="button" class="btn secondary small" data-act="accounts">Quản lý tài khoản</button>` },
   ];
 
   // ----- Vẽ
@@ -180,6 +186,7 @@ export function initCustomerDetail(deps) {
     if (act === 'quote') return deps.onQuote(c);
     if (act === 'approve' || act === 'reject') return deps.onReview(c.id, act === 'approve');
     if (act === 'accounts') return deps.onAccounts(c);
+    if (act === 'discount') return deps.onDiscount(st.d.accounts.find(a => a.memberId === t.closest('[data-member]').dataset.member), reload);
     if (act === 'contact') return contactDialog(null);
     if (act === 'staff') return staffDialog();
     const ed = t.closest('[data-contact-edit]'); if (ed) return contactDialog(st.d.contacts.find(x => x.id === ed.dataset.contactEdit));
