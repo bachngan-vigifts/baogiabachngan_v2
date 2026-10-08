@@ -449,7 +449,7 @@ function route() {
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
   if (view === 'products' && !state.products) loadProducts();
-  if (view === 'products') productAdmin().loadPending();
+  if (view === 'products') { productAdmin().loadPending(); legacyImagesBox(); }
   if (view === 'orders') loadOrders();
   if (view === 'contracts') loadContracts();
   if (view === 'deliveries') loadDeliveries();
@@ -1477,6 +1477,40 @@ async function loadProducts(more = false) {
 }
 /** Thêm sản phẩm + duyệt sản phẩm mới (trial-ui/product-admin.js). */
 var productAdminUi = null; // eslint-disable-line no-var
+/**
+ * Ảnh sản phẩm còn nằm trên web cũ (chỉ xem được khi đăng nhập web cũ → PDF / Excel không chèn được): Manager bấm chuyển
+ * sang kho ảnh mới, chạy từng đợt 20 mã tới khi hết (API /catalog/legacy-images, src/modules/integrations/api/legacy-images.ts).
+ */
+let legacyRunning = false;
+async function legacyImagesBox() {
+  const box = $('#legacy-images');
+  if (!isManager()) { box.hidden = true; return; }
+  let st; try { st = await api('/catalog/legacy-images'); } catch { box.hidden = true; return; }
+  if (!st.remaining) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<div><b>Còn ${fmtNum(st.remaining)} sản phẩm dùng ảnh trên web cũ</b>
+      <small>Ảnh này chỉ xem được khi đăng nhập web cũ nên file PDF / Excel báo giá không chèn được. Chuyển một lần sang kho ảnh mới là xong.</small>
+      ${st.configured ? '' : '<small class="error">Chưa cấu hình: cần secret LEGACY_STAFF_EMAIL / LEGACY_STAFF_PASSWORD (tài khoản web cũ) trên Supabase và chạy migration 0042.</small>'}
+      <small data-progress></small></div>
+    <button type="button" class="btn primary small" data-legacy-run${st.configured ? '' : ' disabled'}>${legacyRunning ? 'Đang chuyển…' : 'Chuyển ảnh từ web cũ'}</button>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-legacy-run]'); if (!b || legacyRunning) return;
+  legacyRunning = true; b.disabled = true; b.textContent = 'Đang chuyển…';
+  const progress = () => document.querySelector('#legacy-images [data-progress]');
+  let after = '', moved = 0, failed = [];
+  try {
+    for (;;) {
+      const r = await api('/catalog/legacy-images/migrate', 'POST', { limit: 20, after });
+      moved += r.migrated; failed = failed.concat(r.failed); after = r.next || after;
+      const p = progress(); if (p) p.textContent = `Đã chuyển ${fmtNum(moved)} ảnh · còn ${fmtNum(r.remaining)}${failed.length ? ` · ${failed.length} ảnh lỗi` : ''}`;
+      if (r.finished || !r.next) break;
+    }
+    toast(`Đã chuyển ${fmtNum(moved)} ảnh sang kho mới.` + (failed.length ? ` ${failed.length} ảnh lỗi (vd ${failed[0].sku}: ${failed[0].error}) – giữ link cũ.` : ''), failed.length ? 'err' : 'ok');
+    state.products = null; // tải lại danh mục để thấy link ảnh mới
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { legacyRunning = false; legacyImagesBox(); }
+});
 function productAdmin() {
   return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
 }

@@ -12,7 +12,7 @@ const ALLOWED: Record<string, string[]> = {
   staff: [], customers: ['staff'], catalog: ['staff'], contracts: [], printing: ['staff', 'quotes'], integrations: ['staff', 'customers', 'catalog'], crm: [],
   sales: ['staff', 'customers', 'catalog', 'quotes', 'contracts', 'notifications'],
   portal: ['staff', 'customers', 'catalog', 'quotes', 'sales', 'notifications'],
-  quotes: ['staff', 'notifications'], work: ['staff'],
+  quotes: ['staff', 'notifications', 'integrations'], work: ['staff'],
   tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
   'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal', 'care'],
   care: ['staff', 'customers'],

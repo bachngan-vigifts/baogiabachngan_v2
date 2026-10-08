@@ -11,6 +11,10 @@ const router = createAppRouter();
 // Kho file (đính kèm tin nhắn): bucket private baogiabachngan-v2-files. SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY do Supabase tự cấp cho Edge Function.
 const FILES_URL = Deno.env.get('SUPABASE_URL') || '', FILES_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const files = FILES_URL && FILES_KEY ? supabaseFileStore({ url: FILES_URL, serviceKey: FILES_KEY }) : undefined;
+// Ảnh sản phẩm: bucket public product-images (migration 0042). Ảnh cũ chuyển từ web cũ bằng tài khoản web cũ
+// (secret LEGACY_STAFF_EMAIL / LEGACY_STAFF_PASSWORD – Manager tự đặt trong Supabase → Edge Functions → Secrets).
+const productImages = FILES_URL && FILES_KEY ? supabaseFileStore({ url: FILES_URL, serviceKey: FILES_KEY, bucket: 'product-images', publicBucket: true }) : undefined;
+const legacySite = { base: 'https://baogia.minhlongonline.com', email: Deno.env.get('LEGACY_STAFF_EMAIL') || '', password: Deno.env.get('LEGACY_STAFF_PASSWORD') || '' };
 // Một client CSDL dùng chung cho cả isolate: các request sau dùng lại kết nối sẵn có (không bắt tay TLS lại mỗi lần).
 // CSDL chỉ có 60 kết nối và SUPABASE_DB_URL là kết nối trực tiếp (không qua pooler), mà Edge chạy nhiều isolate cùng lúc:
 // mỗi isolate giữ TỐI ĐA 1 kết nối và nhả sau 10 giây rảnh, để tổng số kết nối không vượt giới hạn.
@@ -63,7 +67,7 @@ Deno.serve(async req => {
       if(token) headers.set('cookie', '__Host-bn-session=' + token);
     }
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
-    const response = await router.handle(forwarded,{db,waitUntil,files,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined});
+    const response = await router.handle(forwarded,{db,waitUntil,files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined});
     if (response.status < 500) lastOk = Date.now();
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');
