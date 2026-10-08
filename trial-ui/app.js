@@ -3,7 +3,7 @@
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
-import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel } from './order-print.js';
+import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initChat } from './chat.js';
@@ -2070,6 +2070,9 @@ function fillList(key, rows, emptyText) {
 }
 const listError = (key, e) => { $(`#${key}-list`).innerHTML = ''; $(`#${key}-empty`).hidden = false; $(`#${key}-empty-text`).textContent = e.message; };
 
+/** Nút in nhanh phiếu đóng gói / phiếu giao hàng trên dòng đơn / HĐKT (đơn đã xác nhận, chưa huỷ). */
+const slipButtons = (orderId, status) => status === 'draft' || status === 'cancelled' ? ''
+  : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói (theo mẫu đơn đặt hàng)">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng (theo mẫu đơn đặt hàng)">Phiếu GH</button>`;
 // ----- danh sách đơn
 async function loadOrders() {
   $('#orders-list').innerHTML = skeleton(7);
@@ -2083,7 +2086,7 @@ async function loadOrders() {
       <td>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</td>
       <td class="right num">${money(o.total)}</td>
       <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
-      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.contract ? `<button type="button" class="btn secondary small" data-contract-docs-for="${esc(o.id)}" title="Xem, sửa, tải bộ 3 file Word HĐKT">HĐKT</button>` : ''}</td></tr>`),
+      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}${o.contract ? `<button type="button" class="btn secondary small" data-contract-docs-for="${esc(o.id)}" title="Xem, sửa, tải bộ 3 file Word HĐKT">HĐKT</button>` : ''}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
   } catch (e) { listError('orders', e); }
 }
@@ -2095,7 +2098,7 @@ async function loadContracts() {
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
       <td><b>${esc(k.contractNo)}</b></td><td>${esc(k.customerName)}<small>${orderLink(k.orderId, k.orderNo)}${k.quoteNo ? ' · ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button></td></tr>`),
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</td></tr>`),
       'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
   } catch (e) { listError('contracts', e); }
 }
@@ -2321,6 +2324,7 @@ async function openOrder(id) {
     step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : 'Đã thu đủ', '#/receivables'),
   ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
   $('#order-actions').innerHTML = '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>'
+    + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}">In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}">In phiếu giao hàng</button>` : '')
     + (o.status === 'draft' ? '<button class="btn ok" id="order-confirm" title="Khách đặt hàng từ trang khách hàng: kiểm tra rồi xác nhận">Xác nhận đơn</button>' : '')
     + (o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '');
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
@@ -2539,6 +2543,7 @@ document.addEventListener('click', async e => {
 });
 /** Trang phiếu đóng gói (#/packing/<id>): kho xem hàng cần đóng, quy cách gợi ý, cân nặng; xác nhận kèm 1–3 ảnh. Không id: danh sách phiếu chờ đóng. */
 const slipPhotos = [];
+let packingView = null; // phiếu đang mở ở #/packing/<id> (cho nút in)
 async function openPacking(id) {
   const body = $('#packing-body'); body.innerHTML = '<p class="muted card">Đang tải…</p>'; $('#packing-actions').innerHTML = ''; $('#packing-status').innerHTML = '';
   if (!id) {
@@ -2555,7 +2560,8 @@ async function openPacking(id) {
   $('#packing-title').textContent = k.slipNo; $('#breadcrumb').textContent = k.slipNo; document.title = k.slipNo + ' · Bách Ngân';
   $('#packing-status').innerHTML = pill(PACK_STATUS, k.status);
   $('#packing-back').href = d.canOpenOrder ? `#/orders/${encodeURIComponent(o.id)}` : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? '‹ Đơn hàng' : '‹ Công việc';
-  $('#packing-actions').innerHTML = (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
+  packingView = d;
+  $('#packing-actions').innerHTML = '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
   const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
   body.innerHTML = `<div class="editor-grid">
     <div class="card"><h2 class="card-title">Giao cho khách</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>Đơn</dt><dd>${esc(o.orderNo)}</dd>
@@ -2649,6 +2655,74 @@ function openOrderPrint(detail = sales.detail) {
   });
   dlg.showModal();
 }
+/**
+ * Xem trước PHIẾU ĐÓNG GÓI / PHIẾU GIAO HÀNG (cùng kiểu mẫu đơn đặt hàng), sửa trực tiếp trên phiếu rồi in / lưu PDF.
+ * `choices` = [{ value, label }] (chọn phiếu / chuyến giao), `build(value)` → dữ liệu bản in.
+ */
+function openSlipPrint({ kind, choices, initial, build }) {
+  const k = SLIP_KINDS[kind], dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">${kind === 'packing' ? 'Phiếu đóng gói' : 'Phiếu giao hàng'}</span><h2>In ${k.title.toLowerCase()}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><div class="row-gap print-tools">${choices.length > 1 ? `<label class="inline">${kind === 'packing' ? 'Phiếu' : 'Chuyến giao'} <select data-choice>${choices.map(c => `<option value="${esc(c.value)}"${c.value === initial ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>` : ''}
+      <span class="muted small">Bấm vào chữ trên phiếu để sửa trước khi in.</span></div>
+      <div class="paper ddh-paper" data-sheet></div></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn primary" data-print>In / Lưu PDF</button></div>`;
+  document.body.append(dlg);
+  const sheet = dlg.querySelector('[data-sheet]'); let p;
+  const render = v => { p = build(v); sheet.innerHTML = slipSheetHtml(p, { edit: true }); };
+  render(initial ?? choices[0]?.value ?? '');
+  dlg.querySelector('[data-choice]')?.addEventListener('change', e => render(e.target.value));
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+  dlg.querySelector('[data-print]').addEventListener('click', () => {
+    readEdits(sheet, p);
+    $('#print-sheet').innerHTML = slipSheetHtml(p);
+    const title = document.title; document.title = `${k.file}-${p.docNo}`.replace(/[^\w.-]+/g, '-');
+    window.print(); document.title = title;
+  });
+  dlg.showModal();
+}
+const sellerName = d => sellerOf(d).short;
+/** Phiếu đóng gói của đơn (nhân viên phụ trách / Manager): chọn 1 phiếu đã lập, hoặc cả đơn khi chưa chia phiếu. */
+async function printPackingForOrder(orderId) {
+  const [d, pk] = await Promise.all([api('/orders/' + encodeURIComponent(orderId)), api(`/orders/${encodeURIComponent(orderId)}/packing`)]);
+  const live = pk.slips.filter(x => x.status !== 'cancelled').sort((a, b) => a.slipNo.localeCompare(b.slipNo));
+  const choices = [...live.map(x => ({ value: x.id, label: `${x.slipNo} · ${x.sourceLabel}${x.sourceNote ? ': ' + x.sourceNote : ''} · ${PACK_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Cả đơn (tất cả dòng hàng)' }];
+  openSlipPrint({ kind: 'packing', choices, initial: live[0]?.id || '', build: v => {
+    const slip = live.find(x => x.id === v);
+    return packingPrintData({ seller: sellerName(d), order: d.order, slip, lines: slip ? slip.lines : pk.lines }, state.user?.name || '');
+  } });
+}
+/** Phiếu giao hàng của đơn: chọn chuyến giao đã lên lịch, hoặc toàn bộ hàng còn lại. */
+async function printDeliveryForOrder(orderId) {
+  const d = await api('/orders/' + encodeURIComponent(orderId)), byId = new Map(d.lines.map(l => [l.id, l]));
+  const trips = (d.deliveries || []).filter(x => x.status !== 'cancelled');
+  const choices = [...trips.map(x => ({ value: x.id, label: `${x.deliveryNo} · ${fmtDate(x.plannedDate)}${x.timeSlot ? ' ' + x.timeSlot : ''} · ${DELIVERY_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Toàn bộ hàng chưa giao' }];
+  const next = trips.find(x => x.status !== 'delivered');
+  openSlipPrint({ kind: 'delivery', choices, initial: next?.id || (trips.length ? trips.at(-1).id : ''), build: v => {
+    const trip = trips.find(x => x.id === v);
+    const left = d.lines.map(l => ({ ...l, ordered: l.qty, qty: Math.max(0, Math.round((l.qty - (l.deliveredQty || 0)) * 1000) / 1000) })).filter(l => l.qty > 0);
+    const lines = trip ? trip.lines.map(x => { const l = byId.get(x.orderLineId) || {}; return { ...l, ordered: l.qty, qty: x.qty }; })
+      : left.length ? left : d.lines.map(l => ({ ...l, ordered: l.qty }));
+    return deliveryPrintData({ seller: sellerName(d), order: d.order, delivery: trip, lines }, state.user?.name || '');
+  } });
+}
+/** Trang phiếu đóng gói (nhóm Kho không xem được đơn): in phiếu đóng gói / phiếu giao hàng từ chính phiếu. */
+function printFromSlip(kind) {
+  const d = packingView; if (!d) return;
+  const seller = (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN).short, me = state.user?.name || '';
+  openSlipPrint({ kind, choices: [], initial: '', build: () => kind === 'packing'
+    ? packingPrintData({ seller, order: d.order, slip: d.slip, lines: d.lines }, me)
+    : deliveryPrintData({ seller, order: d.order, lines: d.lines.map(l => ({ ...l, ordered: '' })) }, me) });
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-pack-print-for], [data-ship-print-for], [data-slip-print]'); if (!b) return;
+  e.stopPropagation();
+  try {
+    if (b.dataset.packPrintFor) await printPackingForOrder(b.dataset.packPrintFor);
+    else if (b.dataset.shipPrintFor) await printDeliveryForOrder(b.dataset.shipPrintFor);
+    else printFromSlip(b.dataset.slipPrint);
+  } catch (ex) { toast(ex.message, 'err'); }
+});
 document.addEventListener('click', async e => {
   if (e.target.closest('#order-print, #order-print-card')) openOrderPrint();
   const listPrint = e.target.closest('[data-order-print-for]');

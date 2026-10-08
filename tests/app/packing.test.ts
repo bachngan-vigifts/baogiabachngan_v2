@@ -33,6 +33,8 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   let p = (await call(`/orders/${orderId}/packing`, emp)).data;
   const [dia, hop] = p.lines;
   assert.deepEqual([dia.left, dia.perCarton, hop.left], [100, 24, 10]);
+  // Bản in phiếu đóng gói cả đơn: quy cách gợi ý, kích thước thùng, cân nặng ước tính.
+  assert.deepEqual([dia.suggestion, dia.cartonSize, dia.weight, hop.suggestion, hop.weight], ['4 thùng × 24 cái + 4 cái lẻ', '60×40×30 cm', 50, '', null]);
   // Kho có 50 dĩa: 50 kho + 20 NCC + 30 đại lý; hộp quà lấy hết ở kho → 3 phiếu.
   assert.equal((await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [{ orderLineId: dia.id, qty: 101, source: 'warehouse' }] })).status, 400, 'vượt số lượng');
   assert.equal((await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [{ orderLineId: dia.id, qty: 20, source: 'supplier' }] })).status, 400, 'nguồn ngoài kho phải ghi rõ');
@@ -47,6 +49,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   assert.deepEqual([wh.status, wh.totalQty, wh.totalWeight, wh.lines.length], ['draft', 60, null, 2], 'hộp quà chưa có quy cách → tổng cân để trống');
   const sup = p.slips.find((s: any) => s.source === 'supplier');
   assert.deepEqual([sup.totalWeight, sup.lines[0].cartonSize, sup.sourceLabel], [10, '60×40×30 cm', 'Nhập từ NCC']);
+  assert.equal(sup.lines[0].suggestion, '20 cái lẻ', 'bản in phiếu: quy cách gợi ý từng dòng');
   // Kho chưa thấy việc khi phiếu còn nháp; gửi kho → việc nhóm Kho dẫn tới trang phiếu.
   const khoTasks = async () => (await call('/tasks?view=mine&refresh=1', kho)).data.tasks.filter((t: any) => t.source === 'packing' && t.status !== 'done');
   assert.equal((await khoTasks()).length, 0);
@@ -57,6 +60,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   assert.equal(tasks.length, 1); assert.equal(tasks[0].link, `#/packing/${sup.id}`); assert.match(tasks[0].title, /^Đóng gói DG_/);
   // Kho xem được phiếu (không xem được đơn) và phải chụp 1–3 ảnh.
   const view = (await call(`/packing/${sup.id}`, kho)).data;
+  assert.equal(view.order.quoteType, 'HRC', 'bản in của kho: đơn vị bán theo loại báo giá');
   assert.deepEqual([view.canConfirm, view.canOpenOrder, view.order.orderNo], [true, false, (await call(`/orders/${orderId}`, emp)).data.order.orderNo]);
   assert.equal((await call(`/orders/${orderId}`, kho)).status, 404);
   assert.equal((await call(`/packing/${sup.id}/confirm`, emp, 'POST', { photos: [photo] })).status, 403, 'nhân viên sale không xác nhận thay kho');
