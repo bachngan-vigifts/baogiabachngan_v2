@@ -155,6 +155,13 @@
       "when": 1791419430395,
       "tag": "0037_chat_recall_files",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791422969338,
+      "tag": "0039_invoice_email_mode",
+      "breakpoints": true
     }
   ]
 }

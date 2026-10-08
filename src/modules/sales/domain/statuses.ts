@@ -11,3 +11,5 @@ export const INVOICE_STATUSES = ['none', 'requested', 'issued'] as const;
 export const PACKING_STATUSES = ['draft', 'sent', 'packed', 'cancelled'] as const;
 /** Nguồn hàng của phiếu đóng gói: kho, điều chuyển từ cửa hàng, nhập từ NCC, đại lý, khác. */
 export const PACKING_SOURCES = ['warehouse', 'store', 'supplier', 'agent', 'other'] as const;
+/** Yêu cầu xuất hoá đơn: phát hành chính thức hay gửi bản nháp cho khách kiểm tra trước. */
+export const INVOICE_MODES = ['issue', 'draft'] as const;

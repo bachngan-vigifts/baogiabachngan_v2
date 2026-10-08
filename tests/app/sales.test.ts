@@ -185,9 +185,15 @@ test('xuất hoá đơn: giao xong tự yêu cầu / nhân viên bấm yêu cầ
   assert.deepEqual([A.invoiceStatus, A.invoiceRequestedBy], ['requested', null]);
   assert.equal(A.canIssueInvoice, false);
   // Đơn B: nhân viên phụ trách bấm yêu cầu (chưa giao).
-  assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { note: 'Khách cần hoá đơn trước khi giao' })).status, 200);
-  const B = (await call('/orders/' + b, emp)).data.order;
-  assert.deepEqual([B.invoiceStatus, B.invoiceRequestNote, B.invoiceRequestedByName], ['requested', 'Khách cần hoá đơn trước khi giao', 'Tên emp']);
+  assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { email: 'sai-email', note: 'x' })).status, 400);
+  assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { email: 'kt@khach.vn', mode: 'hack' })).status, 400);
+  assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { note: 'Khách cần hoá đơn trước khi giao', email: 'kt@khach.vn; sep@khach.vn', mode: 'draft' })).status, 200);
+  let B = (await call('/orders/' + b, emp)).data.order;
+  assert.deepEqual([B.invoiceStatus, B.invoiceRequestNote, B.invoiceRequestedByName, B.invoiceEmail, B.invoiceMode], ['requested', 'Khách cần hoá đơn trước khi giao', 'Tên emp', 'kt@khach.vn, sep@khach.vn', 'draft']);
+  // Đã yêu cầu rồi: gửi lại = sửa email / cách xuất / ghi chú.
+  assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { note: 'Phát hành luôn', email: 'kt@khach.vn', mode: 'issue' })).data.updated, true);
+  B = (await call('/orders/' + b, emp)).data.order;
+  assert.deepEqual([B.invoiceEmail, B.invoiceMode, B.invoiceRequestNote], ['kt@khach.vn', 'issue', 'Phát hành luôn']);
   // Việc "Xuất hoá đơn" cho nhóm Kế toán: kế toán thấy, nhân viên sale không.
   let team = (await call('/tasks?view=mine&refresh=1', kt)).data.tasks.filter((t: any) => t.source === 'invoice');
   assert.equal(team.length, 2); assert.ok(team.every((t: any) => t.assigneePosition === 'accounting' && /^#\/orders\//.test(t.link)));

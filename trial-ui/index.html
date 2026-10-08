@@ -699,6 +699,22 @@
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="pack-save">Lưu – sinh phiếu đóng gói</button></div>
   </form>
 </dialog>
+<!-- Yêu cầu xuất hoá đơn: email nhận (lấy từ khách, sửa được), phát hành hay gửi bản nháp, ghi chú cho kế toán -->
+<dialog id="invoice-req-dialog" class="modal narrow">
+  <form id="invoice-req-form" novalidate>
+    <div class="modal-head"><div><span class="eyebrow" id="invoice-req-order">Đơn hàng</span><h2>Yêu cầu xuất hoá đơn</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid one-col">
+      <fieldset class="invoice-mode"><legend>Cách xuất</legend>
+        <label class="mode-opt"><input type="radio" name="mode" value="issue" checked><span><b>Phát hành hoá đơn</b><small>Kế toán xuất hoá đơn chính thức và gửi cho khách.</small></span></label>
+        <label class="mode-opt"><input type="radio" name="mode" value="draft"><span><b>Gửi bản nháp</b><small>Gửi bản nháp để khách kiểm tra thông tin trước, chưa phát hành.</small></span></label>
+      </fieldset>
+      <label>Email nhận hoá đơn<input name="email" type="text" inputmode="email" autocomplete="off" maxlength="500" placeholder="ketoan@congty.vn (nhiều email cách nhau bởi dấu phẩy)"><small class="muted" id="invoice-req-email-hint"></small></label>
+      <label>Ghi chú cho kế toán<textarea name="note" rows="3" maxlength="1000" placeholder="Ví dụ: xuất theo tên công ty mẹ, ghi số PO 123…"></textarea></label>
+      <p class="error" id="invoice-req-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="invoice-req-save">Gửi yêu cầu cho kế toán</button></div>
+  </form>
+</dialog>
 <dialog id="discount-dialog" class="modal narrow">
   <form id="discount-form" novalidate>
     <div class="modal-head"><div><span class="eyebrow">Chiết khấu riêng</span><h2 id="discount-name">Khách hàng</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>

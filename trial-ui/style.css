@@ -55,6 +55,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 /* ---------- Ô nhập ---------- */
 label { display: grid; gap: 5px; font-size: .82rem; font-weight: 600; color: #3a4860; }
 input, select, textarea { width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: .95rem; font-weight: 400; color: var(--ink); transition: border-color .15s, box-shadow .15s; }
+/* Ô tick / chọn không giãn 100% (nếu không sẽ đẩy chữ bên cạnh thành cột hẹp) */
+input[type=checkbox], input[type=radio] { width: auto; flex: none; padding: 0; accent-color: var(--green); }
 input:hover, select:hover, textarea:hover { border-color: #b3becd; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: #5d8ee6; box-shadow: 0 0 0 3px #5d8ee626; }
 input[readonly] { background: var(--surface-2); }
@@ -775,7 +777,10 @@ a.flow-step:hover { border-color: var(--blue); }
 .plain-list li.installment-paid > b { color: var(--green); text-decoration: line-through; text-decoration-color: #12805c66; }
 /* ---------- Bản in đơn đặt hàng (mẫu đơn Minh Long) ---------- */
 .modal.xwide { width: 1100px; }
-.print-tools { margin-bottom: 10px; } .print-tools label { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
+.print-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-bottom: 12px; padding: 10px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.print-tools label.check { display: inline-flex; gap: 8px; align-items: center; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.print-tools label.check input { width: 18px; height: 18px; }
+.print-tools .muted { flex: 1 1 220px; }
 .ddh-paper { padding: 18px 22px; }
 .ddh { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 12px; min-width: 860px; }
 .ddh [contenteditable] { outline: 1px dashed transparent; border-radius: 2px; } .ddh span[contenteditable], .ddh b[contenteditable] { display: inline-block; min-width: 20px; }
@@ -1163,3 +1168,12 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .chat-find-results button { width: 100%; text-align: left; display: grid; gap: 2px; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 10px; font: inherit; cursor: pointer; }
 .chat-ref-list button { width: 100%; text-align: left; display: grid; gap: 2px; border: 0; background: none; padding: 8px; border-radius: 8px; font: inherit; cursor: pointer; } .chat-ref-list button:hover { background: var(--surface-2); }
 .chat-ref-list small { color: var(--muted); }
+/* Hộp yêu cầu xuất hoá đơn */
+.form-grid.one-col { grid-template-columns: 1fr; }
+.invoice-mode { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.invoice-mode legend { font-size: .85rem; font-weight: 700; margin-bottom: 6px; }
+.mode-opt { display: flex !important; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; font-weight: 400 !important; }
+.mode-opt input { width: 18px; height: 18px; margin-top: 2px; }
+.mode-opt small { display: block; color: var(--muted); }
+.mode-opt:has(input:checked) { border-color: var(--green); background: #12805c0d; }
+.chat-pick-list { overflow-x: hidden; } .chat-pick-list label > span:not(.chat-avatar) { overflow-wrap: anywhere; }

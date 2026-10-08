@@ -23,7 +23,8 @@ export function orderPrintData(d, me = '') {
     lines: d.lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty || 0, date: dmy(o.expectedDeliveryDate), note: '', unitPrice: l.unitPrice, taxRate: l.taxRate, amount: l.amount })),
     subtotal: o.subtotal, tax: o.tax, total: o.total, note: o.note || '',
     signDate: `Ngày ${String(today.getDate()).padStart(2, '0')} Tháng ${String(today.getMonth() + 1).padStart(2, '0')} Năm ${today.getFullYear()}`,
-    signers: [o.createdByCustomer ? o.customerName : (o.contact || ''), '', o.ownerName || '', me],
+    // Người đặt: tên người liên hệ của khách (không ghi tên công ty); trống thì để ký tay.
+    signers: [o.contact || '', '', o.ownerName || '', me],
   };
 }
 
