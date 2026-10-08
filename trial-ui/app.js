@@ -2258,6 +2258,7 @@ const notifier = setupNotifications({
     refreshData();
   },
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) go('#' + h); },
+  isManager: () => isManager(),
 });
 /** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)

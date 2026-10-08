@@ -1253,3 +1253,5 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .care-money { display: flex; align-items: center; gap: 6px; } .care-money input { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
 .care-static { font-weight: 700; padding: 6px 0; }
 .care-dialog { width: min(560px, calc(100vw - 24px)); }
+.bell-panel [data-push-note] { white-space: pre-line; }
+.push-devices td small { display: block; color: var(--muted, #6b7280); } .push-devices h3 { margin: 18px 0 8px; font-size: 1rem; }

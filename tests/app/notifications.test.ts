@@ -49,10 +49,12 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   assert.equal((await call('/push/subscribe', emp, 'POST', { subscription: pc.subscription })).status, 200);
   // Tự gửi thông báo thử: tới đúng các thiết bị của mình, không lưu vào chuông.
   const tp = await call('/push/test', emp, 'POST', {});
-  assert.deepEqual(tp.data, { devices: 2, sent: 2 });
+  assert.deepEqual([tp.data.devices, tp.data.sent], [2, 2]);
+  assert.deepEqual(tp.data.results.map((r: any) => [r.ok, r.status]), [[true, 201], [true, 201]], 'kết quả từng thiết bị');
   assert.equal((await phone.read(pushed.find(p => p.endpoint.includes('phone'))!.body)).title, 'Thông báo thử');
   assert.equal((await call('/notifications', emp)).data.notifications.length, 0, 'thông báo thử không vào chuông');
-  assert.deepEqual((await call('/push/test', mgr, 'POST', {})).data, { devices: 0, sent: 0 });
+  const none = (await call('/push/test', mgr, 'POST', {})).data;
+  assert.deepEqual([none.devices, none.sent, none.results[0].error], [0, 0, 'Người nhận chưa bật thông báo trên thiết bị nào.']);
   pushed.length = 0;
   const acc = await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Chị Lan', email: 'lan@hl.vn' });
   await call('/activate', '', 'POST', { token: /token=([a-f0-9]{64})/.exec(acc.data.url)![1], password: 'khach-hang-123' });
@@ -78,6 +80,13 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   gone = pc.subscription.endpoint; pushed.length = 0;
   await call('/portal/quotes', kh, 'POST', { items: [{ sku: 'LL-01', qty: 1 }] });
   assert.equal(pushed.length, 2); pushed.length = 0;
+  // Nhật ký gửi: Manager xem trạng thái từng thiết bị (410 → đã huỷ) và từng lần gửi; nhân viên không xem được.
+  assert.equal((await call('/push/devices', emp)).status, 403);
+  const st = (await call('/push/devices', mgr)).data;
+  assert.equal(st.serverEnabled, true);
+  const pcRow = st.devices.find((x: any) => x.pushHost === 'updates.push.services.mozilla.com'), phoneRow = st.devices.find((x: any) => x.pushHost === 'fcm.googleapis.com');
+  assert.deepEqual([pcRow.lastStatus, !!pcRow.disabledAt, phoneRow.lastStatus, !!phoneRow.lastOkAt, phoneRow.lastError], [410, true, 201, true, '']);
+  assert.ok(st.attempts.some((x: any) => x.eventType === 'customer_quote' && x.status === 410));
   const q2 = (await call('/notifications', emp)).data.notifications[0];
   assert.deepEqual([q2.eventType, q2.title], ['customer_quote', 'Khách gửi yêu cầu báo giá']);
 
@@ -119,4 +128,8 @@ test('Web Push chưa có SAPO_SYNC_TOKEN: thông báo vẫn lưu (trang tự là
   const { notify } = await import('../../src/modules/notifications/api/routes.ts');
   assert.equal((await notify(env, { eventType: 'x', title: 'Thử', targetRole: 'manager' })).ok, true);
   assert.equal((await call('/notifications', mgr)).data.notifications[0].title, 'Thử');
+  // Không đẩy được vì máy chủ chưa bật: vẫn ghi nhật ký để Manager thấy lý do.
+  const st = (await call('/push/devices', mgr)).data;
+  assert.equal(st.serverEnabled, false);
+  assert.match(st.attempts[0].error, /SAPO_SYNC_TOKEN/);
 });
