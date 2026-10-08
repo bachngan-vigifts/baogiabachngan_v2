@@ -1363,7 +1363,7 @@ async function downloadQuotePdf(hideDiscount) {
     const name = `${clean(d.quoteNo)} - ${clean(d.customer)} - ${(d.date || todayIso()).split('-').reverse().join('-')}.pdf`;
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     if (tab && !tab.closed) { tab.location.href = url; toast('Đã mở PDF – bấm Chia sẻ để lưu hoặc gửi.'); }
-    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.' + (missingImg ? ` ${missingImg} ảnh không tải được nên để trống.` : '')); }
+    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.' + (missingImg ? ` ${missingImg} ảnh không tải được nên để trống${images.errors[0] ? ': ' + images.errors[0] : ''}.` : ''), missingImg ? 'err' : undefined); }
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (ex) { console.error(ex); if (tab && !tab.closed) tab.close(); toast(ex?.message || 'Không thể tạo PDF. Vui lòng thử lại.', 'err'); }
   finally { pdfBusy = false; }
@@ -2947,10 +2947,12 @@ function loadQuoteImages(rows) {
   const one = src => {
     if (!src) return Promise.resolve(null);
     if (!cache.has(src)) cache.set(src, (async () => (await loadCanvasImage(src, 8000))
-      || (/^https:\/\//i.test(src) ? await api('/images/fetch', 'POST', { url: src }).then(r => loadCanvasImage(r.dataUrl), () => null) : null))());
+      || (/^https?:\/\//i.test(src) ? await api('/images/fetch', 'POST', { url: src }).then(r => loadCanvasImage(r.dataUrl), ex => { errors.push(ex.message); console.warn('Không tải được ảnh', src, ex.message); return null; }) : null))());
     return cache.get(src);
   };
-  return (async () => { const out = []; for (let i = 0; i < rows.length; i += 6) out.push(...await Promise.all(rows.slice(i, i + 6).map(r => one(r.image)))); return out; })();
+  // `out.errors`: lý do máy chủ không tải được (hiện ở thông báo để biết ảnh nào lỗi vì sao).
+  const errors = [];
+  return (async () => { const out = []; for (let i = 0; i < rows.length; i += 6) out.push(...await Promise.all(rows.slice(i, i + 6).map(r => one(r.image)))); out.errors = errors; return out; })();
 }
 let excelBusy = false;
 $('#excel-quote').addEventListener('click', async () => {
@@ -2964,7 +2966,7 @@ $('#excel-quote').addEventListener('click', async () => {
     const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
     await QuoteExcel.download(d, { images, banner });
     const missing = d.rows.filter((r, i) => r.image && !images[i]).length;
-    toast('Đã tải file Excel gồm báo giá và phí vận chuyển' + (missing ? ` (${missing} ảnh không tải được nên để trống)` : '') + '.');
+    toast('Đã tải file Excel gồm báo giá và phí vận chuyển' + (missing ? ` (${missing} ảnh không tải được nên để trống${images.errors[0] ? ': ' + images.errors[0] : ''})` : '') + '.', missing ? 'err' : undefined);
   } catch (ex) { console.error(ex); toast(ex?.message || 'Không thể tạo file Excel. Vui lòng thử lại.', 'err'); }
   finally { excelBusy = false; }
 });
