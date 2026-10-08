@@ -122,3 +122,18 @@ Các sự kiện được thông báo:
   - Khu vực `self`: `/push/config`, `/push/subscribe`, `/push/unsubscribe`, `/notifications`, `/notifications/read`.
   - Khu vực `customer-portal`: `/portal/stock-requests`.
   - Khu vực `business`: `/stock-requests`, `/stock-requests/:id/answer`.
+
+## Khách không có email: đăng nhập bằng số di động
+- Khi tạo tài khoản khách, **email không bắt buộc** nếu có số di động hợp lệ. Gõ số điện thoại vào ô email cũng được hiểu là số di động.
+- Tài khoản chỉ có số di động:
+  - cột email (bắt buộc, duy nhất) giữ một địa chỉ nội bộ `kh-…@sdt.invalid`, không bao giờ hiện ra giao diện;
+  - link đặt mật khẩu ghi số di động;
+  - khách đăng nhập bằng số di động ở mọi dạng viết (0931 328 616, +84…);
+  - không bỏ được số di động của tài khoản này (khách sẽ mất cách vào).
+
+## Thanh chức năng và Doanh số
+- Thanh chức năng trang khách nổi bật: nút to có biểu tượng, nút đang chọn màu đỏ, thanh dính trên đầu khi cuộn.
+- Thẻ **📈 Doanh số** (tính ở trình duyệt từ `/portal/orders`):
+  - tổng mua theo năm (gồm VAT), số đơn, so với năm trước;
+  - từng tháng (thanh ngang), 15 sản phẩm mua nhiều nhất;
+  - chỉ tính đơn đã xác nhận / đang giao / đã giao.

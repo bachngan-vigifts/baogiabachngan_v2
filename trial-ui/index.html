@@ -54,6 +54,7 @@
       <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg><span>Lịch giao hàng</span></a>
       <a class="nav" href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg><span>Công nợ</span></a>
       <a class="nav" href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg><span>Khách hỏi tồn</span><b id="nav-stock-count" class="badge" hidden>0</b></a>
+      <a class="nav packing-nav" href="#/packing" data-nav="packing" hidden><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg><span>Phiếu đóng gói</span></a>
       <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg><span>Sản phẩm</span></a>
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
       <span class="nav-label manager-only">Quản trị</span>
@@ -527,6 +528,7 @@
     <a href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M3.5 6l1.5 1.5L7.5 5 M3.5 12l1.5 1.5L7.5 11 M3.5 18l1.5 1.5L7.5 17"/></svg>Công việc</a>
     <a href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg>Hỏi tồn</a>
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
+    <a href="#/packing" data-nav="packing" class="packing-nav" hidden><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg>Đóng gói</a>
     <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>
     <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Nhân viên</a>
     <a href="#/payroll" data-nav="payroll" class="manager-only"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M12 9v6 M9.5 10.5a2.5 1.5 0 0 1 5 0c0 1.5-5 1.5-5 3a2.5 1.5 0 0 0 5 0"/></svg>Bảng lương</a>
@@ -651,8 +653,8 @@
     <form id="account-form" class="form-grid cols-2" novalidate>
       <h3 class="span-2">Tạo tài khoản mới</h3>
       <label>Tên người dùng<input name="name" required maxlength="200" placeholder="Ví dụ: Chị Lan – phòng mua hàng"></label>
-      <label>Email đăng nhập<input name="email" type="email" required maxlength="254"></label>
-      <label>Điện thoại (khách đăng nhập được bằng số di động này)<input name="phone" maxlength="40" inputmode="tel" placeholder="0901234567"></label>
+      <label>Số di động đăng nhập<input name="phone" maxlength="40" inputmode="tel" placeholder="0901234567"><small class="muted">Khách đăng nhập bằng số này.</small></label>
+      <label>Email <small class="muted">(không bắt buộc)</small><input name="email" type="text" inputmode="email" autocapitalize="none" maxlength="254" placeholder="Bỏ trống nếu khách không có email"><small class="muted">Có email thì khách đăng nhập được bằng cả email.</small></label>
       <fieldset class="span-2 manager-only discount-fields"><legend>Chiết khấu riêng theo nhãn hàng (%) – chỉ Manager</legend>
         <label>Minh Long<input name="d_minhLong" inputmode="decimal" placeholder="0"></label>
         <label>Minh Long - Lys<input name="d_lys" inputmode="decimal" placeholder="0"></label>

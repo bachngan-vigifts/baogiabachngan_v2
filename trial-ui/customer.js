@@ -59,7 +59,7 @@ function showAuth(note = '') {
   const h = new URLSearchParams(location.hash.slice(1)), tk = h.get('token');
   activation = tk && /^[a-f0-9]{64}$/.test(tk) ? { token: tk, email: h.get('email') || '' } : null;
   $('#c-auth-title').textContent = activation ? 'Đặt mật khẩu tài khoản khách hàng' : 'Đăng nhập khách hàng';
-  $('#c-auth-note').textContent = note || (activation ? 'Tạo mật khẩu (ít nhất 8 ký tự) để bắt đầu dùng trang khách hàng.' : 'Dùng email đã được nhân viên Bách Ngân cấp tài khoản.');
+  $('#c-auth-note').textContent = note || (activation ? 'Tạo mật khẩu (ít nhất 8 ký tự) để bắt đầu dùng trang khách hàng.' : 'Dùng email hoặc số di động đã được nhân viên Bách Ngân cấp tài khoản.');
   $('#c-password2-label').hidden = !activation; $('#c-login-button').textContent = activation ? 'Đặt mật khẩu & vào trang' : 'Đăng nhập';
   if (activation) { $('#c-email').value = activation.email; $('#c-email').readOnly = true; $('#c-password').autocomplete = 'new-password'; }
 }
@@ -68,7 +68,7 @@ $('#c-login-form').addEventListener('submit', async e => {
   e.preventDefault();
   const err = $('#c-auth-error'), btn = $('#c-login-button'), email = $('#c-email').value.trim(), password = $('#c-password').value;
   err.textContent = '';
-  if (!email || password.length < 8) { err.textContent = 'Nhập email và mật khẩu (ít nhất 8 ký tự).'; return; }
+  if (!email || password.length < 8) { err.textContent = 'Nhập email / số di động và mật khẩu (ít nhất 8 ký tự).'; return; }
   if (activation && password !== $('#c-password2').value) { err.textContent = 'Hai lần nhập mật khẩu chưa khớp.'; return; }
   btn.disabled = true;
   try {
@@ -88,25 +88,31 @@ async function boot() {
   if (user.role !== 'customer') { $('#c-staff-name').textContent = user.name; view('staff'); return; }
   view('portal');
   st.me = await api('/portal/me');
-  $('#p-customer').textContent = st.me.customer.name; $('#p-user').textContent = `${st.me.user.name} · ${st.me.user.email}`;
+  $('#p-customer').textContent = st.me.customer.name; $('#p-user').textContent = [st.me.user.name, st.me.user.email || st.me.user.phone].filter(Boolean).join(' · ');
   const o = st.me.owner, d = st.me.discounts || {}, ck = [['Minh Long', d.minhLong], ['Minh Long - Lys', d.lys], ['Lock&Lock', d.lock]].filter(([, v]) => v > 0);
   $('#p-owner').innerHTML = `<div><small class="muted">Nhân viên phụ trách</small><b>${esc(o?.name || '—')}</b>${o?.phone ? ` · <a href="tel:${esc(o.phone.replace(/[^\d+]/g, ''))}">${esc(o.phone)}</a>` : ''}${o?.email ? ` · ${esc(o.email)}` : ''}</div>`
-    + (ck.length ? `<div><small class="muted">Chiết khấu riêng của quý khách</small><b>${ck.map(([k, v]) => `${k} ${fmtNum(v)}%`).join(' · ')}</b></div>` : '');
+;
+  // Chiết khấu riêng chỉ hiện trong mục Tài khoản (không để lộ ngay trên trang).
+  $('#p-acc-name').textContent = st.me.user.name; $('#p-acc-login').textContent = st.me.user.email || st.me.user.phone || ''; $('#p-acc-company').textContent = st.me.customer.name;
+  $('#p-acc-ck').hidden = !ck.length; $('#p-acc-ck-text').textContent = ck.map(([k, v]) => `${k} ${fmtNum(v)}%`).join(' · ');
   document.title = st.me.customer.name + ' · Bách Ngân';
   notifier.start();
   showTab(location.hash.replace('#', '') || 'new');
 }
+const accountPop = open => { $('#p-account-pop').hidden = !open; $('#p-account-btn').setAttribute('aria-expanded', String(open)); };
+$('#p-account-btn').addEventListener('click', e => { e.stopPropagation(); accountPop($('#p-account-pop').hidden); });
+document.addEventListener('click', e => { if (!e.target.closest('.account-wrap')) accountPop(false); });
 $('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth('Đã đăng xuất.'); });
 
 /** Thẻ: Tạo báo giá / Check tồn · Danh sách báo giá / Check tồn · Đơn đặt hàng / HĐKT · Công nợ. `#stock` (liên kết thông báo cũ) = danh sách, cuộn tới phần check tồn. */
 function showTab(tab) {
   const toStock = tab === 'stock'; if (toStock) tab = 'quotes';
-  if (!['quotes', 'new', 'orders', 'debt'].includes(tab)) tab = 'new';
+  if (!['quotes', 'new', 'orders', 'debt', 'sales'].includes(tab)) tab = 'new';
   $$('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== tab);
   history.replaceState(null, '', '#' + (toStock ? 'stock' : tab));
   if (tab === 'quotes') { loadQuotes(); loadStock().then(() => { if (toStock) $('#p-stock-section').scrollIntoView({ behavior: 'smooth' }); }); }
-  else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else loadCatalog();
+  else if (tab === 'orders') loadOrders(); else if (tab === 'debt') loadDebt(); else if (tab === 'sales') loadSales(); else loadCatalog();
 }
 $$('[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 addEventListener('hashchange', () => { if (st.me && !$('#portal').hidden) showTab(location.hash.replace('#', '')); });
@@ -378,6 +384,30 @@ $('#p-ask-stock').addEventListener('click', async () => {
 // ----- Công nợ: tổng phải trả, đã trả, còn lại, quá hạn; theo từng đơn và lịch sử thanh toán
 const DEBT_STATUS = { paid: ['Đã thanh toán đủ', 'ok'], overdue: ['Quá hạn', 'danger'], open: ['Chưa đến hạn', 'blue'], none: ['—', 'off'] };
 const METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
+/** Doanh số: tổng mua theo năm, từng tháng (thanh ngang), sản phẩm mua nhiều – tính từ các đơn đã xác nhận. */
+let salesOrders = null;
+async function loadSales(year) {
+  const stats = $('#p-sales-stats');
+  if (!salesOrders || !year) { stats.innerHTML = '<p class="muted">Đang tải…</p>'; try { salesOrders = (await api('/portal/orders')).orders.filter(o => ['confirmed', 'delivering', 'delivered'].includes(o.status)); } catch (e) { stats.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; } }
+  const years = [...new Set([new Date().getFullYear(), ...salesOrders.map(o => Number(String(o.orderDate).slice(0, 4)))])].sort((a, b) => b - a);
+  year = year || years[0];
+  $('#p-sales-year').innerHTML = years.map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
+  const list = salesOrders.filter(o => String(o.orderDate).startsWith(String(year))), prev = salesOrders.filter(o => String(o.orderDate).startsWith(String(year - 1)));
+  const total = list.reduce((t, o) => t + o.total, 0), prevTotal = prev.reduce((t, o) => t + o.total, 0);
+  const change = prevTotal > 0 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
+  stats.innerHTML = [['Tổng mua năm ' + year, money(total), 'Đã gồm VAT'], ['Số đơn hàng', String(list.length), list.length ? 'Trung bình ' + money(total / list.length) + ' / đơn' : ''],
+    ['So với năm ' + (year - 1), change === null ? '—' : (change >= 0 ? '+' : '') + change + '%', prevTotal ? 'Năm trước ' + money(prevTotal) : 'Chưa có đơn năm trước']]
+    .map(([k, v, note]) => `<article class="stat"><small>${esc(k)}</small><strong>${esc(v)}</strong>${note ? `<span class="muted">${esc(note)}</span>` : ''}</article>`).join('');
+  const months = Array.from({ length: 12 }, (_, i) => list.filter(o => Number(String(o.orderDate).slice(5, 7)) === i + 1).reduce((t, o) => t + o.total, 0)), max = Math.max(...months, 1);
+  $('#p-sales-months').innerHTML = months.map((v, i) => `<div class="sales-bar"><span>Th ${i + 1}</span><div><i style="width:${(v / max * 100).toFixed(1)}%"></i></div><b>${v ? money(v) : '—'}</b></div>`).join('');
+  const byProduct = new Map();
+  for (const o of list) for (const l of o.lines || []) { const k = l.sku || l.name, x = byProduct.get(k) || { name: l.name, sku: l.sku, unit: l.unit, qty: 0, amount: 0 }; x.qty += l.qty; x.amount += Number.isFinite(l.amount) ? l.amount : l.qty * l.unitPrice; byProduct.set(k, x); }
+  const top = [...byProduct.values()].sort((a, b) => b.amount - a.amount).slice(0, 15);
+  $('#p-sales-products').innerHTML = top.map(p => `<tr><td class="first">${esc(p.name)}<small>${esc(p.sku || '')}</small></td><td class="right num">${new Intl.NumberFormat('vi-VN').format(p.qty)} ${esc(p.unit || '')}</td><td class="right num">${money(p.amount)}</td></tr>`).join('');
+  $('#p-sales-empty').hidden = list.length > 0;
+}
+$('#p-sales-year').addEventListener('change', e => loadSales(Number(e.target.value)));
+
 async function loadDebt() {
   const tbody = $('#p-debt'); tbody.innerHTML = '<tr><td colspan="6" class="muted">Đang tải…</td></tr>';
   try {
