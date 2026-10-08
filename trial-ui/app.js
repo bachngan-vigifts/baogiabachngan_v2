@@ -1314,7 +1314,52 @@ async function duplicateFromList(id) {
   catch (e) { toast(e.message, 'err'); }
 }
 
-// ----- in / PDF
+// ----- PDF theo 3 mẫu của web cũ (HRC / B2B / VIGIFTS): hrc-pdf.js (bố cục) + editable-pdf.js (pdf-lib, chữ chọn được).
+// Thư viện PDF + font Times New Roman (~3,6 MB) chỉ tải khi bấm tải PDF.
+const PDF_SCRIPTS = ['pdf-lib.min.js', 'fontkit.umd.min.js', 'hrc-pdf.js', 'editable-pdf.js'];
+let pdfReady = null;
+function loadPdfTools() {
+  return pdfReady ||= PDF_SCRIPTS.reduce((chain, src) => chain.then(() => new Promise((resolve, reject) => {
+    const el = document.createElement('script'); el.src = src; el.onload = resolve;
+    el.onerror = () => { pdfReady = null; reject(new Error('Không tải được bộ tạo PDF. Kiểm tra mạng rồi thử lại.')); };
+    document.head.appendChild(el);
+  })), Promise.resolve()).then(() => {
+    // hrc-pdf.js thay globalThis.HrcPdf: giữ đọc số tiền bằng chữ của app (dùng chung cho HĐKT, Excel).
+    globalThis.HrcPdf = { ...globalThis.HrcPdf, amountInWords: n => moneyWords(n) };
+    globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after };
+  });
+}
+const isIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let pdfBusy = false;
+async function downloadQuotePdf(hideDiscount) {
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  if (pdfBusy) return;
+  const d = collectQuote(); if (!d.rows.length) return toast('Chưa có sản phẩm để xuất PDF.', 'err');
+  // iPhone chặn mở tab sau khi chờ: mở tab trống ngay lúc bấm rồi đổ PDF vào sau (như web cũ).
+  const tab = isIos() ? window.open('about:blank', '_blank') : null;
+  if (tab) tab.document.body.innerHTML = '<p style="font:16px Arial;padding:24px">Đang tạo file PDF, vui lòng chờ…</p>';
+  pdfBusy = true; toast('Đang tạo file PDF…');
+  try {
+    await loadPdfTools();
+    const state = { ...d, ...(d.type === 'HRC' ? { hideHrcDiscountColumn: !!hideDiscount } : {}), ...(d.type === 'B2B' ? { hideB2bDiscountColumn: !!hideDiscount } : {}) };
+    const images = [];
+    for (let i = 0; i < d.rows.length; i += 6) images.push(...await Promise.all(d.rows.slice(i, i + 6).map(r => loadCanvasImage(r.image))));
+    const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
+    const bytes = await globalThis.EditableQuotePdf.create({ state, images, banner });
+    // Tên file không dấu: vài trình duyệt / máy bỏ tên có dấu và lưu thành "download".
+    const clean = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, c => c === 'đ' ? 'd' : 'D').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    const name = `${clean(d.quoteNo)} - ${clean(d.customer)} - ${(d.date || todayIso()).split('-').reverse().join('-')}.pdf`;
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    if (tab && !tab.closed) { tab.location.href = url; toast('Đã mở PDF – bấm Chia sẻ để lưu hoặc gửi.'); }
+    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.'); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (ex) { console.error(ex); if (tab && !tab.closed) tab.close(); toast(ex?.message || 'Không thể tạo PDF. Vui lòng thử lại.', 'err'); }
+  finally { pdfBusy = false; }
+}
+$('#pdf-quote').addEventListener('click', () => downloadQuotePdf(false));
+$('#pdf-quote-nock').addEventListener('click', () => downloadQuotePdf(true));
+
+// ----- in nhanh trên trình duyệt
 $('#print-quote').addEventListener('click', () => {
   const block = approvalBlock(); if (block) return toast(block, 'err');
   const d = collectQuote();
@@ -2487,6 +2532,7 @@ function closeDownloadMenu() { $('#download-menu').hidden = true; $('#quote-down
 $('#quote-download').addEventListener('click', e => {
   e.stopPropagation();
   const block = approvalBlock(); if (block) return toast(block, 'err');
+  $('#pdf-quote-nock').hidden = editor.type === 'VIGIFTS'; // mẫu VIGIFTS không có cột CK
   const open = $('#download-menu').hidden; $('#download-menu').hidden = !open; $('#quote-download').setAttribute('aria-expanded', String(open));
 });
 document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) closeDownloadMenu(); });
@@ -2590,7 +2636,7 @@ $('#delete-quote').addEventListener('click', async () => {
 });
 // Excel theo mẫu web cũ (excel-export.js): ảnh sản phẩm + letterhead, 2 sheet báo giá và phí vận chuyển.
 // excel-export.js (chép từ web cũ) gọi QuoteMath.totals và HrcPdf.amountInWords.
-globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals };
+globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after };
 globalThis.HrcPdf = { ...(globalThis.HrcPdf || {}), amountInWords: n => moneyWords(n) };
 function loadCanvasImage(src, timeoutMs = 15000) {
   return new Promise(resolve => {
