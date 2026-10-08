@@ -7,7 +7,10 @@ export const FILE_BUCKET = 'baogiabachngan-v2-files';
 export const MAX_FILE_BYTES = 6 * 1024 * 1024;
 
 export interface FileStore {
-  put(key: string, bytes: Uint8Array, mime: string): Promise<void>;
+  /** `upsert`: ghi đè nếu khoá đã có (mặc định báo lỗi). */
+  put(key: string, bytes: Uint8Array, mime: string, opts?: { upsert?: boolean }): Promise<void>;
+  /** Link công khai không hết hạn – chỉ có ở bucket public (ảnh sản phẩm). */
+  publicUrl?(key: string): string;
   /** Link tải có hạn cho từng khoá (khoá không ký được thì bỏ qua). */
   signedUrls(keys: string[], seconds: number): Promise<Map<string, string>>;
   remove(keys: string[]): Promise<void>;
@@ -18,15 +21,16 @@ const safeKey = (key: string) => {
   return key.split('/').map(encodeURIComponent).join('/');
 };
 
-export function supabaseFileStore(o: { url: string; serviceKey: string; bucket?: string; fetch?: typeof fetch }): FileStore {
+export function supabaseFileStore(o: { url: string; serviceKey: string; bucket?: string; fetch?: typeof fetch; publicBucket?: boolean }): FileStore {
   const base = o.url.replace(/\/+$/, '') + '/storage/v1', bucket = o.bucket ?? FILE_BUCKET, doFetch = o.fetch ?? fetch;
   const headers = (extra: Record<string, string> = {}) => ({ authorization: `Bearer ${o.serviceKey}`, apikey: o.serviceKey, ...extra });
   const fail = async (what: string, res: Response) => { throw new Error(`${what} thất bại (${res.status}): ${(await res.text()).slice(0, 200)}`); };
   return {
-    async put(key, bytes, mime) {
-      const res = await doFetch(`${base}/object/${bucket}/${safeKey(key)}`, { method: 'POST', headers: headers({ 'content-type': mime, 'x-upsert': 'false' }), body: bytes as BodyInit });
+    async put(key, bytes, mime, opts) {
+      const res = await doFetch(`${base}/object/${bucket}/${safeKey(key)}`, { method: 'POST', headers: headers({ 'content-type': mime, 'x-upsert': opts?.upsert ? 'true' : 'false' }), body: bytes as BodyInit });
       if (!res.ok) await fail('Tải file lên', res);
     },
+    ...(o.publicBucket ? { publicUrl: (key: string) => `${base}/object/public/${bucket}/${safeKey(key)}` } : {}),
     async signedUrls(keys, seconds) {
       const out = new Map<string, string>();
       if (!keys.length) return out;
@@ -49,7 +53,8 @@ export function memoryFileStore() {
   const toB64 = (b: Uint8Array) => { let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s); };
   const store: FileStore & { files: typeof files } = {
     files,
-    async put(key, bytes, mime) { safeKey(key); if (files.has(key)) throw new Error('File đã tồn tại.'); files.set(key, { bytes, mime }); },
+    async put(key, bytes, mime, opts) { safeKey(key); if (files.has(key) && !opts?.upsert) throw new Error('File đã tồn tại.'); files.set(key, { bytes, mime }); },
+    publicUrl: key => `https://files.test/public/${key}`,
     async signedUrls(keys) { const out = new Map<string, string>(); for (const k of keys) { const f = files.get(k); if (f) out.set(k, `data:${f.mime};base64,${toB64(f.bytes)}`); } return out; },
     async remove(keys) { for (const k of keys) files.delete(k); },
   };

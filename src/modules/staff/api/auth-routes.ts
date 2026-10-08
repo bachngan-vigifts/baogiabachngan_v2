@@ -32,6 +32,10 @@ export interface StaffEnv {
   files?: FileStore;
   /** Hàm fetch tải ảnh ngoài cho PDF / Excel báo giá (test truyền máy chủ ảnh giả). */
   imageFetch?: typeof fetch;
+  /** Kho ảnh sản phẩm (bucket public product-images): ảnh chuyển từ web cũ sang. */
+  productImages?: FileStore;
+  /** Web cũ (baogia.minhlongonline.com): ảnh sản phẩm cũ chỉ tải được khi đăng nhập – tài khoản riêng lưu ở secret. */
+  legacySite?: { base: string; email: string; password: string; fetch?: typeof fetch };
 }
 type Ctx = RouteContext<StaffEnv>;
 export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }

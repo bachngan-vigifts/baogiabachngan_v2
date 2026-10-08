@@ -2,6 +2,9 @@ import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError, badRequest } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
+import { IMAGE_FETCH_MAX_BYTES, readLimited, sniffImage, toBase64 } from '../../../core/http/image-bytes.ts';
+export { IMAGE_FETCH_MAX_BYTES, sniffImage } from '../../../core/http/image-bytes.ts';
+import { fetchLegacyMedia, legacyMediaKey } from '../../integrations/api/legacy-site.ts';
 
 /**
  * Ảnh sản phẩm / maquette cho file PDF / Excel báo giá: trình duyệt không vẽ được ảnh từ link ngoài (Sapo CDN, link dán tay)
@@ -9,18 +12,8 @@ import type { StaffEnv } from '../../staff/api/auth-routes.ts';
  * Chỉ link http(s) tới tên miền công khai (không IP, không localhost), chỉ file ảnh, tối đa 5 MB, 10 giây, tự theo tối đa 3 lần chuyển hướng.
  * Loại ảnh xác định theo NỘI DUNG file (JPEG / PNG / GIF / WebP) – CDN hay trả Content-Type sai (`image/jpg`, `application/octet-stream`).
  */
-export const IMAGE_FETCH_MAX_BYTES = 5 * 1024 * 1024;
 /** Gửi như trình duyệt: vài CDN chặn yêu cầu không có User-Agent quen. */
 const BROWSER_HEADERS = { accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8', 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36' };
-
-/** Loại ảnh theo vài byte đầu file; không phải ảnh hỗ trợ → null. */
-export function sniffImage(b: Uint8Array): string | null {
-  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
-  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'image/gif';
-  if (b.length >= 12 && String.fromCharCode(...b.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...b.subarray(8, 12)) === 'WEBP') return 'image/webp';
-  return null;
-}
 
 export function publicImageUrl(raw: string): URL | null {
   let u: URL;
@@ -32,32 +25,16 @@ export function publicImageUrl(raw: string): URL | null {
   return u;
 }
 
-async function readLimited(res: Response, max: number): Promise<Uint8Array> {
-  const reader = res.body?.getReader();
-  if (!reader) throw badRequest('Ảnh trống.');
-  const chunks: Uint8Array[] = []; let length = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    length += value.length;
-    if (length > max) { await reader.cancel(); throw new AppError(413, 'Ảnh quá lớn (tối đa 5 MB).'); }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(length); let offset = 0;
-  for (const c of chunks) { out.set(c, offset); offset += c.length; }
-  return out;
-}
-
-const toBase64 = (bytes: Uint8Array) => {
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-};
-
 export function registerImageFetchRoutes(router: Router<StaffEnv>) {
   router.post('/images/fetch', async c => {
     const first = publicImageUrl(String((await readJson(c.req, 5000)).url ?? '').trim());
     if (!first) throw badRequest('Link ảnh không hợp lệ (chỉ nhận link http/https công khai).');
+    // Ảnh sản phẩm còn nằm trên web cũ (cần đăng nhập): tải bằng phiên của tài khoản web cũ.
+    if (legacyMediaKey(first.href)) {
+      const bytes = await readLimited(await fetchLegacyMedia(c.env, first.href), IMAGE_FETCH_MAX_BYTES), mime = sniffImage(bytes);
+      if (!mime) throw new AppError(415, 'File trên web cũ không phải ảnh JPEG / PNG / GIF / WebP.');
+      return json({ dataUrl: `data:${mime};base64,${toBase64(bytes)}` });
+    }
     const doFetch = c.env.imageFetch ?? fetch;
     const signal = AbortSignal.timeout(10_000);
     let url: URL = first;

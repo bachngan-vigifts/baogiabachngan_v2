@@ -3,6 +3,7 @@ import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
 import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
 import { registerCustomerRoutes } from '../modules/customers/api/routes.ts';
 import { registerCatalogRoutes } from '../modules/catalog/api/routes.ts';
+import { registerLegacyImageRoutes } from '../modules/integrations/api/legacy-images.ts';
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
@@ -22,6 +23,7 @@ export function createAppRouter() {
   registerCustomerRoutes(router);
   registerCatalogRoutes(router);
   registerSapoSyncRoutes(router);
+  registerLegacyImageRoutes(router);
   registerSalesRoutes(router);
   registerPackingRoutes(router);
   registerPrintingRoutes(router);

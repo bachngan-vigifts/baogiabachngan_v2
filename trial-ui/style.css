@@ -1226,3 +1226,4 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   .care-filters label.inline { flex: 1 1 45%; } .care-filters label.inline input { flex: 1; min-width: 0; }
 }
 .lines-wrap.hide-subs .sub-field { display: none; }
+.legacy-images { grid-template-columns: 1fr auto; align-items: center; } .legacy-images small { display: block; color: var(--muted); } .legacy-images small.error { color: var(--red); }
