@@ -365,6 +365,16 @@ table { width: 100%; border-collapse: collapse; }
   .data-table td.actions-cell .row-actions { flex-wrap: nowrap; gap: 6px; justify-content: flex-end; align-items: center; }
   .data-table td.actions-cell .btn, .data-table td.row-actions .btn { padding: 5px 10px; }
   .data-table td.actions-cell .icon-btn { width: 32px; height: 32px; }
+  /* Tính đóng thùng & phí vận chuyển: giữ dạng bảng, mỗi mã một hàng, vuốt ngang xem thêm; cột mã / sản phẩm đứng yên bên trái */
+  .data-table.ship-table { display: table; min-width: 720px; }
+  .data-table.ship-table thead { display: table-header-group; } .data-table.ship-table tbody { display: table-row-group; }
+  .data-table.ship-table tr { display: table-row; padding: 0; }
+  .data-table.ship-table th, .data-table.ship-table td { display: table-cell; padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; font-size: .88rem; }
+  .data-table.ship-table td[data-label]::before { content: none; }
+  .data-table.ship-table th:first-child, .data-table.ship-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); white-space: normal; min-width: 150px; max-width: 170px; box-shadow: 1px 0 0 var(--line); }
+  .data-table.ship-table th:first-child { background: var(--surface-2); }
+  .data-table.ship-table td:first-child small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .data-table.ship-table input { width: 78px; padding: 6px 8px; }
   /* Dòng sản phẩm ở cổng khách thành thẻ; trang soạn báo giá giữ bảng vuốt ngang như web cũ (mỗi sản phẩm một hàng) */
   .portal-lines thead { display: none; }
   .portal-lines, .portal-lines tbody { display: block; }
