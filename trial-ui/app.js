@@ -2943,15 +2943,21 @@ function loadCanvasImage(src, timeoutMs = 15000) {
  * → tải trực tiếp trước, không được thì nhờ máy chủ tải hộ (POST /images/fetch trả data URL). Mỗi link chỉ tải 1 lần mỗi lượt xuất file.
  */
 function loadQuoteImages(rows) {
-  const cache = new Map();
+  const cache = new Map(), errors = [];
+  /** Các link thử lần lượt: ảnh Google Drive (ảnh sản phẩm web cũ) đổi sang link ảnh thật (lh3, thumbnail) – link chia sẻ /file/d/… là trang HTML. */
+  const sources = src => [...new Set([fallbackImage(src), displayImage(src), src].filter(Boolean))];
+  const viaServer = url => api('/images/fetch', 'POST', { url }).then(r => loadCanvasImage(r.dataUrl), ex => { errors.push(ex.message); console.warn('Không tải được ảnh', url, ex.message); return null; });
   const one = src => {
     if (!src) return Promise.resolve(null);
-    if (!cache.has(src)) cache.set(src, (async () => (await loadCanvasImage(src, 8000))
-      || (/^https?:\/\//i.test(src) ? await api('/images/fetch', 'POST', { url: src }).then(r => loadCanvasImage(r.dataUrl), ex => { errors.push(ex.message); console.warn('Không tải được ảnh', src, ex.message); return null; }) : null))());
+    if (!cache.has(src)) cache.set(src, (async () => {
+      const list = sources(src);
+      for (const u of list) { const img = await loadCanvasImage(u, 8000); if (img) return img; }
+      for (const u of list.filter(x => /^https?:\/\//i.test(x))) { const img = await viaServer(u); if (img) return img; }
+      return null;
+    })());
     return cache.get(src);
   };
   // `out.errors`: lý do máy chủ không tải được (hiện ở thông báo để biết ảnh nào lỗi vì sao).
-  const errors = [];
   return (async () => { const out = []; for (let i = 0; i < rows.length; i += 6) out.push(...await Promise.all(rows.slice(i, i + 6).map(r => one(r.image)))); out.errors = errors; return out; })();
 }
 let excelBusy = false;
