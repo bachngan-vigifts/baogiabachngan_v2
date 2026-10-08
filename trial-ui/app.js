@@ -711,6 +711,18 @@ function lineCell(r, i) {
     <td class="line-actions"><button type="button" class="icon-btn danger" data-del title="Xoá dòng" aria-label="Xoá dòng ${i + 1}">×</button></td>
   </tr>`;
 }
+// Ẩn / hiện 3 dòng Bộ gồm · Mô tả in ấn · Đóng gói của mọi dòng (chỉ ẩn trên màn hình; dữ liệu, PDF, Excel giữ nguyên).
+// Nhớ lựa chọn trên máy này (localStorage; không đọc được thì mặc định hiện).
+const SUBS_KEY = 'bn-quote-hide-subs';
+function applySubs(hide) {
+  $('.lines-wrap').classList.toggle('hide-subs', hide);
+  const b = $('#toggle-subs'); b.textContent = hide ? 'Hiện mô tả' : 'Ẩn mô tả'; b.setAttribute('aria-pressed', String(hide));
+}
+try { applySubs(localStorage.getItem(SUBS_KEY) === '1'); } catch { applySubs(false); }
+$('#toggle-subs').addEventListener('click', () => {
+  const hide = !$('.lines-wrap').classList.contains('hide-subs'); applySubs(hide);
+  try { localStorage.setItem(SUBS_KEY, hide ? '1' : '0'); } catch { /* chế độ riêng tư: chỉ nhớ trong lượt này */ }
+});
 function renderLines(focus) {
   $('#line-head').innerHTML = lineHead();
   // Báo giá chưa có sản phẩm: thay dòng trống số 1 bằng lời mời "+ Thêm sản phẩm".
@@ -719,6 +731,7 @@ function renderLines(focus) {
   $('#line-count').textContent = `(${editor.rows.length})`;
   if ($('#shipping-card').open) renderShippingRows();
   qf.classList.toggle('type-hrc', editor.type === 'HRC');
+  $('#toggle-subs').hidden = editor.type === 'HRC'; // HRC không có 3 dòng mô tả
   calculate();
   if (focus !== undefined) $(`#line-list tr[data-i="${focus}"] [data-k="name"]`)?.focus();
 }
