@@ -57,6 +57,7 @@
       <a class="nav packing-nav" href="#/packing" data-nav="packing" hidden><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg><span>Phiếu đóng gói</span></a>
       <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg><span>Sản phẩm</span></a>
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
+      <a class="nav" href="#/care" data-nav="care"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg><span>Chăm sóc KH</span><b id="nav-care-count" class="badge" hidden>0</b></a>
       <span class="nav-label manager-only">Quản trị</span>
       <a class="nav manager-only" href="#/staff" data-nav="staff"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Nhân viên</span></a>
       <a class="nav manager-only" href="#/payroll" data-nav="payroll"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M12 9v6 M9.5 10.5a2.5 1.5 0 0 1 5 0c0 1.5-5 1.5-5 3a2.5 1.5 0 0 0 5 0"/></svg><span>Bảng lương</span></a>
@@ -404,6 +405,8 @@
 
     <!-- ---------- Công nợ ---------- -->
     <!-- Khách hỏi tồn kho từ trang khách hàng: nhân viên phụ trách trả lời -->
+    <!-- Chăm sóc khách hàng: nhật ký trao đổi + lịch hẹn (trial-ui/care.js dựng nội dung) -->
+    <section class="view" id="view-care" hidden></section>
     <!-- Công việc: việc tự sinh từ nghiệp vụ + giao việc thủ công (trial-ui/tasks.js) -->
     <section class="view" id="view-tasks" hidden>
       <div class="page-head">
@@ -528,6 +531,7 @@
     <a href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M3.5 6l1.5 1.5L7.5 5 M3.5 12l1.5 1.5L7.5 11 M3.5 18l1.5 1.5L7.5 17"/></svg>Công việc</a>
     <a href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg>Hỏi tồn</a>
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg>Khách hàng</a>
+    <a href="#/care" data-nav="care"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>Chăm sóc</a>
     <a href="#/packing" data-nav="packing" class="packing-nav" hidden><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg>Đóng gói</a>
     <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg>Sản phẩm</a>
     <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Nhân viên</a>

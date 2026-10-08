@@ -162,6 +162,13 @@
       "when": 1791422969338,
       "tag": "0039_invoice_email_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791441006571,
+      "tag": "0040_customer_care",
+      "breakpoints": true
     }
   ]
 }

@@ -13,8 +13,9 @@ const ALLOWED: Record<string, string[]> = {
   sales: ['staff', 'customers', 'catalog', 'quotes', 'contracts', 'notifications'],
   portal: ['staff', 'customers', 'catalog', 'quotes', 'sales', 'notifications'],
   quotes: ['staff', 'notifications'], work: ['staff'],
-  tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
-  'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal'],
+  tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
+  'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal', 'care'],
+  care: ['staff', 'customers'],
   hr: ['staff'], 'staff-hub': ['staff', 'customers', 'quotes', 'sales', 'tasks', 'hr'],
 };
 

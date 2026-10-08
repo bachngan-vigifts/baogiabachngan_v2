@@ -6,6 +6,7 @@ import { verifyBox, duePill, allocatePayments, installmentStatus } from './verif
 import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
+import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
@@ -194,7 +195,7 @@ const state = {
 const isManager = () => state.user?.role === 'manager';
 /** Tài khoản Kho (chức vụ "warehouse"): chỉ các trang cần cho kho – Công việc, Lịch giao hàng, Phiếu đóng gói, Sản phẩm, Tin nhắn. */
 const isWarehouse = () => state.user?.role === 'employee' && state.user?.positionId === 'warehouse';
-const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers']);
+const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers', 'care']);
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -330,7 +331,7 @@ async function loadAll() {
   $('#global-error').hidden = true;
   const jobs = [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadStockBadge(); tasksView().badge(); chatView().startBadge(); $('#chat-launcher').hidden = false;
+  loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -409,7 +410,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói' };
+const VIEWS = { tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -455,6 +456,7 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'tasks') tasksView().load(id);
+  if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
   if (view === 'member') memberDetail().open(decodeURIComponent(id), new URLSearchParams(query).get('month') || '', new URLSearchParams(query).get('tab') || '');
@@ -1863,7 +1865,7 @@ function memberDetail() {
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
   return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
-    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, isManager, onReview: reviewCustomer });
+    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, onReview: reviewCustomer });
 }
 function openCustomer(id, known) {
   customerId = id || null;
@@ -2168,6 +2170,9 @@ const notifier = setupNotifications({
 });
 /** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
+/** Chăm sóc khách hàng (trial-ui/care.js). */
+var careUi = null; // eslint-disable-line no-var
+function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, root: $('#view-care') }); }
 function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var

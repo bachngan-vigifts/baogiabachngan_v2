@@ -9,6 +9,8 @@ import { PACKING_SOURCE_LABEL } from '../../sales/domain/packing.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
+import { dueFollowUps } from '../../care/api/routes.ts';
+import { CARE_TYPE_LABEL } from '../../care/domain/care.ts';
 import { addDaysIso, isOpen, type TaskPriority, type TaskSource } from '../domain/task-config.ts';
 
 /**
@@ -32,6 +34,17 @@ const fmt = (iso: string | null) => iso ? iso.split('-').reverse().join('/') : '
 const vnd = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
 
 export const RULES: Record<string, Rule> = {
+  /**
+   * Hẹn chăm sóc khách (nhật ký chăm sóc) đến hạn trong 1 ngày tới → việc cho người ghi. Khoá gồm ngày hẹn: dời hẹn = việc mới;
+   * bấm "Đã chăm sóc" ở trang Chăm sóc KH → việc tự hoàn thành.
+   */
+  async careFollowUps(db, today) {
+    const rows = await dueFollowUps(db, addDaysIso(today, 1));
+    return rows.map(r => ({ autoKey: `care:${r.id}:${r.nextAt}`, source: 'care' as const, sourceId: r.id,
+      title: `Chăm sóc lại ${r.customerName}${r.nextAction ? ': ' + r.nextAction : ''}`.slice(0, 200),
+      description: `Hẹn từ lần ${CARE_TYPE_LABEL[r.type].toLowerCase()}${r.subject ? ` "${r.subject}"` : ''}.`,
+      link: `#/care/${r.id}`, assigneeId: r.ownerId, priority: r.nextAt! < today ? 'high' as const : 'normal' as const, dueDate: r.nextAt }));
+  },
   /** Báo giá chờ duyệt: khách gửi → nhân viên phụ trách duyệt; nhân viên lập → Manager duyệt (chưa giao người). */
   async quoteApproval(db) {
     const rows = await db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, assigneeId: quotations.assigneeId, createdAt: quotations.createdAt,
