@@ -433,6 +433,8 @@ table { width: 100%; border-collapse: collapse; }
 @media print {
   @page { size: A4; margin: 14mm 12mm; }
   body { background: #fff; }
+  /* Khung app trên điện thoại khoá chiều cao trang (html.app-shell) → khi in phải bỏ, không thì chỉ in được trang đầu, phần dưới bị cắt. */
+  html, body, html.app-shell, html.app-shell body { height: auto !important; min-height: 0 !important; overflow: visible !important; position: static !important; }
   body > *:not(.print-sheet) { display: none !important; }
   .print-sheet { display: block !important; color: #111; font-size: 10.5pt; line-height: 1.4; font-family: "Times New Roman", Times, serif; }
 }
@@ -1237,7 +1239,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 @page quote-canvas { size: A4; margin: 0; }
 @media print {
   .print-sheet.canvas-pages { page: quote-canvas; padding: 0; margin: 0; }
-  .print-sheet.canvas-pages canvas { display: block; width: 210mm; height: 297mm; break-after: page; page-break-after: always; }
+  /* Co theo vùng in (không ép 210 × 297 mm): Safari / máy in giữ lề riêng thì trang vẫn đủ, không bị cắt phải / dưới. */
+  .print-sheet.canvas-pages canvas { display: block; width: 100%; height: auto; max-width: 210mm; margin: 0 auto; break-after: page; page-break-after: always; break-inside: avoid; }
   .print-sheet.canvas-pages canvas:last-child { break-after: auto; page-break-after: auto; }
 }
 .pack-ship { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0; display: grid; gap: 10px; } .pack-ship legend { font-weight: 700; padding: 0 6px; } .ship-to { display: flex; flex-wrap: wrap; gap: 8px; }

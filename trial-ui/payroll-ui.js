@@ -1,5 +1,6 @@
 // Phiếu lương in A4 dọc (lưu được PDF) – dùng ở tab "Lương & thưởng" của trang nhân viên (Manager và chính nhân viên đó).
 // Số liệu do máy chủ tính (src/modules/hr/domain/payroll.ts); phiếu đã chốt in đúng từng khoản lúc chốt.
+import { printSheet } from './print-page.js';
 const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const vnd = v => new Intl.NumberFormat('vi-VN').format(Math.round(Number(v) || 0));
 const monthLabel = m => `${Number(m.slice(5))}/${m.slice(0, 4)}`;
@@ -37,6 +38,5 @@ export function payslipSheetHtml({ member, month, slip, standardDays, words = ()
 export function printPayslip(data) {
   const out = document.getElementById('print-sheet');
   out.innerHTML = payslipSheetHtml(data);
-  const title = document.title; document.title = `Phieu-luong-${data.month}-${data.member.name}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^\w.-]+/g, '-');
-  try { window.print(); } finally { document.title = title; out.innerHTML = ''; }
+  printSheet({ clear: true, title: `Phieu-luong-${data.month}-${data.member.name}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^\w.-]+/g, '-') });
 }
