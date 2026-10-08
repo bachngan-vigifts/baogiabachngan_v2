@@ -1341,18 +1341,29 @@ async function duplicateFromList(id) {
 
 // ----- PDF theo 3 mẫu của web cũ (HRC / B2B / VIGIFTS): hrc-pdf.js (bố cục) + editable-pdf.js (pdf-lib, chữ chọn được).
 // Thư viện PDF + font Times New Roman (~3,6 MB) chỉ tải khi bấm tải PDF.
-const PDF_SCRIPTS = ['pdf-lib.min.js', 'fontkit.umd.min.js', 'hrc-pdf.js', 'editable-pdf.js'];
+// Đổi phiên bản khi API của các bộ dựng PDF thay đổi để không dùng lại script cũ trong cache.
+const PDF_SCRIPTS = ['pdf-lib.min.js', 'fontkit.umd.min.js', 'hrc-pdf.js?v=hrc-rows-2', 'editable-pdf.js?v=hrc-rows-2'];
 let pdfReady = null;
 function loadPdfTools() {
-  return pdfReady ||= PDF_SCRIPTS.reduce((chain, src) => chain.then(() => new Promise((resolve, reject) => {
+  if (pdfReady) return pdfReady;
+  pdfReady = PDF_SCRIPTS.reduce((chain, src) => chain.then(() => new Promise((resolve, reject) => {
     const el = document.createElement('script'); el.src = src; el.onload = resolve;
-    el.onerror = () => { pdfReady = null; reject(new Error('Không tải được bộ tạo PDF. Kiểm tra mạng rồi thử lại.')); };
+    el.onerror = () => { el.remove(); reject(new Error('Không tải được bộ tạo PDF. Kiểm tra mạng rồi thử lại.')); };
     document.head.appendChild(el);
   })), Promise.resolve()).then(() => {
+    if (typeof globalThis.EditableQuotePdf?.create !== 'function'
+      || typeof globalThis.EditableQuotePdf?.hrcRows !== 'function'
+      || typeof globalThis.HrcPdf?.createPages !== 'function') {
+      throw new Error('Bộ tạo PDF chưa đồng bộ phiên bản. Tải lại trang rồi thử lại.');
+    }
     // hrc-pdf.js thay globalThis.HrcPdf: giữ đọc số tiền bằng chữ của app (dùng chung cho HĐKT, Excel).
     globalThis.HrcPdf = { ...globalThis.HrcPdf, amountInWords: n => moneyWords(n) };
     globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after };
+  }).catch(error => {
+    pdfReady = null;
+    throw error;
   });
+  return pdfReady;
 }
 const isIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 let pdfBusy = false;
