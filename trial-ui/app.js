@@ -1356,6 +1356,41 @@ function loadPdfTools() {
 }
 const isIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 let pdfBusy = false;
+/** Ảnh để HIỂN THỊ (không đọc nội dung): như thẻ <img> của bản in nhanh – trình duyệt gửi kèm phiên web cũ, Drive đổi sang ảnh thật. */
+function loadDisplayImage(src) {
+  return new Promise(resolve => {
+    if (!src) return resolve(null);
+    const list = [...new Set([displayImage(src), fallbackImage(src), src].filter(Boolean))];
+    const next = () => {
+      const u = list.shift(); if (!u) return resolve(null);
+      const img = new Image(); const t = setTimeout(() => { img.src = ''; next(); }, 12000);
+      img.onload = () => { clearTimeout(t); resolve(img); }; img.onerror = () => { clearTimeout(t); next(); }; img.src = u;
+    };
+    next();
+  });
+}
+let templateFonts = null;
+/** Font Times New Roman cho bản vẽ canvas (máy không có sẵn font, vd Android). */
+function loadTemplateFonts() {
+  return templateFonts ||= Promise.all([['fonts/TimesNewRoman.ttf', 'normal'], ['fonts/TimesNewRomanBold.ttf', 'bold']].map(([u, w]) => {
+    const f = new FontFace('Times New Roman', `url(${u})`, { weight: w }); document.fonts.add(f); return f.load().catch(() => null);
+  }));
+}
+/**
+ * Bản in theo MẪU WEB CŨ (HRC / B2B / VIGIFTS): vẽ bằng chính bộ dựng trang của web cũ (hrc-pdf.js) lên canvas A4 rồi in qua
+ * trình duyệt – ảnh hiển thị như in nhanh nên luôn có, kể cả ảnh chỉ xem được khi đăng nhập web cũ.
+ */
+async function printQuoteTemplate(state) {
+  await Promise.all([loadPdfTools(), loadTemplateFonts()]);
+  const images = await Promise.all(state.rows.map(r => loadDisplayImage(r.image)));
+  const banner = await loadCanvasImage(state.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
+  const data = state.type === 'HRC' ? { ...state, rows: globalThis.EditableQuotePdf.hrcRows(state) } : state;
+  const pages = globalThis.HrcPdf.createPages({ state: data, images, banner, createCanvas: (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h }) });
+  const out = $('#print-sheet'); out.replaceChildren(...pages); out.classList.add('canvas-pages');
+  const title = document.title; document.title = `${state.quoteNo || 'Bao-gia'}`.replace(/[^\w.-]+/g, '-');
+  window.print(); document.title = title;
+  setTimeout(() => out.classList.remove('canvas-pages'), 1000);
+}
 async function downloadQuotePdf(hideDiscount) {
   const block = approvalBlock(); if (block) return toast(block, 'err');
   if (pdfBusy) return;
@@ -1368,6 +1403,14 @@ async function downloadQuotePdf(hideDiscount) {
     await loadPdfTools();
     const state = { ...d, ...(d.type === 'HRC' ? { hideHrcDiscountColumn: !!hideDiscount } : {}), ...(d.type === 'B2B' ? { hideB2bDiscountColumn: !!hideDiscount } : {}) };
     const images = await loadQuoteImages(d.rows);
+    // Ảnh không đọc được nội dung (vd ảnh trên web cũ – chỉ xem được khi đăng nhập web cũ): in theo đúng mẫu web cũ
+    // bằng trình duyệt như "In nhanh" (trình duyệt tự hiện ảnh) → chọn "Lưu dưới dạng PDF".
+    if (d.rows.some((r, i) => r.image && !images[i])) {
+      if (tab && !tab.closed) tab.close();
+      await printQuoteTemplate(state);
+      toast('Ảnh sản phẩm nằm trên web cũ nên mở bản in theo mẫu: chọn "Lưu dưới dạng PDF" (Save as PDF) để tải file.');
+      return;
+    }
     const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
     const bytes = await globalThis.EditableQuotePdf.create({ state, images, banner });
     const missingImg = d.rows.filter((r, i) => r.image && !images[i]).length;
