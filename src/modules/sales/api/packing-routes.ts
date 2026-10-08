@@ -7,7 +7,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { products } from '../../catalog/schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, shippingCarriers } from '../schema.ts';
+import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, shippingCarriers } from '../schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { printingWorkshops as DEFAULT_WORKSHOPS } from '../../quotes/domain/quote-math.ts';
 import { printingWorkshops } from '../../printing/schema.ts';
@@ -107,6 +107,12 @@ async function readDelivery(c: Ctx, raw: unknown, order: typeof salesOrders.$inf
   return { shipTo, shipName, shipAddress, shipPhone, carrierName, carrierPhone };
 }
 
+/** Đơn đã lên lịch giao (có chuyến chưa huỷ) mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng được. */
+export async function hasDeliverySchedule(db: StaffEnv['db'], orderId: string) {
+  return (await db.select({ id: deliveries.id }).from(deliveries).where(and(eq(deliveries.orderId, orderId), ne(deliveries.status, 'cancelled'))).limit(1)).length > 0;
+}
+export const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
+
 export function registerPackingRoutes(router: Router<StaffEnv>) {
   /** Danh sách nhà xe (chọn nhanh khi lập phiếu giao). */
   router.get('/shipping-carriers', async c => json({ carriers: await c.env.db.select({ name: shippingCarriers.name, phone: shippingCarriers.phone }).from(shippingCarriers).orderBy(asc(shippingCarriers.name)) }), 'business');
@@ -133,6 +139,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       lines: lines.map(l => { const packed = allocated.get(l.id) ?? 0, c = cartons.find(x => x.sku === l.sku), s = packingSuggestion(l.qty, l.unit, c);
         return { id: l.id, sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty, packed, left: Math.max(0, Math.round((l.qty - packed) * 1000) / 1000),
           perCarton: c?.perCarton ?? null, cartonWeight: c?.cartonWeight ?? null, suggestion: s.text, cartonSize: s.cartonSize, weight: s.weight }; }),
+      scheduled: await hasDeliverySchedule(db, order.id),
       canRequest: order.status !== 'cancelled' && order.status !== 'draft',
       // Hộp "Yêu cầu đóng gói - Giao hàng": có phí in → mặc định giao về xưởng in; không thì giao thẳng cho khách.
       delivery: { hasPrintFee: await hasPrintFee(db, order.quoteId), customer: { name: order.customerName, address: order.address, phone: [order.contact, order.phone].filter(Boolean).join(' · ') },
@@ -147,6 +154,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   router.post('/orders/:id/packing', async c => {
     const body = await readJson(c.req, 64_000), me = viewer(c), order = await loadOrder(c, c.params.id!);
     if (order.status === 'cancelled' || order.status === 'draft') throw new AppError(409, 'Đơn chưa xác nhận hoặc đã huỷ, chưa yêu cầu đóng gói được.');
+    if (!await hasDeliverySchedule(c.env.db, order.id)) throw new AppError(409, NO_SCHEDULE, 'NO_DELIVERY_SCHEDULE');
     if (!Array.isArray(body.allocations) || !body.allocations.length || body.allocations.length > 500) throw new AppError(400, 'Chưa có dòng hàng nào để đóng gói.');
     const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
     const allocated = await allocatedByLine(c.env.db, order.id);

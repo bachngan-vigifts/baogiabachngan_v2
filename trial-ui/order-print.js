@@ -77,7 +77,7 @@ export function packingPrintData({ seller, order, slip = null, lines }, me = '')
     info: [['Số phiếu', slip?.slipNo || ''], ['Số ĐH', order.orderNo], ['Tên khách hàng', order.customerName], ['Ngày lập', dmy(slip?.createdAt || new Date().toISOString())],
       ['Nguồn hàng', slip ? [slip.sourceLabel, slip.sourceNote].filter(Boolean).join(': ') : ''], ['Ngày giao', dmy(order.expectedDeliveryDate)],
       ['Giao tới', slip?.shipTo === 'workshop' ? `Xưởng in ${slip.shipName}` : 'Khách hàng'], ['Liên hệ', slip?.shipTo === 'workshop' ? slip.shipPhone || '' : contactOf(order)],
-      ['Địa chỉ giao', slip?.shipAddress || order.address || ''], ['Gửi xe', slip?.carrierName ? [slip.carrierName, slip.carrierPhone].filter(Boolean).join(' · ') : '']],
+      ['Nhà xe', slip?.carrierName || ''], ['SĐT bác tài', slip?.carrierPhone || ''], ['Địa chỉ giao', slip?.shipAddress || order.address || '']],
     cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL', k: 'qty', num: true, sum: true },
       { h: 'Quy cách đóng gói', k: 'spec' }, { h: 'Cân nặng (kg)', k: 'weight', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
     lines: lines.map(l => ({ sku: l.sku || '', name: l.name, unit: l.unit || '', qty: Number(l.qty) || 0,
@@ -95,7 +95,8 @@ export function deliveryPrintData({ seller, order, delivery = null, lines }, me 
   return {
     kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || order.orderNo,
     info: [['Số phiếu', delivery?.deliveryNo || ''], ['Số ĐH', order.orderNo], ['Tên khách hàng', order.customerName], ['Ngày giao', dmy(delivery?.plannedDate || order.expectedDeliveryDate)],
-      ['Địa chỉ giao', delivery?.address || order.address || ''], ['MST', order.taxCode || ''], ['Người nhận', receiver], ['Thời gian', delivery?.timeSlot || ''], ...(delivery?.carrier ? [['Gửi xe', delivery.carrier]] : [])],
+      ['Địa chỉ giao', delivery?.address || order.address || ''], ['MST', order.taxCode || ''], ['Người nhận', receiver], ['Thời gian', delivery?.timeSlot || ''],
+      ...(delivery?.carrier ? [['Nhà xe', delivery.carrier], ['SĐT bác tài', delivery.carrierPhone || '']] : [])],
     cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
     lines: lines.map(l => ({ sku: l.sku || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
@@ -107,7 +108,7 @@ export function deliveryPrintData({ seller, order, delivery = null, lines }, me 
 export function slipSheetHtml(p, { edit = false } = {}) {
   const ce = f => edit ? ` contenteditable="true" data-f="${f}"` : '', kind = SLIP_KINDS[p.kind];
   const first = p.cols.findIndex(c => c.sum);
-  return `<div class="ddh">
+  return `<div class="ddh slip">
     <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
     <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
     <table class="ddh-table"><thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>

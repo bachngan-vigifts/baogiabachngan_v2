@@ -33,6 +33,12 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   let p = (await call(`/orders/${orderId}/packing`, emp)).data;
   const [dia, hop] = p.lines;
+  // Chưa lên lịch giao → chưa yêu cầu đóng gói được.
+  assert.equal(p.scheduled, false);
+  const early = await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [{ orderLineId: dia.id, qty: 10, source: 'warehouse' }] });
+  assert.equal(early.status, 409); assert.equal(early.data.code, 'NO_DELIVERY_SCHEDULE');
+  assert.equal((await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2030-01-15', lines: [{ orderLineId: dia.id, qty: 1 }] })).status, 201);
+  assert.equal((await call(`/orders/${orderId}/packing`, emp)).data.scheduled, true);
   assert.deepEqual([dia.left, dia.perCarton, hop.left], [100, 24, 10]);
   // Bản in phiếu đóng gói cả đơn: quy cách gợi ý, kích thước thùng, cân nặng ước tính.
   assert.deepEqual([dia.suggestion, dia.cartonSize, dia.weight, hop.suggestion, hop.weight], ['4 thùng × 24 cái + 4 cái lẻ', '60×40×30 cm', 50, '', null]);
@@ -97,6 +103,7 @@ test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xư�
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
   await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  assert.equal((await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2030-01-15' })).status, 201);
   const p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.equal(p.delivery.hasPrintFee, true, 'có phí in logo');
   assert.ok(p.delivery.workshops.some((w: any) => w.name === 'Trọng Tín'), 'xưởng in mặc định');

@@ -2162,6 +2162,7 @@ function fillList(key, rows, emptyText) {
 }
 const listError = (key, e) => { $(`#${key}-list`).innerHTML = ''; $(`#${key}-empty`).hidden = false; $(`#${key}-empty-text`).textContent = e.message; };
 
+const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
 /** Nút in nhanh phiếu đóng gói / phiếu giao hàng trên dòng đơn / HĐKT (đơn đã xác nhận, chưa huỷ). */
 const slipButtons = (orderId, status) => status === 'draft' || status === 'cancelled' ? ''
   : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói (theo mẫu đơn đặt hàng)">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng (theo mẫu đơn đặt hàng)">Phiếu GH</button>`;
@@ -2418,8 +2419,10 @@ async function openOrder(id) {
     step(o.status === 'delivered', 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao`, '#/deliveries'),
     step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : 'Đã thu đủ', '#/receivables'),
   ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
+  // Phiếu đóng gói / phiếu giao hàng / yêu cầu đóng gói chỉ dùng được khi đơn đã lên lịch giao (có chuyến chưa huỷ).
+  const scheduled = d.deliveries.some(x => x.status !== 'cancelled');
   $('#order-actions').innerHTML = '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>'
-    + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}">In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}">In phiếu giao hàng</button>` : '')
+    + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
     + (o.status === 'draft' ? (isManager() ? '<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt đơn / HĐKT. Đã duyệt thì báo giá bị khoá.">Duyệt đơn</button>'
       : '<span class="pill warn" title="Còn nháp: sửa báo giá thì đơn / HĐKT tự cập nhật theo">Chờ Manager duyệt</span>') : '')
     + (o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '');
@@ -2447,13 +2450,14 @@ async function openOrder(id) {
     <dt>Thanh toán</dt><dd>Theo HĐ nguyên tắc với khách</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
   renderInvoice(o);
-  // Ngày giao dự kiến nằm ngay ở Lịch giao hàng: nhân viên đổi ngày → đơn (và đơn khách xem) cập nhật theo.
-  $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><label><span>Ngày giao dự kiến</span><input type="date" id="order-expected" value="${esc(o.expectedDeliveryDate || '')}"></label>
-      ${duePill(o.expectedDeliveryDate, { fmt: fmtDate })}<button type="button" class="btn secondary small" id="order-expected-save" hidden>Lưu ngày giao</button></div>`)
+  // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
+  $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
+      ${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { fmt: fmtDate }) : '<span class="muted">Chưa có</span>'}<small class="muted">Đổi ngày giao bằng nút "＋ Lên lịch giao".</small></div>`)
     + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}<span class="row-gap">${deliveryButtons(x)}</span><span class="pack-slot" data-pack-slot="${esc(x.id)}" data-pack-status="${esc(x.status)}"></span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
   loadPackingState(o.id); loadOrderPacking(o.id);
   $('#order-pack').hidden = o.status === 'cancelled' || o.status === 'draft';
+  $('#order-pack').disabled = !scheduled; $('#order-pack').title = scheduled ? 'Lập phiếu đóng gói theo nguồn hàng, chọn giao cho khách hay về xưởng in, gửi xe nào' : NO_SCHEDULE;
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
   $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
@@ -2516,7 +2520,6 @@ document.addEventListener('submit', async e => {
   try { await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice`, 'PUT', { invoiceNo: f.invoiceNo.value, invoiceDate: f.invoiceDate.value }); toast('Đã lưu số hoá đơn.'); openOrder(sales.order.id); tasksView().badge(); }
   catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
 });
-document.addEventListener('input', e => { if (e.target.id === 'order-expected') document.getElementById('order-expected-save').hidden = e.target.value === (sales.order.expectedDeliveryDate || ''); });
 /** Ô Lịch giao hàng: tình trạng xuất kho / đóng hàng của từng chuyến (việc của nhóm Kho) + nút yêu cầu kho đóng hàng. */
 async function loadPackingState(orderId) {
   let packing = [];
@@ -2794,11 +2797,17 @@ function openSlipPrint({ kind, choices, initial, build }) {
   const k = SLIP_KINDS[kind], dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">${kind === 'packing' ? 'Phiếu đóng gói' : 'Phiếu giao hàng'}</span><h2>In ${k.title.toLowerCase()}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body"><div class="row-gap print-tools">${choices.length > 1 ? `<label class="inline">${kind === 'packing' ? 'Phiếu' : 'Chuyến giao'} <select data-choice>${choices.map(c => `<option value="${esc(c.value)}"${c.value === initial ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>` : ''}
+      <label class="inline">Khổ giấy <select data-orient><option value="portrait">A4 dọc</option><option value="landscape">A4 ngang</option></select></label>
       <span class="muted small">Bấm vào chữ trên phiếu để sửa trước khi in.</span></div>
       <div class="paper ddh-paper" data-sheet></div></div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn primary" data-print>In / Lưu PDF</button></div>`;
   document.body.append(dlg);
-  const sheet = dlg.querySelector('[data-sheet]'); let p;
+  const sheet = dlg.querySelector('[data-sheet]'), orient = dlg.querySelector('[data-orient]'); let p;
+  // Khổ giấy dọc / ngang: nhớ lựa chọn lần trước trên máy này.
+  try { orient.value = localStorage.getItem('slipOrient') === 'landscape' ? 'landscape' : 'portrait'; } catch { /* không có localStorage: mặc định dọc */ }
+  const paper = () => sheet.classList.toggle('landscape', orient.value === 'landscape');
+  orient.addEventListener('change', () => { paper(); try { localStorage.setItem('slipOrient', orient.value); } catch { /* bỏ qua */ } });
+  paper();
   const render = v => { p = build(v); sheet.innerHTML = slipSheetHtml(p, { edit: true }); };
   render(initial ?? choices[0]?.value ?? '');
   dlg.querySelector('[data-choice]')?.addEventListener('change', e => render(e.target.value));
@@ -2806,9 +2815,9 @@ function openSlipPrint({ kind, choices, initial, build }) {
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
   dlg.querySelector('[data-print]').addEventListener('click', () => {
     readEdits(sheet, p);
-    $('#print-sheet').innerHTML = slipSheetHtml(p);
+    const out = $('#print-sheet'), cls = 'slip-' + orient.value; out.innerHTML = slipSheetHtml(p); out.classList.add(cls);
     const title = document.title; document.title = `${k.file}-${p.docNo}`.replace(/[^\w.-]+/g, '-');
-    window.print(); document.title = title;
+    window.print(); document.title = title; out.classList.remove(cls);
   });
   dlg.showModal();
 }
@@ -2816,6 +2825,7 @@ const sellerName = d => sellerOf(d).short;
 /** Phiếu đóng gói của đơn (nhân viên phụ trách / Manager): chọn 1 phiếu đã lập, hoặc cả đơn khi chưa chia phiếu. */
 async function printPackingForOrder(orderId) {
   const [d, pk] = await Promise.all([api('/orders/' + encodeURIComponent(orderId)), api(`/orders/${encodeURIComponent(orderId)}/packing`)]);
+  if (!pk.scheduled) throw new Error(NO_SCHEDULE);
   const live = pk.slips.filter(x => x.status !== 'cancelled').sort((a, b) => a.slipNo.localeCompare(b.slipNo));
   const choices = [...live.map(x => ({ value: x.id, label: `${x.slipNo} · ${x.sourceLabel}${x.sourceNote ? ': ' + x.sourceNote : ''} · ${PACK_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Cả đơn (tất cả dòng hàng)' }];
   openSlipPrint({ kind: 'packing', choices, initial: live[0]?.id || '', build: v => {
@@ -2827,6 +2837,7 @@ async function printPackingForOrder(orderId) {
 async function printDeliveryForOrder(orderId) {
   const d = await api('/orders/' + encodeURIComponent(orderId)), byId = new Map(d.lines.map(l => [l.id, l]));
   const trips = (d.deliveries || []).filter(x => x.status !== 'cancelled');
+  if (!trips.length) throw new Error(NO_SCHEDULE);
   const choices = [...trips.map(x => ({ value: x.id, label: `${x.deliveryNo} · ${fmtDate(x.plannedDate)}${x.timeSlot ? ' ' + x.timeSlot : ''} · ${DELIVERY_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Toàn bộ hàng chưa giao' }];
   const next = trips.find(x => x.status !== 'delivered');
   openSlipPrint({ kind: 'delivery', choices, initial: next?.id || (trips.length ? trips.at(-1).id : ''), build: v => {
@@ -2844,7 +2855,7 @@ function printFromSlip(kind) {
   openSlipPrint({ kind, choices: [], initial: '', build: () => kind === 'packing'
     ? packingPrintData({ seller, order: d.order, slip: d.slip, lines: d.lines }, me)
     : deliveryPrintData({ seller, order: d.order, delivery: { deliveryNo: d.slip.slipNo, address: d.slip.shipAddress || d.order.address,
-        receiverName: d.slip.shipTo === 'workshop' ? d.slip.shipName : '', receiverPhone: d.slip.shipPhone, carrier: [d.slip.carrierName, d.slip.carrierPhone].filter(Boolean).join(' · ') },
+        receiverName: d.slip.shipTo === 'workshop' ? d.slip.shipName : '', receiverPhone: d.slip.shipPhone, carrier: d.slip.carrierName, carrierPhone: d.slip.carrierPhone },
         lines: d.lines.map(l => ({ ...l, ordered: '' })) }, me) });
 }
 document.addEventListener('click', async e => {
@@ -2870,10 +2881,6 @@ document.addEventListener('click', async e => {
     try { const d = await api('/orders/' + encodeURIComponent(listDocs.dataset.contractDocsFor)); openContractDocs({ detail: d, api, toast, onSaved: loadContracts }); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
-  if (e.target.closest('#order-expected-save')) {
-    const date = document.getElementById('order-expected').value; if (!date) return toast('Chọn ngày giao.', 'err');
-    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/delivery-date`, 'PUT', { date }); toast('Đã đổi ngày giao dự kiến.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
-  }
   if (e.target.closest('#order-cancel')) {
     if (!await confirmBox('Huỷ đơn này? Đơn huỷ không còn tính công nợ; báo giá có thể tạo đơn mới.', { title: 'Huỷ đơn', ok: 'Huỷ đơn', danger: true })) return;
     try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ đơn.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
