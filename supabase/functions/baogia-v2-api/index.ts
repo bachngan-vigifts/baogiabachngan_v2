@@ -3,10 +3,14 @@ import { createDb } from '../../../src/core/db/client.ts';
 import * as schema from '../../../src/db/schema.ts';
 import { createAppRouter } from '../../../src/app/router.ts';
 import { SYNC_PREFIX } from '../../../src/modules/staff/api/auth-routes.ts';
+import { supabaseFileStore } from '../../../src/core/storage/file-store.ts';
 // Trang giao diện được phép gọi API. Thêm địa chỉ mới (vd Cloudflare Pages) bằng secret ALLOWED_ORIGINS="https://a,https://b".
 const ORIGINS = new Set(["https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site", "https://crm.minhlongonline.com",
   ...(Deno.env.get('ALLOWED_ORIGINS') || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(s => /^https:\/\/[^/]+$/.test(s))]);
 const router = createAppRouter();
+// Kho file (đính kèm tin nhắn): bucket private baogiabachngan-v2-files. SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY do Supabase tự cấp cho Edge Function.
+const FILES_URL = Deno.env.get('SUPABASE_URL') || '', FILES_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const files = FILES_URL && FILES_KEY ? supabaseFileStore({ url: FILES_URL, serviceKey: FILES_KEY }) : undefined;
 // Một client CSDL dùng chung cho cả isolate: các request sau dùng lại kết nối sẵn có (không bắt tay TLS lại mỗi lần).
 // CSDL chỉ có 60 kết nối và SUPABASE_DB_URL là kết nối trực tiếp (không qua pooler), mà Edge chạy nhiều isolate cùng lúc:
 // mỗi isolate giữ TỐI ĐA 1 kết nối và nhả sau 10 giây rảnh, để tổng số kết nối không vượt giới hạn.
@@ -59,7 +63,7 @@ Deno.serve(async req => {
       if(token) headers.set('cookie', '__Host-bn-session=' + token);
     }
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
-    const response = await router.handle(forwarded,{db,waitUntil,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined});
+    const response = await router.handle(forwarded,{db,waitUntil,files,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined});
     if (response.status < 500) lastOk = Date.now();
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');

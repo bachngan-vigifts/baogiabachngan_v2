@@ -2159,7 +2159,7 @@ var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dò
 function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
-function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id }); }
+function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
 /** Tải lại dữ liệu đang xem (không đụng báo giá đang sửa dở). */
 function refreshData() {
   loadQuotes(); loadStockBadge(); tasksView().badge(); chatView().badge();
@@ -2340,8 +2340,13 @@ async function openOrder(id) {
   $('#order-pack').hidden = o.status === 'cancelled' || o.status === 'draft';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
   $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
-  $('#order-payments').innerHTML = d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
-    : '<p class="muted">Chưa có phiếu thu.</p>';
+  // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
+  const paySummary = o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
+    ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
+    : `<div class="pay-summary ${r.overdue ? 'danger' : 'warn'}"><span>Còn phải thu${r.overdue ? ` <small class="danger-text">(quá hạn ${money(r.overdue)})</small>` : ''}</span><b>${money(r.balance)}</b>
+       <small>Đã thu ${money(r.paid)} / ${money(r.due)}</small></div>`;
+  $('#order-payments').innerHTML = paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
+    : '<p class="muted">Chưa có phiếu thu.</p>');
 }
 /** Ô Hoá đơn của đơn: yêu cầu xuất (tự động khi giao xong / nhân viên bấm) → nhóm Kế toán nhập số hoá đơn. */
 function renderInvoice(o) {

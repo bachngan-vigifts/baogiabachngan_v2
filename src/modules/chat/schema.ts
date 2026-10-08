@@ -1,4 +1,4 @@
-import { pgTable, text, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { CHAT_KINDS } from './domain/chat-config.ts';
@@ -30,5 +30,21 @@ export const chatMessages = pgTable('chat_messages', {
   conversationId: text('conversation_id').notNull().references(() => chatConversations.id, { onDelete: 'cascade' }),
   memberId: text('member_id').notNull().references(() => employees.id),
   body: text('body').notNull(),
+  /** Liên kết nhanh (JSON {type,id,label}): đơn hàng / HĐKT / báo giá / phiếu đóng gói / việc. '' = không có. */
+  refJson: text('ref_json').notNull().default(''),
+  /** Người gửi thu hồi (trong 4 giờ): nội dung, liên kết, file bị xoá. */
+  recalledAt: text('recalled_at'),
   createdAt: text('created_at').notNull(),
 }, t => [index('idx_chat_messages_conv').on(t.conversationId, t.createdAt)]).enableRLS();
+
+/** File đính kèm tin nhắn: nằm trong bucket private (khoá `file_key`), người trong hội thoại nhận link có hạn. */
+export const chatAttachments = pgTable('chat_attachments', {
+  id: text('id').primaryKey(),
+  messageId: text('message_id').notNull().references(() => chatMessages.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').notNull().references(() => chatConversations.id, { onDelete: 'cascade' }),
+  fileKey: text('file_key').notNull(),
+  name: text('name').notNull(),
+  mime: text('mime').notNull(),
+  bytes: bigint('bytes', { mode: 'number' }).notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [index('idx_chat_attachments_message').on(t.messageId), uniqueIndex('idx_chat_attachments_key').on(t.fileKey)]).enableRLS();

@@ -73,5 +73,5 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.deepEqual(p.lines.map((l: any) => l.left), [50, 10]);
   assert.equal((await call('/packing?status=packed', kho)).data.slips.length, 1);
-  assert.equal((await call('/packing', emp)).status, 403);
+  assert.deepEqual((await call('/packing?q=khach p', emp)).data.slips.map((x: any) => x.status).sort(), ['cancelled', 'draft', 'packed'], 'nhân viên thấy phiếu của đơn mình');
 });

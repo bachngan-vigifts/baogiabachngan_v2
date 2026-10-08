@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
+import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { products } from '../../catalog/schema.ts';
@@ -158,14 +159,19 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     });
   }, 'business');
 
-  /** Phiếu đang chờ kho đóng (nhóm Kho / Manager). */
+  /**
+   * Danh sách phiếu: nhóm Kho / Manager thấy mọi phiếu (mặc định phiếu chờ đóng); nhân viên khác thấy phiếu của đơn mình xem được
+   * (dùng cho nút gửi phiếu trong tin nhắn). `status=all` = mọi trạng thái; `q` tìm số phiếu / số đơn / khách.
+   */
   router.get('/packing', async c => {
-    const m = viewer(c);
-    if (m.role !== 'manager' && !isWarehouse(m)) throw new AppError(403, 'Chỉ nhóm Kho hoặc Manager xem được danh sách phiếu đóng gói.');
-    const status = c.url.searchParams.get('status') || 'sent';
+    const m = viewer(c), all = m.role === 'manager' || isWarehouse(m), p = c.url.searchParams;
+    const status = p.get('status') || (all ? 'sent' : 'all');
     const rows = await c.env.db.select({ slip: packingSlips, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, expectedDeliveryDate: salesOrders.expectedDeliveryDate })
       .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId))
-      .where((PACKING_STATUSES as readonly string[]).includes(status) ? eq(packingSlips.status, status as typeof PACKING_STATUSES[number]) : undefined).orderBy(desc(packingSlips.updatedAt)).limit(200);
+      .where(and(all ? undefined : orderScopeFor(m),
+        (PACKING_STATUSES as readonly string[]).includes(status) ? eq(packingSlips.status, status as typeof PACKING_STATUSES[number]) : undefined,
+        matchAllWords(foldSql(packingSlips.slipNo, salesOrders.orderNo, salesOrders.customerName), p.get('q'))))
+      .orderBy(desc(packingSlips.updatedAt)).limit(200);
     return json({ slips: rows.map(r => ({ ...r.slip, sourceLabel: PACKING_SOURCE_LABEL[r.slip.source], orderNo: r.orderNo, customerName: r.customerName, expectedDeliveryDate: r.expectedDeliveryDate })) });
   }, 'business');
 

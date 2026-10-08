@@ -10,11 +10,14 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import * as schema from '../src/db/schema.ts';
 import { createAppRouter } from '../src/app/router.ts';
+import { memoryFileStore } from '../src/core/storage/file-store.ts';
 import type { AnyDb } from '../src/core/db/client.ts';
 import { PgFixture } from '../tests/helpers/postgres.ts';
 import { seedStaff } from '../tests/helpers/staff-fixture.ts';
 
 const root = join(import.meta.dirname, '..'), uiDir = join(root, 'trial-ui');
+// Đính kèm tin nhắn khi chạy thử: lưu trong bộ nhớ (link = data URL).
+const devFiles = memoryFileStore();
 const PORT = Number(process.env.PORT || 8787), ORIGIN = `http://localhost:${PORT}`;
 
 const client = new PGlite();
@@ -55,7 +58,7 @@ createServer(async (req, res) => {
     if (bearer) headers.set('cookie', '__Host-bn-session=' + bearer);
     const response = await router.handle(new Request(ORIGIN + url.pathname + url.search, {
       method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method || 'GET') ? undefined : Buffer.concat(chunks),
-    }), { db, passwordIterations: 1000 });
+    }), { db, files: devFiles, passwordIterations: 1000 });
     const payload = await response.json() as Record<string, unknown>;
     const cookie = response.headers.get('set-cookie');
     if (cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';
