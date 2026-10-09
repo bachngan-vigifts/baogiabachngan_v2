@@ -1289,11 +1289,10 @@ function validateQuote(data) {
 let saving = false;
 async function saveQuote() {
   if (saving) return;
+  if (editor.id && !isManager() && editor.approval?.status === 'approved') return toast('Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'err');
   const err = $('#quote-error'); err.textContent = '';
   const data = collectQuote(), problem = validateQuote(data);
   if (problem) { err.textContent = problem; toast(problem, 'err'); qf.querySelector('.invalid')?.focus(); return; }
-  if (editor.id && !isManager() && editor.approval?.status === 'approved' && editor.dirty
-    && !await confirmBox('Báo giá này đã được duyệt. Lưu thay đổi sẽ chuyển báo giá về "Chờ duyệt" và phải được Manager duyệt lại. Tiếp tục lưu?', { ok: 'Lưu và gửi duyệt lại' })) return;
   saving = true; $('#save-quote').disabled = $('#save-quote-m').disabled = true;
   try {
     const saved = editor.id
@@ -1312,7 +1311,7 @@ async function saveQuote() {
       $('#conflict-text').textContent = e.message + ' Thay đổi của anh/chị chưa được lưu.';
       $('#conflict-banner').hidden = false; $('#conflict-banner').scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else { err.textContent = e.message; toast(e.message, 'err'); }
-  } finally { saving = false; $('#save-quote').disabled = $('#save-quote-m').disabled = false; }
+  } finally { saving = false; updateQuoteActions(); }
 }
 qf.addEventListener('submit', e => { e.preventDefault(); saveQuote(); });
 $('#save-quote-m').addEventListener('click', e => { e.preventDefault(); saveQuote(); });
@@ -2439,9 +2438,9 @@ async function openOrder(id) {
   const scheduled = d.deliveries.some(x => x.status !== 'cancelled');
   $('#order-actions').innerHTML = '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>'
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
-    + (o.status === 'draft' ? (isManager() ? '<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt đơn / HĐKT. Đã duyệt thì báo giá bị khoá.">Duyệt đơn</button>'
+    + (o.status === 'draft' ? (isManager() ? '<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt đơn / HĐKT. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt đơn</button>'
       : '<span class="pill warn" title="Còn nháp: sửa báo giá thì đơn / HĐKT tự cập nhật theo">Chờ Manager duyệt</span>') : '')
-    + (o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '')
+    + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)]]
@@ -2460,7 +2459,7 @@ async function openOrder(id) {
   $('#order-contract').innerHTML = k ? `<dl class="kv"><dt>Số HĐKT</dt><dd><b>${esc(k.contractNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(CONTRACT_STATUS, k.status)}</dd>
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
-    <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${k.status === 'draft' && o.status !== 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
+    <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${isManager() && k.status === 'draft' && o.status !== 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
     : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(ORDER_STATUS, o.status)}</dd>
     <dt>Ngày đặt</dt><dd>${fmtDate(o.orderDate)}</dd>${o.quoteNo ? `<dt>Từ báo giá</dt><dd>${o.quoteId ? `<a href="#/quotes/${encodeURIComponent(o.quoteId)}">${esc(o.quoteNo)}</a>` : esc(o.quoteNo)}</dd>` : ''}
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd><dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
@@ -2961,6 +2960,12 @@ function approvalBlock() {
 }
 function updateQuoteActions() {
   const saved = !!editor.id, approved = editor.approval?.status === 'approved', mgr = isManager(), block = approvalBlock();
+  const locked = saved && approved && !mgr;
+  for (const el of qf.querySelectorAll('.editor-grid input, .editor-grid select, .editor-grid textarea, .editor-grid button, .card input, .card select, .card textarea, .card button')) {
+    if (locked && !el.disabled) { el.dataset.approvalLock = '1'; el.disabled = true; }
+    else if (!locked && el.dataset.approvalLock) { delete el.dataset.approvalLock; el.disabled = false; }
+  }
+  $('#save-quote').disabled = $('#save-quote-m').disabled = saving || locked;
   const pill = $('#editor-approval');
   pill.hidden = !saved; pill.className = 'pill ' + (approved ? 'ok' : 'warn');
   pill.textContent = approved ? 'Đã duyệt' : 'Chờ duyệt';
@@ -3132,3 +3137,4 @@ $('#excel-quote').addEventListener('click', async () => {
 });
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) chatView().refresh(); });
+
