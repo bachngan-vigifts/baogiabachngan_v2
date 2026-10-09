@@ -5,6 +5,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { quotationScope, quotationEditScope, type SqlScope } from '../domain/access.ts';
 import { cleanQuotation } from '../domain/quotation-schema.ts';
+import { autoQuoteHead, nextQuoteNoAfter, quoteHeadFor } from '../domain/quote-number.ts';
 import { quoteHeaderIndex, quoteLineRows } from '../domain/quote-index.ts';
 import { totals } from '../domain/quote-math.ts';
 import { quotations, quoteLines, quoteNotifications, quoteRevisions } from '../schema.ts';
@@ -43,6 +44,23 @@ const contentKey = (data: unknown) => {
 const approvalOnCreate = (viewer: { id: string; role: string }, now: string) =>
   isManager(viewer) ? { approvalStatus: 'approved' as const, approvedAt: now, approvedBy: viewer.id } : { approvalStatus: 'pending' as const, approvedAt: null, approvedBy: null };
 
+/**
+ * Cấp số báo giá lúc lưu (trong giao dịch, khoá theo phiên giao dịch để hai người lưu cùng lúc không ra trùng số):
+ *  - số theo mẫu tự sinh (HRC_BG20261009_001…) mà đã có báo giá khác dùng → tự đổi sang số kế tiếp còn trống;
+ *  - số gõ tay trùng báo giá khác → báo lỗi để người dùng đổi số.
+ * `exceptId` = báo giá đang sửa (không tính chính nó).
+ */
+export async function assignQuoteNo(tx: Tx, quoteNo: string, exceptId?: string): Promise<string> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('staff_quotations.quote_no'))`);
+  const taken = async (no: string) => (await tx.select({ id: quotations.id }).from(quotations)
+    .where(and(eq(quotations.quoteNo, no), exceptId ? sql`${quotations.id} <> ${exceptId}` : undefined)).limit(1)).length > 0;
+  if (!await taken(quoteNo)) return quoteNo;
+  const head = autoQuoteHead(quoteNo);
+  if (!head) throw new AppError(400, `Số báo giá ${quoteNo} đã được dùng cho báo giá khác. Vui lòng đổi số khác.`, 'QUOTE_NO_EXISTS');
+  const used = (await tx.select({ n: quotations.quoteNo }).from(quotations).where(sql`${quotations.quoteNo} LIKE ${head + '%'}`)).map(r => r.n);
+  return nextQuoteNoAfter(head, used);
+}
+
 export function registerQuoteRoutes(router: Router<StaffEnv>) {
   router.get('/quotes', async c => {
     const viewer = (c.state.session as SessionState).member;
@@ -59,6 +77,14 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     }) });
   }, 'business');
   /** Manager: số báo giá đang đợi duyệt (badge như web cũ). */
+  /** Số báo giá kế tiếp (gợi ý điền sẵn khi tạo mới) – đếm trên toàn bộ báo giá; lúc lưu máy chủ vẫn kiểm lại. */
+  router.get('/quotes/next-no', async c => {
+    const type = c.url.searchParams.get('type') || 'B2B', date = c.url.searchParams.get('date') || '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new AppError(400, 'Ngày không hợp lệ.');
+    const head = quoteHeadFor(type, date);
+    const used = (await c.env.db.select({ n: quotations.quoteNo }).from(quotations).where(sql`${quotations.quoteNo} LIKE ${head + '%'}`)).map(r => r.n);
+    return json({ quoteNo: nextQuoteNoAfter(head, used) });
+  }, 'business');
   router.get('/quotes/pending-count', async c => {
     const viewer = (c.state.session as SessionState).member;
     const [r] = await c.env.db.select({ n: count() }).from(quotations).where(and(eq(quotations.approvalStatus, 'pending'), predicate(quotationScope(viewer))));
@@ -126,6 +152,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const data = cleanQuotation(await readJson(c.req));
     const id = crypto.randomUUID(), now = new Date().toISOString(), approval = approvalOnCreate(viewer, now);
     await c.env.db.transaction(async tx => {
+      data.quoteNo = await assignQuoteNo(tx, data.quoteNo);
       await tx.insert(quotations).values({ id, creatorId: viewer.id, assigneeId: viewer.id, quoteNo: data.quoteNo, quoteType: data.type, customer: data.customer, ...quoteHeaderIndex(data), data: JSON.stringify(data), revision: 1, ...approval, createdAt: now, updatedAt: now });
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
@@ -145,6 +172,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       const [old] = await tx.select().from(quotations).where(condition).limit(1);
       if (!old) throw new AppError(409, 'Báo giá đã thay đổi hoặc anh không có quyền sửa. Vui lòng tải lại.');
       for (const h of quoteSaveHooks.beforeSave) await h(tx, old);
+      if (data.quoteNo !== old.quoteNo) data.quoteNo = await assignQuoteNo(tx, data.quoteNo, old.id);
       const next = old.revision + 1, encoded = JSON.stringify(data);
       // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, phải gửi duyệt lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
       const changed = contentKey(data) !== contentKey(old.data);
