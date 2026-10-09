@@ -42,7 +42,7 @@
 
 **Trung bình**
 3. **Phân quyền viết cứng trong code.** Ví dụ Kế toán chưa xem được mọi công nợ. Muốn đổi quyền phải sửa code.
-4. **Chưa có hộp "Cần duyệt" chung cho Manager.** Duyệt nằm rải ở từng trang; việc tự sinh và thông báo đẩy đang bù lại phần này.
+4. ~~**Chưa có hộp "Cần duyệt" chung cho Manager.**~~ → **Đã làm (M3): thẻ "Cần duyệt" trong trang Công việc.**
 5. **Web Push phụ thuộc secret `SAPO_SYNC_TOKEN`** (≥ 32 ký tự): thiếu thì không đẩy được. Đã có hộp "Kiểm tra thiết bị nhận thông báo" cho Manager (PR #55) để thấy lý do.
 6. **Bảo mật HTTP:** đã bật HSTS (chỉ tên miền này) và **CSP ở chế độ chỉ báo cáo** (M1); còn phải xem báo cáo rồi mới chặn thật.
 
@@ -120,10 +120,21 @@ Kế hoạch gốc của M2 (để đối chiếu):
 - **Giao diện:** thẻ "Lịch sử" ở chi tiết báo giá / đơn / khách. Thêm xem lại `quote_revisions` (so sánh bản trước / sau).
 - **Test:** mỗi thao tác trên ghi đúng một dòng; nhân viên không xem được nhật ký của người khác.
 
-### M3 – Hộp "Cần duyệt" cho Manager
-- **API:** `GET /approvals` gom báo giá, đơn, HĐKT, khách hàng và sản phẩm đang chờ duyệt, kèm số đếm.
-- **Giao diện:** trang `#/approvals` (badge trên menu), duyệt nhanh từng dòng (vẫn qua hộp kiểm tra như hiện nay).
-- **Test:** mỗi loại xuất hiện / biến mất đúng khi tạo / duyệt.
+### M3 – Hộp "Cần duyệt" cho Manager ✅ (đã làm 09/10/2026)
+- **API:** `GET /approvals` (`src/app/approval-routes.ts`, chỉ Manager, chỉ đọc) gom các mục đang chờ duyệt, kèm số đếm từng loại:
+  - báo giá chờ duyệt (nhân viên lập / khách gửi);
+  - đơn hàng nháp;
+  - HĐKT của đơn nháp;
+  - khách hàng nhân viên tạo;
+  - sản phẩm nhân viên thêm.
+  - Chờ lâu nhất lên trước.
+- **Giao diện:** theo yêu cầu của chủ dự án, nằm **trong trang Công việc** (`trial-ui/tasks.js`):
+  - thẻ **"Cần duyệt"** cạnh thẻ "Công việc", có số đỏ;
+  - ô thống kê "Cần duyệt";
+  - lọc theo loại;
+  - nút **"Mở để duyệt"** mở đúng màn hình gốc. Duyệt vẫn làm ở đó, giữ nguyên hộp kiểm tra; **không đổi nghiệp vụ duyệt**;
+  - link thẳng `#/tasks/approvals`.
+- **Test:** `tests/app/approval-inbox.test.ts`: mỗi loại xuất hiện khi tạo, biến mất khi duyệt; nhân viên bị chặn.
 
 ### M4 – Phân quyền theo chức vụ
 - **Migration:** bảng `position_permissions (position_id, permission)`, danh mục quyền viết sẵn trong code. Ví dụ:

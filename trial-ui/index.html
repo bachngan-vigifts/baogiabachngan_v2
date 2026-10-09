@@ -416,6 +416,8 @@
         <div><span class="eyebrow">Điều hành</span><h1>Công việc</h1><p class="muted">Việc tự sinh từ báo giá, check tồn, đơn hàng, giao hàng, HĐKT, công nợ, nhập hàng – tự hoàn thành khi xử lý xong. Giao việc cho nhau ngay ở ô bên dưới. Phím tắt: <kbd>N</kbd> thêm việc, <kbd>/</kbd> tìm.</p></div>
       </div>
       <div class="stats task-stats" id="tasks-stats"></div>
+      <div class="care-tabs task-tabs" role="tablist" id="tasks-tabs" hidden><button type="button" role="tab" data-tab="tasks" aria-selected="true">Công việc</button><button type="button" role="tab" data-tab="approvals" aria-selected="false">Cần duyệt <b class="tab-count" id="tasks-approval-count" hidden></b></button></div>
+      <div class="card approvals-board" id="tasks-approvals" hidden></div>
       <div class="card task-board">
         <form class="task-quick" id="tasks-quick" autocomplete="off">
           <input name="title" placeholder="＋ Thêm việc mới… (Enter để lưu)" maxlength="300" aria-label="Tên công việc">
