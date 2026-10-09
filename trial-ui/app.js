@@ -2431,7 +2431,7 @@ async function openOrder(id) {
   const shipped = d.lines.reduce((s, l) => s + l.deliveredQty, 0), totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
   $('#order-flow').innerHTML = [
     step(!!o.quoteId, 'Báo giá', o.quoteNo || 'Không có', o.quoteId ? `#/quotes/${encodeURIComponent(o.quoteId)}` : ''),
-    step(true, 'Đơn đặt hàng', o.orderNo),
+    ...(!d.contract ? [step(true, 'Đơn đặt hàng', o.orderNo)] : []),
     step(!!d.contract, 'HĐKT', d.contract ? d.contract.contractNo : 'Chưa lập', d.contract ? '#/contracts' : ''),
     step(o.status === 'delivered', 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao`, '#/deliveries'),
     step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : 'Đã thu đủ', '#/receivables'),
