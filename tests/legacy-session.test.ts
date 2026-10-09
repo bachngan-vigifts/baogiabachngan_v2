@@ -41,7 +41,7 @@ test('legacy session tokens reject tampering, another manager session, changed c
   await fetchLegacyMedia(f.env, url);
   const token = await exportLegacySession(f.env, 'owner');
   assert.ok(token);
-  for (const [owner, value] of [['other', token], ['owner', 'bad-token'], ['owner', token.slice(0, 20) + 'AAAA' + token.slice(24)]]) {
+  for (const [owner, value] of [['other', token], ['owner', 'bad-token'], ['owner', token.slice(0, 20) + 'AAAA' + token.slice(24)]] as const) {
     resetLegacySession();
     const before = f.logins();
     await restoreLegacySession(f.env, owner, value);
@@ -66,7 +66,7 @@ test('legacy session tokens reject tampering, another manager session, changed c
 });
 
 test('429 reports cooldown separately from wrong credentials, respecting Retry-After', async () => {
-  for (const [header, expected] of [['120', 120], ['', 900], ['invalid', 900]]) {
+  for (const [header, expected] of [['120', 120], ['', 900], ['invalid', 900]] as const) {
     resetLegacySession();
     const f = fixture();
     f.env.legacySite!.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': header } });
