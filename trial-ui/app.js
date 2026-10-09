@@ -173,14 +173,17 @@ const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 async function api(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
-  if (token) headers.authorization = 'Bearer ' + token;
+  const requestToken = token;
+  if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   try { res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  if (data.sessionToken !== undefined) saveToken(data.sessionToken);
+  // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
+  const sameSession = requestToken === token;
+  if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
   if (!res.ok) {
-    if (res.status === 401 && !['/login', '/activate', '/password'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
+    if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
     throw new ApiError(data.error || 'Không thực hiện được thao tác.', res.status, data.code);
   }
   return data;
@@ -207,11 +210,16 @@ const hashParams = () => new URLSearchParams(location.hash.slice(1));
 let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('token') : null;
 
 function showAuth(message = '', { keepToken = false } = {}) {
+  const auth = $('#auth'), opening = auth.hidden;
   state.user = null; if (!keepToken) saveToken('');
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
-  setTimeout(() => ($('#email').value ? $('#password') : $('#email')).focus(), 0);
+  // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
+  if (opening) setTimeout(() => {
+    if (auth.hidden || auth.contains(document.activeElement)) return;
+    ($('#email').value ? $('#password') : $('#email')).focus();
+  }, 0);
 }
 function setupActivationForm() {
   $('#auth-title').textContent = 'Đặt mật khẩu';
