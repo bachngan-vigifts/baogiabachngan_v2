@@ -18,7 +18,7 @@ export function paymentClause(terms, total = 0, inWords = () => '') {
 }
 export function withPaymentNotes(notes, terms, total, inWords) {
   const lines = String(notes || '').split(/\r?\n/);
-  const isPayment = line => /^\s*[-+–•]?\s*(?:Thanh toán:|Bên Mua sẽ tiến hành tạm ứng|(?:\d+(?:[.,]\d+)?%)\s*(?:trị giá|giá trị)|Bên A thanh toán)/i.test(line);
+  const isPayment = line => /^\s*[-+–•]?\s*(?:Thanh toán:|Bên Mua sẽ tiến hành tạm ứng|(?:\d+(?:[.,]\d+)?%)\s*(?:trị giá|giá trị)\s+còn lại|Bên A thanh toán)/i.test(line);
   const first = lines.findIndex(isPayment);
   const result = lines.filter(line => !isPayment(line));
   result.splice(first < 0 ? result.findIndex(line => /Trân trọng|Hy vọng/i.test(line)) < 0 ? result.length : result.findIndex(line => /Trân trọng|Hy vọng/i.test(line)) : first, 0,
