@@ -52,7 +52,9 @@ const visibleQuotes = (customerId: string, me: string) => and(
   sql`(${quotations.data}::jsonb ->> 'customerId') = ${customerId}`,
   or(eq(quotations.approvalStatus, 'approved'), eq(quotations.creatorId, me)),
 );
-const ORDER_FIELDS = { id: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, quoteNo: salesOrders.quoteNo, status: salesOrders.status,
+/** `contractNo` có → HĐKT (luồng riêng với đơn hàng): khách thấy số HĐKT, không thấy số đơn. */
+const ORDER_FIELDS = { id: salesOrders.id, orderNo: salesOrders.orderNo, contractNo: sql<string | null>`(SELECT ${salesContracts.contractNo} FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`,
+  quoteId: salesOrders.quoteId, quoteNo: salesOrders.quoteNo, status: salesOrders.status,
   orderDate: salesOrders.orderDate, expectedDeliveryDate: salesOrders.expectedDeliveryDate, subtotal: salesOrders.subtotal, tax: salesOrders.tax, total: salesOrders.total, note: salesOrders.note };
 
 export function registerPortalRoutes(router: Router<StaffEnv>) {
@@ -92,7 +94,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     return json({ quotes: rows.map(r => {
       const d = JSON.parse(r.data), o = orders.find(x => x.quoteId === r.id);
       return { id: r.id, quoteNo: r.quoteNo, date: r.quoteDate, total: totals(d).total, lineCount: d.rows.length, approvalStatus: r.approvalStatus, mine: r.creatorId === me,
-        updatedAt: r.updatedAt, order: o ? { id: o.id, orderNo: o.orderNo, status: o.status } : null };
+        updatedAt: r.updatedAt, order: o ? { id: o.id, orderNo: o.orderNo, contractNo: o.contractNo ?? null, status: o.status } : null };
     }) });
   }, 'customer-portal');
 
@@ -204,7 +206,8 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
   router.post('/portal/orders/:id/cancel', async c => {
     const { customer } = await myAccount(c);
     const done = await c.env.db.update(salesOrders).set({ status: 'cancelled', updatedAt: nowIso() })
-      .where(and(eq(salesOrders.id, c.params.id!), eq(salesOrders.customerId, customer.id), eq(salesOrders.status, 'draft'))).returning({ id: salesOrders.id });
+      .where(and(eq(salesOrders.id, c.params.id!), eq(salesOrders.customerId, customer.id), eq(salesOrders.status, 'draft'),
+        sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`)).returning({ id: salesOrders.id }); // HĐKT: huỷ qua nhân viên
     if (!done.length) throw new AppError(409, 'Đơn đã được xác nhận hoặc không tồn tại, không huỷ được. Vui lòng liên hệ nhân viên phụ trách.');
     return json({ ok: true });
   }, 'customer-portal');

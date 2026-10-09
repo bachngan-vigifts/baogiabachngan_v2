@@ -11,7 +11,8 @@ import { taskComments, tasks } from '../schema.ts';
 import { reconcileAutoTasks } from './auto-tasks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
 import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, canViewPeers, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
-import { deliveries, deliveryLines, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { docRef } from '../../sales/domain/doc-ref.ts';
 import { orderScopeFor } from '../../sales/api/routes.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -264,7 +265,8 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const lines = await c.env.db.select({ name: salesOrderLines.name, unit: salesOrderLines.unit, qty: deliveryLines.qty }).from(deliveryLines)
       .innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId)).where(eq(deliveryLines.deliveryId, row.d.id));
     const today = vietnamDate().iso, now = nowIso();
-    const description = [`Đơn ${row.o.orderNo} · giao ${row.d.plannedDate.split('-').reverse().join('/')}${row.d.timeSlot ? ' ' + row.d.timeSlot : ''}`, `Địa chỉ: ${row.d.address || row.o.address}`,
+    const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, row.o.id)).limit(1);
+    const description = [`${docRef(row.o.id, row.o.orderNo, k?.no).Label} · giao ${row.d.plannedDate.split('-').reverse().join('/')}${row.d.timeSlot ? ' ' + row.d.timeSlot : ''}`, `Địa chỉ: ${row.d.address || row.o.address}`,
       ...lines.map(l => `- ${l.name}: ${new Intl.NumberFormat('vi-VN').format(l.qty)} ${l.unit}`), note ? `Ghi chú: ${note}` : ''].filter(Boolean).join('\n');
     const values = { title: `Xuất kho & đóng hàng ${row.d.deliveryNo} – ${row.o.customerName}`, description, status: 'todo' as const, priority: row.d.plannedDate <= addDays(today, 1) ? 'urgent' as const : 'high' as const,
       source: 'packing' as const, sourceId: row.o.id, link: '', // kho không mở được đơn (đơn chỉ NV phụ trách / Manager xem) – nội dung việc đã ghi đủ hàng cần xuất

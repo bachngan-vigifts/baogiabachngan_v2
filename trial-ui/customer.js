@@ -130,7 +130,7 @@ async function loadQuotes() {
       <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount} sản phẩm${q.mine ? ' · quý khách gửi' : ''}</small></td>
       <td data-label="Ngày">${fmtDate(q.date) || '—'}</td><td class="right num">${money(q.total)}</td>
       <td data-label="Trạng thái">${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã xác nhận</span>' : '<span class="pill warn">Chờ nhân viên xác nhận</span>'}</td>
-      <td data-label="Đơn hàng">${q.order ? `${esc(q.order.orderNo)} ${pill(ORDER_STATUS, q.order.status)}` : q.approvalStatus === 'approved' ? '<span class="muted">Chưa đặt hàng</span>' : '—'}</td></tr>`).join('');
+      <td data-label="Đơn hàng / HĐKT">${q.order ? `${esc(docName(q.order))} ${pill(ORDER_STATUS, q.order.status)}` : q.approvalStatus === 'approved' ? '<span class="muted">Chưa đặt hàng</span>' : '—'}</td></tr>`).join('');
   } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="error">${esc(e.message)}</td></tr>`; }
 }
 let openQuoteId = '', openQuote = null;
@@ -146,7 +146,7 @@ $('#p-quotes').addEventListener('click', async e => {
       </tbody></table></div>
       <dl class="totals"><div><dt>Tạm tính</dt><dd>${money(t.subtotal)}</dd></div><div><dt>${esc(t.label)}</dt><dd>${money(t.tax)}</dd></div><div class="grand"><dt>Tổng thanh toán</dt><dd>${money(t.total)}</dd></div></dl>
       ${d.notes ? `<h3>Ghi chú</h3><p class="pre">${esc(d.notes)}</p>` : ''}
-      ${q.order ? `<p>Đơn hàng: <b>${esc(q.order.orderNo)}</b> ${pill(ORDER_STATUS, q.order.status)}</p>` : ''}`;
+      ${q.order ? `<p>${q.order.contractNo ? 'HĐKT' : 'Đơn hàng'}: <b>${esc(q.order.contractNo || q.order.orderNo)}</b> ${pill(ORDER_STATUS, q.order.status)}</p>` : ''}`;
     $('#pq-order').hidden = q.approvalStatus !== 'approved' || !!q.order;
     $('#p-quote-dialog').showModal();
   } catch (ex) { toast(ex.message, 'err'); }
@@ -398,7 +398,7 @@ async function loadSales(year) {
   const list = salesOrders.filter(o => String(o.orderDate).startsWith(String(year))), prev = salesOrders.filter(o => String(o.orderDate).startsWith(String(year - 1)));
   const total = list.reduce((t, o) => t + o.total, 0), prevTotal = prev.reduce((t, o) => t + o.total, 0);
   const change = prevTotal > 0 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
-  stats.innerHTML = [['Tổng mua năm ' + year, money(total), 'Đã gồm VAT'], ['Số đơn hàng', String(list.length), list.length ? 'Trung bình ' + money(total / list.length) + ' / đơn' : ''],
+  stats.innerHTML = [['Tổng mua năm ' + year, money(total), 'Đã gồm VAT'], ['Số đơn hàng / HĐKT', String(list.length), list.length ? 'Trung bình ' + money(total / list.length) + ' / đơn' : ''],
     ['So với năm ' + (year - 1), change === null ? '—' : (change >= 0 ? '+' : '') + change + '%', prevTotal ? 'Năm trước ' + money(prevTotal) : 'Chưa có đơn năm trước']]
     .map(([k, v, note]) => `<article class="stat"><small>${esc(k)}</small><strong>${esc(v)}</strong>${note ? `<span class="muted">${esc(note)}</span>` : ''}</article>`).join('');
   const months = Array.from({ length: 12 }, (_, i) => list.filter(o => Number(String(o.orderDate).slice(5, 7)) === i + 1).reduce((t, o) => t + o.total, 0)), max = Math.max(...months, 1);
@@ -422,30 +422,32 @@ async function loadDebt() {
       .map(([k, v, note]) => `<article class="stat"><small>${k}</small><strong class="${k === 'Quá hạn' && v > 0 ? 'danger-text' : ''}">${money(v)}</strong>${note ? `<span class="muted">${esc(note)}</span>` : ''}</article>`).join('');
     $('#p-debt-empty').hidden = list.length > 0;
     tbody.innerHTML = list.map(o => { const r = o.receivable; return `<tr>
-      <td class="first"><span class="strong">${esc(o.orderNo)}</span><small>Ngày đặt ${fmtDate(o.orderDate)}</small></td>
+      <td class="first"><span class="strong">${esc(docName(o))}</span><small>Ngày ${o.contract ? 'lập' : 'đặt'} ${fmtDate(o.orderDate)}</small></td>
       <td class="right num">${money(r.due)}</td><td class="right num ${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</td><td class="right num"><b>${money(r.balance)}</b></td>
       <td data-label="Hạn">${allocatePayments(o.schedules, r.paid).map(s => `<small>${esc(s.note || (s.kind === 'deposit' ? 'Đặt cọc' : 'Phần còn lại'))}: ${money(s.amount)} · ${s.left <= 0 ? installmentStatus(s) : (s.dueDate ? 'hạn ' + fmtDate(s.dueDate) : 'sau khi giao hàng') + (s.covered > 0 ? ' · ' + installmentStatus(s) : '')}</small>`).join('')}</td>
       <td data-label="Tình trạng">${pill(DEBT_STATUS, r.status)}${r.overdue > 0 ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}</td></tr>`; }).join('');
-    const pays = orders.filter(o => o.receivable).flatMap(o => o.payments.map(p => ({ ...p, orderNo: o.orderNo }))).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
-    $('#p-pay-history').innerHTML = pays.length ? pays.map(p => `<li><span>${fmtDate(p.paidAt)} · ${esc(METHOD[p.method] || p.method)}<small>Đơn ${esc(p.orderNo)}</small></span><b>${money(p.amount)}</b></li>`).join('') : '<li class="muted">Chưa có lần thanh toán nào.</li>';
+    const pays = orders.filter(o => o.receivable).flatMap(o => o.payments.map(p => ({ ...p, orderNo: docName(o) }))).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+    $('#p-pay-history').innerHTML = pays.length ? pays.map(p => `<li><span>${fmtDate(p.paidAt)} · ${esc(METHOD[p.method] || p.method)}<small>${esc(p.orderNo.startsWith('HĐKT') ? p.orderNo : 'Đơn ' + p.orderNo)}</small></span><b>${money(p.amount)}</b></li>`).join('') : '<li class="muted">Chưa có lần thanh toán nào.</li>';
   } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="error">${esc(e.message)}</td></tr>`; }
 }
 
 // ----- Đơn đặt hàng / HĐKT
 const CONTRACT_STATUS = { draft: ['HĐKT nháp', 'off'], signed: ['Đã ký', 'ok'], completed: ['Hoàn tất', 'ok'] };
+/** Đơn hàng và HĐKT là 2 chứng từ riêng: HĐKT hiện số HĐKT (không hiện số đơn nội bộ). */
+const docName = o => o.contract?.contractNo ? 'HĐKT ' + o.contract.contractNo : o.contractNo ? 'HĐKT ' + o.contractNo : o.orderNo;
 async function loadOrders() {
   const box = $('#p-orders'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
   try {
     const { orders } = await api('/portal/orders');
     $('#p-orders-empty').hidden = orders.length > 0;
     box.innerHTML = orders.map(o => `<article class="card portal-order" data-order="${esc(o.id)}">
-      <header><div><b>${esc(o.orderNo)}</b> ${pill(ORDER_STATUS, o.status)}<small>Ngày đặt ${fmtDate(o.orderDate)}${o.quoteNo ? ' · Báo giá ' + esc(o.quoteNo) : ''}</small>${o.expectedDeliveryDate && o.status !== 'cancelled' ? `<span class="small">Giao dự kiến ${duePill(o.expectedDeliveryDate, { done: o.status === 'delivered', fmt: fmtDate })}</span>` : ''}</div>
+      <header><div><b>${esc(docName(o))}</b> ${pill(ORDER_STATUS, o.status)}<small>Ngày ${o.contract ? 'lập' : 'đặt'} ${fmtDate(o.orderDate)}${o.quoteNo ? ' · Báo giá ' + esc(o.quoteNo) : ''}</small>${o.expectedDeliveryDate && o.status !== 'cancelled' ? `<span class="small">Giao dự kiến ${duePill(o.expectedDeliveryDate, { done: o.status === 'delivered', fmt: fmtDate })}</span>` : ''}</div>
         <strong>${money(o.total)}</strong></header>
       <ul class="plain-list">${o.lines.map(l => `<li><span>${esc(l.name)}<small>${esc(l.sku)}</small></span><span>${fmtNum(l.qty)} ${esc(l.unit)}${l.deliveredQty ? ` · đã giao ${fmtNum(l.deliveredQty)}` : ''}</span><b>${money(l.amount)}</b></li>`).join('')}</ul>
-      ${o.contract ? `<p class="small"><b>HĐKT ${esc(o.contract.contractNo)}</b> ${pill(CONTRACT_STATUS, o.contract.status)}${o.contract.signedDate ? ' · ký ngày ' + fmtDate(o.contract.signedDate) : ''}</p>` : ''}
+      ${o.contract ? `<p class="small">Tình trạng HĐKT: ${pill(CONTRACT_STATUS, o.contract.status)}${o.contract.signedDate ? ' · ký ngày ' + fmtDate(o.contract.signedDate) : ''}</p>` : ''}
       ${o.deliveries.length ? `<p class="small"><b>Lịch giao:</b> ${o.deliveries.map(d => `${fmtDate(d.plannedDate)} ${esc(d.timeSlot)} (${esc(DELIVERY_STATUS[d.status] || d.status)})`).join(' · ')}</p>` : ''}
       ${o.receivable && o.status !== 'draft' ? `<p class="small">Đã thanh toán ${money(o.receivable.paid)} · <b>Còn lại ${money(o.receivable.balance)}</b></p>` : ''}
-      ${o.status === 'draft' ? '<button type="button" class="btn ghost small" data-cancel>Huỷ đơn</button>' : ''}
+      ${o.status === 'draft' && !o.contract ? '<button type="button" class="btn ghost small" data-cancel>Huỷ đơn</button>' : ''}
     </article>`).join('');
   } catch (e) { box.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
 }

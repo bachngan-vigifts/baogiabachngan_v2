@@ -118,31 +118,32 @@ test('sinh đơn hàng: chọn kho → đơn web + đơn nháp Sapo cùng lúc; 
   assert.equal(sapo.db.orders.length, 2);
 });
 
-test('lập HĐKT: đơn luồng HĐKT chưa đẩy; lập HĐKT mới đẩy Sapo (ghi chú có số HĐKT); Sapo lỗi → không có HĐKT', async () => {
+test('lập HĐKT thẳng từ báo giá (không qua đơn hàng) + đẩy Sapo cùng lúc (ghi chú có số HĐKT); Sapo lỗi → không có HĐKT', async () => {
   const ok = await setup();
   const qid = await ok.makeQuote('B2B_BG20261009_003');
-  const o = await ok.call('/orders', ok.emp, 'POST', { quoteId: qid, flow: 'contract' });
-  assert.deepEqual([o.status, o.data.sapo], [201, null], 'luồng HĐKT: đơn tạm chưa đẩy');
-  assert.equal((await ok.call(`/sapo/preview?orderId=${o.data.id}`, ok.emp)).data.code, 'B2B_BG20261009_003');
-  const contract = { orderId: o.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-09' };
+  assert.equal((await ok.call(`/sapo/preview?quoteId=${qid}`, ok.emp)).data.code, 'B2B_BG20261009_003');
+  const contract = { quoteId: qid, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-09' };
   assert.equal((await ok.call('/contracts', ok.emp, 'POST', contract)).data.code, 'SAPO_LOCATION_REQUIRED');
+  assert.equal(await ok.orderCount(), 0);
   const k = await ok.call('/contracts', ok.emp, 'POST', { ...contract, sapoLocationId: 7 });
   assert.equal(k.status, 201, JSON.stringify(k.data));
   assert.equal(k.data.sapo.status, 'created');
-  assert.ok(ok.sapo.db.orders[0]!.note.includes('HĐKT: ' + k.data.contractNo), 'ghi chú đơn Sapo có số HĐKT');
-  assert.equal((await ok.call(`/sapo/preview?orderId=${o.data.id}`, ok.emp)).data.pushed.code, 'B2B_BG20261009_003');
+  const note: string = ok.sapo.db.orders[0]!.note;
+  assert.ok(note.includes('HĐKT: ' + k.data.contractNo) && !note.includes('DH_'), 'ghi chú đơn Sapo có số HĐKT, không có số đơn web');
+  assert.equal((await ok.call(`/sapo/preview?orderId=${k.data.orderId}`, ok.emp)).data.pushed.code, 'B2B_BG20261009_003');
+  // Báo giá đã lập HĐKT thì không sinh đơn hàng nữa (2 luồng độc lập).
+  assert.match((await ok.call('/orders', ok.emp, 'POST', { quoteId: qid, sapoLocationId: 7 })).data.error ?? '', /đã có HĐKT/);
 
-  // Sapo từ chối (thiếu quyền) → không lập HĐKT, không tạo đơn hàng.
+  // Sapo từ chối (thiếu quyền) → không lập HĐKT, không có bản ghi nào.
   const bad = await setup({ forbidOrders: true });
   const q2 = await bad.makeQuote('B2B_BG20261009_004');
   const denied = await bad.call('/orders', bad.emp, 'POST', { quoteId: q2, sapoLocationId: 7 });
   assert.deepEqual([denied.status, denied.data.code], [403, 'SAPO_PERMISSION_DENIED']);
   assert.equal(await bad.orderCount(), 0, 'Sapo lỗi → không có đơn hàng');
-  const o2 = await bad.call('/orders', bad.emp, 'POST', { quoteId: q2, flow: 'contract' });
-  const k2 = await bad.call('/contracts', bad.emp, 'POST', { orderId: o2.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15, sapoLocationId: 7 });
+  const k2 = await bad.call('/contracts', bad.emp, 'POST', { quoteId: q2, legalEntity: 'BN', depositRate: 30, paymentDays: 15, sapoLocationId: 7 });
   assert.equal(k2.status, 403);
   assert.equal((await bad.db.select().from(salesContracts)).length, 0, 'Sapo lỗi → không có HĐKT');
-  assert.equal((await bad.call(`/orders/${o2.data.id}`, bad.emp)).data.contract, null);
+  assert.equal(await bad.orderCount(), 0);
 });
 
 test('chưa kết nối Sapo / dòng thiếu SKU / không có quyền xem báo giá → báo rõ, không tạo đơn', async () => {

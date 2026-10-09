@@ -13,6 +13,7 @@ import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
+import { docRef } from '../domain/doc-ref.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
 import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
@@ -50,7 +51,7 @@ const quotePredicate = (scope: SqlScope) => {
 };
 async function loadOrder(c: Ctx, id: string, db: StaffEnv['db'] | Tx = c.env.db) {
   const [order] = await db.select().from(salesOrders).where(and(eq(salesOrders.id, id), orderScope(c))).limit(1);
-  if (!order) throw new AppError(404, 'Không tìm thấy đơn đặt hàng.');
+  if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
   return order;
 }
 async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
@@ -67,8 +68,9 @@ export async function recordSaleMovements(db: StaffEnv['db'] | Tx, orderId: stri
   const [order] = await db.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
   if (!order || order.status === 'draft' || order.status === 'cancelled') return;
   const lines = await db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
+  const ref = docRef(orderId, order.orderNo, (await contractNosOf(db, [orderId])).get(orderId));
   await recordMovements(db, lines.map(l => ({ refKey: `sale:${orderId}:${l.id}`, sku: l.sku, kind: 'sale', name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
-    partner: order.customerName, refCode: order.orderNo, link: `#/orders/${orderId}`, status: 'Đã xác nhận', occurredAt: order.createdAt })));
+    partner: order.customerName, refCode: ref.no, link: ref.link, status: 'Đã xác nhận', occurredAt: order.createdAt })));
 }
 /** Ghi ngày giao dự kiến mới cho đơn; đơn do khách đặt thì báo khách ngày mới. */
 async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
@@ -76,7 +78,7 @@ async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferS
   await c.env.db.update(salesOrders).set({ expectedDeliveryDate: date, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
   const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
   if (by?.role === 'customer') await notify(c.env, { eventType: 'order_delivery_date', targetMemberId: order.createdBy, actorId: viewer(c).id, title: 'Đổi ngày giao dự kiến',
-    body: `${order.orderNo}: giao dự kiến ${date.split('-').reverse().join('/')}`, url: '/customer.html#orders', data: { orderId: order.id, date } });
+    body: `${docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id)).Label}: giao dự kiến ${date.split('-').reverse().join('/')}`, url: '/customer.html#orders', data: { orderId: order.id, date } });
 }
 /** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán. */
 async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
@@ -94,6 +96,12 @@ async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string |
   }
 }
 
+/** Số HĐKT của các bản ghi (bản ghi có HĐKT là HĐKT, không phải đơn hàng – xem domain/doc-ref.ts). */
+export async function contractNosOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
+  const ids = [...new Set(orderIds)];
+  const rows = ids.length ? await db.select({ orderId: salesContracts.orderId, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, ids)) : [];
+  return new Map(rows.map(r => [r.orderId, r.no]));
+}
 type QuoteRow = typeof quotations.$inferSelect;
 /**
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
@@ -104,7 +112,10 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
     .where(and(eq(salesOrders.quoteId, quote.id), ne(salesOrders.status, 'cancelled'))).limit(1);
-  if (existing) throw new AppError(409, `Báo giá này đã có đơn ${existing.orderNo}.`, 'ORDER_EXISTS');
+  if (existing) {
+    const [k] = await db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, existing.id)).limit(1);
+    throw new AppError(409, k ? `Báo giá này đã có HĐKT ${k.no}.` : `Báo giá này đã có đơn hàng ${existing.orderNo}.`, 'ORDER_EXISTS');
+  }
   const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
   if (!lines.length) throw new AppError(400, 'Báo giá chưa có dòng sản phẩm nào có số lượng.');
   const t = orderTotals(lines), today = vietnamDate().iso, now = nowIso(), id = crypto.randomUUID();
@@ -145,7 +156,7 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
   const order = await linkedOrder(tx, quote.id);
   if (!order || (order.status !== 'draft' && member.role !== 'manager')) return;
   const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
-  if (!lines.length) throw new AppError(400, `Báo giá đã sinh đơn ${order.orderNo}: phải còn ít nhất một dòng có số lượng.`);
+  if (!lines.length) throw new AppError(400, `Báo giá đã sinh ${docRef(order.id, order.orderNo, (await contractNosOf(tx, [order.id])).get(order.id)).label}: phải còn ít nhất một dòng có số lượng.`);
   const t = orderTotals(lines), now = nowIso();
   const oldLines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
   const links = await tx.select({ id: deliveryLines.orderLineId, qty: deliveryLines.qty, status: deliveries.status })
@@ -205,7 +216,7 @@ async function syncPaymentSchedules(tx: Tx, order: typeof salesOrders.$inferSele
 }
 quoteSaveHooks.beforeSave.push(async (tx, old, member) => {
   const order = await linkedOrder(tx, old.id);
-  if (order && order.status !== 'draft' && member.role !== 'manager') throw new AppError(409, `Đơn ${order.orderNo} đã duyệt. Chỉ Manager được sửa báo giá và cập nhật chứng từ liên quan.`, 'ORDER_APPROVED');
+  if (order && order.status !== 'draft' && member.role !== 'manager') throw new AppError(409, `${docRef(order.id, order.orderNo, (await contractNosOf(tx, [order.id])).get(order.id)).Label} đã duyệt. Chỉ Manager được sửa báo giá và cập nhật chứng từ liên quan.`, 'ORDER_APPROVED');
 });
 quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
@@ -290,8 +301,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
-    // Luồng đơn hàng: đẩy sang Sapo trong cùng giao dịch (Sapo lỗi → không tạo đơn). Luồng HĐKT (`flow: 'contract'`): đẩy lúc lập HĐKT.
-    const push = body.flow !== 'contract' && sapoPushRequired(c) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    // Đẩy sang Sapo trong cùng giao dịch (Sapo lỗi → không tạo đơn). HĐKT là luồng riêng: POST /contracts { quoteId }.
+    const push = sapoPushRequired(c) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let sapo: SapoPushOutcome = null;
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft',
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
@@ -328,11 +339,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Đơn khách đặt từ trang khách hàng: báo cho khách.
     const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
     // Người phụ trách / người lập đơn (nhân viên) nhận thông báo đơn đã duyệt / bị huỷ.
+    const ref = docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id)), what = ref.kind === 'contract' ? 'HĐKT' : 'Đơn hàng';
     await notifyMany(c.env, [order.ownerId, by?.role === 'customer' ? null : order.createdBy], { eventType: status === 'confirmed' ? 'order_approved' : 'order_cancelled',
-      title: status === 'confirmed' ? 'Đơn hàng đã được duyệt' : 'Đơn hàng đã bị huỷ', body: `${order.orderNo} – ${order.customerName} · ${viewer(c).name}`,
-      url: `/index.html#/orders/${order.id}`, actorId: viewer(c).id, data: { orderId: order.id } });
+      title: status === 'confirmed' ? `${what} đã được duyệt` : `${what} đã bị huỷ`, body: `${ref.no} – ${order.customerName} · ${viewer(c).name}`,
+      url: `/index.html${ref.link}`, actorId: viewer(c).id, data: { orderId: order.id } });
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
-      title: status === 'confirmed' ? 'Đơn hàng đã được xác nhận' : 'Đơn hàng đã bị huỷ', body: `${order.orderNo} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
+      title: status === 'confirmed' ? `${what} đã được xác nhận` : `${what} đã bị huỷ`, body: `${ref.no} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
     return json({ ok: true });
   }, 'business');
 
@@ -385,7 +397,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   // ================= HĐKT =================
   router.get('/contracts', async c => {
     const { limit, offset } = paging(c.url, 200, 500);
-    const where = and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.orderNo, salesOrders.customerName), c.url.searchParams.get('q')));
+    const where = and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.quoteNo, salesOrders.customerName), c.url.searchParams.get('q')));
     const [[{ n: total = 0 } = {}], rows] = await Promise.all([
       c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(where),
       c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
@@ -399,15 +411,17 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })), total: Number(total), limit, offset });
   }, 'business');
 
-  /** Lập HĐKT cho đơn: cấp số theo `contract_counters` (như web cũ), lập lại kỳ phải thu = cọc + phần còn lại. */
+  /**
+   * Lập HĐKT THẲNG TỪ BÁO GIÁ – luồng độc lập với Đơn hàng (không sinh đơn hàng trước). Cấp số theo `contract_counters`
+   * (như web cũ), kỳ phải thu = cọc + phần còn lại. Dòng hàng / giao hàng / công nợ của HĐKT nằm trong bản ghi `sales_orders`
+   * đi kèm (ẩn với người dùng: mọi nơi hiện số HĐKT). Cùng giao dịch: đẩy đơn nháp sang Sapo (Sapo lỗi → không có HĐKT).
+   */
   router.post('/contracts', async c => {
-    const body = await readJson(c.req, 64_000), me = viewer(c);
-    const order = await loadOrder(c, text(body.orderId, 80));
-    if (order.status === 'cancelled') throw new AppError(409, 'Đơn đã huỷ.');
-    if (order.quoteId) {
-      const [q] = await c.env.db.select({ s: quotations.approvalStatus }).from(quotations).where(eq(quotations.id, order.quoteId)).limit(1);
-      if (q && q.s !== 'approved') throw new AppError(409, 'Báo giá của đơn đang đợi duyệt lại. Chỉ báo giá đã duyệt mới sinh được HĐKT.', 'QUOTE_NOT_APPROVED');
-    }
+    const body = await readJson(c.req, 64_000), me = viewer(c), quoteId = text(body.quoteId, 80);
+    if (!quoteId) throw new AppError(400, 'Chọn báo giá đã duyệt để lập HĐKT.');
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
+    if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
+    if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới lập được HĐKT.', 'QUOTE_NOT_APPROVED');
     const entity = legalCode(body.legalEntity);
     if (!entity) throw new AppError(400, 'Chọn pháp nhân bên bán: Bách Ngân (BN), Vigifts (VG) hoặc QTV.');
     const depositRate = Number(body.depositRate ?? 0), paymentDays = Number(body.paymentDays ?? 0);
@@ -415,39 +429,40 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!Number.isInteger(paymentDays) || paymentDays < 0 || paymentDays > 3650) throw new AppError(400, 'Số ngày thanh toán không hợp lệ.');
     const signedDate = body.signedDate ? String(body.signedDate) : vietnamDate().iso;
     if (!isDate(signedDate)) throw new AppError(400, 'Ngày ký không hợp lệ.');
-    const [cust] = order.customerId ? await c.env.db.select().from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
-    const customerCode = compactCode(cust?.customerCode || order.taxCode || cust?.taxCode);
-    if (!customerCode) throw new AppError(400, 'Đơn chưa có mã khách hàng hoặc MST để cấp số HĐKT.');
+    const data = JSON.parse(quote.data);
+    const [cust] = data.customerId ? await c.env.db.select().from(customers).where(eq(customers.id, String(data.customerId))).limit(1) : [];
+    const customerCode = compactCode(cust?.customerCode || data.customerTaxCode || cust?.taxCode);
+    if (!customerCode) throw new AppError(400, 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.');
     const now = nowIso(), id = crypto.randomUUID(), { year, month } = vietnamDate();
-    // Lập HĐKT: đẩy đơn sang Sapo trong cùng giao dịch (Sapo lỗi → không lập HĐKT). Đơn đã có trên Sapo thì thôi.
-    const push = sapoPushRequired(c) && !order.sapoOrderId ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    const push = sapoPushRequired(c) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let contractNo = '', sapo: SapoPushOutcome = null;
+    let orderId = '';
     try {
-      await c.env.db.transaction(async tx => {
+      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', inTx: async (tx, oid) => {
+        const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, oid)).limit(1);
         const counterId = `HDKT:${year}:${month}:${entity}`;
         const [row] = await tx.insert(contractCounters).values({ id: counterId, type: 'HDKT', year: Number(year), month: Number(month), legalEntity: entity, lastSequence: 1, updatedAt: now })
           .onConflictDoUpdate({ target: contractCounters.id, set: { lastSequence: sql`${contractCounters.lastSequence} + 1`, updatedAt: now } }).returning({ seq: contractCounters.lastSequence });
         contractNo = contractNumber(entity, customerCode, row!.seq);
         await tx.insert(salesContracts).values({
-          id, contractNo, orderId: order.id, quoteId: order.quoteId, customerId: order.customerId, legalEntity: entity, status: body.signedDate && order.status !== 'draft' ? 'signed' : 'draft',
-          signedDate: body.signedDate && order.status !== 'draft' ? signedDate : null, value: order.total, depositRate, depositAmount: Math.round(order.total * depositRate / 100), paymentDays,
-          paymentMethod: text(body.paymentMethod, 1000), deliveryAddress: text(body.deliveryAddress, 2000) || order.address,
+          id, contractNo, orderId: oid, quoteId: quote.id, customerId: order!.customerId, legalEntity: entity, status: 'draft', signedDate: null,
+          value: order!.total, depositRate, depositAmount: Math.round(order!.total * depositRate / 100), paymentDays,
+          paymentMethod: text(body.paymentMethod, 1000), deliveryAddress: text(body.deliveryAddress, 2000) || order!.address,
           data: JSON.stringify(body.details && typeof body.details === 'object' ? body.details : {}), createdBy: me.id, createdAt: now, updatedAt: now,
         });
-        // Kỳ phải thu chưa có phiếu thu gắn vào thì thay bằng kỳ theo HĐKT.
-        const paidSchedules = (await tx.select({ id: customerPayments.scheduleId }).from(customerPayments).where(eq(customerPayments.orderId, order.id))).map(r => r.id).filter(Boolean) as string[];
-        await tx.delete(paymentSchedules).where(and(eq(paymentSchedules.orderId, order.id), paidSchedules.length ? sql`${paymentSchedules.id} NOT IN (${sql.join(paidSchedules.map(x => sql`${x}`), sql`, `)})` : undefined));
-        const plans = contractSchedules(order.total, depositRate, signedDate);
-        if (plans.length) await tx.insert(paymentSchedules).values(plans.map(p => ({ id: crypto.randomUUID(), orderId: order.id, contractId: id, ...p, createdAt: now })));
-        if (push) sapo = await push.push(tx, order.id);
-      });
+        // Kỳ phải thu theo HĐKT (cọc + phần còn lại) thay cho kỳ "thanh toán khi giao" mặc định.
+        await tx.delete(paymentSchedules).where(eq(paymentSchedules.orderId, oid));
+        const plans = contractSchedules(order!.total, depositRate, signedDate);
+        if (plans.length) await tx.insert(paymentSchedules).values(plans.map(p => ({ id: crypto.randomUUID(), orderId: oid, contractId: id, ...p, createdAt: now })));
+        if (push) sapo = await push.push(tx, oid);
+      } });
     } catch (e) {
-      if ((e as { code?: string; cause?: { code?: string } }).code === '23505' || (e as { cause?: { code?: string } }).cause?.code === '23505') throw new AppError(409, 'Đơn này đã có HĐKT.', 'CONTRACT_EXISTS');
+      if ((e as { code?: string; cause?: { code?: string } }).code === '23505' || (e as { cause?: { code?: string } }).cause?.code === '23505') throw new AppError(409, 'Báo giá này đã có HĐKT.', 'CONTRACT_EXISTS');
       throw e;
     } finally { await push?.done(); }
-    await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: order.status === 'draft' ? 'HĐKT mới chờ duyệt' : 'HĐKT mới',
-      body: `${me.name}: ${contractNo} – ${order.customerName}`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id, contractId: id } });
-    return json({ id, contractNo, sapo }, 201);
+    await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
+      body: `${me.name}: ${contractNo} – ${text(data.customer) || quote.customer}`, url: `/index.html#/contracts/${orderId}`, actorId: me.id, data: { orderId, contractId: id } });
+    return json({ id, orderId, contractNo, sapo }, 201);
   }, 'business');
 
   router.put('/contracts/:id', async c => {
@@ -490,12 +505,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   // ================= LỊCH GIAO HÀNG =================
   router.get('/deliveries', async c => {
     const from = c.url.searchParams.get('from'), to = c.url.searchParams.get('to'), status = c.url.searchParams.get('status') || '';
-    const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName })
-      .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+    const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName })
+      .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
       .where(and(deliveryScope(c), isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
         status ? eq(deliveries.status, status as never) : undefined))
       .orderBy(asc(deliveries.plannedDate), asc(deliveries.timeSlot)).limit(500);
-    return json({ deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, customerName: r.customerName })) });
+    // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
+    return json({ deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName })) });
   }, 'business');
 
   /** Lên lịch giao: số lượng mỗi dòng không vượt phần còn lại (đã trừ hàng đã giao và các chuyến đang chờ giao). */
@@ -566,8 +582,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const [o] = await c.env.db.select().from(salesOrders).where(eq(salesOrders.id, row.d.orderId)).limit(1);
       const lines = await c.env.db.select({ id: deliveryLines.orderLineId, qty: deliveryLines.qty, sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit, unitPrice: salesOrderLines.unitPrice })
         .from(deliveryLines).innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId)).where(eq(deliveryLines.deliveryId, row.d.id));
+      const ref = docRef(row.d.orderId, o?.orderNo ?? '', (await contractNosOf(c.env.db, [row.d.orderId])).get(row.d.orderId));
       await recordMovements(c.env.db, lines.map(l => ({ refKey: `delivery:${row.d.id}:${l.id}`, sku: l.sku, kind: 'delivery', name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
-        partner: o?.customerName ?? '', location: row.d.address, refCode: `${row.d.deliveryNo} · ${o?.orderNo ?? ''}`, link: `#/orders/${row.d.orderId}`, status: 'Đã giao', occurredAt: nowIso() })));
+        partner: o?.customerName ?? '', location: row.d.address, refCode: `${row.d.deliveryNo} · ${ref.no}`, link: ref.link, status: 'Đã giao', occurredAt: nowIso() })));
     }
     return json({ ok: true });
   }, 'business');
@@ -577,12 +594,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   router.get('/receivables', async c => {
     const want = c.url.searchParams.get('status') || '';
     const rows = await c.env.db.select().from(salesOrders).where(and(orderScope(c), ne(salesOrders.status, 'cancelled'),
-      matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.taxCode), c.url.searchParams.get('q'))))
+      matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.taxCode,
+        sql`(SELECT ${salesContracts.contractNo} FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`), c.url.searchParams.get('q'))))
       .orderBy(desc(salesOrders.orderDate)).limit(500);
-    const contracts = rows.length ? await c.env.db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, rows.map(r => r.id))) : [];
+    const contracts = rows.length ? await c.env.db.select({ orderId: salesContracts.orderId, status: salesContracts.status, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, rows.map(r => r.id))) : [];
     const counted = rows.filter(r => debtCounts(r.status, contracts.find(x => x.orderId === r.id)?.status));
     const debts = await receivableOf(c.env.db, counted.map(r => r.id));
-    const list = counted.map(r => ({ orderId: r.id, orderNo: r.orderNo, customerId: r.customerId, customerName: r.customerName, phone: r.phone, orderDate: r.orderDate, orderStatus: r.status, ...debts.get(r.id)! }))
+    const list = counted.map(r => ({ orderId: r.id, orderNo: r.orderNo, contractNo: contracts.find(x => x.orderId === r.id)?.no ?? null, customerId: r.customerId, customerName: r.customerName, phone: r.phone, orderDate: r.orderDate, orderStatus: r.status, ...debts.get(r.id)! }))
       .filter(r => r.status !== 'none' && (!want || r.status === want || (want === 'open' && r.status === 'overdue')));
     const sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => list.reduce((s, r) => s + r[k], 0);
     return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue') } });

@@ -62,7 +62,8 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       db.select({ id: salesContracts.id, orderId: salesContracts.orderId, contractNo: salesContracts.contractNo, status: salesContracts.status, signedDate: salesContracts.signedDate,
         value: salesContracts.value, legalEntity: salesContracts.legalEntity, updatedAt: salesContracts.updatedAt }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]) : [[], [], [], [], []];
-    const today = vietnamDate().iso, orderNo = new Map(orders.map(r => [r.o.id, r.o.orderNo]));
+    // Bản ghi có HĐKT là HĐKT (luồng riêng): giao hàng / phiếu thu / báo giá kèm số HĐKT để hiện thay số đơn.
+    const today = vietnamDate().iso, orderNo = new Map(orders.map(r => [r.o.id, r.o.orderNo])), contractNo = new Map(cts.map(k => [k.orderId, k.contractNo]));
     const orderList = orders.map(({ o, ownerName }) => {
       const k = cts.find(x => x.orderId === o.id && x.status !== 'cancelled'), counted = debtCounts(o.status, k?.status);
       return { id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, status: o.status, total: o.total, ownerName, quoteNo: o.quoteNo, expectedDeliveryDate: o.expectedDeliveryDate,
@@ -72,7 +73,8 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
     const counted = orderList.filter(o => o.counted), sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => counted.reduce((s, o) => s + (o.receivable?.[k] ?? 0), 0);
     const confirmedIds = new Set(counted.map(o => o.id));
     const quotes = quoteRows.map(({ q, assigneeName }) => ({ id: q.id, quoteNo: q.quoteNo, quoteType: q.quoteType, quoteDate: q.quoteDate, approvalStatus: q.approvalStatus,
-      total: quoteTotal(q.data), assigneeName, updatedAt: q.updatedAt, orderId: orders.find(r => r.o.quoteId === q.id && r.o.status !== 'cancelled')?.o.id ?? null }));
+      total: quoteTotal(q.data), assigneeName, updatedAt: q.updatedAt, orderId: orders.find(r => r.o.quoteId === q.id && r.o.status !== 'cancelled')?.o.id ?? null }))
+      .map(q => ({ ...q, contractNo: q.orderId ? contractNo.get(q.orderId) ?? null : null }));
     const lastOrder = counted[0]?.orderDate ?? null;
     return json({
       ...profile,
@@ -84,8 +86,8 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       quotes,
       orders: orderList,
       contracts: cts.map(k => ({ ...k, orderNo: orderNo.get(k.orderId) ?? '' })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-      deliveries: ships.map(d => ({ ...d, orderNo: orderNo.get(d.orderId) ?? '' })),
-      payments: pays.map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '' })),
+      deliveries: ships.map(d => ({ ...d, orderNo: orderNo.get(d.orderId) ?? '', contractNo: contractNo.get(d.orderId) ?? null })),
+      payments: pays.map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '', contractNo: contractNo.get(p.orderId) ?? null })),
       purchases: purchaseHistory(lines.filter(l => confirmedIds.has(l.orderId)).map(l => ({ ...l, orderDate: orders.find(r => r.o.id === l.orderId)!.o.orderDate }))),
       stockRequests: stockRows.map(r => { let items: unknown[] = []; try { items = JSON.parse(r.items); } catch { /* bỏ qua */ } return { ...r, items: Array.isArray(items) ? items.length : 0 }; }),
       care: careRows.map(({ a, ownerName }) => ({ ...a, ownerName, typeLabel: CARE_TYPE_LABEL[a.type], resultLabel: CARE_RESULT_LABEL[a.result], remindLabel: CARE_REMIND_LABEL[a.remindBefore], canEdit: me.role === 'manager' || a.ownerId === me.id })),

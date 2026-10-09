@@ -3,7 +3,8 @@
 ## Luồng và liên kết giữa các trang
 
 ```
-Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[Lập HĐKT]──▶ HĐKT
+Báo giá ──[Sinh đơn hàng]──▶ Đơn đặt hàng
+        └─[Lập HĐKT]──────▶ HĐKT          (2 luồng độc lập: HĐKT KHÔNG sinh từ đơn hàng)
                                     │  ├─[Lên lịch giao]──▶ Lịch giao hàng ──[Đã giao]──▶ cập nhật "đã giao" của đơn
                                     │  └─[Ghi nhận thanh toán]──▶ Công nợ
                                     └── trang chi tiết đơn (#/orders/<id>) nối tất cả: báo giá gốc, HĐKT, các chuyến giao, kỳ phải thu, phiếu thu
@@ -23,9 +24,14 @@ Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[L�
 
 - Trên báo giá đã duyệt có một nút **Sinh Đơn hàng / HĐKT**. Bấm vào thì hiện hộp cho nhân viên chọn 1 trong 2:
   - **Đơn hàng**: cho khách đã có HĐ nguyên tắc. Chỉ tạo đơn (giao hàng, xuất hoá đơn, công nợ), không sinh HĐKT.
-  - **HĐKT**: tạo đơn rồi mở luôn hộp lập HĐKT (cấp số, cọc, hồ sơ Word).
+  - **HĐKT**: mở ngay hộp lập HĐKT (pháp nhân, cọc, hạn thanh toán) → chọn kho Sapo → `POST /contracts { quoteId }` lập HĐKT thẳng từ báo giá, **không sinh đơn hàng**.
 - **Trang Đơn hàng** (`GET /orders?flow=order`) chỉ hiện đơn **không có HĐKT**. **Trang HĐKT** hiện các HĐKT. Mỗi trang có nút ＋ để chọn một báo giá đã duyệt chưa có đơn (`GET /order-quote-candidates?q=`) rồi tạo nhanh.
-- Bên dưới, HĐKT vẫn gắn với một đơn (`sales_orders`) để dùng chung lịch giao, công nợ và hoá đơn. Trang chi tiết đơn có HĐKT thì nút quay lại dẫn về trang HĐKT.
+- **HĐKT và đơn hàng độc lập.** Bên dưới, HĐKT có một bản ghi `sales_orders` đi kèm để dùng chung dòng hàng, lịch giao, công nợ và hoá đơn. Bản ghi này **ẩn với người dùng**:
+  - Trang chi tiết HĐKT là `#/contracts/<id>`. Link cũ `#/orders/<id>` của HĐKT tự chuyển sang đây.
+  - Trang chi tiết HĐKT **không có** nút / mẫu in đơn đặt hàng; nút chính là **Xem / tải hồ sơ HĐKT**.
+  - Mọi nơi đều hiện **số HĐKT**, không hiện số đơn `DH_…`: danh sách, giao hàng, công nợ, phiếu đóng gói, việc tự sinh, thông báo, hộp duyệt, lịch sử sản phẩm, chat, trang khách, trang khách hàng / nhân viên, ghi chú đơn Sapo.
+  - Hàm dùng chung: `sales/domain/doc-ref.ts` (máy chủ) và `docLink` / `docHref` (giao diện).
+  - Báo giá đã lập HĐKT thì không sinh đơn hàng nữa (và ngược lại). Không lập HĐKT từ một đơn hàng.
 
 ## Xuất hoá đơn
 
@@ -91,7 +97,7 @@ Báo giá ──[Tạo đơn đặt hàng]──▶ Đơn đặt hàng ──[L�
   - Tạo đơn hàng: máy chủ chặn bằng `409 QUOTE_NOT_APPROVED`.
   - Sinh HĐKT: máy chủ chặn khi báo giá của đơn đang đợi duyệt lại.
 - **Thanh nút** trên trang báo giá: Kiểm tồn · Sinh Đơn hàng / HĐKT · Tải báo giá ▾ · Nhân bản · Lưu báo giá · Duyệt (Manager) · Xoá báo giá (Manager).
-  - *Sinh Đơn hàng / HĐKT* hỏi chọn luồng; chọn HĐKT thì tạo đơn nếu chưa có rồi mở hộp lập HĐKT.
+  - *Sinh Đơn hàng / HĐKT* hỏi chọn luồng; chọn HĐKT thì mở hộp lập HĐKT (không sinh đơn hàng).
 - **API:**
   - `POST /quotes/:id/approve {revision}`: Manager duyệt đúng phiên bản đang xem; duyệt không tăng phiên bản.
   - `GET /quotes/pending-count`: số báo giá đang chờ duyệt.

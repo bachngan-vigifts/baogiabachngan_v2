@@ -86,8 +86,8 @@ export function buildSapoOrder(input: SapoPushInput, cfg: SapoPushConfig, ids: {
   const note = [
     'Tạo đơn nháp từ web báo giá Bách Ngân.',
     input.quoteNo ? 'Số báo giá: ' + input.quoteNo + '.' : '',
-    'Số đơn web: ' + input.orderNo + '.',
-    input.contractNo ? 'HĐKT: ' + input.contractNo + '.' : '',
+    // HĐKT là luồng riêng với đơn hàng: chỉ ghi số HĐKT, không ghi số đơn web.
+    input.contractNo ? 'HĐKT: ' + input.contractNo + '.' : 'Số đơn web: ' + input.orderNo + '.',
     input.quoteType ? 'Loại: ' + input.quoteType + '.' : '',
     input.ownerName ? 'NV phụ trách: ' + input.ownerName + (input.ownerPhone ? ' - ' + input.ownerPhone : '') + '.' : '',
     input.customer.name ? 'Khách: ' + input.customer.name + (input.customer.taxCode ? ' MST ' + input.customer.taxCode : '') + '.' : '',

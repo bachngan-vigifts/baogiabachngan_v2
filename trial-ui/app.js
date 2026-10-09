@@ -471,11 +471,13 @@ function route() {
   if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', '#/tasks'); return route(); }
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
+  // HĐKT là luồng riêng: #/contracts/<id> mở trang chi tiết HĐKT (dùng chung khung trang với đơn hàng, nội dung theo HĐKT).
+  if (view === 'contracts' && id) view = 'order';
   if (view === 'customers' && id) view = 'customer';
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
-  const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
+  const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
-  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : VIEWS[view];
+  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : VIEWS[view];
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
@@ -2317,9 +2319,9 @@ const DEBT_STATUS = { open: ['Còn nợ', 'warn'], overdue: ['Quá hạn', 'dang
 /** Trạng thái thanh toán / đặt cọc của đơn (danh sách đơn và HĐKT). */
 const PAY_STATE = { unpaid: ['Chưa thanh toán', 'warn'], deposit_due: ['Chờ đặt cọc', 'warn'], deposit_paid: ['Đã cọc', 'info'], partial: ['Đã thu một phần', 'info'],
   overdue: ['Quá hạn', 'danger'], paid: ['Đã thanh toán đủ', 'ok'], none: ['Chưa có kỳ thu', 'muted'] };
-function payCell(r, counts, orderStatus) {
-  if (orderStatus === 'cancelled') return '<span class="muted">Đơn đã huỷ</span>';
-  if (!counts) return '<span class="pill muted">Chưa phát sinh</span><small>Đơn chờ xác nhận</small>';
+function payCell(r, counts, orderStatus, what = 'Đơn') {
+  if (orderStatus === 'cancelled') return `<span class="muted">${what} đã huỷ</span>`;
+  if (!counts) return `<span class="pill muted">Chưa phát sinh</span><small>${what} chờ ${what === 'HĐKT' ? 'duyệt / ký' : 'xác nhận'}</small>`;
   if (!r) return '—';
   const sub = r.payState === 'paid' ? `Đã thu ${money(r.paid)}`
     : [r.deposit > 0 ? `Cọc ${money(r.depositPaid)}/${money(r.deposit)}` : r.paid > 0 ? `Đã thu ${money(r.paid)}` : '', `Còn ${money(r.balance)}`].filter(Boolean).join(' · ');
@@ -2331,6 +2333,12 @@ const invoiceCell = (status, no, orderStatus) => orderStatus === 'cancelled' ? '
   : status === 'issued' ? `${pill(INVOICE_STATUS, 'issued')}<small>Số ${esc(no)}</small>` : pill(INVOICE_STATUS, status || 'none');
 const pill = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
 const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
+/** Đơn hàng và HĐKT là 2 luồng độc lập: bản ghi có HĐKT hiện "HĐKT <số>" và mở #/contracts/<id>, không bao giờ hiện số đơn. */
+const docHref = (id, contractNo) => `#/${contractNo ? 'contracts' : 'orders'}/${encodeURIComponent(id)}`;
+const docLink = (id, orderNo, contractNo) => `<a href="${docHref(id, contractNo)}">${esc(contractNo ? 'HĐKT ' + contractNo : orderNo)}</a>`;
+/** Số chứng từ đang mở ở trang chi tiết: số HĐKT nếu là HĐKT, không thì số đơn. */
+const docNo = (d = sales.detail) => d?.contract?.contractNo || d?.order?.orderNo || '';
+const isContractDoc = (d = sales.detail) => !!d?.contract;
 const debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 function fillList(key, rows, emptyText) {
   $(`#${key}-list`).innerHTML = rows.join('');
@@ -2341,7 +2349,7 @@ const listError = (key, e) => { $(`#${key}-list`).innerHTML = ''; $(`#${key}-emp
 const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
 /** Nút in nhanh phiếu đóng gói / phiếu giao hàng trên dòng đơn / HĐKT (đơn đã xác nhận, chưa huỷ). */
 const slipButtons = (orderId, status) => status === 'draft' || status === 'cancelled' ? ''
-  : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói (theo mẫu đơn đặt hàng)">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng (theo mẫu đơn đặt hàng)">Phiếu GH</button>`;
+  : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng">Phiếu GH</button>`;
 // ----- danh sách đơn
 let ordersPager, ordersReq = 0;
 async function loadOrders() {
@@ -2360,7 +2368,7 @@ async function loadOrders() {
       <td>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</td>
       <td class="right num">${money(o.total)}</td>
       <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
-      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}${o.contract ? `<button type="button" class="btn secondary small" data-contract-docs-for="${esc(o.id)}" title="Xem, sửa, tải bộ 3 file Word HĐKT">HĐKT</button>` : ''}</td></tr>`),
+      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
   } catch (e) { if (req === ordersReq) { listError('orders', e); ordersPager.render(0); } }
 }
@@ -2374,10 +2382,11 @@ async function loadContracts() {
     const d = await api(`/contracts?limit=${contractsPager.limit}&offset=${contractsPager.offset}&q=` + encodeURIComponent($('#contracts-search').value));
     if (req !== contractsReq) return;
     contractsPager.render(d.total ?? d.contracts.length);
-    fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
-      <td><b>${esc(k.contractNo)}</b></td><td>${esc(k.customerName)}<small>${orderLink(k.orderId, k.orderNo)}${k.quoteNo ? ' · ' + esc(k.quoteNo) : ''}</small></td>
+    // HĐKT là luồng riêng: mở #/contracts/<id>, dòng phụ là số báo giá (không hiện số đơn).
+    fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
+      <td><a href="#/contracts/${esc(encodeURIComponent(k.orderId))}"><b>${esc(k.contractNo)}</b></a></td><td>${esc(k.customerName)}<small>${k.quoteNo ? 'Báo giá ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</td></tr>`),
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus, 'HĐKT')}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</td></tr>`),
       'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
   } catch (e) { if (req === contractsReq) { listError('contracts', e); contractsPager.render(0); } }
 }
@@ -2388,10 +2397,10 @@ async function loadDeliveries() {
   try {
     const d = await api(`/deliveries?from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}`);
     const q = normalize($('#deliveries-search').value);
-    const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
+    const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.contractNo || x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.orderNo) : orderLink(x.orderId, x.orderNo)}</small></td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}</small></td>
       <td>${esc([x.receiverName, x.receiverPhone].filter(Boolean).join(' · '))}<small>${esc(x.address)}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
@@ -2406,12 +2415,12 @@ async function loadReceivables() {
     const d = await api('/receivables?q=' + encodeURIComponent($('#receivables-search').value));
     $('#receivable-stats').innerHTML = [['Phải thu', d.totals.due, ''], ['Đã thu', d.totals.paid, ''], ['Còn lại', d.totals.balance, ''], ['Quá hạn', d.totals.overdue, d.totals.overdue > 0 ? 'danger-text' : '']]
       .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('');
-    fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="#/orders/${esc(r.orderId)}">
-      <td>${esc(r.customerName)}<small>${orderLink(r.orderId, r.orderNo)} · ${fmtDate(r.orderDate)}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
+    fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
+      <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
       <td>${fmtDate(r.nextDueDate) || '<span class="muted">Sau khi giao</span>'}</td>
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
       <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) : '—'}</td></tr>`),
-      'Chưa có công nợ. Công nợ xuất hiện khi có đơn đặt hàng.');
+      'Chưa có công nợ. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
   } catch (e) { listError('receivables', e); }
 }
 $('#orders-search').addEventListener('input', debounce(() => { ordersPager?.reset(); loadOrders(); }));
@@ -2472,7 +2481,7 @@ async function refreshData() {
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
   if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
   else if (page === 'orders') jobs.push(id ? openOrder(id) : loadOrders());
-  else if (page === 'contracts') jobs.push(loadContracts());
+  else if (page === 'contracts') jobs.push(id ? openOrder(id) : loadContracts());
   else if (page === 'deliveries') jobs.push(loadDeliveries());
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : loadCustomers());
@@ -2607,13 +2616,15 @@ $('#discount-form').addEventListener('submit', async e => {
 $('#account-link-copy').addEventListener('click', () => { $('#account-link-url').select(); navigator.clipboard?.writeText($('#account-link-url').value).then(() => toast('Đã chép link.')).catch(() => document.execCommand('copy')); });
 
 async function openOrder(id) {
-  $('#order-title').textContent = 'Đang tải đơn…';
+  const onContracts = location.hash.startsWith('#/contracts/');
+  $('#order-title').textContent = onContracts ? 'Đang tải HĐKT…' : 'Đang tải đơn…';
   let d;
-  try { d = await api('/orders/' + encodeURIComponent(id)); } catch (e) { toast(e.message, 'err'); if (e.status !== 401) go('#/orders'); return; }
+  try { d = await api('/orders/' + encodeURIComponent(id)); } catch (e) { toast(e.message, 'err'); if (e.status !== 401) go(onContracts ? '#/contracts' : '#/orders'); return; }
   sales.order = d.order; sales.detail = d;
-  const wantContract = sales.openContract === id; sales.openContract = null;
-  if (wantContract) setTimeout(() => { const b = $('#order-contract-action button'); if (b) b.click(); else toast('Đơn này đã có HĐKT.'); }, 0);
-  const o = d.order, r = d.receivable;
+  // HĐKT luôn ở #/contracts/<id>, đơn hàng ở #/orders/<id> (link cũ / thông báo cũ tự chuyển đúng trang).
+  const want = docHref(id, d.contract?.contractNo);
+  if (location.hash.split('?')[0] !== want) { history.replaceState(null, '', want); lastRoutedHash = want; currentHash = want; }
+  const o = d.order, r = d.receivable, isK = !!d.contract, what = isK ? 'HĐKT' : 'đơn';
   const ref = orderReference(o, d.contract);
   $('#order-title').textContent = ref.number; $('#breadcrumb').textContent = ref.number; document.title = ref.number + ' · Bách Ngân';
   // Đơn hàng và HĐKT là 2 luồng: đơn có HĐKT quay về trang HĐKT.
@@ -2632,20 +2643,23 @@ async function openOrder(id) {
   ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
   // Phiếu đóng gói / phiếu giao hàng / yêu cầu đóng gói chỉ dùng được khi đơn đã lên lịch giao (có chuyến chưa huỷ).
   const scheduled = d.deliveries.some(x => x.status !== 'cancelled');
-  $('#order-actions').innerHTML = '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>'
+  // HĐKT không có mẫu "đơn đặt hàng": nút chính là hồ sơ HĐKT (HĐKT + đề nghị tạm ứng + biên bản nghiệm thu).
+  $('#order-actions').innerHTML = (isK ? '<button class="btn secondary" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / tải hồ sơ HĐKT</button>'
+      : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
-    + (o.status === 'draft' ? (isManager() ? '<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt đơn / HĐKT. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt đơn</button>'
-      : '<span class="pill warn" title="Còn nháp: sửa báo giá thì đơn / HĐKT tự cập nhật theo">Chờ Manager duyệt</span>') : '')
-    + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '')
+    + (o.status === 'draft' ? (isManager() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
+      : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
+    + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (o.sapoOrderUrl ? `<a class="btn secondary" href="${esc(o.sapoOrderUrl)}" target="_blank" rel="noopener noreferrer" title="Mở đơn trên Sapo">Đơn Sapo ${esc(o.sapoOrderCode || '')} ↗</a>`
       : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
-  $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)]]
+  $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], [isK ? 'Ngày lập' : 'Ngày đặt', fmtDate(o.orderDate)]]
     .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')
     // Giao dự kiến tô màu theo hạn: trễ/hôm nay đỏ, ≤3 ngày cam, ≤7 ngày xanh dương, xa hơn xanh lá.
     + `<dt>Giao dự kiến</dt><dd>${duePill(o.expectedDeliveryDate, { done: shipDone, fmt: fmtDate })}</dd>`;
-  $('#order-debt').innerHTML = `<dl class="totals"><div><dt>Giá trị đơn (gồm VAT)</dt><dd>${money(o.total)}</dd></div><div><dt>Đã thu</dt><dd class="${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</dd></div>
+  $('#order-lines-title').textContent = isK ? 'Hàng trong HĐKT' : 'Hàng trong đơn';
+  $('#order-debt').innerHTML = `<dl class="totals"><div><dt>Giá trị ${what} (gồm VAT)</dt><dd>${money(o.total)}</dd></div><div><dt>Đã thu</dt><dd class="${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</dd></div>
     <div class="grand"><dt>Còn phải thu</dt><dd>${money(r.balance)}</dd></div>${r.overdue ? `<div><dt class="danger-text">Quá hạn</dt><dd class="danger-text">${money(r.overdue)}</dd></div>` : ''}</dl>
     <ul class="plain-list">${allocatePayments(d.schedules, r.paid).map(s => `<li class="${s.left <= 0 ? 'installment-paid' : ''}"><span>${esc(s.note || s.kind)}<small>${installmentStatus(s)}</small></span><b>${money(s.amount)}</b><small>${s.left <= 0 ? 'Đã hoàn tất' : s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
   $('#order-lines').innerHTML = d.lines.map(l => `<tr><td>${esc(l.name)}<small>${esc([l.sku, l.unit].filter(Boolean).join(' · '))}</small></td><td class="right">${fmtNum(l.qty)}</td>
@@ -2653,7 +2667,8 @@ async function openOrder(id) {
   const k = d.contract;
   // Đơn hàng và HĐKT là 2 luồng: đơn không có HĐKT (khách có HĐ nguyên tắc) hiện ô "Đơn hàng" thay cho ô HĐKT.
   $('#order-contract-title').textContent = k ? 'HĐKT' : 'Đơn hàng';
-  $('#order-contract-action').innerHTML = !k && o.status !== 'cancelled' ? '<button class="btn ghost small" id="order-new-contract" title="Chỉ khi đơn này cần HĐKT riêng">＋ Lập HĐKT</button>' : '';
+  // Đơn hàng và HĐKT là 2 luồng độc lập: không lập HĐKT từ một đơn hàng (HĐKT lập thẳng từ báo giá).
+  $('#order-contract-action').innerHTML = '';
   $('#order-contract').innerHTML = k ? `<dl class="kv"><dt>Số HĐKT</dt><dd><b>${esc(k.contractNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(CONTRACT_STATUS, k.status)}</dd>
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
@@ -2707,7 +2722,7 @@ document.addEventListener('click', async e => {
   if (e.target.id !== 'invoice-request') return;
   // Hộp yêu cầu xuất hoá đơn của app: email nhận (mặc định email trên đơn / của khách, sửa được), cách xuất, ghi chú.
   const o = sales.order, f = $('#invoice-req-form');
-  $('#invoice-req-order').textContent = `${o.orderNo} · ${o.customerName}`; $('#invoice-req-error').textContent = '';
+  $('#invoice-req-order').textContent = `${docNo()} · ${o.customerName}`; $('#invoice-req-error').textContent = '';
   f.email.value = o.invoiceEmail || o.email || o.customerEmail || '';
   $('#invoice-req-email-hint').textContent = f.email.value ? 'Lấy từ thông tin khách hàng – sửa lại nếu khách muốn nhận ở email khác.' : 'Khách chưa có email – nhập email nhận hoá đơn.';
   f.note.value = o.invoiceStatus === 'requested' ? o.invoiceRequestNote || '' : '';
@@ -2787,7 +2802,7 @@ $('#order-pack').addEventListener('click', async () => {
     // Tồn khả dụng của kho (như trang Khách hỏi tồn): mặc định lấy từ kho tối đa bằng tồn, phần thiếu bắt buộc nhập nguồn khác.
     const skus = [...new Set(todo.map(l => l.sku).filter(Boolean))], stock = new Map();
     try { for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); } } catch { /* không có số liệu tồn: để kho = đủ */ }
-    $('#pack-order').textContent = `${o.orderNo} · ${o.customerName}`; $('#pack-error').textContent = ''; $('#pack-form').note.value = '';
+    $('#pack-order').textContent = `${docNo()} · ${o.customerName}`; $('#pack-error').textContent = ''; $('#pack-form').note.value = '';
     $('#pack-lines').innerHTML = todo.map(l => {
       const p = l.sku ? stock.get(l.sku) : null, av = p ? Math.max(0, availableStock(p)) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock;
       return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}">
@@ -2896,7 +2911,7 @@ async function openPacking(id) {
     $('#packing-title').textContent = 'Phiếu chờ đóng gói'; $('#packing-back').href = '#/tasks';
     try {
       const { slips } = await api('/packing?status=sent');
-      body.innerHTML = slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
+      body.innerHTML = slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
         : '<p class="muted card">Không có phiếu nào chờ đóng gói.</p>';
     } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
     return;
@@ -2905,7 +2920,7 @@ async function openPacking(id) {
   const k = d.slip, o = d.order; slipPhotos.length = 0;
   $('#packing-title').textContent = k.slipNo; $('#breadcrumb').textContent = k.slipNo; document.title = k.slipNo + ' · Bách Ngân';
   $('#packing-status').innerHTML = pill(PACK_STATUS, k.status);
-  $('#packing-back').href = d.canOpenOrder ? `#/orders/${encodeURIComponent(o.id)}` : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? '‹ Đơn hàng' : '‹ Công việc';
+  $('#packing-back').href = d.canOpenOrder ? docHref(o.id, o.contractNo) : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? (o.contractNo ? '‹ HĐKT' : '‹ Đơn hàng') : '‹ Công việc';
   packingView = d;
   $('#packing-actions').innerHTML = '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
   const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
@@ -2959,21 +2974,21 @@ async function verifyAndConfirmOrder() {
   const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
   const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
   const v = await verifyBox({
-    title: 'Duyệt đơn ' + o.orderNo, eyebrow: 'Kiểm tra trước khi duyệt',
-    intro: 'Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được đơn.',
+    title: `Duyệt ${isContractDoc(d) ? 'HĐKT' : 'đơn'} ${docNo(d)}`, eyebrow: 'Kiểm tra trước khi duyệt',
+    intro: `Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được ${isContractDoc(d) ? 'HĐKT' : 'đơn'}.`,
     rows: [['Khách hàng', dash(o.customerName)], ['MST', dash(o.taxCode)], ['Người nhận / SĐT', dash([o.contact, o.phone].filter(Boolean).join(' · '))], ['Địa chỉ giao', dash(o.address)],
-      ['Sản phẩm', items], ['Giá trị đơn (gồm VAT)', `<b>${money(o.total)}</b>`], ['Ghi chú', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
+      ['Sản phẩm', items], [`Giá trị ${isContractDoc(d) ? 'HĐKT' : 'đơn'} (gồm VAT)`, `<b>${money(o.total)}</b>`], ['Ghi chú', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
     fields: `<label class="verify-field"><span>Ngày giao dự kiến</span><input type="date" name="deliveryDate" value="${esc(o.expectedDeliveryDate || '')}" min="${todayIso()}"></label>`,
     checks: ['Thông tin khách hàng (tên công ty, MST, người nhận, số điện thoại, địa chỉ giao) chính xác',
       'Sản phẩm, số lượng, đơn giá và VAT đúng với yêu cầu của khách', 'Đã kiểm tra tồn kho / khả năng đáp ứng đủ số lượng',
       'Ngày giao dự kiến khả thi và đã thống nhất với khách', 'Điều kiện thanh toán (đặt cọc / thanh toán khi giao) đã thống nhất với khách'],
-    validate: x => x.deliveryDate ? '' : 'Chọn ngày giao dự kiến.', ok: 'Duyệt đơn',
+    validate: x => x.deliveryDate ? '' : 'Chọn ngày giao dự kiến.', ok: isContractDoc(d) ? 'Duyệt HĐKT' : 'Duyệt đơn',
   });
   if (!v) return;
   try {
     if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
     await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true });
-    toast('Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
+    toast(isContractDoc(d) ? 'Đã duyệt HĐKT. Báo giá của HĐKT đã được khoá.' : 'Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
   } catch (ex) { toast(ex.message, 'err'); }
 }
 /** Xem trước đơn đặt hàng (mẫu đơn Minh Long), sửa trực tiếp trên phiếu rồi in / lưu PDF hoặc tải Excel. */
@@ -3041,7 +3056,7 @@ async function printPackingForOrder(orderId) {
   const [d, pk] = await Promise.all([api('/orders/' + encodeURIComponent(orderId)), api(`/orders/${encodeURIComponent(orderId)}/packing`)]);
   if (!pk.scheduled) throw new Error(NO_SCHEDULE);
   const live = pk.slips.filter(x => x.status !== 'cancelled').sort((a, b) => a.slipNo.localeCompare(b.slipNo));
-  const choices = [...live.map(x => ({ value: x.id, label: `${x.slipNo} · ${x.sourceLabel}${x.sourceNote ? ': ' + x.sourceNote : ''} · ${PACK_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Cả đơn (tất cả dòng hàng)' }];
+  const choices = [...live.map(x => ({ value: x.id, label: `${x.slipNo} · ${x.sourceLabel}${x.sourceNote ? ': ' + x.sourceNote : ''} · ${PACK_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: (d.contract ? 'Cả HĐKT' : 'Cả đơn') + ' (tất cả dòng hàng)' }];
   openSlipPrint({ kind: 'packing', choices, initial: live[0]?.id || '', build: v => {
     const slip = live.find(x => x.id === v);
     return packingPrintData({ seller: sellerName(d), order: d.order, contract: d.contract, slip, lines: slip ? slip.lines : pk.lines }, state.user?.name || '');
@@ -3095,30 +3110,39 @@ document.addEventListener('click', async e => {
     try { const d = await api('/orders/' + encodeURIComponent(listDocs.dataset.contractDocsFor)); openContractDocs({ detail: d, api, toast, onSaved: loadContracts }); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
-  if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: 'Đơn ' + sales.order.orderNo });
+  if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: (isContractDoc() ? 'HĐKT ' : 'Đơn ') + docNo() });
   if (e.target.closest('#order-cancel')) {
-    if (!await confirmBox('Huỷ đơn này? Đơn huỷ không còn tính công nợ; báo giá có thể tạo đơn mới.', { title: 'Huỷ đơn', ok: 'Huỷ đơn', danger: true })) return;
-    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ đơn.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
-  }
-  if (e.target.closest('#order-new-contract')) {
-    const f = $('#contract-form'); f.reset(); $('#contract-error').textContent = '';
-    $('#contract-order-no').textContent = sales.order.orderNo; f.signedDate.value = todayIso(); f.deliveryAddress.value = sales.order.address || '';
-    f.legalEntity.value = sales.order.quoteType === 'VIGIFTS' ? 'VG' : 'BN';
-    $('#contract-dialog').showModal();
+    const w = isContractDoc() ? 'HĐKT' : 'đơn';
+    if (!await confirmBox(`Huỷ ${w} ${docNo()}? ${isContractDoc() ? 'HĐKT' : 'Đơn'} huỷ không còn tính công nợ; báo giá có thể lập lại.`, { title: 'Huỷ ' + w, ok: 'Huỷ ' + w, danger: true })) return;
+    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
   }
   const sign = e.target.closest('[data-contract-sign]');
   if (sign) { try { await api('/contracts/' + encodeURIComponent(sign.dataset.contractSign), 'PUT', { status: 'signed', signedDate: todayIso() }); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); } }
 });
+/**
+ * Lập HĐKT THẲNG TỪ BÁO GIÁ (luồng độc lập với Đơn hàng – không sinh đơn hàng trước): điền pháp nhân, cọc, hạn thanh toán…
+ * → chọn kho Sapo → máy chủ lập HĐKT + đơn nháp Sapo cùng lúc (POST /contracts { quoteId }).
+ */
+let contractTarget = null;
+function openContractForm(t) {
+  contractTarget = t;
+  const f = $('#contract-form'); f.reset(); $('#contract-error').textContent = '';
+  $('#contract-order-no').textContent = `báo giá ${t.quoteNo}${t.customer ? ' · ' + t.customer : ''}`;
+  f.signedDate.value = todayIso(); f.deliveryAddress.value = t.address || ''; f.legalEntity.value = t.quoteType === 'VIGIFTS' ? 'VG' : 'BN';
+  $('#contract-dialog').showModal();
+}
 $('#contract-form').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, err = $('#contract-error'); err.textContent = '';
-  const body = { orderId: sales.order.id, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
+  const target = contractTarget; if (!target) return;
+  const body = { quoteId: target.quoteId, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
     signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
   try {
     // Lập HĐKT = đẩy đơn sang Sapo cùng lúc (chọn kho); Sapo lỗi → không lập HĐKT. Đơn đã có trên Sapo thì lập luôn.
-    const r = await sapoPush().choose({ orderId: sales.order.id }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
+    const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
       run: loc => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}) }) });
     if (!r) return;
-    $('#contract-dialog').close(); toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); openOrder(sales.order.id);
+    $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo);
+    target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
   } catch (ex) { err.textContent = ex.message; }
 });
 $('#order-new-delivery').addEventListener('click', () => {
@@ -3194,22 +3218,21 @@ $('#download-menu').addEventListener('click', () => closeDownloadMenu());
  * Tạo đơn cho báo giá. Luồng đơn hàng: popup chọn kho Sapo – máy chủ tạo đơn + đơn nháp Sapo cùng lúc (Sapo lỗi → không có đơn).
  * Luồng HĐKT: tạo đơn tạm, đẩy Sapo lúc lập HĐKT. Báo giá đã có đơn → mở đơn đó. Trả id đơn, null khi huỷ.
  */
-async function createOrderForQuote(quoteId, quoteNo, flow) {
-  let existed = false;
+async function createOrderForQuote(quoteId, quoteNo) {
+  let existed = null;
   const post = async loc => {
-    try { return await api('/orders', 'POST', { quoteId, flow, ...(loc ? { sapoLocationId: loc } : {}) }); }
+    try { return await api('/orders', 'POST', { quoteId, ...(loc ? { sapoLocationId: loc } : {}) }); }
     catch (ex) {
       if (ex.code !== 'ORDER_EXISTS') throw ex;
       const found = (await api('/orders?q=' + encodeURIComponent(quoteNo))).orders.find(o => o.quoteId === quoteId && o.status !== 'cancelled');
-      if (!found) throw ex;
-      existed = true; return { id: found.id };
+      if (!found) throw ex; // báo giá đã lập HĐKT: báo lỗi rõ ("Báo giá này đã có HĐKT …"), không mở đơn
+      existed = found; return { id: found.id };
     }
   };
-  const r = flow === 'contract' ? await post(null)
-    : await sapoPush().choose({ quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: post });
+  const r = await sapoPush().choose({ quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: post });
   if (!r) return null;
-  if (existed) toast('Báo giá này đã có đơn – mở đơn đó.');
-  else { toast(flow === 'contract' ? 'Đã tạo đơn – điền thông tin để lập HĐKT.' : 'Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); }
+  if (existed) toast('Báo giá này đã có đơn hàng – mở đơn đó.');
+  else { toast('Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); }
   return r.id;
 }
 // Kiểm tồn cả báo giá (giống trang Khách hỏi tồn): tồn khả dụng, tồn NCC, hàng chờ về so với số lượng báo giá.
@@ -3245,19 +3268,25 @@ function chooseFlow(label) {
     dlg.showModal();
   });
 }
-/** Tạo đơn của báo giá theo luồng đã chọn rồi mở đơn (luồng HĐKT: mở luôn hộp lập HĐKT). */
-async function makeFromQuote(flow, quoteId, quoteNo) {
-  const id = await createOrderForQuote(quoteId, quoteNo, flow);
+/**
+ * Sinh chứng từ từ báo giá theo luồng đã chọn – 2 luồng ĐỘC LẬP:
+ *  - 'order': sinh đơn hàng (+ đơn Sapo) rồi mở đơn;
+ *  - 'contract': mở hộp lập HĐKT ngay (không sinh đơn hàng) → lập xong mở trang HĐKT.
+ * `q`: { quoteId, quoteNo, quoteType, customer, address }. Trả true khi đã sinh / đã mở hộp lập HĐKT.
+ */
+async function makeFromQuote(flow, q, done) {
+  if (flow === 'contract') { openContractForm({ ...q, done }); return true; }
+  const id = await createOrderForQuote(q.quoteId, q.quoteNo);
   if (!id) return false;
-  if (flow === 'contract') sales.openContract = id;
-  go('#/orders/' + id);
+  done?.(); go('#/orders/' + id);
   return true;
 }
 $('#quote-make').addEventListener('click', async () => {
   const block = approvalBlock(); if (block) return toast(block, 'err');
   const flow = await chooseFlow(`${field('quoteNo').value} · ${field('customer').value || ''}`); if (!flow) return;
   const btn = $('#quote-make'); btn.disabled = true;
-  try { await makeFromQuote(flow, editor.id, field('quoteNo').value); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+  try { await makeFromQuote(flow, { quoteId: editor.id, quoteNo: field('quoteNo').value, quoteType: editor.type, customer: field('customer').value, address: field('customerAddress').value }); }
+  catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
 });
 // ＋ ở trang Đơn hàng / HĐKT: chọn một báo giá đã duyệt (chưa có đơn) → tạo đơn / lập HĐKT.
 let quotePickFlow = 'order';
@@ -3265,12 +3294,12 @@ async function drawQuotePick() {
   const box = $('#quote-pick-list'); box.innerHTML = '<li class="muted">Đang tải…</li>';
   try {
     const { quotes } = await api('/order-quote-candidates?q=' + encodeURIComponent($('#quote-pick-search').value));
-    box.innerHTML = quotes.length ? quotes.map(q => `<li><button type="button" data-pick-quote="${esc(q.id)}"><b>${esc(q.quoteNo)}</b><span>${esc(q.customer)}</span><small>${esc(q.quoteType)}${q.quoteDate ? ' · ' + fmtDate(q.quoteDate) : ''}</small></button></li>`).join('')
+    box.innerHTML = quotes.length ? quotes.map(q => `<li><button type="button" data-pick-quote="${esc(q.id)}" data-pick-type="${esc(q.quoteType)}"><b>${esc(q.quoteNo)}</b><span>${esc(q.customer)}</span><small>${esc(q.quoteType)}${q.quoteDate ? ' · ' + fmtDate(q.quoteDate) : ''}</small></button></li>`).join('')
       : '<li class="muted">Không có báo giá đã duyệt nào chưa có đơn.</li>';
   } catch (e) { box.innerHTML = `<li class="error">${esc(e.message)}</li>`; }
 }
 function openQuotePick(flow) {
-  quotePickFlow = flow; $('#quote-pick-title').textContent = flow === 'contract' ? 'Lập HĐKT' : 'Tạo đơn hàng';
+  quotePickFlow = flow; $('#quote-pick-title').textContent = flow === 'contract' ? 'Lập HĐKT từ báo giá' : 'Tạo đơn hàng từ báo giá';
   $('#quote-pick-search').value = ''; $('#quote-pick-dialog').showModal(); drawQuotePick();
 }
 $('#orders-new').addEventListener('click', () => openQuotePick('order'));
@@ -3279,7 +3308,11 @@ $('#quote-pick-search').addEventListener('input', debounce(drawQuotePick));
 $('#quote-pick-list').addEventListener('click', async e => {
   const b = e.target.closest('[data-pick-quote]'); if (!b) return;
   b.disabled = true;
-  try { if (await makeFromQuote(quotePickFlow, b.dataset.pickQuote, b.querySelector('b')?.textContent || '')) $('#quote-pick-dialog').close(); else b.disabled = false; }
+  const q = { quoteId: b.dataset.pickQuote, quoteNo: b.querySelector('b')?.textContent || '', quoteType: b.dataset.pickType || '', customer: b.querySelector('span')?.textContent || '' };
+  try {
+    if (quotePickFlow === 'contract') { $('#quote-pick-dialog').close(); await makeFromQuote('contract', q); }
+    else if (await makeFromQuote('order', q)) $('#quote-pick-dialog').close(); else b.disabled = false;
+  }
   catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
 });
 $('#approve-quote').addEventListener('click', async () => {

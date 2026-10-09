@@ -41,10 +41,10 @@ test('file SQL xoá dữ liệu chạy thử: xoá đúng bảng, giữ dữ li�
   assert.equal((await call(`/quotes/${q.data.id}`, emp, 'PUT', { revision: 1, data: { type: 'B2B', quoteNo: 'B2B_BG20261006_001', customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8,
     rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 120, price: 200000, taxRate: 8 }] } })).status, 200);
   assert.equal((await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 2 })).status, 200);
-  const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201, JSON.stringify(o.data));
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  const k = await call('/contracts', emp, 'POST', { quoteId: q.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-06' }); assert.equal(k.status, 201, JSON.stringify(k.data));
+  const o = { data: { id: k.data.orderId as string } };
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt HĐKT (tạo ra luôn là nháp)
   const line = (await call(`/orders/${o.data.id}`, emp)).data.lines[0];
-  assert.equal((await call('/contracts', emp, 'POST', { orderId: o.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-06' })).status, 201);
   assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: '2026-10-10', lines: [{ orderLineId: line.id, qty: 50 }] })).status, 201);
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 1_000_000, paidAt: '2026-10-06', method: 'transfer' })).status, 201);
   const pk = await call(`/orders/${o.data.id}/packing`, emp, 'POST', { allocations: [{ orderLineId: line.id, qty: 50, source: 'warehouse' }] }); assert.equal(pk.status, 201);

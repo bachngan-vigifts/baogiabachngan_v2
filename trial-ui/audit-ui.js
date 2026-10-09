@@ -5,7 +5,7 @@ const when = iso => new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', min
 /** Tên dễ hiểu cho từng thao tác (route). Thao tác chưa có tên thì hiện nguyên route. */
 const ACTIONS = {
   'POST /quotes': 'Tạo báo giá', 'PUT /quotes/:id': 'Sửa báo giá', 'POST /quotes/:id/approve': 'Duyệt báo giá', 'DELETE /quotes/:id': 'Xoá báo giá',
-  'POST /orders': 'Tạo đơn hàng', 'PUT /orders/:id/status': 'Đổi trạng thái đơn', 'PUT /orders/:id/delivery-date': 'Đổi ngày giao dự kiến',
+  'POST /orders': 'Tạo đơn hàng', 'PUT /orders/:id/status': 'Duyệt / huỷ đơn hoặc HĐKT', 'PUT /orders/:id/delivery-date': 'Đổi ngày giao dự kiến',
   'POST /orders/:id/invoice-request': 'Yêu cầu xuất hoá đơn', 'PUT /orders/:id/invoice': 'Nhập số hoá đơn', 'POST /orders/:id/packing': 'Yêu cầu đóng gói',
   'POST /contracts': 'Lập HĐKT', 'PUT /contracts/:id': 'Sửa HĐKT', 'POST /deliveries': 'Lên lịch giao', 'PUT /deliveries/:id/status': 'Đổi trạng thái giao hàng',
   'POST /payments': 'Ghi phiếu thu', 'POST /customers': 'Tạo khách hàng', 'PUT /customers/:id': 'Sửa khách hàng', 'POST /customers/:id/approve': 'Duyệt khách hàng',

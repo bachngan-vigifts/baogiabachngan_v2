@@ -49,7 +49,7 @@ function accountFor(accounts: Raw[], owner: Owner) {
 /** Đầu vào đẩy Sapo từ đơn web (đọc trong giao dịch đang tạo đơn / HĐKT). */
 async function inputFromOrder(db: Db | Tx, orderId: string) {
   const [o] = await db.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
-  if (!o) throw new AppError(404, 'Không tìm thấy đơn đặt hàng.');
+  if (!o) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
   const [lines, [contract], [cust], owner] = await Promise.all([
     db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, o.id)).orderBy(asc(salesOrderLines.lineNo)),
     db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, o.id)).limit(1),

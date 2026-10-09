@@ -14,6 +14,7 @@ import { printingWorkshops } from '../../printing/schema.ts';
 import { PACKING_SOURCES, PACKING_STATUSES } from '../domain/statuses.ts';
 import { PACKING_SOURCE_LABEL, packingSuggestion, type PackingSource } from '../domain/packing.ts';
 import { nextDocNo, vietnamDate } from '../domain/sales.ts';
+import { docRef } from '../domain/doc-ref.ts';
 import { orderScopeFor } from './routes.ts';
 
 /*
@@ -37,7 +38,7 @@ const PHOTO_RE = /^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/]+=*$/;
 
 async function loadOrder(c: Ctx, id: string) {
   const [order] = await c.env.db.select().from(salesOrders).where(and(eq(salesOrders.id, id), orderScopeFor(viewer(c)))).limit(1);
-  if (!order) throw new AppError(404, 'Không tìm thấy đơn đặt hàng.');
+  if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
   return order;
 }
 /** Phiếu + đơn của phiếu. Ai xem được: Manager, nhóm Kho, người xem được đơn. */
@@ -225,13 +226,13 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   router.get('/packing', async c => {
     const m = viewer(c), all = m.role === 'manager' || isWarehouse(m), p = c.url.searchParams;
     const status = p.get('status') || (all ? 'sent' : 'all');
-    const rows = await c.env.db.select({ slip: packingSlips, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, expectedDeliveryDate: salesOrders.expectedDeliveryDate })
-      .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId))
+    const rows = await c.env.db.select({ slip: packingSlips, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, expectedDeliveryDate: salesOrders.expectedDeliveryDate })
+      .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, packingSlips.orderId))
       .where(and(all ? undefined : orderScopeFor(m),
         (PACKING_STATUSES as readonly string[]).includes(status) ? eq(packingSlips.status, status as typeof PACKING_STATUSES[number]) : undefined,
-        matchAllWords(foldSql(packingSlips.slipNo, salesOrders.orderNo, salesOrders.customerName), p.get('q'))))
+        matchAllWords(foldSql(packingSlips.slipNo, salesOrders.orderNo, salesContracts.contractNo, salesOrders.customerName), p.get('q'))))
       .orderBy(desc(packingSlips.updatedAt)).limit(200);
-    return json({ slips: rows.map(r => ({ ...r.slip, sourceLabel: PACKING_SOURCE_LABEL[r.slip.source], orderNo: r.orderNo, customerName: r.customerName, expectedDeliveryDate: r.expectedDeliveryDate })) });
+    return json({ slips: rows.map(r => ({ ...r.slip, sourceLabel: PACKING_SOURCE_LABEL[r.slip.source], orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName, expectedDeliveryDate: r.expectedDeliveryDate })) });
   }, 'business');
 
   /** Gửi phiếu nháp cho kho → việc "Đóng gói" cho nhóm Kho (tự sinh) + thông báo. */
@@ -269,7 +270,8 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       await tx.insert(packingSlipPhotos).values((photos as string[]).map(dataUrl => ({ id: crypto.randomUUID(), slipId: slip.id, dataUrl, bytes: Math.floor(dataUrl.length * 3 / 4), createdBy: m.id, createdAt: now })));
     });
     const to = slip.sentBy ?? slip.createdBy;
-    if (to !== m.id) await notify(c.env, { eventType: 'packing_done', title: 'Kho đã đóng hàng', body: `${slip.slipNo} · ${order.orderNo} – ${order.customerName}`,
+    const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);
+    if (to !== m.id) await notify(c.env, { eventType: 'packing_done', title: 'Kho đã đóng hàng', body: `${slip.slipNo} · ${docRef(order.id, order.orderNo, k?.no).Label} – ${order.customerName}`,
       url: `/index.html#/packing/${slip.id}`, targetMemberId: to, actorId: m.id });
     return json({ ok: true });
   }, 'business');
