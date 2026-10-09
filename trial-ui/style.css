@@ -1319,3 +1319,16 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .commission-input select { width: auto; }
 .commission-table td small { display: block; }
 #commission-excluded { margin-top: 10px; }
+/* Tiến trình sản phẩm (trang chi tiết đơn / HĐKT) */
+.progress-card .card-title-row { flex-wrap: wrap; gap: 8px; }
+.progress-steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; counter-reset: none; }
+.progress-steps li { position: relative; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px 10px 44px; background: var(--surface); min-height: 64px; }
+.progress-steps li .dot { position: absolute; left: 12px; top: 12px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: .78rem; font-weight: 700; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line-strong); }
+.progress-steps li b { display: block; }
+.progress-steps li small { display: block; color: var(--muted); margin-top: 2px; }
+.progress-steps li.done { border-color: #bfe3d2; background: var(--green-50); }
+.progress-steps li.done .dot { background: var(--green); color: #fff; border-color: var(--green); }
+.progress-steps li.current { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-50); }
+.progress-steps li.current .dot { background: var(--blue); color: #fff; border-color: var(--blue); }
+.progress-steps .link-btn { margin-top: 4px; margin-right: 8px; }
+@media (max-width: 640px) { .progress-steps { grid-template-columns: 1fr; } }

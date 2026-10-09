@@ -13,6 +13,7 @@ import { completeFollowUp } from '../../care/api/routes.ts';
 import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, canViewPeers, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
+import { markProgress } from '../../sales/api/progress.ts';
 import { orderScopeFor } from '../../sales/api/routes.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -238,6 +239,9 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     await c.env.db.update(tasks).set({ ...set, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id));
     // Việc hẹn chăm sóc khách hoàn thành ở "Công việc" → lịch hẹn bên nhật ký chăm sóc cũng xong (khoá việc = care:<id>:<ngày hẹn>).
     if (b.status === 'done' && t.source === 'care' && t.sourceId && t.autoKey) await completeFollowUp(c.env.db, t.sourceId, t.autoKey.split(':')[2] ?? '');
+    // Hoàn thành việc "In mẫu" / "Sản xuất" → bước tương ứng trên thanh tiến trình đơn / HĐKT xong (khoá việc = print-sample:<đơn> / production:<đơn>).
+    const stage = t.autoKey?.startsWith('print-sample:') ? 'sample' as const : t.autoKey?.startsWith('production:') ? 'production' as const : null;
+    if (b.status === 'done' && stage && t.sourceId) await markProgress(c.env.db, t.sourceId, [stage], 'task', m.id);
     if (reassigned && reassigned !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc', body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`,
       targetMemberId: reassigned, actorId: m.id, data: { taskId: t.id } });
     if (toTeam) await notifyTeam(c.env, toTeam, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(toTeam)}`, body: `${m.name}: ${t.title}`, url: `/index.html#/tasks/${t.id}`, actorId: m.id, data: { taskId: t.id } });

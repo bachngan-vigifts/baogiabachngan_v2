@@ -2,7 +2,7 @@
 
 > File này được **sinh tự động** từ schema (`npm run docs:data-model`). Đừng sửa tay.
 
-Tổng: **97 bảng**.
+Tổng: **98 bảng**.
 
 Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = bản cũ có, đã thêm/bỏ cột · **hợp thức hoá** = bản cũ tự tạo lúc chạy, nay có migration · **mới** = chưa có ở bản cũ.
 
@@ -143,6 +143,7 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `customer_payments` | 11 | mới |  |
 | `deliveries` | 17 | mới |  |
 | `delivery_lines` | 3 | mới |  |
+| `order_progress_marks` | 5 | mới |  |
 | `packing_slip_lines` | 11 | mới |  |
 | `packing_slip_photos` | 6 | mới |  |
 | `packing_slips` | 24 | mới |  |

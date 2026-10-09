@@ -14,6 +14,7 @@ import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { docRef } from '../domain/doc-ref.ts';
+import { progressOf } from './progress.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
 import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
@@ -273,6 +274,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: viewer(c).role === 'manager' || order.status === 'draft', data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id) })),
       schedules, payments, receivable: receivable(schedules, payments, vietnamDate().iso),
+      progress: (await progressOf(db, [order.id])).get(order.id),
     });
   }, 'business');
 
