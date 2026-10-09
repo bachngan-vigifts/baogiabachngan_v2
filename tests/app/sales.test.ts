@@ -278,3 +278,4 @@ test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; c
   assert.equal((await call(`/contracts/${k.data.id}`, mgr, 'PUT', { status: 'signed', signedDate: '2026-10-09' })).status, 200);
 });
 
+

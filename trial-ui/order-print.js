@@ -13,6 +13,12 @@ export const SELLERS = {
 };
 export const sellerOf = d => SELLERS[d.contract?.legalEntity] || (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN);
 
+/** Chứng từ tham chiếu: có HĐKT thì dùng số hợp đồng, đơn thường dùng số đơn. */
+export function orderReference(order, contract = null) {
+  const number = String(contract?.contractNo || order.contractNo || '').trim();
+  return number ? { label: 'Số HĐKT', number } : { label: 'Số ĐH', number: order.orderNo };
+}
+
 /** Dữ liệu bản in (sửa được trước khi in / tải): mặc định lấy từ đơn. */
 export function orderPrintData(d, me = '') {
   const o = d.order, today = new Date();
@@ -71,10 +77,10 @@ const contactOf = o => [o.contact, o.phone].filter(Boolean).join(' · ');
  * Phiếu đóng gói. `order` = { orderNo, customerName, contact, phone, address, expectedDeliveryDate }, `slip` (tuỳ chọn) = phiếu đã lập,
  * `lines` = [{ sku, name, unit, qty, suggestion, cartonSize, weight }].
  */
-export function packingPrintData({ seller, order, slip = null, lines }, me = '') {
+export function packingPrintData({ seller, order, contract = null, slip = null, lines }, me = '') {
   return {
-    kind: 'packing', seller, department: 'Kho', docNo: slip?.slipNo || order.orderNo,
-    info: [['Số phiếu', slip?.slipNo || ''], ['Số ĐH', order.orderNo], ['Tên khách hàng', order.customerName], ['Ngày lập', dmy(slip?.createdAt || new Date().toISOString())],
+    kind: 'packing', seller, department: 'Kho', docNo: slip?.slipNo || orderReference(order, contract).number,
+    info: [['Số phiếu', slip?.slipNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['Ngày lập', dmy(slip?.createdAt || new Date().toISOString())],
       ['Nguồn hàng', slip ? [slip.sourceLabel, slip.sourceNote].filter(Boolean).join(': ') : ''], ['Ngày giao', dmy(order.expectedDeliveryDate)],
       ['Giao tới', slip?.shipTo === 'workshop' ? `Xưởng in ${slip.shipName}` : 'Khách hàng'], ['Liên hệ', slip?.shipTo === 'workshop' ? slip.shipPhone || '' : contactOf(order)],
       ['Nhà xe', slip?.carrierName || ''], ['SĐT bác tài', slip?.carrierPhone || ''], ['Địa chỉ giao', slip?.shipAddress || order.address || '']],
@@ -90,11 +96,11 @@ export function packingPrintData({ seller, order, slip = null, lines }, me = '')
  * Phiếu giao hàng. `delivery` (tuỳ chọn) = chuyến giao { deliveryNo, plannedDate, address, receiverName, receiverPhone };
  * `lines` = [{ sku, name, unit, ordered, qty }] (ordered = SL đặt, qty = SL giao chuyến này).
  */
-export function deliveryPrintData({ seller, order, delivery = null, lines }, me = '') {
+export function deliveryPrintData({ seller, order, contract = null, delivery = null, lines }, me = '') {
   const receiver = delivery && (delivery.receiverName || delivery.receiverPhone) ? [delivery.receiverName, delivery.receiverPhone].filter(Boolean).join(' · ') : contactOf(order);
   return {
-    kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || order.orderNo,
-    info: [['Số phiếu', delivery?.deliveryNo || ''], ['Số ĐH', order.orderNo], ['Tên khách hàng', order.customerName], ['Ngày giao', dmy(delivery?.plannedDate || order.expectedDeliveryDate)],
+    kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || orderReference(order, contract).number,
+    info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['Ngày giao', dmy(delivery?.plannedDate || order.expectedDeliveryDate)],
       ['Địa chỉ giao', delivery?.address || order.address || ''], ['MST', order.taxCode || ''], ['Người nhận', receiver], ['Thời gian', delivery?.timeSlot || ''],
       ...(delivery?.carrier ? [['Nhà xe', delivery.carrier], ['SĐT bác tài', delivery.carrierPhone || '']] : [])],
     cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },

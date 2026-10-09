@@ -33,7 +33,7 @@ function dueText(t) {
  */
 export function initTasks({ api, toast, go, isManager, userId }) {
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
-  const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [] };
+  const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', approvals: null };
   let searchTimer;
 
   async function people() {
@@ -56,8 +56,9 @@ export function initTasks({ api, toast, go, isManager, userId }) {
   }
 
   function renderStats(s) {
+    const ap = st.approvals?.counts.total ?? 0;
     const cards = [['mine', 'Việc của tôi', s.open, 'đang mở', ''], ['overdue', 'Quá hạn', s.overdue, 'cần xử lý ngay', s.overdue ? 'danger' : ''], ['today', 'Đến hạn hôm nay', s.today, 'trong ngày', s.today ? 'warn' : '']];
-    if (isManager()) cards.push(['unassigned', 'Chưa giao', s.unassigned, 'chờ phân công', s.unassigned ? 'info' : '']);
+    if (isManager()) cards.push(['unassigned', 'Chưa giao', s.unassigned, 'chờ phân công', s.unassigned ? 'info' : ''], ['approvals', 'Cần duyệt', ap, 'chờ Manager duyệt', ap ? 'warn' : '']);
     else if (s.team) cards.push(['team', 'Việc nhóm', s.team, 'chưa ai nhận', 'info']);
     q('#tasks-stats').innerHTML = cards.map(([k, label, n, sub, tone]) => `<button type="button" class="stat task-stat ${tone}" data-stat="${k}"><small>${label}</small><strong>${n}</strong><span class="muted">${sub}</span></button>`).join('');
   }
@@ -75,7 +76,38 @@ export function initTasks({ api, toast, go, isManager, userId }) {
       <td class="task-go">${t.link ? `<a class="btn ghost small" href="${esc(t.link)}" data-open-link title="Mở chứng từ">Mở</a>` : ''}</td></tr>`;
   }
 
+  // ----- Thẻ "Cần duyệt" (Manager): báo giá, đơn / HĐKT, khách hàng, sản phẩm đang chờ duyệt – GET /approvals (chỉ đọc).
+  // Duyệt vẫn làm ở màn hình của từng loại (bấm "Mở"), giữ nguyên hộp kiểm tra như hiện nay.
+  const KIND = { quote: ['Báo giá', 'quote'], order: ['Đơn hàng', 'order'], contract: ['HĐKT', 'contract'], customer: ['Khách hàng', 'manual'], product: ['Sản phẩm', 'purchase'] };
+  const money = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
+  async function loadApprovals() {
+    if (!isManager()) { st.approvals = null; return null; }
+    try { st.approvals = await api('/approvals'); } catch { st.approvals = null; }
+    const n = st.approvals?.counts.total ?? 0, c = q('#tasks-approval-count');
+    c.hidden = !n; c.textContent = n;
+    return st.approvals;
+  }
+  function renderApprovals() {
+    const box = q('#tasks-approvals'), d = st.approvals;
+    if (!d) { box.innerHTML = '<p class="error">Chưa tải được danh sách cần duyệt.</p>'; return; }
+    const items = st.kind ? d.items.filter(i => i.kind === st.kind) : d.items;
+    box.innerHTML = `<div class="chips approval-kinds" role="group" aria-label="Lọc loại"><button type="button" class="chip" data-kind="" aria-pressed="${!st.kind}">Tất cả <b>${d.counts.total}</b></button>${Object.entries(KIND).map(([k, [l]]) => `<button type="button" class="chip" data-kind="${k}" aria-pressed="${st.kind === k}" ${d.counts[k] ? '' : 'disabled'}>${l} <b>${d.counts[k]}</b></button>`).join('')}</div>
+      ${items.length ? `<div class="table-wrap"><table class="data-table task-table approval-table"><thead><tr><th>Cần duyệt</th><th>Người tạo</th><th>Chờ từ</th><th class="right">Giá trị</th><th><span class="sr-only">Mở</span></th></tr></thead><tbody>
+      ${items.map(i => `<tr><td class="task-main"><div class="task-title">${esc(i.title)}</div><div class="task-meta"><span class="pill ${KIND[i.kind][1]} src">${esc(KIND[i.kind][0])}</span>${i.sub ? `<span class="muted task-desc">${esc(i.sub)}</span>` : ''}</div></td>
+        <td data-label="Người tạo">${esc(i.by || '—')}</td><td data-label="Chờ từ">${i.at ? esc(ago(i.at)) : '—'}</td><td${i.amount ? ' data-label="Giá trị"' : ''} class="right num">${i.amount ? money(i.amount) : ''}</td>
+        <td class="task-go"><a class="btn primary small" href="${esc(i.link)}">Mở để duyệt</a></td></tr>`).join('')}</tbody></table></div>`
+      : '<p class="muted task-empty">Không có gì đang chờ duyệt. 🎉</p>'}`;
+  }
+  function showTab(tab) {
+    st.tab = isManager() && tab === 'approvals' ? 'approvals' : 'tasks';
+    q('#tasks-tabs').querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === st.tab)));
+    q('#tasks-approvals').hidden = st.tab !== 'approvals'; q('.task-board').hidden = st.tab === 'approvals';
+    if (st.tab === 'approvals') renderApprovals();
+  }
+
   async function load(focusId) {
+    if (focusId === 'approvals') { focusId = undefined; st.tab = 'approvals'; }
+    q('#tasks-tabs').hidden = !isManager();
     const list = q('#tasks-list');
     if (!st.list.length) list.innerHTML = '<tr><td colspan="7" class="muted">Đang tải…</td></tr>';
     await people();
@@ -85,7 +117,8 @@ export function initTasks({ api, toast, go, isManager, userId }) {
     const params = new URLSearchParams({ view: st.view, status: st.status });
     if (st.priority) params.set('priority', st.priority); if (st.source) params.set('source', st.source); if (st.search) params.set('q', st.search);
     try {
-      const [d, s] = await Promise.all([api('/tasks?' + params), badge()]);
+      const [d, s] = await Promise.all([api('/tasks?' + params), badge(), loadApprovals()]);
+      showTab(st.tab);
       st.list = d.tasks; if (s) renderStats(s);
       if (!q('#tasks-quick-assignee').options.length) q('#tasks-quick-assignee').innerHTML = personOptions(userId(), isManager());
       const groups = st.status === 'open' ? TASK_UI.groups.map(([k, label]) => [label, d.tasks.filter(t => t.due === k), k]).filter(([, items]) => items.length) : [['', d.tasks, '']];
@@ -183,9 +216,16 @@ export function initTasks({ api, toast, go, isManager, userId }) {
   q('#tasks-priority').addEventListener('change', e => { st.priority = e.target.value; load(); });
   q('#tasks-source').addEventListener('change', e => { st.source = e.target.value; load(); });
   q('#tasks-search').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { st.search = e.target.value.trim(); load(); }, 250); });
+  q('#tasks-tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+  q('#tasks-approvals').addEventListener('click', e => {
+    const b = e.target.closest('[data-kind]'); if (!b) return;
+    st.kind = b.dataset.kind; renderApprovals();
+  });
   q('#tasks-stats').addEventListener('click', e => {
     const b = e.target.closest('[data-stat]'); if (!b) return;
-    const k = b.dataset.stat; st.view = k === 'unassigned' ? 'unassigned' : k === 'team' ? 'team' : 'mine'; st.status = 'open';
+    const k = b.dataset.stat;
+    if (k === 'approvals') return showTab('approvals');
+    showTab('tasks'); st.view = k === 'unassigned' ? 'unassigned' : k === 'team' ? 'team' : 'mine'; st.status = 'open';
     q('#tasks-view').querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === st.view)));
     q('#tasks-status').querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === 'open')));
     load().then(() => { const g = q(`.task-group.g-${k === 'overdue' ? 'overdue' : k === 'today' ? 'today' : ''}`); g?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });

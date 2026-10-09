@@ -95,3 +95,16 @@ test('sai tài khoản web cũ: dừng ngay, báo rõ cần sửa secret, không
   assert.equal(r.status, 502); assert.match(r.data.error, /LEGACY_STAFF_EMAIL/);
   assert.equal((await call('/catalog/legacy-images', mgr)).data.remaining, 4);
 });
+
+test('nhiều ảnh tải song song dùng chung phiên web cũ, hết hạn chỉ đăng nhập lại một lần', async () => {
+  const { call, fake, emp } = await setup();
+  const batch = () => Promise.all([K1, K2, K1, K2, K1, K2].map(key =>
+    call('/images/fetch', emp, 'POST', { url: media(key) })));
+  const first = await batch();
+  assert.ok(first.every(r => r.status === 200), JSON.stringify(first.map(r => r.data)));
+  assert.equal(fake.log.logins, 1, 'không đăng nhập cạnh tranh từng ảnh');
+  fake.expire();
+  const again = await batch();
+  assert.ok(again.every(r => r.status === 200), JSON.stringify(again.map(r => r.data)));
+  assert.equal(fake.log.logins, 2, 'sáu yêu cầu cùng hết phiên chỉ làm mới một lần');
+});

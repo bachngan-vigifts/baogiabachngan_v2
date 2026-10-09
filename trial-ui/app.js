@@ -2,11 +2,12 @@
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
+import { setupDataRefresh } from './auto-refresh.js';
 import { printSheet } from './print-page.js';
 import { showAudit } from './audit-ui.js';
 import { watchCsp } from './csp-report.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
-import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
+import { orderReference, orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
@@ -173,15 +174,23 @@ const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 async function api(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
-  if (token) headers.authorization = 'Bearer ' + token;
+  const requestRoute = location.hash;
+  const requestToken = token;
+  if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   try { res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  if (data.sessionToken !== undefined) saveToken(data.sessionToken);
+  // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
+  const sameSession = requestToken === token;
+  if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
   if (!res.ok) {
-    if (res.status === 401 && !['/login', '/activate', '/password'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
+    if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
     throw new ApiError(data.error || 'Không thực hiện được thao tác.', res.status, data.code);
+  }
+  if (state.user && sameSession) {
+    if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
+    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) { dataRefresh.saved(); queueMicrotask(() => dataRefresh.tick()); }
   }
   return data;
 }
@@ -207,11 +216,16 @@ const hashParams = () => new URLSearchParams(location.hash.slice(1));
 let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('token') : null;
 
 function showAuth(message = '', { keepToken = false } = {}) {
-  state.user = null; if (!keepToken) saveToken('');
+  const auth = $('#auth'), opening = auth.hidden;
+  state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
-  setTimeout(() => ($('#email').value ? $('#password') : $('#email')).focus(), 0);
+  // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
+  if (opening) setTimeout(() => {
+    if (auth.hidden || auth.contains(document.activeElement)) return;
+    ($('#email').value ? $('#password') : $('#email')).focus();
+  }, 0);
 }
 function setupActivationForm() {
   $('#auth-title').textContent = 'Đặt mật khẩu';
@@ -267,7 +281,7 @@ async function enter() {
   currentHash = location.hash;
   route();
   loadAll();
-  notifier.start();
+  notifier.start(); dataRefresh.start(); dataRefresh.tick();
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -561,14 +575,33 @@ $('#reset-notes').addEventListener('click', async () => {
 });
 const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
-/** Số báo giá tự sinh: HRC_BG20261006_001, B2B_BG20261006_002, VG_BG20261006_001 (đếm theo loại + ngày). */
+/**
+ * Số báo giá tự sinh: HRC_BG20261006_001, B2B_BG20261006_002, VG_BG20261006_001 (đếm theo loại + ngày trên TOÀN CÔNG TY).
+ * Số kế tiếp lấy từ máy chủ (GET /quotes/next-no, `refreshQuoteNo`) vì nhân viên chỉ thấy báo giá của mình; lúc lưu máy chủ
+ * vẫn kiểm lại – số tự sinh bị người khác lấy trước thì tự đổi sang số kế tiếp còn trống.
+ */
 const QUOTE_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG' };
+const quotePrefix = (type, date) => `${QUOTE_PREFIX[type] || 'B2B'}_BG${String(date || todayIso()).replaceAll('-', '')}_`;
+const serverQuoteNo = new Map(); // phần đầu → số thứ tự kế tiếp theo máy chủ
 function nextQuoteNo(type = 'B2B', date = todayIso()) {
-  const prefix = `${QUOTE_PREFIX[type] || 'B2B'}_BG${String(date || todayIso()).replaceAll('-', '')}_`;
+  const prefix = quotePrefix(type, date);
   const used = (state.quotes || []).map(q => q.quoteNo).filter(n => n?.startsWith(prefix)).map(n => parseInt(n.slice(prefix.length), 10) || 0);
-  return prefix + String(Math.max(0, ...used) + 1).padStart(3, '0');
+  return prefix + String(Math.max(Math.max(0, ...used) + 1, serverQuoteNo.get(prefix) || 0)).padStart(3, '0');
 }
-const isAutoQuoteNo = (no, type, date) => no === nextQuoteNo(type, date);
+async function refreshQuoteNo(type, date) {
+  const prefix = quotePrefix(type, date);
+  try { const r = await api(`/quotes/next-no?type=${encodeURIComponent(type)}&date=${encodeURIComponent(date || todayIso())}`); serverQuoteNo.set(prefix, parseInt(r.quoteNo.slice(prefix.length), 10) || 0); } catch { /* mất mạng: dùng số tạm, máy chủ sửa lúc lưu */ }
+}
+/** Số còn đúng mẫu tự sinh của loại + ngày này (chưa bị người dùng gõ số khác). */
+const isAutoQuoteNo = (no, type, date) => no.startsWith(quotePrefix(type, date)) && /^\d{3,}$/.test(no.slice(quotePrefix(type, date).length));
+/** Báo giá mới chưa lưu: cập nhật số tự sinh theo máy chủ (nếu người dùng chưa tự gõ số). */
+async function syncEditorQuoteNo() {
+  if (editor.id) return;
+  const type = editor.type, date = field('date').value || todayIso();
+  await refreshQuoteNo(type, date);
+  const f = field('quoteNo');
+  if (!editor.id && editor.type === type && isAutoQuoteNo(f.value.trim(), type, date)) f.value = nextQuoteNo(type, date);
+}
 /** Chiết khấu toàn bảng chọn lúc tạo báo giá: áp cho mọi dòng mới (vẫn sửa riêng từng dòng được). */
 const defaultLineDiscount = () => editor.defaultDiscount > 0 ? { discount: editor.defaultDiscount, discountType: 'percent' } : {};
 const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT, ...defaultLineDiscount() });
@@ -585,6 +618,7 @@ async function openEditor(id) {
     if (pending) delete pending.defaultDiscount;
     fillEditor(null, 0, pending || newQuoteData());
     if (pending) markDirty();
+    syncEditorQuoteNo();
     setTimeout(() => { if (!qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : field('customer')).focus(); }, 50);
     return;
   }
@@ -645,8 +679,10 @@ function setType(type, dirty = true) {
   const notes = field('notes');
   if (dirty && (!notes.value.trim() || notes.value === defaultNotes(editor.type))) notes.value = defaultNotes(type);
   // Báo giá chưa lưu còn số tự sinh của loại cũ thì đổi sang tiền tố của loại mới.
-  if (dirty && !editor.id && isAutoQuoteNo(field('quoteNo').value.trim(), editor.type, field('date').value)) field('quoteNo').value = nextQuoteNo(type, field('date').value);
+  const reNumber = dirty && !editor.id && isAutoQuoteNo(field('quoteNo').value.trim(), editor.type, field('date').value);
+  if (reNumber) field('quoteNo').value = nextQuoteNo(type, field('date').value);
   editor.type = type;
+  if (reNumber) syncEditorQuoteNo();
   $$('#type-seg button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
   $('#type-hint').textContent = type === 'HRC' ? 'Báo giá HRC: không có cột phí in.' : 'Phí in (F7) được cộng vào giá sau chiết khấu.';
   qf.classList.toggle('type-hrc', type === 'HRC');
@@ -1045,12 +1081,14 @@ $('#refresh-profit-costs').addEventListener('click', async e => {
 
 // ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
 const nq = { type: 'HRC', customer: null, autoNo: '' };
-function nqSetType(type) {
+function nqSetType(type, fetchServer = true) {
   const date = $('#nq-date').value || todayIso(), no = $('#nq-no');
   const keepAuto = !no.value.trim() || no.value.trim() === nq.autoNo;
   nq.type = type; $('#nq-type-name').textContent = type === 'VIGIFTS' ? 'Vigifts' : type;
   $$('#nq-type button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
   nq.autoNo = nextQuoteNo(type, date); if (keepAuto) no.value = nq.autoNo;
+  // Lấy số kế tiếp trên toàn công ty rồi điền lại (nếu người dùng chưa tự gõ số).
+  if (fetchServer) refreshQuoteNo(type, date).then(() => { if (nq.type === type && ($('#nq-date').value || todayIso()) === date) nqSetType(type, false); });
 }
 async function openNewQuote() {
   if (editor.dirty && currentHash.startsWith('#/quotes/')) {
@@ -1417,23 +1455,24 @@ async function downloadQuotePdf(hideDiscount) {
     await loadPdfTools();
     const state = { ...d, ...(d.type === 'HRC' ? { hideHrcDiscountColumn: !!hideDiscount } : {}), ...(d.type === 'B2B' ? { hideB2bDiscountColumn: !!hideDiscount } : {}) };
     const images = await loadQuoteImages(d.rows);
-    // Ảnh không đọc được nội dung (vd ảnh trên web cũ – chỉ xem được khi đăng nhập web cũ): in theo đúng mẫu web cũ
-    // bằng trình duyệt như "In nhanh" (trình duyệt tự hiện ảnh) → chọn "Lưu dưới dạng PDF".
+    // Ảnh máy chủ không đọc được nội dung (vd ảnh web cũ khi chưa cài secret LEGACY_STAFF_*): KHÔNG báo lỗi mà in theo đúng
+    // mẫu PDF bằng trình duyệt, lấy ảnh y như "In nhanh" (thẻ <img>, cùng nguồn ảnh – trình duyệt tự gửi phiên web cũ)
+    // → hộp in mở ra, chọn "Lưu dưới dạng PDF". Cùng bố cục, cùng cột (kể cả bản ẩn cột CK).
     if (d.rows.some((r, i) => r.image && !images[i])) {
       if (tab && !tab.closed) tab.close();
       await printQuoteTemplate(state);
-      toast('Ảnh sản phẩm nằm trên web cũ nên mở bản in theo mẫu: chọn "Lưu dưới dạng PDF" (Save as PDF) để tải file.');
+      toast('Đã mở bản in theo mẫu PDF (ảnh lấy như In nhanh): chọn "Lưu dưới dạng PDF" / "Save as PDF" để tải file.');
       return;
     }
     const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
     const bytes = await globalThis.EditableQuotePdf.create({ state, images, banner });
-    const missingImg = d.rows.filter((r, i) => r.image && !images[i]).length;
+    
     // Tên file không dấu: vài trình duyệt / máy bỏ tên có dấu và lưu thành "download".
     const clean = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, c => c === 'đ' ? 'd' : 'D').replace(/[\\/:*?"<>|]+/g, ' ').trim();
     const name = `${clean(d.quoteNo)} - ${clean(d.customer)} - ${(d.date || todayIso()).split('-').reverse().join('-')}.pdf`;
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     if (tab && !tab.closed) { tab.location.href = url; toast('Đã mở PDF – bấm Chia sẻ để lưu hoặc gửi.'); }
-    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.' + (missingImg ? ` ${missingImg} ảnh không tải được nên để trống${images.errors[0] ? ': ' + images.errors[0] : ''}.` : ''), missingImg ? 'err' : undefined); }
+    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.'); }
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (ex) { console.error(ex); if (tab && !tab.closed) tab.close(); toast(ex?.message || 'Không thể tạo PDF. Vui lòng thử lại.', 'err'); }
   finally { pdfBusy = false; }
@@ -2265,11 +2304,19 @@ document.addEventListener('click', async e => {
 // ----- chi tiết đơn
 const sales = { order: null, detail: null };
 // ----- Thông báo (Web Push như web cũ) + trang TỰ LÀM MỚI khi khách gửi báo giá / đặt hàng / hỏi tồn
+var dataRefresh = setupDataRefresh({
+  read: path => api(path), refresh: () => refreshData(),
+  enabled: () => !!state.user,
+  blocked: () => (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
+  routeKey: () => location.hash,
+  primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : ['/quotes', '/orders', '/contracts'],
+  onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
+});
 const notifier = setupNotifications({
   api, root: $('#staff-bell'),
   onNew(notes) {
     for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
-    refreshData();
+    dataRefresh.request(); dataRefresh.tick();
   },
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) go('#' + h); },
   isManager: () => isManager(),
@@ -2283,13 +2330,28 @@ function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager,
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
-/** Tải lại dữ liệu đang xem (không đụng báo giá đang sửa dở). */
-function refreshData() {
-  loadQuotes(); loadStockBadge(); tasksView().badge(); chatView().badge();
-  const [page, id] = location.hash.replace(/^#\/?/, '').split('/');
-  if (page === 'orders' && id) openOrder(id);
-  else if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') openEditor(id); }
-  else if (['orders', 'contracts', 'deliveries', 'receivables', 'stock-requests', 'tasks'].includes(page)) route();
+/** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
+async function refreshData() {
+  if (!state.user) return;
+  const jobs = [loadQuotes(), loadStockBadge(), tasksView().badge(), chatView().badge()];
+  if (!isWarehouse()) jobs.push(careView().badge());
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [page, id] = path.split('/'), params = new URLSearchParams(query);
+  if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
+  else if (page === 'orders') jobs.push(id ? openOrder(id) : loadOrders());
+  else if (page === 'contracts') jobs.push(loadContracts());
+  else if (page === 'deliveries') jobs.push(loadDeliveries());
+  else if (page === 'receivables') jobs.push(loadReceivables());
+  else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : loadCustomers());
+  else if (page === 'products') jobs.push(loadProducts(), productAdmin().loadPending(), loadCatalogSnapshot());
+  else if (page === 'staff' && isManager()) jobs.push(loadMembers());
+  else if (page === 'tasks') jobs.push(tasksView().load(id));
+  else if (page === 'care') jobs.push(careView().load(id ? decodeURIComponent(id) : ''));
+  else if (page === 'stock-requests') jobs.push(loadStockRequests(id));
+  else if (page === 'packing') jobs.push(openPacking(id ? decodeURIComponent(id) : ''));
+  else if (page === 'members' && id) jobs.push(memberDetail().open(decodeURIComponent(id), params.get('month') || '', params.get('tab') || ''));
+  else if (page === 'payroll') jobs.push(payrollBoard().open(params.get('month') || ''));
+  await Promise.allSettled(jobs);
 }
 
 // ----- Khách hỏi tồn kho: nhân viên phụ trách trả lời (khách nhận thông báo)
@@ -2419,7 +2481,8 @@ async function openOrder(id) {
   const wantContract = sales.openContract === id; sales.openContract = null;
   if (wantContract) setTimeout(() => { const b = $('#order-contract-action button'); if (b) b.click(); else toast('Đơn này đã có HĐKT.'); }, 0);
   const o = d.order, r = d.receivable;
-  $('#order-title').textContent = o.orderNo; $('#breadcrumb').textContent = o.orderNo; document.title = o.orderNo + ' · Bách Ngân';
+  const ref = orderReference(o, d.contract);
+  $('#order-title').textContent = ref.number; $('#breadcrumb').textContent = ref.number; document.title = ref.number + ' · Bách Ngân';
   // Đơn hàng và HĐKT là 2 luồng: đơn có HĐKT quay về trang HĐKT.
   $('#order-back').href = d.contract ? '#/contracts' : '#/orders'; $('#order-back').textContent = d.contract ? '‹ HĐKT' : '‹ Đơn đặt hàng';
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (d.contract ? 'contracts' : 'orders')));
@@ -2429,7 +2492,7 @@ async function openOrder(id) {
   const shipped = d.lines.reduce((s, l) => s + l.deliveredQty, 0), totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
   $('#order-flow').innerHTML = [
     step(!!o.quoteId, 'Báo giá', o.quoteNo || 'Không có', o.quoteId ? `#/quotes/${encodeURIComponent(o.quoteId)}` : ''),
-    step(true, 'Đơn đặt hàng', o.orderNo),
+    ...(!d.contract ? [step(true, 'Đơn đặt hàng', o.orderNo)] : []),
     step(!!d.contract, 'HĐKT', d.contract ? d.contract.contractNo : 'Chưa lập', d.contract ? '#/contracts' : ''),
     step(o.status === 'delivered', 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao`, '#/deliveries'),
     step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : 'Đã thu đủ', '#/receivables'),
@@ -2712,7 +2775,7 @@ async function openPacking(id) {
   $('#packing-actions').innerHTML = '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
   const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
   body.innerHTML = `<div class="editor-grid">
-    <div class="card"><h2 class="card-title">${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in' : '🏠 Giao thẳng cho khách'}</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>Đơn</dt><dd>${esc(o.orderNo)}</dd>
+    <div class="card"><h2 class="card-title">${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in' : '🏠 Giao thẳng cho khách'}</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>${orderReference(o).label}</dt><dd>${esc(orderReference(o).number)}</dd>
       ${k.shipTo === 'workshop' ? `<dt>Xưởng in</dt><dd><b>${esc(k.shipName)}</b></dd>${k.shipPhone ? `<dt>SĐT xưởng</dt><dd>${esc(k.shipPhone)}</dd>` : ''}${k.shipAddress ? `<dt>Địa chỉ xưởng</dt><dd>${esc(k.shipAddress)}</dd>` : ''}`
         : `${k.shipPhone || o.contact || o.phone ? `<dt>Người nhận</dt><dd>${esc(k.shipPhone || [o.contact, o.phone].filter(Boolean).join(' · '))}</dd>` : ''}${k.shipAddress || o.address ? `<dt>Địa chỉ</dt><dd>${esc(k.shipAddress || o.address)}</dd>` : ''}`}
       ${k.carrierName ? `<dt>Gửi xe</dt><dd><b>${esc(k.carrierName)}</b>${k.carrierPhone ? ` · <a href="tel:${esc(k.carrierPhone.replace(/[^\d+]/g, ''))}">${esc(k.carrierPhone)}</a>` : ''}</dd>` : ''}
@@ -2846,7 +2909,7 @@ async function printPackingForOrder(orderId) {
   const choices = [...live.map(x => ({ value: x.id, label: `${x.slipNo} · ${x.sourceLabel}${x.sourceNote ? ': ' + x.sourceNote : ''} · ${PACK_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Cả đơn (tất cả dòng hàng)' }];
   openSlipPrint({ kind: 'packing', choices, initial: live[0]?.id || '', build: v => {
     const slip = live.find(x => x.id === v);
-    return packingPrintData({ seller: sellerName(d), order: d.order, slip, lines: slip ? slip.lines : pk.lines }, state.user?.name || '');
+    return packingPrintData({ seller: sellerName(d), order: d.order, contract: d.contract, slip, lines: slip ? slip.lines : pk.lines }, state.user?.name || '');
   } });
 }
 /** Phiếu giao hàng của đơn: chọn chuyến giao đã lên lịch, hoặc toàn bộ hàng còn lại. */
@@ -2861,13 +2924,13 @@ async function printDeliveryForOrder(orderId) {
     const left = d.lines.map(l => ({ ...l, ordered: l.qty, qty: Math.max(0, Math.round((l.qty - (l.deliveredQty || 0)) * 1000) / 1000) })).filter(l => l.qty > 0);
     const lines = trip ? trip.lines.map(x => { const l = byId.get(x.orderLineId) || {}; return { ...l, ordered: l.qty, qty: x.qty }; })
       : left.length ? left : d.lines.map(l => ({ ...l, ordered: l.qty }));
-    return deliveryPrintData({ seller: sellerName(d), order: d.order, delivery: trip, lines }, state.user?.name || '');
+    return deliveryPrintData({ seller: sellerName(d), order: d.order, contract: d.contract, delivery: trip, lines }, state.user?.name || '');
   } });
 }
 /** Trang phiếu đóng gói (nhóm Kho không xem được đơn): in phiếu đóng gói / phiếu giao hàng từ chính phiếu. */
 function printFromSlip(kind) {
   const d = packingView; if (!d) return;
-  const seller = (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN).short, me = state.user?.name || '';
+  const seller = (SELLERS[d.order.legalEntity] || (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN)).short, me = state.user?.name || '';
   openSlipPrint({ kind, choices: [], initial: '', build: () => kind === 'packing'
     ? packingPrintData({ seller, order: d.order, slip: d.slip, lines: d.lines }, me)
     : deliveryPrintData({ seller, order: d.order, delivery: { deliveryNo: d.slip.slipNo, address: d.slip.shipAddress || d.order.address,
@@ -3110,6 +3173,8 @@ function loadQuoteImages(rows) {
     if (!src) return Promise.resolve(null);
     if (!cache.has(src)) cache.set(src, (async () => {
       const list = sources(src);
+      // Ảnh riêng tư web cũ: dùng phiên máy chủ chung, không phụ thuộc máy người tải đã đăng nhập web cũ hay chưa.
+      if (/^https:\/\/baogia\.minhlongonline\.com\/api\/staff\/media-file\?key=/i.test(src)) return viaServer(src);
       for (const u of list) { const img = await loadCanvasImage(u, 8000); if (img) return img; }
       for (const u of list.filter(x => /^https?:\/\//i.test(x))) { const img = await viaServer(u); if (img) return img; }
       return null;
@@ -3136,5 +3201,7 @@ $('#excel-quote').addEventListener('click', async () => {
   finally { excelBusy = false; }
 });
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
-if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) chatView().refresh(); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
+
+
 

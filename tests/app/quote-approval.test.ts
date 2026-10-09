@@ -17,7 +17,7 @@ async function setup() {
 }
 const doc = (price = 100000) => ({ type: 'B2B', quoteNo: 'B2B_BG20261006_001', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', qty: 10, price }] });
 
-test('duyệt báo giá như web cũ: nhân viên lưu → đợi duyệt; Manager duyệt; nhân viên sửa → mất duyệt; Manager tạo → tự duyệt', async () => {
+test('duyệt báo giá như web cũ: nhân viên lưu → đợi duyệt; Manager duyệt; đã duyệt thì chỉ Manager được sửa; Manager tạo → tự duyệt', async () => {
   const { call, emp, mgr } = await setup();
   const q = await call('/quotes', emp, 'POST', doc());
   assert.equal(q.data.approvalStatus, 'pending');
@@ -30,18 +30,20 @@ test('duyệt báo giá như web cũ: nhân viên lưu → đợi duyệt; Manag
   assert.equal(got.approvalStatus, 'approved'); assert.equal(got.revision, 1, 'duyệt không tăng phiên bản');
   assert.equal((await call('/quotes', emp)).data.quotes[0].approvalStatus, 'approved');
 
-  // Lưu lại y nguyên → vẫn duyệt; sửa nội dung → mất duyệt, phải duyệt lại.
-  let saved = await call('/quotes/' + q.data.id, emp, 'PUT', { revision: 1, data: got.data });
-  assert.equal(saved.data.approvalStatus, 'approved'); assert.equal(saved.data.approvalRevoked, false);
-  saved = await call('/quotes/' + q.data.id, emp, 'PUT', { revision: 2, data: doc(120000) });
-  assert.equal(saved.data.approvalStatus, 'pending'); assert.equal(saved.data.approvalRevoked, true);
+  // Nhân viên không được ghi lại, sửa hoặc xoá báo giá đã duyệt.
+  for (const data of [got.data, doc(120000)]) {
+    const blocked = await call('/quotes/' + q.data.id, emp, 'PUT', { revision: 1, data });
+    assert.equal(blocked.status, 403); assert.equal(blocked.data.code, 'QUOTE_APPROVED');
+  }
+  assert.equal((await call('/quotes/' + q.data.id, emp, 'DELETE', { revision: 1 })).status, 403);
   got = (await call('/quotes/' + q.data.id, emp)).data;
-  assert.equal(got.approvalStatus, 'pending'); assert.equal(got.approvedByName, '');
+  assert.equal(got.approvalStatus, 'approved'); assert.equal(got.revision, 1);
+  assert.equal(got.data.rows[0].price, 100000, 'yêu cầu bị chặn không thay đổi dữ liệu');
 
-  // Manager sửa báo giá đã duyệt thì giữ duyệt.
-  await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 3 });
-  saved = await call('/quotes/' + q.data.id, mgr, 'PUT', { revision: 3, data: doc(130000) });
-  assert.equal(saved.data.approvalStatus, 'approved');
+  // Manager sửa báo giá đã duyệt thì giữ duyệt và tăng phiên bản.
+  const saved = await call('/quotes/' + q.data.id, mgr, 'PUT', { revision: 1, data: doc(130000) });
+  assert.equal(saved.status, 200); assert.equal(saved.data.approvalStatus, 'approved');
+  assert.equal(saved.data.revision, 2);
 
   const m = await call('/quotes', mgr, 'POST', { ...doc(), quoteNo: 'B2B_BG20261006_002' });
   assert.equal(m.data.approvalStatus, 'approved');

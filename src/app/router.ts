@@ -17,6 +17,7 @@ import { registerCareRoutes } from '../modules/care/api/routes.ts';
 import { registerHrRoutes } from '../modules/hr/api/routes.ts';
 import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api/routes.ts';
 import { registerAuditRoutes } from './audit-routes.ts';
+import { registerApprovalRoutes } from './approval-routes.ts';
 export function createAppRouter() {
   const router = createStaffRouter();
   registerQuoteRoutes(router);
@@ -37,5 +38,6 @@ export function createAppRouter() {
   registerHrRoutes(router, { revenueOf: memberRevenues }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerStaffHubRoutes(router);
   registerAuditRoutes(router);
+  registerApprovalRoutes(router);
   return router;
 }

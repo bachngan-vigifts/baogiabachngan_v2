@@ -1270,3 +1270,9 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 @media (max-width: 640px) and (hover: none) {
   input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px !important; }
 }
+/* Thẻ "Cần duyệt" trong trang Công việc (Manager). */
+.task-tabs { margin: 4px 0 12px; }
+.task-tabs .tab-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--red, #c8212b); color: #fff; font-size: .75rem; }
+.approvals-board .approval-kinds { margin-bottom: 12px; flex-wrap: wrap; }
+.approvals-board .approval-kinds .chip b { margin-left: 4px; }
+.approval-table .task-go .btn { white-space: nowrap; }
