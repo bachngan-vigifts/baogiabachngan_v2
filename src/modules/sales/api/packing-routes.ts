@@ -7,7 +7,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { products } from '../../catalog/schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, shippingCarriers } from '../schema.ts';
+import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, salesContracts, shippingCarriers } from '../schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { printingWorkshops as DEFAULT_WORKSHOPS } from '../../quotes/domain/quote-math.ts';
 import { printingWorkshops } from '../../printing/schema.ts';
@@ -201,10 +201,11 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   /** Chi tiết phiếu (trang #/packing/<id>): kho xem để đóng hàng; kèm ảnh xác nhận. */
   router.get('/packing/:id', async c => {
     const m = viewer(c), { slip, order } = await loadSlip(c, c.params.id!);
-    const [lines, photos, people] = await Promise.all([
+    const [lines, photos, people, contracts] = await Promise.all([
       c.env.db.select().from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id)),
       c.env.db.select({ id: packingSlipPhotos.id, dataUrl: packingSlipPhotos.dataUrl, createdAt: packingSlipPhotos.createdAt }).from(packingSlipPhotos).where(eq(packingSlipPhotos.slipId, slip.id)).orderBy(asc(packingSlipPhotos.createdAt)),
       c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [slip.createdBy, slip.sentBy, slip.packedBy].filter((x): x is string => !!x))),
+      c.env.db.select({ contractNo: salesContracts.contractNo, legalEntity: salesContracts.legalEntity }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1),
     ]);
     const name = (id: string | null) => (id ? people.find(p => p.id === id)?.name ?? '' : '');
     const manage = await canManageOrder(c, order.id);
@@ -212,7 +213,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       slip: { ...slip, sourceLabel: PACKING_SOURCE_LABEL[slip.source], createdByName: name(slip.createdBy), sentByName: name(slip.sentBy), packedByName: name(slip.packedBy) },
       lines: lines.map(l => ({ ...l, suggestion: packingSuggestion(l.qty, l.unit, { perCarton: l.perCarton, cartonWeight: l.cartonWeight }).text })), photos,
       // Kho không xem được đơn: chỉ đưa thông tin cần để đóng & giao.
-      order: { id: order.id, orderNo: order.orderNo, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, address: order.address, expectedDeliveryDate: order.expectedDeliveryDate },
+      order: { id: order.id, orderNo: order.orderNo, contractNo: contracts[0]?.contractNo ?? '', legalEntity: contracts[0]?.legalEntity ?? null, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, address: order.address, expectedDeliveryDate: order.expectedDeliveryDate },
       canOpenOrder: manage, canSend: manage && slip.status === 'draft', canCancel: manage && (slip.status === 'draft' || slip.status === 'sent'), canConfirm: canConfirm(m, slip.status),
     });
   }, 'business');
