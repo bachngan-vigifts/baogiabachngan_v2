@@ -12,7 +12,7 @@ export function paymentClause(terms, total = 0, inWords = () => '') {
     : 'ngay sau khi giao hàng' : term.replace(/^thanh toán\s*/i, '').replace(/[.]+$/, '');
   const amount = value => money(value) + ' đồng';
   if (rate === 100) return 'Đặt cọc 100% giá trị hợp đồng tương ứng với số tiền là ' + amount(deposit) + ' trước khi giao hàng.';
-  if (rate === 0) return 'Bên A thanh toán 100% giá trị hợp đồng tương ứng với số tiền là ' + amount(remaining) + ' ' + deadline + '.';
+  if (rate === 0) return 'Thanh toán 100% giá trị hợp đồng tương ứng với số tiền là ' + amount(remaining) + ' ' + deadline + '.';
   return 'Đặt cọc ' + percent(rate) + '% giá trị của hợp đồng tương ứng với số tiền là ' + amount(deposit)
     + ' ngay sau khi ký hợp đồng. Thanh toán ' + percent(100 - rate) + '% giá trị còn lại tương ứng ' + amount(remaining) + ' ' + deadline + '.';
 }
