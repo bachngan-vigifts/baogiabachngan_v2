@@ -54,7 +54,8 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   p = (await call(`/customers/${k.data.id}`, emp)).data;
   assert.deepEqual(p.contacts.map((x: any) => [x.name, x.title, x.isPrimary]), [['Anh Minh', 'Trưởng phòng mua hàng', true], ['Chị Lan', 'Kế toán', false]]);
   assert.equal((await call(`/customers/${k.data.id}/contacts/${c1.data.id}`, emp, 'DELETE')).status, 200);
-  assert.equal((await call(`/customers/${k2.data.id}/contacts/${c2.data.id}`, emp, 'DELETE')).status, 404, 'không xoá chéo khách');
+  assert.equal((await call(`/customers/${k2.data.id}/contacts/${c2.data.id}`, emp, 'DELETE')).status, 403, 'không phụ trách k2 → không sửa được');
+  assert.equal((await call(`/customers/${k2.data.id}/contacts/${c2.data.id}`, mgr, 'DELETE')).status, 404, 'không xoá chéo khách');
 
   // Phụ trách / chia sẻ: chỉ Manager đổi người phụ trách; người phụ trách chia sẻ được; người ngoài không.
   assert.equal((await call(`/customers/${k.data.id}/staff`, emp, 'PUT', { ownerId: 'old' })).status, 403);
