@@ -4,7 +4,7 @@ import { employees } from '../../staff/schema.ts';
 import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrollSettings, hrPayslips, hrSalaryProfiles } from '../schema.ts';
 import { mergeParams, type PayrollParams } from '../domain/params.ts';
 import {
-  EMPTY_GROUP_MONTH, EMPTY_INPUT, EMPTY_PROFILE, computePayslip, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
+  EMPTY_GROUP_MONTH, EMPTY_INPUT, computePayslip, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
   type GroupMonth, type PayrollInput, type PayslipCalc, type SalaryProfile,
 } from '../domain/payroll.ts';
 
@@ -15,12 +15,13 @@ import {
 export type RevenueOf = (db: AnyDb, months: readonly string[]) => Promise<Map<string, Record<string, number>>>;
 
 type ProfileRow = typeof hrSalaryProfiles.$inferSelect;
-const toProfile = (p: ProfileRow | undefined): SalaryProfile & { effectiveMonth: string | null; note: string } => p ? {
+/** Chưa có hồ sơ lương → mặc định theo chức vụ (`effectiveMonth: null`). */
+const toProfile = (p: ProfileRow | undefined, positionId?: string | null): SalaryProfile & { effectiveMonth: string | null; note: string } => p ? {
   payrollGroup: p.payrollGroup, positionLabel: p.positionLabel, baseSalary: p.baseSalary, capacityCoef: p.capacityCoef,
   responsibilityMode: p.responsibilityMode, responsibility: p.responsibility, mealAllowance: p.mealAllowance, phoneAllowance: p.phoneAllowance,
   attendanceBonus: p.attendanceBonus, kpiEnabled: p.kpiEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget,
   insurance: p.insurance, bankCode: p.bankCode, bankAccount: p.bankAccount, bankHolder: p.bankHolder, effectiveMonth: p.effectiveMonth, note: p.note,
-} : { ...EMPTY_PROFILE, effectiveMonth: null, note: '' };
+} : { ...defaultProfileFor(positionId), effectiveMonth: null, note: '' };
 const toInput = (r: typeof hrPayrollInputs.$inferSelect | undefined): PayrollInput & { note: string } => r ? {
   workDays: r.workDays, overtimeHours: r.overtimeHours, revenue: r.revenue, outputQty: r.outputQty, healthInsurance: r.healthInsurance, incomeTax: r.incomeTax,
   quarterBonus: r.quarterBonus, kpiNewCustomers: r.kpiNewCustomers, kpiTransactions: r.kpiTransactions, kpiContracts: r.kpiContracts, kpiRevenue: r.kpiRevenue,
@@ -101,7 +102,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     quarterBonuses(db, month, params, gm, revenueOf),
   ]);
   const rows: PayrollRow[] = list.map(m => {
-    const profile = toProfile(profiles.get(m.id)), input = toInput(inputs.find(i => i.memberId === m.id));
+    const profile = toProfile(profiles.get(m.id), m.positionId), input = toInput(inputs.find(i => i.memberId === m.id));
     const adj = adjustments.filter(a => a.memberId === m.id).map(({ memberId: _m, ...a }) => ({ ...a, createdByName: a.createdByName ?? '' }));
     const attendanceDays = summarizeAttendance(attendance.filter(a => a.memberId === m.id)).worked, systemRevenue = revenues.get(m.id)?.[month] ?? 0;
     const calc = computePayslip({ profile, params, input, adjustments: adj, attendanceDays, systemRevenue, groupMonth: gm, quarterBonusAuto: quarter.map.get(m.id) ?? 0 });

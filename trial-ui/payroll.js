@@ -1,4 +1,4 @@
-// BẢNG LƯƠNG CÔNG TY (#/payroll?month=YYYY-MM) – theo file "Bảng lương mẫu": Tổng hợp · 3 bảng (Sale & VP, Bách Ngân, Lock) ·
+// BẢNG LƯƠNG CÔNG TY (#/payroll?month=YYYY-MM) – theo file "Bảng lương mẫu": Tổng hợp · 3 bảng (Sale & VP, NVBH ML – Bách Ngân, NVBH Lock) ·
 // Chuyển khoản (VietQR) · Tham số · Xuất Excel. Mọi con số do máy chủ tính (src/modules/hr/domain/payroll.ts) – trang này chỉ hiển thị.
 // Sửa số liệu từng người ở trang chi tiết nhân viên (tab Lương & thưởng); số liệu chung của nhóm và tham số sửa ngay tại đây.
 
@@ -12,17 +12,23 @@ export function initPayroll(deps) {
   const { api, toast, esc, money, pill, confirmBox } = deps;
   const root = document.getElementById('payroll-board');
   const st = { month: '', d: null, tab: 'summary', seq: 0 };
-  const TABS = [['summary', 'Tổng hợp'], ['sale', 'Sale & VP'], ['bn', 'Bách Ngân'], ['lock', 'Lock'], ['transfer', 'Chuyển khoản']];
+  const TABS = [['summary', 'Tổng hợp'], ['sale', 'Sale & VP'], ['bn', 'NVBH ML'], ['lock', 'NVBH Lock'], ['transfer', 'Chuyển khoản']];
   const memberLink = (r, text) => `<a href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">${esc(text)}</a>`;
   const line = (p, key) => [...p.income, ...p.deductions].find(l => l.key === key)?.amount ?? 0;
   const withProfile = () => st.d.rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
+  const missingIn = g => st.d.rows.filter(r => r.member.active && !r.profile.hasProfile && r.payslip.status === 'estimate' && r.payslip.group === g).length;
 
   function groupTable(g) {
     const d = st.d, cols = d.columns, rows = withProfile().filter(r => r.payslip.group === g);
-    if (!rows.length) return `<p class="muted cd-empty">Chưa có nhân viên nào thuộc bảng ${esc(cols.groups[g])}. Đặt "Bảng lương" trong hồ sơ lương của nhân viên.</p>`;
+    // Nhân viên đang làm chưa có hồ sơ lương (xếp bảng theo chức vụ, vd NVBH ML → bảng ML): liệt kê để Manager thiết lập, không sót ai.
+    const missing = d.rows.filter(r => !rows.includes(r) && r.member.active && r.payslip.group === g);
+    const missingHtml = missing.length ? `<div class="approval-box"><div class="approval-head"><b>Chưa có hồ sơ lương (${missing.length})</b>
+      <small class="muted">Chưa tính vào bảng / tổng. Bấm tên để nhập LCB, BHXH, ngân hàng… ở tab Lương & thưởng rồi lưu hồ sơ lương.</small></div>
+      <p>${missing.map(r => memberLink(r, r.member.name)).join(' · ')}</p></div>` : '';
+    if (!rows.length) return missingHtml + `<p class="muted cd-empty">Chưa có nhân viên nào thuộc bảng ${esc(cols.groups[g])}. Đặt "Bảng lương" trong hồ sơ lương của nhân viên.</p>`;
     const inc = cols.income[g], ded = cols.deductions[g], sum = k => rows.reduce((s, r) => s + line(r.payslip, k), 0);
     const head = ['STT', 'Họ tên', 'Vị trí', 'Ngày công', ...inc.map(k => cols.labels[k]), 'Tổng thu nhập', ...ded.map(k => cols.labels[k]), 'Thực nhận', 'Trạng thái'];
-    return `<div class="table-wrap pr-wide"><table class="data-table pr-table"><thead><tr>${head.map((h, i) => `<th class="${i >= 3 && i < head.length - 1 ? 'right' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>
+    return missingHtml + `<div class="table-wrap pr-wide"><table class="data-table pr-table"><thead><tr>${head.map((h, i) => `<th class="${i >= 3 && i < head.length - 1 ? 'right' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>
       ${rows.map((r, i) => { const p = r.payslip; return `<tr>
         <td>${i + 1}</td><td class="first">${memberLink(r, r.member.name)}</td><td>${esc(r.profile.positionLabel || '—')}</td><td class="right num" data-label="Ngày công">${p.workDays}</td>
         ${inc.map(k => { const v = line(p, k); return `<td class="right num ${v ? '' : 'muted'}" data-label="${esc(cols.labels[k])}">${v ? money(v) : '—'}</td>`; }).join('')}
@@ -44,8 +50,8 @@ export function initPayroll(deps) {
       </tbody></table></div>
       <div class="pr-grid">
         <form class="card pr-month" id="pr-month-form"><h3>Số liệu chung ${esc(monthLabel(d.month).toLowerCase())}</h3>
-          <label>DS cửa hàng Bách Ngân<input name="bnRevenue" data-money inputmode="numeric" value="${gm.bnRevenue ? Number(gm.bnRevenue).toLocaleString('vi-VN') : ''}" placeholder="0"></label>
-          <label>DS trung bình 6 tháng (Bách Ngân)<input name="bnAvgRevenue" data-money inputmode="numeric" value="${gm.bnAvgRevenue ? Number(gm.bnAvgRevenue).toLocaleString('vi-VN') : ''}" placeholder="0"></label>
+          <label>DS cửa hàng ML (Bách Ngân)<input name="bnRevenue" data-money inputmode="numeric" value="${gm.bnRevenue ? Number(gm.bnRevenue).toLocaleString('vi-VN') : ''}" placeholder="0"></label>
+          <label>DS trung bình 6 tháng (cửa hàng ML)<input name="bnAvgRevenue" data-money inputmode="numeric" value="${gm.bnAvgRevenue ? Number(gm.bnAvgRevenue).toLocaleString('vi-VN') : ''}" placeholder="0"></label>
           <label>DS team Lock<input name="lockRevenue" data-money inputmode="numeric" value="${gm.lockRevenue ? Number(gm.lockRevenue).toLocaleString('vi-VN') : ''}" placeholder="0"></label>
           ${quarterEnd ? `<label class="check"><input type="checkbox" name="payQuarterBonus" ${gm.payQuarterBonus ? 'checked' : ''}> Chi trả thưởng quý ${Math.ceil(Number(d.month.slice(5)) / 3)} team Sale trong kỳ lương này</label>` : '<small class="muted">Thưởng quý team Sale chỉ xét ở tháng cuối quý (3, 6, 9, 12).</small>'}
           <button class="btn primary small">Lưu số liệu chung</button></form>
@@ -88,7 +94,7 @@ export function initPayroll(deps) {
         <article class="stat"><small>Tổng thực nhận</small><strong class="paid-text">${money(total.net)}</strong><span class="muted">Chuyển khoản</span></article>
       </div>
       <div class="card cd-tabs-card">
-        <div class="chips cd-tabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" class="chip ${k === st.tab ? 'active' : ''}" data-tab="${k}">${t}${['sale', 'bn', 'lock'].includes(k) ? ` <b>${d.totals.find(x => x.group === k).people}</b>` : ''}</button>`).join('')}</div>
+        <div class="chips cd-tabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" class="chip ${k === st.tab ? 'active' : ''}" data-tab="${k}">${t}${['sale', 'bn', 'lock'].includes(k) ? ` <b>${d.totals.find(x => x.group === k).people}</b>${missingIn(k) ? ` <small class="danger-text" title="Chưa có hồ sơ lương">+${missingIn(k)}</small>` : ''}` : ''}</button>`).join('')}</div>
         <div class="cd-tab-body">${st.tab === 'summary' ? summaryHtml() : st.tab === 'transfer' ? transferHtml() : groupTable(st.tab)}</div></div>`;
     root.querySelectorAll('.cd-tab-body table.data-table').forEach(t => {
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);

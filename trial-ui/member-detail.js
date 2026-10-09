@@ -14,7 +14,7 @@ const ATT_CYCLE = ['present', 'half', 'paid_leave', 'unpaid_leave', 'absent', ''
 const ADJ = { // khớp ADJUSTMENT_KINDS (hr/domain/payroll.ts)
   bonus: ['Thưởng khác / tuyên dương', 'ok'], allowance: ['Công tác / phụ cấp khác', 'blue'], deduction: ['Vi phạm / khấu trừ', 'danger'],
   advance: ['Tạm ứng', 'warn'], phone_advance: ['Tạm ứng điện thoại', 'warn'] };
-const GROUP = { sale: 'Sale & Văn phòng', bn: 'Bách Ngân', lock: 'Lock' };
+const GROUP = { sale: 'Sale & Văn phòng', bn: 'NVBH ML (Bách Ngân)', lock: 'NVBH Lock' };
 const RESP = { fixed: 'Cố định / tháng', prorated: 'Theo tỷ lệ ngày làm', per_day: 'Theo ngày (tham số / ngày)' };
 const KPI_TIER = { high: ['Mức cao', 'ok'], low: ['Mức thấp', 'warn'], none: ['Không thưởng', 'muted'] };
 const SLIP = { estimate: ['Tạm tính', 'muted'], confirmed: ['Đã chốt', 'info'], paid: ['Đã trả', 'ok'] };
@@ -273,7 +273,7 @@ export function initMemberDetail(deps) {
       ${moneyInput('insurance', 'BHXH người lao động / tháng', has ? p.insurance : prm.socialInsurance)}
       ${check('mealAllowance', 'Hưởng phụ cấp cơm + xăng (thử việc: bỏ chọn)', p.mealAllowance)}
       ${check('kpiEnabled', 'Sale: tính KPI công việc + thưởng KPI DS', p.kpiEnabled)}
-      ${check('teamBonus', 'Bách Ngân / Lock: hưởng thưởng DS của nhóm', p.teamBonus)}
+      ${check('teamBonus', 'NVBH ML / Lock: hưởng thưởng DS của nhóm', p.teamBonus)}
       <label>Mã ngân hàng (VietQR)<input name="bankCode" maxlength="30" value="${esc(p.bankCode)}" placeholder="vcb, acb, vietinbank, tcb…"></label>
       <label>Số tài khoản<input name="bankAccount" maxlength="30" inputmode="numeric" value="${esc(p.bankAccount)}"></label>
       <label class="span-2">Chủ tài khoản<input name="bankHolder" maxlength="120" value="${esc(p.bankHolder)}"></label>
