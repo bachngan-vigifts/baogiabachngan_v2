@@ -19,7 +19,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
-import { totals, after, profit, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
+import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -1002,6 +1002,7 @@ function renderProfit(doc = currentDoc()) {
   const ship = shippingCalc(editor.rows, shipOpts()), p = profit(doc, ship.fee), payer = shipOpts().payer || 'receiver';
   renderPrintingCosts(doc);
   $('#sum-revenue').textContent = money(p.revenue);
+  $('#sum-commission').textContent = money(p.commission);
   $('#sum-cost').textContent = money(p.cost);
   $('#sum-shipping').textContent = ship.fee === null ? 'Chưa có cước dự toán' : money(ship.fee);
   $$('input[name="profitShippingPayer"]').forEach(i => { i.checked = i.value === payer; });
@@ -1009,6 +1010,59 @@ function renderProfit(doc = currentDoc()) {
   $('#sum-gross').textContent = money(p.gross); $('#sum-gross').className = p.gross < 0 ? 'neg' : '';
   $('#sum-margin').textContent = fmtNum(p.margin, 1) + '%'; $('#sum-margin').classList.toggle('neg', p.margin < 0);
 }
+/**
+ * CK cho khách ("tiền cà phê"): popup theo từng mã hàng – đơn giá sau CK (không phí in), SL, CK theo % hoặc đ/SP, tiền CK.
+ * Lưu ở `row.commission` {mode, value, excluded}; lợi nhuận gộp trừ tổng CK (quote-math `commissionOf`).
+ */
+const commissionRows = () => editor.rows.filter(r => (r.name || '').trim() || (r.sku || '').trim() || Number(r.price));
+function renderCommission() {
+  const rows = commissionRows(), active = rows.filter(r => !r.commission?.excluded), off = rows.filter(r => r.commission?.excluded);
+  const host = $('#commission-rows'), typing = host.contains(document.activeElement) && document.activeElement.matches('[data-commission-value]');
+  if (typing) host.querySelectorAll('[data-commission-total]').forEach(el => { const r = editor.rows.find(x => x.id === el.dataset.commissionTotal); if (r) el.textContent = money(commissionOf(r)); });
+  else host.innerHTML = active.length ? active.map(r => `<tr data-commission-id="${esc(r.id)}"><td><b>${esc(r.sku || 'Chưa có mã')}</b><small>${esc(r.name || '')}</small></td>
+      <td class="right num" data-label="Đơn giá sau CK">${money(discounted(r))}</td><td class="right" data-label="SL">${fmtNum(Number(r.qty || 0))}</td>
+      <td><div class="commission-input"><input class="num-input" type="number" inputmode="decimal" min="0" step="any" data-commission-value aria-label="CK cho khách ${esc(r.sku || r.name || '')}" value="${r.commission?.value || ''}" placeholder="0">
+        <select data-commission-mode aria-label="Kiểu CK"><option value="percent"${r.commission?.mode !== 'amount' ? ' selected' : ''}>%</option><option value="amount"${r.commission?.mode === 'amount' ? ' selected' : ''}>đ/SP</option></select></div></td>
+      <td class="right num" data-label="Tiền CK"><b data-commission-total="${esc(r.id)}">${money(commissionOf(r))}</b></td>
+      <td><button type="button" class="icon-btn" data-commission-exclude title="Không tính CK cho dòng này" aria-label="Bỏ dòng ${esc(r.sku || r.name || '')}">×</button></td></tr>`).join('')
+    : '<tr><td colspan="6" class="muted">Không có dòng nào tính CK.</td></tr>';
+  $('#commission-total').textContent = money(rows.reduce((s, r) => s + commissionOf(r), 0));
+  $('#commission-excluded').innerHTML = off.length ? `<p class="muted small">Không tính CK: ${off.map(r => `<button type="button" class="chip" data-commission-include="${esc(r.id)}" title="Tính CK lại cho dòng này">${esc(r.sku || r.name || 'Dòng')} ↺</button>`).join(' ')}</p>` : '';
+}
+const commissionRowOf = el => editor.rows.find(x => x.id === el.closest('[data-commission-id]')?.dataset.commissionId);
+function commissionChanged() { markDirty(); renderCommission(); renderProfit(); }
+$('#open-commission').addEventListener('click', () => { if (!isManager()) return; renderCommission(); $('#commission-dialog').showModal(); });
+$('#commission-rows').addEventListener('input', e => {
+  if (!e.target.matches('[data-commission-value]')) return;
+  const r = commissionRowOf(e.target); if (!r) return;
+  const mode = r.commission?.mode === 'amount' ? 'amount' : 'percent';
+  r.commission = { ...r.commission, mode, value: Math.min(mode === 'percent' ? 100 : 1e12, Math.max(0, Number(e.target.value) || 0)), excluded: false };
+  commissionChanged();
+});
+$('#commission-rows').addEventListener('change', e => {
+  if (!e.target.matches('[data-commission-mode]')) return;
+  const r = commissionRowOf(e.target); if (!r) return;
+  const mode = e.target.value === 'amount' ? 'amount' : 'percent';
+  r.commission = { ...r.commission, mode, value: Math.min(mode === 'percent' ? 100 : 1e12, Number(r.commission?.value) || 0), excluded: false };
+  commissionChanged();
+});
+$('#commission-rows').addEventListener('click', e => {
+  if (!e.target.closest('[data-commission-exclude]')) return;
+  const r = commissionRowOf(e.target); if (!r) return;
+  r.commission = { mode: r.commission?.mode === 'amount' ? 'amount' : 'percent', value: Number(r.commission?.value) || 0, excluded: true };
+  commissionChanged();
+});
+$('#commission-excluded').addEventListener('click', e => {
+  const b = e.target.closest('[data-commission-include]'); if (!b) return;
+  const r = editor.rows.find(x => x.id === b.dataset.commissionInclude); if (!r) return;
+  r.commission = { ...r.commission, excluded: false }; commissionChanged();
+});
+$('#commission-all-apply').addEventListener('click', () => {
+  const mode = $('#commission-all-mode').value === 'amount' ? 'amount' : 'percent', value = Math.min(mode === 'percent' ? 100 : 1e12, Math.max(0, Number($('#commission-all-value').value) || 0));
+  for (const r of commissionRows()) if (!r.commission?.excluded) r.commission = { mode, value, excluded: false };
+  commissionChanged();
+});
+
 /** Mỗi dòng có `printing` {xưởng, đơn giá in}; báo giá cũ chỉ có tổng chi phí in thì dồn vào dòng đầu (như initializePrintingLines). */
 function initPrintingLines() {
   const rows = editor.rows, legacy = editor.base.printing, first = rows.find(r => Number(r.qty) > 0), hasLines = rows.some(r => r.printing);

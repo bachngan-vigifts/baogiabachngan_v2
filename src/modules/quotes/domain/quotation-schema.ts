@@ -114,6 +114,12 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
       if (!row.printing || typeof row.printing !== 'object' || Array.isArray(row.printing)) throw bad('Phí in gia công không hợp lệ.');
       clean.printing = { workshop: text(row.printing.workshop ?? '', 180), unitPrice: number(row.printing.unitPrice ?? 0, 1e12), workshopExplicit: row.printing.workshopExplicit === true };
     }
+    if (row.commission !== undefined && row.commission !== null) {
+      const c = row.commission;
+      if (typeof c !== 'object' || Array.isArray(c) || (c.mode !== undefined && !['percent', 'amount'].includes(c.mode))) throw bad('CK cho khách không hợp lệ.');
+      const mode = c.mode === 'amount' ? 'amount' : 'percent';
+      clean.commission = { mode, value: number(c.value ?? 0, mode === 'percent' ? 100 : 1e12), excluded: c.excluded === true };
+    }
     if (row.discountType !== undefined && !['percent', 'amount'].includes(row.discountType)) throw bad('Loại chiết khấu không hợp lệ.');
     clean.discountType = row.discountType || 'percent';
     if (row.taxRate !== undefined && row.taxRate !== null) clean.taxRate = number(row.taxRate, 100);

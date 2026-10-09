@@ -38,7 +38,10 @@ test('đối chiếu bản cũ ↔ bản mới trên 5.000 báo giá ngẫu nhi�
   for (let i = 0; i < 5000; i++) {
     const d: any = doc(), fee = pick([null, 0, 25000, -4, NaN, 30000]);
     assert.deepStrictEqual(M.totals(d), L.totals(d), `totals #${i} ${JSON.stringify(d)}`);
-    assert.deepStrictEqual(M.profit(d, fee as any), L.profit(d, fee), `profit #${i} ${JSON.stringify(d)}`);
+    // `commission` (CK cho khách) là mục mới, web cũ không có; báo giá ngẫu nhiên không có CK nên luôn 0.
+    const { commission, ...mine } = M.profit(d, fee as any);
+    assert.equal(commission, 0);
+    assert.deepStrictEqual(mine, L.profit(d, fee), `profit #${i} ${JSON.stringify(d)}`);
     assert.deepStrictEqual(M.printingInfo(d), L.printingInfo(d), `printingInfo #${i}`);
     for (const r of d.rows) {
       assert.deepStrictEqual(M.after(r, d), L.after(r, d), `after #${i}`);

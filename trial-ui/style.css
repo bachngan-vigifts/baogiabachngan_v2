@@ -1307,3 +1307,15 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 #sapo-push-body ul.error, #sapo-push-body .warn-list { padding-left: 18px; }
 #sapo-push-body .warn-list { color: var(--amber); }
 #sapo-push-body select { width: 100%; margin-top: 6px; }
+/* CK cho khách (tiền cà phê) – Lợi nhuận tạm tính */
+.profit-commission .link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--blue); cursor: pointer; text-align: left; }
+.profit-commission .link-btn:hover { text-decoration: underline; }
+.commission-all { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+.commission-all label { display: inline-flex; align-items: center; gap: 6px; }
+.commission-all input { width: 110px; }
+.commission-all select, #commission-all-mode { width: auto; flex: none; }
+.commission-input { display: flex; gap: 4px; align-items: center; }
+.commission-input input { width: 100px; }
+.commission-input select { width: auto; }
+.commission-table td small { display: block; }
+#commission-excluded { margin-top: 10px; }

@@ -1,5 +1,6 @@
 // TỰ SINH bởi `npm run ui:build` từ src/modules/quotes/domain/quote-math.ts – không sửa tay.
 // src/modules/quotes/domain/quote-math.ts
+var num = (v) => Number(v || 0);
 var printingWorkshops = ["X\u01B0\u1EDFng in Ti\u1EBFn ph\xE1t", "Th\u01B0\u01A1ng B\xE9 Ba", "Tr\u1ECDng T\xEDn", "X\u01B0\u1EDFng in H\u1EA1nh Nguy\xEAn (Anh Li\xEAm)", "Minh Long"];
 var normalize = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
 var rate = (r, s) => Number.isFinite(r.taxRate) ? r.taxRate : Number(s.vat || 0);
@@ -22,14 +23,20 @@ function printingInfo(s) {
   const minhLong = rows.length > 0 && rows.every((row) => /minh long|healthy cook|su duong sinh/.test(normalize(`${row.brand || ""} ${row.name || ""}`)));
   return { enabled, defaultWorkshop: minhLong ? printingWorkshops[0] : printingWorkshops[1] };
 }
+function commissionOf(r) {
+  const c = r.commission, qty = Math.max(0, num(r.qty)), value = Math.max(0, num(c?.value));
+  if (!c || c.excluded || !value || !qty) return 0;
+  return Math.round(c.mode === "amount" ? value * qty : discounted(r) * value / 100 * qty);
+}
 function profit(s, shippingFee = null) {
   const revenue = totals(s).subtotal;
   const cost = s.rows.reduce((sum, row) => sum + (Number(row.costPrice) || 0) * Number(row.qty || 0), 0);
   const shippingCost = s.shipping?.payer === "sender" && Number.isFinite(shippingFee) ? Math.max(0, shippingFee) : 0;
   const hasLineCosts = s.rows.some((row) => row.printing && Number.isFinite(row.printing.unitPrice));
   const printingCost = printingInfo(s).enabled ? hasLineCosts ? s.rows.reduce((sum, row) => sum + Math.round(Math.max(0, Number(row.printing?.unitPrice) || 0) * Math.max(0, Number(row.qty) || 0)), 0) : Math.max(0, Number(s.printing?.totalCost) || 0) : 0;
-  const gross = revenue - cost - shippingCost - printingCost;
-  return { revenue, cost, shippingCost, printingCost, gross, margin: revenue ? gross / revenue * 100 : 0 };
+  const commission = s.rows.reduce((sum, row) => sum + commissionOf(row), 0);
+  const gross = revenue - cost - commission - shippingCost - printingCost;
+  return { revenue, cost, commission, shippingCost, printingCost, gross, margin: revenue ? gross / revenue * 100 : 0 };
 }
 var netPrice = (raw, tax, included) => included ? raw / (1 + tax / 100) : raw;
 function defaultCostDiscount(product) {
@@ -57,6 +64,7 @@ function customerDiscount(brand, discounts = {}, mode = "percent", price = 0) {
 }
 export {
   after,
+  commissionOf,
   customerDiscount,
   defaultCostDiscount,
   defaultCostPrice,
