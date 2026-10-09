@@ -7,6 +7,7 @@ import { customers } from '../../customers/schema.ts';
 import { customerPayments, deliveries, deliveryLines, packingSlipLines, packingSlips, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { PACKING_SOURCE_LABEL } from '../../sales/domain/packing.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
+import { progressOf } from '../../sales/api/progress.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
@@ -166,6 +167,25 @@ export const RULES: Record<string, Rule> = {
         ...lines.filter(l => l.slipId === s.id).map(l => `- ${l.name}: ${n(l.qty)} ${l.unit}`), s.note ? `Ghi chú: ${s.note}` : '', 'Đóng xong: mở phiếu, chụp 1–3 ảnh và xác nhận.'].filter(Boolean).join('\n'),
       link: `#/packing/${s.id}`, assigneeId: null, assigneePosition: 'warehouse', priority: due && due <= addDaysIso(today, 1) ? 'urgent' as const : 'high' as const,
       dueDate: due ? addDaysIso(due, -1) : null }));
+  },
+  /**
+   * Tiến trình sản phẩm (đơn / HĐKT có phí in): kho đã xuất (đóng gói xong) → việc "In mẫu" cho người phụ trách;
+   * hoàn thành "In mẫu" → việc "Sản xuất". Hoàn thành việc = bước trên thanh tiến trình xong (xem tasks/api/routes.ts);
+   * Manager bấm xong nhanh trên thanh tiến trình thì việc tự đóng.
+   */
+  async productionSteps(db) {
+    const orders = await db.select().from(salesOrders).where(inArray(salesOrders.status, ['confirmed', 'delivering'])).limit(500);
+    if (!orders.length) return [];
+    const ids = orders.map(o => o.id), [progress, kNo] = await Promise.all([progressOf(db, ids), contractNoMap(db, ids)]);
+    return orders.flatMap(o => {
+      const p = progress.get(o.id); if (!p?.printing) return [];
+      const ref = docRef(o.id, o.orderNo, kNo.get(o.id)), base = { sourceId: o.id, link: ref.link, assigneeId: o.ownerId, priority: 'high' as const, dueDate: o.expectedDeliveryDate };
+      if (p.current === 'sample') return [{ ...base, autoKey: `print-sample:${o.id}`, source: 'order' as const, title: `In mẫu ${ref.label} – ${o.customerName}`,
+        description: 'Kho đã xuất hàng. In mẫu, gửi khách duyệt mẫu rồi bấm hoàn thành để chuyển sang sản xuất.' }];
+      if (p.current === 'production') return [{ ...base, autoKey: `production:${o.id}`, source: 'order' as const, title: `Sản xuất ${ref.label} – ${o.customerName}`,
+        description: 'Mẫu đã xong. Theo dõi in / sản xuất hàng loạt, xong thì bấm hoàn thành để chuyển sang giao hàng.' }];
+      return [];
+    });
   },
   /**
    * Xuất hoá đơn: đơn / HĐKT đã được yêu cầu (tự động khi giao xong, hoặc nhân viên phụ trách bấm) → nhóm Kế toán.

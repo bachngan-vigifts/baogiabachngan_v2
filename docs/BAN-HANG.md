@@ -159,3 +159,22 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 - Chuyển đơn sang Sapo: cột `sales_orders.sapo_order_id/code` đã có sẵn.
 - Phân quyền chi tiết theo chức vụ, ví dụ Kế toán thấy mọi công nợ (Kho đã thấy mọi lịch giao và phiếu đóng gói).
 - Chuyển dữ liệu HĐKT và công nợ từ web cũ sang (nếu cần).
+
+## Tiến trình sản phẩm (migration `0049_order_progress.sql`, `0050_supabase_access_order_progress_marks.sql`)
+- **Thanh 5 bước** ở trang chi tiết đơn / HĐKT để mọi người cùng theo dõi: **Duyệt → Xuất kho → In mẫu → Sản xuất → Giao hàng**.
+  - Đơn / HĐKT **không có phí in** thì bỏ hai bước In mẫu và Sản xuất.
+  - Nhãn tình trạng theo bước đang làm: Đợi duyệt, Chờ xuất kho, Đang in mẫu, Đang sản xuất, Đang giao hàng, Đã giao hàng.
+- **Tự xong theo chứng từ / công việc:**
+  - Duyệt: Manager duyệt đơn / HĐKT.
+  - Xuất kho: kho xác nhận đã đóng gói một phiếu đóng gói của đơn.
+  - In mẫu: xuất kho xong → tự sinh việc "In mẫu …" cho người phụ trách; hoàn thành việc → bước xong.
+  - Sản xuất: tự sinh việc "Sản xuất …"; hoàn thành việc → bước xong.
+  - Giao hàng: đơn đã giao đủ.
+- **Manager hoàn thành nhanh:**
+  - Bấm "Xong" ở một bước → xong bước đó và mọi bước trước.
+  - "Hoàn thành tất cả" → xong cả đơn.
+  - "Bỏ" → gỡ dấu tay ở bước đó và các bước sau.
+  - API: `POST /orders/:id/progress { stage | 'all', done }`.
+- **Chỉ là tiến trình theo dõi:** không đổi trạng thái đơn, lịch giao, công nợ, hoá đơn.
+- **Lưu trữ:** `order_progress_marks` (bước xong theo việc / dấu tay). Các bước theo chứng từ tính trực tiếp, không lưu.
+- **Code:** `sales/domain/progress.ts`, `sales/api/progress.ts`, `progress-routes.ts`; việc tự sinh `productionSteps` trong `tasks/api/auto-tasks.ts`.

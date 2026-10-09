@@ -2678,7 +2678,7 @@ async function openOrder(id) {
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd><dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>Theo HĐ nguyên tắc với khách</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
-  renderInvoice(o);
+  renderInvoice(o); renderProgress(d);
   // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
       ${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { fmt: fmtDate }) : '<span class="muted">Chưa có</span>'}<small class="muted">Đổi ngày giao bằng nút "＋ Lên lịch giao".</small></div>`)
@@ -2697,6 +2697,36 @@ async function openOrder(id) {
   $('#order-payments').innerHTML = paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>');
 }
+/**
+ * Tiến trình sản phẩm (mọi người cùng theo dõi): Duyệt → Xuất kho → In mẫu → Sản xuất → Giao hàng (đơn không in thì bỏ In mẫu / Sản xuất).
+ * Bước tự xong theo chứng từ / công việc; Manager bấm "Xong" ở một bước (xong luôn các bước trước) hoặc "Hoàn thành tất cả".
+ */
+function renderProgress(d) {
+  const box = $('#order-progress'), p = d.progress;
+  box.hidden = !p; if (!p) return;
+  const cancelled = d.order.status === 'cancelled', canMark = isManager() && !cancelled;
+  const by = s => s.by === 'auto' ? 'Tự động theo chứng từ' : s.by === 'task' ? `Hoàn thành việc${s.byName ? ' · ' + s.byName : ''}` : s.by === 'manual' ? `Manager đánh dấu${s.byName ? ' · ' + s.byName : ''}` : '';
+  box.innerHTML = `<div class="card-title-row"><h2 class="card-title">Tiến trình sản phẩm</h2>
+      <span class="pill ${cancelled ? 'muted' : p.done ? 'ok' : 'info'}">${esc(p.label)}</span>
+      ${canMark && !p.done ? '<button type="button" class="btn secondary small" data-progress="all" title="Đánh dấu xong tất cả các bước (chỉ tiến trình – không đổi giao hàng, công nợ)">✓ Hoàn thành tất cả</button>' : ''}</div>
+    <ol class="progress-steps">${p.stages.map((s, i) => `<li class="${s.done ? 'done' : s.key === p.current ? 'current' : ''}">
+      <span class="dot" aria-hidden="true">${s.done ? '✓' : i + 1}</span><b>${esc(s.label)}</b>
+      <small>${s.done ? esc(by(s)) + (s.at ? ' · ' + fmtDate(s.at.slice(0, 10)) : '') : s.key === p.current ? 'Đang ở bước này' : 'Chưa tới'}</small>
+      ${canMark && !s.done ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
+      ${canMark && s.by === 'manual' ? `<button type="button" class="link-btn muted" data-progress-undo="${esc(s.key)}" title="Bỏ đánh dấu tay ở bước này và các bước sau">Bỏ</button>` : ''}
+    </li>`).join('')}</ol>
+    ${p.printing ? '' : '<p class="muted small">Đơn không có phí in nên không có bước In mẫu / Sản xuất.</p>'}`;
+}
+$('#order-progress').addEventListener('click', async e => {
+  const b = e.target.closest('[data-progress], [data-progress-undo]'); if (!b || !sales.order) return;
+  const undo = b.dataset.progressUndo, stage = undo || b.dataset.progress;
+  if (stage === 'all' && !await confirmBox('Đánh dấu xong tất cả các bước tiến trình? Chỉ là tiến trình theo dõi – không đổi lịch giao, công nợ, hoá đơn.', { title: 'Hoàn thành tất cả', ok: 'Hoàn thành' })) return;
+  b.disabled = true;
+  try {
+    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/progress`, 'POST', { stage, done: !undo });
+    sales.detail.progress = r.progress; renderProgress(sales.detail); toast(undo ? 'Đã bỏ đánh dấu.' : 'Đã cập nhật tiến trình.');
+  } catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
+});
 /** Ô Hoá đơn của đơn: yêu cầu xuất (tự động khi giao xong / nhân viên bấm) → nhóm Kế toán nhập số hoá đơn. */
 function renderInvoice(o) {
   const st = o.status === 'cancelled' ? null : o.invoiceStatus || 'none', at = v => v ? new Date(v).toLocaleString('vi-VN') : '';

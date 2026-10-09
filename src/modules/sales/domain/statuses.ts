@@ -15,3 +15,8 @@ export const PACKING_SOURCES = ['warehouse', 'store', 'supplier', 'agent', 'othe
 export const SHIP_TO = ['customer', 'workshop'] as const;
 /** Yêu cầu xuất hoá đơn: phát hành chính thức hay gửi bản nháp cho khách kiểm tra trước. */
 export const INVOICE_MODES = ['issue', 'draft'] as const;
+/**
+ * Tiến trình sản phẩm của đơn / HĐKT (thanh 5 bước cho mọi người cùng theo dõi):
+ * duyệt → xuất kho → in mẫu → sản xuất → giao hàng. "In mẫu" và "Sản xuất" chỉ có ở đơn có phí in.
+ */
+export const PROGRESS_STAGES = ['approve', 'export', 'sample', 'production', 'delivered'] as const;

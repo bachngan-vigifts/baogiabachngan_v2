@@ -4,7 +4,7 @@ import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
 import { quotations } from '../quotes/schema.ts';
-import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, SCHEDULE_KINDS, SHIP_TO } from './domain/statuses.ts';
+import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, PROGRESS_STAGES, SCHEDULE_KINDS, SHIP_TO } from './domain/statuses.ts';
 
 /*
  * Bán hàng sau báo giá: Báo giá → Đơn đặt hàng → (HĐKT) → Lịch giao hàng → Công nợ.
@@ -289,3 +289,17 @@ export const shippingCarriers = pgTable('shipping_carriers', {
   createdBy: text('created_by').references(() => employees.id),
   createdAt: text('created_at').notNull(),
 }, t => [uniqueIndex('idx_shipping_carriers_name_key').on(t.nameKey)]).enableRLS();
+
+/**
+ * Bước tiến trình đã xong (thanh tiến trình đơn / HĐKT): ghi khi nhân viên hoàn thành việc "In mẫu" / "Sản xuất"
+ * (`source = 'task'`) hoặc Manager bấm hoàn thành nhanh (`source = 'manual'`). Bước "Duyệt", "Xuất kho", "Giao hàng"
+ * còn tự xong theo chứng từ (đơn đã duyệt, kho xác nhận đóng gói, đơn đã giao) – không cần dòng ở đây.
+ */
+export const orderProgressMarks = pgTable('order_progress_marks', {
+  orderId: text('order_id').notNull().references(() => salesOrders.id, { onDelete: 'cascade' }),
+  stage: text('stage', { enum: PROGRESS_STAGES }).notNull(),
+  source: text('source', { enum: ['task', 'manual'] }).notNull(),
+  markedBy: text('marked_by').references(() => employees.id),
+  markedAt: text('marked_at').notNull(),
+}, t => [primaryKey({ columns: [t.orderId, t.stage] }), enumCheck('chk_order_progress_stage', t.stage, PROGRESS_STAGES),
+  enumCheck('chk_order_progress_source', t.source, ['task', 'manual'])]).enableRLS();
