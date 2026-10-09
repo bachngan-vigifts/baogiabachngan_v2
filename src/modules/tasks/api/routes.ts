@@ -12,6 +12,7 @@ import { reconcileAutoTasks } from './auto-tasks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
 import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, canViewPeers, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { orderScopeFor } from '../../sales/api/routes.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Task = typeof tasks.$inferSelect;
@@ -59,6 +60,15 @@ const colleaguesOf = (pos: string) => sql`(select ${employees.id} from ${employe
 const peerCond = (pos: string): SQL => or(sql`${tasks.assigneeId} in ${colleaguesOf(pos)}`, sql`${tasks.createdBy} in ${colleaguesOf(pos)}`, eq(tasks.assigneePosition, pos))!;
 /** Việc tôi trực tiếp liên quan (được sửa / trao đổi theo quyền cũ): Manager, người nhận, người giao, nhóm của tôi chưa ai nhận. */
 const involved = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'manager' || t.assigneeId === m.id || t.createdBy === m.id || inMyTeam(c, t); };
+/** Việc tự sinh có mô tả nhạy cảm (ghi chú chăm sóc khách, số tiền công nợ, MST / email xuất hoá đơn): đồng nghiệp chỉ xem thấy tiêu đề, không thấy mô tả. */
+const PRIVATE_DESC_SOURCES = new Set<string>(['care', 'receivable', 'invoice']);
+/** Bản gửi cho người xem: việc chỉ xem của đồng nghiệp bị ẩn mô tả nhạy cảm. */
+const forViewer = (c: Ctx, t: Task) => !involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { ...t, description: '' } : t;
+/** Điều kiện SQL "việc tôi trực tiếp liên quan" (để tìm kiếm trong mô tả chỉ trên các việc này). */
+const involvedSql = (c: Ctx): SQL | undefined => {
+  const m = me(c), team = myTeam(c);
+  return m.role === 'manager' ? undefined : or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined);
+};
 const visible = (c: Ctx): SQL | undefined => {
   const m = me(c), team = myTeam(c), pos = peerPos(c);
   if (m.role === 'manager') return undefined;
@@ -160,7 +170,10 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const priority = p.get('priority'), source = p.get('source');
     if (priority && TASK_PRIORITIES.includes(priority as TaskPriority)) where.push(eq(tasks.priority, priority as TaskPriority));
     if (source && (TASK_SOURCES as readonly string[]).includes(source)) where.push(eq(tasks.source, source as Task['source']));
-    if (q) where.push(sql`lower(${tasks.title} || ' ' || ${tasks.description}) like ${'%' + q.replace(/[%_\\]/g, '') + '%'}`);
+    if (q) { // tìm theo tiêu đề; mô tả chỉ tìm trong việc mình liên quan (không dò được mô tả đã ẩn của đồng nghiệp)
+      const pat = '%' + q.replace(/[%_\\]/g, '') + '%', inv = involvedSql(c);
+      where.push(or(sql`lower(${tasks.title}) like ${pat}`, and(sql`lower(${tasks.description}) like ${pat}`, inv)));
+    }
     const rows = await c.env.db.select().from(tasks).where(and(...where)).orderBy(status === 'done' ? desc(tasks.completedAt) : asc(tasks.dueDate), desc(tasks.createdAt)).limit(500);
     const ids = [...new Set(rows.flatMap(r => [r.assigneeId, r.createdBy, r.completedBy]).filter(Boolean) as string[])];
     const people = ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
@@ -170,7 +183,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const today = vietnamDate().iso;
     // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
-    return json({ today, tasks: sorted.map(t => ({ ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    return json({ today, tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), comments: Number(counts.find(x => x.taskId === t.id)?.n ?? 0), due: dueBucket(t.dueDate, today),
       canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) })) });
   }, 'business');
@@ -268,6 +281,8 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   /** Tình trạng đóng hàng của các chuyến giao trong một đơn (hiện ở ô Lịch giao hàng). */
   router.get('/tasks/packing', async c => {
     const orderId = str(c.url.searchParams.get('orderId'), 80);
+    // Chỉ người xem được đơn (Manager, Kế toán, người phụ trách / tạo đơn, người được chia sẻ khách) mới xem tình trạng đóng hàng.
+    if (!(await c.env.db.select({ id: salesOrders.id }).from(salesOrders).where(and(eq(salesOrders.id, orderId), orderScopeFor(me(c)))).limit(1)).length) return json({ packing: [] });
     const rows = await c.env.db.select({ t: tasks, name: employees.name }).from(tasks).leftJoin(employees, eq(employees.id, sql`coalesce(${tasks.completedBy}, ${tasks.assigneeId})`))
       .where(and(eq(tasks.source, 'packing'), eq(tasks.sourceId, orderId))).limit(100);
     // Chỉ là tình trạng đóng hàng của chuyến (ai làm, lúc nào) – người xem được đơn đều thấy.
@@ -280,7 +295,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const ids = [t.assigneeId, t.createdBy, t.completedBy].filter(Boolean) as string[];
     const people = ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
     const name = (id: string | null) => id ? people.find(x => x.id === id)?.name ?? '' : '';
-    return json({ task: { ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (me(c).role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    return json({ task: { ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (me(c).role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), due: dueBucket(t.dueDate, vietnamDate().iso), canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) } });
   }, 'business');
 

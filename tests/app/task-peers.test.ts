@@ -4,6 +4,7 @@ import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
+import { tasks } from '../../src/modules/tasks/schema.ts';
 
 /**
  * PHÂN QUYỀN XEM CÔNG VIỆC THEO CHỨC VỤ (chốt 09/10/2026):
@@ -27,11 +28,11 @@ async function setup() {
   const login = async (id: string) => (await call('/login', '', 'POST', { email: `${id}@x.vn`, password: PASSWORD })).cookie;
   const who: Record<string, string> = {};
   for (const id of ['mgr', 'emp', 'sl3', 'sl4', 'kho1', 'kho2', 'sa1', 'sa2', 'ml1', 'ml2', 'lk1']) who[id] = await login(id);
-  return { call, who };
+  return { db, call, who };
 }
 
 test('Công việc: Sale chỉ thấy việc mình; Kho / Sale Admin / NVBH thấy việc đồng nghiệp cùng chức vụ – chỉ xem, không đọc trao đổi', async () => {
-  const { call, who } = await setup();
+  const { db, call, who } = await setup();
   const make = async (by: string, to: string, title: string) => { const r = await call('/tasks', who[by], 'POST', { title, assigneeId: to }); assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data.id as string; };
   const ids = async (u: string, view = 'all') => { const r = await call(`/tasks?view=${view}&status=all`, who[u]); assert.equal(r.status, 200, u + ': ' + JSON.stringify(r.data)); return r.data.tasks.map((t: any) => t.title) as string[]; };
 
@@ -71,6 +72,13 @@ test('Công việc: Sale chỉ thấy việc mình; Kho / Sale Admin / NVBH th�
   assert.ok(!(await ids('sa1')).includes('Soạn hàng đơn A'));
   assert.ok((await ids('ml2')).includes('Báo giá ML D'));
   assert.equal((await call(`/tasks/${mlTask}`, who.lk1)).status, 404, 'khác chức vụ');
+  // Việc tự sinh nhạy cảm của đồng nghiệp (chăm sóc khách / công nợ / hoá đơn): chỉ thấy tiêu đề, mô tả bị ẩn, không tìm ra theo mô tả.
+  const at = '2026-10-09T00:00:00.000Z';
+  await db.insert(tasks).values({ id: 'care-k1', title: 'Chăm sóc lại Công ty X', description: 'Ghi chú bí mật: khách chê giá', source: 'care', assigneeId: 'kho1', autoKey: 'care:test', createdAt: at, updatedAt: at });
+  const careSeen = (await call('/tasks/care-k1', who.kho2)).data.task;
+  assert.deepEqual([careSeen.title, careSeen.description, careSeen.viewOnly], ['Chăm sóc lại Công ty X', '', true]);
+  assert.ok(!(await call('/tasks?view=all&status=all&q=b%C3%AD%20m%E1%BA%ADt', who.kho2)).data.tasks.some((t: any) => t.id === 'care-k1'), 'không dò mô tả ẩn');
+  assert.equal((await call('/tasks/care-k1', who.kho1)).data.task.description, 'Ghi chú bí mật: khách chê giá', 'người nhận vẫn thấy đủ');
   // Việc của Manager không lộ cho ai.
   for (const u of ['kho2', 'sa1', 'ml2', 'emp']) assert.equal((await call(`/tasks/${mgrOwn}`, who[u])).status, 404, u);
   // Sale không có bộ lọc "Cùng chức vụ".

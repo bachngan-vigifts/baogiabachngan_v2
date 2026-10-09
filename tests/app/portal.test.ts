@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
-import { customers } from '../../src/modules/customers/schema.ts';
+import { customers, customerStaff } from '../../src/modules/customers/schema.ts';
 import { pricePolicies, productPrices, products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
 
 const origin = 'https://trial.test';
@@ -20,6 +20,8 @@ async function setup() {
     { id: '1001', name: 'Công ty Hoàng Long', contact: 'Chị Lan', phone: '0901', email: 'lan@hl.vn', address: '1 Lê Lợi', search: '', taxCode: '0101234567', customerCode: 'HL01', sourceVersion: 0, syncedAt: t },
     { id: '1002', name: 'Công ty Khác', contact: '', phone: '', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: t },
   ]);
+  // Nhân viên phụ trách khách 1001 (không phụ trách 1002) – chỉ cấp được tài khoản trang khách cho khách mình phụ trách / được chia sẻ.
+  await db.insert(customerStaff).values({ customerId: '1001', memberId: 'emp', role: 'owner', createdAt: t });
   await db.insert(pricePolicies).values([{ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 }, { id: 'si', name: 'Giá sỉ', sortOrder: 1 }]);
   await db.insert(warehouses).values({ id: 'k1', name: 'Kho Q1' });
   await db.insert(products).values([
@@ -47,6 +49,11 @@ test('tài khoản khách: nhân viên cấp (không đặt được CK), Manage
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Lan', email: 'x@hl.vn', discounts: { minhLong: 5 } })).status, 403, 'nhân viên không đặt CK');
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '9999', name: 'Lan', email: 'x@hl.vn' })).status, 404);
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Lan', email: 'emp@x.vn' })).status, 409, 'trùng email');
+  // Khách KHÔNG phụ trách: không cấp được tài khoản (tài khoản trang khách xem được mọi đơn / công nợ của khách), không xem danh sách tài khoản.
+  assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '1002', name: 'Kẻ lạ', email: 'la@khac.vn' })).status, 403, 'khách không phụ trách');
+  assert.equal((await call('/customer-accounts', mgr, 'POST', { customerId: '1002', name: 'Chị Khác', email: 'chi@khac.vn' })).status, 201, 'Manager cấp được');
+  assert.deepEqual((await call('/customers/1002/accounts', emp)).data.accounts, [], 'nhân viên không phụ trách không xem danh sách tài khoản / chiết khấu');
+  assert.equal((await call('/customers/1002/accounts', mgr)).data.accounts.length, 1);
   const k = await customerLogin(s, emp, { customerId: '1001', name: 'Chị Lan', email: 'lan@hl.vn', phone: '0901' });
   let acc = (await call('/customers/1001/accounts', emp)).data.accounts;
   assert.deepEqual([acc[0].name, acc[0].activated, acc[0].owner.id, acc[0].discounts, acc[0].canManage], ['Chị Lan', true, 'emp', {}, true]);
