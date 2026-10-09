@@ -1450,11 +1450,14 @@ async function downloadQuotePdf(hideDiscount) {
     await loadPdfTools();
     const state = { ...d, ...(d.type === 'HRC' ? { hideHrcDiscountColumn: !!hideDiscount } : {}), ...(d.type === 'B2B' ? { hideB2bDiscountColumn: !!hideDiscount } : {}) };
     const images = await loadQuoteImages(d.rows);
-    const missingRows = d.rows.filter((r, i) => r.image && !images[i]);
-    if (missingRows.length) {
-      const names = missingRows.slice(0, 3).map(r => r.sku || r.name || 'sản phẩm').join(', ');
-      throw new Error('Chưa tải được ảnh của ' + names + (missingRows.length > 3 ? '…' : '')
-        + '. Chưa tạo PDF để tránh mất hình.' + (images.errors[0] ? ' ' + images.errors[0] : ' Vui lòng thử lại.'));
+    // Ảnh máy chủ không đọc được nội dung (vd ảnh web cũ khi chưa cài secret LEGACY_STAFF_*): KHÔNG báo lỗi mà in theo đúng
+    // mẫu PDF bằng trình duyệt, lấy ảnh y như "In nhanh" (thẻ <img>, cùng nguồn ảnh – trình duyệt tự gửi phiên web cũ)
+    // → hộp in mở ra, chọn "Lưu dưới dạng PDF". Cùng bố cục, cùng cột (kể cả bản ẩn cột CK).
+    if (d.rows.some((r, i) => r.image && !images[i])) {
+      if (tab && !tab.closed) tab.close();
+      await printQuoteTemplate(state);
+      toast('Đã mở bản in theo mẫu PDF (ảnh lấy như In nhanh): chọn "Lưu dưới dạng PDF" / "Save as PDF" để tải file.');
+      return;
     }
     const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
     const bytes = await globalThis.EditableQuotePdf.create({ state, images, banner });
