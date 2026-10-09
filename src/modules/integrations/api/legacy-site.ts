@@ -11,6 +11,34 @@ export const LEGACY_MEDIA = /^https:\/\/baogia\.minhlongonline\.com\/api\/staff\
 export const legacyMediaKey = (url: string) => LEGACY_MEDIA.exec(url)?.[1] ?? null;
 
 const COOKIE = '__Host-bn-session';
+export class LegacyRateLimitError extends AppError {
+  constructor(readonly retryAfter: number) {
+    super(429, 'Web cũ đang giới hạn đăng nhập (429). Chờ ' + retryAfter + ' giây rồi tiếp tục; không cần đổi mật khẩu.');
+  }
+}
+const sessionKey = async (site: NonNullable<StaffEnv['legacySite']>) => crypto.subtle.importKey(
+  'raw', await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(['legacy-image-session-v1', site.base, site.email, site.password]))),
+  'AES-GCM', false, ['encrypt', 'decrypt']);
+/** Phiên được mã hoá, gắn với phiên Manager, để dùng tiếp khi Edge đổi isolate. Không trả cookie web cũ dạng rõ. */
+export async function exportLegacySession(env: StaffEnv, owner: string): Promise<string | null> {
+  const site = env.legacySite;
+  if (!site || !session || session.base !== site.base || session.email !== site.email) return null;
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const bytes = new TextEncoder().encode(JSON.stringify({ cookie: session.cookie, expires: Date.now() + 3600_000 }));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(owner) }, await sessionKey(site), bytes);
+  return btoa(String.fromCharCode(...iv, ...new Uint8Array(ciphertext)));
+}
+export async function restoreLegacySession(env: StaffEnv, owner: string, token: unknown): Promise<void> {
+  const site = env.legacySite;
+  if (!site || typeof token !== 'string' || token.length > 4096) return;
+  try {
+    const bytes = Uint8Array.from(atob(token), c => c.charCodeAt(0));
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, 12), additionalData: new TextEncoder().encode(owner) }, await sessionKey(site), bytes.slice(12));
+    const value = JSON.parse(new TextDecoder().decode(plain));
+    if (typeof value.cookie !== 'string' || !/^__Host-bn-session=[A-Za-z0-9._~-]+$/.test(value.cookie) || !(value.expires > Date.now())) return;
+    session = { cookie: value.cookie, at: Date.now(), email: site.email, base: site.base };
+  } catch { /* token hết hạn / bị sửa / đổi tài khoản: đăng nhập bình thường */ }
+}
 let session: { cookie: string; at: number; email: string; base: string } | null = null;
 let pendingLogin: { site: NonNullable<StaffEnv['legacySite']>; promise: Promise<string> } | null = null;
 /** Xoá phiên đã nhớ (test). */
@@ -24,6 +52,11 @@ async function loginRequest(site: NonNullable<StaffEnv['legacySite']>): Promise<
     res = await doFetch(`${site.base}/api/staff/login`, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10_000),
       headers: { 'content-type': 'application/json', origin: site.base }, body: JSON.stringify({ email: site.email, password: site.password }) });
   } catch { throw new AppError(502, 'Không kết nối được web cũ để lấy ảnh.'); }
+  if (res.status === 429) {
+    const retry = res.headers.get('retry-after') || '';
+    const seconds = /^\d+$/.test(retry) ? Number(retry) : Math.ceil((Date.parse(retry) - Date.now()) / 1000);
+    throw new LegacyRateLimitError(Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 86400) : 900);
+  }
   const raw = res.headers.get('set-cookie') ?? '', m = new RegExp(`${COOKIE}=([^;,\\s]+)`).exec(raw);
   if (!res.ok || !m) throw new AppError(502, `Đăng nhập web cũ để lấy ảnh không được (${res.status}). Kiểm tra secret LEGACY_STAFF_EMAIL / LEGACY_STAFF_PASSWORD.`);
   session = { cookie: `${COOKIE}=${m[1]}`, at: Date.now(), email: site.email, base: site.base };
