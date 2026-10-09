@@ -1,0 +1,55 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { cleanQuotation } from '../src/modules/quotes/domain/quotation-schema.ts';
+
+const source = readFileSync(new URL('../trial-ui/quote-payment.js', import.meta.url), 'utf8');
+const context = vm.createContext({ Intl });
+vm.runInContext(source.replace(/export /g, '') + '\nglobalThis.terms = {paymentClause, withPaymentNotes, defaultPaymentTerms};', context);
+const terms = context.terms as { paymentClause: (t: object, total: number, words: (v: number) => string) => string;
+  withPaymentNotes: (notes: string, t: object, total: number, words: (v: number) => string) => string; defaultPaymentTerms: (type: string) => object };
+const words = (v: number) => 'words-' + v;
+
+test('quote payment clause matches existing contract wording for numeric deadlines and 0/100% deposits', () => {
+  const docSource = readFileSync(new URL('../trial-ui/contract-document.js', import.meta.url), 'utf8');
+  const doc = vm.createContext({ Intl, globalThis: { HrcPdf: { amountInWords: words } } });
+  vm.runInContext(docSource.replace('return {build, buildPack, download, paymentDetails,', 'return {paymentClause, build, buildPack, download, paymentDetails,'), doc);
+  for (const rate of [0, 30, 50, 100]) for (const days of [0, 15, 30]) {
+    const total = 1234567, deposit = Math.round(total * rate / 100);
+    const contract = doc.globalThis.ContractDocument.paymentClause({ depositRate: rate, days, deposit, remaining: total - deposit });
+    assert.equal(terms.paymentClause({ depositRate: rate, balanceTerm: String(days) }, total, words), contract);
+  }
+});
+
+test('remaining balance supports pre-delivery and entered text; amounts update without losing unrelated notes', () => {
+  const t = { depositRate: 30, balanceTerm: 'Thanh toán trước khi giao hàng' };
+  let notes = terms.withPaymentNotes('- Giá có hiệu lực 30 ngày.\n- Bên Mua sẽ tiến hành tạm ứng 30% trị giá hợp đồng.\n- 70% trị giá còn lại của hợp đồng sẽ thanh toán trước khi nhận hàng.\nTrân trọng.', t, 1000000, words);
+  assert.ok(notes.includes('30%')); assert.ok(notes.includes('70%'));
+  assert.ok(notes.includes('300.000 đồng')); assert.ok(notes.includes('700.000 đồng'));
+  assert.ok(notes.includes('trước khi giao hàng.'));
+  assert.ok(!notes.includes('Bên Mua'));
+  notes = terms.withPaymentNotes(notes, t, 2000000, words);
+  assert.ok(notes.includes('600.000 đồng')); assert.ok(notes.includes('1.400.000 đồng'));
+  assert.equal(notes.match(/- Thanh toán:/g)?.length, 1);
+  assert.ok(notes.startsWith('- Giá có hiệu lực 30 ngày.'));
+  assert.ok(notes.endsWith('Trân trọng.'));
+  assert.ok(terms.paymentClause({ depositRate: 0, balanceTerm: 'Thanh toán trước khi giao hàng' }, 1000, words).endsWith('trước khi giao hàng.'));
+  assert.ok(terms.paymentClause({ depositRate: 50, balanceTerm: 'trong vòng 7 ngày sau khi nghiệm thu' }, 1000, words).endsWith('trong vòng 7 ngày sau khi nghiệm thu.'));
+  assert.ok(terms.paymentClause({ depositRate: 30.5, balanceTerm: '15' }, 1000, words).includes('30,5%'));
+});
+
+const quote = { type: 'HRC', quoteNo: 'TEST-1', vat: 8, rows: [{ name: 'Ly', qty: 1, price: 1000 }] };
+test('quote payment terms persist through validation; invalid rates/days are rejected and old quotes stay unchanged', () => {
+  for (const type of ['HRC', 'B2B', 'VIGIFTS']) {
+    const paymentTerms = terms.defaultPaymentTerms(type);
+    assert.deepEqual(cleanQuotation({ ...quote, type, paymentTerms }).paymentTerms, { ...paymentTerms });
+  }
+  for (const t of [{ depositRate: -1, balanceTerm: '30' }, { depositRate: 101, balanceTerm: '30' },
+    { depositRate: 30, balanceTerm: '' }, { depositRate: 30, balanceTerm: '-1' }, { depositRate: 30, balanceTerm: '3651' }, { depositRate: 30, balanceTerm: '1.5' }]) {
+    assert.throws(() => cleanQuotation({ ...quote, paymentTerms: t }));
+  }
+  const before = { depositRate: 50, balanceTerm: 'Thanh toán trước khi giao hàng' };
+  assert.deepEqual(cleanQuotation({ ...quote, paymentTerms: before }).paymentTerms, before);
+  assert.equal(cleanQuotation(quote).paymentTerms, undefined);
+});

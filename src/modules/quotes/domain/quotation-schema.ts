@@ -56,6 +56,14 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
   for (const key of ['quoteNo', 'date', 'customer', 'customerId', 'customerTaxCode', 'customerCode', 'customerAddress', 'contact', 'phone', 'email', 'owner', 'ownerPhone', 'notes']) result[key] = text(inp[key] ?? '', key === 'notes' ? 20000 : 500);
   if (!result.quoteNo.trim()) throw bad('Vui lòng nhập số báo giá.');
   for (const key of ['deliveryDate', 'delivery_date']) if (inp[key]) { const d = validDeliveryDate(inp[key]); if (!d) throw bad('Ngày giao không hợp lệ.'); result[key] = d; }
+  if (inp.paymentTerms !== undefined) {
+    if (!isObj(inp.paymentTerms)) throw bad('Điều khoản thanh toán báo giá không hợp lệ.');
+    const depositRate = number(inp.paymentTerms.depositRate, 100);
+    const balanceTerm = text(inp.paymentTerms.balanceTerm ?? '', 500).trim();
+    if (depositRate < 100 && !balanceTerm) throw bad('Thiếu thời hạn thanh toán phần còn lại.');
+    if (/^[+-]?\d+(?:[.,]\d+)?\s*(?:ngày)?$/i.test(balanceTerm) && (!/^\d+\s*(?:ngày)?$/i.test(balanceTerm) || parseInt(balanceTerm, 10) > 3650)) throw bad('Số ngày thanh toán phải từ 0 đến 3650.');
+    result.paymentTerms = { depositRate, balanceTerm };
+  }
   if (inp.notesVersion === 2) result.notesVersion = 2;
   if (inp.careStatus !== undefined || inp.careDueDate !== undefined || inp.careAssigneeId !== undefined || inp.careNote !== undefined) {
     const careStatus = text(inp.careStatus ?? '', 20);
