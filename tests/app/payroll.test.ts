@@ -50,8 +50,9 @@ test('bảng lương công ty: tham số theo tháng, DS nhóm, thưởng quý t
   assert.equal(line('old', 'meal'), 1_250_000, 'Bách Ngân trừ 1 ngày cơm');
   assert.match(b.rows.find((r: any) => r.member.id === 'emp').qr, /vcb-0123\.png\?amount=/);
   const sale = b.totals.find((t: any) => t.group === 'sale');
-  assert.equal(sale.people, b.rows.filter((r: any) => r.payslip.group === 'sale').length);
-  assert.equal(sale.net, b.rows.filter((r: any) => r.payslip.group === 'sale').reduce((s: number, r: any) => s + r.payslip.net, 0));
+  const saleRows = b.rows.filter((r: any) => r.payslip.group === 'sale' && r.profile.hasProfile);
+  assert.equal(sale.people, saleRows.length, 'tổng chỉ tính người đã có hồ sơ lương');
+  assert.equal(sale.net, saleRows.reduce((s: number, r: any) => s + r.payslip.net, 0));
 
   // Chốt cả bảng (chỉ người đã có hồ sơ lương); chốt rồi thì sửa tham số không làm đổi phiếu.
   const net = row('emp').net;
@@ -64,4 +65,24 @@ test('bảng lương công ty: tham số theo tháng, DS nhóm, thưởng quý t
   // Nhân viên xem phiếu đã chốt của mình.
   const mine = (await call(`/members/emp/overview?month=${M}`, emp)).data.payroll;
   assert.equal(mine.payslip.status, 'confirmed'); assert.equal(mine.payslip.net, net); assert.equal(mine.locked, true);
+});
+
+test('bảng lương: NVBH ML / NVBH Lock chưa có hồ sơ lương vẫn hiện, tự xếp vào bảng theo chức vụ (không bị sót)', async () => {
+  const { call, mgr } = await setup();
+  // Chức vụ: emp → NVBH ML, new → NVBH Lock (chưa ai có hồ sơ lương).
+  for (const [id, positionId] of [['emp', 'sales-ml'], ['new', 'sales-lock']] as const) {
+    const m = (await call('/admin/members', mgr)).data.members.find((x: any) => x.id === id);
+    assert.equal((await call('/admin/member', mgr, 'PUT', { id, name: m.name, email: m.email, phone: m.phone, positionId, role: m.role, active: true })).status, 200);
+  }
+  const b = (await call('/hr/payroll/2026-09', mgr)).data;
+  const row = (id: string) => b.rows.find((r: any) => r.member.id === id);
+  assert.deepEqual([row('emp').payslip.group, row('emp').profile.positionLabel, row('emp').profile.hasProfile], ['bn', 'NVBH', false]);
+  assert.equal(row('new').payslip.group, 'lock');
+  assert.equal(b.columns.groups.bn, 'NVBH ML (Bách Ngân)');
+  assert.equal(b.totals.find((t: any) => t.group === 'bn').people, 0, 'chưa có hồ sơ lương → chưa tính vào tổng');
+  // Trang chi tiết: form hồ sơ lương điền sẵn theo chức vụ; lưu xong thì vào bảng ML.
+  const profile = (await call('/members/emp/overview?month=2026-09', mgr)).data.payroll.profile;
+  assert.deepEqual([profile.payrollGroup, profile.responsibilityMode, profile.teamBonus, profile.attendanceBonus], ['bn', 'per_day', true, 200_000]);
+  assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: '2026-09', payrollGroup: 'bn', positionLabel: 'NVBH', baseSalary: 4_758_000, responsibilityMode: 'per_day', teamBonus: true })).status, 200);
+  assert.equal((await call('/hr/payroll/2026-09', mgr)).data.totals.find((t: any) => t.group === 'bn').people, 1);
 });

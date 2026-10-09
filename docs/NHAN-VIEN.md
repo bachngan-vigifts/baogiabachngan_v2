@@ -43,13 +43,15 @@ Công thức lấy đúng file Excel mẫu và đã đối chiếu từng đồn
 | Phần file Excel | Trong app | Code |
 |---|---|---|
 | Sheet "Tham số" | Bảng lương → **Tham số** (lưu theo "áp dụng từ tháng") | `hr/domain/params.ts` (`PARAM_FIELDS`) |
-| "Lương Sale", "Lương Bách Ngân", "Lương Lock" | Mỗi người thuộc 1 **bảng lương** (hồ sơ lương) → tab trong Bảng lương | `hr/domain/payroll.ts` (`computePayslip`) |
+| "Lương Sale", "Lương Bách Ngân", "Lương Lock" | Mỗi người thuộc 1 **bảng lương** (hồ sơ lương) → tab **Sale & VP**, **NVBH ML** (cửa hàng ML – sheet "Lương Bách Ngân"), **NVBH Lock** | `hr/domain/payroll.ts` (`computePayslip`) |
 | "KPI CV" | Số liệu tháng của nhân viên Sale (KH mới, giao dịch, HĐ, DS cá nhân, ngày làm hàng / công tác, KPI chốt) | `hr/domain/kpi-cv.ts` |
 | "Thưởng quý" | Tự tính tháng cuối quý khi bật "Chi trả thưởng quý" | `computeQuarterBonus` |
 | "Phiếu lương" | Tab **Lương & thưởng** ở trang nhân viên (nhân viên tự xem phiếu của mình) | `member-detail.js` |
 | "DS tổng hợp", "Tổng hợp" | Bảng lương → **Tổng hợp** | `payroll.js` |
 | "Chuyển khoản" (VietQR) | Bảng lương → **Chuyển khoản** + cột trong file Excel xuất ra | `vietQrUrl` |
 | "Chỉ tiêu DS" | Chỉ tiêu DS cá nhân / tháng trong hồ sơ lương (mặc định 415tr ở Tham số) | – |
+
+Nhân viên **chưa có hồ sơ lương** vẫn hiện ở tab theo chức vụ (NVBH ML → tab NVBH ML, NVBH LOCK → tab NVBH Lock, còn lại → Sale & VP) trong khung "Chưa có hồ sơ lương", chưa tính vào tổng / chốt. Form hồ sơ lương điền sẵn mặc định theo chức vụ (`defaultProfileFor`): NVBH, trách nhiệm theo ngày, chuyên cần 200.000, hưởng thưởng DS nhóm.
 
 ### Công thức
 **Chung cả 3 bảng:**

@@ -23,7 +23,7 @@ import { computeKpiCv, type KpiCvInput, type KpiCvResult } from './kpi-cv.ts';
 // ---------------- Nhóm bảng lương
 export const PAYROLL_GROUPS = ['sale', 'bn', 'lock'] as const;
 export type PayrollGroup = typeof PAYROLL_GROUPS[number];
-export const GROUP_LABEL: Record<PayrollGroup, string> = { sale: 'Sale & Văn phòng', bn: 'Bách Ngân', lock: 'Lock' };
+export const GROUP_LABEL: Record<PayrollGroup, string> = { sale: 'Sale & Văn phòng', bn: 'NVBH ML (Bách Ngân)', lock: 'NVBH Lock' };
 export const RESPONSIBILITY_MODES = ['fixed', 'prorated', 'per_day'] as const;
 export type ResponsibilityMode = typeof RESPONSIBILITY_MODES[number];
 export const RESPONSIBILITY_LABEL: Record<ResponsibilityMode, string> = { fixed: 'Cố định / tháng', prorated: 'Theo tỷ lệ ngày làm', per_day: 'Theo ngày (tham số / ngày)' };
@@ -96,6 +96,17 @@ export const EMPTY_PROFILE: SalaryProfile = {
   mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, outputRate: 0, revenueTarget: 0, insurance: 0,
   bankCode: '', bankAccount: '', bankHolder: '',
 };
+
+/**
+ * Hồ sơ lương mặc định theo chức vụ khi nhân viên CHƯA có hồ sơ lương – để không ai bị sót khỏi bảng lương:
+ * NVBH ML → bảng cửa hàng ML (Bách Ngân), NVBH Lock → bảng Lock (trách nhiệm theo ngày, chuyên cần, thưởng DS nhóm như file mẫu);
+ * chức vụ khác → Sale & Văn phòng. Manager vẫn phải lưu hồ sơ lương (LCB, BHXH…) trước khi chốt.
+ */
+export const POSITION_GROUP: Readonly<Record<string, PayrollGroup>> = { 'sales-ml': 'bn', 'sales-lock': 'lock' };
+export function defaultProfileFor(positionId: string | null | undefined): SalaryProfile {
+  const g = POSITION_GROUP[positionId ?? ''];
+  return g ? { ...EMPTY_PROFILE, payrollGroup: g, positionLabel: 'NVBH', responsibilityMode: 'per_day', attendanceBonus: 200_000, teamBonus: true } : EMPTY_PROFILE;
+}
 
 // ---------------- Số liệu nhập theo tháng (một dòng / người / tháng)
 export interface PayrollInput extends KpiCvInput {

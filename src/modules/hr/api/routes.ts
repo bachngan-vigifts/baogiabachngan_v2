@@ -97,7 +97,9 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
           bankCode: r.profile.bankCode, bankAccount: r.profile.bankAccount, bankHolder: r.profile.bankHolder },
         payslip: slip, qr: vietQrUrl(r.profile.bankCode, r.profile.bankAccount, slip.net, b.month) };
     });
-    const totals = PAYROLL_GROUPS.map(g => { const list = rows.filter(r => r.payslip.group === g);
+    // Tổng chỉ tính người đã có hồ sơ lương / phiếu đã chốt (người chưa có hồ sơ hiện riêng để Manager thiết lập).
+    const counted = rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
+    const totals = PAYROLL_GROUPS.map(g => { const list = counted.filter(r => r.payslip.group === g);
       return { group: g, label: GROUP_LABEL[g], people: list.length, gross: list.reduce((s, r) => s + r.payslip.gross, 0), deductions: list.reduce((s, r) => s + r.payslip.deductionTotal, 0), net: list.reduce((s, r) => s + r.payslip.net, 0) }; });
     return json({ month: b.month, params: b.params, paramsMonth: b.paramsMonth, groupMonth: b.groupMonth, quarter: b.quarter, rows, totals,
       columns: { income: GROUP_INCOME, deductions: GROUP_DEDUCTION, labels: LINE_LABEL, groups: GROUP_LABEL } });
