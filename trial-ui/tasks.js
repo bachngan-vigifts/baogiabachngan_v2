@@ -12,6 +12,8 @@ export const TASK_UI = {
   teams: { warehouse: 'Kho', accounting: 'Kế toán', 'sale-admin': 'Sale Admin' },
   groups: [['overdue', 'Quá hạn'], ['today', 'Hôm nay'], ['upcoming', 'Sắp tới'], ['none', 'Chưa đặt hạn']],
 };
+/** Chức vụ xem được việc của đồng nghiệp cùng chức vụ – cùng danh sách PEER_VIEW_POSITIONS ở máy chủ. */
+const PEER_VIEW = ['sale-admin', 'warehouse', 'sales-lock', 'sales-ml'];
 const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
 // "Hôm nay" theo giờ Việt Nam (khớp máy chủ), không theo múi giờ của máy đang mở.
@@ -31,7 +33,7 @@ function dueText(t) {
  * Gắn bảng công việc vào #view-tasks. `api(path, method, body)`, `toast(msg, kind)`, `go(hash)`, `isManager()`, `userId()`.
  * Trả về { load(id?), badge() }.
  */
-export function initTasks({ api, toast, go, isManager, userId }) {
+export function initTasks({ api, toast, go, isManager, userId, positionId = () => '' }) {
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
   const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', approvals: null };
   let searchTimer;
@@ -64,15 +66,15 @@ export function initTasks({ api, toast, go, isManager, userId }) {
   }
 
   function row(t) {
-    const done = t.status === 'done' || t.status === 'cancelled';
-    return `<tr class="task-row ${done ? 'is-done' : ''} prio-${t.priority}" data-task="${esc(t.id)}">
-      <td class="task-check"><input type="checkbox" ${t.status === 'done' ? 'checked' : ''} ${t.status === 'cancelled' ? 'disabled' : ''} aria-label="Hoàn thành ${esc(t.title)}" data-toggle></td>
-      <td class="task-main"><div class="task-title">${esc(t.title)}</div>
+    const done = t.status === 'done' || t.status === 'cancelled', ro = t.viewOnly;
+    return `<tr class="task-row ${ro ? 'is-peer' : ''} ${done ? 'is-done' : ''} prio-${t.priority}" data-task="${esc(t.id)}">
+      <td class="task-check"><input type="checkbox" ${t.status === 'done' ? 'checked' : ''} ${t.status === 'cancelled' || ro ? 'disabled' : ''} aria-label="Hoàn thành ${esc(t.title)}" data-toggle></td>
+      <td class="task-main"><div class="task-title">${esc(t.title)}${ro ? ' <span class="pill off" title="Việc của đồng nghiệp cùng chức vụ – chỉ xem">Đồng nghiệp · chỉ xem</span>' : ''}</div>
         <div class="task-meta">${pill(TASK_UI.source, t.source, 'src')}${t.auto && !t.createdBy ? '<span class="pill off" title="Hệ thống tự tạo, tự hoàn thành khi chứng từ xử lý xong">Tự động</span>' : ''}${t.description ? `<span class="muted task-desc">${esc(t.description)}</span>` : ''}${t.comments ? `<span class="task-cmt" title="Trao đổi">💬 ${t.comments}</span>` : ''}</div></td>
       <td data-label="Ưu tiên">${pill(TASK_UI.priority, t.priority, 'prio')}</td>
       <td data-label="Giao / nhận" class="task-people"><small class="muted">${esc(t.creatorName || 'Hệ thống')} →</small><b>${who(t)}</b>${t.canClaim && !done ? '<button type="button" class="btn secondary small claim-btn" data-claim>Nhận việc</button>' : ''}</td>
       <td data-label="Hạn">${dueText(t)}</td>
-      <td data-label="Trạng thái"><select class="task-status st-${t.status}" data-status aria-label="Trạng thái">${Object.entries(TASK_UI.status).filter(([k]) => k !== 'cancelled' || t.canManage || t.status === 'cancelled').map(([k, [l]]) => `<option value="${k}" ${k === t.status ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+      <td data-label="Trạng thái"><select class="task-status st-${t.status}" data-status aria-label="Trạng thái" ${ro ? 'disabled' : ''}>${Object.entries(TASK_UI.status).filter(([k]) => k !== 'cancelled' || t.canManage || t.status === 'cancelled').map(([k, [l]]) => `<option value="${k}" ${k === t.status ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
       <td class="task-go">${t.link ? `<a class="btn ghost small" href="${esc(t.link)}" data-open-link title="Mở chứng từ">Mở</a>` : ''}</td></tr>`;
   }
 
@@ -112,6 +114,10 @@ export function initTasks({ api, toast, go, isManager, userId }) {
     if (!st.list.length) list.innerHTML = '<tr><td colspan="7" class="muted">Đang tải…</td></tr>';
     await people();
     q('#tasks-view [data-v="unassigned"]').hidden = !isManager();
+    // "Cùng chức vụ": Sale Admin / Kho / NVBH LOCK / NVBH ML xem việc của đồng nghiệp cùng chức vụ (chỉ xem).
+    const peers = !isManager() && PEER_VIEW.includes(positionId() || '');
+    q('#tasks-view [data-v="colleagues"]').hidden = !peers;
+    if (st.view === 'colleagues' && !peers) st.view = 'mine';
     q('#tasks-view [data-v="all"]').textContent = isManager() ? 'Tất cả' : 'Tất cả của tôi';
     if (st.view === 'unassigned' && !isManager()) st.view = 'mine';
     const params = new URLSearchParams({ view: st.view, status: st.status });
@@ -139,7 +145,7 @@ export function initTasks({ api, toast, go, isManager, userId }) {
     let t;
     try { t = (await api('/tasks/' + encodeURIComponent(id))).task; } catch (e) { toast(e.message, 'err'); return; }
     await people();
-    const me = userId(), canEdit = t.canManage, isAssignee = t.assigneeId === me || t.canClaim, edit = canEdit || isAssignee, text = canEdit && !t.auto;
+    const me = userId(), ro = !!t.viewOnly, canEdit = t.canManage && !ro, isAssignee = !ro && (t.assigneeId === me || t.canClaim), edit = canEdit || isAssignee, text = canEdit && !t.auto;
     const dlg = document.createElement('dialog'); dlg.className = 'modal task-dialog';
     dlg.innerHTML = `<form class="task-form">
       <div class="modal-head"><div><span class="eyebrow">${TASK_UI.source[t.source]?.[0] || ''}${t.auto ? ' · Tự động' : ''}</span>
@@ -154,8 +160,9 @@ export function initTasks({ api, toast, go, isManager, userId }) {
         </div>
         <label class="task-desc-field"><span>Mô tả</span>${text ? `<textarea name="description" rows="3" maxlength="5000">${esc(t.description)}</textarea>` : `<p class="pre">${esc(t.description) || '<span class="muted">—</span>'}</p>`}</label>
         <p class="muted small">${t.teamName && !t.assigneeId ? `Giao cho <b>nhóm ${esc(t.teamName)}</b> – người trong nhóm bấm "Nhận việc" hoặc chuyển sang Đang làm để nhận. · ` : ''}Giao bởi <b>${esc(t.creatorName)}</b> · ${ago(t.createdAt)}${t.completedAt ? ` · Hoàn thành ${dmy(t.completedAt)}${t.completedByName ? ' bởi ' + esc(t.completedByName) : ''}` : ''}${t.link ? ` · <a href="${esc(t.link)}" data-open-link>Mở chứng từ →</a>` : ''}</p>
-        <h3 class="task-cmt-title">Trao đổi</h3><ul class="task-comments" data-comments><li class="muted">Đang tải…</li></ul>
-        <div class="task-cmt-add"><input name="comment" placeholder="Nhắn người giao / người nhận… (Enter để gửi)" maxlength="2000"><button type="button" class="btn secondary small" data-send>Gửi</button></div>
+        ${ro ? '<p class="muted small task-peer-note">Việc của đồng nghiệp cùng chức vụ: chỉ xem. Trao đổi trong việc chỉ người giao, người nhận và Manager xem được.</p>'
+          : `<h3 class="task-cmt-title">Trao đổi</h3><ul class="task-comments" data-comments><li class="muted">Đang tải…</li></ul>
+        <div class="task-cmt-add"><input name="comment" placeholder="Nhắn người giao / người nhận… (Enter để gửi)" maxlength="2000"><button type="button" class="btn secondary small" data-send>Gửi</button></div>`}
       </div>
       <div class="modal-foot">${t.canDelete ? '<button type="button" class="btn ghost danger-text" data-del>Xoá việc</button>' : ''}<span class="grow"></span>${t.canClaim && t.status !== 'done' ? '<button type="button" class="btn secondary" data-claim-dlg>Nhận việc</button>' : ''}<button type="button" class="btn secondary" data-x>Đóng</button>${edit ? '<button type="submit" class="btn primary">Lưu</button>' : ''}</div></form>`;
     document.body.append(dlg); dlg.showModal();
@@ -165,7 +172,7 @@ export function initTasks({ api, toast, go, isManager, userId }) {
     let status = t.status;
     dlg.querySelectorAll('[data-set-status]').forEach(b => b.addEventListener('click', () => { status = b.dataset.setStatus; dlg.querySelectorAll('[data-set-status]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }));
     const loadComments = async () => {
-      const ul = dlg.querySelector('[data-comments]');
+      const ul = dlg.querySelector('[data-comments]'); if (!ul) return;
       try {
         const { comments } = await api(`/tasks/${encodeURIComponent(t.id)}/comments`);
         ul.innerHTML = comments.length ? comments.map(c => `<li class="${c.memberId === me ? 'me' : ''}"><b>${esc(c.name)}</b><span>${esc(c.body)}</span><small>${ago(c.createdAt)}</small></li>`).join('') : '<li class="muted">Chưa có trao đổi.</li>';
@@ -177,8 +184,8 @@ export function initTasks({ api, toast, go, isManager, userId }) {
       inp.disabled = true;
       try { await api(`/tasks/${encodeURIComponent(t.id)}/comments`, 'POST', { body }); inp.value = ''; await loadComments(); } catch (e) { toast(e.message, 'err'); } finally { inp.disabled = false; inp.focus(); }
     };
-    dlg.querySelector('[data-send]').addEventListener('click', send);
-    f.comment.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+    dlg.querySelector('[data-send]')?.addEventListener('click', send);
+    f.comment?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
     dlg.querySelector('[data-claim-dlg]')?.addEventListener('click', async () => { if (await update(t.id, { assigneeId: me }, 'Đã nhận việc.')) close(); });
     dlg.querySelector('[data-del]')?.addEventListener('click', async () => {
       if (!confirm('Xoá công việc này?')) return;

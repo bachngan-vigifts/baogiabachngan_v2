@@ -2326,7 +2326,7 @@ var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dò
 /** Chăm sóc khách hàng (trial-ui/care.js). */
 var careUi = null; // eslint-disable-line no-var
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id }); }
+function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }

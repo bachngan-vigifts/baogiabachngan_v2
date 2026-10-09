@@ -25,6 +25,15 @@ export const TASK_TEAMS = { warehouse: 'Kho', accounting: 'Kế toán', 'sale-ad
 export type TaskTeam = keyof typeof TASK_TEAMS;
 export const isTeam = (v: unknown): v is TaskTeam => typeof v === 'string' && Object.hasOwn(TASK_TEAMS, v);
 
+/**
+ * Chức vụ được XEM công việc của đồng nghiệp CÙNG chức vụ (việc đồng nghiệp nhận hoặc giao) – chỉ xem: không sửa / đổi trạng thái /
+ * nhận / xoá, không xem / gửi trao đổi. Chức vụ khác (Sale, Kế toán…) chỉ thấy việc của chính mình (+ việc nhóm chưa ai nhận).
+ * Quyết định của chủ dự án 09/10/2026.
+ */
+export const PEER_VIEW_POSITIONS = ['sale-admin', 'warehouse', 'sales-lock', 'sales-ml'] as const;
+export const canViewPeers = (positionId: unknown): positionId is typeof PEER_VIEW_POSITIONS[number] =>
+  typeof positionId === 'string' && (PEER_VIEW_POSITIONS as readonly string[]).includes(positionId);
+
 export const OPEN_STATUSES: readonly TaskStatus[] = ['todo', 'in_progress'];
 export const isOpen = (s: string) => (OPEN_STATUSES as readonly string[]).includes(s);
 /** Thứ tự sắp xếp: khẩn trước. */
