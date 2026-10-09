@@ -11,14 +11,18 @@ const terms = context.terms as { paymentClause: (t: object, total: number, words
   withPaymentNotes: (notes: string, t: object, total: number, words: (v: number) => string) => string; defaultPaymentTerms: (type: string) => object };
 const words = (v: number) => 'words-' + v;
 
-test('quote payment clause matches existing contract wording for numeric deadlines and 0/100% deposits', () => {
+test('quote payment clause keeps contract rates/deadlines with short wording and no amount in words', () => {
   const docSource = readFileSync(new URL('../trial-ui/contract-document.js', import.meta.url), 'utf8');
   const doc = vm.createContext({ Intl, globalThis: { HrcPdf: { amountInWords: words } } });
   vm.runInContext(docSource.replace('return {build, buildPack, download, paymentDetails,', 'return {paymentClause, build, buildPack, download, paymentDetails,'), doc);
   for (const rate of [0, 30, 50, 100]) for (const days of [0, 15, 30]) {
     const total = 1234567, deposit = Math.round(total * rate / 100);
     const contract = doc.globalThis.ContractDocument.paymentClause({ depositRate: rate, days, deposit, remaining: total - deposit });
-    assert.equal(terms.paymentClause({ depositRate: rate, balanceTerm: String(days) }, total, words), contract);
+    const expected = contract.replace(/\s*\(Bằng chữ: [^)]*\)/g, '').replace('Bên A thanh toán cho Bên B ', 'Đặt cọc ')
+      .replace('Bên A thanh toán 100%', rate === 100 ? 'Đặt cọc 100%' : 'Thanh toán 100%');
+    const actual = terms.paymentClause({ depositRate: rate, balanceTerm: String(days) }, total, words);
+    assert.equal(actual, expected);
+    assert.ok(!actual.includes('Bằng chữ')); assert.ok(!actual.includes('Bên A')); assert.ok(!actual.includes('Bên B'));
   }
 });
 

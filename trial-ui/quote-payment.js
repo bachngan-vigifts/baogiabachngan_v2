@@ -1,4 +1,4 @@
-// Điều khoản báo giá dùng cùng cách viết với điều khoản thanh toán HĐKT.
+// Điều khoản báo giá: đặt cọc và thời hạn thanh toán, số tiền bằng số.
 export const defaultPaymentTerms = type => ({ depositRate: type === 'HRC' ? 0 : type === 'VIGIFTS' ? 50 : 30,
   balanceTerm: type === 'HRC' ? '30' : type === 'VIGIFTS' ? '0' : 'Thanh toán trước khi giao hàng' });
 export function paymentClause(terms, total = 0, inWords = () => '') {
@@ -10,10 +10,10 @@ export function paymentClause(terms, total = 0, inWords = () => '') {
   const deadline = days !== undefined ? Number(days) > 0
     ? (rate === 0 ? 'sau ' + Number(days) + ' ngày kể từ ngày giao hàng' : 'trong vòng ' + Number(days) + ' ngày kể từ ngày giao hàng')
     : 'ngay sau khi giao hàng' : term.replace(/^thanh toán\s*/i, '').replace(/[.]+$/, '');
-  const amount = value => money(value) + ' đồng (Bằng chữ: ' + inWords(value) + ')';
-  if (rate === 100) return 'Bên A thanh toán 100% giá trị hợp đồng tương ứng với số tiền là ' + amount(deposit) + ' trước khi giao hàng.';
+  const amount = value => money(value) + ' đồng';
+  if (rate === 100) return 'Đặt cọc 100% giá trị hợp đồng tương ứng với số tiền là ' + amount(deposit) + ' trước khi giao hàng.';
   if (rate === 0) return 'Bên A thanh toán 100% giá trị hợp đồng tương ứng với số tiền là ' + amount(remaining) + ' ' + deadline + '.';
-  return 'Bên A thanh toán cho Bên B ' + percent(rate) + '% giá trị của hợp đồng tương ứng với số tiền là ' + amount(deposit)
+  return 'Đặt cọc ' + percent(rate) + '% giá trị của hợp đồng tương ứng với số tiền là ' + amount(deposit)
     + ' ngay sau khi ký hợp đồng. Thanh toán ' + percent(100 - rate) + '% giá trị còn lại tương ứng ' + amount(remaining) + ' ' + deadline + '.';
 }
 export function withPaymentNotes(notes, terms, total, inWords) {
