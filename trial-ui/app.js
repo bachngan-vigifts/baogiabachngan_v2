@@ -1418,23 +1418,21 @@ async function downloadQuotePdf(hideDiscount) {
     await loadPdfTools();
     const state = { ...d, ...(d.type === 'HRC' ? { hideHrcDiscountColumn: !!hideDiscount } : {}), ...(d.type === 'B2B' ? { hideB2bDiscountColumn: !!hideDiscount } : {}) };
     const images = await loadQuoteImages(d.rows);
-    // Ảnh không đọc được nội dung (vd ảnh trên web cũ – chỉ xem được khi đăng nhập web cũ): in theo đúng mẫu web cũ
-    // bằng trình duyệt như "In nhanh" (trình duyệt tự hiện ảnh) → chọn "Lưu dưới dạng PDF".
-    if (d.rows.some((r, i) => r.image && !images[i])) {
-      if (tab && !tab.closed) tab.close();
-      await printQuoteTemplate(state);
-      toast('Ảnh sản phẩm nằm trên web cũ nên mở bản in theo mẫu: chọn "Lưu dưới dạng PDF" (Save as PDF) để tải file.');
-      return;
+    const missingRows = d.rows.filter((r, i) => r.image && !images[i]);
+    if (missingRows.length) {
+      const names = missingRows.slice(0, 3).map(r => r.sku || r.name || 'sản phẩm').join(', ');
+      throw new Error('Chưa tải được ảnh của ' + names + (missingRows.length > 3 ? '…' : '')
+        + '. Chưa tạo PDF để tránh mất hình.' + (images.errors[0] ? ' ' + images.errors[0] : ' Vui lòng thử lại.'));
     }
     const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
     const bytes = await globalThis.EditableQuotePdf.create({ state, images, banner });
-    const missingImg = d.rows.filter((r, i) => r.image && !images[i]).length;
+    
     // Tên file không dấu: vài trình duyệt / máy bỏ tên có dấu và lưu thành "download".
     const clean = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, c => c === 'đ' ? 'd' : 'D').replace(/[\\/:*?"<>|]+/g, ' ').trim();
     const name = `${clean(d.quoteNo)} - ${clean(d.customer)} - ${(d.date || todayIso()).split('-').reverse().join('-')}.pdf`;
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     if (tab && !tab.closed) { tab.location.href = url; toast('Đã mở PDF – bấm Chia sẻ để lưu hoặc gửi.'); }
-    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.' + (missingImg ? ` ${missingImg} ảnh không tải được nên để trống${images.errors[0] ? ': ' + images.errors[0] : ''}.` : ''), missingImg ? 'err' : undefined); }
+    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.'); }
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (ex) { console.error(ex); if (tab && !tab.closed) tab.close(); toast(ex?.message || 'Không thể tạo PDF. Vui lòng thử lại.', 'err'); }
   finally { pdfBusy = false; }
@@ -3105,6 +3103,8 @@ function loadQuoteImages(rows) {
     if (!src) return Promise.resolve(null);
     if (!cache.has(src)) cache.set(src, (async () => {
       const list = sources(src);
+      // Ảnh riêng tư web cũ: dùng phiên máy chủ chung, không phụ thuộc máy người tải đã đăng nhập web cũ hay chưa.
+      if (/^https:\/\/baogia\.minhlongonline\.com\/api\/staff\/media-file\?key=/i.test(src)) return viaServer(src);
       for (const u of list) { const img = await loadCanvasImage(u, 8000); if (img) return img; }
       for (const u of list.filter(x => /^https?:\/\//i.test(x))) { const img = await viaServer(u); if (img) return img; }
       return null;
