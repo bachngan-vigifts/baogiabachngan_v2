@@ -56,17 +56,18 @@ async function templatesFor(quote) {
 const saveBlob = (bytes, name, type) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type })); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 };
-const cleanDetails = d => ({ ...d, depositRate: Number(d.depositRate) || 0, paymentDays: Math.max(0, parseInt(d.paymentDays, 10) || 0) });
+const cleanDetails = d => ({ ...d, depositRate: Number(d.depositRate), paymentDays: Number(d.paymentDays) });
 
 /**
  * Mở hộp xem / sửa / tải HĐKT. `api(path, method, body)` gọi máy chủ; `onSaved()` tải lại đơn sau khi lưu.
  */
 export async function openContractDocs({ detail, api, toast, onSaved }) {
   const k = detail.contract; if (!k) return;
+  const canEdit = k.canEdit === true, canEditFinancial = k.canEditFinancial === true;
   const dlg = document.createElement('dialog'); dlg.className = 'modal xwide contract-docs';
-  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">HĐKT ${esc(k.contractNo)}</span><h2>Xem, chỉnh sửa và tải hồ sơ HĐKT</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">HĐKT ${esc(k.contractNo)}</span><h2>${canEdit ? 'Xem, chỉnh sửa và tải hồ sơ HĐKT' : 'Xem và tải hồ sơ HĐKT'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body cd-body">
-      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. Tỉ lệ đặt cọc và số ngày thanh toán lấy theo HĐKT đã lập. Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Khi đã sửa chữ trực tiếp trên trang, cần <b>Dựng lại</b> hồ sơ đó để nhận thông tin mới.</p>
+      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. ${canEditFinancial ? 'Manager được sửa tỷ lệ cọc và số ngày thanh toán; khi lưu, kỳ công nợ sẽ cập nhật theo.' : 'Tỷ lệ cọc và số ngày thanh toán lấy theo HĐKT đã lập.'} Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Khi đã sửa chữ trực tiếp trên trang, cần <b>Dựng lại</b> hồ sơ đó để nhận thông tin mới.</p>
         ${FIELDS.map(([f, label, type]) => `<label><span>${label}</span>${type === 'area' ? `<textarea rows="2" data-d="${f}"></textarea>` : `<input data-d="${f}" type="${type || 'text'}" ${type === 'number' ? 'min="0"' : ''}>`}</label>`).join('')}
         <button type="button" class="btn secondary small" data-refresh>Cập nhật bản xem</button></aside>
       <section class="cd-preview"><div class="cd-tabs chips" role="tablist">${DOCS.map(([t, label], i) => `<button type="button" class="chip" role="tab" data-doc="${t}" aria-selected="${i === 0}">${label}</button>`).join('')}</div>
@@ -81,9 +82,10 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   let current = 'HDKT', dirty = false, quoteRows = null, renderSeq = 0;
   for (const el of dlg.querySelectorAll('[data-d]')) {
     el.value = details[el.dataset.d] ?? '';
-    if (['depositRate', 'paymentDays'].includes(el.dataset.d)) { el.readOnly = true; el.title = 'Theo HĐKT đã lập (khớp kỳ công nợ)'; continue; }
+    if (!canEdit || (['depositRate', 'paymentDays'].includes(el.dataset.d) && !canEditFinancial)) { el.readOnly = true; el.title = 'Theo HĐKT đã lập (khớp kỳ công nợ)'; continue; }
     el.addEventListener('input', () => { details[el.dataset.d] = el.value; markDirty(); });
   }
+  for (const selector of ['[data-save]', '[data-refresh]', '[data-rebuild]']) $d(selector).hidden = !canEdit;
   const markDirty = () => { dirty = true; $d('[data-dirty]').textContent = 'Có thay đổi chưa lưu'; };
   const close = () => { if (dirty && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
@@ -108,6 +110,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
       const wrapper = doc.querySelector('.docx-wrapper'); if (wrapper) wrapper.style.zoom = String(Math.min(1, Math.max(0.35, (frame.clientWidth - 32) / 794)));
       for (const info of prepared.paragraphs) {
         const p = doc.getElementById('bnword_' + info.index)?.closest('p'); if (!p) continue;
+        if (!canEdit) continue;
         p.contentEditable = 'plaintext-only'; p.dataset.wordIndex = String(info.index);
         if (edits[current].some(e => e.index === info.index)) p.classList.add('edited');
         const record = () => {
@@ -121,6 +124,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
         p.addEventListener('blur', () => { if (p.classList.contains('edited')) dropIfEmpty(); });
         if (!p.innerText.trim() && p.classList.contains('edited') && !p.closest('td')) p.style.display = 'none';
       }
+      if (!canEdit) { status('HĐKT đã duyệt: nhân viên chỉ được xem và tải. Chỉ Manager được chỉnh sửa.'); return; }
       status('Bấm vào đoạn văn hoặc ô bảng để sửa trực tiếp; xoá hết chữ một dòng rồi bấm Backspace để bỏ hẳn dòng đó. Sửa chữ không tự tính lại giá / thuế. Ngắt trang có thể khác Microsoft Word.' + (edits[current].length ? ` · Hồ sơ này có ${edits[current].length} đoạn đã sửa.` : ''));
     } catch (e) { if (seq === renderSeq) status(e.message); }
   }
@@ -131,8 +135,9 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   $d('[data-rebuild]').addEventListener('click', () => { if (!edits[current].length || confirm('Bỏ các chỗ đã sửa trực tiếp của hồ sơ này?')) { edits[current] = []; markDirty(); render(); } });
   $d('[data-print]').addEventListener('click', () => $d('.cd-frame').contentWindow.print());
   $d('[data-save]').addEventListener('click', async e => {
+    if (!canEdit) return;
     e.target.disabled = true;
-    try { await api('/contracts/' + encodeURIComponent(k.id), 'PUT', { details: { ...(k.data || {}), details: cleanDetails(details), edits } }); dirty = false; $d('[data-dirty]').textContent = 'Đã lưu'; toast('Đã lưu hồ sơ HĐKT.'); onSaved?.(); }
+    try { await api('/contracts/' + encodeURIComponent(k.id), 'PUT', { revision: k.revision, signedDate: details.signedDate, paymentMethod: details.paymentMethod, deliveryAddress: details.deliveryAddress, ...(canEditFinancial ? { depositRate: Number(details.depositRate), paymentDays: Number(details.paymentDays) } : {}), details: { ...(k.data || {}), details: cleanDetails(details), edits } }); k.revision += 1; dirty = false; $d('[data-dirty]').textContent = 'Đã lưu'; toast('Đã lưu hồ sơ HĐKT.'); onSaved?.(); }
     catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
   });
   const wordName = type => `${type}_${String(k.contractNo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[^a-zA-Z0-9]+/g, '-')}.docx`;
@@ -151,3 +156,5 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   });
   render();
 }
+
+

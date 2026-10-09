@@ -22,11 +22,11 @@ type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 type QuoteRow = typeof quotations.$inferSelect;
 /**
  * Điểm móc khi lưu báo giá (chạy trong cùng giao dịch) – module bán hàng đăng ký (đảo phụ thuộc: quotes không import sales):
- *  - `beforeSave`: chặn sửa (vd đơn hàng của báo giá đã được Manager duyệt);
- *  - `afterSave`: đồng bộ chứng từ sinh từ báo giá (đơn / HĐKT còn nháp nhận số lượng, giá mới).
+ *  - `beforeSave`: kiểm tra quyền sửa chứng từ đã duyệt;
+ *  - `afterSave`: đồng bộ chứng từ sinh từ báo giá (đơn / HĐKT nhận số lượng, giá mới theo quyền người sửa).
  */
 export const quoteSaveHooks: {
-  beforeSave: ((tx: Tx, old: QuoteRow) => Promise<void>)[]; afterSave: ((tx: Tx, saved: QuoteRow) => Promise<void>)[];
+  beforeSave: ((tx: Tx, old: QuoteRow, viewer: { id: string; role: string }) => Promise<void>)[]; afterSave: ((tx: Tx, saved: QuoteRow, viewer: { id: string; role: string }) => Promise<void>)[];
   /** Sau khi tạo / lưu báo giá xong (ngoài giao dịch): vd. tasks tạo ngay việc "Duyệt báo giá" + thông báo, không đợi ai mở trang Công việc. */
   afterCommit: ((env: StaffEnv) => Promise<void>)[];
 } = { beforeSave: [], afterSave: [], afterCommit: [] };
@@ -171,7 +171,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), predicate(quotationEditScope(viewer)));
       const [old] = await tx.select().from(quotations).where(condition).limit(1);
       if (!old) throw new AppError(409, 'Báo giá đã thay đổi hoặc anh không có quyền sửa. Vui lòng tải lại.');
-      for (const h of quoteSaveHooks.beforeSave) await h(tx, old);
+      if (old.approvalStatus === 'approved' && !isManager(viewer)) throw new AppError(403, 'Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'QUOTE_APPROVED');
+      for (const h of quoteSaveHooks.beforeSave) await h(tx, old, viewer);
       if (data.quoteNo !== old.quoteNo) data.quoteNo = await assignQuoteNo(tx, data.quoteNo, old.id);
       const next = old.revision + 1, encoded = JSON.stringify(data);
       // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, phải gửi duyệt lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
@@ -184,7 +185,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       await tx.delete(quoteLines).where(eq(quoteLines.quoteId, old.id));
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(old.id, data));
       const [fresh] = await tx.select().from(quotations).where(eq(quotations.id, old.id)).limit(1);
-      for (const h of quoteSaveHooks.afterSave) await h(tx, fresh!);
+      if (changed) for (const h of quoteSaveHooks.afterSave) await h(tx, fresh!, viewer);
       // Nhân viên sửa nội dung báo giá còn đang chờ duyệt → Manager được báo bản mới (lưu mà không đổi gì thì không báo).
       const pendingEdit = !isManager(viewer) && old.approvalStatus === 'pending' && changed;
       return { revision: next, approvalStatus: revoke ? 'pending' : old.approvalStatus, revoked: revoke, pendingEdit };
@@ -197,3 +198,5 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     return json({ id: c.params.id, revision: saved.revision, data, approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
   }, 'business');
 }
+
+
