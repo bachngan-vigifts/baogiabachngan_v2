@@ -186,7 +186,11 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const sku = decodeURIComponent(c.params.sku!).trim().slice(0, 500);
     const rows = await historyOf(c.env.db, sku);
     const prices = rows.filter(r => r.kind === 'sale' && r.unitPrice !== null).map(r => r.unitPrice!);
-    return json({ sku, limit: PRODUCT_HISTORY_LIMIT, history: rows.map(({ id, refKey, recordedAt, ...r }) => r),
+    // Giá nhập (giá vốn) và tên nhà cung cấp chỉ Manager xem: nhân viên chỉ thấy giá ở dòng bán / giao / khách trả.
+    const mgr = (c.state.session as SessionState).member.role === 'manager';
+    const COST_KINDS = new Set(['purchase', 'supplier_return', 'transfer', 'adjustment']), SUPPLIER_KINDS = new Set(['purchase', 'supplier_return']);
+    const shown = (r: typeof rows[number]) => mgr ? r : { ...r, unitPrice: COST_KINDS.has(r.kind) ? null : r.unitPrice, partner: SUPPLIER_KINDS.has(r.kind) ? '' : r.partner };
+    return json({ sku, limit: PRODUCT_HISTORY_LIMIT, history: rows.map(shown).map(({ id, refKey, recordedAt, ...r }) => r),
       sales: prices.length ? { count: prices.length, last: prices[0], min: Math.min(...prices), max: Math.max(...prices), avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) } : null });
   }, 'business');
 

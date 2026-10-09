@@ -11,6 +11,7 @@ import { CUSTOMER_POSITION_ID } from '../../staff/domain/roles.ts';
 import { normalizePhone } from '../../staff/domain/login-id.ts';
 import { phoneKeySql } from '../../staff/repo/auth-repo.ts';
 import { customers } from '../../customers/schema.ts';
+import { customerAccess } from '../../customers/api/routes.ts';
 import { pricePolicies, productPrices, products } from '../../catalog/schema.ts';
 import { snapshotVersion } from '../../catalog/api/routes.ts';
 import { quotations, quoteLines } from '../../quotes/schema.ts';
@@ -259,8 +260,12 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   // ======================= NHÂN VIÊN: cấp & quản lý tài khoản khách =======================
-  /** Tài khoản khách của một khách hàng. */
+  /**
+   * Tài khoản khách của một khách hàng (tên, email / SĐT đăng nhập, chiết khấu riêng): chỉ Manager / người phụ trách /
+   * người được chia sẻ khách (như trang chi tiết khách). Nhân viên khác nhận danh sách rỗng.
+   */
   router.get('/customers/:id/accounts', async c => {
+    if (!(await customerAccess(c.env.db, c.params.id!, member(c))).canSeeAll) return json({ accounts: [] });
     const rows = await c.env.db.select({ account: customerAccounts, name: employees.name, email: employees.email, phone: employees.phone, active: employees.active, passwordHash: credentials.passwordHash })
       .from(customerAccounts).innerJoin(employees, eq(employees.id, customerAccounts.memberId)).leftJoin(credentials, eq(credentials.memberId, employees.id))
       .where(eq(customerAccounts.customerId, c.params.id!)).orderBy(asc(customerAccounts.createdAt));
@@ -291,6 +296,8 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const [cust] = await db.select({ id: customers.id, approvalStatus: customers.approvalStatus }).from(customers).where(eq(customers.id, customerId)).limit(1);
     if (!cust) throw new AppError(404, 'Không tìm thấy khách hàng.');
     if (cust.approvalStatus === 'pending') throw new AppError(409, 'Khách hàng đang chờ Manager duyệt, chưa cấp tài khoản được.', 'CUSTOMER_PENDING');
+    // Tài khoản trang khách xem được MỌI đơn / công nợ / báo giá của khách → chỉ Manager, người phụ trách hoặc người được chia sẻ khách cấp được.
+    if (!(await customerAccess(db, customerId, me)).canSeeAll) throw new AppError(403, 'Chỉ Manager hoặc nhân viên phụ trách / được chia sẻ khách hàng này mới cấp được tài khoản trang khách.');
     const ownerId = mgr && body.ownerId ? str(body.ownerId, 80) : me.id;
     const [owner] = await db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, ownerId), eq(employees.active, true), inArray(employees.role, ['manager', 'employee']))).limit(1);
     if (!owner) throw new AppError(400, 'Nhân viên phụ trách không hợp lệ.');

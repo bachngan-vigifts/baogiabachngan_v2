@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
-import { customers } from '../../src/modules/customers/schema.ts';
+import { customers, customerStaff } from '../../src/modules/customers/schema.ts';
 import { normalizePhone, parseLoginId } from '../../src/modules/staff/domain/login-id.ts';
 
 const origin = 'https://trial.test';
@@ -27,6 +27,7 @@ test('tài khoản khách đăng nhập bằng email hoặc số điện thoại
   };
   const emp = (await call('/login', '', 'POST', { email: 'emp@x.vn', password: PASSWORD })).cookie;
   await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: '', phone: '', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' });
+  await db.insert(customerStaff).values({ customerId: '1001', memberId: 'emp', role: 'owner', createdAt: '2026-10-01T00:00:00.000Z' }); // nhân viên phụ trách khách → được cấp tài khoản trang khách
   const acc = await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Chị Lan', email: 'lan@hl.vn', phone: '+84 901 234 567' });
   assert.equal(acc.status, 201);
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Anh Minh', email: 'minh@hl.vn', phone: '0901234567' })).status, 409, 'số đã dùng cho tài khoản khách khác');
@@ -61,6 +62,7 @@ test('khách không có email: tạo tài khoản chỉ bằng số di động (
   };
   const emp = (await call('/login', '', 'POST', { email: 'emp@x.vn', password: PASSWORD })).cookie;
   await db.insert(customers).values({ id: '2002', name: 'Công ty Kim Trần Gia', contact: '', phone: '', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' });
+  await db.insert(customerStaff).values({ customerId: '2002', memberId: 'emp', role: 'owner', createdAt: '2026-10-01T00:00:00.000Z' }); // nhân viên phụ trách khách → được cấp tài khoản trang khách
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '2002', name: 'Trần Hoàng' })).status, 400, 'phải có email hoặc số di động');
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '2002', name: 'Trần Hoàng', phone: '12345' })).status, 400, 'số không đăng nhập được');
   // Gõ số điện thoại vào ô email (như ảnh chụp) cũng được.

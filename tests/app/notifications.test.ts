@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
-import { customers } from '../../src/modules/customers/schema.ts';
+import { customers, customerStaff } from '../../src/modules/customers/schema.ts';
 import { pricePolicies, productPrices, products } from '../../src/modules/catalog/schema.ts';
 import { webPushKeys } from '../../src/modules/notifications/schema.ts';
 import { b64url, decryptPushPayload } from '../../src/modules/notifications/domain/web-push.ts';
@@ -32,6 +32,7 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   const login = async (email: string, pw = PASSWORD) => (await call('/login', '', 'POST', { email, password: pw })).cookie;
   const emp = await login('emp@x.vn'), mgr = await login('mgr@x.vn');
   await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: '', phone: '', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: t });
+  await db.insert(customerStaff).values({ customerId: '1001', memberId: 'emp', role: 'owner', createdAt: '2026-10-01T00:00:00.000Z' }); // nhân viên phụ trách khách → được cấp tài khoản trang khách
   await db.insert(pricePolicies).values({ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 });
   await db.insert(products).values([{ sku: 'ML-01', name: 'Bộ trà Minh Long', brand: 'Minh Long', unit: 'bộ', updatedAt: t }, { sku: 'LL-01', name: 'Bình giữ nhiệt', brand: 'Lock&Lock', unit: 'cái', updatedAt: t }]);
   await db.insert(productPrices).values([{ sku: 'ML-01', policyId: 'le', price: 1_000_000 }, { sku: 'LL-01', policyId: 'le', price: 200_000 }]);
