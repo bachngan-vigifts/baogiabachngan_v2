@@ -2,6 +2,7 @@
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
+import { setupDataRefresh } from './auto-refresh.js';
 import { printSheet } from './print-page.js';
 import { showAudit } from './audit-ui.js';
 import { watchCsp } from './csp-report.js';
@@ -173,6 +174,7 @@ const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 async function api(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
+  const requestRoute = location.hash;
   const requestToken = token;
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
@@ -185,6 +187,10 @@ async function api(path, method = 'GET', body) {
   if (!res.ok) {
     if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
     throw new ApiError(data.error || 'Không thực hiện được thao tác.', res.status, data.code);
+  }
+  if (state.user && sameSession) {
+    if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
+    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) { dataRefresh.saved(); queueMicrotask(() => dataRefresh.tick()); }
   }
   return data;
 }
@@ -211,7 +217,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
-  state.user = null; if (!keepToken) saveToken('');
+  state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
@@ -275,7 +281,7 @@ async function enter() {
   currentHash = location.hash;
   route();
   loadAll();
-  notifier.start();
+  notifier.start(); dataRefresh.start(); dataRefresh.tick();
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -2299,11 +2305,19 @@ document.addEventListener('click', async e => {
 // ----- chi tiết đơn
 const sales = { order: null, detail: null };
 // ----- Thông báo (Web Push như web cũ) + trang TỰ LÀM MỚI khi khách gửi báo giá / đặt hàng / hỏi tồn
+var dataRefresh = setupDataRefresh({
+  read: path => api(path), refresh: () => refreshData(),
+  enabled: () => !!state.user,
+  blocked: () => (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
+  routeKey: () => location.hash,
+  primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : ['/quotes', '/orders', '/contracts'],
+  onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
+});
 const notifier = setupNotifications({
   api, root: $('#staff-bell'),
   onNew(notes) {
     for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
-    refreshData();
+    dataRefresh.request(); dataRefresh.tick();
   },
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) go('#' + h); },
   isManager: () => isManager(),
@@ -2317,13 +2331,28 @@ function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager,
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
-/** Tải lại dữ liệu đang xem (không đụng báo giá đang sửa dở). */
-function refreshData() {
-  loadQuotes(); loadStockBadge(); tasksView().badge(); chatView().badge();
-  const [page, id] = location.hash.replace(/^#\/?/, '').split('/');
-  if (page === 'orders' && id) openOrder(id);
-  else if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') openEditor(id); }
-  else if (['orders', 'contracts', 'deliveries', 'receivables', 'stock-requests', 'tasks'].includes(page)) route();
+/** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
+async function refreshData() {
+  if (!state.user) return;
+  const jobs = [loadQuotes(), loadStockBadge(), tasksView().badge(), chatView().badge()];
+  if (!isWarehouse()) jobs.push(careView().badge());
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [page, id] = path.split('/'), params = new URLSearchParams(query);
+  if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
+  else if (page === 'orders') jobs.push(id ? openOrder(id) : loadOrders());
+  else if (page === 'contracts') jobs.push(loadContracts());
+  else if (page === 'deliveries') jobs.push(loadDeliveries());
+  else if (page === 'receivables') jobs.push(loadReceivables());
+  else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : loadCustomers());
+  else if (page === 'products') jobs.push(loadProducts(), productAdmin().loadPending(), loadCatalogSnapshot());
+  else if (page === 'staff' && isManager()) jobs.push(loadMembers());
+  else if (page === 'tasks') jobs.push(tasksView().load(id));
+  else if (page === 'care') jobs.push(careView().load(id ? decodeURIComponent(id) : ''));
+  else if (page === 'stock-requests') jobs.push(loadStockRequests(id));
+  else if (page === 'packing') jobs.push(openPacking(id ? decodeURIComponent(id) : ''));
+  else if (page === 'members' && id) jobs.push(memberDetail().open(decodeURIComponent(id), params.get('month') || '', params.get('tab') || ''));
+  else if (page === 'payroll') jobs.push(payrollBoard().open(params.get('month') || ''));
+  await Promise.allSettled(jobs);
 }
 
 // ----- Khách hỏi tồn kho: nhân viên phụ trách trả lời (khách nhận thông báo)
@@ -3167,4 +3196,5 @@ $('#excel-quote').addEventListener('click', async () => {
   finally { excelBusy = false; }
 });
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
-if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) chatView().refresh(); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
+
