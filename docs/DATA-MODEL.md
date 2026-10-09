@@ -2,7 +2,7 @@
 
 > File này được **sinh tự động** từ schema (`npm run docs:data-model`). Đừng sửa tay.
 
-Tổng: **69 bảng**.
+Tổng: **97 bảng**.
 
 Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = bản cũ có, đã thêm/bỏ cột · **hợp thức hoá** = bản cũ tự tạo lúc chạy, nay có migration · **mới** = chưa có ở bản cũ.
 
@@ -122,7 +122,8 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 |---|---|---|---|
 | `staff_web_notification_reads` | 3 | giữ nguyên |  |
 | `staff_web_notifications` | 10 | giữ nguyên |  |
-| `staff_web_push_subscriptions` | 11 | giữ nguyên |  |
+| `staff_web_push_subscriptions` | 15 | đổi | thêm: last_status, last_error, last_attempt_at, last_ok_at |
+| `web_push_attempts` | 8 | mới |  |
 | `web_push_keys` | 4 | mới |  |
 
 ## integrations — Sapo
@@ -134,3 +135,60 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `sapo_inventory_docs` | 15 | mới |  |
 | `sapo_order_statuses` | 9 | giữ nguyên |  |
 | `sapo_runtime_sessions` | 4 | hợp thức hoá |  |
+
+## sales — Đơn hàng, HĐKT, giao hàng, thu tiền, phiếu đóng gói
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `customer_payments` | 11 | mới |  |
+| `deliveries` | 17 | mới |  |
+| `delivery_lines` | 3 | mới |  |
+| `packing_slip_lines` | 11 | mới |  |
+| `packing_slip_photos` | 6 | mới |  |
+| `packing_slips` | 24 | mới |  |
+| `payment_schedules` | 8 | mới |  |
+| `sales_contracts` | 19 | mới |  |
+| `sales_order_lines` | 11 | mới |  |
+| `sales_orders` | 36 | mới |  |
+| `shipping_carriers` | 6 | mới |  |
+
+## tasks — Công việc
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `task_comments` | 5 | mới |  |
+| `tasks` | 20 | mới |  |
+
+## chat — Tin nhắn nội bộ
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `chat_attachments` | 8 | mới |  |
+| `chat_conversations` | 7 | mới |  |
+| `chat_members` | 4 | mới |  |
+| `chat_messages` | 7 | mới |  |
+
+## care — Chăm sóc khách hàng
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `customer_activities` | 17 | mới |  |
+
+## hr — Nhân sự, lương
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `hr_adjustments` | 8 | mới |  |
+| `hr_attendance` | 6 | mới |  |
+| `hr_payroll_inputs` | 19 | mới |  |
+| `hr_payroll_months` | 8 | mới |  |
+| `hr_payroll_settings` | 4 | mới |  |
+| `hr_payslips` | 13 | mới |  |
+| `hr_salary_profiles` | 22 | mới |  |
+
+## portal — Trang khách hàng
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `customer_accounts` | 7 | mới |  |
+| `customer_stock_requests` | 12 | mới |  |

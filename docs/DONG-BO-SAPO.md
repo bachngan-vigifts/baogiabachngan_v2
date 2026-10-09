@@ -90,7 +90,7 @@ Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùn
 
 ## Chưa làm (đề xuất bước sau)
 - Webhook **tồn kho** riêng (`inventory`) và đơn hàng Sapo.
-- Nút **"Đồng bộ ngay"** để app tự kéo từ Sapo. Việc này cần cách đăng nhập Sapo ổn định (web cũ dùng cookie phiên admin, hết hạn sau vài giờ), nên cần chủ dự án chọn cách trước.
+- ~~Nút "Đồng bộ ngay"~~ – đã làm: app tự kéo từ Sapo (`/integrations/sapo/pull`, `/admin/sapo-pull`, lịch chạy `supabase/sapo-cron.sql`), dùng phiên Sapo của Manager lưu mã hoá.
 
 ## Tồn kho xoay vòng và chứng từ kho (đơn nhập, điều chuyển, kiểm hàng)
 

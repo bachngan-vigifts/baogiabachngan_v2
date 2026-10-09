@@ -37,7 +37,9 @@ test('trang dùng thử: mọi id mà app.js tra cứu đều có trong index.ht
   const used = [...app.matchAll(/\$\('#([\w-]+)'\)/g)].map(m => m[1]!);
   assert.ok(used.length > 50);
   assert.deepEqual(used.filter(id => !ids.has(id)), []);
-  assert.match(readFileSync(join(ui, 'login.html'), 'utf8'), /location\.replace\('index\.html' \+ location\.hash\)/);
+  // Chuyển trang nằm ở file riêng (CSP không cho script nội tuyến).
+  assert.match(readFileSync(join(ui, 'login.html'), 'utf8'), /<script src="login-redirect\.js"><\/script>/);
+  assert.match(readFileSync(join(ui, 'login-redirect.js'), 'utf8'), /location\.replace\('index\.html' \+ location\.hash\)/);
 });
 
 test('index.html: thẻ mở / đóng khớp nhau và mọi trang (.view) nằm trong <main> (thừa thẻ đóng làm trang bị đẩy xuống dưới)', () => {

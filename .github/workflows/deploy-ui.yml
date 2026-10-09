@@ -5,7 +5,7 @@ name: Triển khai giao diện
 on:
   push:
     branches: [main]
-    paths: ['trial-ui/**', '.github/workflows/deploy-ui.yml']
+    paths: ['trial-ui/**', 'scripts/stamp-ui-version.ts', '.github/workflows/deploy-ui.yml']
   workflow_dispatch:
 concurrency: deploy-ui
 env:

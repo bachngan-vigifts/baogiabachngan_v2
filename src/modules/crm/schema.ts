@@ -1,5 +1,12 @@
 import { pgTable, text, bigint, boolean, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 
+/**
+ * MODULE CRM – GIỮ LẠI cho việc thay AppSheet CRM (docs/THAY-APPSHEET.md, mốc M5). Hiện CHỈ có bảng, chưa có API / giao diện:
+ *  - `vigifts_appsheet_*`: bản sao cấu trúc + dòng của app AppSheet VIGIFTS (chép nguyên từ web cũ). Dùng làm vùng đệm khi chuyển
+ *    dữ liệu AppSheet sang (lưu dòng gốc `raw_json`) và để liệt kê bảng / cột (scripts/sql/appsheet-schema-report.sql).
+ *  - `crm_tasks`: KHÔNG DÙNG – công việc đã chuyển sang module `tasks`. Giữ bảng (không xoá dữ liệu cũ nếu có), đừng viết code mới vào đây.
+ */
+
 export const crmTasks = pgTable('crm_tasks', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),

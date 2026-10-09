@@ -45,10 +45,12 @@ self.addEventListener('notificationclick', event => {
   event.waitUntil((async () => {
     const target = new URL(event.notification.data?.url || '/', self.location.origin);
     const url = target.origin === self.location.origin ? target.href : self.location.origin + '/';
-    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const client of windows) {
-      if (new URL(client.url).origin === self.location.origin) { await client.focus(); return client.navigate(url); }
-    }
+    const windows = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(c => new URL(c.url).origin === self.location.origin);
+    // Trang nhân viên (index.html) và trang khách (customer.html) dùng chung service worker: ưu tiên cửa sổ cùng trang với thông báo,
+    // tránh mở thông báo của nhân viên trong tab trang khách (và ngược lại).
+    const page = p => (p.replace(/\/+$/, '').split('/').pop() || 'index.html').replace(/\.html$/, '') || 'index';
+    const client = windows.find(c => page(new URL(c.url).pathname) === page(target.pathname)) || (page(target.pathname) === 'index' ? windows.find(c => page(new URL(c.url).pathname) !== 'customer') : null);
+    if (client) { await client.focus(); return client.navigate(url); }
     return self.clients.openWindow(url);
   })());
 });

@@ -1,7 +1,12 @@
 # Bách Ngân – Báo giá & CRM (v2)
 
-Viết lại từ `bachngan-vigifts/bach-ngan-bao-gia` theo kiến trúc module. Giữ nền tảng:
-Cloudflare Workers + vinext, Supabase PostgreSQL + Storage, Drizzle, shadcn/ui.
+Viết lại từ `bachngan-vigifts/bach-ngan-bao-gia` theo kiến trúc module. Nền tảng đang chạy:
+- **Giao diện:** HTML + JavaScript thuần trong `trial-ui/`, đưa lên **Cloudflare Pages** (https://crm.minhlongonline.com).
+- **API:** Supabase Edge Function `baogia-v2-api` (`supabase/functions/`), gói các module trong `src/` (Drizzle ORM).
+- **Dữ liệu:** Supabase PostgreSQL + Storage.
+- Merge vào `main` → GitHub Actions tự kiểm tra rồi triển khai cả giao diện lẫn API ([docs/TRIEN-KHAI.md](docs/TRIEN-KHAI.md)).
+
+Hiện trạng và kế hoạch thay AppSheet CRM: [docs/THAY-APPSHEET.md](docs/THAY-APPSHEET.md).
 
 Bản dùng thử và hướng dẫn kết nối: [docs/SUPABASE.md](docs/SUPABASE.md).
 
@@ -24,10 +29,13 @@ npm run docs:ncc      # ma trận nút bấm của trang NCC (sinh từ máy tr�
 src/
   core/            hạ tầng dùng chung (db, lỗi, tiền tệ...) – không biết gì về nghiệp vụ
   db/schema.ts     điểm tập hợp schema cho drizzle-kit
-  modules/<tên>/   mỗi module tự chứa: schema.ts · domain/ (hàm thuần) · repo/ (truy vấn Drizzle) · api/ (route) · ui/ · *.test.ts
-migrations/        lịch sử SQLite; migrations/postgres/ dùng cho Supabase; riêng 0001 (trigger) viết tay. KHÔNG xoá cả thư mục để sinh lại – thêm migration mới
-tests/             test xuyên module (schema, tương thích bản cũ, kiến trúc)
-docs/              ROADMAP.md · DATA-MODEL.md (tự sinh)
+  modules/<tên>/   mỗi module tự chứa: schema.ts · domain/ (hàm thuần) · api/ (route) · repo/ (truy vấn Drizzle, nếu cần)
+trial-ui/          giao diện nhân viên (index.html + app.js…) và trang khách (customer.html + customer.js)
+supabase/          Edge Function baogia-v2-api (điểm vào API)
+migrations/        lịch sử SQLite cũ; migrations/postgres/ là bộ migration đang dùng cho Supabase. KHÔNG xoá để sinh lại – chỉ thêm file mới
+tests/             test xuyên module (schema, tương thích bản cũ, kiến trúc) và test luồng API (tests/app/)
+docs/              đặc tả từng phần: BAN-HANG, CONG-VIEC, CHAM-SOC-KHACH, KHACH-HANG, NHAN-VIEN, TIN-NHAN, TRANG-KHACH-HANG,
+                   DONG-BO-SAPO, TRIEN-KHAI, THAY-APPSHEET, ROADMAP, DATA-MODEL (tự sinh)…
 ```
 
 ## Quy tắc để dự án không rối lại

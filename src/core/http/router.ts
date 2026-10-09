@@ -9,7 +9,9 @@ export interface RouteContext<Env = unknown> {
 }
 export type Handler<Env = unknown> = (ctx: RouteContext<Env>) => Response | Promise<Response>;
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-type Route<Env> = { method: Method; pattern: RegExp; keys: string[]; handler: Handler<Env>; meta: unknown };
+type Route<Env> = { method: Method; path: string; pattern: RegExp; keys: string[]; handler: Handler<Env>; meta: unknown };
+/** Thông tin một thao tác ghi đã thành công (cho nhật ký thay đổi). */
+export interface SuccessInfo { route: string; status: number; requestText: string; responseText: string }
 
 /** Header an toàn dùng cho mọi phản hồi JSON (giống bản cũ). */
 export const json = (body: unknown, status = 200, headers: HeadersInit = {}): Response =>
@@ -49,6 +51,11 @@ export interface RouterOptions<Env> {
   authorize?: (ctx: RouteContext<Env>) => void | Promise<void>;
   /** Bắt buộc mọi route có `meta` (khu vực truy cập). Thiếu → lỗi ngay lúc đăng ký, không chạy được. */
   requireMeta?: boolean;
+  /**
+   * Sau khi một yêu cầu GHI (không phải GET) chạy thành công (2xx): vd ghi nhật ký thay đổi. Nhận bản sao thân yêu cầu / phản hồi
+   * (đã cắt ngắn). Lỗi trong hàm này không làm hỏng phản hồi. Trả `false` từ `wants` để bỏ qua route (không đọc thân).
+   */
+  onSuccess?: { wants: (ctx: RouteContext<Env>) => boolean; run: (ctx: RouteContext<Env>, info: SuccessInfo) => Promise<void> };
 }
 
 /**
@@ -64,7 +71,7 @@ export class Router<Env = unknown> {
     if (this.options.requireMeta && meta === undefined) throw new Error(`Route ${method} ${pattern} chưa khai báo khu vực truy cập (meta).`);
     const { pattern: re, keys } = this.compile(pattern);
     if (this.routes.some(r => r.method === method && r.pattern.source === re.source)) throw new Error(`Route ${method} ${pattern} bị đăng ký hai lần.`);
-    this.routes.push({ method, pattern: re, keys, handler, meta });
+    this.routes.push({ method, path: pattern, pattern: re, keys, handler, meta });
     return this;
   }
   private compile(pattern: string) {
@@ -101,7 +108,17 @@ export class Router<Env = unknown> {
         catch { throw new AppError(400, 'Đường dẫn không hợp lệ.'); }
         const ctx: RouteContext<Env> = { req, url, params, env, state: {}, meta: r.meta };
         await this.options.authorize?.(ctx);
-        return await r.handler(ctx);
+        const hook = req.method !== 'GET' && this.options.onSuccess?.wants(ctx) ? this.options.onSuccess : null;
+        if (!hook) return await r.handler(ctx);
+        const copy = req.clone();
+        const res = await r.handler(ctx);
+        if (res.status >= 200 && res.status < 300) {
+          try {
+            const text = async (x: Request | Response) => { try { return (await x.text()).slice(0, 200_000); } catch { return ''; } };
+            await hook.run(ctx, { route: `${r.method} ${r.path}`, status: res.status, requestText: await text(copy), responseText: await text(res.clone()) });
+          } catch (e) { console.error('onSuccess hook failed', e instanceof Error ? e.message : e); }
+        }
+        return res;
       }
       if (allowed.size) return json({ error: 'Phương thức không được hỗ trợ.' }, 405, { allow: [...allowed].join(', ') });
       return json({ error: 'Không tìm thấy.' }, 404);
