@@ -568,10 +568,28 @@ const QUOTE_NOTES = {
   VIGIFTS: '- Tổng giá trị thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Giá trên chỉ có hiệu lực trong vòng 7 ngày kể từ ngày gửi chào giá.\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Phương thức thanh toán: Chuyển khoản.\nTài khoản: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS.\nSố tài khoản: 159063909 tại Ngân Hàng TMCP Á Châu, CN Cần Thơ.\n+ Bên Mua sẽ tiến hành tạm ứng 50% trị giá hợp đồng ngay sau khi Hợp đồng ký kết.\n+ 50% trị giá còn lại của hợp đồng sẽ thanh toán khi nhận đầy đủ hàng hoá và chứng từ kèm theo.\nHy vọng bảng chào giá đáp ứng được yêu cầu của Quý Khách hàng.\nTrân trọng kính chào,',
 };
 const defaultNotes = type => QUOTE_NOTES[type] || QUOTE_NOTES.HRC;
+/** Ngày giao dự kiến là nguồn cho dòng thời gian giao hàng; giữ nguyên các ghi chú khác. */
+function notesWithDeliveryDate(notes, date) {
+  const text = String(notes || '');
+  const formatted = fmtDate(date);
+  const fallback = 'Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.';
+  if (formatted) {
+    const line = '- Thời gian giao hàng: giao hàng ngày ' + formatted + '.';
+    return /^[ \t]*[-–•]?[ \t]*Thời gian giao hàng:[^\r\n]*/im.test(text)
+      ? text.replace(/^([ \t]*[-–•]?[ \t]*Thời gian giao hàng:)[^\r\n]*/im, '$1 giao hàng ngày ' + formatted + '.')
+      : text + (text && !text.endsWith('\n') ? '\n' : '') + line;
+  }
+  // Xoá ngày đã chọn: chỉ đưa dòng tự sinh về mặc định, không xoá ghi chú tự viết.
+  return text.replace(/^([ \t]*[-–•]?[ \t]*Thời gian giao hàng:)[ \t]*giao hàng ngày \d{2}\/\d{2}\/\d{4}\.?[ \t]*$/im, '$1 ' + fallback);
+}
+function syncDeliveryNotes() {
+  field('notes').value = notesWithDeliveryDate(field('notes').value, field('deliveryDate').value);
+}
+
 $('#reset-notes').addEventListener('click', async () => {
   const notes = field('notes');
-  if (notes.value.trim() && notes.value !== defaultNotes(editor.type) && !await confirmBox('Thay nội dung ghi chú hiện tại bằng ghi chú mặc định?', { ok: 'Thay' })) return;
-  notes.value = defaultNotes(editor.type); markDirty();
+  if (notes.value.trim() && notes.value !== notesWithDeliveryDate(defaultNotes(editor.type), field('deliveryDate').value) && !await confirmBox('Thay nội dung ghi chú hiện tại bằng ghi chú mặc định?', { ok: 'Thay' })) return;
+  notes.value = defaultNotes(editor.type); syncDeliveryNotes(); markDirty();
 });
 const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
@@ -647,6 +665,7 @@ function fillEditor(id, revision, data, meta = {}) {
   for (const name of ['quoteNo', 'date', 'owner', 'ownerPhone', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'notes'])
     field(name).value = data[name] ?? '';
   field('deliveryDate').value = data.deliveryDate || data.delivery_date || '';
+  syncDeliveryNotes();
   field('vat').value = fmtNum(Number(data.vat ?? 8));
   editor.discountMode = data.discountMode || editor.rows[0]?.discountType || 'percent';
   if (!keepProfit) editor.showCostFields = false;
@@ -665,6 +684,7 @@ function fillEditor(id, revision, data, meta = {}) {
 function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; updateQuoteActions(); } }
 qf.addEventListener('input', e => {
   markDirty();
+  if (e.target.name === 'deliveryDate') syncDeliveryNotes();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
   if (['customer', 'phone'].includes(e.target.name)) {
     if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) editor.customerId = '';
@@ -677,7 +697,8 @@ field('vat').addEventListener('blur', e => { const v = parseNum(e.target.value);
 function setType(type, dirty = true) {
   // Ghi chú còn là mặc định của loại cũ (hoặc trống) thì đổi theo loại mới, như web cũ.
   const notes = field('notes');
-  if (dirty && (!notes.value.trim() || notes.value === defaultNotes(editor.type))) notes.value = defaultNotes(type);
+  if (dirty && (!notes.value.trim() || notes.value === notesWithDeliveryDate(defaultNotes(editor.type), field('deliveryDate').value))) notes.value = defaultNotes(type);
+  syncDeliveryNotes();
   // Báo giá chưa lưu còn số tự sinh của loại cũ thì đổi sang tiền tố của loại mới.
   const reNumber = dirty && !editor.id && isAutoQuoteNo(field('quoteNo').value.trim(), editor.type, field('date').value);
   if (reNumber) field('quoteNo').value = nextQuoteNo(type, field('date').value);
@@ -1294,6 +1315,7 @@ $('#paste-form').addEventListener('submit', e => {
 
 // ----- lưu
 function collectQuote() {
+  syncDeliveryNotes();
   const f = name => field(name).value.trim();
   const data = { ...editor.base };
   delete data.delivery_date;
