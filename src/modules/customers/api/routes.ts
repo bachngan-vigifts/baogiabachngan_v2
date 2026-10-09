@@ -38,7 +38,11 @@ export async function customerAccess(db: Db, customerId: string, who: Viewer) {
   const [row] = await db.select({ role: customerStaff.role }).from(customerStaff)
     .where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.memberId, who.id))).limit(1);
   const manager = who.role === 'manager', owner = row?.role === 'owner', shared = row?.role === 'shared';
-  return { manager, owner, shared, canSeeAll: manager || owner || shared, canManageStaff: manager || owner, canChangeOwner: manager };
+  return { manager, owner, shared, canSeeAll: manager || owner || shared, canManageStaff: manager || owner, canChangeOwner: manager, canEdit: manager || owner };
+}
+/** Sửa thông tin khách / người liên hệ: chỉ nhân viên phụ trách khách hoặc Manager. */
+async function requireEdit(db: Db, customerId: string, who: Viewer) {
+  if (!(await customerAccess(db, customerId, who)).canEdit) throw new AppError(403, 'Chỉ nhân viên phụ trách khách hàng hoặc Manager được sửa thông tin khách.');
 }
 
 /** Nhân viên / Manager đang hoạt động (người gán cho khách được). */
@@ -102,6 +106,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const fields = { name, contact: text('contact'), phone: text('phone', 40), email: text('email'), address: text('address', 2000), taxCode: text('taxCode'), customerCode: text('customerCode') };
     const row = { ...fields, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
     if (update) {
+      await loadCustomer(c.env.db, id); await requireEdit(c.env.db, id, me);
       if (!(await c.env.db.update(customers).set(row).where(eq(customers.id, id)).returning({ id: customers.id })).length) throw new AppError(404, 'Không tìm thấy khách hàng.');
       return json({ id });
     }
@@ -194,7 +199,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   };
   router.post('/customers/:id/contacts', async c => {
     const db = c.env.db, id = c.params.id!, f = contactFields(await readJson(c.req, 8_000)), now = nowIso();
-    await loadCustomer(db, id);
+    await loadCustomer(db, id); await requireEdit(db, id, viewer(c));
     const [{ n = 0 } = {}] = await db.select({ n: count() }).from(customerContacts).where(eq(customerContacts.customerId, id));
     if (Number(n) >= CUSTOMER_LIMITS.contacts) throw new AppError(400, `Mỗi khách tối đa ${CUSTOMER_LIMITS.contacts} người liên hệ.`);
     const contactId = crypto.randomUUID();
@@ -206,6 +211,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   }, 'business');
   router.put('/customers/:id/contacts/:contactId', async c => {
     const db = c.env.db, id = c.params.id!, f = contactFields(await readJson(c.req, 8_000));
+    await loadCustomer(db, id); await requireEdit(db, id, viewer(c));
     const done = await db.transaction(async tx => {
       if (f.isPrimary) await tx.update(customerContacts).set({ isPrimary: false }).where(and(eq(customerContacts.customerId, id), ne(customerContacts.id, c.params.contactId!)));
       return tx.update(customerContacts).set({ ...f, updatedAt: nowIso() })
@@ -215,6 +221,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     return json({ ok: true });
   }, 'business');
   router.delete('/customers/:id/contacts/:contactId', async c => {
+    await loadCustomer(c.env.db, c.params.id!); await requireEdit(c.env.db, c.params.id!, viewer(c));
     const done = await c.env.db.delete(customerContacts)
       .where(and(eq(customerContacts.id, c.params.contactId!), eq(customerContacts.customerId, c.params.id!))).returning({ id: customerContacts.id });
     if (!done.length) throw new AppError(404, 'Không tìm thấy người liên hệ.');

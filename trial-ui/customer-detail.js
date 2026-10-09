@@ -79,14 +79,14 @@ export function initCustomerDetail(deps) {
     const d = st.d, c = d.customer, s = d.stats, a = d.access, pending = c.approvalStatus === 'pending';
     const contacts = d.contacts.map(x => `<li class="cd-contact"><span><b>${esc(x.name)}</b>${x.isPrimary ? ' <span class="pill blue">Liên hệ chính</span>' : ''}
         <small>${esc([x.title, x.phone, x.email].filter(Boolean).join(' · ')) || '—'}</small>${x.note ? `<small class="muted">${esc(x.note)}</small>` : ''}</span>
-        <span class="row-actions"><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
-        <button class="icon-btn" data-contact-del="${esc(x.id)}" aria-label="Xoá ${esc(x.name)}" title="Xoá"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button></span></li>`).join('');
+        ${a.canEdit ? `<span class="row-actions"><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
+        <button class="icon-btn" data-contact-del="${esc(x.id)}" aria-label="Xoá ${esc(x.name)}" title="Xoá"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button></span>` : ''}</li>`).join('');
     const tab = TABS.find(t => t.key === st.tab) || TABS[0];
     root.innerHTML = `
       <div class="editor-head">
         <div class="editor-title"><a class="btn ghost small" href="#/customers">‹ Khách hàng</a><h1>${esc(c.name)}</h1>
           <span class="pill ${c.fromSapo ? 'blue' : 'off'}">${c.fromSapo ? 'Sapo' : 'Tạo trên web'}</span>${pending ? '<span class="pill warn">Chờ duyệt</span>' : ''}</div>
-        <div class="editor-actions"><button class="btn secondary" data-act="edit">Sửa thông tin</button>${pending ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
+        <div class="editor-actions">${a.canEdit ? '<button class="btn secondary" data-act="edit" title="Chỉ nhân viên phụ trách hoặc Manager">Sửa thông tin</button>' : ''}${pending ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
       </div>
       ${pending ? `<div class="approval-box"><div class="approval-head"><b>Khách hàng mới đang chờ Manager duyệt</b><small class="muted">Chưa lập báo giá, đặt hàng hay cấp tài khoản cho khách này được tới khi được duyệt.</small></div>
         <div class="row-actions">${deps.isManager() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt khách hàng</button>' : ''}
@@ -111,7 +111,7 @@ export function initCustomerDetail(deps) {
           <dt>Được chia sẻ</dt><dd>${d.shared.length ? d.shared.map(p => `<span class="cd-person shared">${esc(p.name)}</span>`).join(' ') : '<span class="muted">Chưa chia sẻ</span>'}</dd></dl>
           ${a.canSeeAll ? '' : '<p class="muted small">Bạn không phụ trách khách này: chỉ thấy báo giá / đơn do bạn phụ trách hoặc tạo.</p>'}
         </div>
-        <div class="card"><div class="card-title-row"><h2 class="card-title">Người liên hệ <small class="muted">(${d.contacts.length})</small></h2><button class="btn secondary small" data-act="contact">＋ Thêm</button></div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Người liên hệ <small class="muted">(${d.contacts.length})</small></h2>${a.canEdit ? '<button class="btn secondary small" data-act="contact">＋ Thêm</button>' : ''}</div>
           ${contacts ? `<ul class="plain-list cd-contacts">${contacts}</ul>` : '<p class="muted cd-empty">Chưa có người liên hệ bổ sung (kế toán, mua hàng, người nhận hàng…).</p>'}</div>
       </div>
       <div class="card cd-tabs-card">

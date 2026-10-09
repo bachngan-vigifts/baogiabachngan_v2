@@ -6,6 +6,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { quotationScope, quotationEditScope, type SqlScope } from '../domain/access.ts';
 import { cleanQuotation } from '../domain/quotation-schema.ts';
+import { keepCosts, withoutCosts } from '../domain/cost-privacy.ts';
 import { autoQuoteHead, nextQuoteNoAfter, quoteHeadFor } from '../domain/quote-number.ts';
 import { quoteHeaderIndex, quoteLineRows } from '../domain/quote-index.ts';
 import { totals } from '../domain/quote-math.ts';
@@ -19,6 +20,8 @@ const predicate = (scope: SqlScope) => {
 };
 
 const isManager = (m: { role: string }) => m.role === 'manager';
+/** Giá vốn (giá nhập, CK mua vào, chi phí in gia công, CK khách) chỉ Manager thấy. */
+const forViewer = <T extends Record<string, unknown>>(viewer: { role: string }, data: T): T => isManager(viewer) ? data : withoutCosts(data);
 type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 type QuoteRow = typeof quotations.$inferSelect;
 /**
@@ -146,7 +149,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const [approver] = row.approvedBy ? await c.env.db.select({ name: employees.name }).from(employees).where(eq(employees.id, row.approvedBy)).limit(1) : [];
     const [creator] = await c.env.db.select({ role: employees.role, name: employees.name }).from(employees).where(eq(employees.id, row.creatorId)).limit(1);
     const fromCustomer = creator?.role === 'customer';
-    return json({ id: row.id, revision: row.revision, data: JSON.parse(row.data), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',
+    return json({ id: row.id, revision: row.revision, data: forViewer(viewer, JSON.parse(row.data)), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',
       fromCustomer, canApprove: isManager(viewer) || (fromCustomer && row.assigneeId === viewer.id) });
   }, 'business');
   /** Manager duyệt đúng phiên bản đang xem (phiên bản đổi → 409). Duyệt không đổi nội dung nên không tăng `revision`. */
@@ -198,7 +201,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
   }, 'business');
   router.post('/quotes', async c => {
     const viewer = (c.state.session as SessionState).member;
-    const data = cleanQuotation(await readJson(c.req));
+    // Nhân viên không đặt giá vốn (Manager bổ sung sau).
+    const raw = await readJson(c.req), data = cleanQuotation(isManager(viewer) ? raw : keepCosts(raw, null));
     const id = crypto.randomUUID(), now = new Date().toISOString(), approval = approvalOnCreate(viewer, now);
     await c.env.db.transaction(async tx => {
       data.quoteNo = await assignQuoteNo(tx, data.quoteNo);
@@ -209,18 +213,21 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     if (approval.approvalStatus === 'pending') await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá mới chờ duyệt',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || 'Chưa nhập khách'}`, url: `/index.html#/quotes/${id}`, actorId: viewer.id, data: { quoteId: id } });
     if (approval.approvalStatus === 'pending') await runAfterCommit(c.env);
-    return json({ id, revision: 1, data, approvalStatus: approval.approvalStatus }, 201);
+    return json({ id, revision: 1, data: forViewer(viewer, data), approvalStatus: approval.approvalStatus }, 201);
   }, 'business');
   router.put('/quotes/:id', async c => {
     const viewer = (c.state.session as SessionState).member;
     const body = await readJson(c.req);
     if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
-    const data = cleanQuotation(body.data), now = new Date().toISOString();
+    let data = cleanQuotation(body.data);
+    const now = new Date().toISOString();
     const saved = await c.env.db.transaction(async tx => {
       const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), predicate(quotationEditScope(viewer)));
       const [old] = await tx.select().from(quotations).where(condition).limit(1);
       if (!old) throw new AppError(409, 'Báo giá đã thay đổi hoặc anh không có quyền sửa. Vui lòng tải lại.');
       if (old.approvalStatus === 'approved' && !isManager(viewer)) throw new AppError(403, 'Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'QUOTE_APPROVED');
+      // Nhân viên không thấy giá vốn → giữ nguyên giá vốn cũ của từng dòng (theo id dòng).
+      if (!isManager(viewer)) data = cleanQuotation(keepCosts(body.data as Record<string, unknown>, JSON.parse(old.data)));
       for (const h of quoteSaveHooks.beforeSave) await h(tx, old, viewer);
       if (data.quoteNo !== old.quoteNo) data.quoteNo = await assignQuoteNo(tx, data.quoteNo, old.id);
       const next = old.revision + 1, encoded = JSON.stringify(data);
@@ -244,7 +251,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       title: saved.revoked ? 'Báo giá sửa lại, chờ duyệt lại' : 'Báo giá chờ duyệt vừa được sửa',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || ''}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     if (saved.revoked) await runAfterCommit(c.env);
-    return json({ id: c.params.id, revision: saved.revision, data, approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
+    return json({ id: c.params.id, revision: saved.revision, data: forViewer(viewer, data), approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
   }, 'business');
 }
 

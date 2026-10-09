@@ -2071,7 +2071,7 @@ function renderCustomers() {
         ${c.approvalStatus === 'pending' ? `${isManager() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
         <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${isManager() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
-        <button class="icon-btn" data-edit-customer="${esc(c.id)}" title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
+        <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
     </tr>`).join('');
   const none = !state.customerQuery && list.length === 0;
