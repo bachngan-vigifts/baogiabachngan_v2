@@ -53,3 +53,32 @@ test('quote payment terms persist through validation; invalid rates/days are rej
   assert.deepEqual(cleanQuotation({ ...quote, paymentTerms: before }).paymentTerms, before);
   assert.equal(cleanQuotation(quote).paymentTerms, undefined);
 });
+
+test('new quote popup accepts pre-delivery text, preserves chosen terms, rejects invalid inputs', () => {
+  const app = readFileSync(new URL('../trial-ui/app.js', import.meta.url), 'utf8');
+  const begin = app.indexOf("$('#new-quote-form').addEventListener('submit',");
+  const end = app.indexOf('// ----- đóng thùng', begin);
+  for (const type of ['HRC', 'B2B', 'VIGIFTS']) {
+    let submit: (e: object) => void = () => {};
+    const inputs: Record<string, any> = {
+      '#nq-error': { textContent: '' }, '#nq-date': { value: '2026-10-09' }, '#nq-no': { value: 'TEST' },
+      '#nq-discount': { value: '' }, '#nq-deposit-rate': { value: '40' },
+      '#nq-payment-term': { value: 'Thanh toán trước khi giao hàng' }, '#nq-customer': { value: 'Khách' },
+      '#new-quote-form': { addEventListener: (_: string, fn: typeof submit) => { submit = fn; } },
+      '#new-quote-dialog': { close() {} },
+    };
+    const editor: any = {};
+    const ctx = vm.createContext({ $: (id: string) => inputs[id], nq: { type, customer: null }, editor,
+      parseNum: Number, newQuoteData: (extra: object) => extra, location: { hash: '' }, go() {}, route() {} });
+    vm.runInContext(app.slice(begin, end), ctx);
+    submit({ preventDefault() {} });
+    assert.equal(editor.pending.type, type);
+    assert.deepEqual(JSON.parse(JSON.stringify(editor.pending.paymentTerms)), { depositRate: 40, balanceTerm: 'Thanh toán trước khi giao hàng' });
+    for (const [rate, deadline] of [['101', '30'], ['', '30'], ['30', ''], ['30', '-1 ngày'], ['30', '3651 ngày']] as const) {
+      delete editor.pending;
+      inputs['#nq-deposit-rate'].value = rate; inputs['#nq-payment-term'].value = deadline;
+      submit({ preventDefault() {} });
+      assert.equal(editor.pending, undefined); assert.ok(inputs['#nq-error'].textContent);
+    }
+  }
+});
