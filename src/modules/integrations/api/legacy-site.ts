@@ -11,11 +11,12 @@ export const LEGACY_MEDIA = /^https:\/\/baogia\.minhlongonline\.com\/api\/staff\
 export const legacyMediaKey = (url: string) => LEGACY_MEDIA.exec(url)?.[1] ?? null;
 
 const COOKIE = '__Host-bn-session';
-let session: { cookie: string; at: number; email: string } | null = null;
+let session: { cookie: string; at: number; email: string; base: string } | null = null;
+let pendingLogin: { site: NonNullable<StaffEnv['legacySite']>; promise: Promise<string> } | null = null;
 /** Xoá phiên đã nhớ (test). */
-export const resetLegacySession = () => { session = null; };
+export const resetLegacySession = () => { session = null; pendingLogin = null; };
 
-async function login(site: NonNullable<StaffEnv['legacySite']>): Promise<string> {
+async function loginRequest(site: NonNullable<StaffEnv['legacySite']>): Promise<string> {
   const doFetch = site.fetch ?? fetch;
   let res: Response;
   try {
@@ -25,8 +26,19 @@ async function login(site: NonNullable<StaffEnv['legacySite']>): Promise<string>
   } catch { throw new AppError(502, 'Không kết nối được web cũ để lấy ảnh.'); }
   const raw = res.headers.get('set-cookie') ?? '', m = new RegExp(`${COOKIE}=([^;,\\s]+)`).exec(raw);
   if (!res.ok || !m) throw new AppError(502, `Đăng nhập web cũ để lấy ảnh không được (${res.status}). Kiểm tra secret LEGACY_STAFF_EMAIL / LEGACY_STAFF_PASSWORD.`);
-  session = { cookie: `${COOKIE}=${m[1]}`, at: Date.now(), email: site.email };
+  session = { cookie: `${COOKIE}=${m[1]}`, at: Date.now(), email: site.email, base: site.base };
   return session.cookie;
+}
+
+/** Các ảnh được tải song song dùng chung một lần đăng nhập, tránh phiên vừa tạo bị lần khác thay thế. */
+async function login(site: NonNullable<StaffEnv['legacySite']>): Promise<string> {
+  if (session?.email === site.email && session.base === site.base) return session.cookie;
+  if (pendingLogin?.site.email === site.email && pendingLogin.site.base === site.base
+    && pendingLogin.site.password === site.password) return pendingLogin.promise;
+  const pending = { site, promise: loginRequest(site) };
+  pendingLogin = pending;
+  try { return await pending.promise; }
+  finally { if (pendingLogin === pending) pendingLogin = null; }
 }
 
 /** Tải một file ảnh của web cũ (đăng nhập lại 1 lần nếu phiên hết hạn). Trả về Response gốc (đã ok). */
@@ -36,11 +48,15 @@ export async function fetchLegacyMedia(env: StaffEnv, url: string): Promise<Resp
   if (!legacyMediaKey(url)) throw new AppError(400, 'Không phải link ảnh của web cũ.');
   const doFetch = site.fetch ?? fetch;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const cookie = session && session.email === site.email && attempt === 0 ? session.cookie : await login(site);
+    const cookie = await login(site);
     let res: Response;
     try { res = await doFetch(url, { redirect: 'manual', signal: AbortSignal.timeout(15_000), headers: { cookie, accept: 'image/*' } }); }
     catch { throw new AppError(502, 'Không tải được ảnh từ web cũ.'); }
-    if (res.status === 401 || res.status === 403) { session = null; continue; }
+    if (res.status === 401 || res.status === 403) {
+      // Yêu cầu cũ trả 401 không được xoá phiên mới do yêu cầu khác vừa đăng nhập lại.
+      if (session?.cookie === cookie) session = null;
+      continue;
+    }
     if (res.status === 404) throw new AppError(404, 'Web cũ không còn file ảnh này.');
     if (!res.ok) throw new AppError(502, `Web cũ trả lỗi ${res.status} khi lấy ảnh.`);
     return res;
