@@ -111,7 +111,8 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.deepEqual([listed.debtCounts, listed.receivable.payState, listed.receivable.deposit, listed.receivable.depositPaid], [true, 'deposit_paid', 7_452_000, 7_452_000]);
   const kList = (await call('/contracts', emp)).data.contracts.find((x: any) => x.orderId === o.data.id);
   assert.deepEqual([kList.debtCounts, kList.receivable.payState, kList.receivable.balance], [true, 'deposit_paid', 17_388_000]);
-  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 409);
+  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 403);
+  assert.equal((await call('/orders/' + o.data.id + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 409, 'Manager cũng không huỷ được đơn đã giao / thu tiền');
   assert.equal((await call('/orders?q=hoang long', emp)).data.orders[0].contract.contractNo, k.data.contractNo);
   assert.equal((await call('/orders', ncc)).status, 403);
 });
@@ -124,7 +125,8 @@ test('huỷ đơn chưa giao/chưa thu được; huỷ rồi tạo lại đơn t
   await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   assert.equal((await call('/orders/' + o.data.id, emp)).data.lines[0].unitPrice, 500000, 'HRC không cộng phí in');
   assert.equal((await call('/contracts', emp, 'POST', { orderId: o.data.id, legalEntity: 'BN' })).status, 400, 'khách chưa có MST/mã KH');
-  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 200);
+  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 403);
+  assert.equal((await call('/orders/' + o.data.id + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 200);
   assert.equal((await call('/receivables', emp)).data.receivables.length, 0);
   assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).status, 201);
 });
@@ -169,7 +171,7 @@ test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sa
   assert.equal(h.history[0].unitPrice, 120000, 'mới nhất đứng đầu');
   assert.equal(h.history.some((x: any) => x.kind === 'purchase'), false, 'giao dịch cũ nhất bị bỏ');
   assert.equal((await call('/products/' + encodeURIComponent('Không mã') + '/history', emp)).data.history.length, 0);
-  await call('/orders/' + ids.at(-1) + '/status', emp, 'PUT', { status: 'cancelled' });
+  assert.equal((await call('/orders/' + ids.at(-1) + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 200);
   h = (await call('/products/ML-TRA/history', emp)).data;
   assert.deepEqual([h.history.length, h.history[0].unitPrice], [19, 119000]);
 });
