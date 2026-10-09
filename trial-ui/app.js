@@ -6,7 +6,7 @@ import { printSheet } from './print-page.js';
 import { showAudit } from './audit-ui.js';
 import { watchCsp } from './csp-report.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
-import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
+import { orderReference, orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
@@ -2420,7 +2420,8 @@ async function openOrder(id) {
   const wantContract = sales.openContract === id; sales.openContract = null;
   if (wantContract) setTimeout(() => { const b = $('#order-contract-action button'); if (b) b.click(); else toast('Đơn này đã có HĐKT.'); }, 0);
   const o = d.order, r = d.receivable;
-  $('#order-title').textContent = o.orderNo; $('#breadcrumb').textContent = o.orderNo; document.title = o.orderNo + ' · Bách Ngân';
+  const ref = orderReference(o, d.contract);
+  $('#order-title').textContent = ref.number; $('#breadcrumb').textContent = ref.number; document.title = ref.number + ' · Bách Ngân';
   // Đơn hàng và HĐKT là 2 luồng: đơn có HĐKT quay về trang HĐKT.
   $('#order-back').href = d.contract ? '#/contracts' : '#/orders'; $('#order-back').textContent = d.contract ? '‹ HĐKT' : '‹ Đơn đặt hàng';
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (d.contract ? 'contracts' : 'orders')));
@@ -2713,7 +2714,7 @@ async function openPacking(id) {
   $('#packing-actions').innerHTML = '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
   const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
   body.innerHTML = `<div class="editor-grid">
-    <div class="card"><h2 class="card-title">${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in' : '🏠 Giao thẳng cho khách'}</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>Đơn</dt><dd>${esc(o.orderNo)}</dd>
+    <div class="card"><h2 class="card-title">${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in' : '🏠 Giao thẳng cho khách'}</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>${orderReference(o).label}</dt><dd>${esc(orderReference(o).number)}</dd>
       ${k.shipTo === 'workshop' ? `<dt>Xưởng in</dt><dd><b>${esc(k.shipName)}</b></dd>${k.shipPhone ? `<dt>SĐT xưởng</dt><dd>${esc(k.shipPhone)}</dd>` : ''}${k.shipAddress ? `<dt>Địa chỉ xưởng</dt><dd>${esc(k.shipAddress)}</dd>` : ''}`
         : `${k.shipPhone || o.contact || o.phone ? `<dt>Người nhận</dt><dd>${esc(k.shipPhone || [o.contact, o.phone].filter(Boolean).join(' · '))}</dd>` : ''}${k.shipAddress || o.address ? `<dt>Địa chỉ</dt><dd>${esc(k.shipAddress || o.address)}</dd>` : ''}`}
       ${k.carrierName ? `<dt>Gửi xe</dt><dd><b>${esc(k.carrierName)}</b>${k.carrierPhone ? ` · <a href="tel:${esc(k.carrierPhone.replace(/[^\d+]/g, ''))}">${esc(k.carrierPhone)}</a>` : ''}</dd>` : ''}
@@ -2847,7 +2848,7 @@ async function printPackingForOrder(orderId) {
   const choices = [...live.map(x => ({ value: x.id, label: `${x.slipNo} · ${x.sourceLabel}${x.sourceNote ? ': ' + x.sourceNote : ''} · ${PACK_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Cả đơn (tất cả dòng hàng)' }];
   openSlipPrint({ kind: 'packing', choices, initial: live[0]?.id || '', build: v => {
     const slip = live.find(x => x.id === v);
-    return packingPrintData({ seller: sellerName(d), order: d.order, slip, lines: slip ? slip.lines : pk.lines }, state.user?.name || '');
+    return packingPrintData({ seller: sellerName(d), order: d.order, contract: d.contract, slip, lines: slip ? slip.lines : pk.lines }, state.user?.name || '');
   } });
 }
 /** Phiếu giao hàng của đơn: chọn chuyến giao đã lên lịch, hoặc toàn bộ hàng còn lại. */
@@ -2862,13 +2863,13 @@ async function printDeliveryForOrder(orderId) {
     const left = d.lines.map(l => ({ ...l, ordered: l.qty, qty: Math.max(0, Math.round((l.qty - (l.deliveredQty || 0)) * 1000) / 1000) })).filter(l => l.qty > 0);
     const lines = trip ? trip.lines.map(x => { const l = byId.get(x.orderLineId) || {}; return { ...l, ordered: l.qty, qty: x.qty }; })
       : left.length ? left : d.lines.map(l => ({ ...l, ordered: l.qty }));
-    return deliveryPrintData({ seller: sellerName(d), order: d.order, delivery: trip, lines }, state.user?.name || '');
+    return deliveryPrintData({ seller: sellerName(d), order: d.order, contract: d.contract, delivery: trip, lines }, state.user?.name || '');
   } });
 }
 /** Trang phiếu đóng gói (nhóm Kho không xem được đơn): in phiếu đóng gói / phiếu giao hàng từ chính phiếu. */
 function printFromSlip(kind) {
   const d = packingView; if (!d) return;
-  const seller = (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN).short, me = state.user?.name || '';
+  const seller = (SELLERS[d.order.legalEntity] || (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN)).short, me = state.user?.name || '';
   openSlipPrint({ kind, choices: [], initial: '', build: () => kind === 'packing'
     ? packingPrintData({ seller, order: d.order, slip: d.slip, lines: d.lines }, me)
     : deliveryPrintData({ seller, order: d.order, delivery: { deliveryNo: d.slip.slipNo, address: d.slip.shipAddress || d.order.address,
