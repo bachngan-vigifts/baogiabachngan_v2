@@ -779,6 +779,10 @@
         </label>
         <label>Ngày báo giá<input id="nq-date" type="date" required></label>
         <label>Số báo giá<input id="nq-no" required maxlength="500" autocomplete="off"></label>
+        <label>Tỷ lệ đặt cọc (%)<input id="nq-deposit-rate" inputmode="decimal" value="0" required></label>
+        <label>Thời hạn thanh toán phần còn lại<input id="nq-payment-term" list="nq-payment-options" maxlength="500" value="30" placeholder="Số ngày hoặc Thanh toán trước khi giao hàng"></label>
+        <datalist id="nq-payment-options"><option value="Thanh toán trước khi giao hàng"></option><option value="0"></option><option value="15"></option><option value="30"></option></datalist>
+        <p class="muted small span-2">Nhập số ngày tính từ ngày giao hàng (0 = ngay sau giao), hoặc nhập điều kiện thanh toán bằng chữ. Đặt cọc 100% = thanh toán toàn bộ trước khi giao hàng.</p>
         <label class="span-2">Chiết khấu toàn bảng (%)<input id="nq-discount" inputmode="decimal" placeholder="Ví dụ: 10 (để trống nếu nhập từng dòng)"></label>
       </div>
       <p class="muted small">Chiết khấu toàn bảng tự áp cho mọi sản phẩm thêm vào báo giá; vẫn sửa riêng từng dòng được.</p>

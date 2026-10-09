@@ -1,6 +1,7 @@
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
+import { defaultPaymentTerms, withPaymentNotes } from './quote-payment.js';
 import { setupNotifications } from './notify.js';
 import { setupDataRefresh } from './auto-refresh.js';
 import { printSheet } from './print-page.js';
@@ -566,7 +567,10 @@ const QUOTE_NOTES = {
   B2B: '- Tổng giá trị thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Giá trên chỉ có hiệu lực trong 30 ngày.\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Phương thức thanh toán: Chuyển khoản.\n- Đơn vị bán hàng: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN\n- Mã số thuế: 1801686576\n- Số tài khoản: 579268 tại Ngân hàng TMCP Á Châu - Chi Nhánh Cần Thơ\n- Bên Mua sẽ tiến hành tạm ứng 30% trị giá hợp đồng ngay sau khi Hợp đồng ký kết.\n- 70% trị giá còn lại của hợp đồng sẽ thanh toán trước khi nhận hàng.\nHy vọng bảng chào giá đáp ứng được yêu cầu của Quý Khách hàng.\nTrân trọng kính chào.',
   VIGIFTS: '- Tổng giá trị thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Giá trên chỉ có hiệu lực trong vòng 7 ngày kể từ ngày gửi chào giá.\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Phương thức thanh toán: Chuyển khoản.\nTài khoản: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS.\nSố tài khoản: 159063909 tại Ngân Hàng TMCP Á Châu, CN Cần Thơ.\n+ Bên Mua sẽ tiến hành tạm ứng 50% trị giá hợp đồng ngay sau khi Hợp đồng ký kết.\n+ 50% trị giá còn lại của hợp đồng sẽ thanh toán khi nhận đầy đủ hàng hoá và chứng từ kèm theo.\nHy vọng bảng chào giá đáp ứng được yêu cầu của Quý Khách hàng.\nTrân trọng kính chào,',
 };
-const defaultNotes = type => QUOTE_NOTES[type] || QUOTE_NOTES.HRC;
+const defaultNotes = type => withPaymentNotes(QUOTE_NOTES[type] || QUOTE_NOTES.HRC, defaultPaymentTerms(type), 0, moneyWords);
+function syncPaymentNotes(total = totals(currentDoc()).total) {
+  if (editor.base.paymentTerms) field('notes').value = withPaymentNotes(field('notes').value, editor.base.paymentTerms, total, moneyWords);
+}
 /** Ngày giao dự kiến là nguồn cho dòng thời gian giao hàng; giữ nguyên các ghi chú khác. */
 function notesWithDeliveryDate(notes, date) {
   const text = String(notes || '');
@@ -588,7 +592,9 @@ function syncDeliveryNotes() {
 $('#reset-notes').addEventListener('click', async () => {
   const notes = field('notes');
   if (notes.value.trim() && notes.value !== notesWithDeliveryDate(defaultNotes(editor.type), field('deliveryDate').value) && !await confirmBox('Thay nội dung ghi chú hiện tại bằng ghi chú mặc định?', { ok: 'Thay' })) return;
-  notes.value = defaultNotes(editor.type); syncDeliveryNotes(); markDirty();
+  notes.value = defaultNotes(editor.type);
+  editor.base.paymentTerms ||= defaultPaymentTerms(editor.type);
+  syncPaymentNotes(); syncDeliveryNotes(); markDirty();
 });
 const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
@@ -624,7 +630,8 @@ const defaultLineDiscount = () => editor.defaultDiscount > 0 ? { discount: edito
 const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT, ...defaultLineDiscount() });
 function newQuoteData(extra = {}) {
   const type = extra.type || 'B2B', date = extra.date || todayIso();
-  return { type, quoteNo: nextQuoteNo(type, date), date, vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: defaultNotes(type), notesVersion: 2, ...extra, rows: extra.rows || [] };
+  const paymentTerms = extra.paymentTerms || defaultPaymentTerms(type);
+  return { type, quoteNo: nextQuoteNo(type, date), date, vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: withPaymentNotes(QUOTE_NOTES[type] || QUOTE_NOTES.HRC, paymentTerms, 0, moneyWords), notesVersion: 2, paymentTerms, ...extra, rows: extra.rows || [] };
 }
 
 async function openEditor(id) {
@@ -979,6 +986,7 @@ function currentDoc() {
 }
 function calculate() {
   const doc = currentDoc(), t = totals(doc);
+  syncPaymentNotes(t.total);
   editor.rows.forEach((r, i) => {
     const tr = $(`#line-list tr[data-i="${i}"]`); if (!tr) return;
     const unit = after(r, doc);
@@ -1104,6 +1112,10 @@ const nq = { type: 'HRC', customer: null, autoNo: '' };
 function nqSetType(type, fetchServer = true) {
   const date = $('#nq-date').value || todayIso(), no = $('#nq-no');
   const keepAuto = !no.value.trim() || no.value.trim() === nq.autoNo;
+  if (!nq.paymentTouched) {
+    const terms = defaultPaymentTerms(type);
+    $('#nq-deposit-rate').value = terms.depositRate; $('#nq-payment-term').value = terms.balanceTerm;
+  }
   nq.type = type; $('#nq-type-name').textContent = type === 'VIGIFTS' ? 'Vigifts' : type;
   $$('#nq-type button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
   nq.autoNo = nextQuoteNo(type, date); if (keepAuto) no.value = nq.autoNo;
@@ -1116,6 +1128,7 @@ async function openNewQuote() {
     editor.dirty = false;
   }
   nq.customer = null; nq.autoNo = '';
+  nq.paymentTouched = false;
   $('#new-quote-form').reset(); $('#nq-error').textContent = '';
   $('#nq-date').value = todayIso(); $('#nq-no').value = '';
   nqSetType(nq.type);
@@ -1129,6 +1142,7 @@ document.addEventListener('click', e => {
 });
 $('#nq-type').addEventListener('click', e => { const b = e.target.closest('button'); if (b) nqSetType(b.dataset.value); });
 $('#nq-date').addEventListener('change', () => nqSetType(nq.type));
+for (const id of ['#nq-deposit-rate', '#nq-payment-term']) $(id).addEventListener('input', () => { nq.paymentTouched = true; });
 /** Bật/tắt vòng xoay "đang tìm" trên ô tìm khách hàng. */
 const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy', on);
 {
@@ -1157,10 +1171,14 @@ $('#new-quote-form').addEventListener('submit', e => {
   err.textContent = '';
   if (!date || !no) { err.textContent = 'Vui lòng nhập ngày và số báo giá.'; return; }
   if (!(disc >= 0 && disc <= 100)) { err.textContent = 'Chiết khấu toàn bảng phải từ 0 đến 100%.'; return; }
+  const rateText = $('#nq-deposit-rate').value.trim(), depositRate = rateText ? parseNum(rateText) : NaN, balanceTerm = $('#nq-payment-term').value.trim();
+  if (!Number.isFinite(depositRate) || depositRate < 0 || depositRate > 100) { err.textContent = 'Tỷ lệ đặt cọc phải từ 0 đến 100%.'; return; }
+  if (depositRate < 100 && (!balanceTerm || balanceTerm.length > 500 || /^[+-]?\d+(?:[.,]\d+)?\s*(?:ngày)?$/i.test(balanceTerm) && (!/^\d+\s*(?:ngày)?$/i.test(balanceTerm) || parseInt(balanceTerm, 10) > 3650))) { err.textContent = 'Nhập thời hạn thanh toán: số ngày từ 0 đến 3650 hoặc nội dung như “Thanh toán trước khi giao hàng”.'; return; }
+  const paymentTerms = { depositRate, balanceTerm };
   const c = nq.customer, typed = $('#nq-customer').value.trim();
   const customer = c ? { customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' } : typed ? { customer: typed } : {};
   editor.defaultDiscount = disc;
-  editor.pending = { ...newQuoteData({ type: nq.type, date, quoteNo: no, ...customer, rows: [] }), defaultDiscount: disc };
+  editor.pending = { ...newQuoteData({ type: nq.type, date, quoteNo: no, paymentTerms, ...customer, rows: [] }), defaultDiscount: disc };
   $('#new-quote-dialog').close();
   if (location.hash === '#/quotes/new') route(); else go('#/quotes/new');
 });
@@ -1314,6 +1332,7 @@ $('#paste-form').addEventListener('submit', e => {
 
 // ----- lưu
 function collectQuote() {
+  syncPaymentNotes();
   syncDeliveryNotes();
   const f = name => field(name).value.trim();
   const data = { ...editor.base };
