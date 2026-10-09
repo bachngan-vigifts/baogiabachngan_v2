@@ -237,7 +237,7 @@ test('đơn hàng và HĐKT là 2 luồng: trang Đơn hàng (flow=order) bỏ �
   assert.deepEqual([k.length, k[0].orderId, k[0].invoiceStatus], [1, o2, 'none']);
 });
 
-test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; còn nháp thì sửa báo giá tự cập nhật đơn + HĐKT; đã duyệt thì khoá báo giá', async () => {
+test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; còn nháp thì sửa báo giá tự cập nhật đơn + HĐKT; đã duyệt thì chỉ Manager sửa và đồng bộ báo giá', async () => {
   const { db, call, emp, mgr } = await setup();
   await db.insert(customers).values({ id: '2001', name: 'Công ty An Phú', contact: 'Anh Phú', phone: '0902', email: '', address: 'Cần Thơ', search: '', taxCode: '0309999999', customerCode: 'AP01', sourceVersion: 0, syncedAt: '' });
   const doc = (qty: number, price: number) => ({ type: 'HRC', quoteNo: 'HRC_BG20261008_001', customer: 'Công ty An Phú', customerId: '2001', vat: 8,
@@ -266,10 +266,15 @@ test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; c
   // Chỉ Manager duyệt.
   assert.equal((await call(`/orders/${o.data.id}/status`, emp, 'PUT', { status: 'confirmed', verified: true })).status, 404, 'nhân viên không phụ trách không thấy đơn');
   assert.equal((await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true })).status, 200);
-  // Đã duyệt: báo giá bị khoá; HĐKT ký được.
+  // Đã duyệt: Manager vẫn sửa báo giá và đồng bộ HĐKT; nhân viên bị chặn.
   const rev2 = (await call(`/quotes/${q.data.id}`, mgr)).data.revision;
   const locked = await call(`/quotes/${q.data.id}`, mgr, 'PUT', { revision: rev2, data: doc(150, 1_704_000) });
-  assert.equal(locked.status, 409); assert.equal(locked.data.code, 'ORDER_APPROVED');
-  assert.equal((await call(`/orders/${o.data.id}`, mgr)).data.lines[0].qty, 144);
+  assert.equal(locked.status, 200, JSON.stringify(locked.data));
+  const updated = (await call(`/orders/${o.data.id}`, mgr)).data;
+  assert.equal(updated.lines[0].qty, 150);
+  assert.equal(updated.order.status, 'confirmed');
+  assert.equal(updated.contract.value, updated.order.total);
+  assert.equal(updated.schedules.reduce((sum: number, x: any) => sum + x.amount, 0), updated.order.total);
   assert.equal((await call(`/contracts/${k.data.id}`, mgr, 'PUT', { status: 'signed', signedDate: '2026-10-09' })).status, 200);
 });
+
