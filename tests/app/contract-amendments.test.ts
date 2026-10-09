@@ -11,6 +11,7 @@ test('reorder and price change preserve IDs referenced by deliveries and packing
   const a = line('a', 1, 'A'), b = line('b', 2, 'B');
   const plan = amendmentLines([a, b], [{ ...b, lineNo: 1 }, { ...a, lineNo: 2, unitPrice: 200 }], new Map(), new Set(['a']));
   assert.deepEqual(plan.updates.map(l => l.id), ['b', 'a']);
+  assert.ok(plan.updates[1]);
   assert.equal(plan.updates[1].unitPrice, 200);
   assert.equal(plan.remove.length, 0);
 });
@@ -18,13 +19,17 @@ test('quantity cannot fall below delivered or reserved quantities', () => {
   const a = { ...line('a', 1, 'A'), deliveredQty: 4 };
   assert.throws(() => amendmentLines([a], [{ ...a, qty: 3 }], new Map(), new Set()), /số đã giao/);
   assert.throws(() => amendmentLines([a], [{ ...a, qty: 7 }], new Map([['a', 8]]), new Set()), /lên lịch/);
-  assert.equal(amendmentLines([a], [{ ...a, qty: 12 }], new Map([['a', 8]]), new Set()).updates[0].deliveredQty, 4);
+  const increased = amendmentLines([a], [{ ...a, qty: 12 }], new Map([['a', 8]]), new Set()).updates[0];
+  assert.ok(increased);
+  assert.equal(increased.deliveredQty, 4);
 });
 test('referenced product cannot disappear; unreferenced product can be replaced', () => {
   const a = line('a', 1, 'A');
   assert.throws(() => amendmentLines([a], [line('b', 1, 'B')], new Map(), new Set(['a'])), /chứng từ/);
   const plan = amendmentLines([a], [line('b', 1, 'B')], new Map(), new Set());
+  assert.ok(plan.updates[0]);
   assert.equal(plan.updates[0].id, null);
+  assert.ok(plan.remove[0]);
   assert.equal(plan.remove[0].id, 'a');
 });
 test('paid schedule IDs stay stable without duplicating receivables', () => {
