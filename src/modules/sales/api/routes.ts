@@ -13,6 +13,7 @@ import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
+import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
@@ -251,7 +252,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       order: { ...order, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
-        canIssueInvoice: canIssueInvoice(viewer(c)) }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: viewer(c).role === 'manager' || order.status === 'draft', data: JSON.parse(contract[0].data) } : null,
+        canIssueInvoice: canIssueInvoice(viewer(c)),
+        // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
+        sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
+        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: viewer(c).role === 'manager' || order.status === 'draft', data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id) })),
       schedules, payments, receivable: receivable(schedules, payments, vietnamDate().iso),
     });

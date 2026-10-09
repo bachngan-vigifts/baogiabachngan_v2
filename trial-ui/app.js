@@ -15,6 +15,7 @@ import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
+import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
@@ -1642,6 +1643,11 @@ document.addEventListener('click', async e => {
   } catch (ex) { toast(ex.message, 'err'); }
   finally { legacyRunning = false; legacyImagesBox(); }
 });
+/** Popup đẩy đơn sang Sapo (trial-ui/sapo-push.js). */
+var sapoPushUi = null; // eslint-disable-line no-var
+const sapoPush = () => sapoPushUi ||= initSapoPush({ api, toast, esc, money, $ });
+/** Sau khi sinh đơn / lập HĐKT: hỏi đẩy sang Sapo luôn (chọn kho). */
+const offerSapoPush = id => sapoPush().open(id, { onDone: () => { if (sales.order?.id === id) openOrder(id); } });
 function productAdmin() {
   return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
 }
@@ -2554,6 +2560,8 @@ async function openOrder(id) {
     + (o.status === 'draft' ? (isManager() ? '<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt đơn / HĐKT. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt đơn</button>'
       : '<span class="pill warn" title="Còn nháp: sửa báo giá thì đơn / HĐKT tự cập nhật theo">Chờ Manager duyệt</span>') : '')
     + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '')
+    + (o.sapoOrderUrl ? `<a class="btn secondary" href="${esc(o.sapoOrderUrl)}" target="_blank" rel="noopener noreferrer" title="Mở đơn trên Sapo">Đơn Sapo ${esc(o.sapoOrderCode || '')} ↗</a>`
+      : o.status !== 'cancelled' ? '<button class="btn secondary" id="order-sapo" title="Tạo đơn nháp trên Sapo: chọn kho, người phụ trách theo báo giá">Đẩy sang Sapo</button>' : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)]]
@@ -3010,6 +3018,7 @@ document.addEventListener('click', async e => {
     try { const d = await api('/orders/' + encodeURIComponent(listDocs.dataset.contractDocsFor)); openContractDocs({ detail: d, api, toast, onSaved: loadContracts }); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
+  if (e.target.closest('#order-sapo')) offerSapoPush(sales.order.id);
   if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: 'Đơn ' + sales.order.orderNo });
   if (e.target.closest('#order-cancel')) {
     if (!await confirmBox('Huỷ đơn này? Đơn huỷ không còn tính công nợ; báo giá có thể tạo đơn mới.', { title: 'Huỷ đơn', ok: 'Huỷ đơn', danger: true })) return;
@@ -3030,6 +3039,7 @@ $('#contract-form').addEventListener('submit', async e => {
     const r = await api('/contracts', 'POST', { orderId: sales.order.id, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
       signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value });
     $('#contract-dialog').close(); toast('Đã lập HĐKT ' + r.contractNo); openOrder(sales.order.id);
+    if (!sales.order.sapoOrderUrl) offerSapoPush(sales.order.id);
   } catch (ex) { err.textContent = ex.message; }
 });
 $('#order-new-delivery').addEventListener('click', () => {
@@ -3148,6 +3158,8 @@ async function makeFromQuote(flow, createOrder) {
   const id = await createOrder();
   if (flow === 'contract') sales.openContract = id;
   go('#/orders/' + id);
+  // Luồng đơn hàng: đẩy sang Sapo ngay; luồng HĐKT: đẩy sau khi lập xong HĐKT (xem #contract-form).
+  if (flow === 'order') offerSapoPush(id);
 }
 $('#quote-make').addEventListener('click', async () => {
   const block = approvalBlock(); if (block) return toast(block, 'err');

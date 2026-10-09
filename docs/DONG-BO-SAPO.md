@@ -8,7 +8,8 @@ Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy t
 - Manager vào trang **Nhân viên**, ô **Đồng bộ Sapo**, bấm **Kết nối Sapo**, rồi dán cookie phiên Sapo theo 3 bước ghi trong hộp thoại.
   - App gọi thử Sapo trước, phiên dùng được mới lưu.
   - Cookie được **mã hoá AES-GCM** (khoá dẫn xuất từ secret `SAPO_SYNC_TOKEN`, không nằm trong DB) và không bao giờ trả về trình duyệt.
-- App **chỉ đọc** Sapo (GET):
+- Đồng bộ **chỉ đọc** Sapo (GET). Ghi vào Sapo chỉ có một chỗ: **đẩy đơn hàng / HĐKT sang Sapo** (mục 3).
+- Các đường đọc:
   - `/accounts.json` lấy nhân viên,
   - `/customers.json` lấy khách hàng,
   - `/products.json` lấy sản phẩm,
@@ -87,6 +88,37 @@ Sai hoặc thiếu mã thì app trả 401. App chưa cài mã thì trả 503 và
 - Đồng bộ chỉ cập nhật tên và SĐT. Chức vụ, quyền và trạng thái khoá do Manager quyết trên web; Manager đã khoá thì đồng bộ không mở lại.
 
 Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùng không tạo dòng trùng.
+
+## 3. Đẩy đơn hàng / HĐKT sang Sapo (thay "Copy báo giá vào Sapo" của web cũ)
+- **Khi nào:**
+  - Sinh **đơn hàng** từ báo giá → popup **Đẩy đơn sang Sapo** mở ngay.
+  - Lập xong **HĐKT** → popup mở ngay.
+  - Bấm "Để sau" thì đẩy lại bằng nút **Đẩy sang Sapo** ở trang đơn.
+  - Đã đẩy thì nút đổi thành **Đơn Sapo … ↗**, mở đơn trên Sapo.
+- **Nhân viên chọn kho** (danh sách kho Sapo đang hoạt động). App nhớ kho chọn lần trước trên máy đó.
+- **Nhân viên phụ trách trên Sapo** = người phụ trách đơn (mặc định người phụ trách báo giá).
+  - Khớp tài khoản Sapo theo liên kết nhân viên ↔ Sapo (đồng bộ nhân viên), rồi theo email, rồi theo tên.
+  - Không khớp được → popup báo trước; đơn Sapo để người phụ trách theo phiên Sapo đang kết nối.
+- **Cách tạo (giống web cũ, `lib/sapo-copy.mjs`):**
+  - Tạo đơn **nháp** (`status: draft`), mã đơn = **số báo giá** (đơn không từ báo giá: số đơn web).
+  - Đã có đơn Sapo cùng mã (kể cả đơn đã copy từ web cũ) → chỉ liên kết, **không tạo trùng**.
+  - Khách: tìm theo id Sapo / mã KH / MST / SĐT / email / tên; chưa có thì tạo.
+  - Sản phẩm: tìm theo SKU; chưa có thì tạo. SKU trùng trên Sapo → dừng, báo lỗi.
+  - Dòng hàng: giá sau CK (đã cộng phí in), chưa VAT, thuế suất từng dòng; ghi chú có số báo giá, số đơn web, HĐKT, NV phụ trách, ngày giao, tổng web.
+  - Nguồn đơn `339582` và bảng giá `146550` như web cũ.
+- **Kiểm tra:**
+  - Đơn huỷ, báo giá chưa duyệt, hoặc dòng thiếu SKU → không đẩy.
+  - Tổng Sapo lệch tổng web hơn 1đ → cảnh báo.
+  - Hai lần bấm cùng lúc → chỉ một lượt chạy (giữ chỗ trên đơn 3 phút).
+- **Quyền:**
+  - Ai xem được đơn thì đẩy được.
+  - Dùng phiên Sapo Manager đã kết nối; tài khoản Sapo đó cần quyền tạo đơn / khách / sản phẩm.
+- **Sửa báo giá sau khi đã đẩy:** đơn Sapo **không** tự cập nhật, cần sửa tay trên Sapo.
+- **Code:**
+  - `src/modules/integrations/domain/sapo-order.ts`, `api/sapo-order-push.ts`
+  - `src/modules/sales/api/sapo-push-routes.ts`
+  - Giao diện: `trial-ui/sapo-push.js`
+  - Test: `tests/app/sapo-push.test.ts`
 
 ## Chưa làm (đề xuất bước sau)
 - Webhook **tồn kho** riêng (`inventory`) và đơn hàng Sapo.

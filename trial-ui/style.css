@@ -203,6 +203,8 @@ table { width: 100%; border-collapse: collapse; }
 .editor-title { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 200px; }
 .editor-title h1 { font-size: 1.35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .editor-actions { display: flex; gap: 8px; }
+/* Trang đơn có nhiều nút (in, phiếu, duyệt, Sapo, lịch sử): xuống dòng thay vì tràn khuất trên điện thoại. */
+#order-actions { flex-wrap: wrap; }
 .editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .editor-bottom { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 16px; }
 .picker-label { margin-bottom: 14px; }
@@ -351,6 +353,7 @@ table { width: 100%; border-collapse: collapse; }
   .chip { flex: none; }
   .editor-actions { width: 100%; }
   .editor-actions .btn { flex: 1; }
+  #order-actions .btn { flex: 1 1 auto; }
   /* Bảng thành thẻ */
   .data-table thead { display: none; }
   .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; }
@@ -1299,3 +1302,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .approvals-board .approval-kinds { margin-bottom: 12px; flex-wrap: wrap; }
 .approvals-board .approval-kinds .chip b { margin-left: 4px; }
 .approval-table .task-go .btn { white-space: nowrap; }
+/* Popup đẩy đơn sang Sapo (trial-ui/sapo-push.js) */
+#sapo-push-body > * + * { margin-top: 12px; }
+#sapo-push-body ul.error, #sapo-push-body .warn-list { padding-left: 18px; }
+#sapo-push-body .warn-list { color: var(--amber); }
+#sapo-push-body select { width: 100%; margin-top: 6px; }
