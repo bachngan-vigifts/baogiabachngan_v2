@@ -243,6 +243,7 @@
               <b id="sum-margin">0%</b></div>
             <dl class="totals profit">
               <div><dt>Doanh thu trước VAT</dt><dd id="sum-revenue">0 ₫</dd></div>
+              <div class="profit-commission"><dt><button type="button" class="link-btn" id="open-commission" title="Nhập CK cho khách theo từng mã hàng">CK khách (tiền cà phê) ›</button></dt><dd id="sum-commission">0 ₫</dd></div>
               <div><dt>Giá nhập</dt><dd id="sum-cost">0 ₫</dd></div>
               <div><dt>Cước vận chuyển</dt><dd id="sum-shipping">Chưa có cước dự toán</dd></div>
             </dl>
@@ -695,6 +696,21 @@
   </div>
 </dialog>
 <!-- Kiểm tồn cả báo giá (giống trang Khách hỏi tồn) -->
+<dialog id="commission-dialog" class="modal wide">
+  <form method="dialog" id="commission-form">
+    <div class="modal-head"><div><span class="eyebrow">Lợi nhuận tạm tính · chỉ Manager</span><h2>CK cho khách (tiền cà phê)</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body">
+      <p class="muted small">Đơn giá = giá sau chiết khấu, <b>không</b> gồm phí in. CK nhập theo % hoặc số tiền mỗi sản phẩm (đ/SP). Bấm × để bỏ dòng không tính CK (vd. bao bì).</p>
+      <div class="commission-all"><label>Áp cùng mức cho mọi dòng <input class="num-input" type="number" inputmode="decimal" min="0" step="any" id="commission-all-value" placeholder="0"></label>
+        <select id="commission-all-mode" aria-label="Kiểu CK"><option value="percent">%</option><option value="amount">đ/SP</option></select><button type="button" class="btn secondary small" id="commission-all-apply">Áp dụng</button></div>
+      <div class="table-wrap"><table class="data-table commission-table"><thead><tr><th>Mã hàng</th><th class="right">Đơn giá sau CK</th><th class="right">SL</th><th>CK cho khách</th><th class="right">Tiền CK</th><th><span class="sr-only">Bỏ dòng</span></th></tr></thead>
+        <tbody id="commission-rows"></tbody><tfoot><tr><th colspan="4" class="right">Tổng CK cho khách</th><th class="right" id="commission-total">0 ₫</th><th></th></tr></tfoot></table></div>
+      <div id="commission-excluded"></div>
+    </div>
+    <div class="modal-foot"><button class="btn primary">Xong</button></div>
+  </form>
+</dialog>
+
 <dialog id="stock-check-dialog" class="modal wide">
   <div class="modal-head"><div><span class="eyebrow">Kiểm tồn</span><h2 id="stock-check-title">Báo giá</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body"><div id="stock-check-body"></div></div>

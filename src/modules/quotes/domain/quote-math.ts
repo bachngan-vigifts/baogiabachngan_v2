@@ -15,6 +15,11 @@ export interface QuoteRow {
   taxRate?: number | null;
   costPrice?: number;
   printing?: { unitPrice?: number; workshop?: string; workshopExplicit?: boolean };
+  /**
+   * CK cho khách ("tiền cà phê", chỉ Manager thấy ở Lợi nhuận tạm tính): theo % hoặc số tiền mỗi sản phẩm, tính trên
+   * đơn giá sau chiết khấu KHÔNG gồm phí in. `excluded`: dòng không tính CK (vd. bao bì).
+   */
+  commission?: { mode?: 'percent' | 'amount'; value?: number; excluded?: boolean };
 }
 
 export interface QuoteDoc {
@@ -64,7 +69,14 @@ export function printingInfo(s: Pick<QuoteDoc, 'type' | 'rows'>): { enabled: boo
   return { enabled, defaultWorkshop: minhLong ? printingWorkshops[0] : printingWorkshops[1] };
 }
 
-export interface Profit { revenue: number; cost: number; shippingCost: number; printingCost: number; gross: number; margin: number }
+/** Tiền CK cho khách của một dòng: % × đơn giá sau CK (không phí in) × SL, hoặc số tiền/SP × SL. Dòng bị loại → 0. */
+export function commissionOf(r: QuoteRow): number {
+  const c = r.commission, qty = Math.max(0, num(r.qty)), value = Math.max(0, num(c?.value));
+  if (!c || c.excluded || !value || !qty) return 0;
+  return Math.round(c.mode === 'amount' ? value * qty : discounted(r) * value / 100 * qty);
+}
+
+export interface Profit { revenue: number; cost: number; commission: number; shippingCost: number; printingCost: number; gross: number; margin: number }
 export function profit(s: QuoteDoc, shippingFee: number | null = null): Profit {
   const revenue = totals(s).subtotal;
   const cost = s.rows.reduce((sum, row) => sum + (Number(row.costPrice) || 0) * Number(row.qty || 0), 0);
@@ -75,8 +87,9 @@ export function profit(s: QuoteDoc, shippingFee: number | null = null): Profit {
       ? s.rows.reduce((sum, row) => sum + Math.round(Math.max(0, Number(row.printing?.unitPrice) || 0) * Math.max(0, Number(row.qty) || 0)), 0)
       : Math.max(0, Number(s.printing?.totalCost) || 0))
     : 0;
-  const gross = revenue - cost - shippingCost - printingCost;
-  return { revenue, cost, shippingCost, printingCost, gross, margin: revenue ? gross / revenue * 100 : 0 };
+  const commission = s.rows.reduce((sum, row) => sum + commissionOf(row), 0);
+  const gross = revenue - cost - commission - shippingCost - printingCost;
+  return { revenue, cost, commission, shippingCost, printingCost, gross, margin: revenue ? gross / revenue * 100 : 0 };
 }
 
 /** Giá chưa thuế từ giá đã/chưa gồm thuế. */
