@@ -24,7 +24,7 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
     pushed.push({ endpoint: String(url), body: init!.body as Uint8Array, headers: init!.headers as Record<string, string> });
     return new Response('', { status: String(url) === gone ? 410 : 201 });
   }) as typeof fetch;
-  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, pushFetch };
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, sapoSyncToken: SECRET, pushFetch };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
@@ -118,7 +118,7 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
 
 test('Web Push chưa có SAPO_SYNC_TOKEN: thông báo vẫn lưu (trang tự làm mới), chỉ không đẩy', async () => {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
-  const router = createAppRouter(), env = { db, passwordIterations: 1000 };
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const };
   const call = async (path: string, cookie = '') => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { headers: { origin, cookie } }), env);
     return { status: res.status, data: await res.json() as any };

@@ -89,34 +89,38 @@ Sai hoặc thiếu mã thì app trả 401. App chưa cài mã thì trả 503 và
 
 Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùng không tạo dòng trùng.
 
-## 3. Đẩy đơn hàng / HĐKT sang Sapo (thay "Copy báo giá vào Sapo" của web cũ)
-- **Khi nào:**
-  - Sinh **đơn hàng** từ báo giá → popup **Đẩy đơn sang Sapo** mở ngay.
-  - Lập xong **HĐKT** → popup mở ngay.
-  - Bấm "Để sau" thì đẩy lại bằng nút **Đẩy sang Sapo** ở trang đơn.
-  - Đã đẩy thì nút đổi thành **Đơn Sapo … ↗**, mở đơn trên Sapo.
-- **Nhân viên chọn kho** (danh sách kho Sapo đang hoạt động). App nhớ kho chọn lần trước trên máy đó.
-- **Nhân viên phụ trách trên Sapo** = người phụ trách đơn (mặc định người phụ trách báo giá).
-  - Khớp tài khoản Sapo theo liên kết nhân viên ↔ Sapo (đồng bộ nhân viên), rồi theo email, rồi theo tên.
+## 3. Đẩy đơn hàng / HĐKT sang Sapo – tự động, bắt buộc (thay "Copy báo giá vào Sapo" của web cũ)
+- **Khi nào:** đẩy cùng lúc với việc sinh đơn / HĐKT; không có nút đẩy riêng.
+  - **Sinh đơn hàng** (từ báo giá, hoặc nút ＋ ở trang Đơn hàng): popup chọn **kho Sapo** → bấm "Sinh đơn hàng + đơn Sapo".
+  - **Lập HĐKT:** bấm "Lập HĐKT" → popup chọn kho → "Lập HĐKT + đơn Sapo".
+    - Đơn tạm của luồng HĐKT chưa đẩy; chỉ đẩy khi lập HĐKT.
+    - Đơn đã có trên Sapo thì lập HĐKT luôn, không hỏi kho.
+- **Sapo lỗi → không sinh gì:**
+  - Máy chủ tạo đơn / HĐKT và đơn nháp Sapo trong **cùng một giao dịch**. Sapo lỗi (chưa kết nối, hết phiên, thiếu quyền, SKU trùng…) → huỷ giao dịch, không có đơn / HĐKT.
+  - Lỗi hiện ngay trong popup để nhân viên sửa rồi thử lại.
+  - Phiên Sapo được đọc trước khi mở giao dịch.
+- **Sau khi đẩy:** trang đơn có nút **Đơn Sapo … ↗** mở đơn trên Sapo.
+- **Kho:** danh sách kho Sapo đang hoạt động; app nhớ kho chọn lần trước trên máy đó.
+- **Nhân viên phụ trách trên Sapo** = người phụ trách báo giá / đơn.
+  - Khớp tài khoản Sapo theo liên kết nhân viên ↔ Sapo (đồng bộ nhân viên), rồi email, rồi tên.
   - Không khớp được → popup báo trước; đơn Sapo để người phụ trách theo phiên Sapo đang kết nối.
 - **Cách tạo (giống web cũ, `lib/sapo-copy.mjs`):**
-  - Tạo đơn **nháp** (`status: draft`), mã đơn = **số báo giá** (đơn không từ báo giá: số đơn web).
-  - Đã có đơn Sapo cùng mã (kể cả đơn đã copy từ web cũ) → chỉ liên kết, **không tạo trùng**.
+  - Tạo đơn **nháp** (`status: draft`), mã đơn = **số báo giá**.
+  - Đã có đơn Sapo cùng mã (kể cả đơn copy từ web cũ, hoặc lần trước Sapo tạo xong mà web lỗi) → chỉ liên kết, **không tạo trùng**.
   - Khách: tìm theo id Sapo / mã KH / MST / SĐT / email / tên; chưa có thì tạo.
-  - Sản phẩm: tìm theo SKU; chưa có thì tạo. SKU trùng trên Sapo → dừng, báo lỗi.
-  - Dòng hàng: giá sau CK (đã cộng phí in), chưa VAT, thuế suất từng dòng; ghi chú có số báo giá, số đơn web, HĐKT, NV phụ trách, ngày giao, tổng web.
+  - Sản phẩm: tìm theo SKU; chưa có thì tạo. SKU trùng trên Sapo → lỗi.
+  - Dòng hàng: giá sau CK (đã cộng phí in), chưa VAT, thuế suất từng dòng.
+  - Ghi chú gồm số báo giá, số đơn web, HĐKT, NV phụ trách, ngày giao, tổng web.
   - Nguồn đơn `339582` và bảng giá `146550` như web cũ.
-- **Kiểm tra:**
-  - Đơn huỷ, báo giá chưa duyệt, hoặc dòng thiếu SKU → không đẩy.
-  - Tổng Sapo lệch tổng web hơn 1đ → cảnh báo.
-  - Hai lần bấm cùng lúc → chỉ một lượt chạy (giữ chỗ trên đơn 3 phút).
-- **Quyền:**
-  - Ai xem được đơn thì đẩy được.
-  - Dùng phiên Sapo Manager đã kết nối; tài khoản Sapo đó cần quyền tạo đơn / khách / sản phẩm.
+- **Chặn trước khi tạo:**
+  - Dòng thiếu SKU → chặn.
+  - Tổng Sapo lệch tổng web hơn 1đ → vẫn tạo, kèm cảnh báo.
+- **Quyền:** dùng phiên Sapo Manager đã kết nối; tài khoản Sapo đó cần quyền tạo đơn / khách / sản phẩm.
 - **Sửa báo giá sau khi đã đẩy:** đơn Sapo **không** tự cập nhật, cần sửa tay trên Sapo.
+- **Tắt (chỉ cho test):** `env.sapoOrderPush = 'off'`.
 - **Code:**
   - `src/modules/integrations/domain/sapo-order.ts`, `api/sapo-order-push.ts`
-  - `src/modules/sales/api/sapo-push-routes.ts`
+  - `src/modules/sales/api/sapo-push.ts`
   - Giao diện: `trial-ui/sapo-push.js`
   - Test: `tests/app/sapo-push.test.ts`
 

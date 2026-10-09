@@ -13,7 +13,7 @@ const origin = 'https://trial.test', SECRET = 'bi-mat-dong-bo-sapo-0123456789abc
 async function setup(sapoSyncToken = SECRET) {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const router = createAppRouter();
-  const env = { db, passwordIterations: 1000, sapoSyncToken };
+  const env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, sapoSyncToken };
   // Máy chủ gọi đồng bộ: không có Origin, không có cookie.
   const push = async (path: string, body: unknown, headers: Record<string, string> = { authorization: 'Bearer ' + SECRET }) => {
     const res = await router.handle(new Request(origin + '/api/staff/integrations/sapo/' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }), env);
@@ -208,7 +208,7 @@ test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, l
   const expiredSapo = fakeSapo({}, { expired: true });
   let fake = sapo;
   const router = createAppRouter();
-  const env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, get sapoFetch() { return fake.fetch; } };
+  const env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, sapoSyncToken: SECRET, get sapoFetch() { return fake.fetch; } };
   const call = async (path: string, cookie = '', method = 'GET', body?: object, headers: Record<string, string> = { origin }) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', cookie, ...headers }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
@@ -286,7 +286,7 @@ test('giữ phiên Sapo: gọi nhẹ, lưu cookie mới Sapo cấp; hết hạn 
     if (mode === 'renew') res.headers.append('set-cookie', '_admin_session_id=moi; Path=/; HttpOnly');
     return res;
   }) as typeof globalThis.fetch;
-  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch };
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, sapoSyncToken: SECRET, sapoFetch };
   const call = async (path: string, cookie = '', method = 'GET', body?: object, headers: Record<string, string> = { origin }) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', cookie, ...headers }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
@@ -320,7 +320,7 @@ test('giữ phiên Sapo: gọi nhẹ, lưu cookie mới Sapo cấp; hết hạn 
 test('kết nối lại Sapo: lỗi của lần đồng bộ trước đó không còn hiện', async () => {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const sapoFetch = (async () => Response.json({ accounts: [] })) as typeof globalThis.fetch;
-  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch };
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, sapoSyncToken: SECRET, sapoFetch };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', origin, cookie }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
@@ -344,7 +344,7 @@ test('kéo từ Sapo: loại chứng từ Sapo không cho đọc (404/403) thì 
     if (key === 'stock_transfers') return new Response('', { status: 403 });
     return Response.json({ [key]: key === 'purchase_orders' ? [{ id: 1, code: 'PO1', line_items: [] }] : [] });
   }) as typeof globalThis.fetch;
-  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch };
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, sapoSyncToken: SECRET, sapoFetch };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', cookie, origin }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };

@@ -33,7 +33,7 @@ export async function newDriver(): Promise<Driver> {
   const { d1, db } = (await createTestDb()); await seedStaff(d1);
   const router = createStaffRouter();
   router.get('/customers', () => json({ ok: true }), 'business'); // đại diện một route nghiệp vụ để so quyền NCC
-  const env: StaffEnv = { db, passwordIterations: 1000 };
+  const env: StaffEnv = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const };
   return { d1, call: async (p, c) => read(await router.handle(req(p, c), env)) };
 }
 

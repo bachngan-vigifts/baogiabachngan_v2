@@ -1643,11 +1643,15 @@ document.addEventListener('click', async e => {
   } catch (ex) { toast(ex.message, 'err'); }
   finally { legacyRunning = false; legacyImagesBox(); }
 });
-/** Popup đẩy đơn sang Sapo (trial-ui/sapo-push.js). */
+/** Popup chọn kho Sapo khi sinh đơn hàng / lập HĐKT (trial-ui/sapo-push.js). */
 var sapoPushUi = null; // eslint-disable-line no-var
-const sapoPush = () => sapoPushUi ||= initSapoPush({ api, toast, esc, money, $ });
-/** Sau khi sinh đơn / lập HĐKT: hỏi đẩy sang Sapo luôn (chọn kho). */
-const offerSapoPush = id => sapoPush().open(id, { onDone: () => { if (sales.order?.id === id) openOrder(id); } });
+const sapoPush = () => sapoPushUi ||= initSapoPush({ api, esc, $ });
+/** Báo kết quả đẩy Sapo (kèm cảnh báo: chưa khớp NV phụ trách Sapo, tổng tiền lệch…). */
+function sapoToast(s) {
+  if (!s) return;
+  toast(`${s.status === 'existing' ? 'Đã liên kết đơn Sapo có sẵn' : 'Đã tạo đơn nháp Sapo'} ${s.code} · ${s.location}.`);
+  for (const w of s.warnings || []) toast(w, 'err');
+}
 function productAdmin() {
   return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
 }
@@ -2561,7 +2565,7 @@ async function openOrder(id) {
       : '<span class="pill warn" title="Còn nháp: sửa báo giá thì đơn / HĐKT tự cập nhật theo">Chờ Manager duyệt</span>') : '')
     + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '')
     + (o.sapoOrderUrl ? `<a class="btn secondary" href="${esc(o.sapoOrderUrl)}" target="_blank" rel="noopener noreferrer" title="Mở đơn trên Sapo">Đơn Sapo ${esc(o.sapoOrderCode || '')} ↗</a>`
-      : o.status !== 'cancelled' ? '<button class="btn secondary" id="order-sapo" title="Tạo đơn nháp trên Sapo: chọn kho, người phụ trách theo báo giá">Đẩy sang Sapo</button>' : '')
+      : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)]]
@@ -3018,7 +3022,6 @@ document.addEventListener('click', async e => {
     try { const d = await api('/orders/' + encodeURIComponent(listDocs.dataset.contractDocsFor)); openContractDocs({ detail: d, api, toast, onSaved: loadContracts }); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
-  if (e.target.closest('#order-sapo')) offerSapoPush(sales.order.id);
   if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: 'Đơn ' + sales.order.orderNo });
   if (e.target.closest('#order-cancel')) {
     if (!await confirmBox('Huỷ đơn này? Đơn huỷ không còn tính công nợ; báo giá có thể tạo đơn mới.', { title: 'Huỷ đơn', ok: 'Huỷ đơn', danger: true })) return;
@@ -3035,11 +3038,14 @@ document.addEventListener('click', async e => {
 });
 $('#contract-form').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, err = $('#contract-error'); err.textContent = '';
+  const body = { orderId: sales.order.id, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
+    signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
   try {
-    const r = await api('/contracts', 'POST', { orderId: sales.order.id, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
-      signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value });
-    $('#contract-dialog').close(); toast('Đã lập HĐKT ' + r.contractNo); openOrder(sales.order.id);
-    if (!sales.order.sapoOrderUrl) offerSapoPush(sales.order.id);
+    // Lập HĐKT = đẩy đơn sang Sapo cùng lúc (chọn kho); Sapo lỗi → không lập HĐKT. Đơn đã có trên Sapo thì lập luôn.
+    const r = await sapoPush().choose({ orderId: sales.order.id }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
+      run: loc => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}) }) });
+    if (!r) return;
+    $('#contract-dialog').close(); toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; }
 });
 $('#order-new-delivery').addEventListener('click', () => {
@@ -3111,14 +3117,27 @@ $('#quote-download').addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) closeDownloadMenu(); });
 $('#download-menu').addEventListener('click', () => closeDownloadMenu());
 /** Đơn của báo giá đang mở: có đơn đang hiệu lực thì dùng, chưa có thì tạo. */
-async function ensureOrderForQuote() {
-  try { const r = await api('/orders', 'POST', { quoteId: editor.id }); toast('Đã tạo đơn đặt hàng.'); return r.id; }
-  catch (ex) {
-    if (ex.code !== 'ORDER_EXISTS') throw ex;
-    const found = (await api('/orders?q=' + encodeURIComponent(field('quoteNo').value))).orders.find(o => o.quoteId === editor.id && o.status !== 'cancelled');
-    if (!found) throw ex;
-    return found.id;
-  }
+/**
+ * Tạo đơn cho báo giá. Luồng đơn hàng: popup chọn kho Sapo – máy chủ tạo đơn + đơn nháp Sapo cùng lúc (Sapo lỗi → không có đơn).
+ * Luồng HĐKT: tạo đơn tạm, đẩy Sapo lúc lập HĐKT. Báo giá đã có đơn → mở đơn đó. Trả id đơn, null khi huỷ.
+ */
+async function createOrderForQuote(quoteId, quoteNo, flow) {
+  let existed = false;
+  const post = async loc => {
+    try { return await api('/orders', 'POST', { quoteId, flow, ...(loc ? { sapoLocationId: loc } : {}) }); }
+    catch (ex) {
+      if (ex.code !== 'ORDER_EXISTS') throw ex;
+      const found = (await api('/orders?q=' + encodeURIComponent(quoteNo))).orders.find(o => o.quoteId === quoteId && o.status !== 'cancelled');
+      if (!found) throw ex;
+      existed = true; return { id: found.id };
+    }
+  };
+  const r = flow === 'contract' ? await post(null)
+    : await sapoPush().choose({ quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: post });
+  if (!r) return null;
+  if (existed) toast('Báo giá này đã có đơn – mở đơn đó.');
+  else { toast(flow === 'contract' ? 'Đã tạo đơn – điền thông tin để lập HĐKT.' : 'Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); }
+  return r.id;
 }
 // Kiểm tồn cả báo giá (giống trang Khách hỏi tồn): tồn khả dụng, tồn NCC, hàng chờ về so với số lượng báo giá.
 $('#quote-stock').addEventListener('click', async () => {
@@ -3154,18 +3173,18 @@ function chooseFlow(label) {
   });
 }
 /** Tạo đơn của báo giá theo luồng đã chọn rồi mở đơn (luồng HĐKT: mở luôn hộp lập HĐKT). */
-async function makeFromQuote(flow, createOrder) {
-  const id = await createOrder();
+async function makeFromQuote(flow, quoteId, quoteNo) {
+  const id = await createOrderForQuote(quoteId, quoteNo, flow);
+  if (!id) return false;
   if (flow === 'contract') sales.openContract = id;
   go('#/orders/' + id);
-  // Luồng đơn hàng: đẩy sang Sapo ngay; luồng HĐKT: đẩy sau khi lập xong HĐKT (xem #contract-form).
-  if (flow === 'order') offerSapoPush(id);
+  return true;
 }
 $('#quote-make').addEventListener('click', async () => {
   const block = approvalBlock(); if (block) return toast(block, 'err');
   const flow = await chooseFlow(`${field('quoteNo').value} · ${field('customer').value || ''}`); if (!flow) return;
   const btn = $('#quote-make'); btn.disabled = true;
-  try { await makeFromQuote(flow, ensureOrderForQuote); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+  try { await makeFromQuote(flow, editor.id, field('quoteNo').value); } catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
 });
 // ＋ ở trang Đơn hàng / HĐKT: chọn một báo giá đã duyệt (chưa có đơn) → tạo đơn / lập HĐKT.
 let quotePickFlow = 'order';
@@ -3187,7 +3206,7 @@ $('#quote-pick-search').addEventListener('input', debounce(drawQuotePick));
 $('#quote-pick-list').addEventListener('click', async e => {
   const b = e.target.closest('[data-pick-quote]'); if (!b) return;
   b.disabled = true;
-  try { await makeFromQuote(quotePickFlow, async () => (await api('/orders', 'POST', { quoteId: b.dataset.pickQuote })).id); $('#quote-pick-dialog').close(); toast(quotePickFlow === 'contract' ? 'Đã tạo đơn – điền thông tin để lập HĐKT.' : 'Đã tạo đơn hàng.'); }
+  try { if (await makeFromQuote(quotePickFlow, b.dataset.pickQuote, b.querySelector('b')?.textContent || '')) $('#quote-pick-dialog').close(); else b.disabled = false; }
   catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
 });
 $('#approve-quote').addEventListener('click', async () => {

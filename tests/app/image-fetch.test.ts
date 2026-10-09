@@ -31,11 +31,11 @@ test('máy chủ tải hộ ảnh báo giá cho PDF / Excel (ảnh ngoài không
     return new Response('', { status: 404 });
   }) as typeof fetch;
   const call = async (body: object, cookie = '') => {
-    const res = await router.handle(new Request(origin + '/api/staff/images/fetch', { method: 'POST', headers: { origin, 'content-type': 'application/json', cookie }, body: JSON.stringify(body) }), { db, imageFetch, passwordIterations: 1000 });
+    const res = await router.handle(new Request(origin + '/api/staff/images/fetch', { method: 'POST', headers: { origin, 'content-type': 'application/json', cookie }, body: JSON.stringify(body) }), { db, imageFetch, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const emp = (await (async () => {
-    const res = await router.handle(new Request(origin + '/api/staff/login', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email: 'emp@x.vn', password: PASSWORD }) }), { db, passwordIterations: 1000 });
+    const res = await router.handle(new Request(origin + '/api/staff/login', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email: 'emp@x.vn', password: PASSWORD }) }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return res.headers.get('set-cookie')?.split(';')[0] ?? '';
   })());
 

@@ -14,6 +14,7 @@ import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
+import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
@@ -98,7 +99,9 @@ type QuoteRow = typeof quotations.$inferSelect;
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
  */
-export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string; deliveryDate?: string | null }) {
+export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string; deliveryDate?: string | null;
+  /** Chạy cuối giao dịch tạo đơn (vd. đẩy đơn sang Sapo); lỗi → huỷ, không có đơn. */
+  inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
     .where(and(eq(salesOrders.quoteId, quote.id), ne(salesOrders.status, 'cancelled'))).limit(1);
   if (existing) throw new AppError(409, `Báo giá này đã có đơn ${existing.orderNo}.`, 'ORDER_EXISTS');
@@ -127,6 +130,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
       WHERE NOT EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${customerId} AND ${customerStaff.role} = 'owner')
         AND EXISTS (SELECT 1 FROM ${employees} WHERE ${employees.id} = ${quote.assigneeId ?? quote.creatorId} AND ${employees.role} IN ('employee', 'manager'))
       ON CONFLICT DO NOTHING`);
+    if (o.inTx) await o.inTx(tx, id);
   });
   if (o.status === 'confirmed') await recordSaleMovements(db, id);
   return id;
@@ -261,6 +265,24 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     });
   }, 'business');
 
+  /**
+   * Xem trước đẩy Sapo cho popup chọn kho: `?quoteId=` (trước khi sinh đơn) hoặc `?orderId=` (trước khi lập HĐKT).
+   * Trả kho Sapo, NV phụ trách trên Sapo, lỗi dữ liệu; đơn đã có trên Sapo thì trả `pushed`.
+   */
+  router.get('/sapo/preview', async c => {
+    const p = c.url.searchParams, me = viewer(c);
+    if (p.get('orderId')) {
+      const o = await loadOrder(c, p.get('orderId')!);
+      if (o.sapoOrderId) return json({ pushed: { code: o.sapoOrderCode, url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId)}` }, required: sapoPushRequired(c) });
+      const lines = await c.env.db.select({ sku: salesOrderLines.sku }).from(salesOrderLines).where(eq(salesOrderLines.orderId, o.id));
+      return json(await sapoPreview(c, { code: o.quoteNo || o.orderNo, ownerId: o.ownerId, lines: lines.map(l => ({ sku: l.sku.trim() })), customerName: o.customerName }));
+    }
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, text(p.get('quoteId'), 80)), quotePredicate(quotationScope(me)))).limit(1);
+    if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
+    const data = JSON.parse(quote.data);
+    return json(await sapoPreview(c, { code: quote.quoteNo, ownerId: quote.assigneeId ?? quote.creatorId, lines: orderLinesFromQuote(data).map(l => ({ sku: String(l.sku ?? '').trim() })), customerName: text(data.customer) || quote.customer }));
+  }, 'business');
+
   /** Tạo đơn từ báo giá (người xem được báo giá mới tạo được). Mỗi báo giá một đơn đang hiệu lực. */
   router.post('/orders', async c => {
     const body = await readJson(c.req, 8_192), me = viewer(c), quoteId = text(body.quoteId, 80);
@@ -268,11 +290,15 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
-    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft' });
+    // Luồng đơn hàng: đẩy sang Sapo trong cùng giao dịch (Sapo lỗi → không tạo đơn). Luồng HĐKT (`flow: 'contract'`): đẩy lúc lập HĐKT.
+    const push = body.flow !== 'contract' && sapoPushRequired(c) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    let sapo: SapoPushOutcome = null;
+    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft',
+      inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
     await notifyMany(c.env, 'managers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
       url: `/index.html#/orders/${id}`, actorId: me.id, data: { orderId: id } });
-    return json({ id }, 201);
+    return json({ id, sapo }, 201);
   }, 'business');
 
   router.put('/orders/:id/status', async c => {
@@ -393,7 +419,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const customerCode = compactCode(cust?.customerCode || order.taxCode || cust?.taxCode);
     if (!customerCode) throw new AppError(400, 'Đơn chưa có mã khách hàng hoặc MST để cấp số HĐKT.');
     const now = nowIso(), id = crypto.randomUUID(), { year, month } = vietnamDate();
-    let contractNo = '';
+    // Lập HĐKT: đẩy đơn sang Sapo trong cùng giao dịch (Sapo lỗi → không lập HĐKT). Đơn đã có trên Sapo thì thôi.
+    const push = sapoPushRequired(c) && !order.sapoOrderId ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    let contractNo = '', sapo: SapoPushOutcome = null;
     try {
       await c.env.db.transaction(async tx => {
         const counterId = `HDKT:${year}:${month}:${entity}`;
@@ -411,14 +439,15 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         await tx.delete(paymentSchedules).where(and(eq(paymentSchedules.orderId, order.id), paidSchedules.length ? sql`${paymentSchedules.id} NOT IN (${sql.join(paidSchedules.map(x => sql`${x}`), sql`, `)})` : undefined));
         const plans = contractSchedules(order.total, depositRate, signedDate);
         if (plans.length) await tx.insert(paymentSchedules).values(plans.map(p => ({ id: crypto.randomUUID(), orderId: order.id, contractId: id, ...p, createdAt: now })));
+        if (push) sapo = await push.push(tx, order.id);
       });
     } catch (e) {
       if ((e as { code?: string; cause?: { code?: string } }).code === '23505' || (e as { cause?: { code?: string } }).cause?.code === '23505') throw new AppError(409, 'Đơn này đã có HĐKT.', 'CONTRACT_EXISTS');
       throw e;
-    }
+    } finally { await push?.done(); }
     await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: order.status === 'draft' ? 'HĐKT mới chờ duyệt' : 'HĐKT mới',
       body: `${me.name}: ${contractNo} – ${order.customerName}`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id, contractId: id } });
-    return json({ id, contractNo }, 201);
+    return json({ id, contractNo, sapo }, 201);
   }, 'business');
 
   router.put('/contracts/:id', async c => {

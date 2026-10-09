@@ -12,10 +12,10 @@ async function setup() {
   await d1.sqlite.prepare("UPDATE staff_credentials SET password_hash = (SELECT password_hash FROM staff_credentials WHERE member_id = 'emp'), activation_hash = NULL WHERE member_id IN ('new', 'old')").run();
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
-    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000 });
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return { status: res.status, data: await res.json() as any };
   };
-  const login = async (email: string) => (await router.handle(new Request(origin + '/api/staff/login', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: PASSWORD }) }), { db, passwordIterations: 1000 }))
+  const login = async (email: string) => (await router.handle(new Request(origin + '/api/staff/login', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: PASSWORD }) }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const }))
     .headers.get('set-cookie')!.split(';')[0]!;
   return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), other: await login('new@x.vn'), old: await login('old@x.vn') };
 }

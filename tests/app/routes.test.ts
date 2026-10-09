@@ -9,7 +9,7 @@ test('trial: customer CRUD, quote save/revision và chặn NCC/nhân viên khác
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const router = createAppRouter();
   const call = async (path: string, method = 'GET', body?: object, cookie = '') => {
-    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000 });
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   assert.equal((await call('/quotes')).status, 401);

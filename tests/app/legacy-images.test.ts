@@ -39,7 +39,7 @@ async function setup(legacyPassword = 'dung') {
   resetLegacySession();
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const fake = fakeLegacy(), productImages = memoryFileStore(), router = createAppRouter();
-  const env = { db, passwordIterations: 1000, productImages, legacySite: { base: BASE, email: 'kho-anh@x.vn', password: legacyPassword, fetch: fake.f } };
+  const env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, productImages, legacySite: { base: BASE, email: 'kho-anh@x.vn', password: legacyPassword, fetch: fake.f } };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
