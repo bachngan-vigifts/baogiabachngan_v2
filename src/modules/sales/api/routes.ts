@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, gte, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
-import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
+import { foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -209,14 +209,19 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   router.get('/orders', async c => {
     const q = c.url.searchParams.get('q'), status = c.url.searchParams.get('status') || '', flow = c.url.searchParams.get('flow') || '';
     const invoice = c.url.searchParams.get('invoice') || '';
-    const rows = await c.env.db.select().from(salesOrders).where(and(
+    const { limit, offset } = paging(c.url, 200, 500);
+    const where = and(
       orderScope(c),
       status ? eq(salesOrders.status, status as OrderStatus) : undefined,
       // Đơn hàng và HĐKT là 2 luồng song song: trang Đơn hàng (flow=order) chỉ hiện đơn KHÔNG có HĐKT (khách đã có HĐ nguyên tắc).
       flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined,
       invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined,
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.quoteNo, salesOrders.customerName, salesOrders.phone), q),
-    )).orderBy(desc(salesOrders.orderDate), desc(salesOrders.createdAt)).limit(200);
+    );
+    const [[{ n: total = 0 } = {}], rows] = await Promise.all([
+      c.env.db.select({ n: count() }).from(salesOrders).where(where),
+      c.env.db.select().from(salesOrders).where(where).orderBy(desc(salesOrders.orderDate), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(limit).offset(offset),
+    ]);
     const ids = rows.map(r => r.id);
     const [debts, contracts] = await Promise.all([
       receivableOf(c.env.db, ids),
@@ -224,7 +229,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     ]);
     return json({ orders: rows.map(r => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
       // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
-      return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }) });
+      return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }), total: Number(total), limit, offset });
   }, 'business');
 
   router.get('/orders/:id', async c => {
@@ -349,15 +354,19 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
 
   // ================= HĐKT =================
   router.get('/contracts', async c => {
-    const rows = await c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
+    const { limit, offset } = paging(c.url, 200, 500);
+    const where = and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.orderNo, salesOrders.customerName), c.url.searchParams.get('q')));
+    const [[{ n: total = 0 } = {}], rows] = await Promise.all([
+      c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(where),
+      c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
       invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
-      .where(and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.orderNo, salesOrders.customerName), c.url.searchParams.get('q'))))
-      .orderBy(desc(salesContracts.createdAt)).limit(200);
+      .where(where).orderBy(desc(salesContracts.createdAt), desc(salesContracts.id)).limit(limit).offset(offset),
+    ]);
     const debts = await receivableOf(c.env.db, [...new Set(rows.map(r => r.contract.orderId))]);
     return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo, orderStatus: r.orderStatus,
       invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo,
-      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })) });
+      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })), total: Number(total), limit, offset });
   }, 'business');
 
   /** Lập HĐKT cho đơn: cấp số theo `contract_counters` (như web cũ), lập lại kỳ phải thu = cọc + phần còn lại. */

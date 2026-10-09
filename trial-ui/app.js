@@ -4,6 +4,7 @@ import { hydrateSnapshot, searchProducts as searchCatalog } from './product-sear
 import { setupNotifications } from './notify.js';
 import { setupDataRefresh } from './auto-refresh.js';
 import { printSheet } from './print-page.js';
+import { createPager } from './pager.js';
 import { showAudit } from './audit-ui.js';
 import { watchCsp } from './csp-report.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
@@ -355,20 +356,29 @@ async function loadAll() {
   await Promise.all(jobs);
 }
 function showGlobalError(message) { const el = $('#global-error'); el.textContent = message; el.hidden = false; }
+// Báo giá: lọc, sắp xếp, phân trang trên máy chủ (GET /quotes); trang này chỉ giữ các báo giá của trang đang xem.
+const quotePager = createPager($('#quote-pager'), 'quotes', () => loadQuotes(), 50);
+let quoteReq = 0;
 async function loadQuotes() {
-  try { state.quotes = (await api('/quotes')).quotes; }
-  catch (e) { state.quotes = state.quotes || []; if (e.status !== 401) showGlobalError(e.message); }
-  renderQuotes(); renderCustomers();
+  const req = ++quoteReq, f = state.quoteFilter;
+  try {
+    const d = await api(`/quotes?limit=${quotePager.limit}&offset=${quotePager.offset}&q=${encodeURIComponent(f.q)}&type=${encodeURIComponent(f.type)}&owner=${encodeURIComponent(f.owner)}&sort=${encodeURIComponent(f.sort)}&month=${todayIso().slice(0, 7)}`);
+    if (req !== quoteReq) return;
+    state.quotes = d.quotes; state.quoteMeta = d;
+  } catch (e) { if (req !== quoteReq) return; state.quotes = state.quotes || []; if (e.status !== 401) showGlobalError(e.message); }
+  renderQuotes();
 }
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
-let customerReq = 0;
-async function loadCustomers(more = false) {
-  const req = ++customerReq, offset = more ? (state.customers || []).length : 0;
+let customerReq = 0, customerPager;
+async function loadCustomers() {
+  const req = ++customerReq;
+  customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
-    const d = await api(`/customers?limit=100&offset=${offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}${$('#customer-pending').checked ? '&status=pending' : ''}`);
+    const d = await api(`/customers?limit=${customerPager.limit}&offset=${customerPager.offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}${$('#customer-pending').checked ? '&status=pending' : ''}`);
     if (req !== customerReq) return;
-    state.customers = more ? [...state.customers, ...d.customers] : d.customers;
+    state.customers = d.customers; state.customerQuoteCounts = null;
     state.customerTotal = d.total ?? d.customers.length;
+    loadCustomerQuoteCounts(req);
     if (!state.customerQuery && !$('#customer-mine').checked && !$('#customer-pending').checked) state.customerGrandTotal = state.customerTotal;
     $('#customer-pending-count').textContent = d.pendingCount || 0; $('#customer-pending-chip').hidden = !d.pendingCount && !$('#customer-pending').checked;
   } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
@@ -487,39 +497,25 @@ const go = hash => { if (location.hash === hash) route(); else location.hash = h
 
 // ---------------------------------------------------------------- danh sách báo giá
 const skeleton = cols => Array.from({ length: 4 }, () => `<tr class="skeleton">${'<td><span></span></td>'.repeat(cols)}</tr>`).join('');
-function filteredQuotes() {
-  const f = state.quoteFilter, q = normalize(f.q);
-  const list = (state.quotes || []).filter(x =>
-    (!f.type || x.quoteType === f.type) &&
-    (!f.owner || (f.owner === 'mine') === !!x.mine) &&
-    (!q || normalize(`${x.quoteNo} ${x.customer} ${x.contact || ''} ${x.phone || ''}`).includes(q)));
-  const by = {
-    updated: (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)),
-    date: (a, b) => String(b.quoteDate || '').localeCompare(String(a.quoteDate || '')) || String(b.updatedAt).localeCompare(String(a.updatedAt)),
-    value: (a, b) => b.total - a.total,
-    no: (a, b) => String(a.quoteNo).localeCompare(String(b.quoteNo), 'vi', { numeric: true }),
-  }[f.sort];
-  return list.sort(by);
-}
 function renderStats() {
-  const all = state.quotes;
-  if (!all) return;
-  const list = filteredQuotes(), month = todayIso().slice(0, 7);
-  const thisMonth = all.filter(q => (q.quoteDate || q.createdAt || '').startsWith(month));
-  $('#stat-count').textContent = list.length.toLocaleString('vi-VN');
-  $('#stat-count-note').textContent = list.length === all.length ? 'Tất cả báo giá' : `Lọc từ ${all.length} báo giá`;
-  $('#stat-value').textContent = shortMoney(list.reduce((s, q) => s + q.total, 0));
-  $('#stat-month').textContent = thisMonth.length.toLocaleString('vi-VN');
-  $('#stat-month-value').textContent = thisMonth.length ? shortMoney(thisMonth.reduce((s, q) => s + q.total, 0)) : 'Chưa có báo giá';
+  const all = state.quotes, m = state.quoteMeta;
+  if (!all || !m) return;
+  $('#stat-count').textContent = m.total.toLocaleString('vi-VN');
+  $('#stat-count-note').textContent = m.total === m.all ? 'Tất cả báo giá' : `Lọc từ ${m.all.toLocaleString('vi-VN')} báo giá`;
+  // Giá trị: máy chủ cộng sẵn khi số báo giá khớp lọc vừa phải; nhiều quá thì cộng trang đang xem.
+  $('#stat-value').textContent = shortMoney(m.value ?? all.reduce((s, q) => s + q.total, 0));
+  $('#stat-value-note').textContent = m.value === null ? 'Trang đang xem · gồm VAT' : 'Đã gồm VAT';
+  $('#stat-month').textContent = (m.month?.count ?? 0).toLocaleString('vi-VN');
+  $('#stat-month-value').textContent = m.month?.count ? shortMoney(m.month.value) : 'Chưa có báo giá';
   $('#stat-customers').textContent = state.customerGrandTotal !== undefined ? state.customerGrandTotal.toLocaleString('vi-VN') : '–';
-  $('#nav-quote-count').textContent = all.length;
+  $('#nav-quote-count').textContent = m.all;
 }
 function renderQuotes() {
   const tbody = $('#quote-list');
   if (!state.quotes) { tbody.innerHTML = skeleton(7); return; }
-  $('#quote-owner').hidden = !state.quotes.some(q => !q.mine);
-  const list = filteredQuotes();
-  renderStats();
+  $('#quote-owner').hidden = !state.quoteMeta?.hasOthers;
+  const list = state.quotes;
+  renderStats(); quotePager.render(state.quoteMeta?.total ?? list.length);
   tbody.innerHTML = list.map(q => `
     <tr class="clickable" data-open="${esc(q.id)}">
       <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
@@ -533,7 +529,7 @@ function renderQuotes() {
         <button class="icon-btn" data-open="${esc(q.id)}" title="Mở" aria-label="Mở ${esc(q.quoteNo)}"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div></td>
     </tr>`).join('');
-  const empty = $('#quote-empty'), none = state.quotes.length === 0;
+  const empty = $('#quote-empty'), none = !state.quoteMeta?.all;
   empty.hidden = list.length > 0;
   $('#quote-empty-title').textContent = none ? 'Chưa có báo giá' : 'Không có báo giá phù hợp';
   $('#quote-empty-text').textContent = none ? 'Tạo báo giá đầu tiên để bắt đầu làm việc.' : 'Thử từ khoá khác hoặc bỏ bớt bộ lọc.';
@@ -546,13 +542,15 @@ $('#quote-list').addEventListener('click', e => {
   const open = e.target.closest('[data-open]');
   if (open) go('#/quotes/' + encodeURIComponent(open.dataset.open));
 });
-$('#quote-search').addEventListener('input', e => { state.quoteFilter.q = e.target.value; renderQuotes(); });
-$('#quote-sort').addEventListener('change', e => { state.quoteFilter.sort = e.target.value; renderQuotes(); });
-$('#quote-owner').addEventListener('change', e => { state.quoteFilter.owner = e.target.value; renderQuotes(); });
+let quoteTimer;
+const reloadQuotes = () => { quotePager.reset(); loadQuotes(); };
+$('#quote-search').addEventListener('input', e => { state.quoteFilter.q = e.target.value; clearTimeout(quoteTimer); quoteTimer = setTimeout(reloadQuotes, 250); });
+$('#quote-sort').addEventListener('change', e => { state.quoteFilter.sort = e.target.value; reloadQuotes(); });
+$('#quote-owner').addEventListener('change', e => { state.quoteFilter.owner = e.target.value; reloadQuotes(); });
 $('#type-filter').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
   $$('#type-filter .chip').forEach(c => c.classList.toggle('active', c === chip));
-  state.quoteFilter.type = chip.dataset.type; renderQuotes();
+  state.quoteFilter.type = chip.dataset.type; reloadQuotes();
 });
 
 // ---------------------------------------------------------------- soạn báo giá
@@ -1553,14 +1551,16 @@ function applyCatalogMeta(d) {
   $('#product-sub').textContent = d.observedAt ? `Danh mục cập nhật lúc ${new Date(d.observedAt).toLocaleString('vi-VN')}. Chọn sản phẩm để tạo báo giá nhanh.` : 'Danh mục, giá bán và tồn kho để chọn nhanh khi lập báo giá.';
 }
 let productReq = 0, brandsLoaded = false;
-async function loadProducts(more = false) {
-  const req = ++productReq, offset = more ? (state.products || []).length : 0;
-  if (!more) { state.products = null; renderProducts(); }
+let productPager;
+async function loadProducts() {
+  const req = ++productReq;
+  productPager ||= createPager($('#product-pager'), 'products', () => loadProducts(), 50);
+  state.products = null; renderProducts();
   try {
-    const d = await api(`/products?limit=60&offset=${offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}`);
+    const d = await api(`/products?limit=${productPager.limit}&offset=${productPager.offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}`);
     if (req !== productReq) return;
     applyCatalogMeta(d);
-    state.products = more ? [...state.products, ...d.products] : d.products; state.productTotal = d.total;
+    state.products = d.products; state.productTotal = d.total;
   } catch (e) { state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message); }
   renderProducts();
   if (!brandsLoaded) {
@@ -1615,7 +1615,7 @@ function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
   const list = state.products, filtered = state.productQuery || state.productBrand;
-  $('#product-count').textContent = list.length ? `${list.length.toLocaleString('vi-VN')}/${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
+  $('#product-count').textContent = state.productTotal ? `${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
   tbody.innerHTML = list.map(p => {
     const price = productPrice(p), stock = availableStock(p), sel = state.selected.has(p.sku);
     return `<tr>
@@ -1632,7 +1632,7 @@ function renderProducts() {
   $('#product-empty-title').textContent = filtered ? 'Không tìm thấy sản phẩm' : 'Chưa có dữ liệu sản phẩm';
   $('#product-empty-text').textContent = filtered ? 'Thử từ khoá khác hoặc bỏ lọc thương hiệu.' : 'Danh mục sẽ hiện ở đây sau khi nhập dữ liệu từ web cũ.';
   $('#product-table').hidden = list.length === 0;
-  $('#product-more-row').hidden = list.length >= state.productTotal;
+  productPager?.render(state.productTotal);
   renderSelection();
 }
 function renderSelection() {
@@ -1661,10 +1661,10 @@ function rowFromProduct(p) {
 }
 const rowsFromProducts = list => list.map(rowFromProduct).filter(Boolean);
 let productTimer;
-$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(() => loadProducts(), 250); });
-$('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; loadProducts(); });
+const reloadProducts = () => { productPager?.reset(); loadProducts(); };
+$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, 250); });
+$('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; reloadProducts(); });
 $('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });
-$('#product-more').addEventListener('click', () => loadProducts(true));
 $('#product-list').addEventListener('change', e => {
   const box = e.target.closest('[data-select]'); if (!box) return;
   const p = state.products.find(x => x.sku === box.dataset.select);
@@ -1923,17 +1923,22 @@ $('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.
 
 // ---------------------------------------------------------------- khách hàng
 let customerId = null;
-function quoteCountByCustomer() {
-  const m = new Map();
-  for (const q of state.quotes || []) { const k = normalize(q.customer); m.set(k, (m.get(k) || 0) + 1); }
-  return m;
+/** Số báo giá của các khách trên trang đang xem (máy chủ đếm trong phạm vi người xem, so tên không dấu). */
+async function loadCustomerQuoteCounts(req) {
+  const names = [...new Set((state.customers || []).map(c => c.name).filter(Boolean))];
+  try {
+    const d = names.length ? await api('/quotes/customer-counts?' + names.map(n => 'name=' + encodeURIComponent(n)).join('&')) : { counts: {} };
+    if (req !== customerReq) return;
+    state.customerQuoteCounts = d.counts; renderCustomers();
+  } catch { /* cột "Báo giá" để trống */ }
 }
+const quoteCountOf = name => state.customerQuoteCounts?.[name];
 function renderCustomers() {
   const tbody = $('#customer-list');
   if (!state.customers) { tbody.innerHTML = skeleton(7); return; }
-  const counts = quoteCountByCustomer(), list = state.customers;
-  $('#customer-count').textContent = `${list.length.toLocaleString('vi-VN')}/${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
-  $('#customer-more-row').hidden = list.length >= state.customerTotal;
+  const list = state.customers;
+  $('#customer-count').textContent = `${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
+  customerPager?.render(state.customerTotal);
   tbody.innerHTML = list.map(c => `
     <tr class="clickable" data-href="#/customers/${esc(encodeURIComponent(c.id))}">
       <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.approvalStatus === 'pending' ? ' <span class="pill warn">Chờ duyệt</span>' : ''}${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
@@ -1941,7 +1946,7 @@ function renderCustomers() {
       <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
       <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
-      <td class="right" data-label="Báo giá">${counts.get(normalize(c.name)) || 0}</td>
+      <td class="right" data-label="Báo giá">${quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
         ${c.approvalStatus === 'pending' ? `${isManager() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
         <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${isManager() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
@@ -1956,8 +1961,8 @@ function renderCustomers() {
   $('#customer-table').hidden = list.length === 0;
 }
 let customerTimer;
-$('#customer-search').addEventListener('input', e => { state.customerQuery = e.target.value; clearTimeout(customerTimer); customerTimer = setTimeout(() => loadCustomers(), 250); });
-$('#customer-more').addEventListener('click', () => loadCustomers(true));
+const reloadCustomers = () => { customerPager?.reset(); loadCustomers(); };
+$('#customer-search').addEventListener('input', e => { state.customerQuery = e.target.value; clearTimeout(customerTimer); customerTimer = setTimeout(reloadCustomers, 250); });
 /** Tạo báo giá mới điền sẵn thông tin khách. */
 function quoteForCustomer(c) {
   editor.pending = newQuoteData({ customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' });
@@ -1973,8 +1978,8 @@ $('#customer-list').addEventListener('click', e => {
   // Bấm vào dòng: mở trang chi tiết khách hàng.
   const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
 });
-$('#customer-mine').addEventListener('change', () => loadCustomers());
-$('#customer-pending').addEventListener('change', () => loadCustomers());
+$('#customer-mine').addEventListener('change', reloadCustomers);
+$('#customer-pending').addEventListener('change', reloadCustomers);
 /** Manager duyệt khách mới; từ chối (hoặc người tạo xoá) khách đang chờ duyệt. */
 async function reviewCustomer(id, approve) {
   const c = state.customers?.find(x => x.id === id);
@@ -2220,11 +2225,16 @@ const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gó
 const slipButtons = (orderId, status) => status === 'draft' || status === 'cancelled' ? ''
   : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói (theo mẫu đơn đặt hàng)">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng (theo mẫu đơn đặt hàng)">Phiếu GH</button>`;
 // ----- danh sách đơn
+let ordersPager, ordersReq = 0;
 async function loadOrders() {
+  const req = ++ordersReq;
+  ordersPager ||= createPager($('#orders-pager'), 'orders', () => loadOrders(), 50);
   $('#orders-list').innerHTML = skeleton(7);
   try {
     // Đơn hàng và HĐKT là 2 luồng song song: trang này chỉ hiện đơn không có HĐKT.
-    const d = await api('/orders?flow=order&q=' + encodeURIComponent($('#orders-search').value));
+    const d = await api(`/orders?flow=order&limit=${ordersPager.limit}&offset=${ordersPager.offset}&q=` + encodeURIComponent($('#orders-search').value));
+    if (req !== ordersReq) return;
+    ordersPager.render(d.total ?? d.orders.length);
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
       <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.quoteNo || 'Không từ báo giá')} · ${fmtDate(o.orderDate)}</small></td>
       <td>${esc(o.customerName)}<small>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</small></td>
@@ -2234,19 +2244,24 @@ async function loadOrders() {
       <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
       <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}${o.contract ? `<button type="button" class="btn secondary small" data-contract-docs-for="${esc(o.id)}" title="Xem, sửa, tải bộ 3 file Word HĐKT">HĐKT</button>` : ''}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
-  } catch (e) { listError('orders', e); }
+  } catch (e) { if (req === ordersReq) { listError('orders', e); ordersPager.render(0); } }
 }
 // ----- danh sách HĐKT
+let contractsPager, contractsReq = 0;
 async function loadContracts() {
+  const req = ++contractsReq;
+  contractsPager ||= createPager($('#contracts-pager'), 'contracts', () => loadContracts(), 50);
   $('#contracts-list').innerHTML = skeleton(9);
   try {
-    const d = await api('/contracts?q=' + encodeURIComponent($('#contracts-search').value));
+    const d = await api(`/contracts?limit=${contractsPager.limit}&offset=${contractsPager.offset}&q=` + encodeURIComponent($('#contracts-search').value));
+    if (req !== contractsReq) return;
+    contractsPager.render(d.total ?? d.contracts.length);
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
       <td><b>${esc(k.contractNo)}</b></td><td>${esc(k.customerName)}<small>${orderLink(k.orderId, k.orderNo)}${k.quoteNo ? ' · ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
       <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus)}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</td></tr>`),
       'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
-  } catch (e) { listError('contracts', e); }
+  } catch (e) { if (req === contractsReq) { listError('contracts', e); contractsPager.render(0); } }
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
 async function loadDeliveries() {
@@ -2281,8 +2296,8 @@ async function loadReceivables() {
       'Chưa có công nợ. Công nợ xuất hiện khi có đơn đặt hàng.');
   } catch (e) { listError('receivables', e); }
 }
-$('#orders-search').addEventListener('input', debounce(loadOrders));
-$('#contracts-search').addEventListener('input', debounce(loadContracts));
+$('#orders-search').addEventListener('input', debounce(() => { ordersPager?.reset(); loadOrders(); }));
+$('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
 $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));
 for (const id of ['#deliveries-from', '#deliveries-to']) $(id).addEventListener('change', loadDeliveries);

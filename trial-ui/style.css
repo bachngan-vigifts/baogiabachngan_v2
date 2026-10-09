@@ -451,6 +451,21 @@ table { width: 100%; border-collapse: collapse; }
 .thumb svg { width: 18px; height: 18px; }
 .stock-low { color: var(--amber); } .stock-out { color: #b4232c; }
 .more-row { display: flex; justify-content: center; padding: 14px; border-top: 1px solid var(--line); }
+/* Phân trang số (trial-ui/pager.js): Hiển thị [n] kết quả · Từ a đến b trên tổng N · ‹ 1 2 3 … › */
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.pager[hidden] { display: none; }
+.pager-size { display: inline-flex; align-items: center; gap: 6px; }
+.pager-size select { width: auto; min-width: 64px; padding: 4px 8px; }
+.pager-pages { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.pager-pages button { min-width: 34px; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+.pager-pages button:hover:not(:disabled):not(.active) { border-color: var(--line-strong); background: var(--surface-2); }
+.pager-pages button.active { background: var(--blue); border-color: var(--blue); color: #fff; cursor: default; }
+.pager-pages button:disabled { opacity: .4; cursor: default; }
+.pager-gap { min-width: 22px; text-align: center; }
+@media (max-width: 640px) {
+  .pager { justify-content: center; text-align: center; }
+  .pager-pages { margin-left: 0; justify-content: center; width: 100%; }
+}
 .selection-bar { position: sticky; bottom: 16px; margin-top: 14px; display: flex; align-items: center; gap: 12px; justify-content: flex-end; background: var(--navy); color: #fff; padding: 10px 12px 10px 18px; border-radius: 12px; box-shadow: var(--shadow-lg); }
 .selection-bar span { margin-right: auto; font-weight: 600; }
 .selection-bar .btn.ghost { color: #c9d3e1; }

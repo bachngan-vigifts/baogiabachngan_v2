@@ -1,4 +1,5 @@
-import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -62,10 +63,44 @@ export async function assignQuoteNo(tx: Tx, quoteNo: string, exceptId?: string):
 }
 
 export function registerQuoteRoutes(router: Router<StaffEnv>) {
+  /**
+   * Danh sách báo giá – lọc, sắp xếp, phân trang trên máy chủ (`?q=&type=&owner=mine|others&sort=updated|date|no|value&limit=&offset=`).
+   * Kèm `total` (số báo giá khớp bộ lọc), `all` (tổng báo giá xem được), `value` (tổng giá trị khớp bộ lọc; null khi quá nhiều),
+   * `month` (`?month=YYYY-MM`: số lượng + giá trị báo giá tháng đó) và `hasOthers` (có báo giá của người khác để hiện bộ lọc người tạo).
+   */
   router.get('/quotes', async c => {
-    const viewer = (c.state.session as SessionState).member;
-    const rows = await c.env.db.select().from(quotations).where(predicate(quotationScope(viewer))).orderBy(desc(quotations.updatedAt)).limit(100);
-    const customerCreators = new Set(rows.length ? (await c.env.db.select({ id: employees.id }).from(employees)
+    const viewer = (c.state.session as SessionState).member, p = c.url.searchParams, db = c.env.db;
+    const { limit, offset } = paging(c.url, 100, 500);
+    const scope = predicate(quotationScope(viewer)), type = p.get('type') || '', owner = p.get('owner') || '', sort = p.get('sort') || 'updated';
+    const where = and(scope,
+      type === 'HRC' || type === 'B2B' || type === 'VIGIFTS' ? eq(quotations.quoteType, type) : undefined,
+      owner === 'mine' ? eq(quotations.creatorId, viewer.id) : owner === 'others' ? ne(quotations.creatorId, viewer.id) : undefined,
+      matchAllWords(sql`(${foldSql(quotations.quoteNo, quotations.customer)} || ' ' || coalesce(${quotations.searchText}, ''))`, p.get('q')));
+    const month = /^\d{4}-\d{2}$/.test(p.get('month') || '') ? p.get('month')! : '';
+    const [[{ n: total = 0 } = {}], [{ n: all = 0 } = {}], [other], monthRows] = await Promise.all([
+      db.select({ n: count() }).from(quotations).where(where),
+      db.select({ n: count() }).from(quotations).where(scope),
+      db.select({ id: quotations.id }).from(quotations).where(and(scope, ne(quotations.creatorId, viewer.id))).limit(1),
+      month ? db.select({ data: quotations.data }).from(quotations).where(and(scope, sql`left(coalesce(nullif(${quotations.quoteDate}, ''), ${quotations.createdAt}), 7) = ${month}`)) : [],
+    ]);
+    const sum = (rows: { data: string }[]) => rows.reduce((s, r) => s + totals(JSON.parse(r.data)).total, 0);
+    // Giá trị không có cột riêng: tính từ nội dung báo giá – chỉ làm khi số báo giá khớp lọc vừa phải.
+    const VALUE_CAP = 3000, n = Number(total);
+    const valued = sort === 'value' || n <= VALUE_CAP
+      ? (await db.select({ id: quotations.id, data: quotations.data }).from(quotations).where(where).orderBy(desc(quotations.updatedAt)).limit(VALUE_CAP))
+        .map(r => ({ id: r.id, total: totals(JSON.parse(r.data)).total }))
+      : null;
+    let rows: QuoteRow[];
+    if (sort === 'value') {
+      const ids = valued!.sort((a, b) => b.total - a.total).slice(offset, offset + limit).map(r => r.id);
+      const got = ids.length ? await db.select().from(quotations).where(inArray(quotations.id, ids)) : [];
+      rows = ids.map(id => got.find(r => r.id === id)!).filter(Boolean);
+    } else {
+      const order = sort === 'date' ? [sql`${quotations.quoteDate} DESC NULLS LAST`, desc(quotations.updatedAt), desc(quotations.id)]
+        : sort === 'no' ? [asc(quotations.quoteNo), asc(quotations.id)] : [desc(quotations.updatedAt), desc(quotations.id)];
+      rows = await db.select().from(quotations).where(where).orderBy(...order).limit(limit).offset(offset);
+    }
+    const customerCreators = new Set(rows.length ? (await db.select({ id: employees.id }).from(employees)
       .where(and(eq(employees.role, 'customer'), inArray(employees.id, [...new Set(rows.map(r => r.creatorId))])))).map(e => e.id) : []);
     return json({ quotes: rows.map(r => {
       const data = JSON.parse(r.data);
@@ -74,7 +109,21 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
         quoteDate: r.quoteDate, createdAt: r.createdAt, contact: data.contact || '', phone: data.phone || '', lineCount: data.rows.length, mine: r.creatorId === viewer.id,
         approvalStatus: r.approvalStatus, fromCustomer: customerCreators.has(r.creatorId),
       };
-    }) });
+    }), total: n, all: Number(all), limit, offset, hasOthers: !!other,
+    value: valued && n <= VALUE_CAP ? valued.reduce((s, r) => s + r.total, 0) : null,
+    month: month ? { month, count: monthRows.length, value: sum(monthRows) } : null });
+  }, 'business');
+  /** Số báo giá (trong phạm vi người xem) của từng khách trên trang danh bạ đang xem: `?name=A&name=B…` (≤ 500 tên, so khớp không dấu). */
+  router.get('/quotes/customer-counts', async c => {
+    const viewer = (c.state.session as SessionState).member;
+    const names = [...new Set(c.url.searchParams.getAll('name').slice(0, 500).filter(Boolean))];
+    const keys = [...new Set(names.map(fold).filter(Boolean))];
+    if (!keys.length) return json({ counts: {} });
+    const key = sql<string>`trim(regexp_replace(${foldSql(quotations.customer)}, '\\s+', ' ', 'g'))`;
+    const rows = await c.env.db.select({ k: key }).from(quotations).where(and(predicate(quotationScope(viewer)), inArray(key, keys)));
+    const byKey = new Map<string, number>();
+    for (const r of rows) byKey.set(r.k, (byKey.get(r.k) ?? 0) + 1);
+    return json({ counts: Object.fromEntries(names.map(n => [n, byKey.get(fold(n)) ?? 0])) });
   }, 'business');
   /** Manager: số báo giá đang đợi duyệt (badge như web cũ). */
   /** Số báo giá kế tiếp (gợi ý điền sẵn khi tạo mới) – đếm trên toàn bộ báo giá; lúc lưu máy chủ vẫn kiểm lại. */

@@ -348,11 +348,10 @@ export function initChat({ api, toast, userId, isManager, compress }) {
   q('#chat-quick').addEventListener('click', () => { closePops('#chat-quick-menu'); q('#chat-quick-menu').hidden = !q('#chat-quick-menu').hidden; });
   const fmtVnd = n => new Intl.NumberFormat('vi-VN').format(Math.round(n || 0)) + ' ₫';
   const SOURCES = {
-    order: { title: 'Gửi đơn hàng', ph: 'Tìm số đơn, khách hàng…', load: async t => (await api('/orders?flow=order&q=' + encodeURIComponent(t))).orders.map(o => ({ id: o.id, label: `Đơn ${o.orderNo} · ${o.customerName}`, sub: fmtVnd(o.total) })) },
-    contract: { title: 'Gửi HĐKT', ph: 'Tìm số HĐKT, khách hàng…', load: async t => (await api('/contracts?q=' + encodeURIComponent(t))).contracts.map(k => ({ id: k.orderId, label: `HĐKT ${k.contractNo} · ${k.customerName}`, sub: `Đơn ${k.orderNo}` })) },
-    quote: { title: 'Gửi báo giá', ph: 'Tìm số báo giá, khách hàng…', load: async t => { const f = t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
-      return (await api('/quotes')).quotes.filter(x => !f || `${x.quoteNo} ${x.customer}`.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').includes(f)).slice(0, 40)
-        .map(x => ({ id: x.id, label: `Báo giá ${x.quoteNo} · ${x.customer}`, sub: fmtVnd(x.total) })); } },
+    order: { title: 'Gửi đơn hàng', ph: 'Tìm số đơn, khách hàng…', load: async t => (await api('/orders?flow=order&limit=40&q=' + encodeURIComponent(t))).orders.map(o => ({ id: o.id, label: `Đơn ${o.orderNo} · ${o.customerName}`, sub: fmtVnd(o.total) })) },
+    contract: { title: 'Gửi HĐKT', ph: 'Tìm số HĐKT, khách hàng…', load: async t => (await api('/contracts?limit=40&q=' + encodeURIComponent(t))).contracts.map(k => ({ id: k.orderId, label: `HĐKT ${k.contractNo} · ${k.customerName}`, sub: `Đơn ${k.orderNo}` })) },
+    quote: { title: 'Gửi báo giá', ph: 'Tìm số báo giá, khách hàng…', load: async t => (await api('/quotes?limit=40&q=' + encodeURIComponent(t))).quotes
+      .map(x => ({ id: x.id, label: `Báo giá ${x.quoteNo} · ${x.customer}`, sub: fmtVnd(x.total) })) },
     packing: { title: 'Gửi phiếu đóng gói / xuất kho', ph: 'Tìm số phiếu, số đơn, khách hàng…', load: async t => (await api('/packing?status=all&q=' + encodeURIComponent(t))).slips.map(x => ({ id: x.id, label: `Phiếu ${x.slipNo} · ${x.customerName}`, sub: `${x.sourceLabel} · đơn ${x.orderNo}` })) },
   };
   /** Hộp chọn một chứng từ để gửi liên kết. */
