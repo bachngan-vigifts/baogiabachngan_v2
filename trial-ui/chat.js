@@ -22,7 +22,7 @@ const linkify = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" targe
  * Gắn khung Tin nhắn vào #view-chat. `api(path, method, body)`, `toast`, `userId()`, `isManager()`.
  * Trả về { show(id?), hide(), open(id), badge(), refresh(), startBadge(), stop() }.
  */
-const REF = { order: ['🛒', o => `#/orders/${o}`], contract: ['📝', o => `#/orders/${o}`], quote: ['📄', o => `#/quotes/${o}`], packing: ['📦', o => `#/packing/${o}`], task: ['✅', o => `#/tasks/${o}`] };
+const REF = { order: ['🛒', o => `#/orders/${o}`], contract: ['📝', o => `#/contracts/${o}`], quote: ['📄', o => `#/quotes/${o}`], packing: ['📦', o => `#/packing/${o}`], task: ['✅', o => `#/tasks/${o}`] };
 const fileSize = n => n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 const safeUrl = u => /^(https:\/\/|data:image\/(jpeg|png|webp|gif);|data:application\/[\w.+-]+;|data:text\/(plain|csv);)/.test(u || '') ? u : '';
 /** Nội dung bong bóng: chữ, liên kết nhanh (đơn hàng / HĐKT / báo giá / phiếu / việc), file (ảnh xem trước, file khác tải về). */
@@ -349,10 +349,10 @@ export function initChat({ api, toast, userId, isManager, compress }) {
   const fmtVnd = n => new Intl.NumberFormat('vi-VN').format(Math.round(n || 0)) + ' ₫';
   const SOURCES = {
     order: { title: 'Gửi đơn hàng', ph: 'Tìm số đơn, khách hàng…', load: async t => (await api('/orders?flow=order&limit=40&q=' + encodeURIComponent(t))).orders.map(o => ({ id: o.id, label: `Đơn ${o.orderNo} · ${o.customerName}`, sub: fmtVnd(o.total) })) },
-    contract: { title: 'Gửi HĐKT', ph: 'Tìm số HĐKT, khách hàng…', load: async t => (await api('/contracts?limit=40&q=' + encodeURIComponent(t))).contracts.map(k => ({ id: k.orderId, label: `HĐKT ${k.contractNo} · ${k.customerName}`, sub: `Đơn ${k.orderNo}` })) },
+    contract: { title: 'Gửi HĐKT', ph: 'Tìm số HĐKT, khách hàng…', load: async t => (await api('/contracts?limit=40&q=' + encodeURIComponent(t))).contracts.map(k => ({ id: k.orderId, label: `HĐKT ${k.contractNo} · ${k.customerName}`, sub: k.quoteNo ? `Báo giá ${k.quoteNo}` : '' })) },
     quote: { title: 'Gửi báo giá', ph: 'Tìm số báo giá, khách hàng…', load: async t => (await api('/quotes?limit=40&q=' + encodeURIComponent(t))).quotes
       .map(x => ({ id: x.id, label: `Báo giá ${x.quoteNo} · ${x.customer}`, sub: fmtVnd(x.total) })) },
-    packing: { title: 'Gửi phiếu đóng gói / xuất kho', ph: 'Tìm số phiếu, số đơn, khách hàng…', load: async t => (await api('/packing?status=all&q=' + encodeURIComponent(t))).slips.map(x => ({ id: x.id, label: `Phiếu ${x.slipNo} · ${x.customerName}`, sub: `${x.sourceLabel} · đơn ${x.orderNo}` })) },
+    packing: { title: 'Gửi phiếu đóng gói / xuất kho', ph: 'Tìm số phiếu, số đơn, khách hàng…', load: async t => (await api('/packing?status=all&q=' + encodeURIComponent(t))).slips.map(x => ({ id: x.id, label: `Phiếu ${x.slipNo} · ${x.customerName}`, sub: `${x.sourceLabel} · ${x.contractNo ? 'HĐKT ' + x.contractNo : 'đơn ' + x.orderNo}` })) },
   };
   /** Hộp chọn một chứng từ để gửi liên kết. */
   function pickRef(type) {

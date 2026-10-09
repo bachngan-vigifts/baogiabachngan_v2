@@ -6,12 +6,18 @@ import { customerStockRequests } from '../../portal/schema.ts';
 import { customers } from '../../customers/schema.ts';
 import { customerPayments, deliveries, deliveryLines, packingSlipLines, packingSlips, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { PACKING_SOURCE_LABEL } from '../../sales/domain/packing.ts';
+import { docRef } from '../../sales/domain/doc-ref.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
 import { dueFollowUps } from '../../care/api/routes.ts';
 import { CARE_TYPE_LABEL } from '../../care/domain/care.ts';
 import { addDaysIso, isOpen, type TaskPriority, type TaskSource } from '../domain/task-config.ts';
+/** Số HĐKT theo bản ghi (bản ghi có HĐKT hiện là HĐKT, không phải đơn hàng). */
+async function contractNoMap(db: StaffEnv['db'], orderIds: string[]) {
+  const rows = orderIds.length ? await db.select({ orderId: salesContracts.orderId, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, orderIds)) : [];
+  return new Map(rows.map(r => [r.orderId, r.no]));
+}
 
 /**
  * VIỆC TỰ SINH. Mỗi quy tắc đọc trạng thái hiện tại của nghiệp vụ và trả danh sách việc CẦN có lúc này.
@@ -65,15 +71,17 @@ export const RULES: Record<string, Rule> = {
   },
   /** Đơn / HĐKT nháp (nhân viên, Manager hay khách tạo) chờ Manager duyệt – việc chưa giao người: Manager thấy và duyệt. */
   async orderConfirm(db) {
-    const rows = await db.select().from(salesOrders).where(eq(salesOrders.status, 'draft')).limit(500);
-    return rows.map(o => ({ autoKey: `order-confirm:${o.id}`, source: 'order' as const, sourceId: o.id, title: `Duyệt đơn ${o.orderNo} – ${o.customerName}`,
-      description: `Đơn ${vnd(o.total)} chờ Manager duyệt.`, link: `#/orders/${o.id}`, assigneeId: null, priority: 'urgent' as const, dueDate: addDaysIso(o.orderDate, 1) }));
+    const rows = await db.select({ o: salesOrders, contractNo: salesContracts.contractNo }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
+      .where(eq(salesOrders.status, 'draft')).limit(500);
+    return rows.map(({ o, contractNo }) => { const ref = docRef(o.id, o.orderNo, contractNo);
+      return { autoKey: `order-confirm:${o.id}`, source: (contractNo ? 'contract' : 'order') as 'contract' | 'order', sourceId: o.id, title: `Duyệt ${ref.label} – ${o.customerName}`,
+        description: `${contractNo ? 'HĐKT' : 'Đơn'} ${vnd(o.total)} chờ Manager duyệt.`, link: ref.link, assigneeId: null, priority: 'urgent' as const, dueDate: addDaysIso(o.orderDate, 1) }; });
   },
   /** Đơn đã xác nhận còn hàng chưa lên lịch giao. */
   async deliverySchedule(db) {
     const orders = await db.select().from(salesOrders).where(inArray(salesOrders.status, ['confirmed', 'delivering'])).limit(500);
     if (!orders.length) return [];
-    const ids = orders.map(o => o.id);
+    const ids = orders.map(o => o.id), kNo = await contractNoMap(db, ids);
     const [lines, pending] = await Promise.all([
       db.select({ orderId: salesOrderLines.orderId, qty: salesOrderLines.qty, delivered: salesOrderLines.deliveredQty }).from(salesOrderLines).where(inArray(salesOrderLines.orderId, ids)),
       db.select({ orderId: deliveries.orderId, qty: deliveryLines.qty }).from(deliveryLines).innerJoin(deliveries, eq(deliveries.id, deliveryLines.deliveryId))
@@ -82,25 +90,25 @@ export const RULES: Record<string, Rule> = {
     return orders.filter(o => {
       const left = lines.filter(l => l.orderId === o.id).reduce((s, l) => s + l.qty - l.delivered, 0);
       return left - pending.filter(p => p.orderId === o.id).reduce((s, p) => s + p.qty, 0) > 1e-9;
-    }).map(o => ({ autoKey: `delivery-plan:${o.id}`, source: 'delivery' as const, sourceId: o.id, title: `Lên lịch giao đơn ${o.orderNo} – ${o.customerName}`,
-      description: o.expectedDeliveryDate ? `Khách cần hàng ngày ${fmt(o.expectedDeliveryDate)}.` : 'Đơn chưa có ngày giao dự kiến.', link: `#/orders/${o.id}`,
-      assigneeId: o.ownerId, priority: 'normal' as const, dueDate: o.expectedDeliveryDate ? addDaysIso(o.expectedDeliveryDate, -1) : null }));
+    }).map(o => { const ref = docRef(o.id, o.orderNo, kNo.get(o.id)); return { autoKey: `delivery-plan:${o.id}`, source: 'delivery' as const, sourceId: o.id, title: `Lên lịch giao ${ref.label} – ${o.customerName}`,
+      description: o.expectedDeliveryDate ? `Khách cần hàng ngày ${fmt(o.expectedDeliveryDate)}.` : `${ref.kind === 'contract' ? 'HĐKT' : 'Đơn'} chưa có ngày giao dự kiến.`, link: ref.link,
+      assigneeId: o.ownerId, priority: 'normal' as const, dueDate: o.expectedDeliveryDate ? addDaysIso(o.expectedDeliveryDate, -1) : null }; });
   },
   /** Chuyến giao đến ngày (hôm nay / ngày mai / đã trễ) chưa xong. */
   async deliveryRun(db, today) {
-    const rows = await db.select({ d: deliveries, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId }).from(deliveries)
-      .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+    const rows = await db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId }).from(deliveries)
+      .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
       .where(and(inArray(deliveries.status, ['planned', 'in_transit']), lte(deliveries.plannedDate, addDaysIso(today, 1)))).limit(500);
-    return rows.map(({ d, orderNo, customerName, ownerId }) => ({ autoKey: `delivery-run:${d.id}`, source: 'delivery' as const, sourceId: d.orderId, title: `Giao hàng ${d.deliveryNo} – ${customerName}`,
-      description: `Đơn ${orderNo}${d.timeSlot ? ' · ' + d.timeSlot : ''}${d.address ? ' · ' + d.address : ''}`, link: `#/orders/${d.orderId}`,
+    return rows.map(({ d, orderNo, contractNo, customerName, ownerId }) => ({ autoKey: `delivery-run:${d.id}`, source: 'delivery' as const, sourceId: d.orderId, title: `Giao hàng ${d.deliveryNo} – ${customerName}`,
+      description: `${docRef(d.orderId, orderNo, contractNo).Label}${d.timeSlot ? ' · ' + d.timeSlot : ''}${d.address ? ' · ' + d.address : ''}`, link: docRef(d.orderId, orderNo, contractNo).link,
       assigneeId: d.assigneeId ?? ownerId, priority: d.plannedDate <= today ? 'high' as const : 'normal' as const, dueDate: d.plannedDate }));
   },
   /** HĐKT đã lập chưa ký. */
   async contractSign(db) {
-    const rows = await db.select({ k: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId, orderStatus: salesOrders.status })
+    const rows = await db.select({ k: salesContracts, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId, orderStatus: salesOrders.status })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(and(eq(salesContracts.status, 'draft'), ne(salesOrders.status, 'cancelled'))).limit(500);
-    return rows.map(({ k, orderNo, customerName, ownerId }) => ({ autoKey: `contract-sign:${k.id}`, source: 'contract' as const, sourceId: k.orderId, title: `Ký HĐKT ${k.contractNo} – ${customerName}`,
-      description: `Đơn ${orderNo}. Gửi hồ sơ HĐKT cho khách ký và đánh dấu đã ký.`, link: `#/orders/${k.orderId}`, assigneeId: ownerId, priority: 'normal' as const, dueDate: addDaysIso(day(k.createdAt)!, 3) }));
+    return rows.map(({ k, customerName, ownerId }) => ({ autoKey: `contract-sign:${k.id}`, source: 'contract' as const, sourceId: k.orderId, title: `Ký HĐKT ${k.contractNo} – ${customerName}`,
+      description: 'Gửi hồ sơ HĐKT cho khách ký và đánh dấu đã ký.', link: `#/contracts/${k.orderId}`, assigneeId: ownerId, priority: 'normal' as const, dueDate: addDaysIso(day(k.createdAt)!, 3) }));
   },
   /** Công nợ quá hạn (đơn đã xác nhận / HĐKT đã ký). */
   async overdueDebt(db, today) {
@@ -110,15 +118,16 @@ export const RULES: Record<string, Rule> = {
       db.select().from(salesOrders).where(inArray(salesOrders.id, ids)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
       db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount }).from(customerPayments).where(inArray(customerPayments.orderId, ids)),
-      db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
+      db.select({ orderId: salesContracts.orderId, status: salesContracts.status, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]);
     return orders.flatMap(o => {
       if (!debtCounts(o.status, ks.find(k => k.orderId === o.id)?.status)) return [];
       const r = receivable(allSch.filter(s => s.orderId === o.id), pays.filter(p => p.orderId === o.id), today);
       if (r.overdue <= 0) return [];
       const oldest = allSch.filter(s => s.orderId === o.id && s.dueDate && s.dueDate < today).map(s => s.dueDate!).sort()[0] ?? today;
-      return [{ autoKey: `debt-overdue:${o.id}`, source: 'receivable' as const, sourceId: o.id, title: `Thu công nợ quá hạn ${o.orderNo} – ${o.customerName}`,
-        description: `Quá hạn ${vnd(r.overdue)} (còn phải thu ${vnd(r.balance)}).`, link: `#/orders/${o.id}`, assigneeId: o.ownerId, priority: 'urgent' as const, dueDate: oldest }];
+      const ref = docRef(o.id, o.orderNo, ks.find(k => k.orderId === o.id)?.no);
+      return [{ autoKey: `debt-overdue:${o.id}`, source: 'receivable' as const, sourceId: o.id, title: `Thu công nợ quá hạn ${ref.label} – ${o.customerName}`,
+        description: `Quá hạn ${vnd(r.overdue)} (còn phải thu ${vnd(r.balance)}).`, link: ref.link, assigneeId: o.ownerId, priority: 'urgent' as const, dueDate: oldest }];
     });
   },
   /** Đơn nhập hàng Sapo (60 ngày gần đây) chưa hoàn tất → theo dõi nhận hàng (chưa giao người). */
@@ -132,10 +141,11 @@ export const RULES: Record<string, Rule> = {
   async orderDue(db, today) {
     const rows = await db.select().from(salesOrders)
       .where(and(inArray(salesOrders.status, ['confirmed', 'delivering']), isNotNull(salesOrders.expectedDeliveryDate), lte(salesOrders.expectedDeliveryDate, addDaysIso(today, 1)))).limit(500);
+    const kNo = await contractNoMap(db, rows.map(o => o.id));
     return rows.map(o => {
-      const late = o.expectedDeliveryDate! < today;
-      return { autoKey: `order-due:${o.id}`, source: 'delivery' as const, sourceId: o.id, title: `${late ? 'Trễ hạn giao' : 'Đến hạn giao'} đơn ${o.orderNo} – ${o.customerName}`,
-        description: `Hạn giao ${fmt(o.expectedDeliveryDate)}. Kiểm tra hàng, yêu cầu kho đóng hàng và giao cho khách.`, link: `#/orders/${o.id}`, assigneeId: o.ownerId,
+      const late = o.expectedDeliveryDate! < today, ref = docRef(o.id, o.orderNo, kNo.get(o.id));
+      return { autoKey: `order-due:${o.id}`, source: 'delivery' as const, sourceId: o.id, title: `${late ? 'Trễ hạn giao' : 'Đến hạn giao'} ${ref.label} – ${o.customerName}`,
+        description: `Hạn giao ${fmt(o.expectedDeliveryDate)}. Kiểm tra hàng, yêu cầu kho đóng hàng và giao cho khách.`, link: ref.link, assigneeId: o.ownerId,
         priority: late ? 'urgent' as const : 'high' as const, dueDate: o.expectedDeliveryDate };
     });
   },
@@ -144,14 +154,15 @@ export const RULES: Record<string, Rule> = {
    * Kho xác nhận đã đóng (kèm ảnh) hoặc phiếu bị huỷ thì việc tự hoàn thành.
    */
   async packingSlips(db, today) {
-    const rows = await db.select({ s: packingSlips, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, due: salesOrders.expectedDeliveryDate })
-      .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).where(eq(packingSlips.status, 'sent')).limit(500);
+    const rows = await db.select({ s: packingSlips, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, due: salesOrders.expectedDeliveryDate })
+      .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, packingSlips.orderId))
+      .where(eq(packingSlips.status, 'sent')).limit(500);
     if (!rows.length) return [];
     const lines = await db.select().from(packingSlipLines).where(inArray(packingSlipLines.slipId, rows.map(r => r.s.id)));
     const n = (v: number) => new Intl.NumberFormat('vi-VN').format(v);
-    return rows.map(({ s, orderNo, customerName, due }) => ({ autoKey: `slip:${s.id}`, source: 'packing' as const, sourceId: s.id,
+    return rows.map(({ s, orderNo, contractNo, customerName, due }) => ({ autoKey: `slip:${s.id}`, source: 'packing' as const, sourceId: s.id,
       title: `Đóng gói ${s.slipNo} – ${customerName}`,
-      description: [`Đơn ${orderNo} · ${PACKING_SOURCE_LABEL[s.source]}${s.sourceNote ? ': ' + s.sourceNote : ''}${s.totalWeight ? ` · ~${n(s.totalWeight)} kg` : ''}`,
+      description: [`${docRef(s.orderId, orderNo, contractNo).Label} · ${PACKING_SOURCE_LABEL[s.source]}${s.sourceNote ? ': ' + s.sourceNote : ''}${s.totalWeight ? ` · ~${n(s.totalWeight)} kg` : ''}`,
         ...lines.filter(l => l.slipId === s.id).map(l => `- ${l.name}: ${n(l.qty)} ${l.unit}`), s.note ? `Ghi chú: ${s.note}` : '', 'Đóng xong: mở phiếu, chụp 1–3 ảnh và xác nhận.'].filter(Boolean).join('\n'),
       link: `#/packing/${s.id}`, assigneeId: null, assigneePosition: 'warehouse', priority: due && due <= addDaysIso(today, 1) ? 'urgent' as const : 'high' as const,
       dueDate: due ? addDaysIso(due, -1) : null }));
@@ -165,8 +176,8 @@ export const RULES: Record<string, Rule> = {
       .where(and(eq(salesOrders.invoiceStatus, 'requested'), ne(salesOrders.status, 'cancelled'))).limit(500);
     return rows.map(({ o, contractNo }) => ({ autoKey: `invoice:${o.id}`, source: 'invoice' as const, sourceId: o.id,
       title: `${o.invoiceMode === 'draft' ? 'Gửi nháp hoá đơn' : 'Xuất hoá đơn'} ${contractNo ? 'HĐKT ' + contractNo : 'đơn ' + o.orderNo} – ${o.customerName}`,
-      description: `${contractNo ? `Đơn ${o.orderNo} · ` : ''}${vnd(o.total)}${o.taxCode ? ' · MST ' + o.taxCode : ''}${o.invoiceMode === 'draft' ? ' · GỬI BẢN NHÁP cho khách kiểm tra' : ' · Phát hành chính thức'}${o.invoiceEmail ? ' · Gửi tới: ' + o.invoiceEmail : ''}${o.invoiceRequestNote ? ' · ' + o.invoiceRequestNote : ''}. Nhập số hoá đơn vào đơn sau khi xuất.`,
-      link: `#/orders/${o.id}`, assigneeId: null, assigneePosition: 'accounting', priority: 'normal' as const, dueDate: o.invoiceRequestedAt ? addDaysIso(day(o.invoiceRequestedAt)!, 1) : null }));
+      description: `${vnd(o.total)}${o.taxCode ? ' · MST ' + o.taxCode : ''}${o.invoiceMode === 'draft' ? ' · GỬI BẢN NHÁP cho khách kiểm tra' : ' · Phát hành chính thức'}${o.invoiceEmail ? ' · Gửi tới: ' + o.invoiceEmail : ''}${o.invoiceRequestNote ? ' · ' + o.invoiceRequestNote : ''}. Nhập số hoá đơn vào ${contractNo ? 'HĐKT' : 'đơn'} sau khi xuất.`,
+      link: docRef(o.id, o.orderNo, contractNo).link, assigneeId: null, assigneePosition: 'accounting', priority: 'normal' as const, dueDate: o.invoiceRequestedAt ? addDaysIso(day(o.invoiceRequestedAt)!, 1) : null }));
   },
   /**
    * Xuất kho / đóng hàng: KHÔNG tự tạo – sinh khi nhân viên bấm "Yêu cầu kho đóng hàng" (POST /tasks/packing).

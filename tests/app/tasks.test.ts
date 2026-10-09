@@ -47,13 +47,14 @@ test('bảng công việc: việc tự sinh từ báo giá / đơn / HĐKT tự 
   await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const done = (await call('/tasks?view=all&status=done&refresh=1', mgr)).data.tasks.find((t: any) => t.id === approveTask.id);
   assert.equal(done.status, 'done');
-  const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  // Lập HĐKT thẳng từ báo giá (luồng độc lập với đơn hàng) → Manager duyệt → việc "Lên lịch giao" + "Ký HĐKT", mở trang HĐKT.
+  const k = await call('/contracts', emp, 'POST', { quoteId: quote.data.id, legalEntity: 'BN', depositRate: 30 }); assert.equal(k.status, 201, JSON.stringify(k.data));
+  const o = { data: { id: k.data.orderId as string } };
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
   let mine = (await call('/tasks?refresh=1', emp)).data.tasks;
   const plan = mine.find((t: any) => t.source === 'delivery');
-  assert.ok(plan && plan.link === `#/orders/${o.data.id}`, JSON.stringify(mine));
-  // Lập HĐKT → việc "Ký HĐKT"; lên lịch giao → việc lên lịch tự xong.
-  await call('/contracts', emp, 'POST', { orderId: o.data.id, legalEntity: 'BN', depositRate: 30 });
+  assert.ok(plan && plan.link === `#/contracts/${o.data.id}` && plan.title.includes(k.data.contractNo) && !plan.title.includes('DH_'), JSON.stringify(mine));
+  // Lên lịch giao → việc lên lịch tự xong; còn việc "Ký HĐKT".
   await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: '2030-01-10' });
   mine = (await call('/tasks?refresh=1', emp)).data.tasks;
   assert.deepEqual(mine.map((t: any) => t.source).sort(), ['contract']);

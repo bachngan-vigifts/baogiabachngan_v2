@@ -18,6 +18,10 @@ export function initCustomerDetail(deps) {
   const METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
   const ENTITY = { BN: 'Bách Ngân', VG: 'Vigifts', QTV: 'QTV' };
   const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
+  // Đơn hàng và HĐKT là 2 luồng độc lập: bản ghi có HĐKT hiện "HĐKT <số>" và mở #/contracts/<id>.
+  const docHref = (id, contractNo) => `#/${contractNo ? 'contracts' : 'orders'}/${encodeURIComponent(id)}`;
+  const docLink = (id, orderNo, contractNo) => `<a href="${docHref(id, contractNo)}">${esc(contractNo ? 'HĐKT ' + contractNo : orderNo)}</a>`;
+  const plainOrders = d => d.orders.filter(o => !o.contract);
   const when = iso => iso ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)) : '';
   const DISCOUNT_LABELS = { minhLong: 'Minh Long', lys: 'Minh Long - Lys', lock: 'Lock&Lock' };
   const discountText = ds => Object.keys(DISCOUNT_LABELS).filter(k => ds?.[k]).map(k => `${DISCOUNT_LABELS[k]} <b>${ds[k]}%</b>`).join('<br>') || '<span class="muted">Chưa đặt</span>';
@@ -27,33 +31,32 @@ export function initCustomerDetail(deps) {
 
   // ----- Các mục (tab). Mỗi mục: nhãn, số đếm, nội dung.
   const TABS = [
-    { key: 'orders', label: 'Đơn hàng', count: d => d.orders.length, html: d => table(['Đơn', 'Tình trạng', 'HĐKT', 'Phụ trách', '>Giá trị', 'Thanh toán'], d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
+    { key: 'orders', label: 'Đơn hàng', count: d => plainOrders(d).length, html: d => table(['Đơn', 'Tình trạng', 'Phụ trách', '>Giá trị', 'Thanh toán'], plainOrders(d).map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
         <td>${orderLink(o.id, o.orderNo)}<small>${fmtDate(o.orderDate)}${o.quoteNo ? ' · ' + esc(o.quoteNo) : ''}</small></td>
         <td>${pill(ORDER_STATUS, o.status)}${o.expectedDeliveryDate ? `<small>Giao dự kiến ${fmtDate(o.expectedDeliveryDate)}</small>` : ''}</td>
-        <td>${o.contract ? esc(o.contract.contractNo) + `<small>${pill(CONTRACT_STATUS, o.contract.status)}</small>` : '<span class="muted">Chưa có</span>'}</td>
         <td>${esc(o.ownerName)}</td><td class="right num">${money(o.total)}</td><td>${payCell(o.receivable, o.counted, o.status)}</td></tr>`), 'Chưa có đơn đặt hàng.') },
-    { key: 'quotes', label: 'Báo giá', count: d => d.quotes.length, html: d => table(['Báo giá', 'Duyệt', 'Phụ trách', '>Giá trị', 'Đơn hàng'], d.quotes.map(x => `<tr class="clickable" data-href="#/quotes/${esc(x.id)}">
+    { key: 'quotes', label: 'Báo giá', count: d => d.quotes.length, html: d => table(['Báo giá', 'Duyệt', 'Phụ trách', '>Giá trị', 'Đơn hàng / HĐKT'], d.quotes.map(x => `<tr class="clickable" data-href="#/quotes/${esc(x.id)}">
         <td><a href="#/quotes/${encodeURIComponent(x.id)}">${esc(x.quoteNo)}</a><small>${esc(x.quoteType)} · ${fmtDate(x.quoteDate || x.updatedAt)}</small></td>
         <td>${pill(QUOTE_STATUS, x.approvalStatus)}</td><td>${esc(x.assigneeName)}</td><td class="right num">${money(x.total)}</td>
-        <td>${x.orderId ? orderLink(x.orderId, 'Xem đơn') : '<span class="muted">Chưa đặt</span>'}</td></tr>`), 'Chưa có báo giá cho khách này.') },
-    { key: 'contracts', label: 'HĐKT', count: d => d.contracts.length, html: d => table(['Số HĐKT', 'Pháp nhân', 'Tình trạng', 'Ngày ký', '>Giá trị', 'Đơn'], d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
-        <td>${esc(k.contractNo)}</td><td>${esc(ENTITY[k.legalEntity] || k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-        <td class="right num">${money(k.value)}</td><td>${orderLink(k.orderId, k.orderNo)}</td></tr>`), 'Chưa có hợp đồng kinh tế.') },
-    { key: 'payments', label: 'Giao dịch', count: d => d.payments.length, html: d => table(['Ngày thu', 'Hình thức', 'Đơn', 'Ghi chú', '>Số tiền'], d.payments.map(p => `<tr>
-        <td>${fmtDate(p.paidAt)}</td><td>${esc(METHOD[p.method] || p.method)}</td><td>${orderLink(p.orderId, p.orderNo)}</td>
+        <td>${x.orderId ? `<a href="${docHref(x.orderId, x.contractNo)}">${x.contractNo ? 'Xem HĐKT' : 'Xem đơn'}</a>` : '<span class="muted">Chưa đặt</span>'}</td></tr>`), 'Chưa có báo giá cho khách này.') },
+    { key: 'contracts', label: 'HĐKT', count: d => d.contracts.length, html: d => table(['Số HĐKT', 'Pháp nhân', 'Tình trạng', 'Ngày ký', '>Giá trị'], d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
+        <td><a href="#/contracts/${encodeURIComponent(k.orderId)}">${esc(k.contractNo)}</a></td><td>${esc(ENTITY[k.legalEntity] || k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
+        <td class="right num">${money(k.value)}</td></tr>`), 'Chưa có hợp đồng kinh tế.') },
+    { key: 'payments', label: 'Giao dịch', count: d => d.payments.length, html: d => table(['Ngày thu', 'Hình thức', 'Đơn / HĐKT', 'Ghi chú', '>Số tiền'], d.payments.map(p => `<tr>
+        <td>${fmtDate(p.paidAt)}</td><td>${esc(METHOD[p.method] || p.method)}</td><td>${docLink(p.orderId, p.orderNo, p.contractNo)}</td>
         <td>${esc(p.reference || p.note) || '<span class="muted">—</span>'}</td><td class="right num paid-text">${money(p.amount)}</td></tr>`), 'Chưa có phiếu thu nào.') },
     { key: 'debts', label: 'Công nợ', count: d => d.orders.filter(o => o.receivable && o.receivable.balance > 0).length, html: d => {
         const rows = d.orders.filter(o => o.receivable && o.receivable.balance > 0);
-        return table(['Đơn', 'Hạn gần nhất', '>Phải thu', '>Đã thu', '>Còn lại', '>Quá hạn'], rows.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
-          <td>${orderLink(o.id, o.orderNo)}<small>${fmtDate(o.orderDate)}</small></td><td>${fmtDate(o.receivable.nextDueDate) || '—'}</td>
+        return table(['Đơn / HĐKT', 'Hạn gần nhất', '>Phải thu', '>Đã thu', '>Còn lại', '>Quá hạn'], rows.map(o => `<tr class="clickable" data-href="${docHref(o.id, o.contract?.contractNo)}">
+          <td>${docLink(o.id, o.orderNo, o.contract?.contractNo)}<small>${fmtDate(o.orderDate)}</small></td><td>${fmtDate(o.receivable.nextDueDate) || '—'}</td>
           <td class="right num">${money(o.receivable.due)}</td><td class="right num paid-text">${money(o.receivable.paid)}</td>
           <td class="right num strong">${money(o.receivable.balance)}</td><td class="right num ${o.receivable.overdue ? 'danger-text' : 'muted'}">${o.receivable.overdue ? money(o.receivable.overdue) : '—'}</td></tr>`), 'Khách không còn công nợ.');
       } },
     { key: 'purchases', label: 'Lịch sử mua', count: d => d.purchases.length, html: d => table(['Sản phẩm', '>Số lượng', '>Số đơn', 'Mua gần nhất', '>Đơn giá gần nhất', '>Tổng tiền'], d.purchases.map(p => `<tr>
         <td><span class="strong">${esc(p.name)}</span>${p.sku ? `<small>${esc(p.sku)}</small>` : ''}</td><td class="right num">${p.qty.toLocaleString('vi-VN')} ${esc(p.unit)}</td>
         <td class="right num">${p.orders}</td><td>${fmtDate(p.lastDate)}</td><td class="right num">${money(p.lastPrice)}</td><td class="right num">${money(p.amount)}</td></tr>`), 'Chưa mua hàng (chỉ tính đơn đã xác nhận).') },
-    { key: 'deliveries', label: 'Giao hàng', count: d => d.deliveries.length, html: d => table(['Chuyến giao', 'Ngày giao', 'Tình trạng', 'Đơn'], d.deliveries.map(x => `<tr class="clickable" data-href="#/orders/${esc(x.orderId)}">
-        <td>${esc(x.deliveryNo)}</td><td>${fmtDate(x.plannedDate)}${x.timeSlot ? `<small>${esc(x.timeSlot)}</small>` : ''}</td><td>${pill(DELIVERY_STATUS, x.status)}</td><td>${orderLink(x.orderId, x.orderNo)}</td></tr>`), 'Chưa có chuyến giao.') },
+    { key: 'deliveries', label: 'Giao hàng', count: d => d.deliveries.length, html: d => table(['Chuyến giao', 'Ngày giao', 'Tình trạng', 'Đơn / HĐKT'], d.deliveries.map(x => `<tr class="clickable" data-href="${docHref(x.orderId, x.contractNo)}">
+        <td>${esc(x.deliveryNo)}</td><td>${fmtDate(x.plannedDate)}${x.timeSlot ? `<small>${esc(x.timeSlot)}</small>` : ''}</td><td>${pill(DELIVERY_STATUS, x.status)}</td><td>${docLink(x.orderId, x.orderNo, x.contractNo)}</td></tr>`), 'Chưa có chuyến giao.') },
     { key: 'stock', label: 'Hỏi tồn', count: d => d.stockRequests.length, html: d => table(['Ngày gửi', 'Số mã', 'Tình trạng', 'Ghi chú'], d.stockRequests.map(r => `<tr class="clickable" data-href="#/stock-requests/${esc(r.id)}">
         <td>${fmtDate(r.createdAt)}</td><td>${r.items}</td><td>${pill(STOCK_STATUS, r.status)}</td><td>${esc(r.note) || '<span class="muted">—</span>'}</td></tr>`), 'Khách chưa gửi đơn check tồn.') },
     { key: 'care', label: 'Chăm sóc', count: d => d.care.length, html: d => `<div class="row-gap"><button type="button" class="btn primary small" data-act="care-new">＋ Ghi chăm sóc</button>
@@ -89,7 +92,7 @@ export function initCustomerDetail(deps) {
         <div class="row-actions">${deps.isManager() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt khách hàng</button>' : ''}
         <button type="button" class="btn ghost small danger-text" data-act="reject">${deps.isManager() ? 'Từ chối' : 'Xoá'}</button></div></div>` : ''}
       <div class="stats cd-stats">
-        <article class="stat"><small>Doanh số</small><strong>${money(s.revenue)}</strong><span class="muted">${s.orders} đơn đã xác nhận</span></article>
+        <article class="stat"><small>Doanh số</small><strong>${money(s.revenue)}</strong><span class="muted">${s.orders} đơn hàng / HĐKT đã xác nhận</span></article>
         <article class="stat"><small>Đã thu</small><strong class="paid-text">${money(s.paid)}</strong><span class="muted">Phải thu ${money(s.due)}</span></article>
         <article class="stat"><small>Còn nợ</small><strong class="${s.balance > 0 ? 'danger-text' : ''}">${money(s.balance)}</strong><span class="${s.overdue ? 'danger-text' : 'muted'}">${s.overdue ? 'Quá hạn ' + money(s.overdue) : 'Không quá hạn'}</span></article>
         <article class="stat"><small>Mua gần nhất</small><strong>${s.lastOrderDate ? fmtDate(s.lastOrderDate) : '—'}</strong><span class="muted">${s.quotes} báo giá · ${s.contracts} HĐKT</span></article>

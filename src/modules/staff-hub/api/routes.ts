@@ -93,6 +93,8 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
     }));
     const debtors = orderList.filter(o => o.receivable && o.receivable.balance > 0);
     const orderNo = new Map(orders.map(o => [o.id, o.orderNo])), orderCustomer = new Map(orders.map(o => [o.id, o.customerName]));
+    // Bản ghi có HĐKT là HĐKT (luồng riêng): kèm số HĐKT để hiện thay số đơn.
+    const contractNo = new Map(contracts.map(k => [k.orderId, k.contractNo]));
 
     // ----- Khách hàng: khách được phân công + khách có đơn do nhân viên phụ trách.
     const byCustomer = new Map<string, { id: string; name: string; phone: string; role: string; approvalStatus: string; orders: number; revenue: number; balance: number; lastOrderDate: string | null }>();
@@ -129,11 +131,12 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
       access: { isSelf: me.id === id, canManage: me.role === 'manager' },
       kpi, trend: trend(orderList, payments, months),
       customers: [...byCustomer.values()].sort((a, b) => (b.lastOrderDate ?? '').localeCompare(a.lastOrderDate ?? '') || a.name.localeCompare(b.name, 'vi')),
-      quotes: quoteRows.map(({ data, ...q }) => ({ ...q, total: quoteTotal(data), orderId: orders.find(o => o.quoteId === q.id && o.status !== 'cancelled')?.id ?? null })),
+      quotes: quoteRows.map(({ data, ...q }) => { const orderId = orders.find(o => o.quoteId === q.id && o.status !== 'cancelled')?.id ?? null;
+        return { ...q, total: quoteTotal(data), orderId, contractNo: orderId ? contractNo.get(orderId) ?? null : null }; }),
       orders: orderList,
       contracts: contracts.map(k => ({ ...k, orderNo: orderNo.get(k.orderId) ?? '', customerName: orderCustomer.get(k.orderId) ?? '' })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-      payments: payments.slice(0, STAFF_HUB_LIMITS.payments).map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '', customerName: orderCustomer.get(p.orderId) ?? '' })),
-      debts: debtors.map(o => ({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, customerName: o.customerName, ...o.receivable! })),
+      payments: payments.slice(0, STAFF_HUB_LIMITS.payments).map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '', contractNo: contractNo.get(p.orderId) ?? null, customerName: orderCustomer.get(p.orderId) ?? '' })),
+      debts: debtors.map(o => ({ id: o.id, orderNo: o.orderNo, contractNo: contractNo.get(o.id) ?? null, orderDate: o.orderDate, customerName: o.customerName, ...o.receivable! })),
       payroll,
     });
   }, 'business');

@@ -65,7 +65,8 @@ createServer(async (req, res) => {
     if (bearer) headers.set('cookie', '__Host-bn-session=' + bearer);
     const response = await router.handle(new Request(ORIGIN + url.pathname + url.search, {
       method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method || 'GET') ? undefined : Buffer.concat(chunks),
-    }), { db, files: devFiles, passwordIterations: 1000 });
+    // DEV_SAPO_PUSH=off: thử luồng sinh đơn / HĐKT trên máy dev không có Sapo (máy chủ thật luôn bắt buộc đẩy Sapo).
+    }), { db, files: devFiles, passwordIterations: 1000, ...(process.env.DEV_SAPO_PUSH === 'off' ? { sapoOrderPush: 'off' as const } : {}) });
     const payload = await response.json() as Record<string, unknown>;
     const cookie = response.headers.get('set-cookie');
     if (cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';

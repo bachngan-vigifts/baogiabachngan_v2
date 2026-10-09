@@ -385,10 +385,10 @@
       
       <div class="panel">
         <div class="toolbar">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số đơn, khách hàng…" aria-label="Tìm"></label>
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số báo giá, khách hàng…" aria-label="Tìm"></label>
           <span id="contracts-filters"></span>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Đơn</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hoá đơn</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Báo giá</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hoá đơn</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
         <div id="contracts-empty" class="empty" hidden><p class="muted" id="contracts-empty-text"></p></div>
         <div class="pager" id="contracts-pager" hidden></div>
       </div>
@@ -405,7 +405,7 @@
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="deliveries-search" type="search" placeholder="Lọc theo khách hàng, số đơn…" aria-label="Tìm"></label>
           <span id="deliveries-filters"></span>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
         <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
       </div>
     </section>
@@ -459,7 +459,7 @@
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="receivables-search" type="search" placeholder="Tìm khách hàng, số đơn, MST…" aria-label="Tìm"></label>
           <span id="receivables-filters"></span>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn</th><th>Tình trạng</th><th>Hạn gần nhất</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn / HĐKT</th><th>Tình trạng</th><th>Hạn gần nhất</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
         <div id="receivables-empty" class="empty" hidden><p class="muted" id="receivables-empty-text"></p></div>
       </div>
     </section>
@@ -484,7 +484,7 @@
         <div class="card"><h2 class="card-title">Khách hàng</h2><dl class="kv" id="order-customer"></dl></div>
         <div class="card"><h2 class="card-title">Công nợ</h2><div id="order-debt"></div></div>
       </div>
-      <div class="card"><div class="card-title-row"><h2 class="card-title">Hàng trong đơn</h2></div>
+      <div class="card"><div class="card-title-row"><h2 class="card-title" id="order-lines-title">Hàng trong đơn</h2></div>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đã giao</th><th class="right">Đơn giá</th><th class="right">VAT</th><th class="right">Thành tiền</th></tr></thead><tbody id="order-lines"></tbody></table></div>
       </div>
       <div class="editor-grid">
@@ -683,7 +683,7 @@
   <div class="modal-head"><div><span class="eyebrow" id="flow-quote">Báo giá</span><h2>Sinh Đơn hàng / HĐKT</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body flow-pick">
     <button type="button" data-flow="order"><b>📦 Đơn hàng</b><small>Khách đã có HĐ nguyên tắc – chỉ tạo đơn để giao hàng, xuất hoá đơn, theo dõi công nợ. Không sinh HĐKT.</small></button>
-    <button type="button" data-flow="contract"><b>📝 HĐKT</b><small>Lập hợp đồng kinh tế: cấp số HĐKT, đặt cọc, tải bộ 3 file Word (HĐKT, đề nghị tạm ứng, biên bản nghiệm thu).</small></button>
+    <button type="button" data-flow="contract"><b>📝 HĐKT</b><small>Lập hợp đồng kinh tế: cấp số HĐKT, đặt cọc, tải bộ 3 file Word (HĐKT, đề nghị tạm ứng, biên bản nghiệm thu). Không sinh đơn hàng.</small></button>
   </div>
 </dialog>
 <!-- ＋ ở trang Đơn hàng / HĐKT: chọn báo giá đã duyệt (chưa có đơn) để tạo nhanh -->
@@ -818,7 +818,7 @@
 
 <dialog id="contract-dialog" class="modal">
   <form id="contract-form" novalidate>
-    <div class="modal-head"><div><span class="eyebrow">Lập hợp đồng kinh tế</span><h2>HĐKT cho <span id="contract-order-no"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-head"><div><span class="eyebrow">Lập hợp đồng kinh tế</span><h2>Lập HĐKT từ <span id="contract-order-no"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body form-grid cols-2">
       <label class="span-2">Pháp nhân bên bán<select name="legalEntity"><option value="BN">Bách Ngân (BN)</option><option value="VG">Vigifts (VG)</option><option value="QTV">QTV</option></select></label>
       <label>Đặt cọc (%)<input name="depositRate" inputmode="decimal" value="30"></label>

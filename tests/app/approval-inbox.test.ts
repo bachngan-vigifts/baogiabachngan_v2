@@ -36,8 +36,9 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   const q3 = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_I3', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows });
   await call(`/quotes/${q2.data.id}/approve`, mgr, 'POST', { revision: 1 });
   await call(`/quotes/${q3.data.id}/approve`, mgr, 'POST', { revision: 1 });
-  const o2 = await call('/orders', emp, 'POST', { quoteId: q2.data.id }), o3 = await call('/orders', emp, 'POST', { quoteId: q3.data.id });
-  assert.equal((await call('/contracts', emp, 'POST', { orderId: o3.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 })).status, 201);
+  const o2 = await call('/orders', emp, 'POST', { quoteId: q2.data.id });
+  const k3 = await call('/contracts', emp, 'POST', { quoteId: q3.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 }); assert.equal(k3.status, 201);
+  const o3 = { data: { id: k3.data.orderId as string } };
   // Khách hàng và sản phẩm nhân viên tạo.
   assert.equal((await call('/customers', emp, 'POST', { name: 'Công ty Mới Tạo' })).status, 201);
   assert.equal((await call('/products', emp, 'POST', { sku: 'NEW-01', name: 'Ly sứ mới', unit: 'cái' })).status, 201);
@@ -47,7 +48,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   const byKind = Object.fromEntries(d.items.map((i: any) => [i.kind, i]));
   assert.deepEqual([byKind.quote.title, byKind.quote.by, byKind.quote.link], ['Báo giá HRC_I1', 'Tên emp', `#/quotes/${q1.data.id}`]);
   assert.equal(byKind.order.link, `#/orders/${o2.data.id}`); assert.ok(byKind.order.amount > 0, 'đơn kèm giá trị');
-  assert.match(byKind.contract.title, /^HĐKT .* · đơn /); assert.equal(byKind.contract.link, `#/orders/${o3.data.id}`);
+  assert.equal(byKind.contract.title, 'HĐKT ' + k3.data.contractNo, 'HĐKT không hiện số đơn'); assert.equal(byKind.contract.link, `#/contracts/${o3.data.id}`);
   assert.equal(byKind.product.sub, 'Mã NEW-01');
   assert.ok(d.items.every((i: any, k: number) => k === 0 || (d.items[k - 1].at || '') <= (i.at || '')), 'chờ lâu nhất lên trước');
 

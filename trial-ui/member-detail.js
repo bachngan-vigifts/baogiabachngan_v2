@@ -33,6 +33,10 @@ export function initMemberDetail(deps) {
   const st = { id: '', month: '', d: null, tab: 'customers', seq: 0 };
   const short = n => { const v = Math.abs(n); return v >= 1e9 ? (n / 1e9).toFixed(1).replace('.0', '') + ' tỷ' : v >= 1e6 ? (n / 1e6).toFixed(1).replace('.0', '') + ' tr' : money(n); };
   const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
+  // Đơn hàng và HĐKT là 2 luồng độc lập: bản ghi có HĐKT hiện "HĐKT <số>" và mở #/contracts/<id>.
+  const docHref = (id, contractNo) => `#/${contractNo ? 'contracts' : 'orders'}/${encodeURIComponent(id)}`;
+  const docLink = (id, orderNo, contractNo) => `<a href="${docHref(id, contractNo)}">${esc(contractNo ? 'HĐKT ' + contractNo : orderNo)}</a>`;
+  const plainOrders = d => d.orders.filter(o => !o.contract);
   const table = (head, rows, empty) => rows.length
     ? `<div class="table-wrap"><table class="data-table"><thead><tr>${head.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<p class="muted cd-empty">${esc(empty)}</p>`;
@@ -49,19 +53,19 @@ export function initMemberDetail(deps) {
     { key: 'quotes', label: 'Báo giá', count: d => d.quotes.length, html: d => table(['Báo giá', 'Khách hàng', 'Duyệt', '>Giá trị', 'Đơn hàng'], d.quotes.map(x => `<tr class="clickable" data-href="#/quotes/${esc(x.id)}">
         <td><a href="#/quotes/${encodeURIComponent(x.id)}">${esc(x.quoteNo)}</a><small>${esc(x.quoteType)} · ${fmtDate(x.quoteDate)}</small></td><td>${esc(x.customer)}</td>
         <td>${pill(QUOTE_STATUS, x.approvalStatus)}</td><td class="right num">${money(x.total)}</td>
-        <td>${x.orderId ? orderLink(x.orderId, 'Xem đơn') : '<span class="muted">Chưa đặt</span>'}</td></tr>`), 'Chưa có báo giá.') },
-    { key: 'orders', label: 'Đơn hàng', count: d => d.orders.length, html: d => table(['Đơn', 'Khách hàng', 'Tình trạng', 'HĐKT', '>Giá trị', 'Thanh toán'], d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
+        <td>${x.orderId ? `<a href="${docHref(x.orderId, x.contractNo)}">${x.contractNo ? 'Xem HĐKT' : 'Xem đơn'}</a>` : '<span class="muted">Chưa đặt</span>'}</td></tr>`), 'Chưa có báo giá.') },
+    { key: 'orders', label: 'Đơn hàng', count: d => plainOrders(d).length, html: d => table(['Đơn', 'Khách hàng', 'Tình trạng', '>Giá trị', 'Thanh toán'], plainOrders(d).map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
         <td>${orderLink(o.id, o.orderNo)}<small>${fmtDate(o.orderDate)}${o.quoteNo ? ' · ' + esc(o.quoteNo) : ''}</small></td><td>${esc(o.customerName)}</td>
-        <td>${pill(ORDER_STATUS, o.status)}</td><td>${o.contract ? esc(o.contract.contractNo) + `<small>${pill(CONTRACT_STATUS, o.contract.status)}</small>` : '<span class="muted">Chưa có</span>'}</td>
+        <td>${pill(ORDER_STATUS, o.status)}</td>
         <td class="right num">${money(o.total)}</td><td>${payCell(o.receivable, o.counted, o.status)}</td></tr>`), 'Chưa có đơn đặt hàng.') },
-    { key: 'contracts', label: 'HĐKT', count: d => d.contracts.length, html: d => table(['Số HĐKT', 'Khách hàng', 'Tình trạng', 'Ngày ký', '>Giá trị', 'Đơn'], d.contracts.map(k => `<tr class="clickable" data-href="#/orders/${esc(k.orderId)}">
-        <td>${esc(k.contractNo)}</td><td>${esc(k.customerName)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
-        <td class="right num">${money(k.value)}</td><td>${orderLink(k.orderId, k.orderNo)}</td></tr>`), 'Chưa có hợp đồng kinh tế.') },
-    { key: 'payments', label: 'Giao dịch', count: d => d.payments.length, html: d => table(['Ngày thu', 'Khách hàng', 'Hình thức', 'Đơn', '>Số tiền'], d.payments.map(p => `<tr>
+    { key: 'contracts', label: 'HĐKT', count: d => d.contracts.length, html: d => table(['Số HĐKT', 'Khách hàng', 'Tình trạng', 'Ngày ký', '>Giá trị'], d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
+        <td><a href="#/contracts/${encodeURIComponent(k.orderId)}">${esc(k.contractNo)}</a></td><td>${esc(k.customerName)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
+        <td class="right num">${money(k.value)}</td></tr>`), 'Chưa có hợp đồng kinh tế.') },
+    { key: 'payments', label: 'Giao dịch', count: d => d.payments.length, html: d => table(['Ngày thu', 'Khách hàng', 'Hình thức', 'Đơn / HĐKT', '>Số tiền'], d.payments.map(p => `<tr>
         <td>${fmtDate(p.paidAt)}</td><td>${esc(p.customerName)}${p.reference || p.note ? `<small>${esc(p.reference || p.note)}</small>` : ''}</td>
-        <td>${esc(METHOD[p.method] || p.method)}</td><td>${orderLink(p.orderId, p.orderNo)}</td><td class="right num paid-text">${money(p.amount)}</td></tr>`), 'Chưa có phiếu thu nào.') },
-    { key: 'debts', label: 'Công nợ', count: d => d.debts.length, html: d => table(['Đơn', 'Khách hàng', 'Hạn gần nhất', '>Phải thu', '>Đã thu', '>Còn lại', '>Quá hạn'], d.debts.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
-        <td>${orderLink(o.id, o.orderNo)}<small>${fmtDate(o.orderDate)}</small></td><td>${esc(o.customerName)}</td><td>${fmtDate(o.nextDueDate) || '—'}</td>
+        <td>${esc(METHOD[p.method] || p.method)}</td><td>${docLink(p.orderId, p.orderNo, p.contractNo)}</td><td class="right num paid-text">${money(p.amount)}</td></tr>`), 'Chưa có phiếu thu nào.') },
+    { key: 'debts', label: 'Công nợ', count: d => d.debts.length, html: d => table(['Đơn / HĐKT', 'Khách hàng', 'Hạn gần nhất', '>Phải thu', '>Đã thu', '>Còn lại', '>Quá hạn'], d.debts.map(o => `<tr class="clickable" data-href="${docHref(o.id, o.contractNo)}">
+        <td>${docLink(o.id, o.orderNo, o.contractNo)}<small>${fmtDate(o.orderDate)}</small></td><td>${esc(o.customerName)}</td><td>${fmtDate(o.nextDueDate) || '—'}</td>
         <td class="right num">${money(o.due)}</td><td class="right num paid-text">${money(o.paid)}</td><td class="right num strong">${money(o.balance)}</td>
         <td class="right num ${o.overdue ? 'danger-text' : 'muted'}">${o.overdue ? money(o.overdue) : '—'}</td></tr>`), 'Không có công nợ đang theo dõi.') },
     { key: 'attendance', label: 'Ngày công', count: d => d.payroll.attendanceSummary.worked, html: attendanceHtml },
@@ -183,7 +187,7 @@ export function initMemberDetail(deps) {
       </div>
       <div class="stats md-kpis">
         ${stat('Doanh số tháng', money(k.revenue), `${bar}<span class="muted">${pct === null ? 'Chưa đặt chỉ tiêu' : `${pct}% chỉ tiêu ${short(k.revenueTarget)}`}</span>`, 'md-kpi-main')}
-        ${stat('Đơn hàng', k.orders, `<span class="muted">TB ${money(k.avgOrder)}/đơn</span>`)}
+        ${stat('Đơn hàng / HĐKT', k.orders, `<span class="muted">TB ${money(k.avgOrder)}/đơn</span>`)}
         ${stat('Báo giá', k.quotes, `<span class="muted">Chốt ${k.quotesWon} · ${k.conversion === null ? '—' : k.conversion + '%'}</span>`)}
         ${stat('Đã thu tháng', `<span class="paid-text">${money(k.collected)}</span>`, `<span class="muted">${k.contractsSigned} HĐKT ký trong tháng</span>`)}
         ${stat('Công nợ đang giữ', `<span class="${k.debt.balance > 0 ? 'danger-text' : ''}">${money(k.debt.balance)}</span>`, `<span class="${k.debt.overdue ? 'danger-text' : 'muted'}">${k.debt.overdue ? 'Quá hạn ' + money(k.debt.overdue) : `${k.debt.orders} đơn còn nợ`}</span>`)}

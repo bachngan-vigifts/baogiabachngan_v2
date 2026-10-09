@@ -93,7 +93,7 @@ Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùn
 - **Khi nào:** đẩy cùng lúc với việc sinh đơn / HĐKT; không có nút đẩy riêng.
   - **Sinh đơn hàng** (từ báo giá, hoặc nút ＋ ở trang Đơn hàng): popup chọn **kho Sapo** → bấm "Sinh đơn hàng + đơn Sapo".
   - **Lập HĐKT:** bấm "Lập HĐKT" → popup chọn kho → "Lập HĐKT + đơn Sapo".
-    - Đơn tạm của luồng HĐKT chưa đẩy; chỉ đẩy khi lập HĐKT.
+    - HĐKT lập thẳng từ báo giá (không qua đơn hàng); ghi chú Sapo chỉ có số HĐKT.
     - Đơn đã có trên Sapo thì lập HĐKT luôn, không hỏi kho.
 - **Sapo lỗi → không sinh gì:**
   - Máy chủ tạo đơn / HĐKT và đơn nháp Sapo trong **cùng một giao dịch**. Sapo lỗi (chưa kết nối, hết phiên, thiếu quyền, SKU trùng…) → huỷ giao dịch, không có đơn / HĐKT.

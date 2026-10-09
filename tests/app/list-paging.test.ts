@@ -70,9 +70,11 @@ test('đơn hàng / HĐKT: phân trang trên máy chủ, trả tổng số', asy
   const orders: string[] = [];
   for (let i = 1; i <= 4; i++) {
     const q = await call('/quotes', mgr, 'POST', { ...quote(`B2B_BG20261009_00${i}`, `Khách ${i}`, 100000), customerTaxCode: `010123456${i}` });
-    const o = await call('/orders', mgr, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201, JSON.stringify(o.data)); orders.push(o.data.id);
+    // Báo giá 1 → HĐKT (luồng riêng), còn lại → đơn hàng.
+    const o = i === 1 ? await call('/contracts', mgr, 'POST', { quoteId: q.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-09' })
+      : await call('/orders', mgr, 'POST', { quoteId: q.data.id });
+    assert.equal(o.status, 201, JSON.stringify(o.data)); orders.push(o.data.orderId ?? o.data.id);
   }
-  assert.equal((await call('/contracts', mgr, 'POST', { orderId: orders[0], legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-09' })).status, 201, 'lập HĐKT');
 
   const p1 = (await call('/orders?flow=order&limit=2&offset=0', mgr)).data, p2 = (await call('/orders?flow=order&limit=2&offset=2', mgr)).data;
   assert.deepEqual([p1.total, p1.orders.length, p2.orders.length], [3, 2, 1], 'đơn có HĐKT không nằm ở trang Đơn hàng');

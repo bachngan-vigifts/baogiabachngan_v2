@@ -8,6 +8,7 @@ import { quotations } from '../modules/quotes/schema.ts';
 import { salesContracts, salesOrders } from '../modules/sales/schema.ts';
 import { customers } from '../modules/customers/schema.ts';
 import { products } from '../modules/catalog/schema.ts';
+import { docRef } from '../modules/sales/domain/doc-ref.ts';
 
 /** Loại việc cần duyệt (thứ tự hiển thị). */
 export const APPROVAL_KINDS = ['quote', 'order', 'contract', 'customer', 'product'] as const;
@@ -43,8 +44,8 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
       ...qs.map(q => ({ kind: 'quote' as const, id: q.id, title: `Báo giá ${q.quoteNo}`, sub: (q.role === 'customer' ? 'Khách gửi · ' : '') + (q.customer || 'Chưa nhập khách'),
         by: q.by ?? '', at: q.updatedAt || q.createdAt, amount: null, link: `#/quotes/${q.id}` })),
       ...os.map(o => { const k = contractOf.get(o.id);
-        return { kind: k ? 'contract' as const : 'order' as const, id: o.id, title: k ? `HĐKT ${k} · đơn ${o.orderNo}` : `Đơn ${o.orderNo}`, sub: o.customerName,
-          by: o.by ?? '', at: o.createdAt, amount: o.total, link: `#/orders/${o.id}` }; }),
+        const ref = docRef(o.id, o.orderNo, k);
+        return { kind: ref.kind, id: o.id, title: ref.Label, sub: o.customerName, by: o.by ?? '', at: o.createdAt, amount: o.total, link: ref.link }; }),
       ...cs.map(k => ({ kind: 'customer' as const, id: k.id, title: `Khách hàng ${k.name}`, sub: [k.phone, k.taxCode && 'MST ' + k.taxCode].filter(Boolean).join(' · '),
         by: k.by ?? '', at: k.createdAt, amount: null, link: `#/customers/${encodeURIComponent(k.id)}` })),
       ...ps.map(p => ({ kind: 'product' as const, id: p.sku, title: `Sản phẩm ${p.name}`, sub: `Mã ${p.sku}`, by: p.by ?? '', at: p.updatedAt, amount: null, link: '#/products' })),
