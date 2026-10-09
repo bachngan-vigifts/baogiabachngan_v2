@@ -98,7 +98,7 @@
       </div>
       <div class="stats">
         <article class="stat"><small>Báo giá</small><strong id="stat-count">–</strong><span id="stat-count-note" class="muted">Đang hiển thị</span></article>
-        <article class="stat"><small>Tổng giá trị</small><strong id="stat-value">–</strong><span class="muted">Đã gồm VAT</span></article>
+        <article class="stat"><small>Tổng giá trị</small><strong id="stat-value">–</strong><span id="stat-value-note" class="muted">Đã gồm VAT</span></article>
         <article class="stat"><small>Tháng này</small><strong id="stat-month">–</strong><span id="stat-month-value" class="muted"></span></article>
         <article class="stat"><small>Khách hàng</small><strong id="stat-customers">–</strong><span class="muted">Trong danh bạ</span></article>
       </div>
@@ -124,6 +124,7 @@
           <h3 id="quote-empty-title">Chưa có báo giá</h3><p class="muted" id="quote-empty-text">Tạo báo giá đầu tiên để bắt đầu.</p>
           <a class="btn primary" href="#/quotes/new" id="quote-empty-action" data-new-quote>Tạo báo giá</a>
         </div>
+        <div class="pager" id="quote-pager" hidden></div>
       </div>
     </section>
 
@@ -314,7 +315,7 @@
           <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg></div>
           <h3 id="product-empty-title">Chưa có dữ liệu sản phẩm</h3><p class="muted" id="product-empty-text">Danh mục sẽ hiện ở đây sau khi nhập dữ liệu từ web cũ.</p>
         </div>
-        <div class="more-row" id="product-more-row" hidden><button class="btn secondary" id="product-more">Xem thêm</button></div>
+        <div class="pager" id="product-pager" hidden></div>
       </div>
       <div class="selection-bar" id="product-selection" hidden>
         <span id="product-selection-text"></span>
@@ -342,11 +343,11 @@
             <tbody id="customer-list"></tbody>
           </table>
         </div>
-        <div class="more-row" id="customer-more-row" hidden><button class="btn secondary" id="customer-more">Xem thêm</button></div>
         <div id="customer-empty" class="empty" hidden>
           <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></svg></div>
           <h3 id="customer-empty-title">Chưa có khách hàng</h3><p class="muted" id="customer-empty-text">Thêm khách hàng để chọn nhanh khi lập báo giá.</p>
         </div>
+        <div class="pager" id="customer-pager" hidden></div>
       </div>
     </section>
 
@@ -370,6 +371,7 @@
         </div>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn hàng</th><th>Khách hàng</th><th>Trạng thái</th><th>Hoá đơn</th><th class="right">Giá trị</th><th>Thanh toán / Đặt cọc</th><th>In / Tải</th></tr></thead><tbody id="orders-list"></tbody></table></div>
         <div id="orders-empty" class="empty" hidden><p class="muted" id="orders-empty-text"></p></div>
+        <div class="pager" id="orders-pager" hidden></div>
       </div>
     </section>
 
@@ -387,6 +389,7 @@
         </div>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Đơn</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hoá đơn</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
         <div id="contracts-empty" class="empty" hidden><p class="muted" id="contracts-empty-text"></p></div>
+        <div class="pager" id="contracts-pager" hidden></div>
       </div>
     </section>
 
