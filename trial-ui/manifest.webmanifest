@@ -3,6 +3,7 @@
   "short_name": "Bách Ngân",
   "description": "Báo giá, đơn hàng, khách hàng, công việc của nhân viên Bách Ngân.",
   "lang": "vi",
+  "id": "index.html",
   "start_url": "index.html",
   "scope": "./",
   "display": "standalone",

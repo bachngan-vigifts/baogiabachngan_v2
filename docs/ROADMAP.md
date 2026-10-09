@@ -1,5 +1,17 @@
 # Lộ trình xây dựng lại
 
+> **Cập nhật 09/10/2026 – đọc phần này trước.** Các giai đoạn bên dưới là kế hoạch gốc (05–07/10/2026), viết khi còn định chạy
+> trên Cloudflare D1/Workers và React. Thực tế đã đổi:
+> - **Nền tảng:** Supabase PostgreSQL + Edge Function `baogia-v2-api` (API) và Cloudflare Pages (giao diện `trial-ui/`, JavaScript thuần).
+>   Migration đang dùng: `migrations/postgres/` (`0000` → `0047`). `migrations/*.sql` (SQLite) chỉ còn là lịch sử.
+> - **Đã chạy thật** (có API + giao diện + test): đăng nhập & nhân viên, khách hàng (duyệt khách), sản phẩm/tồn kho, báo giá (duyệt, PDF/Excel/in),
+>   đơn hàng & HĐKT (duyệt, mẫu Word), giao hàng, phiếu đóng gói, công nợ & phiếu thu, yêu cầu xuất hoá đơn, công việc (tự sinh từ các luồng),
+>   chăm sóc khách hàng, tin nhắn nội bộ, thông báo + Web Push, trang khách hàng (portal), nhân sự & bảng lương, đồng bộ Sapo, xưởng in.
+>   Như vậy các giai đoạn 2 (trừ đồng bộ nhân viên Sapo hai chiều), 3, 4, 5, 6 (bằng JavaScript thuần thay React), 7 đã xong về chức năng.
+> - **Còn lại:** cổng NCC (giai đoạn 8 – mới có bảng + logic thuần), module `crm` (bảng sao AppSheet, chưa dùng) và `work` (giai đoạn 9),
+>   nhật ký thay đổi (`audit_logs` chưa ghi), phân quyền theo chức vụ, chuyển dữ liệu & cắt chuyển khỏi AppSheet (giai đoạn 10).
+> - Kế hoạch chi tiết thay AppSheet CRM: [THAY-APPSHEET.md](THAY-APPSHEET.md). Bảng dữ liệu hiện có: [DATA-MODEL.md](DATA-MODEL.md) (97 bảng).
+
 Nguyên tắc: **mỗi bước kết thúc bằng test xanh**, app cũ vẫn chạy song song cho tới khi cắt chuyển.
 Ký hiệu: ✅ xong · ⬜ chưa làm. "Xong" nghĩa là đạt hết mục *Tiêu chí xong* của giai đoạn.
 

@@ -18,6 +18,12 @@ import * as crm from '../src/modules/crm/schema.ts';
 import * as work from '../src/modules/work/schema.ts';
 import * as notifications from '../src/modules/notifications/schema.ts';
 import * as integrations from '../src/modules/integrations/schema.ts';
+import * as sales from '../src/modules/sales/schema.ts';
+import * as tasks from '../src/modules/tasks/schema.ts';
+import * as chat from '../src/modules/chat/schema.ts';
+import * as care from '../src/modules/care/schema.ts';
+import * as hr from '../src/modules/hr/schema.ts';
+import * as portal from '../src/modules/portal/schema.ts';
 import * as core from '../src/core/db/schema.ts';
 
 const mods: [string, Record<string, unknown>, string][] = [
@@ -25,6 +31,8 @@ const mods: [string, Record<string, unknown>, string][] = [
   ['catalog', catalog, 'Sản phẩm, giá, kho, tồn kho'], ['quotes', quotes, 'Báo giá'], ['contracts', contracts, 'Hợp đồng'],
   ['suppliers', suppliers, 'Hàng sắp về và đơn nhà cung cấp'], ['printing', printing, 'Xưởng in'], ['crm', crm, 'CRM và bản sao AppSheet VIGIFTS'],
   ['work', work, 'Báo cáo công việc, ca, tiền mặt'], ['notifications', notifications, 'Thông báo web/push'], ['integrations', integrations, 'Sapo'],
+  ['sales', sales, 'Đơn hàng, HĐKT, giao hàng, thu tiền, phiếu đóng gói'], ['tasks', tasks, 'Công việc'], ['chat', chat, 'Tin nhắn nội bộ'],
+  ['care', care, 'Chăm sóc khách hàng'], ['hr', hr, 'Nhân sự, lương'], ['portal', portal, 'Trang khách hàng'],
 ];
 const legacyCols = new Map(legacyTablesIn(legacy).map(getLegacyConfig).map(t => [t.name, new Set(t.columns.map(c => c.name))]));
 const runtime = new Set(Object.keys(legacyRuntimeDdl));

@@ -149,7 +149,7 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 
 ## Bước sau (chưa làm trong bản này)
 
-- In / xuất Word HĐKT theo mẫu của web cũ, dùng `sales_contracts.data`.
+- ~~In / xuất Word HĐKT theo mẫu của web cũ~~ – đã làm (`trial-ui/contract-ui.js`, 6 mẫu `.docx`).
 - Chuyển đơn sang Sapo: cột `sales_orders.sapo_order_id/code` đã có sẵn.
-- Phân quyền chi tiết theo chức vụ, ví dụ Kế toán thấy mọi công nợ, Kho thấy mọi lịch giao.
+- Phân quyền chi tiết theo chức vụ, ví dụ Kế toán thấy mọi công nợ (Kho đã thấy mọi lịch giao và phiếu đóng gói).
 - Chuyển dữ liệu HĐKT và công nợ từ web cũ sang (nếu cần).

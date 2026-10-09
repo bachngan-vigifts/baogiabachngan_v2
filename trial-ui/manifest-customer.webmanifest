@@ -3,6 +3,7 @@
   "short_name": "Bách Ngân",
   "description": "Xem và tạo báo giá, đặt hàng, theo dõi đơn hàng với Bách Ngân.",
   "lang": "vi",
+  "id": "customer.html",
   "start_url": "customer.html",
   "scope": "./",
   "display": "standalone",
