@@ -51,7 +51,7 @@ async function setup(legacyPassword = 'dung') {
     { sku: 'B1', name: 'Dĩa B1', unit: 'cái', imageUrl: media(K2), updatedAt: now }, { sku: 'C1', name: 'Mất ảnh', unit: 'cái', imageUrl: media(GONE), updatedAt: now },
     { sku: 'S1', name: 'Ảnh Sapo', unit: 'cái', imageUrl: 'https://sapo.dktcdn.net/100/a.jpg', updatedAt: now },
   ]);
-  return { db, call, fake, productImages, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
+  return { db, call, fake, env, productImages, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
 }
 
 test('ảnh web cũ (cần đăng nhập): /images/fetch tải bằng phiên web cũ, hết phiên tự đăng nhập lại', async () => {
@@ -107,4 +107,26 @@ test('nhiều ảnh tải song song dùng chung phiên web cũ, hết hạn ch�
   const again = await batch();
   assert.ok(again.every(r => r.status === 200), JSON.stringify(again.map(r => r.data)));
   assert.equal(fake.log.logins, 2, 'sáu yêu cầu cùng hết phiên chỉ làm mới một lần');
+});
+
+test('429 mid-batch returns progress and retries the blocked product without skipping it', async () => {
+  const { call, fake, env, mgr } = await setup();
+  let blocked = false;
+  env.legacySite.fetch = (async (input, init) => {
+    if (String(input) === media(K2) && !blocked) {
+      blocked = true; fake.expire();
+      return new Response('', { status: 401 });
+    }
+    if (String(input).endsWith('/login') && blocked) return new Response('', { status: 429, headers: { 'retry-after': '120' } });
+    return fake.f(input, init);
+  }) as typeof fetch;
+  const r = await call('/catalog/legacy-images/migrate', mgr, 'POST', { limit: 3 });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.migrated, r.data.next, r.data.remaining, r.data.paused, r.data.retryAfter], [2, 'A2', 2, true, 120]);
+  env.legacySite.fetch = fake.f;
+  const resumed = await call('/catalog/legacy-images/migrate', mgr, 'POST', { limit: 2, after: r.data.next, legacySession: r.data.legacySession });
+  assert.equal(resumed.status, 200);
+  assert.equal(resumed.data.migrated, 1, 'B1 is retried after cooldown');
+  assert.deepEqual(resumed.data.failed.map((x: any) => x.sku), ['C1']);
+  assert.equal(resumed.data.remaining, 1);
 });

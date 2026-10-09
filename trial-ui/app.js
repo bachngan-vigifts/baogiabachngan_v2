@@ -1616,12 +1616,25 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-legacy-run]'); if (!b || legacyRunning) return;
   legacyRunning = true; b.disabled = true; b.textContent = 'Đang chuyển…';
   const progress = () => document.querySelector('#legacy-images [data-progress]');
-  let after = '', moved = 0, failed = [];
+  let after = '', moved = 0, failed = [], legacySession = null, pauses = 0;
+  const memberId = state.user?.id;
   try {
     for (;;) {
-      const r = await api('/catalog/legacy-images/migrate', 'POST', { limit: 20, after });
+      const r = await api('/catalog/legacy-images/migrate', 'POST', { limit: 20, after, legacySession });
       moved += r.migrated; failed = failed.concat(r.failed); after = r.next || after;
+      legacySession = r.legacySession || null;
       const p = progress(); if (p) p.textContent = `Đã chuyển ${fmtNum(moved)} ảnh · còn ${fmtNum(r.remaining)}${failed.length ? ` · ${failed.length} ảnh lỗi` : ''}`;
+      if (r.paused) {
+        if (++pauses > 3) throw new Error('Web cũ vẫn giới hạn đăng nhập (429). Ảnh đã chuyển được giữ nguyên; thử lại sau.');
+        const resumeAt = Date.now() + Math.max(1, Number(r.retryAfter) || 900) * 1000;
+        while (Date.now() < resumeAt) {
+          if (state.user?.id !== memberId) return;
+          const waiting = progress(); if (waiting) waiting.textContent = 'Web cũ giới hạn đăng nhập (429). Tự tiếp tục sau ' + Math.ceil((resumeAt - Date.now()) / 1000) + ' giây. Đã chuyển ' + fmtNum(moved) + ' ảnh.';
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        continue;
+      }
+      if (state.user?.id !== memberId) return;
       if (r.finished || !r.next) break;
     }
     toast(`Đã chuyển ${fmtNum(moved)} ảnh sang kho mới.` + (failed.length ? ` ${failed.length} ảnh lỗi (vd ${failed[0].sku}: ${failed[0].error}) – giữ link cũ.` : ''), failed.length ? 'err' : 'ok');
