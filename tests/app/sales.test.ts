@@ -111,7 +111,8 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.deepEqual([listed.debtCounts, listed.receivable.payState, listed.receivable.deposit, listed.receivable.depositPaid], [true, 'deposit_paid', 7_452_000, 7_452_000]);
   const kList = (await call('/contracts', emp)).data.contracts.find((x: any) => x.orderId === o.data.id);
   assert.deepEqual([kList.debtCounts, kList.receivable.payState, kList.receivable.balance], [true, 'deposit_paid', 17_388_000]);
-  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 409);
+  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 403);
+  assert.equal((await call('/orders/' + o.data.id + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 409, 'Manager cũng không huỷ được đơn đã giao / thu tiền');
   assert.equal((await call('/orders?q=hoang long', emp)).data.orders[0].contract.contractNo, k.data.contractNo);
   assert.equal((await call('/orders', ncc)).status, 403);
 });
@@ -124,7 +125,8 @@ test('huỷ đơn chưa giao/chưa thu được; huỷ rồi tạo lại đơn t
   await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   assert.equal((await call('/orders/' + o.data.id, emp)).data.lines[0].unitPrice, 500000, 'HRC không cộng phí in');
   assert.equal((await call('/contracts', emp, 'POST', { orderId: o.data.id, legalEntity: 'BN' })).status, 400, 'khách chưa có MST/mã KH');
-  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 200);
+  assert.equal((await call('/orders/' + o.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 403);
+  assert.equal((await call('/orders/' + o.data.id + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 200);
   assert.equal((await call('/receivables', emp)).data.receivables.length, 0);
   assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).status, 201);
 });
@@ -169,7 +171,7 @@ test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sa
   assert.equal(h.history[0].unitPrice, 120000, 'mới nhất đứng đầu');
   assert.equal(h.history.some((x: any) => x.kind === 'purchase'), false, 'giao dịch cũ nhất bị bỏ');
   assert.equal((await call('/products/' + encodeURIComponent('Không mã') + '/history', emp)).data.history.length, 0);
-  await call('/orders/' + ids.at(-1) + '/status', emp, 'PUT', { status: 'cancelled' });
+  assert.equal((await call('/orders/' + ids.at(-1) + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 200);
   h = (await call('/products/ML-TRA/history', emp)).data;
   assert.deepEqual([h.history.length, h.history[0].unitPrice], [19, 119000]);
 });
@@ -237,7 +239,7 @@ test('đơn hàng và HĐKT là 2 luồng: trang Đơn hàng (flow=order) bỏ �
   assert.deepEqual([k.length, k[0].orderId, k[0].invoiceStatus], [1, o2, 'none']);
 });
 
-test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; còn nháp thì sửa báo giá tự cập nhật đơn + HĐKT; đã duyệt thì khoá báo giá', async () => {
+test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; còn nháp thì sửa báo giá tự cập nhật đơn + HĐKT; đã duyệt thì chỉ Manager sửa và đồng bộ báo giá', async () => {
   const { db, call, emp, mgr } = await setup();
   await db.insert(customers).values({ id: '2001', name: 'Công ty An Phú', contact: 'Anh Phú', phone: '0902', email: '', address: 'Cần Thơ', search: '', taxCode: '0309999999', customerCode: 'AP01', sourceVersion: 0, syncedAt: '' });
   const doc = (qty: number, price: number) => ({ type: 'HRC', quoteNo: 'HRC_BG20261008_001', customer: 'Công ty An Phú', customerId: '2001', vat: 8,
@@ -266,10 +268,16 @@ test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; c
   // Chỉ Manager duyệt.
   assert.equal((await call(`/orders/${o.data.id}/status`, emp, 'PUT', { status: 'confirmed', verified: true })).status, 404, 'nhân viên không phụ trách không thấy đơn');
   assert.equal((await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true })).status, 200);
-  // Đã duyệt: báo giá bị khoá; HĐKT ký được.
+  // Đã duyệt: Manager vẫn sửa báo giá và đồng bộ HĐKT; nhân viên bị chặn.
   const rev2 = (await call(`/quotes/${q.data.id}`, mgr)).data.revision;
   const locked = await call(`/quotes/${q.data.id}`, mgr, 'PUT', { revision: rev2, data: doc(150, 1_704_000) });
-  assert.equal(locked.status, 409); assert.equal(locked.data.code, 'ORDER_APPROVED');
-  assert.equal((await call(`/orders/${o.data.id}`, mgr)).data.lines[0].qty, 144);
+  assert.equal(locked.status, 200, JSON.stringify(locked.data));
+  const updated = (await call(`/orders/${o.data.id}`, mgr)).data;
+  assert.equal(updated.lines[0].qty, 150);
+  assert.equal(updated.order.status, 'confirmed');
+  assert.equal(updated.contract.value, updated.order.total);
+  assert.equal(updated.schedules.reduce((sum: number, x: any) => sum + x.amount, 0), updated.order.total);
   assert.equal((await call(`/contracts/${k.data.id}`, mgr, 'PUT', { status: 'signed', signedDate: '2026-10-09' })).status, 200);
 });
+
+

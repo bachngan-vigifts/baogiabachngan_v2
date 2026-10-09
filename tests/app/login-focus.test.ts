@@ -18,6 +18,9 @@ function harness() {
   elements['#auth'].contains = (el: unknown) => el === elements['#email'] || el === elements['#password'];
   const ctx: any = {
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, API: '/api',
+    location: { hash: '#/quotes' },
+    dataRefresh: { stop() {}, observe() {}, saved() {}, tick() {} },
+    queueMicrotask: (fn: () => void) => timers.push(fn),
     document, $: (id: string) => elements[id],
     setTimeout: (fn: () => void) => timers.push(fn),
     fetch: () => new Promise(resolve => pending.push(resolve)),
