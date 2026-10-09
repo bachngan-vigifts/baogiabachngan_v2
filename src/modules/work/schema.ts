@@ -1,6 +1,11 @@
 import { pgTable, doublePrecision, text, bigint, boolean, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 import { employees } from '../staff/schema.ts';
 
+/**
+ * MODULE WORK (báo cáo công việc, ca làm, tiền mặt) – GIỮ LẠI, chép nguyên từ web cũ. Hiện CHỈ có bảng, chưa có API / giao diện
+ * và chưa có code nào dùng. Sẽ xem lại khi thay AppSheet (docs/THAY-APPSHEET.md): phần nào trùng `tasks` / `hr` thì gộp, không viết song song.
+ */
+
 export const workBranches = pgTable('work_branches', {
  id: text('id').primaryKey(), name: text('name').notNull(), keeperId: text('keeper_id'), updatedAt:text('updated_at').notNull(),
 }).enableRLS();

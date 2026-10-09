@@ -3,6 +3,7 @@ import type { FileStore } from '../../../core/storage/file-store.ts';
 import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
 import { Router, json, readJson, type RouteContext } from '../../../core/http/router.ts';
 import { checkMethodAndOrigin } from '../../../core/http/security.ts';
+import { auditFromRequest, writeAudit } from '../../../core/audit.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { CUSTOMER_FORBIDDEN_MESSAGE, FORBIDDEN_MESSAGE, SUPPLIER_FORBIDDEN_MESSAGE, canAccessArea, type Area } from '../domain/area-policy.ts';
 import { isCustomer, isSupplier } from '../domain/roles.ts';
@@ -165,8 +166,22 @@ async function activationHash(body: Record<string, unknown>): Promise<string> {
 export const SYNC_PREFIX = '/api/staff/integrations/';
 export const isSyncPath = (url: URL) => url.pathname.startsWith(SYNC_PREFIX);
 
+/**
+ * NHẬT KÝ THAY ĐỔI: mọi thao tác GHI thành công ở khu vực làm việc / quản trị / trang khách / NCC được ghi vào `audit_logs`
+ * (người làm, route, mã bản ghi, thân yêu cầu đã che mật khẩu và bỏ ảnh). Bỏ qua thao tác cá nhân không phải nghiệp vụ:
+ * đăng nhập, đổi mật khẩu, tin nhắn, đánh dấu đã đọc, bật thông báo, tải ảnh hộ.
+ */
+const AUDIT_AREAS = new Set<unknown>(['business', 'admin', 'ncc-admin', 'customer-portal', 'supplier-portal']);
+const AUDIT_SKIP = /^\/api\/staff\/(images\/fetch|chat\/|notifications\/read|push\/|csp-report)/;
+const auditable = (c: RouteContext<StaffEnv>) => AUDIT_AREAS.has(c.meta) && !AUDIT_SKIP.test(c.url.pathname);
+
 export function createStaffRouter(): Router<StaffEnv> {
-  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: authorizeRoute });
+  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: authorizeRoute,
+    onSuccess: { wants: auditable, run: async (c, info) => {
+      const member = (c.state.session as SessionState | undefined)?.member;
+      const path = c.url.pathname.replace(/^\/api\/staff/, '') || '/';
+      await writeAudit(c.env.db, { actorId: member?.id ?? null, module: String(c.meta), ...auditFromRequest({ ...info, path, params: c.params }) });
+    } } });
   registerAuthRoutes(router);
   registerMemberRoutes(router);
   registerAvatarRoutes(router);

@@ -3,6 +3,7 @@
 import { totals, after } from './quote-math.js';
 import { searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
+import { watchCsp } from './csp-report.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -44,6 +45,8 @@ async function api(path, method = 'GET', body) {
   if (!res.ok) throw Object.assign(new Error(data.error || 'Không thực hiện được thao tác.'), { status: res.status, code: data.code });
   return data;
 }
+// CSP chỉ báo cáo: vi phạm gửi về máy chủ khi đã đăng nhập.
+watchCsp(r => { if (!token) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
 
 const ORDER_STATUS = { draft: ['Chờ xác nhận', 'warn'], confirmed: ['Đã xác nhận', 'blue'], delivering: ['Đang giao', 'warn'], delivered: ['Đã giao xong', 'ok'], cancelled: ['Đã huỷ', 'off'] };
 const DELIVERY_STATUS = { planned: 'Đã lên lịch', in_transit: 'Đang giao', delivered: 'Đã giao', failed: 'Giao không thành công' };

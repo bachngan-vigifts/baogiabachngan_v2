@@ -1,8 +1,13 @@
 # Cloudflare Pages: header bảo mật cho giao diện.
 # Cache-Control no-cache: trình duyệt luôn hỏi lại máy chủ (304 nếu chưa đổi) nên bản giao diện mới lên là dùng ngay, không giữ JS/CSS cũ.
+# Strict-Transport-Security: HTTPS bắt buộc 1 năm, CHỈ cho tên miền này (không includeSubDomains để không ảnh hưởng tên miền con khác).
+# Content-Security-Policy-Report-Only: CSP CHỈ BÁO CÁO (chưa chặn gì). Trang tự gửi vi phạm về POST /csp-report (trial-ui/csp-report.js)
+#   → xem log Edge Function "csp-report" vài ngày, sửa / bổ sung nguồn hợp lệ, rồi mới đổi sang Content-Security-Policy để chặn thật.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Cache-Control: no-cache
+  Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://taceqfnsorewelsbdckg.supabase.co; worker-src 'self'; manifest-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'

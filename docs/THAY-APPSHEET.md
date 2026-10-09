@@ -37,19 +37,19 @@
 ## 2. Lỗi / rủi ro theo mức độ
 
 **Cao**
-1. **Chưa có nhật ký thay đổi (audit).** `audit_logs` không được ghi, nên không truy được ai duyệt, ai sửa giá, ai huỷ đơn khi có tranh chấp. AppSheet có lịch sử theo dòng. Đây là điều kiện bắt buộc trước khi tắt AppSheet.
+1. ~~**Chưa có nhật ký thay đổi (audit).**~~ → **Đã làm (M2, xem bên dưới).**
 2. **Chưa có công cụ chuyển dữ liệu AppSheet.** Lịch sử giao dịch / chăm sóc khách, nhiệm vụ đang mở và hợp đồng đang chạy trên AppSheet chưa có đường sang hệ mới, nên chưa cắt chuyển được.
 
 **Trung bình**
 3. **Phân quyền viết cứng trong code.** Ví dụ Kế toán chưa xem được mọi công nợ. Muốn đổi quyền phải sửa code.
 4. **Chưa có hộp "Cần duyệt" chung cho Manager.** Duyệt nằm rải ở từng trang; việc tự sinh và thông báo đẩy đang bù lại phần này.
 5. **Web Push phụ thuộc secret `SAPO_SYNC_TOKEN`** (≥ 32 ký tự): thiếu thì không đẩy được. Đã có hộp "Kiểm tra thiết bị nhận thông báo" cho Manager (PR #55) để thấy lý do.
-6. **Bảo mật HTTP:** `_headers` chưa có `Content-Security-Policy` và `Strict-Transport-Security`. Cần thử kỹ trước khi bật CSP vì trang dùng script và style nội tuyến.
+6. **Bảo mật HTTP:** đã bật HSTS (chỉ tên miền này) và **CSP ở chế độ chỉ báo cáo** (M1); còn phải xem báo cáo rồi mới chặn thật.
 
 **Thấp**
 7. **Bộ nhớ đệm:** mọi file đều `Cache-Control: no-cache`, nên thư viện lớn (pdf-lib, exceljs, font, mẫu Word ≈ 5 MB) được kiểm lại mỗi lần dùng. Có thể đặt `immutable` cho file đã gắn `?v=`.
-8. **Phóng to trên điện thoại:** thẻ `viewport` chặn phóng to (`user-scalable=no`). Đây là chủ ý để app không bị phóng khi gõ, nhưng hạn chế người cần xem chữ to (Android).
-9. **Code và bảng không dùng nữa:** module `crm` / `work` và bảng `contracts` cũ (trừ `contract_counters`). Nên dọn khi cắt chuyển xong.
+8. ~~**Phóng to trên điện thoại**~~ → **đã cho phóng to** (bỏ `maximum-scale=1`, `user-scalable=no`); ô nhập trên điện thoại ≥ 16px để iPhone không tự phóng khi gõ. Màn nào vỡ khi phóng to thì sửa giao diện, không khoá lại.
+9. **Module `crm` / `work`:** chỉ có bảng. **Quyết định 09/10: GIỮ LẠI** (đường thay AppSheet), đã ghi chú trạng thái ngay trong `schema.ts`; `crm_tasks` đánh dấu không dùng (thay bằng `tasks`). Không xoá.
 
 ## 3. Đã sửa trong lần kiểm tra này
 
@@ -67,17 +67,50 @@
 - `node --check trial-ui/push-sw.js`;
 - sau khi triển khai: mở trang, cài lại app (không bắt buộc), bấm một thông báo khi đang mở cả tab nhân viên lẫn tab khách.
 
-**Không tự sửa (cần anh xác nhận):** bật CSP / HSTS, cho phóng to trên điện thoại, xoá module `crm` / `work`.
+**Quyết định của chủ dự án (09/10/2026):**
+1. CSP: bật **chỉ báo cáo** trước, xem báo cáo rồi siết dần. HSTS: chỉ `crm.minhlongonline.com`, **không** `includeSubDomains`.
+2. Cho phóng to trên điện thoại; màn nào vỡ thì sửa giao diện.
+3. **Không xoá** `crm` / `work`; code chết hoặc lệch thì đánh dấu / tách, chưa xoá.
+4. Danh sách bảng AppSheet: đọc từ bản sao `vigifts_appsheet_*` bằng `scripts/sql/appsheet-schema-report.sql` (chỉ cấu trúc + số dòng, không dữ liệu thật) → gửi chủ dự án duyệt.
+5. Làm **M2 (nhật ký thay đổi) trước**, không đổi nghiệp vụ duyệt.
 
 ## 4. Lộ trình thay AppSheet (theo thứ tự ưu tiên)
 
-### M1 – Sửa nhanh (1–2 ngày) ✅ phần lớn đã làm ở mục 3
-- Còn lại:
-  - đặt `Cache-Control: immutable` cho file có `?v=` (sửa `_headers`);
-  - thêm `Strict-Transport-Security`;
-  - thử CSP ở chế độ chỉ báo cáo (`Content-Security-Policy-Report-Only`).
+### M1 – Sửa nhanh ✅
+- ✅ Manifest `id`, thông báo mở đúng cửa sổ, điều kiện triển khai, tài liệu (mục 3).
+- ✅ `Strict-Transport-Security: max-age=31536000` (không `includeSubDomains`).
+- ✅ `Content-Security-Policy-Report-Only` (`trial-ui/_headers`):
+  - trang tự gửi vi phạm về `POST /csp-report` (`trial-ui/csp-report.js`, chỉ khi đã đăng nhập, tối đa 20 vi phạm khác nhau mỗi trang);
+  - máy chủ in ra log Edge Function, dòng `csp-report`.
+  - Không dùng `report-uri` vì Edge Function chỉ nhận yêu cầu có Origin của trang.
+  - **Việc tiếp:** xem log vài ngày, bổ sung nguồn hợp lệ, rồi đổi sang `Content-Security-Policy` (chặn thật).
+- ✅ Cho phóng to trên điện thoại.
+- ✅ `login.html` không còn script nội tuyến (`login-redirect.js`).
+- Còn lại (không gấp): `Cache-Control: immutable` cho file có `?v=`.
 
-### M2 – Nhật ký thay đổi (bắt buộc trước khi cắt chuyển)
+### M2 – Nhật ký thay đổi ✅ (đã làm 09/10/2026)
+- **Cách ghi:** tự động ở tầng router (`core/http/router.ts` → `onSuccess`, `core/audit.ts`, gắn trong `staff/api/auth-routes.ts`).
+  - Mọi thao tác GHI **thành công** ở khu vực làm việc / quản trị / trang khách / NCC tạo một dòng `audit_logs`, gồm:
+    - người làm (`actor_id`), khu vực (`module`);
+    - `action` = "PHƯƠNG THỨC /route", ví dụ `PUT /orders/:id/status`;
+    - loại bản ghi (đoạn đầu đường dẫn) và mã bản ghi (`:id` / `:sku`, hoặc `id` trả về khi tạo mới);
+    - `data`: thân yêu cầu đã **che mật khẩu / mã bí mật**, **bỏ ảnh / file**, rút gọn chuỗi dài, tối đa ~6 KB.
+  - Không ghi: thao tác lỗi, đọc dữ liệu, đăng nhập / đổi mật khẩu, tin nhắn, đánh dấu đã đọc, bật thông báo, tải ảnh hộ, báo cáo CSP.
+  - Lỗi ghi nhật ký không làm hỏng thao tác chính. **Không đổi nghiệp vụ** nào.
+- **API:** `GET /audit` (chỉ Manager), lọc theo:
+  - `entityType` + `entityId` (`&related=1` kèm thao tác nhắc tới mã này, ví dụ phiếu thu / giao hàng của đơn);
+  - `actorId`;
+  - `before`;
+  - không lọc = 100 thao tác gần nhất.
+- **Giao diện:** nút **"Lịch sử"** (chỉ Manager) ở trang báo giá và trang đơn hàng (`trial-ui/audit-ui.js`), có tên thao tác dễ đọc.
+- **Migration:** `0048_audit_log_created.sql` (chỉ mục theo thời gian).
+- **Test:** `tests/app/audit.test.ts`.
+- **Còn có thể thêm sau:**
+  - nút Lịch sử ở trang khách hàng / sản phẩm;
+  - xem so sánh các bản `quote_revisions`;
+  - cho nhân viên xem lịch sử việc của mình.
+
+Kế hoạch gốc của M2 (để đối chiếu):
 - **Backend:** hàm `audit(env, { actor, entity, entityId, action, before, after })` ghi `audit_logs`, gọi ở:
   - duyệt / bỏ duyệt báo giá, đơn, HĐKT, khách hàng, sản phẩm;
   - đổi giá / số lượng, huỷ đơn, xoá báo giá;

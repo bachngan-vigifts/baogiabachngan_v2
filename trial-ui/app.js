@@ -3,6 +3,8 @@
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
 import { printSheet } from './print-page.js';
+import { showAudit } from './audit-ui.js';
+import { watchCsp } from './csp-report.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
 import { orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
@@ -183,6 +185,8 @@ async function api(path, method = 'GET', body) {
   }
   return data;
 }
+// CSP chỉ báo cáo: vi phạm gửi về máy chủ khi đã đăng nhập.
+watchCsp(r => { if (!token) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
 
 initAvatars(api); // ô nào có data-av tự hiện ảnh đại diện
 
@@ -1436,6 +1440,7 @@ async function downloadQuotePdf(hideDiscount) {
   finally { pdfBusy = false; }
 }
 $('#pdf-quote').addEventListener('click', () => downloadQuotePdf(false));
+$('#quote-history').addEventListener('click', () => editor.id && showAudit({ api, toast, entityType: 'quotes', entityId: editor.id, title: 'Báo giá ' + (collectQuote().quoteNo || '') }));
 $('#pdf-quote-nock').addEventListener('click', () => downloadQuotePdf(true));
 
 // ----- in nhanh trên trình duyệt
@@ -2436,7 +2441,8 @@ async function openOrder(id) {
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
     + (o.status === 'draft' ? (isManager() ? '<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt đơn / HĐKT. Đã duyệt thì báo giá bị khoá.">Duyệt đơn</button>'
       : '<span class="pill warn" title="Còn nháp: sửa báo giá thì đơn / HĐKT tự cập nhật theo">Chờ Manager duyệt</span>') : '')
-    + (o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '');
+    + (o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? '<button class="btn ghost" id="order-cancel">Huỷ đơn</button>' : '')
+    + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], ['Ngày đặt', fmtDate(o.orderDate)]]
     .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')
@@ -2892,6 +2898,7 @@ document.addEventListener('click', async e => {
     try { const d = await api('/orders/' + encodeURIComponent(listDocs.dataset.contractDocsFor)); openContractDocs({ detail: d, api, toast, onSaved: loadContracts }); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
+  if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: 'Đơn ' + sales.order.orderNo });
   if (e.target.closest('#order-cancel')) {
     if (!await confirmBox('Huỷ đơn này? Đơn huỷ không còn tính công nợ; báo giá có thể tạo đơn mới.', { title: 'Huỷ đơn', ok: 'Huỷ đơn', danger: true })) return;
     try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ đơn.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
@@ -2964,6 +2971,7 @@ function updateQuoteActions() {
   const canApprove = mgr || !!editor.approval?.canApprove;
   const ap = $('#approve-quote'); ap.hidden = !canApprove || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : editor.approval?.fromCustomer ? 'Xác nhận báo giá khách' : 'Duyệt';
   $('#delete-quote').hidden = !mgr || !saved;
+  $('#quote-history').hidden = !mgr || !saved;
 }
 function closeDownloadMenu() { $('#download-menu').hidden = true; $('#quote-download').setAttribute('aria-expanded', 'false'); }
 $('#quote-download').addEventListener('click', e => {
