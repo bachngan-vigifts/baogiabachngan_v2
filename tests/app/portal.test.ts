@@ -124,13 +124,14 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed', verified: true })).status, 403, 'chỉ Manager duyệt đơn');
   assert.equal((await call('/orders/' + o.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed' })).data.code, 'VERIFY_REQUIRED', 'phải xác thực trước khi duyệt');
   assert.equal((await call('/orders/' + o.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed', verified: true })).status, 200);
-  // Nhân viên đổi ngày giao dự kiến (ô Lịch giao hàng) → đơn của khách cập nhật + khách nhận thông báo; lên lịch giao ngày khác cũng đổi theo.
+  // Chỉ Manager đổi ngày giao dự kiến của đơn đã duyệt; nhân viên lên lịch chuyến giao không ghi đè ngày trên đơn.
   assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', emp, 'PUT', { date: 'x' })).status, 400);
-  assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', emp, 'PUT', { date: '2026-10-25' })).status, 200);
+  assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', emp, 'PUT', { date: '2026-10-25' })).status, 403, 'đơn đã duyệt chỉ Manager được đổi ngày giao');
+  assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', mgr, 'PUT', { date: '2026-10-25' })).status, 200);
   assert.equal((await call('/portal/orders', k.cookie)).data.orders[0].expectedDeliveryDate, '2026-10-25');
   assert.equal((await call('/notifications', k.cookie)).data.notifications[0].eventType, 'order_delivery_date');
   assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.orderId, plannedDate: '2026-10-27' })).status, 201);
-  assert.equal((await call('/portal/orders', k.cookie)).data.orders[0].expectedDeliveryDate, '2026-10-27');
+  assert.equal((await call('/portal/orders', k.cookie)).data.orders[0].expectedDeliveryDate, '2026-10-25', 'nhân viên lên lịch chuyến không sửa ngày trên đơn đã duyệt');
   // Đã xác nhận: kỳ phải trả + lịch sử thanh toán.
   orders = (await call('/portal/orders', k.cookie)).data.orders;
   assert.deepEqual(orders[0].schedules.map((x: any) => [x.kind, x.amount, x.dueDate]), [['balance', 2_604_000, null]]);
