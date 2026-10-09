@@ -65,6 +65,22 @@ async function saveRefreshed(c: Ctx, api: Api | undefined, savedAt: string) {
   return done.length > 0;
 }
 
+/**
+ * Chạy `fn` với phiên Sapo đã lưu của Manager (cho luồng đẩy đơn sang Sapo); lưu lại cookie nếu Sapo gia hạn phiên.
+ * Không có phiên / phiên hỏng → 409 SAPO_SESSION_MISSING để giao diện nhắc Manager kết nối Sapo.
+ */
+export async function withSapoSession<T>(c: Ctx, fn: (api: Api) => Promise<T>): Promise<T> {
+  const s = await openSapoSession(c);
+  try { return await fn(s.api); } finally { await s.save(); }
+}
+/** Mở phiên Sapo đã lưu (đọc DB ngay) để dùng trong giao dịch khác; gọi `save()` sau khi xong để lưu cookie Sapo gia hạn. */
+export async function openSapoSession(c: Ctx) {
+  requireKey(c);
+  const s = await readCookie(c), api = client(c, s.cookie);
+  return { api, save: () => saveRefreshed(c, api, s.savedAt).catch(() => false) };
+}
+export type SapoApi = Api;
+
 interface SessionCheck { checkedAt: string; ok: boolean; code?: string; error?: string; refreshed?: boolean }
 async function readCheck(db: AnyDb): Promise<SessionCheck | null> {
   const [row] = await db.select().from(sapoHealthMonitorState).where(eq(sapoHealthMonitorState.id, CHECK_ID)).limit(1);

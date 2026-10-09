@@ -10,20 +10,23 @@ export interface SapoClientOptions { cookie: string; base?: string; fetch?: type
 const expired = () => new AppError(503, 'Phiên Sapo đã hết hạn. Manager cần đăng nhập lại Sapo trên trang Nhân viên.', 'SAPO_SESSION_EXPIRED');
 
 /**
- * Gọi Sapo admin bằng cookie phiên của Manager. CHỈ ĐỌC (GET): app không bao giờ ghi gì vào Sapo.
+ * Gọi Sapo admin bằng cookie phiên của Manager. Đồng bộ chỉ ĐỌC (`get` / `list`); `send` (POST / PUT) chỉ dùng cho
+ * luồng đẩy đơn hàng sang Sapo (api/sapo-order-push.ts) – như nút "Copy báo giá vào Sapo" của web cũ.
  * Phân loại lỗi như bản cũ: chuyển về trang đăng nhập / 401 → phiên hết hạn; 403 → thiếu quyền.
  */
 export function sapoClient(o: SapoClientOptions) {
   let cookie = o.cookie;
   const base = (o.base || DEFAULT_SAPO_BASE).replace(/\/+$/, ''), origin = base.replace(/\/admin$/, ''), doFetch = o.fetch ?? fetch;
-  async function get(path: string): Promise<Record<string, any>> {
+  async function request(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, extra: Record<string, string> = {}): Promise<Record<string, any>> {
     let res: Response;
     try {
       res = await doFetch(base + path, {
-        method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(o.timeoutMs ?? 20_000),
+        method, redirect: 'manual', signal: AbortSignal.timeout(o.timeoutMs ?? (method === 'GET' ? 20_000 : 45_000)),
+        body: body === undefined ? undefined : JSON.stringify(body),
         headers: {
           cookie, accept: 'application/json', 'x-requested-with': 'XMLHttpRequest',
           'x-sapo-client': 'sapo-frontend-v3', 'x-sapo-serviceid': 'sapo-frontend-v3', origin, referer: base, 'accept-language': 'vi',
+          ...(body === undefined ? {} : { 'content-type': 'application/json; charset=UTF-8' }), ...extra,
         },
       });
     } catch { throw new AppError(504, 'Sapo chưa phản hồi. Vui lòng thử lại sau.', 'SAPO_UNREACHABLE'); }
@@ -33,14 +36,19 @@ export function sapoClient(o: SapoClientOptions) {
     const nextCookie = fresh.length ? mergeSetCookies(cookie, fresh) : cookie;
     const location = res.headers.get('location') || '';
     if (res.status === 401 || (res.status >= 300 && res.status < 400) || /\/login/i.test(location)) throw expired();
-    if (res.status === 403) throw new AppError(403, 'Tài khoản Sapo đang kết nối chưa đủ quyền xem dữ liệu này.', 'SAPO_PERMISSION_DENIED');
+    if (res.status === 403) throw new AppError(403, method === 'GET' ? 'Tài khoản Sapo đang kết nối chưa đủ quyền xem dữ liệu này.'
+      : 'Tài khoản Sapo đang kết nối chưa đủ quyền tạo đơn / khách / sản phẩm. Manager cần kết nối bằng tài khoản đủ quyền.', 'SAPO_PERMISSION_DENIED');
     if (!res.ok) throw new AppError(502, `Sapo báo lỗi (${res.status}).`, 'SAPO_HTTP_' + res.status);
-    let body: unknown;
-    try { body = JSON.parse(text); } catch { throw /<html|đăng nhập|login/i.test(text.slice(0, 2000)) ? expired() : new AppError(502, 'Sapo trả dữ liệu không hợp lệ.'); }
-    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AppError(502, 'Sapo trả dữ liệu không hợp lệ.');
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { throw /<html|đăng nhập|login/i.test(text.slice(0, 2000)) ? expired() : new AppError(502, 'Sapo trả dữ liệu không hợp lệ.'); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new AppError(502, 'Sapo trả dữ liệu không hợp lệ.');
     if (/(^|;\s*)_admin_session_id=/.test(nextCookie)) cookie = nextCookie;
-    return body as Record<string, any>;
+    return parsed as Record<string, any>;
   }
+  const get = (path: string) => request('GET', path);
+  /** Ghi vào Sapo (POST / PUT). Mỗi lần gửi kèm mã yêu cầu riêng như web cũ. */
+  const send = (method: 'POST' | 'PUT', path: string, body: unknown, headers: Record<string, string> = {}) =>
+    request(method, path, body, { 'x-sapo-requestid': crypto.randomUUID(), ...headers });
   /**
    * Đọc danh sách theo trang (limit=250&page=N như bản cũ), từ trang `fromPage`, tối đa `maxPages` trang.
    * Trả `nextPage` khi chưa hết (lần sau đọc tiếp), null khi đã hết.
@@ -58,5 +66,5 @@ export function sapoClient(o: SapoClientOptions) {
     return { items, nextPage: fromPage + maxPages };
   }
   /** Cookie hiện tại (đã gộp Set-Cookie của Sapo) và có khác bản ban đầu không. */
-  return { get, list, cookie: () => cookie, refreshed: () => cookie !== o.cookie };
+  return { get, send, list, base, cookie: () => cookie, refreshed: () => cookie !== o.cookie };
 }

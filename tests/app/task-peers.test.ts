@@ -22,7 +22,7 @@ async function setup() {
   for (const [id, pos] of <[string, string][]>[['kho1', 'warehouse'], ['kho2', 'warehouse'], ['sa1', 'sale-admin'], ['sa2', 'sale-admin'], ['ml1', 'sales-ml'], ['ml2', 'sales-ml'], ['lk1', 'sales-lock'], ['sl3', 'sale'], ['sl4', 'sale']]) await add(id, pos);
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
-    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000 });
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (id: string) => (await call('/login', '', 'POST', { email: `${id}@x.vn`, password: PASSWORD })).cookie;
