@@ -569,14 +569,33 @@ $('#reset-notes').addEventListener('click', async () => {
 });
 const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
-/** Số báo giá tự sinh: HRC_BG20261006_001, B2B_BG20261006_002, VG_BG20261006_001 (đếm theo loại + ngày). */
+/**
+ * Số báo giá tự sinh: HRC_BG20261006_001, B2B_BG20261006_002, VG_BG20261006_001 (đếm theo loại + ngày trên TOÀN CÔNG TY).
+ * Số kế tiếp lấy từ máy chủ (GET /quotes/next-no, `refreshQuoteNo`) vì nhân viên chỉ thấy báo giá của mình; lúc lưu máy chủ
+ * vẫn kiểm lại – số tự sinh bị người khác lấy trước thì tự đổi sang số kế tiếp còn trống.
+ */
 const QUOTE_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG' };
+const quotePrefix = (type, date) => `${QUOTE_PREFIX[type] || 'B2B'}_BG${String(date || todayIso()).replaceAll('-', '')}_`;
+const serverQuoteNo = new Map(); // phần đầu → số thứ tự kế tiếp theo máy chủ
 function nextQuoteNo(type = 'B2B', date = todayIso()) {
-  const prefix = `${QUOTE_PREFIX[type] || 'B2B'}_BG${String(date || todayIso()).replaceAll('-', '')}_`;
+  const prefix = quotePrefix(type, date);
   const used = (state.quotes || []).map(q => q.quoteNo).filter(n => n?.startsWith(prefix)).map(n => parseInt(n.slice(prefix.length), 10) || 0);
-  return prefix + String(Math.max(0, ...used) + 1).padStart(3, '0');
+  return prefix + String(Math.max(Math.max(0, ...used) + 1, serverQuoteNo.get(prefix) || 0)).padStart(3, '0');
 }
-const isAutoQuoteNo = (no, type, date) => no === nextQuoteNo(type, date);
+async function refreshQuoteNo(type, date) {
+  const prefix = quotePrefix(type, date);
+  try { const r = await api(`/quotes/next-no?type=${encodeURIComponent(type)}&date=${encodeURIComponent(date || todayIso())}`); serverQuoteNo.set(prefix, parseInt(r.quoteNo.slice(prefix.length), 10) || 0); } catch { /* mất mạng: dùng số tạm, máy chủ sửa lúc lưu */ }
+}
+/** Số còn đúng mẫu tự sinh của loại + ngày này (chưa bị người dùng gõ số khác). */
+const isAutoQuoteNo = (no, type, date) => no.startsWith(quotePrefix(type, date)) && /^\d{3,}$/.test(no.slice(quotePrefix(type, date).length));
+/** Báo giá mới chưa lưu: cập nhật số tự sinh theo máy chủ (nếu người dùng chưa tự gõ số). */
+async function syncEditorQuoteNo() {
+  if (editor.id) return;
+  const type = editor.type, date = field('date').value || todayIso();
+  await refreshQuoteNo(type, date);
+  const f = field('quoteNo');
+  if (!editor.id && editor.type === type && isAutoQuoteNo(f.value.trim(), type, date)) f.value = nextQuoteNo(type, date);
+}
 /** Chiết khấu toàn bảng chọn lúc tạo báo giá: áp cho mọi dòng mới (vẫn sửa riêng từng dòng được). */
 const defaultLineDiscount = () => editor.defaultDiscount > 0 ? { discount: editor.defaultDiscount, discountType: 'percent' } : {};
 const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT, ...defaultLineDiscount() });
@@ -593,6 +612,7 @@ async function openEditor(id) {
     if (pending) delete pending.defaultDiscount;
     fillEditor(null, 0, pending || newQuoteData());
     if (pending) markDirty();
+    syncEditorQuoteNo();
     setTimeout(() => { if (!qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : field('customer')).focus(); }, 50);
     return;
   }
@@ -653,8 +673,10 @@ function setType(type, dirty = true) {
   const notes = field('notes');
   if (dirty && (!notes.value.trim() || notes.value === defaultNotes(editor.type))) notes.value = defaultNotes(type);
   // Báo giá chưa lưu còn số tự sinh của loại cũ thì đổi sang tiền tố của loại mới.
-  if (dirty && !editor.id && isAutoQuoteNo(field('quoteNo').value.trim(), editor.type, field('date').value)) field('quoteNo').value = nextQuoteNo(type, field('date').value);
+  const reNumber = dirty && !editor.id && isAutoQuoteNo(field('quoteNo').value.trim(), editor.type, field('date').value);
+  if (reNumber) field('quoteNo').value = nextQuoteNo(type, field('date').value);
   editor.type = type;
+  if (reNumber) syncEditorQuoteNo();
   $$('#type-seg button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
   $('#type-hint').textContent = type === 'HRC' ? 'Báo giá HRC: không có cột phí in.' : 'Phí in (F7) được cộng vào giá sau chiết khấu.';
   qf.classList.toggle('type-hrc', type === 'HRC');
@@ -1053,12 +1075,14 @@ $('#refresh-profit-costs').addEventListener('click', async e => {
 
 // ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
 const nq = { type: 'HRC', customer: null, autoNo: '' };
-function nqSetType(type) {
+function nqSetType(type, fetchServer = true) {
   const date = $('#nq-date').value || todayIso(), no = $('#nq-no');
   const keepAuto = !no.value.trim() || no.value.trim() === nq.autoNo;
   nq.type = type; $('#nq-type-name').textContent = type === 'VIGIFTS' ? 'Vigifts' : type;
   $$('#nq-type button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
   nq.autoNo = nextQuoteNo(type, date); if (keepAuto) no.value = nq.autoNo;
+  // Lấy số kế tiếp trên toàn công ty rồi điền lại (nếu người dùng chưa tự gõ số).
+  if (fetchServer) refreshQuoteNo(type, date).then(() => { if (nq.type === type && ($('#nq-date').value || todayIso()) === date) nqSetType(type, false); });
 }
 async function openNewQuote() {
   if (editor.dirty && currentHash.startsWith('#/quotes/')) {
