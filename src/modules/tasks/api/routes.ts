@@ -10,7 +10,7 @@ import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
 import { reconcileAutoTasks } from './auto-tasks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
-import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
+import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, canViewPeers, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -51,13 +51,21 @@ const myTeam = (c: Ctx) => { const p = (me(c) as { positionId?: string | null })
 /** Việc giao cho nhóm, chưa ai nhận. */
 const teamOpen = (t: Pick<Task, 'assigneeId' | 'assigneePosition'>) => !t.assigneeId && !!t.assigneePosition;
 /** Ai thấy việc: Manager thấy tất cả; nhân viên thấy việc mình nhận, mình giao, và việc giao cho nhóm của mình chưa ai nhận. */
+/** Chức vụ được xem việc của đồng nghiệp cùng chức vụ (PEER_VIEW_POSITIONS), null nếu không. Manager không cần (thấy tất cả). */
+const peerPos = (c: Ctx) => { const m = me(c); return m.role === 'employee' && canViewPeers(m.positionId) ? m.positionId : null; };
+/** Đồng nghiệp cùng chức vụ (nhân viên, không tính Manager) – câu con SQL. */
+const colleaguesOf = (pos: string) => sql`(select ${employees.id} from ${employees} where ${employees.positionId} = ${pos} and ${employees.role} = 'employee')`;
+/** Việc của đồng nghiệp cùng chức vụ: đồng nghiệp nhận, đồng nghiệp giao, hoặc giao cho nhóm chức vụ đó. */
+const peerCond = (pos: string): SQL => or(sql`${tasks.assigneeId} in ${colleaguesOf(pos)}`, sql`${tasks.createdBy} in ${colleaguesOf(pos)}`, eq(tasks.assigneePosition, pos))!;
+/** Việc tôi trực tiếp liên quan (được sửa / trao đổi theo quyền cũ): Manager, người nhận, người giao, nhóm của tôi chưa ai nhận. */
+const involved = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'manager' || t.assigneeId === m.id || t.createdBy === m.id || inMyTeam(c, t); };
 const visible = (c: Ctx): SQL | undefined => {
-  const m = me(c), team = myTeam(c);
+  const m = me(c), team = myTeam(c), pos = peerPos(c);
   if (m.role === 'manager') return undefined;
-  return or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined);
+  return or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined, pos ? peerCond(pos) : undefined);
 };
 const inMyTeam = (c: Ctx, t: Task) => teamOpen(t) && t.assigneePosition === myTeam(c);
-const canSee = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'manager' || t.assigneeId === m.id || t.createdBy === m.id || inMyTeam(c, t); };
+const canSee = (c: Ctx, t: Task) => involved(c, t);
 const canManage = (c: Ctx, t: Task) => me(c).role === 'manager' || (t.createdBy !== null && t.createdBy === me(c).id);
 const teamName = (pos: string | null) => (pos && isTeam(pos) ? TASK_TEAMS[pos] : '');
 
@@ -73,9 +81,19 @@ async function notifyTeam(env: StaffEnv, team: string, n: Omit<Parameters<typeof
   for (const x of members) if (x.id !== n.actorId) await notify(env, { ...n, targetMemberId: x.id });
 }
 
+/** Xem được việc: liên quan trực tiếp, hoặc việc của đồng nghiệp cùng chức vụ (chỉ xem). */
 async function loadTask(c: Ctx, id: string) {
   const [t] = await c.env.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!t || !canSee(c, t)) throw new AppError(404, 'Không tìm thấy công việc.');
+  if (!t) throw new AppError(404, 'Không tìm thấy công việc.');
+  if (canSee(c, t)) return t;
+  const pos = peerPos(c);
+  if (pos && (await c.env.db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.id, t.id), peerCond(pos))).limit(1)).length) return t;
+  throw new AppError(404, 'Không tìm thấy công việc.');
+}
+/** Việc chỉ xem (của đồng nghiệp): không sửa, không trao đổi. */
+async function loadOwnTask(c: Ctx, id: string, message: string) {
+  const t = await loadTask(c, id);
+  if (!involved(c, t)) throw new AppError(403, message);
   return t;
 }
 async function assertAssignee(c: Ctx, id: string | null) {
@@ -120,7 +138,8 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   /**
-   * Danh sách việc. `view`: mine (tôi nhận + nhóm tôi chưa ai nhận) · created (tôi giao) · team (việc giao cho nhóm, chưa ai nhận) · unassigned (chưa giao, Manager) · all.
+   * Danh sách việc. `view`: mine (tôi nhận + nhóm tôi chưa ai nhận) · created (tôi giao) · team (việc giao cho nhóm, chưa ai nhận) · unassigned (chưa giao, Manager)
+   * · colleagues (việc của đồng nghiệp cùng chức vụ – Sale Admin / Kho / NVBH LOCK / NVBH ML, chỉ xem) · all.
    * `status`: open (mặc định) · done · all. Lọc thêm `priority`, `source`, `q`.
    */
   router.get('/tasks', async c => {
@@ -132,6 +151,10 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     else if (view === 'created') where.push(eq(tasks.createdBy, m.id));
     else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`));
     else if (view === 'unassigned') where.push(and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)));
+    else if (view === 'colleagues') { // việc của đồng nghiệp cùng chức vụ (không gồm việc của chính mình)
+      const pos = peerPos(c);
+      where.push(pos ? and(peerCond(pos), sql`coalesce(${tasks.assigneeId}, '') <> ${m.id}`, sql`coalesce(${tasks.createdBy}, '') <> ${m.id}`) : sql`false`);
+    }
     if (status === 'open') where.push(inArray(tasks.status, [...OPEN_STATUSES]));
     else if (status === 'done') where.push(inArray(tasks.status, ['done', 'cancelled']));
     const priority = p.get('priority'), source = p.get('source');
@@ -149,7 +172,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
     return json({ today, tasks: sorted.map(t => ({ ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), comments: Number(counts.find(x => x.taskId === t.id)?.n ?? 0), due: dueBucket(t.dueDate, today),
-      canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t) })) });
+      canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) })) });
   }, 'business');
 
   /** Giao việc thủ công. Người nhận (khác mình) được báo ngay. */
@@ -173,7 +196,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
    * Người nhận: đổi trạng thái, mức ưu tiên, hạn.
    */
   router.put('/tasks/:id', async c => {
-    const m = me(c), b = await readJson(c.req, 20_000), t = await loadTask(c, c.params.id!);
+    const m = me(c), b = await readJson(c.req, 20_000), t = await loadOwnTask(c, c.params.id!, 'Việc của đồng nghiệp cùng chức vụ – chỉ xem, không sửa được.');
     if (b.revision !== undefined && Number(b.revision) !== t.revision) throw new AppError(409, 'Công việc vừa được người khác cập nhật. Tải lại để xem bản mới.', 'REVISION_CONFLICT');
     // Người trong nhóm được giao (chưa ai nhận) làm như người nhận: bấm "Nhận việc" hoặc đổi trạng thái là nhận luôn.
     const manage = canManage(c, t), isAssignee = t.assigneeId === m.id || inMyTeam(c, t), f = readFields(b);
@@ -258,11 +281,11 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const people = ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
     const name = (id: string | null) => id ? people.find(x => x.id === id)?.name ?? '' : '';
     return json({ task: { ...t, auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (me(c).role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
-      completedByName: name(t.completedBy), due: dueBucket(t.dueDate, vietnamDate().iso), canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t) } });
+      completedByName: name(t.completedBy), due: dueBucket(t.dueDate, vietnamDate().iso), canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) } });
   }, 'business');
 
   router.delete('/tasks/:id', async c => {
-    const t = await loadTask(c, c.params.id!);
+    const t = await loadOwnTask(c, c.params.id!, 'Việc của đồng nghiệp cùng chức vụ – chỉ xem, không sửa được.');
     if (t.autoKey) throw new AppError(409, 'Việc tự sinh không xoá được; việc sẽ tự hoàn thành khi xử lý xong chứng từ.');
     if (!canManage(c, t)) throw new AppError(403, 'Chỉ người giao việc hoặc Manager xoá được.');
     await c.env.db.delete(tasks).where(eq(tasks.id, t.id));
@@ -270,7 +293,8 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.get('/tasks/:id/comments', async c => {
-    const t = await loadTask(c, c.params.id!);
+    // Trao đổi là chuyện riêng của người giao ↔ người nhận: đồng nghiệp cùng chức vụ (chỉ xem việc) không đọc được.
+    const t = await loadOwnTask(c, c.params.id!, 'Chỉ người giao, người nhận và Manager xem được trao đổi của việc này.');
     const rows = await c.env.db.select({ id: taskComments.id, body: taskComments.body, createdAt: taskComments.createdAt, memberId: taskComments.memberId, name: employees.name })
       .from(taskComments).innerJoin(employees, eq(employees.id, taskComments.memberId)).where(eq(taskComments.taskId, t.id)).orderBy(asc(taskComments.createdAt)).limit(300);
     return json({ comments: rows });
@@ -278,7 +302,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
 
   /** Trao đổi trong việc: báo người còn lại (người giao ↔ người nhận). */
   router.post('/tasks/:id/comments', async c => {
-    const m = me(c), t = await loadTask(c, c.params.id!), body = str((await readJson(c.req, 8_000)).body, 2000);
+    const m = me(c), t = await loadOwnTask(c, c.params.id!, 'Chỉ người giao, người nhận và Manager trao đổi được trong việc này.'), body = str((await readJson(c.req, 8_000)).body, 2000);
     if (!body) throw new AppError(400, 'Nhập nội dung trao đổi.');
     const id = crypto.randomUUID();
     await c.env.db.insert(taskComments).values({ id, taskId: t.id, memberId: m.id, body, createdAt: nowIso() });

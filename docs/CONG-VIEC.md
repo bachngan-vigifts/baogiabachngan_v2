@@ -74,3 +74,21 @@ Quy định với việc tự sinh:
   - Thấp: xám.
 - **Màu nguồn việc**: mỗi nguồn một màu nhẹ.
 - **Phím tắt**: `N` thêm việc, `/` tìm kiếm.
+
+## Ai xem được việc nào (chốt 09/10/2026)
+| Chức vụ | Xem được |
+|---|---|
+| Manager | Mọi việc |
+| Sale, Kế toán | Việc mình nhận, việc mình giao, và việc giao cho nhóm của mình mà chưa ai nhận. Không thấy việc của người khác. |
+| Sale Admin, Kho, NVBH LOCK, NVBH ML | Như trên, **cộng thêm** việc mà đồng nghiệp **cùng chức vụ** nhận hoặc giao (bộ lọc "Cùng chức vụ"). |
+
+Việc của đồng nghiệp cùng chức vụ là **chỉ xem**:
+- **Không được thao tác:** không sửa, không đổi trạng thái, không nhận việc thay, không xoá.
+- **Không thấy trao đổi:** không đọc và không gửi trao đổi (bình luận). Phần trao đổi là chuyện riêng giữa người giao, người nhận và Manager.
+- **Máy chủ chặn**, không chỉ giao diện:
+  - danh sách, chi tiết, sửa, xoá và trao đổi đều kiểm tra quyền;
+  - xem không được trả 404, làm không được trả 403;
+  - xem `src/modules/tasks/api/routes.ts` (`peerPos`, `peerCond`, `loadOwnTask`) và `PEER_VIEW_POSITIONS` trong `domain/task-config.ts`.
+- **Chứng từ đính kèm:** link "Mở chứng từ" vẫn theo quyền riêng của từng trang. Không có quyền xem đơn hoặc báo giá đó thì không mở được.
+
+Test: `tests/app/task-peers.test.ts`.
