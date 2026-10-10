@@ -182,7 +182,7 @@ function fakeSapo(data: Record<string, any[]>, opts: { expired?: boolean } = {})
   const fetch: typeof globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input)); calls.push(url.pathname + url.search);
     assert.equal(init?.method, 'GET', 'chỉ đọc Sapo');
-    assert.match(String((init?.headers as Record<string, string>).cookie), /_admin_session_id=abc/);
+    assert.match(String((init?.headers as Record<string, string>).cookie), /_admin_session_id=abc|sapo-admin=CfDJ8gia/);
     if (opts.expired) return new Response('', { status: 302, headers: { location: '/admin/login' } });
     const key = url.pathname.replace(/^\/admin\//, '').replace(/\.json$/, '');
     const page = Number(url.searchParams.get('page') || 1), all = data[key] ?? [];
@@ -219,6 +219,9 @@ test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, l
   assert.equal((await call('/admin/sapo-pull', mgr, 'POST', {})).status, 409, 'chưa kết nối');
   assert.equal((await call('/admin/sapo-session', emp, 'POST', { cookie: '_admin_session_id=abc' })).status, 403);
   assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: 'khong-co-phien=1' })).status, 400);
+  // Sapo đổi cookie phiên sang `sapo-admin` (10/2026): vẫn nhận; tên gần giống thì không.
+  assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: 'x-sapo-admin=1; lang=vi' })).status, 400);
+  assert.equal((await call('/admin/sapo-session', mgr, 'POST', { cookie: 'lang=vi; sapo-admin=CfDJ8gia; _ga=1' })).status, 200, 'cookie phiên dạng mới');
   const saved = await call('/admin/sapo-session', mgr, 'POST', { cookie: 'Cookie: _admin_session_id=abc; other=1' });
   assert.equal(saved.status, 200, JSON.stringify(saved.data));
   const [row] = await db.select().from(sapoRuntimeSessions);

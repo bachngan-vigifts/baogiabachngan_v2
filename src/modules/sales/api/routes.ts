@@ -11,7 +11,7 @@ import { employees } from '../../staff/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
-import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines } from '../schema.ts';
+import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines, packingSlips } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
@@ -347,6 +347,34 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       url: `/index.html${ref.link}`, actorId: viewer(c).id, data: { orderId: order.id } });
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
       title: status === 'confirmed' ? `${what} đã được xác nhận` : `${what} đã bị huỷ`, body: `${ref.no} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
+    return json({ ok: true });
+  }, 'business');
+
+  /**
+   * XOÁ HẲN đơn hàng / HĐKT ĐÃ HUỶ (chỉ Manager) – dọn danh sách. Không xoá được nếu đã thu tiền hoặc đã giao hàng
+   * (chứng từ có tiền / hàng phải giữ). Xoá kèm dòng hàng, HĐKT, lịch thanh toán, chuyến giao, phiếu đóng gói, tiến trình.
+   * Nhật ký thay đổi vẫn giữ (ai huỷ / xoá, lúc nào); báo giá gốc lập đơn / HĐKT lại được. Đơn nháp trên Sapo (nếu có) không bị xoá.
+   */
+  router.delete('/orders/:id', async c => {
+    if (viewer(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager được xoá đơn hàng / HĐKT.');
+    const order = await loadOrder(c, c.params.id!);
+    if (order.status !== 'cancelled') throw new AppError(409, 'Chỉ xoá được đơn hàng / HĐKT đã huỷ. Huỷ trước rồi xoá.', 'ORDER_NOT_CANCELLED');
+    await c.env.db.transaction(async tx => {
+      const [[paid], lines, [shipped]] = await Promise.all([
+        tx.select({ n: count() }).from(customerPayments).where(eq(customerPayments.orderId, order.id)),
+        tx.select({ deliveredQty: salesOrderLines.deliveredQty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id)),
+        tx.select({ n: count() }).from(deliveries).where(and(eq(deliveries.orderId, order.id), eq(deliveries.status, 'delivered'))),
+      ]);
+      if (Number(paid?.n) > 0 || Number(shipped?.n) > 0 || lines.some(l => l.deliveredQty > 0))
+        throw new AppError(409, 'Đơn / HĐKT đã thu tiền hoặc đã giao hàng, không xoá được (chứng từ cần giữ lại).', 'ORDER_HAS_HISTORY');
+      // Thứ tự theo khoá ngoại: chứng từ con trước, đơn sau (dòng giao / dòng đóng gói / ảnh tự xoá theo phiếu).
+      await tx.delete(packingSlips).where(eq(packingSlips.orderId, order.id));
+      await tx.delete(deliveries).where(eq(deliveries.orderId, order.id));
+      await tx.delete(paymentSchedules).where(eq(paymentSchedules.orderId, order.id));
+      await tx.delete(salesContracts).where(eq(salesContracts.orderId, order.id));
+      await tx.delete(salesOrders).where(eq(salesOrders.id, order.id));
+    });
+    await removeMovements(c.env.db, `sale:${order.id}:`);
     return json({ ok: true });
   }, 'business');
 

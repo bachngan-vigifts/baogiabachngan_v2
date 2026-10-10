@@ -1,5 +1,5 @@
 import { AppError } from '../../../core/errors.ts';
-import { mergeSetCookies } from '../domain/sapo-session.ts';
+import { hasSapoSessionCookie, mergeSetCookies } from '../domain/sapo-session.ts';
 
 /** Cửa hàng Sapo của Bách Ngân (đổi bằng env SAPO_ADMIN_BASE nếu cần). */
 export const DEFAULT_SAPO_BASE = 'https://bachngankiengiang.mysapogo.com/admin';
@@ -42,7 +42,7 @@ export function sapoClient(o: SapoClientOptions) {
     let parsed: unknown;
     try { parsed = JSON.parse(text); } catch { throw /<html|đăng nhập|login/i.test(text.slice(0, 2000)) ? expired() : new AppError(502, 'Sapo trả dữ liệu không hợp lệ.'); }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new AppError(502, 'Sapo trả dữ liệu không hợp lệ.');
-    if (/(^|;\s*)_admin_session_id=/.test(nextCookie)) cookie = nextCookie;
+    if (hasSapoSessionCookie(nextCookie)) cookie = nextCookie;
     return parsed as Record<string, any>;
   }
   const get = (path: string) => request('GET', path);

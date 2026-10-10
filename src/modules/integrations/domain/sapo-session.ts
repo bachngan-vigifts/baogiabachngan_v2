@@ -28,13 +28,20 @@ export async function decryptCookie(secret: string, payload: string): Promise<st
 }
 
 /**
+ * Cookie phiên admin Sapo: `_admin_session_id` (bản cũ) hoặc `sapo-admin` (Sapo đổi sang từ 10/2026).
+ * Phải có ít nhất một trong hai thì mới là phiên đăng nhập.
+ */
+export const SAPO_SESSION_COOKIE_RE = /(^|;\s*)(_admin_session_id|sapo-admin)=[^;\s]+/;
+export const hasSapoSessionCookie = (cookie: string) => SAPO_SESSION_COOKIE_RE.test(cookie);
+
+/**
  * Chuẩn hoá cookie Manager dán vào: nhận cả dòng `Cookie: a=1; b=2` lẫn chuỗi `a=1; b=2`.
- * Bắt buộc có `_admin_session_id` (phiên admin Sapo); trả '' nếu không hợp lệ.
+ * Bắt buộc có cookie phiên admin Sapo (`SAPO_SESSION_COOKIE_RE`); trả '' nếu không hợp lệ.
  */
 export function cleanCookie(raw: unknown): string {
   const value = String(raw ?? '').trim().replace(/^cookie:\s*/i, '').trim();
   if (!value || value.length > 30_000 || /[\r\n]/.test(value)) return '';
-  return /(^|;\s*)_admin_session_id=[^;\s]+/.test(value) ? value : '';
+  return hasSapoSessionCookie(value) ? value : '';
 }
 
 /**
