@@ -6,6 +6,7 @@ import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { products } from '../../catalog/schema.ts';
+import { customers } from '../../customers/schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
 import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, salesContracts, shippingCarriers } from '../schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -209,13 +210,15 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [slip.createdBy, slip.sentBy, slip.packedBy].filter((x): x is string => !!x))),
       c.env.db.select({ contractNo: salesContracts.contractNo, legalEntity: salesContracts.legalEntity }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1),
     ]);
+    const [cust] = order.customerId ? await c.env.db.select({ code: customers.customerCode }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
     const name = (id: string | null) => (id ? people.find(p => p.id === id)?.name ?? '' : '');
     const manage = await canManageOrder(c, order.id);
     return json({
       slip: { ...slip, sourceLabel: PACKING_SOURCE_LABEL[slip.source], createdByName: name(slip.createdBy), sentByName: name(slip.sentBy), packedByName: name(slip.packedBy) },
       lines: lines.map(l => ({ ...l, suggestion: packingSuggestion(l.qty, l.unit, { perCarton: l.perCarton, cartonWeight: l.cartonWeight }).text })), photos,
       // Kho không xem được đơn: chỉ đưa thông tin cần để đóng & giao.
-      order: { id: order.id, orderNo: order.orderNo, contractNo: contracts[0]?.contractNo ?? '', legalEntity: contracts[0]?.legalEntity ?? null, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, address: order.address, expectedDeliveryDate: order.expectedDeliveryDate },
+      order: { id: order.id, orderNo: order.orderNo, contractNo: contracts[0]?.contractNo ?? '', legalEntity: contracts[0]?.legalEntity ?? null, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, email: order.email, address: order.address,
+        taxCode: order.taxCode, customerCode: cust?.code ?? '', note: order.note, expectedDeliveryDate: order.expectedDeliveryDate },
       canOpenOrder: manage, canSend: manage && slip.status === 'draft', canCancel: manage && (slip.status === 'draft' || slip.status === 'sent'), canConfirm: canConfirm(m, slip.status),
     });
   }, 'business');

@@ -599,13 +599,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   // ================= LỊCH GIAO HÀNG =================
   router.get('/deliveries', async c => {
     const from = c.url.searchParams.get('from'), to = c.url.searchParams.get('to'), status = c.url.searchParams.get('status') || '';
-    const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName })
+    const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
+      contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
       .where(and(deliveryScope(c), isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
         status ? eq(deliveries.status, status as never) : undefined))
       .orderBy(asc(deliveries.plannedDate), asc(deliveries.timeSlot)).limit(500);
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
-    return json({ deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName })) });
+    // Liên hệ / địa chỉ của khách trên đơn: kho (không xem được danh bạ khách) vẫn có đủ thông tin để liên hệ giao hàng.
+    return json({ deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
+      customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress })) });
   }, 'business');
 
   /** Lên lịch giao: số lượng mỗi dòng không vượt phần còn lại (đã trừ hàng đã giao và các chuyến đang chờ giao). */
