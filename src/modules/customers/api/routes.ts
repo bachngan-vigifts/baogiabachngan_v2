@@ -5,7 +5,7 @@ import { AppError } from '../../../core/errors.ts';
 import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { customerContacts, customers, customerStaff } from '../schema.ts';
+import { customerBrandDiscounts, customerContacts, customers, customerStaff } from '../schema.ts';
 import { CUSTOMER_LIMITS } from '../domain/customer-config.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -58,18 +58,28 @@ async function loadCustomer(db: Db, id: string) {
   return row;
 }
 
-/** Hồ sơ khách: thông tin, người phụ trách, người được chia sẻ, người liên hệ, quyền của người xem. */
+/** Chiết khấu theo thương hiệu (%) của khách – áp dụng khi thêm sản phẩm vào báo giá. Chưa đặt = null. */
+export const BRAND_DISCOUNT_KEYS = ['minhLong', 'lys', 'lock'] as const;
+export type BrandDiscounts = Record<typeof BRAND_DISCOUNT_KEYS[number], number | null>;
+export async function brandDiscountsOf(db: Db, customerId: string): Promise<BrandDiscounts> {
+  const rows = await db.select({ key: customerBrandDiscounts.brandKey, percent: customerBrandDiscounts.percent }).from(customerBrandDiscounts)
+    .where(eq(customerBrandDiscounts.customerId, customerId));
+  return Object.fromEntries(BRAND_DISCOUNT_KEYS.map(k => [k, rows.find(r => r.key === k)?.percent ?? null])) as BrandDiscounts;
+}
+
+/** Hồ sơ khách: thông tin, người phụ trách, người được chia sẻ, người liên hệ, chiết khấu thương hiệu, quyền của người xem. */
 export async function customerProfile(db: Db, id: string, who: Viewer) {
-  const [customer, staff, contacts, access] = await Promise.all([
+  const [customer, staff, contacts, access, discounts] = await Promise.all([
     loadCustomer(db, id),
     customerStaffOf(db, [id]),
     db.select({ id: customerContacts.id, name: customerContacts.name, title: customerContacts.title, phone: customerContacts.phone, email: customerContacts.email,
       note: customerContacts.note, isPrimary: customerContacts.isPrimary, updatedAt: customerContacts.updatedAt })
       .from(customerContacts).where(eq(customerContacts.customerId, id)).orderBy(desc(customerContacts.isPrimary), asc(customerContacts.createdAt)),
     customerAccess(db, id, who),
+    brandDiscountsOf(db, id),
   ]);
   const { search: _s, sourceVersion: _v, ...info } = customer;
-  return { customer: { ...info, fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, access };
+  return { customer: { ...info, fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access };
 }
 
 export function registerCustomerRoutes(router: Router<StaffEnv>) {
@@ -197,6 +207,32 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'Email người liên hệ không hợp lệ.');
     return { name, title: t('title', CUSTOMER_LIMITS.contactTitle), phone: t('phone', 40), email, note: t('note', CUSTOMER_LIMITS.contactNote), isPrimary: body.isPrimary === true };
   };
+  /** Chiết khấu thương hiệu của khách (để báo giá điền sẵn CK khi thêm sản phẩm). */
+  router.get('/customers/:id/discounts', async c => {
+    await loadCustomer(c.env.db, c.params.id!);
+    return json({ discounts: await brandDiscountsOf(c.env.db, c.params.id!) });
+  }, 'business');
+  /** Sửa chiết khấu thương hiệu (%): `{ minhLong, lys, lock }`, mỗi ô 0–100 hoặc trống (= chưa thiết lập). Người phụ trách / Manager. */
+  router.put('/customers/:id/discounts', async c => {
+    const db = c.env.db, id = c.params.id!, body = await readJson(c.req, 2_000);
+    await loadCustomer(db, id); await requireEdit(db, id, viewer(c));
+    const values = BRAND_DISCOUNT_KEYS.map(k => {
+      const v = body[k];
+      if (v === undefined) return [k, undefined] as const;
+      if (v === null || v === '') return [k, null] as const;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 100) throw new AppError(400, 'Chiết khấu phải từ 0 đến 100%.');
+      return [k, Math.round(n * 100) / 100] as const;
+    });
+    await db.transaction(async tx => {
+      for (const [k, v] of values) {
+        if (v === undefined) continue;
+        await tx.delete(customerBrandDiscounts).where(and(eq(customerBrandDiscounts.customerId, id), eq(customerBrandDiscounts.brandKey, k)));
+        if (v !== null) await tx.insert(customerBrandDiscounts).values({ customerId: id, brandKey: k, percent: v });
+      }
+    });
+    return json({ discounts: await brandDiscountsOf(db, id) });
+  }, 'business');
   router.post('/customers/:id/contacts', async c => {
     const db = c.env.db, id = c.params.id!, f = contactFields(await readJson(c.req, 8_000)), now = nowIso();
     await loadCustomer(db, id); await requireEdit(db, id, viewer(c));

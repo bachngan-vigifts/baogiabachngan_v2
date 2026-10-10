@@ -8,6 +8,9 @@ import { careResult, careSummary, careType, followUpCell } from './care.js';
  *               ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS, onEdit(customer), onQuote(customer), onAccounts(customer),
  *               onCare(customer, activity | null, onSaved) – ghi / sửa lần chăm sóc (trial-ui/care.js) }
  */
+const BRANDS = [['minhLong', 'Minh Long'], ['lys', 'Lys'], ['lock', 'Lock']];
+const fmtPct = n => Number(n).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+
 export function initCustomerDetail(deps) {
   const { api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS } = deps;
   const root = document.getElementById('customer-detail');
@@ -111,6 +114,9 @@ export function initCustomerDetail(deps) {
           <dt>Được chia sẻ</dt><dd>${d.shared.length ? d.shared.map(p => `<span class="cd-person shared">${esc(p.name)}</span>`).join(' ') : '<span class="muted">Chưa chia sẻ</span>'}</dd></dl>
           ${a.canSeeAll ? '' : '<p class="muted small">Bạn không phụ trách khách này: chỉ thấy báo giá / đơn do bạn phụ trách hoặc tạo.</p>'}
         </div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Chiết khấu theo thương hiệu (%)</h2>${a.canEdit ? '<button class="btn secondary small" data-act="brand-discounts">Sửa</button>' : ''}</div>
+          <dl class="kv cd-discounts">${BRANDS.map(([k, label]) => `<dt>CK ${label}</dt><dd>${d.discounts?.[k] === null || d.discounts?.[k] === undefined ? '<span class="muted">Chưa thiết lập</span>' : `<b>${fmtPct(d.discounts[k])}%</b>`}</dd>`).join('')}</dl>
+          <p class="muted small">Áp dụng khi thêm sản phẩm vào báo giá. Có thể sửa CK trên từng dòng.</p></div>
         <div class="card"><div class="card-title-row"><h2 class="card-title">Người liên hệ <small class="muted">(${d.contacts.length})</small></h2>${a.canEdit ? '<button class="btn secondary small" data-act="contact">＋ Thêm</button>' : ''}</div>
           ${contacts ? `<ul class="plain-list cd-contacts">${contacts}</ul>` : '<p class="muted cd-empty">Chưa có người liên hệ bổ sung (kế toán, mua hàng, người nhận hàng…).</p>'}</div>
       </div>
@@ -147,6 +153,26 @@ export function initCustomerDetail(deps) {
     dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', () => dlg.close()));
     dlg.addEventListener('close', () => dlg.remove());
     return dlg;
+  }
+  /** Sửa chiết khấu theo thương hiệu (%): ô trống = chưa thiết lập. */
+  function discountDialog() {
+    const cur = st.d.discounts || {};
+    const dlg = dialog('Chiết khấu theo thương hiệu (%)', `<div class="form-grid cols-3">${BRANDS.map(([k, label]) =>
+      `<label>CK ${label}<input name="${k}" inputmode="decimal" maxlength="6" placeholder="Chưa thiết lập" value="${cur[k] === null || cur[k] === undefined ? '' : esc(fmtPct(cur[k]))}"></label>`).join('')}</div>
+      <p class="muted small">Áp dụng khi thêm sản phẩm vào báo giá. Có thể sửa CK trên từng dòng.</p>`, 'Lưu');
+    dlg.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = e.target.elements, body = {};
+      for (const [k, label] of BRANDS) {
+        const t = f[k].value.trim().replace(',', '.');
+        if (t === '') { body[k] = null; continue; }
+        const n = Number(t);
+        if (!Number.isFinite(n) || n < 0 || n > 100) { dlg.querySelector('[data-err]').textContent = `CK ${label} phải từ 0 đến 100%.`; return; }
+        body[k] = n;
+      }
+      try { await api(`/customers/${encodeURIComponent(st.id)}/discounts`, 'PUT', body); dlg.close(); toast('Đã lưu chiết khấu.'); reload(); }
+      catch (ex) { dlg.querySelector('[data-err]').textContent = ex.message; }
+    });
   }
   function contactDialog(x) {
     const v = k => esc(x?.[k] || '');
@@ -195,6 +221,7 @@ export function initCustomerDetail(deps) {
     const tabBtn = t.closest('[data-tab]'); if (tabBtn) { st.tab = tabBtn.dataset.tab; render(); return; }
     const act = t.closest('[data-act]')?.dataset.act, c = st.d?.customer;
     if (act === 'edit') return deps.onEdit(c);
+    if (act === 'brand-discounts') return discountDialog();
     if (act === 'quote') return deps.onQuote(c);
     if (act === 'approve' || act === 'reject') return deps.onReview(c.id, act === 'approve');
     if (act === 'accounts') return deps.onAccounts(c);

@@ -65,6 +65,7 @@ textarea { resize: vertical; }
 .form-grid { display: grid; gap: 14px; }
 .form-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.form-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .span-2 { grid-column: span 2; }
 .field-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
 .field-label { font-size: .82rem; font-weight: 600; color: #3a4860; }
@@ -1002,7 +1003,7 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 #customer-list tr.clickable { cursor: pointer; } #customer-list td.first a.strong { color: var(--ink); text-decoration: none; } #customer-list td.first a.strong:hover { text-decoration: underline; }
 .cd-loading { padding: 40px 0; text-align: center; }
 .cd-stats { margin-top: 4px; }
-.cd-grid { display: grid; grid-template-columns: 1.1fr 1fr 1.2fr; gap: 16px; margin-bottom: 16px; }
+.cd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .cd-grid .card { margin: 0; }
 .cd-person { display: inline-block; background: var(--blue-50); color: var(--blue); border-radius: 14px; padding: 2px 10px; font-size: .84rem; font-weight: 600; margin: 0 4px 4px 0; }
 .cd-person.shared { background: var(--green-50); color: var(--green); }
@@ -1017,7 +1018,7 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .cd-people { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto; display: grid; gap: 2px; }
 .cd-people label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; } .cd-people label:hover { background: var(--surface-2); }
 label.check { display: flex; align-items: center; gap: 8px; }
-@media (max-width: 1100px) { .cd-grid { grid-template-columns: 1fr 1fr; } .cd-grid .card:last-child { grid-column: span 2; } }
+
 @media (max-width: 720px) { .cd-grid { grid-template-columns: 1fr; } .cd-grid .card:last-child { grid-column: auto; }
 }
 

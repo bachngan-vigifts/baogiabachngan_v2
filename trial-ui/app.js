@@ -20,7 +20,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
-import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
+import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -679,7 +679,7 @@ function fillEditor(id, revision, data, meta = {}) {
   editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false) } : null;
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
-  editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : '';
+  editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
   editor.rows = (data.rows || []).map(r => ({ ...r, id: r.id || uid(), discountType: r.discountType || 'percent' }));
   qf.reset();
   for (const name of ['quoteNo', 'date', 'owner', 'ownerPhone', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'notes'])
@@ -708,7 +708,7 @@ qf.addEventListener('input', e => {
   if (e.target.name === 'deliveryDate') syncDeliveryNotes();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
   if (['customer', 'phone'].includes(e.target.name)) {
-    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) editor.customerId = '';
+    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) { editor.customerId = ''; editor.brandDiscounts = null; }
     updateContactsButton();
   }
   if (e.target.name === 'quoteNo') $('#editor-title').textContent = e.target.value || 'Báo giá';
@@ -1339,7 +1339,7 @@ function showSuggest() {
 }
 function hideSuggest() { suggest.hidden = true; searchInput.setAttribute('aria-expanded', 'false'); }
 function pickCustomer(c) {
-  editor.customerId = c.id; editor.customerName = c.name;
+  editor.customerId = c.id; editor.customerName = c.name; loadBrandDiscounts();
   field('customer').value = c.name; field('contact').value = c.contact || ''; field('phone').value = c.phone || '';
   field('email').value = c.email || ''; field('customerTaxCode').value = c.taxCode || ''; field('customerAddress').value = c.address || '';
   editor.base.customerCode = c.customerCode || '';
@@ -1773,6 +1773,13 @@ function renderSelection() {
   $('#product-selection').hidden = n === 0;
   $('#product-selection-text').textContent = `Đã chọn ${n} sản phẩm`;
 }
+/** Chiết khấu theo thương hiệu của khách đang chọn trên báo giá (trang chi tiết khách hàng) – điền sẵn CK khi thêm sản phẩm. */
+async function loadBrandDiscounts() {
+  const id = editor.customerId;
+  editor.brandDiscounts = null;
+  if (!id) return;
+  try { const { discounts } = await api(`/customers/${encodeURIComponent(id)}/discounts`); if (editor.customerId === id) editor.brandDiscounts = discounts; } catch { /* không có CK riêng */ }
+}
 /**
  * Dòng báo giá từ sản phẩm trong danh mục – port `catalogChoice`/`addProduct` của bản cũ:
  * VAT dòng = thuế đầu ra (không chịu thuế → 0%); bảng giá có chữ "VAT" hoặc sản phẩm "Giá đã bao gồm thuế"
@@ -1787,6 +1794,9 @@ function rowFromProduct(p) {
   const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
   const price = netPrice(raw, tax, included);
   const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '', packagingDescription: PACKAGING_DEFAULT };
+  // CK theo thương hiệu của khách (Minh Long / Lys / Lock) – thay CK mặc định của dòng khi khách có thiết lập.
+  const brandDisc = editor.brandDiscounts ? customerDiscount(row.brand, editor.brandDiscounts, row.discountType === 'amount' ? 'amount' : 'percent', price) : 0;
+  if (brandDisc > 0) row.discount = row.discountType === 'amount' ? Math.round(brandDisc) : brandDisc;
   if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; row.costPrice = purchasePrice(price, d); } }
   if (savableImage(p.imageUrl)) row.image = p.imageUrl;
   for (const k of ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) if (Number(p[k]) > 0) row[k] = Number(p[k]);
