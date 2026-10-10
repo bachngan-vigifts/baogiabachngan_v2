@@ -7,7 +7,16 @@ const PAGE = 250;
 
 export interface SapoClientOptions { cookie: string; base?: string; fetch?: typeof fetch; timeoutMs?: number }
 
-const expired = () => new AppError(503, 'Phiên Sapo đã hết hạn. Manager cần đăng nhập lại Sapo trên trang Nhân viên.', 'SAPO_SESSION_EXPIRED');
+/**
+ * Sapo không nhận phiên. `why` (mã HTTP / nơi chuyển hướng, không chứa cookie) hiện kèm thông báo và ghi log
+ * để phân biệt "phiên hết hạn thật" với "Sapo đổi cách đăng nhập" khi chẩn đoán.
+ */
+const expired = (why = '') => {
+  if (why) console.warn('sapo session rejected', why);
+  return new AppError(503, `Phiên Sapo đã hết hạn hoặc Sapo không nhận phiên này${why ? ` (${why})` : ''}. Manager cần đăng nhập lại Sapo rồi kết nối lại.`, 'SAPO_SESSION_EXPIRED');
+};
+/** Đường dẫn chuyển hướng, bỏ phần query (có thể chứa mã). */
+const pathOf = (location: string) => { try { return new URL(location, 'https://x').pathname; } catch { return '?'; } };
 
 /**
  * Gọi Sapo admin bằng cookie phiên của Manager. Đồng bộ chỉ ĐỌC (`get` / `list`); `send` (POST / PUT) chỉ dùng cho
@@ -35,12 +44,13 @@ export function sapoClient(o: SapoClientOptions) {
     const fresh = res.headers.getSetCookie?.() ?? [];
     const nextCookie = fresh.length ? mergeSetCookies(cookie, fresh) : cookie;
     const location = res.headers.get('location') || '';
-    if (res.status === 401 || (res.status >= 300 && res.status < 400) || /\/login/i.test(location)) throw expired();
+    if (res.status === 401) throw expired(`${method} ${path.split('?')[0]} → 401`);
+    if ((res.status >= 300 && res.status < 400) || /\/login/i.test(location)) throw expired(`${method} ${path.split('?')[0]} → ${res.status} ${pathOf(location)}`);
     if (res.status === 403) throw new AppError(403, method === 'GET' ? 'Tài khoản Sapo đang kết nối chưa đủ quyền xem dữ liệu này.'
       : 'Tài khoản Sapo đang kết nối chưa đủ quyền tạo đơn / khách / sản phẩm. Manager cần kết nối bằng tài khoản đủ quyền.', 'SAPO_PERMISSION_DENIED');
     if (!res.ok) throw new AppError(502, `Sapo báo lỗi (${res.status}).`, 'SAPO_HTTP_' + res.status);
     let parsed: unknown;
-    try { parsed = JSON.parse(text); } catch { throw /<html|đăng nhập|login/i.test(text.slice(0, 2000)) ? expired() : new AppError(502, 'Sapo trả dữ liệu không hợp lệ.'); }
+    try { parsed = JSON.parse(text); } catch { throw /<html|đăng nhập|login/i.test(text.slice(0, 2000)) ? expired(`${method} ${path.split('?')[0]} → trang HTML`) : new AppError(502, 'Sapo trả dữ liệu không hợp lệ.'); }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new AppError(502, 'Sapo trả dữ liệu không hợp lệ.');
     if (hasSapoSessionCookie(nextCookie)) cookie = nextCookie;
     return parsed as Record<string, any>;
