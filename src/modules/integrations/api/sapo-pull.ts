@@ -247,7 +247,7 @@ export function registerSapoPullRoutes(router: Router<StaffEnv>) {
   router.post('/admin/sapo-session', async c => {
     requireKey(c);
     const cookie = cleanCookie((await readJson(c.req, 40_000)).cookie);
-    if (!cookie) throw new AppError(400, 'Phiên Sapo không hợp lệ: cần chuỗi cookie có _admin_session_id.');
+    if (!cookie) throw new AppError(400, 'Phiên Sapo không hợp lệ: cần chuỗi cookie có sapo-admin (hoặc _admin_session_id).');
     await client(c, cookie).get('/accounts.json?limit=1');
     const now = new Date().toISOString(), by = (c.state.session as SessionState).member.id, enc = await encryptCookie(c.env.sapoSyncToken!, cookie);
     await c.env.db.insert(sapoRuntimeSessions).values({ id: SESSION_ID, encryptedCookie: enc, updatedAt: now, updatedBy: by })

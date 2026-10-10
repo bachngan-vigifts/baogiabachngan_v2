@@ -418,7 +418,7 @@ $('#sapo-form').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = $('#save-sapo'), err = $('#sapo-error'), cookie = String(new FormData(e.target).get('cookie') || '').trim();
   err.textContent = '';
-  if (!/_admin_session_id=/.test(cookie)) { err.textContent = 'Chuỗi cookie cần có _admin_session_id. Kiểm tra lại bước 3.'; return; }
+  if (!/(^|;\s*)(_admin_session_id|sapo-admin)=/.test(cookie)) { err.textContent = 'Chuỗi cookie cần có sapo-admin (hoặc _admin_session_id). Kiểm tra lại bước 3.'; return; }
   btn.disabled = true;
   try { await api('/admin/sapo-session', 'POST', { cookie }); $('#sapo-dialog').close(); toast('Đã kết nối Sapo.'); await loadSapoSync(); }
   catch (ex) { err.textContent = ex.message; }
