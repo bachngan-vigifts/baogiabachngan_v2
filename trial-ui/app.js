@@ -3173,9 +3173,9 @@ $('#contract-form').addEventListener('submit', async e => {
   const body = { quoteId: target.quoteId, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
     signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
   try {
-    // Lập HĐKT = đẩy đơn sang Sapo cùng lúc (chọn kho); Sapo lỗi → không lập HĐKT. Đơn đã có trên Sapo thì lập luôn.
+    // Lập HĐKT: chọn có tạo đơn trên Sapo (chọn kho; Sapo lỗi → không lập HĐKT) hay chỉ lập trên web.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
-      run: loc => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}) }) });
+      run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }) });
     if (!r) return;
     $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo);
     target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
@@ -3256,8 +3256,8 @@ $('#download-menu').addEventListener('click', () => closeDownloadMenu());
  */
 async function createOrderForQuote(quoteId, quoteNo) {
   let existed = null;
-  const post = async loc => {
-    try { return await api('/orders', 'POST', { quoteId, ...(loc ? { sapoLocationId: loc } : {}) }); }
+  const post = async (loc, push) => {
+    try { return await api('/orders', 'POST', { quoteId, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }); }
     catch (ex) {
       if (ex.code !== 'ORDER_EXISTS') throw ex;
       const found = (await api('/orders?q=' + encodeURIComponent(quoteNo))).orders.find(o => o.quoteId === quoteId && o.status !== 'cancelled');

@@ -153,6 +153,12 @@ test('chưa kết nối Sapo / dòng thiếu SKU / không có quyền xem báo g
   assert.equal(pre.connected, false); assert.match(pre.message, /Chưa kết nối Sapo/);
   assert.equal((await off.call('/orders', off.emp, 'POST', { quoteId: qid, sapoLocationId: 7 })).status, 409);
   assert.equal(await off.orderCount(), 0);
+  // Chọn "Không tạo đơn trên Sapo": sinh đơn / lập HĐKT trên web dù chưa kết nối Sapo, không cần kho.
+  const plain = await off.call('/orders', off.emp, 'POST', { quoteId: qid, pushSapo: false });
+  assert.equal(plain.status, 201, JSON.stringify(plain.data)); assert.equal(plain.data.sapo, null);
+  assert.equal((await off.call(`/orders/${plain.data.id}`, off.emp)).data.order.sapoOrderId ?? null, null);
+  const k = await off.call('/contracts', off.emp, 'POST', { quoteId: await off.makeQuote('B2B_BG20261009_002'), legalEntity: 'BN', depositRate: 30, paymentDays: 15, pushSapo: false });
+  assert.equal(k.status, 201, JSON.stringify(k.data)); assert.equal(k.data.sapo, null);
 
   const s = await setup();
   const noSku = await s.makeQuote('B2B_BG20261009_005', [{ name: 'Hàng tự do', sku: '', qty: 1, price: 1000 }]);
