@@ -26,7 +26,34 @@ const pathOf = (location: string) => { try { return new URL(location, 'https://x
 export function sapoClient(o: SapoClientOptions) {
   let cookie = o.cookie;
   const base = (o.base || DEFAULT_SAPO_BASE).replace(/\/+$/, ''), origin = base.replace(/\/admin$/, ''), doFetch = o.fetch ?? fetch;
-  async function request(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, extra: Record<string, string> = {}): Promise<Record<string, any>> {
+  /**
+   * Sapo (từ 10/2026) đăng nhập bằng cookie `sapo-admin`; cookie phiên `_admin_session_id` (API .json cần) chỉ được cấp
+   * qua Set-Cookie ở lần mở trang admin đầu tiên. Cookie Manager dán chưa có `_admin_session_id` → mở trang admin
+   * (theo tối đa 3 lần chuyển hướng cùng tên miền, không vào trang đăng nhập) để lấy, rồi mới gọi API.
+   */
+  let bootstrapped = false;
+  async function ensureSession() {
+    if (bootstrapped || /(^|;\s*)_admin_session_id=/.test(cookie)) return;
+    bootstrapped = true;
+    let url = base;
+    for (let hop = 0; hop < 4; hop++) {
+      let res: Response;
+      try {
+        res = await doFetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(o.timeoutMs ?? 20_000),
+          headers: { cookie, accept: 'text/html,application/json', referer: base, 'accept-language': 'vi' } });
+      } catch { return; }
+      await res.text().catch(() => '');
+      const fresh = res.headers.getSetCookie?.() ?? [];
+      if (fresh.length) { const next = mergeSetCookies(cookie, fresh); if (hasSapoSessionCookie(next)) cookie = next; }
+      const location = res.headers.get('location') || '';
+      if (/(^|;\s*)_admin_session_id=/.test(cookie) || res.status < 300 || res.status >= 400 || !location || /\/login/i.test(location)) return;
+      const nextUrl = new URL(location, url);
+      if (nextUrl.origin !== origin) return;
+      url = nextUrl.href;
+    }
+  }
+  async function request(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, extra: Record<string, string> = {}, retried = false): Promise<Record<string, any>> {
+    await ensureSession();
     let res: Response;
     try {
       res = await doFetch(base + path, {
@@ -44,6 +71,11 @@ export function sapoClient(o: SapoClientOptions) {
     const fresh = res.headers.getSetCookie?.() ?? [];
     const nextCookie = fresh.length ? mergeSetCookies(cookie, fresh) : cookie;
     const location = res.headers.get('location') || '';
+    // Sapo cấp / đổi cookie phiên ngay trong câu trả lời từ chối → dùng cookie mới thử lại một lần.
+    if (!retried && (res.status === 401 || (res.status >= 300 && res.status < 400)) && nextCookie !== cookie && /(^|;\s*)_admin_session_id=/.test(nextCookie)) {
+      cookie = nextCookie;
+      return request(method, path, body, extra, true);
+    }
     if (res.status === 401) throw expired(`${method} ${path.split('?')[0]} → 401`);
     if ((res.status >= 300 && res.status < 400) || /\/login/i.test(location)) throw expired(`${method} ${path.split('?')[0]} → ${res.status} ${pathOf(location)}`);
     if (res.status === 403) throw new AppError(403, method === 'GET' ? 'Tài khoản Sapo đang kết nối chưa đủ quyền xem dữ liệu này.'

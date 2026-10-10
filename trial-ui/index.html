@@ -618,8 +618,8 @@
       <p class="muted small">App dùng phiên đăng nhập Sapo của Manager để <b>chỉ đọc</b> nhân viên, khách hàng, sản phẩm mới (30 phút/lần và khi bấm "Đồng bộ ngay"). Phiên được mã hoá, không ai xem lại được.</p>
       <ol class="muted small steps">
         <li>Đăng nhập <b>bachngankiengiang.mysapogo.com/admin</b> bằng Chrome.</li>
-        <li>Nhấn <b>F12</b> → thẻ <b>Network</b> → nhấn <b>F5</b> → bấm một dòng bất kỳ có chữ <b>admin</b>.</li>
-        <li>Ở mục <b>Request Headers</b>, chuột phải dòng <b>cookie</b> → <b>Copy value</b>, dán vào ô dưới.</li>
+        <li>Nhấn <b>F12</b> → thẻ <b>Network</b> → nhấn <b>F5</b> → gõ <b>.json</b> vào ô lọc → bấm một dòng ở <b>dưới cùng</b> danh sách.</li>
+        <li>Ở mục <b>Request Headers</b> (không phải Response Headers), chuột phải dòng <b>cookie</b> → <b>Copy value</b>, dán vào ô dưới. Chỉ dán vào đây – không gửi cookie qua chat / tin nhắn.</li>
       </ol>
       <label>Cookie phiên Sapo<textarea name="cookie" rows="4" required maxlength="30000" autocomplete="off" spellcheck="false" placeholder="…; sapo-admin=…; …"></textarea></label>
       <p class="error" id="sapo-error" role="alert"></p>
