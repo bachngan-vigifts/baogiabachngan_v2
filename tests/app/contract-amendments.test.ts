@@ -84,7 +84,7 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   };
   runInNewContext(stripTypeScriptTypes(routeSource) + '\nthis.register = registerSalesRoutes;', ctx);
   const router: any = {};
-  for (const method of ['get', 'post', 'put']) router[method] = (path: string, fn: any) => handlers.set(method + path, fn);
+  for (const method of ['get', 'post', 'put', 'delete']) router[method] = (path: string, fn: any) => handlers.set(method + path, fn);
   ctx.register(router);
   const call = () => handlers.get(path)({ req: {}, params: { id: 'k' }, env: { db }, state: { session: { member: { id: 'm', role } } } });
   return { call, updates, inserts };

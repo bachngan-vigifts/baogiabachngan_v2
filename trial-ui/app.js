@@ -2650,6 +2650,7 @@ async function openOrder(id) {
     + (o.status === 'draft' ? (isManager() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
       : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
     + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
+    + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (o.sapoOrderUrl ? `<a class="btn secondary" href="${esc(o.sapoOrderUrl)}" target="_blank" rel="noopener noreferrer" title="Mở đơn trên Sapo">Đơn Sapo ${esc(o.sapoOrderCode || '')} ↗</a>`
       : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
@@ -3145,6 +3146,11 @@ document.addEventListener('click', async e => {
     const w = isContractDoc() ? 'HĐKT' : 'đơn';
     if (!await confirmBox(`Huỷ ${w} ${docNo()}? ${isContractDoc() ? 'HĐKT' : 'Đơn'} huỷ không còn tính công nợ; báo giá có thể lập lại.`, { title: 'Huỷ ' + w, ok: 'Huỷ ' + w, danger: true })) return;
     try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
+  }
+  if (e.target.closest('#order-delete')) {
+    const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';
+    if (!await confirmBox(`Xoá hẳn ${w} ${docNo()} đã huỷ? Không khôi phục được (nhật ký thay đổi vẫn giữ lại). Đơn nháp trên Sapo (nếu có) cần xoá riêng trên Sapo.`, { title: 'Xoá ' + w, ok: 'Xoá ' + w, danger: true })) return;
+    try { await api(`/orders/${encodeURIComponent(sales.order.id)}`, 'DELETE'); toast('Đã xoá ' + w + '.'); go(k ? '#/contracts' : '#/orders'); } catch (ex) { toast(ex.message, 'err'); }
   }
   const sign = e.target.closest('[data-contract-sign]');
   if (sign) { try { await api('/contracts/' + encodeURIComponent(sign.dataset.contractSign), 'PUT', { status: 'signed', signedDate: todayIso() }); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); } }
