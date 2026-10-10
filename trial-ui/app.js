@@ -20,7 +20,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
-import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
+import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -351,7 +351,8 @@ if ('ResizeObserver' in window) {
 }
 async function loadAll() {
   $('#global-error').hidden = true;
-  const jobs = [loadQuotes(), loadCustomers()];
+  // Kho không xem được danh bạ khách (máy chủ chặn) → không tải, tránh báo lỗi đỏ khi mở app.
+  const jobs = isWarehouse() ? [loadQuotes()] : [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
   loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
@@ -377,6 +378,7 @@ async function loadQuotes() {
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
 let customerReq = 0, customerPager;
 async function loadCustomers() {
+  if (isWarehouse()) return;
   const req = ++customerReq;
   customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
@@ -679,7 +681,7 @@ function fillEditor(id, revision, data, meta = {}) {
   editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false) } : null;
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
-  editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : '';
+  editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
   editor.rows = (data.rows || []).map(r => ({ ...r, id: r.id || uid(), discountType: r.discountType || 'percent' }));
   qf.reset();
   for (const name of ['quoteNo', 'date', 'owner', 'ownerPhone', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'notes'])
@@ -708,7 +710,7 @@ qf.addEventListener('input', e => {
   if (e.target.name === 'deliveryDate') syncDeliveryNotes();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
   if (['customer', 'phone'].includes(e.target.name)) {
-    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) editor.customerId = '';
+    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) { editor.customerId = ''; editor.brandDiscounts = null; }
     updateContactsButton();
   }
   if (e.target.name === 'quoteNo') $('#editor-title').textContent = e.target.value || 'Báo giá';
@@ -1339,7 +1341,7 @@ function showSuggest() {
 }
 function hideSuggest() { suggest.hidden = true; searchInput.setAttribute('aria-expanded', 'false'); }
 function pickCustomer(c) {
-  editor.customerId = c.id; editor.customerName = c.name;
+  editor.customerId = c.id; editor.customerName = c.name; loadBrandDiscounts();
   field('customer').value = c.name; field('contact').value = c.contact || ''; field('phone').value = c.phone || '';
   field('email').value = c.email || ''; field('customerTaxCode').value = c.taxCode || ''; field('customerAddress').value = c.address || '';
   editor.base.customerCode = c.customerCode || '';
@@ -1773,6 +1775,13 @@ function renderSelection() {
   $('#product-selection').hidden = n === 0;
   $('#product-selection-text').textContent = `Đã chọn ${n} sản phẩm`;
 }
+/** Chiết khấu theo thương hiệu của khách đang chọn trên báo giá (trang chi tiết khách hàng) – điền sẵn CK khi thêm sản phẩm. */
+async function loadBrandDiscounts() {
+  const id = editor.customerId;
+  editor.brandDiscounts = null;
+  if (!id) return;
+  try { const { discounts } = await api(`/customers/${encodeURIComponent(id)}/discounts`); if (editor.customerId === id) editor.brandDiscounts = discounts; } catch { /* không có CK riêng */ }
+}
 /**
  * Dòng báo giá từ sản phẩm trong danh mục – port `catalogChoice`/`addProduct` của bản cũ:
  * VAT dòng = thuế đầu ra (không chịu thuế → 0%); bảng giá có chữ "VAT" hoặc sản phẩm "Giá đã bao gồm thuế"
@@ -1787,6 +1796,9 @@ function rowFromProduct(p) {
   const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
   const price = netPrice(raw, tax, included);
   const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '', packagingDescription: PACKAGING_DEFAULT };
+  // CK theo thương hiệu của khách (Minh Long / Lys / Lock) – thay CK mặc định của dòng khi khách có thiết lập.
+  const brandDisc = editor.brandDiscounts ? customerDiscount(row.brand, editor.brandDiscounts, row.discountType === 'amount' ? 'amount' : 'percent', price) : 0;
+  if (brandDisc > 0) row.discount = row.discountType === 'amount' ? Math.round(brandDisc) : brandDisc;
   if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; row.costPrice = purchasePrice(price, d); } }
   if (savableImage(p.imageUrl)) row.image = p.imageUrl;
   for (const k of ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) if (Number(p[k]) > 0) row[k] = Number(p[k]);
@@ -2946,18 +2958,31 @@ document.addEventListener('click', async e => {
     if (location.hash.startsWith('#/packing/')) openPacking(location.hash.slice(10)); else if (sales.order) loadOrderPacking(sales.order.id);
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
 });
+const PACKING_FILTER_KEY = 'packingFilter';
+const packingFilter = () => { try { return localStorage.getItem(PACKING_FILTER_KEY) === 'packed' ? 'packed' : 'sent'; } catch { return 'sent'; } };
+$('#packing-body').addEventListener('click', e => {
+  const b = e.target.closest('[data-packing-filter]'); if (!b) return;
+  try { localStorage.setItem(PACKING_FILTER_KEY, b.dataset.packingFilter); } catch { /* bỏ qua */ }
+  openPacking(null);
+});
 /** Trang phiếu đóng gói (#/packing/<id>): kho xem hàng cần đóng, quy cách gợi ý, cân nặng; xác nhận kèm 1–3 ảnh. Không id: danh sách phiếu chờ đóng. */
 const slipPhotos = [];
 let packingView = null; // phiếu đang mở ở #/packing/<id> (cho nút in)
 async function openPacking(id) {
   const body = $('#packing-body'); body.innerHTML = '<p class="muted card">Đang tải…</p>'; $('#packing-actions').innerHTML = ''; $('#packing-status').innerHTML = '';
   if (!id) {
-    $('#packing-title').textContent = 'Phiếu chờ đóng gói'; $('#packing-back').href = '#/tasks';
+    // Bộ lọc: Chưa đóng (đã gửi kho, chờ đóng) · Đã đóng. Nhớ lựa chọn trên máy.
+    const filter = packingFilter();
+    $('#packing-title').textContent = filter === 'packed' ? 'Phiếu đã đóng gói' : 'Phiếu chờ đóng gói'; $('#packing-back').href = '#/tasks';
+    const chips = `<div class="chips packing-filter" role="tablist">${[['sent', 'Chưa đóng'], ['packed', 'Đã đóng']].map(([k, t]) =>
+      `<button type="button" class="chip ${k === filter ? 'active' : ''}" data-packing-filter="${k}" aria-selected="${k === filter}">${t}</button>`).join('')}</div>`;
+    body.innerHTML = chips + '<p class="muted card">Đang tải…</p>';
     try {
-      const { slips } = await api('/packing?status=sent');
-      body.innerHTML = slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
-        : '<p class="muted card">Không có phiếu nào chờ đóng gói.</p>';
-    } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
+      const { slips } = await api('/packing?status=' + filter);
+      if (packingFilter() !== filter) return;
+      body.innerHTML = chips + (slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}${filter === 'packed' && x.packedAt ? ' · đóng ' + new Date(x.packedAt).toLocaleDateString('vi-VN') : ''}${x.packedNote ? ' · ' + esc(x.packedNote) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
+        : `<p class="muted card">${filter === 'packed' ? 'Chưa có phiếu nào đã đóng.' : 'Không có phiếu nào chờ đóng gói.'}</p>`);
+    } catch (e) { body.innerHTML = chips + `<p class="error card">${esc(e.message)}</p>`; }
     return;
   }
   let d; try { d = await api('/packing/' + encodeURIComponent(id)); } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; return; }
@@ -3053,7 +3078,7 @@ function openOrderPrint(detail = sales.detail) {
   dlg.querySelector('[data-print]').addEventListener('click', () => {
     readEdits(sheet, p);
     $('#print-sheet').innerHTML = orderSheetHtml(p, { prices: prices() });
-    printSheet({ page: { size: 'A4 landscape', margin: '10mm' }, cls: 'landscape', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
+    printSheet({ page: { size: 'A4 portrait', margin: '10mm' }, cls: 'order-sheet', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
   });
   dlg.querySelector('[data-xlsx]').addEventListener('click', async e => {
     readEdits(sheet, p); e.target.disabled = true;
@@ -3178,13 +3203,31 @@ function openContractForm(t) {
   const f = $('#contract-form'); f.reset(); $('#contract-error').textContent = '';
   $('#contract-order-no').textContent = `báo giá ${t.quoteNo}${t.customer ? ' · ' + t.customer : ''}`;
   f.signedDate.value = todayIso(); f.deliveryAddress.value = t.address || ''; f.legalEntity.value = t.quoteType === 'VIGIFTS' ? 'VG' : 'BN';
+  f.contractNo.value = ''; f.contractNo.dataset.auto = '';
   $('#contract-dialog').showModal();
+  previewContractNo();
 }
+/** Điền số HĐKT tự sinh (theo pháp nhân); người dùng đã sửa số thì giữ số đã sửa. */
+async function previewContractNo() {
+  const f = $('#contract-form'), t = contractTarget, input = f.contractNo; if (!t) return;
+  const untouched = !input.value.trim() || input.value === input.dataset.auto;
+  try {
+    const r = await api(`/contracts/next-no?quoteId=${encodeURIComponent(t.quoteId)}&legalEntity=${encodeURIComponent(f.legalEntity.value)}`);
+    if (contractTarget !== t) return;
+    input.placeholder = r.error || 'Nhập số HĐKT';
+    if (untouched || !input.value.trim()) input.value = r.contractNo || '';
+    input.dataset.auto = r.contractNo || '';
+  } catch (ex) { input.placeholder = 'Nhập số HĐKT'; }
+}
+$('#contract-form').legalEntity.addEventListener('change', previewContractNo);
 $('#contract-form').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, err = $('#contract-error'); err.textContent = '';
   const target = contractTarget; if (!target) return;
   const body = { quoteId: target.quoteId, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
     signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
+  // Giữ số tự sinh → máy chủ cấp số kế tiếp lúc lập (tránh trùng nếu người khác vừa lấy số); đã sửa → gửi số đã sửa.
+  const no = f.contractNo.value.trim();
+  if (no && no !== f.contractNo.dataset.auto) body.contractNo = no;
   try {
     // Lập HĐKT: chọn có tạo đơn trên Sapo (chọn kho; Sapo lỗi → không lập HĐKT) hay chỉ lập trên web.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',

@@ -121,3 +121,41 @@ test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xư�
   assert.ok(again.workshops.some((w: any) => w.name === 'Xưởng in Phúc Lộc' && w.address === '5 Trần Phú, Q.5'));
   assert.deepEqual((await call('/shipping-carriers', emp)).data.carriers, [{ name: 'Nhà xe Phương Trang', phone: '1900 6067' }]);
 });
+
+test('đơn đã giao xong → phiếu đóng gói còn treo tự hoàn tất (đã gửi kho → đã đóng, nháp → huỷ); lọc Đã đóng / Chưa đóng', async () => {
+  const { call, emp, mgr, kho } = await setup();
+  const make = async (quoteNo: string) => {
+    const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo, customer: 'Khách G', vat: 8, rows: [{ name: 'Ly', unit: 'cái', qty: 10, price: 1000 }, { name: 'Đĩa', unit: 'cái', qty: 5, price: 1000 }] });
+    await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+    const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
+    await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+    const lines = (await call(`/orders/${orderId}/packing`, emp)).data.lines;
+    const dv = await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2030-01-15', lines: [{ orderLineId: lines[0].id, qty: 10 }, { orderLineId: lines[1].id, qty: 5 }] });
+    assert.equal(dv.status, 201, JSON.stringify(dv.data));
+    const delivery = dv.data.id as string;
+    const made = await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [
+      { orderLineId: lines[0].id, qty: 10, source: 'warehouse' }, { orderLineId: lines[1].id, qty: 5, source: 'agent', sourceNote: 'Đại lý' }] });
+    assert.equal(made.status, 201, JSON.stringify(made.data));
+    const slips = (await call(`/orders/${orderId}/packing`, emp)).data.slips;
+    const wh = slips.find((s: any) => s.source === 'warehouse'), ag = slips.find((s: any) => s.source === 'agent');
+    await call(`/packing/${wh.id}/send`, emp, 'POST', {});
+    return { orderId, delivery, wh, ag };
+  };
+  // 1) Chuyến giao "Đã giao" (giao đủ) → đơn giao xong → phiếu tự hoàn tất.
+  const a = await make('HRC_G1');
+  assert.ok((await call('/packing', kho)).data.slips.some((s: any) => s.id === a.wh.id), 'đang chờ đóng');
+  assert.equal((await call(`/deliveries/${a.delivery}/status`, emp, 'PUT', { status: 'delivered' })).status, 200);
+  assert.equal((await call(`/orders/${a.orderId}`, emp)).data.order.status, 'delivered');
+  let wh = (await call(`/packing/${a.wh.id}`, kho)).data.slip;
+  assert.deepEqual([wh.status, wh.packedNote], ['packed', 'Tự động hoàn tất: đơn đã giao.']);
+  assert.equal((await call(`/packing/${a.ag.id}`, kho)).data.slip.status, 'cancelled', 'phiếu nháp chưa gửi kho → huỷ');
+  assert.ok(!(await call('/packing', kho)).data.slips.some((s: any) => s.id === a.wh.id), 'không còn trong "Chưa đóng"');
+  assert.ok((await call('/packing?status=packed', kho)).data.slips.some((s: any) => s.id === a.wh.id), 'nằm trong "Đã đóng"');
+  // 2) Manager bấm hoàn thành tiến trình (đã giao hàng) → phiếu cũng tự hoàn tất.
+  const b = await make('HRC_G2');
+  assert.equal((await call(`/orders/${b.orderId}/progress`, mgr, 'POST', { stage: 'all' })).status, 200);
+  wh = (await call(`/packing/${b.wh.id}`, kho)).data.slip;
+  assert.equal(wh.status, 'packed');
+  // Việc "Đóng gói" của kho không còn mở.
+  assert.ok(!(await call('/tasks?refresh=1', kho)).data.tasks.some((t: any) => t.status !== 'done' && String(t.link || '').includes(b.wh.id)));
+});
