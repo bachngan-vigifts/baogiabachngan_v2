@@ -367,6 +367,10 @@ async function loadQuotes() {
     const d = await api(`/quotes?limit=${quotePager.limit}&offset=${quotePager.offset}&q=${encodeURIComponent(f.q)}&type=${encodeURIComponent(f.type)}&owner=${encodeURIComponent(f.owner)}&sort=${encodeURIComponent(f.sort)}&month=${todayIso().slice(0, 7)}`);
     if (req !== quoteReq) return;
     state.quotes = d.quotes; state.quoteMeta = d;
+    // Báo giá đã sinh đơn hàng / HĐKT → nút xem chứng từ (thay chỗ nhãn loại báo giá).
+    const ids = d.quotes.map(q => q.id);
+    state.quoteDocs = ids.length ? (await api('/quote-docs?ids=' + encodeURIComponent(ids.join(','))).catch(() => ({ docs: {} }))).docs : {};
+    if (req !== quoteReq) return;
   } catch (e) { if (req !== quoteReq) return; state.quotes = state.quotes || []; if (e.status !== 401) showGlobalError(e.message); }
   renderQuotes();
 }
@@ -514,6 +518,13 @@ function renderStats() {
   $('#stat-customers').textContent = state.customerGrandTotal !== undefined ? state.customerGrandTotal.toLocaleString('vi-VN') : '–';
   $('#nav-quote-count').textContent = m.all;
 }
+/** Cột "Đơn / HĐKT" của danh sách báo giá: đã sinh đơn / HĐKT → nút xem; chưa → nhãn loại báo giá như cũ. */
+function quoteDocCell(q) {
+  const k = state.quoteDocs?.[q.id];
+  if (!k) return `<span class="pill type-${esc(q.quoteType)}">${esc(q.quoteType)}</span>`;
+  const label = k.contractNo ? 'Xem HĐKT' : 'Xem đơn hàng', no = k.contractNo || k.orderNo;
+  return `<a class="btn ghost small quote-doc-btn" data-doc-link href="#/${k.contractNo ? 'contracts' : 'orders'}/${esc(encodeURIComponent(k.orderId))}" title="${esc((k.contractNo ? 'HĐKT ' : 'Đơn hàng ') + no)}">${label}<small>${esc(no)}</small></a>`;
+}
 function renderQuotes() {
   const tbody = $('#quote-list');
   if (!state.quotes) { tbody.innerHTML = skeleton(7); return; }
@@ -524,7 +535,7 @@ function renderQuotes() {
     <tr class="clickable" data-open="${esc(q.id)}">
       <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
       <td data-label="Khách">${esc(q.customer) || '<span class="muted">—</span>'}${q.contact || q.phone ? `<small>${esc([q.contact, q.phone].filter(Boolean).join(' · '))}</small>` : ''}</td>
-      <td><span class="pill type-${esc(q.quoteType)}">${esc(q.quoteType)}</span></td>
+      <td data-label="Đơn / HĐKT">${quoteDocCell(q)}</td>
       <td data-label="Ngày">${fmtDate(q.quoteDate) || '—'}</td>
       <td class="right num">${money(q.total)}</td>
       <td data-label="Cập nhật" title="${esc(new Date(q.updatedAt).toLocaleString('vi-VN'))}">${ago(q.updatedAt)}</td>
@@ -543,6 +554,7 @@ function renderQuotes() {
 $('#quote-list').addEventListener('click', e => {
   const dup = e.target.closest('[data-dup]');
   if (dup) { e.stopPropagation(); duplicateFromList(dup.dataset.dup); return; }
+  if (e.target.closest('[data-doc-link]')) return; // nút xem đơn / HĐKT: theo link, không mở báo giá
   const open = e.target.closest('[data-open]');
   if (open) go('#/quotes/' + encodeURIComponent(open.dataset.open));
 });
