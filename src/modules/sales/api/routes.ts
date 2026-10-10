@@ -424,6 +424,21 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   /** Báo giá đã duyệt, chưa có đơn đang hiệu lực (để bấm ＋ ở trang Đơn hàng / HĐKT tạo nhanh). */
+  /**
+   * Đơn hàng / HĐKT (chưa huỷ) sinh từ các báo giá – trang danh sách báo giá hiện nút "Xem đơn hàng / HĐKT".
+   * `?ids=a,b,c` (tối đa 200). Chỉ trả chứng từ người xem được (như danh sách đơn).
+   */
+  router.get('/quote-docs', async c => {
+    const ids = [...new Set((c.url.searchParams.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 200);
+    if (!ids.length) return json({ docs: {} });
+    const rows = await c.env.db.select({ id: salesOrders.id, quoteId: salesOrders.quoteId, orderNo: salesOrders.orderNo, status: salesOrders.status }).from(salesOrders)
+      .where(and(inArray(salesOrders.quoteId, ids), ne(salesOrders.status, 'cancelled'), orderScope(c)));
+    const kNo = await contractNosOf(c.env.db, rows.map(r => r.id));
+    const docs: Record<string, { orderId: string; orderNo: string; contractNo: string | null; status: string }> = {};
+    for (const r of rows) if (r.quoteId) docs[r.quoteId] = { orderId: r.id, orderNo: r.orderNo, contractNo: kNo.get(r.id) ?? null, status: r.status };
+    return json({ docs });
+  }, 'business');
+
   router.get('/order-quote-candidates', async c => {
     const rows = await c.env.db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, quoteType: quotations.quoteType, quoteDate: quotations.quoteDate })
       .from(quotations).where(and(quotePredicate(quotationScope(viewer(c))), eq(quotations.approvalStatus, 'approved'),
