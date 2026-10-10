@@ -256,6 +256,7 @@ test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, l
   fake = expiredSapo;
   const bad = await call('/admin/sapo-pull', mgr, 'POST', {});
   assert.equal(bad.status, 409); assert.equal(bad.data.code, 'SAPO_SESSION_EXPIRED');
+  assert.match(bad.data.error, /→ 302 \/admin\/login/, 'báo rõ Sapo chuyển về trang đăng nhập (để chẩn đoán)');
   const status = await call('/admin/sapo-sync', mgr);
   assert.equal(status.data.session.connected, true); assert.equal(status.data.session.expired, true);
   assert.ok(!JSON.stringify(status.data).includes('abc'));
