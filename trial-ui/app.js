@@ -686,6 +686,7 @@ function fillEditor(id, revision, data, meta = {}) {
   $$('input, textarea', qf).forEach(i => i.classList.remove('invalid'));
   renderLines(); updateContactsButton();
   editor.dirty = false; $('#editor-dirty').hidden = true;
+  refreshQuoteDocument(id);
   updateQuoteActions();
   fillMissingImages();
 }
@@ -3232,7 +3233,15 @@ function updateQuoteActions() {
   pill.hidden = !saved; pill.className = 'pill ' + (approved ? 'ok' : 'warn');
   pill.textContent = approved ? 'Đã duyệt' : 'Chờ duyệt';
   pill.title = approved && editor.approval.by ? `Duyệt bởi ${editor.approval.by}${editor.approval.at ? ' lúc ' + new Date(editor.approval.at).toLocaleString('vi-VN') : ''}` : approved ? '' : 'Manager cần duyệt trước khi tải file, tạo đơn hàng, sinh HĐKT.';
-  { const b = $('#quote-make'); b.hidden = !saved; b.disabled = !!block; b.title = block || 'Chọn tạo Đơn hàng (khách có HĐ nguyên tắc) hoặc HĐKT'; }
+  {
+    const b = $('#quote-make'), linked = editor.document;
+    b.hidden = !saved;
+    b.textContent = linked ? 'Xem Đơn hàng / HĐKT' : editor.documentLoading ? 'Đang kiểm tra Đơn hàng / HĐKT…'
+      : editor.documentError ? 'Kiểm tra Đơn hàng / HĐKT' : 'Sinh Đơn hàng / HĐKT';
+    b.disabled = !!editor.documentLoading || (!linked && !editor.documentError && !!block);
+    b.title = linked ? 'Xem ' + (linked.contractNo || linked.orderNo) : editor.documentError ? 'Thử kiểm tra lại hồ sơ đã tạo'
+      : block || 'Chọn tạo Đơn hàng (khách có HĐ nguyên tắc) hoặc HĐKT';
+  }
   const dl = $('#quote-download'); dl.disabled = !!block; dl.title = block || ''; if (block) closeDownloadMenu();
   // Manager duyệt mọi báo giá; nhân viên phụ trách xác nhận báo giá khách gửi từ trang khách hàng.
   const canApprove = mgr || !!editor.approval?.canApprove;
@@ -3317,13 +3326,39 @@ async function makeFromQuote(flow, q, done) {
   done?.(); go('#/orders/' + id);
   return true;
 }
+/** Đọc lại khi mở/lưu báo giá và trước khi sinh, tránh dùng liên kết cũ hoặc sinh trùng. */
+async function refreshQuoteDocument(id) {
+  const request = editor.documentRequest = (editor.documentRequest || 0) + 1;
+  editor.document = null; editor.documentError = false; editor.documentLoading = !!id;
+  if (!id) return null;
+  updateQuoteActions();
+  try {
+    const { order } = await api('/orders/by-quote/' + encodeURIComponent(id));
+    if (editor.id !== id || editor.documentRequest !== request) return undefined;
+    editor.document = order;
+    return order;
+  } catch (ex) {
+    if (editor.id === id && editor.documentRequest === request) editor.documentError = true;
+    return null;
+  } finally {
+    if (editor.id === id && editor.documentRequest === request) {
+      editor.documentLoading = false; updateQuoteActions();
+    }
+  }
+}
 $('#quote-make').addEventListener('click', async () => {
+  const id = editor.id; if (!id) return toast('Lưu báo giá trước.', 'err');
+  const linked = await refreshQuoteDocument(id);
+  if (editor.id !== id || linked === undefined) return;
+  if (editor.documentError) return toast('Chưa kiểm tra được Đơn hàng / HĐKT. Vui lòng thử lại.', 'err');
+  if (linked) return go('#/' + (linked.contractNo ? 'contracts/' : 'orders/') + encodeURIComponent(linked.id));
   const block = approvalBlock(); if (block) return toast(block, 'err');
-  const flow = await chooseFlow(`${field('quoteNo').value} · ${field('customer').value || ''}`); if (!flow) return;
+  const flow = await chooseFlow(`${field('quoteNo').value} · ${field('customer').value || ''}`); if (!flow || editor.id !== id) return;
   const btn = $('#quote-make'); btn.disabled = true;
   try { await makeFromQuote(flow, { quoteId: editor.id, quoteNo: field('quoteNo').value, quoteType: editor.type, customer: field('customer').value, address: field('customerAddress').value }); }
   catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
 });
+
 // ＋ ở trang Đơn hàng / HĐKT: chọn một báo giá đã duyệt (chưa có đơn) → tạo đơn / lập HĐKT.
 let quotePickFlow = 'order';
 async function drawQuotePick() {

@@ -249,6 +249,15 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }), total: Number(total), limit, offset });
   }, 'business');
 
+  /** Hồ sơ đang hiệu lực của báo giá: dùng ID chính xác, giữ nguyên quyền xem đơn. */
+  router.get('/orders/by-quote/:quoteId', async c => {
+    const [order] = await c.env.db.select({
+      id: salesOrders.id, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo,
+    }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
+      .where(and(eq(salesOrders.quoteId, c.params.quoteId!), ne(salesOrders.status, 'cancelled'), orderScope(c))).limit(1);
+    return json({ order: order ?? null });
+  }, 'business');
+
   router.get('/orders/:id', async c => {
     const db = c.env.db, order = await loadOrder(c, c.params.id!);
     const [lines, contract, ships, schedules, payments] = await Promise.all([
