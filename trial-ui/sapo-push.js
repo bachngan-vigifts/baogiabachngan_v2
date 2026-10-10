@@ -2,6 +2,7 @@
  * Popup khi SINH ĐƠN HÀNG / LẬP HĐKT: chọn CÓ tạo đơn trên Sapo hay không (mặc định có).
  *  - Có: chọn kho Sapo; máy chủ tạo đơn / HĐKT cùng đơn nháp Sapo trong một lượt; Sapo lỗi → không tạo gì, lỗi hiện ngay trong popup.
  *  - Không: chỉ sinh đơn / HĐKT trên web (`pushSapo: false`), không cần kết nối Sapo.
+ *  - Mở popup là kiểm tra kết nối Sapo ngay: lỗi → khoá "Có", chọn sẵn "Không"; Sapo lỗi lúc tạo → nút "… không qua Sapo".
  * Người phụ trách trên Sapo = người phụ trách báo giá. API xem trước: GET /sapo/preview?quoteId= | ?orderId=.
  */
 const LAST_KEY = 'sapoLocation';
@@ -34,9 +35,13 @@ export function initSapoPush({ api, esc, $ }) {
       return run(null, false);
     }
     $('#sapo-push-code').textContent = d.code;
+    // Kiểm tra kết nối trước (xem trước gọi Sapo thật: danh sách kho). Sapo lỗi / chưa kết nối / không có kho →
+    // khoá "Có", chọn sẵn "Không" để vẫn sinh được đơn / HĐKT trên web.
+    const sapoOk = d.connected && d.locations.length > 0;
     const choice = `<fieldset class="sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>
-      <label class="check"><input type="radio" name="sapo-push-mode" value="yes" checked> Có – tạo đơn nháp trên Sapo</label>
-      <label class="check"><input type="radio" name="sapo-push-mode" value="no"> Không – chỉ sinh trên web</label></fieldset>`;
+      <label class="check"><input type="radio" name="sapo-push-mode" value="yes"${sapoOk ? ' checked' : ' disabled'}> Có – tạo đơn nháp trên Sapo${sapoOk ? ' <span class="pill ok">Sapo đã kết nối</span>' : ''}</label>
+      <label class="check"><input type="radio" name="sapo-push-mode" value="no"${sapoOk ? '' : ' checked'}> Không – chỉ sinh trên web</label>
+      ${sapoOk ? '' : `<p class="error small">Không kết nối được Sapo: ${esc(d.message || (d.connected ? 'Sapo chưa trả danh sách kho.' : 'Chưa kết nối Sapo.'))} Đơn / HĐKT sẽ chỉ sinh trên web; Manager kết nối lại Sapo ở trang Nhân viên → Đồng bộ Sapo.</p>`}</fieldset>`;
     const blocks = [`<dl class="kv"><dt>Mã đơn trên Sapo</dt><dd><b>${esc(d.code)}</b> <small class="muted">(số báo giá)</small></dd>
       <dt>NV phụ trách trên Sapo</dt><dd>${d.connected ? (d.account ? `<b>${esc(d.account.name)}</b>` : `<span class="pill warn">Chưa khớp tài khoản Sapo của ${esc(d.owner || 'người phụ trách')}</span><small>Đơn Sapo sẽ để người phụ trách theo phiên Sapo đang kết nối.</small>`) : esc(d.owner)}</dd></dl>`];
     if (d.problems.length) blocks.push(`<ul class="error">${d.problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul><p class="muted small">Sửa báo giá cho đủ rồi thử lại.</p>`);
@@ -71,7 +76,15 @@ export function initSapoPush({ api, esc, $ }) {
       if (push) remember(sel.value);
       current = null; dialog.close(); me.resolve(r);
     } catch (ex) {
-      $('#sapo-push-error').textContent = ex.message + ' Chưa sinh đơn / HĐKT nào.';
+      const err = $('#sapo-push-error');
+      err.textContent = ex.message + ' Chưa sinh đơn / HĐKT nào.';
+      // Lỗi lúc đẩy Sapo: cho sinh luôn trên web (không qua Sapo) thay vì kẹt lại.
+      if (push) {
+        const alt = document.createElement('button');
+        alt.type = 'button'; alt.className = 'btn secondary small'; alt.textContent = `${title} không qua Sapo`;
+        alt.addEventListener('click', () => { const no = body.querySelector('input[name="sapo-push-mode"][value="no"]'); if (no) { no.checked = true; me.sync?.(); dialog.querySelector('#sapo-push-form').requestSubmit(); } });
+        err.append(' ', alt);
+      }
       submit.textContent = label; me.busy = false; me.sync?.();
     }
   });
