@@ -3188,13 +3188,31 @@ function openContractForm(t) {
   const f = $('#contract-form'); f.reset(); $('#contract-error').textContent = '';
   $('#contract-order-no').textContent = `báo giá ${t.quoteNo}${t.customer ? ' · ' + t.customer : ''}`;
   f.signedDate.value = todayIso(); f.deliveryAddress.value = t.address || ''; f.legalEntity.value = t.quoteType === 'VIGIFTS' ? 'VG' : 'BN';
+  f.contractNo.value = ''; f.contractNo.dataset.auto = '';
   $('#contract-dialog').showModal();
+  previewContractNo();
 }
+/** Điền số HĐKT tự sinh (theo pháp nhân); người dùng đã sửa số thì giữ số đã sửa. */
+async function previewContractNo() {
+  const f = $('#contract-form'), t = contractTarget, input = f.contractNo; if (!t) return;
+  const untouched = !input.value.trim() || input.value === input.dataset.auto;
+  try {
+    const r = await api(`/contracts/next-no?quoteId=${encodeURIComponent(t.quoteId)}&legalEntity=${encodeURIComponent(f.legalEntity.value)}`);
+    if (contractTarget !== t) return;
+    input.placeholder = r.error || 'Nhập số HĐKT';
+    if (untouched || !input.value.trim()) input.value = r.contractNo || '';
+    input.dataset.auto = r.contractNo || '';
+  } catch (ex) { input.placeholder = 'Nhập số HĐKT'; }
+}
+$('#contract-form').legalEntity.addEventListener('change', previewContractNo);
 $('#contract-form').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, err = $('#contract-error'); err.textContent = '';
   const target = contractTarget; if (!target) return;
   const body = { quoteId: target.quoteId, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
     signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
+  // Giữ số tự sinh → máy chủ cấp số kế tiếp lúc lập (tránh trùng nếu người khác vừa lấy số); đã sửa → gửi số đã sửa.
+  const no = f.contractNo.value.trim();
+  if (no && no !== f.contractNo.dataset.auto) body.contractNo = no;
   try {
     // Lập HĐKT: chọn có tạo đơn trên Sapo (chọn kho; Sapo lỗi → không lập HĐKT) hay chỉ lập trên web.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',

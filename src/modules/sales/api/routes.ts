@@ -104,6 +104,12 @@ export async function contractNosOf(db: StaffEnv['db'] | Tx, orderIds: string[])
   return new Map(rows.map(r => [r.orderId, r.no]));
 }
 type QuoteRow = typeof quotations.$inferSelect;
+/** Mã khách dùng trong số HĐKT: mã KH trong danh bạ, không có thì MST trên báo giá / danh bạ. */
+async function contractCustomerCode(db: StaffEnv['db'] | Tx, quote: QuoteRow) {
+  const data = JSON.parse(quote.data);
+  const [cust] = data.customerId ? await db.select().from(customers).where(eq(customers.id, String(data.customerId))).limit(1) : [];
+  return compactCode(cust?.customerCode || data.customerTaxCode || cust?.taxCode);
+}
 /**
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
@@ -470,6 +476,22 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
    * (như web cũ), kỳ phải thu = cọc + phần còn lại. Dòng hàng / giao hàng / công nợ của HĐKT nằm trong bản ghi `sales_orders`
    * đi kèm (ẩn với người dùng: mọi nơi hiện số HĐKT). Cùng giao dịch: đẩy đơn nháp sang Sapo (Sapo lỗi → không có HĐKT).
    */
+  /**
+   * Xem trước SỐ HĐKT sẽ cấp (popup Lập HĐKT điền sẵn, cho sửa): `?quoteId=&legalEntity=`. Không giữ số –
+   * lúc lập mới cấp thật (ai lập trước lấy số trước); nhân viên sửa số thì dùng đúng số đã sửa.
+   */
+  router.get('/contracts/next-no', async c => {
+    const me = viewer(c), quoteId = text(c.url.searchParams.get('quoteId'), 80), entity = legalCode(c.url.searchParams.get('legalEntity'));
+    if (!entity) throw new AppError(400, 'Chọn pháp nhân bên bán.');
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
+    if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
+    const customerCode = await contractCustomerCode(c.env.db, quote);
+    if (!customerCode) return json({ contractNo: '', error: 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.' });
+    const { year, month } = vietnamDate();
+    const [row] = await c.env.db.select({ seq: contractCounters.lastSequence }).from(contractCounters).where(eq(contractCounters.id, `HDKT:${year}:${month}:${entity}`)).limit(1);
+    return json({ contractNo: contractNumber(entity, customerCode, (row?.seq ?? 0) + 1) });
+  }, 'business');
+
   router.post('/contracts', async c => {
     const body = await readJson(c.req, 64_000), me = viewer(c), quoteId = text(body.quoteId, 80);
     if (!quoteId) throw new AppError(400, 'Chọn báo giá đã duyệt để lập HĐKT.');
@@ -484,9 +506,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const signedDate = body.signedDate ? String(body.signedDate) : vietnamDate().iso;
     if (!isDate(signedDate)) throw new AppError(400, 'Ngày ký không hợp lệ.');
     const data = JSON.parse(quote.data);
-    const [cust] = data.customerId ? await c.env.db.select().from(customers).where(eq(customers.id, String(data.customerId))).limit(1) : [];
-    const customerCode = compactCode(cust?.customerCode || data.customerTaxCode || cust?.taxCode);
+    const customerCode = await contractCustomerCode(c.env.db, quote);
     if (!customerCode) throw new AppError(400, 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.');
+    // Số HĐKT nhân viên sửa trong popup (trống = cấp tự động).
+    const customNo = text(body.contractNo, 120).replace(/\s+/g, ' ');
+    if (customNo && /[\u0000-\u001f<>]/.test(customNo)) throw new AppError(400, 'Số HĐKT không hợp lệ.');
     const now = nowIso(), id = crypto.randomUUID(), { year, month } = vietnamDate();
     const push = wantsSapoPush(c, body) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let contractNo = '', sapo: SapoPushOutcome = null;
@@ -498,6 +522,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         const [row] = await tx.insert(contractCounters).values({ id: counterId, type: 'HDKT', year: Number(year), month: Number(month), legalEntity: entity, lastSequence: 1, updatedAt: now })
           .onConflictDoUpdate({ target: contractCounters.id, set: { lastSequence: sql`${contractCounters.lastSequence} + 1`, updatedAt: now } }).returning({ seq: contractCounters.lastSequence });
         contractNo = contractNumber(entity, customerCode, row!.seq);
+        if (customNo && customNo !== contractNo) {
+          // Dùng số đã sửa: trả lại số thứ tự vừa lấy (dòng đếm đang khoá trong giao dịch này) để không nhảy số.
+          await tx.update(contractCounters).set({ lastSequence: sql`${contractCounters.lastSequence} - 1` })
+            .where(and(eq(contractCounters.id, counterId), eq(contractCounters.lastSequence, row!.seq)));
+          contractNo = customNo;
+          const [taken] = await tx.select({ id: salesContracts.id }).from(salesContracts).where(eq(salesContracts.contractNo, customNo)).limit(1);
+          if (taken) throw new AppError(409, `Số HĐKT ${customNo} đã dùng cho HĐKT khác. Vui lòng đổi số.`, 'CONTRACT_NO_EXISTS');
+        }
         await tx.insert(salesContracts).values({
           id, contractNo, orderId: oid, quoteId: quote.id, customerId: order!.customerId, legalEntity: entity, status: 'draft', signedDate: null,
           value: order!.total, depositRate, depositAmount: Math.round(order!.total * depositRate / 100), paymentDays,
@@ -511,7 +543,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         if (push) sapo = await push.push(tx, oid);
       } });
     } catch (e) {
-      if ((e as { code?: string; cause?: { code?: string } }).code === '23505' || (e as { cause?: { code?: string } }).cause?.code === '23505') throw new AppError(409, 'Báo giá này đã có HĐKT.', 'CONTRACT_EXISTS');
+      const pg = e as { code?: string; constraint?: string; cause?: { code?: string; constraint?: string } };
+      if ((pg.code ?? pg.cause?.code) === '23505') {
+        if (/contracts_no/.test(pg.constraint ?? pg.cause?.constraint ?? '') || (customNo && /contracts_no/.test(String((e as Error).message) + String((pg.cause as Error | undefined)?.message))))
+          throw new AppError(409, `Số HĐKT ${contractNo} đã dùng cho HĐKT khác. Vui lòng đổi số.`, 'CONTRACT_NO_EXISTS');
+        throw new AppError(409, 'Báo giá này đã có HĐKT.', 'CONTRACT_EXISTS');
+      }
       throw e;
     } finally { await push?.done(); }
     await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
