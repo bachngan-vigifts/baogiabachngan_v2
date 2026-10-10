@@ -362,3 +362,39 @@ test('kéo từ Sapo: loại chứng từ Sapo không cho đọc (404/403) thì 
   assert.equal(run.data.results.stock_transfer.unavailable, 1);
   assert.equal(run.data.warnings.length, 2);
 });
+
+test('kết nối Sapo chỉ với cookie sapo-admin: tự mở trang admin lấy _admin_session_id rồi mới gọi API, lưu cookie đã gộp', async () => {
+  const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  const seen: string[] = [];
+  // Sapo mới: API .json cần _admin_session_id; cookie đó chỉ được cấp (Set-Cookie) khi mở trang admin bằng sapo-admin.
+  const sapoFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input)), cookie = String((init?.headers as Record<string, string>).cookie);
+    seen.push(url.pathname);
+    assert.equal(init?.method, 'GET');
+    const hasSid = /_admin_session_id=sid1/.test(cookie);
+    if (url.pathname === '/admin') {
+      if (!/sapo-admin=tok/.test(cookie)) return new Response('', { status: 302, headers: { location: '/admin/login' } });
+      const res = new Response('', { status: 302, headers: { location: '/admin/dashboard' } });
+      res.headers.append('set-cookie', '_admin_session_id=sid1; expires=Sat, 10 Oct 2099 22:10:53 GMT; path=/');
+      res.headers.append('set-cookie', '.AspNetCore.Session=abc; path=/; samesite=lax; httponly');
+      return res;
+    }
+    if (url.pathname === '/admin/dashboard') return new Response('<html>ok</html>', { status: 200 });
+    if (!hasSid) return new Response('', { status: 302, headers: { location: '/admin/login' } });
+    return Response.json({ accounts: [] });
+  }) as typeof globalThis.fetch;
+  const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const, sapoSyncToken: SECRET, sapoFetch };
+  const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { 'content-type': 'application/json', cookie, origin }, body: body ? JSON.stringify(body) : undefined }), env);
+    return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
+  };
+  const mgr = (await call('/login', '', 'POST', { email: 'mgr@x.vn', password: PASSWORD })).cookie;
+  const r = await call('/admin/sapo-session', mgr, 'POST', { cookie: 'lang=vi; sapo-admin=tok' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.deepEqual(seen, ['/admin', '/admin/accounts.json'], 'có _admin_session_id ngay lần đầu thì không cần theo chuyển hướng');
+  const saved = await decryptCookie(SECRET, (await db.select().from(sapoRuntimeSessions))[0]!.encryptedCookie);
+  assert.match(saved, /sapo-admin=tok/); assert.match(saved, /_admin_session_id=sid1/); assert.match(saved, /\.AspNetCore\.Session=abc/);
+  // sapo-admin sai → Sapo đưa về trang đăng nhập → báo phiên không dùng được, không lưu đè.
+  const bad = await call('/admin/sapo-session', mgr, 'POST', { cookie: 'sapo-admin=sai' });
+  assert.equal(bad.data.code, 'SAPO_SESSION_EXPIRED');
+});
