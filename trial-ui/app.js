@@ -2426,10 +2426,16 @@ async function loadDeliveries() {
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(x.carrier)}</small></td>
       <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}</small></td>
-      <td>${esc([x.receiverName, x.receiverPhone].filter(Boolean).join(' · '))}<small>${esc(x.address)}</small></td>
+      <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
   } catch (e) { listError('deliveries', e); }
+}
+/** Người nhận của chuyến giao: người nhận ghi trên chuyến, không có thì người liên hệ / SĐT của khách trên đơn (bấm để gọi). */
+function deliveryReceiver(x) {
+  const name = x.receiverName || x.customerContact || '', phone = x.receiverPhone || x.customerPhone || '';
+  const tel = phone ? `<a href="tel:${esc(phone.replace(/[^\d+]/g, ''))}">${esc(phone)}</a>` : '';
+  return [esc(name), tel].filter(Boolean).join(' · ') || '<span class="muted">—</span>';
 }
 const deliveryButtons = x => ['planned', 'in_transit'].includes(x.status)
   ? `${x.status === 'planned' ? `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="in_transit">Đang giao</button>` : ''}<button class="btn secondary small" data-ship="${esc(x.id)}" data-to="delivered">Đã giao</button><button class="btn ghost small" data-ship="${esc(x.id)}" data-to="cancelled">Huỷ</button>` : '';

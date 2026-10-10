@@ -125,7 +125,7 @@ test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xư�
 test('đơn đã giao xong → phiếu đóng gói còn treo tự hoàn tất (đã gửi kho → đã đóng, nháp → huỷ); lọc Đã đóng / Chưa đóng', async () => {
   const { call, emp, mgr, kho } = await setup();
   const make = async (quoteNo: string) => {
-    const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo, customer: 'Khách G', vat: 8, rows: [{ name: 'Ly', unit: 'cái', qty: 10, price: 1000 }, { name: 'Đĩa', unit: 'cái', qty: 5, price: 1000 }] });
+    const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo, customer: 'Khách G', contact: 'Chị Lan', phone: '0901234567', customerTaxCode: '0312345678', customerAddress: '1 Lê Lợi, Q1', vat: 8, rows: [{ name: 'Ly', unit: 'cái', qty: 10, price: 1000 }, { name: 'Đĩa', unit: 'cái', qty: 5, price: 1000 }] });
     await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
     const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
     await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
@@ -143,6 +143,11 @@ test('đơn đã giao xong → phiếu đóng gói còn treo tự hoàn tất (�
   };
   // 1) Chuyến giao "Đã giao" (giao đủ) → đơn giao xong → phiếu tự hoàn tất.
   const a = await make('HRC_G1');
+  // Kho không xem được danh bạ khách nhưng phiếu / lịch giao vẫn đủ thông tin liên hệ giao hàng.
+  const kv = (await call(`/packing/${a.wh.id}`, kho)).data.order;
+  assert.deepEqual([kv.contact, kv.phone, kv.address, kv.taxCode], ['Chị Lan', '0901234567', '1 Lê Lợi, Q1', '0312345678']);
+  const trip = (await call('/deliveries?from=2030-01-01&to=2030-01-31', kho)).data.deliveries.find((x: any) => x.id === a.delivery);
+  assert.deepEqual([trip.customerContact, trip.customerPhone, trip.customerAddress], ['Chị Lan', '0901234567', '1 Lê Lợi, Q1']);
   assert.ok((await call('/packing', kho)).data.slips.some((s: any) => s.id === a.wh.id), 'đang chờ đóng');
   assert.equal((await call(`/deliveries/${a.delivery}/status`, emp, 'PUT', { status: 'delivered' })).status, 200);
   assert.equal((await call(`/orders/${a.orderId}`, emp)).data.order.status, 'delivered');
