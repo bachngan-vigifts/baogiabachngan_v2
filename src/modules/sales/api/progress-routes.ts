@@ -7,6 +7,7 @@ import { PROGRESS_STAGES } from '../domain/statuses.ts';
 import { stagesFor, stagesUpTo, type ProgressStage } from '../domain/progress.ts';
 import { salesOrders } from '../schema.ts';
 import { markProgress, printingOrders, progressOf, unmarkProgress } from './progress.ts';
+import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
 import { orderScopeFor } from './routes.ts';
 
 /**
@@ -32,7 +33,11 @@ export function registerProgressRoutes(router: Router<StaffEnv>) {
     if (body.done === false) {
       if (stage === 'all') throw new AppError(400, 'Chọn bước cần bỏ đánh dấu.');
       await unmarkProgress(c.env.db, order.id, list.slice(list.indexOf(stage)));
-    } else await markProgress(c.env.db, order.id, stagesUpTo(printing, stage), 'manual', viewer(c).id);
+    } else {
+      await markProgress(c.env.db, order.id, stagesUpTo(printing, stage), 'manual', viewer(c).id);
+      // Manager đánh dấu đã giao hàng → phiếu đóng gói còn treo tự hoàn tất.
+      if (stage === 'all' || stage === 'delivered') await closeSlipsOfDeliveredOrders(c.env.db, [order.id]);
+    }
     return json({ progress: (await progressOf(c.env.db, [order.id])).get(order.id) });
   }, 'business');
 }

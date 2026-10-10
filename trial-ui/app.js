@@ -351,7 +351,8 @@ if ('ResizeObserver' in window) {
 }
 async function loadAll() {
   $('#global-error').hidden = true;
-  const jobs = [loadQuotes(), loadCustomers()];
+  // Kho không xem được danh bạ khách (máy chủ chặn) → không tải, tránh báo lỗi đỏ khi mở app.
+  const jobs = isWarehouse() ? [loadQuotes()] : [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
   loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
@@ -377,6 +378,7 @@ async function loadQuotes() {
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
 let customerReq = 0, customerPager;
 async function loadCustomers() {
+  if (isWarehouse()) return;
   const req = ++customerReq;
   customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
@@ -2956,18 +2958,31 @@ document.addEventListener('click', async e => {
     if (location.hash.startsWith('#/packing/')) openPacking(location.hash.slice(10)); else if (sales.order) loadOrderPacking(sales.order.id);
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
 });
+const PACKING_FILTER_KEY = 'packingFilter';
+const packingFilter = () => { try { return localStorage.getItem(PACKING_FILTER_KEY) === 'packed' ? 'packed' : 'sent'; } catch { return 'sent'; } };
+$('#packing-body').addEventListener('click', e => {
+  const b = e.target.closest('[data-packing-filter]'); if (!b) return;
+  try { localStorage.setItem(PACKING_FILTER_KEY, b.dataset.packingFilter); } catch { /* bỏ qua */ }
+  openPacking(null);
+});
 /** Trang phiếu đóng gói (#/packing/<id>): kho xem hàng cần đóng, quy cách gợi ý, cân nặng; xác nhận kèm 1–3 ảnh. Không id: danh sách phiếu chờ đóng. */
 const slipPhotos = [];
 let packingView = null; // phiếu đang mở ở #/packing/<id> (cho nút in)
 async function openPacking(id) {
   const body = $('#packing-body'); body.innerHTML = '<p class="muted card">Đang tải…</p>'; $('#packing-actions').innerHTML = ''; $('#packing-status').innerHTML = '';
   if (!id) {
-    $('#packing-title').textContent = 'Phiếu chờ đóng gói'; $('#packing-back').href = '#/tasks';
+    // Bộ lọc: Chưa đóng (đã gửi kho, chờ đóng) · Đã đóng. Nhớ lựa chọn trên máy.
+    const filter = packingFilter();
+    $('#packing-title').textContent = filter === 'packed' ? 'Phiếu đã đóng gói' : 'Phiếu chờ đóng gói'; $('#packing-back').href = '#/tasks';
+    const chips = `<div class="chips packing-filter" role="tablist">${[['sent', 'Chưa đóng'], ['packed', 'Đã đóng']].map(([k, t]) =>
+      `<button type="button" class="chip ${k === filter ? 'active' : ''}" data-packing-filter="${k}" aria-selected="${k === filter}">${t}</button>`).join('')}</div>`;
+    body.innerHTML = chips + '<p class="muted card">Đang tải…</p>';
     try {
-      const { slips } = await api('/packing?status=sent');
-      body.innerHTML = slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
-        : '<p class="muted card">Không có phiếu nào chờ đóng gói.</p>';
-    } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
+      const { slips } = await api('/packing?status=' + filter);
+      if (packingFilter() !== filter) return;
+      body.innerHTML = chips + (slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}${filter === 'packed' && x.packedAt ? ' · đóng ' + new Date(x.packedAt).toLocaleDateString('vi-VN') : ''}${x.packedNote ? ' · ' + esc(x.packedNote) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
+        : `<p class="muted card">${filter === 'packed' ? 'Chưa có phiếu nào đã đóng.' : 'Không có phiếu nào chờ đóng gói.'}</p>`);
+    } catch (e) { body.innerHTML = chips + `<p class="error card">${esc(e.message)}</p>`; }
     return;
   }
   let d; try { d = await api('/packing/' + encodeURIComponent(id)); } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; return; }

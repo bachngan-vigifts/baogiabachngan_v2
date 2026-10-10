@@ -15,6 +15,7 @@ import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesCon
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
+import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
 import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
@@ -90,6 +91,8 @@ async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string |
   // Giao xong mà chưa ai yêu cầu xuất hoá đơn → tự yêu cầu (sinh việc cho nhóm Kế toán).
   if (status === 'delivered' && order!.invoiceStatus === 'none')
     await tx.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: null, invoiceRequestNote: 'Tự động: đơn đã giao xong.', invoiceEmail: order!.invoiceEmail || order!.email, invoiceMode: 'issue' }).where(eq(salesOrders.id, orderId));
+  // Giao xong → phiếu đóng gói còn treo của đơn tự hoàn tất.
+  if (status === 'delivered') await closeSlipsOfDeliveredOrders(tx, [orderId]);
   if (status === 'delivered' && deliveredOn) {
     const [contract] = await tx.select().from(salesContracts).where(eq(salesContracts.orderId, orderId)).limit(1);
     await tx.update(paymentSchedules).set({ dueDate: addDays(deliveredOn, contract?.paymentDays ?? 0) })

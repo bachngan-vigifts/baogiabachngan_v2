@@ -16,6 +16,7 @@ import { PACKING_SOURCE_LABEL, packingSuggestion, type PackingSource } from '../
 import { nextDocNo, vietnamDate } from '../domain/sales.ts';
 import { docRef } from '../domain/doc-ref.ts';
 import { orderScopeFor } from './routes.ts';
+import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
 
 /*
  * Phiếu đóng gói (xuất kho):
@@ -226,6 +227,8 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   router.get('/packing', async c => {
     const m = viewer(c), all = m.role === 'manager' || isWarehouse(m), p = c.url.searchParams;
     const status = p.get('status') || (all ? 'sent' : 'all');
+    // Dọn phiếu còn treo của đơn đã giao (kể cả dữ liệu cũ trước khi có tự hoàn tất).
+    if (all) await closeSlipsOfDeliveredOrders(c.env.db);
     const rows = await c.env.db.select({ slip: packingSlips, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, expectedDeliveryDate: salesOrders.expectedDeliveryDate })
       .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, packingSlips.orderId))
       .where(and(all ? undefined : orderScopeFor(m),
