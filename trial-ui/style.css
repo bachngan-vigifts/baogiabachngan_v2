@@ -825,8 +825,14 @@ a.flow-step:hover { border-color: var(--blue); }
 .ddh-table th { font-weight: 700; text-align: center; background: #f2f2f2; } .ddh-table .c { text-align: center; } .ddh-table .n { text-align: right; white-space: nowrap; }
 .ddh-note { margin-top: 12px; } .ddh-date { text-align: right; margin: 14px 40px 4px 0; font-style: italic; }
 .ddh-sign { display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; } .ddh-sign .space { height: 64px; }
-@page landscape { size: A4 landscape; margin: 10mm; }
-@media print { .print-sheet.landscape { page: landscape; } .print-sheet .ddh { min-width: 0; font-size: 10.5pt; } }
+/* Đơn đặt hàng: bản in GIỐNG HỆT bản xem – luôn dàn trang ở bề rộng cố định 1000px (bảng không bị bóp, chữ không xuống dòng lung tung),
+   in A4 DỌC (Safari iPhone / iPad bỏ qua khổ ngang nên cố định khổ dọc để máy nào in cũng như nhau) và THU NHỎ ĐỀU cả phiếu
+   cho vừa vùng in: 210 − 2×10 mm = 190 mm ≈ 718px → ×0.71. */
+.ddh:not(.slip) { width: 1000px; min-width: 1000px; }
+@media print {
+  .print-sheet.order-sheet .ddh:not(.slip) { width: 1000px; min-width: 1000px; font-size: 12px; line-height: 1.35; zoom: 0.71; }
+  .print-sheet.order-sheet .ddh-table tr, .print-sheet.order-sheet .ddh-sign { break-inside: avoid; }
+}
 /* Phiếu đóng gói / phiếu giao hàng: Times New Roman; lề trên 2 cm, trái phải 0,8 cm; in A4 dọc hoặc ngang. */
 /* Bản in GIỐNG HỆT bản xem trên form: phiếu luôn dàn trang ở bề rộng cố định 1000px (như trên form – bảng không xuống dòng),
    khi in thì THU NHỎ ĐỀU cả phiếu (zoom) cho vừa vùng in: A4 dọc 194 mm ≈ 733px → ×0.73; A4 ngang 281 mm ≈ 1062px → ×1.06. */

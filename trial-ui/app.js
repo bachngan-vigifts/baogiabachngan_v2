@@ -3063,7 +3063,7 @@ function openOrderPrint(detail = sales.detail) {
   dlg.querySelector('[data-print]').addEventListener('click', () => {
     readEdits(sheet, p);
     $('#print-sheet').innerHTML = orderSheetHtml(p, { prices: prices() });
-    printSheet({ page: { size: 'A4 landscape', margin: '10mm' }, cls: 'landscape', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
+    printSheet({ page: { size: 'A4 portrait', margin: '10mm' }, cls: 'order-sheet', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
   });
   dlg.querySelector('[data-xlsx]').addEventListener('click', async e => {
     readEdits(sheet, p); e.target.disabled = true;
