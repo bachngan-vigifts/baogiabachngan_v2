@@ -10,8 +10,9 @@ import { SAPO_DEFAULTS, matchSapoAccount, sapoPushProblems, sapoTotalMatches, ty
 import { salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
 
 /**
- * ĐẨY ĐƠN SANG SAPO – TỰ ĐỘNG VÀ BẮT BUỘC khi sinh đơn hàng / lập HĐKT (thay "Copy báo giá vào Sapo" của web cũ):
- *  - Nhân viên chọn kho Sapo trong popup lúc bấm sinh đơn / lập HĐKT; người phụ trách trên Sapo = người phụ trách báo giá.
+ * ĐẨY ĐƠN SANG SAPO khi sinh đơn hàng / lập HĐKT (thay "Copy báo giá vào Sapo" của web cũ):
+ *  - Mặc định có tạo đơn trên Sapo; nhân viên chọn "Không tạo đơn trên Sapo" trong popup (`pushSapo: false`) thì chỉ sinh đơn / HĐKT trên web.
+ *  - Có tạo: nhân viên chọn kho Sapo trong popup; người phụ trách trên Sapo = người phụ trách báo giá.
  *  - Máy chủ tạo đơn / HĐKT và đơn nháp Sapo trong CÙNG một giao dịch: Sapo lỗi → huỷ giao dịch, không có đơn / HĐKT nào.
  *  - `env.sapoOrderPush === 'off'`: tắt (chỉ dùng cho test các luồng không liên quan Sapo).
  */
@@ -21,6 +22,8 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export const sapoPushRequired = (c: Ctx) => c.env.sapoOrderPush !== 'off';
+/** Lượt sinh đơn / lập HĐKT này có tạo đơn trên Sapo không: mặc định có; nhân viên bỏ chọn trong popup → `pushSapo: false`. */
+export const wantsSapoPush = (c: Ctx, body: Raw) => sapoPushRequired(c) && body.pushSapo !== false;
 
 /** Kho Sapo nhân viên chọn (bắt buộc khi đẩy). */
 export function sapoLocationOf(body: Raw): number {

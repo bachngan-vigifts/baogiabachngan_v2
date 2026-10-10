@@ -16,7 +16,7 @@ import { recordMovements, removeMovements } from '../../catalog/api/product-hist
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
-import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, type SapoPushOutcome } from './sapo-push.ts';
+import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
@@ -303,8 +303,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
-    // Đẩy sang Sapo trong cùng giao dịch (Sapo lỗi → không tạo đơn). HĐKT là luồng riêng: POST /contracts { quoteId }.
-    const push = sapoPushRequired(c) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    // Có tạo đơn Sapo (mặc định): đẩy trong cùng giao dịch (Sapo lỗi → không tạo đơn); `pushSapo: false` → chỉ tạo đơn web. HĐKT là luồng riêng: POST /contracts { quoteId }.
+    const push = wantsSapoPush(c, body) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let sapo: SapoPushOutcome = null;
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft',
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
@@ -464,7 +464,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const customerCode = compactCode(cust?.customerCode || data.customerTaxCode || cust?.taxCode);
     if (!customerCode) throw new AppError(400, 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.');
     const now = nowIso(), id = crypto.randomUUID(), { year, month } = vietnamDate();
-    const push = sapoPushRequired(c) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    const push = wantsSapoPush(c, body) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
