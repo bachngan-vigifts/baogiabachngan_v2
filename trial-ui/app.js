@@ -16,6 +16,7 @@ import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
+import { initProductActions } from './product-actions.js';
 import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
@@ -1746,6 +1747,15 @@ function productAdmin() {
   return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
+var productActionsUi = null;
+function productActions() {
+  return productActionsUi ||= initProductActions({ api, toast, esc, money, isManager, policy: currentPolicy, warehouses: () => state.warehouses || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } });
+}
+$('#product-actions').addEventListener('click', e => {
+  const action = e.target.closest('[data-product-action]')?.dataset.productAction;
+  if (action === 'value' || action === 'audit') productActions().report(action);
+  else if (action === 'stock' || action === 'packing') productActions().openImport(action).catch(ex => toast(ex.message, 'err'));
+});
 function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
@@ -3521,6 +3531,7 @@ $('#excel-quote').addEventListener('click', async () => {
 });
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
+
 
 
 

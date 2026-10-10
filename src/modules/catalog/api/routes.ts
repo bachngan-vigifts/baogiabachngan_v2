@@ -9,6 +9,7 @@ import { catalogVersions, pricePolicies, productPrices, products, productStock, 
 import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../domain/product-filters.ts';
 import { historyOf } from './product-history.ts';
 import { registerProductAdminRoutes } from './product-admin.ts';
+import { registerProductActionRoutes } from './product-actions.ts';
 import { PRODUCT_HISTORY_LIMIT } from '../domain/product-history.ts';
 
 const amount = z.number().finite().min(0).max(1e12).nullable();
@@ -98,6 +99,7 @@ export async function snapshotVersion(db: StaffEnv['db']) {
 
 export function registerCatalogRoutes(router: Router<StaffEnv>) {
   registerProductAdminRoutes(router);
+  registerProductActionRoutes(router);
   /**
    * Bản chụp toàn bộ danh mục cho "Tìm nhanh sản phẩm" lọc ngay trên trình duyệt như web cũ (`GET /api/staff/catalog` bản cũ).
    * `?v=<phiên bản đang có>`: nếu chưa đổi thì chỉ trả `{ version, unchanged: true }`.
@@ -259,3 +261,4 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     return json({ count: data.products.length, replaced: data.replaceAll, policies: data.pricePolicies.length, warehouses: data.warehouses.length, message: `Đã nhập ${data.products.length} sản phẩm.` });
   }, 'admin');
 }
+
