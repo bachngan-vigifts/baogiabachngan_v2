@@ -1,0 +1,36 @@
+# Tổng quan doanh số
+
+Trang `#/dashboard`, menu **Tổng quan doanh số**, gọi duy nhất `GET /api/staff/dashboard/revenue`.
+Chỉ đọc; không migration, không ghi nghiệp vụ, không thay đổi lương, cron hay đồng bộ Sapo.
+
+## Quyền và nguồn dữ liệu
+
+- Router dùng phiên đăng nhập và khu vực `business` hiện có. Endpoint kiểm tra lại quyền; NCC, khách hàng, tài khoản không hoạt động không được vào.
+- `role=manager` xem tổng công ty và lọc nhóm/nhân viên. Repo không có role Giám đốc riêng: Giám đốc cần quyền Manager hiện có. Không suy quyền quản lý từ tên chức vụ.
+- Nhân viên chỉ nhận doanh số của `sales_orders.owner_id`, báo giá của `coalesce(assignee_id,creator_id)` và chăm sóc do mình ghi cho khách mình phụ trách (`customer_staff.role=owner`). Không lấy khách chỉ được chia sẻ hay log của người khác. Bộ lọc người khác/nhóm bị 403 ở server.
+- Nhóm lấy từ `staff_members.position_id → staff_positions.name`, tức nhóm theo chức vụ hiện tại. Không đọc dữ liệu lương. Không có lịch sử chuyển nhóm; kỳ cũ vẫn xếp theo nhóm hiện tại. Nhân viên ngừng hoạt động/xoá mềm vẫn được giữ để tổng doanh số lịch sử không mất.
+- `crm_tasks` là bảng cũ không sử dụng; AppSheet mirror không phải nguồn doanh số. Trang không gọi GET Công việc để tránh sinh việc tự động.
+
+## Định nghĩa chỉ số
+
+- Thực tế/đã chốt: tổng `sales_orders.total` gồm VAT theo `order_date` trong kỳ. Đơn huỷ không tính; đơn nháp chỉ tính khi có HĐKT `signed` hoặc `completed`. Cùng định nghĩa `debtCounts` của Bán hàng và KPI hồ sơ nhân viên. HĐKT không cộng thêm lần nữa; kiểm tra hợp đồng bằng EXISTS.
+- Dự kiến: `customer_activities.expected_revenue` của lần chăm sóc mới nhất trong kỳ cho mỗi cặp khách/nhân viên; kết quả `lost` đóng góp 0. Đây là dự kiến ghi nhận trong chăm sóc, không phải mục tiêu lương, tiền đã thu hay số đơn Sapo.
+- Pipeline: lần chăm sóc mới nhất đến hết kỳ cho mỗi cặp khách/nhân viên, gồm `consulting`, `quote_sent`, `negotiating`. Có thể bắt đầu trước kỳ. `won`/`lost` thoát pipeline. Ngày chăm sóc xác định theo múi giờ Việt Nam.
+- Tỷ lệ chốt: số báo giá trong kỳ đã sinh đơn chưa huỷ / số báo giá trong kỳ, ngày báo giá (fallback ngày tạo); không có báo giá thì hiển thị —. Đây là tỷ lệ chuyển báo giá thành đơn, không phải tỷ lệ tiền đã thu.
+- Đã rớt: số cặp khách/nhân viên có lần chăm sóc mới nhất trong kỳ là `lost`. Schema chưa có mã cơ hội hay quan hệ giữa một log chăm sóc và một đơn; do đó đây là **số rớt trong chăm sóc**, không tự coi mọi đơn huỷ là rớt. Cùng một khách có nhiều cơ hội riêng chưa thể phân biệt chính xác.
+- Bảng tháng lấy snapshot mới nhất từng tháng. Dự kiến/rớt cả kỳ dùng snapshot cuối kỳ nên không nhất thiết bằng cộng các tháng. Thực tế, số đơn và số báo giá cộng được.
+- Khách lâu chưa chăm sóc: lần trao đổi `occurred_at` gần nhất trước mốc hiện tại ít nhất N ngày, mặc định 30, hoặc chưa có log. Đây là tình trạng **hiện tại**, không phải lịch sử theo kỳ doanh số. Nhân viên chỉ xem khách mình phụ trách và log mình ghi. Manager có thể lọc theo người phụ trách khách/nhóm; khách chưa phân công chỉ hiện khi xem toàn công ty.
+
+## Thời điểm và giới hạn
+
+- Hiển thị mốc gần nhất giữa lượt Sapo pull thành công (`sapo_health_monitor_state`, id `pull`, chỉ trích `finishedAt`) và `max(sapo_customers.synced_at)` của ID Sapo dạng số. Không dùng thời điểm cập nhật phiên/cookie. Nếu thiếu mốc, ghi rõ chưa có mốc đồng bộ.
+- Mốc fallback khách hàng không bảo đảm tất cả loại dữ liệu đã đồng bộ xong; giao diện ghi rõ nguồn. Doanh số lấy đơn/HĐKT CRM hiện có, không suy doanh số từ chứng từ kho Sapo.
+- Kỳ từ tháng đến tháng, tối đa 12 tháng; mặc định tháng hiện tại Việt Nam. Danh sách khách phân trang 25 dòng, tổng tính bằng COUNT trong DB.
+- Toàn bộ nguồn nghiệp vụ được SUM/COUNT/GROUP BY/DISTINCT ON trong PostgreSQL, không có giới hạn 200/1000 dòng nguồn. Server chỉ cộng các dòng tổng hợp nhân viên/tháng, client không cộng doanh số. Một transaction REPEATABLE READ, READ ONLY giữ kết quả nhất quán.
+- Không thêm index/schema theo ràng buộc. Nếu dữ liệu lớn, cần đo query plan trên môi trường thật để đánh giá các aggregate/snapshot chăm sóc.
+
+## Kiểm thử
+
+`tests/app/dashboard.test.ts`: phiên/quyền, chặn đổi owner/group, phương thức ghi 405, 1.001 đơn không bị cắt tổng, loại nháp/huỷ và tính hợp đồng ký một lần, snapshot chống cộng trùng, biên ngày Việt Nam, nhóm từ DB, tổng/phân trang khách, không trả JSON giám sát Sapo thô, UI không innerHTML/token persistence.
+
+Chạy `npm run typecheck` và `npm test`. Test PostgreSQL dùng PGlite và migration có sẵn, không truy cập hay sửa database production.
