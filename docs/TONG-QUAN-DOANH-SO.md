@@ -25,9 +25,16 @@ Chỉ đọc; không migration, không ghi nghiệp vụ, không thay đổi lư
 
 - Hiển thị mốc gần nhất giữa lượt Sapo pull thành công (`sapo_health_monitor_state`, id `pull`, chỉ trích `finishedAt`) và `max(sapo_customers.synced_at)` của ID Sapo dạng số. Không dùng thời điểm cập nhật phiên/cookie. Nếu thiếu mốc, ghi rõ chưa có mốc đồng bộ.
 - Mốc fallback khách hàng không bảo đảm tất cả loại dữ liệu đã đồng bộ xong; giao diện ghi rõ nguồn. Doanh số lấy đơn/HĐKT CRM hiện có, không suy doanh số từ chứng từ kho Sapo.
-- Kỳ từ tháng đến tháng, tối đa 12 tháng; mặc định tháng hiện tại Việt Nam. Danh sách khách phân trang 25 dòng, tổng tính bằng COUNT trong DB.
+- Kỳ từ tháng đến tháng, tối đa 12 tháng; API mặc định tháng hiện tại Việt Nam, giao diện mặc định 6 tháng gần nhất để có xu hướng. Danh sách khách phân trang 25 dòng, tổng tính bằng COUNT trong DB.
 - Toàn bộ nguồn nghiệp vụ được SUM/COUNT/GROUP BY/DISTINCT ON trong PostgreSQL, không có giới hạn 200/1000 dòng nguồn. Server chỉ cộng các dòng tổng hợp nhân viên/tháng, client không cộng doanh số. Một transaction REPEATABLE READ, READ ONLY giữ kết quả nhất quán.
 - Không thêm index/schema theo ràng buộc. Nếu dữ liệu lớn, cần đo query plan trên môi trường thật để đánh giá các aggregate/snapshot chăm sóc.
+
+## Giao diện (biểu đồ)
+
+- Hàng bộ lọc trên cùng: kỳ nhanh (Tháng này / 3 / 6 / 12 tháng) hoặc chọn Từ–Đến; Manager thêm Nhóm, Nhân viên. Mọi biểu đồ dùng chung một bộ lọc. Khi tải lại, biểu đồ cũ mờ đi chứ không nhảy bố cục.
+- Ô chỉ số: Doanh số đã chốt (số chính) + Dự kiến, Pipeline, Tỷ lệ chốt, Khách đã rớt, Lâu chưa chăm sóc.
+- Biểu đồ: cột theo tháng (Thực tế so với Dự kiến, một trục VND), đường tỷ lệ chốt theo tháng (0–100%), thanh pipeline theo giai đoạn, xếp hạng nhân viên (đổi Thực tế / Dự kiến / Pipeline; ẩn khi chỉ có 1 người), doanh số theo nhóm (Manager), danh sách khách lâu chưa chăm sóc (chọn số ngày ngay trên thẻ).
+- SVG dựng bằng DOM API (`createElementNS` + `textContent`), không chuỗi HTML, không thư viện ngoài. Rê chuột / chạm / Tab để xem tooltip; mỗi biểu đồ có "Bảng số liệu" để đọc đủ giá trị không cần rê chuột. Màu đã kiểm tra mù màu: Thực tế xanh `#2a78d6`, Dự kiến cam `#eb6834`, giai đoạn pipeline là thang xanh nhạt → đậm.
 
 ## Kiểm thử
 
