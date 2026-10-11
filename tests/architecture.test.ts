@@ -16,6 +16,8 @@ const ALLOWED: Record<string, string[]> = {
   tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
   'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal', 'care'],
   care: ['staff', 'customers'],
+  dashboard: ['staff', 'customers', 'sales', 'quotes', 'care', 'integrations'], // báo cáo chỉ đọc, không phụ thuộc HR/lương
+
   hr: ['staff'], 'staff-hub': ['staff', 'customers', 'quotes', 'sales', 'tasks', 'hr'],
 };
 

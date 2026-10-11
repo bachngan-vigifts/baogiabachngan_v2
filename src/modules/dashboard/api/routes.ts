@@ -1,0 +1,123 @@
+import { and, asc, count, desc, eq, exists, gte, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
+import { AppError } from '../../../core/errors.ts';
+import { json, type Router } from '../../../core/http/router.ts';
+import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
+import { employees, positions } from '../../staff/schema.ts';
+import { customers, customerStaff } from '../../customers/schema.ts';
+import { customerActivities as care } from '../../care/schema.ts';
+import { salesContracts, salesOrders as orders } from '../../sales/schema.ts';
+import { quotations as quotes } from '../../quotes/schema.ts';
+import { sapoHealthMonitorState } from '../../integrations/schema.ts';
+import { vietnamDate } from '../../sales/domain/sales.ts';
+import { dashboardFilters } from '../domain/filters.ts';
+
+const amount = (column: typeof orders.total | typeof care.expectedRevenue) => sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
+const ratio = (part: number, whole: number) => whole ? Math.round(part / whole * 1000) / 10 : null;
+const blank = () => ({ actual: 0, orders: 0, expected: 0, pipeline: 0, consulting: 0, quote_sent: 0, negotiating: 0, lost: 0, quotes: 0, converted: 0 });
+
+/** Only GET. All totals are DB aggregates; no limit on source orders/activities. */
+export function registerDashboardRoutes(router: Router<StaffEnv>) {
+  router.get('/dashboard/revenue', async c => {
+    const me = (c.state.session as SessionState | undefined)?.member;
+    if (!me) throw new AppError(401, 'Vui lòng đăng nhập.');
+    const f = dashboardFilters(c.url.searchParams, me, vietnamDate().iso);
+    // One read-only snapshot keeps totals, tables and pagination consistent during concurrent updates.
+    const data = await c.env.db.transaction(async db => {
+      const selected = db.select({ id: employees.id }).from(employees).where(and(
+        inArray(employees.role, ['manager', 'employee']),
+        f.owner ? eq(employees.id, f.owner) : undefined,
+        f.group ? eq(employees.positionId, f.group) : undefined));
+      const [members, groups] = await Promise.all([
+        db.select({ id: employees.id, name: employees.name, groupId: employees.positionId, groupName: positions.name, active: employees.active })
+          .from(employees).leftJoin(positions, eq(employees.positionId, positions.id)).where(inArray(employees.id, selected)).orderBy(asc(employees.name)),
+        f.manager ? db.select({ id: positions.id, name: positions.name }).from(positions).orderBy(asc(positions.name)) : Promise.resolve([]),
+      ]);
+      // EXISTS prevents multiplying a single order when historical contracts exist.
+      const signed = exists(db.select({ id: salesContracts.id }).from(salesContracts).where(and(eq(salesContracts.orderId, orders.id), inArray(salesContracts.status, ['signed', 'completed']))));
+      const counted = and(ne(orders.status, 'cancelled'), or(ne(orders.status, 'draft'), signed));
+      const orderMonth = sql<string>`substr(${orders.orderDate}, 1, 7)`;
+      const actual = await db.select({ owner: orders.ownerId, month: orderMonth.as('month'), actual: amount(orders.total), orders: count() })
+        .from(orders).where(and(inArray(orders.ownerId, selected), counted, gte(orders.orderDate, f.from), lt(orders.orderDate, f.next)))
+        .groupBy(orders.ownerId, orderMonth);
+      // Employee care metrics never expose customers merely shared with them or another employee's log.
+      const careOwnedCustomer = f.manager ? undefined : exists(db.select({ id: customerStaff.customerId }).from(customerStaff)
+        .where(and(eq(customerStaff.customerId, care.customerId), eq(customerStaff.memberId, me.id), eq(customerStaff.role, 'owner'))));
+      const careMonth = sql<string>`to_char(${care.occurredAt}::timestamptz at time zone 'Asia/Ho_Chi_Minh', 'YYYY-MM')`;
+      // Text timestamps are canonical UTC; use timestamptz for VN midnight boundaries.
+      const inPeriod = and(sql`${care.occurredAt}::timestamptz >= ${f.from + 'T00:00:00+07:00'}::timestamptz`,
+        sql`${care.occurredAt}::timestamptz < ${f.next + 'T00:00:00+07:00'}::timestamptz`);
+      const latest = db.$with('dashboard_latest').as(db.selectDistinctOn([care.ownerId, care.customerId], {
+        owner: care.ownerId, customer: care.customerId, result: care.result, expected: care.expectedRevenue,
+      }).from(care).where(and(inArray(care.ownerId, selected), careOwnedCustomer,
+        sql`${care.occurredAt}::timestamptz < ${f.next + 'T00:00:00+07:00'}::timestamptz`))
+        .orderBy(care.ownerId, care.customerId, desc(care.occurredAt), desc(care.updatedAt), desc(care.id)));
+      const pipeline = await db.with(latest).select({ owner: latest.owner, stage: latest.result, value: sql<number>`sum(${latest.expected})`.mapWith(Number) })
+        .from(latest).where(inArray(latest.result, ['consulting', 'quote_sent', 'negotiating'])).groupBy(latest.owner, latest.result);
+      const monthlyCare = db.$with('dashboard_monthly_care').as(db.selectDistinctOn([care.ownerId, care.customerId, careMonth], {
+        owner: care.ownerId, customer: care.customerId, month: careMonth.as('month'), expected: care.expectedRevenue, result: care.result,
+      }).from(care).where(and(inArray(care.ownerId, selected), careOwnedCustomer, inPeriod))
+        .orderBy(care.ownerId, care.customerId, careMonth, desc(care.occurredAt), desc(care.updatedAt), desc(care.id)));
+      const expected = await db.with(monthlyCare).select({ owner: monthlyCare.owner, month: monthlyCare.month,
+        expected: sql<number>`coalesce(sum(${monthlyCare.expected}) filter (where ${monthlyCare.result} <> 'lost'), 0)`.mapWith(Number),
+        lost: sql<number>`count(*) filter (where ${monthlyCare.result} = 'lost')`.mapWith(Number),
+      }).from(monthlyCare).groupBy(monthlyCare.owner, monthlyCare.month);
+      const periodCare = db.$with('dashboard_period_care').as(db.selectDistinctOn([care.ownerId, care.customerId], {
+        owner: care.ownerId, customer: care.customerId, expected: care.expectedRevenue, result: care.result,
+      }).from(care).where(and(inArray(care.ownerId, selected), careOwnedCustomer, inPeriod))
+        .orderBy(care.ownerId, care.customerId, desc(care.occurredAt), desc(care.updatedAt), desc(care.id)));
+      const periodExpected = await db.with(periodCare).select({ owner: periodCare.owner,
+        expected: sql<number>`coalesce(sum(${periodCare.expected}) filter (where ${periodCare.result} <> 'lost'), 0)`.mapWith(Number),
+        lost: sql<number>`count(*) filter (where ${periodCare.result} = 'lost')`.mapWith(Number),
+      }).from(periodCare).groupBy(periodCare.owner);
+      const quoteOwner = sql<string>`coalesce(${quotes.assigneeId}, ${quotes.creatorId})`;
+      const quoteDay = sql<string>`coalesce(nullif(${quotes.quoteDate}, ''), substr(${quotes.createdAt}, 1, 10))`;
+      const quoteMonth = sql<string>`substr(${quoteDay}, 1, 7)`;
+      const converted = exists(db.select({ id: orders.id }).from(orders).where(and(eq(orders.quoteId, quotes.id), ne(orders.status, 'cancelled'), f.owner ? eq(orders.ownerId, f.owner) : undefined)));
+      const conversion = await db.select({ owner: quoteOwner.as('owner'), month: quoteMonth.as('month'), quotes: count(),
+        converted: sql<number>`count(*) filter (where ${converted})`.mapWith(Number),
+      }).from(quotes).where(and(inArray(quoteOwner, selected), gte(quoteDay, f.from), lt(quoteDay, f.next))).groupBy(quoteOwner, quoteMonth);
+      const employeeRows = members.map(m => ({ ...m, ...blank() }));
+      const monthRows = f.months.map(month => ({ month, ...blank() }));
+      const rowsById = new Map(employeeRows.map(r => [r.id, r]));
+      for (const r of [...actual, ...expected, ...conversion]) {
+        const e = 'expected' in r ? undefined : rowsById.get(r.owner), m = monthRows.find(m => m.month === r.month);
+        for (const k of ['actual', 'orders', 'expected', 'lost', 'quotes', 'converted'] as const) {
+          const value = k in r ? Number(r[k as keyof typeof r]) : 0;
+          if (e) e[k] += value; if (m) m[k] += value;
+        }
+      }
+      for (const r of periodExpected) { const e = rowsById.get(r.owner); if (e) { e.expected = r.expected; e.lost = r.lost; } }
+      for (const p of pipeline) { const e = rowsById.get(p.owner); if (e) { e.pipeline += p.value; e[p.stage as 'consulting' | 'quote_sent' | 'negotiating'] += p.value; } }
+      const summary = blank(); const teamRows = new Map<string, ReturnType<typeof blank> & { id: string; name: string }>();
+      for (const e of employeeRows) {
+        const id = e.groupId ?? '', team = teamRows.get(id) ?? { id, name: e.groupName ?? 'Chưa phân nhóm', ...blank() };
+        for (const k of Object.keys(summary) as (keyof typeof summary)[]) { summary[k] += e[k]; team[k] += e[k]; }
+        teamRows.set(id, team);
+      }
+      const lastCare = db.$with('dashboard_last_care').as(db.select({ customer: care.customerId, lastAt: max(care.occurredAt).as('last_at') }).from(care)
+        .where(f.manager ? undefined : eq(care.ownerId, me.id)).groupBy(care.customerId));
+      const staleBefore = new Date(Date.parse(f.today + 'T00:00:00+07:00') - f.neglectDays * 86400000).toISOString();
+      const ownCustomer = exists(db.select({ id: customerStaff.customerId }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id),
+        eq(customerStaff.role, 'owner'), inArray(customerStaff.memberId, selected))));
+      const customerScope = (!f.manager || f.owner || f.group) ? ownCustomer : undefined;
+      const stale = and(customerScope, or(isNull(lastCare.lastAt), lt(lastCare.lastAt, staleBefore)));
+      const [neglectCount] = await db.with(lastCare).select({ count: count() }).from(customers).leftJoin(lastCare, eq(lastCare.customer, customers.id)).where(stale);
+      const neglected = await db.with(lastCare).select({ id: customers.id, name: customers.name, lastAt: lastCare.lastAt })
+        .from(customers).leftJoin(lastCare, eq(lastCare.customer, customers.id)).where(stale)
+        .orderBy(sql`${lastCare.lastAt} asc nulls first`, asc(customers.id)).limit(25).offset((f.page - 1) * 25);
+      // Select a timestamp only, never read/return Sapo session, cookie or raw monitor JSON.
+      const [sync] = await db.select({ at: sql<string | null>`case when (${sapoHealthMonitorState.data}::jsonb ->> 'ok') = 'true' then ${sapoHealthMonitorState.data}::jsonb ->> 'finishedAt' else null end` })
+        .from(sapoHealthMonitorState).where(eq(sapoHealthMonitorState.id, 'pull')).limit(1);
+      const [customerSync] = await db.select({ at: max(sql<string>`nullif(${customers.syncedAt}, '')`) }).from(customers).where(sql`${customers.id} ~ '^[0-9]+$'`);
+      const syncAt = sync?.at && (!customerSync?.at || sync.at >= customerSync.at) ? sync.at : customerSync?.at ?? null;
+      const rates = <T extends { converted: number; quotes: number }>(r: T) => ({ ...r, closeRate: ratio(r.converted, r.quotes) });
+      return { scope: f.manager ? 'company' : 'self', from: f.from, to: f.months.at(-1), summary: rates(summary),
+        employees: employeeRows.map(rates), groups: f.manager ? [...teamRows.values()].map(rates) : [], months: monthRows.map(rates),
+        filters: { employees: f.manager ? members.map(m => ({ id: m.id, name: m.name })) : [], groups },
+        neglected: { total: neglectCount?.count ?? 0, page: f.page, pageSize: 25, days: f.neglectDays, customers: neglected },
+        lastSyncedAt: syncAt, syncSource: syncAt && syncAt === sync?.at ? 'sapo-pull' : syncAt ? 'customers' : null,
+        calculatedAt: new Date().toISOString() };
+    }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
+    return json(data);
+  }, 'business');
+}
