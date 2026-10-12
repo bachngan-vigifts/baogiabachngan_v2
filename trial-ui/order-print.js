@@ -103,13 +103,13 @@ export function deliveryPrintData({ seller, order, contract = null, delivery = n
   const receiver = delivery && (delivery.receiverName || delivery.receiverPhone) ? [delivery.receiverName, delivery.receiverPhone].filter(Boolean).join(' · ') : contactOf(order);
   return {
     kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || orderReference(order, contract).number,
-    info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['Ngày giao', dmy(delivery?.plannedDate || order.expectedDeliveryDate)],
-      ['Địa chỉ giao', delivery?.address || order.address || ''], ['MST', order.taxCode || ''], ['Người nhận', receiver], ['Thời gian', delivery?.timeSlot || ''],
+    info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['MST', order.taxCode || ''],
+      ['Địa chỉ giao', delivery?.address || order.address || ''], ['Thời gian', delivery?.timeSlot || ''], ['Người nhận', receiver], ['', ''],
       ...(delivery?.carrier ? [['Nhà xe', delivery.carrier], ['SĐT bác tài', delivery.carrierPhone || '']] : [])],
     cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
     lines: lines.map(l => ({ sku: l.sku || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
-    note: order.note || '', signDate: signDateText(), names: [delivery?.receiverName || order.contact || '', '', me, 'Lê Minh Thái'],
+    note: order.note || '', signDate: 'Ngày …… Tháng …… Năm ……', names: ['', '', me, 'Lê Minh Thái'],
   };
 }
 

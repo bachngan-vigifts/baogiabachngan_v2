@@ -77,10 +77,28 @@ test('Excel đơn đặt hàng giữ ghi chú và cùng ngày hẹn giao/ba ch�
 test('phiếu giao hàng: người lập phiếu ở cột ba và người phê duyệt Lê Minh Thái ở cột cuối', () => {
   const p = print.deliveryPrintData({ seller: 'BN', order: { ...order, contact: 'Anh Hải' }, lines: [] }, 'Nhân viên lập phiếu');
   assert.deepEqual(print.SLIP_KINDS.delivery.signers, ['Người nhận hàng', 'Người giao hàng', 'Người lập phiếu', 'Người phê duyệt']);
-  assert.deepEqual(p.names, ['Anh Hải', '', 'Nhân viên lập phiếu', 'Lê Minh Thái']);
+  assert.deepEqual(p.names, ['', '', 'Nhân viên lập phiếu', 'Lê Minh Thái']);
   const html = print.slipSheetHtml(p, { edit: true });
   assert.doesNotMatch(html, /Thủ kho/);
   assert.match(html, /<b>Người lập phiếu<\/b>[\s\S]*?data-f="names\.2">Nhân viên lập phiếu/);
   assert.match(html, /<b>Người phê duyệt<\/b>[\s\S]*?data-f="names\.3">Lê Minh Thái/);
   assert.deepEqual(print.SLIP_KINDS.packing.signers, ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra']);
+});
+
+
+test('phiếu giao hàng: ngày ký và tên người nhận để ghi tay, bỏ ngày giao ở đầu phiếu kể cả có HĐKT', () => {
+  for (const k of [null, contract]) {
+    const p = print.deliveryPrintData({ seller: 'BN', order: { ...order, contact: 'Mạnh', phone: '0900', taxCode: '123' }, contract: k, delivery: { deliveryNo: 'GH_001', plannedDate: '2026-10-12', receiverName: 'Tên người nhận chuyến', timeSlot: '9h–11h' }, lines: [] }, 'Người lập');
+    assert.equal(p.signDate, 'Ngày …… Tháng …… Năm ……');
+    assert.equal(p.names[0], '');
+    assert.ok(!p.info.some(([label]: string[]) => label === 'Ngày giao'));
+    assert.ok(p.info.some(([label, value]: string[]) => label === 'Thời gian' && value === '9h–11h'));
+    const html = print.slipSheetHtml(p, { edit: true });
+    assert.doesNotMatch(html, /Ngày giao|12\/10\/2026/);
+    assert.match(html, /data-f="names\.0"><\/span>/);
+    assert.match(html, /Ngày …… Tháng …… Năm ……/);
+  }
+  const packing = print.packingPrintData({ seller: 'BN', order, lines: [] });
+  assert.ok(packing.info.some(([label]: string[]) => label === 'Ngày giao'));
+  assert.notEqual(packing.signDate, 'Ngày …… Tháng …… Năm ……');
 });
