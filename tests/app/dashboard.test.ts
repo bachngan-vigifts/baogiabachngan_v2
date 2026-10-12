@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm';
+import { employees } from '../../src/modules/staff/schema.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -88,4 +90,24 @@ test('dashboard: role defense and new UI has no HTML injection or token persiste
   assert.throws(() => dashboardFilters(new URLSearchParams(), { ...member, positionId: 'supplier' }, '2026-10-11'), /quyền/);
   const ui = readFileSync(new URL('../../trial-ui/dashboard.js', import.meta.url), 'utf8');
   assert.doesNotMatch(ui, /innerHTML|insertAdjacentHTML|localStorage|sessionStorage/);
+});
+
+
+test('dashboard: ranking and employee selector match staff page, deleted history stays in company totals', async () => {
+  const { db, call, mgr } = await fixture();
+  const before = (await call('/dashboard/revenue' + month, mgr)).data;
+  await db.update(employees).set({ deletedAt: now, active: false }).where(eq(employees.id, 'emp'));
+  const res = await call('/dashboard/revenue' + month, mgr);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  const staff = (await call('/admin/members', mgr)).data.members.filter((m: any) => ['employee', 'manager'].includes(m.role));
+  const ids = (rows: any[]) => rows.map(r => r.id).sort();
+  assert.deepEqual(ids(res.data.employees), ids(staff));
+  assert.deepEqual(ids(res.data.filters.employees), ids(staff));
+  assert.ok(res.data.employees.some((m: any) => m.id === 'off' && !m.active), 'locked but not deleted still exists on staff page');
+  assert.equal(res.data.summary.actual, before.summary.actual, 'historical revenue is not lost');
+  assert.deepEqual(res.data.months, before.months);
+  assert.deepEqual(res.data.groups, before.groups);
+  const filtered = (await call('/dashboard/revenue' + month + '&owner=mgr', mgr)).data;
+  assert.deepEqual(ids(filtered.employees), ['mgr']);
+  assert.deepEqual(ids(filtered.filters.employees), ids(staff), 'selector keeps full visible roster when filtered');
 });

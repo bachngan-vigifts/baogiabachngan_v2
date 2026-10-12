@@ -253,7 +253,11 @@ export function initDashboard({ api, root, isManager, money }) {
     content.classList.add('is-loading'); if (!data) content.replaceChildren(node('p', 'Đang tải tổng quan…', 'dash-sub'));
     try {
       const res = await api('/dashboard/revenue?' + new URLSearchParams(filters)); if (id !== requestId) return;
-      if (!filters.owner && !filters.group) options = res.filters;
+      options = res.filters;
+      // A staff member removed since the last refresh must also leave the cached selector.
+      if (isManager() && filters.owner && !options.employees.some(m => m.id === filters.owner)) {
+        filters.owner = ''; filters.page = '1'; return load();
+      }
       fillSelect(group, options.groups, 'Tất cả nhóm'); fillSelect(owner, options.employees, 'Tất cả nhân viên');
       data = res; render();
     } catch (e) {

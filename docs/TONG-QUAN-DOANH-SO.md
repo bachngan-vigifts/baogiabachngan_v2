@@ -8,7 +8,7 @@ Chỉ đọc; không migration, không ghi nghiệp vụ, không thay đổi lư
 - Router dùng phiên đăng nhập và khu vực `business` hiện có. Endpoint kiểm tra lại quyền; NCC, khách hàng, tài khoản không hoạt động không được vào.
 - `role=manager` xem tổng công ty và lọc nhóm/nhân viên. Repo không có role Giám đốc riêng: Giám đốc cần quyền Manager hiện có. Không suy quyền quản lý từ tên chức vụ.
 - Nhân viên chỉ nhận doanh số của `sales_orders.owner_id`, báo giá của `coalesce(assignee_id,creator_id)` và chăm sóc do mình ghi cho khách mình phụ trách (`customer_staff.role=owner`). Không lấy khách chỉ được chia sẻ hay log của người khác. Bộ lọc người khác/nhóm bị 403 ở server.
-- Nhóm lấy từ `staff_members.position_id → staff_positions.name`, tức nhóm theo chức vụ hiện tại. Không đọc dữ liệu lương. Không có lịch sử chuyển nhóm; kỳ cũ vẫn xếp theo nhóm hiện tại. Nhân viên ngừng hoạt động/xoá mềm vẫn được giữ để tổng doanh số lịch sử không mất.
+- Nhóm lấy từ `staff_members.position_id → staff_positions.name`, tức nhóm theo chức vụ hiện tại. Không đọc dữ liệu lương. Không có lịch sử chuyển nhóm; kỳ cũ vẫn xếp theo nhóm hiện tại. Xếp hạng và bộ lọc nhân viên chỉ lấy tài khoản còn trong trang Nhân viên (deleted_at IS NULL), không lấy NCC/khách. Tài khoản bị khoá nhưng chưa xoá vẫn hiện như trang Nhân viên. Doanh số lịch sử của nhân viên ngừng hoạt động/xoá mềm vẫn tính trong tổng công ty, nhóm và tháng; vì vậy tổng công ty có thể lớn hơn cộng các hàng đang hiện trong xếp hạng.
 - `crm_tasks` là bảng cũ không sử dụng; AppSheet mirror không phải nguồn doanh số. Trang không gọi GET Công việc để tránh sinh việc tự động.
 
 ## Định nghĩa chỉ số

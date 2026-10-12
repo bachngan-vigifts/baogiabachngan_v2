@@ -27,10 +27,13 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
         inArray(employees.role, ['manager', 'employee']),
         f.owner ? eq(employees.id, f.owner) : undefined,
         f.group ? eq(employees.positionId, f.group) : undefined));
-      const [members, groups] = await Promise.all([
-        db.select({ id: employees.id, name: employees.name, groupId: employees.positionId, groupName: positions.name, active: employees.active })
+      const [members, groups, visibleRoster] = await Promise.all([
+        db.select({ id: employees.id, name: employees.name, groupId: employees.positionId, groupName: positions.name, active: employees.active, deletedAt: employees.deletedAt })
           .from(employees).leftJoin(positions, eq(employees.positionId, positions.id)).where(inArray(employees.id, selected)).orderBy(asc(employees.name)),
         f.manager ? db.select({ id: positions.id, name: positions.name }).from(positions).orderBy(asc(positions.name)) : Promise.resolve([]),
+        // Match the staff page: soft-deleted accounts are hidden; locked accounts remain visible.
+        f.manager ? db.select({ id: employees.id, name: employees.name }).from(employees)
+          .where(and(inArray(employees.role, ['manager', 'employee']), isNull(employees.deletedAt))).orderBy(asc(employees.name)) : Promise.resolve([]),
       ]);
       // EXISTS prevents multiplying a single order when historical contracts exist.
       const signed = exists(db.select({ id: salesContracts.id }).from(salesContracts).where(and(eq(salesContracts.orderId, orders.id), inArray(salesContracts.status, ['signed', 'completed']))));
@@ -112,8 +115,8 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
       const syncAt = sync?.at && (!customerSync?.at || sync.at >= customerSync.at) ? sync.at : customerSync?.at ?? null;
       const rates = <T extends { converted: number; quotes: number }>(r: T) => ({ ...r, closeRate: ratio(r.converted, r.quotes) });
       return { scope: f.manager ? 'company' : 'self', from: f.from, to: f.months.at(-1), summary: rates(summary),
-        employees: employeeRows.map(rates), groups: f.manager ? [...teamRows.values()].map(rates) : [], months: monthRows.map(rates),
-        filters: { employees: f.manager ? members.map(m => ({ id: m.id, name: m.name })) : [], groups },
+        employees: employeeRows.filter(e => e.deletedAt === null).map(({ deletedAt, ...row }) => rates(row)), groups: f.manager ? [...teamRows.values()].map(rates) : [], months: monthRows.map(rates),
+        filters: { employees: visibleRoster, groups },
         neglected: { total: neglectCount?.count ?? 0, page: f.page, pageSize: 25, days: f.neglectDays, customers: neglected },
         lastSyncedAt: syncAt, syncSource: syncAt && syncAt === sync?.at ? 'sapo-pull' : syncAt ? 'customers' : null,
         calculatedAt: new Date().toISOString() };
