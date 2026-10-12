@@ -1,3 +1,4 @@
+import { bindStockCheckFilter } from './stock-check-filter.js';
 import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
 import { initOrderCreate } from './order-create.js';
@@ -3412,12 +3413,13 @@ $('#quote-stock').addEventListener('click', async () => {
     const rows = [...need.values()].map(i => {
       const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p) : null, miss = av === null ? null : Math.max(0, i.qty - av);
       if (miss) short++;
-      return `<tr><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
+      return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
         <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
     $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    bindStockCheckFilter($('#stock-check-body'));
     $('#stock-check-note').textContent = short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.';
   } catch (e) { $('#stock-check-body').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
 });
