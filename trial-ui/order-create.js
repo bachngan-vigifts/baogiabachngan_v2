@@ -1,3 +1,4 @@
+import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes } from './order-notes.js';
 /** Open the business form first. Sapo is contacted only after submitting with explicit opt-in. */
 export function initOrderCreate({ api, $, todayIso, chooseSapo }) {
   const dialog = $('#order-create-dialog'), form = $('#order-create-form'), submit = $('#order-create-submit');
@@ -20,12 +21,19 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo }) {
       if (config.version !== 1 || config.noteMaxLength !== 20000) throw new Error('API chưa hỗ trợ form sinh đơn mới. Vui lòng tải lại sau.');
       $('#order-create-quote').textContent = [q.data.quoteNo || ref.quoteNo, q.data.customer].filter(Boolean).join(' · ');
       form.elements.deliveryDate.value = q.data.deliveryDate || '';
-      form.elements.deliveryAddress.value = q.data.customerAddress || '';
-      form.elements.note.value = q.data.notes || '';
+      form.elements.deliveryAddress.value = orderDeliveryAddress(q.data);
+      form.elements.note.value = orderNotesFromQuote(q.data);
+      me.source = q.data;
       me.ready = true; submit.disabled = false; status.textContent = '';
     } catch (e) { if (current === me) { error.textContent = e.message; status.textContent = ''; } }
     return result;
   }
+  const syncDelivery = key => {
+    if (!current?.ready || current.busy) return;
+    form.elements.note.value = syncOrderDeliveryNotes(form.elements.note.value, { [key]: form.elements[key].value }, current.source);
+  };
+  form.elements.deliveryDate.addEventListener('change', () => syncDelivery('deliveryDate'));
+  form.elements.deliveryAddress.addEventListener('change', () => syncDelivery('deliveryAddress'));
   form.addEventListener('submit', async e => {
     e.preventDefault(); const me = current; if (!me?.ready || me.busy || !form.reportValidity()) return;
     me.busy = true; submit.disabled = true; error.textContent = '';

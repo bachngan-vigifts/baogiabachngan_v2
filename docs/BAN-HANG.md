@@ -183,7 +183,7 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 ## Form sinh đơn hàng từ báo giá
 
 - Chọn **Sinh đơn hàng** mở form ngay, lấy dữ liệu báo giá đã lưu qua API CRM; không kiểm tra Sapo trước.
-- Form: ngày đặt, ngày hẹn giao, địa chỉ giao, ghi chú. Ghi chú chép từ `data.notes` của báo giá, cho sửa riêng hoặc xoá, tối đa 20.000 ký tự; không sửa lại báo giá.
+- Form: ngày đặt, ngày hẹn giao, địa chỉ giao, ghi chú. Ghi chú chỉ lấy thời gian giao hàng, địa chỉ giao hàng và thanh toán từ `data.notes` của báo giá, cho sửa riêng hoặc xoá, tối đa 20.000 ký tự; không sửa lại báo giá.
 - Chọn **Không – chỉ sinh trên web** (mặc định): gửi `pushSapo: false` thẳng tới API, không gọi preview/kết nối Sapo.
 - Chọn **Có**: sau khi gửi form mới mở bước kiểm tra Sapo/chọn kho, cùng cách HĐKT. Sapo lỗi vẫn cho chuyển sang chỉ sinh trên web, giữ nguyên thông tin đã nhập.
 - Các giá trị được lưu vào cột có sẵn: `order_date`, `expected_delivery_date`, `address`, `note`; không migration. Nếu không gửi ghi chú, đơn mới mặc định lấy ghi chú báo giá; gửi `note: ''` thì để trống.
@@ -193,3 +193,10 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 ## Form chỉnh mẫu In/Tải đơn đặt hàng
 
 Popup In/Tải có form bên trái và bản xem trước bên phải, tương tự hồ sơ HĐKT. Sửa được thông tin đơn/khách hàng, ngày đặt/ngày hẹn giao, địa chỉ, ghi chú và ba người ký. Form và các ô sửa trực tiếp trên giấy đồng bộ hai chiều; trước khi in/PDF/Excel đều cập nhật cùng snapshot. Các chỉnh sửa này dành riêng cho bản xuất, không lưu thay đổi vào đơn nghiệp vụ. Điện thoại xếp form phía trên bản xem.
+
+
+Ghi chú mặc định dùng ngày giao dự kiến đã nhập và địa chỉ giao riêng nếu có, thay cho thông tin mặc định. Khi đổi ngày/địa chỉ trên form, chỉ hai dòng tương ứng cập nhật; giữ điều khoản thanh toán đã chỉnh. Helper dùng chung cho server và trình duyệt, không sửa ghi chú báo giá hoặc đơn đã tạo.
+
+## Chẩn đoán lỗi tạo đơn Sapo
+
+Form sinh đơn gửi `pushSapo` là boolean rõ ràng: chỉ `true` mới yêu cầu đẩy Sapo. Lựa chọn chỉ trên web gửi `false`. Khi Sapo từ chối tạo nháp, thông báo và log kèm mã nội bộ an toàn (ví dụ `SAPO_HTTP_422`), không trả nội dung phản hồi gốc, cookie hay token. Cần kiểm tra trên Sapo trước khi thử lại để tránh tạo trùng.

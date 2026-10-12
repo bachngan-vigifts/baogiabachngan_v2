@@ -103,7 +103,7 @@ export async function pushSapoOrder(api: Api, input: SapoPushInput, cfg: SapoPus
   for (const l of input.lines) { const r = await ensureVariant(api, l, cfg.locationId); variants.push(r.variant); products.push({ sku: l.sku, action: r.action }); }
   const order = buildSapoOrder(input, cfg, { customerId: customer.customer.id, accountId, variants });
   const summary = { customer: { id: customer.customer.id, name: String(customer.customer.name ?? ''), action: customer.action }, products };
-  const errors: string[] = [];
+  const errors: string[] = [], failureCodes = new Set<string>();
   // Sapo từng nhận dòng hàng dưới tên `order_line_items` hoặc `line_items` (web cũ thử cả hai).
   for (const body of [{ order }, { order: { ...order, line_items: order.order_line_items } }]) {
     try {
@@ -113,9 +113,14 @@ export async function pushSapoOrder(api: Api, input: SapoPushInput, cfg: SapoPus
     } catch (e) {
       if (e instanceof AppError && /SAPO_SESSION_EXPIRED|SAPO_PERMISSION_DENIED|SAPO_CODE_MISMATCH/.test(e.code ?? '')) throw e;
       errors.push(e instanceof Error ? e.message : String(e));
+      // Report only our fixed error codes: upstream bodies may contain credentials or customer data.
+      const code = e instanceof AppError && /^SAPO_(?:HTTP_\d{3}|UNREACHABLE)$/.test(e.code ?? '') ? e.code! : 'SAPO_RESPONSE_INVALID';
+      failureCodes.add(code);
+      console.warn('sapo draft creation failed', code);
       const made = await findSapoOrder(api, input.code);
       if (made) return { status: 'created', order: await readOrder(api, made.id), ...summary, errors };
     }
   }
-  throw new AppError(502, 'Không tạo được đơn nháp Sapo. Kiểm tra trên Sapo trước khi thử lại để tránh tạo trùng.', 'SAPO_ORDER_FAILED');
+  throw new AppError(502, `Không tạo được đơn nháp Sapo (${[...failureCodes].join(', ')}). Kiểm tra trên Sapo trước khi thử lại để tránh tạo trùng.`, 'SAPO_ORDER_FAILED');
 }
+

@@ -10,6 +10,8 @@ import { join } from 'node:path';
 const root = join(import.meta.dirname, '..');
 export const QUOTE_MATH_OUT = join(root, 'trial-ui', 'quote-math.js');
 /** Bộ lọc "Tìm nhanh sản phẩm" chạy trên trình duyệt – cùng quy tắc với máy chủ. */
+export const ORDER_NOTES_OUT = join(root, 'trial-ui', 'order-notes.js');
+export const bundleOrderNotes = () => bundle('src/modules/sales/domain/order-notes.ts');
 export const PRODUCT_SEARCH_OUT = join(root, 'trial-ui', 'product-search.js');
 
 function bundle(entry: string): string {
@@ -23,7 +25,7 @@ export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-mat
 export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  for (const [out, code] of [[QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()]] as const) {
+  for (const [out, code] of [[QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()]] as const) {
     if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
     console.log('Đã ghi', out);
   }

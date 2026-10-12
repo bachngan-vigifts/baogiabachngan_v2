@@ -3349,7 +3349,7 @@ const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, 
 async function createOrderForQuote(quoteId, quoteNo) {
   let existed = null;
   const post = async (fields, loc, push) => {
-    try { return await api('/orders', 'POST', { quoteId, ...fields, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }); }
+    try { return await api('/orders', 'POST', { quoteId, ...fields, ...(loc ? { sapoLocationId: loc } : {}), pushSapo: push === true }); }
     catch (ex) {
       if (ex.code !== 'ORDER_EXISTS') throw ex;
       const found = (await api('/orders?q=' + encodeURIComponent(quoteNo))).orders.find(o => o.quoteId === quoteId && o.status !== 'cancelled');
