@@ -72,7 +72,7 @@ const showNum = v => typeof v === 'number' ? (v ? num(v) : '') : String(v ?? '')
 const signDateText = () => { const t = new Date(); return `Ngày ${String(t.getDate()).padStart(2, '0')} Tháng ${String(t.getMonth() + 1).padStart(2, '0')} Năm ${t.getFullYear()}`; };
 export const SLIP_KINDS = {
   packing: { title: 'PHIẾU ĐÓNG GÓI', file: 'Phieu-dong-goi', signers: ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra'] },
-  delivery: { title: 'PHIẾU GIAO HÀNG', file: 'Phieu-giao-hang', signers: ['Người nhận hàng', 'Người giao hàng', 'Thủ kho', 'Người lập phiếu'] },
+  delivery: { title: 'PHIẾU GIAO HÀNG', file: 'Phieu-giao-hang', signers: ['Người nhận hàng', 'Người giao hàng', 'Người lập phiếu', 'Người phê duyệt'] },
 };
 const contactOf = o => [o.contact, o.phone].filter(Boolean).join(' · ');
 
@@ -109,7 +109,7 @@ export function deliveryPrintData({ seller, order, contract = null, delivery = n
     cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
     lines: lines.map(l => ({ sku: l.sku || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
-    note: order.note || '', signDate: signDateText(), names: [delivery?.receiverName || order.contact || '', '', '', me],
+    note: order.note || '', signDate: signDateText(), names: [delivery?.receiverName || order.contact || '', '', me, 'Lê Minh Thái'],
   };
 }
 

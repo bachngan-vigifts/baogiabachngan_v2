@@ -73,3 +73,14 @@ test('Excel đơn đặt hàng giữ ghi chú và cùng ngày hẹn giao/ba ch�
     }
   } finally { g.document = saved.document; g.ExcelJS = saved.ExcelJS; }
 });
+
+test('phiếu giao hàng: người lập phiếu ở cột ba và người phê duyệt Lê Minh Thái ở cột cuối', () => {
+  const p = print.deliveryPrintData({ seller: 'BN', order: { ...order, contact: 'Anh Hải' }, lines: [] }, 'Nhân viên lập phiếu');
+  assert.deepEqual(print.SLIP_KINDS.delivery.signers, ['Người nhận hàng', 'Người giao hàng', 'Người lập phiếu', 'Người phê duyệt']);
+  assert.deepEqual(p.names, ['Anh Hải', '', 'Nhân viên lập phiếu', 'Lê Minh Thái']);
+  const html = print.slipSheetHtml(p, { edit: true });
+  assert.doesNotMatch(html, /Thủ kho/);
+  assert.match(html, /<b>Người lập phiếu<\/b>[\s\S]*?data-f="names\.2">Nhân viên lập phiếu/);
+  assert.match(html, /<b>Người phê duyệt<\/b>[\s\S]*?data-f="names\.3">Lê Minh Thái/);
+  assert.deepEqual(print.SLIP_KINDS.packing.signers, ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra']);
+});
