@@ -85,6 +85,7 @@ export async function customerProfile(db: Db, id: string, who: Viewer) {
 export function registerCustomerRoutes(router: Router<StaffEnv>) {
   // Tìm không dấu theo tên, người liên hệ, điện thoại, email, MST, mã KH; phân trang (?q=&limit=&offset=).
   // `?mine=1`: chỉ khách mình phụ trách hoặc được chia sẻ. Mỗi dòng kèm người phụ trách.
+  // Thứ tự: khách mới tạo lên trên cùng (created_at giảm dần; dữ liệu cũ không có ngày tạo xuống cuối), cùng ngày thì theo tên.
   router.get('/customers', async c => {
     const { limit, offset } = paging(c.url, 100, 500), me = viewer(c);
     const mine = c.url.searchParams.get('mine') === '1'
@@ -96,7 +97,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const where = and(matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval);
     const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}]] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
-      c.env.db.select().from(customers).where(where).orderBy(asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
+      c.env.db.select().from(customers).where(where).orderBy(desc(customers.createdAt), asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
       c.env.db.select({ pending: count() }).from(customers).where(eq(customers.approvalStatus, 'pending')),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));

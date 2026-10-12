@@ -1,12 +1,17 @@
-# Kiểm tra mỗi PR và mỗi lần đẩy lên main: TypeScript + toàn bộ test (PostgreSQL chạy bằng PGlite, không cần Supabase).
+# Kiểm tra mỗi PR: TypeScript + toàn bộ test (PostgreSQL chạy bằng PGlite, không cần Supabase).
+# Không chạy lại khi merge vào main (PR đã kiểm tra; "Triển khai API" vẫn chạy test trước khi deploy) để tiết kiệm phút GitHub Actions.
+# Đẩy commit mới lên cùng PR thì lượt kiểm tra cũ đang chạy tự huỷ.
 name: Kiểm tra
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
