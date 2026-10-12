@@ -1,3 +1,4 @@
+import { initOrderPrintForm } from './order-print-form.js';
 import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
@@ -3086,30 +3087,27 @@ async function verifyAndConfirmOrder() {
 function openOrderPrint(detail = sales.detail) {
   const p = orderPrintData(detail, state.user?.name || '');
   const dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
-  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Đơn đặt hàng</span><h2>In / Tải ${esc(p.orderNo)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
-    <div class="modal-body"><div class="row-gap print-tools"><label class="check"><input type="checkbox" data-prices> Hiện đơn giá, thành tiền</label><span class="muted small">Bấm vào chữ trên phiếu để sửa trước khi in / tải.</span></div>
-      <div class="paper ddh-paper" data-sheet></div></div>
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Đơn đặt hàng</span><h2>Xem, chỉnh sửa và tải ${esc(p.orderNo)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body order-doc-body"><aside class="order-doc-form" data-order-form></aside>
+      <section class="order-doc-preview"><div class="row-gap print-tools"><label class="check"><input type="checkbox" data-prices> Hiện đơn giá, thành tiền</label><span class="muted small">Sửa ở form bên trái hoặc trực tiếp trên phiếu.</span></div>
+        <div class="paper ddh-paper" data-sheet></div></section></div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-xlsx>Tải Excel</button><button type="button" class="btn primary" data-print>In / Lưu PDF</button></div>`;
   document.body.append(dlg);
   const sheet = dlg.querySelector('[data-sheet]'), prices = () => dlg.querySelector('[data-prices]').checked;
-  const noteLabel = document.createElement('label'); noteLabel.className = 'order-print-note'; noteLabel.textContent = 'Ghi chú đơn hàng';
-  const noteInput = document.createElement('textarea'); noteInput.rows = 2; noteInput.maxLength = 20000;
-  noteInput.value = p.note; noteInput.placeholder = 'Nhập ghi chú để đưa vào bản in / PDF / Excel'; noteLabel.append(noteInput);
-  dlg.querySelector('.print-tools').after(noteLabel);
-  const render = () => { sheet.innerHTML = orderSheetHtml(p, { prices: prices(), edit: true }); noteInput.value = p.note; };
-  noteInput.addEventListener('input', () => { p.note = noteInput.value; sheet.querySelector('[data-f="note"]').textContent = p.note; });
-  sheet.addEventListener('input', e => { if (e.target.dataset.f === 'note') { p.note = e.target.innerText; noteInput.value = p.note; } });
+  const render = () => { sheet.innerHTML = orderSheetHtml(p, { prices: prices(), edit: true }); };
   render();
-  dlg.querySelector('[data-prices]').addEventListener('change', () => { readEdits(sheet, p); render(); });
+  const editForm = initOrderPrintForm({ host: dlg.querySelector('[data-order-form]'), data: p, beforeUpdate: () => readEdits(sheet, p), onUpdate: render });
+  sheet.addEventListener('input', () => { readEdits(sheet, p); editForm.sync(); });
+  dlg.querySelector('[data-prices]').addEventListener('change', () => editForm.apply());
   const close = () => { dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
   dlg.querySelector('[data-print]').addEventListener('click', () => {
-    readEdits(sheet, p);
+    editForm.apply();
     $('#print-sheet').innerHTML = orderSheetHtml(p, { prices: prices() });
     printSheet({ page: { size: 'A4 portrait', margin: '10mm' }, cls: 'order-sheet', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
   });
   dlg.querySelector('[data-xlsx]').addEventListener('click', async e => {
-    readEdits(sheet, p); e.target.disabled = true;
+    editForm.apply(); e.target.disabled = true;
     try { await downloadOrderExcel(p, { prices: prices() }); } catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
   });
   dlg.showModal();
