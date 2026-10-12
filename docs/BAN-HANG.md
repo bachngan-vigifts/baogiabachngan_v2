@@ -188,3 +188,8 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 - Chọn **Có**: sau khi gửi form mới mở bước kiểm tra Sapo/chọn kho, cùng cách HĐKT. Sapo lỗi vẫn cho chuyển sang chỉ sinh trên web, giữ nguyên thông tin đã nhập.
 - Các giá trị được lưu vào cột có sẵn: `order_date`, `expected_delivery_date`, `address`, `note`; không migration. Nếu không gửi ghi chú, đơn mới mặc định lấy ghi chú báo giá; gửi `note: ''` thì để trống.
 - Đơn vẫn tạo ở trạng thái nháp, phải được Manager duyệt. Phân quyền báo giá và chống tạo trùng giữ nguyên.
+
+
+## Form chỉnh mẫu In/Tải đơn đặt hàng
+
+Popup In/Tải có form bên trái và bản xem trước bên phải, tương tự hồ sơ HĐKT. Sửa được thông tin đơn/khách hàng, ngày đặt/ngày hẹn giao, địa chỉ, ghi chú và ba người ký. Form và các ô sửa trực tiếp trên giấy đồng bộ hai chiều; trước khi in/PDF/Excel đều cập nhật cùng snapshot. Các chỉnh sửa này dành riêng cho bản xuất, không lưu thay đổi vào đơn nghiệp vụ. Điện thoại xếp form phía trên bản xem.
