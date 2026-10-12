@@ -1,3 +1,4 @@
+import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
@@ -3092,7 +3093,7 @@ function openOrderPrint(detail = sales.detail) {
   document.body.append(dlg);
   const sheet = dlg.querySelector('[data-sheet]'), prices = () => dlg.querySelector('[data-prices]').checked;
   const noteLabel = document.createElement('label'); noteLabel.className = 'order-print-note'; noteLabel.textContent = 'Ghi chú đơn hàng';
-  const noteInput = document.createElement('textarea'); noteInput.rows = 2; noteInput.maxLength = 2000;
+  const noteInput = document.createElement('textarea'); noteInput.rows = 2; noteInput.maxLength = 20000;
   noteInput.value = p.note; noteInput.placeholder = 'Nhập ghi chú để đưa vào bản in / PDF / Excel'; noteLabel.append(noteInput);
   dlg.querySelector('.print-tools').after(noteLabel);
   const render = () => { sheet.innerHTML = orderSheetHtml(p, { prices: prices(), edit: true }); noteInput.value = p.note; };
@@ -3342,13 +3343,15 @@ document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) c
 $('#download-menu').addEventListener('click', () => closeDownloadMenu());
 /** Đơn của báo giá đang mở: có đơn đang hiệu lực thì dùng, chưa có thì tạo. */
 /**
- * Tạo đơn cho báo giá. Luồng đơn hàng: popup chọn kho Sapo – máy chủ tạo đơn + đơn nháp Sapo cùng lúc (Sapo lỗi → không có đơn).
- * Luồng HĐKT: tạo đơn tạm, đẩy Sapo lúc lập HĐKT. Báo giá đã có đơn → mở đơn đó. Trả id đơn, null khi huỷ.
+ * Tạo đơn cho báo giá: mở form nhập thông tin trước, sau đó chỉ kiểm Sapo nếu chọn có đẩy.
+ * HĐKT dùng form riêng. Báo giá đã có đơn → mở đơn đó. Trả id đơn, null khi huỷ.
  */
+var orderCreateUi = null;
+const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
 async function createOrderForQuote(quoteId, quoteNo) {
   let existed = null;
-  const post = async (loc, push) => {
-    try { return await api('/orders', 'POST', { quoteId, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }); }
+  const post = async (fields, loc, push) => {
+    try { return await api('/orders', 'POST', { quoteId, ...fields, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }); }
     catch (ex) {
       if (ex.code !== 'ORDER_EXISTS') throw ex;
       const found = (await api('/orders?q=' + encodeURIComponent(quoteNo))).orders.find(o => o.quoteId === quoteId && o.status !== 'cancelled');
@@ -3356,7 +3359,7 @@ async function createOrderForQuote(quoteId, quoteNo) {
       existed = found; return { id: found.id };
     }
   };
-  const r = await sapoPush().choose({ quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: post });
+  const r = await orderCreate().choose({ quoteId, quoteNo }, post);
   if (!r) return null;
   if (existed) toast('Báo giá này đã có đơn hàng – mở đơn đó.');
   else { toast('Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); }

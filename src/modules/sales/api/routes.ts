@@ -1,3 +1,4 @@
+import { cleanOrderInput } from '../domain/order-input.ts';
 import { and, asc, count, desc, eq, gte, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -117,7 +118,7 @@ async function contractCustomerCode(db: StaffEnv['db'] | Tx, quote: QuoteRow) {
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
  */
-export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string; deliveryDate?: string | null;
+export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string;
   /** Chạy cuối giao dịch tạo đơn (vd. đẩy đơn sang Sapo); lỗi → huỷ, không có đơn. */
   inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
@@ -138,9 +139,9 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
     await tx.insert(salesOrders).values({
       id, orderNo: nextDocNo('DH', today, used), quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
-      taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
-      ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: today,
-      expectedDeliveryDate: isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note, 2000), createdAt: now, updatedAt: now,
+      taxCode: text(data.customerTaxCode, 100), address: o.deliveryAddress === undefined ? text(data.customerAddress, 2000) : text(o.deliveryAddress, 2000),
+      ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: o.orderDate ?? today,
+      expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note ?? data.notes, 20000), createdAt: now, updatedAt: now,
     });
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
@@ -267,6 +268,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({ order: order ?? null });
   }, 'business');
 
+  // The form checks capabilities so a UI deploy cannot silently lose notes on an older API.
+  router.get('/orders/create-config', async () => json({ version: 1, noteMaxLength: 20000 }), 'business');
+
   router.get('/orders/:id', async c => {
     const db = c.env.db, order = await loadOrder(c, c.params.id!);
     const [lines, contract, ships, schedules, payments] = await Promise.all([
@@ -316,15 +320,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
 
   /** Tạo đơn từ báo giá (người xem được báo giá mới tạo được). Mỗi báo giá một đơn đang hiệu lực. */
   router.post('/orders', async c => {
-    const body = await readJson(c.req, 8_192), me = viewer(c), quoteId = text(body.quoteId, 80);
+    const body = await readJson(c.req, 128_000), me = viewer(c), quoteId = text(body.quoteId, 80);
     const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
+    const input = cleanOrderInput(body);
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
     // Có tạo đơn Sapo (mặc định): đẩy trong cùng giao dịch (Sapo lỗi → không tạo đơn); `pushSapo: false` → chỉ tạo đơn web. HĐKT là luồng riêng: POST /contracts { quoteId }.
     const push = wantsSapoPush(c, body) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let sapo: SapoPushOutcome = null;
-    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft',
+    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', ...input,
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
     await notifyMany(c.env, 'managers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
