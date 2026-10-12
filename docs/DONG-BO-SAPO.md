@@ -104,9 +104,9 @@ Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùn
 - **Nhân viên phụ trách trên Sapo** = người phụ trách báo giá / đơn.
   - Khớp tài khoản Sapo theo liên kết nhân viên ↔ Sapo (đồng bộ nhân viên), rồi email, rồi tên.
   - Không khớp được → popup báo trước; đơn Sapo để người phụ trách theo phiên Sapo đang kết nối.
-- **Cách tạo (giống web cũ, `lib/sapo-copy.mjs`):**
-  - Tạo đơn **nháp** (`status: draft`), mã đơn = **số báo giá**.
-  - Đã có đơn Sapo cùng mã (kể cả đơn copy từ web cũ, hoặc lần trước Sapo tạo xong mà web lỗi) → chỉ liên kết, **không tạo trùng**.
+- **Cách tạo:**
+  - Tạo đơn **nháp** (`status: draft`), mã đơn = **số đơn hàng mới sinh**, hoặc **số HĐKT** với luồng hợp đồng.
+  - Đã có đơn Sapo cùng mã (lần trước Sapo tạo xong mà web lỗi) → chỉ liên kết, **không tạo trùng**.
   - Khách: tìm theo id Sapo / mã KH / MST / SĐT / email / tên; chưa có thì tạo.
   - Sản phẩm: tìm theo SKU; chưa có thì tạo. SKU trùng trên Sapo → lỗi.
   - Dòng hàng: giá sau CK (đã cộng phí in), chưa VAT, thuế suất từng dòng.
@@ -146,3 +146,5 @@ Mỗi lần **Đồng bộ ngay** hoặc chạy theo lịch tự động, ngoài
   - Dữ liệu lưu vào bảng `sapo_inventory_docs` (đầu phiếu) và `sapo_inventory_doc_lines` (dòng hàng), qua migration `0009`, phân quyền ở `0010`.
   - Bản gốc Sapo được giữ trong cột `data`.
   - Loại nào Sapo không cho đọc (404/403, ví dụ tài khoản thiếu quyền) thì được ghi vào `warnings`; các phần khác vẫn đồng bộ bình thường.
+
+Số báo giá chỉ giữ trong ghi chú nguồn. Trước khi sinh chứng từ, popup chưa có mã đơn Sapo và hiển thị sẽ dùng số đơn/HĐKT mới cấp; không lấy số báo giá làm mã tạm. Mã kiểm trùng, mã tham chiếu và tag đối chiếu dùng số chứng từ đã được cấp trong giao dịch. Các liên kết Sapo đã lưu vẫn giữ nguyên.

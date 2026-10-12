@@ -7,9 +7,9 @@ import {
 
 /**
  * Đẩy đơn sang Sapo (port `sendSapoCopy` của web cũ), cùng thứ tự để không tạo trùng:
- *  1. Tìm đơn Sapo đã có cùng mã (số báo giá) → trả lại đơn đó, không tạo mới.
+ *  1. Tìm đơn Sapo đã có cùng mã (số đơn hàng / HĐKT) → trả lại đơn đó, không tạo mới.
  *  2. Tìm / tạo khách hàng; tìm / tạo sản phẩm theo SKU.
- *  3. Tạo đơn nháp; Sapo đổi mã đơn thì sửa lại cho đúng số báo giá.
+ *  3. Tạo đơn nháp; Sapo đổi mã đơn thì sửa lại cho đúng số đơn hàng / HĐKT.
  *  4. Lỗi giữa chừng → tìm lại theo mã (có thể Sapo đã tạo xong) trước khi báo lỗi.
  */
 type Api = ReturnType<typeof sapoClient>;
@@ -81,13 +81,13 @@ async function ensureVariant(api: Api, l: SapoPushLine, locationId: number) {
   throw new AppError(502, `Không tạo được sản phẩm Sapo cho SKU ${l.sku}.`, 'SAPO_PRODUCT_FAILED');
 }
 
-/** Sapo tự cấp mã đơn khác: sửa lại mã = số báo giá (như web cũ). */
+/** Sapo tự cấp mã đơn khác: sửa lại mã = số đơn hàng / HĐKT (như web cũ). */
 async function keepCode(api: Api, id: unknown, code: string) {
   let order = await readOrder(api, id);
   if (order.code === code && order.reference_number === code) return order;
   await api.send('PUT', '/orders/' + encodeURIComponent(String(id)) + '.json', { order: { id, code, reference_number: code } });
   order = await readOrder(api, id);
-  if (order.code !== code && order.reference_number !== code) throw new AppError(502, 'Sapo đã tạo đơn nhưng chưa giữ đúng số báo giá – kiểm tra trên Sapo.', 'SAPO_CODE_MISMATCH');
+  if (order.code !== code && order.reference_number !== code) throw new AppError(502, 'Sapo đã tạo đơn nhưng chưa giữ đúng số đơn hàng / HĐKT – kiểm tra trên Sapo.', 'SAPO_CODE_MISMATCH');
   return order;
 }
 

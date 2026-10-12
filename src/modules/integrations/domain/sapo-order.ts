@@ -1,7 +1,7 @@
 /**
  * ĐẨY ĐƠN HÀNG SANG SAPO – phần nghiệp vụ thuần (port từ `lib/sapo-copy.mjs` của web cũ, nút "Copy báo giá vào Sapo").
- *  - Đơn Sapo là đơn NHÁP (`status: draft`), mã đơn = số báo giá (như web cũ, để không tạo trùng với đơn đã copy từ web cũ);
- *    đơn không từ báo giá thì dùng số đơn web.
+ *  - Đơn Sapo là đơn NHÁP (`status: draft`), mã đơn = số HĐKT nếu có hợp đồng, còn lại dùng số đơn web.
+ *    Số báo giá chỉ là thông tin nguồn, không dùng để đối chiếu trùng.
  *  - Kho (location) do nhân viên chọn lúc đẩy; nhân viên phụ trách trên Sapo = người phụ trách đơn / báo giá.
  *  - Dòng hàng: giá sau chiết khấu (đã cộng phí in), chưa VAT, thuế suất từng dòng – đúng như dòng đơn trên web.
  */
@@ -27,9 +27,9 @@ const compact = <T extends Raw>(o: T) => Object.fromEntries(Object.entries(o).fi
 const truncate = (v: string, max: number) => v.length <= max ? v : v.slice(0, max - 3).trimEnd() + '...';
 
 /** Lỗi dữ liệu trước khi gọi Sapo (trả nguyên văn cho nhân viên). Rỗng = đẩy được. */
-export function sapoPushProblems(input: SapoPushInput): string[] {
+export function sapoPushProblems(input: SapoPushInput, options: { requireCode?: boolean } = {}): string[] {
   const out: string[] = [];
-  if (!input.code) out.push('Đơn chưa có số báo giá / số đơn.');
+  if (options.requireCode !== false && !input.code) out.push('Chưa có số đơn hàng / HĐKT.');
   if (!input.customer.name && !input.customer.phone && !input.customer.email && !input.customer.customerCode) out.push('Đơn chưa có thông tin khách hàng.');
   if (!input.lines.length) out.push('Đơn chưa có sản phẩm.');
   if (input.lines.length > 300) out.push('Đơn quá 300 dòng – Sapo không nhận.');
@@ -105,3 +105,4 @@ export function buildSapoOrder(input: SapoPushInput, cfg: SapoPushConfig, ids: {
 
 /** Tổng Sapo khớp tổng web (lệch ≤ 1đ do làm tròn). */
 export const sapoTotalMatches = (sapoTotal: unknown, webTotal: number) => Number.isFinite(Number(sapoTotal)) && Math.abs(Number(sapoTotal) - webTotal) <= 1;
+

@@ -12,7 +12,7 @@ import { buildSapoOrder, isSapoOrderFor, matchSapoAccount, sapoPushProblems, typ
 
 /**
  * ĐẨY ĐƠN SANG SAPO – TỰ ĐỘNG, BẮT BUỘC khi sinh đơn hàng / lập HĐKT (thay "Copy báo giá vào Sapo" của web cũ):
- * chọn kho → tạo đơn NHÁP Sapo (mã = số báo giá, NV phụ trách Sapo = người phụ trách báo giá) cùng lúc với đơn / HĐKT web.
+ * chọn kho → tạo đơn NHÁP Sapo (mã = số đơn / HĐKT, NV phụ trách Sapo = người phụ trách báo giá) cùng lúc với đơn / HĐKT web.
  * Sapo lỗi → KHÔNG có đơn / HĐKT nào. Khách / SKU chưa có trên Sapo thì tạo; đơn Sapo cùng mã đã có thì chỉ liên kết.
  */
 const origin = 'https://trial.test', SECRET = 's'.repeat(40);
@@ -47,7 +47,7 @@ function fakeSapo(opts: { forbidOrders?: boolean; orderStatus?: number } = {}) {
       if (opts.forbidOrders) return new Response('{}', { status: 403 });
       const o = body.order, lines: Raw[] = o.order_line_items;
       const total = Math.round(lines.reduce((s, l) => s + l.price * l.quantity * (1 + (l.tax_rate_override ?? 0) / 100), 0));
-      // Sapo tự cấp mã SON… → app phải sửa lại mã = số báo giá.
+      // Sapo tự cấp mã SON… → app phải sửa lại mã = số đơn / HĐKT.
       const created = { ...o, id: ++seq, code: 'SON' + seq, reference_number: '', total };
       db.orders.push(created); return Response.json({ order: created });
     }
@@ -89,12 +89,13 @@ async function setup(opts: { forbidOrders?: boolean; orderStatus?: number; conne
 test('sinh đơn hàng: chọn kho → đơn web + đơn nháp Sapo cùng lúc; đúng mã, đúng NV phụ trách; tạo SKU thiếu; Sapo đã có cùng mã thì liên kết', async () => {
   const { sapo, call, emp, makeQuote, orderCount } = await setup();
   const qid = await makeQuote('B2B_BG20261009_001');
+  sapo.db.orders.push({ id: 6666, code: 'B2B_BG20261009_001', reference_number: 'B2B_BG20261009_001', tags: ['B2B_BG20261009_001'], total: 0 });
 
   const pre = (await call(`/sapo/preview?quoteId=${qid}`, emp)).data;
   assert.equal(pre.connected, true, JSON.stringify(pre));
   assert.deepEqual(pre.locations, [{ id: 7, name: 'Kho Q1' }, { id: 8, name: 'Kho Hà Nội' }], 'bỏ kho ngừng hoạt động');
   assert.deepEqual(pre.account, { id: 21, name: 'Tên emp' }, 'NV phụ trách Sapo = người phụ trách báo giá (khớp email)');
-  assert.deepEqual([pre.code, pre.problems, pre.required], ['B2B_BG20261009_001', [], true]);
+  assert.deepEqual([pre.code, pre.problems, pre.required], ['', [], true]);
   assert.equal(sapo.writes.length, 0, 'xem trước không ghi gì vào Sapo');
 
   // Không chọn kho / kho ngừng hoạt động → không có đơn.
@@ -104,37 +105,45 @@ test('sinh đơn hàng: chọn kho → đơn web + đơn nháp Sapo cùng lúc; 
 
   const r = await call('/orders', emp, 'POST', { quoteId: qid, sapoLocationId: 8 });
   assert.equal(r.status, 201, JSON.stringify(r.data));
-  assert.deepEqual([r.data.sapo.status, r.data.sapo.code, r.data.sapo.location, r.data.sapo.account, r.data.sapo.warnings], ['created', 'B2B_BG20261009_001', 'Kho Hà Nội', 'Tên emp', []]);
-  const created = sapo.db.orders[0]!;
+  const detail = (await call(`/orders/${r.data.id}`, emp)).data.order;
+  assert.deepEqual([r.data.sapo.status, r.data.sapo.code, r.data.sapo.location, r.data.sapo.account, r.data.sapo.warnings], ['created', detail.orderNo, 'Kho Hà Nội', 'Tên emp', []]);
+  const created = sapo.db.orders.find(o => o.id !== 6666)!;
   assert.deepEqual([created.status, created.location_id, created.assignee_id, created.account_id, created.customer_id], ['draft', 8, 21, 21, 501]);
-  assert.equal(created.code, 'B2B_BG20261009_001', 'Sapo cấp mã SON… → sửa lại đúng số báo giá');
+  assert.equal(created.code, detail.orderNo, 'Sapo cấp mã SON… → sửa lại đúng số đơn mới sinh');
+  assert.equal(created.reference_number, detail.orderNo);
+  assert.ok(created.tags.includes(detail.orderNo));
+  assert.ok(!created.tags.includes('B2B_BG20261009_001'));
+  assert.equal(sapo.db.orders[0]!.id, 6666, 'không liên kết nhầm đơn cũ mang số báo giá');
   assert.deepEqual(created.order_line_items.map((l: Raw) => [l.price, l.quantity, l.tax_rate_override]), [[200000, 10, 8], [100000, 5, 8]]);
   assert.ok(sapo.writes.some(w => w.path === '/products.json' && w.body.product.variants[0].sku === 'HQ-NEW'), 'SKU chưa có thì tạo sản phẩm Sapo');
-  const detail = (await call(`/orders/${r.data.id}`, emp)).data.order;
-  assert.equal(detail.sapoOrderCode, 'B2B_BG20261009_001'); assert.match(detail.sapoOrderUrl, /\/admin\/orders\/\d+$/);
+  assert.equal(detail.sapoOrderCode, detail.orderNo); assert.match(detail.sapoOrderUrl, /\/admin\/orders\/\d+$/);
 
-  // Đơn Sapo cùng số báo giá đã có (vd. copy từ web cũ) → liên kết, không tạo thêm; tổng lệch thì cảnh báo.
+  // Đơn Sapo cùng số đơn mới sinh đã có (vd. Sapo đã ghi trước khi web lỗi) → liên kết, không tạo thêm; tổng lệch thì cảnh báo.
   const q2 = await makeQuote('B2B_BG20261009_002');
-  sapo.db.orders.push({ id: 7777, code: 'B2B_BG20261009_002', reference_number: 'B2B_BG20261009_002', total: 1 });
+  const nextNo = detail.orderNo.replace(/_(\d+)$/, (_: string, n: string) => '_' + String(Number(n) + 1).padStart(n.length, '0'));
+  sapo.db.orders.push({ id: 7777, code: nextNo, reference_number: nextNo, total: 1 });
   const again = await call('/orders', emp, 'POST', { quoteId: q2, sapoLocationId: 7 });
   assert.deepEqual([again.status, again.data.sapo.status, again.data.sapo.id], [201, 'existing', '7777']);
   assert.match(again.data.sapo.warnings.join(), /Tổng tiền trên Sapo/);
-  assert.equal(sapo.db.orders.length, 2);
+  assert.equal(sapo.db.orders.length, 3);
 });
 
 test('lập HĐKT thẳng từ báo giá (không qua đơn hàng) + đẩy Sapo cùng lúc (ghi chú có số HĐKT); Sapo lỗi → không có HĐKT', async () => {
   const ok = await setup();
   const qid = await ok.makeQuote('B2B_BG20261009_003');
-  assert.equal((await ok.call(`/sapo/preview?quoteId=${qid}`, ok.emp)).data.code, 'B2B_BG20261009_003');
+  assert.equal((await ok.call(`/sapo/preview?quoteId=${qid}`, ok.emp)).data.code, '');
   const contract = { quoteId: qid, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-09' };
   assert.equal((await ok.call('/contracts', ok.emp, 'POST', contract)).data.code, 'SAPO_LOCATION_REQUIRED');
   assert.equal(await ok.orderCount(), 0);
   const k = await ok.call('/contracts', ok.emp, 'POST', { ...contract, sapoLocationId: 7 });
   assert.equal(k.status, 201, JSON.stringify(k.data));
   assert.equal(k.data.sapo.status, 'created');
+  assert.equal(k.data.sapo.code, k.data.contractNo);
+  assert.equal(ok.sapo.db.orders[0]!.reference_number, k.data.contractNo);
+  assert.ok(ok.sapo.db.orders[0]!.tags.includes(k.data.contractNo));
   const note: string = ok.sapo.db.orders[0]!.note;
   assert.ok(note.includes('HĐKT: ' + k.data.contractNo) && !note.includes('DH_'), 'ghi chú đơn Sapo có số HĐKT, không có số đơn web');
-  assert.equal((await ok.call(`/sapo/preview?orderId=${k.data.orderId}`, ok.emp)).data.pushed.code, 'B2B_BG20261009_003');
+  assert.equal((await ok.call(`/sapo/preview?orderId=${k.data.orderId}`, ok.emp)).data.pushed.code, k.data.contractNo);
   // Báo giá đã lập HĐKT thì không sinh đơn hàng nữa (2 luồng độc lập).
   assert.match((await ok.call('/orders', ok.emp, 'POST', { quoteId: qid, sapoLocationId: 7 })).data.error ?? '', /đã có HĐKT/);
 
@@ -176,7 +185,7 @@ test('chưa kết nối Sapo / dòng thiếu SKU / không có quyền xem báo g
 });
 
 test('đẩy Sapo: hàm thuần – kiểm dữ liệu, khớp đơn đúng mã, khớp tài khoản phụ trách, dựng đơn nháp', () => {
-  const input: SapoPushInput = { code: 'B2B_BG20261009_001', orderNo: 'DH_20261009_001', quoteNo: 'B2B_BG20261009_001', quoteType: 'B2B', contractNo: '',
+  const input: SapoPushInput = { code: 'DH_20261009_001', orderNo: 'DH_20261009_001', quoteNo: 'B2B_BG20261009_001', quoteType: 'B2B', contractNo: '',
     customer: { sapoId: 501, name: 'Khách', customerCode: '', taxCode: '', phone: '', email: '', contact: '', address: '' },
     lines: [{ sku: 'A', name: 'A', unit: 'cái', qty: 2, unitPrice: 1000, taxRate: 8 }, { sku: '', name: 'B', unit: '', qty: 1, unitPrice: 5, taxRate: 0 }],
     ownerName: 'Lan', ownerPhone: '', expectedDeliveryDate: '2026-10-20', subtotal: 2005, tax: 160, total: 2165 };
@@ -185,7 +194,7 @@ test('đẩy Sapo: hàm thuần – kiểm dữ liệu, khớp đơn đúng mã,
   assert.equal(isSapoOrderFor({ code: 'SON1', tags: ['web-bao-gia', 'B2B_BG20261009_001'] }, 'B2B_BG20261009_001'), true);
   assert.equal(matchSapoAccount([{ id: 1, full_name: 'Nguyễn Văn Lan', status: 'inactive' }, { id: 2, full_name: 'nguyen van lan' }], { email: '', name: 'Nguyễn Văn Lan' })?.id, 2);
   const o = buildSapoOrder({ ...input, lines: [input.lines[0]!] }, { locationId: 7, sourceId: 1, priceListId: 2 }, { customerId: 501, accountId: 21, variants: [{ id: 9, product_id: 90 }] });
-  assert.deepEqual([o.code, o.status, o.location_id, o.assignee_id, o.customer_id], ['B2B_BG20261009_001', 'draft', 7, 21, 501]);
+  assert.deepEqual([o.code, o.status, o.location_id, o.assignee_id, o.customer_id], ['DH_20261009_001', 'draft', 7, 21, 501]);
   assert.deepEqual(o.order_line_items![0], { product_id: 90, variant_id: 9, is_freeform: false, price: 1000, tax_included: false, tax_rate_override: 8, quantity: 2, note: 'Ngày giao: 2026-10-20' });
 });
 
