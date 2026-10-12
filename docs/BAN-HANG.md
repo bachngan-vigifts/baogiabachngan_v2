@@ -178,3 +178,13 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 - **Chỉ là tiến trình theo dõi:** không đổi trạng thái đơn, lịch giao, công nợ, hoá đơn.
 - **Lưu trữ:** `order_progress_marks` (bước xong theo việc / dấu tay). Các bước theo chứng từ tính trực tiếp, không lưu.
 - **Code:** `sales/domain/progress.ts`, `sales/api/progress.ts`, `progress-routes.ts`; việc tự sinh `productionSteps` trong `tasks/api/auto-tasks.ts`.
+
+
+## Form sinh đơn hàng từ báo giá
+
+- Chọn **Sinh đơn hàng** mở form ngay, lấy dữ liệu báo giá đã lưu qua API CRM; không kiểm tra Sapo trước.
+- Form: ngày đặt, ngày hẹn giao, địa chỉ giao, ghi chú. Ghi chú chép từ `data.notes` của báo giá, cho sửa riêng hoặc xoá, tối đa 20.000 ký tự; không sửa lại báo giá.
+- Chọn **Không – chỉ sinh trên web** (mặc định): gửi `pushSapo: false` thẳng tới API, không gọi preview/kết nối Sapo.
+- Chọn **Có**: sau khi gửi form mới mở bước kiểm tra Sapo/chọn kho, cùng cách HĐKT. Sapo lỗi vẫn cho chuyển sang chỉ sinh trên web, giữ nguyên thông tin đã nhập.
+- Các giá trị được lưu vào cột có sẵn: `order_date`, `expected_delivery_date`, `address`, `note`; không migration. Nếu không gửi ghi chú, đơn mới mặc định lấy ghi chú báo giá; gửi `note: ''` thì để trống.
+- Đơn vẫn tạo ở trạng thái nháp, phải được Manager duyệt. Phân quyền báo giá và chống tạo trùng giữ nguyên.

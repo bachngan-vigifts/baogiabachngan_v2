@@ -4,6 +4,9 @@ import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
+import { quotations } from '../../src/modules/quotes/schema.ts';
+import { eq } from 'drizzle-orm';
+import { cleanOrderInput } from '../../src/modules/sales/domain/order-input.ts';
 import { salesContracts, salesOrders } from '../../src/modules/sales/schema.ts';
 import { buildSapoOrder, isSapoOrderFor, matchSapoAccount, sapoPushProblems, type SapoPushInput } from '../../src/modules/integrations/domain/sapo-order.ts';
 
@@ -184,3 +187,39 @@ test('đẩy Sapo: hàm thuần – kiểm dữ liệu, khớp đơn đúng mã,
   assert.deepEqual(o.order_line_items![0], { product_id: 90, variant_id: 9, is_freeform: false, price: 1000, tax_included: false, tax_rate_override: 8, quantity: 2, note: 'Ngày giao: 2026-10-20' });
 });
 
+
+
+test('sinh đơn: ghi chú báo giá được chép đầy đủ, sửa riêng và xoá ghi chú; không qua Sapo không cần phiên', async () => {
+  const s = await setup({ connect: false });
+  assert.deepEqual((await s.call('/orders/create-config', s.emp)).data, { version: 1, noteMaxLength: 20000 });
+  assert.equal((await s.call('/orders/create-config')).status, 401);
+  const quoteId = await s.makeQuote('B2B_BG20261009_101');
+  const longNote = 'Ghi chú nhiều dòng\n' + 'Thanh toán sau khi giao hàng. '.repeat(100).trim();
+  const [quote] = await s.db.select().from(quotations).where(eq(quotations.id, quoteId));
+  const data = JSON.parse(quote!.data); data.notes = longNote; data.deliveryDate = '2026-10-30';
+  await s.db.update(quotations).set({ data: JSON.stringify(data) }).where(eq(quotations.id, quoteId));
+  const inherited = await s.call('/orders', s.emp, 'POST', { quoteId, pushSapo: false });
+  assert.equal(inherited.status, 201, JSON.stringify(inherited.data));
+  const read = async (id: string) => (await s.call('/orders/' + id, s.emp)).data.order;
+  assert.equal((await read(inherited.data.id)).note, longNote, 'no truncation at old 2000-char limit');
+  const q2 = await s.makeQuote('B2B_BG20261009_102');
+  const made = await s.call('/orders', s.emp, 'POST', { quoteId: q2, pushSapo: false, note: 'Giao từng đợt\nGọi trước 30 phút', deliveryAddress: 'Kho khách hàng', orderDate: '2026-10-10', deliveryDate: '2026-10-31' });
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  const o = await read(made.data.id);
+  assert.deepEqual([o.note, o.address, o.orderDate, o.expectedDeliveryDate], ['Giao từng đợt\nGọi trước 30 phút', 'Kho khách hàng', '2026-10-10', '2026-10-31']);
+  assert.equal((await s.call('/quotes/' + q2, s.emp)).data.data.notes, '', 'order overrides do not change quote');
+  const q3 = await s.makeQuote('B2B_BG20261009_103');
+  const [q3row] = await s.db.select().from(quotations).where(eq(quotations.id, q3));
+  await s.db.update(quotations).set({ data: JSON.stringify({ ...JSON.parse(q3row!.data), notes: 'Ghi chú gốc', deliveryDate: '2026-10-30' }) }).where(eq(quotations.id, q3));
+  const cleared = await s.call('/orders', s.emp, 'POST', { quoteId: q3, pushSapo: false, note: '', deliveryDate: '' });
+  assert.equal(cleared.status, 201); assert.equal((await read(cleared.data.id)).note, ''); assert.equal((await read(cleared.data.id)).expectedDeliveryDate, null);
+  assert.equal(s.sapo.writes.length, 0);
+});
+
+test('thông tin đơn hàng: kiểm ngày thật và giới hạn ghi chú ở server', () => {
+  assert.throws(() => cleanOrderInput({ orderDate: '2026-02-30' }), /không hợp lệ/);
+  assert.throws(() => cleanOrderInput({ deliveryDate: '31/10/2026' }), /không hợp lệ/);
+  assert.throws(() => cleanOrderInput({ note: 'x'.repeat(20001) }), /không hợp lệ/);
+  assert.throws(() => cleanOrderInput({ note: 123 }), /không hợp lệ/);
+  assert.deepEqual(cleanOrderInput({ deliveryDate: '', note: '' }), { orderDate: undefined, deliveryDate: null, deliveryAddress: undefined, note: '' });
+});

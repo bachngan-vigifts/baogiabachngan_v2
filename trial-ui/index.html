@@ -826,6 +826,25 @@
   </form>
 </dialog>
 
+<dialog id="order-create-dialog" class="modal">
+  <form id="order-create-form">
+    <div class="modal-head"><div><span class="eyebrow">Đơn đặt hàng</span><h2>Sinh đơn hàng từ <span id="order-create-quote"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid cols-2">
+      <label>Ngày đặt<input name="orderDate" type="date" required></label>
+      <label>Ngày hẹn giao<input name="deliveryDate" type="date"></label>
+      <label class="span-2">Địa chỉ giao hàng<textarea name="deliveryAddress" rows="2" maxlength="2000"></textarea></label>
+      <label class="span-2">Ghi chú đơn hàng <small class="muted">Lấy từ báo giá, có thể chỉnh riêng cho đơn hàng.</small><textarea name="note" rows="8" maxlength="20000"></textarea></label>
+      <fieldset class="span-2 sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>
+        <label class="check"><input type="radio" name="pushSapo" value="no" checked> Không – chỉ sinh trên web</label>
+        <label class="check"><input type="radio" name="pushSapo" value="yes"> Có – tạo thêm đơn nháp trên Sapo</label>
+      </fieldset>
+      <p class="muted small span-2" id="order-create-status" role="status"></p>
+      <p class="error span-2" id="order-create-error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="order-create-submit">Sinh đơn hàng</button></div>
+  </form>
+</dialog>
+
 <dialog id="contract-dialog" class="modal">
   <form id="contract-form" novalidate>
     <div class="modal-head"><div><span class="eyebrow">Lập hợp đồng kinh tế</span><h2>Lập HĐKT từ <span id="contract-order-no"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
