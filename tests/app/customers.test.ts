@@ -44,6 +44,10 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal(list.find((x: any) => x.id === k.data.id).owner.name, 'Tên emp');
   assert.deepEqual((await call('/customers?mine=1', emp)).data.customers.map((x: any) => x.id), [k.data.id]);
   assert.equal((await call('/customers/nope', emp)).status, 404);
+  // Khách mới tạo lên trên cùng (không theo ABC).
+  await new Promise(r => setTimeout(r, 5));
+  const k3 = await call('/customers', mgr, 'POST', { name: 'Công ty Xuân Mai' });
+  assert.deepEqual((await call('/customers', mgr)).data.customers.slice(0, 2).map((x: any) => x.id), [k3.data.id, k2.data.id]);
 
   // Người liên hệ: thêm / sửa / xoá; một người liên hệ chính.
   assert.equal((await call(`/customers/${k.data.id}/contacts`, emp, 'POST', { name: '' })).status, 400);
