@@ -41,7 +41,7 @@ async function api(path, method = 'GET', body) {
   catch { throw Object.assign(new Error('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.'), { status: 0 }); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   if (data.sessionToken !== undefined) saveToken(data.sessionToken);
-  if (res.status === 401 && !['/login', '/activate'].includes(path)) { toLogin('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); throw new Error('Phiên đăng nhập đã hết hạn.'); }
+  if (res.status === 401 && !['/login', '/activate', '/activation-info'].includes(path)) { toLogin('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); throw new Error('Phiên đăng nhập đã hết hạn.'); }
   if (!res.ok) throw Object.assign(new Error(data.error || 'Không thực hiện được thao tác.'), { status: res.status, code: data.code });
   return data;
 }
@@ -57,25 +57,60 @@ const st = { me: null, items: [], cart: new Map(), catalogVersion: '' };
 // ----- Đăng nhập / đặt mật khẩu ngay trên trang khách hàng (link kích hoạt: customer.html#email=…&token=…)
 const view = which => { $('#c-auth').hidden = which !== 'auth'; $('#c-staff').hidden = which !== 'staff'; $('#portal').hidden = $('#p-head').hidden = which !== 'portal'; };
 let activation = null;
-function showAuth(note = '') {
+let checkingActivation = false;
+const usedActivationNote = 'Liên kết đặt mật khẩu này đã dùng hoặc hết hạn. Anh/chị đăng nhập bằng tài khoản đã đăng ký; nếu quên mật khẩu, liên hệ nhân viên phụ trách để cấp link mới.';
+// Chỉ lỗi liên kết từ API mới đổi flow; lỗi mạng, giới hạn thử hoặc mật khẩu vẫn cho thử lại.
+const invalidActivation = ex => ex.status === 400 && /^Liên kết (?:kích hoạt không hợp lệ|đã hết hạn|đã được sử dụng)/.test(ex.message);
+function activationToLogin() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const identifier = $('#c-email').value || h.get('email') || h.get('phone') || '';
+  h.delete('token');
+  history.replaceState(null, '', location.pathname + location.search + (h.size ? '#' + h.toString() : ''));
+  activation = null;
+  $('#c-password').value = $('#c-password2').value = '';
+  renderAuth(usedActivationNote, identifier);
+}
+function renderAuth(note = '', identifier = '') {
   view('auth');
-  const h = new URLSearchParams(location.hash.slice(1)), tk = h.get('token');
-  activation = tk && /^[a-f0-9]{64}$/.test(tk) ? { token: tk, email: h.get('email') || '' } : null;
   $('#c-auth-title').textContent = activation ? 'Đặt mật khẩu tài khoản khách hàng' : 'Đăng nhập khách hàng';
   $('#c-auth-note').textContent = note || (activation ? 'Tạo mật khẩu (ít nhất 8 ký tự) để bắt đầu dùng trang khách hàng.' : 'Dùng email hoặc số di động đã được nhân viên Bách Ngân cấp tài khoản.');
   $('#c-password2-label').hidden = !activation; $('#c-login-button').textContent = activation ? 'Đặt mật khẩu & vào trang' : 'Đăng nhập';
-  if (activation) { $('#c-email').value = activation.email; $('#c-email').readOnly = true; $('#c-password').autocomplete = 'new-password'; }
+  $('#c-email').value = identifier || $('#c-email').value;
+  $('#c-email').readOnly = !!activation;
+  $('#c-password').autocomplete = activation ? 'new-password' : 'current-password';
+}
+async function showAuth(note = '') {
+  const h = new URLSearchParams(location.hash.slice(1));
+  activation = h.has('token') ? { token: h.get('token'), email: h.get('email') || h.get('phone') || '' } : null;
+  renderAuth(note, activation?.email || h.get('email') || h.get('phone') || '');
+  if (!activation) return;
+  checkingActivation = true;
+  $('#c-login-button').disabled = true;
+  $('#c-auth-error').textContent = '';
+  $('#c-auth-note').textContent = 'Đang kiểm tra liên kết đặt mật khẩu…';
+  try {
+    const info = await api('/activation-info', 'POST', { token: activation.token });
+    renderAuth(note, activation.email || info.email || '');
+  } catch (ex) {
+    if (invalidActivation(ex)) activationToLogin();
+    else { renderAuth(note); $('#c-auth-error').textContent = ex.message; }
+  } finally { checkingActivation = false; $('#c-login-button').disabled = false; }
 }
 $('#c-show-password').addEventListener('change', e => { $('#c-password').type = $('#c-password2').type = e.target.checked ? 'text' : 'password'; });
 $('#c-login-form').addEventListener('submit', async e => {
   e.preventDefault();
+  if (checkingActivation) return;
   const err = $('#c-auth-error'), btn = $('#c-login-button'), email = $('#c-email').value.trim(), password = $('#c-password').value;
   err.textContent = '';
   if (!email || password.length < 8) { err.textContent = 'Nhập email / số di động và mật khẩu (ít nhất 8 ký tự).'; return; }
   if (activation && password !== $('#c-password2').value) { err.textContent = 'Hai lần nhập mật khẩu chưa khớp.'; return; }
   btn.disabled = true;
   try {
-    if (activation) { await api('/activate', 'POST', { token: activation.token, password }); activation = null; history.replaceState(null, '', location.pathname + '#new'); }
+    if (activation) {
+      try { await api('/activate', 'POST', { token: activation.token, password }); }
+      catch (ex) { if (invalidActivation(ex)) { activationToLogin(); return; } throw ex; }
+      activation = null; history.replaceState(null, '', location.pathname + location.search + '#new');
+    }
     await api('/login', 'POST', { email, password });
     $('#c-login-form').reset(); $('#c-email').readOnly = false;
     await boot();
@@ -85,7 +120,7 @@ $('#c-login-form').addEventListener('submit', async e => {
 $('#c-staff-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth(); });
 
 async function boot() {
-  if (/token=[a-f0-9]{64}/.test(location.hash)) { saveToken(''); return showAuth(); } // mở link đặt mật khẩu
+  if (new URLSearchParams(location.hash.slice(1)).has('token')) { saveToken(''); return showAuth(); } // mở link đặt mật khẩu
   if (!token) return showAuth();
   const { user } = await api('/me');
   if (user.role !== 'customer') { $('#c-staff-name').textContent = user.name; view('staff'); return; }
