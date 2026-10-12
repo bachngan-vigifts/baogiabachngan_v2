@@ -345,6 +345,7 @@
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="customer-search" type="search" placeholder="Tìm tên, người liên hệ, số điện thoại, MST…" aria-label="Tìm khách hàng"></label>
           <label class="chip-check"><input type="checkbox" id="customer-mine"> Khách của tôi</label>
           <label class="chip-check" id="customer-pending-chip" hidden><input type="checkbox" id="customer-pending"> Chờ duyệt <b id="customer-pending-count">0</b></label>
+          <button type="button" class="chip-check dup-chip" id="customer-dup-chip" hidden>Trùng MST <b id="customer-dup-count">0</b></button>
           <span class="muted small" id="customer-count"></span>
         </div>
         <div class="table-wrap">
@@ -595,6 +596,16 @@
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-member">Tạo tài khoản</button></div>
   </form>
+</dialog>
+
+<dialog id="dup-dialog" class="modal wide">
+  <div class="modal-head"><h2>Khách trùng mã số thuế</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body">
+    <p class="muted small">Mỗi nhóm giữ lại 1 khách (ưu tiên khách có người liên hệ, nhiều đơn / báo giá hơn). Đơn hàng, HĐKT, báo giá, phiếu thu, chăm sóc, người liên hệ, phụ trách của bản trùng được chuyển sang khách giữ lại; ô còn trống được bù; sau đó bản trùng bị xoá.</p>
+    <div id="dup-list" class="dup-list"></div>
+    <p class="error" id="dup-error" role="alert"></p>
+  </div>
+  <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button><button type="button" class="btn primary" id="dup-merge-all">Gộp tất cả</button></div>
 </dialog>
 
 <dialog id="link-dialog" class="modal">

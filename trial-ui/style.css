@@ -1357,3 +1357,14 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .order-doc-preview { min-width: 0; overflow: auto; }
 .order-doc-preview .print-tools { margin-bottom: 12px; }
 @media (max-width: 850px) { .order-doc-body { grid-template-columns: 1fr; overflow: auto; } .order-doc-form { overflow: visible; padding: 0; } .order-doc-preview { overflow: auto; } }
+/* Khách trùng mã số thuế */
+.dup-chip { background: var(--amber-50); color: var(--amber); border-color: #f1d49a; font-family: inherit; }
+.dup-list { display: grid; gap: 14px; max-height: 60vh; overflow: auto; margin-top: 10px; }
+.dup-group { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.dup-group h3 { font-size: .85rem; color: var(--muted); margin: 0 0 6px; }
+.dup-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.dup-row:first-of-type { border-top: 0; }
+.dup-row small { display: block; color: var(--muted); font-size: .78rem; }
+.dup-tag { min-width: 74px; text-align: center; font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--red-50); color: var(--red-700); white-space: nowrap; }
+.dup-tag.keep { background: var(--green-50); color: var(--green); }
+@media (max-width: 640px) { .dup-row { grid-template-columns: auto 1fr; } .dup-row .btn { grid-column: 1 / -1; } }

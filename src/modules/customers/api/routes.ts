@@ -8,6 +8,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { customerBrandDiscounts, customerContacts, customers, customerStaff } from '../schema.ts';
 import { CUSTOMER_LIMITS } from '../domain/customer-config.ts';
+import { NORM_TAX_SQL, normTaxCode } from '../domain/tax-code.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Db = StaffEnv['db'];
@@ -52,6 +53,14 @@ async function activeStaff(db: Db, ids: string[]) {
   if (!ids.length) return [];
   return (await db.select({ id: employees.id }).from(employees)
     .where(and(inArray(employees.id, ids), eq(employees.active, true), isNull(employees.deletedAt), inArray(employees.role, ['employee', 'manager'])))).map(r => r.id);
+}
+
+/** Khách khác đã dùng MST này (chống trùng khách theo mã số thuế). */
+export async function customerWithTaxCode(db: Db, taxCode: string, exceptId?: string) {
+  const tax = normTaxCode(taxCode); if (!tax) return null;
+  const [row] = await db.select({ id: customers.id, name: customers.name }).from(customers)
+    .where(and(sql`${sql.raw(NORM_TAX_SQL('tax_code'))} = ${tax}`, exceptId ? ne(customers.id, exceptId) : undefined)).limit(1);
+  return row ?? null;
 }
 
 async function loadCustomer(db: Db, id: string) {
@@ -118,6 +127,10 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const now = nowIso(), id = update ? c.params.id! : crypto.randomUUID();
     const fields = { name, contact: text('contact'), phone: text('phone', 40), email: text('email'), address: text('address', 2000), taxCode: text('taxCode'), customerCode: text('customerCode') };
     const row = { ...fields, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
+    // Sửa khách mà không đổi MST thì không chặn (dữ liệu trùng cũ gộp bằng chức năng "Gộp khách trùng MST").
+    const unchanged = update && normTaxCode((await loadCustomer(c.env.db, id)).taxCode) === normTaxCode(fields.taxCode);
+    const dup = unchanged ? null : await customerWithTaxCode(c.env.db, fields.taxCode, update ? id : undefined);
+    if (dup) throw new AppError(409, `Mã số thuế ${fields.taxCode} đã có ở khách "${dup.name}". Mở khách đó thay vì tạo trùng.`, 'CUSTOMER_TAX_DUPLICATE');
     if (update) {
       await loadCustomer(c.env.db, id); await requireEdit(c.env.db, id, me);
       if (!(await c.env.db.update(customers).set(row).where(eq(customers.id, id)).returning({ id: customers.id })).length) throw new AppError(404, 'Không tìm thấy khách hàng.');

@@ -7,6 +7,7 @@ import { fold } from '../../../core/text/fold.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { credentials, employees, sessions, staffSapoLinks } from '../../staff/schema.ts';
 import { customers } from '../../customers/schema.ts';
+import { NORM_TAX_SQL, normTaxCode } from '../../customers/domain/tax-code.ts';
 import { pricePolicies, productPrices, products, productStock, warehouses } from '../../catalog/schema.ts';
 import { sapoInventoryDocs } from '../schema.ts';
 import { registerSapoPullRoutes, pullStatus } from './sapo-pull.ts';
@@ -67,9 +68,21 @@ export async function syncCustomers(db: AnyDb, body: Record<string, unknown>) {
   if (new Set(rows.map(r => r.id)).size !== rows.length) throw new AppError(400, 'Trùng mã khách hàng trong một lần đồng bộ.');
   const now = new Date().toISOString();
   const search = (r: SapoCustomer) => fold([r.name, r.contact, r.phone, r.email, r.address, r.taxCode, r.customerCode].join(' '));
-  const eligible = rows.filter(isEligibleSapoCustomer), others = rows.filter(r => !isEligibleSapoCustomer(r));
-  let applied = 0;
+  const candidates = rows.filter(isEligibleSapoCustomer), others = rows.filter(r => !isEligibleSapoCustomer(r));
+  let applied = 0, duplicates = 0, kept = 0;
   await db.transaction(async tx => {
+    // Chống trùng theo MST: khách Sapo MỚI mà MST đã có ở khách khác (thường là khách tạo trên web rồi đẩy đơn sang Sapo)
+    // thì không tạo thêm bản sao; khách Sapo đã có (cùng id) vẫn cập nhật bình thường.
+    const taxes = [...new Set(candidates.map(r => normTaxCode(r.taxCode)).filter(Boolean))];
+    const known = new Set((await tx.select({ id: customers.id }).from(customers).where(inArray(customers.id, candidates.map(r => r.id).concat('')))).map(r => r.id));
+    const taken = new Map<string, string>(taxes.length ? (await tx.select({ id: customers.id, tax: sql<string>`${sql.raw(NORM_TAX_SQL('tax_code'))}` }).from(customers)
+      .where(inArray(sql.raw(NORM_TAX_SQL('tax_code')), taxes))).map(r => [r.tax, r.id]) : []);
+    const eligible = candidates.filter(r => {
+      const tax = normTaxCode(r.taxCode); if (!tax || known.has(r.id)) return true;
+      if (taken.has(tax) && taken.get(tax) !== r.id) { duplicates++; return false; }
+      taken.set(tax, r.id); return true;
+    });
+    kept = eligible.length;
     if (eligible.length) {
       const done = await tx.insert(customers).values(eligible.map(r => ({
         id: r.id, name: r.name, contact: r.contact, phone: r.phone, email: r.email, address: r.address, taxCode: r.taxCode,
@@ -88,7 +101,7 @@ export async function syncCustomers(db: AnyDb, body: Record<string, unknown>) {
       await tx.update(customers).set({ name: r.name, taxCode: r.taxCode, search: search(r), sourceVersion: r.version, syncedAt: now })
         .where(and(eq(customers.id, r.id), sql`${customers.sourceVersion} <= ${r.version}`));
   });
-  return { received: raw.length, applied, skipped: raw.length - eligible.length };
+  return { received: raw.length, applied, skipped: raw.length - kept, duplicates };
 }
 
 // ---------------- Nhân viên ----------------

@@ -395,8 +395,42 @@ async function loadCustomers() {
     if (!state.customerQuery && !$('#customer-mine').checked && !$('#customer-pending').checked) state.customerGrandTotal = state.customerTotal;
     $('#customer-pending-count').textContent = d.pendingCount || 0; $('#customer-pending-chip').hidden = !d.pendingCount && !$('#customer-pending').checked;
   } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
-  renderCustomers(); renderStats();
+  renderCustomers(); renderStats(); loadCustomerDuplicates();
 }
+// Khách trùng mã số thuế (Manager): đếm + gộp.
+let customerDups = null;
+async function loadCustomerDuplicates() {
+  if (!isManager()) { $('#customer-dup-chip').hidden = true; return; }
+  try { customerDups = await api('/customer-duplicates'); } catch { customerDups = null; }
+  $('#customer-dup-count').textContent = customerDups?.total || 0; $('#customer-dup-chip').hidden = !customerDups?.total;
+}
+function renderCustomerDuplicates() {
+  const groups = customerDups?.groups || [];
+  $('#dup-list').innerHTML = groups.length ? groups.map(g => `<section class="dup-group"><h3>MST ${esc(g.taxCode)}</h3>${g.customers.map(c => `
+    <div class="dup-row${c.keep ? ' keep' : ''}"><span class="dup-tag${c.keep ? " keep" : ""}">${c.keep ? 'Giữ lại' : 'Gộp & xoá'}</span>
+      <div><b>${esc(c.name)}</b><small>${esc([c.contact ? 'Liên hệ: ' + c.contact : 'Không có người liên hệ', c.phone, c.email].filter(Boolean).join(' · '))}</small>
+      <small>${c.contacts} người liên hệ · ${c.refs} chứng từ / lịch sử${c.hasOwner ? ' · có phụ trách' : ''}${/^\d+$/.test(c.id) ? ' · từ Sapo' : ''}</small></div>
+      ${c.keep ? '' : `<button type="button" class="btn secondary small" data-dup-keep="${esc(c.id)}" data-dup-tax="${esc(g.taxCode)}">Giữ khách này</button>`}</div>`).join('')}</section>`).join('')
+    : '<p class="muted">Không còn khách trùng mã số thuế.</p>';
+  $('#dup-merge-all').disabled = !groups.length; $('#dup-error').textContent = '';
+}
+$('#customer-dup-chip').addEventListener('click', () => { renderCustomerDuplicates(); $('#dup-dialog').showModal(); });
+$('#dup-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-dup-keep]'); if (!b) return;
+  const g = customerDups.groups.find(x => x.taxCode === b.dataset.dupTax);
+  g.keepId = b.dataset.dupKeep; g.customers.forEach(c => { c.keep = c.id === g.keepId; });
+  renderCustomerDuplicates();
+});
+$('#dup-merge-all').addEventListener('click', async () => {
+  const groups = customerDups?.groups || []; if (!groups.length) return;
+  const n = groups.reduce((s, g) => s + g.customers.length - 1, 0);
+  if (!await confirmBox(`Gộp ${n} khách trùng vào ${groups.length} khách giữ lại? Bản trùng sẽ bị xoá, không hoàn tác được.`, { title: 'Gộp khách trùng MST', ok: 'Gộp', danger: true })) return;
+  const btn = $('#dup-merge-all'); btn.disabled = true;
+  try {
+    for (const g of groups) await api('/customer-duplicates/merge', 'POST', { keepId: g.keepId, dropIds: g.customers.filter(c => !c.keep).map(c => c.id) });
+    $('#dup-dialog').close(); toast(`Đã gộp ${n} khách trùng.`); loadCustomers();
+  } catch (e) { $('#dup-error').textContent = e.message; btn.disabled = false; await loadCustomerDuplicates(); renderCustomerDuplicates(); }
+});
 async function loadMembers() {
   try { const d = await api('/admin/members'); state.members = d.members; state.positions = d.positions; }
   catch (e) { state.members = state.members || []; if (e.status !== 401) showGlobalError(e.message); }
