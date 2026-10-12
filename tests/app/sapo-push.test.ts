@@ -19,7 +19,7 @@ const origin = 'https://trial.test', SECRET = 's'.repeat(40);
 type Raw = Record<string, any>;
 
 /** Sapo giả có trạng thái: đọc / tạo khách, sản phẩm, đơn; ghi lại mọi yêu cầu ghi. */
-function fakeSapo(opts: { forbidOrders?: boolean } = {}) {
+function fakeSapo(opts: { forbidOrders?: boolean; orderStatus?: number } = {}) {
   const db = {
     accounts: [{ id: 21, full_name: 'Tên emp', email: 'emp@x.vn', status: 'active' }, { id: 22, full_name: 'Tên mgr', email: 'other@x.vn' }],
     locations: [{ id: 7, name: 'Kho Q1' }, { id: 8, name: 'Kho Hà Nội' }, { id: 9, name: 'Kho cũ', status: 'inactive' }],
@@ -43,6 +43,7 @@ function fakeSapo(opts: { forbidOrders?: boolean } = {}) {
     if (path === '/products.json') { const pid = ++seq, v = { ...body.product.variants[0], id: ++seq, product_id: pid }; db.variants.push(v); return Response.json({ product: { id: pid, variants: [v] } }); }
     if (path === '/orders.json' && method === 'GET') return Response.json({ orders: db.orders.filter(o => JSON.stringify(o).includes(q)) });
     if (path === '/orders.json') {
+      if (opts.orderStatus) return new Response(JSON.stringify({ secret: 'never-return-upstream-body' }), { status: opts.orderStatus });
       if (opts.forbidOrders) return new Response('{}', { status: 403 });
       const o = body.order, lines: Raw[] = o.order_line_items;
       const total = Math.round(lines.reduce((s, l) => s + l.price * l.quantity * (1 + (l.tax_rate_override ?? 0) / 100), 0));
@@ -61,7 +62,7 @@ function fakeSapo(opts: { forbidOrders?: boolean } = {}) {
   return { db, writes, fetch };
 }
 
-async function setup(opts: { forbidOrders?: boolean; connect?: boolean } = {}) {
+async function setup(opts: { forbidOrders?: boolean; orderStatus?: number; connect?: boolean } = {}) {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const sapo = fakeSapo(opts), router = createAppRouter();
   const env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch: sapo.fetch };
@@ -159,6 +160,7 @@ test('chưa kết nối Sapo / dòng thiếu SKU / không có quyền xem báo g
   // Chọn "Không tạo đơn trên Sapo": sinh đơn / lập HĐKT trên web dù chưa kết nối Sapo, không cần kho.
   const plain = await off.call('/orders', off.emp, 'POST', { quoteId: qid, pushSapo: false });
   assert.equal(plain.status, 201, JSON.stringify(plain.data)); assert.equal(plain.data.sapo, null);
+  assert.equal(off.sapo.writes.length, 0, 'chỉ sinh trên web tuyệt đối không ghi Sapo');
   assert.equal((await off.call(`/orders/${plain.data.id}`, off.emp)).data.order.sapoOrderId ?? null, null);
   const k = await off.call('/contracts', off.emp, 'POST', { quoteId: await off.makeQuote('B2B_BG20261009_002'), legalEntity: 'BN', depositRate: 30, paymentDays: 15, pushSapo: false });
   assert.equal(k.status, 201, JSON.stringify(k.data)); assert.equal(k.data.sapo, null);
@@ -189,19 +191,21 @@ test('đẩy Sapo: hàm thuần – kiểm dữ liệu, khớp đơn đúng mã,
 
 
 
-test('sinh đơn: ghi chú báo giá được chép đầy đủ, sửa riêng và xoá ghi chú; không qua Sapo không cần phiên', async () => {
+test('sinh đơn: lọc ghi chú đúng ba phần, giữ điều khoản dài, sửa riêng và xoá ghi chú; không qua Sapo không cần phiên', async () => {
   const s = await setup({ connect: false });
   assert.deepEqual((await s.call('/orders/create-config', s.emp)).data, { version: 1, noteMaxLength: 20000 });
   assert.equal((await s.call('/orders/create-config')).status, 401);
   const quoteId = await s.makeQuote('B2B_BG20261009_101');
-  const longNote = 'Ghi chú nhiều dòng\n' + 'Thanh toán sau khi giao hàng. '.repeat(100).trim();
+  const longNote = '- Thanh toán: ' + 'Thanh toán sau khi giao hàng. '.repeat(100).trim();
   const [quote] = await s.db.select().from(quotations).where(eq(quotations.id, quoteId));
   const data = JSON.parse(quote!.data); data.notes = longNote; data.deliveryDate = '2026-10-30';
   await s.db.update(quotations).set({ data: JSON.stringify(data) }).where(eq(quotations.id, quoteId));
   const inherited = await s.call('/orders', s.emp, 'POST', { quoteId, pushSapo: false });
   assert.equal(inherited.status, 201, JSON.stringify(inherited.data));
   const read = async (id: string) => (await s.call('/orders/' + id, s.emp)).data.order;
-  assert.equal((await read(inherited.data.id)).note, longNote, 'no truncation at old 2000-char limit');
+  const inheritedNote = (await read(inherited.data.id)).note;
+  assert.ok(inheritedNote.includes(longNote), 'payment terms are not truncated at old 2000-char limit');
+  assert.equal(inheritedNote.split('\n').length, 3);
   const q2 = await s.makeQuote('B2B_BG20261009_102');
   const made = await s.call('/orders', s.emp, 'POST', { quoteId: q2, pushSapo: false, note: 'Giao từng đợt\nGọi trước 30 phút', deliveryAddress: 'Kho khách hàng', orderDate: '2026-10-10', deliveryDate: '2026-10-31' });
   assert.equal(made.status, 201, JSON.stringify(made.data));
@@ -222,4 +226,15 @@ test('thông tin đơn hàng: kiểm ngày thật và giới hạn ghi chú ở 
   assert.throws(() => cleanOrderInput({ note: 'x'.repeat(20001) }), /không hợp lệ/);
   assert.throws(() => cleanOrderInput({ note: 123 }), /không hợp lệ/);
   assert.deepEqual(cleanOrderInput({ deliveryDate: '', note: '' }), { orderDate: undefined, deliveryDate: null, deliveryAddress: undefined, note: '' });
+});
+
+
+test('Sapo từ chối đơn: trả mã HTTP an toàn, rollback đơn web, không trả nội dung nhạy cảm', async () => {
+  const s = await setup({ orderStatus: 422 });
+  const quoteId = await s.makeQuote('B2B_BG20261012_080');
+  const r = await s.call('/orders', s.emp, 'POST', { quoteId, sapoLocationId: 7 });
+  assert.equal(r.status, 502); assert.equal(r.data.code, 'SAPO_ORDER_FAILED');
+  assert.match(JSON.stringify(r.data), /SAPO_HTTP_422/);
+  assert.doesNotMatch(JSON.stringify(r.data), /never-return-upstream-body/);
+  assert.equal(await s.orderCount(), 0); assert.equal(s.sapo.db.orders.length, 0);
 });

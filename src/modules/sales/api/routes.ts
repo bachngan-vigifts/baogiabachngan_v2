@@ -1,3 +1,4 @@
+import { orderNotesFromQuote, orderDeliveryAddress } from '../domain/order-notes.ts';
 import { cleanOrderInput } from '../domain/order-input.ts';
 import { and, asc, count, desc, eq, gte, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -139,9 +140,9 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
     await tx.insert(salesOrders).values({
       id, orderNo: nextDocNo('DH', today, used), quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
-      taxCode: text(data.customerTaxCode, 100), address: o.deliveryAddress === undefined ? text(data.customerAddress, 2000) : text(o.deliveryAddress, 2000),
+      taxCode: text(data.customerTaxCode, 100), address: o.deliveryAddress === undefined ? text(orderDeliveryAddress(data), 2000) : text(o.deliveryAddress, 2000),
       ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: o.orderDate ?? today,
-      expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note ?? data.notes, 20000), createdAt: now, updatedAt: now,
+      expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note ?? orderNotesFromQuote(data), 20000), createdAt: now, updatedAt: now,
     });
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
