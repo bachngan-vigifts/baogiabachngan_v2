@@ -43,9 +43,9 @@ test('Công việc: Sale chỉ thấy việc mình; Kho / Sale Admin / NVBH th�
   const mlTask = await make('ml1', 'ml1', 'Báo giá ML D');                         // NVBH ML tự giao mình
   const mgrOwn = await make('mgr', 'mgr', 'Việc riêng Manager');
 
-  // Sale: chỉ việc của mình – không thấy việc Sale khác (cùng chức vụ Sale cũng không).
-  assert.ok(!(await ids('sl4')).includes('Gọi khách B'));
-  assert.equal((await call(`/tasks/${saleTask}`, who.sl4)).status, 404);
+  // Sale: thấy công việc của đồng nghiệp cùng chức vụ, chỉ đọc.
+  assert.ok((await ids('sl4')).includes('Gọi khách B'));
+  assert.equal((await call(`/tasks/${saleTask}`, who.sl4)).status, 200);
   assert.ok((await ids('sl3')).includes('Gọi khách B'), 'người nhận vẫn thấy');
 
   // Kho: thấy việc kho1 nhận (chỉ xem), không thấy việc Sale / Sale Admin / NVBH / Manager.
@@ -85,3 +85,4 @@ test('Công việc: Sale chỉ thấy việc mình; Kho / Sale Admin / NVBH th�
   assert.deepEqual(await ids('emp', 'colleagues'), []);
   void saTask;
 });
+

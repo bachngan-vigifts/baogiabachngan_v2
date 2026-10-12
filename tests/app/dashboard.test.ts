@@ -48,15 +48,15 @@ async function fixture() {
   return { db, call, mgr, emp, ncc };
 }
 
-test('dashboard: server permissions, all-company manager / strictly own employee, read-only endpoints', async () => {
+test('dashboard: server permissions, all-company manager / employee restricted to assigned department, read-only endpoints', async () => {
   const { call, mgr, emp, ncc } = await fixture();
   assert.equal((await call('/dashboard/revenue' + month)).status, 401);
   assert.equal((await call('/dashboard/revenue' + month, ncc)).status, 403);
   assert.equal((await call('/dashboard/revenue' + month + '&owner=mgr', emp)).status, 403);
-  assert.equal((await call('/dashboard/revenue' + month + '&group=sale', emp)).status, 403);
+  assert.equal((await call('/dashboard/revenue' + month + '&group=warehouse', emp)).status, 403);
   assert.equal((await call('/dashboard/revenue', mgr, 'POST')).status, 405);
   const mine = await call('/dashboard/revenue' + month, emp); assert.equal(mine.status, 200, JSON.stringify(mine.data));
-  assert.equal(mine.data.scope, 'self'); assert.deepEqual(mine.data.employees.map((x: any) => x.id), ['emp']); assert.deepEqual(mine.data.groups, []);
+  assert.equal(mine.data.scope, 'department'); assert.ok(mine.data.employees.some((x: any) => x.id === 'emp')); assert.ok(mine.data.employees.every((x: any) => x.groupId === 'sale')); assert.deepEqual(mine.data.groups, []);
   assert.equal(mine.data.summary.actual, 1201); assert.equal(mine.data.summary.expected, 150); assert.equal(mine.data.summary.pipeline, 150);
   assert.equal(mine.data.summary.closeRate, 50); assert.equal(mine.data.summary.lost, 0);
   assert.deepEqual(mine.data.neglected.customers.map((x: any) => x.id).sort(), ['never']);
@@ -86,7 +86,7 @@ test('dashboard: period snapshots avoid duplicate follow-ups, month boundaries V
 
 test('dashboard: role defense and new UI has no HTML injection or token persistence', () => {
   const member = { id: 'emp', active: true, role: 'employee' as const, positionId: 'sale' };
-  assert.equal(dashboardFilters(new URLSearchParams(), member, '2026-10-11').owner, 'emp');
+  assert.equal(dashboardFilters(new URLSearchParams(), member, '2026-10-11').owner, undefined);
   assert.throws(() => dashboardFilters(new URLSearchParams(), { ...member, positionId: 'supplier' }, '2026-10-11'), /quyền/);
   const ui = readFileSync(new URL('../../trial-ui/dashboard.js', import.meta.url), 'utf8');
   assert.doesNotMatch(ui, /innerHTML|insertAdjacentHTML|localStorage|sessionStorage/);

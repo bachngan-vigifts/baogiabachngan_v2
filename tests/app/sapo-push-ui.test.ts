@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-function setup(code = '') {
+function setup(code = '', existingDocument = false) {
   const events = new Map<string, Function>(), closeEvents = new Map<string, Function>();
   const radio = { value: 'yes', checked: true, addEventListener() {} };
   const no = { value: 'no', checked: false, addEventListener() {} };
@@ -16,7 +16,7 @@ function setup(code = '') {
   const source = readFileSync(new URL('../../trial-ui/sapo-push.js', import.meta.url), 'utf8');
   runInNewContext(source.replace('export function initSapoPush', 'globalThis.init = function'), context);
   const ui = context.init({ api: async () => ({ connected: true, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: [{ id: 7, name: 'Kho' }], problems: [] }), esc: (s: string) => s, $: (id: string) => nodes[id] });
-  return { ui, dialog, body, submit, label, error, send: () => events.get('submit')!({ preventDefault() {} }) };
+  return { ui, existingDocument, dialog, body, submit, label, error, send: () => events.get('submit')!({ preventDefault() {} }) };
 }
 
 test('popup Sapo: chưa sinh chứng từ thì không hiện số báo giá làm mã đơn', async () => {
@@ -37,5 +37,17 @@ test('Sapo từ chối: hiện nút sinh không qua Sapo và mở lại submit t
   assert.equal(s.error.children[1].textContent, 'Sinh đơn hàng không qua Sapo');
   assert.equal(s.submit.disabled, false); assert.equal(s.submit.textContent, 'Tạo');
   assert.equal(s.dialog.open, true);
+  s.dialog.close(); await pending;
+});
+
+
+test('lỗi đẩy sau không thông báo nhầm rằng chưa sinh chứng từ CRM', async () => {
+  const s = setup('DH_20261012_002', true);
+  const pending = s.ui.choose({ orderId: 'o' }, { title: 'Tạo đơn Sapo', action: 'Tạo', existingDocument: true, run: async () => { throw new Error('Sapo từ chối'); } });
+  await new Promise(resolve => setImmediate(resolve)); await s.send();
+  assert.match(s.error.textContent, /Chứng từ trên CRM được giữ nguyên/);
+  assert.doesNotMatch(s.error.textContent, /Chưa sinh đơn/);
+  assert.equal(s.error.children[1].textContent, 'Giữ chứng từ trên web');
+  assert.match(s.body.innerHTML, /Không – giữ chứng từ trên web/);
   s.dialog.close(); await pending;
 });

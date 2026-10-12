@@ -1,3 +1,5 @@
+import { departmentOwner } from '../../staff/api/department.ts';
+import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { orderNotesFromQuote, orderDeliveryAddress } from '../domain/order-notes.ts';
 import { cleanOrderInput } from '../domain/order-input.ts';
 import { and, asc, count, desc, eq, gte, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
@@ -11,7 +13,6 @@ import { quotations } from '../../quotes/schema.ts';
 import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
-import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { contractCounters } from '../../contracts/schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines, packingSlips } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
@@ -44,19 +45,31 @@ export const canIssueInvoice = (m: { role: string; positionId?: string | null })
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
  */
 export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) ? undefined
-  : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id),
+  : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id), departmentOwner(salesOrders.ownerId, m), departmentOwner(salesOrders.createdBy, m),
     sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
 /** Lịch giao hàng: nhóm Kho (chức vụ `warehouse`) xem và đổi trạng thái mọi chuyến giao (không xem được đơn / công nợ). */
 const deliveryScope = (c: Ctx): SQL | undefined => { const m = viewer(c); return m.role === 'employee' && m.positionId === 'warehouse' ? undefined : orderScope(c); };
-const quotePredicate = (scope: SqlScope) => {
-  const parts = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
-  return sql.join(parts.flatMap((p, i) => i < scope.bindings.length ? [sql.raw(p), sql`${scope.bindings[i]}`] : [sql.raw(p)]), sql.raw(''));
-};
+
 async function loadOrder(c: Ctx, id: string, db: StaffEnv['db'] | Tx = c.env.db) {
   const [order] = await db.select().from(salesOrders).where(and(eq(salesOrders.id, id), orderScope(c))).limit(1);
   if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
   return order;
+}
+/** Integration writes obey the existing approved-document lock. Shared viewers cannot push. */
+export const canCreateSapoFor = (m: { id: string; role: string }, o: typeof salesOrders.$inferSelect) =>
+  o.status !== 'cancelled' && (m.role === 'manager' || (m.role === 'employee' && o.status === 'draft' && (o.ownerId === m.id || o.createdBy === m.id)));
+const linkedSapo = (c: Ctx, o: typeof salesOrders.$inferSelect) => ({ status: 'existing', id: o.sapoOrderId, code: o.sapoOrderCode,
+  url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId!)}`, warnings: [] });
+async function canCreateSapoInDepartment(c: Ctx, o: typeof salesOrders.$inferSelect) {
+  if (canCreateSapoFor(viewer(c), o)) return true;
+  if (o.status !== 'draft') return false;
+  const [peer] = await c.env.db.select({ id: employees.id }).from(employees).where(and(inArray(employees.id, [o.ownerId, o.createdBy]), departmentOwner(employees.id, viewer(c)) ?? sql`false`)).limit(1);
+  return !!peer;
+}
+async function assertCanCreateSapo(c: Ctx, o: typeof salesOrders.$inferSelect) {
+  if (o.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không tạo đơn Sapo.', 'ORDER_CANCELLED');
+  if (!await canCreateSapoInDepartment(c, o)) throw new AppError(403, 'Chỉ người phụ trách/người tạo được đẩy chứng từ nháp. Chứng từ đã duyệt chỉ Manager được đẩy Sapo.', 'SAPO_PUSH_FORBIDDEN');
 }
 async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   if (!orderIds.length) return new Map<string, ReturnType<typeof receivable>>();
@@ -291,7 +304,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       order: { ...order, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
-        canIssueInvoice: canIssueInvoice(viewer(c)),
+        canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && await canCreateSapoInDepartment(c, order),
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
         sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: viewer(c).role === 'manager' || order.status === 'draft', data: JSON.parse(contract[0].data) } : null,
@@ -314,7 +327,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const [contract] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, o.id)).limit(1);
       return json(await sapoPreview(c, { code: contract?.no || o.orderNo, ownerId: o.ownerId, lines: lines.map(l => ({ sku: l.sku.trim() })), customerName: o.customerName }));
     }
-    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, text(p.get('quoteId'), 80)), quotePredicate(quotationScope(me)))).limit(1);
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, text(p.get('quoteId'), 80)), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     const data = JSON.parse(quote.data);
     return json(await sapoPreview(c, { code: '', ownerId: quote.assigneeId ?? quote.creatorId, lines: orderLinesFromQuote(data).map(l => ({ sku: String(l.sku ?? '').trim() })), customerName: text(data.customer) || quote.customer }));
@@ -323,7 +336,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   /** Tạo đơn từ báo giá (người xem được báo giá mới tạo được). Mỗi báo giá một đơn đang hiệu lực. */
   router.post('/orders', async c => {
     const body = await readJson(c.req, 128_000), me = viewer(c), quoteId = text(body.quoteId, 80);
-    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
     const input = cleanOrderInput(body);
@@ -337,6 +350,22 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     await notifyMany(c.env, 'managers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
       url: `/index.html#/orders/${id}`, actorId: me.id, data: { orderId: id } });
     return json({ id, sapo }, 201);
+  }, 'business');
+
+  /** Push an existing document; never create another CRM order/contract. Row lock serializes double clicks. */
+  router.post('/orders/:id/sapo', async c => {
+    const body = await readJson(c.req, 1_024), order = await loadOrder(c, c.params.id!);
+    if (order.sapoOrderId) return json({ sapo: linkedSapo(c, order) });
+    await assertCanCreateSapo(c, order);
+    const push = await prepareSapoPush(c, sapoLocationOf(body));
+    const sapo = await c.env.db.transaction(async tx => {
+      const [locked] = await tx.select().from(salesOrders).where(and(eq(salesOrders.id, order.id), orderScope(c))).limit(1).for('update');
+      if (!locked) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
+      if (locked.sapoOrderId) return linkedSapo(c, locked);
+      await assertCanCreateSapo(c, locked);
+      return push.push(tx, locked.id);
+    }).finally(() => push.done());
+    return json({ sapo });
   }, 'business');
 
   router.put('/orders/:id/status', async c => {
@@ -457,7 +486,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
 
   router.get('/order-quote-candidates', async c => {
     const rows = await c.env.db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, quoteType: quotations.quoteType, quoteDate: quotations.quoteDate })
-      .from(quotations).where(and(quotePredicate(quotationScope(viewer(c))), eq(quotations.approvalStatus, 'approved'),
+      .from(quotations).where(and(quotationPredicate(viewer(c)), eq(quotations.approvalStatus, 'approved'),
         sql`NOT EXISTS (SELECT 1 FROM ${salesOrders} WHERE ${salesOrders.quoteId} = ${quotations.id} AND ${salesOrders.status} <> 'cancelled')`,
         matchAllWords(foldSql(quotations.quoteNo, quotations.customer), c.url.searchParams.get('q'))))
       .orderBy(desc(quotations.updatedAt)).limit(30);
@@ -493,7 +522,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   router.get('/contracts/next-no', async c => {
     const me = viewer(c), quoteId = text(c.url.searchParams.get('quoteId'), 80), entity = legalCode(c.url.searchParams.get('legalEntity'));
     if (!entity) throw new AppError(400, 'Chọn pháp nhân bên bán.');
-    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     const customerCode = await contractCustomerCode(c.env.db, quote);
     if (!customerCode) return json({ contractNo: '', error: 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.' });
@@ -505,7 +534,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   router.post('/contracts', async c => {
     const body = await readJson(c.req, 64_000), me = viewer(c), quoteId = text(body.quoteId, 80);
     if (!quoteId) throw new AppError(400, 'Chọn báo giá đã duyệt để lập HĐKT.');
-    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotePredicate(quotationScope(me)))).limit(1);
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới lập được HĐKT.', 'QUOTE_NOT_APPROVED');
     const entity = legalCode(body.legalEntity);

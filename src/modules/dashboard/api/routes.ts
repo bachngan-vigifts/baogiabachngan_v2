@@ -1,3 +1,4 @@
+import { departmentOwner } from '../../staff/api/department.ts';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, type Router } from '../../../core/http/router.ts';
@@ -25,6 +26,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
     const data = await c.env.db.transaction(async db => {
       const selected = db.select({ id: employees.id }).from(employees).where(and(
         inArray(employees.role, ['manager', 'employee']),
+        f.manager ? undefined : or(eq(employees.id, me.id), departmentOwner(employees.id, me)),
         f.owner ? eq(employees.id, f.owner) : undefined,
         f.group ? eq(employees.positionId, f.group) : undefined));
       const [members, groups, visibleRoster] = await Promise.all([
@@ -35,6 +37,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
         f.manager ? db.select({ id: employees.id, name: employees.name }).from(employees)
           .where(and(inArray(employees.role, ['manager', 'employee']), isNull(employees.deletedAt))).orderBy(asc(employees.name)) : Promise.resolve([]),
       ]);
+      if (!f.manager && f.owner && !members.some(m => m.id === f.owner)) throw new AppError(403, 'Không có quyền xem nhân viên này.');
       // EXISTS prevents multiplying a single order when historical contracts exist.
       const signed = exists(db.select({ id: salesContracts.id }).from(salesContracts).where(and(eq(salesContracts.orderId, orders.id), inArray(salesContracts.status, ['signed', 'completed']))));
       const counted = and(ne(orders.status, 'cancelled'), or(ne(orders.status, 'draft'), signed));
@@ -44,7 +47,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
         .groupBy(orders.ownerId, orderMonth);
       // Employee care metrics never expose customers merely shared with them or another employee's log.
       const careOwnedCustomer = f.manager ? undefined : exists(db.select({ id: customerStaff.customerId }).from(customerStaff)
-        .where(and(eq(customerStaff.customerId, care.customerId), eq(customerStaff.memberId, me.id), eq(customerStaff.role, 'owner'))));
+        .where(and(eq(customerStaff.customerId, care.customerId), inArray(customerStaff.memberId, selected), eq(customerStaff.role, 'owner'))));
       const careMonth = sql<string>`to_char(${care.occurredAt}::timestamptz at time zone 'Asia/Ho_Chi_Minh', 'YYYY-MM')`;
       // Text timestamps are canonical UTC; use timestamptz for VN midnight boundaries.
       const inPeriod = and(sql`${care.occurredAt}::timestamptz >= ${f.from + 'T00:00:00+07:00'}::timestamptz`,
@@ -98,7 +101,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
         teamRows.set(id, team);
       }
       const lastCare = db.$with('dashboard_last_care').as(db.select({ customer: care.customerId, lastAt: max(care.occurredAt).as('last_at') }).from(care)
-        .where(f.manager ? undefined : eq(care.ownerId, me.id)).groupBy(care.customerId));
+        .where(f.manager ? undefined : inArray(care.ownerId, selected)).groupBy(care.customerId));
       const staleBefore = new Date(Date.parse(f.today + 'T00:00:00+07:00') - f.neglectDays * 86400000).toISOString();
       const ownCustomer = exists(db.select({ id: customerStaff.customerId }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id),
         eq(customerStaff.role, 'owner'), inArray(customerStaff.memberId, selected))));
@@ -114,7 +117,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
       const [customerSync] = await db.select({ at: max(sql<string>`nullif(${customers.syncedAt}, '')`) }).from(customers).where(sql`${customers.id} ~ '^[0-9]+$'`);
       const syncAt = sync?.at && (!customerSync?.at || sync.at >= customerSync.at) ? sync.at : customerSync?.at ?? null;
       const rates = <T extends { converted: number; quotes: number }>(r: T) => ({ ...r, closeRate: ratio(r.converted, r.quotes) });
-      return { scope: f.manager ? 'company' : 'self', from: f.from, to: f.months.at(-1), summary: rates(summary),
+      return { scope: f.manager ? 'company' : f.group ? 'department' : 'self', from: f.from, to: f.months.at(-1), summary: rates(summary),
         employees: employeeRows.filter(e => e.deletedAt === null).map(({ deletedAt, ...row }) => rates(row)), groups: f.manager ? [...teamRows.values()].map(rates) : [], months: monthRows.map(rates),
         filters: { employees: visibleRoster, groups },
         neglected: { total: neglectCount?.count ?? 0, page: f.page, pageSize: 25, days: f.neglectDays, customers: neglected },

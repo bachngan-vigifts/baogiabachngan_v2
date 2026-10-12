@@ -12,8 +12,6 @@ export const TASK_UI = {
   teams: { warehouse: 'Kho', accounting: 'Kế toán', 'sale-admin': 'Sale Admin' },
   groups: [['overdue', 'Quá hạn'], ['today', 'Hôm nay'], ['upcoming', 'Sắp tới'], ['none', 'Chưa đặt hạn']],
 };
-/** Chức vụ xem được việc của đồng nghiệp cùng chức vụ – cùng danh sách PEER_VIEW_POSITIONS ở máy chủ. */
-const PEER_VIEW = ['sale-admin', 'warehouse', 'sales-lock', 'sales-ml'];
 const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
 // "Hôm nay" theo giờ Việt Nam (khớp máy chủ), không theo múi giờ của máy đang mở.
@@ -114,17 +112,19 @@ export function initTasks({ api, toast, go, isManager, userId, positionId = () =
     if (!st.list.length) list.innerHTML = '<tr><td colspan="7" class="muted">Đang tải…</td></tr>';
     await people();
     q('#tasks-view [data-v="unassigned"]').hidden = !isManager();
-    // "Cùng chức vụ": Sale Admin / Kho / NVBH LOCK / NVBH ML xem việc của đồng nghiệp cùng chức vụ (chỉ xem).
-    const peers = !isManager() && PEER_VIEW.includes(positionId() || '');
+    // Quyền đồng nghiệp do server cấp theo nhóm/chức vụ hiện có.
+    const peers = !isManager() && st.canViewColleagues === true;
     q('#tasks-view [data-v="colleagues"]').hidden = !peers;
     if (st.view === 'colleagues' && !peers) st.view = 'mine';
-    q('#tasks-view [data-v="all"]').textContent = isManager() ? 'Tất cả' : 'Tất cả của tôi';
+    q('#tasks-view [data-v="all"]').textContent = isManager() ? 'Tất cả' : 'Tất cả được xem';
     if (st.view === 'unassigned' && !isManager()) st.view = 'mine';
     const params = new URLSearchParams({ view: st.view, status: st.status });
     if (st.priority) params.set('priority', st.priority); if (st.source) params.set('source', st.source); if (st.search) params.set('q', st.search);
     try {
       const [d, s] = await Promise.all([api('/tasks?' + params), badge(), loadApprovals()]);
       showTab(st.tab);
+      st.canViewColleagues = d.canViewColleagues === true;
+      q('#tasks-view [data-v="colleagues"]').hidden = !st.canViewColleagues;
       st.list = d.tasks; if (s) renderStats(s);
       if (!q('#tasks-quick-assignee').options.length) q('#tasks-quick-assignee').innerHTML = personOptions(userId(), isManager());
       const groups = st.status === 'open' ? TASK_UI.groups.map(([k, label]) => [label, d.tasks.filter(t => t.due === k), k]).filter(([, items]) => items.length) : [['', d.tasks, '']];
@@ -256,3 +256,4 @@ export function initTasks({ api, toast, go, isManager, userId, positionId = () =
   });
   return { load, badge, refreshPeople: () => { st.people = null; } };
 }
+

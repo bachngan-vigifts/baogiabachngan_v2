@@ -1,7 +1,7 @@
 import { isCustomer, isSupplier, type Role } from '../../staff/domain/roles.ts';
 
 /**
- * Phân quyền báo giá. Quy tắc (chốt 05/10/2026):
+ * Quyền sở hữu/chia sẻ báo giá (lớp cơ sở; API department-access.ts bổ sung quyền phòng ban từ DB):
  *  - CHỦ (`creatorId`) là người tạo và KHÔNG BAO GIỜ đổi, dù có ai khác cùng làm (DB có trigger chặn).
  *  - Mỗi báo giá có thể có NGƯỜI PHỤ TRÁCH (`assigneeId`, mặc định là chủ). Người phụ trách xem và sửa được.
  *    Người phụ trách được ƯU TIÊN: khi đã giao cho người khác thì chủ KHÔNG đè lên được, chỉ Manager đổi được.
@@ -12,7 +12,7 @@ import { isCustomer, isSupplier, type Role } from '../../staff/domain/roles.ts';
  *  - Manager xem, sửa, chia sẻ, đổi người phụ trách mọi báo giá.
  *  - Người bị khoá hoặc tài khoản NCC (vai trò hoặc chức vụ 'supplier') KHÔNG truy cập được báo giá nào,
  *    kể cả báo giá của mình hay đang được chia sẻ/giao phụ trách.
- *  - Cùng chức vụ KHÔNG tự thấy nhau (bản cũ cho thấy – đã bỏ).
+ *  - Quyền đồng nghiệp cùng nhóm được kiểm ở quotes/api/department-access.ts theo dữ liệu nhân viên đang hoạt động; lớp cơ sở này không đọc DB.
  */
 export interface Viewer { id: string; role: Role; active: boolean; positionId?: string | null }
 export interface QuoteOwnership { id: string; creatorId: string; assigneeId?: string | null }
@@ -78,9 +78,10 @@ function scope(viewer: Viewer | null | undefined, permission: 'any' | 'edit'): S
 
 /**
  * Điều kiện SQL lọc báo giá được XEM (alias bảng `q` = staff_quotations). Dùng chung cho danh sách,
- * chi tiết và xuất file để không bao giờ lệch với `canViewQuotation`.
+ * chi tiết và xuất file; API dùng quotationPredicate để bổ sung quyền phòng ban.
  */
 export const quotationScope = (viewer: Viewer | null | undefined): SqlScope => scope(viewer, 'any');
 
 /** Điều kiện SQL báo giá được SỬA. Câu UPDATE phải kèm điều kiện này để chặn sửa vượt quyền ngay ở tầng DB. */
 export const quotationEditScope = (viewer: Viewer | null | undefined): SqlScope => scope(viewer, 'edit');
+

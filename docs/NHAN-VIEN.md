@@ -6,7 +6,7 @@ Trang `#/members/<id>?month=YYYY-MM`. Manager mở từ trang Nhân viên (bấm
 | Ai | Xem | Sửa |
 |---|---|---|
 | Manager | Mọi nhân viên | Mức lương, chấm công, thưởng / phụ cấp / khấu trừ / tạm ứng, chốt lương, đánh dấu đã trả, mở lại phiếu |
-| Nhân viên | Chỉ hồ sơ của mình (gồm lương của mình) | Không sửa gì; chỉ đổi ảnh đại diện của mình |
+| Nhân viên | Hồ sơ mình (gồm lương); hồ sơ nghiệp vụ đồng nghiệp cùng nhóm, không có lương/ngày công | Không sửa gì; chỉ đổi ảnh đại diện của mình |
 
 ## Màn hình
 1. **Đầu trang:** ảnh, tên, chức vụ, chọn tháng (‹ tháng ›). Các nút: Sửa thông tin (Manager), Đổi ảnh.
@@ -137,3 +137,6 @@ Migration theo thứ tự:
 | `PUT /hr/members/:id/attendance/:month` | `{ days: { 'YYYY-MM-DD': 'present' \| 'half' \| 'paid_leave' \| 'unpaid_leave' \| 'absent' \| '' } }` |
 | `POST /hr/members/:id/adjustments` · `DELETE /hr/adjustments/:id` | Khoản cộng / trừ |
 | `POST /hr/members/:id/payslips/:month` · `POST …/paid` · `DELETE …` | Chốt · đã trả · mở lại |
+
+
+Đồng nghiệp cùng nhóm được xác định bằng `staff_members.position_id`, tài khoản đang hoạt động/chưa xoá. API overview trả `canViewPayroll: false` và `payroll: null` khi xem đồng nghiệp; không gọi `payrollOf` và không trả dữ liệu từ hồ sơ lương. Quyền các endpoint HR giữ nguyên.

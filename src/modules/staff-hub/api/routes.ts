@@ -1,3 +1,4 @@
+import { departmentOwner } from '../../staff/api/department.ts';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json } from '../../../core/http/router.ts';
@@ -55,12 +56,16 @@ export async function memberRevenues(db: AnyDb, months: readonly string[]) {
 
 /**
  * Trang chi tiết nhân viên: gom một lượt hồ sơ, KPI tháng, khách hàng, báo giá, đơn, HĐKT, giao dịch (phiếu thu), công nợ,
- * công việc, ngày công, lương / thưởng. Manager xem mọi nhân viên; nhân viên chỉ xem của chính mình.
+ * công việc, ngày công, lương / thưởng. Manager xem mọi nhân viên; đồng nghiệp cùng nhóm xem nghiệp vụ, không đọc dữ liệu lương.
  */
 export function registerStaffHubRoutes(router: Router<StaffEnv>) {
   router.get('/members/:id/overview', async c => {
     const db = c.env.db, me = viewer(c), id = c.params.id!;
-    if (me.id !== id && me.role !== 'manager') throw new AppError(403, 'Bạn chỉ xem được hồ sơ của chính mình.');
+    const canViewPayroll = me.id === id || me.role === 'manager';
+    if (!canViewPayroll) {
+      const [peer] = await db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, id), departmentOwner(employees.id, me) ?? sql`false`)).limit(1);
+      if (!peer) throw new AppError(403, 'Bạn chỉ xem được hồ sơ của mình và đồng nghiệp cùng phòng ban.');
+    }
     const today = vietnamDate().iso, qMonth = c.url.searchParams.get('month');
     const month = isMonth(qMonth) ? qMonth : today.slice(0, 7), r = monthRange(month);
     const [member] = await db.select({ id: employees.id, name: employees.name, email: employees.email, phone: employees.phone, role: employees.role, positionId: employees.positionId,
@@ -110,8 +115,8 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
     // ----- KPI tháng
     const sales = revenueIn(orderList, month), wonQuotes = new Set(orders.filter(o => o.status !== 'cancelled' && o.quoteId).map(o => o.quoteId));
     const collected = payments.filter(p => monthOf(p.paidAt) === month).reduce((s, p) => s + p.amount, 0);
-    const payroll = await payrollOf(db, id, month, memberRevenues);
-    const target = payroll.profile.revenueTarget || (payroll.profile.kpiEnabled ? payroll.params.kpiRevenue : 0);
+    const payroll = canViewPayroll ? await payrollOf(db, id, month, memberRevenues) : null;
+    const target = payroll ? payroll.profile.revenueTarget || (payroll.profile.kpiEnabled ? payroll.params.kpiRevenue : 0) : 0;
     const kpi = {
       revenue: sales.revenue, orders: sales.orders, avgOrder: sales.orders ? Math.round(sales.revenue / sales.orders) : 0,
       revenueTarget: target, targetPercent: targetPercent(sales.revenue, target),
@@ -122,13 +127,13 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
       debt: { balance: debtors.reduce((s, o) => s + o.receivable!.balance, 0), overdue: debtors.reduce((s, o) => s + o.receivable!.overdue, 0), orders: debtors.length },
       tasks: { done: taskRows.filter(t => t.status === 'done').length, open: taskRows.filter(t => t.status !== 'done').length,
         overdue: taskRows.filter(t => t.status !== 'done' && t.dueDate && t.dueDate < today).length },
-      workedDays: payroll.payslip?.workDays ?? payroll.attendanceSummary.worked, standardDays: payroll.attendanceSummary.standardDays,
+      workedDays: payroll ? payroll.payslip?.workDays ?? payroll.attendanceSummary.worked : null, standardDays: payroll?.attendanceSummary.standardDays ?? null,
     };
     const months = Array.from({ length: STAFF_HUB_LIMITS.trendMonths }, (_, i) => shiftMonth(month, i - STAFF_HUB_LIMITS.trendMonths + 1));
 
     return json({
       member, month, today,
-      access: { isSelf: me.id === id, canManage: me.role === 'manager' },
+      access: { isSelf: me.id === id, canManage: me.role === 'manager', canViewPayroll },
       kpi, trend: trend(orderList, payments, months),
       customers: [...byCustomer.values()].sort((a, b) => (b.lastOrderDate ?? '').localeCompare(a.lastOrderDate ?? '') || a.name.localeCompare(b.name, 'vi')),
       quotes: quoteRows.map(({ data, ...q }) => { const orderId = orders.find(o => o.quoteId === q.id && o.status !== 'cancelled')?.id ?? null;
@@ -141,3 +146,4 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
     });
   }, 'business');
 }
+

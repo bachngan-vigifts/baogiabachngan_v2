@@ -39,10 +39,10 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal(p.owner.id, 'emp'); assert.deepEqual(p.shared, []); assert.equal(p.customer.fromSapo, false);
   assert.deepEqual([p.access.canSeeAll, p.access.canManageStaff, p.access.canChangeOwner], [true, true, false]);
   assert.equal((await call(`/customers/${k2.data.id}`, mgr)).data.owner.id, 'new');
-  // Danh sách: kèm người phụ trách; ?mine=1 chỉ khách của mình.
+  // Danh sách: kèm người phụ trách; ?mine=1 gồm khách của mình và cùng phòng ban.
   const list = (await call('/customers', emp)).data.customers;
   assert.equal(list.find((x: any) => x.id === k.data.id).owner.name, 'Tên emp');
-  assert.deepEqual((await call('/customers?mine=1', emp)).data.customers.map((x: any) => x.id), [k.data.id]);
+  assert.deepEqual((await call('/customers?mine=1', emp)).data.customers.map((x: any) => x.id).sort(), [k.data.id, k2.data.id].sort());
   assert.equal((await call('/customers/nope', emp)).status, 404);
   // Khách mới tạo lên trên cùng (không theo ABC).
   await new Promise(r => setTimeout(r, 5));
@@ -76,7 +76,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
   await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
 
-  // Trang chi tiết: người phụ trách thấy đủ; người được chia sẻ (old) thấy đơn và mở được đơn; người ngoài (new) không thấy.
+  // Trang chi tiết: người phụ trách thấy đủ; người được chia sẻ (old) thấy đơn và mở được đơn; đồng nghiệp cùng nhóm (new) thấy nghiệp vụ nhưng không có quyền chia sẻ khách.
   let ov = (await call(`/customers/${k.data.id}/overview`, emp)).data;
   assert.equal(ov.quotes.length, 1); assert.equal(ov.quotes[0].total, 2_160_000); assert.equal(ov.quotes[0].orderId, o.data.id);
   assert.equal(ov.orders.length, 1); assert.equal(ov.stats.orders, 1); assert.equal(ov.stats.revenue, 2_160_000); assert.equal(ov.stats.balance, 2_160_000);
@@ -84,7 +84,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal((await call(`/customers/${k.data.id}/overview`, old)).data.orders.length, 1);
   assert.equal((await call(`/orders/${o.data.id}`, old)).status, 200, 'được chia sẻ khách → mở được đơn của khách');
   ov = (await call(`/customers/${k.data.id}/overview`, other)).data;
-  assert.equal(ov.access.canSeeAll, false); assert.equal(ov.orders.length, 0); assert.equal(ov.quotes.length, 0);
+  assert.equal(ov.access.canSeeAll, false); assert.equal(ov.orders.length, 1); assert.equal(ov.quotes.length, 1);
   // Tài khoản trang khách (email đăng nhập) chỉ người phụ trách / được chia sẻ / Manager thấy.
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: k.data.id, name: 'Chị Lan', email: 'lan@hoanglong.vn' })).status, 201);
   assert.deepEqual((await call(`/customers/${k.data.id}/overview`, emp)).data.accounts.map((a: any) => a.email), ['lan@hoanglong.vn']);
@@ -98,7 +98,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.deepEqual(accs.filter((a: any) => a.name === 'Anh Tú').map((a: any) => [a.email, a.phone]), [['', '0987654321']]);
   assert.deepEqual((await call(`/customers/${k.data.id}/overview`, other)).data.accounts, [], 'người không phụ trách không thấy tài khoản khách');
   assert.equal((await call('/customers/%E0/overview', emp)).status, 400, 'URL hỏng → 400, không phải 500');
-  assert.equal((await call(`/orders/${o.data.id}`, other)).status, 404);
+  assert.equal((await call(`/orders/${o.data.id}`, other)).status, 200, 'đồng nghiệp cùng nhóm xem được chứng từ');
 
   // Manager đổi người phụ trách sang old: old không còn trong danh sách chia sẻ; bỏ trống người phụ trách được.
   p = (await call(`/customers/${k.data.id}/staff`, mgr, 'PUT', { ownerId: 'old' })).data;
@@ -112,3 +112,4 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal((await call('/orders', emp, 'POST', { quoteId: q2.data.id })).status, 201);
   assert.equal((await call(`/customers/${k.data.id}`, mgr)).data.owner.id, 'emp');
 });
+
