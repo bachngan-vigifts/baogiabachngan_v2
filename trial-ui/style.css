@@ -823,8 +823,11 @@ a.flow-step:hover { border-color: var(--blue); }
 .ddh-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
 .ddh-table th, .ddh-table td { border: 1px solid #000; padding: 4px 6px; vertical-align: middle; }
 .ddh-table th { font-weight: 700; text-align: center; background: #f2f2f2; } .ddh-table .c { text-align: center; } .ddh-table .n { text-align: right; white-space: nowrap; }
-.ddh-note { margin-top: 12px; } .ddh-date { text-align: right; margin: 14px 40px 4px 0; font-style: italic; }
+.ddh-note { margin-top: 12px; } .ddh-note > span { white-space: pre-wrap; overflow-wrap: anywhere; } .ddh-date { text-align: right; margin: 14px 40px 4px 0; font-style: italic; }
 .ddh-sign { display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; } .ddh-sign .space { height: 64px; }
+.ddh-order-sign { grid-template-columns: repeat(3, 1fr); }
+.order-print-note { display: grid; gap: 6px; margin: 12px 0; font-size: 13px; }
+.order-print-note textarea { width: 100%; }
 /* Đơn đặt hàng: bản in GIỐNG HỆT bản xem – luôn dàn trang ở bề rộng cố định 1000px (bảng không bị bóp, chữ không xuống dòng lung tung),
    in A4 DỌC (Safari iPhone / iPad bỏ qua khổ ngang nên cố định khổ dọc để máy nào in cũng như nhau) và THU NHỎ ĐỀU cả phiếu
    cho vừa vùng in: 210 − 2×10 mm = 190 mm ≈ 718px → ×0.71. */

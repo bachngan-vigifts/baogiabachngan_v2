@@ -3091,7 +3091,13 @@ function openOrderPrint(detail = sales.detail) {
     <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-xlsx>Tải Excel</button><button type="button" class="btn primary" data-print>In / Lưu PDF</button></div>`;
   document.body.append(dlg);
   const sheet = dlg.querySelector('[data-sheet]'), prices = () => dlg.querySelector('[data-prices]').checked;
-  const render = () => { sheet.innerHTML = orderSheetHtml(p, { prices: prices(), edit: true }); };
+  const noteLabel = document.createElement('label'); noteLabel.className = 'order-print-note'; noteLabel.textContent = 'Ghi chú đơn hàng';
+  const noteInput = document.createElement('textarea'); noteInput.rows = 2; noteInput.maxLength = 2000;
+  noteInput.value = p.note; noteInput.placeholder = 'Nhập ghi chú để đưa vào bản in / PDF / Excel'; noteLabel.append(noteInput);
+  dlg.querySelector('.print-tools').after(noteLabel);
+  const render = () => { sheet.innerHTML = orderSheetHtml(p, { prices: prices(), edit: true }); noteInput.value = p.note; };
+  noteInput.addEventListener('input', () => { p.note = noteInput.value; sheet.querySelector('[data-f="note"]').textContent = p.note; });
+  sheet.addEventListener('input', e => { if (e.target.dataset.f === 'note') { p.note = e.target.innerText; noteInput.value = p.note; } });
   render();
   dlg.querySelector('[data-prices]').addEventListener('change', () => { readEdits(sheet, p); render(); });
   const close = () => { dlg.close(); dlg.remove(); };
