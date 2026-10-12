@@ -14,8 +14,8 @@ const addDays = (iso: string, n: number) => new Date(Date.parse(iso + 'T00:00:00
 
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
-  // Nhân viên thứ hai (đăng nhập được) để kiểm tra "chỉ thấy của mình".
-  await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('emp2','emp2@x.vn','Tên emp2','0900000002','employee','sale',1,'2026-01-01T00:00:00.000Z')").run();
+  // Nhân viên ở phòng ban khác để kiểm tra không thấy dữ liệu chéo phòng.
+  await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('emp2','emp2@x.vn','Tên emp2','0900000002','employee','sale-admin',1,'2026-01-01T00:00:00.000Z')").run();
   await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,version) VALUES (?,?,0)').run('emp2', await hashPassword(PASSWORD, 1000));
   await db.insert(customers).values([
     { id: 'K1', name: 'Công ty Hoàng Long', contact: 'Anh Long', phone: '0901', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' },
@@ -131,3 +131,4 @@ test('giao dịch chăm sóc: ghi / sửa / xoá, chỉ thấy của mình, Mana
   assert.equal((await call(`/care/${a2.id}`, mgr, 'DELETE')).status, 200);
   assert.equal((await list(mgr)).total, 2);
 });
+

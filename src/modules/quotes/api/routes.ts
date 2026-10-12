@@ -1,10 +1,10 @@
+import { quotationPredicate } from './department-access.ts';
 import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
-import { quotationScope, quotationEditScope, type SqlScope } from '../domain/access.ts';
 import { cleanQuotation } from '../domain/quotation-schema.ts';
 import { keepCosts, withoutCosts } from '../domain/cost-privacy.ts';
 import { autoQuoteHead, nextQuoteNoAfter, quoteHeadFor } from '../domain/quote-number.ts';
@@ -14,10 +14,7 @@ import { quotations, quoteLines, quoteNotifications, quoteRevisions } from '../s
 import { employees } from '../../staff/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 
-const predicate = (scope: SqlScope) => {
-  const fragments = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
-  return sql.join(fragments.flatMap((part, i) => i < scope.bindings.length ? [sql.raw(part), sql`${scope.bindings[i]}`] : [sql.raw(part)]), sql.raw(''));
-};
+
 
 const isManager = (m: { role: string }) => m.role === 'manager';
 /** Giá vốn (giá nhập, CK mua vào, chi phí in gia công, CK khách) chỉ Manager thấy. */
@@ -74,7 +71,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
   router.get('/quotes', async c => {
     const viewer = (c.state.session as SessionState).member, p = c.url.searchParams, db = c.env.db;
     const { limit, offset } = paging(c.url, 100, 500);
-    const scope = predicate(quotationScope(viewer)), type = p.get('type') || '', owner = p.get('owner') || '', sort = p.get('sort') || 'updated';
+    const scope = quotationPredicate(viewer), type = p.get('type') || '', owner = p.get('owner') || '', sort = p.get('sort') || 'updated';
     const where = and(scope,
       type === 'HRC' || type === 'B2B' || type === 'VIGIFTS' ? eq(quotations.quoteType, type) : undefined,
       owner === 'mine' ? eq(quotations.creatorId, viewer.id) : owner === 'others' ? ne(quotations.creatorId, viewer.id) : undefined,
@@ -123,7 +120,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const keys = [...new Set(names.map(fold).filter(Boolean))];
     if (!keys.length) return json({ counts: {} });
     const key = sql<string>`trim(regexp_replace(${foldSql(quotations.customer)}, '\\s+', ' ', 'g'))`;
-    const rows = await c.env.db.select({ k: key }).from(quotations).where(and(predicate(quotationScope(viewer)), inArray(key, keys)));
+    const rows = await c.env.db.select({ k: key }).from(quotations).where(and(quotationPredicate(viewer), inArray(key, keys)));
     const byKey = new Map<string, number>();
     for (const r of rows) byKey.set(r.k, (byKey.get(r.k) ?? 0) + 1);
     return json({ counts: Object.fromEntries(names.map(n => [n, byKey.get(fold(n)) ?? 0])) });
@@ -139,12 +136,12 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
   }, 'business');
   router.get('/quotes/pending-count', async c => {
     const viewer = (c.state.session as SessionState).member;
-    const [r] = await c.env.db.select({ n: count() }).from(quotations).where(and(eq(quotations.approvalStatus, 'pending'), predicate(quotationScope(viewer))));
+    const [r] = await c.env.db.select({ n: count() }).from(quotations).where(and(eq(quotations.approvalStatus, 'pending'), quotationPredicate(viewer)));
     return json({ count: Number(r?.n ?? 0) });
   }, 'business');
   router.get('/quotes/:id', async c => {
     const viewer = (c.state.session as SessionState).member;
-    const [row] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, c.params.id!), predicate(quotationScope(viewer)))).limit(1);
+    const [row] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, c.params.id!), quotationPredicate(viewer))).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy báo giá.');
     const [approver] = row.approvedBy ? await c.env.db.select({ name: employees.name }).from(employees).where(eq(employees.id, row.approvedBy)).limit(1) : [];
     const [creator] = await c.env.db.select({ role: employees.role, name: employees.name }).from(employees).where(eq(employees.id, row.creatorId)).limit(1);
@@ -222,7 +219,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     let data = cleanQuotation(body.data);
     const now = new Date().toISOString();
     const saved = await c.env.db.transaction(async tx => {
-      const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), predicate(quotationEditScope(viewer)));
+      const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), quotationPredicate(viewer, true));
       const [old] = await tx.select().from(quotations).where(condition).limit(1);
       if (!old) throw new AppError(409, 'Báo giá đã thay đổi hoặc anh không có quyền sửa. Vui lòng tải lại.');
       if (old.approvalStatus === 'approved' && !isManager(viewer)) throw new AppError(403, 'Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'QUOTE_APPROVED');
@@ -254,5 +251,6 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     return json({ id: c.params.id, revision: saved.revision, data: forViewer(viewer, data), approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
   }, 'business');
 }
+
 
 

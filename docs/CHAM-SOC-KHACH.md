@@ -32,7 +32,7 @@ Mỗi lần ghi gồm kết quả và (tuỳ chọn) **lịch hẹn chăm sóc t
 
 ## Quyền
 
-- **Nhân viên:** chỉ xem, sửa, xoá lần mình ghi. Ghi được cho mọi khách hàng.
+- **Nhân viên:** xem lần mình ghi và đồng nghiệp đang hoạt động cùng nhóm/chức vụ; chỉ sửa/xoá lần mình ghi. Ghi được cho mọi khách hàng.
 - **Manager:** xem, sửa, xoá tất cả; lọc được theo nhân viên.
 - **Kho, NCC, khách:** không vào được. Menu bị ẩn; API khu vực `business` chặn NCC và khách.
 - **Phạm vi chung:** điều kiện `careScope()` trong `src/modules/care/api/routes.ts` dùng chung cho trang Chăm sóc KH và tab "Chăm sóc" ở trang chi tiết khách.
@@ -75,3 +75,4 @@ Mỗi lần ghi gồm kết quả và (tuỳ chọn) **lịch hẹn chăm sóc t
   - tab trên trang khách: mục `care` trong `TABS` của `trial-ui/customer-detail.js`;
   - CSS: khối "Chăm sóc khách hàng" cuối `trial-ui/style.css`.
 - **Test:** `tests/app/care.test.ts` (kiểm tra dữ liệu, quyền, lọc, việc tự sinh hai chiều).
+

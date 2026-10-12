@@ -168,9 +168,10 @@ export function initMemberDetail(deps) {
 
   // ----- Vẽ
   function render() {
-    const d = st.d, m = d.member, k = d.kpi, a = d.access, s = d.payroll.payslip;
+    const d = st.d, m = d.member, k = d.kpi, a = d.access, s = d.payroll?.payslip;
     const pct = k.targetPercent, bar = pct === null ? '' : `<span class="md-progress"><i style="width:${Math.min(100, pct)}%"></i></span>`;
-    const tab = TABS.find(t => t.key === st.tab) || TABS[0];
+    const tabs = d.payroll ? TABS : TABS.filter(t => !['attendance', 'payroll'].includes(t.key));
+    const tab = tabs.find(t => t.key === st.tab) || tabs[0];
     const stat = (label, value, sub, cls = '') => `<article class="stat ${cls}"><small>${label}</small><strong>${value}</strong>${sub}</article>`;
     root.innerHTML = `
       <div class="editor-head md-head">
@@ -192,7 +193,7 @@ export function initMemberDetail(deps) {
         ${stat('Đã thu tháng', `<span class="paid-text">${money(k.collected)}</span>`, `<span class="muted">${k.contractsSigned} HĐKT ký trong tháng</span>`)}
         ${stat('Công nợ đang giữ', `<span class="${k.debt.balance > 0 ? 'danger-text' : ''}">${money(k.debt.balance)}</span>`, `<span class="${k.debt.overdue ? 'danger-text' : 'muted'}">${k.debt.overdue ? 'Quá hạn ' + money(k.debt.overdue) : `${k.debt.orders} đơn còn nợ`}</span>`)}
         ${stat('Khách hàng', k.customers, `<span class="muted">${k.newCustomers} khách mới trong tháng</span>`)}
-        ${stat('Ngày công', `${k.workedDays}<small class="md-of">/${k.standardDays}</small>`, `<span class="muted">${monthLabel(d.month)}</span>`)}
+        ${d.payroll ? stat('Ngày công', `${k.workedDays}<small class="md-of">/${k.standardDays}</small>`, `<span class="muted">${monthLabel(d.month)}</span>`) : ''}
         ${stat('Công việc', `${k.tasks.done}<small class="md-of"> xong</small>`, `<span class="${k.tasks.overdue ? 'danger-text' : 'muted'}">${k.tasks.open} đang làm${k.tasks.overdue ? ` · ${k.tasks.overdue} trễ hạn` : ''}</span>`)}
       </div>
       <div class="md-grid">
@@ -202,14 +203,14 @@ export function initMemberDetail(deps) {
           <dt>Điện thoại</dt><dd>${m.phone ? `<a href="tel:${esc(m.phone.replace(/[^\d+]/g, ''))}">${esc(m.phone)}</a>` : '—'}</dd>
           <dt>Chức vụ</dt><dd>${esc(m.position || m.positionId || '—')}</dd><dt>Vào làm</dt><dd>${fmtDate(m.createdAt) || '—'}</dd>
           <dt>Trạng thái</dt><dd>${m.active ? '<span class="pill ok">Đang làm việc</span>' : '<span class="pill off">Đã khoá</span>'}</dd></dl></div>
-        <div class="card md-salary-card"><div class="card-title-row"><h2 class="card-title">Lương ${esc(monthLabel(d.month).toLowerCase())}</h2>${pill(SLIP, s.status)}</div>
+        ${d.payroll ? `<div class="card md-salary-card"><div class="card-title-row"><h2 class="card-title">Lương ${esc(monthLabel(d.month).toLowerCase())}</h2>${pill(SLIP, s.status)}</div>
           <strong class="md-net">${money(s.net)}</strong><span class="muted">Thực nhận${s.status === 'estimate' ? ' (tạm tính)' : ''}</span>
           <dl class="kv md-mini"><dt>Tổng thu nhập</dt><dd class="num">${money(s.gross)}</dd><dt>Thưởng</dt><dd class="num">${money(s.income.filter(l => /Bonus$/.test(l.key)).reduce((a, l) => a + l.amount, 0))}</dd>
             <dt>Khấu trừ</dt><dd class="num">−${money(s.deductionTotal)}</dd></dl>
-          <button type="button" class="btn ghost small" data-tab="payroll">Xem phiếu lương ›</button></div>
+          <button type="button" class="btn ghost small" data-tab="payroll">Xem phiếu lương ›</button></div>` : ''}
       </div>
       <div class="card cd-tabs-card">
-        <div class="chips cd-tabs" role="tablist">${TABS.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label} <b>${t.count(d)}</b></button>`).join('')}</div>
+        <div class="chips cd-tabs" role="tablist">${tabs.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label} <b>${t.count(d)}</b></button>`).join('')}</div>
         <div class="cd-tab-body">${tab.html(d)}</div>
       </div>`;
     root.querySelectorAll('.cd-tab-body table.data-table').forEach(t => {
@@ -379,3 +380,4 @@ export function initMemberDetail(deps) {
 
   return { open, reload };
 }
+

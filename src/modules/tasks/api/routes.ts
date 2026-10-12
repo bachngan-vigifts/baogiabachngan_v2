@@ -54,10 +54,10 @@ const myTeam = (c: Ctx) => { const p = (me(c) as { positionId?: string | null })
 /** Việc giao cho nhóm, chưa ai nhận. */
 const teamOpen = (t: Pick<Task, 'assigneeId' | 'assigneePosition'>) => !t.assigneeId && !!t.assigneePosition;
 /** Ai thấy việc: Manager thấy tất cả; nhân viên thấy việc mình nhận, mình giao, và việc giao cho nhóm của mình chưa ai nhận. */
-/** Chức vụ được xem việc của đồng nghiệp cùng chức vụ (PEER_VIEW_POSITIONS), null nếu không. Manager không cần (thấy tất cả). */
+/** Chức vụ được xem việc của đồng nghiệp cùng chức vụ (theo nhóm/chức vụ được gán), null nếu không. Manager không cần (thấy tất cả). */
 const peerPos = (c: Ctx) => { const m = me(c); return m.role === 'employee' && canViewPeers(m.positionId) ? m.positionId : null; };
 /** Đồng nghiệp cùng chức vụ (nhân viên, không tính Manager) – câu con SQL. */
-const colleaguesOf = (pos: string) => sql`(select ${employees.id} from ${employees} where ${employees.positionId} = ${pos} and ${employees.role} = 'employee')`;
+const colleaguesOf = (pos: string) => sql`(select ${employees.id} from ${employees} where ${employees.positionId} = ${pos} and ${employees.role} = 'employee' and ${employees.active} = true and ${employees.deletedAt} is null)`;
 /** Việc của đồng nghiệp cùng chức vụ: đồng nghiệp nhận, đồng nghiệp giao, hoặc giao cho nhóm chức vụ đó. */
 const peerCond = (pos: string): SQL => or(sql`${tasks.assigneeId} in ${colleaguesOf(pos)}`, sql`${tasks.createdBy} in ${colleaguesOf(pos)}`, eq(tasks.assigneePosition, pos))!;
 /** Việc tôi trực tiếp liên quan (được sửa / trao đổi theo quyền cũ): Manager, người nhận, người giao, nhóm của tôi chưa ai nhận. */
@@ -185,7 +185,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const today = vietnamDate().iso;
     // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
-    return json({ today, tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    return json({ today, canViewColleagues: !!peerPos(c), tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), comments: Number(counts.find(x => x.taskId === t.id)?.n ?? 0), due: dueBucket(t.dueDate, today),
       canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) })) });
   }, 'business');
@@ -332,3 +332,4 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     return json({ id }, 201);
   }, 'business');
 }
+

@@ -200,3 +200,19 @@ Ghi chú mặc định dùng ngày giao dự kiến đã nhập và địa chỉ
 ## Chẩn đoán lỗi tạo đơn Sapo
 
 Form sinh đơn gửi `pushSapo` là boolean rõ ràng: chỉ `true` mới yêu cầu đẩy Sapo. Lựa chọn chỉ trên web gửi `false`. Khi Sapo từ chối tạo nháp, thông báo và log kèm mã nội bộ an toàn (ví dụ `SAPO_HTTP_422`), không trả nội dung phản hồi gốc, cookie hay token. Cần kiểm tra trên Sapo trước khi thử lại để tránh tạo trùng.
+
+
+## Đẩy Sapo sau khi đã sinh chứng từ
+
+Trang chi tiết đơn hàng/HĐKT có **Tạo đơn Sapo** nếu chưa có liên kết và người xem có quyền; sau khi liên kết hiện **Xem đơn Sapo**. Nút tạo mở popup chọn kho và gửi `POST /orders/:id/sapo`; số đối chiếu là số đơn/HĐKT đã cấp, không tạo thêm chứng từ CRM. Không đẩy chứng từ đã huỷ. Nhân viên chỉ đẩy nháp mình phụ trách/tạo; chứng từ đã duyệt chỉ Manager đẩy, theo quy tắc khoá sửa trước đó. Kiểm quyền ở server, không chỉ ẩn nút.
+
+Endpoint khóa bản ghi đơn trong giao dịch, kiểm lại liên kết sau khóa để hai yêu cầu cùng lúc chỉ đẩy một lần. Nếu đã có `sapo_order_id`, trả liên kết ngay mà không cần kho/phiên Sapo. Lỗi Sapo giữ nguyên chứng từ CRM; popup dùng lời nhắc dành cho chứng từ đã có. Không migration, không sửa phiên hay cron Sapo.
+
+
+## Quyền giữa đồng nghiệp cùng phòng ban
+
+Phòng ban trong app dùng nhóm/chức vụ hiện có (`staff_members.position_id`), không dùng nhóm lương. Nhân viên đang hoạt động, chưa xoá và có cùng nhóm được xem báo giá, đơn/HĐKT, chăm sóc, khách liên quan và doanh số của nhau. Cùng nhóm sửa được báo giá/đơn/HĐKT **nháp**; chứng từ đã duyệt/ký/hoàn tất vẫn chỉ Manager sửa/xoá. Không tự cấp quyền duyệt, chia sẻ tiếp hoặc đổi người phụ trách. Người chưa có nhóm không tự thấy nhau. Manager và quyền chia sẻ trực tiếp có sẵn giữ nguyên.
+
+`staff/api/department.ts` cung cấp điều kiện Drizzle có tham số bind; `quotes/api/department-access.ts` kết hợp quyền sở hữu/chia sẻ cũ với quyền phòng ban. Mọi API danh sách/chi tiết/sửa kiểm quyền ở server. Chăm sóc và Công việc của đồng nghiệp chỉ xem; quyền ghi/xoá nhật ký/trao đổi không mở theo quyền sửa nháp chứng từ.
+
+Hồ sơ đồng nghiệp chỉ trả thông tin nghiệp vụ: `payroll: null`, không gọi hàm đọc/tính lương, không trả tham số lương, ngày công hoặc tài khoản ngân hàng từ hồ sơ lương. Hồ sơ của mình và Manager giữ quyền lương cũ; các endpoint HR giữ nguyên kiểm quyền. Giao diện ẩn thẻ/tab lương và ngày công khi không có quyền. Không migration, không sửa module HR, phiên Sapo hay cron.

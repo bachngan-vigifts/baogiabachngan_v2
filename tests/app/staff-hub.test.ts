@@ -54,7 +54,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
 
   // Nhân viên xem hồ sơ của chính mình.
   const d = (await call(`/members/emp/overview?month=${month}`, emp)).data;
-  assert.deepEqual(d.access, { isSelf: true, canManage: false });
+  assert.deepEqual(d.access, { isSelf: true, canManage: false, canViewPayroll: true });
   assert.equal(d.member.name, 'Tên emp');
   assert.equal(d.kpi.revenue, 2_160_000); assert.equal(d.kpi.orders, 1); assert.equal(d.kpi.targetPercent, 50);
   assert.equal(d.kpi.quotes, 2); assert.equal(d.kpi.quotesWon, 1); assert.equal(d.kpi.conversion, 50);
@@ -89,3 +89,4 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   assert.equal((await call(`/hr/members/emp/payslips/${month}`, mgr, 'DELETE')).status, 409, 'đã trả lương thì không mở lại');
   assert.equal((await call(`/members/emp/overview?month=${month}`, emp)).data.payroll.payslip.status, 'paid');
 });
+

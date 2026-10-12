@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
+import { quotationPredicate } from '../../src/modules/quotes/api/department-access.ts';
+import { departmentOwner } from '../../src/modules/staff/api/department.ts';
 import { amendmentLines, amendmentSchedules } from '../../src/modules/sales/domain/amendments.ts';
 
 const line = (id: string, lineNo: number, sku: string, qty = 10) =>
@@ -70,7 +72,7 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   };
   const table = new Proxy({}, { get: (_, key) => String(key) });
   const ctx: any = {
-    quoteSaveHooks: { beforeSave: [], afterSave: [] },
+    departmentOwner, quotationPredicate, quoteSaveHooks: { beforeSave: [], afterSave: [] },
     customerStaff: table, salesOrders: table, salesContracts: table, paymentSchedules: table, customerPayments: table, deliveries: table,
     or: () => null, eq: () => null, and: () => null, desc: () => null, sql: () => null,
     CONTRACT_STATUSES: ['draft', 'signed', 'completed', 'cancelled'],
@@ -124,7 +126,7 @@ test('employee cannot edit or delete an approved quote through the API', async (
   const sql: any = () => null;
   sql.join = () => null; sql.raw = () => null;
   const ctx: any = {
-    sql, quotations: table, eq: () => null, and: () => null,
+    quotationPredicate, sql, quotations: table, eq: () => null, and: () => null,
     quotationEditScope: () => ({ sql: '', bindings: [] }),
     cleanQuotation: (data: any) => data, readJson: async () => ({ revision: 1, data: {} }),
     AppError: class extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; } },
@@ -140,3 +142,4 @@ test('employee cannot edit or delete an approved quote through the API', async (
   const c = { req: {}, params: { id: 'q' }, env: { db }, state: { session: { member: { id: 'employee', role: 'employee' } } } };
   for (const path of ['put/quotes/:id', 'delete/quotes/:id']) await assert.rejects(handlers.get(path)(c), (e: any) => e.status === 403);
 });
+

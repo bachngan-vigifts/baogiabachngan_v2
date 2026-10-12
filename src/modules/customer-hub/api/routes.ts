@@ -1,11 +1,12 @@
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { quotationPredicate } from '../../quotes/api/department-access.ts';
+import { departmentOwner } from '../../staff/api/department.ts';
+import { and, asc, desc, eq, inArray, or, ne, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json } from '../../../core/http/router.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { customerProfile } from '../../customers/api/routes.ts';
 import { quotations } from '../../quotes/schema.ts';
-import { quotationScope, type SqlScope } from '../../quotes/domain/access.ts';
 import { customerPayments, deliveries, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { orderScopeFor } from '../../sales/api/routes.ts';
 import { debtCounts, quoteTotal, receivable, vietnamDate } from '../../sales/domain/sales.ts';
@@ -19,10 +20,7 @@ import { CARE_REMIND_LABEL, CARE_RESULT_LABEL, CARE_TYPE_LABEL } from '../../car
 type Ctx = RouteContext<StaffEnv>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 /** Điều kiện SQL thô của quyền báo giá (alias `q`) → điều kiện drizzle trên bảng staff_quotations. */
-const quotePredicate = (scope: SqlScope) => {
-  const parts = scope.sql.replace(/\bq\./g, 'staff_quotations.').split('?');
-  return sql.join(parts.flatMap((p, i) => i < scope.bindings.length ? [sql.raw(p), sql`${scope.bindings[i]}`] : [sql.raw(p)]), sql.raw(''));
-};
+
 
 /**
  * Trang chi tiết khách hàng: gom một lượt mọi thứ liên quan tới khách
@@ -33,7 +31,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
   router.get('/customers/:id/overview', async c => {
     const db = c.env.db, me = viewer(c), id = c.params.id!;
     const profile = await customerProfile(db, id, me), all = profile.access.canSeeAll;
-    const quoteWhere = and(sql`(${quotations.data}::jsonb ->> 'customerId') = ${id}`, all ? undefined : quotePredicate(quotationScope(me)));
+    const quoteWhere = and(sql`(${quotations.data}::jsonb ->> 'customerId') = ${id}`, all ? undefined : quotationPredicate(me));
     const [orders, quoteRows, stockRows, accountRows, careRows] = await Promise.all([
       db.select({ o: salesOrders, ownerName: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId))
         .where(and(eq(salesOrders.customerId, id), all ? undefined : orderScopeFor(me)))
@@ -41,7 +39,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       db.select({ q: quotations, assigneeName: employees.name }).from(quotations).innerJoin(employees, eq(employees.id, sql`coalesce(${quotations.assigneeId}, ${quotations.creatorId})`))
         .where(quoteWhere).orderBy(desc(quotations.updatedAt)).limit(HUB_LIMITS.quotes),
       db.select({ id: customerStockRequests.id, status: customerStockRequests.status, items: customerStockRequests.items, note: customerStockRequests.note, createdAt: customerStockRequests.createdAt, answeredAt: customerStockRequests.answeredAt })
-        .from(customerStockRequests).where(and(eq(customerStockRequests.customerId, id), all ? undefined : eq(customerStockRequests.ownerId, me.id)))
+        .from(customerStockRequests).where(and(eq(customerStockRequests.customerId, id), all ? undefined : or(eq(customerStockRequests.ownerId, me.id), departmentOwner(customerStockRequests.ownerId, me))))
         .orderBy(desc(customerStockRequests.createdAt)).limit(HUB_LIMITS.stockRequests),
       // Tài khoản trang khách (tên, email / SĐT đăng nhập, chiết khấu riêng): chỉ Manager / người phụ trách / người được chia sẻ khách mới xem.
       all ? db.select({ memberId: customerAccounts.memberId, name: employees.name, email: employees.email, phone: employees.phone, active: employees.active, discounts: customerAccounts.discounts })
@@ -95,3 +93,4 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
     });
   }, 'business');
 }
+

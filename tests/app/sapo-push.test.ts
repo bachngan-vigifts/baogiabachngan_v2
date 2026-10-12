@@ -7,6 +7,7 @@ import { customers } from '../../src/modules/customers/schema.ts';
 import { quotations } from '../../src/modules/quotes/schema.ts';
 import { eq } from 'drizzle-orm';
 import { cleanOrderInput } from '../../src/modules/sales/domain/order-input.ts';
+import { credentials, employees } from '../../src/modules/staff/schema.ts';
 import { salesContracts, salesOrders } from '../../src/modules/sales/schema.ts';
 import { buildSapoOrder, isSapoOrderFor, matchSapoAccount, sapoPushProblems, type SapoPushInput } from '../../src/modules/integrations/domain/sapo-order.ts';
 
@@ -246,4 +247,61 @@ test('Sapo từ chối đơn: trả mã HTTP an toàn, rollback đơn web, khôn
   assert.match(JSON.stringify(r.data), /SAPO_HTTP_422/);
   assert.doesNotMatch(JSON.stringify(r.data), /never-return-upstream-body/);
   assert.equal(await s.orderCount(), 0); assert.equal(s.sapo.db.orders.length, 0);
+});
+
+
+test('đơn/HĐKT đã có: đẩy Sapo sau, lặp lại không tạo trùng, không sinh thêm chứng từ CRM', async () => {
+  const s = await setup();
+  const quoteId = await s.makeQuote('B2B_BG20261012_201');
+  const made = await s.call('/orders', s.emp, 'POST', { quoteId, pushSapo: false });
+  const read = async () => (await s.call('/orders/' + made.data.id, s.emp)).data.order;
+  assert.equal((await read()).canCreateSapo, true);
+  const r = await s.call('/orders/' + made.data.id + '/sapo', s.emp, 'POST', { sapoLocationId: 7 });
+  assert.equal(r.status, 200, JSON.stringify(r.data)); assert.equal(r.data.sapo.code, (await read()).orderNo);
+  assert.equal((await read()).canCreateSapo, false); assert.ok((await read()).sapoOrderUrl);
+  const writes = s.sapo.writes.length;
+  const again = await s.call('/orders/' + made.data.id + '/sapo', s.emp, 'POST', {});
+  assert.equal(again.data.sapo.id, r.data.sapo.id); assert.equal(s.sapo.writes.length, writes);
+  assert.equal(await s.orderCount(), 1);
+  const k = await s.call('/contracts', s.emp, 'POST', { quoteId: await s.makeQuote('B2B_BG20261012_202'), legalEntity: 'BN', depositRate: 30, paymentDays: 15, pushSapo: false });
+  const pushed = await s.call('/orders/' + k.data.orderId + '/sapo', s.emp, 'POST', { sapoLocationId: 7 });
+  assert.equal(pushed.status, 200, JSON.stringify(pushed.data)); assert.equal(pushed.data.sapo.code, k.data.contractNo);
+  assert.equal(await s.orderCount(), 2); assert.equal((await s.db.select().from(salesContracts)).length, 1);
+});
+
+test('đẩy Sapo sau: kiểm quyền server, kho hợp lệ, chứng từ đã duyệt/đã huỷ và giữ chứng từ khi lỗi', async () => {
+  const s = await setup({ forbidOrders: true });
+  const made = await s.call('/orders', s.emp, 'POST', { quoteId: await s.makeQuote('B2B_BG20261012_203'), pushSapo: false });
+  const path = '/orders/' + made.data.id + '/sapo';
+  assert.equal((await s.call(path, '', 'POST', { sapoLocationId: 7 })).status, 401);
+  const [known] = await s.db.select().from(credentials).where(eq(credentials.memberId, 'emp'));
+  await s.db.update(credentials).set({ passwordHash: known!.passwordHash }).where(eq(credentials.memberId, 'new'));
+  await s.db.update(employees).set({ positionId: 'warehouse' }).where(eq(employees.id, 'new'));
+  const other = (await s.call('/login', '', 'POST', { email: 'new@x.vn', password: PASSWORD })).cookie;
+  assert.equal((await s.call(path, other, 'POST', { sapoLocationId: 7 })).status, 404);
+  assert.equal((await s.call(path, s.emp, 'POST', {})).data.code, 'SAPO_LOCATION_REQUIRED');
+  assert.equal((await s.call(path, s.emp, 'POST', { sapoLocationId: 9 })).data.code, 'SAPO_LOCATION_INVALID');
+  const bad = await s.call(path, s.emp, 'POST', { sapoLocationId: 7 });
+  assert.equal(bad.status, 403); assert.equal(bad.data.code, 'SAPO_PERMISSION_DENIED');
+  assert.equal(await s.orderCount(), 1);
+  await s.db.update(salesOrders).set({ status: 'confirmed' }).where(eq(salesOrders.id, made.data.id));
+  assert.equal((await s.call(path, s.emp, 'POST', { sapoLocationId: 7 })).data.code, 'SAPO_PUSH_FORBIDDEN');
+  assert.equal((await s.call('/orders/' + made.data.id, s.emp)).data.order.canCreateSapo, false);
+  assert.equal((await s.call('/orders/' + made.data.id, s.mgr)).data.order.canCreateSapo, true);
+  await s.db.update(salesOrders).set({ status: 'cancelled' }).where(eq(salesOrders.id, made.data.id));
+  assert.equal((await s.call(path, s.mgr, 'POST', { sapoLocationId: 7 })).data.code, 'ORDER_CANCELLED');
+  const order = (await s.call('/orders/' + made.data.id, s.mgr)).data.order;
+  assert.equal(order.sapoOrderId, null); assert.equal(order.canCreateSapo, false);
+});
+
+
+test('hai yêu cầu đẩy cùng chứng từ chỉ tạo một đơn Sapo', async () => {
+  const s = await setup();
+  const made = await s.call('/orders', s.emp, 'POST', { quoteId: await s.makeQuote('B2B_BG20261012_204'), pushSapo: false });
+  const path = '/orders/' + made.data.id + '/sapo';
+  const responses = await Promise.all([s.call(path, s.emp, 'POST', { sapoLocationId: 7 }), s.call(path, s.emp, 'POST', { sapoLocationId: 7 })]);
+  for (const r of responses) assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(responses[0].data.sapo.id, responses[1].data.sapo.id);
+  assert.equal(s.sapo.writes.filter(w => w.method === 'POST' && w.path === '/orders.json').length, 1);
+  assert.equal(await s.orderCount(), 1);
 });

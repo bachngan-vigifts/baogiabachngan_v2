@@ -1,4 +1,5 @@
-import { and, asc, count, desc, eq, gte, isNotNull, isNull, lt, lte, type SQL } from 'drizzle-orm';
+import { departmentOwner } from '../../staff/api/department.ts';
+import { and, asc, count, desc, eq, or, gte, isNotNull, isNull, lt, lte, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -19,15 +20,15 @@ import { CARE_REMIND, CARE_REMIND_LABEL, CARE_RESULT_LABEL, CARE_RESULTS, CARE_T
  *  PUT    /care/:id             sửa (người ghi hoặc Manager; `revision` chống ghi đè)
  *  POST   /care/:id/done        đánh dấu hẹn chăm sóc đã xong / mở lại ({ done: boolean })
  *  DELETE /care/:id             xoá (người ghi hoặc Manager)
- * Quyền xem: nhân viên chỉ thấy dòng mình ghi; Manager thấy tất cả.
+ * Quyền xem: nhân viên thấy dòng của mình và đồng nghiệp cùng nhóm; Manager thấy tất cả. Quyền sửa/xoá vẫn chỉ người ghi hoặc Manager.
  */
 type Ctx = RouteContext<StaffEnv>;
-type Viewer = Pick<SessionState['member'], 'id' | 'role'>;
+type Viewer = Pick<SessionState['member'], 'id' | 'role' | 'positionId'>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 const isManager = (m: Viewer) => m.role === 'manager';
 
-/** Điều kiện xem được: Manager tất cả, nhân viên dòng mình ghi. Dùng chung cho trang chi tiết khách (customer-hub). */
-export const careScope = (m: Viewer): SQL | undefined => (isManager(m) ? undefined : eq(customerActivities.ownerId, m.id));
+/** Điều kiện xem được: Manager tất cả, nhân viên mình và đồng nghiệp cùng nhóm. Dùng chung cho trang chi tiết khách (customer-hub). */
+export const careScope = (m: Viewer): SQL | undefined => (isManager(m) ? undefined : or(eq(customerActivities.ownerId, m.id), departmentOwner(customerActivities.ownerId, m)));
 
 /** Ngày hôm nay theo giờ Việt Nam (YYYY-MM-DD). */
 export const vnToday = (now = new Date()) => new Date(now.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
@@ -48,9 +49,9 @@ const baseQuery = (c: Ctx) => c.env.db.select(columns).from(customerActivities)
   .innerJoin(customers, eq(customers.id, customerActivities.customerId)).innerJoin(employees, eq(employees.id, customerActivities.ownerId));
 
 /** Một dòng người xem được (không có quyền → 404, không lộ là có tồn tại). */
-async function loadOne(c: Ctx, id: string) {
+async function loadOne(c: Ctx, id: string, write = false) {
   const me = viewer(c);
-  const [row] = await baseQuery(c).where(and(eq(customerActivities.id, id), careScope(me))).limit(1);
+  const [row] = await baseQuery(c).where(and(eq(customerActivities.id, id), write && !isManager(me) ? eq(customerActivities.ownerId, me.id) : careScope(me))).limit(1);
   if (!row) throw new AppError(404, 'Không tìm thấy lần chăm sóc này.');
   return row;
 }
@@ -113,7 +114,7 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.put('/care/:id', async c => {
-    const me = viewer(c), today = vnToday(), body = await readJson(c.req, 20_000), { a: old } = await loadOne(c, c.params.id!);
+    const me = viewer(c), today = vnToday(), body = await readJson(c.req, 20_000), { a: old } = await loadOne(c, c.params.id!, true);
     if (body.revision !== undefined && Number(body.revision) !== old.revision) throw new AppError(409, 'Dòng này vừa được người khác sửa. Tải lại rồi sửa tiếp.');
     // Giữ nguyên ngày hẹn cũ (đã qua) thì vẫn lưu được; đổi ngày hẹn thì phải từ hôm nay trở đi.
     const keepOld = !!old.nextAt && body.nextAt === old.nextAt;
@@ -127,7 +128,7 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.post('/care/:id/done', async c => {
-    const me = viewer(c), body = await readJson(c.req, 1000), { a: old } = await loadOne(c, c.params.id!);
+    const me = viewer(c), body = await readJson(c.req, 1000), { a: old } = await loadOne(c, c.params.id!, true);
     if (!old.nextAt) throw new AppError(409, 'Lần chăm sóc này không có lịch hẹn.');
     const now = new Date().toISOString();
     await c.env.db.update(customerActivities).set({ nextDoneAt: body.done === false ? null : now, revision: old.revision + 1, updatedAt: now }).where(eq(customerActivities.id, old.id));
@@ -135,7 +136,7 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.delete('/care/:id', async c => {
-    const { a } = await loadOne(c, c.params.id!);
+    const { a } = await loadOne(c, c.params.id!, true);
     await c.env.db.delete(customerActivities).where(eq(customerActivities.id, a.id));
     return json({ ok: true });
   }, 'business');
@@ -158,3 +159,4 @@ export async function dueFollowUps(db: StaffEnv['db'], today: string) {
     .where(and(isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt), lte(customerActivities.nextAt, horizon))).limit(2000);
   return rows.filter(r => remindFrom(r.nextAt!, r.remindBefore) <= today);
 }
+

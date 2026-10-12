@@ -1,3 +1,4 @@
+import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
 import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
@@ -2699,9 +2700,9 @@ async function openOrder(id) {
       : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
     + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
-    + (o.sapoOrderUrl ? `<a class="btn secondary" href="${esc(o.sapoOrderUrl)}" target="_blank" rel="noopener noreferrer" title="Mở đơn trên Sapo">Đơn Sapo ${esc(o.sapoOrderCode || '')} ↗</a>`
-      : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
+  const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
+  if (sapoAction) $('#order-actions').append(sapoAction);
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], [isK ? 'Ngày lập' : 'Ngày đặt', fmtDate(o.orderDate)]]
     .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')

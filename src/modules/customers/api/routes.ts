@@ -1,4 +1,5 @@
-import { and, asc, count, desc, eq, exists, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { departmentOwner } from '../../staff/api/department.ts';
+import { and, asc, count, desc, eq, exists, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -10,7 +11,7 @@ import { CUSTOMER_LIMITS } from '../domain/customer-config.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Db = StaffEnv['db'];
-type Viewer = { id: string; role: string };
+type Viewer = { id: string; role: string; positionId?: string | null };
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 const nowIso = () => new Date().toISOString();
 
@@ -38,7 +39,8 @@ export async function customerAccess(db: Db, customerId: string, who: Viewer) {
   const [row] = await db.select({ role: customerStaff.role }).from(customerStaff)
     .where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.memberId, who.id))).limit(1);
   const manager = who.role === 'manager', owner = row?.role === 'owner', shared = row?.role === 'shared';
-  return { manager, owner, shared, canSeeAll: manager || owner || shared, canManageStaff: manager || owner, canChangeOwner: manager, canEdit: manager || owner };
+  const [peer] = await db.select({ id: customerStaff.memberId }).from(customerStaff).where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.role, 'owner'), departmentOwner(customerStaff.memberId, who) ?? sql`false`)).limit(1);
+  return { manager, owner, shared, peer: !!peer, canSeeAll: manager || owner || shared, canManageStaff: manager || owner, canChangeOwner: manager, canEdit: manager || owner };
 }
 /** Sửa thông tin khách / người liên hệ: chỉ nhân viên phụ trách khách hoặc Manager. */
 async function requireEdit(db: Db, customerId: string, who: Viewer) {
@@ -89,7 +91,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   router.get('/customers', async c => {
     const { limit, offset } = paging(c.url, 100, 500), me = viewer(c);
     const mine = c.url.searchParams.get('mine') === '1'
-      ? exists(c.env.db.select({ x: sql`1` }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id), eq(customerStaff.memberId, me.id))))
+      ? exists(c.env.db.select({ x: sql`1` }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id), or(eq(customerStaff.memberId, me.id), departmentOwner(customerStaff.memberId, me)))))
       : undefined;
     // `?status=pending`: khách chờ Manager duyệt; `?usable=1`: chỉ khách đã duyệt (chọn cho báo giá / đơn).
     const status = c.url.searchParams.get('status'), usable = c.url.searchParams.get('usable') === '1';
@@ -265,3 +267,4 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     return json({ ok: true });
   }, 'business');
 }
+

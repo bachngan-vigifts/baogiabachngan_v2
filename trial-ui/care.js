@@ -59,7 +59,7 @@ export function initCare(deps) {
           ${isManager() ? `<select data-f="owner" aria-label="Nhân viên">${options(people || [], st.owner, 'Mọi nhân viên')}</select>` : ''}
           <span class="muted small" data-count></span>
         </div>
-        <div class="table-wrap"><table class="data-table care-table"><thead><tr><th>Thời gian</th><th>Khách hàng</th><th>Hình thức</th><th>Nội dung</th><th>Kết quả</th><th>Hẹn tiếp</th>${isManager() ? '<th>Người ghi</th>' : ''}<th></th></tr></thead><tbody data-list></tbody></table></div>
+        <div class="table-wrap"><table class="data-table care-table"><thead><tr><th>Thời gian</th><th>Khách hàng</th><th>Hình thức</th><th>Nội dung</th><th>Kết quả</th><th>Hẹn tiếp</th><th>Người ghi</th><th></th></tr></thead><tbody data-list></tbody></table></div>
         <div class="empty" data-empty hidden><p data-empty-text></p></div>
       </div>`;
   }
@@ -67,7 +67,7 @@ export function initCare(deps) {
       <td class="nowrap">${esc(when(a.occurredAt))}</td>
       <td><a href="#/customers/${encodeURIComponent(a.customerId)}">${esc(a.customerName)}</a>${a.customerPhone ? `<small>${esc(a.customerPhone)}</small>` : ''}</td>
       <td>${careType(a)}</td><td class="care-text">${careSummary(a)}</td><td>${careResult(a)}</td><td>${followUpCell(a)}</td>
-      ${isManager() ? `<td>${esc(a.ownerName)}</td>` : ''}
+      <td>${esc(a.ownerName)}</td>
       <td class="row-actions">${a.canEdit && a.nextAt && !a.nextDoneAt ? `<button type="button" class="btn ok small" data-care-done="${esc(a.id)}" title="Đã chăm sóc theo hẹn">✓ Xong</button>` : ''}
         ${a.canEdit ? `<button type="button" class="btn ghost small" data-care-edit="${esc(a.id)}">Sửa</button><button type="button" class="icon-btn danger" data-care-del="${esc(a.id)}" title="Xoá" aria-label="Xoá">×</button>` : ''}</td></tr>`;
   async function refresh() {
@@ -196,3 +196,4 @@ export function initCare(deps) {
   }
   return { load, openForm, badge };
 }
+

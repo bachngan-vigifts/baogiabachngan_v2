@@ -31,8 +31,9 @@ test('quote-docs: đơn hàng, HĐKT, đơn đã huỷ không tính, nhân viên
   assert.deepEqual([docs[q1].orderId, docs[q1].contractNo], [o1.id, null]);
   assert.deepEqual([docs[q2].orderId, docs[q2].contractNo], [k2.orderId, k2.contractNo]);
   assert.deepEqual((await call('/quote-docs?ids=', emp)).data.docs, {});
-  // Nhân viên khác (không phụ trách / không lập đơn): không thấy chứng từ.
-  await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('emp3','emp3@x.vn','Sale 3','0900','employee','sale',1,'2026-01-01T00:00:00.000Z')").run();
+  // Nhân viên phòng ban khác (không phụ trách / không lập đơn): không thấy chứng từ.
+  await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('emp3','emp3@x.vn','Sale 3','0900','employee','sale-admin',1,'2026-01-01T00:00:00.000Z')").run();
   await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run('emp3', await hashPassword(PASSWORD, 1000));
   assert.deepEqual((await call(`/quote-docs?ids=${q1}`, await login('emp3@x.vn'))).data.docs, {});
 });
+
