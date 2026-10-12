@@ -52,7 +52,7 @@ test('đồng bộ khách hàng: tạo/cập nhật theo mã Sapo, bỏ qua bả
     { id: 'b1c2d3e4-0000-4000-8000-000000000000', name: 'Ghi đè khách web', tax_code: '0101' },
   ] });
   assert.equal(r1.status, 200, JSON.stringify(r1.data));
-  assert.deepEqual(r1.data, { received: 4, applied: 1, skipped: 3 });
+  assert.deepEqual(r1.data, { received: 4, applied: 1, skipped: 3, duplicates: 0 });
   const [hl] = await db.select().from(customers).where(eq(customers.id, '1001'));
   assert.equal(hl!.email, 'a@hl.vn'); assert.equal(hl!.customerCode, 'CUS01'); assert.equal(hl!.address, '1 Lê Lợi, Q1, HCM');
   assert.equal((await db.select().from(customers).where(eq(customers.id, 'b1c2d3e4-0000-4000-8000-000000000000')))[0]!.name, 'Khách tạo trên web');
