@@ -60,7 +60,7 @@ async function inputFromOrder(db: Db | Tx, orderId: string) {
     ownerOf(db, o.ownerId),
   ]);
   const input: SapoPushInput = {
-    code: o.quoteNo || o.orderNo, orderNo: o.orderNo, quoteNo: o.quoteNo, quoteType: o.quoteType, contractNo: contract?.no ?? '',
+    code: contract?.no || o.orderNo, orderNo: o.orderNo, quoteNo: o.quoteNo, quoteType: o.quoteType, contractNo: contract?.no ?? '',
     customer: { sapoId: /^\d+$/.test(o.customerId ?? '') ? Number(o.customerId) : null, name: o.customerName, customerCode: cust?.code ?? '', taxCode: o.taxCode, phone: o.phone, email: o.email, contact: o.contact, address: o.address },
     lines: lines.map(l => ({ sku: l.sku.trim(), name: l.name, unit: l.unit, qty: l.qty, unitPrice: l.unitPrice, taxRate: l.taxRate })),
     ownerName: owner.name, ownerPhone: owner.phone, expectedDeliveryDate: o.expectedDeliveryDate, subtotal: o.subtotal, tax: o.tax, total: o.total,
@@ -109,7 +109,7 @@ export async function prepareSapoPush(c: Ctx, locationId: number) {
  */
 export async function sapoPreview(c: Ctx, p: { code: string; ownerId: string; lines: Pick<SapoPushLine, 'sku'>[]; customerName: string }) {
   const owner = await ownerOf(c.env.db, p.ownerId);
-  const problems = sapoPushProblems({ code: p.code, customer: { name: p.customerName }, lines: p.lines } as SapoPushInput);
+  const problems = sapoPushProblems({ code: p.code, customer: { name: p.customerName }, lines: p.lines } as SapoPushInput, { requireCode: !!p.code });
   try {
     return await withSapoSession(c, async api => {
       const [locations, accounts] = await Promise.all([sapoLocations(api), sapoAccounts(api)]);
@@ -120,3 +120,4 @@ export async function sapoPreview(c: Ctx, p: { code: string; ownerId: string; li
     return { connected: false, required: sapoPushRequired(c), message: e.message, code: p.code, owner: owner.name, account: null, locations: [], problems };
   }
 }
+

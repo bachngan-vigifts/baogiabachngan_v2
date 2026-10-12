@@ -311,12 +311,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const o = await loadOrder(c, p.get('orderId')!);
       if (o.sapoOrderId) return json({ pushed: { code: o.sapoOrderCode, url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId)}` }, required: sapoPushRequired(c) });
       const lines = await c.env.db.select({ sku: salesOrderLines.sku }).from(salesOrderLines).where(eq(salesOrderLines.orderId, o.id));
-      return json(await sapoPreview(c, { code: o.quoteNo || o.orderNo, ownerId: o.ownerId, lines: lines.map(l => ({ sku: l.sku.trim() })), customerName: o.customerName }));
+      const [contract] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, o.id)).limit(1);
+      return json(await sapoPreview(c, { code: contract?.no || o.orderNo, ownerId: o.ownerId, lines: lines.map(l => ({ sku: l.sku.trim() })), customerName: o.customerName }));
     }
     const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, text(p.get('quoteId'), 80)), quotePredicate(quotationScope(me)))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     const data = JSON.parse(quote.data);
-    return json(await sapoPreview(c, { code: quote.quoteNo, ownerId: quote.assigneeId ?? quote.creatorId, lines: orderLinesFromQuote(data).map(l => ({ sku: String(l.sku ?? '').trim() })), customerName: text(data.customer) || quote.customer }));
+    return json(await sapoPreview(c, { code: '', ownerId: quote.assigneeId ?? quote.creatorId, lines: orderLinesFromQuote(data).map(l => ({ sku: String(l.sku ?? '').trim() })), customerName: text(data.customer) || quote.customer }));
   }, 'business');
 
   /** Tạo đơn từ báo giá (người xem được báo giá mới tạo được). Mỗi báo giá một đơn đang hiệu lực. */
