@@ -68,8 +68,10 @@ test('báo giá: phân trang + lọc + sắp xếp trên máy chủ, kèm tổng
 test('đơn hàng / HĐKT: phân trang trên máy chủ, trả tổng số', async () => {
   const { call, mgr } = await setup();
   const orders: string[] = [];
+  // Dùng tên riêng bằng chữ: từ khóa số có thể khớp ngày trong số đơn tự sinh.
+  const customerNames = ['Khách Sen', 'Khách Trúc', 'Khách Đào', 'Khách Lan'];
   for (let i = 1; i <= 4; i++) {
-    const q = await call('/quotes', mgr, 'POST', { ...quote(`B2B_BG20261009_00${i}`, `Khách ${i}`, 100000), customerTaxCode: `010123456${i}` });
+    const q = await call('/quotes', mgr, 'POST', { ...quote(`B2B_BG20261009_00${i}`, customerNames[i - 1]!, 100000), customerTaxCode: `010123456${i}` });
     // Báo giá 1 → HĐKT (luồng riêng), còn lại → đơn hàng.
     const o = i === 1 ? await call('/contracts', mgr, 'POST', { quoteId: q.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-09' })
       : await call('/orders', mgr, 'POST', { quoteId: q.data.id });
@@ -79,7 +81,7 @@ test('đơn hàng / HĐKT: phân trang trên máy chủ, trả tổng số', asy
   const p1 = (await call('/orders?flow=order&limit=2&offset=0', mgr)).data, p2 = (await call('/orders?flow=order&limit=2&offset=2', mgr)).data;
   assert.deepEqual([p1.total, p1.orders.length, p2.orders.length], [3, 2, 1], 'đơn có HĐKT không nằm ở trang Đơn hàng');
   assert.equal(new Set([...p1.orders, ...p2.orders].map((o: any) => o.id)).size, 3);
-  assert.equal((await call('/orders?flow=order&q=khach%203', mgr)).data.total, 1);
+  assert.equal((await call('/orders?flow=order&q=khach%20dao', mgr)).data.total, 1);
   const k = (await call('/contracts?limit=1', mgr)).data;
   assert.deepEqual([k.total, k.contracts.length], [1, 1]);
   assert.equal((await call('/contracts?limit=1&offset=1', mgr)).data.contracts.length, 0);
