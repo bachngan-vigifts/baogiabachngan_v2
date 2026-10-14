@@ -692,16 +692,20 @@ function newQuoteData(extra = {}) {
   return { type, quoteNo: nextQuoteNo(type, date), date, vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: withPaymentNotes(QUOTE_NOTES[type] || QUOTE_NOTES.HRC, paymentTerms, 0, moneyWords), notesVersion: 2, paymentTerms, ...extra, rows: extra.rows || [] };
 }
 
+let editorLoadSequence = 0;
 async function openEditor(id) {
+  const sequence = ++editorLoadSequence, requestedHash = location.hash;
+  const current = () => sequence === editorLoadSequence && location.hash === requestedHash;
   $('#quote-error').textContent = ''; $('#conflict-banner').hidden = true;
   if (id === 'new') {
+    editor.loading = false; qf.inert = false;
     const pending = editor.pending; editor.pending = null;
     editor.defaultDiscount = Number(pending?.defaultDiscount) || 0;
     if (pending) delete pending.defaultDiscount;
     fillEditor(null, 0, pending || newQuoteData());
     if (pending) markDirty();
     syncEditorQuoteNo();
-    setTimeout(() => { if (!qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : field('customer')).focus(); }, 50);
+    setTimeout(() => { if (current() && !qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : field('customer')).focus(); }, 50);
     return;
   }
   if (editor.id === id && !editor.loading && editor.dirty) return; // quay lại đúng báo giá đang sửa
@@ -710,11 +714,13 @@ async function openEditor(id) {
   qf.inert = true;
   try {
     const q = await api('/quotes/' + encodeURIComponent(id));
+    if (!current() || editor.dirty) return;
     fillEditor(q.id, q.revision, q.data, q);
   } catch (e) {
+    if (!current()) return;
     toast(e.message, 'err');
     if (e.status !== 401) { editor.dirty = false; go('#/quotes'); }
-  } finally { editor.loading = false; qf.inert = false; }
+  } finally { if (current()) { editor.loading = false; qf.inert = false; } }
 }
 
 function fillEditor(id, revision, data, meta = {}) {
@@ -752,7 +758,7 @@ qf.addEventListener('input', e => {
   if (e.target.name === 'deliveryDate') syncDeliveryNotes();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
   if (['customer', 'phone'].includes(e.target.name)) {
-    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) { editor.customerId = ''; editor.brandDiscounts = null; }
+    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) { editor.customerId = ''; editor.customerName = ''; editor.base.customerCode = ''; editor.brandDiscounts = null; }
     updateContactsButton();
   }
   if (e.target.name === 'quoteNo') $('#editor-title').textContent = e.target.value || 'Báo giá';
@@ -1240,7 +1246,7 @@ async function openNewQuote() {
     if (!await confirmBox('Báo giá đang sửa có thay đổi chưa lưu. Tạo báo giá mới sẽ bỏ các thay đổi này.', { title: 'Bỏ thay đổi chưa lưu?', ok: 'Tạo báo giá mới', danger: true })) return;
     editor.dirty = false;
   }
-  nq.customer = null; nq.autoNo = '';
+  nq.customer = null; nq.autoNo = ''; nq.resetCustomerSearch?.();
   nq.paymentTouched = false;
   $('#new-quote-form').reset(); $('#nq-error').textContent = '';
   $('#nq-date').value = todayIso(); $('#nq-no').value = '';
@@ -1261,12 +1267,16 @@ const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy
 {
   const input = $('#nq-customer'), list = $('#nq-suggest'); let items = [], timer, req = 0;
   const hide = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+  const reset = nq.resetCustomerSearch = () => {
+    clearTimeout(timer); req++; items = []; list.replaceChildren(); hide(); comboBusy(input, false);
+  };
   input.addEventListener('input', () => {
-    nq.customer = null; clearTimeout(timer); comboBusy(input, true);
+    nq.customer = null; reset(); comboBusy(input, true);
+    const ticket = req, query = input.value;
     timer = setTimeout(async () => {
-      const r = ++req; let found = [];
-      try { found = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(input.value)}`)).customers; } catch { /* để trống */ }
-      if (r !== req) return;
+      let found = [];
+      try { found = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(query)}`)).customers; } catch { /* để trống */ }
+      if (ticket !== req || query !== input.value || !$('#new-quote-dialog').open) return;
       comboBusy(input, false);
       if (document.activeElement !== input) return;
       items = found;
@@ -1276,7 +1286,12 @@ const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy
     }, 180);
   });
   input.addEventListener('blur', () => { clearTimeout(timer); req++; comboBusy(input, false); setTimeout(hide, 150); });
-  list.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (!li) return; e.preventDefault(); nq.customer = items[li.dataset.i]; input.value = nq.customer.name; hide(); });
+  list.addEventListener('mousedown', e => { if (e.target.closest('li[data-i]')) e.preventDefault(); });
+  list.addEventListener('click', e => {
+    const li = e.target.closest('li[data-i]'), customer = li && items[li.dataset.i];
+    if (!customer || list.hidden) return;
+    e.preventDefault(); nq.customer = customer; input.value = customer.name; reset();
+  });
 }
 $('#new-quote-form').addEventListener('submit', e => {
   e.preventDefault();
@@ -1288,7 +1303,7 @@ $('#new-quote-form').addEventListener('submit', e => {
   if (!Number.isFinite(depositRate) || depositRate < 0 || depositRate > 100) { err.textContent = 'Tỷ lệ đặt cọc phải từ 0 đến 100%.'; return; }
   if (depositRate < 100 && (!balanceTerm || balanceTerm.length > 500 || /^[+-]?\d+(?:[.,]\d+)?\s*(?:ngày)?$/i.test(balanceTerm) && (!/^\d+\s*(?:ngày)?$/i.test(balanceTerm) || parseInt(balanceTerm, 10) > 3650))) { err.textContent = 'Nhập thời hạn thanh toán: số ngày từ 0 đến 3650 hoặc nội dung như “Thanh toán trước khi giao hàng”.'; return; }
   const paymentTerms = { depositRate, balanceTerm };
-  const c = nq.customer, typed = $('#nq-customer').value.trim();
+  const typed = $('#nq-customer').value.trim(), c = nq.customer?.name === typed ? nq.customer : null;
   const customer = c ? { customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' } : typed ? { customer: typed } : {};
   editor.defaultDiscount = disc;
   editor.pending = { ...newQuoteData({ type: nq.type, date, quoteNo: no, paymentTerms, ...customer, rows: [] }), defaultDiscount: disc };
@@ -1366,12 +1381,12 @@ const suggest = $('#customer-suggest'), searchInput = field('customer');
 let suggestIndex = -1, suggestItems = [];
 let suggestTimer, suggestReq = 0;
 function showSuggest() {
-  clearTimeout(suggestTimer); comboBusy(searchInput, true);
+  clearTimeout(suggestTimer); const req = ++suggestReq, query = searchInput.value;
+  suggestItems = []; suggestIndex = -1; suggest.replaceChildren(); hideSuggest(); comboBusy(searchInput, true);
   suggestTimer = setTimeout(async () => {
-    const req = ++suggestReq;
     let items = [];
-    try { items = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(searchInput.value)}`)).customers; } catch { /* hiện thông báo trống */ }
-    if (req !== suggestReq) return;
+    try { items = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(query)}`)).customers; } catch { /* hiện thông báo trống */ }
+    if (req !== suggestReq || query !== searchInput.value) return;
     comboBusy(searchInput, false);
     if (document.activeElement !== searchInput) return;
     suggestItems = items; suggestIndex = items.length ? 0 : -1;
@@ -1484,12 +1499,13 @@ async function saveQuote() {
   const err = $('#quote-error'); err.textContent = '';
   const data = collectQuote(), problem = validateQuote(data);
   if (problem) { err.textContent = problem; toast(problem, 'err'); qf.querySelector('.invalid')?.focus(); return; }
+  const saveSequence = editorLoadSequence, saveHash = location.hash, wasNew = !editor.id;
   saving = true; $('#save-quote').disabled = $('#save-quote-m').disabled = true;
   try {
     const saved = editor.id
       ? await api('/quotes/' + encodeURIComponent(editor.id), 'PUT', { revision: editor.revision, data })
       : await api('/quotes', 'POST', data);
-    const wasNew = !editor.id;
+    if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast('Đã lưu ' + saved.data.quoteNo); loadQuotes(); return; }
     const keepApproval = !wasNew && saved.approvalStatus === 'approved' ? { approvedAt: editor.approval?.at, approvedByName: editor.approval?.by } : {};
     fillEditor(saved.id, saved.revision, saved.data, { ...keepApproval, approvalStatus: saved.approvalStatus });
     if (wasNew) { suppressHash = true; location.hash = '#/quotes/' + encodeURIComponent(saved.id); currentHash = location.hash; }
@@ -1498,6 +1514,7 @@ async function saveQuote() {
     else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
     loadQuotes();
   } catch (e) {
+    if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast(e.message, 'err'); return; }
     if (e.status === 409) {
       $('#conflict-text').textContent = e.message + ' Thay đổi của anh/chị chưa được lưu.';
       $('#conflict-banner').hidden = false; $('#conflict-banner').scrollIntoView({ behavior: 'smooth', block: 'center' });
