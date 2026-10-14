@@ -91,13 +91,29 @@ async function keepCode(api: Api, id: unknown, code: string) {
   return order;
 }
 
+/**
+ * Đơn Sapo trùng số đơn / HĐKT chỉ được liên kết khi là của CÙNG khách.
+ * Số đơn có thể được cấp lại khi lần tạo trước bị huỷ giữa chừng (đơn nháp Sapo vẫn còn, đơn web đã rollback):
+ * không được gắn đơn mới của khách khác vào đơn nháp cũ đó.
+ */
+async function sameCustomerDraft(api: Api, order: Raw, input: SapoPushInput): Promise<Raw> {
+  const embedded = (order.customer ?? order.customer_data ?? null) as Raw | null;
+  let same: boolean | null = null;
+  if (order.customer_id != null && order.customer_id !== '') {
+    const mine = await findCustomer(api, input.customer);
+    same = !!mine && String(mine.id) === String(order.customer_id);
+  } else if (embedded && typeof embedded === 'object') same = sapoCustomerMatches(embedded, input.customer);
+  if (same === false) throw new AppError(409, `Số ${input.code} đã có đơn trên Sapo của khách khác (có thể là đơn nháp còn sót từ lần tạo lỗi). Kiểm tra / huỷ đơn đó trên Sapo rồi thử lại.`, 'SAPO_CODE_TAKEN');
+  return order;
+}
+
 export interface SapoPushResult { status: 'created' | 'existing'; order: Raw; customer?: { id: unknown; name: string; action: string }; products?: { sku: string; action: string }[]; errors?: string[] }
 
 export async function pushSapoOrder(api: Api, input: SapoPushInput, cfg: SapoPushConfig, accountId: number | null): Promise<SapoPushResult> {
   const problems = sapoPushProblems(input);
   if (problems.length) throw new AppError(400, problems.join(' '), 'SAPO_PUSH_INVALID');
   const existing = await findSapoOrder(api, input.code);
-  if (existing) return { status: 'existing', order: existing.id ? await readOrder(api, existing.id) : existing };
+  if (existing) return { status: 'existing', order: await sameCustomerDraft(api, existing.id ? await readOrder(api, existing.id) : existing, input) };
 
   const customer = await ensureCustomer(api, input.customer), variants: Raw[] = [], products: { sku: string; action: string }[] = [];
   for (const l of input.lines) { const r = await ensureVariant(api, l, cfg.locationId); variants.push(r.variant); products.push({ sku: l.sku, action: r.action }); }
@@ -118,7 +134,7 @@ export async function pushSapoOrder(api: Api, input: SapoPushInput, cfg: SapoPus
       failureCodes.add(code);
       console.warn('sapo draft creation failed', code);
       const made = await findSapoOrder(api, input.code);
-      if (made) return { status: 'created', order: await readOrder(api, made.id), ...summary, errors };
+      if (made) return { status: 'created', order: await sameCustomerDraft(api, await readOrder(api, made.id), input), ...summary, errors };
     }
   }
   throw new AppError(502, `Không tạo được đơn nháp Sapo (${[...failureCodes].join(', ')}). Kiểm tra trên Sapo trước khi thử lại để tránh tạo trùng.`, 'SAPO_ORDER_FAILED');

@@ -40,10 +40,20 @@ export function orderNotesFromQuote(source: QuoteNotesSource) {
   t.address = orderDeliveryAddress(source);
   return render(t);
 }
-/** Update only delivery fields selected by the user; retain edited payment terms. */
+/**
+ * Update only the delivery time / address lines the user changed; every other line the employee typed
+ * (payment terms, "Gọi anh Nam trước 30 phút", "Lưu ý: in logo đỏ"…) is kept exactly as written.
+ */
 export function syncOrderDeliveryNotes(notes: string, changes: { deliveryDate?: string; deliveryAddress?: string }, source: QuoteNotesSource) {
-  const t = terms(notes);
-  if (changes.deliveryDate !== undefined) { const date = day(changes.deliveryDate); t.time = date ? 'Giao hàng ngày ' + date + '.' : terms(source.notes).time; }
-  if (changes.deliveryAddress !== undefined) t.address = changes.deliveryAddress.trim();
-  return render(t);
+  const lines = String(notes ?? '').split(/\r?\n/);
+  const KEY: Record<'time' | 'address', RegExp> = { time: /^thoi gian giao hang\s*[:：]/, address: /^dia (?:chi|diem) giao hang\s*[:：]/ };
+  const setLine = (kind: 'time' | 'address', label: string, value: string) => {
+    const at = lines.findIndex(raw => KEY[kind].test(fold(raw.trim().replace(/^[-+–•]\s*/, ''))));
+    const line = '- ' + label + ': ' + value;
+    if (at < 0) { lines.splice(kind === 'time' ? 0 : Math.max(0, lines.findIndex(raw => KEY.time.test(fold(raw.trim().replace(/^[-+–•]\s*/, '')))) + 1), 0, line); return; }
+    lines[at] = line;
+  };
+  if (changes.deliveryDate !== undefined) { const date = day(changes.deliveryDate); setLine('time', 'Thời gian giao hàng', date ? 'Giao hàng ngày ' + date + '.' : terms(source.notes).time); }
+  if (changes.deliveryAddress !== undefined) setLine('address', 'Địa chỉ giao hàng', changes.deliveryAddress.replace(/\s+/g, ' ').trim());
+  return lines.join('\n').replace(/\s+$/, '');
 }

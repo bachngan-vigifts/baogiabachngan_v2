@@ -71,6 +71,11 @@ test('hồ sơ đồng nghiệp không có dữ liệu lương; care/khách/doan
   const form = { customerId: s.customerId, contactName: 'Anh khách', type: 'call', result: 'consulting', content: 'Gọi khách', expectedRevenue: 100000, nextAt: today, remindBefore: '1d' };
   const care = await s.call('/care', s.peer, 'POST', form); assert.equal(care.status, 201, JSON.stringify(care.data));
   const visible = await s.call('/care/' + care.data.activity.id, s.emp); assert.equal(visible.status, 200); assert.equal(visible.data.activity.canEdit, false);
+  // Hẹn chăm sóc của đồng nghiệp: xem được trong nhật ký, nhưng không vào danh sách việc cần làm / số nhắc của mình.
+  const mineDue = (await s.call('/care?view=follow-ups', s.emp)).data;
+  assert.deepEqual([mineDue.total, mineDue.counts.today, mineDue.counts.overdue], [0, 0, 0]);
+  assert.equal((await s.call('/care?view=follow-ups', s.peer)).data.counts.today, 1);
+  assert.ok((await s.call('/care', s.emp)).data.activities.some((a: any) => a.id === care.data.activity.id), 'nhật ký vẫn thấy của đồng nghiệp');
   assert.equal((await s.call('/care/' + care.data.activity.id, s.emp, 'PUT', form)).status, 404, 'xem cùng nhóm không cấp quyền ghi đè nhật ký chăm sóc');
   const mine = await s.call('/customers?mine=1', s.emp); assert.ok(mine.data.customers.some((x: any) => x.id === s.customerId));
   const overview = await s.call('/members/new/overview', s.emp); assert.equal(overview.status, 200, JSON.stringify(overview.data));

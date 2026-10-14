@@ -89,9 +89,11 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
       DATE.test(from) ? gte(customerActivities.occurredAt, dayStart(from)) : undefined,
       DATE.test(to) ? lt(customerActivities.occurredAt, dayStart(new Date(Date.parse(to + 'T00:00:00Z') + 86_400_000).toISOString().slice(0, 10))) : undefined,
       matchAllWords(foldSql(customers.name, customerActivities.subject, customerActivities.content, customerActivities.contactName, customerActivities.nextAction), p.get('q')),
-      followUps ? and(isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt)) : undefined,
+      // Danh sách hẹn chăm sóc là việc cần làm: nhân viên chỉ thấy hẹn của mình (nhật ký vẫn xem được của đồng nghiệp cùng nhóm).
+      followUps ? and(isManager(me) ? undefined : eq(customerActivities.ownerId, me.id), isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt)) : undefined,
     );
-    const pending = and(scope, isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt));
+    // Số nhắc (quá hạn / hôm nay) chỉ đếm hẹn của chính mình – hẹn của đồng nghiệp xem được nhưng mình không đánh dấu xong được.
+    const pending = and(isManager(me) ? undefined : eq(customerActivities.ownerId, me.id), isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt));
     const [rows, [{ total = 0 } = {}], [{ overdue = 0 } = {}], [{ dueToday = 0 } = {}]] = await Promise.all([
       baseQuery(c).where(filters)
         .orderBy(...(followUps ? [asc(customerActivities.nextAt), asc(customers.name)] : [desc(customerActivities.occurredAt), desc(customerActivities.createdAt)]))

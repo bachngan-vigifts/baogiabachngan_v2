@@ -356,6 +356,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   router.post('/orders/:id/sapo', async c => {
     const body = await readJson(c.req, 1_024), order = await loadOrder(c, c.params.id!);
     if (order.sapoOrderId) return json({ sapo: linkedSapo(c, order) });
+    // Công tắc tắt đẩy Sapo (SAPO_ORDER_PUSH=off) áp dụng cho cả nút "Tạo đơn Sapo" trên chứng từ có sẵn.
+    if (!sapoPushRequired(c)) throw new AppError(409, 'Đẩy đơn sang Sapo đang tắt trên hệ thống.', 'SAPO_PUSH_DISABLED');
     await assertCanCreateSapo(c, order);
     const push = await prepareSapoPush(c, sapoLocationOf(body));
     const sapo = await c.env.db.transaction(async tx => {

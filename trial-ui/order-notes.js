@@ -38,13 +38,23 @@ function orderNotesFromQuote(source) {
   return render(t);
 }
 function syncOrderDeliveryNotes(notes, changes, source) {
-  const t = terms(notes);
+  const lines = String(notes ?? "").split(/\r?\n/);
+  const KEY = { time: /^thoi gian giao hang\s*[:：]/, address: /^dia (?:chi|diem) giao hang\s*[:：]/ };
+  const setLine = (kind, label, value) => {
+    const at = lines.findIndex((raw) => KEY[kind].test(fold(raw.trim().replace(/^[-+–•]\s*/, ""))));
+    const line = "- " + label + ": " + value;
+    if (at < 0) {
+      lines.splice(kind === "time" ? 0 : Math.max(0, lines.findIndex((raw) => KEY.time.test(fold(raw.trim().replace(/^[-+–•]\s*/, "")))) + 1), 0, line);
+      return;
+    }
+    lines[at] = line;
+  };
   if (changes.deliveryDate !== void 0) {
     const date = day(changes.deliveryDate);
-    t.time = date ? "Giao h\xE0ng ng\xE0y " + date + "." : terms(source.notes).time;
+    setLine("time", "Th\u1EDDi gian giao h\xE0ng", date ? "Giao h\xE0ng ng\xE0y " + date + "." : terms(source.notes).time);
   }
-  if (changes.deliveryAddress !== void 0) t.address = changes.deliveryAddress.trim();
-  return render(t);
+  if (changes.deliveryAddress !== void 0) setLine("address", "\u0110\u1ECBa ch\u1EC9 giao h\xE0ng", changes.deliveryAddress.replace(/\s+/g, " ").trim());
+  return lines.join("\n").replace(/\s+$/, "");
 }
 export {
   orderDeliveryAddress,

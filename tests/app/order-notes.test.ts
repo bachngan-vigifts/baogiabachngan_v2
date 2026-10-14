@@ -30,3 +30,13 @@ test('ngày không hợp lệ không in ra; báo giá thiếu điều khoản kh
   const note = orderNotesFromQuote({ deliveryDate: '2026-02-30', notes: '- Tổng thanh toán: 1.000 đồng.\n- Số tài khoản: 123' });
   assert.equal(note, '- Thời gian giao hàng: \n- Địa chỉ giao hàng: \n- Thanh toán: ');
 });
+
+test('đổi ngày / địa chỉ giao: giữ nguyên mọi dòng nhân viên tự gõ thêm', () => {
+  const notes = ['- Thời gian giao hàng: Giao hàng ngày 20/10/2026.', '- Địa chỉ giao hàng: 1 Lê Lợi', '- Thanh toán: 100% trước khi giao', '- Gọi anh Nam trước 30 phút', 'Lưu ý: in logo màu đỏ', 'Giao giờ hành chính'].join('\n');
+  const out = syncOrderDeliveryNotes(notes, { deliveryDate: '2026-10-25' }, {});
+  assert.equal(out, notes.replace('20/10/2026', '25/10/2026'));
+  const addr = syncOrderDeliveryNotes(out, { deliveryAddress: '12 Nguyễn Huệ,\nQ1' }, {});
+  assert.deepEqual(addr.split('\n'), ['- Thời gian giao hàng: Giao hàng ngày 25/10/2026.', '- Địa chỉ giao hàng: 12 Nguyễn Huệ, Q1', '- Thanh toán: 100% trước khi giao', '- Gọi anh Nam trước 30 phút', 'Lưu ý: in logo màu đỏ', 'Giao giờ hành chính']);
+  // Nhân viên đã xoá dòng giao hàng → thêm lại lên đầu, không đụng phần còn lại.
+  assert.equal(syncOrderDeliveryNotes('Ghi chú riêng', { deliveryDate: '2026-10-25', deliveryAddress: 'Kho A' }, {}), '- Thời gian giao hàng: Giao hàng ngày 25/10/2026.\n- Địa chỉ giao hàng: Kho A\nGhi chú riêng');
+});
