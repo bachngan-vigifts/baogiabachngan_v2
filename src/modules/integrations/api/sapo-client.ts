@@ -32,8 +32,8 @@ export function sapoClient(o: SapoClientOptions) {
    * (theo tối đa 3 lần chuyển hướng cùng tên miền, không vào trang đăng nhập) để lấy, rồi mới gọi API.
    */
   let bootstrapped = false;
-  async function ensureSession() {
-    if (bootstrapped || /(^|;\s*)_admin_session_id=/.test(cookie)) return;
+  async function ensureSession(force = false) {
+    if (!force && (bootstrapped || /(^|;\s*)_admin_session_id=/.test(cookie))) return;
     bootstrapped = true;
     let url = base;
     for (let hop = 0; hop < 4; hop++) {
@@ -72,9 +72,22 @@ export function sapoClient(o: SapoClientOptions) {
     const nextCookie = fresh.length ? mergeSetCookies(cookie, fresh) : cookie;
     const location = res.headers.get('location') || '';
     // Sapo cấp / đổi cookie phiên ngay trong câu trả lời từ chối → dùng cookie mới thử lại một lần.
-    if (!retried && (res.status === 401 || (res.status >= 300 && res.status < 400)) && nextCookie !== cookie && /(^|;\s*)_admin_session_id=/.test(nextCookie)) {
+    if (method === 'GET' && !retried && (res.status === 401 || (res.status >= 300 && res.status < 400)) && nextCookie !== cookie && /(^|;\s*)_admin_session_id=/.test(nextCookie)) {
       cookie = nextCookie;
       return request(method, path, body, extra, true);
+    }
+    // Cookie API có thể hết hạn trước cookie đăng nhập. Chỉ khôi phục/thử lại GET;
+    // không gửi lại POST/PUT tạo chứng từ vì phản hồi mơ hồ có thể gây trùng.
+    if (method === 'GET' && !retried && (res.status === 401 || (res.status >= 300 && res.status < 400))
+      && /(^|;\s*)sapo-admin=[^;]+/.test(nextCookie)) {
+      const previousCookie = cookie;
+      cookie = nextCookie.split(';').map(part => part.trim())
+        .filter(part => !/^(?:_admin_session_id|\.AspNetCore\.Session)=/.test(part)).join('; ');
+      try {
+        await ensureSession(true);
+        if (/(^|;\s*)_admin_session_id=/.test(cookie)) return await request(method, path, body, extra, true);
+      } catch (e) { cookie = previousCookie; throw e; }
+      cookie = previousCookie; // không lưu đè phiên khi khôi phục thất bại
     }
     if (res.status === 401) throw expired(`${method} ${path.split('?')[0]} → 401`);
     if ((res.status >= 300 && res.status < 400) || /\/login/i.test(location)) throw expired(`${method} ${path.split('?')[0]} → ${res.status} ${pathOf(location)}`);
