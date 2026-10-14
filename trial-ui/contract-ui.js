@@ -11,22 +11,31 @@ const loadBuilder = async () => { await script('fflate.min.js'); await script('c
 const loadPreview = async () => { await script('jszip.min.js'); await script('docx-preview.min.js'); };
 
 export const DOCS = [['HDKT', 'Hợp đồng kinh tế'], ['TAM_UNG', 'Đề nghị tạm ứng'], ['BBNT', 'Biên bản bàn giao & nghiệm thu']];
-const FIELDS = [['representativeName', 'Người đại diện bên A'], ['representativeTitle', 'Chức vụ'], ['signedDate', 'Ngày ký', 'date'], ['depositRate', 'Tỷ lệ tạm ứng / đặt cọc (%)', 'number'],
+const FIELDS = [['representativeHonorific', 'Danh xưng người đại diện bên A', 'honorific'], ['representativeName', 'Người đại diện bên A'], ['representativeTitle', 'Chức vụ'], ['signedDate', 'Ngày ký', 'date'], ['depositRate', 'Tỷ lệ tạm ứng / đặt cọc (%)', 'number'],
   ['paymentDays', 'Số ngày thanh toán phần còn lại', 'number'], ['deliveryTime', 'Thời gian giao hàng', 'area'], ['deliveryAddress', 'Địa điểm giao hàng', 'area'], ['paymentMethod', 'Phương thức thanh toán', 'area']];
 
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
 const todayIso = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 
+// Tách dữ liệu cũ có Ông/Bà trong tên; lưu hai trường riêng và không đoán danh xưng từ tên.
+function representativeDetails(details) {
+  const raw = String(details.representativeName || '').trim();
+  const prefix = /^(ông|bà)\s+/i.exec(raw);
+  const chosen = ['', 'Ông', 'Bà'].includes(details.representativeHonorific) ? details.representativeHonorific : undefined;
+  return { ...details, representativeName: prefix ? raw.slice(prefix[0].length).trim() : raw,
+    representativeHonorific: chosen ?? (prefix ? (/^ông$/i.test(prefix[1]) ? 'Ông' : 'Bà') : '') };
+}
+
 /** Thông tin điền mẫu mặc định: lấy từ HĐKT + đơn; phần đã lưu trước (data.details) được giữ. */
 export function contractDetails(detail) {
   const o = detail.order, k = detail.contract, saved = k?.data?.details || {};
-  return {
+  return representativeDetails({
     representativeName: o.contact || '', representativeTitle: '', signedDate: k?.signedDate || todayIso(), depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
     deliveryTime: o.expectedDeliveryDate ? 'Giao hàng ngày ' + dmy(o.expectedDeliveryDate) : 'Theo thỏa thuận của hai bên.', deliveryAddress: k?.deliveryAddress || o.address || '',
     paymentMethod: k?.paymentMethod || 'Chuyển khoản.', ...saved,
     // Tỉ lệ cọc và số ngày thanh toán phần còn lại luôn theo HĐKT đã lập (khớp kỳ công nợ), không lấy bản lưu cũ.
     depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
-  };
+  });
 }
 
 /** Đổi đơn + HĐKT (+ dòng báo giá để lấy Bộ gồm / In ấn / Đóng gói) sang dạng báo giá mà bộ dựng của web cũ dùng. */
@@ -56,7 +65,7 @@ async function templatesFor(quote) {
 const saveBlob = (bytes, name, type) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type })); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 };
-const cleanDetails = d => ({ ...d, depositRate: Number(d.depositRate), paymentDays: Number(d.paymentDays) });
+const cleanDetails = d => representativeDetails({ ...d, depositRate: Number(d.depositRate), paymentDays: Number(d.paymentDays) });
 
 /**
  * Mở hộp xem / sửa / tải HĐKT. `api(path, method, body)` gọi máy chủ; `onSaved()` tải lại đơn sau khi lưu.
@@ -68,7 +77,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">HĐKT ${esc(k.contractNo)}</span><h2>${canEdit ? 'Xem, chỉnh sửa và tải hồ sơ HĐKT' : 'Xem và tải hồ sơ HĐKT'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body cd-body">
       <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. ${canEditFinancial ? 'Manager được sửa tỷ lệ cọc và số ngày thanh toán; khi lưu, kỳ công nợ sẽ cập nhật theo.' : 'Tỷ lệ cọc và số ngày thanh toán lấy theo HĐKT đã lập.'} Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Khi đã sửa chữ trực tiếp trên trang, cần <b>Dựng lại</b> hồ sơ đó để nhận thông tin mới.</p>
-        ${FIELDS.map(([f, label, type]) => `<label><span>${label}</span>${type === 'area' ? `<textarea rows="2" data-d="${f}"></textarea>` : `<input data-d="${f}" type="${type || 'text'}" ${type === 'number' ? 'min="0"' : ''}>`}</label>`).join('')}
+        ${FIELDS.map(([f, label, type]) => `<label><span>${label}</span>${type === 'honorific' ? `<select data-d="${f}"><option value="">Chọn danh xưng</option><option value="Ông">Ông</option><option value="Bà">Bà</option></select>` : type === 'area' ? `<textarea rows="2" data-d="${f}"></textarea>` : `<input data-d="${f}" type="${type || 'text'}" ${type === 'number' ? 'min="0"' : ''}>`}</label>`).join('')}
         <button type="button" class="btn secondary small" data-refresh>Cập nhật bản xem</button></aside>
       <section class="cd-preview"><div class="cd-tabs chips" role="tablist">${DOCS.map(([t, label], i) => `<button type="button" class="chip" role="tab" data-doc="${t}" aria-selected="${i === 0}">${label}</button>`).join('')}</div>
         <p class="muted small" data-status>Đang dựng bản xem…</p>
@@ -82,7 +91,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   let current = 'HDKT', dirty = false, quoteRows = null, renderSeq = 0;
   for (const el of dlg.querySelectorAll('[data-d]')) {
     el.value = details[el.dataset.d] ?? '';
-    if (!canEdit || (['depositRate', 'paymentDays'].includes(el.dataset.d) && !canEditFinancial)) { el.readOnly = true; el.title = 'Theo HĐKT đã lập (khớp kỳ công nợ)'; continue; }
+    if (!canEdit || (['depositRate', 'paymentDays'].includes(el.dataset.d) && !canEditFinancial)) { el.readOnly = true; if (el.tagName === 'SELECT') el.disabled = true; el.title = 'Theo HĐKT đã lập (khớp kỳ công nợ)'; continue; }
     el.addEventListener('input', () => { details[el.dataset.d] = el.value; markDirty(); });
   }
   for (const selector of ['[data-save]', '[data-refresh]', '[data-rebuild]']) $d(selector).hidden = !canEdit;

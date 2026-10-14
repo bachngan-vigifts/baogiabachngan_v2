@@ -176,9 +176,23 @@ globalThis.ContractDocument = (() => {
     const paymentMethod = quote.contractDetails?.paymentMethod || noteValue(lines, 'Phương thức thanh toán') || 'Chuyển khoản.';
     const customer = quote.customer || {};
     const paymentText = paymentClause(payment);
-    const partyAName = customer.contact_name || customer.contact || '';
+    const rawName = String(customer.contact_name || customer.contact || '').trim();
+    const prefix = /^(ông|bà)\s+/i.exec(rawName);
+    const partyAName = prefix ? rawName.slice(prefix[0].length).trim() : rawName;
+    const selectedHonorific = quote.contractDetails?.representativeHonorific;
+    const honorific = ['', 'Ông', 'Bà'].includes(selectedHonorific) ? selectedHonorific : prefix ? (/^ông$/i.test(prefix[1]) ? 'Ông' : 'Bà') : '';
+    source = tidySignature(source, quote, documentType);
+    // Mẫu cũ có Ông trước token: thay riêng chữ này, giữ nguyên các run/định dạng Word.
+    source = source.replace(/<w:p\b[\s\S]*?<\/w:p>/g, paragraph => {
+      const at = tokenPattern('[Bên A]').exec(paragraph)?.index;
+      if (at === undefined) return paragraph;
+      let hasHonorific = false;
+      const before = paragraph.slice(0, at).replace(/(<w:t\b[^>]*>[^<]*?)(?:Ông|Bà)(\s*)(<\/w:t>|$)/gi, (_, open, gap, close) => { hasHonorific = true; return open + xml(honorific) + gap + close; });
+      if (hasHonorific) return before + paragraph.slice(at);
+      return replaceToken(paragraph, '[Bên A]', [honorific, partyAName].filter(Boolean).join(' '));
+    });
     const values = {'[Số HĐ]': contractNumber, '[dấu thời gian]': `${date.day}/${date.month}/${date.year}`, '[Ngày ký]': `${date.day}/${date.month}/${date.year}`, '[KH_NDP].[TênKH]': customer.name || '', '[KH_NDP].[dia chi]': customer.address || '', '[KH_NDP].[Dia Chi]': customer.address || '', '[KH_NDP].[Ma So Thue]': customer.tax_code || '', '[Bên A]': partyAName, '[Bên A ký tên]': upper(partyAName), '[Chức vụ]': quote.contractTitle || '', '[Thời gian giao hàng]': deliveryTime, '[Địa điểm giao hàng]': deliveryPlace, '[Phương thức thanh toán]': paymentMethod, '[Thời hạn thanh toán]': paymentText, '[hình thức thanh toán]': paymentText, '[Tỉ lệ cọc]': money(payment.depositRate), '[số tiền tạm ứng]': money(payment.deposit), '[bằng chữ tạm ứng]': amountInWords(payment.deposit), '[Thành Tiền (-Thuế)]': money(quote.subtotal), '[Tiền thuế]': money(quote.vat_amount), '[Thành tiền (+thuế)]': money(quote.total), '[Số tiền bằng chữ]': amountInWords(quote.total), '[Nhãn VAT]': vatLabel(quote.items || [])};
-    let result = replaceTokens(expandItems(tidySignature(source, quote, documentType), quote.items || []), values);
+    let result = replaceTokens(expandItems(source, quote.items || []), values);
     result = result.replace('Hôm nay, ngày      tháng      năm 2025, chúng tôi gồm:', `Hôm nay, ngày ${date.day} tháng ${date.month} năm ${date.year}, chúng tôi gồm:`);
     result = result.replace('TP Cần Thơ, ngày 04 tháng 06 năm 2025', `TP Cần Thơ, ngày ${date.day} tháng ${date.month} năm ${date.year}`);
     result = result.replace('ký ngày  07  tháng 05  năm 2025', `ký ngày ${date.day} tháng ${date.month} năm ${date.year}`);
