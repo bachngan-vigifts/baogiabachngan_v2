@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-function setup(code = '', existingDocument = false) {
+function setup(code = '', existingDocument = false, connected = true) {
   const events = new Map<string, Function>(), closeEvents = new Map<string, Function>();
   const radio = { value: 'yes', checked: true, addEventListener() {} };
-  const no = { value: 'no', checked: false, addEventListener() {} };
+  const no = { value: 'no', checked: !connected, addEventListener() {} };
   const body = { innerHTML: '', querySelector: (s: string) => s.includes('value="no"') ? no : no.checked ? no : radio, querySelectorAll: () => [radio, no] };
   const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; closeEvents.get('close')?.(); }, addEventListener: (e: string, fn: Function) => closeEvents.set(e, fn) };
   const error = { textContent: '', children: [] as any[], append(...items: any[]) { this.children.push(...items); } };
@@ -15,8 +15,8 @@ function setup(code = '', existingDocument = false) {
   const context: any = { URLSearchParams, localStorage: { getItem: () => '', setItem() {} }, document: { createElement: () => ({ addEventListener() {} }) } };
   const source = readFileSync(new URL('../../trial-ui/sapo-push.js', import.meta.url), 'utf8');
   runInNewContext(source.replace('export function initSapoPush', 'globalThis.init = function'), context);
-  const ui = context.init({ api: async () => ({ connected: true, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: [{ id: 7, name: 'Kho' }], problems: [] }), esc: (s: string) => s, $: (id: string) => nodes[id] });
-  return { ui, existingDocument, dialog, body, submit, label, error, send: () => events.get('submit')!({ preventDefault() {} }) };
+  const ui = context.init({ api: async () => ({ connected, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: connected ? [{ id: 7, name: 'Kho' }] : [], problems: [] }), esc: (s: string) => s, $: (id: string) => nodes[id] });
+  return { ui, no, existingDocument, dialog, body, submit, label, error, send: () => events.get('submit')!({ preventDefault() {} }) };
 }
 
 test('popup Sapo: chưa sinh chứng từ thì không hiện số báo giá làm mã đơn', async () => {
@@ -49,5 +49,20 @@ test('lỗi đẩy sau không thông báo nhầm rằng chưa sinh chứng từ 
   assert.doesNotMatch(s.error.textContent, /Chưa sinh đơn/);
   assert.equal(s.error.children[1].textContent, 'Giữ chứng từ trên web');
   assert.match(s.body.innerHTML, /Không – giữ chứng từ trên web/);
+  s.dialog.close(); await pending;
+});
+
+
+test('phiên Sapo hỏng trên đơn đã có: nút giữ chứng từ, không báo sinh đơn mới; chặn gửi đẩy', async () => {
+  const s = setup('DH_20261013_004', true, false);
+  let called = 0;
+  const pending = s.ui.choose({ orderId: 'o' }, { title: 'Tạo đơn Sapo', action: 'Tạo đơn nháp Sapo', existingDocument: true,
+    run: async () => { called++; return {}; } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(s.submit.textContent, 'Giữ chứng từ trên web');
+  assert.match(s.body.innerHTML, /Chứng từ trên CRM được giữ nguyên/);
+  assert.doesNotMatch(s.body.innerHTML, /sẽ chỉ sinh trên web/);
+  s.no.checked = false;
+  await s.send(); assert.equal(called, 0);
   s.dialog.close(); await pending;
 });
