@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="dashboard.css">
 <link rel="stylesheet" href="flow-map.css">
+<link rel="stylesheet" href="suppliers.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -63,6 +64,7 @@
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
       <a class="nav" href="#/care" data-nav="care"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg><span>Chăm sóc KH</span><b id="nav-care-count" class="badge" hidden>0</b></a>
       <span class="nav-label manager-only">Quản trị</span>
+      <a class="nav manager-only" href="#/suppliers" data-nav="suppliers"><svg viewBox="0 0 24 24"><path d="M3 21h18 M5 21V9l7-5 7 5v12 M9 21v-6h6v6"/></svg><span>Nhà cung cấp</span></a>
       <a class="nav manager-only" href="#/staff" data-nav="staff"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Nhân viên</span></a>
       <a class="nav manager-only" href="#/payroll" data-nav="payroll"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M12 9v6 M9.5 10.5a2.5 1.5 0 0 1 5 0c0 1.5-5 1.5-5 3a2.5 1.5 0 0 0 5 0"/></svg><span>Bảng lương</span></a>
     </nav>
@@ -97,6 +99,7 @@
     <!-- ---------- Danh sách báo giá ---------- -->
     <section class="view" id="view-dashboard" hidden></section>
     <section class="view" id="view-flow" hidden></section>
+    <section class="view" id="view-suppliers" hidden></section>
     <section class="view" id="view-quotes" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Báo giá</h1><p class="muted">Tạo, sửa và in báo giá gửi khách hàng.</p></div>

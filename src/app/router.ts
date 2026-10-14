@@ -9,6 +9,7 @@ import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
 import { registerProgressRoutes } from '../modules/sales/api/progress-routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
+import { registerSupplierDirectoryRoutes } from '../modules/suppliers/api/directory-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes } from '../modules/tasks/api/routes.ts';
@@ -34,6 +35,7 @@ export function createAppRouter() {
   registerPackingRoutes(router);
   registerProgressRoutes(router);
   registerPrintingRoutes(router);
+  registerSupplierDirectoryRoutes(router);
   registerPortalRoutes(router);
   registerNotificationRoutes(router);
   registerTaskRoutes(router);

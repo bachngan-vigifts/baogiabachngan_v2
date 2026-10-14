@@ -5,6 +5,7 @@ import { initOrderPrintForm } from './order-print-form.js';
 import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
 import { initFlowMap } from './flow-map.js';
+import { initSuppliers } from './suppliers.js';
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
@@ -489,7 +490,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { flow: 'Sơ đồ quy trình', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -514,7 +515,7 @@ function route() {
   const [page = 'quotes', id] = path.split('/');
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
-  if ((view === 'staff' || view === 'payroll') && !isManager()) view = isWarehouse() ? 'tasks' : 'quotes';
+  if ((view === 'staff' || view === 'payroll' || view === 'suppliers') && !isManager()) view = isWarehouse() ? 'tasks' : 'quotes';
   // Kho mở nhầm trang bán hàng (link cũ, thông báo…): về Công việc.
   if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', '#/tasks'); return route(); }
   if (view === 'quotes' && id) view = 'editor';
@@ -539,6 +540,7 @@ function route() {
   if (view === 'tasks') tasksView().load(id);
   if (view === 'dashboard') dashboardView().load();
   if (view === 'flow') flowView().load();
+  if (view === 'suppliers') suppliersView().load();
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
@@ -2553,6 +2555,8 @@ var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dò
 var careUi = null; // eslint-disable-line no-var
 var dashboardUi = null;
 function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money }); }
+var suppliersUi = null;
+function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox }); }
 // Sơ đồ quy trình: cấu hình ở flow-config.js; `openers` nối nút nhanh của khối với hộp thoại có sẵn của app.
 var flowUi = null;
 function flowView() {
@@ -2585,6 +2589,7 @@ async function refreshData() {
   else if (page === 'tasks') jobs.push(tasksView().load(id));
   else if (page === 'dashboard') jobs.push(dashboardView().load());
   else if (page === 'flow') jobs.push(flowView().load());
+  else if (page === 'suppliers' && isManager()) jobs.push(suppliersView().load());
   else if (page === 'care') jobs.push(careView().load(id ? decodeURIComponent(id) : ''));
   else if (page === 'stock-requests') jobs.push(loadStockRequests(id));
   else if (page === 'packing') jobs.push(openPacking(id ? decodeURIComponent(id) : ''));
