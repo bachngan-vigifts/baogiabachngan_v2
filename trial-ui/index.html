@@ -63,6 +63,8 @@
       <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z M3 8v8l9 5 9-5V8 M12 13v8"/></svg><span>Sản phẩm</span></a>
       <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1 M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7 M21 20v-1a4 4 0 0 0-3-3.9 M16 4.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Khách hàng</span></a>
       <a class="nav" href="#/care" data-nav="care"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg><span>Chăm sóc KH</span><b id="nav-care-count" class="badge" hidden>0</b></a>
+      <span class="nav-label">Mua hàng</span>
+      <a class="nav" href="#/purchases" data-nav="purchases"><svg viewBox="0 0 24 24"><path d="M4 4h16v5H4z M6 9v11h12V9 M10 13h4"/></svg><span>Đơn mua NCC</span><b id="nav-purchase-count" class="badge" hidden>0</b></a>
       <span class="nav-label manager-only">Quản trị</span>
       <a class="nav manager-only" href="#/suppliers" data-nav="suppliers"><svg viewBox="0 0 24 24"><path d="M3 21h18 M5 21V9l7-5 7 5v12 M9 21v-6h6v6"/></svg><span>Nhà cung cấp</span></a>
       <a class="nav manager-only" href="#/staff" data-nav="staff"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Nhân viên</span></a>
@@ -100,6 +102,7 @@
     <section class="view" id="view-dashboard" hidden></section>
     <section class="view" id="view-flow" hidden></section>
     <section class="view" id="view-suppliers" hidden></section>
+    <section class="view" id="view-purchases" hidden></section>
     <section class="view" id="view-quotes" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Báo giá</h1><p class="muted">Tạo, sửa và in báo giá gửi khách hàng.</p></div>
@@ -151,6 +154,7 @@
           <!-- Như web cũ: chỉ báo giá ĐÃ DUYỆT mới Sinh Đơn hàng / HĐKT, Tải báo giá. Duyệt, Xoá: chỉ Manager. -->
           <div class="editor-actions quote-actions">
             <button type="button" class="btn secondary" id="quote-stock" title="Kiểm tồn khả dụng, NCC, hàng chờ về cho cả báo giá">Kiểm tồn</button>
+            <button type="button" class="btn secondary" id="quote-purchase" title="Lập đơn mua NCC từ các mã của báo giá (hiện số còn cần đặt để tránh mua trùng)">Đặt hàng NCC</button>
             <button type="button" class="btn secondary" id="quote-make" hidden>Sinh Đơn hàng / HĐKT</button>
             <span class="menu-wrap">
               <button type="button" class="btn secondary" id="quote-download" aria-haspopup="menu" aria-expanded="false">Tải báo giá ▾</button>

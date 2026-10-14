@@ -26,6 +26,7 @@ Kiểu chữ: `trial-ui/flow-map.css`. Trang dành cho máy tính (sơ đồ r�
 - **Hỏi tồn:** Manager thấy tất cả, nhân viên chỉ thấy khách mình phụ trách.
 - **Chăm sóc:** hẹn của chính mình (Manager thấy tất cả).
 - **Kho** chỉ thấy các khối Mua hàng / Đóng gói / Giao hàng.
+- Khối **Đơn mua NCC** đếm chờ duyệt / chờ NCC xác nhận / quá hẹn / chờ nhận / chờ nhập Sapo theo đúng phạm vi xem của trang `#/purchases` (kho chỉ thấy đơn đã duyệt).
 
 Nút trên từng việc chỉ hiện khi máy chủ trả tên thao tác. Ví dụ `approve-quote` chỉ trả cho Manager. Khi bấm, API gốc vẫn kiểm tra quyền lại.
 

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
@@ -25,7 +26,7 @@ async function setup() {
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  const s = { call, files, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn'), kt: await login('kt@x.vn'), ncc: await login('ncc@x.vn') };
+  const s = { db, call, files, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn'), kt: await login('kt@x.vn'), ncc: await login('ncc@x.vn') };
   // Chứng từ nguồn: báo giá của emp (ly 10, đĩa 5) và HĐKT của emp (ly 4).
   await db.insert(quotations).values({ id: 'q1', creatorId: 'emp', quoteNo: 'B2B_1', quoteType: 'B2B', customer: 'Kim Trần Gia', quoteDate: '2026-09-10', data: '{"rows":[]}', createdAt: now, updatedAt: now });
   await db.insert(quoteLines).values([{ id: 'ql1', quoteId: 'q1', lineNo: 1, sku: 'LY1', name: 'Ly sứ', unit: 'cái', qty: 10 }, { id: 'ql2', quoteId: 'q1', lineNo: 2, sku: 'DIA1', name: 'Đĩa', unit: 'cái', qty: 5 }]);
@@ -164,4 +165,29 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.deepEqual(await list('sapo'), [], 'phiếu còn lại đã nhập Sapo');
   assert.deepEqual(await list('draft'), []);
   assert.ok(v.events.length >= 8, 'có lịch sử thao tác');
+});
+
+test('việc tự sinh + sơ đồ: chờ duyệt → chờ xác nhận → nhận hàng (kho) → nhập Sapo (kho) → trả NCC (kế toán)', async () => {
+  const { RULES } = await import('../../src/modules/tasks/api/auto-tasks.ts');
+  const s = await setup(), { call, emp, mgr, kho, a } = s;
+  const today = vietnamDate().iso;
+  const id = (await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, arrivalDate: today, lines: [{ sku: 'LY1', quantity: 2 }] }] })).data.ids[0];
+  const db = (s as any).db;
+  const keys = async () => (await RULES.supplierPurchases!(db, today)).map(t => [t.autoKey.split(':')[0], t.assigneeId ?? t.assigneePosition ?? 'manager']);
+  assert.deepEqual(await keys(), [['po-approve', 'manager']]);
+  let v = (await call(`/purchase-orders/${id}`, mgr)).data;
+  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], payment: { balanceDueDate: today } });
+  assert.deepEqual(await keys(), [['po-confirm', 'manager'], ['po-pay', 'accounting']]);
+  await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
+  assert.deepEqual((await keys()).map(k => k[0]).sort(), ['po-pay', 'po-receive']);
+  v = (await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-flow-1', lines: [{ lineId: v.lines[0].id, goodQty: 2 }] })).data;
+  assert.deepEqual((await keys()).sort(), [['po-pay', 'accounting'], ['po-sapo', 'warehouse']]);
+  const flow = (await call('/flow', kho)).data;
+  const node = flow.nodes?.purchase ?? flow.purchase;
+  assert.equal(node.metrics.find((m: any) => m.key === 'sapo').value, 1, 'sơ đồ: phiếu chờ nhập Sapo');
+  assert.equal(node.items[0].hash, '#/purchases/' + id);
+});
+
+test('giao diện đơn mua: không chèn HTML thô', () => {
+  for (const f of ['purchases.js', 'purchase-pdf.js']) assert.doesNotMatch(readFileSync(new URL('../../trial-ui/' + f, import.meta.url), 'utf8'), /innerHTML|insertAdjacentHTML/);
 });

@@ -96,9 +96,9 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
 }
 
 /** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
-export async function listPurchases(db: Db, m: Member, filter: { q?: string; supplierId?: string; state?: string; limit?: number }, today: string) {
+export async function listPurchases(db: Db, m: Member, filter: { q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }, today: string) {
   const q = (filter.q ?? '').trim().slice(0, 80), likeQ = '%' + q.replace(/[\\%_]/g, x => '\\' + x) + '%';
-  const rows = await db.select().from(incomingShipments).where(and(purchaseScope(m), filter.supplierId ? eq(incomingShipments.supplierId, filter.supplierId) : undefined,
+  const rows = await db.select().from(incomingShipments).where(and(purchaseScope(m), filter.openOnly ? isNull(incomingShipments.cancelledAt) : undefined, filter.supplierId ? eq(incomingShipments.supplierId, filter.supplierId) : undefined,
     q ? or(ilike(incomingShipments.ticketNumber, likeQ), ilike(incomingShipments.supplierName, likeQ), ilike(incomingShipments.note, likeQ),
       sql`exists (select 1 from ${supplierOrderSources} where ${supplierOrderSources.shipmentId} = ${incomingShipments.id} and (${supplierOrderSources.sourceNo} ilike ${likeQ} or ${supplierOrderSources.customerName} ilike ${likeQ} or ${supplierOrderSources.sku} ilike ${likeQ}))`) : undefined))
     .orderBy(desc(incomingShipments.createdAt)).limit(Math.min(filter.limit ?? 300, 500));
@@ -125,10 +125,15 @@ export async function listPurchases(db: Db, m: Member, filter: { q?: string; sup
       createdAt: o.createdAt, createdBy: o.createdBy, arrivalDate: promised, lineCount: ls.length, ordered: progress.ordered, good: progress.good, missing: progress.missing, damaged: progress.damaged,
       late: Boolean(promised && promised < today && !progress.fullyReceived && !o.cancelledAt && o.approvalStatus === 'approved'),
       sapoPending: pendingSapo.find(x => x.shipmentId === o.id)?.n ?? 0,
-      total: prices ? total : null, balance: prices ? debt.balance : null, overdue: prices ? debt.overdue : null, debtStatus: prices ? debt.status : null };
+      total: prices ? total : null, balance: prices ? debt.balance : null, overdue: prices ? debt.overdue : null, debtStatus: prices ? debt.status : null,
+      nextDueDate: prices ? debt.nextDueDate : null, nextDueAmount: prices ? debt.nextDueAmount : null, approvedAt: o.approvedAt };
   });
   return filter.state ? out.filter(r => r.state === filter.state || (filter.state === 'late' && r.late) || (filter.state === 'sapo' && r.sapoPending > 0) || (filter.state === 'debt' && (r.balance ?? 0) > 0)) : out;
 }
+
+/** Đơn mua chưa huỷ, nhìn với quyền Manager – cho việc tự sinh (tasks) và sơ đồ quy trình. */
+export const SYSTEM_VIEWER = { id: 'system', role: 'manager', active: true, positionId: 'manager' } as unknown as Member;
+export const openPurchases = (db: Db, today: string) => listPurchases(db, SYSTEM_VIEWER, { openOnly: true, limit: 500 }, today);
 
 // ---------------------------------------------------------------- nguồn: báo giá / đơn-HĐKT / khách hỏi tồn
 export type SourceType = 'quote' | 'order' | 'stock_request';

@@ -13,6 +13,7 @@ import { customerStockRequests } from '../modules/portal/schema.ts';
 import { customerActivities } from '../modules/care/schema.ts';
 import { tasks } from '../modules/tasks/schema.ts';
 import { OPEN_STATUSES } from '../modules/tasks/domain/task-config.ts';
+import { listPurchases } from '../modules/suppliers/api/purchase-store.ts';
 
 /**
  * SƠ ĐỒ QUY TRÌNH (trang #/flow) – API CHỈ ĐỌC, một lượt gọi trả số liệu + vài việc gần nhất cho mọi khối.
@@ -122,19 +123,25 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
   async orders(x) { return salesDocs(x, false); },
   async contracts(x) { return salesDocs(x, true); },
 
-  // ------------------------------------------------ MUA HÀNG (việc nhập hàng NCC / Sapo giao cho kho)
-  async purchase({ db, me, manager, warehouse, today }) {
-    const who = manager ? undefined : warehouse ? or(eq(tasks.assigneeId, me.id), and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, 'warehouse'))) : eq(tasks.assigneeId, me.id);
-    const where = and(eq(tasks.source, 'purchase'), inArray(tasks.status, [...OPEN_STATUSES]), who);
-    const [open, late, rows] = await Promise.all([
-      total(db.select({ n: count() }).from(tasks).where(where)),
-      total(db.select({ n: count() }).from(tasks).where(and(where, lt(tasks.dueDate, today)))),
-      db.select({ id: tasks.id, title: tasks.title, dueDate: tasks.dueDate, revision: tasks.revision }).from(tasks).where(where).orderBy(sql`${tasks.dueDate} asc nulls last`).limit(ITEMS),
-    ]);
+  // ------------------------------------------------ MUA HÀNG (đơn mua NCC, cùng phạm vi xem với trang #/purchases)
+  async purchase({ db, me, today }) {
+    const rows = await listPurchases(db, me, { openOnly: true, limit: 500 }, today);
+    const has = (f: (r: typeof rows[number]) => boolean) => rows.filter(f);
+    const draft = has(r => r.state === 'draft'), waiting = has(r => r.state === 'awaiting_confirmation'), late = has(r => r.late);
+    const receive = has(r => (r.state === 'confirmed' || r.state === 'partially_received') && !r.late), sapo = has(r => r.sapoPending > 0);
+    const tag = (r: typeof rows[number]): [string, Tone] => r.late ? ['Quá hẹn', 'danger'] : r.sapoPending ? ['Chờ nhập Sapo', 'warn'] : r.state === 'draft' ? ['Chờ duyệt', 'warn']
+      : r.state === 'awaiting_confirmation' ? ['Chờ NCC xác nhận', ''] : ['Chờ nhận', 'ok'];
+    const queue = [...late, ...sapo, ...draft, ...waiting, ...receive].filter((r, i, all) => all.findIndex(x => x.id === r.id) === i);
     return {
-      metrics: [{ key: 'open', label: 'Phiếu nhập chờ xử lý', value: open, tone: open ? 'warn' : '' }, { key: 'late', label: 'Quá hạn', value: late, tone: late ? 'danger' : '' }],
-      items: rows.map(r => ({ id: r.id, title: r.title, sub: r.dueDate ? 'hạn ' + ddmm(r.dueDate) : '', revision: r.revision,
-        tone: r.dueDate && r.dueDate < today ? 'danger' as const : '' as const, badge: r.dueDate && r.dueDate < today ? 'Quá hạn' : '', hash: '#/tasks/' + encodeURIComponent(r.id), actions: ['task-done'] })),
+      metrics: [
+        { key: 'draft', label: 'Chờ duyệt', value: draft.length, tone: draft.length ? 'warn' : '' },
+        { key: 'confirm', label: 'Chờ NCC xác nhận', value: waiting.length },
+        { key: 'late', label: 'Quá hẹn', value: late.length, tone: late.length ? 'danger' : '' },
+        { key: 'receive', label: 'Chờ nhận hàng', value: receive.length, tone: receive.length ? 'ok' : '' },
+        { key: 'sapo', label: 'Chờ nhập Sapo', value: sapo.length, tone: sapo.length ? 'warn' : '' },
+      ],
+      items: queue.slice(0, ITEMS).map(r => { const [badge, tone] = tag(r); return { id: r.id, title: r.ticketNumber, sub: `${r.supplierName ?? ''}${r.arrivalDate ? ' · hẹn ' + ddmm(r.arrivalDate) : ''}`,
+        badge, tone, hash: '#/purchases/' + encodeURIComponent(r.id) }; }),
     };
   },
 

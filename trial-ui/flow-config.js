@@ -62,9 +62,9 @@ export const NODES = [
     desc: 'HĐKT: chờ duyệt, chưa ký, chờ giao.',
     actions: [{ label: 'Danh sách HĐKT', go: '#/contracts' }] },
 
-  { id: 'purchase', stage: 'purchase', row: 1, title: 'Nhập hàng NCC', icon: 'truckIn', page: '#/tasks',
-    desc: 'Việc nhập hàng từ nhà cung cấp / phiếu nhập Sapo giao cho kho khi hàng không đủ.',
-    actions: [{ label: 'Mở Công việc', go: '#/tasks' }] },
+  { id: 'purchase', stage: 'purchase', row: 1, title: 'Đơn mua NCC', icon: 'truckIn', page: '#/purchases',
+    desc: 'Đơn mua NCC: chờ Manager duyệt, chờ NCC xác nhận, quá hẹn, chờ kho nhận hàng, phiếu nhận chờ nhập kho Sapo.',
+    actions: [{ label: 'Lập đơn mua', go: '#/purchases/new' }, { label: 'Danh sách đơn mua', go: '#/purchases' }] },
 
   { id: 'packing', stage: 'warehouse', row: 2, title: 'Đóng gói & xuất kho', icon: 'box', page: '#/packing',
     desc: 'Phiếu đóng gói đã gửi kho chờ đóng, phiếu nháp chưa gửi, phiếu đóng xong hôm nay.',

@@ -23,6 +23,42 @@ Nơi sửa **mọi thứ về NCC mà trước đây phải sửa code**:
 | Email nhận đơn và CC | `supplier_contacts` | `cleanContacts`; điền sẵn khi duyệt đơn (`defaultRecipients`). Tối đa 20 CC. |
 | Tài khoản đăng nhập của NCC | `supplier_accounts` | `planAccountLink`: chỉ gắn tài khoản chức vụ NCC đang hoạt động; mỗi tài khoản thuộc đúng một NCC. **Đây là nơi quyết định ai thấy đơn của NCC nào** (thay cho so email và hai email viết cứng của bản cũ). |
 
+### 3. Đơn mua NCC – `#/purchases` (khu vực `business`) ✅ đã làm (đợt 2)
+Đơn mua = `incoming_shipments` với `source = 'supplier-order'` (dùng chung bảng với cổng NCC). Quyền chi tiết ở `src/modules/suppliers/domain/purchasing.ts` (`checkPurchase`, `purchaseActions`); máy chủ trả `actions` cho từng đơn, giao diện chỉ ẩn/hiện nút.
+
+**Hai quyết định đã chốt**
+- **Nguồn tồn chính là Sapo.** CRM không cộng tồn. Mỗi phiếu nhận (`supplier_receipts`) có trạng thái nhập kho Sapo riêng: `pending` → `done` (bắt buộc mã phiếu Sapo) / `failed` (bắt buộc ghi lỗi, phiếu vẫn giữ để xử lý tiếp) / `not_needed`. Phiếu đã `done` không nhận "done" lần hai (chặn cộng tồn hai lần). Chỉ Manager mở lại được, sau khi đã huỷ phiếu nhập trên Sapo.
+- **Quyền ghi thanh toán:** Manager và Kế toán ghi khoản trả và sửa lịch trả. Chỉ Manager huỷ khoản trả; khoản đã huỷ vẫn giữ trong lịch sử.
+
+| Bước | Ai | Ghi chú |
+|---|---|---|
+| Lập đơn từ báo giá / đơn-HĐKT / khách hỏi tồn | Mọi nhân viên (chỉ chứng từ mình được xem) | Liên kết nguồn lưu ở `supplier_order_sources`. Có thể chia một lần lập ra nhiều NCC, mỗi NCC một đơn. **Chống mua trùng:** với mỗi (chứng từ, mã), số đã đặt ở các đơn chưa huỷ cộng số đặt lần này không được vượt số cần. Có khoá advisory nên hai người lập cùng lúc cũng không vượt được. Với khách hỏi tồn, số cần = số khách hỏi trừ số đã báo đáp ứng. |
+| Sửa nháp | Người lập hoặc Manager | Khoá theo `revision`. Nhân viên không thấy giá; giá Manager đã nhập được giữ nguyên. Lịch sử sửa ghi lại thay đổi số lượng theo từng mã. |
+| Duyệt giá / chiết khấu / lịch trả | Manager | Gồm không cọc, cọc theo % hoặc theo số tiền, trả nhiều đợt, hạn trả phần còn lại. Email nhận đơn mặc định lấy từ danh bạ NCC. |
+| Ghi nhận NCC xác nhận và ngày hẹn | Manager (thay NCC, khi chưa có cổng NCC) | `confirmed_on_behalf = true`. Ghi được ngày hẹn riêng cho từng mã và số đơn phía NCC. |
+| PDF đơn mua | Manager, Kế toán (cần giá) | Tạo ở trình duyệt (`trial-ui/purchase-pdf.js`), không ghi lên máy chủ. |
+| Nhận hàng từng đợt | Kho, Manager | Ghi theo từng mã: đạt / hỏng / ghi chú. Hàng hỏng không tính vào số đã nhận, vẫn tính là còn thiếu. `clientKey` duy nhất, nên bấm lặp không tạo phiếu thứ hai. Số đạt không được vượt số còn thiếu; ngày nhận không được sau hôm nay. |
+| Huỷ phiếu nhận | Manager | Chỉ huỷ được khi phiếu chưa nhập Sapo. |
+| Trả NCC | Manager, Kế toán | Khoản trả có `clientKey`, không được vượt số còn nợ, đính kèm được chứng từ ảnh/PDF ≤ 6 MB (lưu ở kho file private). Công nợ tính FIFO theo lịch trả, có quá hạn và kỳ tới. |
+| Huỷ đơn | Người lập (đơn nháp) / Manager | Bắt buộc ghi lý do. Không huỷ được khi đã nhận hàng hoặc đã trả tiền. Huỷ xong, số đã đặt được trả lại cho chứng từ nguồn. |
+
+Bảng mới (migration `0051_supplier_purchasing`, REVOKE ở `0052`): `supplier_order_sources`, `supplier_receipts`, `supplier_receipt_lines`, `supplier_payment_schedules`, `supplier_payments`, `supplier_order_events` (lịch sử thao tác). Cột mới trên `incoming_shipments`: `note`, `cancelled_*`, `cancel_reason`, `confirmed_on_behalf`, `revision`.
+
+**Việc tự sinh** (`supplierPurchases` trong `tasks/api/auto-tasks.ts`, nguồn `purchase`):
+- duyệt đơn: Manager;
+- chờ NCC xác nhận: Manager;
+- quá hẹn: người lập đơn;
+- nhận hàng khi tới hẹn: nhóm Kho;
+- nhập kho Sapo: nhóm Kho;
+- trả NCC trước hạn 3 ngày: nhóm Kế toán.
+
+Sơ đồ quy trình (khối "Đơn mua NCC") dùng cùng các hàng đợi này.
+
+**Chưa làm (để sau):**
+- `supplier_stock_requests` vẫn giữ nghĩa cũ là xin hàng từ đơn sắp về, chưa phải hỏi tồn mọi sản phẩm.
+- Gửi email đơn mua tự động.
+- Cổng NCC tự xác nhận.
+
 ## Quyền xem đơn
 | Người dùng | Thấy | Giá/tiền |
 |---|---|---|
