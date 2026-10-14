@@ -33,7 +33,7 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
   legend.append(el('span', 'flow-key', ''), document.createTextNode(' luồng chính   '), el('span', 'flow-key alt', ''), document.createTextNode(' nhánh phụ (thiếu hàng, chăm sóc lại)'));
   const status = el('p', 'muted');
   page.append(head, status, board, legend);
-  // Bảng chi tiết (ngăn kéo bên phải; điện thoại: trượt từ dưới lên).
+  // Bảng chi tiết (ngăn kéo bên phải).
   const shade = el('div', 'flow-shade'); shade.hidden = true; shade.addEventListener('click', () => closePanel());
   const panel = el('aside', 'flow-panel'); panel.hidden = true; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'false');
   root.append(page, shade, panel);
@@ -45,19 +45,20 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
     const stages = STAGES.filter(s => visible.some(nd => nd.stage === s.id));
     const rows = [...new Set(visible.map(nd => nd.row))].sort((a, b) => a - b);
     const col = id => stages.findIndex(s => s.id === id) + 1, row = r => rows.indexOf(r) + 1;
-    board.style.setProperty('--flow-cols', String(stages.length));
+    board.style.setProperty('--flow-cols', String(stages.length)); board.style.setProperty('--flow-rows', String(rows.length));
     stagesRow.replaceChildren(...stages.map(s => { const t = el('div', 'flow-stage'); t.append(icon(s.icon), el('span', '', s.title)); return t; }));
     grid.replaceChildren(lines);
+    // Dải nền mỗi cột (xen kẽ đậm / nhạt), cao hết sơ đồ.
+    stages.forEach((s, i) => { const lane = el('div', 'flow-lane' + (i % 2 ? ' alt' : '')); lane.style.gridColumn = String(i + 1); lane.style.gridRow = '1 / -1'; grid.append(lane); });
     for (const nd of visible) {
-      const d = data.nodes[nd.id], h = headline(d), stage = STAGES.find(s => s.id === nd.stage);
+      const d = data.nodes[nd.id], h = headline(d);
       const b = el('button', 'flow-node' + (h?.value && h.tone ? ' tone-' + h.tone : '') + (nd.id === openId ? ' is-open' : ''));
       b.type = 'button'; b.dataset.node = nd.id;
       b.style.gridColumn = String(col(nd.stage)); b.style.gridRow = String(row(nd.row));
-      b.style.order = String(col(nd.stage) * 10 + row(nd.row)); // điện thoại: xếp theo giai đoạn
-      const dot = el('span', 'flow-dot'); dot.append(icon(nd.icon));
+            const dot = el('span', 'flow-dot'); dot.append(icon(nd.icon));
       if (h?.value) { const c = el('span', 'flow-count', h.money ? '!' : h.value > 99 ? '99+' : h.value); dot.append(c); }
       const body = el('span', 'flow-node-body');
-      body.append(el('span', 'flow-node-stage', stage?.title || ''), el('span', 'flow-node-title', nd.title),
+      body.append(el('span', 'flow-node-title', nd.title),
         el('span', 'flow-node-sub', h ? `${h.label}: ${fmt(h)}` : ''));
       b.append(dot, body);
       b.addEventListener('click', () => openPanel(nd.id));
@@ -81,21 +82,29 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
       const cx = dot.left + dot.width / 2 - g.left, rad = dot.width / 2 + 6;
       return { t: r.top - g.top, b: r.bottom - g.top, cx, cy: dot.top + dot.height / 2 - g.top, dl: cx - rad, dr: cx + rad, col: Number(node.style.gridColumn), row: Number(node.style.gridRow) };
     };
-    const colW = g.width / Number(getComputedStyle(board).getPropertyValue('--flow-cols') || 6), loopY = g.height - 14;
+    const cols = Number(getComputedStyle(board).getPropertyValue('--flow-cols') || 6), colW = g.width / cols, loopY = g.height - 16;
+    const occupied = new Set([...grid.querySelectorAll('[data-node]')].map(nd => nd.style.gridColumn + ':' + nd.style.gridRow));
+    /** Đường ngang ở hàng `row` từ cột `from` (không tính) tới cột `to` (tính) có đi qua khối nào không. */
+    const blocked = (row, from, to) => { for (let c = from + 1; c <= to; c++) if (occupied.has(c + ':' + row)) return true; return false; };
     for (const e of EDGES) {
       const a = box(e.from), b = box(e.to); if (!a || !b) continue;
       let pts, label;
-      if (a.col === b.col && Math.abs(a.row - b.row) === 1) { // cùng cột, hàng kề nhau: đường dọc, chữ bên phải
+      if (a.col === b.col && Math.abs(a.row - b.row) === 1) { // cùng cột, hàng kề: đường dọc giữa hai khối, chữ bên phải
         const down = b.row > a.row; pts = [[a.cx, down ? a.b : a.t], [b.cx, down ? b.t : b.b]]; label = [a.cx + 8, (pts[0][1] + pts[1][1]) / 2 + 4, 'start'];
-      } else if (a.col === b.col) { // cùng cột, cách hàng: vòng qua mép phải cột (không cắt chữ của khối ở giữa)
-        const x = a.cx + colW / 2 - 12; pts = [[a.dr, a.cy], [x, a.cy], [x, b.cy], [b.dr, b.cy]]; label = [b.dr + 4, b.cy - 8, 'start'];
-      } else if (b.col > a.col) { // sang phải: thẳng nếu cùng hàng, không thì gấp khúc ở giữa hai cột
-        const mid = a.cx + colW / 2;
-        pts = a.cy === b.cy ? [[a.dr, a.cy], [b.dl, b.cy]] : [[a.dr, a.cy], [mid, a.cy], [mid, b.cy], [b.dl, b.cy]];
-        label = a.cy === b.cy ? [(a.dr + b.dl) / 2, a.cy - 8, 'middle'] : [a.dr + 4, a.cy - 8, 'start'];
+      } else if (a.col === b.col) { // cùng cột, cách hàng: vòng qua ranh giới bên phải cột
+        const x = a.cx + colW / 2; pts = [[a.dr, a.cy], [x, a.cy], [x, b.cy], [b.dr, b.cy]]; label = [b.dr + 6, b.cy - 8, 'start'];
+      } else if (b.col > a.col && a.row === b.row) { // sang phải cùng hàng: thẳng, chữ sát khối đích
+        pts = [[a.dr, a.cy], [b.dl, b.cy]]; label = [(a.dr + b.dl) / 2, a.cy - 8, 'middle'];
+      } else if (b.col > a.col && !blocked(a.row, a.col, b.col)) { // sang phải khác hàng: đi ngang tới cột đích rồi vào đỉnh / đáy khối
+        const down = b.row > a.row; pts = [[a.dr, a.cy], [b.cx, a.cy], [b.cx, down ? b.t : b.b]]; label = [a.dr + 6, a.cy - 8, 'start'];
+      } else if (b.col > a.col) { // đường ngang bị khối chắn: gấp khúc ở ranh giới hai cột
+        const mid = a.cx + colW / 2; pts = [[a.dr, a.cy], [mid, a.cy], [mid, b.cy], [b.dl, b.cy]]; label = [b.dl - 8, b.cy - 8, 'end'];
       } else { // quay ngược về cột trước: đi vòng dưới đáy sơ đồ
-        pts = [[a.cx, a.b], [a.cx, loopY], [b.cx, loopY], [b.cx, b.b]]; label = [(a.cx + b.cx) / 2, loopY - 6, 'middle'];
+        pts = [[a.cx, a.b], [a.cx, loopY], [b.cx, loopY], [b.cx, b.b]]; label = [(a.cx + b.cx) / 2, loopY - 7, 'middle'];
       }
+      // Cấu hình có thể ép vị trí chữ: `labelAt: 'source'` (sát khối nguồn) | 'target' (sát khối đích).
+      if (e.labelAt === 'source' && a.col !== b.col) label = [a.dr + 6, a.cy - 8, 'start'];
+      if (e.labelAt === 'target' && a.col !== b.col) label = [b.dl - 8, b.cy - 8, 'end'];
       const kind = e.alt ? 'alt' : 'main';
       lines.append(svg('path', { d: 'M' + pts.map(p => p.map(Math.round).join(' ')).join(' L'), class: 'flow-edge ' + kind, 'marker-end': `url(#flow-arrow-${kind})` }));
       if (e.label) lines.append(svg('text', { x: Math.round(label[0]), y: Math.round(label[1]), 'text-anchor': label[2], class: 'flow-edge-label ' + kind }, e.label));

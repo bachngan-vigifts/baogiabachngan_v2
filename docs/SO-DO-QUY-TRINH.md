@@ -13,7 +13,9 @@ Trang dạng sơ đồ: các cột giai đoạn **Khách hàng → Kinh doanh �
 | `trial-ui/flow-map.js` | **Phần vẽ.** Dựng khối theo cấu hình, vẽ mũi tên SVG, mở bảng chi tiết, chạy thao tác. Không chứa nghiệp vụ. | Hiếm khi. |
 | `src/app/flow-routes.ts` | **API chỉ đọc** `GET /flow`. Mỗi khối là một hàm trong `NODES` (khoá trùng `id` ở `flow-config.js`), trả `{ metrics, items }` hoặc `null` khi vai trò đó không thấy khối. | Đổi cách đếm, thêm khối. |
 
-Kiểu chữ: `trial-ui/flow-map.css`. App nối nút nhanh `open: 'new-quote' | 'new-customer' | 'new-care'` với hộp thoại có sẵn tại `flowView()` trong `trial-ui/app.js`.
+Kiểu chữ: `trial-ui/flow-map.css`. Trang dành cho máy tính (sơ đồ rộng tối thiểu 940px, màn hẹp hơn thì cuộn ngang).
+
+**Bố cục đều nhau:** cột chia đều, hàng cao cố định 176px, khối 150×150px. Mũi tên ngang đi ở cao độ chấm tròn (vùng trống), đường dọc đi giữa các khối hoặc ở ranh giới cột, đường quay ngược đi vòng dưới đáy. Hai nhãn chồng nhau thì đặt `labelAt: 'source' | 'target'` cho mũi tên trong `EDGES`. App nối nút nhanh `open: 'new-quote' | 'new-customer' | 'new-care'` với hộp thoại có sẵn tại `flowView()` trong `trial-ui/app.js`.
 
 ## Quyền xem: dùng lại đúng scope của từng trang
 

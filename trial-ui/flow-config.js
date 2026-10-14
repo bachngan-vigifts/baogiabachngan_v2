@@ -5,7 +5,8 @@
  *  - STAGES  : các cột (giai đoạn) theo thứ tự từ trái sang phải.
  *  - NODES   : các khối. `id` trùng khoá trong API `GET /flow` (src/app/flow-routes.ts) – máy chủ trả số liệu + việc cho khối đó.
  *              `stage` = cột, `row` = hàng (1 trên cùng). `page` = trang mở khi bấm "Mở trang". `actions` = nút nhanh của khối.
- *  - EDGES   : mũi tên nối khối (`from` → `to`, `label` chữ trên mũi tên, `alt: true` = nhánh phụ/ngoại lệ, vẽ màu cam).
+ *  - EDGES   : mũi tên nối khối (`from` → `to`, `label` chữ trên mũi tên, `alt: true` = nhánh phụ/ngoại lệ, vẽ màu cam,
+ *              `labelAt: 'source' | 'target'` đặt chữ sát khối nguồn / đích khi hai nhãn bị chồng nhau).
  *  - ITEM_ACTIONS : nút trên từng việc. Máy chủ quyết định việc nào được hiện nút (trả tên thao tác trong `actions`),
  *              ở đây khai báo nhãn, câu xác nhận và cách gọi API. Máy chủ vẫn kiểm tra quyền khi gọi.
  *  - NODE_ACTIONS (trong NODES.actions): `{ label, open: 'new-quote' | 'new-customer' | 'new-care' }` gọi hộp thoại có sẵn của app,
@@ -51,13 +52,13 @@ export const NODES = [
     desc: 'Lịch hẹn chăm sóc quá hạn / hôm nay của bạn. Ghi lần chăm sóc mới ngay tại đây.',
     actions: [{ label: 'Ghi chăm sóc', open: 'new-care' }, { label: 'Nhật ký chăm sóc', go: '#/care' }] },
 
-  { id: 'quotes', stage: 'sales', row: 1, title: 'Báo giá', icon: 'doc', page: '#/quotes',
+  { id: 'quotes', stage: 'sales', row: 2, title: 'Báo giá', icon: 'doc', page: '#/quotes',
     desc: 'Báo giá chờ Manager duyệt và báo giá đã duyệt nhưng chưa sinh đơn hàng / HĐKT.',
     actions: [{ label: 'Tạo báo giá', open: 'new-quote' }, { label: 'Danh sách báo giá', go: '#/quotes' }] },
-  { id: 'orders', stage: 'sales', row: 2, title: 'Đơn hàng', icon: 'cart', page: '#/orders',
+  { id: 'orders', stage: 'sales', row: 1, title: 'Đơn hàng', icon: 'cart', page: '#/orders',
     desc: 'Đơn đặt hàng (không ký HĐKT): nháp chờ duyệt, đã duyệt chờ giao, đang giao.',
     actions: [{ label: 'Danh sách đơn hàng', go: '#/orders' }] },
-  { id: 'contracts', stage: 'sales', row: 3, title: 'Hợp đồng (HĐKT)', icon: 'sign', page: '#/contracts',
+  { id: 'contracts', stage: 'sales', row: 3, title: 'HĐKT', icon: 'sign', page: '#/contracts',
     desc: 'HĐKT: chờ duyệt, chưa ký, chờ giao.',
     actions: [{ label: 'Danh sách HĐKT', go: '#/contracts' }] },
 
@@ -82,7 +83,7 @@ export const NODES = [
 ];
 
 export const EDGES = [
-  { from: 'customers', to: 'quotes', label: 'Báo giá' },
+  { from: 'customers', to: 'quotes', label: 'Hỏi giá', labelAt: 'source' },
   { from: 'stock-requests', to: 'quotes', label: 'Kiểm tồn' },
   { from: 'quotes', to: 'orders', label: 'Chốt đơn' },
   { from: 'quotes', to: 'contracts', label: 'Ký HĐKT' },
