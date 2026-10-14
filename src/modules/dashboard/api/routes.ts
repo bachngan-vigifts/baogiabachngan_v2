@@ -14,6 +14,8 @@ import { dashboardFilters } from '../domain/filters.ts';
 
 const amount = (column: typeof orders.total | typeof care.expectedRevenue) => sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
 const ratio = (part: number, whole: number) => whole ? Math.round(part / whole * 1000) / 10 : null;
+/** Pipeline chỉ tính cơ hội còn "sống": lần chăm sóc mới nhất không quá N ngày trước cuối kỳ. */
+export const PIPELINE_FRESH_DAYS = 90;
 const blank = () => ({ actual: 0, orders: 0, expected: 0, pipeline: 0, consulting: 0, quote_sent: 0, negotiating: 0, lost: 0, quotes: 0, converted: 0 });
 
 /** Only GET. All totals are DB aggregates; no limit on source orders/activities. */
@@ -53,12 +55,15 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
       const inPeriod = and(sql`${care.occurredAt}::timestamptz >= ${f.from + 'T00:00:00+07:00'}::timestamptz`,
         sql`${care.occurredAt}::timestamptz < ${f.next + 'T00:00:00+07:00'}::timestamptz`);
       const latest = db.$with('dashboard_latest').as(db.selectDistinctOn([care.ownerId, care.customerId], {
-        owner: care.ownerId, customer: care.customerId, result: care.result, expected: care.expectedRevenue,
+        owner: care.ownerId, customer: care.customerId, result: care.result, expected: care.expectedRevenue, at: care.occurredAt,
       }).from(care).where(and(inArray(care.ownerId, selected), careOwnedCustomer,
         sql`${care.occurredAt}::timestamptz < ${f.next + 'T00:00:00+07:00'}::timestamptz`))
         .orderBy(care.ownerId, care.customerId, desc(care.occurredAt), desc(care.updatedAt), desc(care.id)));
       const pipeline = await db.with(latest).select({ owner: latest.owner, stage: latest.result, value: sql<number>`sum(${latest.expected})`.mapWith(Number) })
-        .from(latest).where(inArray(latest.result, ['consulting', 'quote_sent', 'negotiating'])).groupBy(latest.owner, latest.result);
+        .from(latest).where(and(inArray(latest.result, ['consulting', 'quote_sent', 'negotiating']),
+          // Khách để quá lâu không cập nhật không còn tính là đang theo đuổi.
+          sql`${latest.at}::timestamptz >= ${f.next + 'T00:00:00+07:00'}::timestamptz - make_interval(days => ${PIPELINE_FRESH_DAYS})`))
+        .groupBy(latest.owner, latest.result);
       const monthlyCare = db.$with('dashboard_monthly_care').as(db.selectDistinctOn([care.ownerId, care.customerId, careMonth], {
         owner: care.ownerId, customer: care.customerId, month: careMonth.as('month'), expected: care.expectedRevenue, result: care.result,
       }).from(care).where(and(inArray(care.ownerId, selected), careOwnedCustomer, inPeriod))
@@ -78,7 +83,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
       const quoteOwner = sql<string>`coalesce(${quotes.assigneeId}, ${quotes.creatorId})`;
       const quoteDay = sql<string>`coalesce(nullif(${quotes.quoteDate}, ''), substr(${quotes.createdAt}, 1, 10))`;
       const quoteMonth = sql<string>`substr(${quoteDay}, 1, 7)`;
-      const converted = exists(db.select({ id: orders.id }).from(orders).where(and(eq(orders.quoteId, quotes.id), ne(orders.status, 'cancelled'), f.owner ? eq(orders.ownerId, f.owner) : undefined)));
+      const converted = exists(db.select({ id: orders.id }).from(orders).where(and(eq(orders.quoteId, quotes.id), ne(orders.status, 'cancelled'), f.owner || f.group || !f.manager ? inArray(orders.ownerId, selected) : undefined)));
       const conversion = await db.select({ owner: quoteOwner.as('owner'), month: quoteMonth.as('month'), quotes: count(),
         converted: sql<number>`count(*) filter (where ${converted})`.mapWith(Number),
       }).from(quotes).where(and(inArray(quoteOwner, selected), gte(quoteDay, f.from), lt(quoteDay, f.next))).groupBy(quoteOwner, quoteMonth);
@@ -105,7 +110,9 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
       const staleBefore = new Date(Date.parse(f.today + 'T00:00:00+07:00') - f.neglectDays * 86400000).toISOString();
       const ownCustomer = exists(db.select({ id: customerStaff.customerId }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id),
         eq(customerStaff.role, 'owner'), inArray(customerStaff.memberId, selected))));
-      const customerScope = (!f.manager || f.owner || f.group) ? ownCustomer : undefined;
+      // Toàn công ty: chỉ khách đã có người phụ trách (khách đồng bộ Sapo chưa giao ai không tính là "bỏ quên").
+      const anyOwner = exists(db.select({ id: customerStaff.customerId }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id), eq(customerStaff.role, 'owner'))));
+      const customerScope = (!f.manager || f.owner || f.group) ? ownCustomer : anyOwner;
       const stale = and(customerScope, or(isNull(lastCare.lastAt), lt(lastCare.lastAt, staleBefore)));
       const [neglectCount] = await db.with(lastCare).select({ count: count() }).from(customers).leftJoin(lastCare, eq(lastCare.customer, customers.id)).where(stale);
       const neglected = await db.with(lastCare).select({ id: customers.id, name: customers.name, lastAt: lastCare.lastAt })

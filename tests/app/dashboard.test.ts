@@ -76,12 +76,23 @@ test('dashboard: period snapshots avoid duplicate follow-ups, month boundaries V
   assert.equal(total.data.summary.pipeline, 0, 'won exits pipeline');
   assert.deepEqual(total.data.months.map((r: any) => r.expected), [150, 200]);
   await db.insert(customers).values(Array.from({ length: 30 }, (_, i) => ({ id: 'page-' + i, name: 'Customer ' + i, contact: '', phone: '', email: '', address: '', search: '', sourceVersion: 0, syncedAt: '' })));
+  // Khách chưa có người phụ trách (vd. khách Sapo '123') không tính "lâu chưa chăm sóc" ở phạm vi toàn công ty.
+  await db.insert(customerStaff).values(Array.from({ length: 30 }, (_, i) => ({ customerId: 'page-' + i, memberId: 'mgr', role: 'owner' as const, createdAt: now })));
   const first = (await call('/dashboard/revenue' + month, mgr)).data.neglected;
   const second = (await call('/dashboard/revenue' + month + '&page=2', mgr)).data.neglected;
-  assert.equal(first.total, 32); assert.equal(first.customers.length, 25); assert.equal(second.customers.length, 7);
-  assert.equal(new Set([...first.customers, ...second.customers].map((x: any) => x.id)).size, 32);
+  assert.equal(first.total, 31); assert.equal(first.customers.length, 25); assert.equal(second.customers.length, 6);
+  assert.equal(new Set([...first.customers, ...second.customers].map((x: any) => x.id)).size, 31);
+  assert.ok(![...first.customers, ...second.customers].some((x: any) => x.id === '123'), 'khách chưa phân công không vào danh sách');
   assert.equal((await call('/dashboard/revenue?from=2026-01&to=2027-01', mgr)).status, 400);
   assert.equal((await call('/dashboard/revenue?from=oops', mgr)).status, 400);
+});
+
+test('dashboard: pipeline bỏ khách để quá lâu không cập nhật', async () => {
+  const { db, call, emp } = await fixture();
+  // Khách 'never' được ghi "đang tư vấn" từ tháng 5, sau đó không cập nhật: tháng 5–6 còn trong pipeline, tháng 9 thì không.
+  await db.insert(customerActivities).values({ id: 'old', customerId: 'never', ownerId: 'emp', type: 'call', result: 'consulting', expectedRevenue: 500, occurredAt: '2026-05-10T03:00:00Z', content: 'Call', createdAt: '2026-05-10T03:00:00Z', updatedAt: '2026-05-10T03:00:00Z' });
+  assert.equal((await call('/dashboard/revenue?from=2026-06&to=2026-06', emp)).data.summary.pipeline, 500);
+  assert.equal((await call('/dashboard/revenue' + month, emp)).data.summary.pipeline, 150, 'quá 90 ngày không cập nhật thì rời pipeline');
 });
 
 test('dashboard: role defense and new UI has no HTML injection or token persistence', () => {
