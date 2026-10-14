@@ -41,7 +41,7 @@ export function initSapoPush({ api, esc, $ }) {
     const choice = `<fieldset class="sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>
       <label class="check"><input type="radio" name="sapo-push-mode" value="yes"${sapoOk ? ' checked' : ' disabled'}> Có – tạo đơn nháp trên Sapo${sapoOk ? ' <span class="pill ok">Sapo đã kết nối</span>' : ''}</label>
       <label class="check"><input type="radio" name="sapo-push-mode" value="no"${sapoOk ? '' : ' checked'}> ${existingDocument ? 'Không – giữ chứng từ trên web' : 'Không – chỉ sinh trên web'}</label>
-      ${sapoOk ? '' : `<p class="error small">Không kết nối được Sapo: ${esc(d.message || (d.connected ? 'Sapo chưa trả danh sách kho.' : 'Chưa kết nối Sapo.'))} Đơn / HĐKT sẽ chỉ sinh trên web; Manager kết nối lại Sapo ở trang Nhân viên → Đồng bộ Sapo.</p>`}</fieldset>`;
+      ${sapoOk ? '' : `<p class="error small">Không kết nối được Sapo: ${esc(d.message || (d.connected ? 'Sapo chưa trả danh sách kho.' : 'Chưa kết nối Sapo.'))} ${existingDocument ? 'Chứng từ trên CRM được giữ nguyên.' : 'Đơn / HĐKT sẽ chỉ sinh trên web.'} Manager kết nối lại Sapo ở trang Nhân viên → Đồng bộ Sapo.</p>`}</fieldset>`;
     const blocks = [`<dl class="kv"><dt>Mã đơn trên Sapo</dt><dd><b>${esc(d.code || 'Sẽ dùng số đơn hàng / HĐKT mới sinh')}</b></dd>
       <dt>NV phụ trách trên Sapo</dt><dd>${d.connected ? (d.account ? `<b>${esc(d.account.name)}</b>` : `<span class="pill warn">Chưa khớp tài khoản Sapo của ${esc(d.owner || 'người phụ trách')}</span><small>Đơn Sapo sẽ để người phụ trách theo phiên Sapo đang kết nối.</small>`) : esc(d.owner)}</dd></dl>`];
     if (d.problems.length) blocks.push(`<ul class="error">${d.problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul><p class="muted small">Sửa báo giá cho đủ rồi thử lại.</p>`);
@@ -54,11 +54,12 @@ export function initSapoPush({ api, esc, $ }) {
     blocks.push(existingDocument ? '<p class="muted small">Chỉ tạo đơn nháp Sapo cho chứng từ đã có. Lỗi Sapo không xoá hay thay đổi chứng từ trên CRM.</p>' : '<p class="muted small">Tạo cùng lúc đơn NHÁP trên Sapo (khách / sản phẩm chưa có trên Sapo sẽ được tạo theo mã KH / MST / SKU). Sapo lỗi thì không sinh đơn / HĐKT.</p>');
     body.innerHTML = choice + `<div id="sapo-push-detail">${blocks.join('')}</div>` + '<p class="error" id="sapo-push-error" role="alert"></p>';
     const sel = $('#sapo-push-location');
+    me.canPush = sapoOk && !d.problems.length;
     me.push = () => body.querySelector('input[name="sapo-push-mode"]:checked')?.value !== 'no';
     me.sync = () => {
       const push = me.push();
       $('#sapo-push-detail').hidden = !push;
-      if (!me.busy) submit.textContent = push ? action : title;
+      if (!me.busy) submit.textContent = push ? action : existingDocument ? 'Giữ chứng từ trên web' : title;
       submit.disabled = me.busy || (push && (!d.connected || !!d.problems.length || !sel?.value));
     };
     sel?.addEventListener('change', me.sync);
@@ -69,7 +70,7 @@ export function initSapoPush({ api, esc, $ }) {
   $('#sapo-push-form').addEventListener('submit', async e => {
     e.preventDefault();
     const me = current, sel = $('#sapo-push-location'), push = me?.push?.() ?? true;
-    if (!me || me.busy || (push && !sel?.value)) return;
+    if (!me || me.busy || (push && (!me.canPush || !sel?.value))) return;
     me.busy = true; me.sync?.(); const label = submit.textContent; submit.textContent = push ? 'Đang tạo đơn + đơn Sapo…' : 'Đang tạo…'; $('#sapo-push-error').textContent = '';
     try {
       const r = await me.run(push ? Number(sel.value) : null, push);
