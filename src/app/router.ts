@@ -9,6 +9,8 @@ import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
 import { registerProgressRoutes } from '../modules/sales/api/progress-routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
+import { registerSupplierDirectoryRoutes } from '../modules/suppliers/api/directory-routes.ts';
+import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes } from '../modules/tasks/api/routes.ts';
@@ -20,6 +22,7 @@ import { registerHrRoutes } from '../modules/hr/api/routes.ts';
 import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api/routes.ts';
 import { registerAuditRoutes } from './audit-routes.ts';
 import { registerApprovalRoutes } from './approval-routes.ts';
+import { registerFlowRoutes } from './flow-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
   const router = createStaffRouter();
@@ -33,6 +36,8 @@ export function createAppRouter() {
   registerPackingRoutes(router);
   registerProgressRoutes(router);
   registerPrintingRoutes(router);
+  registerSupplierDirectoryRoutes(router);
+  registerPurchaseRoutes(router);
   registerPortalRoutes(router);
   registerNotificationRoutes(router);
   registerTaskRoutes(router);
@@ -45,5 +50,6 @@ export function createAppRouter() {
   registerDashboardRoutes(router);
   registerAuditRoutes(router);
   registerApprovalRoutes(router);
+  registerFlowRoutes(router);
   return router;
 }

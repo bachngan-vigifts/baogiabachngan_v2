@@ -11,6 +11,7 @@ import { progressOf } from '../../sales/api/progress.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
+import { openPurchases } from '../../suppliers/api/purchase-store.ts';
 import { dueFollowUps } from '../../care/api/routes.ts';
 import { CARE_TYPE_LABEL } from '../../care/domain/care.ts';
 import { addDaysIso, isOpen, type TaskPriority, type TaskSource } from '../domain/task-config.ts';
@@ -137,6 +138,31 @@ export const RULES: Record<string, Rule> = {
     return rows.filter(d => !/(complet|finish|cancel|received|closed|hoàn|huỷ|hủy)/i.test(d.status)).map(d => ({ autoKey: `purchase:${d.id}`, source: 'purchase' as const, sourceId: d.id,
       title: `Nhận hàng nhập ${d.code}${d.partnerName ? ' – ' + d.partnerName : ''}`, description: `${new Intl.NumberFormat('vi-VN').format(d.totalQty)} sản phẩm${d.locationName ? ' · ' + d.locationName : ''}${d.status ? ' · Sapo: ' + d.status : ''}`,
       link: '', assigneeId: null, assigneePosition: 'warehouse', priority: 'normal' as const, dueDate: d.createdOn ? addDaysIso(day(d.createdOn)!, 7) : null }));
+  },
+  /**
+   * Đơn mua NCC (trang #/purchases): chờ Manager duyệt → chờ NCC xác nhận (Manager ghi nhận thay) → kho nhận khi tới hẹn → kho nhập Sapo
+   * → Kế toán trả NCC khi tới kỳ (≤ 3 ngày). Quá hẹn giao mà chưa nhận đủ → người lập đơn theo dõi NCC. Mỗi bước xong thì việc tự hoàn thành.
+   */
+  async supplierPurchases(db, today) {
+    const out: AutoTask[] = [];
+    for (const p of await openPurchases(db, today)) {
+      const base = { source: 'purchase' as const, sourceId: p.id, link: `#/purchases/${p.id}` }, who = `${p.ticketNumber} – ${p.supplierName ?? ''}`;
+      if (p.state === 'draft') out.push({ ...base, autoKey: `po-approve:${p.id}`, title: `Duyệt đơn mua ${who}`, description: `${p.lineCount} mã · ${new Intl.NumberFormat('vi-VN').format(p.ordered)} sản phẩm. Nhập giá mua / chiết khấu / lịch trả rồi duyệt.`,
+        assigneeId: null, priority: 'high', dueDate: addDaysIso(day(p.createdAt)!, 1) });
+      if (p.state === 'awaiting_confirmation') out.push({ ...base, autoKey: `po-confirm:${p.id}`, title: `Chờ NCC xác nhận ${who}`, description: 'Gửi PDF đơn mua cho NCC; NCC xác nhận qua điện thoại / email thì Manager bấm "Ghi nhận NCC xác nhận" kèm ngày hẹn.',
+        assigneeId: null, priority: 'normal', dueDate: p.approvedAt ? addDaysIso(day(p.approvedAt)!, 2) : null });
+      if (p.late) out.push({ ...base, autoKey: `po-late:${p.id}`, title: `Quá hẹn nhận hàng ${who}`, description: `Hẹn ${fmt(p.arrivalDate)}, còn thiếu ${new Intl.NumberFormat('vi-VN').format(p.missing)}. Liên hệ NCC hỏi ngày giao mới.`,
+        assigneeId: p.createdBy, priority: 'urgent', dueDate: p.arrivalDate || null });
+      if ((p.state === 'confirmed' || p.state === 'partially_received') && p.arrivalDate && p.arrivalDate <= addDaysIso(today, 1)) out.push({ ...base, autoKey: `po-receive:${p.id}`,
+        title: `Nhận hàng ${who}`, description: `Còn thiếu ${new Intl.NumberFormat('vi-VN').format(p.missing)} sản phẩm. Kiểm đếm, ghi đạt / hỏng theo từng mã trên đơn mua.`,
+        assigneeId: null, assigneePosition: 'warehouse', priority: p.arrivalDate <= today ? 'high' : 'normal', dueDate: p.arrivalDate });
+      if (p.sapoPending > 0) out.push({ ...base, autoKey: `po-sapo:${p.id}`, title: `Nhập kho Sapo ${who}`, description: `${p.sapoPending} phiếu nhận chưa nhập kho Sapo (hoặc lỗi). Nhập trên Sapo rồi ghi mã phiếu Sapo vào phiếu nhận.`,
+        assigneeId: null, assigneePosition: 'warehouse', priority: 'high', dueDate: today });
+      if ((p.balance ?? 0) > 0 && p.nextDueDate && p.nextDueDate <= addDaysIso(today, 3)) out.push({ ...base, autoKey: `po-pay:${p.id}:${p.nextDueDate}`, title: `Trả NCC ${who}`,
+        description: `Kỳ ${vnd(p.nextDueAmount ?? 0)} hạn ${fmt(p.nextDueDate)} · còn nợ ${vnd(p.balance ?? 0)}. Ghi khoản trả kèm chứng từ trên đơn mua.`,
+        assigneeId: null, assigneePosition: 'accounting', priority: p.nextDueDate < today ? 'urgent' : 'high', dueDate: p.nextDueDate });
+    }
+    return out;
   },
   /** Đơn đến hạn giao (hôm nay / ngày mai / đã trễ) mà chưa giao xong → nhân viên phụ trách. */
   async orderDue(db, today) {

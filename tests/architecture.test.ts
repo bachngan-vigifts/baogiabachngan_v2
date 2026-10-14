@@ -13,7 +13,7 @@ const ALLOWED: Record<string, string[]> = {
   sales: ['staff', 'customers', 'catalog', 'quotes', 'contracts', 'notifications', 'printing', 'integrations'], // integrations: đẩy đơn sang Sapo
   portal: ['staff', 'customers', 'catalog', 'quotes', 'sales', 'notifications'],
   quotes: ['staff', 'notifications', 'integrations'], work: ['staff'],
-  tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff'],
+  tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care', 'suppliers'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff', 'catalog', 'customers', 'quotes', 'sales', 'portal'], // đơn mua lấy nguồn từ báo giá / đơn-HĐKT / khách hỏi tồn
   'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal', 'care'],
   care: ['staff', 'customers'],
   dashboard: ['staff', 'customers', 'sales', 'quotes', 'care', 'integrations'], // báo cáo chỉ đọc, không phụ thuộc HR/lương

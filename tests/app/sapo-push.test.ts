@@ -305,3 +305,27 @@ test('hai yêu cầu đẩy cùng chứng từ chỉ tạo một đơn Sapo', as
   assert.equal(s.sapo.writes.filter(w => w.method === 'POST' && w.path === '/orders.json').length, 1);
   assert.equal(await s.orderCount(), 1);
 });
+
+test('đẩy Sapo: số đơn trùng đơn nháp Sapo của KHÁCH KHÁC (sót từ lần tạo lỗi) → không liên kết nhầm; cùng khách thì liên kết', async () => {
+  const { sapo, call, emp, makeQuote, orderCount } = await setup();
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).replaceAll('-', ''), code = `DH_${today}_001`;
+  sapo.db.orders.push({ id: 7777, code, reference_number: code, customer_id: 9999, total: 0 });
+  const r = await call('/orders', emp, 'POST', { quoteId: await makeQuote('B2B_TAKEN_1'), sapoLocationId: 8 });
+  assert.equal(r.status, 409, JSON.stringify(r.data)); assert.equal(r.data.code, 'SAPO_CODE_TAKEN');
+  assert.equal(await orderCount(), 0, 'không tạo đơn web gắn nhầm');
+  // Đơn nháp cùng khách (Công ty Hoàng Long, id Sapo 501) thì liên kết như cũ.
+  sapo.db.orders[0]!.customer_id = 501;
+  const ok = await call('/orders', emp, 'POST', { quoteId: await makeQuote('B2B_TAKEN_2'), sapoLocationId: 8 });
+  assert.equal(ok.status, 201, JSON.stringify(ok.data)); assert.equal(ok.data.sapo.status, 'existing');
+});
+
+test('đẩy Sapo cho chứng từ có sẵn: tôn trọng công tắc tắt đẩy Sapo', async () => {
+  const { db, sapo, call, emp, makeQuote } = await setup();
+  const r = await call('/orders', emp, 'POST', { quoteId: await makeQuote('B2B_OFF_1'), pushSapo: false });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const router = createAppRouter();
+  const res = await router.handle(new Request(origin + `/api/staff/orders/${r.data.id}/sapo`, { method: 'POST', headers: { origin, 'content-type': 'application/json', cookie: emp }, body: JSON.stringify({ sapoLocationId: 8 }) }),
+    { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch: sapo.fetch, sapoOrderPush: 'off' as const });
+  assert.equal(res.status, 409); assert.equal(((await res.json()) as any).code, 'SAPO_PUSH_DISABLED');
+  assert.equal(sapo.writes.filter(w => w.path === '/orders.json').length, 0);
+});

@@ -28,7 +28,8 @@ function loadScript(file, present) {
     document.head.append(script);
   });
 }
-async function resources() {
+/** pdf-lib + fontkit + font Times (tải một lần, dùng chung cho PDF đơn mua NCC). */
+export async function resources() {
   return ready ||= (async () => {
     await Promise.all([loadScript('./pdf-lib.min.js', () => !!globalThis.PDFLib), loadScript('./fontkit.umd.min.js', () => !!globalThis.fontkit)]);
     const fonts = await Promise.all(['TimesNewRoman.ttf', 'TimesNewRomanBold.ttf'].map(async file => {
