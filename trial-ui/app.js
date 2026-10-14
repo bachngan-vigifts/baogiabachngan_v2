@@ -4,6 +4,7 @@ import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
 import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
+import { initFlowMap } from './flow-map.js';
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
@@ -488,7 +489,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { flow: 'Sơ đồ quy trình', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -537,6 +538,7 @@ function route() {
   if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'tasks') tasksView().load(id);
   if (view === 'dashboard') dashboardView().load();
+  if (view === 'flow') flowView().load();
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
@@ -2551,6 +2553,15 @@ var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dò
 var careUi = null; // eslint-disable-line no-var
 var dashboardUi = null;
 function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money }); }
+// Sơ đồ quy trình: cấu hình ở flow-config.js; `openers` nối nút nhanh của khối với hộp thoại có sẵn của app.
+var flowUi = null;
+function flowView() {
+  return flowUi ||= initFlowMap({ api, root: $('#view-flow'), go, confirmBox, toast, money, openers: {
+    'new-quote': () => openNewQuote(),
+    'new-customer': () => openCustomer(),
+    'new-care': done => careView().openForm({}, done),
+  } });
+}
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
 function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
@@ -2573,6 +2584,7 @@ async function refreshData() {
   else if (page === 'staff' && isManager()) jobs.push(loadMembers());
   else if (page === 'tasks') jobs.push(tasksView().load(id));
   else if (page === 'dashboard') jobs.push(dashboardView().load());
+  else if (page === 'flow') jobs.push(flowView().load());
   else if (page === 'care') jobs.push(careView().load(id ? decodeURIComponent(id) : ''));
   else if (page === 'stock-requests') jobs.push(loadStockRequests(id));
   else if (page === 'packing') jobs.push(openPacking(id ? decodeURIComponent(id) : ''));

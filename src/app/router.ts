@@ -20,6 +20,7 @@ import { registerHrRoutes } from '../modules/hr/api/routes.ts';
 import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api/routes.ts';
 import { registerAuditRoutes } from './audit-routes.ts';
 import { registerApprovalRoutes } from './approval-routes.ts';
+import { registerFlowRoutes } from './flow-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
   const router = createStaffRouter();
@@ -45,5 +46,6 @@ export function createAppRouter() {
   registerDashboardRoutes(router);
   registerAuditRoutes(router);
   registerApprovalRoutes(router);
+  registerFlowRoutes(router);
   return router;
 }
