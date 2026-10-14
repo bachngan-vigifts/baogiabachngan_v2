@@ -204,6 +204,13 @@
       "when": 1791554181446,
       "tag": "0049_order_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791987125408,
+      "tag": "0051_supplier_purchasing",
+      "breakpoints": true
     }
   ]
 }

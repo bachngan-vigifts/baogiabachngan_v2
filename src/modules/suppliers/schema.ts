@@ -133,6 +133,18 @@ export const incomingShipments = pgTable('incoming_shipments', {
   updatedBy: text('updated_by'),
   /** Trường chưa mô hình hoá (giữ để không mất dữ liệu khi chuyển từ bản cũ). */
   extra: text('extra').notNull().default('{}'),
+
+  // ---- Đơn mua hàng NCC trên CRM (đợt 2, migration 0051)
+  /** Ghi chú nội bộ của đơn mua (không gửi NCC). */
+  note: text('note').notNull().default(''),
+  /** Huỷ đơn: giữ bản ghi, ghi lý do. Đơn đã huỷ không tính "đã đặt", không nhận hàng, không thanh toán thêm. */
+  cancelledAt: text('cancelled_at'),
+  cancelledBy: text('cancelled_by'),
+  cancelReason: text('cancel_reason').notNull().default(''),
+  /** Manager ghi nhận xác nhận / ngày hẹn THAY NCC (khi NCC chưa dùng cổng NCC). */
+  confirmedOnBehalf: boolean('confirmed_on_behalf').notNull().default(false),
+  /** Khoá lạc quan: tăng 1 mỗi lần sửa nội dung đơn; gửi lên kèm mỗi lần lưu, lệch → 409. */
+  revision: bigint('revision', { mode: 'number' }).notNull().default(1),
 }, t => [
   // Bản cũ so sánh số phiếu KHÔNG phân biệt hoa thường (bằng JS). lower() của SQLite chỉ hạ chữ ASCII –
   // repo phải tự kiểm tra trùng bằng JS cho phần chữ có dấu (xem test 'GIỚI HẠN ĐÃ BIẾT').
@@ -261,3 +273,139 @@ export const supplierStockRequestLines = pgTable('supplier_stock_request_lines',
   index('idx_supplier_stock_request_lines_shipment').on(t.shipmentId),
   check('chk_stock_request_qty', sql`${t.quantity} > 0 AND ${t.quantity} <= ${t.maxQuantity}`),
 ]).enableRLS();
+
+/*
+ * ĐƠN MUA HÀNG NCC – PHẦN BỔ SUNG (đợt 2, migration 0051). Đơn mua = `incoming_shipments` với source 'supplier-order'.
+ *
+ *  supplier_order_sources   mỗi dòng đơn mua lấy từ chứng từ nào (báo giá / đơn-HĐKT / khách hỏi tồn / tay) và bao nhiêu
+ *                           → biết đã đặt bao nhiêu cho từng chứng từ + mã để tránh mua trùng (bỏ qua đơn đã huỷ).
+ *  supplier_receipts(+lines) phiếu NHẬN HÀNG từng đợt (kho / Manager): đạt, hỏng theo từng mã; còn thiếu = đặt − đạt.
+ *                           Nhận hàng KHÁC nhập kho Sapo: `sapo_status` theo dõi riêng (Sapo là nguồn tồn chính – CRM
+ *                           không tự cộng tồn, tồn về qua đồng bộ Sapo). Sapo lỗi → phiếu giữ nguyên, ghi lỗi để xử lý tiếp.
+ *  supplier_payment_schedules  lịch trả NCC (cọc / từng đợt / phần còn lại) có hạn trả.
+ *  supplier_payments        từng lần trả (có chứng từ); huỷ khoản trả = đánh dấu, không xoá.
+ *  supplier_order_events    lịch sử thao tác trên đơn mua (tạo, sửa, duyệt, xác nhận thay NCC, nhận hàng, trả tiền, huỷ…).
+ * Số "đã nhận / còn thiếu / đã trả / còn nợ / quá hạn" là DỮ LIỆU SUY RA – tính trong domain, không lưu cột.
+ */
+const SOURCE_TYPES = ['quote', 'order', 'stock_request', 'manual'] as const;
+export const supplierOrderSources = pgTable('supplier_order_sources', {
+  id: text('id').primaryKey(),
+  shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id, { onDelete: 'cascade' }),
+  lineId: text('line_id').notNull().references(() => incomingShipmentLines.id, { onDelete: 'cascade' }),
+  sourceType: text('source_type', { enum: SOURCE_TYPES }).notNull(),
+  /** id chứng từ nguồn (báo giá / đơn hàng / yêu cầu hỏi tồn); rỗng khi nhập tay. */
+  sourceId: text('source_id').notNull().default(''),
+  /** Số chứng từ để hiển thị (B2B_…, DH_…, HĐKT…). */
+  sourceNo: text('source_no').notNull().default(''),
+  customerName: text('customer_name').notNull().default(''),
+  sku: text('sku').notNull(),
+  quantity: doublePrecision('quantity').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  index('idx_supplier_order_sources_source').on(t.sourceType, t.sourceId, t.sku),
+  index('idx_supplier_order_sources_shipment').on(t.shipmentId),
+  enumCheck('chk_supplier_order_sources_type', t.sourceType, [...SOURCE_TYPES]),
+  check('chk_supplier_order_sources_qty', sql`${t.quantity} > 0`),
+]).enableRLS();
+
+const SAPO_STATUSES = ['pending', 'done', 'failed', 'not_needed'] as const;
+export const supplierReceipts = pgTable('supplier_receipts', {
+  id: text('id').primaryKey(),
+  receiptNo: text('receipt_no').notNull(),
+  shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id),
+  /** Ngày nhận thực tế YYYY-MM-DD. */
+  receivedDate: text('received_date').notNull(),
+  receivedBy: text('received_by').notNull().references(() => employees.id),
+  warehouse: text('warehouse').notNull().default(''),
+  note: text('note').notNull().default(''),
+  /** Khoá chống bấm lặp do trình duyệt sinh cho mỗi lần mở hộp nhận hàng: gửi lại cùng khoá → trả phiếu đã ghi, không tạo thêm. */
+  clientKey: text('client_key').notNull(),
+  sapoStatus: text('sapo_status', { enum: SAPO_STATUSES }).notNull().default('pending'),
+  sapoReceiptCode: text('sapo_receipt_code').notNull().default(''),
+  sapoNote: text('sapo_note').notNull().default(''),
+  sapoUpdatedAt: text('sapo_updated_at'),
+  sapoUpdatedBy: text('sapo_updated_by'),
+  cancelledAt: text('cancelled_at'),
+  cancelledBy: text('cancelled_by'),
+  cancelReason: text('cancel_reason').notNull().default(''),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('idx_supplier_receipts_no').on(t.receiptNo),
+  uniqueIndex('idx_supplier_receipts_client_key').on(t.clientKey),
+  index('idx_supplier_receipts_shipment').on(t.shipmentId, t.createdAt),
+  index('idx_supplier_receipts_sapo').on(t.sapoStatus),
+  enumCheck('chk_supplier_receipts_sapo', t.sapoStatus, [...SAPO_STATUSES]),
+]).enableRLS();
+
+export const supplierReceiptLines = pgTable('supplier_receipt_lines', {
+  receiptId: text('receipt_id').notNull().references(() => supplierReceipts.id, { onDelete: 'cascade' }),
+  lineId: text('line_id').notNull().references(() => incomingShipmentLines.id),
+  sku: text('sku').notNull(),
+  /** Số lượng nhận đạt (dùng được). */
+  goodQty: doublePrecision('good_qty').notNull().default(0),
+  /** Số lượng hỏng / lỗi (không tính đã nhận, NCC cần bù). */
+  damagedQty: doublePrecision('damaged_qty').notNull().default(0),
+  note: text('note').notNull().default(''),
+}, t => [
+  primaryKey({ columns: [t.receiptId, t.lineId] }),
+  index('idx_supplier_receipt_lines_line').on(t.lineId),
+  check('chk_supplier_receipt_lines_qty', sql`${t.goodQty} >= 0 AND ${t.damagedQty} >= 0 AND ${t.goodQty} + ${t.damagedQty} > 0`),
+]).enableRLS();
+
+const SCHEDULE_KINDS = ['deposit', 'installment', 'balance'] as const;
+export const supplierPaymentSchedules = pgTable('supplier_payment_schedules', {
+  id: text('id').primaryKey(),
+  shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: SCHEDULE_KINDS }).notNull(),
+  amount: doublePrecision('amount').notNull(),
+  /** Hạn trả YYYY-MM-DD; null = chưa hẹn (vd. phần còn lại tính từ ngày nhận hàng). */
+  dueDate: text('due_date'),
+  note: text('note').notNull().default(''),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  index('idx_supplier_payment_schedules_shipment').on(t.shipmentId),
+  index('idx_supplier_payment_schedules_due').on(t.dueDate),
+  enumCheck('chk_supplier_payment_schedules_kind', t.kind, [...SCHEDULE_KINDS]),
+  check('chk_supplier_payment_schedules_amount', sql`${t.amount} >= 0`),
+]).enableRLS();
+
+const PAYMENT_METHODS = ['transfer', 'cash', 'other'] as const;
+export const supplierPayments = pgTable('supplier_payments', {
+  id: text('id').primaryKey(),
+  shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id),
+  amount: doublePrecision('amount').notNull(),
+  /** Ngày trả YYYY-MM-DD. */
+  paidDate: text('paid_date').notNull(),
+  method: text('method', { enum: PAYMENT_METHODS }).notNull().default('transfer'),
+  /** Số chứng từ / mã giao dịch ngân hàng. */
+  reference: text('reference').notNull().default(''),
+  note: text('note').notNull().default(''),
+  /** File chứng từ (Storage key, bucket private) – tuỳ chọn. */
+  attachmentKey: text('attachment_key').notNull().default(''),
+  attachmentName: text('attachment_name').notNull().default(''),
+  /** Khoá chống bấm lặp (như phiếu nhận hàng). */
+  clientKey: text('client_key').notNull(),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+  voidedAt: text('voided_at'),
+  voidedBy: text('voided_by'),
+  voidReason: text('void_reason').notNull().default(''),
+}, t => [
+  uniqueIndex('idx_supplier_payments_client_key').on(t.clientKey),
+  index('idx_supplier_payments_shipment').on(t.shipmentId, t.paidDate),
+  enumCheck('chk_supplier_payments_method', t.method, [...PAYMENT_METHODS]),
+  check('chk_supplier_payments_amount', sql`${t.amount} > 0`),
+]).enableRLS();
+
+export const supplierOrderEvents = pgTable('supplier_order_events', {
+  id: text('id').primaryKey(),
+  shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id, { onDelete: 'cascade' }),
+  at: text('at').notNull(),
+  actorId: text('actor_id'),
+  /** Mã thao tác (create, update, submit, approve, confirm, receive, sapo, pay, void_payment, cancel…). */
+  action: text('action').notNull(),
+  /** Câu mô tả tiếng Việt hiển thị trong lịch sử. */
+  summary: text('summary').notNull().default(''),
+  /** Chi tiết (JSON): thay đổi dòng hàng, giá trị cũ/mới… */
+  data: text('data').notNull().default('{}'),
+}, t => [index('idx_supplier_order_events_shipment').on(t.shipmentId, t.at)]).enableRLS();
