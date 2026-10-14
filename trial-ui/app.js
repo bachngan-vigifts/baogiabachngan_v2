@@ -1,3 +1,4 @@
+import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
 import { bindStockCheckFilter } from './stock-check-filter.js';
 import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
@@ -2582,21 +2583,25 @@ async function refreshData() {
 
 // ----- Khách hỏi tồn kho: nhân viên phụ trách trả lời (khách nhận thông báo)
 let stockFilter = 'open';
+const stockShortageExports = new Map();
 async function loadStockBadge() {
   try { const n = (await api('/stock-requests?status=open')).requests.length; $('#nav-stock-count').hidden = !n; $('#nav-stock-count').textContent = n; } catch { /* bỏ qua */ }
 }
 async function loadStockRequests(focusId) {
+  stockShortageExports.clear();
   const box = $('#stock-req-list'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
   try {
     const { requests } = await api('/stock-requests' + (stockFilter ? '?status=' + stockFilter : ''));
     const skus = [...new Set(requests.flatMap(r => r.items.map(i => i.sku)))];
     const stock = new Map();
     for (let i = 0; i < skus.length; i += 200) { const d = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(d); for (const p of d.products) stock.set(p.sku, p); }
+    for (const request of requests) stockShortageExports.set(request.id, shortageRows(request.items, stock, availableStock));
     $('#stock-req-empty').hidden = requests.length > 0;
     $('#nav-stock-count').hidden = stockFilter !== 'open' || !requests.length; $('#nav-stock-count').textContent = requests.length;
     box.innerHTML = requests.map(r => `<article class="card stock-req ${r.id === focusId ? 'focus' : ''}" data-req="${esc(r.id)}">
       <header><div><b>${esc(r.customerName)}</b> <span class="pill ${r.status === 'open' ? 'warn' : 'ok'}">${r.status === 'open' ? 'Chờ trả lời' : 'Đã trả lời'}</span>
         <small class="muted">${esc(r.askedBy)} · ${new Date(r.createdAt).toLocaleString('vi-VN')}</small></div></header>
+      <div class="row-gap end"><button type="button" class="btn secondary small" data-shortage-pdf ${stockShortageExports.get(r.id)?.rows.length ? '' : 'disabled'} title="Xuất mã thiếu so với tồn khả dụng; không kèm thông tin khách hoặc giá">Tải PDF mã thiếu</button></div>
       ${r.note ? `<p class="small"><b>Khách ghi chú:</b> ${esc(r.note)}</p>` : ''}
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th><th class="right">Tồn khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
       ${r.items.map(i => { const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
@@ -2617,6 +2622,15 @@ $('#stock-req-filter').addEventListener('click', e => {
   stockFilter = b.dataset.status; $$('#stock-req-filter [data-status]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); loadStockRequests();
 });
 $('#stock-req-list').addEventListener('click', async e => {
+  const pdfButton = e.target.closest('[data-shortage-pdf]');
+  if (pdfButton) {
+    if (pdfButton.disabled) return;
+    const id = pdfButton.closest('[data-req]').dataset.req, data = stockShortageExports.get(id);
+    pdfButton.disabled = true;
+    try { await downloadShortagePdf(data, id); } catch (ex) { toast(ex.message, 'err'); }
+    finally { pdfButton.disabled = !data?.rows.length; }
+    return;
+  }
   const btn = e.target.closest('[data-reply]'); if (!btn) return;
   const card = btn.closest('[data-req]');
   const items = $$('input[data-sku]', card).map(i => ({ sku: i.dataset.sku, available: parseNum(i.value || '0') }));
