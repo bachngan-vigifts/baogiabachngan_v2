@@ -197,7 +197,7 @@ test('xuất hoá đơn: giao xong tự yêu cầu / nhân viên bấm yêu cầ
   await call('/deliveries/' + g.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-07' });
   let A = (await call('/orders/' + a, emp)).data.order;
   assert.deepEqual([A.invoiceStatus, A.invoiceRequestedBy], ['requested', null]);
-  assert.equal(A.canIssueInvoice, false);
+  assert.equal(A.canIssueInvoice, true, 'nhân viên tự nhập số hoá đơn trên đơn của mình');
   // Đơn B: nhân viên phụ trách bấm yêu cầu (chưa giao).
   assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { email: 'sai-email', note: 'x' })).status, 400);
   assert.equal((await call('/orders/' + b + '/invoice-request', emp, 'POST', { email: 'kt@khach.vn', mode: 'hack' })).status, 400);
@@ -211,9 +211,8 @@ test('xuất hoá đơn: giao xong tự yêu cầu / nhân viên bấm yêu cầ
   // Việc "Xuất hoá đơn" cho nhóm Kế toán: kế toán thấy, nhân viên sale không.
   let team = (await call('/tasks?view=mine&refresh=1', kt)).data.tasks.filter((t: any) => t.source === 'invoice');
   assert.equal(team.length, 2); assert.ok(team.every((t: any) => t.assigneePosition === 'accounting' && /^#\/orders\//.test(t.link)));
-  // Kế toán xem được mọi đơn (dù không phụ trách) và là người duy nhất (cùng Manager) nhập số hoá đơn.
+  // Kế toán xem được mọi đơn (dù không phụ trách); nhân viên phụ trách, Kế toán và Manager đều nhập được số hoá đơn.
   assert.equal((await call('/orders/' + a, kt)).status, 200);
-  assert.equal((await call('/orders/' + a + '/invoice', emp, 'PUT', { invoiceNo: '0000123' })).status, 403);
   assert.equal((await call('/orders/' + a + '/invoice', kt, 'PUT', { invoiceNo: '' })).status, 400);
   assert.equal((await call('/orders/' + a + '/invoice', kt, 'PUT', { invoiceNo: '0000123', invoiceDate: '2026-10-08' })).status, 200);
   A = (await call('/orders/' + a, emp)).data.order;
@@ -222,6 +221,12 @@ test('xuất hoá đơn: giao xong tự yêu cầu / nhân viên bấm yêu cầ
   team = (await call('/tasks?view=mine&refresh=1', kt)).data.tasks.filter((t: any) => t.source === 'invoice' && t.status !== 'done');
   assert.deepEqual(team.map((t: any) => t.sourceId), [b], 'việc của đơn đã có số hoá đơn tự hoàn thành');
   assert.deepEqual((await call('/orders?invoice=requested', kt)).data.orders.map((o: any) => o.id), [b]);
+  // Nhân viên phụ trách tự nhập số hoá đơn đơn B → việc kế toán tự hoàn thành.
+  assert.equal((await call('/orders/' + b + '/invoice', emp, 'PUT', { invoiceNo: '0000456', invoiceDate: '2026-10-09' })).status, 200);
+  B = (await call('/orders/' + b, emp)).data.order;
+  assert.deepEqual([B.invoiceStatus, B.invoiceNo, B.invoiceIssuedByName], ['issued', '0000456', 'Tên emp']);
+  team = (await call('/tasks?view=mine&refresh=1', kt)).data.tasks.filter((t: any) => t.source === 'invoice' && t.status !== 'done');
+  assert.deepEqual(team, []);
 });
 
 test('đơn hàng và HĐKT là 2 luồng: trang Đơn hàng (flow=order) bỏ đơn đã có HĐKT; ＋ tạo nhanh chọn báo giá đã duyệt chưa có đơn', async () => {

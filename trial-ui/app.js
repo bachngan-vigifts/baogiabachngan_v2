@@ -590,6 +590,7 @@ function renderQuotes() {
       <td class="right num">${money(q.total)}</td>
       <td data-label="Cập nhật" title="${esc(new Date(q.updatedAt).toLocaleString('vi-VN'))}">${ago(q.updatedAt)}</td>
       <td class="actions-cell"><div class="row-actions">
+        <button class="icon-btn" data-buy="${esc(q.id)}" title="Đặt hàng NCC" aria-label="Đặt hàng NCC cho ${esc(q.quoteNo)}"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a1.5 1.5 0 1 0 0-.01 M17 19a1.5 1.5 0 1 0 0-.01 M6 11h5 M9 9l2 2-2 2"/></svg></button>
         <button class="icon-btn" data-dup="${esc(q.id)}" title="Nhân bản" aria-label="Nhân bản ${esc(q.quoteNo)}"><svg viewBox="0 0 24 24"><path d="M9 9h11v11H9z M5 15H4V4h11v1"/></svg></button>
         <button class="icon-btn" data-open="${esc(q.id)}" title="Mở" aria-label="Mở ${esc(q.quoteNo)}"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div></td>
@@ -604,6 +605,8 @@ function renderQuotes() {
 $('#quote-list').addEventListener('click', e => {
   const dup = e.target.closest('[data-dup]');
   if (dup) { e.stopPropagation(); duplicateFromList(dup.dataset.dup); return; }
+  const buy = e.target.closest('[data-buy]');
+  if (buy) { e.stopPropagation(); go('#/purchases/new?type=quote&id=' + encodeURIComponent(buy.dataset.buy)); return; }
   if (e.target.closest('[data-doc-link]')) return; // nút xem đơn / HĐKT: theo link, không mở báo giá
   const open = e.target.closest('[data-open]');
   if (open) go('#/quotes/' + encodeURIComponent(open.dataset.open));
@@ -2886,9 +2889,9 @@ function renderInvoice(o) {
     <dt>Email nhận</dt><dd>${o.invoiceEmail ? esc(o.invoiceEmail) : '<span class="muted">Chưa có</span>'}</dd>` : '';
   $('#order-invoice').innerHTML = !st ? '<p class="muted">Đơn đã huỷ.</p>'
     : st === 'issued' ? `<dl class="kv"><dt>Số hoá đơn</dt><dd><b>${esc(o.invoiceNo)}</b></dd><dt>Ngày hoá đơn</dt><dd>${fmtDate(o.invoiceDate) || '—'}</dd>
-        <dt>Kế toán nhập</dt><dd>${esc(o.invoiceIssuedByName || '—')} · ${at(o.invoiceIssuedAt)}</dd>${requested}</dl>
+        <dt>Người nhập</dt><dd>${esc(o.invoiceIssuedByName || '—')} · ${at(o.invoiceIssuedAt)}</dd>${requested}</dl>
         ${o.canIssueInvoice ? '<button type="button" class="btn ghost small" id="invoice-edit">Sửa số hoá đơn</button>' : ''}${form('Lưu số hoá đơn')}`
-    : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Kế toán nhập số hoá đơn vào đây sau khi xuất.</p>
+    : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Sau khi xuất, Kế toán hoặc nhân viên phụ trách nhập số hoá đơn vào đây.</p>
        <button type="button" class="btn ghost small" id="invoice-request" title="Đổi email nhận, cách xuất hoặc ghi chú">Sửa yêu cầu</button>${form('Đã xuất – lưu số hoá đơn')}`
     : `<p class="muted">Chưa yêu cầu xuất hoá đơn. Khi đơn giao xong, hệ thống tự yêu cầu và giao việc cho nhóm Kế toán.</p>
        ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>'}${form('Lưu số hoá đơn')}`;

@@ -39,7 +39,8 @@ const money = (v: unknown, what: string) => { const n = Number(v); if (!Number.i
 /** Kế toán (chức vụ `accounting`): xem mọi đơn / HĐKT để nhập số hoá đơn, theo dõi công nợ. */
 export const isAccountant = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'accounting';
 /** Ai nhập được số hoá đơn: Manager và Kế toán. */
-export const canIssueInvoice = (m: { role: string; positionId?: string | null }) => m.role === 'manager' || isAccountant(m);
+/** Nhập số hoá đơn: Manager, Kế toán và nhân viên (chỉ trên đơn mình được xem – `loadOrder` kiểm phạm vi). */
+export const canIssueInvoice = (m: { role: string; positionId?: string | null }) => m.role === 'manager' || (m.role === 'employee' && m.positionId !== 'warehouse') || isAccountant(m);
 /**
  * Ai thấy đơn: Manager và Kế toán thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
@@ -456,9 +457,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({ ok: true });
   }, 'business');
 
-  /** Kế toán / Manager nhập số hoá đơn (sửa lại được khi nhập nhầm). Việc "Xuất hoá đơn" tự hoàn thành. */
+  /** Nhân viên / Kế toán / Manager nhập số hoá đơn (sửa lại được khi nhập nhầm). Việc "Xuất hoá đơn" tự hoàn thành. */
   router.put('/orders/:id/invoice', async c => {
-    if (!canIssueInvoice(viewer(c))) throw new AppError(403, 'Chỉ Kế toán hoặc Manager nhập được số hoá đơn.');
+    if (!canIssueInvoice(viewer(c))) throw new AppError(403, 'Bạn không có quyền nhập số hoá đơn.');
     const body = await readJson(c.req, 4_096), order = await loadOrder(c, c.params.id!);
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn đã huỷ.');
     const invoiceNo = text(body.invoiceNo, 200), invoiceDate = body.invoiceDate ? String(body.invoiceDate) : vietnamDate().iso;
