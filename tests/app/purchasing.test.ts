@@ -234,12 +234,12 @@ test('gửi email đơn đặt hàng từ máy chủ (Resend): kèm PDF, ngườ
   assert.equal(r.status, 200, JSON.stringify(r.data)); assert.equal(r.data.to, 'chot@ncc.vn');
   assert.equal(sent.length, 1); const m = sent[0];
   assert.equal(m.url, 'https://api.resend.com/emails'); assert.equal(m.auth, 'Bearer re_test_key_123');
-  assert.deepEqual(m.body.to, ['chot@ncc.vn'], 'người nhận do máy chủ quyết, bỏ qua "to" từ trình duyệt'); assert.deepEqual(m.body.cc, ['kt@ncc.vn', 'emp@x.vn', 'luu@bn.test'], 'CC: danh bạ/Manager chốt + nhân viên phụ trách (người lập đơn mua) + CC chung (MAIL_CC), bỏ trùng');
+  assert.deepEqual(m.body.to, ['chot@ncc.vn'], 'người nhận do máy chủ quyết, bỏ qua "to" từ trình duyệt'); assert.deepEqual(m.body.cc, ['kt@ncc.vn', 'emp@x.vn', 'mgr@x.vn', 'luu@bn.test'], 'CC: danh bạ/Manager chốt + nhân viên phụ trách (người lập đơn mua) + Manager + CC chung (MAIL_CC), bỏ trùng');
   assert.equal(m.body.from, 'Bách Ngân <don@bn.vn>'); assert.equal(m.body.reply_to, 'kt@x.vn', 'NCC trả lời về người bấm gửi');
   assert.match(m.body.subject, /^Đơn đặt hàng DMH_/); assert.match(m.body.text, /1\. LY1 - .*: 2/);
   assert.equal(m.body.attachments.length, 1); assert.match(m.body.attachments[0].filename, /^Don-dat-hang-DMH_\w+\.pdf$/); assert.equal(m.body.attachments[0].content, pdf);
   const events = (await call(`/purchase-orders/${id}`, mgr)).data.events.map((e: any) => e.summary);
-  assert.ok(events.some((x: string) => x.startsWith('Đã gửi email đơn đặt hàng (kèm PDF) tới chot@ncc.vn (CC kt@ncc.vn, emp@x.vn, luu@bn.test)')));
+  assert.ok(events.some((x: string) => x.startsWith('Đã gửi email đơn đặt hàng (kèm PDF) tới chot@ncc.vn (CC kt@ncc.vn, emp@x.vn, mgr@x.vn, luu@bn.test)')));
   // Manager lập đơn từ HĐKT do emp phụ trách → CC cả Manager (người lập) và emp (người phụ trách chứng từ).
   const id3 = (await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: a, lines: [{ sku: 'LY1', quantity: 4, sources: [{ type: 'order', id: 'o1', quantity: 4 }] }] }] })).data.ids[0];
   const v3 = (await call(`/purchase-orders/${id3}`, mgr)).data;
