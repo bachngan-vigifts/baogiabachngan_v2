@@ -230,7 +230,8 @@ async function salesDocs({ db, me, manager, warehouse }: Ctx, contract: boolean)
   const q = (w: SQL | undefined) => total(db.select({ n: count() }).from(salesOrders).where(w));
   const unsigned = ex(sql`select 1 from ${salesContracts} where ${salesContracts.orderId} = ${salesOrders.id} and ${salesContracts.status} = 'draft'`);
   const [draft, confirmed, delivering, unsignedN, rows] = await Promise.all([
-    q(and(scope, eq(salesOrders.status, 'draft'))), q(and(scope, eq(salesOrders.status, 'confirmed'))), q(and(scope, eq(salesOrders.status, 'delivering'))),
+    // Manager chỉ đếm đơn nhân viên đã bấm "Gửi duyệt"; nhân viên đếm mọi đơn nháp của mình.
+    q(and(scope, eq(salesOrders.status, 'draft'), manager ? isNotNull(salesOrders.submittedAt) : undefined)), q(and(scope, eq(salesOrders.status, 'confirmed'))), q(and(scope, eq(salesOrders.status, 'delivering'))),
     contract ? q(and(scope, ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'), unsigned)) : Promise.resolve(0),
     db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, status: salesOrders.status, due: salesOrders.expectedDeliveryDate,
       contractNo: sql<string | null>`(select ${salesContracts.contractNo} from ${salesContracts} where ${salesContracts.orderId} = ${salesOrders.id} limit 1)` })

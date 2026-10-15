@@ -74,7 +74,7 @@ export const RULES: Record<string, Rule> = {
   /** Đơn / HĐKT nháp (nhân viên, Manager hay khách tạo) chờ Manager duyệt – việc chưa giao người: Manager thấy và duyệt. */
   async orderConfirm(db) {
     const rows = await db.select({ o: salesOrders, contractNo: salesContracts.contractNo }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
-      .where(eq(salesOrders.status, 'draft')).limit(500);
+      .where(and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt))).limit(500); // nháp chưa gửi duyệt: chưa giao việc cho Manager
     return rows.map(({ o, contractNo }) => { const ref = docRef(o.id, o.orderNo, contractNo);
       return { autoKey: `order-confirm:${o.id}`, source: (contractNo ? 'contract' : 'order') as 'contract' | 'order', sourceId: o.id, title: `Duyệt ${ref.label} – ${o.customerName}`,
         description: `${contractNo ? 'HĐKT' : 'Đơn'} ${vnd(o.total)} chờ Manager duyệt.`, link: ref.link, assigneeId: null, priority: 'urgent' as const, dueDate: addDaysIso(o.orderDate, 1) }; });

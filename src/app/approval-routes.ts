@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
@@ -31,7 +31,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
       db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, createdAt: quotations.createdAt, updatedAt: quotations.updatedAt, by: employees.name, role: employees.role })
         .from(quotations).leftJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.approvalStatus, 'pending')).orderBy(asc(quotations.updatedAt)).limit(LIMIT),
       db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total, createdAt: salesOrders.createdAt, by: employees.name })
-        .from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.createdBy)).where(eq(salesOrders.status, 'draft')).orderBy(asc(salesOrders.createdAt)).limit(LIMIT),
+        .from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.createdBy)).where(and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt))).orderBy(asc(salesOrders.createdAt)).limit(LIMIT),
       db.select({ id: customers.id, name: customers.name, phone: customers.phone, taxCode: customers.taxCode, createdAt: customers.createdAt, by: employees.name })
         .from(customers).leftJoin(employees, eq(employees.id, customers.createdBy)).where(eq(customers.approvalStatus, 'pending')).orderBy(asc(customers.createdAt)).limit(LIMIT),
       db.select({ sku: products.sku, name: products.name, updatedAt: products.updatedAt, by: employees.name })
