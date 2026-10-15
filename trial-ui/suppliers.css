@@ -67,3 +67,17 @@
 .pur-create .pur-inline input { font: inherit; font-size: .86rem; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px; }
 .pur-manual { display: grid; grid-template-columns: 160px minmax(0, 1fr) 80px 80px auto; gap: 6px; }
 .pur-manual input { width: 100%; min-width: 0; }
+/* Lập đơn mua: cột tồn kho / còn cần đặt / SL cần đặt */
+.pur-grid th { white-space: nowrap; }
+.pur-grid td.pur-stock { font-weight: 700; }
+.pur-stock.ok { color: var(--green); } .pur-stock.warn { color: var(--amber); } .pur-stock.out { color: #b42318; } .pur-stock.none { color: var(--muted); font-weight: 400; }
+.pur-remain b { color: var(--blue); font-size: .95rem; }
+.pur-want input { border-color: var(--blue) !important; background: var(--blue-50); font-weight: 700; }
+.pur-extra { color: var(--amber); font-weight: 600; }
+.pur-result.is-added { opacity: 1; border-color: var(--green); background: var(--green-50); cursor: default; }
+.pur-result.is-added b, .pur-result.is-added small { color: var(--ink); }
+.pur-added { font-size: .74rem; font-weight: 700; color: var(--green); }
+.pur-grid td:first-child { max-width: 230px; }
+.pur-grid td.pur-src { max-width: 150px; overflow-wrap: anywhere; }
+.pur-grid th { white-space: normal; min-width: 64px; }
+.pur-want small { white-space: nowrap; }

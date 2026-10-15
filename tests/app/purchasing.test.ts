@@ -8,6 +8,7 @@ import { createAppRouter } from '../../src/app/router.ts';
 import { quotations, quoteLines } from '../../src/modules/quotes/schema.ts';
 import { salesOrders, salesOrderLines, salesContracts } from '../../src/modules/sales/schema.ts';
 import { vietnamDate } from '../../src/modules/sales/domain/sales.ts';
+import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
 
 /** ĐƠN MUA NCC (đợt 2): lập từ chứng từ nguồn, chống mua trùng, chia NCC, duyệt, xác nhận thay NCC, nhận hàng từng đợt, Sapo, thanh toán, huỷ. */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
@@ -38,10 +39,15 @@ async function setup() {
 }
 
 test('lập đơn mua: từ báo giá + HĐKT, chia 2 NCC, chống mua trùng, sửa nháp đúng người', async () => {
-  const { call, emp, mgr, kho, ncc, a, b } = await setup();
+  const s = await setup(), { call, emp, mgr, kho, ncc, a, b } = s;
   assert.equal((await call('/purchase-orders', ncc)).status, 403, 'tài khoản NCC không vào trang nội bộ');
+  // Tồn kho = tổng các kho thật đang dùng (không tính kho NCC / hàng chờ về); mã chưa có số liệu tồn → null.
+  const db = (s as any).db;
+  await db.insert(products).values({ sku: 'LY1', name: 'Ly sứ', updatedAt: now });
+  await db.insert(warehouses).values([{ id: 'w1', name: 'Kho 1', kind: 'stock' }, { id: 'w2', name: 'Kho 2', kind: 'stock' }, { id: 'wn', name: 'Tồn NCC', kind: 'supplier' }]);
+  await db.insert(productStock).values([{ sku: 'LY1', warehouseId: 'w1', quantity: 3, updatedAt: now }, { sku: 'LY1', warehouseId: 'w2', quantity: 1, updatedAt: now }, { sku: 'LY1', warehouseId: 'wn', quantity: 99, updatedAt: now }]);
   const src = (await call('/purchase-sources/quote/q1', emp)).data;
-  assert.deepEqual(src.lines.map((l: any) => [l.sku, l.remaining]), [['LY1', 10], ['DIA1', 5]]);
+  assert.deepEqual(src.lines.map((l: any) => [l.sku, l.quantity, l.stock, l.remaining]), [['LY1', 10, 4, 10], ['DIA1', 5, null, 5]]);
   assert.equal((await call('/purchase-sources?q=HD-01', emp)).data.sources.some((x: any) => x.no === 'HD-01'), true, 'tìm theo số HĐKT');
 
   // Chia: ly 6 từ Minh Long, ly 4 + đĩa 5 từ Lys; ly của HĐKT đặt Minh Long.

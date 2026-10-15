@@ -109,8 +109,8 @@ async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: M
   const now = nowIso();
   for (const [i, l] of lines.entries()) {
     // Tên / ĐVT trống: lấy theo danh mục, không có thì theo dòng của chứng từ nguồn.
-    const lineId = crypto.randomUUID(), p = names.get(l.sku) ?? l.sources.map(s => needs.get(s.type + ':' + s.id)!.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase())).find(Boolean);
-    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: l.name || p?.name || '', unit: l.unit || p?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate });
+    const lineId = crypto.randomUUID(), p = names.get(l.sku), src = l.sources.map(s => needs.get(s.type + ':' + s.id)!.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase())).find(Boolean);
+    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: l.name || p?.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate });
     for (const s of l.sources) {
       const n = needs.get(s.type + ':' + s.id)!;
       await tx.insert(supplierOrderSources).values({ id: crypto.randomUUID(), shipmentId, lineId, sourceType: s.type as 'quote', sourceId: s.id, sourceNo: n.no, customerName: n.customerName, sku: l.sku, quantity: s.quantity, createdAt: now });
