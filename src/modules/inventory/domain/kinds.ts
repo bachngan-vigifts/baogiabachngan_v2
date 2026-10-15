@@ -1,0 +1,6 @@
+/** Loại dòng phát sinh sổ kho và loại chứng từ gốc. */
+export const STOCK_MOVE_KINDS = ['opening', 'receipt', 'issue', 'adjust', 'reverse'] as const;
+export type StockMoveKind = typeof STOCK_MOVE_KINDS[number];
+export const STOCK_REF_TYPES = ['opening', 'supplier_receipt', 'packing_slip', 'adjustment'] as const;
+export type StockRefType = typeof STOCK_REF_TYPES[number];
+export const STOCK_KIND_LABEL: Record<StockMoveKind, string> = { opening: 'Tồn đầu kỳ', receipt: 'Nhập NCC', issue: 'Xuất đóng gói', adjust: 'Điều chỉnh', reverse: 'Huỷ chứng từ' };

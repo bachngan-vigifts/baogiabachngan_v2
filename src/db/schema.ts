@@ -17,3 +17,4 @@ export * from '../modules/tasks/schema.ts';
 export * from '../modules/chat/schema.ts';
 export * from '../modules/hr/schema.ts';
 export * from '../modules/care/schema.ts';
+export * from '../modules/inventory/schema.ts';

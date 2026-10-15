@@ -5,6 +5,7 @@ import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { orderProgress, stagesUpTo } from '../../src/modules/sales/domain/progress.ts';
+import { warehouses } from '../../src/modules/catalog/schema.ts';
 
 /**
  * TIẾN TRÌNH SẢN PHẨM: Duyệt → Xuất kho → In mẫu → Sản xuất → Giao hàng (đơn không in bỏ In mẫu / Sản xuất).
@@ -15,6 +16,7 @@ async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('kho','kho@x.vn','Thủ kho','0900','employee','warehouse',1,'2026-01-01T00:00:00.000Z')").run();
   await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run('kho', await hashPassword(PASSWORD, 1000));
+  await db.insert(warehouses).values({ id: 'ct', name: 'Kho Cần Thơ', kind: 'stock' });
   const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env);
@@ -57,7 +59,10 @@ test('tiến trình: duyệt → kho xác nhận đóng gói → việc In mẫu
   const slip = (await call(`/orders/${id}/packing`, emp, 'POST', { allocations: [{ orderLineId: line.id, qty: 10, source: 'warehouse' }] })).data.slips?.[0]
     ?? (await call(`/orders/${id}/packing`, emp)).data.slips[0];
   await call(`/packing/${slip.id}/send`, emp, 'POST', {});
-  assert.equal((await call(`/packing/${slip.id}/confirm`, kho, 'POST', { photos: [photo] })).status, 200);
+  assert.equal((await call(`/packing/${slip.id}/confirm`, kho, 'POST', { photos: [photo] })).status, 400, 'nguồn Kho: phải chọn kho xuất');
+  assert.equal((await call(`/packing/${slip.id}/confirm`, kho, 'POST', { photos: [photo], warehouseId: 'ct' })).status, 200);
+  const card = (await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).data;
+  assert.deepEqual(card.lines.map((l: any) => [l.kind, l.qty, l.refNo]), [['issue', -10, slip.slipNo]], 'xác nhận đóng hàng → phiếu xuất vào sổ kho');
   p = await progress(id);
   assert.deepEqual([p.current, p.label, p.stages[1].by], ['sample', 'Đang in mẫu', 'auto']);
   let mine = (await call('/tasks?refresh=1', emp)).data.tasks;

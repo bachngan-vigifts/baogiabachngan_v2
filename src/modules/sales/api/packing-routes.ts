@@ -5,7 +5,8 @@ import { AppError } from '../../../core/errors.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { products } from '../../catalog/schema.ts';
+import { products, warehouses } from '../../catalog/schema.ts';
+import { postMoves } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
 import { notify } from '../../notifications/api/routes.ts';
 import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, salesContracts, shippingCarriers } from '../schema.ts';
@@ -268,12 +269,23 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     const photos = Array.isArray(body.photos) ? body.photos : [];
     if (photos.length < PHOTO_MIN || photos.length > PHOTO_MAX) throw new AppError(400, `Chụp ${PHOTO_MIN}–${PHOTO_MAX} ảnh hàng đã đóng trước khi xác nhận.`);
     for (const p of photos) if (typeof p !== 'string' || p.length > PHOTO_MAX_CHARS || !PHOTO_RE.test(p)) throw new AppError(400, 'Ảnh không hợp lệ hoặc quá lớn. Chụp lại rồi thử lại.');
+    // Nguồn = Kho: bắt buộc chọn kho xuất → ghi phiếu xuất vào sổ kho (Sapo vẫn là nguồn tồn chính, sổ kho để đối chiếu).
+    let stockWarehouseId: string | null = null;
+    if (slip.source === 'warehouse') {
+      const [w] = typeof body.warehouseId === 'string' ? await c.env.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, body.warehouseId), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).limit(1) : [];
+      if (!w) throw new AppError(400, 'Chọn kho xuất hàng.');
+      stockWarehouseId = w.id;
+    }
     const now = nowIso();
     await c.env.db.transaction(async tx => {
-      const done = await tx.update(packingSlips).set({ status: 'packed', packedAt: now, packedBy: m.id, packedNote: text(body.note, 1000), updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
+      const done = await tx.update(packingSlips).set({ status: 'packed', packedAt: now, packedBy: m.id, packedNote: text(body.note, 1000), stockWarehouseId, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'sent'))).returning({ id: packingSlips.id });
       if (!done.length) throw new AppError(409, 'Phiếu vừa được người khác xác nhận.');
       await tx.insert(packingSlipPhotos).values((photos as string[]).map(dataUrl => ({ id: crypto.randomUUID(), slipId: slip.id, dataUrl, bytes: Math.floor(dataUrl.length * 3 / 4), createdBy: m.id, createdAt: now })));
+      if (stockWarehouseId) {
+        const lines = await tx.select({ sku: packingSlipLines.sku, qty: packingSlipLines.qty }).from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id));
+        await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: stockWarehouseId!, qty: -l.qty, kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` })), now);
+      }
     });
     const to = slip.sentBy ?? slip.createdBy;
     const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);

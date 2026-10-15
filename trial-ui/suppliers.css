@@ -98,3 +98,8 @@
 .pur-sup-chip { display: inline-flex; align-items: center; gap: 4px; font-size: .84rem; padding: 3px 4px 3px 10px; background: var(--green-50); color: var(--green); }
 .pur-sup-chip .icon-btn { width: 22px; height: 22px; min-height: 0; padding: 0; font-size: .95rem; }
 .pur-sup-chips[hidden] { display: none; }
+
+/* Sổ kho (#/inventory) */
+.inv-status p { margin: 0; }
+.inv-check { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; white-space: nowrap; }
+.inv-adjust-lines { display: grid; gap: 6px; }
