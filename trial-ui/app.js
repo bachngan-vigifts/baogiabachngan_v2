@@ -3447,7 +3447,11 @@ function updateQuoteActions() {
   const ap = $('#approve-quote'); ap.hidden = !canApprove || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : editor.approval?.fromCustomer ? 'Xác nhận báo giá khách' : 'Duyệt';
   // Nhân viên xoá được báo giá chưa duyệt của mình; "Gửi duyệt" chỉ hiện với báo giá nháp (Manager duyệt thẳng).
   $('#delete-quote').hidden = !saved || (!mgr && approved);
-  $('#submit-quote').hidden = !saved || mgr || !draft; $('#submit-quote').disabled = saving;
+  // Nhân viên luôn thấy nút: nháp → "Gửi duyệt"; đã gửi (chờ duyệt) → "Đã gửi duyệt" (khoá). Báo giá khách gửi thì dùng nút xác nhận.
+  const sb = $('#submit-quote');
+  sb.hidden = !saved || mgr || approved || !!editor.approval?.fromCustomer;
+  sb.disabled = saving || !draft; sb.textContent = draft ? 'Gửi duyệt' : 'Đã gửi duyệt';
+  sb.title = draft ? 'Gửi báo giá cho Manager duyệt' : 'Báo giá đã gửi, đang chờ Manager duyệt';
   $('#quote-history').hidden = !mgr || !saved;
 }
 function closeDownloadMenu() { $('#download-menu').hidden = true; $('#quote-download').setAttribute('aria-expanded', 'false'); }
