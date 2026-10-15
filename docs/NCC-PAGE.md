@@ -103,3 +103,19 @@ Khác có chủ đích:
    - đã xác nhận thì không xoá **hoặc thay** bản ký;
    - không nhập kho đơn NCC chưa duyệt.
 5. Luật thứ tư `depositRequiresConfirmation` (phải xác nhận trước khi yêu cầu cọc) **tắt mặc định**, vì bản cũ cho phép và chưa rõ có chủ đích.
+
+
+## Tải PDF / Excel đơn gửi NCC
+
+- Nút **PDF / Excel gửi NCC** trên chi tiết đơn mua mở hộp chọn mẫu và thông tin điền file. Chỉ người được API cấp action `pdf` (Manager / Kế toán, thấy giá mua) sử dụng; không đổi quyền hiện có.
+- **Theo yêu cầu: cả 3 file Excel chỉ lấy sheet thứ 2 theo thứ tự workbook**, kể cả sheet ẩn:
+  - Lock: `GIAO KHCM ` trong file VIGIFTS CT – ĐẶT HÀNG 58%…; điền mã ERP (nếu bổ sung), SKU, mô tả, quy cách, SL, giá và tiền.
+  - Minh Long thường: `Sheet2` trong `DHNCC-20261002-6674.xlsx`; các cột STT, mã, tên, bộ, hoa văn, chất lượng, SL, NCC và ngày lấy hàng/số đơn.
+  - Minh Long in logo: `Form  trien khai mau` trong `FORM ĐẶT HÀNG MINH LONG ĐƠN IN LOGO.xlsx`; nhân viên/chi nhánh NCC, NPP, khách/logo, ngày yêu cầu, ngày maquette, mã/tên/bộ/hoa văn/ĐVT/SL và nội dung logo. Không dùng sheet “Form xac nhan dh” của file này.
+- Mỗi file xuất chỉ có một sheet tương ứng. `trial-ui/templates/supplier-orders.json` giữ bố cục, style, vùng gộp và hash SHA-256 file nguồn; loại dữ liệu đơn ví dụ, danh mục ẩn, VLOOKUP và liên kết file ngoài.
+- Mã hàng luôn là chuỗi để giữ số 0 đầu. Tên/mã do người nhập bắt đầu bằng dấu = vẫn là văn bản trong Excel.
+- Lock tính giá có VAT theo giá mua, chiết khấu đã xác nhận, phí in và VAT từng dòng của đơn hiện tại; không cố định mức 58% hoặc VAT 8% từ mẫu. Dùng công thức có kết quả lưu sẵn để file đọc được trước khi Excel tính lại.
+- Các ô ERP/bộ/CL/số Kg chưa có thông tin thì để trống, không suy đoán. Hoa văn và SL/thùng có thể gợi ý từ GET /products; người dùng chỉnh được trước khi tải. Catalog không được dùng để ghi đè giá/SL đã duyệt.
+- PDF dùng bố cục đơn đặt hàng khách hàng: tiêu đề công ty, hai cột thông tin, bảng hàng có khung, tổng tiền/VAT, ghi chú và 3 chữ ký. A4 ngang, font Times New Roman tiếng Việt, tự chia trang kể cả ghi chú một dòng hàng dài.
+- Thông tin chỉnh trong hộp tải chỉ áp dụng cho file; không lưu đè đơn mua. Không gửi email tự động, không tạo giao dịch hoặc đổi tồn kho.
+- Không cần migration. Cần deploy API (bổ sung printDescription/printFee có ẩn giá đúng quyền) và giao diện.

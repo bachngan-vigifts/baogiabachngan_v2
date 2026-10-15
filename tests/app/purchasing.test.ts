@@ -59,6 +59,7 @@ test('lập đơn mua: từ báo giá + HĐKT, chia 2 NCC, chống mua trùng, s
   const [idA, idB] = created.data.ids;
   const pa = (await call(`/purchase-orders/${idA}`, emp)).data;
   assert.equal(pa.state, 'draft'); assert.equal(pa.priceHidden, true); assert.equal(pa.lines[0].price, null, 'nhân viên không nhập / thấy giá mua');
+  assert.equal(pa.lines[0].printFee, null, 'phí in mua cũng ẩn với nhân viên');
   assert.deepEqual([pa.lines[0].name, pa.lines[0].unit], ['Ly sứ', 'cái'], 'tên / ĐVT lấy từ chứng từ nguồn khi để trống');
   assert.deepEqual(pa.lines[0].sources.map((x: any) => [x.no, x.quantity]).sort(), [['B2B_1', 6], ['HD-01', 4]]);
   assert.deepEqual((await call('/purchase-sources/quote/q1', emp)).data.lines.map((l: any) => [l.sku, l.ordered, l.remaining]), [['LY1', 10, 0], ['DIA1', 5, 0]]);
