@@ -147,7 +147,8 @@ export const RULES: Record<string, Rule> = {
     const out: AutoTask[] = [];
     for (const p of await openPurchases(db, today)) {
       const base = { source: 'purchase' as const, sourceId: p.id, link: `#/purchases/${p.id}` }, who = `${p.ticketNumber} – ${p.supplierName ?? ''}`;
-      if (p.state === 'draft') out.push({ ...base, autoKey: `po-approve:${p.id}`, title: `Duyệt đơn mua ${who}`, description: `${p.lineCount} mã · ${new Intl.NumberFormat('vi-VN').format(p.ordered)} sản phẩm. Nhập giá mua / chiết khấu / lịch trả rồi duyệt.`,
+      // Nháp chưa gửi duyệt không giao việc cho Manager.
+      if (p.state === 'draft' && p.submitted) out.push({ ...base, autoKey: `po-approve:${p.id}`, title: `Duyệt đơn mua ${who}`, description: `${p.lineCount} mã · ${new Intl.NumberFormat('vi-VN').format(p.ordered)} sản phẩm. Nhập giá mua / chiết khấu / lịch trả rồi duyệt.`,
         assigneeId: null, priority: 'high', dueDate: addDaysIso(day(p.createdAt)!, 1) });
       if (p.state === 'awaiting_confirmation') out.push({ ...base, autoKey: `po-confirm:${p.id}`, title: `Chờ NCC xác nhận ${who}`, description: 'Gửi PDF đơn mua cho NCC; NCC xác nhận qua điện thoại / email thì Manager bấm "Ghi nhận NCC xác nhận" kèm ngày hẹn.',
         assigneeId: null, priority: 'normal', dueDate: p.approvedAt ? addDaysIso(day(p.approvedAt)!, 2) : null });

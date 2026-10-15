@@ -181,8 +181,11 @@ test('việc tự sinh + sơ đồ: chờ duyệt → chờ xác nhận → nh�
   const id = (await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', arrivalDate: today, lines: [{ sku: 'LY1', quantity: 2 }] }] })).data.ids[0];
   const db = (s as any).db;
   const keys = async () => (await RULES.supplierPurchases!(db, today)).map(t => [t.autoKey.split(':')[0], t.assigneeId ?? t.assigneePosition ?? 'manager']);
-  assert.deepEqual(await keys(), [['po-approve', 'manager']]);
+  assert.deepEqual(await keys(), [], 'nháp chưa gửi duyệt: chưa giao việc cho Manager');
   let v = (await call(`/purchase-orders/${id}`, mgr)).data;
+  await call(`/purchase-orders/${id}/submit`, emp, 'POST', { revision: v.revision });
+  assert.deepEqual(await keys(), [['po-approve', 'manager']]);
+  v = (await call(`/purchase-orders/${id}`, mgr)).data;
   await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], payment: { balanceDueDate: today } });
   assert.deepEqual(await keys(), [['po-confirm', 'manager'], ['po-pay', 'accounting']]);
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
@@ -308,4 +311,19 @@ test('địa chỉ giao hàng bắt buộc: tạo nhiều NCC nguyên tử và s
   const edited = await call(`/purchase-orders/${id}`, emp, 'PUT', { ...order, revision: before.revision, warehouse: '  34 Đường Mới  ' });
   assert.equal(edited.status, 200);
   assert.equal(edited.data.warehouse, '34 Đường Mới');
+});
+
+test('đơn mua của nhân viên là nháp, chỉ vào hàng chờ duyệt khi bấm "Gửi duyệt"; Manager lập thì vào thẳng', async () => {
+  const { call, emp, mgr, kt, a } = await setup();
+  const id = (await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 2 }] }] })).data.ids[0];
+  let v = (await call(`/purchase-orders/${id}`, emp)).data;
+  assert.equal(v.submittedAt, null); assert.equal(v.stateLabel, 'Nháp – chưa gửi duyệt'); assert.ok(v.actions.includes('submit'));
+  assert.equal((await call(`/purchase-orders/${id}/submit`, kt, 'POST', { revision: v.revision })).status, 403, 'người khác không gửi thay');
+  const r = await call(`/purchase-orders/${id}/submit`, emp, 'POST', { revision: v.revision });
+  assert.equal(r.status, 200, JSON.stringify(r.data)); assert.ok(r.data.submittedAt); assert.equal(r.data.stateLabel, 'Nháp – chờ Manager duyệt');
+  assert.ok(!r.data.actions.includes('submit')); assert.ok(r.data.events.some((e: any) => e.summary === 'Gửi Manager duyệt đơn mua'));
+  assert.equal((await call(`/purchase-orders/${id}/submit`, emp, 'POST', { revision: r.data.revision })).status, 409, 'không gửi lần hai');
+  const mid = (await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'DIA1', quantity: 1 }] }] })).data.ids[0];
+  v = (await call(`/purchase-orders/${mid}`, mgr)).data;
+  assert.ok(v.submittedAt, 'Manager lập = đã gửi'); assert.ok(!v.actions.includes('submit'));
 });

@@ -79,6 +79,8 @@ export const incomingShipments = pgTable('incoming_shipments', {
   ticketNumber: text('ticket_number').notNull(),
   source: text('source', { enum: ['incoming-stock', 'supplier-order', 'supplier-delivery-note'] }).notNull().default('incoming-stock'),
   approvalStatus: text('approval_status', { enum: ['pending', 'approved'] }).notNull().default('approved'),
+  /** Đơn mua NCC: lúc người lập bấm "Gửi duyệt" (null = nháp, chưa vào hàng chờ duyệt của Manager). Manager lập thì có ngay. */
+  submittedAt: text('submitted_at'),
   warehouse: text('warehouse').notNull(),
   /** YYYY-MM-DD */
   arrivalDate: text('arrival_date'),

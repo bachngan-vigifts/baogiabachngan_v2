@@ -16,7 +16,7 @@ import {
 } from '../schema.ts';
 import { computeOrderTotals, hidePrices } from '../domain/order-totals.ts';
 import {
-  canSeePrices, isAccountantStaff, isWarehouseStaff, purchaseActions, purchaseState, PURCHASE_STATE_LABEL, receiptProgress, remainingToOrder, supplierDebt,
+  canSeePrices, isAccountantStaff, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
   type Actor, type NeedLine,
 } from '../domain/purchasing.ts';
 
@@ -64,13 +64,13 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   const totals = computeOrderTotals({ rows: lines, depositRate: o.depositRate, paidAmount: 0 });
   const debt = supplierDebt(totals.total, schedules, payments.map(x => x.p), today);
   const a = asActor(m), prices = canSeePrices(a);
-  const flags = { approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy };
+  const flags = { approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy, submittedAt: o.submittedAt };
   const state = purchaseState(flags, progress);
   const shownTotals = prices ? totals : hidePrices(totals);
   return {
     raw: { order: o, lines, totals, progress, debt },
     view: {
-      id: o.id, ticketNumber: o.ticketNumber, state, stateLabel: PURCHASE_STATE_LABEL[state], supplier: supplier ?? { id: o.supplierId, name: o.supplierName },
+      id: o.id, ticketNumber: o.ticketNumber, state, stateLabel: purchaseStateLabel(state, flags), submittedAt: o.submittedAt, supplier: supplier ?? { id: o.supplierId, name: o.supplierName },
       supplierEmail: prices ? o.supplierEmail : '', ccEmail: prices ? o.ccEmail : '', internalNo: o.supplierInternalOrderNumber,
       arrivalDate: o.arrivalDate, warehouse: o.warehouse, note: o.note, revision: o.revision, createdAt: o.createdAt, createdBy: o.createdBy,
       approvedAt: o.approvedAt, confirmedAt: o.supplierConfirmedAt, confirmedOnBehalf: o.confirmedOnBehalf,
@@ -122,9 +122,9 @@ export async function listPurchases(db: Db, m: Member, filter: { q?: string; sup
     const progress = receiptProgress(ls.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity })), rl.filter(x => x.shipmentId === o.id).map(x => x.l));
     const total = computeOrderTotals({ rows: ls, depositRate: o.depositRate, paidAmount: 0 }).total;
     const debt = supplierDebt(total, schedules.filter(s => s.shipmentId === o.id), payments.filter(p => p.shipmentId === o.id), today);
-    const state = purchaseState({ approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy }, progress);
+    const state = purchaseState({ approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy }, progress), submitted = o.submittedAt !== null;
     const promised = ls.map(l => l.promisedDate).filter(Boolean).sort()[0] || o.arrivalDate || '';
-    return { id: o.id, ticketNumber: o.ticketNumber, supplierId: o.supplierId, supplierName: o.supplierName, state, stateLabel: PURCHASE_STATE_LABEL[state],
+    return { id: o.id, ticketNumber: o.ticketNumber, supplierId: o.supplierId, supplierName: o.supplierName, state, stateLabel: purchaseStateLabel(state, o), submitted,
       createdAt: o.createdAt, createdBy: o.createdBy, arrivalDate: promised, lineCount: ls.length, ordered: progress.ordered, good: progress.good, missing: progress.missing, damaged: progress.damaged,
       late: Boolean(promised && promised < today && !progress.fullyReceived && !o.cancelledAt && o.approvalStatus === 'approved'),
       sapoPending: pendingSapo.find(x => x.shipmentId === o.id)?.n ?? 0,

@@ -26,6 +26,7 @@ import { asActor, listPurchases, loadPurchase, responsibleEmails, loadSourceNeed
  *  POST /purchase-orders                 tạo 1..n đơn nháp (chia nhiều NCC) { orders: [...] }
  *  PUT  /purchase-orders/:id             sửa nháp (người tạo / Manager) – `revision`
  *  POST /purchase-orders/:id/send-email  gửi email đơn đặt hàng kèm PDF tới NCC từ máy chủ (Resend) – Manager / Kế toán, đơn đã duyệt
+ *  POST /purchase-orders/:id/submit      người lập (hoặc Manager) gửi đơn nháp vào hàng chờ duyệt – `revision`
  *  POST /purchase-orders/:id/prices      Manager lưu giá nhập / CK / VAT khi chưa duyệt (đơn vẫn nháp) – `revision`
  *  POST /purchase-orders/:id/approve     Manager duyệt giá / chiết khấu / lịch trả
  *  POST /purchase-orders/:id/confirm     Manager ghi nhận xác nhận + ngày hẹn THAY NCC
@@ -61,7 +62,7 @@ async function lockAndCheck(c: Ctx, tx: Tx, id: string, action: PurchaseAction, 
   const [locked] = await tx.select({ id: incomingShipments.id, revision: incomingShipments.revision }).from(incomingShipments).where(eq(incomingShipments.id, id)).limit(1).for('update');
   if (!locked) fail(404, 'Không tìm thấy đơn mua hàng.');
   const p = await loadPurchase(tx as unknown as Db, me(c), id, today());
-  const flags = { approvalStatus: p.raw.order.approvalStatus, supplierStatus: p.raw.order.supplierStatus, cancelledAt: p.raw.order.cancelledAt, createdBy: p.raw.order.createdBy };
+  const flags = { approvalStatus: p.raw.order.approvalStatus, supplierStatus: p.raw.order.supplierStatus, cancelledAt: p.raw.order.cancelledAt, createdBy: p.raw.order.createdBy, submittedAt: p.raw.order.submittedAt };
   const ck = checkPurchase(action, asActor(me(c)), flags, { anyReceived: p.raw.progress.anyReceived, fullyReceived: p.raw.progress.fullyReceived, paid: p.raw.debt.paid });
   if (!ck.ok) fail(ck.status, ck.message);
   if (revision !== undefined && Number(revision) !== p.raw.order.revision) fail(409, 'Đơn mua vừa được người khác sửa. Tải lại rồi thử lại.');
@@ -171,10 +172,11 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await checkSources(tx as unknown as Db, m, prepared.map(p => p.lines));
       for (const p of prepared) {
         const id = crypto.randomUUID(), now = nowIso(), ticket = await nextNumber(tx as unknown as Db, 'DMH', today());
-        await tx.insert(incomingShipments).values({ id, ticketNumber: ticket, source: 'supplier-order', approvalStatus: 'pending', warehouse: p.warehouse, arrivalDate: p.arrivalDate,
+        // Nhân viên lập = nháp (chưa vào hàng chờ duyệt, bấm "Gửi duyệt" khi xong); Manager lập thì coi như đã gửi.
+        await tx.insert(incomingShipments).values({ id, ticketNumber: ticket, source: 'supplier-order', approvalStatus: 'pending', submittedAt: m.role === 'manager' ? now : null, warehouse: p.warehouse, arrivalDate: p.arrivalDate,
           supplierId: p.supplier.id, supplierName: p.supplier.name, note: p.note, createdAt: now, createdBy: m.id, updatedAt: now, updatedBy: m.id });
         await insertLines(tx, id, p.lines, needs);
-        await event(tx, id, m.id, 'create', `Tạo đơn mua nháp ${ticket} (${p.lines.length} mã)`, { sources: [...new Set(p.lines.flatMap(l => l.sources.map(s => needs.get(s.type + ':' + s.id)!.no)))] });
+        await event(tx, id, m.id, 'create', `Tạo đơn mua ${m.role === 'manager' ? '' : 'nháp '}${ticket} (${p.lines.length} mã)`, { sources: [...new Set(p.lines.flatMap(l => l.sources.map(s => needs.get(s.type + ':' + s.id)!.no)))] });
         ids.push(id);
       }
     });
@@ -282,6 +284,18 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: m.id, supplierEmail: str(body.supplierEmail, 254) || rec.to, ccEmail: (Array.isArray(body.cc) ? body.cc.join(',') : rec.cc.join(',')).slice(0, 2000),
         depositRate: deposit?.mode === 'percent' ? Number(deposit.value) : deposit?.mode === 'none' || !deposit ? 0 : null });
       await event(tx, id, m.id, 'approve', `Manager duyệt đơn – tổng ${Math.round(total).toLocaleString('vi-VN')} đ, ${schedules.length} kỳ trả`, { rows, schedules });
+    });
+    return json((await loadPurchase(db, m, id, today())).view);
+  }, 'business');
+
+  // ---- Gửi duyệt: nháp của nhân viên → vào hàng chờ duyệt của Manager
+  router.post('/purchase-orders/:id/submit', async c => {
+    guard(c);
+    const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 4_000);
+    await db.transaction(async tx => {
+      await lockAndCheck(c, tx, id, 'submit', body.revision);
+      await bump(tx, id, m.id, { submittedAt: nowIso() });
+      await event(tx, id, m.id, 'submit', 'Gửi Manager duyệt đơn mua');
     });
     return json((await loadPurchase(db, m, id, today())).view);
   }, 'business');

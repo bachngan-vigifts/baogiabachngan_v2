@@ -30,7 +30,11 @@ export const PURCHASE_STATE_LABEL: Record<PurchaseState, string> = {
   draft: 'Nháp – chờ Manager duyệt', awaiting_confirmation: 'Chờ NCC xác nhận', confirmed: 'NCC đã xác nhận',
   partially_received: 'Đã nhận một phần', received: 'Đã nhận đủ', cancelled: 'Đã huỷ',
 };
-export interface OrderFlags { approvalStatus: string; supplierStatus: string; cancelledAt: string | null; createdBy: string }
+/** `submittedAt`: null = nháp chưa gửi duyệt (chưa vào hàng chờ của Manager); undefined = không theo dõi (coi như đã gửi). */
+export interface OrderFlags { approvalStatus: string; supplierStatus: string; cancelledAt: string | null; createdBy: string; submittedAt?: string | null }
+/** Nhãn trạng thái: nháp chưa gửi duyệt tách khỏi "chờ Manager duyệt". */
+export const purchaseStateLabel = (state: PurchaseState, o: Pick<OrderFlags, 'submittedAt'>) =>
+  state === 'draft' && o.submittedAt === null ? 'Nháp – chưa gửi duyệt' : PURCHASE_STATE_LABEL[state];
 export function purchaseState(o: OrderFlags, progress: Pick<ReceiptProgress, 'anyReceived' | 'fullyReceived'>): PurchaseState {
   if (o.cancelledAt) return 'cancelled';
   if (o.approvalStatus !== 'approved') return 'draft';
@@ -39,7 +43,7 @@ export function purchaseState(o: OrderFlags, progress: Pick<ReceiptProgress, 'an
   return o.supplierStatus === 'confirmed' ? 'confirmed' : 'awaiting_confirmation';
 }
 
-export type PurchaseAction = 'edit' | 'approve' | 'confirm' | 'receive' | 'pay' | 'schedule' | 'cancel' | 'pdf';
+export type PurchaseAction = 'edit' | 'submit' | 'approve' | 'confirm' | 'receive' | 'pay' | 'schedule' | 'cancel' | 'pdf';
 export type Check = { ok: true } | { ok: false; status: number; message: string };
 const no = (status: number, message: string): Check => ({ ok: false, status, message });
 const OK: Check = { ok: true };
@@ -53,6 +57,10 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
     case 'edit':
       if (state !== 'draft') return no(409, 'Đơn đã duyệt – chỉ sửa được khi còn nháp.');
       return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được sửa đơn nháp.');
+    case 'submit':
+      if (state !== 'draft') return no(409, 'Đơn đã duyệt.');
+      if (o.submittedAt !== null) return no(409, 'Đơn đã gửi Manager duyệt.');
+      return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được gửi duyệt.');
     case 'approve':
       if (!manager) return no(403, 'Chỉ Manager được duyệt đơn mua (giá / chiết khấu).');
       return state === 'draft' ? OK : no(409, 'Đơn này đã được duyệt.');
@@ -76,7 +84,7 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       return canSeePrices(a) ? OK : no(403, 'Chỉ Manager hoặc Kế toán tải được PDF đơn mua (có giá).');
   }
 }
-export const PURCHASE_ACTIONS: PurchaseAction[] = ['edit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf'];
+export const PURCHASE_ACTIONS: PurchaseAction[] = ['edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf'];
 export const purchaseActions = (a: Actor | null | undefined, o: OrderFlags, p: { anyReceived: boolean; fullyReceived: boolean; paid: number }) =>
   PURCHASE_ACTIONS.filter(x => checkPurchase(x, a, o, p).ok);
 
