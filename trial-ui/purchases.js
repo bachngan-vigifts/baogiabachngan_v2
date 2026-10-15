@@ -197,7 +197,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
 
     const info = el('dl', 'pur-info');
     const row = (k, val) => { info.append(el('dt', '', k), el('dd', '', val || '—')); };
-    row('Hẹn giao', dmy(v.arrivalDate)); row('Kho nhận', v.warehouse); row('Số đơn phía NCC', v.internalNo);
+    row('Hẹn giao', dmy(v.arrivalDate)); row('Địa chỉ giao hàng', v.warehouse); row('Số đơn phía NCC', v.internalNo);
     row('Ngày lập', dmy(v.createdAt)); row('Duyệt', v.approvedAt ? dmy(v.approvedAt) : 'Chưa duyệt'); row('NCC xác nhận', v.confirmedAt ? dmy(v.confirmedAt) : 'Chưa');
     if (v.supplierEmail) row('Gửi tới', v.supplierEmail + (v.ccEmail ? ' · CC ' + v.ccEmail : ''));
     if (v.note) row('Ghi chú', v.note);
@@ -525,8 +525,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     const o = await options();
     const d = frame('Sửa đơn nháp', current.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     const sup = supplierSelect(o.suppliers, current.supplier?.id);
-    const arrival = input('date', current.arrivalDate || ''), wh = input('text', current.warehouse || '', { maxLength: 120 }), note = el('textarea'); note.rows = 2; note.value = current.note || '';
-    const grid = el('div', 'form-grid two'); grid.append(field('Nhà cung cấp', sup), field('Hẹn giao (dự kiến)', arrival), field('Kho nhận', wh), field('Ghi chú', note, 'span-2'));
+    const arrival = input('date', current.arrivalDate || ''), wh = input('text', current.warehouse || '', { maxLength: 120, required: true, placeholder: 'Nhập địa chỉ giao hàng' }), note = el('textarea'); note.rows = 2; note.value = current.note || '';
+    const grid = el('div', 'form-grid two'); grid.append(field('Nhà cung cấp', sup), field('Hẹn giao (dự kiến)', arrival), field('Địa chỉ giao hàng *', wh), field('Ghi chú', note, 'span-2'));
     const t = el('table', 'data-table pur-lines'), tb = el('tbody');
     t.append(el('thead'), tb); const th = el('tr'); for (const h of ['Mã / tên', 'Từ chứng từ', 'SL đặt', '']) th.append(el('th', '', h)); t.tHead.append(th);
     const lines = current.lines.map(l => ({ ...l }));
@@ -543,7 +543,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     f.append(grid, el('p', 'muted small', 'Giảm số lượng dưới phần lấy từ chứng từ sẽ bớt phần liên kết (từ chứng từ cuối) để không giữ chỗ thừa.'), tw, err, foot(ok));
     f.addEventListener('submit', e => {
       e.preventDefault();
-      const body = { revision: current.revision, supplierId: sup.value, arrivalDate: arrival.value, warehouse: wh.value, note: note.value,
+      if (!wh.value.trim()) { err.textContent = 'Vui lòng nhập địa chỉ giao hàng.'; wh.focus(); return; }
+      const body = { revision: current.revision, supplierId: sup.value, arrivalDate: arrival.value, warehouse: wh.value.trim(), note: note.value,
         lines: lines.filter(l => !l.removed).map(l => {
           let left = Math.max(0, Math.floor(l.quantity) || 0);
           const sources = l.sources.map(s => { const q = Math.min(s.quantity, left); left -= q; return { type: s.type, id: s.id, quantity: q }; }).filter(s => s.quantity > 0);
@@ -818,8 +819,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     disposeLookup = () => lookup.dispose();
     const table = el('div', 'table-wrap');
     gridBox.append(el('h3', '', '3. Chia số lượng cho từng NCC'), table, el('h4', '', 'Mã ngoài chứng từ (hàng dự trữ…)'), manual);
-    const arrival = input('date', ''), wh = input('text', '', { maxLength: 120 }), note = el('textarea'); note.rows = 2; note.maxLength = 2000;
-    const g = el('div', 'form-grid two'); g.append(field('Hẹn giao dự kiến', arrival), field('Kho nhận', wh), field('Ghi chú cho các đơn', note, 'span-2'));
+    const arrival = input('date', ''), wh = input('text', '', { maxLength: 120, required: true, placeholder: 'Nhập địa chỉ giao hàng' }), note = el('textarea'); note.rows = 2; note.maxLength = 2000;
+    const g = el('div', 'form-grid two'); g.append(field('Hẹn giao dự kiến', arrival), field('Địa chỉ giao hàng *', wh), field('Ghi chú cho các đơn', note, 'span-2'));
     const ok = el('button', 'btn primary', 'Tạo đơn nháp'); ok.type = 'submit';
     f.append(srcBox, supBox, gridBox, g, el('p', 'muted small', o.canSeePrices ? 'Giá mua nhập ở bước duyệt.' : 'Giá mua do Manager nhập khi duyệt.'), err, foot(ok));
     d.append(f);
@@ -885,6 +886,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     }
     f.addEventListener('submit', e => {
       e.preventDefault(); err.textContent = '';
+      if (!wh.value.trim()) { err.textContent = 'Vui lòng nhập địa chỉ giao hàng.'; wh.focus(); return; }
       if (!sups.length && pick.value) addPicked();
       if (!sups.length) { err.textContent = 'Chọn ít nhất một nhà cung cấp.'; return; }
       for (const r of rows) if (perSupplier(r).slice(1).reduce((a, v) => a + v, 0) > Math.max(0, Math.floor(Number(r.want) || 0))) { err.textContent = `${r.sku}: số chia cho các NCC khác vượt "SL cần đặt".`; return; }
@@ -900,7 +902,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
           lines[i].set(k, cur);
         });
       }
-      const orders = sups.map((x, i) => ({ supplierId: x.id, lines: [...lines[i].values()], arrivalDate: arrival.value || undefined, warehouse: wh.value, note: note.value })).filter(x => x.lines.length);
+      const orders = sups.map((x, i) => ({ supplierId: x.id, lines: [...lines[i].values()], arrivalDate: arrival.value || undefined, warehouse: wh.value.trim(), note: note.value })).filter(x => x.lines.length);
       if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
       run(ok, err, async () => {
         const r = await api('/purchase-orders', 'POST', { orders });
