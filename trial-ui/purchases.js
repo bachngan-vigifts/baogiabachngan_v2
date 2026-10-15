@@ -187,10 +187,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         if (v.state === 'draft') { mail.disabled = true; mail.title = 'Manager duyệt giá trước khi gửi đơn cho NCC'; }
         acts.append(mail);
       }
-      if (a === 'pdf' && has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => stockAsk()));
+      if (a === 'pdf' && has('pdf') && v.state === 'draft' && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => stockAsk()));
     }
-    // Người không xem được giá (không có nút PDF) vẫn hỏi tồn được.
-    if (!has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => stockAsk()));
+    // Hỏi tồn chỉ ở đơn nháp (chưa duyệt): đơn đã duyệt là đã chốt đặt với NCC. Người không có nút PDF vẫn hỏi tồn được.
+    if (!has('pdf') && v.state === 'draft' && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => stockAsk()));
     if (acts.children.length) d.append(acts);
     if (v.cancelledAt) d.append(el('p', 'pur-note danger', `Đã huỷ ${dmy(v.cancelledAt)}: ${v.cancelReason || ''}`));
 
