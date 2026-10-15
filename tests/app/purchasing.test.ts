@@ -258,3 +258,23 @@ test('gửi email đơn đặt hàng từ máy chủ (Resend): kèm PDF, ngườ
   const nc = await none.call(`/purchase-orders/${id2}/send-email`, none.mgr, 'POST', { pdf });
   assert.equal(nc.status, 503); assert.equal(nc.data.code, 'mail_not_configured');
 });
+
+test('lưu giá nhập khi chưa duyệt: chỉ Manager, đơn vẫn nháp, ô giá trống = chưa có giá, chống ghi đè bản cũ', async () => {
+  const { call, emp, mgr, kt, a } = await setup();
+  const id = (await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, lines: [{ sku: 'LY1', quantity: 2 }, { sku: 'DIA1', quantity: 3 }] }] })).data.ids[0];
+  const v = (await call(`/purchase-orders/${id}`, mgr)).data, [l1, l2] = v.lines;
+  const body = { revision: v.revision, lines: [{ lineId: l1.id, price: 74000, purchaseDiscount: 19, taxRate: 8 }, { lineId: l2.id, price: null, purchaseDiscount: 25, taxRate: 10 }] };
+  assert.equal((await call(`/purchase-orders/${id}/prices`, emp, 'POST', body)).status, 403, 'nhân viên không lưu giá');
+  assert.equal((await call(`/purchase-orders/${id}/prices`, kt, 'POST', body)).status, 403, 'kế toán xem giá nhưng không duyệt/lưu giá');
+  assert.equal((await call(`/purchase-orders/${id}/prices`, mgr, 'POST', { ...body, lines: [{ lineId: l1.id, price: -1 }] })).status, 400);
+  const r = await call(`/purchase-orders/${id}/prices`, mgr, 'POST', body);
+  assert.equal(r.status, 200, JSON.stringify(r.data)); assert.equal(r.data.state, 'draft', 'vẫn là nháp');
+  const s1 = r.data.lines.find((l: any) => l.id === l1.id), s2 = r.data.lines.find((l: any) => l.id === l2.id);
+  assert.equal(s1.price, 74000); assert.equal(s1.purchaseDiscount, 19); assert.equal(s1.taxRate, 8);
+  assert.equal(s2.price, null); assert.equal(s2.purchaseDiscount, 25);
+  assert.equal((await call(`/purchase-orders/${id}/prices`, mgr, 'POST', body)).status, 409, 'revision cũ bị từ chối');
+  assert.ok(r.data.events.some((e: any) => e.summary === 'Lưu giá nhập 1/2 dòng (chưa duyệt)'));
+  // Duyệt sau đó dùng giá đã lưu cho dòng không gửi lại giá.
+  const ok = await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { revision: r.data.revision, lines: [{ lineId: l2.id, price: 1000, purchaseDiscount: 25, taxRate: 10 }] });
+  assert.equal(ok.status, 200, JSON.stringify(ok.data)); assert.equal(ok.data.lines.find((l: any) => l.id === l1.id).price, 74000); assert.equal(ok.data.lines.find((l: any) => l.id === l1.id).purchaseDiscount, 19);
+});

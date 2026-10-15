@@ -609,15 +609,26 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       const gg = el('div', 'form-grid two'); gg.append(field('Gửi tới', to), field('CC', cc)); r.append(gg); f.append(r);
     }
     const ok = el('button', 'btn primary', approve ? 'Duyệt đơn' : 'Lưu lịch trả'); ok.type = 'submit';
-    f.append(err, foot(ok)); toggle();
+    const priceLines = () => [...price.values()].map(({ l, p, dc, tx }) => ({ lineId: l.id, price: p.value === '' ? null : Number(p.value), purchaseDiscount: Number(dc.value || 0), taxRate: Number(tx.value || 0) }));
+    // "Lưu giá nhập": lưu giá / CK / VAT đang nhập mà chưa duyệt (đơn vẫn là nháp), ở lại form để duyệt sau.
+    let revision = v.revision;
+    const savePrices = approve ? btn('Lưu giá nhập', 'btn secondary', async () => {
+      err.textContent = ''; savePrices.disabled = true;
+      try {
+        const r = await api(`/purchase-orders/${encodeURIComponent(v.id)}/prices`, 'POST', { revision, lines: priceLines() });
+        current = r; revision = r.revision; toast('Đã lưu giá nhập (đơn vẫn chờ duyệt).'); load();
+      } catch (e2) { err.textContent = e2.message || 'Không lưu được giá nhập.'; }
+      finally { savePrices.disabled = false; }
+    }) : null;
+    f.append(err, savePrices ? foot(ok, savePrices) : foot(ok)); toggle();
     f.addEventListener('submit', e => {
       e.preventDefault();
       const payment = { deposit: { mode: mode0.value, value: Number(depVal.value || 0), dueDate: depDue.value || undefined },
         installments: [...inst.querySelectorAll('.pur-inst')].map(r => ({ amount: Number(r.querySelector('input[type=number]').value || 0), dueDate: r.querySelector('input[type=date]').value || undefined })).filter(x => x.amount > 0),
         balanceDueDate: balDue.value || undefined };
       if (!approve) return run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/schedules`, 'PUT', { payment }), 'Đã lưu lịch trả.');
-      const lines = [...price.values()].map(({ l, p, dc, tx }) => ({ lineId: l.id, price: p.value === '' ? null : Number(p.value), purchaseDiscount: Number(dc.value || 0), taxRate: Number(tx.value || 0) }));
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision: v.revision, lines, payment,
+      const lines = priceLines();
+      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision, lines, payment,
         ...(to.value.trim() ? { supplierEmail: to.value.trim() } : {}), ...(cc.value.trim() ? { cc: cc.value.split(',').map(s => s.trim()).filter(Boolean) } : {}) }), 'Đã duyệt đơn mua.');
     });
     d.append(f);
