@@ -5,7 +5,8 @@ import { AppError } from '../errors.ts';
  * Cấu hình bằng secret của Edge Function: RESEND_API_KEY (mã API) + MAIL_FROM (vd "Bách Ngân <don-hang@tenmien.vn>",
  * tên miền phải được xác thực trên Resend). Thiếu cấu hình thì route trả 503 để giao diện quay về cách soạn mail ở máy.
  */
-export interface MailerConfig { apiKey: string; from: string; fetch?: typeof fetch; endpoint?: string; timeoutMs?: number }
+/** `alwaysCc`: CC thêm vào mọi email đơn đặt hàng gửi NCC (secret MAIL_CC, nhiều địa chỉ cách nhau dấu phẩy). */
+export interface MailerConfig { apiKey: string; from: string; alwaysCc?: string[]; fetch?: typeof fetch; endpoint?: string; timeoutMs?: number }
 export interface MailAttachment { filename: string; content: string /* base64 */ }
 export interface MailMessage { to: string[]; cc?: string[]; replyTo?: string; subject: string; text: string; attachments?: MailAttachment[] }
 

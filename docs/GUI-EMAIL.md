@@ -31,6 +31,7 @@ Mã API chỉ nhập trên Supabase. Không gửi qua chat, không ghi vào code
 |---|---|
 | `RESEND_API_KEY` | `re_…` (mã vừa tạo) |
 | `MAIL_FROM` | `Bách Ngân <don-hang@bachngan.vn>` |
+| `MAIL_CC` (tuỳ chọn) | email luôn được CC mọi email đơn đặt hàng gửi NCC, nhiều địa chỉ cách nhau dấu phẩy |
 
 - Địa chỉ trong `MAIL_FROM` phải dùng **đúng tên miền đã xác thực** ở bước 1.
 

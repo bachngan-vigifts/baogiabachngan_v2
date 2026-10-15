@@ -209,7 +209,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const body = await readJson(c.req, 6_000_000);
     const pdf = typeof body.pdf === 'string' ? body.pdf : '';
     if (!pdf || pdf.length > 5_500_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(pdf) || !pdf.startsWith('JVBERi0')) fail(400, 'File PDF đơn đặt hàng không hợp lệ.'); // "%PDF-"
-    const { db, m, id, p, to, cc } = await mailTarget(c, 'order');
+    const { db, m, id, p, to, cc: baseCc } = await mailTarget(c, 'order');
+    const lower = (x: string) => x.toLowerCase();
+    const cc = [...baseCc, ...(c.env.mailer?.alwaysCc ?? [])].filter((x, i, a) => lower(x) !== lower(to) && a.findIndex(y => lower(y) === lower(x)) === i);
     const o = p.raw.order, sup = o.supplierName || 'Quý nhà cung cấp';
     const unit = (u: string | null) => (u ? ' ' + u : '');
     const list = p.raw.lines.slice(0, 60).map((l, i) => `${i + 1}. ${l.sku} - ${l.name}: ${l.quantity.toLocaleString('vi-VN')}${unit(l.unit)}`).join('\n')
