@@ -552,7 +552,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     const rows = [], sups = [], loaded = new Set();
     const srcBox = el('section', 'sup-section');
     const q = input('search', '', { placeholder: 'Tìm số báo giá, đơn / HĐKT, tên khách…' }), results = el('div', 'pur-results');
-    srcBox.append(el('h3', '', '1. Chọn chứng từ nguồn'), el('p', 'muted small', 'Mỗi mã hiện "còn cần đặt" = số chứng từ cần − số đã đặt ở các đơn mua chưa huỷ, để không mua trùng.'), field('Tìm chứng từ', q), results);
+    srcBox.append(el('h3', '', '1. Chọn chứng từ nguồn'), el('p', 'muted small', 'Số lượng cần mua được gợi ý từ số chứng từ cần, số đã đặt ở đơn mua chưa huỷ và tồn kho.'), field('Tìm chứng từ', q), results);
     let t2 = 0, rq = 0;
     const search = async () => {
       const id = ++rq;
@@ -633,7 +633,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       table.replaceChildren();
       if (!rows.length) { table.append(el('p', 'muted small', 'Chưa có mã nào – chọn chứng từ ở bước 1 hoặc thêm mã bên dưới.')); return; }
       const t = el('table', 'data-table pur-lines pur-grid'), th = el('tr'), tb = el('tbody');
-      const heads = ['Mã / tên', 'Chứng từ', 'SL trong đơn', 'Tồn kho', 'Còn cần đặt', sups.length === 1 ? `SL cần đặt · ${sups[0].name}` : 'SL cần đặt'];
+      const heads = ['Mã / tên', 'Chứng từ', 'SL trong đơn', 'Tồn kho', sups.length === 1 ? `SL cần đặt · ${sups[0].name}` : 'SL cần đặt'];
       if (sups.length > 1) heads.push(...sups.map(x => x.name));
       for (const h of [...heads, '']) th.append(el('th', '', h));
       t.append(el('thead'), tb); t.tHead.append(th);
@@ -644,10 +644,9 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         // Tồn kho: đủ cho phần còn cần → xanh; có nhưng thiếu → cam; hết / âm → đỏ; chưa có số liệu → xám.
         const st = r.stock == null ? null : Number(r.stock);
         const stock = el('td', 'num pur-stock ' + (st == null ? 'none' : st >= r.remaining ? 'ok' : st > 0 ? 'warn' : 'out'), st == null ? '—' : num(st));
-        const rem = el('td', 'num pur-remain'); rem.append(el('b', '', num(r.remaining))); if (r.ordered) rem.append(el('small', 'muted sup-sub', `đã đặt ${num(r.ordered)}`));
         const wantTd = el('td', 'pur-want'), want = qtyInput(r.want ?? ''), hint = el('small', 'sup-sub');
         wantTd.append(want, hint);
-        tr.append(nm, src, need, stock, rem, wantTd);
+        tr.append(nm, src, need, stock, wantTd);
         const firstCell = el('td', 'num');
         if (sups.length > 1) {
           tr.append(firstCell);

@@ -30,7 +30,7 @@ export function cleanDiscounts(v: unknown): CustomerDiscounts {
 export const parseDiscounts = (s: string | null | undefined): CustomerDiscounts => { try { return cleanDiscounts(JSON.parse(s || '{}')); } catch { return {}; } };
 
 /** Trường chỉ nội bộ công ty, không bao giờ gửi cho khách (giá nhập, chi phí in gia công, ghi chú nội bộ...). */
-const PRIVATE_DOC_KEYS = ['printing', 'shipping', 'contractDocument', 'careStatus', 'careDueDate', 'careClosedAt', 'careNote', 'careAssigneeId', 'discountMode'];
+const PRIVATE_DOC_KEYS = ['printing', 'shipping', 'contractDocument', 'careStatus', 'careDueDate', 'careClosedAt', 'careNote', 'careAssigneeId', 'discountMode', 'internalNote'];
 const PRIVATE_ROW_KEYS = ['purchaseDiscount', 'costPrice', 'commission', 'printing', 'pricePolicy', 'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight'];
 export function publicQuote(data: Record<string, any>) {
   const out: Record<string, any> = { ...data };

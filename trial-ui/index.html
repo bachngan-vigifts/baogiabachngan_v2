@@ -192,10 +192,9 @@
               <label>Số báo giá<input name="quoteNo" required maxlength="500"></label>
               <label>Ngày báo giá<input name="date" type="date" required></label>
               <label>Ngày giao dự kiến<input name="deliveryDate" type="date"></label>
-            </div>
-            <div class="form-grid cols-2">
               <label>Người phụ trách (in trên báo giá)<input name="owner" maxlength="500"></label>
-              <label>Điện thoại người phụ trách<input name="ownerPhone" maxlength="500" inputmode="tel"></label>
+              <input type="hidden" name="ownerPhone">
+              <label class="span-2">Ghi chú nội bộ cho báo giá<textarea name="internalNote" rows="3" maxlength="3000" placeholder="Ghi chú trao đổi nội bộ…"></textarea><small class="muted">Không in trên báo giá hoặc hiển thị cho khách hàng.</small></label>
             </div>
           </div>
 
