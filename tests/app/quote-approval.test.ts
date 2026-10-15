@@ -17,10 +17,14 @@ async function setup() {
 }
 const doc = (price = 100000) => ({ type: 'B2B', quoteNo: 'B2B_BG20261006_001', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', qty: 10, price }] });
 
-test('duyệt báo giá như web cũ: nhân viên lưu → đợi duyệt; Manager duyệt; đã duyệt thì chỉ Manager được sửa; Manager tạo → tự duyệt', async () => {
+test('duyệt báo giá: nhân viên lưu → nháp; bấm Gửi duyệt → chờ duyệt; Manager duyệt; đã duyệt thì chỉ Manager được sửa; Manager tạo → tự duyệt', async () => {
   const { call, emp, mgr } = await setup();
   const q = await call('/quotes', emp, 'POST', doc());
-  assert.equal(q.data.approvalStatus, 'pending');
+  assert.equal(q.data.approvalStatus, 'draft', 'mới lưu là nháp, chưa gửi Manager');
+  assert.equal((await call('/quotes/pending-count', mgr)).data.count, 0);
+  assert.equal((await call('/quotes/' + q.data.id + '/submit', emp, 'POST', { revision: 9 })).status, 409, 'gửi đúng phiên bản');
+  assert.equal((await call('/quotes/' + q.data.id + '/submit', emp, 'POST', { revision: 1 })).data.approvalStatus, 'pending');
+  assert.equal((await call('/quotes/' + q.data.id + '/submit', emp, 'POST', { revision: 1 })).status, 409, 'đã gửi rồi');
   assert.equal((await call('/quotes/pending-count', mgr)).data.count, 1);
   assert.equal((await call('/quotes/' + q.data.id + '/approve', emp, 'POST', { revision: 1 })).status, 403, 'chỉ Manager duyệt');
   assert.equal((await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 9 })).status, 409, 'duyệt đúng phiên bản');
@@ -44,19 +48,22 @@ test('duyệt báo giá như web cũ: nhân viên lưu → đợi duyệt; Manag
   const saved = await call('/quotes/' + q.data.id, mgr, 'PUT', { revision: 1, data: doc(130000) });
   assert.equal(saved.status, 200); assert.equal(saved.data.approvalStatus, 'approved');
   assert.equal(saved.data.revision, 2);
+  assert.equal((await call('/quotes/' + q.data.id, emp, 'DELETE', { revision: 2 })).status, 403, 'đã duyệt: nhân viên không xoá');
 
   const m = await call('/quotes', mgr, 'POST', { ...doc(), quoteNo: 'B2B_BG20261006_002' });
   assert.equal(m.data.approvalStatus, 'approved');
   assert.equal((await call('/quotes/pending-count', mgr)).data.count, 0);
 });
 
-test('xoá báo giá: chỉ Manager, đúng phiên bản; đã có đơn đặt hàng thì không xoá được', async () => {
+test('xoá báo giá: nhân viên xoá báo giá chưa duyệt của mình; Manager xoá mọi báo giá; đúng phiên bản; đã có đơn thì không xoá được', async () => {
   const { call, emp, mgr } = await setup();
   const a = await call('/quotes', emp, 'POST', doc());
-  assert.equal((await call('/quotes/' + a.data.id, emp, 'DELETE', { revision: 1 })).status, 403);
-  assert.equal((await call('/quotes/' + a.data.id, mgr, 'DELETE', { revision: 5 })).status, 409);
-  assert.equal((await call('/quotes/' + a.data.id, mgr, 'DELETE', { revision: 1 })).status, 200);
+  assert.equal((await call('/quotes/' + a.data.id, emp, 'DELETE', { revision: 5 })).status, 409);
+  assert.equal((await call('/quotes/' + a.data.id, emp, 'DELETE', { revision: 1 })).status, 200, 'nhân viên xoá nháp của mình');
   assert.equal((await call('/quotes/' + a.data.id, emp)).status, 404);
+  const a2 = await call('/quotes', emp, 'POST', { ...doc(), quoteNo: 'B2B_BG20261006_009' });
+  assert.equal((await call('/quotes/' + a2.data.id, mgr, 'DELETE', { revision: 5 })).status, 409);
+  assert.equal((await call('/quotes/' + a2.data.id, mgr, 'DELETE', { revision: 1 })).status, 200);
 
   const b = await call('/quotes', mgr, 'POST', doc());
   assert.equal((await call('/orders', mgr, 'POST', { quoteId: b.data.id })).status, 201);

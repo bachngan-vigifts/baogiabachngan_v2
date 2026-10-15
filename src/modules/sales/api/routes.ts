@@ -390,7 +390,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       // Khách đặt hàng thẳng (báo giá chưa duyệt): nhân viên xác nhận đơn = duyệt luôn báo giá của đơn.
       if (status === 'confirmed' && order.quoteId)
         await tx.update(quotations).set({ approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: viewer(c).id })
-          .where(and(eq(quotations.id, order.quoteId), eq(quotations.approvalStatus, 'pending')));
+          .where(and(eq(quotations.id, order.quoteId), inArray(quotations.approvalStatus, ['draft', 'pending'])));
     });
     // Lịch sử sản phẩm: thêm "Bán" khi xác nhận, bỏ khi huỷ.
     if (status === 'confirmed') await recordSaleMovements(c.env.db, order.id);

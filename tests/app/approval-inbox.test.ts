@@ -31,9 +31,12 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   // Báo giá chờ duyệt (nhân viên lập).
   const rows = [{ name: 'Bộ trà', qty: 10, price: 100000 }];
   const q1 = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_I1', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows });
+  await call('/quotes/' + q1.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   // Báo giá đã duyệt → 2 đơn nháp: một đơn thường, một đơn có HĐKT.
   const q2 = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_I2', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows });
+  await call('/quotes/' + q2.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   const q3 = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_I3', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows });
+  await call('/quotes/' + q3.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   await call(`/quotes/${q2.data.id}/approve`, mgr, 'POST', { revision: 1 });
   await call(`/quotes/${q3.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const o2 = await call('/orders', emp, 'POST', { quoteId: q2.data.id });

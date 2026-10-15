@@ -23,7 +23,8 @@ export const quotations = pgTable('staff_quotations', {
    * Nhân viên sửa nội dung báo giá đã duyệt → về "pending", phải được duyệt lại.
    * Chỉ báo giá đã duyệt mới tải file, tạo đơn hàng, sinh HĐKT.
    */
-  approvalStatus: text('approval_status', { enum: ['pending', 'approved'] }).notNull().default('pending'),
+  /** draft = nhân viên đã lưu, chưa gửi duyệt; pending = đã gửi duyệt (hoặc khách gửi); approved = đã duyệt. */
+  approvalStatus: text('approval_status', { enum: ['draft', 'pending', 'approved'] }).notNull().default('pending'),
   approvedAt: text('approved_at'),
   approvedBy: text('approved_by').references(() => employees.id),
   createdAt: text('created_at').notNull(),
@@ -31,7 +32,7 @@ export const quotations = pgTable('staff_quotations', {
 }, t => [
   index('idx_quotations_creator_updated').on(t.creatorId, t.updatedAt),
   index('idx_quotations_approval').on(t.approvalStatus, t.updatedAt),
-  enumCheck('chk_quotations_approval_status', t.approvalStatus, ['pending', 'approved']),
+  enumCheck('chk_quotations_approval_status', t.approvalStatus, ['draft', 'pending', 'approved']),
   index('idx_quotations_assignee').on(t.assigneeId, t.updatedAt),
   index('idx_quotations_created').on(t.createdAt),
   index('idx_quotations_quote_date').on(t.quoteDate),

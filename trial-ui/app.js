@@ -587,7 +587,7 @@ function renderQuotes() {
   renderStats(); quotePager.render(state.quoteMeta?.total ?? list.length);
   tbody.innerHTML = list.map(q => `
     <tr class="clickable" data-open="${esc(q.id)}">
-      <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
+      <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : q.approvalStatus === 'draft' ? '<span class="pill">Nháp</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
       <td data-label="Khách">${esc(q.customer) || '<span class="muted">—</span>'}${q.contact || q.phone ? `<small>${esc([q.contact, q.phone].filter(Boolean).join(' · '))}</small>` : ''}</td>
       <td data-label="Đơn / HĐKT">${quoteDocCell(q)}</td>
       <td data-label="Ngày">${fmtDate(q.quoteDate) || '—'}</td>
@@ -1522,8 +1522,9 @@ async function saveQuote() {
     const keepApproval = !wasNew && saved.approvalStatus === 'approved' ? { approvedAt: editor.approval?.at, approvedByName: editor.approval?.by } : {};
     fillEditor(saved.id, saved.revision, saved.data, { ...keepApproval, approvalStatus: saved.approvalStatus });
     if (wasNew) { suppressHash = true; location.hash = '#/quotes/' + encodeURIComponent(saved.id); currentHash = location.hash; }
-    if (saved.approvalRevoked) toast('Đã lưu. Báo giá chuyển về "Chờ duyệt", cần Manager duyệt lại.');
+    if (saved.approvalRevoked) toast('Đã lưu. Báo giá chuyển về "Nháp" – bấm "Gửi duyệt" để Manager duyệt lại.');
     else if (saved.approvalStatus === 'pending') toast((wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · đang đợi Manager duyệt.');
+    else if (saved.approvalStatus === 'draft') toast((wasNew ? 'Đã lưu nháp ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · bấm "Gửi duyệt" khi xong.');
     else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
     loadQuotes();
   } catch (e) {
@@ -3403,6 +3404,7 @@ $('#payment-form').addEventListener('submit', async e => {
 function approvalBlock() {
   if (!editor.id) return 'Lưu báo giá trước.';
   if (editor.dirty) return 'Lưu thay đổi trước.';
+  if (editor.approval?.status === 'draft') return 'Báo giá còn nháp – bấm "Gửi duyệt" để Manager duyệt.';
   if (editor.approval?.status !== 'approved') return 'Báo giá đang đợi Manager duyệt.';
   return null;
 }
@@ -3415,8 +3417,9 @@ function updateQuoteActions() {
   }
   $('#save-quote').disabled = $('#save-quote-m').disabled = saving || locked;
   const pill = $('#editor-approval');
-  pill.hidden = !saved; pill.className = 'pill ' + (approved ? 'ok' : 'warn');
-  pill.textContent = approved ? 'Đã duyệt' : 'Chờ duyệt';
+  const draft = editor.approval?.status === 'draft';
+  pill.hidden = !saved; pill.className = 'pill ' + (approved ? 'ok' : draft ? '' : 'warn');
+  pill.textContent = approved ? 'Đã duyệt' : draft ? 'Nháp' : 'Chờ duyệt';
   pill.title = approved && editor.approval.by ? `Duyệt bởi ${editor.approval.by}${editor.approval.at ? ' lúc ' + new Date(editor.approval.at).toLocaleString('vi-VN') : ''}` : approved ? '' : 'Manager cần duyệt trước khi tải file, tạo đơn hàng, sinh HĐKT.';
   {
     const b = $('#quote-make'), linked = editor.document;
@@ -3431,7 +3434,9 @@ function updateQuoteActions() {
   // Manager duyệt mọi báo giá; nhân viên phụ trách xác nhận báo giá khách gửi từ trang khách hàng.
   const canApprove = mgr || !!editor.approval?.canApprove;
   const ap = $('#approve-quote'); ap.hidden = !canApprove || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : editor.approval?.fromCustomer ? 'Xác nhận báo giá khách' : 'Duyệt';
-  $('#delete-quote').hidden = !mgr || !saved;
+  // Nhân viên xoá được báo giá chưa duyệt của mình; "Gửi duyệt" chỉ hiện với báo giá nháp (Manager duyệt thẳng).
+  $('#delete-quote').hidden = !saved || (!mgr && approved);
+  $('#submit-quote').hidden = !saved || mgr || !draft; $('#submit-quote').disabled = saving;
   $('#quote-history').hidden = !mgr || !saved;
 }
 function closeDownloadMenu() { $('#download-menu').hidden = true; $('#quote-download').setAttribute('aria-expanded', 'false'); }
@@ -3590,12 +3595,23 @@ $('#approve-quote').addEventListener('click', async () => {
   finally { updateQuoteActions(); }
 });
 $('#delete-quote').addEventListener('click', async () => {
-  if (!isManager() || !editor.id) return;
+  if (!editor.id || (!isManager() && editor.approval?.status === 'approved')) return;
   if (!await confirmBox(`Xoá báo giá ${field('quoteNo').value} · ${field('customer').value || 'Chưa nhập khách hàng'} khỏi hệ thống? Thao tác này không thể hoàn tác.`, { ok: 'Xoá báo giá', danger: true })) return;
   try {
     await api('/quotes/' + encodeURIComponent(editor.id), 'DELETE', { revision: editor.revision });
     editor.dirty = false; editor.id = null; toast('Đã xoá báo giá.'); go('#/quotes'); loadQuotes();
   } catch (ex) { toast(ex.message, 'err'); }
+});
+$('#submit-quote').addEventListener('click', async () => {
+  if (!editor.id || editor.approval?.status !== 'draft') return;
+  const btn = $('#submit-quote'); btn.disabled = true;
+  try {
+    if (editor.dirty) { await saveQuote(); if (editor.dirty) return; }
+    await api('/quotes/' + encodeURIComponent(editor.id) + '/submit', 'POST', { revision: editor.revision });
+    editor.approval = { ...editor.approval, status: 'pending' };
+    toast('Đã gửi Manager duyệt báo giá.'); loadQuotes();
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { updateQuoteActions(); }
 });
 // Excel theo mẫu web cũ (excel-export.js): ảnh sản phẩm + letterhead, 2 sheet báo giá và phí vận chuyển.
 // excel-export.js (chép từ web cũ) gọi QuoteMath.totals và HrcPdf.amountInWords.

@@ -33,6 +33,7 @@ test('đẩy thông báo: báo giá mới → Manager; duyệt → người lậ
 
   // Nhân viên tạo báo giá → Manager nhận "chờ duyệt"; nhân viên không tự nhận.
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_N1', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ name: 'Bộ trà', qty: 10, price: 100000 }] });
+  await call('/quotes/' + q.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   assert.equal(q.status, 201);
   assert.ok(await has(mgr, 'quote_pending')); assert.ok(!(await has(emp, 'quote_pending')));
   // Việc "Duyệt báo giá" tự sinh NGAY khi lưu (không đợi ai mở trang Công việc) và Manager được báo.
@@ -55,6 +56,7 @@ test('đẩy thông báo: báo giá mới → Manager; duyệt → người lậ
   assert.ok(await has(mgr, 'order_pending'));
   // HĐKT là luồng riêng: lập thẳng từ một báo giá khác.
   const q2 = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_N2', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ name: 'Bộ trà', qty: 10, price: 100000 }] });
+  await call('/quotes/' + q2.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   await call(`/quotes/${q2.data.id}/approve`, mgr, 'POST', { revision: 1 });
   assert.equal((await call('/contracts', emp, 'POST', { quoteId: q2.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 })).status, 201);
   assert.ok(await has(mgr, 'contract_pending'));
