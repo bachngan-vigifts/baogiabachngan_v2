@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
+import { sendMail } from '../../../core/mail/send-mail.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
@@ -24,6 +25,7 @@ import { asActor, listPurchases, loadPurchase, loadSourceNeed, nextNumber, order
  *  GET  /purchase-sources/:type/:id      các mã của chứng từ + đã đặt + còn cần đặt (chống mua trùng)
  *  POST /purchase-orders                 tạo 1..n đơn nháp (chia nhiều NCC) { orders: [...] }
  *  PUT  /purchase-orders/:id             sửa nháp (người tạo / Manager) – `revision`
+ *  POST /purchase-orders/:id/send-email  gửi email đơn đặt hàng kèm PDF tới NCC từ máy chủ (Resend) – Manager / Kế toán, đơn đã duyệt
  *  POST /purchase-orders/:id/approve     Manager duyệt giá / chiết khấu / lịch trả
  *  POST /purchase-orders/:id/confirm     Manager ghi nhận xác nhận + ngày hẹn THAY NCC
  *  POST /purchase-orders/:id/cancel      huỷ (lý do bắt buộc)
@@ -175,9 +177,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   // ---- Email cho NCC (soạn ở máy người dùng qua mailto): máy chủ trả người nhận theo danh bạ NCC + ghi lịch sử.
   //  kind 'stock' = hỏi tồn / ngày giao (ai xem được đơn cũng gửi được, không kèm giá);
   //  kind 'order' = gửi đơn đặt hàng kèm PDF (chỉ người xem được giá, đơn đã duyệt).
-  router.post('/purchase-orders/:id/mail', async c => {
-    guard(c);
-    const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 4_000), kind = body.kind === 'order' ? 'order' : 'stock';
+  /** Người nhận + kiểm quyền cho email NCC. Đơn đã duyệt: dùng người nhận Manager chốt lúc duyệt (nếu có). */
+  async function mailTarget(c: Ctx, kind: 'order' | 'stock') {
+    const db = c.env.db, m = me(c), id = c.params.id!;
     const p = await loadPurchase(db, m, id, today());
     if (p.raw.order.cancelledAt) fail(409, 'Đơn mua đã huỷ.');
     if (kind === 'order') {
@@ -186,12 +188,39 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     }
     const contacts = p.raw.order.supplierId ? await db.select({ kind: supplierContacts.kind, email: supplierContacts.email }).from(supplierContacts).where(eq(supplierContacts.supplierId, p.raw.order.supplierId)) : [];
     const rec = defaultRecipients(contacts);
-    // Đơn đã duyệt: dùng người nhận Manager chốt lúc duyệt (nếu có).
     const to = (kind === 'order' && p.raw.order.supplierEmail) || rec.to;
     const cc = kind === 'order' && p.raw.order.ccEmail ? p.raw.order.ccEmail.split(',').map(x => x.trim()).filter(Boolean) : rec.cc;
     if (!to) fail(400, 'NCC chưa có email nhận đơn – thêm ở trang Nhà cung cấp.');
+    return { db, m, id, p, to, cc };
+  }
+
+  router.post('/purchase-orders/:id/mail', async c => {
+    guard(c);
+    const body = await readJson(c.req, 4_000), kind = body.kind === 'order' ? 'order' : 'stock';
+    const { db, m, id, p, to, cc } = await mailTarget(c, kind);
     await event(db, id, m.id, 'mail', (kind === 'order' ? 'Gửi email đơn đặt hàng tới ' : 'Gửi email hỏi tồn tới ') + to + (cc.length ? ` (CC ${cc.join(', ')})` : ''), { kind, to, cc });
     return json({ to, cc, ticketNumber: p.raw.order.ticketNumber });
+  }, 'business');
+
+  // ---- Gửi email đơn đặt hàng từ máy chủ, đính kèm PDF do trình duyệt tạo (cùng file với nút "PDF gửi NCC").
+  //  Người nhận / tiêu đề / nội dung do máy chủ quyết theo đơn (không nhận từ trình duyệt); trả lời email về người bấm gửi.
+  router.post('/purchase-orders/:id/send-email', async c => {
+    guard(c);
+    const body = await readJson(c.req, 6_000_000);
+    const pdf = typeof body.pdf === 'string' ? body.pdf : '';
+    if (!pdf || pdf.length > 5_500_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(pdf) || !pdf.startsWith('JVBERi0')) fail(400, 'File PDF đơn đặt hàng không hợp lệ.'); // "%PDF-"
+    const { db, m, id, p, to, cc } = await mailTarget(c, 'order');
+    const o = p.raw.order, sup = o.supplierName || 'Quý nhà cung cấp';
+    const unit = (u: string | null) => (u ? ' ' + u : '');
+    const list = p.raw.lines.slice(0, 60).map((l, i) => `${i + 1}. ${l.sku} - ${l.name}: ${l.quantity.toLocaleString('vi-VN')}${unit(l.unit)}`).join('\n')
+      + (p.raw.lines.length > 60 ? `\n... và ${p.raw.lines.length - 60} mã khác (xem file đính kèm)` : '');
+    const due = o.arrivalDate ? `, đề nghị giao trước ngày ${o.arrivalDate.split('-').reverse().join('/')}` : '';
+    const text = `Kính gửi ${sup},\n\nBách Ngân gửi đơn đặt hàng ${o.ticketNumber} (file PDF đính kèm)${due}:\n${list}\n\n`
+      + `Đề nghị Quý NCC xác nhận đơn hàng, ngày giao và số đơn nội bộ (nếu có) bằng cách trả lời email này.\n\nTrân trọng,\n${m.name || 'Bách Ngân'}`;
+    const filename = 'Don-dat-hang-' + o.ticketNumber.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60) + '.pdf';
+    const mailId = await sendMail(c.env.mailer, { to: [to], cc, replyTo: m.email, subject: `Đơn đặt hàng ${o.ticketNumber} – Bách Ngân`, text, attachments: [{ filename, content: pdf }] });
+    await event(db, id, m.id, 'mail', 'Đã gửi email đơn đặt hàng (kèm PDF) tới ' + to + (cc.length ? ` (CC ${cc.join(', ')})` : ''), { kind: 'order', to, cc, sent: true, mailId });
+    return json({ to, cc, sent: true });
   }, 'business');
 
   // ---- Sửa nháp

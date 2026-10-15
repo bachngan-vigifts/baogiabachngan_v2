@@ -106,6 +106,13 @@ export async function buildPurchasePdf(v, { PDFLib, fontkit, fonts }, options = 
   pdf.getPages().forEach((p, i, pages) => p.drawText(`${data.ticketNumber} · Trang ${i + 1}/${pages.length}`, { x: 590, y: 20, font: regular, size: 8 }));
   pdf.setTitle('Đơn đặt hàng ' + data.ticketNumber); return pdf.save();
 }
+/** PDF dạng base64 để máy chủ đính kèm vào email gửi NCC. */
+export async function purchasePdfBase64(v) {
+  const bytes = await buildPurchasePdf(v, await resources());
+  let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 export async function downloadPurchasePdf(v, options = {}) {
   const bytes = await buildPurchasePdf(v, await resources(), options), url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
   const a = document.createElement('a'); a.href = url; a.download = 'Don-mua-' + String(v.ticketNumber).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60) + '.pdf';

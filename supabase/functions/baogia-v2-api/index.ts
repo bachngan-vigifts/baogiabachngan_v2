@@ -67,7 +67,7 @@ Deno.serve(async req => {
       if(token) headers.set('cookie', '__Host-bn-session=' + token);
     }
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
-    const response = await router.handle(forwarded,{db,waitUntil,files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined});
+    const response = await router.handle(forwarded,{db,waitUntil,files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined,mailer:Deno.env.get('RESEND_API_KEY')?{apiKey:Deno.env.get('RESEND_API_KEY')||'',from:Deno.env.get('MAIL_FROM')||''}:undefined});
     if (response.status < 500) lastOk = Date.now();
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');

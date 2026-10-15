@@ -86,3 +86,18 @@ test('PDF splits a very long product note across pages without drawing below the
     assert.ok(draws.every(d => d.y >= 18), 'all text stays within landscape page');
   } finally { pdfDependencies.PDFLib.PDFPage.prototype.drawText = original; }
 });
+
+test('keeps the main email attachment helper producing a real PDF as base64', async () => {
+  const { purchasePdfBase64 } = await import(new URL('../../trial-ui/purchase-pdf.js', import.meta.url).href);
+  const previous = globalThis.fetch;
+  globalThis.fetch = (async (url: any) => {
+    const name = String(url).split('/').pop();
+    if (!['TimesNewRoman.ttf', 'TimesNewRomanBold.ttf'].includes(name!)) throw new Error('Unexpected fetch in export test');
+    return new Response(readFileSync(new URL('fonts/'+name, ui)));
+  }) as typeof fetch;
+  try {
+    const encoded = await purchasePdfBase64(purchase()), bytes = Buffer.from(encoded, 'base64');
+    assert.equal(bytes.subarray(0, 4).toString(), '%PDF');
+    assert.equal((await pdfDependencies.PDFLib.PDFDocument.load(bytes)).getTitle(), 'Đơn đặt hàng DMH_20261015_TEST');
+  } finally { globalThis.fetch = previous; }
+});
