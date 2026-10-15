@@ -198,8 +198,41 @@ globalThis.ContractDocument = (() => {
     result = result.replace('ký ngày  07  tháng 05  năm 2025', `ký ngày ${date.day} tháng ${date.month} năm ${date.year}`);
     result = result.replace('5.2   Địa điểm giao hàng: Theo thoả thuận của từng khách hàng (bắt buộc sửa lại).', `5.2   Địa điểm giao hàng: ${deliveryPlace}`);
     result = result.replace('Phương thức thanh toán: Chuyển khoản.', () => xml(`Phương thức thanh toán: ${paymentMethod}`));
-    return removeLeftoverTokens(result);
+    return tidyDocumentTerms(removeLeftoverTokens(result), documentType);
   };
+  // Work across Word runs without dropping paragraph/run formatting.
+  const tidyDocumentTerms = (source, documentType) => source.replace(/<w:p\b[\s\S]*?<\/w:p>/g, paragraph => {
+    const nodes = [...paragraph.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)];
+    const text = nodes.map(n => n[1]).join('');
+    if (documentType === 'HDKT' && /Hợp đồng này được làm thành/i.test(text)) {
+      const parts = nodes.map(n => n[1]);
+      const offsets = []; let offset = 0;
+      for (const part of parts) { offsets.push(offset); offset += part.length; }
+      // Only the legacy four-copy clause changes; already corrected clauses remain intact.
+      if (/04\s*\(bốn\)/i.test(text)) {
+        const matches = [...text.matchAll(/0([24])\s*\((?:hai|bốn)\)/gi)];
+        for (const match of matches.reverse()) {
+          const from = match.index, to = from + match[0].length;
+          const replacement = match[1] === '4' ? '02 (hai)' : '01 (một)';
+          for (let i = 0; i < parts.length; i++) {
+            const left = offsets[i], right = left + nodes[i][1].length;
+            if (right <= from || left >= to) continue;
+            parts[i] = parts[i].slice(0, Math.max(0, from - left)) + (from >= left ? replacement : '') + parts[i].slice(Math.min(to - left, nodes[i][1].length));
+          }
+        }
+        let i = 0;
+        paragraph = paragraph.replace(/(<w:t\b[^>]*>)[^<]*(<\/w:t>)/g, (_, open, close) => open + parts[i++] + close);
+      }
+    }
+    if (documentType === 'BBNT' && /^\s*[^,]*,?\s*ngày\s*\.{2,}\s*tháng\s*\.{2,}\s*năm\s*\.{2,}\s*$/i.test(text)) {
+      paragraph = paragraph.replace(/<w:tab\s*\/>/g, '').replace(/(<w:t\b[^>]*>)\s+/, '$1');
+      const align = '<w:jc w:val="right"/>';
+      if (/<w:pPr\b[^>]*\/>/.test(paragraph)) paragraph = paragraph.replace(/<w:pPr\b[^>]*\/>/, '<w:pPr>' + align + '</w:pPr>');
+      else if (/<w:pPr\b/.test(paragraph)) paragraph = paragraph.replace(/<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/, props => props.replace(/<w:jc\b[^>]*\/>/g, '').replace(/<w:ind\b[^>]*\/>/g, '').replace('</w:pPr>', align + '</w:pPr>'));
+      else paragraph = paragraph.replace(/(<w:p\b[^>]*>)/, '$1<w:pPr>' + align + '</w:pPr>');
+    }
+    return paragraph;
+  });
   const templateMark = (quote, documentType = 'HDKT') => `${quote.quote_type === 'VIGIFTS' ? 'VG' : 'BN'}-${documentType}-20261002`;
   function addWebSourceFooter(files, quote, documentType) {
     const mark = templateMark(quote, documentType);
