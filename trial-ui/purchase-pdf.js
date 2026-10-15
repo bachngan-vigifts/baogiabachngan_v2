@@ -71,6 +71,13 @@ export async function buildPurchasePdf(v, { PDFLib, fontkit, fonts }) {
   return pdf.save();
 }
 
+/** PDF dạng base64 để máy chủ đính kèm vào email gửi NCC. */
+export async function purchasePdfBase64(v) {
+  const bytes = await buildPurchasePdf(v, await resources());
+  let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 export async function downloadPurchasePdf(v) {
   const bytes = await buildPurchasePdf(v, await resources());
   const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));

@@ -12,6 +12,7 @@ import { RATE_LIMITS, SESSION_LIFETIME_SECONDS, shouldRenewSession, clearedSessi
 import * as repo from '../repo/auth-repo.ts';
 import { registerMemberRoutes } from './member-routes.ts';
 import { registerAvatarRoutes } from './avatar-routes.ts';
+import type { MailerConfig } from '../../../core/mail/send-mail.ts';
 
 /** Môi trường mà các route của `staff` cần. Nơi lắp ráp ứng dụng (src/app) tạo ra từ bindings của Cloudflare. */
 export interface StaffEnv {
@@ -39,6 +40,8 @@ export interface StaffEnv {
   productImages?: FileStore;
   /** Web cũ (baogia.minhlongonline.com): ảnh sản phẩm cũ chỉ tải được khi đăng nhập – tài khoản riêng lưu ở secret. */
   legacySite?: { base: string; email: string; password: string; fetch?: typeof fetch };
+  /** Gửi email từ máy chủ (Resend): secret RESEND_API_KEY + MAIL_FROM. Thiếu thì các nút gửi email quay về soạn mail ở máy. */
+  mailer?: MailerConfig;
 }
 type Ctx = RouteContext<StaffEnv>;
 export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }
