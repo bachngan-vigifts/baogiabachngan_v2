@@ -10,22 +10,30 @@ import { createAppRouter } from '../../src/app/router.ts';
 const origin = 'https://trial.test';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
-  for (const [id, role, pos] of [['ncc1', 'supplier', 'supplier'], ['ncc2', 'employee', 'supplier']] as const) {
+  const addMember = async (id: string, role: string, pos: string) => {
     await d1.sqlite.prepare(`INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'','${role}','${pos}',1,'2026-01-01T00:00:00.000Z')`).run(id, id + '@ncc.vn', 'TK ' + id);
     await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run(id, await hashPassword(PASSWORD, 1000));
-  }
+  };
+  for (const [id, role, pos] of [['ncc1', 'supplier', 'supplier'], ['ncc2', 'employee', 'supplier']] as const) await addMember(id, role, pos);
   const router = createAppRouter(), env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc1@ncc.vn') };
+  return { call, addMember, login, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc1@ncc.vn') };
 }
 
 test('danh bạ NCC: quyền, trùng tên, liên hệ, tài khoản, ngừng hoạt động', async () => {
-  const { call, emp, mgr, ncc } = await setup();
+  const { call, addMember, login, emp, mgr, ncc } = await setup();
   for (const who of [emp, ncc]) assert.equal((await call('/suppliers', who)).status, 403);
+  // Kế toán: xem / thêm / sửa danh bạ NCC được, nhưng không gắn tài khoản NCC (chỉ Manager).
+  const kt = await (async () => { await addMember('kt', 'employee', 'accounting'); return login('kt@ncc.vn'); })();
+  assert.equal((await call('/suppliers', kt)).status, 200);
+  const byKt = await call('/suppliers', kt, 'POST', { name: 'NCC Kế toán thêm' });
+  assert.equal(byKt.status, 201, JSON.stringify(byKt.data));
+  assert.equal((await call('/supplier-account-candidates', kt)).status, 403);
+  assert.equal((await call(`/suppliers/${byKt.data.supplier.id}/accounts`, kt, 'PUT', { memberIds: [] })).status, 403);
   assert.equal((await call('/suppliers', emp, 'POST', { name: 'X' })).status, 403);
 
   const a = await call('/suppliers', mgr, 'POST', { name: 'Gốm Sứ Minh Long', taxCode: '3700', contacts: [

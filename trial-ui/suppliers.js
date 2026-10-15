@@ -6,11 +6,11 @@
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
 const FIELDS = [['name', 'Tên nhà cung cấp *', 180], ['taxCode', 'Mã số thuế', 40], ['phone', 'Điện thoại', 40], ['email', 'Email chung', 254], ['address', 'Địa chỉ', 1000], ['note', 'Ghi chú', 2000]];
 
-export function initSuppliers({ api, root, toast, confirmBox }) {
+export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = () => true }) {
   let rows = [], current = null, candidates = null, req = 0;
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div');
-  titles.append(el('span', 'eyebrow', 'Mua hàng'), el('h1', '', 'Nhà cung cấp'), el('p', 'muted', 'Danh bạ NCC, email nhận đơn đặt hàng và tài khoản NCC đăng nhập. NCC đã có đơn không xoá được – chuyển "Ngừng hoạt động".'));
+  titles.append(el('span', 'eyebrow', 'Mua hàng'), el('h1', '', 'Nhà cung cấp'), el('p', 'muted', 'Danh bạ NCC, email nhận đơn đặt hàng và tài khoản NCC đăng nhập (Manager và Kế toán). NCC đã có đơn không xoá được – chuyển "Ngừng hoạt động".'));
   const add = el('button', 'btn primary', '+ Thêm nhà cung cấp'); add.type = 'button'; add.addEventListener('click', () => openEditor(null));
   head.append(titles, add);
   const panel = el('div', 'panel'), bar = el('div', 'toolbar');
@@ -59,7 +59,7 @@ export function initSuppliers({ api, root, toast, confirmBox }) {
   const closeEditor = () => { drawer.hidden = true; shade.hidden = true; current = null; };
   async function openEditor(id) {
     try {
-      const [d, c] = await Promise.all([id ? api('/suppliers/' + encodeURIComponent(id)) : null, candidates ? null : api('/supplier-account-candidates')]);
+      const [d, c] = await Promise.all([id ? api('/suppliers/' + encodeURIComponent(id)) : null, candidates || !canLinkAccounts() ? null : api('/supplier-account-candidates')]);
       if (c) candidates = c.accounts;
       current = d || { supplier: null, contacts: [], accounts: [], orders: 0 };
       renderEditor(); drawer.hidden = false; shade.hidden = false; drawer.querySelector('input')?.focus();
@@ -118,7 +118,7 @@ export function initSuppliers({ api, root, toast, confirmBox }) {
       });
       foot.append(toggle);
     }
-    form.append(grid, contacts, accounts, err, foot);
+    form.append(grid, contacts, ...(canLinkAccounts() ? [accounts] : []), err, foot);
     form.addEventListener('submit', e => { e.preventDefault(); submit(); });
     async function submit(active) {
       err.textContent = ''; save.disabled = true;
@@ -133,15 +133,15 @@ export function initSuppliers({ api, root, toast, confirmBox }) {
         else {
           d = await api('/suppliers/' + encodeURIComponent(s.id), 'PUT', { ...body, updatedAt: s.updatedAt, ...(active !== undefined ? { active } : {}) });
           const want = [...form.querySelectorAll('[name=account]:checked')].map(c => c.value).sort(), had = [...linked].sort();
-          if (want.join() !== had.join()) { d = await api('/suppliers/' + encodeURIComponent(s.id) + '/accounts', 'PUT', { memberIds: want }); candidates = null; }
+          if (canLinkAccounts() && want.join() !== had.join()) { d = await api('/suppliers/' + encodeURIComponent(s.id) + '/accounts', 'PUT', { memberIds: want }); candidates = null; }
         }
         toast(isNew ? 'Đã thêm nhà cung cấp.' : 'Đã lưu nhà cung cấp.');
-        if (!candidates) candidates = (await api('/supplier-account-candidates')).accounts;
+        if (!candidates && canLinkAccounts()) candidates = (await api('/supplier-account-candidates')).accounts;
         current = d; renderEditor(); load();
       } catch (e2) { err.textContent = e2.message || 'Không lưu được.'; save.disabled = false; }
     }
     drawer.replaceChildren(top, form);
   }
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !drawer.hidden) closeEditor(); });
-  return { load };
+  return { load, openNew: () => openEditor(null) };
 }

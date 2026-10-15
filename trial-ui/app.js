@@ -222,6 +222,8 @@ const state = {
 const isManager = () => state.user?.role === 'manager';
 /** Tài khoản Kho (chức vụ "warehouse"): chỉ các trang cần cho kho – Công việc, Lịch giao hàng, Phiếu đóng gói, Sản phẩm, Tin nhắn. */
 const isWarehouse = () => state.user?.role === 'employee' && state.user?.positionId === 'warehouse';
+/** Danh bạ NCC: Manager và Kế toán (máy chủ kiểm lại). */
+const canEditSuppliers = () => isManager() || (state.user?.role === 'employee' && state.user?.positionId === 'accounting');
 const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers', 'care']);
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
@@ -286,6 +288,7 @@ async function enter() {
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
   showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
+  $$('.supplier-admin-only').forEach(el => el.hidden = !canEditSuppliers());
   // Kho: ẩn các trang bán hàng (báo giá, đơn hàng, HĐKT, công nợ, khách hàng…); hiện mục Phiếu đóng gói (cả Manager).
   $$('[data-nav]').forEach(el => { if (WAREHOUSE_HIDDEN.has(el.dataset.nav)) el.hidden = isWarehouse(); });
   $$('.packing-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
@@ -516,7 +519,8 @@ function route() {
   const [page = 'quotes', id] = path.split('/');
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
-  if ((view === 'staff' || view === 'payroll' || view === 'suppliers') && !isManager()) view = isWarehouse() ? 'tasks' : 'quotes';
+  if ((view === 'staff' || view === 'payroll') && !isManager()) view = isWarehouse() ? 'tasks' : 'quotes';
+  if (view === 'suppliers' && !canEditSuppliers()) view = isWarehouse() ? 'tasks' : 'quotes';
   // Kho mở nhầm trang bán hàng (link cũ, thông báo…): về Công việc.
   if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', '#/tasks'); return route(); }
   if (view === 'quotes' && id) view = 'editor';
@@ -541,7 +545,7 @@ function route() {
   if (view === 'tasks') tasksView().load(id);
   if (view === 'dashboard') dashboardView().load();
   if (view === 'flow') flowView().load();
-  if (view === 'suppliers') suppliersView().load();
+  if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
@@ -2578,7 +2582,7 @@ var careUi = null; // eslint-disable-line no-var
 var dashboardUi = null;
 function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money }); }
 var suppliersUi = null;
-function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox }); }
+function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager }); }
 var purchasesUi = null;
 function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso }); }
 // Sơ đồ quy trình: cấu hình ở flow-config.js; `openers` nối nút nhanh của khối với hộp thoại có sẵn của app.
@@ -2613,7 +2617,7 @@ async function refreshData() {
   else if (page === 'tasks') jobs.push(tasksView().load(id));
   else if (page === 'dashboard') jobs.push(dashboardView().load());
   else if (page === 'flow') jobs.push(flowView().load());
-  else if (page === 'suppliers' && isManager()) jobs.push(suppliersView().load());
+  else if (page === 'suppliers' && canEditSuppliers()) jobs.push(suppliersView().load());
   else if (page === 'purchases') jobs.push(purchasesView().load());
   else if (page === 'care') jobs.push(careView().load(id ? decodeURIComponent(id) : ''));
   else if (page === 'stock-requests') jobs.push(loadStockRequests(id));
