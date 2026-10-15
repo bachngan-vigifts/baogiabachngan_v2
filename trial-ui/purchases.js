@@ -1,3 +1,4 @@
+import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } from './purchase-export-data.js';
 /**
  * ĐƠN MUA HÀNG NCC (#/purchases) – xem docs/NCC-PAGE.md mục "Đơn mua hàng".
  *  #/purchases                 danh sách + lọc trạng thái
@@ -18,7 +19,7 @@ const STATE_PILL = { draft: 'warn', awaiting_confirmation: 'info', confirmed: 'i
 const SAPO_LABEL = { pending: ['Chờ nhập Sapo', 'warn'], done: ['Đã nhập Sapo', 'ok'], failed: ['Nhập Sapo lỗi', 'danger'], not_needed: ['Không cần nhập Sapo', ''] };
 const FILTERS = [['', 'Tất cả'], ['draft', 'Chờ duyệt'], ['awaiting_confirmation', 'Chờ NCC xác nhận'], ['confirmed', 'Chờ nhận hàng'], ['partially_received', 'Nhận một phần'],
   ['late', 'Quá hẹn'], ['sapo', 'Chờ nhập Sapo'], ['debt', 'Còn nợ NCC'], ['received', 'Đã nhận đủ'], ['cancelled', 'Đã huỷ']];
-const ACTION_LABEL = { edit: 'Sửa nháp', approve: 'Duyệt giá', confirm: 'Ghi nhận NCC xác nhận', receive: 'Nhận hàng', pay: 'Ghi trả NCC', schedule: 'Lịch trả', pdf: 'PDF gửi NCC', cancel: 'Huỷ đơn' };
+const ACTION_LABEL = { edit: 'Sửa nháp', approve: 'Duyệt giá', confirm: 'Ghi nhận NCC xác nhận', receive: 'Nhận hàng', pay: 'Ghi trả NCC', schedule: 'Lịch trả', pdf: 'PDF / Excel gửi NCC', cancel: 'Huỷ đơn' };
 
 /** Catalog lookup for the manual purchase line; never converts SKUs to numbers. */
 export function bindManualProductLookup({ api, sku, name, unit, host, add, active }) {
@@ -406,10 +407,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     confirm: () => confirmForm(),
     receive: () => receiveForm(),
     pay: () => payForm(),
-    pdf: async () => {
-      try { const { downloadPurchasePdf } = await import('./purchase-pdf.js'); await downloadPurchasePdf(current); }
-      catch (e) { toast(e.message || 'Không tạo được PDF.', 'err'); }
-    },
+    pdf: () => exportDialog(),
     cancel: () => {
       const d = frame('Huỷ đơn mua', current.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
       const reason = el('textarea'); reason.rows = 3; reason.maxLength = 500; reason.required = true;
@@ -419,6 +417,88 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       d.append(f); reason.focus();
     },
   };
+  function exportDialog() {
+    const v = current;
+    let defaults;
+    try { defaults = purchaseExportData(v); } catch (e) { toast(e.message, 'err'); return; }
+    const dlg = el('dialog', 'modal'), form = el('form'), head = el('div', 'modal-head'), body = el('div', 'modal-body'), footer = el('div', 'modal-foot');
+    head.append(el('h2', '', 'Tải đơn gửi NCC · ' + v.ticketNumber));
+    const kind = el('select');
+    for (const [value, label] of SUPPLIER_TEMPLATES) { const o = el('option', '', label); o.value = value; kind.append(o); }
+    kind.value = suggestedSupplierTemplate(v);
+    const entity = el('select');
+    for (const [value, label] of [['BN', 'Bách Ngân'], ['VG', 'Vigifts']]) { const o = el('option', '', label); o.value = value; entity.append(o); }
+    const contact = input('text', defaults.contact, { maxLength: 200 }), phone = input('text', '', { maxLength: 80 });
+    const approver = input('text', defaults.approver, { maxLength: 200 }), arrival = input('date', v.arrivalDate || '');
+    const address = el('textarea'); address.rows = 2; address.maxLength = 2000; address.value = defaults.address;
+    const note = el('textarea'); note.rows = 3; note.maxLength = 2000; note.value = defaults.note;
+    const g = el('div', 'form-grid two');
+    g.append(field('Mẫu tải', kind), field('Đơn vị đặt hàng', entity), field('Người đặt / phụ trách', contact), field('SĐT liên hệ', phone),
+      field('Người phê duyệt', approver), field('Ngày hẹn giao', arrival), field('Địa chỉ / kho nhận hàng', address, 'span-2'), field('Ghi chú', note, 'span-2'));
+    const logo = el('div', 'form-grid two');
+    const logoCustomer = input('text', defaults.logoCustomer, { maxLength: 1000 }), content = el('textarea'); content.rows = 3; content.maxLength = 3000; content.value = defaults.logoContent;
+    const sampleDate = input('date', '');
+    const supplierContact = input('text', '', { maxLength: 200 }), supplierEmail = input('text', v.supplierEmail || v.supplier?.email || '', { maxLength: 200 });
+    const supplierBranch = input('text', '', { maxLength: 200 }), supplierPhone = input('text', v.supplier?.phone || '', { maxLength: 80 });
+    logo.append(field('Tên khách / logo khách', logoCustomer, 'span-2'), field('Nội dung in logo', content, 'span-2'), field('Ngày yêu cầu maquette', sampleDate), field('Nhân viên NCC yêu cầu', supplierContact), field('Email NCC', supplierEmail), field('Chi nhánh NCC', supplierBranch),
+      field('SĐT NCC', supplierPhone));
+    const specs = el('details'), specsTitle = el('summary', '', 'Bổ sung mã ERP / quy cách sản phẩm'); specs.append(specsTitle);
+    const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), th = el('tr'), tb = el('tbody');
+    ['Mã / tên', 'Mã ERP Lock', 'Bộ', 'Hoa văn', 'CL', 'SL/thùng', 'Số Kg'].forEach(t => th.append(el('th', '', t)));
+    table.append(el('thead'), tb); table.tHead.append(th); wrap.append(table); specs.append(wrap);
+    const controls = new Map();
+    for (const l of v.lines) {
+      const tr = el('tr'), name = el('td'); name.append(el('b', '', l.sku), el('small', 'sup-sub', l.name)); tr.append(name);
+      const fields = {};
+      for (const key of ['erp', 'collection', 'pattern', 'quality', 'perCarton', 'weight']) {
+        const n = input(['perCarton', 'weight'].includes(key) ? 'number' : 'text', '', { maxLength: 300 });
+        n.setAttribute('aria-label', key + ' · ' + l.sku); if (n.type === 'number') { n.min = '0'; n.step = 'any'; }
+        fields[key] = n; const td = el('td'); td.append(n); tr.append(td);
+      }
+      controls.set(l.id || l.sku, fields); tb.append(tr);
+    }
+    const hint = el('p', 'muted small', 'Các ô bổ sung chỉ dùng cho file tải về. Mã ERP hoặc quy cách chưa có dữ liệu sẽ để trống.');
+    const err = errorBox(), status = el('p', 'muted small'); status.setAttribute('role', 'status');
+    let catalogRequested = false;
+    async function catalog() {
+      if (catalogRequested || kind.value === 'pdf') return; catalogRequested = true;
+      status.textContent = 'Đang bổ sung hoa văn và quy cách từ danh mục…';
+      try {
+        const skus = [...new Set(v.lines.map(l => l.sku))];
+        for (let i = 0; i < skus.length; i += 100) {
+          const data = await api('/products?' + new URLSearchParams({ skus: skus.slice(i, i + 100).join(',') }));
+          if (!dlg.open || !dlg.isConnected) return;
+          const products = new Map(data.products.map(p => [p.sku, p]));
+          for (const l of v.lines) {
+            const p = products.get(l.sku), f = controls.get(l.id || l.sku); if (!p) continue;
+            if (!f.pattern.value) f.pattern.value = p.pattern || '';
+            if (!f.perCarton.value && p.perCarton > 0) f.perCarton.value = String(p.perCarton);
+          }
+        }
+        status.textContent = '';
+      } catch { if (dlg.open) status.textContent = 'Không lấy được quy cách từ danh mục; anh/chị có thể nhập bổ sung.'; }
+    }
+    const updateKind = () => { logo.hidden = kind.value !== 'minh-long-logo'; specs.hidden = kind.value === 'pdf'; catalog(); };
+    kind.addEventListener('change', updateKind);
+    const cancel = btn('Đóng', 'btn secondary', () => dlg.close()), download = el('button', 'btn primary', 'Tải file'); download.type = 'submit';
+    footer.append(cancel, download); body.append(g, logo, specs, hint, status, err); form.append(head, body, footer); dlg.append(form);
+    dlg.addEventListener('close', () => dlg.remove());
+    form.addEventListener('submit', async e => {
+      e.preventDefault(); if (download.disabled) return; download.disabled = true; err.textContent = '';
+      const values = { entity: entity.value, contact: contact.value, phone: phone.value, approver: approver.value, arrivalDate: arrival.value,
+        address: address.value, note: note.value, logoCustomer: logoCustomer.value, logoContent: content.value, sampleDate: sampleDate.value,
+        supplierContact: supplierContact.value, supplierEmail: supplierEmail.value, supplierBranch: supplierBranch.value, supplierPhone: supplierPhone.value,
+        lines: Object.fromEntries([...controls].map(([key, fields]) => [key, Object.fromEntries(Object.entries(fields).map(([k, n]) => [k, n.value]))])) };
+      try {
+        if (kind.value === 'pdf') { const { downloadPurchasePdf } = await import('./purchase-pdf.js'); await downloadPurchasePdf(v, values); }
+        else { const { downloadSupplierExcel } = await import('./purchase-excel.js'); await downloadSupplierExcel(v, kind.value, values); }
+        toast('Đã tải đơn gửi NCC.');
+      } catch (ex) { err.textContent = ex.message || 'Không tạo được file.'; }
+      finally { download.disabled = false; }
+    });
+    document.body.append(dlg); dlg.showModal(); updateKind();
+  }
+
   const foot = (...buttons) => { const f = el('div', 'sup-drawer-foot'); f.append(...buttons); return f; };
   const qtyInput = (value, max) => { const i = input('number', value, { min: '0', step: '1', className: 'pur-qty' }); if (max != null) i.max = String(max); return i; };
 
