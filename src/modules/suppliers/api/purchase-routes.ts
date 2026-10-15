@@ -26,6 +26,7 @@ import { asActor, listPurchases, loadPurchase, responsibleEmails, loadSourceNeed
  *  POST /purchase-orders                 tạo 1..n đơn nháp (chia nhiều NCC) { orders: [...] }
  *  PUT  /purchase-orders/:id             sửa nháp (người tạo / Manager) – `revision`
  *  POST /purchase-orders/:id/send-email  gửi email đơn đặt hàng kèm PDF tới NCC từ máy chủ (Resend) – Manager / Kế toán, đơn đã duyệt
+ *  POST /purchase-orders/:id/prices      Manager lưu giá nhập / CK / VAT khi chưa duyệt (đơn vẫn nháp) – `revision`
  *  POST /purchase-orders/:id/approve     Manager duyệt giá / chiết khấu / lịch trả
  *  POST /purchase-orders/:id/confirm     Manager ghi nhận xác nhận + ngày hẹn THAY NCC
  *  POST /purchase-orders/:id/cancel      huỷ (lý do bắt buộc)
@@ -258,7 +259,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const p = await lockAndCheck(c, tx, id, 'approve', body.revision);
       const input = new Map((Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).map(l => [String(l.lineId), l]));
       const rows = p.raw.lines.map(l => {
-        const r = input.get(l.id), rawPrice = r?.price ?? l.price, price = rawPrice === null || rawPrice === undefined || rawPrice === '' ? NaN : Number(rawPrice), taxRate = Number(r?.taxRate ?? l.taxRate ?? 0), discount = Number(r?.purchaseDiscount ?? 0);
+        const r = input.get(l.id), rawPrice = r?.price ?? l.price, price = rawPrice === null || rawPrice === undefined || rawPrice === '' ? NaN : Number(rawPrice), taxRate = Number(r?.taxRate ?? l.taxRate ?? 0), discount = Number(r?.purchaseDiscount ?? l.purchaseDiscount ?? 0);
         if (!(price >= 0 && Number.isFinite(price))) fail(400, `Nhập giá mua cho ${l.sku}.`);
         if (!(taxRate >= 0 && taxRate <= 100) || !(discount >= 0 && discount <= 100)) fail(400, `Thuế / chiết khấu của ${l.sku} không hợp lệ.`);
         return { id: l.id, price, taxRate, purchaseDiscount: discount };
@@ -274,6 +275,28 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: m.id, supplierEmail: str(body.supplierEmail, 254) || rec.to, ccEmail: (Array.isArray(body.cc) ? body.cc.join(',') : rec.cc.join(',')).slice(0, 2000),
         depositRate: deposit?.mode === 'percent' ? Number(deposit.value) : deposit?.mode === 'none' || !deposit ? 0 : null });
       await event(tx, id, m.id, 'approve', `Manager duyệt đơn – tổng ${Math.round(total).toLocaleString('vi-VN')} đ, ${schedules.length} kỳ trả`, { rows, schedules });
+    });
+    return json((await loadPurchase(db, m, id, today())).view);
+  }, 'business');
+
+  // ---- Lưu giá nhập khi chưa duyệt (Manager): giá / CK / VAT từng dòng, đơn vẫn là nháp. Ô giá để trống = chưa có giá.
+  router.post('/purchase-orders/:id/prices', async c => {
+    guard(c);
+    const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000);
+    await db.transaction(async tx => {
+      const p = await lockAndCheck(c, tx, id, 'approve', body.revision);
+      const input = new Map((Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).map(l => [String(l.lineId), l]));
+      const rows = p.raw.lines.filter(l => input.has(l.id)).map(l => {
+        const r = input.get(l.id)!, price = r.price === null || r.price === undefined || r.price === '' ? null : Number(r.price);
+        const taxRate = Number(r.taxRate ?? l.taxRate ?? 0), discount = Number(r.purchaseDiscount ?? 0);
+        if (price !== null && !(price >= 0 && Number.isFinite(price))) fail(400, `Giá mua của ${l.sku} không hợp lệ.`);
+        if (!(taxRate >= 0 && taxRate <= 100) || !(discount >= 0 && discount <= 100)) fail(400, `Thuế / chiết khấu của ${l.sku} không hợp lệ.`);
+        return { id: l.id, price, taxRate, purchaseDiscount: discount };
+      });
+      if (!rows.length) fail(400, 'Chưa có dòng giá nào để lưu.');
+      for (const r of rows) await tx.update(incomingShipmentLines).set({ price: r.price, taxRate: r.taxRate, purchaseDiscount: r.purchaseDiscount }).where(eq(incomingShipmentLines.id, r.id));
+      await bump(tx, id, m.id);
+      await event(tx, id, m.id, 'prices', `Lưu giá nhập ${rows.filter(r => r.price !== null).length}/${rows.length} dòng (chưa duyệt)`, { rows });
     });
     return json((await loadPurchase(db, m, id, today())).view);
   }, 'business');
