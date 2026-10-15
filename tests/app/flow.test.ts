@@ -26,6 +26,7 @@ test('sơ đồ quy trình: số liệu + việc theo vai trò, thao tác nhanh 
   const { call, emp, mgr, kho } = await setup();
   assert.equal((await call('/flow')).status, 401);
   const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_FLOW1', customer: 'Khách Flow', customerTaxCode: '0312345678', vat: 8, rows: [{ name: 'Ly', sku: 'LY1', unit: 'cái', qty: 10, price: 100000 }] });
+  await call('/quotes/' + q.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   assert.equal(q.status, 201);
 
   const m1 = (await call('/flow', mgr)).data;

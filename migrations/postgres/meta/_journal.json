@@ -211,6 +211,13 @@
       "when": 1791987125408,
       "tag": "0051_supplier_purchasing",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792032951442,
+      "tag": "0053_quote_draft_status",
+      "breakpoints": true
     }
   ]
 }

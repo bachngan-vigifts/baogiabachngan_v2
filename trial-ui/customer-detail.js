@@ -16,7 +16,7 @@ export function initCustomerDetail(deps) {
   const root = document.getElementById('customer-detail');
   const st = { id: '', d: null, tab: 'orders', people: null, seq: 0 };
   const q = s => root.querySelector(s);
-  const QUOTE_STATUS = { pending: ['Chờ duyệt', 'warn'], approved: ['Đã duyệt', 'ok'] };
+  const QUOTE_STATUS = { draft: ['Nháp', 'off'], pending: ['Chờ duyệt', 'warn'], approved: ['Đã duyệt', 'ok'] };
   const STOCK_STATUS = { open: ['Chờ trả lời', 'warn'], answered: ['Đã trả lời', 'ok'] };
   const METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
   const ENTITY = { BN: 'Bách Ngân', VG: 'Vigifts', QTV: 'QTV' };

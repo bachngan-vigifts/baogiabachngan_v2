@@ -1,0 +1,2 @@
+ALTER TABLE "staff_quotations" DROP CONSTRAINT "chk_quotations_approval_status";--> statement-breakpoint
+ALTER TABLE "staff_quotations" ADD CONSTRAINT "chk_quotations_approval_status" CHECK ("staff_quotations"."approval_status" IN ('draft', 'pending', 'approved'));

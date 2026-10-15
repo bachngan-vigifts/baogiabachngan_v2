@@ -19,7 +19,7 @@ const RESP = { fixed: 'Cố định / tháng', prorated: 'Theo tỷ lệ ngày l
 const KPI_TIER = { high: ['Mức cao', 'ok'], low: ['Mức thấp', 'warn'], none: ['Không thưởng', 'muted'] };
 const SLIP = { estimate: ['Tạm tính', 'muted'], confirmed: ['Đã chốt', 'info'], paid: ['Đã trả', 'ok'] };
 const ROLE = { owner: ['Phụ trách', 'blue'], shared: ['Được chia sẻ', 'ok'], order: ['Có đơn', 'muted'] };
-const QUOTE_STATUS = { pending: ['Chờ duyệt', 'warn'], approved: ['Đã duyệt', 'ok'] };
+const QUOTE_STATUS = { draft: ['Nháp', 'off'], pending: ['Chờ duyệt', 'warn'], approved: ['Đã duyệt', 'ok'] };
 const METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const monthLabel = m => `Tháng ${Number(m.slice(5))}/${m.slice(0, 4)}`;

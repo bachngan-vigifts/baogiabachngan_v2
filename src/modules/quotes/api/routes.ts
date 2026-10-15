@@ -41,9 +41,9 @@ const contentKey = (data: unknown) => {
     return JSON.stringify(d);
   } catch { return ''; }
 };
-/** Trạng thái duyệt khi lưu (như web cũ): Manager tạo → đã duyệt; nhân viên tạo → đợi duyệt. */
+/** Trạng thái duyệt khi lưu: Manager tạo → đã duyệt; nhân viên tạo → nháp (chỉ gửi Manager khi bấm "Gửi duyệt"). */
 const approvalOnCreate = (viewer: { id: string; role: string }, now: string) =>
-  isManager(viewer) ? { approvalStatus: 'approved' as const, approvedAt: now, approvedBy: viewer.id } : { approvalStatus: 'pending' as const, approvedAt: null, approvedBy: null };
+  isManager(viewer) ? { approvalStatus: 'approved' as const, approvedAt: now, approvedBy: viewer.id } : { approvalStatus: 'draft' as const, approvedAt: null, approvedBy: null };
 
 /**
  * Cấp số báo giá lúc lưu (trong giao dịch, khoá theo phiên giao dịch để hai người lưu cùng lúc không ra trùng số):
@@ -174,17 +174,31 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       body: `${q.quoteNo} – ${q.customer} · ${viewer.name} duyệt`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     return json({ id: c.params.id, approvalStatus: 'approved', approvedAt: now, approvedByName: viewer.name });
   }, 'business');
-  /** Manager xoá báo giá (như nút "Xoá báo giá" web cũ). Báo giá đã có đơn đặt hàng / HĐKT thì không xoá được. */
+  /** Nhân viên gửi báo giá nháp cho Manager duyệt (chỉ lúc này Manager mới nhận thông báo / việc "Duyệt báo giá"). */
+  router.post('/quotes/:id/submit', async c => {
+    const viewer = (c.state.session as SessionState).member;
+    const body = await readJson(c.req, 1_024);
+    if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
+    const rows = await c.env.db.update(quotations).set({ approvalStatus: 'pending', updatedAt: new Date().toISOString() })
+      .where(and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), eq(quotations.approvalStatus, 'draft'), quotationPredicate(viewer, true)))
+      .returning({ quoteNo: quotations.quoteNo, customer: quotations.customer });
+    if (!rows.length) throw new AppError(409, 'Không gửi duyệt được: báo giá đã thay đổi, đã gửi / đã duyệt, hoặc anh không có quyền. Vui lòng tải lại.');
+    await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá mới chờ duyệt',
+      body: `${viewer.name}: ${rows[0]!.quoteNo} – ${rows[0]!.customer || 'Chưa nhập khách'}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
+    await runAfterCommit(c.env);
+    return json({ id: c.params.id, approvalStatus: 'pending' });
+  }, 'business');
+  /** Xoá báo giá: Manager xoá mọi báo giá; nhân viên xoá báo giá mình được sửa khi CHƯA duyệt. Đã có đơn đặt hàng / HĐKT thì không xoá được. */
   router.delete('/quotes/:id', async c => {
     const viewer = (c.state.session as SessionState).member;
-    if (!isManager(viewer)) throw new AppError(403, 'Chỉ Manager được xoá báo giá.');
     const body = await readJson(c.req, 1_024);
     if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
     try {
       await c.env.db.transaction(async tx => {
-        const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)));
-        const [row] = await tx.select({ id: quotations.id }).from(quotations).where(condition).limit(1);
+        const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), isManager(viewer) ? undefined : quotationPredicate(viewer, true));
+        const [row] = await tx.select({ id: quotations.id, approvalStatus: quotations.approvalStatus }).from(quotations).where(condition).limit(1);
         if (!row) throw new AppError(409, 'Không thể xoá: báo giá đã thay đổi. Vui lòng tải lại.');
+        if (!isManager(viewer) && row.approvalStatus === 'approved') throw new AppError(403, 'Báo giá đã duyệt. Chỉ Manager được xoá.', 'QUOTE_APPROVED');
         await tx.delete(quoteNotifications).where(eq(quoteNotifications.quoteId, row.id));
         await tx.delete(quotations).where(condition);
       });
@@ -206,10 +220,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       await tx.insert(quotations).values({ id, creatorId: viewer.id, assigneeId: viewer.id, quoteNo: data.quoteNo, quoteType: data.type, customer: data.customer, ...quoteHeaderIndex(data), data: JSON.stringify(data), revision: 1, ...approval, createdAt: now, updatedAt: now });
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
-    // Nhân viên tạo báo giá mới → Manager nhận thông báo để duyệt.
-    if (approval.approvalStatus === 'pending') await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá mới chờ duyệt',
-      body: `${viewer.name}: ${data.quoteNo} – ${data.customer || 'Chưa nhập khách'}`, url: `/index.html#/quotes/${id}`, actorId: viewer.id, data: { quoteId: id } });
-    if (approval.approvalStatus === 'pending') await runAfterCommit(c.env);
+    // Báo giá nhân viên tạo là nháp: Manager chỉ nhận thông báo khi nhân viên bấm "Gửi duyệt".
     return json({ id, revision: 1, data: forViewer(viewer, data), approvalStatus: approval.approvalStatus }, 201);
   }, 'business');
   router.put('/quotes/:id', async c => {
@@ -228,10 +239,10 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       for (const h of quoteSaveHooks.beforeSave) await h(tx, old, viewer);
       if (data.quoteNo !== old.quoteNo) data.quoteNo = await assignQuoteNo(tx, data.quoteNo, old.id);
       const next = old.revision + 1, encoded = JSON.stringify(data);
-      // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, phải gửi duyệt lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
+      // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, về nháp, phải bấm "Gửi duyệt" lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
       const changed = contentKey(data) !== contentKey(old.data);
       const revoke = !isManager(viewer) && old.approvalStatus === 'approved' && changed;
-      const approval = revoke ? { approvalStatus: 'pending' as const, approvedAt: null, approvedBy: null } : {};
+      const approval = revoke ? { approvalStatus: 'draft' as const, approvedAt: null, approvedBy: null } : {};
       const rows = await tx.update(quotations).set({ quoteNo: data.quoteNo, quoteType: data.type, customer: data.customer, ...quoteHeaderIndex(data), data: encoded, revision: next, ...approval, updatedAt: now }).where(condition).returning({ id: quotations.id });
       if (!rows.length) throw new AppError(409, 'Báo giá vừa được sửa ở nơi khác. Vui lòng tải lại.');
       await tx.insert(quoteRevisions).values({ id: crypto.randomUUID(), quoteId: old.id, revision: old.revision, data: old.data, changedBy: viewer.id, createdAt: now });
@@ -241,11 +252,11 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       if (changed) for (const h of quoteSaveHooks.afterSave) await h(tx, fresh!, viewer);
       // Nhân viên sửa nội dung báo giá còn đang chờ duyệt → Manager được báo bản mới (lưu mà không đổi gì thì không báo).
       const pendingEdit = !isManager(viewer) && old.approvalStatus === 'pending' && changed;
-      return { revision: next, approvalStatus: revoke ? 'pending' : old.approvalStatus, revoked: revoke, pendingEdit };
+      return { revision: next, approvalStatus: revoke ? 'draft' : old.approvalStatus, revoked: revoke, pendingEdit };
     });
-    // Nhân viên sửa báo giá đã duyệt → mất duyệt → Manager nhận thông báo duyệt lại; sửa báo giá đang chờ duyệt → báo bản cập nhật.
-    if (saved.revoked || saved.pendingEdit) await notifyMany(c.env, 'managers', { eventType: 'quote_pending',
-      title: saved.revoked ? 'Báo giá sửa lại, chờ duyệt lại' : 'Báo giá chờ duyệt vừa được sửa',
+    // Sửa báo giá đang chờ duyệt → Manager được báo bản cập nhật. (Sửa báo giá đã duyệt → về nháp, chờ nhân viên gửi duyệt lại.)
+    if (saved.pendingEdit) await notifyMany(c.env, 'managers', { eventType: 'quote_pending',
+      title: 'Báo giá chờ duyệt vừa được sửa',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || ''}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     if (saved.revoked) await runAfterCommit(c.env);
     return json({ id: c.params.id, revision: saved.revision, data: forViewer(viewer, data), approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
