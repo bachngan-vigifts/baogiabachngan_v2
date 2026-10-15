@@ -12,7 +12,7 @@ import { products, productStock, warehouses } from '../../src/modules/catalog/sc
 
 /** ĐƠN MUA NCC (đợt 2): lập từ chứng từ nguồn, chống mua trùng, chia NCC, duyệt, xác nhận thay NCC, nhận hàng từng đợt, Sapo, thanh toán, huỷ. */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
-async function setup() {
+async function setup(extraEnv: Record<string, unknown> = {}) {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   for (const [id, pos] of [['kho', 'warehouse'], ['kt', 'accounting']] as const) {
     await d1.sqlite.prepare(`INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'','employee',?,1,'2026-01-01T00:00:00.000Z')`).run(id, id + '@x.vn', 'Tên ' + id, pos);
@@ -20,7 +20,7 @@ async function setup() {
   }
   const files = new Map<string, Uint8Array>();
   const env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const,
-    files: { put: async (k: string, b: Uint8Array) => { files.set(k, b); }, signedUrls: async (keys: string[]) => new Map(keys.map(k => [k, 'https://files.test/' + k])) } };
+    files: { put: async (k: string, b: Uint8Array) => { files.set(k, b); }, signedUrls: async (keys: string[]) => new Map(keys.map(k => [k, 'https://files.test/' + k])) }, ...extraEnv };
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env as never);
@@ -212,4 +212,42 @@ test('email NCC: hỏi tồn (ai xem đơn cũng gửi, không kèm giá) / gử
   assert.equal((await call(`/purchase-orders/${id}/mail`, kho, 'POST', { kind: 'order' })).status, 403);
   const events = (await call(`/purchase-orders/${id}`, mgr)).data.events.map((e: any) => e.summary);
   assert.ok(events.some((x: string) => x.startsWith('Gửi email hỏi tồn tới minhlong@ncc.vn')) && events.some((x: string) => x.startsWith('Gửi email đơn đặt hàng tới chot@ncc.vn')));
+});
+
+test('gửi email đơn đặt hàng từ máy chủ (Resend): kèm PDF, người nhận theo đơn, quyền, lỗi dịch vụ, chưa cấu hình', async () => {
+  const sent: any[] = []; let fail = 0;
+  const mailer = { apiKey: 're_test_key_123', from: 'Bách Ngân <don@bn.vn>', fetch: (async (url: string, init: RequestInit) => {
+    if (fail) return new Response(JSON.stringify({ message: 'bad' }), { status: fail });
+    sent.push({ url, auth: (init.headers as Record<string, string>).authorization, body: JSON.parse(String(init.body)) });
+    return new Response(JSON.stringify({ id: 'mail-1' }), { status: 200 });
+  }) as unknown as typeof fetch };
+  const { call, emp, mgr, kt, a } = await setup({ mailer });
+  const pdf = Buffer.from('%PDF-1.7 thử').toString('base64');
+  const id = (await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, lines: [{ sku: 'LY1', quantity: 2 }] }] })).data.ids[0];
+  assert.equal((await call(`/purchase-orders/${id}/send-email`, emp, 'POST', { pdf })).status, 403, 'nhân viên không gửi đơn có giá');
+  assert.equal((await call(`/purchase-orders/${id}/send-email`, mgr, 'POST', { pdf })).status, 409, 'chưa duyệt chưa gửi');
+  const v = (await call(`/purchase-orders/${id}`, mgr)).data;
+  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], supplierEmail: 'chot@ncc.vn', cc: ['kt@ncc.vn'] });
+  assert.equal((await call(`/purchase-orders/${id}/send-email`, mgr, 'POST', { pdf: Buffer.from('<html>').toString('base64') })).status, 400, 'không phải PDF');
+  assert.equal((await call(`/purchase-orders/${id}/send-email`, mgr, 'POST', {})).status, 400);
+  const r = await call(`/purchase-orders/${id}/send-email`, kt, 'POST', { pdf, to: 'ke-gian@evil.test' });
+  assert.equal(r.status, 200, JSON.stringify(r.data)); assert.equal(r.data.to, 'chot@ncc.vn');
+  assert.equal(sent.length, 1); const m = sent[0];
+  assert.equal(m.url, 'https://api.resend.com/emails'); assert.equal(m.auth, 'Bearer re_test_key_123');
+  assert.deepEqual(m.body.to, ['chot@ncc.vn'], 'người nhận do máy chủ quyết, bỏ qua "to" từ trình duyệt'); assert.deepEqual(m.body.cc, ['kt@ncc.vn']);
+  assert.equal(m.body.from, 'Bách Ngân <don@bn.vn>'); assert.equal(m.body.reply_to, 'kt@x.vn', 'NCC trả lời về người bấm gửi');
+  assert.match(m.body.subject, /^Đơn đặt hàng DMH_/); assert.match(m.body.text, /1\. LY1 - .*: 2/);
+  assert.equal(m.body.attachments.length, 1); assert.match(m.body.attachments[0].filename, /^Don-dat-hang-DMH_\w+\.pdf$/); assert.equal(m.body.attachments[0].content, pdf);
+  const events = (await call(`/purchase-orders/${id}`, mgr)).data.events.map((e: any) => e.summary);
+  assert.ok(events.some((x: string) => x.startsWith('Đã gửi email đơn đặt hàng (kèm PDF) tới chot@ncc.vn (CC kt@ncc.vn)')));
+  fail = 401;
+  const bad = await call(`/purchase-orders/${id}/send-email`, mgr, 'POST', { pdf });
+  assert.equal(bad.status, 502); assert.doesNotMatch(JSON.stringify(bad.data), /re_test_key/, 'không lộ mã API');
+  // Chưa cấu hình: 503 + mã để giao diện quay về soạn mail ở máy.
+  const none = await setup();
+  const id2 = (await none.call('/purchase-orders', none.mgr, 'POST', { orders: [{ supplierId: none.a, lines: [{ sku: 'LY1', quantity: 1 }] }] })).data.ids[0];
+  const v2 = (await none.call(`/purchase-orders/${id2}`, none.mgr)).data;
+  await none.call(`/purchase-orders/${id2}/approve`, none.mgr, 'POST', { lines: [{ lineId: v2.lines[0].id, price: 100 }] });
+  const nc = await none.call(`/purchase-orders/${id2}/send-email`, none.mgr, 'POST', { pdf });
+  assert.equal(nc.status, 503); assert.equal(nc.data.code, 'mail_not_configured');
 });

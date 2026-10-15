@@ -183,7 +183,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       if (has(a)) acts.append(btn(ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
       // Cạnh nút PDF: gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
       if (a === 'pdf' && has('pdf')) {
-        const mail = btn('✉ Gửi email NCC', 'btn secondary small', () => mailSupplier('order'));
+        const mail = btn('✉ Gửi email NCC', 'btn secondary small', () => sendOrderEmail(mail));
         if (v.state === 'draft') { mail.disabled = true; mail.title = 'Manager duyệt giá trước khi gửi đơn cho NCC'; }
         acts.append(mail);
       }
@@ -327,6 +327,25 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
    *  - 'stock': hỏi NCC còn hàng / ngày giao cho các mã còn thiếu (không kèm giá).
    * Máy chủ trả email người nhận theo danh bạ NCC và ghi vào lịch sử đơn.
    */
+  /**
+   * "✉ Gửi email NCC": máy chủ gửi email đơn đặt hàng kèm PDF (Resend). Máy chủ chưa cấu hình gửi mail
+   * thì quay về cách cũ: tải PDF + mở ứng dụng mail ở máy để người dùng tự đính kèm.
+   */
+  async function sendOrderEmail(button) {
+    const v = current;
+    const to = [v.supplierEmail, v.ccEmail && 'CC ' + v.ccEmail].filter(Boolean).join(' · ') || 'email nhận đơn trong danh bạ NCC';
+    if (!await confirmBox(`Gửi email đơn đặt hàng ${v.ticketNumber} kèm file PDF tới ${to}?`, { title: 'Gửi email NCC', ok: 'Gửi email' })) return;
+    button.disabled = true; const label = button.textContent; button.textContent = 'Đang gửi…';
+    try {
+      const { purchasePdfBase64 } = await import('./purchase-pdf.js');
+      const r = await api(`/purchase-orders/${encodeURIComponent(v.id)}/send-email`, 'POST', { pdf: await purchasePdfBase64(v) });
+      toast(`Đã gửi email đơn đặt hàng tới ${r.to}${r.cc.length ? ' (CC ' + r.cc.join(', ') + ')' : ''}.`);
+      openDetail(v.id); // cập nhật lịch sử
+    } catch (e) {
+      if (e.code === 'mail_not_configured') { toast('Máy chủ chưa bật gửi email – mở ứng dụng mail ở máy, nhớ đính kèm file PDF vừa tải.', 'err'); return mailSupplier('order'); }
+      toast(e.message || 'Không gửi được email.', 'err');
+    } finally { button.disabled = false; button.textContent = label; }
+  }
   async function mailSupplier(kind) {
     const v = current;
     try {
