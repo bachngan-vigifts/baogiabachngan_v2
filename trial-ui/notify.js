@@ -34,7 +34,7 @@ function showPushDevices(d) {
 }
 const ago = iso => { const s = (Date.now() - Date.parse(iso)) / 1000; return s < 60 ? 'vừa xong' : s < 3600 ? Math.floor(s / 60) + ' phút trước' : s < 86400 ? Math.floor(s / 3600) + ' giờ trước' : new Date(iso).toLocaleDateString('vi-VN'); };
 
-export function setupNotifications({ api, root, onNew, onOpen, isManager = () => false }) {
+export function setupNotifications({ api, root, onNew, onOpen, isManager = () => false, poll = true }) {
   root.innerHTML = `<button type="button" class="bell" aria-haspopup="true" aria-expanded="false" title="Thông báo">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z M10 20a2 2 0 0 0 4 0"/></svg><b class="bell-badge" hidden>0</b></button>
     <div class="bell-panel" hidden><div class="bell-head"><b>Thông báo</b><button type="button" class="link-btn" data-read-all>Đánh dấu đã đọc</button></div>
@@ -168,9 +168,10 @@ export function setupNotifications({ api, root, onNew, onOpen, isManager = () =>
     api('/notifications/read', 'POST', { ids: [n.id] }).catch(() => {}); n.readAt = n.readAt || new Date().toISOString(); draw();
     panel.hidden = true; onOpen(n);
   });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && started) check(); });
+  // poll = false: không tự hỏi định kỳ – trial-ui/pulse.js gọi check() khi có thông báo mới.
+  if (poll) document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && started) check(); });
   return {
-    start() { if (started) return; started = true; check(true); loop(); autoPush(); },
+    start() { if (started) return; started = true; check(true); if (poll) loop(); autoPush(); },
     check,
   };
 }

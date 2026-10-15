@@ -23,6 +23,7 @@ import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
 import { initChat } from './chat.js';
+import { setupPulse } from './pulse.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
 import { initProductActions } from './product-actions.js';
@@ -233,7 +234,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -297,7 +298,7 @@ async function enter() {
   currentHash = location.hash;
   route();
   loadAll();
-  notifier.start(); dataRefresh.start(); dataRefresh.tick();
+  notifier.start(); dataRefresh.start(); dataRefresh.tick(); pulse.start();
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -367,7 +368,7 @@ async function loadAll() {
   // Kho không xem được danh bạ khách (máy chủ chặn) → không tải, tránh báo lỗi đỏ khi mở app.
   const jobs = isWarehouse() ? [loadQuotes()] : [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(); $('#chat-launcher').hidden = false;
+  loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -2573,6 +2574,8 @@ var dataRefresh = setupDataRefresh({
   routeKey: () => location.hash,
   primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : ['/quotes', '/orders', '/contracts'],
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
+  // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
+  schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
 });
 const notifier = setupNotifications({
   api, root: $('#staff-bell'),
@@ -2582,7 +2585,9 @@ const notifier = setupNotifications({
   },
   onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) go('#' + h); },
   isManager: () => isManager(),
+  poll: false,
 });
+var pulse = setupPulse({ api, onData: () => dataRefresh.tick(), onNotify: () => notifier.check(), onChat: n => chatView().badge(n) }); // eslint-disable-line no-var -- showAuth() dừng nhịp trước khi khởi tạo xong
 /** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
 /** Chăm sóc khách hàng (trial-ui/care.js). */

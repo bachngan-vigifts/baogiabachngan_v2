@@ -115,15 +115,17 @@ const isDay = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.te
 const B64_RE = /^[A-Za-z0-9+/]+=*$/;
 function decodeB64(data: string) { const bin = atob(data); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
 
+/** Số tin chưa đọc của một người (dùng cho /chat/unread và GET /pulse). */
+export async function unreadChatCount(db: StaffEnv['db'], memberId: string): Promise<number> {
+  const [r] = await db.select({ n: sql<number>`count(*)` }).from(chatMessages)
+    .innerJoin(chatMembers, and(eq(chatMembers.conversationId, chatMessages.conversationId), eq(chatMembers.memberId, memberId)))
+    .where(and(ne(chatMessages.memberId, memberId), sql`${chatMessages.createdAt} > coalesce(${chatMembers.lastReadAt}, '')`));
+  return Number(r?.n ?? 0);
+}
+
 export function registerChatRoutes(router: Router<StaffEnv>) {
   /** Tổng tin chưa đọc (huy hiệu menu, hỏi định kỳ). */
-  router.get('/chat/unread', async c => {
-    const m = me(c);
-    const [r] = await c.env.db.select({ n: sql<number>`count(*)` }).from(chatMessages)
-      .innerJoin(chatMembers, and(eq(chatMembers.conversationId, chatMessages.conversationId), eq(chatMembers.memberId, m.id)))
-      .where(and(ne(chatMessages.memberId, m.id), sql`${chatMessages.createdAt} > coalesce(${chatMembers.lastReadAt}, '')`));
-    return json({ unread: Number(r?.n ?? 0) });
-  }, 'business');
+  router.get('/chat/unread', async c => json({ unread: await unreadChatCount(c.env.db, me(c).id) }), 'business');
 
   router.get('/chat/conversations', async c => json({ conversations: await conversationsOf(c) }), 'business');
 

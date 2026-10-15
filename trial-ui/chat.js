@@ -44,9 +44,10 @@ export function initChat({ api, toast, userId, isManager, compress }) {
   const st = { list: [], active: null, messages: [], reads: [], last: null, people: null, filter: '', timers: [], loading: false, cache: new Map() };
 
   let lastUnread = null;
-  async function badge() {
+  /** `known`: số chưa đọc đã có sẵn (từ GET /pulse) → không gọi máy chủ. */
+  async function badge(known) {
     try {
-      const { unread } = await api('/chat/unread'), b = document.getElementById('nav-chat-count');
+      const unread = typeof known === 'number' ? known : (await api('/chat/unread')).unread, b = document.getElementById('nav-chat-count');
       b.hidden = !unread; b.textContent = unread > 99 ? '99+' : unread;
       setBadgePart('chat', unread); // số đỏ trên icon app
       // Khung chat đang đóng mà có tin mới: báo ngay (thông báo + tiếng), không chỉ đổi số trên nút.
@@ -55,7 +56,8 @@ export function initChat({ api, toast, userId, isManager, compress }) {
     } catch { /* bỏ qua */ }
   }
   let badgeTimer = null;
-  const startBadge = () => { if (!badgeTimer) { badge(); badgeTimer = setInterval(() => { if (document.visibilityState === 'visible' && root.hidden) badge(); }, 15_000); } };
+  // poll = false: không tự hỏi định kỳ – trial-ui/pulse.js đưa số chưa đọc vào badge(n).
+  const startBadge = (poll = true) => { if (!badgeTimer) { badge(); badgeTimer = poll ? setInterval(() => { if (document.visibilityState === 'visible' && root.hidden) badge(); }, 15_000) : -1; } };
 
   // ----- Danh sách hội thoại
   async function loadList() {
@@ -138,7 +140,7 @@ export function initChat({ api, toast, userId, isManager, compress }) {
       if (seq === openSeq) applyThread(m);
     } catch (e) { if (seq !== openSeq) return; toast(e.message, 'err'); st.active = null; st.loading = false; renderThread(); }
   }
-  // Khi khung chat mở: hỏi tin mới của hội thoại đang xem mỗi 3 giây, làm mới danh sách mỗi 9 giây
+  // Khi khung chat mở: hỏi tin mới của hội thoại đang xem mỗi 5 giây, làm mới danh sách mỗi 15 giây
   // (kể cả khi chưa chọn hội thoại nào, vd trên điện thoại đang ở danh sách).
   function startTimers() {
     if (st.timers.length) return;
@@ -147,7 +149,7 @@ export function initChat({ api, toast, userId, isManager, compress }) {
       if (root.hidden) { stopThread(); return; }
       if (document.visibilityState !== 'visible') return;
       tick++; poll(); if (tick % 3 === 0) loadList();
-    }, 3_000));
+    }, 5_000));
   }
   function stopThread() { st.timers.forEach(clearInterval); st.timers = []; }
   async function markRead() { if (!st.active) return; try { await api(`/chat/${encodeURIComponent(st.active.id)}/read`, 'POST', {}); badge(); } catch { /* bỏ qua */ } }

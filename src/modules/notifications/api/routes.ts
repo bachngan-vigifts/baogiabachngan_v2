@@ -132,6 +132,12 @@ export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boole
 const mine = (m: { id: string; role: string }) => or(eq(webNotifications.targetMemberId, m.id),
   and(isNull(webNotifications.targetMemberId), or(eq(webNotifications.targetRole, 'all'), eq(webNotifications.targetRole, m.role))));
 
+/** Thông báo mới nhất của người xem (cho GET /pulse – trình duyệt chỉ tải lại chuông khi giá trị này đổi). */
+export async function latestNotificationAt(db: StaffEnv['db'], m: { id: string; role: string }): Promise<string> {
+  const [r] = await db.select({ at: sql<string | null>`max(${webNotifications.createdAt})` }).from(webNotifications).where(mine(m));
+  return r?.at ?? '';
+}
+
 export function registerNotificationRoutes(router: Router<StaffEnv>) {
   router.get('/push/config', async c => {
     const keys = await vapidKeys(c.env);
