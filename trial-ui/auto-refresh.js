@@ -1,5 +1,5 @@
 // Theo dõi dữ liệu đang xem và các chứng từ chính, kể cả thay đổi không phát sinh thông báo.
-export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, primaryPaths, onDeferred = () => {}, interval = 10000,
+export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, primaryPaths, onDeferred = () => {}, interval = 10000, wakeOnFocus = true,
   doc = document, win = window, schedule = setInterval, cancel = clearInterval }) {
   let generation = 0;
   let key = routeKey(), records = new Map(), checking = new Set(), busy = false, pending = false, warned = false, draft = false, timer;
@@ -62,9 +62,12 @@ export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, pr
   };
   const wake = () => { tick(); };
   doc.addEventListener('input', onInput);
-  doc.addEventListener('visibilitychange', wake);
-  win.addEventListener('focus', wake);
-  win.addEventListener('online', wake);
+  // wakeOnFocus = false: nơi gọi tự quyết lúc nào kiểm tra (trial-ui/pulse.js chỉ gọi tick() khi máy chủ báo có thay đổi).
+  if (wakeOnFocus) {
+    doc.addEventListener('visibilitychange', wake);
+    win.addEventListener('focus', wake);
+    win.addEventListener('online', wake);
+  }
   win.addEventListener('hashchange', syncRoute);
   function start() { draft = false; if (!timer) timer = schedule(tick, interval); }
   function stop() { generation++; cancel(timer); timer = undefined; records.clear(); pending = false; draft = false; warned = false; }
