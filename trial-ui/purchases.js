@@ -512,7 +512,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     const rows = [], sups = [], loaded = new Set();
     const srcBox = el('section', 'sup-section');
     const q = input('search', '', { placeholder: 'Tìm số báo giá, đơn / HĐKT, tên khách…' }), results = el('div', 'pur-results');
-    srcBox.append(el('h3', '', '1. Chọn chứng từ nguồn'), el('p', 'muted small', 'Mỗi mã hiện "còn cần đặt" = số chứng từ cần − số đã đặt ở các đơn mua chưa huỷ, để không mua trùng.'), field('Tìm chứng từ', q), results);
+    srcBox.append(el('h3', '', '1. Chọn chứng từ nguồn'), el('p', 'muted small', 'Số lượng cần mua được gợi ý từ số chứng từ cần, số đã đặt ở đơn mua chưa huỷ và tồn kho.'), field('Tìm chứng từ', q), results);
     let t2 = 0, rq = 0;
     const search = async () => {
       const id = ++rq;
