@@ -698,8 +698,16 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
   function receiveForm() {
     const v = current, clientKey = key(); // một lần mở hộp nhận = một mã: bấm lặp / mạng chập chờn không tạo phiếu thứ hai
     const d = frame('Nhận hàng', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
-    const date = input('date', today(), { max: today() }), wh = input('text', v.warehouse || '', { maxLength: 120 }), note = input('text', '', { maxLength: 1000 });
-    const g = el('div', 'form-grid two'); g.append(field('Ngày nhận', date), field('Kho nhận', wh), field('Ghi chú', note, 'span-2'));
+    const date = input('date', today(), { max: today() }), note = input('text', '', { maxLength: 1000 });
+    // Kho nhận chọn trong danh sách kho thật → hàng đạt tự cộng vào sổ kho đúng kho (giá trị gửi lên = tên kho).
+    const wh = el('select'); wh.required = true; wh.append(Object.assign(el('option', '', '— Chọn kho nhận —'), { value: '' }));
+    api('/stock-warehouses').then(r => {
+      let last = ''; try { last = localStorage.getItem('bn-receive-wh') || ''; } catch { /* bỏ qua */ }
+      for (const w of r.warehouses) wh.append(Object.assign(el('option', '', w.name), { value: w.name }));
+      if (r.warehouses.length === 1) wh.value = r.warehouses[0].name; else if (r.warehouses.some(w => w.name === last)) wh.value = last;
+    }).catch(() => {});
+    wh.addEventListener('change', () => { try { localStorage.setItem('bn-receive-wh', wh.value); } catch { /* bỏ qua */ } });
+    const g = el('div', 'form-grid two'); g.append(field('Ngày nhận', date), field('Kho nhận *', wh), field('Ghi chú', note, 'span-2'));
     const t = el('table', 'data-table pur-lines'), tb = el('tbody'), th = el('tr'); for (const h of ['Mã / tên', 'Còn thiếu', 'Đạt', 'Hỏng', 'Ghi chú']) th.append(el('th', '', h));
     t.append(el('thead'), tb); t.tHead.append(th);
     const ins = v.lines.filter(l => l.missing > 0).map(l => {

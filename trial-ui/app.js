@@ -24,6 +24,7 @@ import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
+import { initInventory } from './inventory.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
 import { initProductActions } from './product-actions.js';
@@ -495,7 +496,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -548,6 +549,7 @@ function route() {
   if (view === 'flow') flowView().load();
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
+  if (view === 'inventory') inventoryView().load();
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
@@ -2596,6 +2598,8 @@ var dashboardUi = null;
 function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money }); }
 var suppliersUi = null;
 function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager }); }
+var inventoryUi = null;
+function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var purchasesUi = null;
 function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso }); }
 // Sơ đồ quy trình: cấu hình ở flow-config.js; `openers` nối nút nhanh của khối với hộp thoại có sẵn của app.
@@ -3155,9 +3159,20 @@ async function openPacking(id) {
       <p class="muted small">Chụp 1–3 ảnh hàng đã đóng (ảnh tự nén nhỏ để không đầy bộ nhớ).</p>
       <label class="btn secondary pick-photo">📷 Chụp / chọn ảnh<input type="file" id="slip-photo-input" accept="image/*" capture="environment" multiple hidden></label>
       <div class="pack-photos" id="slip-photo-preview"></div>
+      ${k.source === 'warehouse' ? '<label>Xuất từ kho *<select id="slip-confirm-wh" required><option value="">— Chọn kho xuất —</option></select></label>' : ''}
       <label>Ghi chú (tuỳ chọn)<input id="slip-confirm-note" maxlength="1000" placeholder="Ví dụ: 3 thùng, đã dán tem"></label>
       <div class="row-gap end"><button class="btn primary" id="slip-confirm" disabled>Xác nhận đã đóng hàng</button></div></div>` : ''}`;
+  // Nguồn = Kho: chọn kho xuất → ghi phiếu xuất vào sổ kho (trial-ui/inventory.js); nhớ kho đã chọn lần trước trên máy này.
+  const whSel = document.getElementById('slip-confirm-wh');
+  if (whSel) stockWarehouses().then(list => {
+    let last = ''; try { last = localStorage.getItem('bn-pack-wh') || ''; } catch { /* bỏ qua */ }
+    for (const w of list) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.name; whSel.append(o); }
+    if (list.length === 1) whSel.value = list[0].id; else if (list.some(w => w.id === last)) whSel.value = last;
+  }).catch(() => {});
 }
+let stockWarehouseList = null;
+/** Kho thật đang dùng (GET /stock-warehouses) – dùng chung cho chọn kho xuất / kho nhận. */
+function stockWarehouses() { return stockWarehouseList ||= api('/stock-warehouses').then(r => r.warehouses).catch(e => { stockWarehouseList = null; throw e; }); }
 function drawSlipPhotos() {
   const box = document.getElementById('slip-photo-preview'); if (!box) return;
   box.innerHTML = slipPhotos.map((u, i) => `<span class="pack-photo"><img src="${esc(u)}" alt="Ảnh ${i + 1}"><button type="button" class="icon-btn danger" data-photo-del="${i}" aria-label="Bỏ ảnh ${i + 1}">×</button></span>`).join('');
@@ -3177,7 +3192,10 @@ document.addEventListener('click', async e => {
   if (del) { slipPhotos.splice(Number(del.dataset.photoDel), 1); drawSlipPhotos(); return; }
   if (e.target.id !== 'slip-confirm') return;
   const id = location.hash.slice(10); e.target.disabled = true;
-  try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value }); toast('Đã xác nhận đóng hàng.'); tasksView().badge(); openPacking(id); }
+  const whSel = document.getElementById('slip-confirm-wh');
+  if (whSel && !whSel.value) { toast('Chọn kho xuất hàng.', 'err'); whSel.focus(); e.target.disabled = false; return; }
+  if (whSel) try { localStorage.setItem('bn-pack-wh', whSel.value); } catch { /* bỏ qua */ }
+  try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}) }); toast('Đã xác nhận đóng hàng.'); tasksView().badge(); openPacking(id); }
   catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
 });
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */

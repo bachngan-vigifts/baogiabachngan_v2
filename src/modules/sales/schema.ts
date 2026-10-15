@@ -218,6 +218,8 @@ export const packingSlips = pgTable('packing_slips', {
   source: text('source', { enum: PACKING_SOURCES }).notNull().default('warehouse'),
   /** Tên cửa hàng / NCC / đại lý cụ thể. */
   sourceNote: text('source_note').notNull().default(''),
+  /** Kho xuất hàng (nguồn = Kho): kho chọn lúc xác nhận đã đóng hàng → ghi phiếu xuất vào sổ kho. */
+  stockWarehouseId: text('stock_warehouse_id'),
   status: text('status', { enum: PACKING_STATUSES }).notNull().default('draft'),
   note: text('note').notNull().default(''),
   totalQty: doublePrecision('total_qty').notNull().default(0),

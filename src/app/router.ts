@@ -23,6 +23,7 @@ import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api
 import { registerAuditRoutes } from './audit-routes.ts';
 import { registerApprovalRoutes } from './approval-routes.ts';
 import { registerPulseRoutes } from './pulse-routes.ts';
+import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
@@ -52,6 +53,7 @@ export function createAppRouter() {
   registerAuditRoutes(router);
   registerApprovalRoutes(router);
   registerPulseRoutes(router);
+  registerInventoryRoutes(router);
   registerFlowRoutes(router);
   return router;
 }
