@@ -119,3 +119,9 @@ Khác có chủ đích:
 - PDF dùng bố cục đơn đặt hàng khách hàng: tiêu đề công ty, hai cột thông tin, bảng hàng có khung, tổng tiền/VAT, ghi chú và 3 chữ ký. A4 ngang, font Times New Roman tiếng Việt, tự chia trang kể cả ghi chú một dòng hàng dài.
 - Thông tin chỉnh trong hộp tải chỉ áp dụng cho file; không lưu đè đơn mua. Không gửi email tự động, không tạo giao dịch hoặc đổi tồn kho.
 - Không cần migration. Cần deploy API (bổ sung printDescription/printFee có ẩn giá đúng quyền) và giao diện.
+
+### Địa chỉ giao hàng trên đơn mua
+
+- Form tạo và sửa nháp dùng nhãn **Địa chỉ giao hàng** thay cho Kho nhận. Bắt buộc nhập, bỏ khoảng trắng đầu/cuối, tối đa 120 ký tự.
+- API POST/PUT đơn mua kiểm tra lại địa chỉ; một đơn trong lô thiếu địa chỉ thì cả lô không được tạo. Giữ trường API/dữ liệu `warehouse`, không cần migration.
+- Kho nhận trên phiếu nhận hàng là thông tin nghiệp vụ nhận hàng riêng, giữ nguyên.

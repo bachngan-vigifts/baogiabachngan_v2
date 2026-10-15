@@ -45,6 +45,12 @@ const nowIso = () => new Date().toISOString();
 const today = () => vietnamDate().iso;
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim() : '').slice(0, max);
 const fail = (status: number, message: string): never => { throw new AppError(status, message); };
+function deliveryAddress(value: unknown): string {
+  const address = typeof value === 'string' ? value.trim() : '';
+  if (!address) fail(400, 'Vui lòng nhập địa chỉ giao hàng.');
+  if (address.length > 120) fail(400, 'Địa chỉ giao hàng tối đa 120 ký tự.');
+  return address;
+}
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 async function event(tx: Tx | Db, shipmentId: string, actorId: string, action: string, summary: string, data: Record<string, unknown> = {}) {
@@ -155,7 +161,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (!list.length || list.length > 20) fail(400, 'Cần từ 1 đến 20 đơn mua (mỗi nhà cung cấp một đơn).');
     const prepared = await Promise.all(list.map(async o => {
       const arrivalDate = o.arrivalDate ? (isIsoDate(o.arrivalDate) ? o.arrivalDate : fail(400, 'Ngày hàng về dự kiến không hợp lệ.')) : null;
-      return { supplier: await activeSupplier(db, o.supplierId), lines: cleanLines(o.lines, prices), arrivalDate, note: str(o.note, 2000), warehouse: str(o.warehouse, 120) };
+      return { supplier: await activeSupplier(db, o.supplierId), lines: cleanLines(o.lines, prices), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
     }));
     if (new Set(prepared.map(p => p.supplier.id)).size !== prepared.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
     const needs = await checkSources(db, m, prepared.map(p => p.lines));
@@ -239,13 +245,14 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     await db.transaction(async tx => {
       await lockSources(tx);
       const p = await lockAndCheck(c, tx, id, 'edit', body.revision);
+      const warehouse = deliveryAddress(body.warehouse);
       const needs = await checkSources(tx as unknown as Db, m, [lines], id);
       // Nhân viên sửa nháp: giữ giá Manager đã nhập (không thấy, không xoá được).
       if (!prices) for (const l of lines) { const old = p.raw.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase()); l.price = old?.price ?? null; l.taxRate = old?.taxRate ?? null; }
       await tx.delete(supplierOrderSources).where(eq(supplierOrderSources.shipmentId, id));
       await tx.delete(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id));
       await insertLines(tx, id, lines, needs);
-      await bump(tx, id, m.id, { supplierId: supplier.id, supplierName: supplier.name, arrivalDate, note: str(body.note, 2000), warehouse: str(body.warehouse, 120) });
+      await bump(tx, id, m.id, { supplierId: supplier.id, supplierName: supplier.name, arrivalDate, note: str(body.note, 2000), warehouse });
       const before = new Map(p.raw.lines.map(l => [l.sku, l.quantity])), after = new Map(lines.map(l => [l.sku, l.quantity]));
       const diff = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k)).map(k => `${k}: ${before.get(k) ?? 0} → ${after.get(k) ?? 0}`);
       await event(tx, id, m.id, 'update', 'Sửa đơn nháp' + (diff.length ? ' – ' + diff.slice(0, 8).join('; ') : '') + (p.raw.order.supplierId !== supplier.id ? ` · đổi NCC sang ${supplier.name}` : ''), { diff });
