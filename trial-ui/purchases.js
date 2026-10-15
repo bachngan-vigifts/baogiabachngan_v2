@@ -20,8 +20,72 @@ const FILTERS = [['', 'Tất cả'], ['draft', 'Chờ duyệt'], ['awaiting_conf
   ['late', 'Quá hẹn'], ['sapo', 'Chờ nhập Sapo'], ['debt', 'Còn nợ NCC'], ['received', 'Đã nhận đủ'], ['cancelled', 'Đã huỷ']];
 const ACTION_LABEL = { edit: 'Sửa nháp', approve: 'Duyệt giá', confirm: 'Ghi nhận NCC xác nhận', receive: 'Nhận hàng', pay: 'Ghi trả NCC', schedule: 'Lịch trả', pdf: 'PDF gửi NCC', cancel: 'Huỷ đơn' };
 
+/** Catalog lookup for the manual purchase line; never converts SKUs to numbers. */
+export function bindManualProductLookup({ api, sku, name, unit, host, add, active }) {
+  const list = el('div', 'pur-product-results'); list.hidden = true;
+  const status = el('small', 'muted pur-product-status'); status.setAttribute('role', 'status');
+  host.append(list, status);
+  sku.setAttribute('aria-label', 'Mã hàng (SKU)'); name.setAttribute('aria-label', 'Tìm tên hàng');
+  name.autocomplete = sku.autocomplete = 'off';
+  let timer = 0, request = 0, disposed = false, selected = null;
+  const valid = id => !disposed && active() && id === request;
+  function reset() {
+    clearTimeout(timer); ++request; selected = null; list.replaceChildren(); list.hidden = true;
+    status.textContent = ''; add.disabled = false;
+  }
+  function choose(p) {
+    reset(); sku.value = String(p.sku); name.value = p.name || ''; unit.value = p.unit || '';
+    selected = { sku: sku.value, name: name.value }; status.textContent = 'Đã chọn sản phẩm.';
+  }
+  function schedule(kind) {
+    const previous = selected; reset();
+    if (kind === 'sku') { name.value = ''; unit.value = ''; }
+    else if (previous && name.value !== previous.name) { sku.value = ''; unit.value = ''; }
+    const query = (kind === 'sku' ? sku : name).value.trim();
+    if (!query || (kind === 'name' && query.length < 2)) return;
+    const id = request; add.disabled = kind === 'sku'; status.textContent = 'Đang tìm sản phẩm…';
+    timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams(kind === 'sku' ? { skus: query } : { q: query, limit: '8' });
+        const data = await api('/products?' + params);
+        if (!valid(id)) return;
+        if (kind === 'sku') {
+          const product = data.products.find(p => String(p.sku) === query);
+          if (product) choose(product);
+          else status.textContent = 'Chưa có mã trong danh mục; có thể nhập tên và ĐVT thủ công.';
+        } else {
+          list.replaceChildren();
+          for (const product of data.products) {
+            const option = btn('', 'pur-product-option', () => choose(product));
+            option.append(el('b', '', product.sku), el('span', '', product.name), el('small', 'muted', product.unit || ''));
+            option.addEventListener('keydown', e => {
+              if (e.key === 'Escape') { e.stopPropagation(); reset(); name.focus(); }
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault(); (e.key === 'ArrowDown' ? option.nextElementSibling : option.previousElementSibling)?.focus();
+              }
+            });
+            list.append(option);
+          }
+          list.hidden = !data.products.length;
+          status.textContent = data.products.length ? 'Chọn sản phẩm để điền mã và ĐVT.' : 'Không thấy sản phẩm; có thể nhập thủ công.';
+        }
+      } catch {
+        if (valid(id)) status.textContent = 'Không tìm được danh mục. Thử lại hoặc nhập mã, tên và ĐVT thủ công.';
+      } finally { if (valid(id)) add.disabled = false; }
+    }, 250);
+  }
+  const onSku = () => schedule('sku'), onName = () => schedule('name');
+  const onKey = e => {
+    if (e.key === 'Escape') { e.stopPropagation(); reset(); }
+    if (e.key === 'ArrowDown' && !list.hidden) { e.preventDefault(); list.firstChild?.focus(); }
+  };
+  sku.addEventListener('input', onSku); name.addEventListener('input', onName); name.addEventListener('keydown', onKey);
+  return { reset, dispose() { reset(); disposed = true; sku.removeEventListener('input', onSku); name.removeEventListener('input', onName); name.removeEventListener('keydown', onKey); } };
+}
+
 export function initPurchases({ api, root, toast, confirmBox, money, go, today }) {
   let rows = [], filter = '', req = 0, opts = null, current = null;
+  let disposeLookup = () => {};
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Mua hàng'), el('h1', '', 'Đơn mua NCC'),
@@ -86,9 +150,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
   }
 
   // ---------------------------------------------------------------- ngăn kéo
-  const hide = () => { drawer.hidden = true; shade.hidden = true; current = null; };
+  const hide = () => { disposeLookup(); drawer.hidden = true; shade.hidden = true; current = null; };
   const close = () => { hide(); if (/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', '#/purchases'); };
   function frame(eyebrow, title, onBack) {
+    disposeLookup(); disposeLookup = () => {};
     const top = el('div', 'sup-drawer-head'), t = el('div'); t.append(el('span', 'eyebrow', eyebrow), el('h2', '', title));
     const tools = el('div', 'pur-head-tools');
     if (onBack) tools.append(btn('← Quay lại', 'btn secondary small', onBack));
@@ -488,12 +553,15 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     const gridBox = el('section', 'sup-section');
     const manual = el('div', 'pur-inline pur-manual');
     const mSku = input('text', '', { placeholder: 'Mã hàng (SKU)', maxLength: 200 }), mName = input('text', '', { placeholder: 'Tên hàng', maxLength: 300 }), mUnit = input('text', '', { placeholder: 'ĐVT', maxLength: 40, className: 'pur-qty' }), mQty = qtyInput('');
-    manual.append(mSku, mName, mUnit, mQty, btn('+ Thêm mã ngoài chứng từ', 'btn secondary small', () => {
+    const addManual = btn('+ Thêm mã ngoài chứng từ', 'btn secondary small', () => {
       const sku = mSku.value.trim(), qty = Math.floor(Number(mQty.value));
       if (!sku || !(qty > 0)) { toast('Nhập mã hàng và số lượng.', 'err'); return; }
       rows.push({ sku, name: mName.value.trim(), unit: mUnit.value.trim(), need: null, remaining: qty, stock: null, source: null, want: qty, split: {} });
-      mSku.value = mName.value = mUnit.value = mQty.value = ''; renderGrid();
-    }));
+      lookup.reset(); mSku.value = mName.value = mUnit.value = mQty.value = ''; renderGrid(); mSku.focus();
+    });
+    manual.append(mSku, mName, mUnit, mQty, addManual);
+    const lookup = bindManualProductLookup({ api, sku: mSku, name: mName, unit: mUnit, host: manual, add: addManual, active: () => f.isConnected && !drawer.hidden });
+    disposeLookup = () => lookup.dispose();
     const table = el('div', 'table-wrap');
     gridBox.append(el('h3', '', '3. Chia số lượng cho từng NCC'), table, el('h4', '', 'Mã ngoài chứng từ (hàng dự trữ…)'), manual);
     const arrival = input('date', ''), wh = input('text', '', { maxLength: 120 }), note = el('textarea'); note.rows = 2; note.maxLength = 2000;
