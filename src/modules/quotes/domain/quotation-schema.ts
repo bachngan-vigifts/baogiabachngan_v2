@@ -54,6 +54,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
   const number = (value: unknown, max: number): number => { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > max) throw bad('Số liệu báo giá không hợp lệ.'); return value; };
   const result: Obj = { type: inp.type };
   for (const key of ['quoteNo', 'date', 'customer', 'customerId', 'customerTaxCode', 'customerCode', 'customerAddress', 'contact', 'phone', 'email', 'owner', 'ownerPhone', 'notes']) result[key] = text(inp[key] ?? '', key === 'notes' ? 20000 : 500);
+  if (inp.internalNote !== undefined) result.internalNote = text(inp.internalNote, 3000);
   if (!result.quoteNo.trim()) throw bad('Vui lòng nhập số báo giá.');
   for (const key of ['deliveryDate', 'delivery_date']) if (inp[key]) { const d = validDeliveryDate(inp[key]); if (!d) throw bad('Ngày giao không hợp lệ.'); result[key] = d; }
   if (inp.paymentTerms !== undefined) {
