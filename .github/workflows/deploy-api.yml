@@ -29,8 +29,10 @@ jobs:
         run: echo "::warning::Chưa có secret SUPABASE_ACCESS_TOKEN – bỏ qua bước triển khai." 
       - uses: supabase/setup-cli@v1
         if: env.SUPABASE_ACCESS_TOKEN != ''
+        # Cố định phiên bản: "latest" phải hỏi API GitHub mỗi lần và có lúc bị chặn (rate limit) → hỏng bước triển khai.
+        # Muốn nâng cấp thì đổi số này (xem npm view supabase dist-tags).
         with:
-          version: latest
+          version: 2.120.0
       - name: Cập nhật danh sách trang được phép gọi API
         if: env.SUPABASE_ACCESS_TOKEN != '' && vars.APP_ORIGINS != ''
         run: supabase secrets set --project-ref "$PROJECT_REF" ALLOWED_ORIGINS="${{ vars.APP_ORIGINS }}"
