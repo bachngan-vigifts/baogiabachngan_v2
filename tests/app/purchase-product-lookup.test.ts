@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../../trial-ui/purchases.js', import.meta.url), 'utf8');
+// Evaluate the lookup helpers without unrelated ES module imports or page initialization.
+const helpersStart = source.indexOf('const el =');
+const helpersEnd = source.indexOf('export function initPurchases');
+assert.ok(helpersStart >= 0 && helpersEnd > helpersStart, 'purchase lookup helper boundaries must exist');
+const helpers = source.slice(helpersStart, helpersEnd).replace('export function bindManualProductLookup', 'function bindManualProductLookup');
 class Element {
   value = ''; hidden = false; disabled = false; textContent = ''; children: Element[] = []; events: Record<string, Function> = {};
   setAttribute() {} append(...children: Element[]) { this.children.push(...children); }
@@ -15,7 +20,7 @@ function setup() {
   const timers = new Map<number, Function>(), calls: any[] = [];
   const context: any = { document: { createElement: () => new Element() }, URLSearchParams,
     setTimeout: (fn: Function) => { timers.set(++next, fn); return next; }, clearTimeout: (id: number) => timers.delete(id) };
-  runInNewContext(source.slice(0, source.indexOf('export function initPurchases')).replace('export function bindManualProductLookup', 'function bindManualProductLookup') + '\nglobalThis.bind = bindManualProductLookup;', context);
+  runInNewContext(helpers + '\nglobalThis.bind = bindManualProductLookup;', context);
   const sku = new Element(), name = new Element(), unit = new Element(), host = new Element(), add = new Element();
   const lookup = context.bind({ sku, name, unit, host, add, active: () => active, api: (path: string) => new Promise((resolve, reject) => calls.push({ path, resolve, reject })) });
   return { sku, name, unit, host, add, lookup, calls, close: () => { active = false; },
