@@ -509,8 +509,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         loaded.add(type + ':' + id);
         const open = r.lines.filter(l => l.remaining > 0);
         if (!open.length) toast(`${r.source.no}: các mã đã đặt đủ.`);
-        // SL cần đặt điền sẵn = còn cần đặt; anh chị sửa tay được (vd. đặt cả lô ở NCC thay vì lấy một phần từ kho).
-        for (const l of open) rows.push({ sku: l.sku, name: l.name, unit: l.unit, remaining: l.remaining, ordered: l.ordered, need: l.quantity, stock: l.stock, source: r.source, want: l.remaining, split: {} });
+        // SL cần đặt điền sẵn = còn cần đặt − tồn kho (chưa đặt gì thì = SL trong đơn − tồn kho); mã chưa có số liệu tồn → đặt đủ.
+        // Anh chị sửa tay được (vd. đặt cả lô ở NCC thay vì lấy một phần từ kho).
+        for (const l of open) rows.push({ sku: l.sku, name: l.name, unit: l.unit, remaining: l.remaining, ordered: l.ordered, need: l.quantity, stock: l.stock, source: r.source,
+          want: Math.max(0, l.remaining - Math.max(0, Math.floor(Number(l.stock) || 0))), split: {} });
         renderGrid(); search();
       } catch (e) { toast(e.message || 'Không tải được chứng từ.', 'err'); }
     }
