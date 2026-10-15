@@ -5,7 +5,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { incomingShipments, supplierAccounts, supplierContacts, suppliers } from '../schema.ts';
-import { canManageSuppliers, cleanContacts, cleanSupplierInput, planAccountLink } from '../domain/directory.ts';
+import { canEditSuppliers, canManageSuppliers, cleanContacts, cleanSupplierInput, planAccountLink } from '../domain/directory.ts';
 
 /**
  * DANH BẠ NHÀ CUNG CẤP (đợt 1 – Manager, khu vực `ncc-admin`). Xem docs/NCC-PAGE.md, mục "Quản lý NCC".
@@ -19,7 +19,8 @@ import { canManageSuppliers, cleanContacts, cleanSupplierInput, planAccountLink 
  */
 type Ctx = RouteContext<StaffEnv>;
 const member = (c: Ctx) => (c.state.session as SessionState).member;
-const requireManager = (c: Ctx) => { if (!canManageSuppliers(member(c))) throw new AppError(403, 'Chỉ Manager được quản lý nhà cung cấp.'); };
+const requireManager = (c: Ctx) => { if (!canManageSuppliers(member(c))) throw new AppError(403, 'Chỉ Manager được gắn tài khoản NCC.'); };
+const requireEditor = (c: Ctx) => { if (!canEditSuppliers(member(c))) throw new AppError(403, 'Chỉ Manager hoặc Kế toán được quản lý nhà cung cấp.'); };
 const nowIso = () => new Date().toISOString();
 
 async function loadSupplier(db: StaffEnv['db'], id: string) {
@@ -46,7 +47,7 @@ export async function supplierDetail(db: StaffEnv['db'], id: string) {
 
 export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
   router.get('/suppliers', async c => {
-    requireManager(c);
+    requireEditor(c);
     const q = (c.url.searchParams.get('q') ?? '').trim().slice(0, 100), active = c.url.searchParams.get('active');
     const like = '%' + q.replace(/[\\%_]/g, m => '\\' + m) + '%';
     const where = and(q ? or(ilike(suppliers.name, like), ilike(suppliers.taxCode, like), ilike(suppliers.phone, like), ilike(suppliers.email, like)) : undefined,
@@ -63,10 +64,10 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
     // Đang hoạt động trước, rồi theo tên.
     rows.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, 'vi'));
     return json({ suppliers: rows.map(r => ({ ...r, contacts: cm.get(r.id) ?? 0, accounts: am.get(r.id) ?? 0, orders: om.get(r.id) ?? 0 })) });
-  }, 'ncc-admin');
+  }, 'business');
 
   router.post('/suppliers', async c => {
-    requireManager(c);
+    requireEditor(c);
     const body = await readJson(c.req, 32_768), clean = cleanSupplierInput(body), contacts = cleanContacts(body.contacts ?? []);
     const db = c.env.db, now = nowIso(), id = crypto.randomUUID(), me = member(c);
     if (await nameTaken(db, clean.nameKey)) throw new AppError(409, 'Đã có nhà cung cấp trùng tên.');
@@ -77,12 +78,12 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
       if (contacts.length) await tx.insert(supplierContacts).values(contacts.map(ct => ({ id: crypto.randomUUID(), supplierId: id, ...ct, createdAt: now })));
     });
     return json(await supplierDetail(db, id), 201);
-  }, 'ncc-admin');
+  }, 'business');
 
-  router.get('/suppliers/:id', async c => { requireManager(c); return json(await supplierDetail(c.env.db, c.params.id!)); }, 'ncc-admin');
+  router.get('/suppliers/:id', async c => { requireEditor(c); return json(await supplierDetail(c.env.db, c.params.id!)); }, 'business');
 
   router.put('/suppliers/:id', async c => {
-    requireManager(c);
+    requireEditor(c);
     const db = c.env.db, id = c.params.id!, body = await readJson(c.req, 32_768), me = member(c), current = await loadSupplier(db, id);
     if (typeof body.updatedAt === 'string' && body.updatedAt !== current.updatedAt) throw new AppError(409, 'Nhà cung cấp vừa được người khác sửa. Tải lại rồi thử lại.');
     const clean = cleanSupplierInput(body), contacts = body.contacts === undefined ? null : cleanContacts(body.contacts);
@@ -100,7 +101,7 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
       }
     });
     return json(await supplierDetail(db, id));
-  }, 'ncc-admin');
+  }, 'business');
 
   router.put('/suppliers/:id/accounts', async c => {
     requireManager(c);

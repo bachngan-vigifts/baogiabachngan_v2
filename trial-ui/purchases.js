@@ -465,15 +465,26 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     };
     q.addEventListener('input', () => { clearTimeout(t2); t2 = setTimeout(search, 250); });
     const supBox = el('section', 'sup-section');
-    const pick = supplierSelect(o.suppliers, '');
+    let pick = supplierSelect(o.suppliers, '');
     supBox.append(el('h3', '', '2. Chọn nhà cung cấp (có thể chia nhiều NCC)'), el('div', 'pur-inline'));
-    supBox.lastChild.append(pick, btn('+ Thêm NCC', 'btn secondary small', () => {
+    supBox.lastChild.append(pick, btn('+ Thêm NCC vào đơn', 'btn secondary small', () => {
       if (!pick.value || sups.some(s => s.id === pick.value)) return;
       if (sups.length >= 6) { toast('Tối đa 6 nhà cung cấp mỗi lần lập.', 'err'); return; }
       sups.push({ id: pick.value, name: pick.selectedOptions[0].textContent });
       pick.value = ''; renderGrid();
     }));
-    if (!o.suppliers.length) supBox.append(el('p', 'muted small', 'Chưa có nhà cung cấp đang hoạt động – Manager thêm ở trang Nhà cung cấp.'));
+    // Tạo NCC mới (Manager / Kế toán): mở trang Nhà cung cấp ở tab mới; quay lại tab này thì danh sách NCC tự cập nhật.
+    if (o.canEditSuppliers) {
+      supBox.lastChild.append(btn('＋ Tạo NCC mới', 'btn ghost small', () => window.open(location.pathname + '#/suppliers?new=1', '_blank')));
+      const refreshSuppliers = async () => {
+        if (!f.isConnected) { window.removeEventListener('focus', refreshSuppliers); return; }
+        try { opts = null; const fresh = await options(); const keep = pick.value; const next = supplierSelect(fresh.suppliers, keep); pick.replaceWith(next); pick = next; noSup.hidden = fresh.suppliers.length > 0; }
+        catch { /* giữ danh sách cũ */ }
+      };
+      window.addEventListener('focus', refreshSuppliers);
+    }
+    const noSup = el('p', 'muted small', o.canEditSuppliers ? 'Chưa có nhà cung cấp đang hoạt động – bấm "＋ Tạo NCC mới".' : 'Chưa có nhà cung cấp đang hoạt động – Manager / Kế toán thêm ở trang Nhà cung cấp.');
+    noSup.hidden = o.suppliers.length > 0; supBox.append(noSup);
     const gridBox = el('section', 'sup-section');
     const manual = el('div', 'pur-inline pur-manual');
     const mSku = input('text', '', { placeholder: 'Mã hàng (SKU)', maxLength: 200 }), mName = input('text', '', { placeholder: 'Tên hàng', maxLength: 300 }), mUnit = input('text', '', { placeholder: 'ĐVT', maxLength: 40, className: 'pur-qty' }), mQty = qtyInput('');

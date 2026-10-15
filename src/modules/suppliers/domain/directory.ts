@@ -53,7 +53,11 @@ export function defaultRecipients(contacts: readonly { kind: 'order' | 'cc'; ema
   return { to: contacts.find(c => c.kind === 'order')?.email ?? '', cc: contacts.filter(c => c.kind === 'cc').map(c => c.email) };
 }
 
-/** Chỉ Manager quản lý danh mục NCC và gắn tài khoản. */
+/** Thêm / sửa danh bạ NCC (thông tin, email nhận đơn): Manager và Kế toán. */
+export const canEditSuppliers = (actor: { role: Role; active: boolean; positionId?: string | null } | null | undefined): boolean =>
+  Boolean(actor?.active && !isSupplier(actor) && (actor.role === 'manager' || (actor.role === 'employee' && actor.positionId === 'accounting')));
+
+/** Gắn tài khoản NCC đăng nhập (quyết định ai thấy đơn của NCC nào): chỉ Manager. */
 export const canManageSuppliers = (actor: { role: Role; active: boolean; positionId?: string | null } | null | undefined): boolean =>
   Boolean(actor?.active && actor.role === 'manager' && !isSupplier(actor));
 

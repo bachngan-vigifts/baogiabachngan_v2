@@ -12,7 +12,7 @@ Ai vào: **tài khoản NCC** (chỉ thấy đơn của NCC mình) và **Manager
 - **Chi tiết đơn**: bảng dòng hàng (mã, tên, SL, đơn giá, chiết khấu, ngày hẹn, ghi chú NCC), khối tiền (`computeOrderTotals`: tạm tính, VAT, tổng, cọc theo %, đã trả, còn lại), file bản ký, lịch sử đổi ngày hẹn/chiết khấu so với đơn gốc.
 - **Nút** = `nextActions(actor, order)`. Bảng đầy đủ: [`NCC-ACTIONS.md`](NCC-ACTIONS.md) (tự sinh).
 
-### 2. Quản lý NCC – `#/suppliers` (khu vực `ncc-admin`, chỉ Manager) ✅ đã làm (đợt 1)
+### 2. Quản lý NCC – `#/suppliers` (Manager và Kế toán thêm / sửa danh bạ; chỉ Manager gắn tài khoản NCC – khu vực `ncc-admin`) ✅ đã làm (đợt 1)
 API: `src/modules/suppliers/api/directory-routes.ts` (`GET/POST /suppliers`, `GET/PUT /suppliers/:id`, `PUT /suppliers/:id/accounts`, `GET /supplier-account-candidates`). Giao diện: `trial-ui/suppliers.js` (menu Quản trị → Nhà cung cấp). Sửa NCC có khoá lạc quan `updatedAt` (409 khi người khác vừa sửa); mọi thao tác ghi vào `audit_logs` tự động.
 
 Nơi sửa **mọi thứ về NCC mà trước đây phải sửa code**:
