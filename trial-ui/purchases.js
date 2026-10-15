@@ -187,7 +187,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         if (v.state === 'draft') { mail.disabled = true; mail.title = 'Manager duyệt giá trước khi gửi đơn cho NCC'; }
         acts.append(mail);
       }
-      if (a === 'pdf' && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => mailSupplier('stock')));
+      if (a === 'pdf' && has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => mailSupplier('stock')));
     }
     // Người không xem được giá (không có nút PDF) vẫn hỏi tồn được.
     if (!has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => mailSupplier('stock')));
@@ -205,7 +205,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     // Dòng hàng
     const sec = section('Hàng đặt', `Đã nhận đạt ${num(v.progress.good)}/${num(v.progress.ordered)}` + (v.progress.damaged ? ` · hỏng ${num(v.progress.damaged)}` : '') + (v.progress.missing ? ` · còn thiếu ${num(v.progress.missing)}` : ' · đủ'));
     const t = el('table', 'data-table pur-lines'), th = el('tr');
-    const cols = ['Mã / tên', 'SL', 'Đạt', 'Hỏng', 'Thiếu', 'Hẹn', ...(v.priceHidden ? [] : ['Giá', 'CK %', 'Thành tiền'])];
+    const cols = ['Mã / tên', 'SL', 'Hẹn giao', ...(v.priceHidden ? [] : ['Giá', 'CK %', 'Thành tiền'])];
     for (const c of cols) th.append(el('th', '', c));
     const tb = el('tbody');
     for (const l of v.lines) {
@@ -219,7 +219,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         row.append('↳ ', link, `${s.customerName ? ' · ' + s.customerName : ''}: ${num(s.quantity)}`); name.append(row);
       }
       if (l.supplierNote) name.append(el('small', 'muted sup-sub', 'NCC: ' + l.supplierNote));
-      tr.append(name, el('td', 'num', num(l.quantity)), el('td', 'num', num(l.good)), el('td', 'num', l.damaged ? num(l.damaged) : '—'), el('td', 'num' + (l.missing ? ' pur-late' : ''), l.missing ? num(l.missing) : '—'), el('td', '', dmy(l.promisedDate)));
+            // Đã nhận / hỏng / thiếu xem ở dòng tóm tắt phía trên và ở "Phiếu nhận hàng"; "Hẹn giao" = ngày NCC hẹn giao riêng mã này.
+      tr.append(name, el('td', 'num', num(l.quantity)), el('td', '', dmy(l.promisedDate)));
       if (!v.priceHidden) tr.append(el('td', 'num', l.price == null ? '—' : money(l.price)), el('td', 'num', l.purchaseDiscount ? num(l.purchaseDiscount) : '—'), el('td', 'num', money(l.lineTotal)));
       tb.append(tr);
     }
@@ -422,6 +423,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         [p, dc, tx].forEach(i => i.addEventListener('input', recalc));
       }
       const tw = el('div', 'table-wrap'); tw.append(t); f.append(tw);
+      const hint = el('p', 'muted small'); f.append(hint);
+      prefillCosts(price, hint).then(() => recalc());
     }
     const totalEl = el('p', 'pur-total');
     const total = () => approve ? [...price.values()].reduce((s, { l, p, dc, tx }) => { const line = Number(p.value || 0) * (100 - Number(dc.value || 0)) / 100 * l.quantity; return s + line + line * Number(tx.value || 0) / 100; }, 0) : (v.totals?.total || 0);
@@ -464,6 +467,37 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         ...(to.value.trim() ? { supplierEmail: to.value.trim() } : {}), ...(cc.value.trim() ? { cc: cc.value.split(',').map(s => s.trim()).filter(Boolean) } : {}) }), 'Đã duyệt đơn mua.');
     });
     d.append(f);
+  }
+
+  /**
+   * Gợi ý giá cho dòng chưa có giá – cùng quy tắc "Cập nhật CK mua vào" ở báo giá:
+   * Giá mua = giá niêm yết (bảng giá đang chọn ở trang báo giá, quy về chưa thuế) và CK % theo thương hiệu
+   * (Healthy Cook 15, Lys 19, Lock&Lock 58, Minh Long 25) → giá nhập = giá niêm yết × (1 − CK). Manager vẫn sửa được trước khi duyệt.
+   */
+  async function prefillCosts(price, hint) {
+    const empty = [...price.values()].filter(x => x.l.price == null);
+    if (!empty.length) return;
+    hint.textContent = 'Đang lấy giá niêm yết…';
+    try {
+      const { defaultCostDiscount, netPrice } = await import('./quote-math.js');
+      const skus = [...new Set(empty.map(x => x.l.sku).filter(Boolean))];
+      const { products = [], policies = [] } = await api('/products?skus=' + encodeURIComponent(skus.join(',')));
+      let pref = ''; try { pref = localStorage.getItem('bn-price-policy') || ''; } catch { /* bỏ qua */ }
+      const policy = policies.find(p => p.id === pref) || policies[0];
+      const bySku = new Map(products.map(p => [String(p.sku), p])), missing = [];
+      for (const { l, p, dc, tx } of empty) {
+        const prod = bySku.get(String(l.sku));
+        const raw = prod?.prices?.find(x => x.policyId === policy?.id)?.price, disc = defaultCostDiscount(prod || l);
+        if (!prod || !Number.isFinite(raw) || disc === null) { missing.push(l.sku); continue; }
+        const tax = prod.taxable ? (Number.isFinite(prod.taxIn) ? prod.taxIn : Number.isFinite(prod.taxOut) ? prod.taxOut : 8) : 0;
+        const included = /VAT/i.test(policy?.name || '') || prod.taxBasis === 'Giá đã bao gồm thuế';
+        if (p.value === '') p.value = String(Math.round(netPrice(raw, prod.taxable ? (prod.taxOut ?? 0) : 0, included)));
+        if (!Number(dc.value)) dc.value = String(disc);
+        if (l.taxRate == null) tx.value = String(tax);
+      }
+      hint.textContent = `Đã điền sẵn giá niêm yết${policy ? ` (${policy.name})` : ''} + CK mua vào theo thương hiệu, kiểm tra lại rồi bấm Duyệt.`
+        + (missing.length ? ` Chưa xác định được: ${missing.join(', ')} – nhập tay.` : '');
+    } catch { hint.textContent = 'Không lấy được giá niêm yết – nhập giá mua tay.'; }
   }
 
   function confirmForm() {
