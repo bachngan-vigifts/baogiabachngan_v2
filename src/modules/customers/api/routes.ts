@@ -158,7 +158,17 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const name = text('name'); if (!name) throw new AppError(400, 'Vui lòng nhập tên khách hàng.');
     const now = nowIso(), id = update ? c.params.id! : crypto.randomUUID();
     const fields = { name, contact: text('contact'), phone: text('phone', 40), email: text('email'), address: text('address', 2000), taxCode: text('taxCode'), customerCode: text('customerCode') };
-    const row = { ...fields, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
+    // Điều khoản riêng (không bắt buộc; để trống = dùng mặc định của báo giá). Chỉ ghi khi form có gửi.
+    const num = (key: string, max: number, label: string) => {
+      const v = body[key]; if (v === undefined) return undefined; if (v === null || v === '') return null;
+      const n = Number(String(v).replace(/\./g, '').replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0 || n > max) throw new AppError(400, `${label} không hợp lệ.`); return n;
+    };
+    const depositRate = num('depositRate', 100, 'Tỷ lệ đặt cọc'), creditLimit = num('creditLimit', 1e13, 'Giới hạn công nợ');
+    const paymentTerm = body.paymentTerm === undefined ? undefined : (text('paymentTerm') || null);
+    if (paymentTerm && /^\d+(?:\s*ngày)?$/i.test(paymentTerm) && parseInt(paymentTerm, 10) > 3650) throw new AppError(400, 'Hạn thanh toán tối đa 3650 ngày.');
+    const terms = Object.fromEntries(Object.entries({ depositRate, paymentTerm, creditLimit }).filter(([, v]) => v !== undefined));
+    const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
     // Sửa khách mà không đổi MST thì không chặn (dữ liệu trùng cũ gộp bằng chức năng "Gộp khách trùng MST").
     const unchanged = update && normTaxCode((await loadCustomer(c.env.db, id)).taxCode) === normTaxCode(fields.taxCode);
     const dup = unchanged ? null : await customerWithTaxCode(c.env.db, fields.taxCode, update ? id : undefined);

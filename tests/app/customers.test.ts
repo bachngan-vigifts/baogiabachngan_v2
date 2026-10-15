@@ -113,3 +113,21 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal((await call(`/customers/${k.data.id}`, mgr)).data.owner.id, 'emp');
 });
 
+
+test('điều khoản riêng của khách: % cọc, hạn thanh toán, giới hạn công nợ – lưu, sửa, xoá về mặc định, chặn giá trị sai', async () => {
+  const { call, mgr } = await setup();
+  const c = await call('/customers', mgr, 'POST', { name: 'Khách điều khoản', depositRate: '50', paymentTerm: '7', creditLimit: '20.000.000' });
+  assert.equal(c.status, 201, JSON.stringify(c.data));
+  let got = (await call('/customers/' + c.data.id, mgr)).data.customer;
+  assert.deepEqual([got.depositRate, got.paymentTerm, got.creditLimit], [50, '7', 20000000]);
+  assert.equal((await call('/customers/' + c.data.id, mgr, 'PUT', { name: 'Khách điều khoản', depositRate: '', paymentTerm: 'Thanh toán trước khi giao hàng', creditLimit: '' })).status, 200);
+  got = (await call('/customers/' + c.data.id, mgr)).data.customer;
+  assert.deepEqual([got.depositRate, got.paymentTerm, got.creditLimit], [null, 'Thanh toán trước khi giao hàng', null], 'để trống = dùng mặc định');
+  for (const bad of [{ depositRate: '101' }, { depositRate: '-1' }, { paymentTerm: '4000' }, { creditLimit: 'abc' }])
+    assert.equal((await call('/customers/' + c.data.id, mgr, 'PUT', { name: 'Khách điều khoản', ...bad })).status, 400, JSON.stringify(bad));
+  // Form cũ không gửi các trường này: giữ nguyên giá trị đã lưu.
+  await call('/customers/' + c.data.id, mgr, 'PUT', { name: 'Khách điều khoản', depositRate: '40' });
+  assert.equal((await call('/customers/' + c.data.id, mgr, 'PUT', { name: 'Khách điều khoản 2' })).status, 200);
+  got = (await call('/customers/' + c.data.id, mgr)).data.customer;
+  assert.deepEqual([got.name, got.depositRate], ['Khách điều khoản 2', 40]);
+});

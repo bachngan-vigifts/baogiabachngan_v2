@@ -1,6 +1,6 @@
 // Điều khoản báo giá dùng cùng cách viết với điều khoản thanh toán HĐKT.
-export const defaultPaymentTerms = type => ({ depositRate: type === 'HRC' ? 0 : type === 'VIGIFTS' ? 50 : 30,
-  balanceTerm: type === 'HRC' ? '30' : type === 'VIGIFTS' ? '0' : 'Thanh toán trước khi giao hàng' });
+// Gợi ý mặc định cho mọi mẫu: cọc 30%, phần còn lại trong 5 ngày kể từ ngày giao. Khách có điều khoản riêng thì dùng của khách.
+export const defaultPaymentTerms = () => ({ depositRate: 30, balanceTerm: '5' });
 export function paymentClause(terms, total = 0, inWords = () => '') {
   const rate = Number(terms.depositRate), term = String(terms.balanceTerm || '').trim();
   const money = value => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value);

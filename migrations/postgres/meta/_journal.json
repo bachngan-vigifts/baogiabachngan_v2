@@ -232,6 +232,13 @@
       "when": 1792036579249,
       "tag": "0055_customer_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792042293524,
+      "tag": "0057_customer_payment_terms",
+      "breakpoints": true
     }
   ]
 }
