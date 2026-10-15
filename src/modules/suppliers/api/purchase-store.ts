@@ -78,6 +78,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
       lines: lines.map((l, i) => {
         const p = progress.lines.find(x => x.lineId === l.id)!, t = shownTotals.rows[i]!;
         return { id: l.id, lineNo: l.lineNo, sku: l.sku, name: l.name, unit: l.unit, quantity: l.quantity, promisedDate: l.promisedDate, supplierNote: l.supplierNote,
+          printDescription: l.printDescription, printFee: prices ? l.printFee : null,
           price: prices ? l.price : null, taxRate: prices ? l.taxRate : null, purchaseDiscount: prices ? (l.confirmedPurchaseDiscount ?? l.purchaseDiscount) : null,
           lineTotal: prices ? t.lineTotal : null, good: p.good, damaged: p.damaged, missing: p.missing,
           sources: sources.filter(s => s.lineId === l.id).map(s => ({ type: s.sourceType, id: s.sourceId, no: s.sourceNo, customerName: s.customerName, quantity: s.quantity })) };
