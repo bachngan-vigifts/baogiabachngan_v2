@@ -1,4 +1,5 @@
 import { departmentOwner } from '../../staff/api/department.ts';
+import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { orderNotesFromQuote, orderDeliveryAddress } from '../domain/order-notes.ts';
 import { cleanOrderInput } from '../domain/order-input.ts';
@@ -45,7 +46,7 @@ export const canIssueInvoice = (m: { role: string; positionId?: string | null })
  * Ai thấy đơn: Manager và Kế toán thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
  */
-export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) ? undefined
+export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m) ? undefined
   : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id), departmentOwner(salesOrders.ownerId, m), departmentOwner(salesOrders.createdBy, m),
     sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));

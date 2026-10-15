@@ -14,6 +14,7 @@ import { customerActivities } from '../modules/care/schema.ts';
 import { tasks } from '../modules/tasks/schema.ts';
 import { OPEN_STATUSES } from '../modules/tasks/domain/task-config.ts';
 import { listPurchases } from '../modules/suppliers/api/purchase-store.ts';
+import { seesAllAsSaleAdmin } from '../modules/staff/domain/roles.ts';
 
 /**
  * SƠ ĐỒ QUY TRÌNH (trang #/flow) – API CHỈ ĐỌC, một lượt gọi trả số liệu + vài việc gần nhất cho mọi khối.
@@ -68,7 +69,7 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
 
   async 'stock-requests'({ db, me, manager, warehouse }) {
     if (warehouse) return null;
-    const where = and(eq(customerStockRequests.status, 'open'), manager ? undefined : eq(customerStockRequests.ownerId, me.id));
+    const where = and(eq(customerStockRequests.status, 'open'), manager || seesAllAsSaleAdmin(me) ? undefined : eq(customerStockRequests.ownerId, me.id));
     const [open, rows] = await Promise.all([
       total(db.select({ n: count() }).from(customerStockRequests).where(where)),
       db.select({ id: customerStockRequests.id, customer: customers.name, items: customerStockRequests.items, createdAt: customerStockRequests.createdAt })
