@@ -187,10 +187,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         if (v.state === 'draft') { mail.disabled = true; mail.title = 'Manager duyệt giá trước khi gửi đơn cho NCC'; }
         acts.append(mail);
       }
-      if (a === 'pdf' && has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => mailSupplier('stock')));
+      if (a === 'pdf' && has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => stockAsk()));
     }
     // Người không xem được giá (không có nút PDF) vẫn hỏi tồn được.
-    if (!has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => mailSupplier('stock')));
+    if (!has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => stockAsk()));
     if (acts.children.length) d.append(acts);
     if (v.cancelledAt) d.append(el('p', 'pur-note danger', `Đã huỷ ${dmy(v.cancelledAt)}: ${v.cancelReason || ''}`));
 
@@ -343,6 +343,61 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       toast(kind === 'order' ? 'Đã tải PDF và mở email gửi NCC – nhớ đính kèm file PDF vừa tải.' : 'Đã mở email hỏi tồn NCC.');
       openDetail(v.id); // cập nhật lịch sử
     } catch (e) { toast(e.message || 'Không soạn được email.', 'err'); }
+  }
+  /** Quy cách gợi ý (thùng chẵn + lẻ) – cùng cách tính `packingSuggestion` của phiếu đóng gói (src/modules/sales/domain/packing.ts). */
+  function packing(qty, unit, p) {
+    const pos = v => (Number(v) > 0 ? Number(v) : null), per = pos(p?.perCarton), w = pos(p?.cartonWeight), L = pos(p?.cartonLength), W = pos(p?.cartonWidth), H = pos(p?.cartonHeight);
+    const cartons = per ? Math.floor(qty / per + 1e-9) : 0, loose = per ? Math.round((qty - cartons * per) * 1000) / 1000 : qty, u = unit || 'sp';
+    return { text: per ? [cartons ? `${num(cartons)} thùng × ${num(per)} ${u}` : '', loose ? `${num(loose)} ${u} lẻ` : ''].filter(Boolean).join(' + ') : '',
+      size: L && W && H ? `${num(L)}×${num(W)}×${num(H)} cm` : '', perKg: w };
+  }
+  let xlsx;
+  const loadXlsx = () => globalThis.XLSX ? Promise.resolve(globalThis.XLSX) : (xlsx ||= new Promise((resolve, reject) => {
+    const sc = document.createElement('script'); sc.src = 'xlsx.full.min.js';
+    sc.onload = () => resolve(globalThis.XLSX); sc.onerror = () => { xlsx = null; sc.remove(); reject(Error('Không tải được bộ tạo Excel. Tải lại trang rồi thử lại.')); };
+    document.head.append(sc);
+  }));
+  /** "Hỏi tồn NCC": bảng các mã còn thiếu + quy cách gợi ý, tải Excel để gửi NCC (không gửi email, không ghi gì lên máy chủ). */
+  async function stockAsk() {
+    const v = current, d = frame('Hỏi tồn NCC', `${v.ticketNumber} · ${v.supplier?.name || ''}`, back);
+    const lines = v.lines.filter(l => l.missing > 0);
+    let bySku = new Map();
+    try {
+      const skus = [...new Set(lines.map(l => l.sku).filter(Boolean))].slice(0, 300);
+      if (skus.length) bySku = new Map((await api('/products?skus=' + encodeURIComponent(skus.join(',')))).products.map(p => [String(p.sku), p]));
+    } catch { /* thiếu quy cách thùng thì vẫn hiện bảng */ }
+    if (!d.isConnected) return;
+    const rows = lines.map(l => ({ l, k: packing(l.missing, l.unit, bySku.get(String(l.sku))) }));
+    const t = el('table', 'data-table pur-lines'), th = el('tr'), tb = el('tbody');
+    for (const [h, c] of [['Sản phẩm', ''], ['SL', 'num'], ['Quy cách gợi ý', '']]) th.append(el('th', c, h));
+    for (const { l, k } of rows) {
+      const tr = el('tr'), nm = el('td'), q = el('td', 'num'), pk = el('td');
+      nm.append(el('span', '', l.name), el('small', 'muted sup-sub', l.sku));
+      q.append(el('span', '', num(l.missing)), el('small', 'sup-sub', l.unit || ''));
+      pk.append(el('span', k.text ? '' : 'muted', k.text || 'Chưa có quy cách thùng'));
+      if (k.size) pk.append(el('small', 'muted sup-sub', `Thùng ${k.size}${k.perKg ? ` · ${num(k.perKg)} kg/thùng` : ''}`));
+      tr.append(nm, q, pk); tb.append(tr);
+    }
+    const total = el('tr'), tl = el('td'); tl.append(el('b', '', 'Tổng'));
+    const tq = el('td', 'num'); tq.append(el('b', '', num(lines.reduce((s, l) => s + l.missing, 0)))); total.append(tl, tq, el('td')); tb.append(total);
+    t.append(el('thead'), tb); t.tHead.append(th);
+    const tw = el('div', 'table-wrap'); tw.append(t);
+    const dl = btn('⬇ Tải file Excel', 'btn primary small', async () => {
+      dl.disabled = true;
+      try {
+        const X = await loadXlsx();
+        const aoa = [['STT', 'Mã hàng', 'Tên hàng', 'SL cần hỏi', 'ĐVT', 'Quy cách gợi ý', 'Kích thước thùng', 'Kg/thùng'],
+          ...rows.map(({ l, k }, i) => [i + 1, String(l.sku), l.name, l.missing, l.unit || '', k.text, k.size, k.perKg ?? ''])];
+        const ws = X.utils.aoa_to_sheet(aoa); ws['!cols'] = [6, 16, 50, 11, 8, 28, 20, 10].map(wch => ({ wch }));
+        // Mã hàng giữ dạng chữ (không mất số 0 đầu).
+        rows.forEach((_, i) => { const c = ws[X.utils.encode_cell({ r: i + 1, c: 1 })]; if (c) { c.t = 's'; c.z = '@'; } });
+        const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Hỏi tồn');
+        X.writeFile(wb, 'Hoi-ton-' + String(v.ticketNumber).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60) + '.xlsx');
+      } catch (e) { toast(e.message || 'Không tạo được file Excel.', 'err'); }
+      finally { dl.disabled = false; }
+    });
+    const bar = el('div', 'pur-actions'); bar.append(dl);
+    d.append(bar, lines.length ? tw : el('p', 'muted', 'Đơn này không còn mã nào thiếu.'));
   }
   const ACTIONS = {
     edit: () => editForm(),
