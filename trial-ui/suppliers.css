@@ -81,3 +81,15 @@
 .pur-grid td.pur-src { max-width: 150px; overflow-wrap: anywhere; }
 .pur-grid th { white-space: normal; min-width: 64px; }
 .pur-want small { white-space: nowrap; }
+
+/* Manual purchase lines: catalog results stay in normal flow on phones. */
+.pur-product-results, .pur-product-status { grid-column: 1 / -1; }
+.pur-product-results { display: grid; max-height: 250px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.pur-product-results[hidden] { display: none; }
+.pur-product-option { display: flex; flex-wrap: wrap; gap: 6px 12px; text-align: left; background: var(--surface); color: var(--ink); border: 0; border-bottom: 1px solid var(--line); padding: 10px; cursor: pointer; font: inherit; }
+.pur-product-option:hover, .pur-product-option:focus-visible { background: var(--blue-50); }
+.pur-product-option span { flex: 1 1 200px; }
+@media (max-width: 700px) {
+  .pur-manual { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pur-manual > input:nth-child(2), .pur-manual > button { grid-column: 1 / -1; }
+}
