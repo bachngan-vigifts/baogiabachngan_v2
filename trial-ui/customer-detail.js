@@ -103,6 +103,8 @@ export function initCustomerDetail(deps) {
       <div class="cd-grid">
         <div class="card"><h2 class="card-title">Thông tin</h2><dl class="kv">
           <dt>Mã KH</dt><dd>${esc(c.customerCode) || '—'}</dd><dt>MST</dt><dd>${esc(c.taxCode) || '—'}</dd>
+          <dt>Điều khoản</dt><dd>Cọc ${c.depositRate ?? 30}% · thanh toán ${/^\d+$/.test(String(c.paymentTerm ?? '5')) ? (c.paymentTerm ?? '5') + ' ngày' : esc(c.paymentTerm)}${c.depositRate == null && !c.paymentTerm ? ' <small class="muted">(mặc định)</small>' : ''}</dd>
+          <dt>Giới hạn công nợ</dt><dd>${c.creditLimit != null ? money(c.creditLimit) : '—'}</dd>
           <dt>Liên hệ</dt><dd>${esc(c.contact) || '—'}</dd>
           <dt>Điện thoại</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</dd>
           <dt>Email</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '—'}</dd>

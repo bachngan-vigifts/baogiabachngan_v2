@@ -22,6 +22,10 @@ export const customers = pgTable('sapo_customers', {
   createdBy: text('created_by'),
   approvedBy: text('approved_by'),
   approvedAt: text('approved_at'),
+  /** Điều khoản riêng của khách (null = dùng mặc định): % đặt cọc, hạn thanh toán phần còn lại (số ngày hoặc nội dung), giới hạn công nợ (đ). Điền sẵn khi tạo báo giá. */
+  depositRate: doublePrecision('deposit_rate'),
+  paymentTerm: text('payment_term'),
+  creditLimit: doublePrecision('credit_limit'),
 }, t => [index('idx_sapo_customers_name').on(t.name), index('idx_sapo_customers_approval').on(t.approvalStatus),
   enumCheck('chk_sapo_customers_approval', t.approvalStatus, APPROVAL_STATUSES)]).enableRLS();
 export const customerContractProfiles = pgTable('customer_contract_profiles', {

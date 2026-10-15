@@ -225,6 +225,13 @@
       "when": 1792034668773,
       "tag": "0054_order_submitted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792037752837,
+      "tag": "0055_customer_payment_terms",
+      "breakpoints": true
     }
   ]
 }

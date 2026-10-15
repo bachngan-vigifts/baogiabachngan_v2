@@ -1240,19 +1240,24 @@ $('#refresh-profit-costs').addEventListener('click', async e => {
 });
 
 // ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
-const nq = { type: 'HRC', customer: null, autoNo: '' };
+const nq = { type: 'HRC', customer: null, autoNo: '', onCustomerChange: () => nqApplyTerms() };
 function nqSetType(type, fetchServer = true) {
   const date = $('#nq-date').value || todayIso(), no = $('#nq-no');
   const keepAuto = !no.value.trim() || no.value.trim() === nq.autoNo;
-  if (!nq.paymentTouched) {
-    const terms = defaultPaymentTerms(type);
-    $('#nq-deposit-rate').value = terms.depositRate; $('#nq-payment-term').value = terms.balanceTerm;
-  }
+  nqApplyTerms();
   nq.type = type; $('#nq-type-name').textContent = type === 'VIGIFTS' ? 'Vigifts' : type;
   $$('#nq-type button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
   nq.autoNo = nextQuoteNo(type, date); if (keepAuto) no.value = nq.autoNo;
   // Lấy số kế tiếp trên toàn công ty rồi điền lại (nếu người dùng chưa tự gõ số).
   if (fetchServer) refreshQuoteNo(type, date).then(() => { if (nq.type === type && ($('#nq-date').value || todayIso()) === date) nqSetType(type, false); });
+}
+/** Điền điều khoản thanh toán: của khách đã chọn (nếu khách có đặt riêng), không thì mặc định cọc 30% / 5 ngày. Hiện giới hạn công nợ của khách. */
+function nqApplyTerms() {
+  const d = defaultPaymentTerms(nq.type), c = nq.customer;
+  if (!nq.paymentTouched) { $('#nq-deposit-rate').value = c?.depositRate ?? d.depositRate; $('#nq-payment-term').value = c?.paymentTerm || d.balanceTerm; }
+  const credit = $('#nq-credit');
+  credit.hidden = !(c && c.creditLimit != null);
+  credit.textContent = c && c.creditLimit != null ? `Giới hạn công nợ của ${c.name}: ${money(c.creditLimit)}` : '';
 }
 async function openNewQuote() {
   if (editor.dirty && currentHash.startsWith('#/quotes/')) {
@@ -1284,7 +1289,7 @@ const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy
     clearTimeout(timer); req++; items = []; list.replaceChildren(); hide(); comboBusy(input, false);
   };
   input.addEventListener('input', () => {
-    nq.customer = null; reset(); comboBusy(input, true);
+    nq.customer = null; reset(); comboBusy(input, true); nq.onCustomerChange?.();
     const ticket = req, query = input.value;
     timer = setTimeout(async () => {
       let found = [];
@@ -1304,6 +1309,7 @@ const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy
     const li = e.target.closest('li[data-i]'), customer = li && items[li.dataset.i];
     if (!customer || list.hidden) return;
     e.preventDefault(); nq.customer = customer; input.value = customer.name; reset();
+    nq.onCustomerChange?.();
   });
 }
 $('#new-quote-form').addEventListener('submit', e => {
@@ -2246,7 +2252,7 @@ function openCustomer(id, known) {
   customerId = id || null;
   const form = $('#customer-form'); form.reset(); $('#customer-error').textContent = '';
   const c = id ? known || state.customers?.find(x => x.id === id) : null;
-  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address']) form.elements.namedItem(k).value = c[k] || '';
+  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit']) form.elements.namedItem(k).value = c[k] ?? '';
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
 }
