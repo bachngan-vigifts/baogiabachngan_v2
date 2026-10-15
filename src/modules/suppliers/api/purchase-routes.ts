@@ -14,7 +14,7 @@ import { computeOrderTotals } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { canEditSuppliers, defaultRecipients } from '../domain/directory.ts';
 import { buildSchedules, canPay, canReceive, canSeePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
-import { asActor, listPurchases, loadPurchase, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
+import { asActor, listPurchases, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
 
 /**
  * ĐƠN MUA HÀNG NCC (đợt 2) – khu vực 'business', quyền chi tiết kiểm trong domain/purchasing.ts.
@@ -211,7 +211,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (!pdf || pdf.length > 5_500_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(pdf) || !pdf.startsWith('JVBERi0')) fail(400, 'File PDF đơn đặt hàng không hợp lệ.'); // "%PDF-"
     const { db, m, id, p, to, cc: baseCc } = await mailTarget(c, 'order');
     const lower = (x: string) => x.toLowerCase();
-    const cc = [...baseCc, ...(c.env.mailer?.alwaysCc ?? [])].filter((x, i, a) => lower(x) !== lower(to) && a.findIndex(y => lower(y) === lower(x)) === i);
+    // CC: người nhận theo danh bạ / Manager chốt + nhân viên phụ trách (người lập đơn mua, người phụ trách chứng từ nguồn) + CC chung (MAIL_CC).
+    const staff = await responsibleEmails(db, id, p.raw.order.createdBy);
+    const cc = [...baseCc, ...staff, ...(c.env.mailer?.alwaysCc ?? [])].filter((x, i, a) => lower(x) !== lower(to) && a.findIndex(y => lower(y) === lower(x)) === i);
     const o = p.raw.order, sup = o.supplierName || 'Quý nhà cung cấp';
     const unit = (u: string | null) => (u ? ' ' + u : '');
     const list = p.raw.lines.slice(0, 60).map((l, i) => `${i + 1}. ${l.sku} - ${l.name}: ${l.quantity.toLocaleString('vi-VN')}${unit(l.unit)}`).join('\n')
