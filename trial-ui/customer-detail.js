@@ -124,11 +124,53 @@ export function initCustomerDetail(deps) {
         <div class="chips cd-tabs" role="tablist">${TABS.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label} <b>${t.count(d)}</b></button>`).join('')}</div>
         <div class="cd-tab-body">${tab.html(d)}</div>
       </div>`;
+    renderGeneralNote();
     // Bảng thành thẻ trên điện thoại: mỗi ô kèm nhãn cột.
     root.querySelectorAll('.cd-tab-body table').forEach(t => {
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
       t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (i && heads[i]) td.dataset.label = heads[i]; }));
     });
+  }
+
+  // Ghi chú nội bộ dựng bằng DOM/textContent, giữ nguyên xuống dòng và không diễn giải HTML.
+  function renderGeneralNote() {
+    const note = st.d.generalNote;
+    if (!note) return;
+    const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+    const card = make('section', 'card'), header = make('div', 'card-title-row');
+    header.append(make('h2', 'card-title', 'Ghi chú chung về khách hàng'));
+    const content = make('p', note.text ? '' : 'muted', note.text || 'Chưa có ghi chú chung.');
+    content.style.whiteSpace = 'pre-wrap'; content.style.overflowWrap = 'anywhere';
+    card.append(header, content);
+    if (note.updatedAt) card.append(make('small', 'muted', `Cập nhật ${when(note.updatedAt)}${note.updatedBy ? ' · ' + note.updatedBy : ''}`));
+    if (st.d.access.canEdit) {
+      const edit = make('button', 'btn secondary small', note.text ? 'Sửa ghi chú' : 'Thêm ghi chú'); edit.type = 'button'; header.append(edit);
+      edit.addEventListener('click', () => {
+        const customerId = st.d.customer.id, seq = st.seq;
+        const dlg = make('dialog', 'modal'), form = make('form'), head = make('div', 'modal-head');
+        head.append(make('h2', '', 'Ghi chú chung về khách hàng'));
+        const body = make('div', 'modal-body'), label = make('label', '', 'Nội dung ghi chú (tối đa 5.000 ký tự)');
+        const text = make('textarea'); text.rows = 7; text.maxLength = 5000; text.value = note.text; label.append(text);
+        const error = make('p', 'error'); error.setAttribute('role', 'alert');
+        body.append(label, error);
+        const footer = make('div', 'modal-foot'), cancel = make('button', 'btn secondary', 'Huỷ'), save = make('button', 'btn primary', 'Lưu ghi chú');
+        cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => dlg.close());
+        footer.append(cancel, save); form.append(head, body, footer); dlg.append(form);
+        dlg.addEventListener('close', () => dlg.remove());
+        form.addEventListener('submit', async e => {
+          e.preventDefault(); if (save.disabled) return;
+          save.disabled = true; error.textContent = '';
+          try {
+            const saved = await api(`/customers/${encodeURIComponent(customerId)}/notes`, 'PUT', { text: text.value, revision: note.revision });
+            dlg.close(); toast('Đã lưu ghi chú khách hàng.');
+            if (st.seq === seq && st.id === customerId) { st.d.generalNote = saved; render(); }
+          } catch (ex) { error.textContent = ex.message || 'Không lưu được ghi chú.'; }
+          finally { save.disabled = false; }
+        });
+        document.body.append(dlg); dlg.showModal(); text.focus();
+      });
+    }
+    root.querySelector('.cd-tabs-card').before(card);
   }
 
   async function open(id) {

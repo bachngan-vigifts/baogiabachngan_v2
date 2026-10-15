@@ -4,7 +4,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { fold } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { customerBrandDiscounts, customerContacts, customerContractProfiles, customers, customerStaff } from '../../customers/schema.ts';
+import { customerBrandDiscounts, customerContacts, customerContractProfiles, customerNotes, customers, customerStaff } from '../../customers/schema.ts';
 import { NORM_TAX_SQL, normTaxCode, pickKeeper } from '../../customers/domain/tax-code.ts';
 import { quotations, quoteOrderFollowups } from '../../quotes/schema.ts';
 import { customerPayments, salesContracts, salesOrders } from '../../sales/schema.ts';
@@ -45,11 +45,11 @@ export async function duplicateGroups(db: Db) {
  * Gộp `dropIds` vào `keepId`: chuyển mọi chứng từ / lịch sử / người liên hệ / phụ trách sang khách giữ lại,
  * bù thông tin còn trống, rồi xoá các bản trùng. Chạy trong một transaction.
  */
-export async function mergeCustomers(db: Db, keepId: string, dropIds: string[]) {
+export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], actorId: string) {
   const ids = [...new Set(dropIds)].filter(id => id && id !== keepId);
   if (!ids.length) return 0;
   await db.transaction(async tx => {
-    const all = await tx.select().from(customers).where(inArray(customers.id, [keepId, ...ids]));
+    const all = await tx.select().from(customers).where(inArray(customers.id, [keepId, ...ids])).for('update');
     const keep = all.find(r => r.id === keepId); if (!keep) throw new AppError(404, 'Không tìm thấy khách hàng giữ lại.');
     const drops = all.filter(r => r.id !== keepId);
     if (drops.length !== ids.length) throw new AppError(404, 'Không tìm thấy khách hàng cần gộp.');
@@ -83,6 +83,18 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[]) 
     if (!profile) {
       const [first] = await tx.select({ id: customerContractProfiles.customerId }).from(customerContractProfiles).where(inArray(customerContractProfiles.customerId, ids)).limit(1);
       if (first) await tx.update(customerContractProfiles).set({ customerId: keepId }).where(eq(customerContractProfiles.customerId, first.id));
+    }
+
+    // Giữ ghi chú của mọi bản trùng; không để cascade xoá mất nội dung nội bộ.
+    const notes = await tx.select().from(customerNotes).where(inArray(customerNotes.customerId, [keepId, ...ids])).for('update');
+    const nonempty = notes.filter(n => n.text.trim());
+    if (notes.some(n => ids.includes(n.customerId))) {
+      const texts = [...new Set(nonempty.map(n => n.text))];
+      const text = texts.length <= 1 ? texts[0] || '' : nonempty.map(n => `[${all.find(c => c.id === n.customerId)!.name}]\n${n.text}`).join('\n\n');
+      if (text.length > 5000) throw new AppError(409, 'Ghi chú các khách cần gộp vượt 5.000 ký tự. Rút gọn ghi chú trước khi gộp để không mất nội dung.');
+      const currentNote = notes.find(n => n.customerId === keepId);
+      const values = { text, revision: (currentNote?.revision ?? 0) + 1, updatedBy: actorId, updatedAt: new Date().toISOString() };
+      await tx.insert(customerNotes).values({ customerId: keepId, ...values }).onConflictDoUpdate({ target: customerNotes.customerId, set: values });
     }
 
     // Chứng từ và lịch sử.
@@ -119,12 +131,12 @@ export function registerCustomerDuplicateRoutes(router: Router<StaffEnv>) {
     const body = await readJson(c.req, 64_000);
     let merged = 0, groups = 0;
     if (body.all === true) {
-      for (const g of await duplicateGroups(c.env.db)) { merged += await mergeCustomers(c.env.db, g.keepId, g.customers.filter(x => !x.keep).map(x => x.id)); groups++; }
+      for (const g of await duplicateGroups(c.env.db)) { merged += await mergeCustomers(c.env.db, g.keepId, g.customers.filter(x => !x.keep).map(x => x.id), (c.state.session as SessionState).member.id); groups++; }
     } else {
       const keepId = typeof body.keepId === 'string' ? body.keepId : '';
       const dropIds = Array.isArray(body.dropIds) ? body.dropIds.filter((x): x is string => typeof x === 'string') : [];
       if (!keepId || !dropIds.length || dropIds.length > 50) throw new AppError(400, 'Chọn khách giữ lại và khách cần gộp.');
-      merged = await mergeCustomers(c.env.db, keepId, dropIds); groups = 1;
+      merged = await mergeCustomers(c.env.db, keepId, dropIds, (c.state.session as SessionState).member.id); groups = 1;
     }
     return json({ ok: true, groups, merged });
   }, 'business');
