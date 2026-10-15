@@ -458,7 +458,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         for (const s of r.sources) {
           const b = btn('', 'pur-result', () => addSource(s.type, s.id));
           b.append(el('span', 'sup-pill info', SOURCE_LABEL[s.type]), el('b', '', s.no), el('small', 'muted', s.customerName || ''));
-          b.disabled = loaded.has(s.type + ':' + s.id); results.append(b);
+          if (loaded.has(s.type + ':' + s.id)) { b.disabled = true; b.classList.add('is-added'); b.append(el('span', 'pur-added', '✓ Đã thêm')); }
+          results.append(b);
         }
       } catch (e) { results.replaceChildren(el('p', 'error', e.message)); }
     };
@@ -470,7 +471,6 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       if (!pick.value || sups.some(s => s.id === pick.value)) return;
       if (sups.length >= 6) { toast('Tối đa 6 nhà cung cấp mỗi lần lập.', 'err'); return; }
       sups.push({ id: pick.value, name: pick.selectedOptions[0].textContent });
-      for (const r of rows) r.qty[pick.value] = sups.length === 1 ? r.remaining : 0;
       pick.value = ''; renderGrid();
     }));
     if (!o.suppliers.length) supBox.append(el('p', 'muted small', 'Chưa có nhà cung cấp đang hoạt động – Manager thêm ở trang Nhà cung cấp.'));
@@ -480,7 +480,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     manual.append(mSku, mName, mUnit, mQty, btn('+ Thêm mã ngoài chứng từ', 'btn secondary small', () => {
       const sku = mSku.value.trim(), qty = Math.floor(Number(mQty.value));
       if (!sku || !(qty > 0)) { toast('Nhập mã hàng và số lượng.', 'err'); return; }
-      rows.push({ sku, name: mName.value.trim(), unit: mUnit.value.trim(), remaining: qty, source: null, qty: Object.fromEntries(sups.map((s, i) => [s.id, i === 0 ? qty : 0])) });
+      rows.push({ sku, name: mName.value.trim(), unit: mUnit.value.trim(), need: null, remaining: qty, stock: null, source: null, want: qty, split: {} });
       mSku.value = mName.value = mUnit.value = mQty.value = ''; renderGrid();
     }));
     const table = el('div', 'table-wrap');
@@ -498,43 +498,74 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
         loaded.add(type + ':' + id);
         const open = r.lines.filter(l => l.remaining > 0);
         if (!open.length) toast(`${r.source.no}: các mã đã đặt đủ.`);
-        for (const l of open) rows.push({ sku: l.sku, name: l.name, unit: l.unit, remaining: l.remaining, ordered: l.ordered, need: l.quantity, source: r.source, qty: Object.fromEntries(sups.map((s, i) => [s.id, i === 0 ? l.remaining : 0])) });
+        // SL cần đặt điền sẵn = còn cần đặt; anh chị sửa tay được (vd. đặt cả lô ở NCC thay vì lấy một phần từ kho).
+        for (const l of open) rows.push({ sku: l.sku, name: l.name, unit: l.unit, remaining: l.remaining, ordered: l.ordered, need: l.quantity, stock: l.stock, source: r.source, want: l.remaining, split: {} });
         renderGrid(); search();
       } catch (e) { toast(e.message || 'Không tải được chứng từ.', 'err'); }
     }
+    /** Số đặt từng NCC của một dòng: NCC đầu nhận phần còn lại của "SL cần đặt", các NCC sau nhập tay. */
+    const perSupplier = r => {
+      const others = sups.slice(1).map(x => Math.max(0, Math.floor(Number(r.split[x.id]) || 0)));
+      return [Math.max(0, Math.floor(Number(r.want) || 0) - others.reduce((t, v) => t + v, 0)), ...others];
+    };
     function renderGrid() {
       table.replaceChildren();
       if (!rows.length) { table.append(el('p', 'muted small', 'Chưa có mã nào – chọn chứng từ ở bước 1 hoặc thêm mã bên dưới.')); return; }
-      const t = el('table', 'data-table pur-lines'), th = el('tr'), tb = el('tbody');
-      for (const h of ['Mã / tên', 'Chứng từ', 'Còn cần đặt', ...sups.map(s => s.name), '']) th.append(el('th', '', h));
+      const t = el('table', 'data-table pur-lines pur-grid'), th = el('tr'), tb = el('tbody');
+      const heads = ['Mã / tên', 'Chứng từ', 'SL trong đơn', 'Tồn kho', 'Còn cần đặt', sups.length === 1 ? `SL cần đặt · ${sups[0].name}` : 'SL cần đặt'];
+      if (sups.length > 1) heads.push(...sups.map(x => x.name));
+      for (const h of [...heads, '']) th.append(el('th', '', h));
       t.append(el('thead'), tb); t.tHead.append(th);
       rows.forEach((r, idx) => {
         const tr = el('tr'), nm = el('td'); nm.append(el('b', '', r.sku), el('small', 'sup-sub', r.name + (r.unit ? ` (${r.unit})` : '')));
-        const src = el('td', 'small', r.source ? `${r.source.no}${r.source.customerName ? ' · ' + r.source.customerName : ''}` : 'Ngoài chứng từ');
-        const rem = el('td', 'num', num(r.remaining)); if (r.ordered) rem.append(el('small', 'muted sup-sub', `đã đặt ${num(r.ordered)}/${num(r.need)}`));
-        tr.append(nm, src, rem);
-        const sumCell = () => { const s = sups.reduce((t, x) => t + (Number(r.qty[x.id]) || 0), 0); rem.classList.toggle('pur-late', Boolean(r.source) && s > r.remaining); };
-        for (const s of sups) { const td = el('td'), i = qtyInput(r.qty[s.id] || ''); i.addEventListener('input', () => { r.qty[s.id] = Number(i.value) || 0; sumCell(); }); td.append(i); tr.append(td); }
+        const src = el('td', 'small pur-src', r.source ? r.source.no : 'Ngoài chứng từ'); if (r.source?.customerName) src.title = r.source.customerName;
+        const need = el('td', 'num', r.need == null ? '—' : num(r.need));
+        // Tồn kho: đủ cho phần còn cần → xanh; có nhưng thiếu → cam; hết / âm → đỏ; chưa có số liệu → xám.
+        const st = r.stock == null ? null : Number(r.stock);
+        const stock = el('td', 'num pur-stock ' + (st == null ? 'none' : st >= r.remaining ? 'ok' : st > 0 ? 'warn' : 'out'), st == null ? '—' : num(st));
+        const rem = el('td', 'num pur-remain'); rem.append(el('b', '', num(r.remaining))); if (r.ordered) rem.append(el('small', 'muted sup-sub', `đã đặt ${num(r.ordered)}`));
+        const wantTd = el('td', 'pur-want'), want = qtyInput(r.want ?? ''), hint = el('small', 'sup-sub');
+        wantTd.append(want, hint);
+        tr.append(nm, src, need, stock, rem, wantTd);
+        const firstCell = el('td', 'num');
+        if (sups.length > 1) {
+          tr.append(firstCell);
+          for (const x of sups.slice(1)) { const td = el('td'), i = qtyInput(r.split[x.id] || ''); i.addEventListener('input', () => { r.split[x.id] = Number(i.value) || 0; update(); }); td.append(i); tr.append(td); }
+        }
+        const update = () => {
+          const w = Math.max(0, Math.floor(Number(r.want) || 0)), parts = perSupplier(r), others = parts.slice(1).reduce((a, v) => a + v, 0);
+          const extra = r.source ? Math.max(0, w - r.remaining) : 0;
+          // Đặt ít hơn "còn cần đặt" = phần thiếu lấy từ kho: báo nếu kho không đủ.
+          const fromStock = r.source ? Math.max(0, r.remaining - w) : 0, short = fromStock - Math.max(0, st ?? 0);
+          hint.textContent = others > w ? `Các NCC khác vượt ${num(others - w)}` : extra ? `+${num(extra)} dự trữ` : fromStock && short > 0 ? `Kho thiếu ${num(short)}` : fromStock ? `Lấy kho ${num(fromStock)}` : '';
+          hint.className = 'sup-sub ' + (others > w || (fromStock && short > 0) ? 'pur-late' : extra ? 'pur-extra' : 'muted');
+          firstCell.textContent = num(parts[0]);
+        };
+        want.addEventListener('input', () => { r.want = Number(want.value) || 0; update(); });
         const x = el('td'); x.append(btn('×', 'icon-btn', () => { rows.splice(idx, 1); renderGrid(); })); tr.append(x);
-        sumCell(); tb.append(tr);
+        update(); tb.append(tr);
       });
       table.append(t);
-      if (!sups.length) table.append(el('p', 'muted small', 'Thêm ít nhất một nhà cung cấp ở bước 2 để chia số lượng.'));
+      if (!sups.length) table.append(el('p', 'muted small', 'Thêm ít nhất một nhà cung cấp ở bước 2.'));
+      else if (sups.length > 1) table.append(el('p', 'muted small', `Cột ${sups[0].name} tự tính = "SL cần đặt" trừ số nhập cho các NCC còn lại.`));
     }
     f.addEventListener('submit', e => {
       e.preventDefault(); err.textContent = '';
       if (!sups.length) { err.textContent = 'Chọn ít nhất một nhà cung cấp.'; return; }
-      for (const r of rows) if (r.source && sups.reduce((t, s) => t + (Number(r.qty[s.id]) || 0), 0) > r.remaining) { err.textContent = `${r.sku} (${r.source.no}): tổng chia vượt số còn cần đặt ${num(r.remaining)}.`; return; }
-      const orders = sups.map(s => {
-        const bySku = new Map();
-        for (const r of rows) {
-          const q2 = Math.floor(Number(r.qty[s.id]) || 0); if (q2 <= 0) continue;
-          const k = r.sku.toLowerCase(), cur = bySku.get(k) || { sku: r.sku, name: r.name, unit: r.unit, quantity: 0, sources: [] };
-          cur.quantity += q2; if (r.source) cur.sources.push({ type: r.source.type, id: r.source.id, quantity: q2 });
-          bySku.set(k, cur);
-        }
-        return { supplierId: s.id, lines: [...bySku.values()], arrivalDate: arrival.value || undefined, warehouse: wh.value, note: note.value };
-      }).filter(x => x.lines.length);
+      for (const r of rows) if (perSupplier(r).slice(1).reduce((a, v) => a + v, 0) > Math.max(0, Math.floor(Number(r.want) || 0))) { err.textContent = `${r.sku}: số chia cho các NCC khác vượt "SL cần đặt".`; return; }
+      const lines = sups.map(() => new Map());
+      for (const r of rows) {
+        // Phần lấy từ chứng từ không vượt "còn cần đặt" (chống mua trùng); phần đặt thêm tính là hàng ngoài chứng từ.
+        let left = r.source ? r.remaining : 0;
+        perSupplier(r).forEach((qty, i) => {
+          if (qty <= 0) return;
+          const k = r.sku.toLowerCase(), cur = lines[i].get(k) || { sku: r.sku, name: r.name, unit: r.unit, quantity: 0, sources: [] };
+          const fromSrc = Math.min(qty, left); left -= fromSrc;
+          cur.quantity += qty; if (fromSrc > 0) cur.sources.push({ type: r.source.type, id: r.source.id, quantity: fromSrc });
+          lines[i].set(k, cur);
+        });
+      }
+      const orders = sups.map((x, i) => ({ supplierId: x.id, lines: [...lines[i].values()], arrivalDate: arrival.value || undefined, warehouse: wh.value, note: note.value })).filter(x => x.lines.length);
       if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
       run(ok, err, async () => {
         const r = await api('/purchase-orders', 'POST', { orders });

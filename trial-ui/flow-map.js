@@ -46,7 +46,12 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
     const rows = [...new Set(visible.map(nd => nd.row))].sort((a, b) => a - b);
     const col = id => stages.findIndex(s => s.id === id) + 1, row = r => rows.indexOf(r) + 1;
     board.style.setProperty('--flow-cols', String(stages.length)); board.style.setProperty('--flow-rows', String(rows.length));
-    stagesRow.replaceChildren(...stages.map(s => { const t = el('div', 'flow-stage'); t.append(icon(s.icon), el('span', '', s.title)); return t; }));
+    // Tiêu đề cột bấm được: mở bảng tổng hợp mọi khối của giai đoạn đó.
+    stagesRow.replaceChildren(...stages.map(s => {
+      const t = el('button', 'flow-stage' + (openId === 'stage:' + s.id ? ' is-open' : '')); t.type = 'button'; t.dataset.stage = s.id;
+      t.title = 'Xem tổng hợp giai đoạn ' + s.title; t.append(icon(s.icon), el('span', '', s.title));
+      t.addEventListener('click', () => openPanel('stage:' + s.id)); return t;
+    }));
     grid.replaceChildren(lines);
     // Dải nền mỗi cột (xen kẽ đậm / nhạt), cao hết sơ đồ.
     stages.forEach((s, i) => { const lane = el('div', 'flow-lane' + (i % 2 ? ' alt' : '')); lane.style.gridColumn = String(i + 1); lane.style.gridRow = '1 / -1'; grid.append(lane); });
@@ -117,13 +122,42 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
     openId = id; renderPanel();
     panel.hidden = false; shade.hidden = false;
     grid.querySelectorAll('.flow-node').forEach(n => n.classList.toggle('is-open', n.dataset.node === id));
+    stagesRow.querySelectorAll('.flow-stage').forEach(n => n.classList.toggle('is-open', 'stage:' + n.dataset.stage === id));
     panel.querySelector('.flow-panel-close')?.focus();
   }
   function closePanel() {
     openId = ''; panel.hidden = true; shade.hidden = true;
     grid.querySelectorAll('.flow-node.is-open').forEach(n => n.classList.remove('is-open'));
+    stagesRow.querySelectorAll('.flow-stage.is-open').forEach(n => n.classList.remove('is-open'));
+  }
+  /** Bảng tổng hợp một giai đoạn: mỗi khối một thẻ (chỉ số + nút xem chi tiết / mở trang). */
+  function renderStagePanel(stageId) {
+    const st = STAGES.find(s => s.id === stageId), nodes = NODES.filter(nd => nd.stage === stageId && data?.nodes[nd.id]);
+    if (!st || !nodes.length) { closePanel(); return; }
+    const top = el('div', 'flow-panel-head'), t = el('div', 'flow-panel-title');
+    const dot = el('span', 'flow-dot small'); dot.append(icon(st.icon));
+    t.append(dot, el('div')); t.lastChild.append(el('span', 'eyebrow', 'Giai đoạn'), el('h2', '', st.title));
+    const x = el('button', 'icon-btn flow-panel-close', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Đóng'); x.addEventListener('click', closePanel);
+    top.append(t, x);
+    const cards = nodes.map(nd => {
+      const d = data.nodes[nd.id], card = el('section', 'flow-stage-card');
+      card.append(el('h3', 'flow-list-head', nd.title), el('p', 'muted small', nd.desc));
+      const stats = el('div', 'flow-stats');
+      for (const m of d.metrics) {
+        const b = el('button', 'flow-stat' + (m.value && m.tone ? ' tone-' + m.tone : '')); b.type = 'button';
+        b.append(el('strong', '', fmt(m)), el('small', '', m.label));
+        b.addEventListener('click', () => { closePanel(); go(nd.page); }); stats.append(b);
+      }
+      const acts = el('div', 'flow-item-actions');
+      const more = el('button', 'btn small primary', `Xem việc (${d.items.length})`); more.type = 'button'; more.addEventListener('click', () => openPanel(nd.id));
+      const page = el('button', 'btn small secondary', 'Mở trang'); page.type = 'button'; page.addEventListener('click', () => { closePanel(); go(nd.page); });
+      acts.append(more, page); card.append(stats, acts);
+      return card;
+    });
+    panel.replaceChildren(top, ...cards);
   }
   function renderPanel() {
+    if (openId.startsWith('stage:')) { renderStagePanel(openId.slice(6)); return; }
     const nd = NODES.find(x => x.id === openId), d = data?.nodes[openId];
     if (!nd || !d) { closePanel(); return; }
     const top = el('div', 'flow-panel-head'), t = el('div', 'flow-panel-title');
@@ -141,7 +175,7 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
       s.addEventListener('click', () => { closePanel(); go(nd.page); }); stats.append(s);
     }
     // Việc cần xử lý + nút thao tác nhanh.
-    const listHead = el('h3', 'flow-list-head', d.items.length ? 'Việc cần xử lý' : 'Không có việc nào đang chờ 🎉');
+    const listHead = el('h3', 'flow-list-head', d.error ? d.error : d.items.length ? 'Việc cần xử lý' : 'Không có việc nào đang chờ 🎉');
     const list = el('ul', 'flow-items');
     for (const it of d.items) {
       const li = el('li', 'flow-item'), open = el('button', 'flow-item-main'); open.type = 'button';

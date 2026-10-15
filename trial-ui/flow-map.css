@@ -10,6 +10,12 @@
 .flow-stages { display: grid; grid-template-columns: repeat(var(--flow-cols), minmax(0, 1fr)); gap: var(--flow-gap); padding: 10px 12px; background: linear-gradient(120deg, #1757b8, #2f80ed); }
 .flow-stage { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border-radius: 10px; color: #fff; font-weight: 700; font-size: .9rem; text-align: center; background: rgba(255,255,255,.12); }
 .flow-stage:nth-child(even) { background: rgba(255,255,255,.22); }
+.flow-stage { border: 0; font: inherit; font-weight: 700; cursor: pointer; transition: background .15s, box-shadow .15s; }
+.flow-stage:hover, .flow-stage:focus-visible { background: rgba(255,255,255,.34); outline: none; }
+.flow-stage.is-open { background: #fff; color: #1757b8; box-shadow: 0 2px 8px #0f1d3333; }
+.flow-stage.is-open .flow-icon { stroke: #1757b8; }
+.flow-stage-card { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+.flow-stage-card p { margin: 0; }
 .flow-stage .flow-icon { width: 26px; height: 26px; stroke: #fff; }
 
 .flow-grid { position: relative; display: grid; grid-template-columns: repeat(var(--flow-cols), minmax(0, 1fr)); grid-template-rows: repeat(var(--flow-rows, 3), 176px); column-gap: var(--flow-gap);

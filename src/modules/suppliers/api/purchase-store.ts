@@ -8,6 +8,7 @@ import { salesContracts, salesOrderLines, salesOrders } from '../../sales/schema
 import { orderScopeFor } from '../../sales/api/routes.ts';
 import { customerStockRequests } from '../../portal/schema.ts';
 import { customers } from '../../customers/schema.ts';
+import { productStock, warehouses } from '../../catalog/schema.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
   supplierReceiptLines, supplierReceipts, suppliers,
@@ -190,7 +191,18 @@ export async function orderedBySource(db: Db, keys: { type: string; id: string }
 export async function sourceWithRemaining(db: Db, m: Member, type: string, id: string) {
   const need = await loadSourceNeed(db, m, type, id);
   const ordered = (await orderedBySource(db, [{ type, id }])).get(type + ':' + id) ?? new Map();
-  return { source: { type: need.type, id: need.id, no: need.no, customerName: need.customerName }, lines: remainingToOrder(need.lines, ordered) };
+  const lines = remainingToOrder(need.lines, ordered), stock = await stockOf(db, lines.map(l => l.sku));
+  return { source: { type: need.type, id: need.id, no: need.no, customerName: need.customerName }, lines: lines.map(l => ({ ...l, stock: stock.get(l.sku.toLowerCase()) ?? null })) };
+}
+
+/** Tồn kho thật (tổng các kho loại `stock` đang dùng, số đồng bộ từ Sapo) theo mã; mã chưa có số liệu tồn thì không có trong map. */
+export async function stockOf(db: Db, skus: string[]) {
+  const out = new Map<string, number>();
+  if (!skus.length) return out;
+  const rows = await db.select({ sku: productStock.sku, qty: productStock.quantity }).from(productStock).innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId))
+    .where(and(inArray(productStock.sku, [...new Set(skus)]), eq(warehouses.kind, 'stock'), eq(warehouses.active, true)));
+  for (const r of rows) out.set(r.sku.toLowerCase(), (out.get(r.sku.toLowerCase()) ?? 0) + r.qty);
+  return out;
 }
 
 /** Tìm nhanh chứng từ nguồn để lập đơn mua (đúng phạm vi xem). */

@@ -253,7 +253,11 @@ export function registerFlowRoutes(router: Router<StaffEnv>) {
   router.get('/flow', async c => {
     const me = (c.state.session as SessionState).member;
     const x: Ctx = { db: c.env.db, me, manager: me.role === 'manager', warehouse: isWarehouse(me), accountant: isAccountant(me), today: vietnamDate().iso };
-    const entries = await Promise.all(FLOW_NODE_IDS.map(async id => [id, await NODES[id]!(x)] as const));
+    // Một khối lỗi (vd. thiếu bảng khi chưa chạy migration) không làm trắng cả sơ đồ: khối đó hiện rỗng.
+    const entries = await Promise.all(FLOW_NODE_IDS.map(async id => {
+      try { return [id, await NODES[id]!(x)] as const; }
+      catch (e) { console.error('flow node failed', id, e instanceof Error ? e.message : e); return [id, { metrics: [], items: [], error: 'Không tải được số liệu khối này.' }] as const; }
+    }));
     return json({ today: x.today, role: { manager: x.manager, warehouse: x.warehouse, accountant: x.accountant }, nodes: Object.fromEntries(entries) });
   }, 'business');
 }
