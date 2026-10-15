@@ -179,7 +179,18 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     const v = current, d = frame(v.stateLabel + (v.confirmedOnBehalf ? ' · Manager ghi nhận thay NCC' : ''), `${v.ticketNumber} · ${v.supplier?.name || ''}`);
     const has = a => v.actions.includes(a);
     const acts = el('div', 'pur-actions');
-    for (const a of ['edit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'pdf', 'cancel']) if (has(a)) acts.append(btn(ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
+    for (const a of ['edit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'pdf', 'cancel']) {
+      if (has(a)) acts.append(btn(ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
+      // Cạnh nút PDF: gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
+      if (a === 'pdf' && has('pdf')) {
+        const mail = btn('✉ Gửi email NCC', 'btn secondary small', () => mailSupplier('order'));
+        if (v.state === 'draft') { mail.disabled = true; mail.title = 'Manager duyệt giá trước khi gửi đơn cho NCC'; }
+        acts.append(mail);
+      }
+      if (a === 'pdf' && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => mailSupplier('stock')));
+    }
+    // Người không xem được giá (không có nút PDF) vẫn hỏi tồn được.
+    if (!has('pdf') && !v.cancelledAt && v.progress.missing > 0) acts.append(btn('Hỏi tồn NCC', 'btn secondary small', () => mailSupplier('stock')));
     if (acts.children.length) d.append(acts);
     if (v.cancelledAt) d.append(el('p', 'pur-note danger', `Đã huỷ ${dmy(v.cancelledAt)}: ${v.cancelReason || ''}`));
 
@@ -200,7 +211,13 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     for (const l of v.lines) {
       const tr = el('tr'), name = el('td');
       name.append(el('b', '', l.sku), el('small', 'sup-sub', l.name + (l.unit ? ` (${l.unit})` : '')));
-      for (const s of l.sources) name.append(el('small', 'muted sup-sub', `↳ ${s.no}${s.customerName ? ' · ' + s.customerName : ''}: ${num(s.quantity)}`));
+      for (const s of l.sources) {
+        // Liên kết về chứng từ nguồn (báo giá / đơn-HĐKT / khách hỏi tồn); người không có quyền xem sẽ nhận thông báo từ trang đó.
+        const row = el('small', 'muted sup-sub'), link = el('a', '', s.no);
+        link.href = (s.type === 'quote' ? '#/quotes/' : s.type === 'order' ? '#/orders/' : '#/stock-requests/') + encodeURIComponent(s.id);
+        link.addEventListener('click', () => hide());
+        row.append('↳ ', link, `${s.customerName ? ' · ' + s.customerName : ''}: ${num(s.quantity)}`); name.append(row);
+      }
       if (l.supplierNote) name.append(el('small', 'muted sup-sub', 'NCC: ' + l.supplierNote));
       tr.append(name, el('td', 'num', num(l.quantity)), el('td', 'num', num(l.good)), el('td', 'num', l.damaged ? num(l.damaged) : '—'), el('td', 'num' + (l.missing ? ' pur-late' : ''), l.missing ? num(l.missing) : '—'), el('td', '', dmy(l.promisedDate)));
       if (!v.priceHidden) tr.append(el('td', 'num', l.price == null ? '—' : money(l.price)), el('td', 'num', l.purchaseDiscount ? num(l.purchaseDiscount) : '—'), el('td', 'num', money(l.lineTotal)));
@@ -303,6 +320,29 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
 
   // ---------------------------------------------------------------- thao tác
   const back = () => renderDetail();
+  /**
+   * Soạn email cho NCC bằng ứng dụng email của máy (mailto – chưa có dịch vụ gửi mail phía máy chủ):
+   *  - 'order': tải PDF đơn đặt hàng về máy rồi mở email tới người nhận đơn + CC (đính kèm file PDF vừa tải);
+   *  - 'stock': hỏi NCC còn hàng / ngày giao cho các mã còn thiếu (không kèm giá).
+   * Máy chủ trả email người nhận theo danh bạ NCC và ghi vào lịch sử đơn.
+   */
+  async function mailSupplier(kind) {
+    const v = current;
+    try {
+      if (kind === 'order') { const { downloadPurchasePdf } = await import('./purchase-pdf.js'); await downloadPurchasePdf(v); }
+      const r = await api(`/purchase-orders/${encodeURIComponent(v.id)}/mail`, 'POST', { kind });
+      const lines = v.lines.filter(l => kind === 'order' || l.missing > 0);
+      const list = lines.slice(0, 40).map((l, i) => `${i + 1}. ${l.sku} - ${l.name}: ${num(kind === 'order' ? l.quantity : l.missing)} ${l.unit || ''}`.trim()).join('\n') + (lines.length > 40 ? `\n... và ${lines.length - 40} mã khác (xem file đính kèm)` : '');
+      const subject = kind === 'order' ? `Đơn đặt hàng ${v.ticketNumber} – Bách Ngân` : `Hỏi tồn kho – ${v.ticketNumber} – Bách Ngân`;
+      const text = kind === 'order'
+        ? `Kính gửi ${v.supplier?.name || 'Quý nhà cung cấp'},\n\nBách Ngân gửi đơn đặt hàng ${v.ticketNumber} (file PDF đính kèm)${v.arrivalDate ? `, đề nghị giao trước ngày ${dmy(v.arrivalDate)}` : ''}:\n${list}\n\nĐề nghị Quý NCC xác nhận đơn hàng, ngày giao và số đơn nội bộ (nếu có).\n\nTrân trọng.`
+        : `Kính gửi ${v.supplier?.name || 'Quý nhà cung cấp'},\n\nBách Ngân cần hỏi tồn kho và thời gian giao các mã sau:\n${list}\n\nNhờ Quý NCC phản hồi số lượng còn và ngày giao dự kiến.\n\nTrân trọng.`;
+      const href = `mailto:${encodeURIComponent(r.to)}?` + new URLSearchParams({ ...(r.cc.length ? { cc: r.cc.join(',') } : {}), subject, body: text }).toString().replace(/\+/g, '%20');
+      const a = document.createElement('a'); a.href = href; a.rel = 'noopener'; document.body.append(a); a.click(); a.remove();
+      toast(kind === 'order' ? 'Đã tải PDF và mở email gửi NCC – nhớ đính kèm file PDF vừa tải.' : 'Đã mở email hỏi tồn NCC.');
+      openDetail(v.id); // cập nhật lịch sử
+    } catch (e) { toast(e.message || 'Không soạn được email.', 'err'); }
+  }
   const ACTIONS = {
     edit: () => editForm(),
     approve: () => paymentForm('approve'),

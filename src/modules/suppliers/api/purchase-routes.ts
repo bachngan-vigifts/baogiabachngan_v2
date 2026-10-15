@@ -172,6 +172,28 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     return json({ ids }, 201);
   }, 'business');
 
+  // ---- Email cho NCC (soạn ở máy người dùng qua mailto): máy chủ trả người nhận theo danh bạ NCC + ghi lịch sử.
+  //  kind 'stock' = hỏi tồn / ngày giao (ai xem được đơn cũng gửi được, không kèm giá);
+  //  kind 'order' = gửi đơn đặt hàng kèm PDF (chỉ người xem được giá, đơn đã duyệt).
+  router.post('/purchase-orders/:id/mail', async c => {
+    guard(c);
+    const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 4_000), kind = body.kind === 'order' ? 'order' : 'stock';
+    const p = await loadPurchase(db, m, id, today());
+    if (p.raw.order.cancelledAt) fail(409, 'Đơn mua đã huỷ.');
+    if (kind === 'order') {
+      if (!canSeePrices(asActor(m))) fail(403, 'Chỉ Manager hoặc Kế toán gửi đơn đặt hàng cho NCC.');
+      if (p.raw.order.approvalStatus !== 'approved') fail(409, 'Manager duyệt giá trước khi gửi đơn cho NCC.');
+    }
+    const contacts = p.raw.order.supplierId ? await db.select({ kind: supplierContacts.kind, email: supplierContacts.email }).from(supplierContacts).where(eq(supplierContacts.supplierId, p.raw.order.supplierId)) : [];
+    const rec = defaultRecipients(contacts);
+    // Đơn đã duyệt: dùng người nhận Manager chốt lúc duyệt (nếu có).
+    const to = (kind === 'order' && p.raw.order.supplierEmail) || rec.to;
+    const cc = kind === 'order' && p.raw.order.ccEmail ? p.raw.order.ccEmail.split(',').map(x => x.trim()).filter(Boolean) : rec.cc;
+    if (!to) fail(400, 'NCC chưa có email nhận đơn – thêm ở trang Nhà cung cấp.');
+    await event(db, id, m.id, 'mail', (kind === 'order' ? 'Gửi email đơn đặt hàng tới ' : 'Gửi email hỏi tồn tới ') + to + (cc.length ? ` (CC ${cc.join(', ')})` : ''), { kind, to, cc });
+    return json({ to, cc, ticketNumber: p.raw.order.ticketNumber });
+  }, 'business');
+
   // ---- Sửa nháp
   router.put('/purchase-orders/:id', async c => {
     guard(c);

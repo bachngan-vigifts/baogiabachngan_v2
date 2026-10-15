@@ -197,3 +197,19 @@ test('việc tự sinh + sơ đồ: chờ duyệt → chờ xác nhận → nh�
 test('giao diện đơn mua: không chèn HTML thô', () => {
   for (const f of ['purchases.js', 'purchase-pdf.js']) assert.doesNotMatch(readFileSync(new URL('../../trial-ui/' + f, import.meta.url), 'utf8'), /innerHTML|insertAdjacentHTML/);
 });
+
+test('email NCC: hỏi tồn (ai xem đơn cũng gửi, không kèm giá) / gửi đơn (Manager – Kế toán, đơn đã duyệt); ghi lịch sử', async () => {
+  const { call, emp, mgr, kho, a } = await setup();
+  const id = (await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, lines: [{ sku: 'LY1', quantity: 2 }] }] })).data.ids[0];
+  const stock = await call(`/purchase-orders/${id}/mail`, emp, 'POST', { kind: 'stock' });
+  assert.equal(stock.status, 200, JSON.stringify(stock.data)); assert.equal(stock.data.to, 'minhlong@ncc.vn');
+  assert.equal((await call(`/purchase-orders/${id}/mail`, emp, 'POST', { kind: 'order' })).status, 403, 'nhân viên không gửi đơn (có giá)');
+  assert.equal((await call(`/purchase-orders/${id}/mail`, mgr, 'POST', { kind: 'order' })).status, 409, 'chưa duyệt chưa gửi đơn');
+  const v = (await call(`/purchase-orders/${id}`, mgr)).data;
+  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], supplierEmail: 'chot@ncc.vn' });
+  const order = await call(`/purchase-orders/${id}/mail`, mgr, 'POST', { kind: 'order' });
+  assert.equal(order.data.to, 'chot@ncc.vn', 'dùng người nhận Manager chốt khi duyệt');
+  assert.equal((await call(`/purchase-orders/${id}/mail`, kho, 'POST', { kind: 'order' })).status, 403);
+  const events = (await call(`/purchase-orders/${id}`, mgr)).data.events.map((e: any) => e.summary);
+  assert.ok(events.some((x: string) => x.startsWith('Gửi email hỏi tồn tới minhlong@ncc.vn')) && events.some((x: string) => x.startsWith('Gửi email đơn đặt hàng tới chot@ncc.vn')));
+});
