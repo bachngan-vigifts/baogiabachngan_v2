@@ -685,10 +685,22 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       if (!pick.value || sups.some(s => s.id === pick.value)) { pick.value = ''; return; }
       if (sups.length >= 6) { toast('Tối đa 6 nhà cung cấp mỗi lần lập.', 'err'); pick.value = ''; return; }
       sups.push({ id: pick.value, name: pick.selectedOptions[0].textContent });
-      pick.value = ''; err.textContent = ''; renderGrid();
+      pick.value = ''; err.textContent = ''; renderChips(); renderGrid();
     };
+    // NCC đã chọn hiện thành thẻ ngay dưới ô chọn (bấm × để bỏ) – ô chọn trống lại để thêm NCC tiếp khi cần chia.
+    const chips = el('div', 'pur-sup-chips');
+    function renderChips() {
+      chips.replaceChildren(...sups.map((x, i) => {
+        const c = el('span', 'sup-pill info pur-sup-chip'); c.append(el('span', '', (i === 0 && sups.length > 1 ? '★ ' : '✓ ') + x.name));
+        const rm = btn('×', 'icon-btn', () => { sups.splice(i, 1); renderChips(); renderGrid(); }); rm.setAttribute('aria-label', 'Bỏ ' + x.name); c.append(rm);
+        return c;
+      }));
+      chips.hidden = !sups.length;
+    }
+    renderChips();
     pick.addEventListener('change', addPicked);
     supBox.lastChild.append(pick, btn('+ Thêm NCC vào đơn', 'btn secondary small', addPicked));
+    supBox.append(chips);
     // Tạo NCC mới (Manager / Kế toán): mở trang Nhà cung cấp ở tab mới; quay lại tab này thì danh sách NCC tự cập nhật.
     if (o.canEditSuppliers) {
       supBox.lastChild.append(btn('＋ Tạo NCC mới', 'btn ghost small', () => window.open(location.pathname + '#/suppliers?new=1', '_blank')));
