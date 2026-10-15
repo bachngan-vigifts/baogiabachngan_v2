@@ -238,3 +238,23 @@ export async function nextNumber(db: Db, prefix: 'DMH' | 'PNH', today: string) {
   const max = Math.max(0, ...used.map(n => parseInt(n.slice(head.length), 10) || 0));
   return head + String(max + 1).padStart(3, '0');
 }
+
+/**
+ * Email nhân viên phụ trách đơn mua (để CC khi gửi đơn cho NCC): người lập đơn mua + người phụ trách các chứng từ nguồn
+ * (người lập báo giá, người phụ trách đơn hàng / HĐKT, người phụ trách yêu cầu hỏi tồn) + mọi Manager. Chỉ nhân viên nội bộ còn hoạt động.
+ */
+export async function responsibleEmails(db: Db, shipmentId: string, createdBy: string): Promise<string[]> {
+  const src = await db.select({ type: supplierOrderSources.sourceType, id: supplierOrderSources.sourceId }).from(supplierOrderSources).where(eq(supplierOrderSources.shipmentId, shipmentId));
+  const ids = (t: string) => [...new Set(src.filter(s => s.type === t && s.id).map(s => s.id))];
+  const [q, o, r] = await Promise.all([
+    ids('quote').length ? db.select({ id: quotations.creatorId }).from(quotations).where(inArray(quotations.id, ids('quote'))) : [],
+    ids('order').length ? db.select({ id: salesOrders.ownerId }).from(salesOrders).where(inArray(salesOrders.id, ids('order'))) : [],
+    ids('stock_request').length ? db.select({ id: customerStockRequests.ownerId }).from(customerStockRequests).where(inArray(customerStockRequests.id, ids('stock_request'))) : [],
+  ]);
+  const people = [...new Set([createdBy, ...q.map(x => x.id), ...o.map(x => x.id), ...r.map(x => x.id)].filter(Boolean))];
+  const rows = await db.select({ id: employees.id, email: employees.email, role: employees.role }).from(employees)
+    .where(and(or(people.length ? inArray(employees.id, people) : undefined, eq(employees.role, 'manager')), eq(employees.active, true), isNull(employees.deletedAt), inArray(employees.role, ['employee', 'manager'])));
+  // Thứ tự: người lập đơn, người phụ trách chứng từ, rồi các Manager.
+  const managers = rows.filter(x => x.role === 'manager' && !people.includes(x.id)).sort((a, b) => a.email.localeCompare(b.email)).map(x => x.id);
+  return [...people, ...managers].map(id => rows.find(x => x.id === id)?.email ?? '').filter(Boolean);
+}

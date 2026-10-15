@@ -4,6 +4,7 @@ Nút **"✉ Gửi email NCC"** trên trang đơn mua NCC có hai chế độ.
 
 **Đã cấu hình:** máy chủ gửi thẳng email đơn đặt hàng cho NCC, đính kèm file PDF.
 - Người nhận là email "Nhận đơn" và CC theo danh bạ NCC. Nếu Manager đã chốt người nhận lúc duyệt thì dùng người nhận đó.
+- Email tự CC thêm **nhân viên phụ trách**: người lập đơn mua và người phụ trách các chứng từ nguồn (người lập báo giá, người phụ trách đơn hàng / HĐKT, người phụ trách yêu cầu hỏi tồn), cùng **mọi Manager**. Chỉ tính nhân viên còn hoạt động. Ngoài ra CC thêm các địa chỉ trong `MAIL_CC`.
 - Khi NCC bấm trả lời, email về người đã bấm gửi.
 - Mỗi lần gửi được ghi vào lịch sử đơn.
 
@@ -31,6 +32,7 @@ Mã API chỉ nhập trên Supabase. Không gửi qua chat, không ghi vào code
 |---|---|
 | `RESEND_API_KEY` | `re_…` (mã vừa tạo) |
 | `MAIL_FROM` | `Bách Ngân <don-hang@bachngan.vn>` |
+| `MAIL_CC` (tuỳ chọn) | email luôn được CC mọi email đơn đặt hàng gửi NCC, nhiều địa chỉ cách nhau dấu phẩy |
 
 - Địa chỉ trong `MAIL_FROM` phải dùng **đúng tên miền đã xác thực** ở bước 1.
 
