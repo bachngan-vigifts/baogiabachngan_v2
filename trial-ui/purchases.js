@@ -19,7 +19,7 @@ const STATE_PILL = { draft: 'warn', awaiting_confirmation: 'info', confirmed: 'i
 const SAPO_LABEL = { pending: ['Chờ nhập Sapo', 'warn'], done: ['Đã nhập Sapo', 'ok'], failed: ['Nhập Sapo lỗi', 'danger'], not_needed: ['Không cần nhập Sapo', ''] };
 const FILTERS = [['', 'Tất cả'], ['draft', 'Chờ duyệt'], ['awaiting_confirmation', 'Chờ NCC xác nhận'], ['confirmed', 'Chờ nhận hàng'], ['partially_received', 'Nhận một phần'],
   ['late', 'Quá hẹn'], ['sapo', 'Chờ nhập Sapo'], ['debt', 'Còn nợ NCC'], ['received', 'Đã nhận đủ'], ['cancelled', 'Đã huỷ']];
-const ACTION_LABEL = { edit: 'Sửa nháp', approve: 'Duyệt giá', confirm: 'Ghi nhận NCC xác nhận', receive: 'Nhận hàng', pay: 'Ghi trả NCC', schedule: 'Lịch trả', pdf: 'PDF / Excel gửi NCC', cancel: 'Huỷ đơn' };
+const ACTION_LABEL = { edit: 'Sửa nháp', submit: 'Gửi duyệt', approve: 'Duyệt giá', confirm: 'Ghi nhận NCC xác nhận', receive: 'Nhận hàng', pay: 'Ghi trả NCC', schedule: 'Lịch trả', pdf: 'PDF / Excel gửi NCC', cancel: 'Huỷ đơn' };
 
 /** Catalog lookup for the manual purchase line; never converts SKUs to numbers. */
 export function bindManualProductLookup({ api, sku, name, unit, host, add, active }) {
@@ -180,8 +180,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     const v = current, d = frame(v.stateLabel + (v.confirmedOnBehalf ? ' · Manager ghi nhận thay NCC' : ''), `${v.ticketNumber} · ${v.supplier?.name || ''}`);
     const has = a => v.actions.includes(a);
     const acts = el('div', 'pur-actions');
-    for (const a of ['edit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'pdf', 'cancel']) {
-      if (has(a)) acts.append(btn(ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
+    for (const a of ['edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'pdf', 'cancel']) {
+      if (has(a)) acts.append(btn(ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' || a === 'submit' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
       // Cạnh nút PDF: gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
       if (a === 'pdf' && has('pdf')) {
         const mail = btn('✉ Gửi email NCC', 'btn secondary small', () => sendOrderEmail(mail));
@@ -420,6 +420,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     d.append(bar, lines.length ? tw : el('p', 'muted', 'Đơn này không còn mã nào thiếu.'));
   }
   const ACTIONS = {
+    submit: async () => {
+      if (!await confirmBox(`Gửi đơn ${current.ticketNumber} cho Manager duyệt giá? Sau khi gửi, Manager sẽ thấy đơn trong việc cần duyệt.`, { title: 'Gửi duyệt', ok: 'Gửi duyệt' })) return;
+      try { current = await api(`/purchase-orders/${encodeURIComponent(current.id)}/submit`, 'POST', { revision: current.revision }); toast('Đã gửi Manager duyệt đơn mua.'); renderDetail(); load(); }
+      catch (e) { toast(e.message || 'Không gửi duyệt được.', 'err'); }
+    },
     edit: () => editForm(),
     approve: () => paymentForm('approve'),
     schedule: () => paymentForm('schedule'),
@@ -904,7 +909,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
       if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
       run(ok, err, async () => {
         const r = await api('/purchase-orders', 'POST', { orders });
-        toast(`Đã tạo ${r.ids.length} đơn mua nháp – chờ Manager duyệt.`);
+        toast(o.isManager ? `Đã tạo ${r.ids.length} đơn mua – chờ duyệt giá.` : `Đã lưu ${r.ids.length} đơn mua nháp – kiểm tra rồi bấm "Gửi duyệt".`);
         go('#/purchases/' + encodeURIComponent(r.ids[0]));
       });
     });
