@@ -24,6 +24,14 @@ export const isSupplier = (m: MemberLike | null | undefined): boolean =>
 export const isCustomer = (m: MemberLike | null | undefined): boolean =>
   Boolean(m && (m.role === 'customer' || m.positionId === CUSTOMER_POSITION_ID));
 
+/**
+ * Sale Admin xem toàn công ty (TẠM THỜI, theo yêu cầu 15/10/2026): mọi khách hàng, đơn hàng / HĐKT (kèm giao hàng, công nợ),
+ * khách hỏi tồn, đơn mua NCC (kể cả nháp; giá mua vẫn ẩn). Không mở quyền sửa / duyệt. Muốn thu hồi: cho hàm này trả false.
+ */
+export const SALE_ADMIN_POSITION_ID = 'sale-admin';
+export const seesAllAsSaleAdmin = (m: { role: string; positionId?: string | null } | null | undefined): boolean =>
+  Boolean(m && m.role === 'employee' && m.positionId === SALE_ADMIN_POSITION_ID);
+
 /** Báo lỗi dữ liệu lệch giữa vai trò và chức vụ (null = nhất quán). Dùng khi tạo/sửa nhân viên và khi chuyển dữ liệu. */
 export function roleConsistencyIssue(m: MemberLike): string | null {
   const expected = roleFromPosition(m.positionId);

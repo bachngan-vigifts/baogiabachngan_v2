@@ -42,6 +42,8 @@ export const salesOrders = pgTable('sales_orders', {
   orderDate: text('order_date').notNull(),
   expectedDeliveryDate: text('expected_delivery_date'),
   status: text('status', { enum: ORDER_STATUSES }).notNull().default('confirmed'),
+  /** Đơn / HĐKT nháp: null = nhân viên chưa bấm "Gửi duyệt" (Nháp); có giá trị = đã gửi Manager duyệt (Chờ duyệt). */
+  submittedAt: text('submitted_at'),
   subtotal: doublePrecision('subtotal').notNull().default(0),
   tax: doublePrecision('tax').notNull().default(0),
   total: doublePrecision('total').notNull().default(0),

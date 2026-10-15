@@ -2419,7 +2419,8 @@ function resume() {
 
 // ================================================================ BÁN HÀNG: đơn đặt hàng · HĐKT · lịch giao · công nợ
 // Luồng: Báo giá → Đơn đặt hàng → HĐKT → Lịch giao → Công nợ. Mọi trang đều dẫn về trang chi tiết đơn (#/orders/<id>).
-const ORDER_STATUS = { draft: ['Nháp – chờ Manager duyệt', 'warn'], confirmed: ['Đã duyệt', 'info'], delivering: ['Đang giao', 'warn'], delivered: ['Đã giao xong', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
+/** `unsubmitted` = đơn / HĐKT nháp nhân viên chưa bấm "Gửi duyệt" (submittedAt = null). */
+const ORDER_STATUS = { unsubmitted: ['Nháp – chưa gửi duyệt', 'muted'], draft: ['Chờ Manager duyệt', 'warn'], confirmed: ['Đã duyệt', 'info'], delivering: ['Đang giao', 'warn'], delivered: ['Đã giao xong', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
 const CONTRACT_STATUS = { draft: ['Chưa ký', 'warn'], signed: ['Đã ký', 'info'], completed: ['Hoàn tất', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
 const DELIVERY_STATUS = { planned: ['Chờ giao', 'warn'], in_transit: ['Đang giao', 'info'], delivered: ['Đã giao', 'ok'], failed: ['Giao lỗi', 'danger'], cancelled: ['Đã huỷ', 'muted'] };
 const DEBT_STATUS = { open: ['Còn nợ', 'warn'], overdue: ['Quá hạn', 'danger'], paid: ['Đã thu đủ', 'ok'], none: ['—', 'muted'] };
@@ -2471,7 +2472,7 @@ async function loadOrders() {
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
       <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.quoteNo || 'Không từ báo giá')} · ${fmtDate(o.orderDate)}</small></td>
       <td>${esc(o.customerName)}<small>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</small></td>
-      <td>${pill(ORDER_STATUS, o.status)}</td>
+      <td>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
       <td>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</td>
       <td class="right num">${money(o.total)}</td>
       <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
@@ -2777,7 +2778,8 @@ async function openOrder(id) {
   // Đơn hàng và HĐKT là 2 luồng: đơn có HĐKT quay về trang HĐKT.
   $('#order-back').href = d.contract ? '#/contracts' : '#/orders'; $('#order-back').textContent = d.contract ? '‹ HĐKT' : '‹ Đơn đặt hàng';
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (d.contract ? 'contracts' : 'orders')));
-  $('#order-status').outerHTML = `<span class="pill ${ORDER_STATUS[o.status]?.[1] || ''}" id="order-status">${esc(ORDER_STATUS[o.status]?.[0] || o.status)}</span>`;
+  const stKey = (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status);
+  $('#order-status').outerHTML = `<span class="pill ${ORDER_STATUS[stKey]?.[1] || ''}" id="order-status">${esc(ORDER_STATUS[stKey]?.[0] || o.status)}</span>`;
   // Liên kết các bước của đơn
   const step = (done, label, sub, href) => `<${href ? `a href="${href}"` : 'div'} class="flow-step ${done ? 'done' : ''}"><b>${esc(label)}</b><small>${esc(sub)}</small></${href ? 'a' : 'div'}>`;
   const shipped = d.lines.reduce((s, l) => s + l.deliveredQty, 0), totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
@@ -2795,6 +2797,7 @@ async function openOrder(id) {
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
     + (o.status === 'draft' ? (isManager() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
+      : o.submittedAt === null ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>`
       : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
     + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
@@ -2827,7 +2830,7 @@ async function openOrder(id) {
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
     <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${isManager() && k.status === 'draft' && o.status !== 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
-    : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(ORDER_STATUS, o.status)}</dd>
+    : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</dd>
     <dt>Ngày đặt</dt><dd>${fmtDate(o.orderDate)}</dd>${o.quoteNo ? `<dt>Từ báo giá</dt><dd>${o.quoteId ? `<a href="#/quotes/${encodeURIComponent(o.quoteId)}">${esc(o.quoteNo)}</a>` : esc(o.quoteNo)}</dd>` : ''}
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd><dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>Theo HĐ nguyên tắc với khách</dd></dl>
@@ -3310,6 +3313,14 @@ document.addEventListener('click', async e => {
     try { const d = await api('/orders/' + encodeURIComponent(listDocs.dataset.contractDocsFor)); openContractDocs({ detail: d, api, toast, onSaved: loadContracts }); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-confirm')) verifyAndConfirmOrder();
+  const sub = e.target.closest('#order-submit');
+  if (sub && sales.detail?.order) {
+    const o = sales.detail.order, what = sales.detail.contract ? 'HĐKT' : 'đơn hàng';
+    if (!await confirmBox(`Đã xem kỹ ${what} ${sales.detail.contract?.contractNo || o.orderNo}? Gửi Manager duyệt.`, { title: 'Gửi duyệt', ok: 'Gửi duyệt' })) return;
+    sub.disabled = true;
+    try { await api('/orders/' + encodeURIComponent(o.id) + '/submit', 'POST', {}); toast(`Đã gửi Manager duyệt ${what}.`); openOrder(o.id); }
+    catch (ex) { toast(ex.message, 'err'); sub.disabled = false; }
+  }
   if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: (isContractDoc() ? 'HĐKT ' : 'Đơn ') + docNo() });
   if (e.target.closest('#order-cancel')) {
     const w = isContractDoc() ? 'HĐKT' : 'đơn';

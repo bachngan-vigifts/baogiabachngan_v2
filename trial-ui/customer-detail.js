@@ -36,7 +36,7 @@ export function initCustomerDetail(deps) {
   const TABS = [
     { key: 'orders', label: 'Đơn hàng', count: d => plainOrders(d).length, html: d => table(['Đơn', 'Tình trạng', 'Phụ trách', '>Giá trị', 'Thanh toán'], plainOrders(d).map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
         <td>${orderLink(o.id, o.orderNo)}<small>${fmtDate(o.orderDate)}${o.quoteNo ? ' · ' + esc(o.quoteNo) : ''}</small></td>
-        <td>${pill(ORDER_STATUS, o.status)}${o.expectedDeliveryDate ? `<small>Giao dự kiến ${fmtDate(o.expectedDeliveryDate)}</small>` : ''}</td>
+        <td>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}${o.expectedDeliveryDate ? `<small>Giao dự kiến ${fmtDate(o.expectedDeliveryDate)}</small>` : ''}</td>
         <td>${esc(o.ownerName)}</td><td class="right num">${money(o.total)}</td><td>${payCell(o.receivable, o.counted, o.status)}</td></tr>`), 'Chưa có đơn đặt hàng.') },
     { key: 'quotes', label: 'Báo giá', count: d => d.quotes.length, html: d => table(['Báo giá', 'Duyệt', 'Phụ trách', '>Giá trị', 'Đơn hàng / HĐKT'], d.quotes.map(x => `<tr class="clickable" data-href="#/quotes/${esc(x.id)}">
         <td><a href="#/quotes/${encodeURIComponent(x.id)}">${esc(x.quoteNo)}</a><small>${esc(x.quoteType)} · ${fmtDate(x.quoteDate || x.updatedAt)}</small></td>

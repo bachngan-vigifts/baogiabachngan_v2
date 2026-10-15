@@ -1,4 +1,5 @@
 import { departmentOwner } from '../../staff/api/department.ts';
+import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
 import { and, asc, count, desc, eq, exists, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -41,7 +42,7 @@ export async function customerAccess(db: Db, customerId: string, who: Viewer) {
     .where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.memberId, who.id))).limit(1);
   const manager = who.role === 'manager', owner = row?.role === 'owner', shared = row?.role === 'shared';
   const [peer] = await db.select({ id: customerStaff.memberId }).from(customerStaff).where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.role, 'owner'), departmentOwner(customerStaff.memberId, who) ?? sql`false`)).limit(1);
-  return { manager, owner, shared, peer: !!peer, canSeeAll: manager || owner || shared, canManageStaff: manager || owner, canChangeOwner: manager, canEdit: manager || owner };
+  return { manager, owner, shared, peer: !!peer, canSeeAll: manager || owner || shared || seesAllAsSaleAdmin(who), canManageStaff: manager || owner, canChangeOwner: manager, canEdit: manager || owner };
 }
 /** Sửa thông tin khách / người liên hệ: chỉ nhân viên phụ trách khách hoặc Manager. */
 async function requireEdit(db: Db, customerId: string, who: Viewer) {

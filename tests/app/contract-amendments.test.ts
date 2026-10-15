@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { seesAllAsSaleAdmin } from '../../src/modules/staff/domain/roles.ts';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -72,7 +73,7 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   };
   const table = new Proxy({}, { get: (_, key) => String(key) });
   const ctx: any = {
-    departmentOwner, quotationPredicate, quoteSaveHooks: { beforeSave: [], afterSave: [] },
+    departmentOwner, quotationPredicate, seesAllAsSaleAdmin, quoteSaveHooks: { beforeSave: [], afterSave: [] },
     customerStaff: table, salesOrders: table, salesContracts: table, paymentSchedules: table, customerPayments: table, deliveries: table,
     or: () => null, eq: () => null, and: () => null, desc: () => null, sql: () => null,
     CONTRACT_STATUSES: ['draft', 'signed', 'completed', 'cancelled'],

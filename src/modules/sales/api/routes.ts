@@ -1,8 +1,9 @@
 import { departmentOwner } from '../../staff/api/department.ts';
+import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { orderNotesFromQuote, orderDeliveryAddress } from '../domain/order-notes.ts';
 import { cleanOrderInput } from '../domain/order-input.ts';
-import { and, asc, count, desc, eq, gte, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -45,7 +46,7 @@ export const canIssueInvoice = (m: { role: string; positionId?: string | null })
  * Ai thấy đơn: Manager và Kế toán thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
  */
-export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) ? undefined
+export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m) ? undefined
   : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id), departmentOwner(salesOrders.ownerId, m), departmentOwner(salesOrders.createdBy, m),
     sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
@@ -133,7 +134,7 @@ async function contractCustomerCode(db: StaffEnv['db'] | Tx, quote: QuoteRow) {
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
  */
-export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string;
+export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; submitted?: boolean; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string;
   /** Chạy cuối giao dịch tạo đơn (vd. đẩy đơn sang Sapo); lỗi → huỷ, không có đơn. */
   inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
@@ -156,7 +157,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
       taxCode: text(data.customerTaxCode, 100), address: o.deliveryAddress === undefined ? text(orderDeliveryAddress(data), 2000) : text(o.deliveryAddress, 2000),
       ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: o.orderDate ?? today,
-      expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, ...t, note: text(o.note ?? orderNotesFromQuote(data), 20000), createdAt: now, updatedAt: now,
+      expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, submittedAt: o.submitted === false ? null : now, ...t, note: text(o.note ?? orderNotesFromQuote(data), 20000), createdAt: now, updatedAt: now,
     });
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
@@ -345,12 +346,31 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Có tạo đơn Sapo (mặc định): đẩy trong cùng giao dịch (Sapo lỗi → không tạo đơn); `pushSapo: false` → chỉ tạo đơn web. HĐKT là luồng riêng: POST /contracts { quoteId }.
     const push = wantsSapoPush(c, body) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let sapo: SapoPushOutcome = null;
-    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', ...input,
+    // Nhân viên sinh đơn: NHÁP, chỉ gửi Manager khi bấm "Gửi duyệt" (POST /orders/:id/submit). Manager sinh đơn: coi như đã gửi.
+    const submitted = me.role === 'manager';
+    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, ...input,
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
-    await notifyMany(c.env, 'managers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
+    if (submitted) await notifyMany(c.env, 'managers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
       url: `/index.html#/orders/${id}`, actorId: me.id, data: { orderId: id } });
     return json({ id, sapo }, 201);
+  }, 'business');
+
+  /** Nhân viên xem kỹ đơn / HĐKT nháp rồi bấm "Gửi duyệt" → Manager nhận thông báo + việc "Duyệt". */
+  router.post('/orders/:id/submit', async c => {
+    const me = viewer(c), order = await loadOrder(c, c.params.id!);
+    if (order.status !== 'draft') throw new AppError(409, 'Chỉ gửi duyệt được đơn / HĐKT còn nháp.');
+    if (order.submittedAt) return json({ ok: true, submittedAt: order.submittedAt });
+    const now = nowIso();
+    const rows = await c.env.db.update(salesOrders).set({ submittedAt: now, updatedAt: now, revision: sql`${salesOrders.revision} + 1` })
+      .where(and(eq(salesOrders.id, order.id), eq(salesOrders.status, 'draft'), isNull(salesOrders.submittedAt))).returning({ id: salesOrders.id });
+    if (rows.length) {
+      const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);
+      await notifyMany(c.env, 'managers', k
+        ? { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt', body: `${me.name}: ${k.no} – ${order.customerName}`, url: `/index.html#/contracts/${order.id}`, actorId: me.id, data: { orderId: order.id } }
+        : { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${order.orderNo} – ${order.customerName} · ${new Intl.NumberFormat('vi-VN').format(order.total)} đ`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id } });
+    }
+    return json({ ok: true, submittedAt: now });
   }, 'business');
 
   /** Push an existing document; never create another CRM order/contract. Row lock serializes double clicks. */
@@ -558,7 +578,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
-      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', inTx: async (tx, oid) => {
+      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted: me.role === 'manager', inTx: async (tx, oid) => {
         const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, oid)).limit(1);
         const counterId = `HDKT:${year}:${month}:${entity}`;
         const [row] = await tx.insert(contractCounters).values({ id: counterId, type: 'HDKT', year: Number(year), month: Number(month), legalEntity: entity, lastSequence: 1, updatedAt: now })
@@ -593,7 +613,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       }
       throw e;
     } finally { await push?.done(); }
-    await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
+    if (me.role === 'manager') await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
       body: `${me.name}: ${contractNo} – ${text(data.customer) || quote.customer}`, url: `/index.html#/contracts/${orderId}`, actorId: me.id, data: { orderId, contractId: id } });
     return json({ id, orderId, contractNo, sapo }, 201);
   }, 'business');

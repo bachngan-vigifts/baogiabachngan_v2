@@ -41,6 +41,11 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   await call(`/quotes/${q3.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const o2 = await call('/orders', emp, 'POST', { quoteId: q2.data.id });
   const k3 = await call('/contracts', emp, 'POST', { quoteId: q3.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 }); assert.equal(k3.status, 201);
+  // Đơn / HĐKT nhân viên sinh là nháp: chỉ vào hộp "Cần duyệt" sau khi bấm Gửi duyệt.
+  assert.equal((await call(`/orders/${o2.data.id}`, emp)).data.order.submittedAt, null, 'mới sinh: nháp, chưa gửi duyệt');
+  assert.deepEqual([(await inbox()).counts.order, (await inbox()).counts.contract], [0, 0]);
+  for (const oid of [o2.data.id, k3.data.orderId]) assert.equal((await call(`/orders/${oid}/submit`, emp, 'POST', {})).status, 200);
+  assert.equal((await call(`/orders/${o2.data.id}/submit`, emp, 'POST', {})).status, 200, 'bấm lặp không lỗi');
   const o3 = { data: { id: k3.data.orderId as string } };
   // Khách hàng và sản phẩm nhân viên tạo.
   assert.equal((await call('/customers', emp, 'POST', { name: 'Công ty Mới Tạo' })).status, 201);

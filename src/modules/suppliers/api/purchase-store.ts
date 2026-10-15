@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ilike, inArray, isNull, like, or, sql } from 'drizz
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
+import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
 import { quotations, quoteLines } from '../../quotes/schema.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
@@ -33,7 +34,7 @@ const PURCHASE = eq(incomingShipments.source, 'supplier-order');
 
 export function purchaseScope(m: Member) {
   const a = asActor(m);
-  if (a.role === 'manager' || isAccountantStaff(a)) return PURCHASE;
+  if (a.role === 'manager' || isAccountantStaff(a) || seesAllAsSaleAdmin(a)) return PURCHASE;
   if (isWarehouseStaff(a)) return and(PURCHASE, eq(incomingShipments.approvalStatus, 'approved'));
   return and(PURCHASE, or(eq(incomingShipments.approvalStatus, 'approved'), eq(incomingShipments.createdBy, m.id)));
 }
@@ -162,7 +163,7 @@ export async function loadSourceNeed(db: Db, m: Member, type: string, id: string
   }
   if (type === 'stock_request') {
     const [r] = await db.select({ r: customerStockRequests, customer: customers.name }).from(customerStockRequests).innerJoin(customers, eq(customers.id, customerStockRequests.customerId))
-      .where(and(eq(customerStockRequests.id, id), m.role === 'manager' ? undefined : eq(customerStockRequests.ownerId, m.id))).limit(1);
+      .where(and(eq(customerStockRequests.id, id), m.role === 'manager' || seesAllAsSaleAdmin(m) ? undefined : eq(customerStockRequests.ownerId, m.id))).limit(1);
     if (!r) throw new AppError(404, 'Không tìm thấy yêu cầu hỏi tồn.');
     const asked = JSON.parse(r.r.items) as { sku: string; name: string; unit?: string; qty: number }[];
     const answered = new Map((JSON.parse(r.r.answerItems) as { sku: string; available: number }[]).map(a => [a.sku, a.available]));
@@ -218,7 +219,7 @@ export async function sourceCandidates(db: Db, m: Member, q: string) {
       .orderBy(desc(salesOrders.createdAt)).limit(8),
     db.select({ id: customerStockRequests.id, customer: customers.name, at: customerStockRequests.createdAt }).from(customerStockRequests)
       .innerJoin(customers, eq(customers.id, customerStockRequests.customerId))
-      .where(and(m.role === 'manager' ? undefined : eq(customerStockRequests.ownerId, m.id), term ? ilike(customers.name, likeQ) : undefined))
+      .where(and(m.role === 'manager' || seesAllAsSaleAdmin(m) ? undefined : eq(customerStockRequests.ownerId, m.id), term ? ilike(customers.name, likeQ) : undefined))
       .orderBy(desc(customerStockRequests.createdAt)).limit(8),
   ]);
   return [

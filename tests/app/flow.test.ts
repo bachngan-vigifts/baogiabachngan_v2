@@ -41,6 +41,7 @@ test('sơ đồ quy trình: số liệu + việc theo vai trò, thao tác nhanh 
   assert.equal((await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 })).status, 200);
   assert.deepEqual((await call('/flow', emp)).data.nodes.quotes.items[0].actions, ['make-order']);
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201, JSON.stringify(o.data));
+  await call(`/orders/${o.data.id}/submit`, emp, 'POST', {}); // nhân viên gửi duyệt đơn nháp
   assert.equal((await call('/flow', mgr)).data.nodes.orders.metrics[0].value, 1, 'đơn nháp chờ duyệt');
   await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
   const line = (await call(`/orders/${o.data.id}`, mgr)).data.lines[0];
