@@ -86,3 +86,13 @@ export const customerContacts = pgTable('customer_contacts', {
   index('idx_customer_contacts_customer').on(t.customerId, t.isPrimary),
   check('chk_customer_contacts_name', sql`length(trim(${t.name})) > 0`),
 ]).enableRLS();
+
+/** Ghi chú nội bộ của khách; tách khỏi hồ sơ đồng bộ Sapo và cổng khách hàng. */
+export const customerNotes = pgTable('customer_notes', {
+  customerId: text('customer_id').primaryKey().references(() => customers.id, { onDelete: 'cascade' }),
+  text: text('text').notNull().default(''),
+  revision: bigint('revision', { mode: 'number' }).notNull().default(1),
+  updatedBy: text('updated_by').notNull().references(() => employees.id),
+  updatedAt: text('updated_at').notNull(),
+}, t => [check('chk_customer_notes_length', sql`length(${t.text}) <= 5000`),
+  check('chk_customer_notes_revision', sql`${t.revision} > 0`)]).enableRLS();

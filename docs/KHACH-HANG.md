@@ -60,3 +60,14 @@ Module `customer-hub` chỉ đọc. Module này được import `staff`, `custom
 - `POST /customers/:id/approve`: chỉ Manager. `DELETE /customers/:id`: từ chối / xoá khách **đang chờ duyệt** (Manager hoặc người tạo).
 - `GET /customers?status=pending` lọc khách chờ duyệt; mọi phản hồi danh sách kèm `pendingCount`.
 - Khách đồng bộ từ Sapo luôn là `approved`. Cột: `approval_status`, `created_by`, `approved_by`, `approved_at` (migration `0024_approvals_member_delete.sql`).
+
+
+
+## Ghi chú chung nội bộ
+
+- Trang chi tiết khách có thẻ **Ghi chú chung về khách hàng** trước các tab chứng từ. Nội dung tối đa 5.000 ký tự, giữ xuống dòng; có người cập nhật và thời gian lưu.
+- Manager / người phụ trách được thêm, sửa, xoá nội dung. Người được chia sẻ, nhân viên cùng phòng ban và Sale Admin được xem theo phạm vi hiện có. Người ngoài phạm vi không nhận nội dung; cổng khách hàng và NCC không được đọc hoặc sửa.
+- `customer_notes` lưu riêng theo `customer_id`, tránh bị đồng bộ hồ sơ Sapo ghi đè. Không đưa vào báo giá, đơn, HĐKT hoặc hồ sơ khách trên portal.
+- `GET /customers/:id/notes` đọc nội dung; `PUT /customers/:id/notes` nhận `{ text, revision }`. Lần đầu `revision=0`; server trả phiên bản mới. Bản cũ bị từ chối 409 thay vì ghi đè thay đổi của người khác. `GET /customers/:id` và `/overview` có `generalNote` (null nếu không có quyền).
+- Gộp khách trùng giữ ghi chú của cả hai bản. Tổng nội dung quá 5.000 ký tự thì từ chối gộp, giữ nguyên dữ liệu để Manager rút gọn trước.
+- Chạy `0055_customer_notes.sql`, rồi `0056_supabase_access_customer_notes.sql` **trước khi deploy API mới**. Bảng bật RLS, không cấp quyền trực tiếp cho PUBLIC/anon/authenticated; quyền đọc/sửa kiểm tra ở API.

@@ -7,7 +7,7 @@ import { AppError } from '../../../core/errors.ts';
 import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { customerBrandDiscounts, customerContacts, customers, customerStaff } from '../schema.ts';
+import { customerBrandDiscounts, customerContacts, customerNotes, customers, customerStaff } from '../schema.ts';
 import { CUSTOMER_LIMITS } from '../domain/customer-config.ts';
 import { NORM_TAX_SQL, normTaxCode } from '../domain/tax-code.ts';
 
@@ -91,10 +91,41 @@ export async function customerProfile(db: Db, id: string, who: Viewer) {
     brandDiscountsOf(db, id),
   ]);
   const { search: _s, sourceVersion: _v, ...info } = customer;
-  return { customer: { ...info, fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access };
+  return { customer: { ...info, fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access, generalNote: await generalNoteOf(db, id, access) };
+}
+
+/** Internal notes follow customer visibility; never returned to the customer portal. */
+async function generalNoteOf(db: Db, id: string, access: Awaited<ReturnType<typeof customerAccess>>) {
+  if (!access.canSeeAll && !access.peer) return null;
+  const [note] = await db.select({ text: customerNotes.text, revision: customerNotes.revision, updatedAt: customerNotes.updatedAt,
+    updatedBy: employees.name }).from(customerNotes).innerJoin(employees, eq(employees.id, customerNotes.updatedBy))
+    .where(eq(customerNotes.customerId, id)).limit(1);
+  return note ?? { text: '', revision: 0, updatedAt: null, updatedBy: null };
 }
 
 export function registerCustomerRoutes(router: Router<StaffEnv>) {
+  router.get('/customers/:id/notes', async c => {
+    const db = c.env.db, id = c.params.id!, me = viewer(c);
+    await loadCustomer(db, id);
+    const note = await generalNoteOf(db, id, await customerAccess(db, id, me));
+    if (!note) throw new AppError(403, 'Bạn không có quyền xem ghi chú của khách này.');
+    return json(note);
+  }, 'business');
+  router.put('/customers/:id/notes', async c => {
+    const db = c.env.db, id = c.params.id!, me = viewer(c);
+    await loadCustomer(db, id); await requireEdit(db, id, me);
+    const body = await readJson(c.req, 32_768);
+    if (typeof body.text !== 'string' || body.text.length > 5000 || !Number.isSafeInteger(body.revision) || Number(body.revision) < 0)
+      throw new AppError(400, 'Ghi chú tối đa 5.000 ký tự và cần phiên bản hợp lệ.');
+    const revision = Number(body.revision), now = nowIso();
+    const values = { text: body.text.trim(), revision: revision + 1, updatedAt: now, updatedBy: me.id };
+    const changed = revision === 0
+      ? await db.insert(customerNotes).values({ customerId: id, ...values }).onConflictDoNothing().returning({ id: customerNotes.customerId })
+      : await db.update(customerNotes).set(values).where(and(eq(customerNotes.customerId, id), eq(customerNotes.revision, revision))).returning({ id: customerNotes.customerId });
+    if (!changed.length) throw new AppError(409, 'Ghi chú đã được người khác cập nhật. Tải lại ghi chú trước khi lưu.', 'CUSTOMER_NOTE_CONFLICT');
+    return json({ ...values, updatedBy: me.name });
+  }, 'business');
+
   // Tìm không dấu theo tên, người liên hệ, điện thoại, email, MST, mã KH; phân trang (?q=&limit=&offset=).
   // `?mine=1`: chỉ khách mình phụ trách hoặc được chia sẻ. Mỗi dòng kèm người phụ trách.
   // Thứ tự: khách mới tạo lên trên cùng (created_at giảm dần; dữ liệu cũ không có ngày tạo xuống cuối), cùng ngày thì theo tên.
