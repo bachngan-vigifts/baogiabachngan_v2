@@ -128,9 +128,9 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
   async purchase({ db, me, today }) {
     const rows = await listPurchases(db, me, { openOnly: true, limit: 500 }, today);
     const has = (f: (r: typeof rows[number]) => boolean) => rows.filter(f);
-    const draft = has(r => r.state === 'draft'), waiting = has(r => r.state === 'awaiting_confirmation'), late = has(r => r.late);
+    const draft = has(r => r.state === 'draft' && r.submitted), waiting = has(r => r.state === 'awaiting_confirmation'), late = has(r => r.late);
     const receive = has(r => (r.state === 'confirmed' || r.state === 'partially_received') && !r.late), sapo = has(r => r.sapoPending > 0);
-    const tag = (r: typeof rows[number]): [string, Tone] => r.late ? ['Quá hẹn', 'danger'] : r.sapoPending ? ['Chờ nhập Sapo', 'warn'] : r.state === 'draft' ? ['Chờ duyệt', 'warn']
+    const tag = (r: typeof rows[number]): [string, Tone] => r.late ? ['Quá hẹn', 'danger'] : r.sapoPending ? ['Chờ nhập Sapo', 'warn'] : r.state === 'draft' ? (r.submitted ? ['Chờ duyệt', 'warn'] : ['Nháp', '']) 
       : r.state === 'awaiting_confirmation' ? ['Chờ NCC xác nhận', ''] : ['Chờ nhận', 'ok'];
     const queue = [...late, ...sapo, ...draft, ...waiting, ...receive].filter((r, i, all) => all.findIndex(x => x.id === r.id) === i);
     return {
