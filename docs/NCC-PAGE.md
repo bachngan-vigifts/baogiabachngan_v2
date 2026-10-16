@@ -42,7 +42,7 @@ Nơi sửa **mọi thứ về NCC mà trước đây phải sửa code**:
 | Trả NCC | Manager, Kế toán | Khoản trả có `clientKey`, không được vượt số còn nợ, đính kèm được chứng từ ảnh/PDF ≤ 6 MB (lưu ở kho file private). Công nợ tính FIFO theo lịch trả, có quá hạn và kỳ tới. |
 | Huỷ đơn | Người lập (đơn nháp) / Manager | Bắt buộc ghi lý do. Không huỷ được khi đã nhận hàng hoặc đã trả tiền. Huỷ xong, số đã đặt được trả lại cho chứng từ nguồn. |
 
-**Nhập đơn mua từ file Excel tổng đơn của NCC (Manager)** – nút "⬆ Nhập từ file NCC" ở trang Đơn mua (mẫu file Minh Long).
+**Nhập đơn mua từ file Excel tổng đơn của NCC (Manager)** – nút "Nhập từ file NCC" ở trang Đơn mua (mẫu file Minh Long).
 - **Cột đọc:** Đơn hàng (số đơn phía NCC) · Ngày giao gốc · Mã hàng · Tên hàng · Sl đặt · ĐG Bán · Chiết khấu · SL giao. Các cột khác bỏ qua.
   - Tìm cột theo tiêu đề; không thấy dòng tiêu đề thì đọc theo vị trí cột A, E, F, G, L, O, Q, R.
   - Mã hàng đọc dạng chữ nên giữ số 0 đầu.

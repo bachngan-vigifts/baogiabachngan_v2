@@ -102,7 +102,7 @@ export interface PurchaseListFilter { q?: string; supplierId?: string; state?: s
 function purchaseListScope(m: Member, filter: PurchaseListFilter) {
   const q = (filter.q ?? '').trim().slice(0, 80), likeQ = '%' + q.replace(/[\\%_]/g, x => '\\' + x) + '%';
   return and(purchaseScope(m), filter.openOnly ? isNull(incomingShipments.cancelledAt) : undefined, filter.supplierId ? eq(incomingShipments.supplierId, filter.supplierId) : undefined,
-    q ? or(ilike(incomingShipments.ticketNumber, likeQ), ilike(incomingShipments.supplierName, likeQ), ilike(incomingShipments.note, likeQ),
+    q ? or(ilike(incomingShipments.ticketNumber, likeQ), ilike(incomingShipments.supplierInternalOrderNumber, likeQ), ilike(incomingShipments.supplierName, likeQ), ilike(incomingShipments.note, likeQ),
       sql`exists (select 1 from ${supplierOrderSources} where ${supplierOrderSources.shipmentId} = ${incomingShipments.id} and (${supplierOrderSources.sourceNo} ilike ${likeQ} or ${supplierOrderSources.customerName} ilike ${likeQ} or ${supplierOrderSources.sku} ilike ${likeQ}))`) : undefined);
 }
 
@@ -129,7 +129,7 @@ export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilte
     const debt = supplierDebt(total, schedules.filter(s => s.shipmentId === o.id), payments.filter(p => p.shipmentId === o.id), today);
     const state = purchaseState({ approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy }, progress), submitted = o.submittedAt !== null;
     const promised = ls.map(l => l.promisedDate).filter(Boolean).sort()[0] || o.arrivalDate || '';
-    return { id: o.id, ticketNumber: o.ticketNumber, supplierId: o.supplierId, supplierName: o.supplierName, state, stateLabel: purchaseStateLabel(state, o), submitted,
+    return { id: o.id, ticketNumber: o.ticketNumber, internalNo: o.supplierInternalOrderNumber, supplierId: o.supplierId, supplierName: o.supplierName, state, stateLabel: purchaseStateLabel(state, o), submitted,
       createdAt: o.createdAt, createdBy: o.createdBy, arrivalDate: promised, lineCount: ls.length, ordered: progress.ordered, good: progress.good, missing: progress.missing, damaged: progress.damaged,
       late: Boolean(promised && promised < today && !progress.fullyReceived && !o.cancelledAt && o.approvalStatus === 'approved'),
       sapoPending: pendingSapo.find(x => x.shipmentId === o.id)?.n ?? 0,

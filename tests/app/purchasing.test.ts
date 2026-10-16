@@ -412,6 +412,9 @@ test('nhập đơn mua từ file NCC: mỗi số đơn một đơn "đã duyệt
   assert.equal(v.state, 'partially_received'); assert.equal(v.progress.missing, 200);
   assert.deepEqual([v.receipts.length, v.receipts[0].sapoStatus, v.receipts[0].lines[0].goodQty], [1, 'not_needed', 100]);
   assert.ok((await call('/purchase-orders', kho)).data.orders.some((o: any) => o.id === r.data.created[0].id), 'kho thấy ngay để nhận hàng');
+  const found = (await call('/purchase-orders?q=' + encodeURIComponent('ddlt0002/1026'), mgr)).data.orders;
+  assert.deepEqual(found.map((o: any) => [o.id, o.internalNo]), [[r.data.created[1].id, 'DDLT0002/1026']], 'tìm theo số đơn NCC');
+  assert.equal((await call('/purchase-orders?q=' + encodeURIComponent('ddlt0002/1026'), mgr)).data.counts.all, 1, 'số đếm dùng cùng tìm kiếm theo số đơn NCC');
   const again = await call('/purchase-orders/import', mgr, 'POST', body);
   assert.deepEqual([again.data.created.length, again.data.skipped.map((x: any) => x.internalNo)], [0, ['DDLT0001/1026', 'DDLT0002/1026']], 'nhập lại file không tạo trùng');
 });
