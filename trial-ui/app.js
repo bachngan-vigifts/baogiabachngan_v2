@@ -3759,24 +3759,25 @@ async function makeFromQuote(flow, q, done) {
 }
 /** Giữ hàng của báo giá đang mở (GET /quotes/:id/hold): hạn, các mã đang treo, quyền giữ / bỏ giữ / gia hạn. */
 async function refreshQuoteHold(id) {
-  editor.hold = null; drawQuoteHold();
+  editor.hold = null; editor.holdError = ''; drawQuoteHold();
   if (!id) return;
-  try { const h = await api('/quotes/' + encodeURIComponent(id) + '/hold'); if (editor.id === id) { editor.hold = h; drawQuoteHold(); } } catch { /* bỏ qua */ }
+  try { const h = await api('/quotes/' + encodeURIComponent(id) + '/hold'); if (editor.id === id) { editor.hold = h; drawQuoteHold(); } }
+  catch (ex) { if (editor.id === id) { editor.holdError = ex.message || 'Chưa đọc được trạng thái giữ hàng.'; drawQuoteHold(); } } // vẫn hiện nút – bấm sẽ báo lỗi rõ
 }
 function drawQuoteHold() {
   const h = editor.hold, pill = $('#editor-hold'), btn = $('#quote-hold'), ext = $('#quote-hold-extend');
   const active = !!h?.holds?.length, d = active ? new Date(h.expiresAt) : null, p2 = n => String(n).padStart(2, '0'), until = d ? `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}` : '';
   pill.hidden = !active; pill.textContent = active ? `Đang giữ hàng đến ${until}` : '';
   pill.title = active ? h.holds.map(x => `${x.sku} – ${x.name}: ${fmtNum(x.qty)}`).join('\n') + (h.by ? `\nNgười giữ: ${h.by}` : '') : '';
-  btn.hidden = !editor.id || !h; ext.hidden = !h?.canExtend;
-  if (!h) return;
+  btn.hidden = !editor.id; ext.hidden = !h?.canExtend;
+  if (!h) { btn.textContent = 'Giữ hàng 5 ngày'; btn.disabled = false; btn.title = editor.holdError || 'Treo tồn kho cho báo giá này 5 ngày'; return; }
   btn.textContent = active ? 'Bỏ giữ hàng' : `Giữ hàng ${h.days || 5} ngày`;
   const block = active ? '' : editor.dirty ? 'Lưu thay đổi trước.' : !h.canHold ? 'Chỉ giữ hàng cho báo giá đã duyệt.' : '';
   btn.disabled = !!block; btn.title = block || (active ? 'Bỏ treo tồn kho cho báo giá này' : 'Treo tồn kho thật cho báo giá này 5 ngày; báo giá khác thấy khả dụng giảm tương ứng');
 }
 $('#quote-hold').addEventListener('click', async e => {
-  const id = editor.id, h = editor.hold; if (!id || !h) return;
-  const active = !!h.holds?.length;
+  const id = editor.id, h = editor.hold; if (!id) return;
+  const active = !!h?.holds?.length;
   if (active && !await confirmBox('Bỏ giữ hàng cho báo giá này? Tồn sẽ trả lại khả dụng cho báo giá khác.', { title: 'Bỏ giữ hàng', ok: 'Bỏ giữ' })) return;
   e.target.disabled = true;
   try {
