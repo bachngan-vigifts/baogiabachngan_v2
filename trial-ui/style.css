@@ -1038,6 +1038,7 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .approval-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
 .approval-list li small { display: block; }
 .page-head .btn-add { margin-left: 8px; }
+.page-head .head-actions { flex-wrap: nowrap; flex: none; }
 
 /* ---------- Trang chi tiết nhân viên (member-detail.js) ---------- */
 .md-head .editor-title { align-items: center; gap: 14px; }
