@@ -98,12 +98,17 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   };
 }
 
-/** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
-export async function listPurchases(db: Db, m: Member, filter: { q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }, today: string) {
+export interface PurchaseListFilter { q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }
+function purchaseListScope(m: Member, filter: PurchaseListFilter) {
   const q = (filter.q ?? '').trim().slice(0, 80), likeQ = '%' + q.replace(/[\\%_]/g, x => '\\' + x) + '%';
-  const rows = await db.select().from(incomingShipments).where(and(purchaseScope(m), filter.openOnly ? isNull(incomingShipments.cancelledAt) : undefined, filter.supplierId ? eq(incomingShipments.supplierId, filter.supplierId) : undefined,
+  return and(purchaseScope(m), filter.openOnly ? isNull(incomingShipments.cancelledAt) : undefined, filter.supplierId ? eq(incomingShipments.supplierId, filter.supplierId) : undefined,
     q ? or(ilike(incomingShipments.ticketNumber, likeQ), ilike(incomingShipments.supplierInternalOrderNumber, likeQ), ilike(incomingShipments.supplierName, likeQ), ilike(incomingShipments.note, likeQ),
-      sql`exists (select 1 from ${supplierOrderSources} where ${supplierOrderSources.shipmentId} = ${incomingShipments.id} and (${supplierOrderSources.sourceNo} ilike ${likeQ} or ${supplierOrderSources.customerName} ilike ${likeQ} or ${supplierOrderSources.sku} ilike ${likeQ}))`) : undefined))
+      sql`exists (select 1 from ${supplierOrderSources} where ${supplierOrderSources.shipmentId} = ${incomingShipments.id} and (${supplierOrderSources.sourceNo} ilike ${likeQ} or ${supplierOrderSources.customerName} ilike ${likeQ} or ${supplierOrderSources.sku} ilike ${likeQ}))`) : undefined);
+}
+
+/** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
+export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
+  const rows = await db.select().from(incomingShipments).where(purchaseListScope(m, filter))
     .orderBy(desc(incomingShipments.createdAt)).limit(Math.min(filter.limit ?? 300, 500));
   const ids = rows.map(r => r.id);
   if (!ids.length) return [];
@@ -132,6 +137,48 @@ export async function listPurchases(db: Db, m: Member, filter: { q?: string; sup
       nextDueDate: prices ? debt.nextDueDate : null, nextDueAmount: prices ? debt.nextDueAmount : null, approvedAt: o.approvedAt };
   });
   return filter.state ? out.filter(r => r.state === filter.state || (filter.state === 'late' && r.late) || (filter.state === 'sapo' && r.sapoPending > 0) || (filter.state === 'debt' && (r.balance ?? 0) > 0)) : out;
+}
+
+/** Badge counts cover the entire scoped search, independently of selected state and list limits. */
+export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
+  const l = incomingShipmentLines, r = supplierReceipts, rl = supplierReceiptLines;
+  const received = sql`coalesce((select sum(${rl.goodQty}) from ${rl} inner join ${r} on ${r.id} = ${rl.receiptId}
+    where ${rl.lineId} = ${l.id} and ${r.cancelledAt} is null), 0)`;
+  const hasLines = sql`exists (select 1 from ${l} where ${l.shipmentId} = ${incomingShipments.id})`;
+  const fullyReceived = sql<boolean>`${hasLines} and not exists (select 1 from ${l}
+    where ${l.shipmentId} = ${incomingShipments.id} and ${l.quantity} > ${received})`;
+  const anyReceived = sql<boolean>`exists (select 1 from ${r} inner join ${rl} on ${rl.receiptId} = ${r.id}
+    where ${r.shipmentId} = ${incomingShipments.id} and ${r.cancelledAt} is null and (${rl.goodQty} > 0 or ${rl.damagedQty} > 0))`;
+  const amount = sql`(coalesce(${l.price}, 0) * (100 - greatest(0, least(100,
+    coalesce(${l.confirmedPurchaseDiscount}, ${l.purchaseDiscount}, 0)))) / 100 + greatest(0, ${l.printFee})) * floor(${l.quantity} + 0.5)`;
+  const total = sql`coalesce((select sum(${amount}) + sum(${amount} * coalesce(${l.taxRate}, 0) / 100)
+    from ${l} where ${l.shipmentId} = ${incomingShipments.id}), 0)`;
+  const paid = sql`floor(coalesce((select sum(${supplierPayments.amount}) from ${supplierPayments}
+    where ${supplierPayments.shipmentId} = ${incomingShipments.id} and ${supplierPayments.voidedAt} is null), 0) + 0.5)`;
+  // Nested SQL keeps correlated columns qualified in Drizzle single-table selections.
+  const promised = sql`coalesce((select min(${l.promisedDate}) from ${l} where ${l.shipmentId} = ${incomingShipments.id}
+    and ${l.promisedDate} <> ''), ${incomingShipments.arrivalDate}, '')`;
+  const sapoPending = sql`exists (select 1 from ${r} where ${r.shipmentId} = ${incomingShipments.id}
+    and ${r.cancelledAt} is null and ${r.sapoStatus} in ('pending', 'failed'))`;
+  const data = db.$with('purchase_badge_data').as(db.select({
+    state: sql<string>`case when ${incomingShipments.cancelledAt} is not null then 'cancelled'
+      when ${incomingShipments.approvalStatus} <> 'approved' then 'draft'
+      when ${fullyReceived} then 'received' when ${anyReceived} then 'partially_received'
+      when ${incomingShipments.supplierStatus} = 'confirmed' then 'confirmed' else 'awaiting_confirmation' end`.as('state'),
+    late: sql<boolean>`${incomingShipments.approvalStatus} = 'approved' and ${incomingShipments.cancelledAt} is null
+      and not (${fullyReceived}) and ${promised} <> '' and ${promised} < ${today}`.as('late'),
+    sapo: sql<boolean>`${sapoPending}`.as('sapo'),
+    debt: (canSeePrices(asActor(m)) ? sql<boolean>`floor((${total} - ${paid}) + 0.5) > 0` : sql<boolean>`false`).as('debt'),
+  }).from(incomingShipments).where(purchaseListScope(m, filter)));
+  const count = (condition: ReturnType<typeof sql>) => sql<number>`count(*) filter (where ${condition})`.mapWith(Number);
+  const query = db.with(data).select({
+    all: sql<number>`count(*)`.mapWith(Number), draft: count(sql`${data.state} = 'draft'`),
+    awaiting_confirmation: count(sql`${data.state} = 'awaiting_confirmation'`), confirmed: count(sql`${data.state} = 'confirmed'`),
+    partially_received: count(sql`${data.state} = 'partially_received'`), received: count(sql`${data.state} = 'received'`),
+    cancelled: count(sql`${data.state} = 'cancelled'`), late: count(sql`${data.late}`), sapo: count(sql`${data.sapo}`), debt: count(sql`${data.debt}`),
+  }).from(data);
+  const [out] = await query;
+  return out!;
 }
 
 /** Đơn mua chưa huỷ, nhìn với quyền Manager – cho việc tự sinh (tasks) và sơ đồ quy trình. */

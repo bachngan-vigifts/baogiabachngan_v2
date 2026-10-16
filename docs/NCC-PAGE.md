@@ -147,3 +147,11 @@ Khác có chủ đích:
 - Form tạo và sửa nháp dùng nhãn **Địa chỉ giao hàng** thay cho Kho nhận. Bắt buộc nhập, bỏ khoảng trắng đầu/cuối, tối đa 120 ký tự.
 - API POST/PUT đơn mua kiểm tra lại địa chỉ; một đơn trong lô thiếu địa chỉ thì cả lô không được tạo. Giữ trường API/dữ liệu `warehouse`, không cần migration.
 - Kho nhận trên phiếu nhận hàng là thông tin nghiệp vụ nhận hàng riêng, giữ nguyên.
+
+### Số đếm trạng thái và việc chưa hoàn tất
+
+- `GET /purchase-orders` trả thêm `counts`: toàn bộ phạm vi quyền + từ khoá/NCC đang tìm, độc lập thẻ trạng thái được chọn và giới hạn danh sách 300 dòng. Các số đếm được tổng hợp trong PostgreSQL, không cộng từ dữ liệu tải về trình duyệt. Tiến độ nhận bỏ phiếu đã huỷ; tiền nợ chỉ được đếm với người có quyền xem giá.
+- Mỗi thẻ trạng thái hiện số đơn, kể cả số 0. Các nhóm Quá hẹn / Chờ nhập Sapo / Còn nợ có thể trùng với nhóm trạng thái chính.
+- `GET /navigation-counts` (business, cùng phạm vi quyền của trang đích): `packing` = phiếu đã gửi kho chưa đóng, trừ đơn đã giao/đánh dấu giao xong; `deliveries` = chuyến dự kiến/đang đi/giao lỗi cần xử lý, bỏ chuyến đã giao hoặc huỷ; `purchases` = đơn chưa nhận đủ, chưa huỷ. API chỉ đọc, không tự đóng phiếu cũ.
+- Số đỏ ở menu Lịch giao hàng / Phiếu đóng gói / Đơn mua NCC ẩn khi bằng 0. Cập nhật khi đăng nhập, khi nhịp dữ liệu báo thay đổi và sau thao tác lưu liên quan. Phản hồi của tài khoản cũ không ghi đè số của tài khoản mới.
+- Không migration, không thay đổi đồng bộ Sapo hay dữ liệu nghiệp vụ.
