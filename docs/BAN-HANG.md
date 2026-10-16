@@ -81,6 +81,17 @@ Báo giá ──[Sinh đơn hàng]──▶ Đơn đặt hàng
 
 - Nút **Kiểm tồn** trên báo giá: so số lượng từng mã với tồn khả dụng, tồn NCC và hàng chờ về, giống trang *Khách hỏi tồn*. Mã thiếu được đánh dấu đỏ.
 
+## Chiết khấu theo khách và điều khoản thanh toán trên báo giá
+- **Hộp "Tạo báo giá mới":** chọn khách đã đặt CK riêng (trang chi tiết khách hàng) thì ô "Chiết khấu toàn bảng" tự ẩn và hiện CK của khách.
+  - Khi thêm sản phẩm, CK được tự áp đúng theo thương hiệu.
+  - **Nhận thương hiệu:** Lys (có chữ "Lys"); Lock&Lock (Lock&Lock / LocknLock / Lock & Lock…); Minh Long (gồm Healthy Cook, sứ dưỡng sinh). Mã thuộc thương hiệu khác thì CK = 0.
+  - Code: `brandDiscountKey` trong `quotes/domain/quote-math.ts`.
+- **Nút "Điều khoản thanh toán"** (bên phải tiêu đề "Ghi chú báo giá"):
+  - Đổi tỷ lệ cọc và hạn thanh toán phần còn lại; hiện giới hạn công nợ của khách.
+  - Khách có CK riêng: có ô "Áp lại CK riêng của khách cho các dòng". Khách không có: có ô "Chiết khấu toàn bảng" áp cho mọi dòng.
+  - Ghi chú thanh toán tự cập nhật; bấm "Lưu báo giá" để lưu.
+  - Báo giá đã duyệt thì chỉ Manager dùng được, như các ô khác.
+
 ## Giữ hàng cho báo giá (migration `0063_stock_holds.sql`, quyền `0064_supabase_access_stock_holds.sql`)
 - **Nút "Giữ hàng 5 ngày"** trên báo giá **đã duyệt**: nhân viên xem được báo giá hoặc Manager bấm. Hệ thống treo tồn kho thật cho từng mã của báo giá, gộp các dòng cùng mã. Mã không có trong danh mục thì bỏ qua.
   - Mỗi mã chỉ treo **phần đang khả dụng**. Thiếu thì báo rõ mã nào cần bao nhiêu và giữ được bao nhiêu.

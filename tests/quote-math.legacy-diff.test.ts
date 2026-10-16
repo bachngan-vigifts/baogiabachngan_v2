@@ -60,8 +60,16 @@ test('đối chiếu customerDiscount bản cũ ↔ mới', () => {
   const ds = [{ lys: 10, minhLong: 20, lock: 58 }, { lock: 101 }, { lock: -1 }, {}, null, undefined, { lys: NaN }, { minhLong: '5' }];
   for (let i = 0; i < 2000; i++) {
     const b = pick([...brands, 'minh long i', 'locknlock', 'LOCK']), d = pick(ds) as any, mode = pick(['percent', 'amount']) as any, p = pick([0, 1000, 200000, 12.5]);
+    if (BROADER.has(b as string)) continue; // bản mới cố ý nhận rộng hơn – kiểm riêng bên dưới
     assert.deepStrictEqual(M.customerDiscount(b, d, mode, p), L.customerDiscount(b, d, mode, p), `${b} ${JSON.stringify(d)} ${mode} ${p}`);
   }
+});
+
+// Bản mới nhận đúng nhóm CK cả khi tên thương hiệu viết khác (bản cũ trả 0): "Lys" đứng riêng → Lys; dòng Healthy Cook / sứ dưỡng sinh → Minh Long.
+const BROADER = new Set(['Lys', 'Healthy Cook', 'Sứ Dưỡng Sinh']);
+test('CK khách: nhận thương hiệu rộng hơn bản cũ (Lys, Healthy Cook, sứ dưỡng sinh)', () => {
+  const d = { lys: 10, minhLong: 20, lock: 30 };
+  assert.deepEqual(['Lys', 'LYS', 'Healthy Cook', 'Sứ Dưỡng Sinh', 'LOCK & LOCK', 'Khác'].map(b => M.customerDiscount(b, d)), [10, 10, 20, 20, 30, 0]);
 });
 
 test('danh sách xưởng in giống bản cũ', () => assert.deepEqual([...M.printingWorkshops], L.printingWorkshops));

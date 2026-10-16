@@ -283,7 +283,7 @@
             <p class="muted small">Chỉ Manager thấy mục này. Bấm cập nhật CK mua vào để tự điền giá nhập theo nhóm hàng.</p>
           </div>
           <div class="card">
-            <h2 class="card-title">Ghi chú báo giá</h2>
+            <div class="card-head-row"><h2 class="card-title">Ghi chú báo giá</h2><button type="button" class="btn secondary small" id="edit-terms" title="Đổi tỷ lệ cọc, hạn thanh toán, chiết khấu – ghi chú thanh toán tự cập nhật">Điều khoản thanh toán</button></div>
             <textarea name="notes" rows="10" maxlength="20000" placeholder="Điều kiện thanh toán, thời gian giao hàng, hiệu lực báo giá…"></textarea>
             <button type="button" class="btn ghost small" id="reset-notes">Dùng lại ghi chú mặc định của loại báo giá</button>
           </div>
@@ -847,9 +847,10 @@
         <datalist id="nq-payment-options"><option value="Thanh toán trước khi giao hàng"></option><option value="0"></option><option value="5"></option><option value="15"></option><option value="30"></option></datalist>
         <p class="muted small span-2" id="nq-credit" hidden></p>
         <p class="muted small span-2">Nhập số ngày tính từ ngày giao hàng (0 = ngay sau giao), hoặc nhập điều kiện thanh toán bằng chữ. Đặt cọc 100% = thanh toán toàn bộ trước khi giao hàng.</p>
-        <label class="span-2">Chiết khấu toàn bảng (%)<input id="nq-discount" inputmode="decimal" placeholder="Ví dụ: 10 (để trống nếu nhập từng dòng)"></label>
+        <label class="span-2" id="nq-discount-field">Chiết khấu toàn bảng (%)<input id="nq-discount" inputmode="decimal" placeholder="Ví dụ: 10 (để trống nếu nhập từng dòng)"></label>
+        <p class="pill-note span-2" id="nq-brand-discounts" hidden></p>
       </div>
-      <p class="muted small">Chiết khấu toàn bảng tự áp cho mọi sản phẩm thêm vào báo giá; vẫn sửa riêng từng dòng được.</p>
+      <p class="muted small" id="nq-discount-help">Chiết khấu toàn bảng tự áp cho mọi sản phẩm thêm vào báo giá; vẫn sửa riêng từng dòng được.</p>
       <p class="error" id="nq-error" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="nq-create">Tạo báo giá</button></div>

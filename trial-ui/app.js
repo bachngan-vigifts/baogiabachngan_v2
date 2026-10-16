@@ -725,6 +725,52 @@ $('#reset-notes').addEventListener('click', async () => {
   editor.base.paymentTerms ||= defaultPaymentTerms(editor.type);
   syncPaymentNotes(); syncDeliveryNotes(); markDirty();
 });
+/** Kiểm tra điều khoản thanh toán (dùng chung hộp Tạo báo giá và hộp Điều khoản thanh toán). '' = hợp lệ. */
+function termsError(depositRate, balanceTerm) {
+  if (!Number.isFinite(depositRate) || depositRate < 0 || depositRate > 100) return 'Tỷ lệ đặt cọc phải từ 0 đến 100%.';
+  if (depositRate < 100 && (!balanceTerm || balanceTerm.length > 500 || /^[+-]?\d+(?:[.,]\d+)?\s*(?:ngày)?$/i.test(balanceTerm) && (!/^\d+\s*(?:ngày)?$/i.test(balanceTerm) || parseInt(balanceTerm, 10) > 3650)))
+    return 'Nhập thời hạn thanh toán phần còn lại: số ngày (0–3650) hoặc điều kiện bằng chữ.';
+  return '';
+}
+/**
+ * Hộp "Điều khoản thanh toán" trên báo giá (Manager xem lại khi duyệt, hoặc người lập khi còn sửa được): tỷ lệ cọc, hạn thanh toán phần còn lại,
+ * chiết khấu (khách có CK riêng → áp lại CK theo thương hiệu; không thì CK toàn bảng cho mọi dòng). Ghi chú thanh toán tự cập nhật; bấm Lưu báo giá để lưu.
+ */
+$('#edit-terms').addEventListener('click', async () => {
+  const t = editor.base.paymentTerms || defaultPaymentTerms(editor.type);
+  let profile = null;
+  if (editor.customerId) profile = await api('/customers/' + encodeURIComponent(editor.customerId)).catch(() => null);
+  const credit = profile?.customer?.creditLimit, brand = brandDiscountText(profile?.discounts || editor.brandDiscounts);
+  const dlg = document.createElement('dialog'); dlg.className = 'modal narrow';
+  dlg.innerHTML = `<form method="dialog" novalidate><div class="modal-head"><div><span class="eyebrow">Báo giá ${esc(field('quoteNo').value || '')}</span><h2>Điều khoản thanh toán</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><div class="form-grid cols-2">
+      <label>Tỷ lệ đặt cọc (%)<input name="rate" inputmode="decimal" value="${esc(t.depositRate ?? '')}"></label>
+      <label>Thời hạn thanh toán phần còn lại<input name="term" list="nq-payment-options" maxlength="500" value="${esc(t.balanceTerm ?? '')}"></label>
+      ${credit != null ? `<p class="muted small span-2">Giới hạn công nợ của ${esc(profile.customer.name || 'khách')}: ${money(credit)}</p>` : ''}
+      <p class="muted small span-2">Nhập số ngày tính từ ngày giao hàng (0 = ngay sau giao), hoặc điều kiện bằng chữ. Đặt cọc 100% = thanh toán toàn bộ trước khi giao hàng.</p>
+      ${brand ? `<label class="span-2 check-line"><input type="checkbox" name="brand"> Áp lại CK riêng của khách cho các dòng (${esc(brand)})</label>`
+        : `<label class="span-2">Chiết khấu toàn bảng (%)<input name="disc" inputmode="decimal" placeholder="Để trống = giữ CK từng dòng"></label>`}
+    </div><p class="error" data-err role="alert"></p></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Áp dụng</button></div></form>`;
+  document.body.append(dlg); dlg.showModal();
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close));
+  dlg.addEventListener('cancel', close);
+  dlg.querySelector('form').addEventListener('submit', e => {
+    e.preventDefault();
+    const f = e.target.elements, rateText = f.rate.value.trim(), depositRate = rateText ? parseNum(rateText) : NaN, balanceTerm = f.term.value.trim();
+    const discText = f.disc?.value.trim() || '', disc = discText ? parseNum(discText) : null, err = termsError(depositRate, balanceTerm);
+    if (err || (disc !== null && !(disc >= 0 && disc <= 100))) { dlg.querySelector('[data-err]').textContent = err || 'Chiết khấu toàn bảng phải từ 0 đến 100%.'; return; }
+    editor.base.paymentTerms = { depositRate, balanceTerm };
+    const pct = r => f.brand?.checked ? customerDiscount(r.brand, profile.discounts, 'percent') : disc;
+    if (f.brand?.checked || disc !== null) for (const r of editor.rows) {
+      const p = pct(r); if (!(p > 0) && !(disc !== null)) continue; // áp lại CK khách: dòng ngoài 3 thương hiệu giữ nguyên
+      r.discount = r.discountType === 'amount' ? Math.round((Number(r.price) || 0) * p / 100) : p;
+    }
+    renderLines(); syncPaymentNotes(); markDirty(); close();
+    toast('Đã cập nhật điều khoản – bấm "Lưu báo giá" để lưu.');
+  });
+});
 const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
 /**
@@ -1298,7 +1344,17 @@ $('#refresh-profit-costs').addEventListener('click', async e => {
 });
 
 // ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
-const nq = { type: 'HRC', customer: null, autoNo: '', onCustomerChange: () => nqApplyTerms() };
+const nq = { type: 'HRC', customer: null, autoNo: '', brandDiscounts: null, onCustomerChange: () => { nqApplyTerms(); nqBrandDiscounts(); } };
+/** Tên + % CK theo thương hiệu của khách (trang chi tiết khách hàng); '' nếu khách chưa thiết lập. */
+const brandDiscountText = d => [['minhLong', 'Minh Long'], ['lys', 'Lys'], ['lock', 'Lock&Lock']].filter(([k]) => typeof d?.[k] === 'number').map(([k, t]) => `${t} ${fmtNum(d[k])}%`).join(' · ');
+/** Khách đã có CK riêng: ẩn ô "Chiết khấu toàn bảng", báo CK sẽ tự áp theo thương hiệu (Minh Long / Lys / Lock&Lock) khi thêm sản phẩm. */
+async function nqBrandDiscounts() {
+  const c = nq.customer, id = c?.id; nq.brandDiscounts = null;
+  const show = text => { $('#nq-discount-field').hidden = $('#nq-discount-help').hidden = !!text; $('#nq-brand-discounts').hidden = !text; $('#nq-brand-discounts').textContent = text ? `Khách có chiết khấu riêng: ${text}. Tự áp đúng theo thương hiệu khi thêm sản phẩm.` : ''; };
+  show('');
+  if (!id) return;
+  try { const { discounts } = await api(`/customers/${encodeURIComponent(id)}/discounts`); if (nq.customer?.id !== id) return; nq.brandDiscounts = discounts; show(brandDiscountText(discounts)); } catch { /* không có CK riêng */ }
+}
 function nqSetType(type, fetchServer = true) {
   const date = $('#nq-date').value || todayIso(), no = $('#nq-no');
   const keepAuto = !no.value.trim() || no.value.trim() === nq.autoNo;
@@ -1322,7 +1378,7 @@ async function openNewQuote() {
     if (!await confirmBox('Báo giá đang sửa có thay đổi chưa lưu. Tạo báo giá mới sẽ bỏ các thay đổi này.', { title: 'Bỏ thay đổi chưa lưu?', ok: 'Tạo báo giá mới', danger: true })) return;
     editor.dirty = false;
   }
-  nq.customer = null; nq.autoNo = ''; nq.resetCustomerSearch?.();
+  nq.customer = null; nq.autoNo = ''; nq.resetCustomerSearch?.(); nqBrandDiscounts();
   nq.paymentTouched = false;
   $('#new-quote-form').reset(); $('#nq-error').textContent = '';
   $('#nq-date').value = todayIso(); $('#nq-no').value = '';
@@ -1372,7 +1428,8 @@ const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy
 }
 $('#new-quote-form').addEventListener('submit', e => {
   e.preventDefault();
-  const err = $('#nq-error'), date = $('#nq-date').value, no = $('#nq-no').value.trim(), discText = $('#nq-discount').value.trim(), disc = discText ? parseNum(discText) : 0;
+  // Khách có CK riêng theo thương hiệu: không dùng CK toàn bảng (ô đã ẩn).
+  const err = $('#nq-error'), date = $('#nq-date').value, no = $('#nq-no').value.trim(), discText = $('#nq-discount-field').hidden ? '' : $('#nq-discount').value.trim(), disc = discText ? parseNum(discText) : 0;
   err.textContent = '';
   if (!date || !no) { err.textContent = 'Vui lòng nhập ngày và số báo giá.'; return; }
   if (!(disc >= 0 && disc <= 100)) { err.textContent = 'Chiết khấu toàn bảng phải từ 0 đến 100%.'; return; }
