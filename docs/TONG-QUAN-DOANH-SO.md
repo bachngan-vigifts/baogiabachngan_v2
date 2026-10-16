@@ -7,7 +7,7 @@ Chỉ đọc; không migration, không ghi nghiệp vụ, không thay đổi lư
 
 - Router dùng phiên đăng nhập và khu vực `business` hiện có. Endpoint kiểm tra lại quyền; NCC, khách hàng, tài khoản không hoạt động không được vào.
 - `role=manager` xem tổng công ty và lọc nhóm/nhân viên. Repo không có role Giám đốc riêng: Giám đốc cần quyền Manager hiện có. Không suy quyền quản lý từ tên chức vụ.
-- Nhân viên chỉ nhận doanh số của `sales_orders.owner_id`, báo giá của `coalesce(assignee_id,creator_id)` và chăm sóc do mình ghi cho khách mình phụ trách (`customer_staff.role=owner`). Không lấy khách chỉ được chia sẻ hay log của người khác. Bộ lọc người khác/nhóm bị 403 ở server.
+- Nhân viên chỉ nhận doanh số của `sales_orders.owner_id`, báo giá của `coalesce(assignee_id,creator_id)` và chăm sóc do mình ghi cho khách mình phụ trách (`customer_staff.role=owner`). Không lấy khách chỉ được chia sẻ hay log của người khác. Bộ lọc người khác/nhóm bị 403 ở server, kể cả cùng chức vụ/phòng ban. Dashboard không kế thừa quyền xem/sửa chứng từ nháp cùng phòng ban ở các module nghiệp vụ khác.
 - Nhóm lấy từ `staff_members.position_id → staff_positions.name`, tức nhóm theo chức vụ hiện tại. Không đọc dữ liệu lương. Không có lịch sử chuyển nhóm; kỳ cũ vẫn xếp theo nhóm hiện tại. Xếp hạng và bộ lọc nhân viên chỉ lấy tài khoản còn trong trang Nhân viên (deleted_at IS NULL), không lấy NCC/khách. Tài khoản bị khoá nhưng chưa xoá vẫn hiện như trang Nhân viên. Doanh số lịch sử của nhân viên ngừng hoạt động/xoá mềm vẫn tính trong tổng công ty, nhóm và tháng; vì vậy tổng công ty có thể lớn hơn cộng các hàng đang hiện trong xếp hạng.
 - `crm_tasks` là bảng cũ không sử dụng; AppSheet mirror không phải nguồn doanh số. Trang không gọi GET Công việc để tránh sinh việc tự động.
 
@@ -41,3 +41,9 @@ Chỉ đọc; không migration, không ghi nghiệp vụ, không thay đổi lư
 `tests/app/dashboard.test.ts`: phiên/quyền, chặn đổi owner/group, phương thức ghi 405, 1.001 đơn không bị cắt tổng, loại nháp/huỷ và tính hợp đồng ký một lần, snapshot chống cộng trùng, biên ngày Việt Nam, nhóm từ DB, tổng/phân trang khách, không trả JSON giám sát Sapo thô, UI không innerHTML/token persistence.
 
 Chạy `npm run typecheck` và `npm test`. Test PostgreSQL dùng PGlite và migration có sẵn, không truy cập hay sửa database production.
+
+## Rà soát theo yêu cầu dashboard
+
+- Giữ nguồn/schema, chỉ đọc trong transaction; không truy vấn hay thay đổi lương, phiên Sapo hoặc cron.
+- Nhân viên nhận đúng một hàng của mình, không mở rộng qua phòng ban hoặc khách chỉ được chia sẻ. Manager giữ tổng công ty/nhóm/nhân viên/tháng; chỉ số và thời điểm cập nhật giữ định nghĩa đã ghi ở trên.
+- Chưa có role Giám đốc riêng hoặc mã cơ hội gắn đơn: Giám đốc cần role Manager hiện có; chỉ số rớt là kết quả `lost` từ chăm sóc, không tự đồng nhất với đơn huỷ.

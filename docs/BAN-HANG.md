@@ -247,3 +247,16 @@ Phòng ban trong app dùng nhóm/chức vụ hiện có (`staff_members.position
 `staff/api/department.ts` cung cấp điều kiện Drizzle có tham số bind; `quotes/api/department-access.ts` kết hợp quyền sở hữu/chia sẻ cũ với quyền phòng ban. Mọi API danh sách/chi tiết/sửa kiểm quyền ở server. Chăm sóc và Công việc của đồng nghiệp chỉ xem; quyền ghi/xoá nhật ký/trao đổi không mở theo quyền sửa nháp chứng từ.
 
 Hồ sơ đồng nghiệp chỉ trả thông tin nghiệp vụ: `payroll: null`, không gọi hàm đọc/tính lương, không trả tham số lương, ngày công hoặc tài khoản ngân hàng từ hồ sơ lương. Hồ sơ của mình và Manager giữ quyền lương cũ; các endpoint HR giữ nguyên kiểm quyền. Giao diện ẩn thẻ/tab lương và ngày công khi không có quyền. Không migration, không sửa module HR, phiên Sapo hay cron.
+
+
+## Lên lịch và đóng gói trong một lần lưu
+
+- Nút chính **Lên lịch & đóng gói** mở một form cho nguồn hàng, người nhận và lịch giao. Nếu đã có chuyến đang chờ/đang giao, mặc định dùng lịch hiện có; người dùng chỉ bật tạo lịch mới khi đây là chuyến khác. Nút **Chỉ lên lịch giao** giữ cho trường hợp chưa cần lập phiếu.
+- `POST /orders/:id/packing` nhận thêm `schedule` (tuỳ chọn, thông tin như POST /deliveries) và `sendToWarehouse` (boolean). Có schedule thì lượng giao được lấy từ tổng allocations theo dòng đơn; client không thể gửi một bộ dòng giao khác với lượng đóng gói.
+- Lịch và toàn bộ phiếu được ghi trong **một transaction**. Khoá dòng đơn, đọc lại lượng đã phân bổ, trừ các chuyến planned/in_transit và khoá cấp số theo ngày. Sai ngày, nguồn, lượng hoặc địa chỉ xưởng: rollback, không để lại lịch/phiếu/danh bạ xưởng dở.
+- Giao dịch tạo lịch dùng chung `sales/api/delivery-store.ts` cho hai đường vào; cộng gộp mã dòng lặp trước khi kiểm phần còn lại để không vượt lượng giao.
+- UI gửi `sendToWarehouse=true` khi chỉ một nhóm nguồn. Server cũng kiểm một nhóm: tạo phiếu sent, ghi người/thời điểm gửi và báo nhóm Kho ngay. Nhiều nhóm nguồn luôn tạo draft để người lập kiểm rồi gửi; body cũ không có cờ giữ hành vi nháp như trước.
+- Kho vẫn chọn kho xuất và xác nhận kèm 1–3 ảnh; không bỏ kiểm quyền hoặc bỏ bước chứng minh đã đóng hàng. Chuyến planned có thể xác nhận delivered trực tiếp: bước in_transit đã là tuỳ chọn, không cần thay đổi trạng thái/schema. Đã giao vẫn cập nhật lượng giao, yêu cầu hoá đơn và hoàn tất phiếu như trước.
+- Nếu giao về xưởng in, thông tin phiếu là nơi nhận của xưởng; lịch giao khách dùng thông tin khách trên đơn, tránh coi giao xưởng là giao xong cho khách.
+- Gỡ handler/nút ngầm và dòng trạng thái thuộc luồng yêu cầu đóng gói qua Công việc cũ trên UI. API cũ giữ tương thích dữ liệu/liên kết lịch sử; luồng thao tác hiện tại dùng phiếu đóng gói.
+- Không migration. Kiểm thử: packing.test.ts (bao gồm rollback/quyền/chống lặp và tự gửi), fulfilment-ui.test.ts, sales.test.ts; không thử tạo chứng từ trên production.

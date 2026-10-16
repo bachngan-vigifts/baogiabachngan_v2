@@ -519,7 +519,7 @@
       </div>
       <div class="editor-grid">
         <div class="card"><div class="card-title-row"><h2 class="card-title" id="order-contract-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
-        <div class="card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><span class="row-gap"><button class="btn secondary small" id="order-pack" title="Lập phiếu đóng gói theo nguồn hàng (kho / cửa hàng / NCC / đại lý), chọn giao cho khách hay về xưởng in, gửi xe nào">📦 Yêu cầu đóng gói - Giao hàng</button><button class="btn secondary small" id="order-new-delivery">＋ Lên lịch giao</button></span></div><div id="order-deliveries"></div><div id="order-packing"></div></div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><span class="row-gap"><button class="btn secondary small" id="order-pack" title="Lập phiếu đóng gói theo nguồn hàng (kho / cửa hàng / NCC / đại lý), chọn giao cho khách hay về xưởng in, gửi xe nào">📦 Lên lịch & đóng gói</button><button class="btn secondary small" id="order-new-delivery">Chỉ lên lịch giao</button></span></div><div id="order-deliveries"></div><div id="order-packing"></div></div>
       </div>
       <div class="editor-grid">
         <div class="card"><div class="card-title-row"><h2 class="card-title">Hoá đơn</h2><span id="order-invoice-pill"></span></div><div id="order-invoice"></div></div>
@@ -768,7 +768,17 @@
   <form id="pack-form" novalidate>
     <div class="modal-head"><div><span class="eyebrow" id="pack-order">Đơn hàng</span><h2>Yêu cầu đóng gói - Giao hàng</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body">
-      <p class="muted small">Mặc định lấy đủ số lượng trong đơn từ kho. Kho không đủ thì nhập phần còn lại lấy từ đâu (điều chuyển cửa hàng, NCC, đại lý…). Mỗi nguồn hàng sinh một phiếu đóng gói.</p>
+      <p class="muted small">Mặc định lấy đủ số lượng trong đơn từ kho. Kho không đủ thì nhập phần còn lại lấy từ đâu (điều chuyển cửa hàng, NCC, đại lý…). Mỗi nguồn hàng sinh một phiếu đóng gói. Một nguồn gửi kho ngay; nhiều nguồn lưu nháp để kiểm tra rồi gửi kho.</p>
+      <fieldset class="pack-ship"><legend>Lịch giao cho khách</legend>
+        <label class="check"><input type="checkbox" name="createSchedule"> Tạo lịch giao mới cùng phiếu</label>
+        <p class="muted small" id="pack-existing-schedule"></p>
+        <div class="form-grid" id="pack-schedule-fields">
+          <label>Ngày giao<input type="date" name="plannedDate" required></label>
+          <label>Khung giờ<input name="timeSlot" maxlength="100" placeholder="Ví dụ: trước 9h"></label>
+          <label class="span-2">Người nhận hàng<input name="receiverName" maxlength="180"></label>
+        </div>
+        <p class="muted small">Giao thẳng: dùng địa chỉ và SĐT bên dưới. Nếu đưa hàng về xưởng in, lịch giao cho khách vẫn dùng địa chỉ/SĐT của đơn.</p>
+      </fieldset>
       <div id="pack-lines"></div>
       <!-- Giao hàng: đơn có phí in logo → mặc định giao về xưởng in; không thì giao thẳng cho khách. Xưởng / nhà xe mới gõ trong ô tự thêm vào danh sách. -->
       <fieldset class="pack-ship"><legend>Giao hàng</legend>
@@ -792,7 +802,7 @@
       <label>Ghi chú cho kho<textarea name="note" rows="2" maxlength="1000" placeholder="Ví dụ: bọc chống sốc, dán tem, giao trước 9h"></textarea></label>
       <p class="error" id="pack-error" role="alert"></p>
     </div>
-    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="pack-save">Lưu – sinh phiếu đóng gói</button></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="pack-save">Lưu lịch & phiếu đóng gói</button></div>
   </form>
 </dialog>
 <!-- Yêu cầu xuất hoá đơn: email nhận (lấy từ khách, sửa được), phát hành hay gửi bản nháp, ghi chú cho kế toán -->
