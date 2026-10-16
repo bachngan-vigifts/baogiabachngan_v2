@@ -2152,7 +2152,7 @@ addEventListener('scroll', () => { if (!pSuggest.hidden) placeProductSuggest(); 
 // ----- chọn sản phẩm từ danh mục ngay trong báo giá
 let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
 /** Chỉ hàng Lock&Lock có kho NCC (tồn bên nhà cung cấp); hãng khác ẩn cho gọn. */
-const hasSupplierStock = p => brandDiscountKey(p?.brand) === 'lock';
+const hasSupplierStock = p => brandDiscountKey(p?.brand || p?.name) === 'lock'; // chưa có nhãn hiệu trên Sapo thì nhận theo tên
 const kindStock = (p, kind) => { const ws = state.warehouses.filter(w => w.kind === kind && p.stock?.[w.id] !== undefined); return ws.length ? ws.reduce((t, w) => t + Number(p.stock[w.id] || 0), 0) : null; };
 const stockText = v => v === null ? 'Chưa có số liệu' : fmtNum(v);
 /** Bộ lọc giống "Tìm nhanh sản phẩm" của web cũ: phạm vi theo loại báo giá, nhóm, khoảng giá theo chính sách đang chọn. */
