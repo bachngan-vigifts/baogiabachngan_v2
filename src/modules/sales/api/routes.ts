@@ -1,3 +1,4 @@
+import { createScheduledDelivery } from './delivery-store.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
@@ -94,7 +95,7 @@ export async function recordSaleMovements(db: StaffEnv['db'] | Tx, orderId: stri
     partner: order.customerName, refCode: ref.no, link: ref.link, status: 'Đã xác nhận', occurredAt: order.createdAt })));
 }
 /** Ghi ngày giao dự kiến mới cho đơn; đơn do khách đặt thì báo khách ngày mới. */
-async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
+export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
   if (order.expectedDeliveryDate === date || (order.status !== 'draft' && viewer(c).role !== 'manager')) return;
   await c.env.db.update(salesOrders).set({ expectedDeliveryDate: date, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
   const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
@@ -693,31 +694,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const order = await loadOrder(c, text(body.orderId, 80));
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn đã huỷ.');
     if (order.status === 'draft') throw new AppError(409, 'Đơn chưa được Manager duyệt, chưa lên lịch giao được.', 'ORDER_NOT_APPROVED');
-    const plannedDate = String(body.plannedDate || '');
-    if (!isDate(plannedDate)) throw new AppError(400, 'Chọn ngày giao hợp lệ.');
-    const wanted = Array.isArray(body.lines) ? body.lines as { orderLineId?: unknown; qty?: unknown }[] : [];
-    const id = crypto.randomUUID(), now = nowIso();
-    await c.env.db.transaction(async tx => {
-      const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
-      const pending = await tx.select({ lineId: deliveryLines.orderLineId, qty: deliveryLines.qty }).from(deliveryLines)
-        .innerJoin(deliveries, eq(deliveries.id, deliveryLines.deliveryId)).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
-      const remaining = (l: typeof lines[number]) => l.qty - l.deliveredQty - pending.filter(p => p.lineId === l.id).reduce((s, p) => s + p.qty, 0);
-      // Không chỉ định dòng nào = giao hết phần còn lại.
-      const picks = (wanted.length ? wanted.map(w => ({ line: lines.find(l => l.id === w.orderLineId), qty: Number(w.qty) })) : lines.map(l => ({ line: l, qty: remaining(l) }))).filter(p => p.qty > 0);
-      if (!picks.length) throw new AppError(400, 'Không còn hàng nào cần giao cho đơn này.');
-      for (const p of picks) {
-        if (!p.line) throw new AppError(400, 'Dòng hàng không thuộc đơn.');
-        if (!(p.qty > 0) || p.qty > remaining(p.line) + 1e-9) throw new AppError(400, `"${p.line.name}" chỉ còn ${remaining(p.line)} ${p.line.unit} chưa lên lịch giao.`);
-      }
-      const used = (await tx.select({ n: deliveries.deliveryNo }).from(deliveries).where(sql`${deliveries.deliveryNo} LIKE ${'GH_' + plannedDate.replaceAll('-', '') + '_%'}`)).map(r => r.n);
-      await tx.insert(deliveries).values({
-        id, deliveryNo: nextDocNo('GH', plannedDate, used), orderId: order.id, plannedDate, timeSlot: text(body.timeSlot, 100),
-        address: text(body.address, 2000) || order.address, receiverName: text(body.receiverName) || order.contact, receiverPhone: text(body.receiverPhone, 100) || order.phone,
-        carrier: text(body.carrier, 200), shippingFee: money(body.shippingFee ?? 0, 'Phí giao hàng'), status: 'planned', assigneeId: body.assigneeId ? text(body.assigneeId, 80) : null,
-        note: text(body.note, 2000), createdBy: me.id, createdAt: now, updatedAt: now,
-      });
-      await tx.insert(deliveryLines).values(picks.map(p => ({ deliveryId: id, orderLineId: p.line!.id, qty: p.qty })));
-    });
+    const made = await c.env.db.transaction(tx => createScheduledDelivery(tx, order.id, body, me.id));
+    const { id, plannedDate } = made;
     // Ngày lên lịch giao trở thành ngày giao dự kiến của đơn (đơn của khách cũng cập nhật theo).
     await setExpectedDeliveryDate(c, order, plannedDate);
     return json({ id }, 201);

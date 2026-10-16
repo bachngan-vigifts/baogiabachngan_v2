@@ -48,7 +48,7 @@ async function fixture() {
   return { db, call, mgr, emp, ncc };
 }
 
-test('dashboard: server permissions, all-company manager / employee restricted to assigned department, read-only endpoints', async () => {
+test('dashboard: server permissions, all-company manager / employee restricted to own data, read-only endpoints', async () => {
   const { call, mgr, emp, ncc } = await fixture();
   assert.equal((await call('/dashboard/revenue' + month)).status, 401);
   assert.equal((await call('/dashboard/revenue' + month, ncc)).status, 403);
@@ -56,7 +56,7 @@ test('dashboard: server permissions, all-company manager / employee restricted t
   assert.equal((await call('/dashboard/revenue' + month + '&group=warehouse', emp)).status, 403);
   assert.equal((await call('/dashboard/revenue', mgr, 'POST')).status, 405);
   const mine = await call('/dashboard/revenue' + month, emp); assert.equal(mine.status, 200, JSON.stringify(mine.data));
-  assert.equal(mine.data.scope, 'department'); assert.ok(mine.data.employees.some((x: any) => x.id === 'emp')); assert.ok(mine.data.employees.every((x: any) => x.groupId === 'sale')); assert.deepEqual(mine.data.groups, []);
+  assert.equal(mine.data.scope, 'self'); assert.ok(mine.data.employees.some((x: any) => x.id === 'emp')); assert.ok(mine.data.employees.every((x: any) => x.groupId === 'sale')); assert.deepEqual(mine.data.groups, []);
   assert.equal(mine.data.summary.actual, 1201); assert.equal(mine.data.summary.expected, 150); assert.equal(mine.data.summary.pipeline, 150);
   assert.equal(mine.data.summary.closeRate, 50); assert.equal(mine.data.summary.lost, 0);
   assert.deepEqual(mine.data.neglected.customers.map((x: any) => x.id).sort(), ['never']);
@@ -97,7 +97,7 @@ test('dashboard: pipeline bỏ khách để quá lâu không cập nhật', asyn
 
 test('dashboard: role defense and new UI has no HTML injection or token persistence', () => {
   const member = { id: 'emp', active: true, role: 'employee' as const, positionId: 'sale' };
-  assert.equal(dashboardFilters(new URLSearchParams(), member, '2026-10-11').owner, undefined);
+  assert.equal(dashboardFilters(new URLSearchParams(), member, '2026-10-11').owner, 'emp');
   assert.throws(() => dashboardFilters(new URLSearchParams(), { ...member, positionId: 'supplier' }, '2026-10-11'), /quyền/);
   const ui = readFileSync(new URL('../../trial-ui/dashboard.js', import.meta.url), 'utf8');
   assert.doesNotMatch(ui, /innerHTML|insertAdjacentHTML|localStorage|sessionStorage/);
@@ -121,4 +121,23 @@ test('dashboard: ranking and employee selector match staff page, deleted history
   const filtered = (await call('/dashboard/revenue' + month + '&owner=mgr', mgr)).data;
   assert.deepEqual(ids(filtered.employees), ['mgr']);
   assert.deepEqual(ids(filtered.filters.employees), ids(staff), 'selector keeps full visible roster when filtered');
+});
+
+
+test('dashboard: đồng nghiệp cùng chức vụ và khách được chia sẻ không mở rộng số liệu cá nhân', async () => {
+  const { db, call, emp, mgr } = await fixture();
+  const before = (await call('/dashboard/revenue' + month, emp)).data;
+  await db.insert(customers).values({ id: 'peer-customer', name: 'Khách đồng nghiệp', contact: '', phone: '', email: '', address: '', search: '', sourceVersion: 0, syncedAt: '' });
+  await db.insert(customerStaff).values([{ customerId: 'peer-customer', memberId: 'new', role: 'owner', createdAt: now }, { customerId: 'peer-customer', memberId: 'emp', role: 'shared', createdAt: now }]);
+  await db.insert(salesOrders).values({ id: 'peer-order', orderNo: 'PEER', quoteType: 'HRC', customerName: 'Khách đồng nghiệp', customerId: 'peer-customer', ownerId: 'new', createdBy: 'new', orderDate: '2026-09-10', status: 'confirmed', total: 12345, createdAt: now, updatedAt: now });
+  await db.insert(customerActivities).values({ id: 'peer-care', customerId: 'peer-customer', ownerId: 'new', type: 'call', result: 'negotiating', expectedRevenue: 45678, occurredAt: '2026-09-20T03:00:00Z', content: 'Của đồng nghiệp', createdAt: now, updatedAt: now });
+  const mine = (await call('/dashboard/revenue' + month, emp)).data;
+  assert.deepEqual(mine.summary, before.summary);
+  assert.deepEqual(mine.employees.map((x: any) => x.id), ['emp']);
+  assert.ok(!mine.neglected.customers.some((x: any) => x.id === 'peer-customer'));
+  assert.equal((await call('/dashboard/revenue' + month + '&owner=new', emp)).status, 403);
+  assert.equal((await call('/dashboard/revenue' + month + '&group=sale', emp)).status, 403);
+  const all = (await call('/dashboard/revenue' + month, mgr)).data;
+  assert.equal(all.summary.actual, 1501 + 12345);
+  assert.ok(all.employees.some((x: any) => x.id === 'new' && x.actual === 12345));
 });

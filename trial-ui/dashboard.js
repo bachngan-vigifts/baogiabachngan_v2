@@ -180,7 +180,7 @@ export function initDashboard({ api, root, isManager, money }) {
   function render() {
     const x = data, sum = x.summary, manager = x.scope === 'company'; draws = [];
     const date = v => new Date(v).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' });
-    meta.textContent = `${manager ? 'Toàn công ty' : x.scope === 'department' ? 'Doanh số cùng phòng ban' : 'Doanh số của bạn'} · ${monthLabel(x.from.slice(0, 7), 0)} – ${monthLabel(x.to, 0)} · ${x.lastSyncedAt ? 'Đồng bộ Sapo ' + date(x.lastSyncedAt) : 'Chưa có mốc đồng bộ Sapo'} · Tính lúc ${date(x.calculatedAt)}`;
+    meta.textContent = `${manager ? 'Toàn công ty' : 'Doanh số của bạn'} · ${monthLabel(x.from.slice(0, 7), 0)} – ${monthLabel(x.to, 0)} · ${x.lastSyncedAt ? 'Đồng bộ Sapo ' + date(x.lastSyncedAt) : 'Chưa có mốc đồng bộ Sapo'} · Tính lúc ${date(x.calculatedAt)}`;
 
     const kpis = node('div', null, 'dash-kpis');
     const hero = tile('Doanh số đã chốt', compact(sum.actual), `${money(sum.actual)} · ${sum.orders.toLocaleString('vi-VN')} đơn/HĐKT`, 'is-hero');

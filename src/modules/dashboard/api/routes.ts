@@ -1,4 +1,3 @@
-import { departmentOwner } from '../../staff/api/department.ts';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, type Router } from '../../../core/http/router.ts';
@@ -28,7 +27,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
     const data = await c.env.db.transaction(async db => {
       const selected = db.select({ id: employees.id }).from(employees).where(and(
         inArray(employees.role, ['manager', 'employee']),
-        f.manager ? undefined : or(eq(employees.id, me.id), departmentOwner(employees.id, me)),
+        f.manager ? undefined : eq(employees.id, me.id),
         f.owner ? eq(employees.id, f.owner) : undefined,
         f.group ? eq(employees.positionId, f.group) : undefined));
       const [members, groups, visibleRoster] = await Promise.all([
@@ -124,7 +123,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>) {
       const [customerSync] = await db.select({ at: max(sql<string>`nullif(${customers.syncedAt}, '')`) }).from(customers).where(sql`${customers.id} ~ '^[0-9]+$'`);
       const syncAt = sync?.at && (!customerSync?.at || sync.at >= customerSync.at) ? sync.at : customerSync?.at ?? null;
       const rates = <T extends { converted: number; quotes: number }>(r: T) => ({ ...r, closeRate: ratio(r.converted, r.quotes) });
-      return { scope: f.manager ? 'company' : f.group ? 'department' : 'self', from: f.from, to: f.months.at(-1), summary: rates(summary),
+      return { scope: f.manager ? 'company' : 'self', from: f.from, to: f.months.at(-1), summary: rates(summary),
         employees: employeeRows.filter(e => e.deletedAt === null).map(({ deletedAt, ...row }) => rates(row)), groups: f.manager ? [...teamRows.values()].map(rates) : [], months: monthRows.map(rates),
         filters: { employees: visibleRoster, groups },
         neglected: { total: neglectCount?.count ?? 0, page: f.page, pageSize: 25, days: f.neglectDays, customers: neglected },

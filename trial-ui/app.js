@@ -3019,11 +3019,11 @@ async function openOrder(id) {
   // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
       ${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { fmt: fmtDate }) : '<span class="muted">Chưa có</span>'}<small class="muted">Đổi ngày giao bằng nút "＋ Lên lịch giao".</small></div>`)
-    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span><span class="pack-slot" data-pack-slot="${esc(x.id)}" data-pack-status="${esc(x.status)}"></span></li>`).join('')}</ul>`
+    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
-  loadPackingState(o.id); loadOrderPacking(o.id);
-  $('#order-pack').hidden = o.status === 'cancelled' || o.status === 'draft';
-  $('#order-pack').disabled = !scheduled; $('#order-pack').title = scheduled ? 'Lập phiếu đóng gói theo nguồn hàng, chọn giao cho khách hay về xưởng in, gửi xe nào' : NO_SCHEDULE;
+  loadOrderPacking(o.id);
+  $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
+  $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
   $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
@@ -3116,30 +3116,11 @@ document.addEventListener('submit', async e => {
   try { await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice`, 'PUT', { invoiceNo: f.invoiceNo.value, invoiceDate: f.invoiceDate.value }); toast('Đã lưu số hoá đơn.'); openOrder(sales.order.id); tasksView().badge(); }
   catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
 });
-/** Ô Lịch giao hàng: tình trạng xuất kho / đóng hàng của từng chuyến (việc của nhóm Kho) + nút yêu cầu kho đóng hàng. */
-async function loadPackingState(orderId) {
-  let packing = [];
-  try { packing = (await api('/tasks/packing?orderId=' + encodeURIComponent(orderId))).packing; } catch { /* chưa có bảng công việc: chỉ ẩn phần này */ return; }
-  for (const slot of document.querySelectorAll('[data-pack-slot]')) {
-    const p = packing.find(x => x.deliveryId === slot.dataset.packSlot);
-    slot.innerHTML = p && p.status === 'done' ? `<span class="pill ok" title="${p.completedAt ? 'Lúc ' + new Date(p.completedAt).toLocaleString('vi-VN') : ''}">Kho đã đóng hàng ✓${p.by && !p.auto ? ' · ' + esc(p.by) : ''}</span>`
-      : p && (p.status === 'todo' || p.status === 'in_progress') ? `<a class="pill warn" href="#/tasks/${esc(p.taskId)}">${p.status === 'in_progress' ? 'Kho đang đóng hàng' + (p.by ? ' · ' + esc(p.by) : '') : 'Đã yêu cầu kho đóng hàng'}</a>`
-      : ''; // yêu cầu đóng gói giờ làm theo phiếu (nút "📦 Yêu cầu đóng gói" của ô Lịch giao hàng)
-  }
-}
-document.addEventListener('click', async e => {
-  const b = e.target.closest('[data-pack-request]'); if (!b) return;
-  const note = prompt('Ghi chú cho kho (tuỳ chọn) – ví dụ: bọc chống sốc, dán tem, giao trước 9h:', '');
-  if (note === null) return;
-  b.disabled = true;
-  try { await api('/tasks/packing', 'POST', { deliveryId: b.dataset.packRequest, note }); toast('Đã gửi yêu cầu xuất kho & đóng hàng cho nhóm Kho.'); loadPackingState(sales.order.id); tasksView().badge(); }
-  catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
-});
 // ----- Phiếu đóng gói: "📦 Yêu cầu đóng gói" chia số lượng theo nguồn hàng → mỗi nguồn một phiếu → gửi kho → kho xác nhận kèm 1–3 ảnh.
 const PACK_SOURCES = { warehouse: 'Kho', store: 'Điều chuyển từ cửa hàng', supplier: 'Nhập từ NCC', agent: 'Lấy từ đại lý', other: 'Nguồn khác' };
 const PACK_STATUS = { draft: ['Nháp – chưa gửi kho', 'warn'], sent: ['Đã gửi kho', 'info'], packed: ['Kho đã đóng ✓', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
 const kg = v => v === null || v === undefined ? '' : `~${fmtNum(v)} kg`;
-const packing = { lines: [], orderId: '' };
+const packing = { lines: [], orderId: '', hasSchedule: false };
 async function loadOrderPacking(orderId) {
   const box = $('#order-packing'); box.innerHTML = '';
   let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
@@ -3164,6 +3145,7 @@ $('#order-pack').addEventListener('click', async () => {
   const btn = $('#order-pack'); btn.disabled = true;
   try {
     const d = await api(`/orders/${encodeURIComponent(o.id)}/packing`); packing.lines = d.lines;
+    if (!d.canRequest) return toast('Đơn chưa xác nhận, đã huỷ hoặc đã giao xong.', 'err');
     const todo = d.lines.filter(l => l.left > 1e-9);
     if (!todo.length) return toast('Mọi dòng hàng đã có phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.', 'err');
     // Tồn khả dụng của kho (như trang Khách hỏi tồn): mặc định lấy từ kho tối đa bằng tồn, phần thiếu bắt buộc nhập nguồn khác.
@@ -3181,10 +3163,24 @@ $('#order-pack').addEventListener('click', async () => {
         <div data-srcs>${short > 1e-9 ? packSourceRow(short) : ''}</div>
         <button type="button" class="btn ghost small" data-src-add>＋ Thêm nguồn hàng</button></div>`;
     }).join('');
-    fillPackShip(d.delivery);
+    fillPackShip(d.delivery); fillPackSchedule(d.schedules || [], o);
     $('#pack-dialog').showModal();
   } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
 });
+/** A single save can schedule the selected quantities and create the packing slips. */
+function fillPackSchedule(schedules, order) {
+  const f = $('#pack-form'); packing.hasSchedule = schedules.length > 0;
+  f.createSchedule.checked = !packing.hasSchedule; f.createSchedule.disabled = !packing.hasSchedule;
+  f.plannedDate.value = order.expectedDeliveryDate || todayIso(); f.timeSlot.value = ''; f.receiverName.value = order.contact || '';
+  $('#pack-existing-schedule').textContent = packing.hasSchedule
+    ? 'Dùng lịch đã có: ' + schedules.map(x => `${x.deliveryNo} · ${fmtDate(x.plannedDate)}`).join('; ') + '. Chọn tạo lịch mới chỉ khi đây là chuyến giao khác.'
+    : 'Chưa có lịch giao. Ngày giao và số lượng sẽ được lưu cùng phiếu đóng gói.';
+  showPackSchedule();
+}
+function showPackSchedule() {
+  const f = $('#pack-form');
+  for (const input of $('#pack-schedule-fields').querySelectorAll('input')) input.disabled = !f.createSchedule.checked;
+}
 /** Phần "Giao hàng" của hộp đóng gói: có phí in → mặc định về xưởng in; chọn xưởng / nhà xe trong danh sách tự điền địa chỉ, SĐT. */
 let packShip = { workshops: [], carriers: [] };
 function fillPackShip(dv = {}) {
@@ -3208,7 +3204,7 @@ function readPackShip() {
   if (to === 'workshop' && !ship.name) throw new Error('Chọn hoặc gõ tên xưởng in nhận hàng.');
   return { ...ship, carrierName: f.carrierName.value.trim(), carrierPhone: f.carrierPhone.value.trim() };
 }
-$('#pack-form').addEventListener('change', e => { if (e.target.name === 'shipTo') showPackShip(); });
+$('#pack-form').addEventListener('change', e => { if (e.target.name === 'shipTo') showPackShip(); if (e.target.name === 'createSchedule') showPackSchedule(); });
 $('#pack-form').addEventListener('input', e => {
   const f = $('#pack-form'), pick = (list, v) => list.find(x => normalize(x.name) === normalize(v));
   if (e.target.name === 'wsName') { const w = pick(packShip.workshops, e.target.value); if (w) { f.wsAddress.value = w.address || f.wsAddress.value; f.wsPhone.value = w.phone || f.wsPhone.value; } }
@@ -3253,8 +3249,16 @@ $('#pack-form').addEventListener('submit', async e => {
   let allocations, delivery; try { allocations = readPackForm(); delivery = readPackShip(); } catch (ex) { $('#pack-error').textContent = ex.message; return; }
   const btn = $('#pack-save'); btn.disabled = true;
   try {
-    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/packing`, 'POST', { allocations, delivery, note: $('#pack-form').note.value });
-    $('#pack-dialog').close(); toast(`Đã sinh ${r.slips.length} phiếu đóng gói. Kiểm tra rồi bấm "Gửi kho".`); loadOrderPacking(sales.order.id);
+    const f = $('#pack-form'), order = sales.order;
+    const groups = new Set(allocations.map(x => `${x.source}\u0000${(x.sourceNote || '').trim().toLowerCase()}`));
+    const schedule = f.createSchedule.checked ? { plannedDate: f.plannedDate.value, timeSlot: f.timeSlot.value,
+      receiverName: f.receiverName.value, receiverPhone: delivery.to === 'customer' ? delivery.phone : order.phone,
+      address: delivery.to === 'customer' ? delivery.address : order.address,
+      carrier: delivery.to === 'customer' ? delivery.carrierName : '', note: f.note.value } : undefined;
+    const r = await api(`/orders/${encodeURIComponent(order.id)}/packing`, 'POST', { allocations, delivery, schedule, sendToWarehouse: groups.size === 1, note: f.note.value });
+    $('#pack-dialog').close();
+    toast(r.sentToWarehouse ? 'Đã lưu và gửi phiếu cho kho đóng hàng.' : `Đã lưu ${r.slips.length} phiếu nháp. Kiểm tra nguồn hàng rồi bấm "Gửi kho".`);
+    openOrder(order.id);
   } catch (ex) { $('#pack-error').textContent = ex.message; } finally { btn.disabled = false; }
 });
 async function sendSlip(id) { await api(`/packing/${encodeURIComponent(id)}/send`, 'POST', {}); }

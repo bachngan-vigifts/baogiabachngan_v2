@@ -66,7 +66,7 @@ test('đơn và HĐKT cùng phòng ban: đọc/sửa nháp; duyệt chỉ Manage
   assert.equal((await s.call('/orders/' + k.data.orderId, s.emp)).status, 404);
 });
 
-test('hồ sơ đồng nghiệp không có dữ liệu lương; care/khách/doanh số cùng nhóm hiển thị, khác nhóm bị chặn', async () => {
+test('hồ sơ đồng nghiệp không có dữ liệu lương; care/khách cùng nhóm hiển thị, dashboard cá nhân, khác nhóm bị chặn', async () => {
   const s = await setup(), today = vnToday();
   const form = { customerId: s.customerId, contactName: 'Anh khách', type: 'call', result: 'consulting', content: 'Gọi khách', expectedRevenue: 100000, nextAt: today, remindBefore: '1d' };
   const care = await s.call('/care', s.peer, 'POST', form); assert.equal(care.status, 201, JSON.stringify(care.data));
@@ -83,8 +83,7 @@ test('hồ sơ đồng nghiệp không có dữ liệu lương; care/khách/doan
   assert.equal(overview.data.payroll, null); assert.equal(overview.data.access.canViewPayroll, false); assert.equal(overview.data.kpi.workedDays, null);
   assert.equal((await s.call('/hr/payroll/' + today.slice(0, 7), s.emp)).status, 403);
   assert.equal((await s.call('/hr/members/new/salary', s.emp, 'PUT', { effectiveMonth: today.slice(0, 7), baseSalary: 1 })).status, 403);
-  const dash = await s.call('/dashboard/revenue?owner=new', s.emp); assert.equal(dash.status, 200, JSON.stringify(dash.data)); assert.equal(dash.data.scope, 'department');
-  assert.equal(dash.data.summary.pipeline, 100000);
+  const dash = await s.call('/dashboard/revenue?owner=new', s.emp); assert.equal(dash.status, 403, 'dashboard riêng tư dù cùng chức vụ');
   await s.db.update(employees).set({ positionId: 'warehouse' }).where(eq(employees.id, 'new'));
   assert.equal((await s.call('/members/new/overview', s.emp)).status, 403);
   assert.equal((await s.call('/care/' + care.data.activity.id, s.emp)).status, 404);
