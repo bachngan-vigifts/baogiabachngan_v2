@@ -96,8 +96,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     el('p', 'muted', 'Lập đơn từ báo giá, đơn / HĐKT hoặc khách hỏi tồn; Manager duyệt giá; kho nhận hàng từng đợt rồi nhập kho trên Sapo (Sapo là nguồn tồn chính).'));
   const add = btn('+ Lập đơn mua', 'btn primary', () => openCreate());
   // Manager: nhập các đơn đã đặt với NCC từ file Excel tổng đơn của NCC (mẫu Minh Long) – trial-ui/purchase-import.js.
-  const importBtn = btn('⬆ Nhập từ file NCC', 'btn secondary', () => importForm()); importBtn.hidden = true;
-  const headTools = el('div', 'row-gap'); headTools.append(importBtn, add);
+  const importBtn = btn('Nhập từ file NCC', 'btn secondary pur-import', () => importForm()); importBtn.hidden = true;
+  const headTools = el('div', 'row-gap head-actions'); headTools.append(importBtn, add);
   head.append(titles, headTools);
   options().then(o => { importBtn.hidden = !o.isManager || kho(); }).catch(() => {});
   const panel = el('div', 'panel'), bar = el('div', 'toolbar');
