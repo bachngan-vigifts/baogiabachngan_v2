@@ -101,7 +101,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   head.append(titles, headTools);
   options().then(o => { importBtn.hidden = !o.isManager || kho(); }).catch(() => {});
   const panel = el('div', 'panel'), bar = el('div', 'toolbar');
-  const search = input('search', '', { placeholder: 'Tìm số đơn, NCC, mã hàng, số báo giá / HĐKT, khách…' }); search.setAttribute('aria-label', 'Tìm đơn mua');
+  const search = input('search', '', { placeholder: 'Tìm số đơn, số đơn NCC, NCC, mã hàng, số báo giá / HĐKT, khách…' }); search.setAttribute('aria-label', 'Tìm đơn mua');
   const label = el('label', 'search'); label.append(search);
   const countEl = el('span', 'muted small');
   bar.append(label, countEl);
@@ -132,7 +132,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const a = el('a', 'card kho-po'); a.href = '#/purchases/' + encodeURIComponent(r.id) + '?receive=1';
       const top = el('div', 'kho-po-top'); top.append(el('b', 'kho-po-sup', r.supplierName || 'NCC'), el('span', 'sup-pill ' + (STATE_PILL[r.state] ?? ''), r.stateLabel));
       const due = el('span', r.late ? 'pur-late' : '', r.arrivalDate ? (r.late ? '⚠ Trễ hẹn – ' : 'Hẹn về ') + dmy(r.arrivalDate) : 'Chưa có ngày hẹn');
-      const meta = el('div', 'kho-po-meta'); meta.append(due, el('span', '', `${r.lineCount} mã · cần nhận ${num(r.missing)}`), el('span', 'muted', r.ticketNumber));
+      const meta = el('div', 'kho-po-meta'); meta.append(due, el('span', '', `${r.lineCount} mã · cần nhận ${num(r.missing)}`), el('span', 'muted', r.ticketNumber + (r.internalNo ? ' · NCC ' + r.internalNo : '')));
       a.append(top, meta, el('span', 'btn primary kho-po-go', 'Nhận hàng ›'));
       khoBox.append(a);
     }
@@ -148,7 +148,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Chưa có đơn mua nào.'); td.colSpan = prices ? 8 : 6; tr.append(td); tbody.append(tr); return; }
     for (const r of rows) {
       const tr = el('tr', 'clickable' + (r.state === 'cancelled' ? ' is-off' : '')); tr.tabIndex = 0;
-      const no = el('td'); no.append(el('b', '', r.ticketNumber || '—'), el('small', 'muted sup-sub', r.lineCount + ' mã'));
+      const no = el('td'); no.append(el('b', '', r.ticketNumber || '—'), el('small', 'muted sup-sub', (r.internalNo ? 'NCC: ' + r.internalNo + ' · ' : '') + r.lineCount + ' mã'));
       const arr = el('td', r.late ? 'pur-late' : '', dmy(r.arrivalDate)); if (r.late) arr.title = 'Quá ngày hẹn, chưa nhận đủ';
       const prog = el('td'); prog.append(el('span', '', `${num(r.good)}/${num(r.ordered)}`)); if (r.damaged) prog.append(el('small', 'muted sup-sub', `hỏng ${num(r.damaged)}`));
       tr.append(no, el('td', '', r.supplierName || '—'), el('td', '', dmy(r.createdAt)), arr, prog);
