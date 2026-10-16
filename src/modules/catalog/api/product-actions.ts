@@ -97,7 +97,9 @@ export function registerProductActionRoutes(router: Router<StaffEnv>) {
       if (!p.matched.length) throw new AppError(400, 'Không có mã sản phẩm phù hợp để cập nhật.');
       if (kind === 'stock') {
         const revision = Date.now() * 1000 + Math.floor(Math.random() * 1000);
-        const rows = p.matched.flatMap(r => Object.entries(r.stock!).map(([warehouseId, quantity]) => ({ sku: r.sku, warehouseId, quantity })));
+        // Kho "Hàng chờ về" do hệ thống tự tính từ Đơn mua NCC – file tồn không ghi đè.
+        const incoming = new Set((await tx.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.kind, 'incoming'))).map(w => w.id));
+        const rows = p.matched.flatMap(r => Object.entries(r.stock!).filter(([warehouseId]) => !incoming.has(warehouseId)).map(([warehouseId, quantity]) => ({ sku: r.sku, warehouseId, quantity })));
         await tx.insert(stockImports).values({ revision, key: 'crm:' + crypto.randomUUID(), filename: input.filename, observedAt: input.observedAt!, createdAt: now, createdBy: actor, count: p.matched.length });
         for (const chunk of parts(rows)) {
           await tx.insert(productStock).values(chunk.map(r => ({ ...r, updatedAt: now }))).onConflictDoUpdate({ target: [productStock.sku, productStock.warehouseId], set: { quantity: sql`excluded.quantity`, updatedAt: sql`excluded.updated_at` } });

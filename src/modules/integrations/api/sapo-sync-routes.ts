@@ -161,7 +161,8 @@ export async function syncProducts(db: AnyDb, body: Record<string, unknown>, loc
   await db.transaction(async tx => {
     const policies = await tx.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name));
     const stores = await tx.select().from(warehouses).where(eq(warehouses.active, true));
-    const policyId = new Map(policies.map(p => [p.name, p.id])), storeId = new Map(stores.map(w => [w.name, w.id]));
+    // Kho "Hàng chờ về" do hệ thống tự tính từ Đơn mua NCC – đồng bộ Sapo không ghi đè.
+    const policyId = new Map(policies.map(p => [p.name, p.id])), storeId = new Map(stores.filter(w => w.kind !== 'incoming').map(w => [w.name, w.id])), incomingNames = new Set(stores.filter(w => w.kind === 'incoming').map(w => w.name));
     const existing = new Set((await tx.select({ sku: products.sku }).from(products).where(inArray(products.sku, [...new Set(variants.map(v => v.sku))]))).map(r => r.sku));
     for (const v of variants) {
       if (!v.active) {
@@ -189,6 +190,7 @@ export async function syncProducts(db: AnyDb, body: Record<string, unknown>, loc
         await tx.insert(productPrices).values({ sku: v.sku, policyId: id, price }).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price } });
       }
       for (const [name, quantity] of Object.entries(v.stock)) {
+        if (incomingNames.has(name)) continue;
         const id = storeId.get(name); if (!id) { unknownWarehouses.add(name); continue; }
         await tx.insert(productStock).values({ sku: v.sku, warehouseId: id, quantity, updatedAt: now }).onConflictDoUpdate({ target: [productStock.sku, productStock.warehouseId], set: { quantity, updatedAt: now } });
       }

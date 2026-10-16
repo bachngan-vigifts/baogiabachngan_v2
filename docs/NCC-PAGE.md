@@ -57,6 +57,13 @@ Nơi sửa **mọi thứ về NCC mà trước đây phải sửa code**:
   - API: `POST /purchase-orders/import`;
   - test: `tests/app/purchase-import.test.ts`, `tests/app/purchasing.test.ts`.
 
+**Tồn "Hàng chờ về" tự tính từ đơn mua** (`suppliers/api/incoming-stock.ts`):
+- Mỗi mã = tổng số còn thiếu (đặt − đã nhận đạt) của các đơn mua NCC đã duyệt và chưa huỷ.
+- Ghi vào kho loại `incoming`; chưa có kho này thì tự tạo kho "Hàng chờ về".
+- Hệ thống cập nhật lại sau mỗi thao tác trên đơn mua và mỗi lần mở danh sách đơn mua. Chỉ ghi phần thay đổi; mã không còn chờ thì xoá dòng.
+- File danh mục, file tồn và đồng bộ Sapo **không ghi đè** kho này nữa.
+- Mã chưa có trong danh mục sản phẩm thì chưa tính (bảng tồn bắt buộc mã có trong danh mục).
+
 Bảng mới (migration `0051_supplier_purchasing`, REVOKE ở `0052`): `supplier_order_sources`, `supplier_receipts`, `supplier_receipt_lines`, `supplier_payment_schedules`, `supplier_payments`, `supplier_order_events` (lịch sử thao tác). Cột mới trên `incoming_shipments`: `note`, `cancelled_*`, `cancel_reason`, `confirmed_on_behalf`, `revision`.
 
 **Việc tự sinh** (`supplierPurchases` trong `tasks/api/auto-tasks.ts`, nguồn `purchase`):

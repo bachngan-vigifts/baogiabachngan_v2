@@ -243,12 +243,14 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
         } });
       }
       // Giá và tồn lấy đúng theo file: xoá của các mã trong file rồi ghi lại.
+      // Trừ kho "Hàng chờ về": hệ thống tự tính từ Đơn mua NCC (suppliers/api/incoming-stock.ts), file không ghi đè.
+      const incoming = new Set(data.warehouses.flatMap((n, i) => warehouseKind(n) === 'incoming' ? [warehouseIds[i]!] : []));
       for (const part of chunks(skus)) {
         await tx.delete(productPrices).where(inArray(productPrices.sku, part));
-        await tx.delete(productStock).where(inArray(productStock.sku, part));
+        await tx.delete(productStock).where(and(inArray(productStock.sku, part), incoming.size ? notInArray(productStock.warehouseId, [...incoming]) : undefined));
       }
       const priceRows = data.products.flatMap(p => p.prices.map((price, i) => ({ sku: p.sku, policyId: policyIds[i]!, price })));
-      const stockRows = data.products.flatMap(p => p.stock.flatMap((q, i) => q === null ? [] : [{ sku: p.sku, warehouseId: warehouseIds[i]!, quantity: q, updatedAt: now }]));
+      const stockRows = data.products.flatMap(p => p.stock.flatMap((q, i) => q === null || incoming.has(warehouseIds[i]!) ? [] : [{ sku: p.sku, warehouseId: warehouseIds[i]!, quantity: q, updatedAt: now }]));
       for (const part of chunks(priceRows)) await tx.insert(productPrices).values(part);
       for (const part of chunks(stockRows)) await tx.insert(productStock).values(part);
       if (!data.replaceAll) return;
