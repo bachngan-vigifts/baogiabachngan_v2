@@ -3965,3 +3965,29 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
 
 
 
+/**
+ * Tự nhận bản giao diện mới: app mở sẵn (nhất là bản cài trên điện thoại) không tự tải lại nên vẫn chạy bản cũ.
+ * Cứ 3 phút và mỗi lần quay lại app: đọc số phiên bản trong index.html trên máy chủ; khác bản đang chạy thì
+ * tự tải lại khi không có báo giá đang sửa dở, còn đang sửa thì hiện thanh "Có bản mới – Tải lại".
+ */
+(() => {
+  const running = $('#app-version')?.textContent?.trim();
+  if (!running || running === '__BUILD__' || typeof fetch !== 'function') return;
+  let shown = false;
+  const busy = () => typeof editor !== 'undefined' && editor.dirty || !!document.querySelector('dialog[open]');
+  async function check() {
+    try {
+      const html = await (await fetch('index.html', { cache: 'no-store' })).text();
+      const latest = /id="app-version">([^<]+)</.exec(html)?.[1]?.trim();
+      if (!latest || latest === '__BUILD__' || latest === running) return;
+      if (!busy()) { location.reload(); return; }
+      if (shown) return; shown = true;
+      const bar = document.createElement('div'); bar.className = 'update-bar';
+      bar.innerHTML = '<span>Đã có bản giao diện mới.</span><button type="button" class="btn primary small">Tải lại</button>';
+      bar.querySelector('button').addEventListener('click', async () => { if (typeof editor === 'undefined' || !editor.dirty || await confirmBox('Báo giá đang có thay đổi chưa lưu. Vẫn tải lại?', { ok: 'Tải lại' })) location.reload(); });
+      document.body.append(bar);
+    } catch { /* mất mạng – lần sau kiểm tra lại */ }
+  }
+  setInterval(check, 180000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+})();
