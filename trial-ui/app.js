@@ -2812,10 +2812,10 @@ async function loadStockRequests(focusId) {
         <small class="muted">${esc(r.askedBy)} · ${new Date(r.createdAt).toLocaleString('vi-VN')}</small></div></header>
       <div class="row-gap end"><button type="button" class="btn secondary small" data-purchase-from title="Lập đơn mua NCC cho phần khách cần mà chưa đáp ứng">Đặt hàng NCC</button><button type="button" class="btn secondary small" data-shortage-pdf ${stockShortageExports.get(r.id)?.rows.length ? '' : 'disabled'} title="Xuất mã thiếu so với tồn khả dụng; không kèm thông tin khách hoặc giá">Tải PDF mã thiếu</button></div>
       ${r.note ? `<p class="small"><b>Khách ghi chú:</b> ${esc(r.note)}</p>` : ''}
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th><th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
-      ${r.items.map(i => { const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th>${r.items.some(i => heldQty(i.sku) > 0) ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}<th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
+      ${r.items.map(i => { const anyHeld = r.items.some(x => heldQty(x.sku) > 0); const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
         return `<tr><td>${esc(i.name)}<small>${esc(i.sku)} · ${esc(i.unit || '')}</small></td><td class="right">${fmtNum(i.qty)}</td>
-          <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>
+          ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>` : ''}
           <td class="right ${av !== null && av < i.qty ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
           <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
           <td class="right">${r.status === 'open' ? `<input class="num-input" inputmode="decimal" data-sku="${esc(i.sku)}" value="${av === null ? '' : Math.max(0, Math.min(i.qty, av))}" aria-label="Đáp ứng ${esc(i.name)}">` : fmtNum(a?.available ?? 0)}</td></tr>`; }).join('')}
@@ -3716,18 +3716,20 @@ $('#quote-stock').addEventListener('click', async () => {
     await loadHolds(true);
     for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); }
     let short = 0;
+    // Cột "Tồn kho · Đang treo" chỉ hiện khi có mã đang bị báo giá khác treo; không thì bảng gọn như cũ.
+    const anyHeld = [...need.values()].some(i => i.sku && heldQty(i.sku, me) > 0);
     const rows = [...need.values()].map(i => {
       // Khả dụng cho báo giá này = tồn kho − phần báo giá KHÁC đang treo (phần chính báo giá này giữ vẫn tính là của mình).
       const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p, me) : null, miss = av === null ? null : Math.max(0, i.qty - av);
       const mine = i.sku ? (state.holds.get(i.sku) || []).filter(h => h.quoteId === me).reduce((t, h) => t + h.qty, 0) : 0;
       if (miss) short++;
       return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
-        <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>
+        ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>` : ''}
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
         <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
-    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th>${anyHeld ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}<th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     bindStockCheckFilter($('#stock-check-body'));
     $('#stock-check-note').textContent = short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.';
   } catch (e) { $('#stock-check-body').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
