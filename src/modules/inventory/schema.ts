@@ -1,9 +1,9 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { employees } from '../staff/schema.ts';
 import { warehouses } from '../catalog/schema.ts';
 import { enumCheck } from '../../core/db/enum-check.ts';
-import { STOCK_MOVE_KINDS, STOCK_REF_TYPES } from './domain/kinds.ts';
+import { STOCK_MOVE_KINDS, STOCK_REF_TYPES, WAREHOUSE_PHOTO_REFS } from './domain/kinds.ts';
 
 /*
  * SỔ KHO (giai đoạn 1 – chạy song song với Sapo, Sapo vẫn là nguồn tồn chính) – xem docs/SO-KHO.md.
@@ -41,3 +41,17 @@ export const stockBalances = pgTable('stock_balances', {
   qty: doublePrecision('qty').notNull().default(0),
   updatedAt: text('updated_at').notNull(),
 }, t => [primaryKey({ columns: [t.sku, t.warehouseId] }), index('idx_stock_balances_warehouse').on(t.warehouseId)]).enableRLS();
+
+/** Ảnh nghiệp vụ kho: ảnh hàng hỏng khi nhận hàng NCC, ảnh xác nhận đã giao. Nội dung nằm ở kho file private (`file_key`). */
+export const warehousePhotos = pgTable('warehouse_photos', {
+  id: text('id').primaryKey(),
+  refType: text('ref_type', { enum: WAREHOUSE_PHOTO_REFS }).notNull(),
+  refId: text('ref_id').notNull(),
+  fileKey: text('file_key').notNull(),
+  bytes: bigint('bytes', { mode: 'number' }).notNull().default(0),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  index('idx_warehouse_photos_ref').on(t.refType, t.refId),
+  enumCheck('chk_warehouse_photos_ref_type', t.refType, WAREHOUSE_PHOTO_REFS),
+]).enableRLS();

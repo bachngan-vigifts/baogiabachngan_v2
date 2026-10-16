@@ -84,7 +84,10 @@ export function bindManualProductLookup({ api, sku, name, unit, host, add, activ
   return { reset, dispose() { reset(); disposed = true; sku.removeEventListener('input', onSku); name.removeEventListener('input', onName); name.removeEventListener('keydown', onKey); } };
 }
 
-export function initPurchases({ api, root, toast, confirmBox, money, go, today }) {
+/** Đơn kho cần nhận (đã duyệt, chưa nhận đủ, chưa huỷ) – danh sách dạng thẻ cho tài khoản Kho. */
+const RECEIVABLE = new Set(['awaiting_confirmation', 'confirmed', 'partially_received']);
+
+export function initPurchases({ api, root, toast, confirmBox, money, go, today, kho = () => false, compressPhoto = null }) {
   let rows = [], filter = '', req = 0, opts = null, current = null;
   let disposeLookup = () => {};
   const page = el('div', 'sup-page');
@@ -102,7 +105,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
   for (const [v, t] of FILTERS) { const c = btn(t, 'chip' + (v === '' ? ' active' : ''), () => { filter = v; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c)); load(); }); chips.append(c); }
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('thead'), tbody = el('tbody');
   table.append(thead, tbody); wrap.append(table); panel.append(bar, chips, wrap);
-  page.append(head, panel);
+  // Kho: thẻ to "Hàng NCC chờ nhận" thay cho bảng (bấm thẻ mở thẳng form nhận hàng); nút nhỏ để xem mọi đơn.
+  const khoBox = el('div', 'kho-recv'); khoBox.hidden = true;
+  let khoAll = false;
+  page.append(head, khoBox, panel);
   const shade = el('div', 'sup-shade'); shade.hidden = true; shade.addEventListener('click', () => close());
   const drawer = el('aside', 'sup-drawer pur-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
   root.append(page, shade, drawer);
@@ -113,7 +119,24 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
   async function options() { return opts ||= await api('/purchase-options'); }
 
   // ---------------------------------------------------------------- danh sách
+  function renderKho() {
+    const list = rows.filter(r => RECEIVABLE.has(r.state)).sort((a, b) => (a.arrivalDate || '9999') < (b.arrivalDate || '9999') ? -1 : 1);
+    const headRow = el('div', 'kho-list-head'); headRow.append(el('h2', 'card-title', `🚚 Hàng NCC chờ nhận (${list.length})`), btn(khoAll ? 'Ẩn đơn khác' : 'Xem mọi đơn', 'btn ghost small', () => { khoAll = !khoAll; renderList(false); }));
+    khoBox.replaceChildren(headRow);
+    if (!list.length) khoBox.append(el('p', 'muted card', 'Không có hàng NCC nào chờ nhận.'));
+    for (const r of list) {
+      const a = el('a', 'card kho-po'); a.href = '#/purchases/' + encodeURIComponent(r.id) + '?receive=1';
+      const top = el('div', 'kho-po-top'); top.append(el('b', 'kho-po-sup', r.supplierName || 'NCC'), el('span', 'sup-pill ' + (STATE_PILL[r.state] ?? ''), r.stateLabel));
+      const due = el('span', r.late ? 'pur-late' : '', r.arrivalDate ? (r.late ? '⚠ Trễ hẹn – ' : 'Hẹn về ') + dmy(r.arrivalDate) : 'Chưa có ngày hẹn');
+      const meta = el('div', 'kho-po-meta'); meta.append(due, el('span', '', `${r.lineCount} mã · cần nhận ${num(r.missing)}`), el('span', 'muted', r.ticketNumber));
+      a.append(top, meta, el('span', 'btn primary kho-po-go', 'Nhận hàng ›'));
+      khoBox.append(a);
+    }
+  }
   function renderList(prices) {
+    const isKho = kho();
+    khoBox.hidden = !isKho; panel.hidden = isKho && !khoAll; add.hidden = isKho;
+    if (isKho) renderKho();
     thead.replaceChildren(); tbody.replaceChildren();
     const hr = el('tr'); for (const h of ['Số đơn', 'Nhà cung cấp', 'Ngày lập', 'Hẹn giao', 'Đã nhận', ...(prices ? ['Tổng tiền', 'Còn nợ'] : []), 'Trạng thái']) hr.append(el('th', '', h));
     thead.append(hr);
@@ -146,7 +169,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
   async function show(id, query = '') {
     load();
     if (id === 'new') { const p = new URLSearchParams(query); openCreate(p.get('type') && p.get('id') ? { type: p.get('type'), id: p.get('id') } : null); }
-    else if (id) openDetail(id);
+    else if (id) openDetail(id, new URLSearchParams(query).get('receive') === '1');
     else hide();
   }
 
@@ -172,8 +195,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
   }
 
   // ---------------------------------------------------------------- chi tiết
-  async function openDetail(id) {
-    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); }
+  async function openDetail(id, receive = false) {
+    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) receiveForm(); }
     catch (e) { toast(e.message || 'Không mở được đơn mua.', 'err'); close(); }
   }
   function renderDetail() {
@@ -271,6 +294,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     top.append(el('b', '', `${r.receiptNo} · ${dmy(r.receivedDate)}`), el('span', 'sup-pill ' + (r.cancelledAt ? '' : cls), r.cancelledAt ? 'Đã huỷ' : lbl + (r.sapoReceiptCode ? ' · ' + r.sapoReceiptCode : '')));
     card.append(top, el('small', 'muted', `${r.by || ''}${r.warehouse ? ' · ' + r.warehouse : ''}${r.note ? ' · ' + r.note : ''}`));
     card.append(el('p', 'small', r.lines.map(l => `${l.sku}: đạt ${num(l.goodQty)}${l.damagedQty ? `, hỏng ${num(l.damagedQty)}` : ''}${l.note ? ` (${l.note})` : ''}`).join(' · ')));
+    if (r.photos?.length) {
+      const ph = el('div', 'ship-photos');
+      for (const [i, u] of r.photos.entries()) { const a = el('a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; const img = el('img'); img.src = u; img.alt = `Ảnh hàng hỏng ${i + 1}`; img.loading = 'lazy'; a.append(img); ph.append(a); }
+      card.append(el('small', 'muted', 'Ảnh hàng hỏng:'), ph);
+    }
     if (r.sapoNote && r.sapoStatus === 'failed') card.append(el('p', 'pur-note danger small', 'Lỗi Sapo: ' + r.sapoNote));
     if (r.cancelledAt) { card.append(el('p', 'muted small', 'Lý do huỷ: ' + (r.cancelReason || ''))); return card; }
     const o = opts || {};
@@ -708,23 +736,53 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today }
     }).catch(() => {});
     wh.addEventListener('change', () => { try { localStorage.setItem('bn-receive-wh', wh.value); } catch { /* bỏ qua */ } });
     const g = el('div', 'form-grid two'); g.append(field('Ngày nhận', date), field('Kho nhận *', wh), field('Ghi chú', note, 'span-2'));
-    const t = el('table', 'data-table pur-lines'), tb = el('tbody'), th = el('tr'); for (const h of ['Mã / tên', 'Còn thiếu', 'Đạt', 'Hỏng', 'Ghi chú']) th.append(el('th', '', h));
-    t.append(el('thead'), tb); t.tHead.append(th);
+    // Mỗi mã một thẻ: "Cần nhận N" to, ô "Số đạt" / "Số hỏng" có nhãn, nút "Đủ N" điền nhanh (dễ dùng trên điện thoại).
+    const cards = el('div', 'recv-cards');
     const ins = v.lines.filter(l => l.missing > 0).map(l => {
-      const good = qtyInput('', l.missing), bad = qtyInput(''), nt = input('text', '', { maxLength: 300 });
-      const tr = el('tr'), nm = el('td'); nm.append(el('b', '', l.sku), el('small', 'sup-sub', l.name));
-      const cells = [good, bad, nt].map(i => { const td = el('td'); td.append(i); return td; });
-      tr.append(nm, el('td', 'num', num(l.missing)), ...cells); tb.append(tr);
-      return { l, good, bad, nt };
+      const good = qtyInput('', l.missing), bad = qtyInput(''), nt = input('text', '', { maxLength: 300, placeholder: 'Ghi chú (tuỳ chọn)' });
+      good.inputMode = bad.inputMode = 'numeric';
+      const c = el('div', 'recv-card'), hd = el('div', 'recv-head'), nm = el('div');
+      nm.append(el('b', '', l.sku), el('small', 'sup-sub', l.name + (l.unit ? ` (${l.unit})` : '')));
+      const need = el('div', 'recv-need'); need.append(el('small', 'muted', 'Cần nhận'), el('strong', '', num(l.missing)));
+      hd.append(nm, need);
+      const full = btn(`Đủ ${num(l.missing)}`, 'btn secondary recv-full', () => { good.value = String(l.missing); bad.value = ''; sync(); });
+      const row = el('div', 'recv-row'); row.append(field('Số đạt', good, 'recv-field'), field('Số hỏng', bad, 'recv-field bad'), full);
+      c.append(hd, row, nt); cards.append(c);
+      const x = { l, good, bad, nt, c };
+      for (const i of [good, bad]) i.addEventListener('input', sync);
+      return x;
     });
-    const tw = el('div', 'table-wrap'); tw.append(t);
-    const fill = btn('Điền đủ số còn thiếu', 'btn secondary small', () => ins.forEach(x => { x.good.value = String(x.l.missing); }));
-    const ok = el('button', 'btn primary', 'Ghi nhận phiếu nhận'); ok.type = 'submit';
-    f.append(g, el('p', 'muted small', 'Hàng hỏng không tính vào số đã nhận, vẫn còn thiếu để NCC giao bù. Sau khi lưu, nhập phiếu trên Sapo rồi ghi mã Sapo vào phiếu.'), fill, tw, err, foot(ok));
+    // Ảnh hàng hỏng: có số hỏng → bắt buộc 1–3 ảnh (bằng chứng đòi NCC bù); không hỏng → tuỳ chọn.
+    const photos = [], ph = el('div', 'recv-photos'), phHint = el('p', 'small muted'), thumbs = el('div', 'pack-photos');
+    const pick = el('label', 'btn secondary pick-photo', '📷 Chụp ảnh hàng hỏng'), file = input('file'); file.accept = 'image/*'; file.multiple = true; file.hidden = true; file.setAttribute('capture', 'environment'); pick.append(file);
+    ph.append(el('h4', '', 'Ảnh hàng hỏng'), phHint, pick, thumbs);
+    const drawPhotos = () => {
+      thumbs.replaceChildren(...photos.map((u, i) => { const sp = el('span', 'pack-photo'), img = el('img'); img.src = u; img.alt = `Ảnh ${i + 1}`; sp.append(img, btn('×', 'icon-btn danger', () => { photos.splice(i, 1); drawPhotos(); })); return sp; }));
+      sync();
+    };
+    file.addEventListener('change', async () => {
+      const files = [...file.files]; file.value = '';
+      for (const fl of files) {
+        if (photos.length >= 3) { toast('Tối đa 3 ảnh.', 'err'); break; }
+        try { photos.push(await (compressPhoto ? compressPhoto(fl) : Promise.reject(new Error('Trình duyệt chưa hỗ trợ chụp ảnh.')))); } catch (e) { toast(e.message, 'err'); }
+      }
+      drawPhotos();
+    });
+    const hasBad = () => ins.some(x => Number(x.bad.value || 0) > 0);
+    function sync() {
+      for (const x of ins) x.c.classList.toggle('done', Number(x.good.value || 0) + Number(x.bad.value || 0) > 0);
+      phHint.textContent = hasBad() ? (photos.length ? `${photos.length}/3 ảnh.` : 'Có hàng hỏng: bắt buộc chụp 1–3 ảnh.') : 'Không có hàng hỏng thì không cần ảnh.';
+      phHint.className = 'small ' + (hasBad() && !photos.length ? 'danger-text' : 'muted');
+    }
+    sync();
+    const ok = el('button', 'btn primary big-btn', '✅ Lưu phiếu nhận hàng'); ok.type = 'submit';
+    f.append(g, el('p', 'muted small', 'Nhập số đạt và số hỏng của từng mã. Hàng hỏng không tính vào số đã nhận, NCC phải giao bù. Sau khi lưu, nhập phiếu trên Sapo rồi ghi mã Sapo vào phiếu.'), btn('Đủ tất cả mã', 'btn secondary small', () => { ins.forEach(x => { x.good.value = String(x.l.missing); x.bad.value = ''; }); sync(); }), cards, ph, err, foot(ok));
     f.addEventListener('submit', e => {
       e.preventDefault();
       const lines = ins.map(x => ({ lineId: x.l.id, goodQty: Number(x.good.value || 0), damagedQty: Number(x.bad.value || 0), note: x.nt.value })).filter(x => x.goodQty > 0 || x.damagedQty > 0);
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey, receivedDate: date.value, warehouse: wh.value, note: note.value, lines }), 'Đã ghi nhận hàng về – nhớ nhập kho trên Sapo.');
+      if (!lines.length) { err.textContent = 'Nhập số đạt hoặc số hỏng cho ít nhất một mã.'; return; }
+      if (hasBad() && !photos.length) { err.textContent = 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.'; pick.focus(); return; }
+      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(photos.length ? { photos } : {}) }), 'Đã ghi nhận hàng về – nhớ nhập kho trên Sapo.');
     });
     d.append(f);
   }

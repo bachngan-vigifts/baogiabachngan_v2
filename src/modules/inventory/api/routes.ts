@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
+import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
@@ -12,6 +13,7 @@ import { postMoves } from './ledger.ts';
 /**
  * SỔ KHO – giai đoạn 1, chạy song song với Sapo (docs/SO-KHO.md).
  *  GET  /stock-warehouses                kho thật đang dùng (chọn kho nhận / kho xuất) – mọi nhân viên
+ *  GET  /inventory/lookup?q=            Tra tồn (trang kho): tìm mã / tên → tồn từng kho thật, KHÔNG có giá – mọi nhân viên
  *  GET  /inventory/status                đã chốt tồn đầu kỳ chưa, số dòng phát sinh – Manager / Kho
  *  GET  /inventory/compare               tồn sổ kho ↔ tồn Sapo theo (mã, kho); ?warehouseId=&q=&diff=1
  *  GET  /inventory/card?sku=&warehouseId= thẻ kho: các dòng phát sinh + tồn luỹ kế
@@ -31,6 +33,29 @@ const stockWarehouses = (db: StaffEnv['db']) => db.select({ id: warehouses.id, n
 
 export function registerInventoryRoutes(router: Router<StaffEnv>) {
   router.get('/stock-warehouses', async c => json({ warehouses: await stockWarehouses(c.env.db) }), 'business');
+
+  // Tra tồn: số lượng theo từng kho thật. Đã chốt tồn đầu kỳ → lấy tồn sổ kho, chưa chốt → tồn Sapo (đồng bộ gần nhất).
+  router.get('/inventory/lookup', async c => {
+    const db = c.env.db, raw = (c.url.searchParams.get('q') || '').trim().slice(0, 80);
+    if (raw.length < 2) return json({ products: [], warehouses: [], source: 'sapo' });
+    const whs = await stockWarehouses(db), ids = whs.map(w => w.id);
+    // Mã quét từ máy quét / camera: khớp đúng mã trước, không có thì tìm theo chữ.
+    const cols = { sku: products.sku, name: products.name, unit: products.unit, imageUrl: products.imageUrl, brand: products.brand };
+    let found = await db.select(cols).from(products).where(sql`lower(${products.sku}) = ${raw.toLowerCase()}`).limit(1);
+    if (!found.length) found = await db.select(cols).from(products).where(and(eq(products.active, true), matchAllWords(foldSql(products.sku, products.name, products.brand), raw)))
+      .orderBy(asc(products.sku)).limit(30);
+    const skus = found.map(p => p.sku);
+    const [[open], ledger, sapo] = await Promise.all([
+      db.select({ id: stockMoves.id }).from(stockMoves).where(eq(stockMoves.refType, 'opening')).limit(1),
+      skus.length && ids.length ? db.select({ sku: stockBalances.sku, wh: stockBalances.warehouseId, qty: stockBalances.qty }).from(stockBalances).where(and(inArray(stockBalances.sku, skus), inArray(stockBalances.warehouseId, ids))) : [],
+      skus.length && ids.length ? db.select({ sku: productStock.sku, wh: productStock.warehouseId, qty: productStock.quantity }).from(productStock).where(and(inArray(productStock.sku, skus), inArray(productStock.warehouseId, ids))) : [],
+    ]);
+    const src = open ? ledger : sapo, at = (sku: string, wh: string) => num(src.find(r => r.sku === sku && r.wh === wh)?.qty ?? 0);
+    return json({ source: open ? 'ledger' : 'sapo', warehouses: whs, products: found.map(p => {
+      const stock = whs.map(w => ({ warehouseId: w.id, warehouse: w.name, qty: at(p.sku, w.id) }));
+      return { ...p, stock, total: num(stock.reduce((t, x) => t + x.qty, 0)) };
+    }) });
+  }, 'business');
 
   router.get('/inventory/status', async c => {
     guard(c);
