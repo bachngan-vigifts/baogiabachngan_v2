@@ -12,14 +12,16 @@ globalThis.ContractWordEdit=(()=>{
   const removed=new Set();
   for(const edit of edits){const p=paragraphs[edit.index];if(!p||!editable(p)||await digest(serialize(p))!==edit.hash)throw Error('Mẫu hoặc dữ liệu HĐKT đã thay đổi. Cần bỏ bản chỉnh văn bản cũ để dựng lại từ dữ liệu mới.');
    const parent=p.parentNode,onlyInCell=parent?.localName==='tc'&&Array.from(parent.childNodes).filter(n=>n.localName==='p').length===1;
-   if(!String(edit.text).trim()&&!onlyInCell){removed.add(edit.index);continue;}
+   // Dòng trống trong chữ đã sửa (Enter thừa, xoá hết chữ một dòng): bản xem không hiện nhưng Word in thành dòng trắng → bỏ.
+   const text=String(edit.text??'').replace(/\r/g,'').split('\n').map(line=>line.replace(/\s+$/,'')).filter(line=>line.trim()).join('\n');
+   if(!text&&!onlyInCell){removed.add(edit.index);continue;}
    const oldProps=p.getElementsByTagNameNS(W,'rPr')[0]?.cloneNode(true);
    const pPr=Array.from(p.childNodes).find(n=>n.localName==='pPr')?.cloneNode(true)||xml.createElementNS(W,'w:pPr');
    while(p.firstChild)p.removeChild(p.firstChild);p.appendChild(pPr);
    if(edit.align){for(const n of Array.from(pPr.childNodes))if(n.localName==='jc')pPr.removeChild(n);const jc=xml.createElementNS(W,'w:jc');jc.setAttributeNS(W,'w:val',edit.align);pPr.appendChild(jc);}
    const r=xml.createElementNS(W,'w:r'),props=oldProps||xml.createElementNS(W,'w:rPr');
    for(const [key,tag] of [['bold','b'],['italic','i'],['underline','u']])if(typeof edit[key]==='boolean'){for(const n of Array.from(props.childNodes))if(n.localName===tag)props.removeChild(n);const n=xml.createElementNS(W,'w:'+tag);n.setAttributeNS(W,'w:val',edit[key]?(tag==='u'?'single':'1'):(tag==='u'?'none':'0'));props.appendChild(n);}
-   r.appendChild(props);String(edit.text).split('\n').forEach((line,i)=>{if(i)r.appendChild(xml.createElementNS(W,'w:br'));const t=xml.createElementNS(W,'w:t');t.setAttribute('xml:space','preserve');t.appendChild(xml.createTextNode(line));r.appendChild(t);});p.appendChild(r);
+   r.appendChild(props);text.split('\n').forEach((line,i)=>{if(i)r.appendChild(xml.createElementNS(W,'w:br'));const t=xml.createElementNS(W,'w:t');t.setAttribute('xml:space','preserve');t.appendChild(xml.createTextNode(line));r.appendChild(t);});p.appendChild(r);
   }
   // Xoá sau cùng: các đoạn khác vẫn so khớp đúng theo vị trí ban đầu.
   for(const index of removed)paragraphs[index].parentNode.removeChild(paragraphs[index]);

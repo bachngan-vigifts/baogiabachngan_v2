@@ -129,7 +129,11 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
         p.addEventListener('input', record);
         // Xoá hết chữ của một dòng (không nằm trong ô bảng) = xoá hẳn dòng đó: ẩn ngay, file Word bỏ đoạn này (ContractWordEdit).
         const dropIfEmpty = () => { if (p.innerText.trim() || p.closest('td')) return false; p.textContent = ''; record(); p.style.display = 'none'; return true; };
-        p.addEventListener('keydown', e => { if ((e.key === 'Backspace' || e.key === 'Delete') && !p.innerText.trim() && dropIfEmpty()) e.preventDefault(); });
+        p.addEventListener('keydown', e => {
+          if ((e.key === 'Backspace' || e.key === 'Delete') && !p.innerText.trim() && dropIfEmpty()) e.preventDefault();
+          // Mỗi đoạn Word là một dòng: Enter không tạo dòng mới (tránh dòng trắng trong file tải về) mà chuyển sang đoạn kế tiếp.
+          if (e.key === 'Enter') { e.preventDefault(); const all = [...doc.querySelectorAll('[data-word-index]')].filter(x => x.style.display !== 'none'); all[all.indexOf(p) + 1]?.focus(); }
+        });
         p.addEventListener('blur', () => { if (p.classList.contains('edited')) dropIfEmpty(); });
         if (!p.innerText.trim() && p.classList.contains('edited') && !p.closest('td')) p.style.display = 'none';
       }
