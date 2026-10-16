@@ -162,3 +162,37 @@ test('việc tự sinh của nhân viên đã khoá / đã xoá chuyển về "c
   assert.equal((await call('/tasks/' + t.id, mgr, 'PUT', { assigneeId: 'old' })).status, 200);
   assert.equal((await plan()).assigneeId, 'old');
 });
+
+test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận việc và tự xong khi đã nhận đủ', async () => {
+  const { call, mgr, kho } = await setup();
+  const { vietnamDate } = await import('../../src/modules/sales/domain/sales.ts');
+  const supplier = await call('/suppliers', mgr, 'POST', { name: 'NCC kiểm tra tự hoàn thành' });
+  const created = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: supplier.data.supplier.id,
+    warehouse: '12 Đường Giao Hàng', arrivalDate: vietnamDate().iso, lines: [{ sku: 'RECEIVE-TEST', name: 'Ly', quantity: 10 }] }] });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const id = created.data.ids[0];
+  let order = (await call(`/purchase-orders/${id}`, mgr)).data;
+  order = (await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { revision: order.revision, lines: [{ lineId: order.lines[0].id, price: 100 }] })).data;
+  const confirmed = await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data)); order = confirmed.data;
+  const list = (await call('/tasks?refresh=1', kho)).data.tasks;
+  const task = list.find((t: any) => t.sourceId === id && t.completionFromSource);
+  assert.ok(task, JSON.stringify(list));
+  assert.equal((await call(`/tasks/${task.id}`, kho)).data.task.completionFromSource, true);
+  for (const actor of [mgr, kho]) for (const status of ['done', 'cancelled']) {
+    const rejected = await call(`/tasks/${task.id}`, actor, 'PUT', { status });
+    assert.equal(rejected.status, 409); assert.equal(rejected.data.code, 'TASK_SOURCE_MANAGED');
+  }
+  let current = (await call(`/tasks/${task.id}`, kho)).data.task;
+  assert.equal(current.status, 'todo'); assert.equal(current.assigneeId, null, 'bấm hoàn thành bị chặn không tự nhận việc');
+  assert.equal((await call(`/tasks/${task.id}`, kho, 'PUT', { assigneeId: 'kho' })).status, 200);
+  assert.equal((await call(`/tasks/${task.id}`, kho, 'PUT', { status: 'in_progress' })).status, 200);
+  const received = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'task-receive-complete', lines: [{ lineId: order.lines[0].id, goodQty: 10 }] });
+  assert.equal(received.status, 201, JSON.stringify(received.data));
+  const done = (await call('/tasks?refresh=1&status=done', kho)).data.tasks.find((t: any) => t.id === task.id);
+  assert.equal(done.status, 'done'); assert.equal(done.completionFromSource, true);
+  assert.equal((await call(`/tasks/${task.id}`, mgr, 'PUT', { status: 'todo' })).status, 409, 'không mở lại khi chứng từ đã xong');
+  const manual = await call('/tasks', mgr, 'POST', { title: 'Việc thủ công nhận hàng', assigneeId: 'kho' });
+  assert.equal((await call(`/tasks/${manual.data.id}`, kho)).data.task.completionFromSource, false);
+  assert.equal((await call(`/tasks/${manual.data.id}`, kho, 'PUT', { status: 'done' })).status, 200, 'việc thủ công vẫn có thể tick hoàn thành');
+});
