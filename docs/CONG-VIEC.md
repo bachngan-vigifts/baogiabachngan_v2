@@ -95,3 +95,8 @@ Test: `tests/app/task-peers.test.ts`.
 
 
 Giao diện nhận `canViewColleagues` từ API `/tasks` để hiện bộ lọc đồng nghiệp; các nhóm lấy từ chức vụ hiện có.
+
+
+### Việc nhận hàng NCC tự hoàn thành theo chứng từ
+
+Việc tự sinh có khoá `po-receive:` không có ô tick hoàn thành, không có lựa chọn Hoàn thành/Huỷ ở bảng hay chi tiết. Người dùng vẫn nhận việc và chuyển sang Đang làm được. Ghi nhận đủ hàng trên đơn mua thì việc tự hoàn thành qua cơ chế đồng bộ việc hiện có. API trả `completionFromSource` và chặn hoàn thành/huỷ/mở lại thủ công (kể cả Manager), mã `TASK_SOURCE_MANAGED`. Việc thủ công và các loại việc tự sinh khác giữ nguyên.

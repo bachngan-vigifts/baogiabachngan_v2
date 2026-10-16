@@ -65,7 +65,9 @@ const involved = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'mana
 /** Việc tự sinh có mô tả nhạy cảm (ghi chú chăm sóc khách, số tiền công nợ, MST / email xuất hoá đơn): đồng nghiệp chỉ xem thấy tiêu đề, không thấy mô tả. */
 const PRIVATE_DESC_SOURCES = new Set<string>(['care', 'receivable', 'invoice']);
 /** Bản gửi cho người xem: việc chỉ xem của đồng nghiệp bị ẩn mô tả nhạy cảm. */
-const forViewer = (c: Ctx, t: Task) => !involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { ...t, description: '' } : t;
+const completionFromSource = (t: Task) => t.source === 'purchase' && !!t.autoKey?.startsWith('po-receive:');
+const forViewer = (c: Ctx, t: Task) => ({ ...t, completionFromSource: completionFromSource(t),
+  ...(!involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { description: '' } : {}) });
 /** Điều kiện SQL "việc tôi trực tiếp liên quan" (để tìm kiếm trong mô tả chỉ trên các việc này). */
 const involvedSql = (c: Ctx): SQL | undefined => {
   const m = me(c), team = myTeam(c);
@@ -232,6 +234,10 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       set.assigneeId = m.id; set.assigneePosition = null;
     }
     if (b.status !== undefined) {
+      if (completionFromSource(t) && (b.status === 'done' || b.status === 'cancelled' ||
+        ((t.status === 'done' || t.status === 'cancelled') && b.status !== t.status))) {
+        throw new AppError(409, 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.', 'TASK_SOURCE_MANAGED');
+      }
       if (!TASK_STATUSES.includes(b.status as TaskStatus)) throw new AppError(400, 'Trạng thái không hợp lệ.');
       if (b.status === 'cancelled' && !manage) throw new AppError(403, 'Chỉ người giao việc hoặc Manager huỷ được việc.');
       Object.assign(set, statusPatch(b.status as TaskStatus, m.id, t));
