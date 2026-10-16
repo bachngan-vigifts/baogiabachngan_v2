@@ -162,6 +162,12 @@ globalThis.ContractDocument = (() => {
       }
       return out;
     });
+    // Đề nghị tạm ứng (mẫu Vigifts): khối ký chỉ có bên B, là bảng "trôi" – bản xem trên web bỏ qua vị trí trôi nên hiện lệch trái.
+    // Đặt thành bảng thường, rộng nửa khổ chữ, sát lề phải = đúng chỗ cột "Đại diện bên B" của HĐKT. Không đụng các đoạn chữ (giữ chỗ sửa đã lưu).
+    if (!found && documentType === 'TAM_UNG') return result.replace(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g, table => !/ĐẠI DIỆN BÊN B/.test(table) ? table : table
+      .replace(/<w:tblpPr\b[^>]*\/>/, '')
+      .replace(/<w:tblPr>[\s\S]*?<\/w:tblPr>/, pr => pr.replace(/<w:jc\b[^>]*\/>/, '').replace(/<w:tblW\b[^>]*\/>/, `<w:tblW w:w="${col}" w:type="dxa"/><w:jc w:val="right"/>`))
+      .replace(/<w:gridCol\b[^>]*\/>/g, `<w:gridCol w:w="${col}"/>`));
     if (found || documentType !== 'BBNT') return result;
     // Biên bản nghiệm thu Bách Ngân: mẫu cũ không có khối chữ ký → thêm (bên nhận = khách bên trái, bên giao = công ty bên phải).
     const companySigner = quote.quote_type === 'VIGIFTS' ? 'HUỲNH CHÂU YẾN' : 'LÊ MINH THÁI';
@@ -192,6 +198,9 @@ globalThis.ContractDocument = (() => {
       return replaceToken(paragraph, '[Bên A]', [honorific, partyAName].filter(Boolean).join(' '));
     });
     const values = {'[Số HĐ]': contractNumber, '[dấu thời gian]': `${date.day}/${date.month}/${date.year}`, '[Ngày ký]': `${date.day}/${date.month}/${date.year}`, '[KH_NDP].[TênKH]': customer.name || '', '[KH_NDP].[dia chi]': customer.address || '', '[KH_NDP].[Dia Chi]': customer.address || '', '[KH_NDP].[Ma So Thue]': customer.tax_code || '', '[Bên A]': partyAName, '[Bên A ký tên]': upper(partyAName), '[Chức vụ]': quote.contractTitle || '', '[Thời gian giao hàng]': deliveryTime, '[Địa điểm giao hàng]': deliveryPlace, '[Phương thức thanh toán]': paymentMethod, '[Thời hạn thanh toán]': paymentText, '[hình thức thanh toán]': paymentText, '[Tỉ lệ cọc]': money(payment.depositRate), '[số tiền tạm ứng]': money(payment.deposit), '[bằng chữ tạm ứng]': amountInWords(payment.deposit), '[Thành Tiền (-Thuế)]': money(quote.subtotal), '[Tiền thuế]': money(quote.vat_amount), '[Thành tiền (+thuế)]': money(quote.total), '[Số tiền bằng chữ]': amountInWords(quote.total), '[Nhãn VAT]': vatLabel(quote.items || [])};
+    // Cột "Đóng gói" (mẫu biên bản Vigifts) có đoạn trống phía trên chỗ điền → chữ bị đẩy xuống: bỏ đoạn trống trong ô đó.
+    source = source.replace(/<w:tc>(?:(?!<w:tc>)[\s\S])*?<\/w:tc>/g, cell => !cell.includes(token('[Đóng gói]')) ? cell
+      : cell.replace(/<w:p\b(?:(?!<w:p\b)[\s\S])*?<\/w:p>/g, p => /<w:t\b/.test(p) ? p : ''));
     let result = replaceTokens(expandItems(source, quote.items || []), values);
     result = result.replace('Hôm nay, ngày      tháng      năm 2025, chúng tôi gồm:', `Hôm nay, ngày ${date.day} tháng ${date.month} năm ${date.year}, chúng tôi gồm:`);
     result = result.replace('TP Cần Thơ, ngày 04 tháng 06 năm 2025', `TP Cần Thơ, ngày ${date.day} tháng ${date.month} năm ${date.year}`);

@@ -33,3 +33,17 @@ test('HĐKT / biên bản: tên đại diện bên A in hoa ở khối chữ ký
     assert.equal(new Set(cols).size, 1, `${set}-${file}: cột bằng nhau ${cols}`);
   }
 });
+
+test('đề nghị tạm ứng Vigifts: khối ký bên B không trôi, nằm bên phải (như cột bên B của HĐKT); biên bản Vigifts: ô "Đóng gói" không có dòng trống phía trên', async () => {
+  const build = (file: string, documentType: string) => g.ContractDocument.build({
+    quote: { quote_type: 'VIGIFTS', quote_date: '2026-10-07', customer: { name: 'Công ty thử' }, items: [{ name: 'Ấm đun', quantity: 250, unit: 'Bộ', price_after_discount: 307593, line_total: 76898250, tax_percent: 8, packaging_description: 'theo tiêu chuẩn nhà sản xuất' }] },
+    contractNumber: 'X', templateBytes: readFileSync(join(ui, `mau-hop-dong-vigifts-${file}.docx`)), documentType, details: { representativeName: 'Nguyễn Văn Ánh', depositRate: 30, paymentDays: 7 },
+  }).then(out => g.fflate.strFromU8(g.fflate.unzipSync(out)['word/document.xml']!));
+  const tu = await build('tam-ung', 'TAM_UNG');
+  const sign = (tu.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? []).find(t => /ĐẠI DIỆN BÊN B/.test(t))!;
+  assert.doesNotMatch(sign, /<w:tblpPr/); assert.match(sign, /<w:tblPr>[\s\S]*<w:jc w:val="right"\/>[\s\S]*<\/w:tblPr>/);
+  const bb = await build('bien-ban', 'BBNT');
+  const cell = (bb.match(/<w:tc>(?:(?!<w:tc>)[\s\S])*?<\/w:tc>/g) ?? []).find(c => c.includes('theo tiêu chuẩn nhà sản xuất') && !c.includes('Ấm đun'))!;
+  assert.ok(cell, 'có ô đóng gói');
+  assert.equal(cell.match(/<w:p\b/g)!.length, 1, 'chỉ còn một đoạn (không có dòng trống phía trên)');
+});
