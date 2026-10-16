@@ -191,6 +191,70 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     return json({ ids }, 201);
   }, 'business');
 
+  // ---- Nhập đơn mua từ file Excel tổng đơn của NCC (Manager): đơn đã đặt thật với NCC → tạo thẳng "đã duyệt + NCC đã xác nhận".
+  //  Mỗi đơn = một số đơn phía NCC; số đơn đã có (cùng NCC, chưa huỷ) thì bỏ qua – nhập lại file không tạo trùng.
+  //  Số đã giao trong file → phiếu nhận "không cần nhập Sapo" (hàng đã nhập Sapo từ trước), không ghi sổ kho.
+  router.post('/purchase-orders/import', async c => {
+    guard(c);
+    const db = c.env.db, m = me(c), body = await readJson(c.req, 1_000_000);
+    if (m.role !== 'manager') fail(403, 'Chỉ Manager nhập đơn mua từ file.');
+    const supplier = await activeSupplier(db, body.supplierId), warehouse = deliveryAddress(body.warehouse);
+    const taxRate = Number(body.taxRate ?? 0);
+    if (!(taxRate >= 0 && taxRate <= 100)) fail(400, 'Thuế VAT không hợp lệ.');
+    const list = Array.isArray(body.orders) ? body.orders as Record<string, unknown>[] : [];
+    if (!list.length || list.length > 50) fail(400, 'Mỗi lần gửi từ 1 đến 50 đơn.');
+    const orders = list.map(o => {
+      const internalNo = str(o.internalNo, 100);
+      if (!internalNo) fail(400, 'Có đơn thiếu số đơn phía NCC.');
+      const arrivalDate = o.arrivalDate ? (isIsoDate(o.arrivalDate) ? String(o.arrivalDate) : fail(400, `${internalNo}: ngày giao không hợp lệ.`)) : null;
+      const lines = cleanLines(o.lines, true).map((l, i) => {
+        const r = (o.lines as Record<string, unknown>[])[i]!, discount = Number(r.discount ?? 0), received = Number(r.received ?? 0);
+        const promised = r.promisedDate ? (isIsoDate(r.promisedDate) ? String(r.promisedDate) : fail(400, `${internalNo} – ${l.sku}: ngày giao không hợp lệ.`)) : (arrivalDate ?? '');
+        if (l.price === null) fail(400, `${internalNo} – ${l.sku}: thiếu đơn giá.`);
+        if (!(discount >= 0 && discount <= 100)) fail(400, `${internalNo} – ${l.sku}: chiết khấu không hợp lệ.`);
+        if (!(Number.isInteger(received) && received >= 0 && received <= l.quantity)) fail(400, `${internalNo} – ${l.sku}: số đã giao không hợp lệ.`);
+        return { ...l, taxRate, sources: [], discount, received, promised };
+      });
+      return { internalNo, arrivalDate, lines };
+    });
+    if (new Set(orders.map(o => o.internalNo.toLowerCase())).size !== orders.length) fail(400, 'Số đơn phía NCC bị lặp trong file gửi lên.');
+    const created: { id: string; ticketNumber: string; internalNo: string }[] = [], skipped: { internalNo: string; ticketNumber: string }[] = [];
+    for (const o of orders) {
+      await db.transaction(async tx => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'purchase-import:' + supplier.id}))`);
+        const [dup] = await tx.select({ ticketNumber: incomingShipments.ticketNumber }).from(incomingShipments)
+          .where(and(eq(incomingShipments.supplierId, supplier.id), isNull(incomingShipments.cancelledAt), sql`lower(${incomingShipments.supplierInternalOrderNumber}) = ${o.internalNo.toLowerCase()}`)).limit(1);
+        if (dup) { skipped.push({ internalNo: o.internalNo, ticketNumber: dup.ticketNumber }); return; }
+        const id = crypto.randomUUID(), now = nowIso(), ticket = await nextNumber(tx as unknown as Db, 'DMH', today());
+        await tx.insert(incomingShipments).values({ id, ticketNumber: ticket, source: 'supplier-order', approvalStatus: 'approved', approvedAt: now, approvedBy: m.id, submittedAt: now,
+          supplierStatus: 'confirmed', supplierConfirmedAt: now, supplierConfirmedBy: m.id, confirmedOnBehalf: true, supplierInternalOrderNumber: o.internalNo,
+          warehouse, arrivalDate: o.arrivalDate, supplierId: supplier.id, supplierName: supplier.name, note: str(body.note, 2000), depositRate: 0,
+          createdAt: now, createdBy: m.id, updatedAt: now, updatedBy: m.id });
+        await insertLines(tx, id, o.lines, new Map());
+        const lineRows = await tx.select({ id: incomingShipmentLines.id, sku: incomingShipmentLines.sku }).from(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id));
+        for (const l of o.lines) await tx.update(incomingShipmentLines).set({ purchaseDiscount: l.discount, promisedDate: l.promised, supplierConfirmed: true })
+          .where(and(eq(incomingShipmentLines.shipmentId, id), eq(incomingShipmentLines.sku, l.sku)));
+        // Lịch trả mặc định như khi Manager duyệt không chọn cọc: một kỳ "còn lại" chưa đặt hạn.
+        const total = computeOrderTotals({ rows: o.lines.map(l => ({ quantity: l.quantity, price: l.price, taxRate, purchaseDiscount: l.discount, confirmedPurchaseDiscount: null, printFee: 0 })), depositRate: null, paidAmount: 0 }).total;
+        const schedules = buildSchedules(total, {});
+        if (schedules.length) await tx.insert(supplierPaymentSchedules).values(schedules.map(x => ({ id: crypto.randomUUID(), shipmentId: id, ...x, createdAt: now })));
+        await event(tx, id, m.id, 'import', `Nhập từ file đơn NCC: số đơn ${o.internalNo}, ${o.lines.length} mã, tổng ${Math.round(total).toLocaleString('vi-VN')} đ – tạo sẵn "đã duyệt + NCC đã xác nhận"`);
+        const got = o.lines.filter(l => l.received > 0);
+        if (got.length) {
+          const receiptId = crypto.randomUUID(), no = await nextNumber(tx as unknown as Db, 'PNH', today());
+          await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: today(), receivedBy: m.id, warehouse: '', note: 'Đã giao trước khi nhập đơn từ file NCC',
+            clientKey: 'import:' + id, sapoStatus: 'not_needed', sapoNote: 'Hàng đã nhập Sapo từ trước', sapoUpdatedAt: now, sapoUpdatedBy: m.id, createdAt: now });
+          await tx.insert(supplierReceiptLines).values(got.map(l => ({ receiptId, lineId: lineRows.find(r => r.sku === l.sku)!.id, sku: l.sku, goodQty: l.received, damagedQty: 0, note: '' })));
+          const missing = o.lines.reduce((t, l) => t + l.quantity - l.received, 0);
+          if (missing <= 0) await tx.update(incomingShipments).set({ receivedAt: now, receivedBy: m.id }).where(eq(incomingShipments.id, id));
+          await event(tx, id, m.id, 'receive', `Phiếu ${no}: ghi nhận số đã giao theo file NCC – ` + got.map(l => `${l.sku} ${l.received}`).slice(0, 8).join('; ') + (missing > 0 ? ` · còn thiếu ${missing}` : ' · đã nhận đủ'));
+        }
+        created.push({ id, ticketNumber: ticket, internalNo: o.internalNo });
+      });
+    }
+    return json({ created, skipped }, 201);
+  }, 'business');
+
   // ---- Email cho NCC (soạn ở máy người dùng qua mailto): máy chủ trả người nhận theo danh bạ NCC + ghi lịch sử.
   //  kind 'stock' = hỏi tồn / ngày giao (ai xem được đơn cũng gửi được, không kèm giá);
   //  kind 'order' = gửi đơn đặt hàng kèm PDF (chỉ người xem được giá, đơn đã duyệt).
