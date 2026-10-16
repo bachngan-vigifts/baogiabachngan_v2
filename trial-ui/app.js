@@ -2812,10 +2812,10 @@ async function loadStockRequests(focusId) {
         <small class="muted">${esc(r.askedBy)} · ${new Date(r.createdAt).toLocaleString('vi-VN')}</small></div></header>
       <div class="row-gap end"><button type="button" class="btn secondary small" data-purchase-from title="Lập đơn mua NCC cho phần khách cần mà chưa đáp ứng">Đặt hàng NCC</button><button type="button" class="btn secondary small" data-shortage-pdf ${stockShortageExports.get(r.id)?.rows.length ? '' : 'disabled'} title="Xuất mã thiếu so với tồn khả dụng; không kèm thông tin khách hoặc giá">Tải PDF mã thiếu</button></div>
       ${r.note ? `<p class="small"><b>Khách ghi chú:</b> ${esc(r.note)}</p>` : ''}
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th><th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
-      ${r.items.map(i => { const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th>${r.items.some(i => heldQty(i.sku) > 0) ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}<th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
+      ${r.items.map(i => { const anyHeld = r.items.some(x => heldQty(x.sku) > 0); const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
         return `<tr><td>${esc(i.name)}<small>${esc(i.sku)} · ${esc(i.unit || '')}</small></td><td class="right">${fmtNum(i.qty)}</td>
-          <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>
+          ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>` : ''}
           <td class="right ${av !== null && av < i.qty ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
           <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
           <td class="right">${r.status === 'open' ? `<input class="num-input" inputmode="decimal" data-sku="${esc(i.sku)}" value="${av === null ? '' : Math.max(0, Math.min(i.qty, av))}" aria-label="Đáp ứng ${esc(i.name)}">` : fmtNum(a?.available ?? 0)}</td></tr>`; }).join('')}
@@ -3716,18 +3716,20 @@ $('#quote-stock').addEventListener('click', async () => {
     await loadHolds(true);
     for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); }
     let short = 0;
+    // Cột "Tồn kho · Đang treo" chỉ hiện khi có mã đang bị báo giá khác treo; không thì bảng gọn như cũ.
+    const anyHeld = [...need.values()].some(i => i.sku && heldQty(i.sku, me) > 0);
     const rows = [...need.values()].map(i => {
       // Khả dụng cho báo giá này = tồn kho − phần báo giá KHÁC đang treo (phần chính báo giá này giữ vẫn tính là của mình).
       const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p, me) : null, miss = av === null ? null : Math.max(0, i.qty - av);
       const mine = i.sku ? (state.holds.get(i.sku) || []).filter(h => h.quoteId === me).reduce((t, h) => t + h.qty, 0) : 0;
       if (miss) short++;
       return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
-        <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>
+        ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>` : ''}
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
         <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
-    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th>${anyHeld ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}<th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     bindStockCheckFilter($('#stock-check-body'));
     $('#stock-check-note').textContent = short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.';
   } catch (e) { $('#stock-check-body').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
@@ -3757,24 +3759,25 @@ async function makeFromQuote(flow, q, done) {
 }
 /** Giữ hàng của báo giá đang mở (GET /quotes/:id/hold): hạn, các mã đang treo, quyền giữ / bỏ giữ / gia hạn. */
 async function refreshQuoteHold(id) {
-  editor.hold = null; drawQuoteHold();
+  editor.hold = null; editor.holdError = ''; drawQuoteHold();
   if (!id) return;
-  try { const h = await api('/quotes/' + encodeURIComponent(id) + '/hold'); if (editor.id === id) { editor.hold = h; drawQuoteHold(); } } catch { /* bỏ qua */ }
+  try { const h = await api('/quotes/' + encodeURIComponent(id) + '/hold'); if (editor.id === id) { editor.hold = h; drawQuoteHold(); } }
+  catch (ex) { if (editor.id === id) { editor.holdError = ex.message || 'Chưa đọc được trạng thái giữ hàng.'; drawQuoteHold(); } } // vẫn hiện nút – bấm sẽ báo lỗi rõ
 }
 function drawQuoteHold() {
   const h = editor.hold, pill = $('#editor-hold'), btn = $('#quote-hold'), ext = $('#quote-hold-extend');
   const active = !!h?.holds?.length, d = active ? new Date(h.expiresAt) : null, p2 = n => String(n).padStart(2, '0'), until = d ? `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}` : '';
   pill.hidden = !active; pill.textContent = active ? `Đang giữ hàng đến ${until}` : '';
   pill.title = active ? h.holds.map(x => `${x.sku} – ${x.name}: ${fmtNum(x.qty)}`).join('\n') + (h.by ? `\nNgười giữ: ${h.by}` : '') : '';
-  btn.hidden = !editor.id || !h; ext.hidden = !h?.canExtend;
-  if (!h) return;
+  btn.hidden = !editor.id; ext.hidden = !h?.canExtend;
+  if (!h) { btn.textContent = 'Giữ hàng 5 ngày'; btn.disabled = false; btn.title = editor.holdError || 'Treo tồn kho cho báo giá này 5 ngày'; return; }
   btn.textContent = active ? 'Bỏ giữ hàng' : `Giữ hàng ${h.days || 5} ngày`;
   const block = active ? '' : editor.dirty ? 'Lưu thay đổi trước.' : !h.canHold ? 'Chỉ giữ hàng cho báo giá đã duyệt.' : '';
   btn.disabled = !!block; btn.title = block || (active ? 'Bỏ treo tồn kho cho báo giá này' : 'Treo tồn kho thật cho báo giá này 5 ngày; báo giá khác thấy khả dụng giảm tương ứng');
 }
 $('#quote-hold').addEventListener('click', async e => {
-  const id = editor.id, h = editor.hold; if (!id || !h) return;
-  const active = !!h.holds?.length;
+  const id = editor.id, h = editor.hold; if (!id) return;
+  const active = !!h?.holds?.length;
   if (active && !await confirmBox('Bỏ giữ hàng cho báo giá này? Tồn sẽ trả lại khả dụng cho báo giá khác.', { title: 'Bỏ giữ hàng', ok: 'Bỏ giữ' })) return;
   e.target.disabled = true;
   try {
