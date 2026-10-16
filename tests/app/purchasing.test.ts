@@ -333,6 +333,64 @@ test('đơn mua của nhân viên là nháp, chỉ vào hàng chờ duyệt khi 
   assert.ok(v.submittedAt, 'Manager lập = đã gửi'); assert.ok(!v.actions.includes('submit'));
 });
 
+test('badge đơn mua: đếm toàn bộ tìm kiếm trên server, độc lập trạng thái/giới hạn, đúng quyền và tiến độ', async () => {
+  const s = await setup(), { call, mgr, emp, kho, ncc, a, db } = s;
+  const { incomingShipments: po, incomingShipmentLines: ln, supplierReceipts: rec, supplierReceiptLines: rln, supplierPayments: pay } = await import('../../src/modules/suppliers/schema.ts');
+  const base = { source: 'supplier-order' as const, warehouse: '12 Đường Giao Hàng', supplierId: a, supplierName: 'NCC COUNT%', createdAt: now, updatedAt: now, createdBy: 'emp' };
+  await db.insert(po).values([
+    ...Array.from({ length: 310 }, (_, i) => ({ ...base, id: `bulk-${i}`, ticketNumber: `BULK-${i}`, approvalStatus: 'pending' as const })),
+    { ...base, id: 'other-draft', ticketNumber: 'OTHER', approvalStatus: 'pending', createdBy: 'mgr' },
+    { ...base, id: 'wait', ticketNumber: 'COUNT-wait', approvalStatus: 'approved', arrivalDate: '2099-01-01' },
+    { ...base, id: 'confirmed', ticketNumber: 'COUNT-confirmed', approvalStatus: 'approved', supplierStatus: 'confirmed', arrivalDate: '2020-01-01' },
+    { ...base, id: 'partial', ticketNumber: 'COUNT-partial', approvalStatus: 'approved' },
+    { ...base, id: 'full', ticketNumber: 'COUNT-full', approvalStatus: 'approved' },
+    { ...base, id: 'cancelled', ticketNumber: 'COUNT-cancelled', approvalStatus: 'approved', cancelledAt: now },
+    { ...base, id: 'empty', ticketNumber: 'COUNT-empty', approvalStatus: 'approved' },
+  ]);
+  await db.insert(ln).values(['wait', 'confirmed', 'partial', 'full', 'cancelled'].map(id => ({ id: `line-${id}`, shipmentId: id, lineNo: 1, sku: id, quantity: 10, price: 100, printFee: 5, taxRate: 8, purchaseDiscount: 50, confirmedPurchaseDiscount: 10, promisedDate: id === 'wait' ? '2020-01-01' : '' })));
+  await db.insert(rec).values(['partial', 'full', 'wait'].map(id => ({ id: `rec-${id}`, receiptNo: `RC-${id}`, shipmentId: id, receivedDate: '2026-10-01', receivedBy: 'mgr', clientKey: id, createdAt: now, sapoStatus: id === 'full' ? 'done' as const : 'pending' as const, cancelledAt: id === 'wait' ? now : null })));
+  await db.insert(rln).values(['partial', 'full', 'wait'].map(id => ({ receiptId: `rec-${id}`, lineId: `line-${id}`, sku: id, goodQty: id === 'full' ? 10 : id === 'wait' ? 10 : 0, damagedQty: id === 'partial' ? 1 : 0 })));
+  await db.insert(pay).values({ id: 'paid-full', shipmentId: 'full', amount: 1026, paidDate: '2026-10-01', method: 'cash', clientKey: 'paid-full', createdBy: 'mgr', createdAt: now });
+  const all = await call('/purchase-orders', mgr);
+  assert.equal(all.status, 200, JSON.stringify(all.data));
+  assert.equal(all.data.orders.length, 300);
+  assert.deepEqual(all.data.counts, { all: 317, draft: 311, awaiting_confirmation: 2, confirmed: 1, partially_received: 1, received: 1, cancelled: 1, late: 2, sapo: 1, debt: 4 });
+  const selected = await call('/purchase-orders?state=confirmed', mgr);
+  assert.deepEqual(selected.data.counts, all.data.counts, 'chọn thẻ không làm các thẻ khác về 0');
+  const searched = await call('/purchase-orders?q=COUNT-', mgr);
+  assert.equal(searched.data.counts.all, 6);
+  assert.equal((await call('/purchase-orders?q=%25', mgr)).data.counts.all, 317, 'ký tự % tìm theo nghĩa đen');
+  const warehouse = (await call('/purchase-orders', kho)).data;
+  assert.equal(warehouse.counts.all, 6); assert.equal(warehouse.counts.draft, 0); assert.equal(warehouse.counts.debt, 0, 'không lộ công nợ cho kho');
+  assert.equal((await call('/purchase-orders', emp)).data.counts.all, 316, 'không thấy nháp của người khác');
+  assert.equal((await call('/purchase-orders', ncc)).status, 403);
+  assert.equal((await call('/purchase-orders')).status, 401);
+});
+
+test('số đỏ menu: việc chưa hoàn tất, phạm vi đơn, cập nhật ngay khi hoàn tất và không đếm trùng', async () => {
+  const { db, call, mgr, emp, kho, ncc, a } = await setup();
+  const { packingSlips, deliveries } = await import('../../src/modules/sales/schema.ts');
+  await db.insert(salesOrders).values({ id: 'other-order', orderNo: 'OTHER-ORDER', quoteType: 'B2B', customerName: 'Khác', ownerId: 'mgr', createdBy: 'mgr', orderDate: '2026-10-01', createdAt: now, updatedAt: now });
+  await db.insert(packingSlips).values([
+    { id: 'pack-own', slipNo: 'PACK-OWN', orderId: 'o1', status: 'sent', createdBy: 'emp', createdAt: now, updatedAt: now },
+    { id: 'pack-other', slipNo: 'PACK-OTHER', orderId: 'other-order', status: 'sent', createdBy: 'mgr', createdAt: now, updatedAt: now },
+    { id: 'pack-done', slipNo: 'PACK-DONE', orderId: 'o1', status: 'packed', createdBy: 'emp', createdAt: now, updatedAt: now },
+  ]);
+  await db.insert(deliveries).values((['planned', 'in_transit', 'delivered', 'cancelled', 'failed'] as const).map((status, i) => ({ id: `delivery-${i}`, deliveryNo: `DEL-${i}`, orderId: i === 1 ? 'other-order' : 'o1', plannedDate: '2026-10-01', status, createdBy: 'mgr', createdAt: now, updatedAt: now })));
+  const created = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'TEST', quantity: 1 }] }] });
+  assert.equal(created.status, 201);
+  assert.deepEqual((await call('/navigation-counts', mgr)).data, { packing: 2, deliveries: 3, purchases: 1 });
+  assert.deepEqual((await call('/navigation-counts', kho)).data, { packing: 2, deliveries: 3, purchases: 0 });
+  assert.deepEqual((await call('/navigation-counts', emp)).data, { packing: 1, deliveries: 2, purchases: 0 });
+  const { eq } = await import('drizzle-orm');
+  await db.update(salesOrders).set({ status: 'delivered' }).where(eq(salesOrders.id, 'o1'));
+  assert.equal((await call('/navigation-counts', mgr)).data.packing, 1, 'phiếu còn treo của đơn đã giao không còn là việc chờ đóng');
+  await db.update(packingSlips).set({ status: 'packed' }).where(eq(packingSlips.id, 'pack-other'));
+  assert.equal((await call('/navigation-counts', mgr)).data.packing, 0);
+  assert.equal((await call('/navigation-counts', ncc)).status, 403);
+  assert.equal((await call('/navigation-counts')).status, 401);
+});
+
 test('nhập đơn mua từ file NCC: mỗi số đơn một đơn "đã duyệt + NCC đã xác nhận", số đã giao thành phiếu nhận không cần Sapo, nhập lại không trùng', async () => {
   const { call, emp, mgr, kho, a } = await setup();
   const orders = [

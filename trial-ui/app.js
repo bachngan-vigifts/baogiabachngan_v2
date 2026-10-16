@@ -241,7 +241,7 @@ async function api(path, method = 'GET', body) {
   }
   if (state.user && sameSession) {
     if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
-    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) { dataRefresh.saved(); queueMicrotask(() => dataRefresh.tick()); }
+    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|purchase-orders|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) { dataRefresh.saved(); queueMicrotask(() => { loadNavigationBadges(); dataRefresh.tick(); }); }
   }
   return data;
 }
@@ -405,12 +405,24 @@ if ('ResizeObserver' in window) {
   const track = (sel, name) => { const el = document.querySelector(sel); if (el) new ResizeObserver(() => { if (el.offsetHeight) rootStyle.setProperty(name, el.offsetHeight + 'px'); }).observe(el); };
   track('.bottom-nav', '--nav-h'); track('.mobile-savebar', '--savebar-h');
 }
+let navigationBadgeRequest = 0;
+async function loadNavigationBadges() {
+  const request = ++navigationBadgeRequest, user = state.user;
+  try {
+    const counts = await api('/navigation-counts');
+    if (request !== navigationBadgeRequest || user !== state.user) return;
+    for (const [name, id] of [['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count']]) {
+      const badge = document.getElementById(id); if (!badge) continue;
+      const count = Number(counts[name] || 0); badge.textContent = count.toLocaleString('vi-VN'); badge.hidden = count <= 0;
+    }
+  } catch { /* Keep last known badges during a temporary connection failure. */ }
+}
 async function loadAll() {
   $('#global-error').hidden = true;
   // Kho không xem được danh bạ khách (máy chủ chặn) → không tải, tránh báo lỗi đỏ khi mở app.
   const jobs = isWarehouse() ? [loadQuotes()] : [loadQuotes(), loadCustomers()];
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
+  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -2676,7 +2688,7 @@ function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId
 /** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
 async function refreshData() {
   if (!state.user) return;
-  const jobs = [loadQuotes(), loadStockBadge(), tasksView().badge(), chatView().badge()];
+  const jobs = [loadQuotes(), loadStockBadge(), loadNavigationBadges(), tasksView().badge(), chatView().badge()];
   if (!isWarehouse()) jobs.push(careView().badge());
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
