@@ -16,7 +16,7 @@ import { computeOrderTotals } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { canEditSuppliers, defaultRecipients } from '../domain/directory.ts';
 import { buildSchedules, canPay, canReceive, canSeePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
-import { asActor, listPurchases, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
+import { asActor, listPurchases, purchaseCounts, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
 
 /**
  * ĐƠN MUA HÀNG NCC (đợt 2) – khu vực 'business', quyền chi tiết kiểm trong domain/purchasing.ts.
@@ -148,8 +148,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   router.get('/purchase-orders', async c => {
     guard(c); const p = c.url.searchParams;
-    return json({ orders: await listPurchases(c.env.db, me(c), { q: p.get('q') ?? '', supplierId: p.get('supplierId') ?? '', state: p.get('state') ?? '' }, today()),
-      canSeePrices: canSeePrices(asActor(me(c))), today: today() });
+    const filter = { q: p.get('q') ?? '', supplierId: p.get('supplierId') ?? '', state: p.get('state') ?? '' }, day = today();
+    const [orders, counts] = await Promise.all([listPurchases(c.env.db, me(c), filter, day), purchaseCounts(c.env.db, me(c), filter, day)]);
+    return json({ orders, counts, canSeePrices: canSeePrices(asActor(me(c))), today: day });
   }, 'business');
   router.get('/purchase-orders/:id', async c => { guard(c); return json(await viewOf(c, c.params.id!)); }, 'business');
   router.get('/purchase-options', async c => {

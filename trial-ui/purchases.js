@@ -106,7 +106,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   const countEl = el('span', 'muted small');
   bar.append(label, countEl);
   const chips = el('div', 'chips pur-chips');
-  for (const [v, t] of FILTERS) { const c = btn(t, 'chip' + (v === '' ? ' active' : ''), () => { filter = v; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c)); load(); }); chips.append(c); }
+  for (const [v, t] of FILTERS) { const c = btn(t, 'chip' + (v === '' ? ' active' : ''), () => { filter = v; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c)); load(); }); c.dataset.filter = v; chips.append(c); }
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('thead'), tbody = el('tbody');
   table.append(thead, tbody); wrap.append(table); panel.append(bar, chips, wrap);
   // Kho: thẻ to "Hàng NCC chờ nhận" thay cho bảng (bấm thẻ mở thẳng form nhận hàng); nút nhỏ để xem mọi đơn.
@@ -165,7 +165,12 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const id = ++req;
     try {
       const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim(), state: filter }));
-      if (id !== req) return; rows = d.orders; renderList(d.canSeePrices);
+      if (id !== req) return;
+      for (const [v, t] of FILTERS) {
+        const chip = [...chips.children].find(c => c.dataset.filter === v);
+        chip.textContent = `${t} (${Number(d.counts?.[v || 'all'] || 0).toLocaleString('vi-VN')})`;
+      }
+      rows = d.orders; renderList(d.canSeePrices);
     } catch (e) { if (id === req) toast(e.message || 'Không tải được đơn mua.', 'err'); }
   }
 
