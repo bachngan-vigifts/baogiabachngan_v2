@@ -20,6 +20,7 @@ import { recordMovements, removeMovements } from '../../catalog/api/product-hist
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
 import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
+import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
 import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
@@ -51,6 +52,7 @@ export const orderScopeFor = (m: { id: string; role: string; positionId?: string
     sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
 /** Lịch giao hàng: nhóm Kho (chức vụ `warehouse`) xem và đổi trạng thái mọi chuyến giao (không xem được đơn / công nợ). */
+const isWarehouseMember = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'warehouse';
 const deliveryScope = (c: Ctx): SQL | undefined => { const m = viewer(c); return m.role === 'employee' && m.positionId === 'warehouse' ? undefined : orderScope(c); };
 
 async function loadOrder(c: Ctx, id: string, db: StaffEnv['db'] | Tx = c.env.db) {
@@ -296,7 +298,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       db.select().from(paymentSchedules).where(eq(paymentSchedules.orderId, order.id)).orderBy(asc(paymentSchedules.dueDate)),
       db.select().from(customerPayments).where(eq(customerPayments.orderId, order.id)).orderBy(asc(customerPayments.paidAt)),
     ]);
-    const shipLines = ships.length ? await db.select().from(deliveryLines).where(inArray(deliveryLines.deliveryId, ships.map(s => s.id))) : [];
+    const [shipLines, shipPhotos] = ships.length ? await Promise.all([db.select().from(deliveryLines).where(inArray(deliveryLines.deliveryId, ships.map(s => s.id))),
+      photoUrls(db, c.env.files, 'delivery', ships.filter(s => s.status === 'delivered').map(s => s.id))]) : [[], new Map<string, string[]>()];
     // Cho bản in đơn đặt hàng: mã khách hàng, người phụ trách, người soạn.
     const [cust] = order.customerId ? await db.select({ code: customers.customerCode, email: customers.email }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
     const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
@@ -310,7 +313,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
         sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: viewer(c).role === 'manager' || order.status === 'draft', data: JSON.parse(contract[0].data) } : null,
-      deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id) })),
+      deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       schedules, payments, receivable: receivable(schedules, payments, vietnamDate().iso),
       progress: (await progressOf(db, [order.id])).get(order.id),
     });
@@ -666,8 +669,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       .orderBy(asc(deliveries.plannedDate), asc(deliveries.timeSlot)).limit(500);
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
     // Liên hệ / địa chỉ của khách trên đơn: kho (không xem được danh bạ khách) vẫn có đủ thông tin để liên hệ giao hàng.
-    return json({ deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
-      customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress })) });
+    const photos = await photoUrls(c.env.db, c.env.files, 'delivery', rows.filter(r => r.d.status === 'delivered').map(r => r.d.id));
+    return json({ canCancel: !isWarehouseMember(viewer(c)), deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
+      customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress, photos: photos.get(r.d.id) ?? [] })) });
   }, 'business');
 
   /** Lên lịch giao: số lượng mỗi dòng không vượt phần còn lại (đã trừ hàng đã giao và các chuyến đang chờ giao). */
@@ -717,10 +721,15 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({ id }, 201);
   }, 'business');
 
-  /** Đổi trạng thái chuyến giao. "Đã giao" cộng số lượng vào đơn (chỉ một lần), cập nhật trạng thái đơn và hạn công nợ. */
+  /**
+   * Đổi trạng thái chuyến giao. "Đã giao" cộng số lượng vào đơn (chỉ một lần), cập nhật trạng thái đơn và hạn công nợ.
+   * Kho bấm "Đã giao" phải kèm 1–3 ảnh (hàng đã giao / biên bản ký nhận); người khác tuỳ chọn. Kho không huỷ được chuyến (Sale / Manager huỷ).
+   */
   router.put('/deliveries/:id/status', async c => {
-    const body = await readJson(c.req, 1_024), status = body.status as typeof DELIVERY_STATUSES[number];
+    const body = await readJson(c.req, 2_000 + WH_PHOTO_MAX * WH_PHOTO_MAX_CHARS), status = body.status as typeof DELIVERY_STATUSES[number], me = viewer(c);
     if (!DELIVERY_STATUSES.includes(status)) throw new AppError(400, 'Trạng thái giao hàng không hợp lệ.');
+    if (status === 'cancelled' && isWarehouseMember(me)) throw new AppError(403, 'Kho không huỷ được chuyến giao. Báo nhân viên phụ trách đơn hoặc Manager.');
+    const photos = status === 'delivered' ? parsePhotos(body.photos, { min: isWarehouseMember(me) ? 1 : 0, required: 'Chụp 1–3 ảnh hàng đã giao hoặc biên bản ký nhận.' }) : [];
     const [row] = await c.env.db.select({ d: deliveries }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
       .where(and(eq(deliveries.id, c.params.id!), deliveryScope(c))).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy lịch giao.');
@@ -729,6 +738,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     await c.env.db.transaction(async tx => {
       await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() }).where(eq(deliveries.id, row.d.id));
       if (status !== 'delivered') return;
+      await savePhotos(tx, c.env.files, me.id, 'delivery', row.d.id, photos);
       for (const l of await tx.select().from(deliveryLines).where(eq(deliveryLines.deliveryId, row.d.id)))
         await tx.update(salesOrderLines).set({ deliveredQty: sql`LEAST(${salesOrderLines.qty}, ${salesOrderLines.deliveredQty} + ${l.qty})` }).where(eq(salesOrderLines.id, l.orderLineId));
       await refreshOrderStatus(tx, row.d.orderId, deliveredOn);

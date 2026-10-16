@@ -25,6 +25,7 @@ import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
+import { initKhoHome, initStockLookup } from './kho.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
 import { initProductActions } from './product-actions.js';
@@ -178,6 +179,41 @@ function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = f
   });
 }
 $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+/**
+ * Hộp chụp ảnh xác nhận (đã giao hàng, hàng NCC bị hỏng…): 0–3 ảnh nén JPEG. `min` = số ảnh bắt buộc.
+ * Trả mảng data URL, hoặc null khi bấm Huỷ.
+ */
+function photoBox({ title, text = '', min = 1, max = 3, ok = 'Lưu' }) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal narrow photo-box';
+  dlg.innerHTML = `<div class="modal-head"><h2></h2></div><div class="modal-body"><p class="muted"></p>
+    <label class="btn secondary big-btn pick-photo">📷 Chụp / chọn ảnh<input type="file" accept="image/*" capture="environment" multiple hidden></label>
+    <div class="pack-photos"></div><p class="small muted photo-box-hint"></p></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-act="no">Huỷ</button><button type="button" class="btn primary" data-act="ok"></button></div>`;
+  dlg.querySelector('h2').textContent = title; dlg.querySelector('.modal-body > p').textContent = text; dlg.querySelector('[data-act=ok]').textContent = ok;
+  document.body.append(dlg);
+  const photos = [], box = dlg.querySelector('.pack-photos'), okBtn = dlg.querySelector('[data-act=ok]'), hint = dlg.querySelector('.photo-box-hint');
+  const draw = () => {
+    box.innerHTML = photos.map((u, i) => `<span class="pack-photo"><img src="${esc(u)}" alt="Ảnh ${i + 1}"><button type="button" class="icon-btn danger" data-i="${i}" aria-label="Bỏ ảnh ${i + 1}">×</button></span>`).join('');
+    okBtn.disabled = photos.length < min;
+    hint.textContent = photos.length < min ? `Cần ít nhất ${min} ảnh.` : `${photos.length}/${max} ảnh.`;
+  };
+  draw();
+  dlg.querySelector('input[type=file]').addEventListener('change', async e => {
+    const files = [...e.target.files]; e.target.value = '';
+    for (const f of files) {
+      if (photos.length >= max) { toast(`Tối đa ${max} ảnh.`, 'err'); break; }
+      try { photos.push(await compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.')); } catch (ex) { toast(ex.message, 'err'); }
+    }
+    draw();
+  });
+  box.addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (b) { photos.splice(Number(b.dataset.i), 1); draw(); } });
+  return new Promise(resolve => {
+    const done = v => { dlg.close(); dlg.remove(); resolve(v); };
+    okBtn.onclick = () => done([...photos]); dlg.querySelector('[data-act=no]').onclick = () => done(null);
+    dlg.oncancel = e => { e.preventDefault(); done(null); };
+    dlg.showModal();
+  });
+}
 
 // ---------------------------------------------------------------- gọi API
 let token = '';
@@ -226,7 +262,9 @@ const isManager = () => state.user?.role === 'manager';
 const isWarehouse = () => state.user?.role === 'employee' && state.user?.positionId === 'warehouse';
 /** Danh bạ NCC: Manager và Kế toán (máy chủ kiểm lại). */
 const canEditSuppliers = () => isManager() || (state.user?.role === 'employee' && state.user?.positionId === 'accounting');
-const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers', 'care']);
+// Kho: thêm Sơ đồ quy trình, Tổng quan doanh số, Sổ kho (chỉ Manager) – kho dùng Trang kho + Tra tồn.
+const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers', 'care', 'flow', 'dashboard', 'inventory']);
+const KHO_HOME = '#/kho';
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -292,10 +330,13 @@ async function enter() {
   $$('.manager-only').forEach(el => el.hidden = !isManager());
   $$('.supplier-admin-only').forEach(el => el.hidden = !canEditSuppliers());
   // Kho: ẩn các trang bán hàng (báo giá, đơn hàng, HĐKT, công nợ, khách hàng…); hiện mục Phiếu đóng gói (cả Manager).
-  $$('[data-nav]').forEach(el => { if (WAREHOUSE_HIDDEN.has(el.dataset.nav)) el.hidden = isWarehouse(); });
+  $$('[data-nav]').forEach(el => { if (WAREHOUSE_HIDDEN.has(el.dataset.nav) && !el.classList.contains('manager-only')) el.hidden = isWarehouse(); });
   $$('.packing-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
+  // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn); Tra tồn cho cả Manager.
+  $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
+  $$('.lookup-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
   document.body.classList.toggle('role-warehouse', isWarehouse());
-  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/quotes/.test(location.hash))) history.replaceState(null, '', location.pathname + (isWarehouse() ? '#/tasks' : '#/quotes'));
+  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + (isWarehouse() ? KHO_HOME : '#/quotes'));
   currentHash = location.hash;
   route();
   loadAll();
@@ -496,7 +537,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -515,16 +556,16 @@ let lastRoutedHash = '';
 function route() {
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
-  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || (isWarehouse() ? '#/tasks' : '#/quotes')); if (lastRoutedHash) return; }
+  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || (isWarehouse() ? KHO_HOME : '#/quotes')); if (lastRoutedHash) return; }
   lastRoutedHash = location.hash;
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = 'quotes', id] = path.split('/');
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
-  if ((view === 'staff' || view === 'payroll') && !isManager()) view = isWarehouse() ? 'tasks' : 'quotes';
-  if (view === 'suppliers' && !canEditSuppliers()) view = isWarehouse() ? 'tasks' : 'quotes';
-  // Kho mở nhầm trang bán hàng (link cũ, thông báo…): về Công việc.
-  if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', '#/tasks'); return route(); }
+  if ((view === 'staff' || view === 'payroll') && !isManager()) view = isWarehouse() ? 'kho' : 'quotes';
+  if (view === 'suppliers' && !canEditSuppliers()) view = isWarehouse() ? 'kho' : 'quotes';
+  // Kho mở nhầm trang bán hàng (link cũ, thông báo…): về Trang kho.
+  if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', KHO_HOME); return route(); }
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
   // HĐKT là luồng riêng: #/contracts/<id> mở trang chi tiết HĐKT (dùng chung khung trang với đơn hàng, nội dung theo HĐKT).
@@ -550,6 +591,8 @@ function route() {
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
+  if (view === 'kho') khoHome().load();
+  if (view === 'stock-lookup') stockLookup().load();
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
@@ -2509,7 +2552,8 @@ async function loadContracts() {
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
 async function loadDeliveries() {
-  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + 30 * 864e5).toISOString().slice(0, 10); }
+  // Kho: mặc định hôm nay + ngày mai (việc cần làm ngay); người khác 7 ngày trước → 30 ngày tới.
+  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = isWarehouse() ? todayIso() : new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
   $('#deliveries-list').innerHTML = skeleton(6);
   try {
     const d = await api(`/deliveries?from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}`);
@@ -2519,7 +2563,7 @@ async function loadDeliveries() {
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(x.carrier)}</small></td>
       <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}</small></td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
-      <td>${pill(DELIVERY_STATUS, x.status)}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
+      <td>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
   } catch (e) { listError('deliveries', e); }
 }
@@ -2529,8 +2573,11 @@ function deliveryReceiver(x) {
   const tel = phone ? `<a href="tel:${esc(phone.replace(/[^\d+]/g, ''))}">${esc(phone)}</a>` : '';
   return [esc(name), tel].filter(Boolean).join(' · ') || '<span class="muted">—</span>';
 }
+// Kho: nút "Đã giao" to, không có "Huỷ" (chỉ nhân viên phụ trách / Manager huỷ chuyến – máy chủ cũng chặn).
 const deliveryButtons = x => ['planned', 'in_transit'].includes(x.status)
-  ? `${x.status === 'planned' ? `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="in_transit">Đang giao</button>` : ''}<button class="btn secondary small" data-ship="${esc(x.id)}" data-to="delivered">Đã giao</button><button class="btn ghost small" data-ship="${esc(x.id)}" data-to="cancelled">Huỷ</button>` : '';
+  ? `${x.status === 'planned' ? `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="in_transit">Đang giao</button>` : ''}<button class="btn ${isWarehouse() ? 'primary ship-done' : 'secondary small'}" data-ship="${esc(x.id)}" data-to="delivered">${isWarehouse() ? '✅ Đã giao' : 'Đã giao'}</button>${isWarehouse() ? '' : `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="cancelled">Huỷ</button>`}` : '';
+/** Ảnh xác nhận đã giao (hàng đã giao / biên bản ký nhận) – bấm để xem lớn. */
+const deliveryPhotos = x => x.photos?.length ? `<span class="ship-photos">${x.photos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Ảnh giao hàng ${i + 1}" loading="lazy"></a>`).join('')}</span>` : '';
 // ----- công nợ
 async function loadReceivables() {
   $('#receivables-list').innerHTML = skeleton(7);
@@ -2560,9 +2607,15 @@ document.addEventListener('click', e => {
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-ship]'); if (!b) return;
   const to = b.dataset.to, label = DELIVERY_STATUS[to][0];
-  if (to !== 'in_transit' && !await confirmBox(to === 'delivered' ? 'Xác nhận đã giao chuyến này? Số lượng đã giao sẽ cộng vào đơn và không đổi lại được.' : 'Huỷ chuyến giao này?', { title: label, ok: label, danger: to === 'cancelled' })) return;
+  // "Đã giao": chụp ảnh hàng đã giao hoặc biên bản ký nhận (kho bắt buộc 1 ảnh, người khác tuỳ chọn).
+  let photos = [];
+  if (to === 'delivered') {
+    photos = await photoBox({ title: 'Xác nhận đã giao', ok: 'Đã giao', min: isWarehouse() ? 1 : 0,
+      text: 'Chụp ảnh hàng đã giao hoặc biên bản có chữ ký người nhận (1–3 ảnh). Số lượng đã giao sẽ cộng vào đơn và không đổi lại được.' });
+    if (!photos) return;
+  } else if (to === 'cancelled' && !await confirmBox('Huỷ chuyến giao này?', { title: label, ok: label, danger: true })) return;
   b.disabled = true;
-  try { await api(`/deliveries/${encodeURIComponent(b.dataset.ship)}/status`, 'PUT', { status: to }); toast('Đã cập nhật: ' + label); if (!$('#view-order').hidden) openOrder(sales.order.id); else loadDeliveries(); }
+  try { await api(`/deliveries/${encodeURIComponent(b.dataset.ship)}/status`, 'PUT', { status: to, ...(photos.length ? { photos } : {}) }); toast('Đã cập nhật: ' + label); if (!$('#view-order').hidden) openOrder(sales.order.id); else loadDeliveries(); }
   catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
 });
 
@@ -2599,9 +2652,13 @@ function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('
 var suppliersUi = null;
 function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager }); }
 var inventoryUi = null;
+let khoHomeUi = null, stockLookupUi = null;
+function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'), today: todayIso }); }
+function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var purchasesUi = null;
-function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso }); }
+function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso, kho: isWarehouse,
+  compressPhoto: f => compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.') }); }
 // Sơ đồ quy trình: cấu hình ở flow-config.js; `openers` nối nút nhanh của khối với hộp thoại có sẵn của app.
 var flowUi = null;
 function flowView() {
@@ -2854,7 +2911,7 @@ async function openOrder(id) {
   // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
       ${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { fmt: fmtDate }) : '<span class="muted">Chưa có</span>'}<small class="muted">Đổi ngày giao bằng nút "＋ Lên lịch giao".</small></div>`)
-    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}<span class="row-gap">${deliveryButtons(x)}</span><span class="pack-slot" data-pack-slot="${esc(x.id)}" data-pack-status="${esc(x.status)}"></span></li>`).join('')}</ul>`
+    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${esc(line?.name || '')}: ${fmtNum(l.qty)}`; }).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span><span class="pack-slot" data-pack-slot="${esc(x.id)}" data-pack-status="${esc(x.status)}"></span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
   loadPackingState(o.id); loadOrderPacking(o.id);
   $('#order-pack').hidden = o.status === 'cancelled' || o.status === 'draft';
@@ -3119,7 +3176,7 @@ async function openPacking(id) {
   if (!id) {
     // Bộ lọc: Chưa đóng (đã gửi kho, chờ đóng) · Đã đóng. Nhớ lựa chọn trên máy.
     const filter = packingFilter();
-    $('#packing-title').textContent = filter === 'packed' ? 'Phiếu đã đóng gói' : 'Phiếu chờ đóng gói'; $('#packing-back').href = '#/tasks';
+    $('#packing-title').textContent = filter === 'packed' ? 'Phiếu đã đóng gói' : 'Phiếu chờ đóng gói'; $('#packing-back').href = isWarehouse() ? KHO_HOME : '#/tasks'; $('#packing-back').textContent = isWarehouse() ? '‹ Trang kho' : '‹ Công việc';
     const chips = `<div class="chips packing-filter" role="tablist">${[['sent', 'Chưa đóng'], ['packed', 'Đã đóng']].map(([k, t]) =>
       `<button type="button" class="chip ${k === filter ? 'active' : ''}" data-packing-filter="${k}" aria-selected="${k === filter}">${t}</button>`).join('')}</div>`;
     body.innerHTML = chips + '<p class="muted card">Đang tải…</p>';
@@ -3135,7 +3192,7 @@ async function openPacking(id) {
   const k = d.slip, o = d.order; slipPhotos.length = 0;
   $('#packing-title').textContent = k.slipNo; $('#breadcrumb').textContent = k.slipNo; document.title = k.slipNo + ' · Bách Ngân';
   $('#packing-status').innerHTML = pill(PACK_STATUS, k.status);
-  $('#packing-back').href = d.canOpenOrder ? docHref(o.id, o.contractNo) : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? (o.contractNo ? '‹ HĐKT' : '‹ Đơn hàng') : '‹ Công việc';
+  $('#packing-back').href = d.canOpenOrder ? docHref(o.id, o.contractNo) : isWarehouse() ? '#/packing' : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? (o.contractNo ? '‹ HĐKT' : '‹ Đơn hàng') : isWarehouse() ? '‹ Phiếu đóng gói' : '‹ Công việc';
   packingView = d;
   $('#packing-actions').innerHTML = '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
   const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
@@ -3149,25 +3206,34 @@ async function openPacking(id) {
       <dt>Lập</dt><dd>${esc(k.createdByName)} · ${at(k.createdAt)}</dd>${k.sentAt ? `<dt>Gửi kho</dt><dd>${esc(k.sentByName)} · ${at(k.sentAt)}</dd>` : ''}
       ${k.packedAt ? `<dt>Kho đóng</dt><dd>${esc(k.packedByName)} · ${at(k.packedAt)}${k.packedNote ? `<small>${esc(k.packedNote)}</small>` : ''}</dd>` : ''}
       ${k.note ? `<dt>Ghi chú</dt><dd>${esc(k.note)}</dd>` : ''}</dl></div></div>
-    <div class="card"><h2 class="card-title">Hàng cần đóng</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">SL</th><th>Quy cách gợi ý</th><th class="right">Cân nặng</th></tr></thead><tbody>
-      ${d.lines.map(l => `<tr><td>${esc(l.name)}<small>${esc(l.sku || '')}</small></td><td class="right">${fmtNum(l.qty)} ${esc(l.unit)}</td>
+    <div class="card"><h2 class="card-title">${d.canConfirm ? '<span class="step-no">1</span> Lấy hàng – tick từng món đã lấy đủ' : 'Hàng cần đóng'}</h2><div class="table-wrap"><table class="data-table${d.canConfirm ? ' pick-table' : ''}"><thead><tr>${d.canConfirm ? '<th class="pick-col"><span class="sr-only">Đã lấy</span></th>' : ''}<th>Sản phẩm</th><th class="right">SL</th><th>Quy cách gợi ý</th><th class="right">Cân nặng</th></tr></thead><tbody>
+      ${d.lines.map((l, i) => `<tr${d.canConfirm ? ` class="pick-row" data-pick-row="${i}"` : ''}>${d.canConfirm ? `<td class="pick-col"><input type="checkbox" class="pick-tick" data-pick="${i}" aria-label="Đã lấy ${esc(l.name)}"></td>` : ''}<td>${esc(l.name)}<small>${esc(l.sku || '')}</small></td><td class="right"><b class="pick-qty">${fmtNum(l.qty)}</b> ${esc(l.unit)}</td>
         <td>${l.suggestion ? esc(l.suggestion) : '<span class="muted">Chưa có quy cách thùng</span>'}${l.cartonSize ? `<small>Thùng ${esc(l.cartonSize)}${l.cartonWeight ? ' · ' + fmtNum(l.cartonWeight) + ' kg/thùng' : ''}</small>` : ''}</td>
         <td class="right">${l.weight ? kg(l.weight) : '—'}</td></tr>`).join('')}
-      <tr><td><b>Tổng</b></td><td class="right"><b>${fmtNum(k.totalQty)}</b></td><td></td><td class="right"><b>${k.totalWeight ? kg(k.totalWeight) : '—'}</b></td></tr></tbody></table></div></div>
+      <tr>${d.canConfirm ? '<td class="pick-col"></td>' : ''}<td><b>Tổng</b></td><td class="right"><b>${fmtNum(k.totalQty)}</b></td><td></td><td class="right"><b>${k.totalWeight ? kg(k.totalWeight) : '—'}</b></td></tr></tbody></table></div>
+      ${d.canConfirm ? `<p class="pick-progress" id="pick-progress"></p>` : ''}</div>
     ${d.photos.length ? `<div class="card"><h2 class="card-title">Ảnh hàng đã đóng</h2><div class="pack-photos">${d.photos.map(p => `<img src="${esc(p.dataUrl)}" alt="Ảnh hàng đã đóng" loading="lazy">`).join('')}</div></div>` : ''}
-    ${d.canConfirm ? `<div class="card"><h2 class="card-title">Xác nhận đã đóng hàng</h2>
-      <p class="muted small">Chụp 1–3 ảnh hàng đã đóng (ảnh tự nén nhỏ để không đầy bộ nhớ).</p>
-      <label class="btn secondary pick-photo">📷 Chụp / chọn ảnh<input type="file" id="slip-photo-input" accept="image/*" capture="environment" multiple hidden></label>
+    ${d.canConfirm ? `<div class="card pack-steps">
+      <h2 class="card-title"><span class="step-no">2</span> Chụp ảnh hàng đã đóng</h2>
+      <p class="muted small">Chụp 1–3 ảnh (ảnh tự nén nhỏ để không đầy bộ nhớ).</p>
+      <label class="btn secondary big-btn pick-photo">📷 Chụp / chọn ảnh<input type="file" id="slip-photo-input" accept="image/*" capture="environment" multiple hidden></label>
       <div class="pack-photos" id="slip-photo-preview"></div>
-      ${k.source === 'warehouse' ? '<label>Xuất từ kho *<select id="slip-confirm-wh" required><option value="">— Chọn kho xuất —</option></select></label>' : ''}
+      ${k.source === 'warehouse' ? '<h2 class="card-title"><span class="step-no">3</span> Chọn kho xuất hàng</h2><label class="sr-only" for="slip-confirm-wh">Xuất từ kho</label><select id="slip-confirm-wh" class="big-select" required><option value="">— Chọn kho xuất —</option></select>' : ''}
       <label>Ghi chú (tuỳ chọn)<input id="slip-confirm-note" maxlength="1000" placeholder="Ví dụ: 3 thùng, đã dán tem"></label>
-      <div class="row-gap end"><button class="btn primary" id="slip-confirm" disabled>Xác nhận đã đóng hàng</button></div></div>` : ''}`;
+      <h2 class="card-title"><span class="step-no">${k.source === 'warehouse' ? 4 : 3}</span> Bấm khi đã đóng xong</h2>
+      <p class="muted small" id="slip-confirm-hint"></p>
+      <button class="btn primary big-btn" id="slip-confirm" disabled>✅ Đã đóng xong</button></div>` : ''}`;
+  slipPicks.clear(); slipPickTotal = d.canConfirm ? d.lines.length : 0;
+  try { for (const i of JSON.parse(localStorage.getItem('bn-pick-' + k.id) || '[]')) if (i < slipPickTotal) slipPicks.add(i); } catch { /* bỏ qua */ }
+  $$('.pick-tick', body).forEach(c => { c.checked = slipPicks.has(Number(c.dataset.pick)); c.closest('tr').classList.toggle('picked', c.checked); });
+  drawSlipGate();
   // Nguồn = Kho: chọn kho xuất → ghi phiếu xuất vào sổ kho (trial-ui/inventory.js); nhớ kho đã chọn lần trước trên máy này.
   const whSel = document.getElementById('slip-confirm-wh');
   if (whSel) stockWarehouses().then(list => {
     let last = ''; try { last = localStorage.getItem('bn-pack-wh') || ''; } catch { /* bỏ qua */ }
     for (const w of list) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.name; whSel.append(o); }
     if (list.length === 1) whSel.value = list[0].id; else if (list.some(w => w.id === last)) whSel.value = last;
+    drawSlipGate();
   }).catch(() => {});
 }
 let stockWarehouseList = null;
@@ -3176,8 +3242,34 @@ function stockWarehouses() { return stockWarehouseList ||= api('/stock-warehouse
 function drawSlipPhotos() {
   const box = document.getElementById('slip-photo-preview'); if (!box) return;
   box.innerHTML = slipPhotos.map((u, i) => `<span class="pack-photo"><img src="${esc(u)}" alt="Ảnh ${i + 1}"><button type="button" class="icon-btn danger" data-photo-del="${i}" aria-label="Bỏ ảnh ${i + 1}">×</button></span>`).join('');
-  document.getElementById('slip-confirm').disabled = !slipPhotos.length;
+  drawSlipGate();
 }
+/** Tick từng món khi lấy hàng (nhớ trên máy theo phiếu): đủ mọi món + có ảnh + đã chọn kho xuất mới bấm "Đã đóng xong" được. */
+const slipPicks = new Set();
+let slipPickTotal = 0;
+function drawSlipGate() {
+  const btn = document.getElementById('slip-confirm'); if (!btn) return;
+  const whSel = document.getElementById('slip-confirm-wh'), left = slipPickTotal - slipPicks.size;
+  const prog = document.getElementById('pick-progress');
+  if (prog) { prog.textContent = left ? `Đã lấy ${slipPicks.size}/${slipPickTotal} món – còn ${left} món chưa tick.` : `✔ Đã lấy đủ ${slipPickTotal}/${slipPickTotal} món.`; prog.classList.toggle('done', !left); }
+  const missing = [left ? `tick đủ ${left} món còn lại` : '', slipPhotos.length ? '' : 'chụp ít nhất 1 ảnh', whSel && !whSel.value ? 'chọn kho xuất' : ''].filter(Boolean);
+  btn.disabled = missing.length > 0;
+  document.getElementById('slip-confirm-hint').textContent = missing.length ? 'Cần ' + missing.join(', ') + '.' : 'Sẵn sàng – bấm nút dưới để báo đã đóng xong.';
+}
+document.addEventListener('change', e => {
+  if (e.target.id === 'slip-confirm-wh') { drawSlipGate(); return; }
+  const c = e.target.closest?.('.pick-tick'); if (!c) return;
+  const i = Number(c.dataset.pick);
+  if (c.checked) slipPicks.add(i); else slipPicks.delete(i);
+  c.closest('tr').classList.toggle('picked', c.checked);
+  try { localStorage.setItem('bn-pick-' + location.hash.slice(10), JSON.stringify([...slipPicks])); } catch { /* bỏ qua */ }
+  drawSlipGate();
+});
+// Bấm cả dòng (ngón tay to) cũng tick được.
+document.addEventListener('click', e => {
+  const row = e.target.closest('tr[data-pick-row]'); if (!row || e.target.closest('input, a, button')) return;
+  const c = row.querySelector('.pick-tick'); c.checked = !c.checked; c.dispatchEvent(new Event('change', { bubbles: true }));
+});
 document.addEventListener('change', async e => {
   if (e.target.id !== 'slip-photo-input') return;
   const files = [...e.target.files]; e.target.value = '';
@@ -3195,7 +3287,7 @@ document.addEventListener('click', async e => {
   const whSel = document.getElementById('slip-confirm-wh');
   if (whSel && !whSel.value) { toast('Chọn kho xuất hàng.', 'err'); whSel.focus(); e.target.disabled = false; return; }
   if (whSel) try { localStorage.setItem('bn-pack-wh', whSel.value); } catch { /* bỏ qua */ }
-  try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}) }); toast('Đã xác nhận đóng hàng.'); tasksView().badge(); openPacking(id); }
+  try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}) }); toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
   catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
 });
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */

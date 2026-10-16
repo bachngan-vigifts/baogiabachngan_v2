@@ -1368,3 +1368,89 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .dup-tag { min-width: 74px; text-align: center; font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--red-50); color: var(--red-700); white-space: nowrap; }
 .dup-tag.keep { background: var(--green-50); color: var(--green); }
 @media (max-width: 640px) { .dup-row { grid-template-columns: auto 1fr; } .dup-row .btn { grid-column: 1 / -1; } }
+
+/* ---------- Tài khoản Kho: Trang kho, Tra tồn, nút / thẻ to (trial-ui/kho.js) ---------- */
+.kho-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.kho-card { display: grid; gap: 4px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; color: var(--ink); text-decoration: none; }
+.kho-card:hover { border-color: var(--line-strong); }
+.kho-card.warn { border-color: var(--amber); background: var(--amber-50); }
+.kho-icon { font-size: 1.9rem; line-height: 1; }
+.kho-card-title { font-weight: 700; font-size: 1.02rem; }
+.kho-count { font-size: 2.6rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.kho-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.kho-list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.kho-list-head .card-title { margin: 0; }
+.kho-items { list-style: none; margin: 0; padding: 0; }
+.kho-items li + li { border-top: 1px solid var(--line); }
+.kho-items a { display: flex; align-items: center; gap: 10px; padding: 11px 2px; color: var(--ink); text-decoration: none; min-height: 48px; }
+.kho-item-main { display: grid; flex: 1; min-width: 0; } .kho-item-main small { overflow-wrap: anywhere; }
+.kho-item-go { font-size: 1.5rem; color: var(--muted); }
+.kho-recv { display: grid; gap: 10px; margin-bottom: 14px; }
+.kho-po { display: grid; gap: 6px; color: var(--ink); text-decoration: none; }
+.kho-po-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kho-po-sup { font-size: 1.08rem; }
+.kho-po-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .92rem; }
+.kho-po-go { justify-self: start; }
+.big-btn { min-height: 52px; font-size: 1.05rem; padding: 12px 22px; }
+.big-select { min-height: 48px; font-size: 1rem; margin-bottom: 12px; }
+.step-no { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--red); color: #fff; font-size: .9rem; margin-right: 8px; vertical-align: middle; }
+.pack-steps .card-title { margin-top: 14px; } .pack-steps .card-title:first-child { margin-top: 0; }
+.pack-steps #slip-confirm { width: 100%; }
+.pick-col { width: 46px; text-align: center; }
+.pick-tick { width: 26px !important; height: 26px; cursor: pointer; }
+.pick-row { cursor: pointer; }
+.pick-row.picked, .pick-row.picked td { background: var(--green-50); }
+.pick-row.picked td:nth-child(2) { text-decoration: line-through; text-decoration-color: var(--muted); }
+.pick-qty { font-size: 1.1rem; }
+.pick-progress { margin: 10px 0 0; font-weight: 700; color: var(--amber); }
+.pick-progress.done { color: var(--green); }
+.ship-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.ship-photos img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.btn.ship-done { min-height: 44px; padding: 8px 18px; }
+.recv-cards { display: grid; gap: 10px; margin: 10px 0; }
+.recv-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; background: var(--surface); }
+.recv-card.done { border-color: var(--green); background: var(--green-50); }
+.recv-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.recv-head > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.recv-need { text-align: right; display: grid; } .recv-need strong { font-size: 1.6rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.recv-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+.recv-field { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
+.recv-field input { width: 100%; min-height: 46px; font-size: 1.1rem; text-align: center; }
+.recv-field.bad { color: #b4232c; }
+.recv-full { min-height: 46px; }
+.recv-photos { border-top: 1px solid var(--line); padding-top: 10px; }
+.recv-photos h4 { margin: 0 0 4px; }
+.lookup-bar { display: flex; gap: 8px; margin-bottom: 6px; }
+.lookup-bar input { flex: 1; min-width: 0; min-height: 48px; font-size: 1.05rem; }
+.lookup-results { display: grid; gap: 10px; }
+.lookup-item { padding: 14px 16px; }
+.lookup-top { display: flex; gap: 12px; align-items: center; }
+.lookup-top img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; flex: none; }
+.lookup-top > div:not(.lookup-total) { display: grid; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.lookup-sku { font-size: 1.02rem; } .lookup-name { color: var(--muted); font-size: .9rem; }
+.lookup-total { text-align: right; display: grid; } .lookup-total strong { font-size: 1.7rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.lookup-stock { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.lookup-stock li { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+.lookup-stock li b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.scan-dialog video { width: min(80vw, 420px); border-radius: 10px; background: #000; display: block; margin: 8px 0; }
+@media (max-width: 680px) {
+  .kho-cards { grid-template-columns: 1fr; gap: 10px; }
+  .kho-card { grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 12px; padding: 14px 16px; }
+  .kho-card .kho-icon { grid-row: span 2; }
+  .kho-card .kho-count { grid-column: 3; grid-row: 1 / span 2; font-size: 2.2rem; }
+  .kho-card small { grid-column: 2; }
+  .recv-row { grid-template-columns: 1fr 1fr; } .recv-full { grid-column: 1 / -1; }
+  .pick-table tr { padding-left: 52px; min-height: 52px; }
+  .pick-table td.pick-col { position: absolute; left: 10px; top: 12px; flex-basis: auto; width: auto; }
+  .pick-table td.pick-col + td { flex-basis: 100%; }
+}
+@media (max-width: 900px) {
+  /* Thanh dưới của kho: Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn */
+  body.role-warehouse .bottom-nav a:not(.kho-bn) { display: none; }
+  body.role-warehouse .bottom-nav { grid-auto-columns: 1fr; overflow-x: visible; }
+  body.role-warehouse .bottom-nav a[data-nav=kho] { order: 1; }
+  body.role-warehouse .bottom-nav a[data-nav=packing] { order: 2; }
+  body.role-warehouse .bottom-nav a[data-nav=purchases] { order: 3; }
+  body.role-warehouse .bottom-nav a[data-nav=deliveries] { order: 4; }
+  body.role-warehouse .bottom-nav a[data-nav=stock-lookup] { order: 5; }
+}

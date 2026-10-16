@@ -5,22 +5,23 @@ import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { products } from '../../src/modules/catalog/schema.ts';
+import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 
 const origin = 'https://trial.test';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('kho','kho@x.vn','Thủ kho','0900','employee','warehouse',1,'2026-01-01T00:00:00.000Z')").run();
   await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run('kho', await hashPassword(PASSWORD, 1000));
-  const router = createAppRouter();
+  const router = createAppRouter(), files = memoryFileStore();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
-    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, files, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return { status: res.status, data: await res.json() as any };
   };
   const login = async (email: string) => {
     const res = await router.handle(new Request(origin + '/api/staff/login', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: PASSWORD }) }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return res.headers.get('set-cookie')?.split(';')[0] ?? '';
   };
-  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
+  return { db, call, files, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
 }
 const photo = 'data:image/jpeg;base64,' + Buffer.from('anh-hang-da-dong').toString('base64');
 
@@ -91,6 +92,17 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   assert.equal(g.status, 201);
   assert.deepEqual((await call('/deliveries?from=2026-10-01&to=2026-10-31', kho)).data.deliveries.map((x: any) => x.id), [g.data.id]);
   assert.equal((await call(`/deliveries/${g.data.id}/status`, kho, 'PUT', { status: 'in_transit' })).status, 200);
+  // Kho không huỷ chuyến (chỉ Sale / Manager); kho bấm "Đã giao" phải kèm 1–3 ảnh (hàng đã giao / biên bản ký nhận).
+  const list = (await call('/deliveries?from=2026-10-01&to=2026-10-31', kho)).data;
+  assert.equal(list.canCancel, false); assert.equal((await call('/deliveries?from=2026-10-01&to=2026-10-31', emp)).data.canCancel, true);
+  assert.equal((await call(`/deliveries/${g.data.id}/status`, kho, 'PUT', { status: 'cancelled' })).status, 403);
+  const noProof = await call(`/deliveries/${g.data.id}/status`, kho, 'PUT', { status: 'delivered' });
+  assert.equal(noProof.status, 400); assert.match(noProof.data.error, /ảnh/);
+  assert.equal((await call(`/deliveries/${g.data.id}/status`, kho, 'PUT', { status: 'delivered', photos: [photo, photo, photo, photo] })).status, 400, 'tối đa 3 ảnh');
+  assert.equal((await call(`/deliveries/${g.data.id}/status`, kho, 'PUT', { status: 'delivered', photos: [photo] })).status, 200);
+  const shipped = (await call('/deliveries?from=2026-10-01&to=2026-10-31', kho)).data.deliveries[0];
+  assert.equal(shipped.status, 'delivered'); assert.equal(shipped.photos.length, 1); assert.match(shipped.photos[0], /^data:image\/jpeg;base64,/);
+  assert.equal((await call('/orders/' + orderId, emp)).data.deliveries.find((x: any) => x.id === g.data.id).photos.length, 1, 'nhân viên phụ trách xem ảnh trên đơn');
   assert.equal((await call('/orders', kho)).data.orders.length, 0);
   assert.equal((await call('/receivables', kho)).data.receivables.length, 0);
   assert.deepEqual((await call('/packing?q=khach p', emp)).data.slips.map((x: any) => x.status).sort(), ['cancelled', 'draft', 'packed'], 'nhân viên thấy phiếu của đơn mình');

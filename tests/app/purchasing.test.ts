@@ -114,10 +114,15 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.match(v.events[0].summary, /thay|ghi nhận NCC/);
 
   // Nhận đợt 1 (kho): ly đạt 6 hỏng 1; bấm lặp cùng clientKey không tạo phiếu thứ hai.
-  const lines1 = [{ lineId: v.lines[0].id, goodQty: 6, damagedQty: 1 }];
-  const r1 = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000001', lines: lines1 });
+  // Có hàng hỏng: bắt buộc 1–3 ảnh (lưu kho file, Manager xem trên phiếu nhận).
+  const lines1 = [{ lineId: v.lines[0].id, goodQty: 6, damagedQty: 1 }], photo = 'data:image/jpeg;base64,' + Buffer.from('anh-hong').toString('base64');
+  const noPhoto = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000009', lines: lines1 });
+  assert.equal(noPhoto.status, 400); assert.match(noPhoto.data.error, /ảnh/);
+  assert.equal((await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000008', lines: lines1, photos: ['data:text/html;base64,PGI+'] })).status, 400, 'chỉ nhận ảnh');
+  const r1 = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000001', lines: lines1, photos: [photo] });
   assert.equal(r1.status, 201, JSON.stringify(r1.data));
-  const again = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000001', lines: lines1 });
+  assert.equal(r1.data.receipts[0].photos.length, 1); assert.match(r1.data.receipts[0].photos[0], /^https:\/\/files\.test\/warehouse-photos\/supplier_receipt\//);
+  const again = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000001', lines: lines1, photos: [photo] });
   assert.equal(again.data.duplicate, true); assert.equal(again.data.receipts.length, 1);
   v = again.data; assert.equal(v.state, 'partially_received');
   assert.deepEqual(v.lines.map((l: any) => [l.good, l.damaged, l.missing]), [[6, 1, 4], [0, 0, 5]]);
@@ -153,7 +158,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   const p1 = await call(`/purchase-orders/${id}/payments`, kt, 'POST', pay);
   assert.equal(p1.status, 201, JSON.stringify(p1.data));
   assert.equal((await call(`/purchase-orders/${id}/payments`, kt, 'POST', pay)).data.payments.length, 1, 'bấm lặp không trả hai lần');
-  assert.equal(files.size, 1);
+  assert.equal(files.size, 2, '1 ảnh hàng hỏng + 1 chứng từ thanh toán');
   assert.equal((await call(`/purchase-orders/${id}/payments`, kt, 'POST', { clientKey: 'pay-000002', amount: 2000 })).status, 409, 'vượt công nợ');
   v = (await call(`/purchase-orders/${id}`, kt)).data;
   assert.deepEqual([v.debt.paid, v.debt.balance, v.debt.status], [570, 1330, 'open']);

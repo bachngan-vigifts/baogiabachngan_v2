@@ -4,6 +4,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { sendMail } from '../../../core/mail/send-mail.ts';
 import { postMoves, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
+import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
@@ -71,6 +72,12 @@ async function lockAndCheck(c: Ctx, tx: Tx, id: string, action: PurchaseAction, 
 }
 const bump = (tx: Tx, id: string, by: string, set: Partial<typeof incomingShipments.$inferInsert> = {}) =>
   tx.update(incomingShipments).set({ ...set, revision: sql`${incomingShipments.revision} + 1`, updatedAt: nowIso(), updatedBy: by }).where(eq(incomingShipments.id, id));
+/** Chi tiết đơn mua cho trình duyệt: kèm link ảnh hàng hỏng của từng phiếu nhận. */
+async function viewOf(c: Ctx, id: string) {
+  const v = (await loadPurchase(c.env.db, me(c), id, today())).view;
+  const urls = await photoUrls(c.env.db, c.env.files, 'supplier_receipt', v.receipts.map(r => r.id));
+  return { ...v, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
+}
 const lockSources = (tx: Tx) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('supplier_order_sources'))`);
 
 // ---------------------------------------------------------------- dòng hàng + nguồn
@@ -144,7 +151,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     return json({ orders: await listPurchases(c.env.db, me(c), { q: p.get('q') ?? '', supplierId: p.get('supplierId') ?? '', state: p.get('state') ?? '' }, today()),
       canSeePrices: canSeePrices(asActor(me(c))), today: today() });
   }, 'business');
-  router.get('/purchase-orders/:id', async c => { guard(c); return json((await loadPurchase(c.env.db, me(c), c.params.id!, today())).view); }, 'business');
+  router.get('/purchase-orders/:id', async c => { guard(c); return json(await viewOf(c, c.params.id!)); }, 'business');
   router.get('/purchase-options', async c => {
     guard(c);
     const rows = await c.env.db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(eq(suppliers.active, true)).orderBy(suppliers.name);
@@ -258,7 +265,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const diff = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k)).map(k => `${k}: ${before.get(k) ?? 0} → ${after.get(k) ?? 0}`);
       await event(tx, id, m.id, 'update', 'Sửa đơn nháp' + (diff.length ? ' – ' + diff.slice(0, 8).join('; ') : '') + (p.raw.order.supplierId !== supplier.id ? ` · đổi NCC sang ${supplier.name}` : ''), { diff });
     });
-    return json((await loadPurchase(db, m, id, today())).view);
+    return json(await viewOf(c, id));
   }, 'business');
 
   // ---- Manager duyệt giá / chiết khấu / lịch trả
@@ -286,7 +293,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         depositRate: deposit?.mode === 'percent' ? Number(deposit.value) : deposit?.mode === 'none' || !deposit ? 0 : null });
       await event(tx, id, m.id, 'approve', `Manager duyệt đơn – tổng ${Math.round(total).toLocaleString('vi-VN')} đ, ${schedules.length} kỳ trả`, { rows, schedules });
     });
-    return json((await loadPurchase(db, m, id, today())).view);
+    return json(await viewOf(c, id));
   }, 'business');
 
   // ---- Gửi duyệt: nháp của nhân viên → vào hàng chờ duyệt của Manager
@@ -298,7 +305,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { submittedAt: nowIso() });
       await event(tx, id, m.id, 'submit', 'Gửi Manager duyệt đơn mua');
     });
-    return json((await loadPurchase(db, m, id, today())).view);
+    return json(await viewOf(c, id));
   }, 'business');
 
   // ---- Lưu giá nhập khi chưa duyệt (Manager): giá / CK / VAT từng dòng, đơn vẫn là nháp. Ô giá để trống = chưa có giá.
@@ -320,7 +327,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id);
       await event(tx, id, m.id, 'prices', `Lưu giá nhập ${rows.filter(r => r.price !== null).length}/${rows.length} dòng (chưa duyệt)`, { rows });
     });
-    return json((await loadPurchase(db, m, id, today())).view);
+    return json(await viewOf(c, id));
   }, 'business');
 
   // ---- Manager ghi nhận xác nhận / ngày hẹn thay NCC
@@ -343,7 +350,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         confirmedOnBehalf: true, arrivalDate: arrival, supplierInternalOrderNumber: body.internalNo !== undefined ? str(body.internalNo, 100) : p.raw.order.supplierInternalOrderNumber });
       await event(tx, id, m.id, 'confirm', (first ? 'Manager ghi nhận NCC đã xác nhận đơn' : 'Manager cập nhật ngày hẹn') + (arrival ? ` – hẹn giao ${arrival.split('-').reverse().join('/')}` : '') + (changes.length ? ' · ' + changes.slice(0, 6).join('; ') : '') + (str(body.note, 300) ? ` · ${str(body.note, 300)}` : ''), { changes });
     });
-    return json((await loadPurchase(db, m, id, today())).view);
+    return json(await viewOf(c, id));
   }, 'business');
 
   router.post('/purchase-orders/:id/cancel', async c => {
@@ -355,26 +362,30 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { cancelledAt: nowIso(), cancelledBy: m.id, cancelReason: reason });
       await event(tx, id, m.id, 'cancel', 'Huỷ đơn mua – ' + reason);
     });
-    return json((await loadPurchase(db, m, id, today())).view);
+    return json(await viewOf(c, id));
   }, 'business');
 
   // ---- Nhận hàng từng đợt (kho / Manager)
   router.post('/purchase-orders/:id/receipts', async c => {
     guard(c);
-    const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000), clientKey = str(body.clientKey, 80);
+    const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000 + WH_PHOTO_MAX * WH_PHOTO_MAX_CHARS), clientKey = str(body.clientKey, 80);
     if (clientKey.length < 8) fail(400, 'Thiếu mã chống bấm lặp – tải lại trang rồi thử lại.');
     const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
-    if (dup) { if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...(await loadPurchase(db, m, id, today())).view, receiptId: dup.id, duplicate: true }); }
+    if (dup) { if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
+    const photos = parsePhotos(body.photos);
     let receiptId = '';
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'receive');
       const v = validateReceipt(p.raw.progress, { receivedDate: body.receivedDate, lines: body.lines }, today());
+      // Có hàng hỏng: bắt buộc 1–3 ảnh làm bằng chứng đòi NCC bù (Manager xem trên đơn mua).
+      if (!photos.length && v.lines.some(l => l.damagedQty > 0)) fail(400, 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.');
       receiptId = crypto.randomUUID();
       const no = await nextNumber(tx as unknown as Db, 'PNH', today());
       const whName = str(body.warehouse, 120) || p.raw.order.warehouse;
       await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: v.receivedDate, receivedBy: m.id, warehouse: whName,
         note: str(body.note, 1000), clientKey, createdAt: nowIso() });
       await tx.insert(supplierReceiptLines).values(v.lines.map(l => ({ receiptId, lineId: l.lineId, sku: l.sku, goodQty: l.goodQty, damagedQty: l.damagedQty, note: l.note })));
+      await savePhotos(tx as unknown as Db, c.env.files, m.id, 'supplier_receipt', receiptId, photos);
       // Sổ kho: hàng đạt cộng vào kho nhận (Sapo vẫn là nguồn chính – sổ kho chạy song song để đối chiếu).
       const whId = await stockWarehouseByName(tx as unknown as Db, whName);
       if (whId) await postMoves(tx as unknown as Db, m.id, v.lines.map(l => ({ sku: l.sku, warehouseId: whId, qty: l.goodQty, kind: 'receipt' as const, refType: 'supplier_receipt' as const, refId: receiptId, refNo: no, note: `${p.raw.order.ticketNumber} · ${p.raw.order.supplierName ?? ''}` })));
@@ -384,7 +395,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (after <= 0) await tx.update(incomingShipments).set({ receivedAt: nowIso(), receivedBy: m.id, receivedWarehouse: str(body.warehouse, 120) || p.raw.order.warehouse }).where(eq(incomingShipments.id, id));
       await event(tx, id, m.id, 'receive', `Nhận hàng ${no}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId, lines: v.lines });
     });
-    return json({ ...(await loadPurchase(db, m, id, today())).view, receiptId }, 201);
+    return json({ ...await viewOf(c, id), receiptId }, 201);
   }, 'business');
 
   // ---- Trạng thái nhập kho Sapo của một phiếu nhận (Sapo là nguồn tồn chính, CRM không tự cộng tồn)
@@ -413,7 +424,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const label = { pending: 'chờ nhập Sapo', done: `đã nhập Sapo (mã ${code})`, failed: `nhập Sapo lỗi: ${note}`, not_needed: 'không cần nhập Sapo' }[status as 'done'];
       await event(tx, shipmentId, m.id, 'sapo', `Phiếu ${r!.receiptNo}: ${label}`);
     });
-    return json((await loadPurchase(db, m, shipmentId, today())).view);
+    return json(await viewOf(c, shipmentId));
   }, 'business');
 
   router.post('/supplier-receipts/:id/cancel', async c => {
@@ -433,7 +444,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await tx.update(incomingShipments).set({ receivedAt: null, receivedBy: null }).where(eq(incomingShipments.id, shipmentId));
       await event(tx, shipmentId, m.id, 'cancel_receipt', `Huỷ phiếu nhận ${r!.receiptNo} – ${reason}`);
     });
-    return json((await loadPurchase(db, m, shipmentId, today())).view);
+    return json(await viewOf(c, shipmentId));
   }, 'business');
 
   // ---- Thanh toán NCC (Manager / Kế toán)
@@ -447,7 +458,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (schedules.length) await tx.insert(supplierPaymentSchedules).values(schedules.map(s => ({ id: crypto.randomUUID(), shipmentId: id, ...s, createdAt: nowIso() })));
       await event(tx, id, m.id, 'schedule', 'Sửa lịch trả NCC: ' + schedules.map(s => `${Math.round(s.amount).toLocaleString('vi-VN')} đ${s.dueDate ? ' hạn ' + s.dueDate.split('-').reverse().join('/') : ''}`).join('; '), { schedules });
     });
-    return json((await loadPurchase(db, m, id, today())).view);
+    return json(await viewOf(c, id));
   }, 'business');
 
   router.post('/purchase-orders/:id/payments', async c => {
@@ -455,7 +466,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 9_000_000), clientKey = str(body.clientKey, 80);
     if (clientKey.length < 8) fail(400, 'Thiếu mã chống bấm lặp – tải lại trang rồi thử lại.');
     const [dup] = await db.select({ id: supplierPayments.id, shipmentId: supplierPayments.shipmentId }).from(supplierPayments).where(eq(supplierPayments.clientKey, clientKey)).limit(1);
-    if (dup) { if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...(await loadPurchase(db, m, id, today())).view, duplicate: true }); }
+    if (dup) { if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), duplicate: true }); }
     const amount = Math.round(Number(body.amount)), paidDate = body.paidDate ? String(body.paidDate) : today();
     if (!(amount > 0 && amount <= 1e13)) fail(400, 'Số tiền trả không hợp lệ.');
     if (!isIsoDate(paidDate) || paidDate > today()) fail(400, 'Ngày trả không hợp lệ.');
@@ -479,7 +490,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await tx.update(incomingShipments).set({ paidAmount: p.raw.debt.paid + amount, ...(p.raw.order.depositPaidAt ? {} : { depositPaidAt: nowIso(), depositPaidBy: m.id }) }).where(eq(incomingShipments.id, id));
       await event(tx, id, m.id, 'pay', `Trả NCC ${amount.toLocaleString('vi-VN')} đ ngày ${paidDate.split('-').reverse().join('/')}` + (str(body.reference, 120) ? ` (CT ${str(body.reference, 120)})` : ''));
     });
-    return json((await loadPurchase(db, m, id, today())).view, 201);
+    return json(await viewOf(c, id), 201);
   }, 'business');
 
   router.post('/supplier-payments/:id/void', async c => {
@@ -498,7 +509,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await tx.update(incomingShipments).set({ paidAmount: left.reduce((s, r) => s + r.amount, 0) }).where(eq(incomingShipments.id, shipmentId));
       await event(tx, shipmentId, m.id, 'void_payment', `Huỷ khoản trả ${pay!.amount.toLocaleString('vi-VN')} đ – ${reason}`);
     });
-    return json((await loadPurchase(db, m, shipmentId, today())).view);
+    return json(await viewOf(c, shipmentId));
   }, 'business');
 
   router.get('/supplier-payments/:id/attachment', async c => {

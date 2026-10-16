@@ -5,6 +5,7 @@ import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
+import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 
 /**
  * SỔ KHO giai đoạn 1 (chạy song song Sapo): chốt tồn đầu kỳ = tồn Sapo; phiếu nhận NCC tự cộng, huỷ phiếu tự trừ lại;
@@ -18,9 +19,9 @@ async function setup() {
   await db.insert(warehouses).values([{ id: 'ct', name: 'Kho Cần Thơ', kind: 'stock', sortOrder: 0 }, { id: 'vg', name: 'Kho Vigifts', kind: 'stock', sortOrder: 1 }, { id: 'ncc', name: 'Kho NCC/ĐL', kind: 'supplier', sortOrder: 9 }]);
   await db.insert(products).values([{ sku: 'LY1', name: 'Ly sứ', unit: 'cái', updatedAt: now }, { sku: '031106000', name: 'Chén cơm', unit: 'cái', updatedAt: now }]);
   await db.insert(productStock).values([{ sku: 'LY1', warehouseId: 'ct', quantity: 10, updatedAt: now }, { sku: '031106000', warehouseId: 'vg', quantity: 5, updatedAt: now }, { sku: 'LY1', warehouseId: 'ncc', quantity: 99, updatedAt: now }]);
-  const router = createAppRouter();
+  const router = createAppRouter(), files = memoryFileStore();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
-    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const } as never);
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, files, passwordIterations: 1000, sapoOrderPush: 'off' as const } as never);
     return { status: res.status, data: await res.json() as any };
   };
   const login = async (email: string) => {
@@ -55,7 +56,7 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   const v = (await call(`/purchase-orders/${id}`, mgr)).data;
   await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }] });
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
-  const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }] });
+  const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,AAAA'] });
   assert.equal(rc.status, 201, JSON.stringify(rc.data));
   cmp = (await call('/inventory/compare', kho)).data;
   assert.deepEqual(cmp.rows.map((r: any) => [r.sku, r.warehouse, r.ledger, r.sapo, r.diff]), [['LY1', 'Kho Cần Thơ', 14, 10, 4]], 'chỉ cộng hàng đạt, chưa nhập Sapo nên lệch +4');
@@ -80,4 +81,20 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   card = (await call('/inventory/card?sku=031106000&warehouseId=vg', mgr)).data;
   assert.deepEqual([card.balance, card.sapo, card.lines[0].qty, card.lines[0].note], [2, 5, -3, 'Kiểm kê lệch']);
   assert.equal((await call('/inventory/compare?q=chén', mgr)).data.rows[0].diff, -3, 'tìm theo tên');
+});
+
+test('tra tồn: mọi nhân viên tra theo mã / tên, số lượng từng kho thật, không có giá; chốt đầu kỳ rồi thì lấy tồn sổ kho', async () => {
+  const { call, emp, mgr } = await setup();
+  assert.deepEqual((await call('/inventory/lookup?q=l', emp)).data.products, [], 'ít nhất 2 ký tự');
+  let r = (await call('/inventory/lookup?q=ly', emp)).data;
+  assert.equal(r.source, 'sapo');
+  assert.deepEqual(r.products.map((p: any) => [p.sku, p.total, p.stock.map((s: any) => [s.warehouse, s.qty])]), [['LY1', 10, [['Kho Cần Thơ', 10], ['Kho Vigifts', 0]]]], 'không tính kho NCC');
+  assert.ok(!JSON.stringify(r).match(/price/i), 'không có giá');
+  r = (await call('/inventory/lookup?q=031106000', emp)).data;
+  assert.deepEqual(r.products.map((p: any) => [p.sku, p.name, p.total]), [['031106000', 'Chén cơm', 5]], 'quét đúng mã (giữ số 0 đầu)');
+  assert.equal((await call('/inventory/lookup?q=chen com', emp)).data.products[0].sku, '031106000', 'tìm không dấu');
+  await call('/inventory/opening', mgr, 'POST', { confirm: true });
+  await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'ct', reason: 'Kiểm kê', lines: [{ sku: 'LY1', qty: -4 }] });
+  r = (await call('/inventory/lookup?q=LY1', emp)).data;
+  assert.equal(r.source, 'ledger'); assert.equal(r.products[0].total, 6);
 });
