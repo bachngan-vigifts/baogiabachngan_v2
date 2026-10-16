@@ -156,10 +156,13 @@
             <span class="pill" id="editor-revision" hidden></span>
             <span class="pill warn" id="editor-dirty" hidden>Chưa lưu</span>
             <span class="pill" id="editor-approval" hidden></span>
+            <span class="pill blue" id="editor-hold" hidden></span>
           </div>
           <!-- Như web cũ: chỉ báo giá ĐÃ DUYỆT mới Sinh Đơn hàng / HĐKT, Tải báo giá. Duyệt, Xoá: chỉ Manager. -->
           <div class="editor-actions quote-actions">
             <button type="button" class="btn secondary" id="quote-stock" title="Kiểm tồn khả dụng, NCC, hàng chờ về cho cả báo giá">Kiểm tồn</button>
+            <button type="button" class="btn secondary" id="quote-hold" hidden title="Treo tồn kho cho báo giá này 5 ngày (tồn khả dụng của báo giá khác bị trừ)">Giữ hàng 5 ngày</button>
+            <button type="button" class="btn ghost" id="quote-hold-extend" hidden title="Gia hạn giữ hàng thêm 5 ngày (Manager)">Gia hạn +5 ngày</button>
             <button type="button" class="btn secondary" id="quote-purchase" title="Lập đơn mua NCC từ các mã của báo giá (hiện số còn cần đặt để tránh mua trùng)">Đặt hàng NCC</button>
             <button type="button" class="btn secondary" id="quote-make" hidden>Sinh Đơn hàng / HĐKT</button>
             <span class="menu-wrap">

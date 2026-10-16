@@ -7,6 +7,7 @@ import { registerLegacyImageRoutes } from '../modules/integrations/api/legacy-im
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
+import { registerHoldRoutes } from '../modules/sales/api/hold-routes.ts';
 import { registerProgressRoutes } from '../modules/sales/api/progress-routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
 import { registerSupplierDirectoryRoutes } from '../modules/suppliers/api/directory-routes.ts';
@@ -37,6 +38,7 @@ export function createAppRouter() {
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router);
   registerPackingRoutes(router);
+  registerHoldRoutes(router);
   registerProgressRoutes(router);
   registerPrintingRoutes(router);
   registerSupplierDirectoryRoutes(router);

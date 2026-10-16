@@ -819,7 +819,7 @@ function fillEditor(id, revision, data, meta = {}) {
   $$('input, textarea', qf).forEach(i => i.classList.remove('invalid'));
   renderLines(); updateContactsButton();
   editor.dirty = false; $('#editor-dirty').hidden = true;
-  refreshQuoteDocument(id);
+  refreshQuoteDocument(id); refreshQuoteHold(id);
   updateQuoteActions();
   fillMissingImages();
 }
@@ -1788,7 +1788,25 @@ const priceOf = (p, policyId) => {
 /** Giá niêm yết theo bảng giá đang chọn (null = bảng giá này chưa có giá, như bản cũ). */
 const productPrice = p => priceOf(p, currentPolicy());
 /** Tồn khả dụng = tổng các kho thật (không tính NCC và hàng chờ về). */
-const availableStock = p => state.warehouses.filter(w => w.kind === 'stock').reduce((s, w) => s + (Number(p.stock?.[w.id]) || 0), 0);
+/** Hàng đang treo (giữ cho báo giá, GET /stock-holds): sku → [{ qty, quoteId, quoteNo, customer, expiresAt }]. Tải lại tối đa 30 giây/lần. */
+let holdsAt = 0, holdsReq = null;
+state.holds = new Map();
+function loadHolds(force = false) {
+  if (!force && Date.now() - holdsAt < 30000) return holdsReq || Promise.resolve();
+  holdsAt = Date.now();
+  return holdsReq = api('/stock-holds').then(r => { const m = new Map(); for (const h of r.holds) (m.get(h.sku) ?? m.set(h.sku, []).get(h.sku)).push(h); state.holds = m; })
+    .catch(() => { holdsAt = 0; }).finally(() => { holdsReq = null; });
+}
+/** Số đang treo của một mã (bỏ phần treo cho chính báo giá `exceptQuote`). */
+const heldQty = (sku, exceptQuote = '') => (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote).reduce((t, h) => t + h.qty, 0);
+/** Ô "Đang treo": số + link báo giá đang giữ (bấm mở báo giá). */
+const heldCell = (sku, exceptQuote = '') => {
+  const list = (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote);
+  return list.length ? `${fmtNum(heldQty(sku, exceptQuote))}<small>${list.map(h => `<a href="#/quotes/${esc(h.quoteId)}" title="${esc(h.customer)} · giữ đến ${esc(new Date(h.expiresAt).toLocaleString('vi-VN'))}">${esc(h.quoteNo)}</a>`).join(', ')}</small>` : '<span class="muted">—</span>';
+};
+const stockTotal = p => state.warehouses.filter(w => w.kind === 'stock').reduce((s, w) => s + (Number(p.stock?.[w.id]) || 0), 0);
+/** Tồn khả dụng = tổng kho thật − đang treo cho báo giá khác (treo tự hết khi quá hạn 5 ngày). */
+const availableStock = (p, exceptQuote = '') => stockTotal(p) - heldQty(p.sku, exceptQuote);
 const stockDetail = p => state.warehouses.filter(w => p.stock?.[w.id] !== undefined).map(w => `${w.name}: ${fmtNum(Number(p.stock[w.id]))}`).join('\n');
 const thumb = p => imgTag(p.imageUrl);
 function applyCatalogMeta(d) {
@@ -1803,6 +1821,7 @@ function applyCatalogMeta(d) {
 let productReq = 0, brandsLoaded = false;
 let productPager;
 async function loadProducts() {
+  loadHolds().then(() => { if (state.products) renderProducts?.(); });
   const req = ++productReq;
   productPager ||= createPager($('#product-pager'), 'products', () => loadProducts(), 50);
   state.products = null; renderProducts();
@@ -1905,7 +1924,7 @@ function renderProducts() {
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
-      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}">${fmtNum(stock)}</td>
+      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}${heldQty(p.sku) ? ` · đang treo ${fmtNum(heldQty(p.sku))}` : ''}">${fmtNum(stock)}${heldQty(p.sku) ? `<small>treo ${fmtNum(heldQty(p.sku))}</small>` : ''}</td>
       <td class="actions-cell"><div class="row-actions"><button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button></div></td>
     </tr>`;
   }).join('');
@@ -2158,7 +2177,7 @@ function renderPicker(observedAt, min, max) {
     return `<li data-i="${i}" class="${has ? 'added' : ''}">${thumb(p)}
       <span class="prod-text"><b>${esc(p.name)}</b><small>Nhãn hiệu: ${esc(p.brand || 'Chưa có trên Sapo')}</small>
         <small>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · ${vat}</small>
-        <small>Tồn khả dụng: <strong>${stockText(kindStock(p, 'stock'))}</strong> | Tồn NCC: ${stockText(kindStock(p, 'supplier'))} – Hàng chờ về: ${stockText(kindStock(p, 'incoming'))}</small></span>
+        <small>Tồn khả dụng: <strong>${kindStock(p, 'stock') === null ? stockText(null) : fmtNum(availableStock(p, editor.id || ''))}</strong>${heldQty(p.sku, editor.id || '') ? ` (đang treo ${fmtNum(heldQty(p.sku, editor.id || ''))})` : ''} | Tồn NCC: ${stockText(kindStock(p, 'supplier'))} – Hàng chờ về: ${stockText(kindStock(p, 'incoming'))}</small></span>
       <span class="price">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}<small>${included ? 'Đã gồm VAT' : 'Chưa VAT'}</small></span>
       <input class="num-input" inputmode="decimal" value="1" aria-label="Số lượng ${esc(p.name)}">
       <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
@@ -2180,7 +2199,7 @@ function addRowsToQuote(rows) {
 $('#pick-products').addEventListener('click', () => {
   pickerAdded = 0; $('#picker-added').textContent = '';
   pickerPolicyOptions();
-  $('#picker-dialog').showModal(); $('#picker-search').focus(); loadPicker();
+  $('#picker-dialog').showModal(); $('#picker-search').focus(); loadHolds().then(loadPicker);
   loadCatalogSnapshot(); // kiểm tra nền: Sapo có dữ liệu mới thì cập nhật kết quả
 });
 $('#picker-search').addEventListener('input', reloadPicker);
@@ -2726,6 +2745,7 @@ async function loadStockRequests(focusId) {
     const { requests } = await api('/stock-requests' + (stockFilter ? '?status=' + stockFilter : ''));
     const skus = [...new Set(requests.flatMap(r => r.items.map(i => i.sku)))];
     const stock = new Map();
+    await loadHolds(true);
     for (let i = 0; i < skus.length; i += 200) { const d = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(d); for (const p of d.products) stock.set(p.sku, p); }
     for (const request of requests) stockShortageExports.set(request.id, shortageRows(request.items, stock, availableStock));
     $('#stock-req-empty').hidden = requests.length > 0;
@@ -2735,9 +2755,10 @@ async function loadStockRequests(focusId) {
         <small class="muted">${esc(r.askedBy)} · ${new Date(r.createdAt).toLocaleString('vi-VN')}</small></div></header>
       <div class="row-gap end"><button type="button" class="btn secondary small" data-purchase-from title="Lập đơn mua NCC cho phần khách cần mà chưa đáp ứng">Đặt hàng NCC</button><button type="button" class="btn secondary small" data-shortage-pdf ${stockShortageExports.get(r.id)?.rows.length ? '' : 'disabled'} title="Xuất mã thiếu so với tồn khả dụng; không kèm thông tin khách hoặc giá">Tải PDF mã thiếu</button></div>
       ${r.note ? `<p class="small"><b>Khách ghi chú:</b> ${esc(r.note)}</p>` : ''}
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th><th class="right">Tồn khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th><th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
       ${r.items.map(i => { const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
         return `<tr><td>${esc(i.name)}<small>${esc(i.sku)} · ${esc(i.unit || '')}</small></td><td class="right">${fmtNum(i.qty)}</td>
+          <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>
           <td class="right ${av !== null && av < i.qty ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
           <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
           <td class="right">${r.status === 'open' ? `<input class="num-input" inputmode="decimal" data-sku="${esc(i.sku)}" value="${av === null ? '' : Math.max(0, Math.min(i.qty, av))}" aria-label="Đáp ứng ${esc(i.name)}">` : fmtNum(a?.available ?? 0)}</td></tr>`; }).join('')}
@@ -3575,6 +3596,7 @@ function updateQuoteActions() {
       : block || 'Chọn tạo Đơn hàng (khách có HĐ nguyên tắc) hoặc HĐKT';
   }
   const dl = $('#quote-download'); dl.disabled = !!block; dl.title = block || ''; if (block) closeDownloadMenu();
+  if (typeof drawQuoteHold === 'function' && $('#quote-hold')) drawQuoteHold();
   // Manager duyệt mọi báo giá; nhân viên phụ trách xác nhận báo giá khách gửi từ trang khách hàng.
   const canApprove = mgr || !!editor.approval?.canApprove;
   const ap = $('#approve-quote'); ap.hidden = !canApprove || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : editor.approval?.fromCustomer ? 'Xác nhận báo giá khách' : 'Duyệt';
@@ -3618,6 +3640,7 @@ async function createOrderForQuote(quoteId, quoteNo) {
   if (!r) return null;
   if (existed) toast('Báo giá này đã có đơn hàng – mở đơn đó.');
   else { toast('Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); }
+  if (typeof refreshQuoteHold === 'function' && typeof editor !== 'undefined' && editor.id) { refreshQuoteHold(editor.id); loadHolds(true); } // lập đơn từ báo giá → tự bỏ treo
   return r.id;
 }
 // Kiểm tồn cả báo giá (giống trang Khách hỏi tồn): tồn khả dụng, tồn NCC, hàng chờ về so với số lượng báo giá.
@@ -3632,18 +3655,22 @@ $('#quote-stock').addEventListener('click', async () => {
   $('#stock-check-title').textContent = `${d.quoteNo || 'Báo giá'}${d.customer ? ' · ' + d.customer : ''}`;
   $('#stock-check-body').innerHTML = '<p class="muted">Đang kiểm tồn…</p>'; $('#stock-check-note').textContent = ''; $('#stock-check-dialog').showModal();
   try {
-    const skus = [...new Set([...need.values()].map(x => x.sku).filter(Boolean))], stock = new Map();
+    const skus = [...new Set([...need.values()].map(x => x.sku).filter(Boolean))], stock = new Map(), me = editor.id || '';
+    await loadHolds(true);
     for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); }
     let short = 0;
     const rows = [...need.values()].map(i => {
-      const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p) : null, miss = av === null ? null : Math.max(0, i.qty - av);
+      // Khả dụng cho báo giá này = tồn kho − phần báo giá KHÁC đang treo (phần chính báo giá này giữ vẫn tính là của mình).
+      const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p, me) : null, miss = av === null ? null : Math.max(0, i.qty - av);
+      const mine = i.sku ? (state.holds.get(i.sku) || []).filter(h => h.quoteId === me).reduce((t, h) => t + h.qty, 0) : 0;
       if (miss) short++;
-      return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
+      return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
+        <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
         <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
-    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th><th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     bindStockCheckFilter($('#stock-check-body'));
     $('#stock-check-note').textContent = short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.';
   } catch (e) { $('#stock-check-body').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
@@ -3671,6 +3698,46 @@ async function makeFromQuote(flow, q, done) {
   done?.(); go('#/orders/' + id);
   return true;
 }
+/** Giữ hàng của báo giá đang mở (GET /quotes/:id/hold): hạn, các mã đang treo, quyền giữ / bỏ giữ / gia hạn. */
+async function refreshQuoteHold(id) {
+  editor.hold = null; drawQuoteHold();
+  if (!id) return;
+  try { const h = await api('/quotes/' + encodeURIComponent(id) + '/hold'); if (editor.id === id) { editor.hold = h; drawQuoteHold(); } } catch { /* bỏ qua */ }
+}
+function drawQuoteHold() {
+  const h = editor.hold, pill = $('#editor-hold'), btn = $('#quote-hold'), ext = $('#quote-hold-extend');
+  const active = !!h?.holds?.length, d = active ? new Date(h.expiresAt) : null, p2 = n => String(n).padStart(2, '0'), until = d ? `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}` : '';
+  pill.hidden = !active; pill.textContent = active ? `Đang giữ hàng đến ${until}` : '';
+  pill.title = active ? h.holds.map(x => `${x.sku} – ${x.name}: ${fmtNum(x.qty)}`).join('\n') + (h.by ? `\nNgười giữ: ${h.by}` : '') : '';
+  btn.hidden = !editor.id || !h; ext.hidden = !h?.canExtend;
+  if (!h) return;
+  btn.textContent = active ? 'Bỏ giữ hàng' : `Giữ hàng ${h.days || 5} ngày`;
+  const block = active ? '' : editor.dirty ? 'Lưu thay đổi trước.' : !h.canHold ? 'Chỉ giữ hàng cho báo giá đã duyệt.' : '';
+  btn.disabled = !!block; btn.title = block || (active ? 'Bỏ treo tồn kho cho báo giá này' : 'Treo tồn kho thật cho báo giá này 5 ngày; báo giá khác thấy khả dụng giảm tương ứng');
+}
+$('#quote-hold').addEventListener('click', async e => {
+  const id = editor.id, h = editor.hold; if (!id || !h) return;
+  const active = !!h.holds?.length;
+  if (active && !await confirmBox('Bỏ giữ hàng cho báo giá này? Tồn sẽ trả lại khả dụng cho báo giá khác.', { title: 'Bỏ giữ hàng', ok: 'Bỏ giữ' })) return;
+  e.target.disabled = true;
+  try {
+    if (active) { editor.hold = await api(`/quotes/${encodeURIComponent(id)}/hold/release`, 'POST', {}); toast('Đã bỏ giữ hàng.'); }
+    else {
+      const r = await api(`/quotes/${encodeURIComponent(id)}/hold`, 'POST', {}); editor.hold = r;
+      const short = r.short || [];
+      if (short.length) await confirmBox(`Đã giữ ${r.held.length} mã đến ${new Date(r.expiresAt).toLocaleString('vi-VN')}. Không đủ tồn khả dụng cho: ` + short.map(x => `${x.sku} (cần ${fmtNum(x.need)}, giữ được ${fmtNum(x.qty)})`).join('; ') + '.', { title: 'Giữ hàng một phần', ok: 'Đã hiểu' });
+      else toast(`Đã giữ hàng ${r.days || 5} ngày cho ${r.held.length} mã.`);
+    }
+    loadHolds(true);
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { drawQuoteHold(); }
+});
+$('#quote-hold-extend').addEventListener('click', async e => {
+  const id = editor.id; if (!id) return;
+  e.target.disabled = true;
+  try { editor.hold = await api(`/quotes/${encodeURIComponent(id)}/hold/extend`, 'POST', {}); toast('Đã gia hạn giữ hàng thêm 5 ngày.'); loadHolds(true); }
+  catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; drawQuoteHold(); }
+});
 /** Đọc lại khi mở/lưu báo giá và trước khi sinh, tránh dùng liên kết cũ hoặc sinh trùng. */
 async function refreshQuoteDocument(id) {
   const request = editor.documentRequest = (editor.documentRequest || 0) + 1;
@@ -3738,7 +3805,7 @@ $('#approve-quote').addEventListener('click', async () => {
     if (editor.dirty) { await saveQuote(); if (editor.dirty) return; }
     const r = await api('/quotes/' + encodeURIComponent(editor.id) + '/approve', 'POST', { revision: editor.revision });
     editor.approval = { ...editor.approval, status: 'approved', at: r.approvedAt, by: r.approvedByName };
-    toast('Đã duyệt báo giá. Có thể tải file, tạo đơn hàng, sinh HĐKT.'); loadQuotes();
+    toast('Đã duyệt báo giá. Có thể tải file, tạo đơn hàng, sinh HĐKT.'); loadQuotes(); refreshQuoteHold(editor.id);
   } catch (ex) { toast(ex.message, 'err'); }
   finally { updateQuoteActions(); }
 });
