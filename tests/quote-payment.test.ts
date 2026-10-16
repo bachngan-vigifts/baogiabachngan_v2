@@ -62,7 +62,7 @@ test('new quote popup accepts pre-delivery text, preserves chosen terms, rejects
     let submit: (e: object) => void = () => {};
     const inputs: Record<string, any> = {
       '#nq-error': { textContent: '' }, '#nq-date': { value: '2026-10-09' }, '#nq-no': { value: 'TEST' },
-      '#nq-discount': { value: '' }, '#nq-deposit-rate': { value: '40' },
+      '#nq-discount': { value: '' }, '#nq-discount-field': { hidden: false }, '#nq-deposit-rate': { value: '40' },
       '#nq-payment-term': { value: 'Thanh toán trước khi giao hàng' }, '#nq-customer': { value: 'Khách' },
       '#new-quote-form': { addEventListener: (_: string, fn: typeof submit) => { submit = fn; } },
       '#new-quote-dialog': { close() {} },

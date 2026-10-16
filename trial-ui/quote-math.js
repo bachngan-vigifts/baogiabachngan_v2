@@ -56,14 +56,22 @@ var defaultCostPrice = (product, price) => {
   const discount = defaultCostDiscount(product);
   return discount === null ? 0 : purchasePrice(price, discount);
 };
+function brandDiscountKey(brand) {
+  const n = normalize(brand), words = n.split(/[^a-z0-9&]+/).filter(Boolean);
+  if (words.includes("lys")) return "lys";
+  if (/lock\s*(&|n|and)?\s*lock/.test(n) || words.includes("lock")) return "lock";
+  if (/minh long|healthy cook|su duong sinh/.test(n)) return "minhLong";
+  return null;
+}
 function customerDiscount(brand, discounts = {}, mode = "percent", price = 0) {
   const n = normalize(brand);
-  const key = n === "minh long - lys" ? "lys" : ["minh long", "minh long i"].includes(n) ? "minhLong" : ["lock", "locknlock", "lock&lock", "lock & lock"].includes(n) ? "lock" : null;
+  const key = brandDiscountKey(n);
   const percent = key && discounts?.[key];
   return typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100 ? mode === "amount" ? price * percent / 100 : percent : 0;
 }
 export {
   after,
+  brandDiscountKey,
   commissionOf,
   customerDiscount,
   defaultCostDiscount,

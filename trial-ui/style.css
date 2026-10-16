@@ -1455,3 +1455,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   body.role-warehouse .bottom-nav a[data-nav=deliveries] { order: 4; }
   body.role-warehouse .bottom-nav a[data-nav=stock-lookup] { order: 5; }
 }
+/* Báo giá: hàng tiêu đề thẻ có nút bên phải; ghi chú CK riêng của khách trong hộp tạo báo giá. */
+.card-head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.card-head-row .card-title { margin: 0; }
+.pill-note { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--green-50); color: var(--green); font-size: .9rem; font-weight: 600; }
+.check-line { display: flex; align-items: center; gap: 8px; font-weight: 600; }

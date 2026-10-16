@@ -4,7 +4,8 @@ import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
 import { quotations } from '../quotes/schema.ts';
-import { CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, PROGRESS_STAGES, SCHEDULE_KINDS, SHIP_TO } from './domain/statuses.ts';
+import { products } from '../catalog/schema.ts';
+import { HOLD_STATUSES, CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, PROGRESS_STAGES, SCHEDULE_KINDS, SHIP_TO } from './domain/statuses.ts';
 
 /*
  * Bán hàng sau báo giá: Báo giá → Đơn đặt hàng → (HĐKT) → Lịch giao hàng → Công nợ.
@@ -307,3 +308,27 @@ export const orderProgressMarks = pgTable('order_progress_marks', {
   markedAt: text('marked_at').notNull(),
 }, t => [primaryKey({ columns: [t.orderId, t.stage] }), enumCheck('chk_order_progress_stage', t.stage, PROGRESS_STAGES),
   enumCheck('chk_order_progress_source', t.source, ['task', 'manual'])]).enableRLS();
+
+/**
+ * Giữ hàng cho báo giá đã duyệt (nút "Giữ hàng 5 ngày"): mỗi mã một dòng. Tồn khả dụng ở mọi chỗ kiểm tồn = tồn kho thật − tổng đang giữ
+ * (dòng `active` chưa quá `expires_at`). Hết hạn → `expired` + báo nhân viên; lập đơn / HĐKT từ báo giá → `converted`.
+ */
+export const stockHolds = pgTable('stock_holds', {
+  id: text('id').primaryKey(),
+  quoteId: text('quote_id').notNull().references(() => quotations.id, { onDelete: 'cascade' }),
+  sku: text('sku').notNull().references(() => products.sku, { onDelete: 'cascade' }),
+  qty: doublePrecision('qty').notNull(),
+  status: text('status', { enum: HOLD_STATUSES }).notNull().default('active'),
+  expiresAt: text('expires_at').notNull(),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+  closedAt: text('closed_at'),
+  closedBy: text('closed_by'),
+  notifiedAt: text('notified_at'),
+}, t => [
+  index('idx_stock_holds_sku').on(t.sku, t.status),
+  index('idx_stock_holds_quote').on(t.quoteId, t.status),
+  index('idx_stock_holds_expiry').on(t.status, t.expiresAt),
+  enumCheck('chk_stock_holds_status', t.status, HOLD_STATUSES),
+  check('chk_stock_holds_qty', sql`${t.qty} > 0`),
+]).enableRLS();

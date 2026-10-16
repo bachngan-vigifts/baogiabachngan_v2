@@ -3,7 +3,8 @@ import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import type { SessionState, StaffEnv } from '../modules/staff/api/auth-routes.ts';
 import { quotations } from '../modules/quotes/schema.ts';
-import { customerPayments, deliveries, packingSlips, salesContracts, salesOrders } from '../modules/sales/schema.ts';
+import { customerPayments, deliveries, packingSlips, salesContracts, salesOrders, stockHolds } from '../modules/sales/schema.ts';
+import { expireHolds } from '../modules/sales/api/hold-routes.ts';
 import { tasks } from '../modules/tasks/schema.ts';
 import { incomingShipments } from '../modules/suppliers/schema.ts';
 import { customerActivities } from '../modules/care/schema.ts';
@@ -24,11 +25,13 @@ export function registerPulseRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, m = (c.state.session as SessionState).member;
     const latest = (col: unknown) => sql`(select coalesce(max(${col}), '') from ${(col as { table: unknown }).table})`;
     const total = (t: unknown) => sql`(select count(*) from ${t})`;
+    // Giữ hàng quá hạn: bỏ treo + báo nhân viên (nhịp này chạy khi có người đang dùng hệ thống).
+    await expireHolds(c.env).catch(() => 0);
     const [[row], notifyAt, chatUnread] = await Promise.all([
       db.select({
         s: sql<string>`concat_ws('|', ${latest(quotations.updatedAt)}, ${latest(salesOrders.updatedAt)}, ${latest(salesContracts.updatedAt)}, ${latest(deliveries.updatedAt)},
           ${latest(packingSlips.updatedAt)}, ${latest(customerPayments.createdAt)}, ${latest(tasks.updatedAt)}, ${latest(incomingShipments.updatedAt)},
-          ${latest(customerActivities.updatedAt)}, ${latest(customerStockRequests.createdAt)}, ${latest(customerStockRequests.answeredAt)}, ${latest(catalogVersions.observedAt)},
+          ${latest(customerActivities.updatedAt)}, ${latest(customerStockRequests.createdAt)}, ${latest(customerStockRequests.answeredAt)}, ${latest(catalogVersions.observedAt)}, ${latest(stockHolds.createdAt)}, ${latest(stockHolds.closedAt)},
           ${total(quotations)}, ${total(salesOrders)}, ${total(tasks)}, ${total(incomingShipments)})`,
       }).from(sql`(select 1) as one`),
       latestNotificationAt(db, m),

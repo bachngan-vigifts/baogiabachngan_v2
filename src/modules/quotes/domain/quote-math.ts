@@ -117,10 +117,21 @@ export const defaultCostPrice = (product: Parameters<typeof defaultCostDiscount>
 };
 
 export type CustomerDiscounts = Partial<Record<'lys' | 'minhLong' | 'lock', number>>;
+/**
+ * Thương hiệu → nhóm CK của khách: Lys ("Minh Long - Lys", "LYS"…), Lock&Lock ("Lock&Lock", "LocknLock", "LOCK & LOCK"…),
+ * Minh Long (gồm dòng Healthy Cook / sứ dưỡng sinh). Không thuộc ba nhóm → null (không áp CK của khách).
+ */
+export function brandDiscountKey(brand: unknown): 'lys' | 'minhLong' | 'lock' | null {
+  const n = normalize(brand), words = n.split(/[^a-z0-9&]+/).filter(Boolean);
+  if (words.includes('lys')) return 'lys';
+  if (/lock\s*(&|n|and)?\s*lock/.test(n) || words.includes('lock')) return 'lock';
+  if (/minh long|healthy cook|su duong sinh/.test(n)) return 'minhLong';
+  return null;
+}
 /** Chiết khấu của khách cho một thương hiệu (dạng % hoặc số tiền trên `price`). Giá trị ngoài 0..100 bị bỏ qua. */
 export function customerDiscount(brand: unknown, discounts: CustomerDiscounts | null | undefined = {}, mode: 'percent' | 'amount' = 'percent', price = 0): number {
   const n = normalize(brand);
-  const key = n === 'minh long - lys' ? 'lys' : ['minh long', 'minh long i'].includes(n) ? 'minhLong' : ['lock', 'locknlock', 'lock&lock', 'lock & lock'].includes(n) ? 'lock' : null;
+  const key = brandDiscountKey(n);
   const percent = key && discounts?.[key];
   return typeof percent === 'number' && Number.isFinite(percent) && percent >= 0 && percent <= 100 ? (mode === 'amount' ? price * percent / 100 : percent) : 0;
 }

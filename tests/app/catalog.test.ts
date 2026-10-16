@@ -96,7 +96,8 @@ test('nhập danh mục (Manager): tạo bảng giá/kho/sản phẩm; nhập l�
   assert.equal(first.status, 200, JSON.stringify(first.data)); assert.equal(first.data.count, 2);
   let list = (await call('/products', emp)).data;
   assert.deepEqual(list.products.map((x: any) => [x.sku, x.prices, x.stock]), [
-    ['A', [{ policyId: 'le', price: 100 }, { policyId: 'legacy:Giá sỉ', price: null }], { 'legacy:Kho A': 5, 'legacy:Hàng chờ về': 2 }],
+    // Cột "Hàng chờ về" trong file bị bỏ qua: tồn kho này do hệ thống tự tính từ Đơn mua NCC.
+    ['A', [{ policyId: 'le', price: 100 }, { policyId: 'legacy:Giá sỉ', price: null }], { 'legacy:Kho A': 5 }],
     ['B', [{ policyId: 'le', price: 200 }, { policyId: 'legacy:Giá sỉ', price: null }], {}],
   ]);
   assert.deepEqual(list.warehouses.map((w: any) => [w.name, w.kind]), [['Kho A', 'stock'], ['NCC', 'supplier'], ['Hàng chờ về', 'incoming']]);

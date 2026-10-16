@@ -20,3 +20,6 @@ export const INVOICE_MODES = ['issue', 'draft'] as const;
  * duyệt → xuất kho → in mẫu → sản xuất → giao hàng. "In mẫu" và "Sản xuất" chỉ có ở đơn có phí in.
  */
 export const PROGRESS_STAGES = ['approve', 'export', 'sample', 'production', 'delivered'] as const;
+/** Giữ hàng cho báo giá (treo tồn 5 ngày): đang giữ → bỏ giữ / hết hạn / đã lập đơn (tự bỏ treo). */
+export const HOLD_STATUSES = ['active', 'released', 'expired', 'converted'] as const;
+export const HOLD_DAYS = 5;

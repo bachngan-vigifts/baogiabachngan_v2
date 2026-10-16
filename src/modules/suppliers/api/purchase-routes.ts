@@ -5,6 +5,7 @@ import { AppError } from '../../../core/errors.ts';
 import { sendMail } from '../../../core/mail/send-mail.ts';
 import { postMoves, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
+import { syncIncomingStock } from './incoming-stock.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
@@ -74,6 +75,8 @@ const bump = (tx: Tx, id: string, by: string, set: Partial<typeof incomingShipme
   tx.update(incomingShipments).set({ ...set, revision: sql`${incomingShipments.revision} + 1`, updatedAt: nowIso(), updatedBy: by }).where(eq(incomingShipments.id, id));
 /** Chi tiết đơn mua cho trình duyệt: kèm link ảnh hàng hỏng của từng phiếu nhận. */
 async function viewOf(c: Ctx, id: string) {
+  // Mọi thao tác ghi trả về qua đây: cập nhật tồn "Hàng chờ về" theo số còn thiếu của các đơn mua (chỉ ghi phần đổi).
+  await syncIncomingStock(c.env.db).catch(() => {});
   const v = (await loadPurchase(c.env.db, me(c), id, today())).view;
   const urls = await photoUrls(c.env.db, c.env.files, 'supplier_receipt', v.receipts.map(r => r.id));
   return { ...v, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
@@ -148,6 +151,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   router.get('/purchase-orders', async c => {
     guard(c); const p = c.url.searchParams;
+    await syncIncomingStock(c.env.db).catch(() => {});
     const filter = { q: p.get('q') ?? '', supplierId: p.get('supplierId') ?? '', state: p.get('state') ?? '' }, day = today();
     const [orders, counts] = await Promise.all([listPurchases(c.env.db, me(c), filter, day), purchaseCounts(c.env.db, me(c), filter, day)]);
     return json({ orders, counts, canSeePrices: canSeePrices(asActor(me(c))), today: day });
@@ -253,6 +257,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         created.push({ id, ticketNumber: ticket, internalNo: o.internalNo });
       });
     }
+    await syncIncomingStock(db);
     return json({ created, skipped }, 201);
   }, 'business');
 

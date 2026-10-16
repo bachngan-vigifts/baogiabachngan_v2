@@ -81,6 +81,37 @@ Báo giá ──[Sinh đơn hàng]──▶ Đơn đặt hàng
 
 - Nút **Kiểm tồn** trên báo giá: so số lượng từng mã với tồn khả dụng, tồn NCC và hàng chờ về, giống trang *Khách hỏi tồn*. Mã thiếu được đánh dấu đỏ.
 
+## Chiết khấu theo khách và điều khoản thanh toán trên báo giá
+- **Hộp "Tạo báo giá mới":** chọn khách đã đặt CK riêng (trang chi tiết khách hàng) thì ô "Chiết khấu toàn bảng" tự ẩn và hiện CK của khách.
+  - Khi thêm sản phẩm, CK được tự áp đúng theo thương hiệu.
+  - **Nhận thương hiệu:** Lys (có chữ "Lys"); Lock&Lock (Lock&Lock / LocknLock / Lock & Lock…); Minh Long (gồm Healthy Cook, sứ dưỡng sinh). Mã thuộc thương hiệu khác thì CK = 0.
+  - Code: `brandDiscountKey` trong `quotes/domain/quote-math.ts`.
+- **Nút "Điều khoản thanh toán"** (bên phải tiêu đề "Ghi chú báo giá"):
+  - Đổi tỷ lệ cọc và hạn thanh toán phần còn lại; hiện giới hạn công nợ của khách.
+  - Khách có CK riêng: có ô "Áp lại CK riêng của khách cho các dòng". Khách không có: có ô "Chiết khấu toàn bảng" áp cho mọi dòng.
+  - Ghi chú thanh toán tự cập nhật; bấm "Lưu báo giá" để lưu.
+  - Báo giá đã duyệt thì chỉ Manager dùng được, như các ô khác.
+
+## Giữ hàng cho báo giá (migration `0063_stock_holds.sql`, quyền `0064_supabase_access_stock_holds.sql`)
+- **Nút "Giữ hàng 5 ngày"** trên báo giá **đã duyệt**: nhân viên xem được báo giá hoặc Manager bấm. Hệ thống treo tồn kho thật cho từng mã của báo giá, gộp các dòng cùng mã. Mã không có trong danh mục thì bỏ qua.
+  - Mỗi mã chỉ treo **phần đang khả dụng**. Thiếu thì báo rõ mã nào cần bao nhiêu và giữ được bao nhiêu.
+  - Báo giá đang giữ thì không giữ lần hai.
+- **Tồn khả dụng** ở mọi chỗ kiểm tồn = tổng kho thật − **Đang treo**. Đang treo là các dòng giữ còn hạn của báo giá **khác**.
+  - Các bảng Kiểm tồn báo giá và Khách hỏi tồn có thêm cột "Tồn kho", "Đang treo" (kèm link tới báo giá đang giữ) và "Khả dụng".
+  - Hộp chọn sản phẩm và trang Sản phẩm cũng trừ phần đang treo.
+  - Hàng chờ về / tồn NCC không bị treo.
+- **Bỏ giữ:** nhân viên xem được báo giá hoặc Manager. **Gia hạn +5 ngày:** chỉ Manager, tính thêm từ hạn hiện tại.
+- **Lập Đơn hàng / HĐKT từ báo giá:** tự bỏ treo (trạng thái `converted`).
+- **Hết hạn:** hết 5 ngày thì không còn trừ khả dụng nữa.
+  - Dòng giữ chuyển `expired`; người giữ và người phụ trách báo giá nhận thông báo "Hết hạn giữ hàng" (mỗi báo giá một lần).
+  - Việc này chạy ở nhịp `/pulse` (khoảng 30 giây, khi có người đang dùng hệ thống) và khi tải danh sách giữ hàng.
+- **API:**
+  - `GET /stock-holds`;
+  - `GET|POST /quotes/:id/hold`;
+  - `POST /quotes/:id/hold/release`;
+  - `POST /quotes/:id/hold/extend`.
+- **Code:** `src/modules/sales/api/hold-routes.ts`; test `tests/app/stock-holds.test.ts`.
+
 ## Duyệt báo giá (như web cũ; migration `0008_quote_approval.sql`)
 
 - Cột mới trên `staff_quotations`: `approval_status` (`pending` / `approved`), `approved_at`, `approved_by`.

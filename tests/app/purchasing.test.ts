@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
@@ -392,7 +393,8 @@ test('số đỏ menu: việc chưa hoàn tất, phạm vi đơn, cập nhật n
 });
 
 test('nhập đơn mua từ file NCC: mỗi số đơn một đơn "đã duyệt + NCC đã xác nhận", số đã giao thành phiếu nhận không cần Sapo, nhập lại không trùng', async () => {
-  const { call, emp, mgr, kho, a } = await setup();
+  const { db, call, emp, mgr, kho, a } = await setup();
+  await db.insert(products).values([{ sku: 'LY1', name: 'Ly sứ', updatedAt: now }, { sku: 'DIA1', name: 'Đĩa', updatedAt: now }]);
   const orders = [
     { internalNo: 'DDLT0001/1026', arrivalDate: '2026-10-22', lines: [{ sku: 'LY1', name: 'Ly sứ', quantity: 500, price: 187000, discount: 25, promisedDate: '2026-10-22' }, { sku: '030937000', name: 'Chén chấm', quantity: 100, price: 15000, discount: 25 }] },
     { internalNo: 'DDLT0002/1026', arrivalDate: '2026-11-05', lines: [{ sku: 'DIA1', name: 'Đĩa', quantity: 300, price: 1000, discount: 0, received: 100 }] },
@@ -412,6 +414,12 @@ test('nhập đơn mua từ file NCC: mỗi số đơn một đơn "đã duyệt
   assert.equal(v.state, 'partially_received'); assert.equal(v.progress.missing, 200);
   assert.deepEqual([v.receipts.length, v.receipts[0].sapoStatus, v.receipts[0].lines[0].goodQty], [1, 'not_needed', 100]);
   assert.ok((await call('/purchase-orders', kho)).data.orders.some((o: any) => o.id === r.data.created[0].id), 'kho thấy ngay để nhận hàng');
+  // Tồn "Hàng chờ về" = số còn thiếu của đơn mua đã duyệt (mã có trong danh mục); nhận hàng thì giảm.
+  const incoming = async () => Object.fromEntries((await db.select({ sku: productStock.sku, qty: productStock.quantity }).from(productStock).innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId)).where(eq(warehouses.kind, 'incoming'))).map(r => [r.sku, r.qty]));
+  assert.deepEqual(await incoming(), { LY1: 500, DIA1: 200 });
+  const v1 = (await call(`/purchase-orders/${r.data.created[0].id}`, kho)).data;
+  assert.equal((await call(`/purchase-orders/${v1.id}/receipts`, kho, 'POST', { clientKey: 'imp-rcv-001', lines: [{ lineId: v1.lines[0].id, goodQty: 120 }] })).status, 201);
+  assert.deepEqual(await incoming(), { LY1: 380, DIA1: 200 });
   const found = (await call('/purchase-orders?q=' + encodeURIComponent('ddlt0002/1026'), mgr)).data.orders;
   assert.deepEqual(found.map((o: any) => [o.id, o.internalNo]), [[r.data.created[1].id, 'DDLT0002/1026']], 'tìm theo số đơn NCC');
   assert.equal((await call('/purchase-orders?q=' + encodeURIComponent('ddlt0002/1026'), mgr)).data.counts.all, 1, 'số đếm dùng cùng tìm kiếm theo số đơn NCC');

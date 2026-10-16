@@ -15,7 +15,7 @@ import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { contractCounters } from '../../contracts/schema.ts';
-import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines, packingSlips } from '../schema.ts';
+import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines, packingSlips, stockHolds } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
@@ -154,6 +154,8 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   const customerId = cust ? cust.id : null;
   await db.transaction(async tx => {
     const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
+    // Báo giá đang giữ hàng: lập đơn / HĐKT thì tự bỏ treo (hàng đi theo đơn).
+    await tx.update(stockHolds).set({ status: 'converted', closedAt: now, closedBy: o.createdBy }).where(and(eq(stockHolds.quoteId, quote.id), eq(stockHolds.status, 'active')));
     await tx.insert(salesOrders).values({
       id, orderNo: nextDocNo('DH', today, used), quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
