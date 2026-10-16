@@ -33,7 +33,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
-import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS } from './quote-math.js';
+import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -167,15 +167,30 @@ function reportUiError(err) {
 }
 window.addEventListener('error', e => { if (e.error || e.message) reportUiError(e.error || e.message); });
 window.addEventListener('unhandledrejection', e => reportUiError(e.reason));
-function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = false } = {}) {
-  const dlg = $('#confirm-dialog');
+/**
+ * Hộp xác nhận. Chống bấm nhầm cho thao tác xoá / huỷ (`danger`):
+ *  - con trỏ đặt sẵn ở nút "Không" (Enter / chạm đúp không xoá nhầm);
+ *  - nút xoá khoá `delay` ms đầu (đếm ngược) để kịp đọc;
+ *  - `typeToConfirm`: phải gõ đúng mã (vd số báo giá) mới bấm được – dùng cho dữ liệu quan trọng, không khôi phục được.
+ */
+const foldText = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, '');
+function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = false, delay = danger ? 1500 : 0, typeToConfirm = '' } = {}) {
+  const dlg = $('#confirm-dialog'), okBtn = $('#confirm-ok'), cancelBtn = $('#confirm-cancel'), wrap = $('#confirm-type'), input = $('#confirm-type-input');
   $('#confirm-title').textContent = title; $('#confirm-text').textContent = text;
-  const okBtn = $('#confirm-ok'); okBtn.textContent = ok; okBtn.classList.toggle('danger-bg', danger);
+  okBtn.classList.toggle('danger-bg', danger); cancelBtn.textContent = danger ? 'Không, giữ lại' : 'Huỷ';
+  wrap.hidden = !typeToConfirm; input.value = '';
+  if (typeToConfirm) $('#confirm-type-code').textContent = typeToConfirm;
+  let wait = Math.ceil(delay / 1000), timer = 0;
+  const typed = () => !typeToConfirm || foldText(input.value) === foldText(typeToConfirm);
+  const draw = () => { okBtn.textContent = wait > 0 ? `${ok} (${wait})` : ok; okBtn.disabled = wait > 0 || !typed(); };
+  draw();
+  if (wait > 0) timer = setInterval(() => { wait--; draw(); if (wait <= 0) clearInterval(timer); }, 1000);
   return new Promise(resolve => {
-    const done = v => { dlg.close(); okBtn.onclick = $('#confirm-cancel').onclick = null; resolve(v); };
-    okBtn.onclick = () => done(true); $('#confirm-cancel').onclick = () => done(false);
+    const done = v => { clearInterval(timer); dlg.close(); okBtn.onclick = cancelBtn.onclick = input.oninput = input.onkeydown = null; okBtn.disabled = false; okBtn.textContent = ok; resolve(v); };
+    okBtn.onclick = () => { if (!okBtn.disabled) done(true); }; cancelBtn.onclick = () => done(false);
+    input.oninput = draw; input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (!okBtn.disabled) done(true); } };
     dlg.oncancel = e => { e.preventDefault(); done(false); };
-    dlg.showModal(); okBtn.focus();
+    dlg.showModal(); (typeToConfirm ? input : danger ? cancelBtn : okBtn).focus();
   });
 }
 $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
@@ -1055,7 +1070,7 @@ $('#line-list').addEventListener('click', async e => {
   if (e.target.closest('[data-image]')) return openImage(i);
   if (!e.target.closest('[data-del]')) return;
   const r = rows[i];
-  if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true })) return;
+  if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true, delay: 0 })) return;
   rows.splice(i, 1);
   markDirty(); renderLines();
 });
@@ -1067,7 +1082,8 @@ async function stockHtml(sku) {
   const p = d.products.find(x => normalize(x.sku) === normalize(sku));
   if (!p) return { html: '<p class="muted">Chưa tìm thấy mã hàng này trong dữ liệu tồn kho hiện tại.</p>', product: null };
   const byName = new Map(d.warehouses.map(w => [normalize(w.name), w]));
-  const list = QUOTE_WAREHOUSES.some(n => byName.has(normalize(n))) ? QUOTE_WAREHOUSES.map(n => byName.get(normalize(n)) || { name: n }) : d.warehouses;
+  const list = (QUOTE_WAREHOUSES.some(n => byName.has(normalize(n))) ? QUOTE_WAREHOUSES.map(n => byName.get(normalize(n)) || { name: n }) : d.warehouses)
+    .filter(w => hasSupplierStock(p) || !(w.kind === 'supplier' || normalize(w.name) === normalize('NCC')));
   const rows = list.map(w => { const v = w.id ? p.stock?.[w.id] : undefined; return `<div><span>${esc(w.name)}</span><strong>${v === undefined || v === null ? 'Chưa có số liệu' : fmtNum(Number(v))}</strong></div>`; }).join('');
   const at = p.stockUpdatedAt || d.observedAt;
   return { product: p, html: `<div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(at ? new Date(at).toLocaleString('vi-VN') : 'Chưa có thời điểm cập nhật')}</p>` };
@@ -2135,6 +2151,8 @@ addEventListener('scroll', () => { if (!pSuggest.hidden) placeProductSuggest(); 
 
 // ----- chọn sản phẩm từ danh mục ngay trong báo giá
 let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
+/** Chỉ hàng Lock&Lock có kho NCC (tồn bên nhà cung cấp); hãng khác ẩn cho gọn. */
+const hasSupplierStock = p => brandDiscountKey(p?.brand || p?.name) === 'lock'; // chưa có nhãn hiệu trên Sapo thì nhận theo tên
 const kindStock = (p, kind) => { const ws = state.warehouses.filter(w => w.kind === kind && p.stock?.[w.id] !== undefined); return ws.length ? ws.reduce((t, w) => t + Number(p.stock[w.id] || 0), 0) : null; };
 const stockText = v => v === null ? 'Chưa có số liệu' : fmtNum(v);
 /** Bộ lọc giống "Tìm nhanh sản phẩm" của web cũ: phạm vi theo loại báo giá, nhóm, khoảng giá theo chính sách đang chọn. */
@@ -2234,7 +2252,7 @@ function renderPicker(observedAt, min, max) {
     return `<li data-i="${i}" class="${has ? 'added' : ''}">${thumb(p)}
       <span class="prod-text"><b>${esc(p.name)}</b><small>Nhãn hiệu: ${esc(p.brand || 'Chưa có trên Sapo')}</small>
         <small>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · ${vat}</small>
-        <small>Tồn khả dụng: <strong>${kindStock(p, 'stock') === null ? stockText(null) : fmtNum(availableStock(p, editor.id || ''))}</strong>${heldQty(p.sku, editor.id || '') ? ` (đang treo ${fmtNum(heldQty(p.sku, editor.id || ''))})` : ''} | Tồn NCC: ${stockText(kindStock(p, 'supplier'))} – Hàng chờ về: ${stockText(kindStock(p, 'incoming'))}</small></span>
+        <small>Tồn khả dụng: <strong>${kindStock(p, 'stock') === null ? stockText(null) : fmtNum(availableStock(p, editor.id || ''))}</strong>${heldQty(p.sku, editor.id || '') ? ` (đang treo ${fmtNum(heldQty(p.sku, editor.id || ''))})` : ''} | ${hasSupplierStock(p) ? `Tồn NCC: ${stockText(kindStock(p, 'supplier'))} – ` : ''}Hàng chờ về: ${stockText(kindStock(p, 'incoming'))}</small></span>
       <span class="price">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}<small>${included ? 'Đã gồm VAT' : 'Chưa VAT'}</small></span>
       <input class="num-input" inputmode="decimal" value="1" aria-label="Số lượng ${esc(p.name)}">
       <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
@@ -2515,7 +2533,7 @@ $('#member-list').addEventListener('click', async e => {
       if (!await confirmBox(`Khoá tài khoản ${m.name}? Người này sẽ bị đăng xuất và không đăng nhập được nữa.`, { title: 'Khoá tài khoản', ok: 'Khoá', danger: true })) return;
       await api('/admin/member', 'DELETE', { id }); toast('Đã khoá ' + m.name + '.');
     } else if (t.dataset.deleteMember) {
-      if (!await confirmBox(`Xoá ${m.name} khỏi danh sách nhân viên? Tài khoản bị đăng xuất, không đăng nhập được nữa và email được giải phóng (tạo lại được). Báo giá, đơn… cũ vẫn giữ tên ${m.name}. Không hoàn tác được.`, { title: 'Xoá nhân viên', ok: 'Xoá nhân viên', danger: true })) return;
+      if (!await confirmBox(`Xoá ${m.name} khỏi danh sách nhân viên? Tài khoản bị đăng xuất, không đăng nhập được nữa và email được giải phóng (tạo lại được). Báo giá, đơn… cũ vẫn giữ tên ${m.name}. Không hoàn tác được.`, { title: 'Xoá nhân viên', ok: 'Xoá nhân viên', danger: true, typeToConfirm: 'XOA' })) return;
       await api(`/admin/members/${encodeURIComponent(id)}`, 'DELETE'); toast('Đã xoá ' + m.name + '.');
     } else if (t.dataset.unlock) {
       await api('/admin/member', 'PUT', { id, name: m.name, email: m.email, phone: m.phone, positionId: m.positionId, role: m.role, active: true });
@@ -2757,7 +2775,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
+function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
@@ -2812,12 +2830,12 @@ async function loadStockRequests(focusId) {
         <small class="muted">${esc(r.askedBy)} · ${new Date(r.createdAt).toLocaleString('vi-VN')}</small></div></header>
       <div class="row-gap end"><button type="button" class="btn secondary small" data-purchase-from title="Lập đơn mua NCC cho phần khách cần mà chưa đáp ứng">Đặt hàng NCC</button><button type="button" class="btn secondary small" data-shortage-pdf ${stockShortageExports.get(r.id)?.rows.length ? '' : 'disabled'} title="Xuất mã thiếu so với tồn khả dụng; không kèm thông tin khách hoặc giá">Tải PDF mã thiếu</button></div>
       ${r.note ? `<p class="small"><b>Khách ghi chú:</b> ${esc(r.note)}</p>` : ''}
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th>${r.items.some(i => heldQty(i.sku) > 0) ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}<th class="right">NCC · Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
-      ${r.items.map(i => { const anyHeld = r.items.some(x => heldQty(x.sku) > 0); const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th>${r.items.some(i => heldQty(i.sku) > 0) ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}${r.items.some(x => hasSupplierStock(stock.get(x.sku))) ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
+      ${r.items.map(i => { const anyHeld = r.items.some(x => heldQty(x.sku) > 0); const anyLock = r.items.some(x => hasSupplierStock(stock.get(x.sku))); const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
         return `<tr><td>${esc(i.name)}<small>${esc(i.sku)} · ${esc(i.unit || '')}</small></td><td class="right">${fmtNum(i.qty)}</td>
           ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>` : ''}
           <td class="right ${av !== null && av < i.qty ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
-          <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
+          ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? stockText(kindStock(p, 'incoming')) : '—'}</td>
           <td class="right">${r.status === 'open' ? `<input class="num-input" inputmode="decimal" data-sku="${esc(i.sku)}" value="${av === null ? '' : Math.max(0, Math.min(i.qty, av))}" aria-label="Đáp ứng ${esc(i.name)}">` : fmtNum(a?.available ?? 0)}</td></tr>`; }).join('')}
       </tbody></table></div>
       ${r.status === 'open' ? `<label>Trả lời khách<textarea rows="2" maxlength="2000" data-answer placeholder="Ví dụ: Còn đủ hàng, giao được trong 2 ngày."></textarea></label>
@@ -3540,7 +3558,7 @@ document.addEventListener('click', async e => {
   }
   if (e.target.closest('#order-delete')) {
     const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';
-    if (!await confirmBox(`Xoá hẳn ${w} ${docNo()} đã huỷ? Không khôi phục được (nhật ký thay đổi vẫn giữ lại). Đơn nháp trên Sapo (nếu có) cần xoá riêng trên Sapo.`, { title: 'Xoá ' + w, ok: 'Xoá ' + w, danger: true })) return;
+    if (!await confirmBox(`Xoá hẳn ${w} ${docNo()} đã huỷ? Không khôi phục được (nhật ký thay đổi vẫn giữ lại). Đơn nháp trên Sapo (nếu có) cần xoá riêng trên Sapo.`, { title: 'Xoá ' + w, ok: 'Xoá ' + w, danger: true, typeToConfirm: docNo() || 'XOA' })) return;
     try { await api(`/orders/${encodeURIComponent(sales.order.id)}`, 'DELETE'); toast('Đã xoá ' + w + '.'); go(k ? '#/contracts' : '#/orders'); } catch (ex) { toast(ex.message, 'err'); }
   }
   const sign = e.target.closest('[data-contract-sign]');
@@ -3717,7 +3735,7 @@ $('#quote-stock').addEventListener('click', async () => {
     for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); }
     let short = 0;
     // Cột "Tồn kho · Đang treo" chỉ hiện khi có mã đang bị báo giá khác treo; không thì bảng gọn như cũ.
-    const anyHeld = [...need.values()].some(i => i.sku && heldQty(i.sku, me) > 0);
+    const anyHeld = [...need.values()].some(i => i.sku && heldQty(i.sku, me) > 0), anyLock = [...need.values()].some(i => i.sku && hasSupplierStock(stock.get(i.sku)));
     const rows = [...need.values()].map(i => {
       // Khả dụng cho báo giá này = tồn kho − phần báo giá KHÁC đang treo (phần chính báo giá này giữ vẫn tính là của mình).
       const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p, me) : null, miss = av === null ? null : Math.max(0, i.qty - av);
@@ -3726,10 +3744,10 @@ $('#quote-stock').addEventListener('click', async () => {
       return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
         ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>` : ''}
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
-        <td class="right">${p ? `${stockText(kindStock(p, 'supplier'))} · ${stockText(kindStock(p, 'incoming'))}` : '—'}</td>
+        ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? stockText(kindStock(p, 'incoming')) : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
-    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th>${anyHeld ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}<th class="right">NCC · Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th>${anyHeld ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}${anyLock ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     bindStockCheckFilter($('#stock-check-body'));
     $('#stock-check-note').textContent = short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.';
   } catch (e) { $('#stock-check-body').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
@@ -3871,7 +3889,7 @@ $('#approve-quote').addEventListener('click', async () => {
 });
 $('#delete-quote').addEventListener('click', async () => {
   if (!editor.id || (!isManager() && editor.approval?.status === 'approved')) return;
-  if (!await confirmBox(`Xoá báo giá ${field('quoteNo').value} · ${field('customer').value || 'Chưa nhập khách hàng'} khỏi hệ thống? Thao tác này không thể hoàn tác.`, { ok: 'Xoá báo giá', danger: true })) return;
+  if (!await confirmBox(`Xoá báo giá ${field('quoteNo').value} · ${field('customer').value || 'Chưa nhập khách hàng'} khỏi hệ thống? Thao tác này không thể hoàn tác.`, { title: 'Xoá báo giá', ok: 'Xoá báo giá', danger: true, typeToConfirm: field('quoteNo').value || 'XOA' })) return;
   try {
     await api('/quotes/' + encodeURIComponent(editor.id), 'DELETE', { revision: editor.revision });
     editor.dirty = false; editor.id = null; toast('Đã xoá báo giá.'); go('#/quotes'); loadQuotes();

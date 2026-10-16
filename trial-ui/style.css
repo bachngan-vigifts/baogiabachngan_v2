@@ -1460,3 +1460,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .card-head-row .card-title { margin: 0; }
 .pill-note { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--green-50); color: var(--green); font-size: .9rem; font-weight: 600; }
 .check-line { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+/* Hộp xác nhận xoá: gõ mã để xác nhận (chống bấm nhầm). */
+.confirm-type { display: grid; gap: 6px; margin-top: 12px; font-size: .9rem; color: var(--muted, #5b6b82); }
+.confirm-type b { color: #b4232c; user-select: all; }
+.confirm-type input { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; }
+#confirm-ok:disabled { opacity: .55; cursor: not-allowed; }
