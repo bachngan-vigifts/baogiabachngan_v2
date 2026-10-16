@@ -332,3 +332,28 @@ test('đơn mua của nhân viên là nháp, chỉ vào hàng chờ duyệt khi 
   v = (await call(`/purchase-orders/${mid}`, mgr)).data;
   assert.ok(v.submittedAt, 'Manager lập = đã gửi'); assert.ok(!v.actions.includes('submit'));
 });
+
+test('nhập đơn mua từ file NCC: mỗi số đơn một đơn "đã duyệt + NCC đã xác nhận", số đã giao thành phiếu nhận không cần Sapo, nhập lại không trùng', async () => {
+  const { call, emp, mgr, kho, a } = await setup();
+  const orders = [
+    { internalNo: 'DDLT0001/1026', arrivalDate: '2026-10-22', lines: [{ sku: 'LY1', name: 'Ly sứ', quantity: 500, price: 187000, discount: 25, promisedDate: '2026-10-22' }, { sku: '030937000', name: 'Chén chấm', quantity: 100, price: 15000, discount: 25 }] },
+    { internalNo: 'DDLT0002/1026', arrivalDate: '2026-11-05', lines: [{ sku: 'DIA1', name: 'Đĩa', quantity: 300, price: 1000, discount: 0, received: 100 }] },
+  ];
+  const body = { supplierId: a, warehouse: 'Kho Cần Thơ', taxRate: 8, orders };
+  assert.equal((await call('/purchase-orders/import', emp, 'POST', body)).status, 403, 'chỉ Manager');
+  assert.equal((await call('/purchase-orders/import', mgr, 'POST', { ...body, warehouse: '' })).status, 400, 'bắt buộc địa chỉ giao');
+  assert.equal((await call('/purchase-orders/import', mgr, 'POST', { ...body, orders: [{ ...orders[1], lines: [{ ...orders[1]!.lines[0], received: 301 }] }] })).status, 400, 'đã giao vượt số đặt');
+  const r = await call('/purchase-orders/import', mgr, 'POST', body);
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.deepEqual(r.data.created.map((x: any) => x.internalNo), ['DDLT0001/1026', 'DDLT0002/1026']);
+  let v = (await call(`/purchase-orders/${r.data.created[0].id}`, mgr)).data;
+  assert.deepEqual([v.state, v.internalNo, v.warehouse, v.arrivalDate, v.confirmedOnBehalf], ['confirmed', 'DDLT0001/1026', 'Kho Cần Thơ', '2026-10-22', true]);
+  assert.deepEqual(v.lines.map((l: any) => [l.sku, l.quantity, l.price, l.purchaseDiscount, l.taxRate, l.promisedDate]), [['LY1', 500, 187000, 25, 8, '2026-10-22'], ['030937000', 100, 15000, 25, 8, '2026-10-22']]);
+  assert.equal(v.totals.subtotal, 500 * 187000 * 0.75 + 100 * 15000 * 0.75);
+  v = (await call(`/purchase-orders/${r.data.created[1].id}`, mgr)).data;
+  assert.equal(v.state, 'partially_received'); assert.equal(v.progress.missing, 200);
+  assert.deepEqual([v.receipts.length, v.receipts[0].sapoStatus, v.receipts[0].lines[0].goodQty], [1, 'not_needed', 100]);
+  assert.ok((await call('/purchase-orders', kho)).data.orders.some((o: any) => o.id === r.data.created[0].id), 'kho thấy ngay để nhận hàng');
+  const again = await call('/purchase-orders/import', mgr, 'POST', body);
+  assert.deepEqual([again.data.created.length, again.data.skipped.map((x: any) => x.internalNo)], [0, ['DDLT0001/1026', 'DDLT0002/1026']], 'nhập lại file không tạo trùng');
+});

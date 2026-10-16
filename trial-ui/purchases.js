@@ -95,7 +95,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   titles.append(el('span', 'eyebrow', 'Mua hàng'), el('h1', '', 'Đơn mua NCC'),
     el('p', 'muted', 'Lập đơn từ báo giá, đơn / HĐKT hoặc khách hỏi tồn; Manager duyệt giá; kho nhận hàng từng đợt rồi nhập kho trên Sapo (Sapo là nguồn tồn chính).'));
   const add = btn('+ Lập đơn mua', 'btn primary', () => openCreate());
-  head.append(titles, add);
+  // Manager: nhập các đơn đã đặt với NCC từ file Excel tổng đơn của NCC (mẫu Minh Long) – trial-ui/purchase-import.js.
+  const importBtn = btn('⬆ Nhập từ file NCC', 'btn secondary', () => importForm()); importBtn.hidden = true;
+  const headTools = el('div', 'row-gap'); headTools.append(importBtn, add);
+  head.append(titles, headTools);
+  options().then(o => { importBtn.hidden = !o.isManager || kho(); }).catch(() => {});
   const panel = el('div', 'panel'), bar = el('div', 'toolbar');
   const search = input('search', '', { placeholder: 'Tìm số đơn, NCC, mã hàng, số báo giá / HĐKT, khách…' }); search.setAttribute('aria-label', 'Tìm đơn mua');
   const label = el('label', 'search'); label.append(search);
@@ -135,7 +139,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
   function renderList(prices) {
     const isKho = kho();
-    khoBox.hidden = !isKho; panel.hidden = isKho && !khoAll; add.hidden = isKho;
+    khoBox.hidden = !isKho; panel.hidden = isKho && !khoAll; add.hidden = isKho; if (isKho) importBtn.hidden = true;
     if (isKho) renderKho();
     thead.replaceChildren(); tbody.replaceChildren();
     const hr = el('tr'); for (const h of ['Số đơn', 'Nhà cung cấp', 'Ngày lập', 'Hẹn giao', 'Đã nhận', ...(prices ? ['Tổng tiền', 'Còn nợ'] : []), 'Trạng thái']) hr.append(el('th', '', h));
@@ -405,6 +409,75 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     sc.onload = () => resolve(globalThis.XLSX); sc.onerror = () => { xlsx = null; sc.remove(); reject(Error('Không tải được bộ tạo Excel. Tải lại trang rồi thử lại.')); };
     document.head.append(sc);
   }));
+  /**
+   * Nhập đơn mua từ file Excel tổng đơn của NCC: gom theo số đơn phía NCC, xem trước, Manager bấm tạo.
+   * Đơn tạo ra = đã duyệt + NCC đã xác nhận; số đơn đã có thì máy chủ bỏ qua (nhập lại file không trùng).
+   */
+  async function importForm() {
+    const o = await options(), d = frame('Nhập đơn mua', 'Từ file Excel tổng đơn của NCC'), f = el('form', 'sup-form'), err = errorBox();
+    const sup = el('select'); sup.required = true; sup.append(Object.assign(el('option', '', '— Chọn nhà cung cấp —'), { value: '' }));
+    for (const x of o.suppliers) sup.append(Object.assign(el('option', '', x.name), { value: x.id }));
+    sup.value = o.suppliers.find(x => /minh\s*long/i.test(x.name))?.id || '';
+    let lastAddr = ''; try { lastAddr = localStorage.getItem('bn-import-address') || ''; } catch { /* bỏ qua */ }
+    const addr = input('text', lastAddr, { maxLength: 120, required: true, placeholder: 'Áp cho mọi đơn trong file, sửa từng đơn sau nếu cần' });
+    const vat = el('select'); for (const r of [8, 10, 0]) vat.append(Object.assign(el('option', '', r + '%'), { value: String(r) }));
+    const file = input('file'); file.accept = '.xlsx,.xls';
+    const g = el('div', 'form-grid two'); g.append(field('Nhà cung cấp *', sup), field('VAT', vat), field('Địa chỉ giao hàng *', addr, 'span-2'), field('File Excel tổng đơn', file, 'span-2'));
+    const help = el('p', 'muted small', 'Đọc các cột: Đơn hàng (số đơn NCC) · Ngày giao gốc · Mã hàng · Tên hàng · Sl đặt · ĐG Bán · Chiết khấu · SL giao. Các dòng cùng số đơn gom thành một đơn mua, tạo sẵn "đã duyệt + NCC đã xác nhận". Số đã giao ghi thành phiếu nhận (không cần nhập Sapo). Số đơn đã có trên hệ thống sẽ bỏ qua.');
+    const preview = el('div'), ok = el('button', 'btn primary', 'Tạo đơn mua'); ok.type = 'submit'; ok.disabled = true;
+    f.append(g, help, preview, err, foot(ok)); d.append(f);
+    let parsed = null;
+    file.addEventListener('change', async () => {
+      err.textContent = ''; parsed = null; ok.disabled = true; preview.replaceChildren();
+      const fl = file.files?.[0]; if (!fl) return;
+      try {
+        const [X, { parsePurchaseSheet, orderSubtotal }] = await Promise.all([loadXlsx(), import('./purchase-import.js')]);
+        const wb = X.read(await fl.arrayBuffer()), ws = wb.Sheets[wb.SheetNames[0]];
+        parsed = parsePurchaseSheet(X.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }), X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' }));
+        if (!parsed.orders.length) { err.textContent = 'Không đọc được đơn nào. Kiểm tra file có cột "Đơn hàng" và "Mã hàng".'; return; }
+        const lines = parsed.orders.reduce((t, x) => t + x.lines.length, 0), got = parsed.orders.filter(x => x.lines.some(l => l.received > 0)).length;
+        const sum = parsed.orders.reduce((t, x) => t + orderSubtotal(x), 0);
+        preview.append(el('p', 'pur-total', `${parsed.orders.length} đơn · ${lines} dòng hàng · tiền hàng (chưa VAT) ${money(sum)}` + (got ? ` · ${got} đơn đã giao một phần` : '')));
+        if (parsed.warnings.length) {
+          const w = el('div', 'pur-note warn small'); w.append(el('b', '', `Cần xem lại (${parsed.warnings.length}):`));
+          const ul = el('ul'); for (const t of parsed.warnings.slice(0, 30)) ul.append(el('li', '', t)); w.append(ul); preview.append(w);
+        }
+        const t = el('table', 'data-table pur-lines'), th = el('tr'), tb = el('tbody');
+        for (const h of ['Số đơn NCC', 'Hẹn giao', 'Số mã', 'SL đặt', 'Đã giao', 'Tiền hàng']) th.append(el('th', '', h));
+        for (const x of parsed.orders) {
+          const tr = el('tr'), q = x.lines.reduce((s2, l) => s2 + l.quantity, 0), rc = x.lines.reduce((s2, l) => s2 + l.received, 0);
+          const first = el('td'); first.append(el('b', '', x.internalNo), el('small', 'sup-sub', x.lines.slice(0, 3).map(l => l.sku).join(', ') + (x.lines.length > 3 ? '…' : '')));
+          tr.append(first, el('td', '', dmy(x.arrivalDate)), el('td', 'num', x.lines.length), el('td', 'num', num(q)), el('td', 'num', rc ? num(rc) : '—'), el('td', 'num', money(orderSubtotal(x))));
+          tb.append(tr);
+        }
+        t.append(el('thead'), tb); t.tHead.append(th);
+        const tw = el('div', 'table-wrap'); tw.append(t); preview.append(tw);
+        ok.textContent = `Tạo ${parsed.orders.length} đơn mua`; ok.disabled = false;
+      } catch (e) { err.textContent = e.message || 'Không đọc được file Excel.'; }
+    });
+    f.addEventListener('submit', async e => {
+      e.preventDefault(); err.textContent = '';
+      if (!parsed) return;
+      if (!sup.value) { err.textContent = 'Chọn nhà cung cấp.'; return; }
+      if (!addr.value.trim()) { err.textContent = 'Nhập địa chỉ giao hàng.'; addr.focus(); return; }
+      try { localStorage.setItem('bn-import-address', addr.value.trim()); } catch { /* bỏ qua */ }
+      ok.disabled = true; const created = [], skipped = [];
+      try {
+        for (let i = 0; i < parsed.orders.length; i += 50) {
+          ok.textContent = `Đang tạo… ${i}/${parsed.orders.length}`;
+          const r = await api('/purchase-orders/import', 'POST', { supplierId: sup.value, warehouse: addr.value.trim(), taxRate: Number(vat.value),
+            orders: parsed.orders.slice(i, i + 50).map(x => ({ internalNo: x.internalNo, arrivalDate: x.arrivalDate || null, lines: x.lines.map(l => ({ sku: l.sku, name: l.name, quantity: l.quantity, price: l.price, discount: l.discount, received: l.received, promisedDate: l.promisedDate || null })) })) });
+          created.push(...r.created); skipped.push(...r.skipped);
+        }
+        toast(`Đã tạo ${created.length} đơn mua` + (skipped.length ? `, bỏ qua ${skipped.length} đơn đã có` : '') + '.');
+        preview.replaceChildren(el('p', 'pur-total', `Đã tạo ${created.length} đơn mua.` + (skipped.length ? ` Bỏ qua ${skipped.length} đơn đã có: ` + skipped.slice(0, 20).map(x => `${x.internalNo} (${x.ticketNumber})`).join(', ') + (skipped.length > 20 ? '…' : '') : '')));
+        ok.textContent = 'Xong'; parsed = null; load();
+      } catch (ex) {
+        err.textContent = (ex.message || 'Không tạo được đơn.') + (created.length ? ` (Đã tạo ${created.length} đơn trước khi lỗi – sửa file rồi nhập lại, đơn đã có sẽ được bỏ qua.)` : '');
+        ok.disabled = false; ok.textContent = 'Thử lại'; load();
+      }
+    });
+  }
   /** "Hỏi tồn NCC": bảng các mã còn thiếu + quy cách gợi ý, tải Excel để gửi NCC (không gửi email, không ghi gì lên máy chủ). */
   async function stockAsk() {
     const v = current, d = frame('Hỏi tồn NCC', `${v.ticketNumber} · ${v.supplier?.name || ''}`, back);

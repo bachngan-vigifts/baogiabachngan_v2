@@ -42,6 +42,21 @@ Nơi sửa **mọi thứ về NCC mà trước đây phải sửa code**:
 | Trả NCC | Manager, Kế toán | Khoản trả có `clientKey`, không được vượt số còn nợ, đính kèm được chứng từ ảnh/PDF ≤ 6 MB (lưu ở kho file private). Công nợ tính FIFO theo lịch trả, có quá hạn và kỳ tới. |
 | Huỷ đơn | Người lập (đơn nháp) / Manager | Bắt buộc ghi lý do. Không huỷ được khi đã nhận hàng hoặc đã trả tiền. Huỷ xong, số đã đặt được trả lại cho chứng từ nguồn. |
 
+**Nhập đơn mua từ file Excel tổng đơn của NCC (Manager)** – nút "⬆ Nhập từ file NCC" ở trang Đơn mua (mẫu file Minh Long).
+- **Cột đọc:** Đơn hàng (số đơn phía NCC) · Ngày giao gốc · Mã hàng · Tên hàng · Sl đặt · ĐG Bán · Chiết khấu · SL giao. Các cột khác bỏ qua.
+  - Tìm cột theo tiêu đề; không thấy dòng tiêu đề thì đọc theo vị trí cột A, E, F, G, L, O, Q, R.
+  - Mã hàng đọc dạng chữ nên giữ số 0 đầu.
+- **Gom đơn:** các dòng cùng "Đơn hàng" gom thành một đơn mua. Mã lặp trong đơn có cùng giá và CK thì cộng số lượng.
+- **Thông tin chọn trên màn hình nhập:** NCC, địa chỉ giao hàng (áp cho mọi đơn), VAT (mặc định 8%).
+- **Xem trước:** liệt kê cảnh báo, ví dụ trị giá trong file khác SL × giá × (1 − CK), hoặc thiếu giá / số lượng (dòng đó bị bỏ qua).
+- **Đơn tạo ra:** ở trạng thái **đã duyệt + NCC đã xác nhận**, ghi số đơn NCC, ngày hẹn từng mã, giá + CK theo file. Lịch trả mặc định: một kỳ "còn lại" chưa đặt hạn.
+- **Số đã giao (cột SL giao):** ghi thành một phiếu nhận với trạng thái Sapo "không cần nhập" (hàng đã nhập Sapo từ trước). Phiếu này không ghi sổ kho.
+- **Nhập lại file:** số đơn đã có (cùng NCC, chưa huỷ) được bỏ qua, nên nhập lại không tạo trùng.
+- **Code:**
+  - đọc file: `trial-ui/purchase-import.js`;
+  - API: `POST /purchase-orders/import`;
+  - test: `tests/app/purchase-import.test.ts`, `tests/app/purchasing.test.ts`.
+
 Bảng mới (migration `0051_supplier_purchasing`, REVOKE ở `0052`): `supplier_order_sources`, `supplier_receipts`, `supplier_receipt_lines`, `supplier_payment_schedules`, `supplier_payments`, `supplier_order_events` (lịch sử thao tác). Cột mới trên `incoming_shipments`: `note`, `cancelled_*`, `cancel_reason`, `confirmed_on_behalf`, `revision`.
 
 **Việc tự sinh** (`supplierPurchases` trong `tasks/api/auto-tasks.ts`, nguồn `purchase`):

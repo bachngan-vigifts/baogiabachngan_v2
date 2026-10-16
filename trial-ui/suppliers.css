@@ -40,6 +40,7 @@
 .pur-total { margin: 4px 0 0; text-align: right; font-size: .9rem; }
 .pur-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
 .pur-note.danger { background: #fdecea; color: #b42318; }
+.pur-note.warn { background: var(--amber-50); color: var(--amber); } .pur-note ul { margin: 4px 0 0; padding-left: 18px; }
 .pur-card { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .pur-card.is-off { opacity: .65; }
 .pur-card p { margin: 0; }
