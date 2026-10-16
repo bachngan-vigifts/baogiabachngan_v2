@@ -167,15 +167,30 @@ function reportUiError(err) {
 }
 window.addEventListener('error', e => { if (e.error || e.message) reportUiError(e.error || e.message); });
 window.addEventListener('unhandledrejection', e => reportUiError(e.reason));
-function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = false } = {}) {
-  const dlg = $('#confirm-dialog');
+/**
+ * Hộp xác nhận. Chống bấm nhầm cho thao tác xoá / huỷ (`danger`):
+ *  - con trỏ đặt sẵn ở nút "Không" (Enter / chạm đúp không xoá nhầm);
+ *  - nút xoá khoá `delay` ms đầu (đếm ngược) để kịp đọc;
+ *  - `typeToConfirm`: phải gõ đúng mã (vd số báo giá) mới bấm được – dùng cho dữ liệu quan trọng, không khôi phục được.
+ */
+const foldText = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, '');
+function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = false, delay = danger ? 1500 : 0, typeToConfirm = '' } = {}) {
+  const dlg = $('#confirm-dialog'), okBtn = $('#confirm-ok'), cancelBtn = $('#confirm-cancel'), wrap = $('#confirm-type'), input = $('#confirm-type-input');
   $('#confirm-title').textContent = title; $('#confirm-text').textContent = text;
-  const okBtn = $('#confirm-ok'); okBtn.textContent = ok; okBtn.classList.toggle('danger-bg', danger);
+  okBtn.classList.toggle('danger-bg', danger); cancelBtn.textContent = danger ? 'Không, giữ lại' : 'Huỷ';
+  wrap.hidden = !typeToConfirm; input.value = '';
+  if (typeToConfirm) $('#confirm-type-code').textContent = typeToConfirm;
+  let wait = Math.ceil(delay / 1000), timer = 0;
+  const typed = () => !typeToConfirm || foldText(input.value) === foldText(typeToConfirm);
+  const draw = () => { okBtn.textContent = wait > 0 ? `${ok} (${wait})` : ok; okBtn.disabled = wait > 0 || !typed(); };
+  draw();
+  if (wait > 0) timer = setInterval(() => { wait--; draw(); if (wait <= 0) clearInterval(timer); }, 1000);
   return new Promise(resolve => {
-    const done = v => { dlg.close(); okBtn.onclick = $('#confirm-cancel').onclick = null; resolve(v); };
-    okBtn.onclick = () => done(true); $('#confirm-cancel').onclick = () => done(false);
+    const done = v => { clearInterval(timer); dlg.close(); okBtn.onclick = cancelBtn.onclick = input.oninput = input.onkeydown = null; okBtn.disabled = false; okBtn.textContent = ok; resolve(v); };
+    okBtn.onclick = () => { if (!okBtn.disabled) done(true); }; cancelBtn.onclick = () => done(false);
+    input.oninput = draw; input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (!okBtn.disabled) done(true); } };
     dlg.oncancel = e => { e.preventDefault(); done(false); };
-    dlg.showModal(); okBtn.focus();
+    dlg.showModal(); (typeToConfirm ? input : danger ? cancelBtn : okBtn).focus();
   });
 }
 $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
@@ -1055,7 +1070,7 @@ $('#line-list').addEventListener('click', async e => {
   if (e.target.closest('[data-image]')) return openImage(i);
   if (!e.target.closest('[data-del]')) return;
   const r = rows[i];
-  if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true })) return;
+  if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true, delay: 0 })) return;
   rows.splice(i, 1);
   markDirty(); renderLines();
 });
@@ -2515,7 +2530,7 @@ $('#member-list').addEventListener('click', async e => {
       if (!await confirmBox(`Khoá tài khoản ${m.name}? Người này sẽ bị đăng xuất và không đăng nhập được nữa.`, { title: 'Khoá tài khoản', ok: 'Khoá', danger: true })) return;
       await api('/admin/member', 'DELETE', { id }); toast('Đã khoá ' + m.name + '.');
     } else if (t.dataset.deleteMember) {
-      if (!await confirmBox(`Xoá ${m.name} khỏi danh sách nhân viên? Tài khoản bị đăng xuất, không đăng nhập được nữa và email được giải phóng (tạo lại được). Báo giá, đơn… cũ vẫn giữ tên ${m.name}. Không hoàn tác được.`, { title: 'Xoá nhân viên', ok: 'Xoá nhân viên', danger: true })) return;
+      if (!await confirmBox(`Xoá ${m.name} khỏi danh sách nhân viên? Tài khoản bị đăng xuất, không đăng nhập được nữa và email được giải phóng (tạo lại được). Báo giá, đơn… cũ vẫn giữ tên ${m.name}. Không hoàn tác được.`, { title: 'Xoá nhân viên', ok: 'Xoá nhân viên', danger: true, typeToConfirm: 'XOA' })) return;
       await api(`/admin/members/${encodeURIComponent(id)}`, 'DELETE'); toast('Đã xoá ' + m.name + '.');
     } else if (t.dataset.unlock) {
       await api('/admin/member', 'PUT', { id, name: m.name, email: m.email, phone: m.phone, positionId: m.positionId, role: m.role, active: true });
@@ -2757,7 +2772,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ api, toast, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
+function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
@@ -3540,7 +3555,7 @@ document.addEventListener('click', async e => {
   }
   if (e.target.closest('#order-delete')) {
     const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';
-    if (!await confirmBox(`Xoá hẳn ${w} ${docNo()} đã huỷ? Không khôi phục được (nhật ký thay đổi vẫn giữ lại). Đơn nháp trên Sapo (nếu có) cần xoá riêng trên Sapo.`, { title: 'Xoá ' + w, ok: 'Xoá ' + w, danger: true })) return;
+    if (!await confirmBox(`Xoá hẳn ${w} ${docNo()} đã huỷ? Không khôi phục được (nhật ký thay đổi vẫn giữ lại). Đơn nháp trên Sapo (nếu có) cần xoá riêng trên Sapo.`, { title: 'Xoá ' + w, ok: 'Xoá ' + w, danger: true, typeToConfirm: docNo() || 'XOA' })) return;
     try { await api(`/orders/${encodeURIComponent(sales.order.id)}`, 'DELETE'); toast('Đã xoá ' + w + '.'); go(k ? '#/contracts' : '#/orders'); } catch (ex) { toast(ex.message, 'err'); }
   }
   const sign = e.target.closest('[data-contract-sign]');
@@ -3871,7 +3886,7 @@ $('#approve-quote').addEventListener('click', async () => {
 });
 $('#delete-quote').addEventListener('click', async () => {
   if (!editor.id || (!isManager() && editor.approval?.status === 'approved')) return;
-  if (!await confirmBox(`Xoá báo giá ${field('quoteNo').value} · ${field('customer').value || 'Chưa nhập khách hàng'} khỏi hệ thống? Thao tác này không thể hoàn tác.`, { ok: 'Xoá báo giá', danger: true })) return;
+  if (!await confirmBox(`Xoá báo giá ${field('quoteNo').value} · ${field('customer').value || 'Chưa nhập khách hàng'} khỏi hệ thống? Thao tác này không thể hoàn tác.`, { title: 'Xoá báo giá', ok: 'Xoá báo giá', danger: true, typeToConfirm: field('quoteNo').value || 'XOA' })) return;
   try {
     await api('/quotes/' + encodeURIComponent(editor.id), 'DELETE', { revision: editor.revision });
     editor.dirty = false; editor.id = null; toast('Đã xoá báo giá.'); go('#/quotes'); loadQuotes();

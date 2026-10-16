@@ -31,7 +31,7 @@ function dueText(t) {
  * Gắn bảng công việc vào #view-tasks. `api(path, method, body)`, `toast(msg, kind)`, `go(hash)`, `isManager()`, `userId()`.
  * Trả về { load(id?), badge() }.
  */
-export function initTasks({ api, toast, go, isManager, userId, positionId = () => '' }) {
+export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, isManager, userId, positionId = () => '' }) {
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
   const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', approvals: null };
   let searchTimer;
@@ -189,7 +189,7 @@ export function initTasks({ api, toast, go, isManager, userId, positionId = () =
     f.comment?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
     dlg.querySelector('[data-claim-dlg]')?.addEventListener('click', async () => { if (await update(t.id, { assigneeId: me }, 'Đã nhận việc.')) close(); });
     dlg.querySelector('[data-del]')?.addEventListener('click', async () => {
-      if (!confirm('Xoá công việc này?')) return;
+      if (!await confirmBox(`Xoá công việc "${t.title || ''}"? Không khôi phục được.`, { title: 'Xoá việc', ok: 'Xoá việc', danger: true })) return;
       try { await api('/tasks/' + encodeURIComponent(t.id), 'DELETE'); toast('Đã xoá việc.'); close(); load(); } catch (e) { toast(e.message, 'err'); }
     });
     f.addEventListener('submit', async e => {
