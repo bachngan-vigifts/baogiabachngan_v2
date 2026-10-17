@@ -9,7 +9,7 @@ export interface PermissionDef { key: string; group: string; label: string; hint
 const SALES = ['sale', 'sale-admin', 'sales-ml', 'sales-lock'] as const;
 const OFFICE = [...SALES, 'accounting'] as const;
 const ALL = [...OFFICE, 'warehouse'] as const;
-/** Sale Admin TẠM THỜI có quyền của Sale + Kế toán + Kho (yêu cầu 17/10/2026). Kế toán không vào Báo giá / Chăm sóc KH / Khách hỏi tồn (migration 0070).
+/** Sale Admin TẠM THỜI có quyền của Sale + Kế toán + Kho (yêu cầu 17/10/2026). Kế toán không vào Báo giá / Chăm sóc KH / Khách hỏi tồn (migration 0071).
  * Sổ thu / chi, Huỷ phiếu thu, Doanh số toàn công ty: chỉ Kế toán – Sale Admin chỉ xem toàn công ty ở báo giá, khách, đơn, HĐKT. */
 const KHO = ['warehouse', 'sale-admin'] as const, KE_TOAN = ['accounting', 'sale-admin'] as const;
 
