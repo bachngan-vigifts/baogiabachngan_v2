@@ -1103,7 +1103,7 @@ async function stockHtml(sku) {
   const byName = new Map(d.warehouses.map(w => [normalize(w.name), w]));
   const list = (QUOTE_WAREHOUSES.some(n => byName.has(normalize(n))) ? QUOTE_WAREHOUSES.map(n => byName.get(normalize(n)) || { name: n }) : d.warehouses)
     .filter(w => hasSupplierStock(p) || !(w.kind === 'supplier' || normalize(w.name) === normalize('NCC')));
-  const rows = list.map(w => { const v = w.id ? p.stock?.[w.id] : undefined; return `<div><span>${esc(w.name)}</span><strong>${v === undefined || v === null ? 'Chưa có số liệu' : fmtNum(Number(v))}</strong></div>`; }).join('');
+  const rows = list.map(w => { const v = w.id ? p.stock?.[w.id] : undefined; return `<div><span>${esc(w.name)}</span><strong>${v === undefined || v === null ? '—' : fmtNum(Number(v))}</strong></div>`; }).join('');
   const at = p.stockUpdatedAt || d.observedAt;
   return { product: p, html: `<div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(at ? new Date(at).toLocaleString('vi-VN') : 'Chưa có thời điểm cập nhật')}</p>` };
 }
@@ -2174,7 +2174,7 @@ let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTim
 /** Chỉ hàng Lock&Lock có kho NCC (tồn bên nhà cung cấp); hãng khác ẩn cho gọn. */
 const hasSupplierStock = p => brandDiscountKey(p?.brand || p?.name) === 'lock'; // chưa có nhãn hiệu trên Sapo thì nhận theo tên
 const kindStock = (p, kind) => { const ws = state.warehouses.filter(w => w.kind === kind && p.stock?.[w.id] !== undefined); return ws.length ? ws.reduce((t, w) => t + Number(p.stock[w.id] || 0), 0) : null; };
-const stockText = v => v === null ? 'Chưa có số liệu' : fmtNum(v);
+const stockText = v => v === null ? '—' : fmtNum(v);
 /** Ô "Hàng chờ về": có số > 0 thì bấm được → hộp các đơn mua NCC đang về của mã (số đơn, NCC, ngày hẹn). */
 const incomingCell = p => { const v = kindStock(p, 'incoming'); return v > 0 ? `<button type="button" class="link-btn" data-incoming-sku="${esc(p.sku)}" title="Xem các đơn mua NCC đang về">${fmtNum(v)}</button>` : stockText(v); };
 document.addEventListener('click', e => { const b = e.target.closest('[data-incoming-sku]'); if (b) { e.preventDefault(); showIncoming(b.dataset.incomingSku); } });
@@ -3214,7 +3214,7 @@ $('#order-pack').addEventListener('click', async () => {
       return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}">
         <div class="pack-head"><b>${esc(l.name)}</b><small>${esc(l.sku || 'Chưa có mã')} · ${esc(l.unit || '')} · đơn ${fmtNum(l.qty)}${l.packed ? ` · đã có phiếu ${fmtNum(l.packed)}` : ''}</small></div>
         <div class="pack-grid"><label>Cần đóng<input class="num-input" inputmode="decimal" data-need value="${fmtNum(l.left)}"></label>
-          <label>Tồn kho<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? 'Chưa có số liệu' : fmtNum(av)}</span></label>
+          <label>Tồn kho<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</span></label>
           <label>Lấy từ kho<input class="num-input" inputmode="decimal" data-wh value="${fmtNum(fromStock)}"></label></div>
         <p class="pack-warn" ${short > 1e-9 ? '' : 'hidden'}>⚠️ Kho không đủ – nhập phần còn lại lấy từ đâu.</p>
         <div data-srcs>${short > 1e-9 ? packSourceRow(short) : ''}</div>
