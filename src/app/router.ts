@@ -21,6 +21,7 @@ import { registerCustomerDuplicateRoutes } from '../modules/customer-hub/api/dup
 import { registerCareRoutes } from '../modules/care/api/routes.ts';
 import { registerHrRoutes } from '../modules/hr/api/routes.ts';
 import { registerAdmsRoutes } from '../modules/hr/api/adms-routes.ts';
+import { registerSynctimeRoutes } from '../modules/integrations/api/synctime-routes.ts';
 import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api/routes.ts';
 import { registerAuditRoutes } from './audit-routes.ts';
 import { registerPermissionRoutes } from '../modules/staff/api/permission-routes.ts';
@@ -54,6 +55,7 @@ export function createAppRouter() {
   registerCareRoutes(router);
   registerHrRoutes(router, { revenueOf: memberRevenues }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
+  registerSynctimeRoutes(router);
   registerStaffHubRoutes(router);
   registerDashboardRoutes(router);
   registerAuditRoutes(router);

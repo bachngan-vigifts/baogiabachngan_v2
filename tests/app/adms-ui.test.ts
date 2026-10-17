@@ -15,8 +15,8 @@ class Node {
 }
 function setup(api: (path: string, method?: string, body?: object) => Promise<unknown>) {
   const body = new Node();
-  const context: any = { document: { body, createElement: () => new Node() }, URLSearchParams, Intl, Date };
-  const source = readFileSync(new URL('../../trial-ui/adms.js', import.meta.url), 'utf8').replace('export async function openAdms', 'globalThis.openAdms = async function');
+  const context: any = { document: { body, createElement: () => new Node() }, URLSearchParams, Intl, Date, renderSynctimeWebhook: async () => {} };
+  const source = readFileSync(new URL('../../trial-ui/adms.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export async function openAdms', 'globalThis.openAdms = async function');
   runInNewContext(source, context);
   return { body, open: () => context.openAdms({ api, toast() {} }, '2026-10') };
 }

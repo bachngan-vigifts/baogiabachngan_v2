@@ -14,6 +14,7 @@ import * as repo from '../repo/auth-repo.ts';
 import { registerMemberRoutes } from './member-routes.ts';
 import { registerAvatarRoutes } from './avatar-routes.ts';
 import type { MailerConfig } from '../../../core/mail/send-mail.ts';
+import { authorizeSynctime } from '../../integrations/api/synctime-auth.ts';
 
 /** Môi trường mà các route của `staff` cần. Nơi lắp ráp ứng dụng (src/app) tạo ra từ bindings của Cloudflare. */
 export interface StaffEnv {
@@ -74,6 +75,7 @@ export async function authorizeRoute(c: Ctx): Promise<void> {
   const area = c.meta as Area;
   if (area === 'public') return;
   if (area === 'sapo-sync') return checkSyncToken(c);
+  if (area === 'synctime-sync') return authorizeSynctime(c.req, c.env.db);
   const token = readSessionToken(c.req.headers.get('cookie'));
   const tokenHash = sha256Hex(token);
   const member = await repo.findSessionMember(c.env.db, tokenHash, now(c));
@@ -174,7 +176,7 @@ async function activationHash(body: Record<string, unknown>): Promise<string> {
 /** Router của module staff: đã gắn chốt Origin/phương thức và chốt quyền; mọi route BẮT BUỘC khai báo khu vực. */
 /**
  * Đường dẫn đồng bộ Sapo được gọi từ máy chủ khác (không có Origin) nên bỏ qua kiểm tra Origin chống CSRF:
- * chúng không dùng cookie mà xác thực bằng mã bí mật. Test kiến trúc bắt buộc mọi route dưới đây thuộc khu vực 'sapo-sync'.
+ * chúng không dùng cookie mà xác thực bằng mã bí mật. Test kiến trúc bắt buộc mọi route dưới đây dùng khu vực xác thực riêng 'sapo-sync' hoặc 'synctime-sync'.
  */
 export const SYNC_PREFIX = '/api/staff/integrations/';
 export const isSyncPath = (url: URL) => url.pathname.startsWith(SYNC_PREFIX);
