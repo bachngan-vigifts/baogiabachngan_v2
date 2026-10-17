@@ -1,3 +1,4 @@
+import { scopeOf } from './permissions.ts';
 /**
  * Vai trò và chức vụ. Bản cũ SUY vai trò từ chức vụ (`roleFromPosition` trong staff-api.mjs):
  * chức vụ 'manager' → manager, chức vụ 'supplier' (tên hiển thị "NCC") → supplier, còn lại → employee.
@@ -25,12 +26,13 @@ export const isCustomer = (m: MemberLike | null | undefined): boolean =>
   Boolean(m && (m.role === 'customer' || m.positionId === CUSTOMER_POSITION_ID));
 
 /**
+ * Phạm vi "Toàn công ty (chỉ xem)" của chức vụ (trang Phân quyền; mặc định chỉ Sale Admin – domain/permissions.ts).
  * Sale Admin xem toàn công ty (TẠM THỜI, theo yêu cầu 15/10/2026): mọi khách hàng, đơn hàng / HĐKT (kèm giao hàng, công nợ),
  * khách hỏi tồn, đơn mua NCC (kể cả nháp; giá mua vẫn ẩn). Không mở quyền sửa / duyệt. Muốn thu hồi: cho hàm này trả false.
  */
 export const SALE_ADMIN_POSITION_ID = 'sale-admin';
-export const seesAllAsSaleAdmin = (m: { role: string; positionId?: string | null } | null | undefined): boolean =>
-  Boolean(m && m.role === 'employee' && m.positionId === SALE_ADMIN_POSITION_ID);
+export const seesAllAsSaleAdmin = (m: { role: string; positionId?: string | null; dataScope?: string | null } | null | undefined): boolean =>
+  Boolean(m && m.role === 'employee' && scopeOf(m) === 'all');
 
 /** Báo lỗi dữ liệu lệch giữa vai trò và chức vụ (null = nhất quán). Dùng khi tạo/sửa nhân viên và khi chuyển dữ liệu. */
 export function roleConsistencyIssue(m: MemberLike): string | null {

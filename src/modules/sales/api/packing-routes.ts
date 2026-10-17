@@ -1,5 +1,6 @@
 import { createScheduledDelivery } from './delivery-store.ts';
 import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -36,6 +37,8 @@ const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 const nowIso = () => new Date().toISOString();
 const text = (v: unknown, max = 500) => { if (v !== undefined && v !== null && typeof v !== 'string') throw new AppError(400, 'Dữ liệu không hợp lệ.'); return String(v ?? '').trim().slice(0, max); };
 export const isWarehouse = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'warehouse';
+/** Kho đóng gói (quyền "Phiếu đóng gói" – trang Phân quyền): xem mọi phiếu, xác nhận đóng xong. */
+const isPacker = (m: Member) => can(m, 'page.packing');
 const EPS = 1e-9;
 /** Ảnh xác nhận: 1–3 ảnh JPEG / WebP / PNG dạng data URL, mỗi ảnh tối đa ~600 KB (đã nén ở trình duyệt). */
 export const PHOTO_MIN = 1, PHOTO_MAX = 3, PHOTO_MAX_CHARS = 800_000;
@@ -50,7 +53,7 @@ async function loadOrder(c: Ctx, id: string) {
 async function loadSlip(c: Ctx, id: string) {
   const m = viewer(c);
   const [row] = await c.env.db.select({ slip: packingSlips, order: salesOrders }).from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId))
-    .where(and(eq(packingSlips.id, id), m.role === 'manager' || isWarehouse(m) ? undefined : orderScopeFor(m))).limit(1);
+    .where(and(eq(packingSlips.id, id), isPacker(m) ? undefined : orderScopeFor(m))).limit(1);
   if (!row) throw new AppError(404, 'Không tìm thấy phiếu đóng gói.');
   return row;
 }
@@ -61,7 +64,7 @@ async function canManageOrder(c: Ctx, orderId: string) {
   const [o] = await c.env.db.select({ id: salesOrders.id }).from(salesOrders).where(and(eq(salesOrders.id, orderId), orderScopeFor(m))).limit(1);
   return !!o;
 }
-const canConfirm = (m: Member, status: string) => status === 'sent' && (m.role === 'manager' || isWarehouse(m));
+const canConfirm = (m: Member, status: string) => status === 'sent' && isPacker(m);
 
 /** Số lượng đã đưa vào phiếu (chưa huỷ) theo từng dòng đơn. */
 async function allocatedByLine(db: StaffEnv['db'] | Tx, orderId: string) {
@@ -253,7 +256,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
    * (dùng cho nút gửi phiếu trong tin nhắn). `status=all` = mọi trạng thái; `q` tìm số phiếu / số đơn / khách.
    */
   router.get('/packing', async c => {
-    const m = viewer(c), all = m.role === 'manager' || isWarehouse(m), p = c.url.searchParams;
+    const m = viewer(c), all = isPacker(m), p = c.url.searchParams;
     const status = p.get('status') || (all ? 'sent' : 'all');
     // Dọn phiếu còn treo của đơn đã giao (kể cả dữ liệu cũ trước khi có tự hoàn tất).
     if (all) await closeSlipsOfDeliveredOrders(c.env.db);

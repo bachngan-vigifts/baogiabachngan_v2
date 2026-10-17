@@ -1,4 +1,5 @@
 import { quotationPredicate } from './department-access.ts';
+import { can } from '../../staff/domain/permissions.ts';
 import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { Router } from '../../../core/http/router.ts';
@@ -147,17 +148,17 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const [creator] = await c.env.db.select({ role: employees.role, name: employees.name }).from(employees).where(eq(employees.id, row.creatorId)).limit(1);
     const fromCustomer = creator?.role === 'customer';
     return json({ id: row.id, revision: row.revision, data: forViewer(viewer, JSON.parse(row.data)), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',
-      fromCustomer, canApprove: isManager(viewer) || (fromCustomer && row.assigneeId === viewer.id) });
+      fromCustomer, canApprove: can(viewer, 'quotes.approve') || (fromCustomer && row.assigneeId === viewer.id) });
   }, 'business');
   /** Manager duyệt đúng phiên bản đang xem (phiên bản đổi → 409). Duyệt không đổi nội dung nên không tăng `revision`. */
   router.post('/quotes/:id/approve', async c => {
     const viewer = (c.state.session as SessionState).member;
     const body = await readJson(c.req, 1_024);
     // Manager duyệt mọi báo giá; nhân viên phụ trách duyệt (xác nhận) báo giá do KHÁCH gửi từ trang khách hàng.
-    if (!isManager(viewer)) {
+    if (!can(viewer, 'quotes.approve')) {
       const [q] = await c.env.db.select({ assigneeId: quotations.assigneeId, creatorRole: employees.role }).from(quotations)
         .innerJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.id, c.params.id!)).limit(1);
-      if (!q || q.creatorRole !== 'customer' || q.assigneeId !== viewer.id) throw new AppError(403, 'Chỉ Manager được duyệt báo giá.');
+      if (!q || q.creatorRole !== 'customer' || q.assigneeId !== viewer.id) throw new AppError(403, 'Chỉ Manager hoặc người được cấp quyền duyệt báo giá.');
     }
     if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
     const now = new Date().toISOString();

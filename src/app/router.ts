@@ -22,6 +22,7 @@ import { registerCareRoutes } from '../modules/care/api/routes.ts';
 import { registerHrRoutes } from '../modules/hr/api/routes.ts';
 import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api/routes.ts';
 import { registerAuditRoutes } from './audit-routes.ts';
+import { registerPermissionRoutes } from '../modules/staff/api/permission-routes.ts';
 import { registerApprovalRoutes } from './approval-routes.ts';
 import { registerNavigationCounts } from './navigation-counts.ts';
 import { registerPulseRoutes } from './pulse-routes.ts';
@@ -54,6 +55,7 @@ export function createAppRouter() {
   registerStaffHubRoutes(router);
   registerDashboardRoutes(router);
   registerAuditRoutes(router);
+  registerPermissionRoutes(router);
   registerApprovalRoutes(router);
   registerPulseRoutes(router);
   registerNavigationCounts(router);

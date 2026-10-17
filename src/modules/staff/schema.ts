@@ -1,10 +1,26 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, bigint, boolean, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, boolean, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 
+/** Phòng ban (Kinh doanh, Kho, Kế toán…): nhóm các chức vụ – docs/PHAN-QUYEN.md. */
+export const departments = pgTable('staff_departments', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+}, t => [uniqueIndex('idx_departments_name').on(t.name)]).enableRLS();
 export const positions = pgTable('staff_positions', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-}, t => [uniqueIndex('idx_positions_name').on(t.name)]).enableRLS();
+  /** Phòng ban của chức vụ (null = chưa xếp phòng). */
+  departmentId: text('department_id').references(() => departments.id, { onDelete: 'set null' }),
+  /** Phạm vi dữ liệu người giữ chức vụ được xem: own | position | department | all (domain/permissions.ts). */
+  dataScope: text('data_scope', { enum: ['own', 'position', 'department', 'all'] }).notNull().default('position'),
+}, t => [uniqueIndex('idx_positions_name').on(t.name), index('idx_positions_department').on(t.departmentId)]).enableRLS();
+/** Quyền của từng chức vụ (khoá trong PERMISSIONS – domain/permissions.ts). Có dòng = được phép. */
+export const positionPermissions = pgTable('staff_position_permissions', {
+  positionId: text('position_id').notNull().references(() => positions.id, { onDelete: 'cascade' }),
+  permission: text('permission').notNull(),
+}, t => [primaryKey({ columns: [t.positionId, t.permission] })]).enableRLS();
 export const employees = pgTable('staff_members', {
   id: text('id').primaryKey(),
   identityId: text('identity_id'),
@@ -49,3 +65,11 @@ export const staffAvatars = pgTable('staff_avatars', {
   dataUrl: text('data_url').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, t => [uniqueIndex('idx_staff_avatars_key').on(t.key)]).enableRLS();
+/** Nhật ký thay đổi phân quyền: ai sửa, lúc nào, sửa gì (chữ mô tả). */
+export const permissionLog = pgTable('staff_permission_log', {
+  id: text('id').primaryKey(),
+  at: text('at').notNull(),
+  by: text('by').notNull().references(() => employees.id),
+  action: text('action').notNull(),
+  detail: text('detail').notNull(),
+}, t => [index('idx_permission_log_at').on(t.at)]).enableRLS();

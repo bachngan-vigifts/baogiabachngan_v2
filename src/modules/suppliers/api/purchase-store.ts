@@ -16,7 +16,7 @@ import {
 } from '../schema.ts';
 import { computeOrderTotals, hidePrices } from '../domain/order-totals.ts';
 import {
-  canSeePrices, isAccountantStaff, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
+  canSeePrices, canPay, canApprovePurchase, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
   type Actor, type NeedLine,
 } from '../domain/purchasing.ts';
 
@@ -29,12 +29,13 @@ import {
  */
 export type Db = StaffEnv['db'];
 export type Member = SessionState['member'];
-export const asActor = (m: Member): Actor => ({ id: m.id, role: m.role, active: m.active, positionId: m.positionId });
+export const asActor = (m: Member): Actor => ({ id: m.id, role: m.role, active: m.active, positionId: m.positionId, perms: m.perms, dataScope: m.dataScope });
 const PURCHASE = eq(incomingShipments.source, 'supplier-order');
 
 export function purchaseScope(m: Member) {
   const a = asActor(m);
-  if (a.role === 'manager' || isAccountantStaff(a) || seesAllAsSaleAdmin(a)) return PURCHASE;
+  // Xem mọi đơn mua (kể cả nháp): Manager, người duyệt / ghi trả / xem giá NCC (trang Phân quyền), phạm vi toàn công ty.
+  if (a.role === 'manager' || canSeePrices(a) || canPay(a) || canApprovePurchase(a) || seesAllAsSaleAdmin(a)) return PURCHASE;
   if (isWarehouseStaff(a)) return and(PURCHASE, eq(incomingShipments.approvalStatus, 'approved'));
   return and(PURCHASE, or(eq(incomingShipments.approvalStatus, 'approved'), eq(incomingShipments.createdBy, m.id)));
 }

@@ -1,4 +1,5 @@
 import { sha256 } from '@noble/hashes/sha2.js';
+import { PERMISSIONS } from './permissions.ts';
 import { AppError, unauthorized } from '../../../core/errors.ts';
 
 /** Phiên đăng nhập. Hằng số và định dạng cookie giữ NGUYÊN như bản cũ để phiên đang có vẫn dùng được. */
@@ -33,8 +34,10 @@ export const sessionCookie = (value: string, maxAgeSeconds = SESSION_LIFETIME_SE
   `${SESSION_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
 export const clearedSessionCookie = (): string => sessionCookie('', 0);
 
-export interface MemberRow { id: string; name: string; phone: string | null; email: string; role: 'employee' | 'manager' | 'supplier' | 'customer'; positionId: string | null; positionName: string | null; avatarKey?: string | null }
+export interface MemberRow { id: string; name: string; phone: string | null; email: string; role: 'employee' | 'manager' | 'supplier' | 'customer'; positionId: string | null; positionName: string | null; avatarKey?: string | null;
+  /** Quyền của chức vụ (bảng staff_position_permissions) – chỉ có ở phiên đăng nhập. */ perms?: string[] | null; dataScope?: string | null; departmentId?: string | null }
 /** Hồ sơ trả cho trình duyệt (không có gì nhạy cảm). Cùng hình dạng bản cũ. */
-export const publicMember = (m: MemberRow) => ({ id: m.id, name: m.name, phone: m.phone || '', email: m.email, role: m.role, positionId: m.positionId, position: m.positionName, avatar: m.avatarKey ?? null });
+export const publicMember = (m: MemberRow) => ({ id: m.id, name: m.name, phone: m.phone || '', email: m.email, role: m.role, positionId: m.positionId, position: m.positionName, avatar: m.avatarKey ?? null,
+  ...(m.perms ? { perms: m.role === 'manager' ? PERMISSIONS.map(p => p.key) : m.perms, dataScope: m.dataScope ?? null, departmentId: m.departmentId ?? null } : {}) });
 
 export const tooManyAttempts = () => new AppError(429, 'Đã thử quá nhiều lần. Vui lòng thử lại sau 15 phút.');

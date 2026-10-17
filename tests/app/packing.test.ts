@@ -72,7 +72,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   const view = (await call(`/packing/${sup.id}`, kho)).data;
   assert.equal(view.order.quoteType, 'HRC', 'bản in của kho: đơn vị bán theo loại báo giá');
   assert.deepEqual([view.canConfirm, view.canOpenOrder, view.order.orderNo], [true, false, (await call(`/orders/${orderId}`, emp)).data.order.orderNo]);
-  assert.equal((await call(`/orders/${orderId}`, kho)).status, 404);
+  assert.equal((await call(`/orders/${orderId}`, kho)).status, 403, 'chức vụ Kho không được cấp trang Đơn hàng');
   assert.equal((await call(`/packing/${sup.id}/confirm`, emp, 'POST', { photos: [photo] })).status, 403, 'nhân viên sale không xác nhận thay kho');
   assert.equal((await call(`/packing/${sup.id}/confirm`, kho, 'POST', { photos: [] })).status, 400);
   assert.equal((await call(`/packing/${sup.id}/confirm`, kho, 'POST', { photos: [photo, photo, photo, photo] })).status, 400);
@@ -103,8 +103,8 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   const shipped = (await call('/deliveries?from=2026-10-01&to=2026-10-31', kho)).data.deliveries[0];
   assert.equal(shipped.status, 'delivered'); assert.equal(shipped.photos.length, 1); assert.match(shipped.photos[0], /^data:image\/jpeg;base64,/);
   assert.equal((await call('/orders/' + orderId, emp)).data.deliveries.find((x: any) => x.id === g.data.id).photos.length, 1, 'nhân viên phụ trách xem ảnh trên đơn');
-  assert.equal((await call('/orders', kho)).data.orders.length, 0);
-  assert.equal((await call('/receivables', kho)).data.receivables.length, 0);
+  assert.equal((await call('/orders', kho)).status, 403, 'chức vụ Kho không được cấp trang Đơn hàng / Công nợ');
+  assert.equal((await call('/receivables', kho)).status, 403);
   assert.deepEqual((await call('/packing?q=khach p', emp)).data.slips.map((x: any) => x.status).sort(), ['cancelled', 'draft', 'packed'], 'nhân viên thấy phiếu của đơn mình');
 });
 
@@ -196,7 +196,7 @@ test('gộp lịch giao + phiếu: một lần lưu, một nguồn gửi kho nga
   const request = { allocations: [{ orderLineId: lineId, qty: 10, source: 'warehouse' }], schedule: { plannedDate: '2030-01-15', timeSlot: 'Sáng', receiverName: 'Chị Lan' }, sendToWarehouse: true };
   assert.equal((await call(`/orders/${id}/packing`, emp, 'POST', request)).status, 409, 'chưa duyệt không thể dùng luồng gộp để lên lịch');
   await s.approve();
-  assert.equal((await call(`/orders/${id}/packing`, kho, 'POST', request)).status, 404, 'kho không lập/gửi phiếu thay sale');
+  assert.equal((await call(`/orders/${id}/packing`, kho, 'POST', request)).status, 403, 'kho không lập/gửi phiếu thay sale (chức vụ Kho không có trang Đơn hàng)');
   assert.equal((await call(`/orders/${id}/packing`, '', 'POST', request)).status, 401);
   const made = await call(`/orders/${id}/packing`, emp, 'POST', request);
   assert.equal(made.status, 201, JSON.stringify(made.data)); assert.ok(made.data.deliveryId); assert.equal(made.data.sentToWarehouse, true);

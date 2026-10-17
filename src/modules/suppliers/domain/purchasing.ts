@@ -1,4 +1,5 @@
 import { isSupplier, type Role } from '../../staff/domain/roles.ts';
+import { can } from '../../staff/domain/permissions.ts';
 import { isIsoDate } from './quantity.ts';
 import { AppError } from '../../../core/errors.ts';
 
@@ -13,17 +14,19 @@ import { AppError } from '../../../core/errors.ts';
  *  - Nhận hàng: Kho + Manager; chỉ Manager huỷ phiếu nhận (khi chưa nhập Sapo).
  *  - Bảng `supplier_stock_requests` giữ nghĩa cũ (nhân viên xin giữ hàng từ đơn sắp về) – chưa dùng ở đợt này.
  */
-export interface Actor { id: string; role: Role; active: boolean; positionId?: string | null }
+export interface Actor { id: string; role: Role; active: boolean; positionId?: string | null; perms?: readonly string[] | null; dataScope?: string | null }
 const isManager = (a: Actor | null | undefined) => Boolean(a?.active && a.role === 'manager' && !isSupplier(a));
 const isEmployee = (a: Actor | null | undefined) => Boolean(a?.active && a.role === 'employee' && !isSupplier(a) && a.positionId !== 'customer');
 export const isWarehouseStaff = (a: Actor | null | undefined) => isEmployee(a) && a!.positionId === 'warehouse';
 export const isAccountantStaff = (a: Actor | null | undefined) => isEmployee(a) && a!.positionId === 'accounting';
 
 /** Ai thấy giá / tiền của đơn mua: Manager và Kế toán. Nhân viên khác và kho thấy đơn nhưng ẩn giá (giá vốn). */
-export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a);
+export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.prices');
 export const canUsePurchasing = (a: Actor | null | undefined) => isManager(a) || isEmployee(a);
-export const canReceive = (a: Actor | null | undefined) => isManager(a) || isWarehouseStaff(a);
-export const canPay = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a);
+export const canReceive = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.receive');
+export const canPay = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.pay');
+/** Duyệt giá đơn mua: Manager hoặc chức vụ có quyền "Duyệt giá đơn mua NCC" (trang Phân quyền). */
+export const canApprovePurchase = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.approve');
 
 export type PurchaseState = 'draft' | 'awaiting_confirmation' | 'confirmed' | 'partially_received' | 'received' | 'cancelled';
 export const PURCHASE_STATE_LABEL: Record<PurchaseState, string> = {
@@ -62,7 +65,7 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       if (o.submittedAt !== null) return no(409, 'Đơn đã gửi Manager duyệt.');
       return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được gửi duyệt.');
     case 'approve':
-      if (!manager) return no(403, 'Chỉ Manager được duyệt đơn mua (giá / chiết khấu).');
+      if (!canApprovePurchase(a)) return no(403, 'Chỉ Manager hoặc người được cấp quyền duyệt đơn mua (giá / chiết khấu).');
       return state === 'draft' ? OK : no(409, 'Đơn này đã được duyệt.');
     case 'confirm':
       if (!manager) return no(403, 'Chỉ Manager được ghi nhận xác nhận thay NCC.');

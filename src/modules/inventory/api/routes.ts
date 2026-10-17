@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
@@ -24,8 +25,9 @@ type Ctx = RouteContext<StaffEnv>;
 const me = (c: Ctx) => (c.state.session as SessionState).member;
 const fail = (status: number, message: string): never => { throw new AppError(status, message); };
 const isManager = (m: { role: string }) => m.role === 'manager';
-const canView = (m: { role: string; positionId?: string | null }) => isManager(m) || m.positionId === 'warehouse';
-const guard = (c: Ctx) => { if (!canView(me(c))) fail(403, 'Chỉ Manager hoặc nhóm Kho xem được sổ kho.'); };
+const canView = (m: { role: string; positionId?: string | null }) => can(m, 'inventory.view');
+const canManage = (m: { role: string; positionId?: string | null }) => can(m, 'inventory.manage');
+const guard = (c: Ctx) => { if (!canView(me(c))) fail(403, 'Chức vụ của bạn chưa được cấp quyền xem sổ kho.'); };
 const num = (v: unknown) => Math.round(Number(v) * 1000) / 1000;
 
 const stockWarehouses = (db: StaffEnv['db']) => db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses)
@@ -65,7 +67,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
         .where(eq(stockMoves.refType, 'opening')).orderBy(desc(stockMoves.createdAt)).limit(1),
       db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(stockMoves),
     ]);
-    return json({ openedAt: open?.at ?? null, openedBy: open?.by ?? '', moveCount: cnt?.n ?? 0, canManage: isManager(me(c)), warehouses: await stockWarehouses(db) });
+    return json({ openedAt: open?.at ?? null, openedBy: open?.by ?? '', moveCount: cnt?.n ?? 0, canManage: canManage(me(c)), warehouses: await stockWarehouses(db) });
   }, 'business');
 
   router.get('/inventory/compare', async c => {
@@ -110,7 +112,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
 
   router.post('/inventory/opening', async c => {
     const m = me(c);
-    if (!isManager(m)) fail(403, 'Chỉ Manager chốt tồn đầu kỳ.');
+    if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền chốt tồn đầu kỳ.');
     const body = await readJson(c.req, 2_000);
     if (body.confirm !== true) fail(400, 'Xác nhận chốt tồn đầu kỳ.');
     const db = c.env.db, ids = (await stockWarehouses(db)).map(w => w.id);
@@ -133,7 +135,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
 
   router.post('/inventory/adjustments', async c => {
     const m = me(c);
-    if (!isManager(m)) fail(403, 'Chỉ Manager lập phiếu điều chỉnh kho.');
+    if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền lập phiếu điều chỉnh kho.');
     const db = c.env.db, body = await readJson(c.req, 100_000), reason = String(body.reason ?? '').trim().slice(0, 500), wh = String(body.warehouseId ?? '');
     if (reason.length < 3) fail(400, 'Nhập lý do điều chỉnh.');
     if (!(await stockWarehouses(db)).some(w => w.id === wh)) fail(400, 'Chọn kho điều chỉnh.');

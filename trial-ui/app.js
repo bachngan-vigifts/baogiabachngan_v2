@@ -25,6 +25,7 @@ import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
+import { initPermissions } from './permissions.js';
 import { initKhoHome, initStockLookup } from './kho.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
@@ -275,11 +276,26 @@ const state = {
 const isManager = () => state.user?.role === 'manager';
 /** Tài khoản Kho (chức vụ "warehouse"): chỉ các trang cần cho kho – Công việc, Lịch giao hàng, Phiếu đóng gói, Sản phẩm, Tin nhắn. */
 const isWarehouse = () => state.user?.role === 'employee' && state.user?.positionId === 'warehouse';
-/** Danh bạ NCC: Manager và Kế toán (máy chủ kiểm lại). */
-const canEditSuppliers = () => isManager() || (state.user?.role === 'employee' && state.user?.positionId === 'accounting');
-// Kho: thêm Sơ đồ quy trình, Tổng quan doanh số, Sổ kho (chỉ Manager) – kho dùng Trang kho + Tra tồn.
-const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers', 'care', 'flow', 'dashboard', 'inventory']);
+/**
+ * Quyền theo chức vụ (trang Phân quyền – máy chủ trả trong /me, kiểm tra lại ở mọi API). Manager luôn có mọi quyền.
+ * Máy chủ chưa có bảng quyền (chưa chạy migration 0065) thì dùng đúng quyền cũ theo chức vụ.
+ */
+const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
+const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 'page.packing', 'page.stock-lookup', 'purchases.receive']
+  : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
+const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
+/** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
+const PAGE_PERM = {
+  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', deliveries: 'page.deliveries', receivables: 'page.receivables',
+  customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
+  purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
+};
+const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+/** Danh bạ NCC: Manager và chức vụ có quyền "Danh bạ NCC" (mặc định Kế toán; máy chủ kiểm lại). */
+const canEditSuppliers = () => can('suppliers.edit');
 const KHO_HOME = '#/kho';
+/** Trang mở đầu: kho → Trang kho; có Báo giá → Báo giá; còn lại → Công việc. */
+const homeHash = () => isWarehouse() ? KHO_HOME : can('page.quotes') ? '#/quotes' : '#/tasks';
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -343,15 +359,13 @@ async function enter() {
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
   showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
-  $$('.supplier-admin-only').forEach(el => el.hidden = !canEditSuppliers());
-  // Kho: ẩn các trang bán hàng (báo giá, đơn hàng, HĐKT, công nợ, khách hàng…); hiện mục Phiếu đóng gói (cả Manager).
-  $$('[data-nav]').forEach(el => { if (WAREHOUSE_HIDDEN.has(el.dataset.nav) && !el.classList.contains('manager-only')) el.hidden = isWarehouse(); });
-  $$('.packing-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
-  // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn); Tra tồn cho cả Manager.
+  // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn).
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
-  $$('.lookup-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
+  // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.
+  $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
+  $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   document.body.classList.toggle('role-warehouse', isWarehouse());
-  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + (isWarehouse() ? KHO_HOME : '#/quotes'));
+  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
@@ -434,10 +448,10 @@ async function loadNavigationBadges() {
 }
 async function loadAll() {
   $('#global-error').hidden = true;
-  // Kho không xem được danh bạ khách (máy chủ chặn) → không tải, tránh báo lỗi đỏ khi mở app.
-  const jobs = isWarehouse() ? [loadQuotes()] : [loadQuotes(), loadCustomers()];
+  // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
+  const jobs = [can('page.quotes') && loadQuotes(), can('page.customers') && loadCustomers()].filter(Boolean);
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
+  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (can('page.care')) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -446,6 +460,7 @@ function showGlobalError(message) { const el = $('#global-error'); el.textConten
 const quotePager = createPager($('#quote-pager'), 'quotes', () => loadQuotes(), 50);
 let quoteReq = 0;
 async function loadQuotes() {
+  if (!can('page.quotes')) return;
   const req = ++quoteReq, f = state.quoteFilter;
   try {
     const d = await api(`/quotes?limit=${quotePager.limit}&offset=${quotePager.offset}&q=${encodeURIComponent(f.q)}&type=${encodeURIComponent(f.type)}&owner=${encodeURIComponent(f.owner)}&sort=${encodeURIComponent(f.sort)}&month=${todayIso().slice(0, 7)}`);
@@ -461,7 +476,7 @@ async function loadQuotes() {
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
 let customerReq = 0, customerPager;
 async function loadCustomers() {
-  if (isWarehouse()) return;
+  if (!can('page.customers')) return;
   const req = ++customerReq;
   customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
@@ -564,7 +579,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -583,16 +598,16 @@ let lastRoutedHash = '';
 function route() {
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
-  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || (isWarehouse() ? KHO_HOME : '#/quotes')); if (lastRoutedHash) return; }
+  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || homeHash()); if (lastRoutedHash) return; }
   lastRoutedHash = location.hash;
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = 'quotes', id] = path.split('/');
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
-  if ((view === 'staff' || view === 'payroll') && !isManager()) view = isWarehouse() ? 'kho' : 'quotes';
-  if (view === 'suppliers' && !canEditSuppliers()) view = isWarehouse() ? 'kho' : 'quotes';
-  // Kho mở nhầm trang bán hàng (link cũ, thông báo…): về Trang kho.
-  if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', KHO_HOME); return route(); }
+  if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
+  // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
+  const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
+  if (!canPage(detail) && location.hash.split('?')[0] !== homeHash()) { toast('Chức vụ của bạn chưa được cấp quyền vào trang này.', 'err'); history.replaceState(null, '', homeHash()); return route(); }
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
   // HĐKT là luồng riêng: #/contracts/<id> mở trang chi tiết HĐKT (dùng chung khung trang với đơn hàng, nội dung theo HĐKT).
@@ -618,6 +633,7 @@ function route() {
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
+  if (view === 'permissions') permissionsView().load();
   if (view === 'kho') khoHome().load();
   if (view === 'stock-lookup') stockLookup().load();
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
@@ -2733,7 +2749,7 @@ var dataRefresh = setupDataRefresh({
   enabled: () => !!state.user,
   blocked: () => (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
-  primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : ['/quotes', '/orders', '/contracts'],
+  primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
   // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
   schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
@@ -2762,6 +2778,8 @@ let khoHomeUi = null, stockLookupUi = null;
 function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'), today: todayIso }); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
+var permissionsUi = null;
+function permissionsView() { return permissionsUi ||= initPermissions({ api, root: $('#view-permissions'), toast, confirmBox }); }
 var purchasesUi = null;
 function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso, kho: isWarehouse,
   compressPhoto: f => compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.') }); }
@@ -2783,7 +2801,7 @@ function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId
 async function refreshData() {
   if (!state.user) return;
   const jobs = [loadQuotes(), loadStockBadge(), loadNavigationBadges(), tasksView().badge(), chatView().badge()];
-  if (!isWarehouse()) jobs.push(careView().badge());
+  if (can('page.care')) jobs.push(careView().badge());
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
   if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
@@ -2811,6 +2829,7 @@ async function refreshData() {
 let stockFilter = 'open';
 const stockShortageExports = new Map();
 async function loadStockBadge() {
+  if (!can('page.stock-requests')) return;
   try { const n = (await api('/stock-requests?status=open')).requests.length; $('#nav-stock-count').hidden = !n; $('#nav-stock-count').textContent = n; } catch { /* bỏ qua */ }
 }
 async function loadStockRequests(focusId) {

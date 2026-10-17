@@ -5,6 +5,7 @@ import { Router, json, readJson, type RouteContext } from '../../../core/http/ro
 import { checkMethodAndOrigin } from '../../../core/http/security.ts';
 import { auditFromRequest, writeAudit } from '../../../core/audit.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
+import { can, routePermission } from '../domain/permissions.ts';
 import { CUSTOMER_FORBIDDEN_MESSAGE, FORBIDDEN_MESSAGE, SUPPLIER_FORBIDDEN_MESSAGE, canAccessArea, type Area } from '../domain/area-policy.ts';
 import { isCustomer, isSupplier } from '../domain/roles.ts';
 import { parseLoginId } from '../domain/login-id.ts';
@@ -77,9 +78,11 @@ export async function authorizeRoute(c: Ctx): Promise<void> {
   if (!member) throw new AppError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   if (shouldRenewSession(member.sessionExpires, now(c))) await repo.extendSession(c.env.db, tokenHash, now(c) + SESSION_LIFETIME_SECONDS);
   if (!canAccessArea(member, area)) throw new AppError(403, isSupplier(member) ? SUPPLIER_FORBIDDEN_MESSAGE : isCustomer(member) ? CUSTOMER_FORBIDDEN_MESSAGE : FORBIDDEN_MESSAGE[area]);
-  // Kho không xem / sửa danh bạ khách hàng (mọi đường /customers…: danh sách, hồ sơ, tổng quan, người liên hệ, tài khoản khách).
-  if (member.role === 'employee' && member.positionId === 'warehouse' && /^\/api\/staff\/customers(\/|$)/.test(c.url.pathname))
-    throw new AppError(403, 'Kho không xem được danh bạ khách hàng.');
+  // Quyền trang theo chức vụ (trang Phân quyền – domain/permissions.ts): nhân viên cần MỘT trong các quyền của API này.
+  if (member.role === 'employee' && area === 'business') {
+    const need = routePermission(c.req.method, c.url.pathname, c.url.searchParams);
+    if (need && !need.some(k => can(member, k))) throw new AppError(403, 'Chức vụ của bạn chưa được cấp quyền dùng chức năng này. Liên hệ Manager.', 'NO_PERMISSION');
+  }
   c.state.session = { member, tokenHash } satisfies SessionState;
 }
 

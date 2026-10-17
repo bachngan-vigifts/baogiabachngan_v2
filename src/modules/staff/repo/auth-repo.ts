@@ -1,6 +1,6 @@
 import { and, eq, gt, lte, sql } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
-import { authAttempts, credentials, employees, positions, sessions } from '../schema.ts';
+import { authAttempts, credentials, employees, positionPermissions, positions, sessions } from '../schema.ts';
 import { RATE_WINDOW_SECONDS, sha256Hex, type MemberRow } from '../domain/session.ts';
 
 /**
@@ -35,7 +35,9 @@ export async function countAttempt(db: AnyDb, key: string, now: number): Promise
 
 /** Phiên hợp lệ: chưa hết hạn, tài khoản còn hoạt động, và phiên cùng "phiên bản" với thông tin đăng nhập (đổi mật khẩu = huỷ mọi phiên cũ). */
 export async function findSessionMember(db: AnyDb, tokenHash: string, now: number): Promise<(MemberRow & { active: boolean; sessionExpires: number }) | null> {
-  const rows = await db.select({ ...memberColumns, sessionExpires: sessions.expires }).from(sessions)
+  // Quyền của chức vụ đi kèm phiên (một truy vấn): mọi kiểm tra quyền trong yêu cầu dùng chung (domain/permissions.ts).
+  const perms = sql<string[]>`coalesce((select array_agg(${positionPermissions.permission}) from ${positionPermissions} where ${positionPermissions.positionId} = ${employees.positionId}), '{}')`;
+  const rows = await db.select({ ...memberColumns, sessionExpires: sessions.expires, perms, dataScope: positions.dataScope, departmentId: positions.departmentId }).from(sessions)
     .innerJoin(employees, eq(employees.id, sessions.memberId))
     .innerJoin(credentials, eq(credentials.memberId, employees.id))
     .leftJoin(positions, eq(positions.id, employees.positionId))
