@@ -35,7 +35,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
-import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
+import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -953,14 +953,14 @@ $('#toggle-cost-fields').addEventListener('click', () => {
 });
 
 // ----- dòng sản phẩm (cột theo web cũ: HRC không có Phí in; B2B/VIGIFTS có Phí in F7, Bộ gồm, Mô tả in ấn, Đóng gói)
-const NUM_FIELDS = { qty: 4, price: 2, discount: 2, printFee: 2, purchaseDiscount: 2 };
+const NUM_FIELDS = { qty: 4, price: 2, discount: 2, printFee: 2 };
 const showCostCols = () => !!editor.showCostFields && isManager();
 function lineHead() {
   const modes = new Set(editor.rows.map(r => r.discountType || 'percent'));
   const mode = modes.size > 1 ? 'mixed' : [...modes][0] || editor.discountMode || 'percent';
   const disc = `<span class="disc-head">CK (F6)<select id="discount-mode" aria-label="Đơn vị chiết khấu cả cột">${mode === 'mixed' ? '<option value="mixed" selected disabled>Nhiều loại</option>' : ''}<option value="percent" ${mode === 'percent' ? 'selected' : ''}>%</option><option value="amount" ${mode === 'amount' ? 'selected' : ''}>đ/SP</option></select></span>`;
   const hrc = editor.type === 'HRC';
-  return `<tr><th class="col-idx">STT</th><th class="col-img">Hình ảnh</th><th class="col-product">${hrc ? 'Sản phẩm / Mã hàng' : 'Tên hàng / Mã hàng'}</th><th class="col-unit">ĐVT</th><th class="col-qty">Số lượng</th><th class="col-price">Đơn giá</th><th class="col-disc">${disc}</th>${hrc ? '' : '<th class="col-print">Phí in (F7)</th>'}<th class="col-after right">${hrc ? 'Đơn giá CK' : 'Giá sau CK'}</th><th class="col-total right">Thành tiền</th>${showCostCols() ? '<th class="col-pd">CK mua vào</th><th class="col-cost right">Giá nhập</th>' : ''}<th class="col-act"><span class="sr-only">Xoá</span></th></tr>`;
+  return `<tr><th class="col-idx">STT</th><th class="col-img">Hình ảnh</th><th class="col-product">${hrc ? 'Sản phẩm / Mã hàng' : 'Tên hàng / Mã hàng'}</th><th class="col-unit">ĐVT</th><th class="col-qty">Số lượng</th><th class="col-price">Đơn giá</th><th class="col-disc">${disc}</th>${hrc ? '' : '<th class="col-print">Phí in (F7)</th>'}<th class="col-after right">${hrc ? 'Đơn giá CK' : 'Giá sau CK'}</th><th class="col-total right">Thành tiền</th>${showCostCols() ? '<th class="col-pd">Giá nhập / CK mua</th><th class="col-cost right">Giá nhập</th>' : ''}<th class="col-act"><span class="sr-only">Xoá</span></th></tr>`;
 }
 function packingSpec(r) {
   const n = v => Number(v).toLocaleString('vi-VN', { maximumFractionDigits: 3 }), parts = [];
@@ -969,7 +969,8 @@ function packingSpec(r) {
   return parts.join('; ');
 }
 function lineCell(r, i) {
-  const n = (k, label, extra = '') => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${k === 'purchaseDiscount' && !Number.isFinite(r[k]) ? '' : fmtNum(Number(r[k] || 0), NUM_FIELDS[k])}" aria-label="${label} dòng ${i + 1}" ${extra}>`;
+  const n = (k, label, extra = '') => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${fmtNum(Number(r[k] || 0), NUM_FIELDS[k])}" aria-label="${label} dòng ${i + 1}" ${extra}>`;
+  const costMode = costModeOf(r), costValue = costMode === 'manual' ? r.costPrice : r.purchaseDiscount;
   const hrc = editor.type === 'HRC';
   const meta = [r.brand, r.pattern, r.pricePolicy, Number.isFinite(r.taxRate) ? `VAT ${fmtNum(r.taxRate)}%` : ''].filter(Boolean).join(' · ');
   const text = (k, label, ph) => `<label class="sub-field"><span>${label}</span><input data-k="${k}" value="${esc(r[k] ?? '')}" placeholder="${ph}" maxlength="2000"></label>`;
@@ -991,7 +992,7 @@ function lineCell(r, i) {
     ${hrc ? '' : `<td class="col-print" data-label="Phí in (F7)"><div class="unit-field">${n('printFee', 'Phí in')}<b>đ</b></div></td>`}
     <td class="col-after num-cell" data-label="${hrc ? 'Đơn giá CK' : 'Giá sau CK'}"></td>
     <td class="line-total" data-label="Thành tiền"></td>
-    ${showCostCols() ? `<td class="col-pd" data-label="CK mua vào"><div class="unit-field">${n('purchaseDiscount', 'Chiết khấu mua vào')}<b>%</b></div></td><td class="col-cost num-cell" data-label="Giá nhập"></td>` : ''}
+    ${showCostCols() ? `<td class="col-pd" data-label="Giá nhập / CK mua"><select data-cost-mode aria-label="Cách nhập giá vốn dòng ${i + 1}"><option value="discount"${costMode === 'discount' ? ' selected' : ''}>CK mua vào %</option><option value="manual"${costMode === 'manual' ? ' selected' : ''}>Giá trực tiếp</option></select><div class="unit-field"><input class="num-input" inputmode="text" data-k="purchaseCost" value="${Number.isFinite(costValue) ? fmtNum(costValue, 2) : ''}" placeholder="${costMode === 'manual' ? 'VD: 160k' : 'VD: 58%'}" aria-label="Giá nhập hoặc CK mua dòng ${i + 1}"><b data-cost-unit>${costMode === 'manual' ? 'đ' : '%'}</b></div></td><td class="col-cost num-cell" data-label="Giá nhập"></td>` : ''}
     <td class="line-actions"><button type="button" class="icon-btn danger" data-del title="Xoá dòng" aria-label="Xoá dòng ${i + 1}">×</button></td>
   </tr>`;
 }
@@ -1023,13 +1024,12 @@ function validateRowInput(input, r) {
   const k = input.dataset.k, v = parseNum(input.value);
   let ok = Number.isFinite(v) && v >= 0;
   if (k === 'discount') ok = ok && (r.discountType === 'amount' ? v <= Number(r.price || 0) : v <= 100);
-  if (k === 'purchaseDiscount') ok = input.value.trim() === '' || (ok && v <= 100);
   input.classList.toggle('invalid', !ok);
   return ok ? v : null;
 }
-/** Giá nhập = giá bán × (1 − CK mua vào), như `syncCostPrice` web cũ. */
+/** Dòng theo CK tính lại từ đơn giá; dòng giá thủ công giữ nguyên. */
 function syncCost(r) {
-  if (Number.isFinite(r.purchaseDiscount)) r.costPrice = purchasePrice(r.price, r.purchaseDiscount);
+  syncPurchaseCost(r);
 }
 $('#line-head').addEventListener('change', e => {
   if (e.target.id !== 'discount-mode') return;
@@ -1042,22 +1042,44 @@ $('#line-head').addEventListener('change', e => {
   }
   editor.discountMode = mode; markDirty(); renderLines();
 });
+function costInput(input, r) {
+  const parsed = parsePurchaseCost(input.value, costModeOf(r));
+  input.classList.toggle('invalid', parsed === null);
+  if (!parsed) return false;
+  applyPurchaseCost(r, parsed);
+  const tr = input.closest('tr');
+  tr.querySelector('[data-cost-mode]').value = parsed.mode;
+  tr.querySelector('[data-cost-unit]').textContent = parsed.mode === 'manual' ? 'đ' : '%';
+  input.placeholder = parsed.mode === 'manual' ? 'VD: 160k' : 'VD: 58%';
+  return true;
+}
+$('#line-list').addEventListener('change', e => {
+  const select = e.target.closest('[data-cost-mode]'); if (!select || !isManager()) return;
+  const tr = select.closest('tr'), r = editor.rows[tr.dataset.i], mode = select.value;
+  applyPurchaseCost(r, { mode, value: mode === 'manual' && Number.isFinite(r.costPrice) ? r.costPrice : null });
+  markDirty(); renderLines();
+  $(`#line-list tr[data-i="${tr.dataset.i}"] [data-k="purchaseCost"]`)?.focus();
+});
 $('#line-list').addEventListener('input', e => {
   const input = e.target.closest('[data-k]'); if (!input) return;
   const r = editor.rows[input.closest('tr').dataset.i], k = input.dataset.k;
-  if (k in NUM_FIELDS) {
+  if (k === 'purchaseCost') { if (!isManager()) return; costInput(input, r); }
+  else if (k in NUM_FIELDS) {
     const v = validateRowInput(input, r);
-    if (k === 'purchaseDiscount') { if (input.value.trim() === '') { delete r.purchaseDiscount; delete r.costPrice; } else if (v !== null) r.purchaseDiscount = v; }
-    else r[k] = v ?? 0;
+    r[k] = v ?? 0;
     if (k === 'price') { const d = input.closest('tr').querySelector('[data-k="discount"]'); validateRowInput(d, r); }
     syncCost(r);
   } else r[k] = input.value;
   markDirty(); calculate();
 });
 $('#line-list').addEventListener('focusout', e => {
+  const cost = e.target.closest('[data-k="purchaseCost"]');
+  if (cost && !cost.classList.contains('invalid')) {
+    const r = editor.rows[cost.closest('tr').dataset.i], value = costModeOf(r) === 'manual' ? r.costPrice : r.purchaseDiscount;
+    cost.value = Number.isFinite(value) ? fmtNum(value, 2) : ''; return;
+  }
   const input = e.target.closest('[data-k]'); if (!input || !(input.dataset.k in NUM_FIELDS) || input.classList.contains('invalid')) return;
   const r = editor.rows[input.closest('tr').dataset.i], k = input.dataset.k;
-  if (k === 'purchaseDiscount' && !Number.isFinite(r[k])) { input.value = ''; return; }
   input.value = fmtNum(Number(r[k] || 0), NUM_FIELDS[k]);
 });
 let selectedLine = 0;
@@ -1209,7 +1231,7 @@ function calculate() {
     const unit = after(r, doc);
     tr.querySelector('.col-after').textContent = fmtNum(unit) + ' đ';
     tr.querySelector('.line-total').textContent = money(unit * Number(r.qty || 0));
-    const cost = tr.querySelector('.col-cost'); if (cost) cost.textContent = Number.isFinite(r.purchaseDiscount) ? money(r.costPrice) : '—';
+    const cost = tr.querySelector('.col-cost'); if (cost) cost.textContent = Number.isFinite(r.costPrice) ? money(r.costPrice) : '—';
   });
   if ($('#shipping-card').open) renderShippingSummary();
   $('#sum-subtotal').textContent = money(t.subtotal);
@@ -1358,12 +1380,13 @@ $('#refresh-profit-costs').addEventListener('click', async e => {
   try {
     const skus = [...new Set(editor.rows.map(r => (r.sku || '').trim()).filter(Boolean))], found = [];
     try { for (let i = 0; i < skus.length; i += 200) found.push(...(await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(',')))).products); } catch { /* dùng thông tin trên dòng */ }
-    const bySku = new Map(found.map(p => [normalize(p.sku), p])), missing = []; let updated = 0;
+    const bySku = new Map(found.map(p => [normalize(p.sku), p])), missing = []; let updated = 0, manual = 0;
     for (const r of editor.rows) {
       if (!(r.name || r.sku)) continue;
+      if (costModeOf(r) === 'manual') { manual++; continue; }
       const d = defaultCostDiscount(bySku.get(normalize(r.sku)) || r);
       if (d === null) { missing.push(r); continue; }
-      r.purchaseDiscount = d; r.costPrice = purchasePrice(r.price, d); updated++;
+      r.costMode = 'discount'; r.purchaseDiscount = d; r.costPrice = purchasePrice(r.price, d); updated++;
     }
     if (missing.length) editor.showCostFields = true;
     refreshCostToggle(); markDirty(); renderLines();
@@ -1371,9 +1394,9 @@ $('#refresh-profit-costs').addEventListener('click', async e => {
     if (editor.dirty) throw new Error('Chưa lưu được CK mua vào lên hệ thống.');
     if (missing.length) {
       const list = missing.slice(0, 12).map((r, i) => `${i + 1}. ${r.sku || 'Chưa có SKU'} - ${r.name || 'Chưa có tên'}`).join('\n'), more = missing.length > 12 ? `\n... và ${missing.length - 12} dòng khác` : '';
-      alert(`Có ${missing.length} sản phẩm chưa xác định được CK nhập rõ ràng. Vui lòng nhập thủ công ở cột CK mua vào rồi bấm Lưu báo giá.\n\n${list}${more}`);
+      alert(`Có ${missing.length} sản phẩm chưa xác định được CK nhập rõ ràng. Vui lòng nhập giá trực tiếp hoặc CK ở cột Giá nhập / CK mua rồi bấm Lưu báo giá.\n\n${list}${more}`);
       toast(`Đã lưu ${updated} dòng CK, còn ${missing.length} dòng cần nhập thủ công`);
-    } else toast(`Đã cập nhật và lưu CK mua vào cho ${updated} dòng`);
+    } else toast(`Đã cập nhật và lưu CK mua vào cho ${updated} dòng${manual ? `; giữ nguyên ${manual} dòng giá thủ công` : ''}`);
   } catch (err) { toast(err.message || 'Chưa lưu được CK mua vào.', 'err'); }
   finally { btn.disabled = false; btn.textContent = 'Cập nhật CK mua vào'; }
 });
@@ -1641,7 +1664,7 @@ function collectQuote() {
     notes: field('notes').value, internalNote: field('internalNote').value,
     rows: editor.rows.filter(r => (r.name || '').trim() || Number(r.price) || (r.sku || '').trim()).map(r => {
       const row = { ...r, name: (r.name || '').trim(), sku: (r.sku || '').trim(), unit: (r.unit || '').trim() };
-      if (!(Number(r.costPrice) > 0)) delete row.costPrice;
+      if (!Number.isFinite(r.costPrice)) delete row.costPrice;
       if (!Number.isFinite(row.taxRate)) delete row.taxRate;
       return row;
     }),

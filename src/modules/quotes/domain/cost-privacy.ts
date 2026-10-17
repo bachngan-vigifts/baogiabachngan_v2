@@ -7,7 +7,7 @@
  */
 type Obj = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-export const COST_ROW_KEYS = ['costPrice', 'purchaseDiscount', 'printing', 'commission'] as const;
+export const COST_ROW_KEYS = ['costPrice', 'costMode', 'purchaseDiscount', 'printing', 'commission'] as const;
 export const COST_DOC_KEYS = ['printing'] as const;
 
 /** Bản báo giá không có giá vốn (gửi cho nhân viên). */

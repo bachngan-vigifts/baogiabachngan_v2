@@ -86,3 +86,24 @@ test('giá vốn: nhân viên không thấy, lưu lại không mất; Manager th
   const after = (await call(`/quotes/${q.data.id}`, mgr)).data.data.rows;
   assert.deepEqual(after.map((r: any) => [r.qty, r.costPrice, r.purchaseDiscount, r.commission?.value]), [[20, 60000, 40, 2000], [1, undefined, undefined, undefined]]);
 });
+
+test('giá nhập thủ công và chế độ CK chỉ Manager sửa, nhân viên lưu không ghi đè mode hoặc giá nhập', async () => {
+  const { call, mgr, emp } = await setup();
+  const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_GV_MODE', customer: 'Khách', vat: 8,
+    rows: [{ name: 'Bình', price: 400000, qty: 2, costMode: 'manual', costPrice: 1 }] });
+  assert.equal(q.status, 201);
+  const before = (await call(`/quotes/${q.data.id}`, mgr)).data;
+  assert.equal(before.data.rows[0].costMode, undefined, 'nhân viên không tự gán mode');
+  Object.assign(before.data.rows[0], { costMode: 'manual', costPrice: 160000, purchaseDiscount: 58 });
+  const saved = await call(`/quotes/${q.data.id}`, mgr, 'PUT', { revision: before.revision, data: before.data });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.equal(saved.data.data.rows[0].purchaseDiscount, undefined);
+  const employee = (await call(`/quotes/${q.data.id}`, emp)).data;
+  assert.equal(employee.data.rows[0].costMode, undefined); assert.equal(employee.data.rows[0].costPrice, undefined);
+  Object.assign(employee.data.rows[0], { qty: 3, costMode: 'discount', purchaseDiscount: 99, costPrice: 1 });
+  const resaved = await call(`/quotes/${q.data.id}`, emp, 'PUT', { revision: employee.revision, data: employee.data });
+  assert.equal(resaved.status, 200, JSON.stringify(resaved.data));
+  const after = (await call(`/quotes/${q.data.id}`, mgr)).data.data.rows[0];
+  assert.equal(after.qty, 3); assert.equal(after.costMode, 'manual'); assert.equal(after.costPrice, 160000);
+  assert.equal(after.purchaseDiscount, undefined);
+});
