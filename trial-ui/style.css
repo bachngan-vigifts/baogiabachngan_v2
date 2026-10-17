@@ -1519,3 +1519,10 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 /* Cờ "Được duyệt" ở danh sách nhân viên (chỉ Manager). */
 .approver-toggle { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; font-size: .8rem; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .approver-toggle input { width: 16px; height: 16px; }
+/* Tra tồn: hàng đang về từ đơn mua NCC. */
+.lookup-incoming { margin-top: 10px; padding: 10px 12px; border: 1px dashed #c7d3e6; border-radius: 10px; background: #f5f8fd; }
+.lookup-incoming-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.lookup-incoming ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.lookup-incoming li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: .88rem; }
+.lookup-incoming li a { font-weight: 600; }
+.lookup-incoming li b { margin-left: auto; }

@@ -106,6 +106,19 @@ export function initStockLookup({ api, root }) {
         const rows = el('ul', 'lookup-stock');
         for (const s of p.stock) { const li = el('li', s.qty > 0 ? '' : 'muted'); li.append(el('span', '', s.warehouse), el('b', '', num(s.qty))); rows.append(li); }
         c.append(top, rows);
+        // Hàng đang về: đơn mua NCC đã duyệt còn chờ nhận (không cộng vào tổng tồn) – từng đơn: số đơn, NCC, ngày hẹn.
+        const inc = p.incoming;
+        if (inc?.qty > 0) {
+          const box = el('div', 'lookup-incoming'), head = el('div', 'lookup-incoming-head');
+          head.append(el('span', '', '🚚 Hàng đang về'), el('b', '', num(inc.qty)));
+          const ul = el('ul');
+          for (const o of inc.orders) {
+            const li = el('li'), a = el('a', '', [o.ticketNumber, o.internalNo && 'NCC ' + o.internalNo].filter(Boolean).join(' · ')); a.href = '#/purchases/' + encodeURIComponent(o.orderId);
+            li.append(a, el('span', 'muted', [o.supplierName, o.arrivalDate ? 'hẹn ' + dmy(o.arrivalDate) : 'chưa có ngày hẹn'].filter(Boolean).join(' · ')), el('b', '', num(o.qty)));
+            ul.append(li);
+          }
+          box.append(head, ul); c.append(box);
+        }
         return c;
       }));
     } catch (e) { if (my === req) { note.textContent = ''; out.replaceChildren(el('p', 'error card', e.message)); } }
