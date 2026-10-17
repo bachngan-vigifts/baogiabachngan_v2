@@ -1,5 +1,5 @@
 // Đọc dữ liệu file độc lập với giao diện; dùng chung cho Excel và CSV.
-export const normalizeHeader = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase().replace(/[^a-z0-9]/g, '');
+export const normalizeHeader = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().replace(/[^a-z0-9]/g, '');
 export const findHeader = rows => rows.slice(0, 200).findIndex(row => row.some(v => ['sku', 'masku', 'mahang', 'masanpham', 'itemname'].includes(normalizeHeader(v))));
 export function fileNumber(value, line, label) {
   if (value === null || value === undefined || String(value).trim() === '') return null;

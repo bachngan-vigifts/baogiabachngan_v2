@@ -94,6 +94,9 @@ export const productStock = pgTable('product_stock', {
 
 /** Dòng của từng lần nhập file tồn kho (thay cho file JSON trên R2). */
 export const stockImportLines = pgTable('stock_import_lines', {
+  /** Raw Sapo snapshot; quantity remains the available amount used by CRM. */
+  onHand: doublePrecision('on_hand'),
+  committed: doublePrecision('committed'),
   importRevision: bigint('import_revision', { mode: 'number' }).notNull().references(() => stockImports.revision, { onDelete: 'cascade' }),
   sku: text('sku').notNull(),
   warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
