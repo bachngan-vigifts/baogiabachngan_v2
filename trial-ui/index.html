@@ -435,7 +435,12 @@
       <div class="panel">
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="deliveries-search" type="search" placeholder="Lọc theo khách hàng, số đơn…" aria-label="Tìm"></label>
-          <span id="deliveries-filters"></span>
+          <label>Trạng thái<select id="deliveries-status">
+            <option value="">Tất cả</option>
+            <option value="planned">Chưa giao</option>
+            <option value="in_transit">Đang giao</option>
+            <option value="delivered">Đã giao</option>
+          </select></label>
         </div>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
         <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>

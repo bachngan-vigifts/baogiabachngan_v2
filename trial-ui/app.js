@@ -2692,7 +2692,7 @@ async function loadDeliveries() {
   if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = isWarehouse() ? todayIso() : new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
   $('#deliveries-list').innerHTML = skeleton(6);
   try {
-    const d = await api(`/deliveries?from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}`);
+    const d = await api(`/deliveries?from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}&status=${encodeURIComponent($('#deliveries-status').value)}`);
     const q = normalize($('#deliveries-search').value);
     const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.contractNo || x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
     fillList('deliveries', rows.map(x => `<tr>
@@ -2733,7 +2733,7 @@ $('#orders-search').addEventListener('input', debounce(() => { ordersPager?.rese
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
 $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));
-for (const id of ['#deliveries-from', '#deliveries-to']) $(id).addEventListener('change', loadDeliveries);
+for (const id of ['#deliveries-from', '#deliveries-to', '#deliveries-status']) $(id).addEventListener('change', loadDeliveries);
 // Bấm cả dòng để mở đơn (trừ khi bấm nút/liên kết trong dòng).
 document.addEventListener('click', e => {
   const tr = e.target.closest('tr[data-href]'); if (!tr || e.target.closest('a, button')) return;
