@@ -95,6 +95,16 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   // Không chỉ định dòng = giao hết phần còn lại; giao xong thì kỳ còn lại có hạn = ngày giao + 15 ngày.
   const g2 = await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: '2026-10-12' }); assert.equal(g2.status, 201);
   assert.deepEqual((await call('/orders/' + o.data.id, emp)).data.deliveries[1].lines.map((l: any) => l.qty).sort(), [40, 50]);
+  // Lịch giao mới nhất trước; lọc trạng thái kết hợp khoảng ngày.
+  const calendar = async (status = '', from = '2026-10-01') =>
+    (await call('/deliveries?from=' + from + '&to=2026-10-31&status=' + status, emp)).data.deliveries;
+  assert.deepEqual((await calendar()).map((x: any) => x.id), [g2.data.id, g1.data.id]);
+  assert.deepEqual((await calendar('planned')).map((x: any) => x.id), [g2.data.id]);
+  assert.deepEqual((await calendar('delivered')).map((x: any) => x.id), [g1.data.id]);
+  assert.deepEqual(await calendar('delivered', '2026-10-11'), []);
+  assert.equal((await call('/deliveries/' + g2.data.id + '/status', emp, 'PUT', { status: 'in_transit' })).status, 200);
+  assert.deepEqual((await calendar('in_transit')).map((x: any) => x.id), [g2.data.id]);
+  assert.deepEqual(await calendar('planned'), []);
   await call('/deliveries/' + g2.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-12' });
   d = (await call('/orders/' + o.data.id, emp)).data;
   assert.equal(d.order.status, 'delivered');

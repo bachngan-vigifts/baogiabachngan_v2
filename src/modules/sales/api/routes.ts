@@ -672,7 +672,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
       .where(and(deliveryScope(c), isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
         status ? eq(deliveries.status, status as never) : undefined))
-      .orderBy(asc(deliveries.plannedDate), asc(deliveries.timeSlot)).limit(500);
+      .orderBy(desc(deliveries.plannedDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(500);
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
     // Liên hệ / địa chỉ của khách trên đơn: kho (không xem được danh bạ khách) vẫn có đủ thông tin để liên hệ giao hàng.
     const photos = await photoUrls(c.env.db, c.env.files, 'delivery', rows.filter(r => r.d.status === 'delivered').map(r => r.d.id));
