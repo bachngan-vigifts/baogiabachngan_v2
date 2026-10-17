@@ -18,6 +18,8 @@ import type { MailerConfig } from '../../../core/mail/send-mail.ts';
 /** Môi trường mà các route của `staff` cần. Nơi lắp ráp ứng dụng (src/app) tạo ra từ bindings của Cloudflare. */
 export interface StaffEnv {
   db: AnyDb;
+  /** Kết nối API chấm công ADMS: cấu hình server, không gửi URL/token ra trình duyệt. */
+  adms?: import('../../hr/domain/adms.ts').AdmsConfig;
   /** Giây Unix hiện tại; mặc định đồng hồ hệ thống (test truyền đồng hồ giả). */
   nowSec?: () => number;
   /** Số vòng PBKDF2 khi tạo hash mới (mặc định 600.000; test hạ xuống cho nhanh). */

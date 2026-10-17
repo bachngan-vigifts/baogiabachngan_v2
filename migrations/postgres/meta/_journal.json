@@ -281,6 +281,13 @@
       "when": 1792197896769,
       "tag": "0067_member_approver",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792208947917,
+      "tag": "20261017033436_adms_attendance",
+      "breakpoints": true
     }
   ]
 }
