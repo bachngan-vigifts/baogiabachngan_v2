@@ -1,6 +1,7 @@
 /**
  * Chạy thử giao diện `trial-ui/` trên máy, không cần Supabase: PostgreSQL WASM (PGlite) + router thật của ứng dụng,
- * mô phỏng Edge Function `baogia-v2-api` (Bearer ↔ cookie phiên). Dữ liệu chỉ nằm trong bộ nhớ.
+ * mô phỏng proxy /api/staff + Edge Function `baogia-v2-api` (cookie phiên HttpOnly cùng tên miền). Dữ liệu chỉ nằm trong bộ nhớ.
+ * Cookie `__Host-…; Secure` trên http://localhost: Chrome / Firefox nhận (localhost được coi là an toàn), Safari thì không.
  * Chạy: `npm run ui:dev` rồi mở http://localhost:8787 – đăng nhập mgr@x.vn / mat-khau-12345 (Manager) hoặc emp@x.vn (nhân viên).
  */
 import { createServer } from 'node:http';
@@ -13,6 +14,7 @@ import { createAppRouter } from '../src/app/router.ts';
 import { memoryFileStore } from '../src/core/storage/file-store.ts';
 import type { AnyDb } from '../src/core/db/client.ts';
 import { PgFixture } from '../tests/helpers/postgres.ts';
+import { edgeRequestHeaders, edgeResponseCookies } from '../src/modules/staff/api/edge-session.ts';
 import { seedStaff } from '../tests/helpers/staff-fixture.ts';
 
 const root = join(import.meta.dirname, '..'), uiDir = join(root, 'trial-ui');
@@ -58,20 +60,16 @@ createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/staff')) {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
-    const headers = new Headers();
-    for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string' && k !== 'cookie') headers.set(k, v);
-    const bearer = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') || '')?.[1];
-    headers.delete('authorization');
-    if (bearer) headers.set('cookie', '__Host-bn-session=' + bearer);
+    const incoming = new Headers();
+    for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') incoming.set(k, v);
+    const { headers, legacyToken } = edgeRequestHeaders(incoming, { sync: false });
     const response = await router.handle(new Request(ORIGIN + url.pathname + url.search, {
       method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method || 'GET') ? undefined : Buffer.concat(chunks),
     // DEV_SAPO_PUSH=off: thử luồng sinh đơn / HĐKT trên máy dev không có Sapo (máy chủ thật luôn bắt buộc đẩy Sapo).
     }), { db, files: devFiles, passwordIterations: 1000, ...(process.env.DEV_SAPO_PUSH === 'off' ? { sapoOrderPush: 'off' as const } : {}) });
-    const payload = await response.json() as Record<string, unknown>;
-    const cookie = response.headers.get('set-cookie');
-    if (cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';
-    res.writeHead(response.status, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(payload));
+    const cookies = edgeResponseCookies(response, legacyToken);
+    res.writeHead(response.status, { 'content-type': 'application/json; charset=utf-8', ...(cookies.length ? { 'set-cookie': cookies } : {}) });
+    res.end(await response.text());
     return;
   }
   const file = normalizePath(join(uiDir, url.pathname === '/' ? 'index.html' : url.pathname));

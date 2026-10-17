@@ -76,7 +76,7 @@ test('khách không có email: tạo tài khoản chỉ bằng số di động (
   await call('/activate', '', 'POST', { token: /token=([a-f0-9]{64})/.exec(acc.data.url)![1], password: 'khach-hang-123' });
   const r = await call('/login', '', 'POST', { email: '0931328616', password: 'khach-hang-123' });
   assert.equal(r.status, 200);
-  assert.equal((await call('/portal/me', r.data.sessionToken ? `__Host-bn-session=${r.data.sessionToken}` : r.cookie)).data.user.email, '');
+  assert.equal((await call('/portal/me', r.cookie)).data.user.email, '');
   // Không bỏ được số di động của tài khoản chỉ đăng nhập bằng số.
   assert.equal((await call(`/customer-accounts/${acc.data.memberId}`, emp, 'PUT', { phone: '' })).status, 400);
   assert.equal((await call(`/customer-accounts/${acc.data.memberId}`, emp, 'PUT', { phone: '0931 000 111' })).status, 200);

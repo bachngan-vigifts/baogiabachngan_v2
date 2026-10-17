@@ -23,7 +23,7 @@ Frontend ở `trial-ui/`. API dùng Origin của website trên; nếu đổi dom
 | Yêu cầu | Dữ liệu |
 | --- | --- |
 | POST `/api/staff/activate` | `{token,password}`; chỉ dùng liên kết được cấp riêng |
-| POST `/api/staff/login` | `{email,password}`; trả `user` và `sessionToken` |
+| POST `/api/staff/login` | `{email,password}`; trả `user`, phiên đặt bằng cookie HttpOnly `__Host-bn-session` |
 | GET `/api/staff/me` | Phiên hiện tại |
 | POST `/api/staff/logout` | Huỷ phiên |
 | GET/POST `/api/staff/customers` | Danh sách/tạo khách hàng |
@@ -32,7 +32,7 @@ Frontend ở `trial-ui/`. API dùng Origin của website trên; nếu đổi dom
 | GET `/api/staff/quotes/:id` | `{id,revision,data}` |
 | PUT `/api/staff/quotes/:id` | `{revision,data}`; 409 nếu bản cũ hoặc không được sửa |
 
-Gửi `Authorization: Bearer <sessionToken>` cho route riêng tư. Đây là phiên staff của ứng dụng, không phải JWT Supabase Auth. Không dùng Supabase Data API trực tiếp cho bảng nghiệp vụ. Edge Function dùng `SUPABASE_DB_URL` được nền tảng cấp sẵn. Không đưa service_role, secret key, cookie, mật khẩu hoặc token kích hoạt vào frontend, tài liệu hay repo.
+Giao diện gọi API cùng tên miền (`/api/staff/*` qua Pages Function `functions/api/staff`), trình duyệt tự gửi cookie phiên; không lưu token trong Web Storage và API không trả token trong JSON (`docs/TRIEN-KHAI.md` › *Phiên đăng nhập*). Đây là phiên staff của ứng dụng, không phải JWT Supabase Auth. Không dùng Supabase Data API trực tiếp cho bảng nghiệp vụ. Edge Function dùng `SUPABASE_DB_URL` được nền tảng cấp sẵn. Không đưa service_role, secret key, cookie, mật khẩu hoặc token kích hoạt vào frontend, tài liệu hay repo.
 
 ## Phần tiếp theo
 

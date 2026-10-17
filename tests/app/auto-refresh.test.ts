@@ -35,12 +35,6 @@ test('create, edit, approve and delete each refresh once; unchanged data does no
   await h.refresher.tick();
   assert.equal(h.counts().refreshes, 4);
 });
-test('session renewal is not a content change', async () => {
-  const h = setup();
-  h.data({ quotes: [{ id: '1', revision: 1, approvalStatus: 'pending' }], sessionToken: 'renewed' });
-  await h.refresher.tick();
-  assert.equal(h.counts().refreshes, 0);
-});
 test('open/dirty form defers refresh and flushes once after it becomes safe', async () => {
   const h = setup();
   h.block(true); h.data({ quotes: [] });

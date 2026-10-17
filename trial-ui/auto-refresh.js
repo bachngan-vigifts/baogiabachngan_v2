@@ -9,10 +9,7 @@ export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, pr
     url.searchParams.delete('refresh');
     return url.pathname + url.search;
   };
-  const signature = data => {
-    const { sessionToken, ...content } = data || {};
-    return JSON.stringify(content);
-  };
+  const signature = data => JSON.stringify(data || {});
   function syncRoute() {
     if (key !== routeKey()) { key = routeKey(); records = new Map(); pending = false; warned = false; draft = false; }
   }

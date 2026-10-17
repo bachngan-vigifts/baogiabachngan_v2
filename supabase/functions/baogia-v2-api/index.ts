@@ -3,6 +3,7 @@ import { createDb } from '../../../src/core/db/client.ts';
 import * as schema from '../../../src/db/schema.ts';
 import { createAppRouter } from '../../../src/app/router.ts';
 import { SYNC_PREFIX } from '../../../src/modules/staff/api/auth-routes.ts';
+import { edgeRequestHeaders, edgeResponseCookies } from '../../../src/modules/staff/api/edge-session.ts';
 import { supabaseFileStore } from '../../../src/core/storage/file-store.ts';
 // Trang giao diện được phép gọi API. Thêm địa chỉ mới (vd Cloudflare Pages) bằng secret ALLOWED_ORIGINS="https://a,https://b".
 const ORIGINS = new Set(["https://bachngan-baogia-v2.lucky-thyme-5212.chatgpt.site", "https://crm.minhlongonline.com",
@@ -60,23 +61,21 @@ Deno.serve(async req => {
       return new Response(JSON.stringify({ok:true}), {headers:{...cors,'content-type':'application/json'}});
     }
     if (!path) return new Response('{}',{status:404,headers:cors});
-    const headers = new Headers(req.headers); headers.delete('cookie');
-    if (!sync) { // phiên đăng nhập của giao diện: Bearer → cookie; đồng bộ Sapo giữ nguyên Authorization cho router kiểm mã bí mật
-      const token = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') || '')?.[1];
-      headers.delete('authorization');
-      if(token) headers.set('cookie', '__Host-bn-session=' + token);
-    }
+    // Phiên đăng nhập = cookie HttpOnly first-party: giao diện gọi /api/staff/* trên CHÍNH tên miền của nó, proxy
+    // (functions/api/staff/[[path]].js) chuyển tới đây kèm cookie và nhận lại Set-Cookie. Token không bao giờ nằm trong JSON.
+    // Đồng bộ Sapo giữ nguyên Authorization cho router kiểm mã bí mật.
+    const { headers, legacyToken } = edgeRequestHeaders(req.headers, { sync, proxySecret: Deno.env.get('API_PROXY_SECRET') || '' });
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
     const response = await router.handle(forwarded,{db,waitUntil,files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined,mailer:Deno.env.get('RESEND_API_KEY')?{apiKey:Deno.env.get('RESEND_API_KEY')||'',from:Deno.env.get('MAIL_FROM')||'',alwaysCc:(Deno.env.get('MAIL_CC')||'').split(',').map(s=>s.trim()).filter(Boolean)}:undefined});
     if (response.status < 500) lastOk = Date.now();
-    const payload = await response.json();
-    const cookie = response.headers.get('set-cookie');
-    if(cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';
-    const body = JSON.stringify(payload), jsonHeaders = {...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff'};
+    const body = JSON.stringify(await response.json());
+    const jsonHeaders = new Headers({...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff'});
+    for (const c of edgeResponseCookies(response, legacyToken)) jsonHeaders.append('set-cookie', c);
     // Phản hồi lớn (bản chụp danh mục ~3 MB) nén gzip còn ~0,5 MB khi trình duyệt hỗ trợ.
     if (body.length > 100_000 && /\bgzip\b/.test(req.headers.get('accept-encoding') || '')) {
       const gz = new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'));
-      return new Response(gz,{status:response.status,headers:{...jsonHeaders,'content-encoding':'gzip','vary':'Origin, Accept-Encoding'}});
+      jsonHeaders.set('content-encoding','gzip'); jsonHeaders.set('vary','Origin, Accept-Encoding');
+      return new Response(gz,{status:response.status,headers:jsonHeaders});
     }
     return new Response(body,{status:response.status,headers:jsonHeaders});
   } catch(e) {

@@ -6,8 +6,9 @@ import { setupNotifications } from './notify.js';
 import { watchCsp } from './csp-report.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
 
-const API = document.querySelector('meta[name="bn-api"]')?.content
-  || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
+// API cùng tên miền giao diện (Cloudflare Pages Function functions/api/staff → Edge Function): cookie phiên là first-party.
+const API = document.querySelector('meta[name="bn-api"]')?.content || '/api/staff';
+/** Khoá localStorage bản cũ từng giữ token phiên – chỉ còn đọc một lần để chuyển sang cookie rồi xoá. */
 const SESSION_KEY = 'bn-v2-session';
 
 const $ = s => document.querySelector(s);
@@ -27,26 +28,29 @@ function toast(text, kind = 'ok') {
 $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
 
 // ----- API (cùng phiên đăng nhập với trang chính)
-let token = '';
-// Giữ đăng nhập sau khi đóng app / tab: lưu ở localStorage (sessionStorage bị xoá mỗi lần đóng, nhất là app trên iPhone).
-// Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
-try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
-const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
+// Phiên đăng nhập CHỈ nằm trong cookie HttpOnly (JavaScript không đọc được), dùng chung với trang nhân viên; máy chủ tự
+// gia hạn khi còn dùng – chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
+let signedIn = false;
+// Bản cũ giữ token ở localStorage: lấy ra MỘT lần, xoá ngay, gửi kèm yêu cầu đầu tiên để máy chủ đặt cookie thay thế.
+let legacyToken = '';
+try { legacyToken = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch { /* trình duyệt chặn lưu trữ */ }
 const toLogin = (note = '') => showAuth(note);
 async function api(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
-  if (token) headers.authorization = 'Bearer ' + token;
+  if (legacyToken) headers.authorization = 'Bearer ' + legacyToken;
   let res;
-  try { res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  try { res = await fetch(API + path, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw Object.assign(new Error('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.'), { status: 0 }); }
+  if (headers.authorization) legacyToken = ''; // máy chủ đã trả lời: từ nay chỉ còn cookie
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  if (data.sessionToken !== undefined) saveToken(data.sessionToken);
-  if (res.status === 401 && !['/login', '/activate', '/activation-info'].includes(path)) { toLogin('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); throw new Error('Phiên đăng nhập đã hết hạn.'); }
+  if (res.ok && path === '/login') signedIn = true;
+  if (path === '/logout') signedIn = false;
+  if (res.status === 401 && signedIn && !['/login', '/activate', '/activation-info'].includes(path)) { signedIn = false; toLogin('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); throw Object.assign(new Error('Phiên đăng nhập đã hết hạn.'), { status: 401 }); }
   if (!res.ok) throw Object.assign(new Error(data.error || 'Không thực hiện được thao tác.'), { status: res.status, code: data.code });
   return data;
 }
 // CSP chỉ báo cáo: vi phạm gửi về máy chủ khi đã đăng nhập.
-watchCsp(r => { if (!token) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
+watchCsp(r => { if (!signedIn) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
 
 const ORDER_STATUS = { draft: ['Chờ xác nhận', 'warn'], confirmed: ['Đã xác nhận', 'blue'], delivering: ['Đang giao', 'warn'], delivered: ['Đã giao xong', 'ok'], cancelled: ['Đã huỷ', 'off'] };
 const DELIVERY_STATUS = { planned: 'Đã lên lịch', in_transit: 'Đang giao', delivered: 'Đã giao', failed: 'Giao không thành công' };
@@ -117,12 +121,14 @@ $('#c-login-form').addEventListener('submit', async e => {
   } catch (ex) { err.textContent = ex.message; }
   finally { btn.disabled = false; }
 });
-$('#c-staff-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth(); });
+$('#c-staff-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } showAuth(); });
 
 async function boot() {
-  if (new URLSearchParams(location.hash.slice(1)).has('token')) { saveToken(''); return showAuth(); } // mở link đặt mật khẩu
-  if (!token) return showAuth();
-  const { user } = await api('/me');
+  if (new URLSearchParams(location.hash.slice(1)).has('token')) return showAuth(); // mở link đặt mật khẩu (đăng nhập sau đó thay cookie cũ)
+  // JavaScript không thấy cookie phiên (HttpOnly): hỏi /me. 401 = chưa đăng nhập / phiên hết hạn → form đăng nhập.
+  let user;
+  try { ({ user } = await api('/me')); } catch (e) { return showAuth(e.status === 401 ? '' : e.message); }
+  signedIn = true;
   if (user.role !== 'customer') { $('#c-staff-name').textContent = user.name; view('staff'); return; }
   view('portal');
   st.me = await api('/portal/me');
@@ -140,7 +146,7 @@ async function boot() {
 const accountPop = open => { $('#p-account-pop').hidden = !open; $('#p-account-btn').setAttribute('aria-expanded', String(open)); };
 $('#p-account-btn').addEventListener('click', e => { e.stopPropagation(); accountPop($('#p-account-pop').hidden); });
 document.addEventListener('click', e => { if (!e.target.closest('.account-wrap')) accountPop(false); });
-$('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth('Đã đăng xuất.'); });
+$('#p-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } showAuth('Đã đăng xuất.'); });
 
 /** Thẻ: Tạo báo giá / Check tồn · Danh sách báo giá / Check tồn · Đơn đặt hàng / HĐKT · Công nợ. `#stock` (liên kết thông báo cũ) = danh sách, cuộn tới phần check tồn. */
 function showTab(tab) {

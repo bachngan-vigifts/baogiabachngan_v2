@@ -44,7 +44,8 @@ export interface StaffEnv {
   mailer?: MailerConfig;
 }
 type Ctx = RouteContext<StaffEnv>;
-export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string }
+/** `renewedToken`: token của phiên vừa được gia hạn – phản hồi gắn lại cookie (Max-Age mới) để cookie trình duyệt trượt theo phiên. */
+export interface SessionState { member: MemberRow & { active: boolean }; tokenHash: string; renewedToken?: string }
 
 const now = (c: Ctx) => (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))();
 const session = (c: Ctx) => c.state.session as SessionState;
@@ -75,12 +76,26 @@ export async function authorizeRoute(c: Ctx): Promise<void> {
   const tokenHash = sha256Hex(token);
   const member = await repo.findSessionMember(c.env.db, tokenHash, now(c));
   if (!member) throw new AppError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-  if (shouldRenewSession(member.sessionExpires, now(c))) await repo.extendSession(c.env.db, tokenHash, now(c) + SESSION_LIFETIME_SECONDS);
+  const renew = shouldRenewSession(member.sessionExpires, now(c));
+  if (renew) await repo.extendSession(c.env.db, tokenHash, now(c) + SESSION_LIFETIME_SECONDS);
   if (!canAccessArea(member, area)) throw new AppError(403, isSupplier(member) ? SUPPLIER_FORBIDDEN_MESSAGE : isCustomer(member) ? CUSTOMER_FORBIDDEN_MESSAGE : FORBIDDEN_MESSAGE[area]);
   // Kho không xem / sửa danh bạ khách hàng (mọi đường /customers…: danh sách, hồ sơ, tổng quan, người liên hệ, tài khoản khách).
   if (member.role === 'employee' && member.positionId === 'warehouse' && /^\/api\/staff\/customers(\/|$)/.test(c.url.pathname))
     throw new AppError(403, 'Kho không xem được danh bạ khách hàng.');
-  c.state.session = { member, tokenHash } satisfies SessionState;
+  c.state.session = { member, tokenHash, ...(renew ? { renewedToken: token } : {}) } satisfies SessionState;
+}
+
+/**
+ * Cookie phiên chỉ sống 30 ngày kể từ lúc đặt, còn phiên trong DB được gia hạn (trượt): lần gia hạn nào cũng gửi lại cookie
+ * với Max-Age mới, nếu không trình duyệt tự xoá cookie 30 ngày sau lần đăng nhập dù phiên vẫn còn. Phản hồi đã tự đặt
+ * cookie (đăng xuất, đổi mật khẩu) thì giữ nguyên.
+ */
+export function refreshSessionCookie(c: Ctx, res: Response): Response {
+  const token = (c.state.session as SessionState | undefined)?.renewedToken;
+  if (!token || res.headers.has('set-cookie')) return res;
+  const out = new Response(res.body, res); // phản hồi có thể mang header bất biến (vd lấy từ fetch)
+  out.headers.append('set-cookie', sessionCookie(token));
+  return out;
 }
 
 /**
@@ -184,7 +199,7 @@ const AUDIT_SKIP = /^\/api\/staff\/(images\/fetch|chat\/|notifications\/read|pus
 const auditable = (c: RouteContext<StaffEnv>) => AUDIT_AREAS.has(c.meta) && !AUDIT_SKIP.test(c.url.pathname);
 
 export function createStaffRouter(): Router<StaffEnv> {
-  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: authorizeRoute,
+  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: authorizeRoute, afterRoute: refreshSessionCookie,
     onSuccess: { wants: auditable, run: async (c, info) => {
       const member = (c.state.session as SessionState | undefined)?.member;
       const path = c.url.pathname.replace(/^\/api\/staff/, '') || '/';

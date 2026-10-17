@@ -35,8 +35,9 @@ import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
 import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
 
-const API = document.querySelector('meta[name="bn-api"]')?.content
-  || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
+// API cùng tên miền giao diện (Cloudflare Pages Function functions/api/staff → Edge Function): cookie phiên là first-party.
+const API = document.querySelector('meta[name="bn-api"]')?.content || '/api/staff';
+/** Khoá localStorage bản cũ từng giữ token phiên – chỉ còn đọc một lần để chuyển sang cookie rồi xoá. */
 const SESSION_KEY = 'bn-v2-session';
 
 // ---------------------------------------------------------------- tiện ích
@@ -231,27 +232,31 @@ function photoBox({ title, text = '', min = 1, max = 3, ok = 'Lưu' }) {
 }
 
 // ---------------------------------------------------------------- gọi API
-let token = '';
-// Giữ đăng nhập sau khi đóng app / tab: lưu ở localStorage (sessionStorage bị xoá mỗi lần đóng, nhất là app trên iPhone).
-// Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
-try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
-const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
+// Phiên đăng nhập CHỈ nằm trong cookie HttpOnly `__Host-bn-session` (JavaScript không đọc được); trình duyệt tự gửi kèm
+// mọi yêu cầu cùng tên miền. Máy chủ gia hạn phiên (và cookie) khi còn dùng: chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app
+// quá 30 ngày mới phải đăng nhập lại. `signedIn` / `sessionGen` chỉ để phản hồi của phiên cũ không xoá phiên mới.
+let signedIn = false, sessionGen = 0;
+const setSession = on => { signedIn = on; sessionGen++; };
+// Bản cũ giữ token ở localStorage: lấy ra MỘT lần, xoá ngay, gửi kèm yêu cầu đầu tiên để máy chủ đặt cookie thay thế.
+let legacyToken = '';
+try { legacyToken = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch { /* trình duyệt chặn lưu trữ */ }
 
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 async function api(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
   const requestRoute = location.hash;
-  const requestToken = token;
-  if (requestToken) headers.authorization = 'Bearer ' + requestToken;
+  const requestGen = sessionGen, requestSignedIn = signedIn;
+  if (legacyToken) headers.authorization = 'Bearer ' + legacyToken;
   let res;
-  try { res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  try { res = await fetch(API + path, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0); }
+  if (headers.authorization) legacyToken = ''; // máy chủ đã trả lời: từ nay chỉ còn cookie
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
-  const sameSession = requestToken === token;
-  if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
+  const sameSession = requestGen === sessionGen;
+  if (sameSession && res.ok) { if (path === '/login') setSession(true); else if (path === '/logout' || path === '/password') setSession(false); }
   if (!res.ok) {
-    if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
+    if (res.status === 401 && requestSignedIn && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
     throw new ApiError(data.error || 'Không thực hiện được thao tác.', res.status, data.code);
   }
   if (state.user && sameSession) {
@@ -261,7 +266,7 @@ async function api(path, method = 'GET', body) {
   return data;
 }
 // CSP chỉ báo cáo: vi phạm gửi về máy chủ khi đã đăng nhập.
-watchCsp(r => { if (!token) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
+watchCsp(r => { if (!signedIn) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
 
 initAvatars(api); // ô nào có data-av tự hiện ảnh đại diện
 
@@ -285,9 +290,9 @@ const KHO_HOME = '#/kho';
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
 let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('token') : null;
 
-function showAuth(message = '', { keepToken = false } = {}) {
+function showAuth(message = '', { keepSession = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
-  state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
+  state.user = null; dataRefresh?.stop(); if (!keepSession && signedIn) setSession(false);
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
@@ -329,6 +334,7 @@ $('#login-form').addEventListener('submit', async e => {
 
 async function enter() {
   const { user } = await api('/me');
+  if (!signedIn) setSession(true); // mở lại app: cookie còn hiệu lực
   if (user.role === 'supplier' || user.positionId === 'supplier') {
     await api('/logout', 'POST', {}).catch(() => {});
     showAuth('Tài khoản nhà cung cấp chưa dùng được bản thử này. Cổng NCC đang được hoàn thiện.');
@@ -2557,20 +2563,19 @@ $('#copy-link').addEventListener('click', async () => {
 $('#today').textContent = new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 renderQuotes(); renderCustomers();
 if (activation) { setupActivationForm(); showAuth(); }
-else if (token) resume();
-else showAuth();
+else resume();
 /**
- * Mở lại app khi đã có phiên: chỉ đăng xuất khi máy chủ báo phiên hết hạn (401). Mất mạng / máy chủ chưa sẵn sàng thì
- * GIỮ phiên, hiện nút "Thử lại" (tự thử lại khi có mạng) thay vì bắt đăng nhập lại.
+ * Mở app: JavaScript không thấy cookie phiên (HttpOnly) nên luôn hỏi /me. 401 = chưa đăng nhập / phiên hết hạn → form đăng nhập.
+ * Mất mạng / máy chủ chưa sẵn sàng thì GIỮ phiên, hiện nút "Thử lại" (tự thử lại khi có mạng) thay vì bắt đăng nhập lại.
  */
 function resume() {
   enter().catch(e => {
-    if (e.status === 401) return showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-    showAuth(e.message, { keepToken: true });
+    if (e.status === 401) return showAuth();
+    showAuth(e.message, { keepSession: true });
     const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn secondary small'; retry.textContent = 'Thử lại';
     retry.style.marginLeft = '8px'; retry.addEventListener('click', () => { $('#auth-error').textContent = 'Đang kết nối lại…'; resume(); });
     $('#auth-error').append(retry);
-    window.addEventListener('online', () => { if (!state.user && token) resume(); }, { once: true });
+    window.addEventListener('online', () => { if (!state.user && $('#auth-error').contains(retry)) resume(); }, { once: true });
   });
 }
 

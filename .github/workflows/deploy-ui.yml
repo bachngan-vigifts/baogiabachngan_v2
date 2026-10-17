@@ -1,11 +1,13 @@
 # Tự đưa giao diện (trial-ui/) lên Cloudflare Pages và gắn tên miền crm.minhlongonline.com.
 # Chỉ cần 2 secret: CLOUDFLARE_API_TOKEN (quyền: Account › Cloudflare Pages › Edit; thêm Zone › DNS › Edit nếu
 # minhlongonline.com nằm trên Cloudflare) và CLOUDFLARE_ACCOUNT_ID. Thiếu secret thì bỏ qua, không lỗi.
+# Kèm Pages Function functions/api/staff (proxy /api/staff/* → Edge Function, để cookie phiên là cookie first-party).
+# Secret API_PROXY_SECRET (tuỳ chọn, ≥ 32 ký tự, TRÙNG secret cùng tên ở "Triển khai API"): API tin IP người dùng do proxy gửi.
 name: Triển khai giao diện
 on:
   push:
     branches: [main]
-    paths: ['trial-ui/**', 'scripts/stamp-ui-version.ts', '.github/workflows/deploy-ui.yml']
+    paths: ['trial-ui/**', 'functions/**', 'scripts/stamp-ui-version.ts', '.github/workflows/deploy-ui.yml']
   workflow_dispatch:
 concurrency: deploy-ui
 env:
@@ -19,6 +21,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      API_PROXY_SECRET: ${{ secrets.API_PROXY_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - name: Thiếu secret Cloudflare
@@ -38,6 +41,11 @@ jobs:
       - name: Gắn phiên bản vào đường dẫn JS / CSS
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: node --experimental-strip-types scripts/stamp-ui-version.ts "${GITHUB_SHA::7}"
+      - name: Cập nhật mã bí mật proxy API
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.API_PROXY_SECRET != ''
+        # Truyền qua stdin để mã không xuất hiện trong lệnh/log.
+        run: printf '%s' "$API_PROXY_SECRET" | npx --yes wrangler@3 pages secret put API_PROXY_SECRET --project-name "$PROJECT"
+      # Chạy ở thư mục gốc repo: wrangler tự đóng gói thư mục functions/ (proxy /api/staff/*) cùng giao diện trial-ui/.
       - name: Đưa giao diện lên
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npx --yes wrangler@3 pages deploy trial-ui --project-name "$PROJECT" --branch main --commit-dirty=true

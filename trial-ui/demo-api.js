@@ -98,8 +98,8 @@ function handle(method, path, body, auth) {
   if (method === 'POST' && path === '/login') {
     const u = db.members.find(x => x.email.toLowerCase() === String(body.email || '').trim().toLowerCase());
     if (!u || !u.active || u.password !== body.password) fail(401, 'Email hoặc mật khẩu không đúng.');
-    const t = token(); db.sessions[t] = u.id; save();
-    return { user: pub(u), sessionToken: t };
+    const t = token(); db.sessions[t] = u.id; save(); cookie = t;
+    return { user: pub(u) };
   }
   if (method === 'POST' && path === '/activate') {
     const u = db.members.find(x => x.activationToken && x.activationToken === body.token);
@@ -109,11 +109,11 @@ function handle(method, path, body, auth) {
     return { ok: true };
   }
   if (method === 'GET' && path === '/me') return { user: pub(need()) };
-  if (method === 'POST' && path === '/logout') { delete db.sessions[auth]; save(); return { ok: true, sessionToken: '' }; }
+  if (method === 'POST' && path === '/logout') { delete db.sessions[auth]; save(); cookie = ''; return { ok: true }; }
   if (method === 'POST' && path === '/password') {
     need(); if (me.password !== body.currentPassword) fail(400, 'Mật khẩu hiện tại không đúng.');
-    me.password = body.password; for (const k of Object.keys(db.sessions)) if (db.sessions[k] === me.id) delete db.sessions[k]; save();
-    return { ok: true, sessionToken: '' };
+    me.password = body.password; for (const k of Object.keys(db.sessions)) if (db.sessions[k] === me.id) delete db.sessions[k]; save(); cookie = '';
+    return { ok: true };
   }
   if (method === 'GET' && path === '/customers') {
     need();
@@ -194,6 +194,8 @@ function handle(method, path, body, auth) {
   fail(404, 'Không tìm thấy.');
 }
 
+/** "Cookie phiên" của bản demo: như cookie HttpOnly thật, giao diện không thấy; chỉ giữ trong bộ nhớ (tải lại trang = đăng nhập lại). */
+let cookie = '';
 /** Chặn fetch tới DEMO_API và trả lời bằng dữ liệu mẫu. */
 export function installDemoApi() {
   const real = window.fetch.bind(window);
@@ -201,7 +203,7 @@ export function installDemoApi() {
     const url = String(input?.url || input);
     if (!url.startsWith(DEMO_API)) return real(input, init);
     await new Promise(r => setTimeout(r, 120));
-    const auth = /^Bearer (\w+)$/.exec(init.headers?.authorization || '')?.[1];
+    const auth = cookie;
     let status = 200, payload;
     try { query = new URL(url).searchParams; payload = handle(init.method || 'GET', url.slice(DEMO_API.length).split('?')[0], init.body ? JSON.parse(init.body) : {}, auth); if ((init.method || 'GET') === 'POST' && /\/(quotes|customers|admin\/members)$/.test(url)) status = 201; }
     catch (e) { status = e.status || 500; payload = { error: e.status ? e.message : 'Lỗi bản demo: ' + e.message }; }

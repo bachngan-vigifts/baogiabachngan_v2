@@ -2,7 +2,7 @@
 
 Viết lại từ `bachngan-vigifts/bach-ngan-bao-gia` theo kiến trúc module. Nền tảng đang chạy:
 - **Giao diện:** HTML + JavaScript thuần trong `trial-ui/`, đưa lên **Cloudflare Pages** (https://crm.minhlongonline.com).
-- **API:** Supabase Edge Function `baogia-v2-api` (`supabase/functions/`), gói các module trong `src/` (Drizzle ORM).
+- **API:** Supabase Edge Function `baogia-v2-api` (`supabase/functions/`), gói các module trong `src/` (Drizzle ORM). Giao diện gọi qua proxy cùng tên miền `/api/staff/*` (`functions/`, Cloudflare Pages Function) để phiên là cookie HttpOnly first-party.
 - **Dữ liệu:** Supabase PostgreSQL + Storage.
 - Merge vào `main` → GitHub Actions tự kiểm tra rồi triển khai cả giao diện lẫn API ([docs/TRIEN-KHAI.md](docs/TRIEN-KHAI.md)).
 
@@ -31,6 +31,7 @@ src/
   db/schema.ts     điểm tập hợp schema cho drizzle-kit
   modules/<tên>/   mỗi module tự chứa: schema.ts · domain/ (hàm thuần) · api/ (route) · repo/ (truy vấn Drizzle, nếu cần)
 trial-ui/          giao diện nhân viên (index.html + app.js…) và trang khách (customer.html + customer.js)
+functions/         Cloudflare Pages Function: proxy /api/staff/* → Edge Function (giữ Set-Cookie)
 supabase/          Edge Function baogia-v2-api (điểm vào API)
 migrations/        lịch sử SQLite cũ; migrations/postgres/ là bộ migration đang dùng cho Supabase. KHÔNG xoá để sinh lại – chỉ thêm file mới
 tests/             test xuyên module (schema, tương thích bản cũ, kiến trúc) và test luồng API (tests/app/)

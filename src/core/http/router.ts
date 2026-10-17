@@ -56,6 +56,8 @@ export interface RouterOptions<Env> {
    * (đã cắt ngắn). Lỗi trong hàm này không làm hỏng phản hồi. Trả `false` từ `wants` để bỏ qua route (không đọc thân).
    */
   onSuccess?: { wants: (ctx: RouteContext<Env>) => boolean; run: (ctx: RouteContext<Env>, info: SuccessInfo) => Promise<void> };
+  /** Chỉnh phản hồi handler trả về (vd gắn lại cookie phiên vừa gia hạn). Không chạy cho phản hồi lỗi (AppError). */
+  afterRoute?: (ctx: RouteContext<Env>, res: Response) => Response;
 }
 
 /**
@@ -109,7 +111,8 @@ export class Router<Env = unknown> {
         const ctx: RouteContext<Env> = { req, url, params, env, state: {}, meta: r.meta };
         await this.options.authorize?.(ctx);
         const hook = req.method !== 'GET' && this.options.onSuccess?.wants(ctx) ? this.options.onSuccess : null;
-        if (!hook) return await r.handler(ctx);
+        const done = (res: Response) => this.options.afterRoute ? this.options.afterRoute(ctx, res) : res;
+        if (!hook) return done(await r.handler(ctx));
         const copy = req.clone();
         const res = await r.handler(ctx);
         if (res.status >= 200 && res.status < 300) {
@@ -118,7 +121,7 @@ export class Router<Env = unknown> {
             await hook.run(ctx, { route: `${r.method} ${r.path}`, status: res.status, requestText: await text(copy), responseText: await text(res.clone()) });
           } catch (e) { console.error('onSuccess hook failed', e instanceof Error ? e.message : e); }
         }
-        return res;
+        return done(res);
       }
       if (allowed.size) return json({ error: 'Phương thức không được hỗ trợ.' }, 405, { allow: [...allowed].join(', ') });
       return json({ error: 'Không tìm thấy.' }, 404);

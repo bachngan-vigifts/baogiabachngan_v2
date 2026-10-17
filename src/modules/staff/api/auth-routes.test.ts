@@ -214,6 +214,18 @@ test('phiên trượt: còn dùng thì tự gia hạn 30 ngày (tối đa 1 lầ
   assert.equal((await call('/me', { cookie })).status, 401);
 });
 
+test('phiên trượt: lần gia hạn gửi lại cookie cùng token với Max-Age 30 ngày mới (cookie trình duyệt trượt theo phiên)', async () => {
+  const { login, call, clock } = await world();
+  const DAY = 86_400, { cookie } = await login('emp@x.vn');
+  assert.equal((await call('/me', { cookie })).cookie, null, 'chưa tới lúc gia hạn: không gửi cookie');
+  clock.t += 2 * DAY;
+  assert.equal((await call('/me', { cookie })).cookie, `${cookie}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=2592000`);
+  assert.equal((await call('/me', { cookie })).cookie, null, 'tối đa 1 lần/ngày');
+  clock.t += 2 * DAY;
+  const out = await call('/logout', { body: {}, cookie });
+  assert.match(out.cookie!, /Max-Age=0$/, 'đăng xuất đúng lúc gia hạn: vẫn xoá cookie');
+});
+
 test('gia hạn phiên chỉ khi đã trôi qua hơn 1 ngày từ lần gia hạn trước (không ghi DB mỗi request)', () => {
   const now = 1_000_000;
   assert.equal(shouldRenewSession(now + SESSION_LIFETIME_SECONDS, now), false);
