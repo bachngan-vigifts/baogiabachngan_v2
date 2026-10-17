@@ -87,7 +87,7 @@ export function initPayroll(deps) {
       <div class="page-head"><div><span class="eyebrow">Quản trị</span><h1>Bảng lương</h1><p class="muted">${esc(monthLabel(d.month))} · tham số áp dụng ${d.paramsMonth ? 'từ ' + esc(monthLabel(d.paramsMonth).toLowerCase()) : 'mặc định theo file mẫu'}.</p></div>
         <div class="row-actions pr-actions">
           <div class="md-month"><button type="button" class="icon-btn" data-month="-1" aria-label="Tháng trước">‹</button><input type="month" id="pr-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
-          <button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
+          <a class="btn secondary" href="https://synctime.vn/login.php" target="_blank" rel="noopener noreferrer">Đăng nhập SyncTime</a><button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
           ${open ? `<button class="btn primary" data-act="confirm-all">Chốt lương (${open})</button>` : ''}</div></div>
       <div class="stats">
         <article class="stat"><small>Nhân sự</small><strong>${total.people}</strong><span class="muted">${open ? `${open} phiếu tạm tính` : 'Đã chốt tất cả'}</span></article>
