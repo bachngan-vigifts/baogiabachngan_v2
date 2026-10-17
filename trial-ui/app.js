@@ -2723,7 +2723,7 @@ async function loadReceivables() {
       .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('');
     fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
       <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
-      <td>${fmtDate(r.nextDueDate) || '<span class="muted">Sau khi giao</span>'}</td>
+      <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : '<span class="muted">Chưa xuất</span>'}</td>
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
       <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) : '—'}</td></tr>`),
       'Chưa có công nợ. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
