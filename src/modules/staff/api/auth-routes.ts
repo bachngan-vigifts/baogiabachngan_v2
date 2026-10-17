@@ -66,14 +66,22 @@ export function clientIp(h: Headers): string {
   return xff.at(-1) || 'unknown';
 }
 
+export interface StaffRouterOptions {
+  /** Lớp ứng dụng cung cấp xác thực webhook; staff không phụ thuộc module tích hợp. */
+  authorizeSynctime?: (req: Request, db: AnyDb) => Promise<void>;
+}
 /**
  * Chốt quyền cho MỌI route (gắn vào Router qua `authorize`): route 'public' đi thẳng; còn lại phải có phiên hợp lệ
  * và khu vực của route phải nằm trong quyền của người dùng. NCC đi sai khu vực nhận đúng thông báo của bản cũ.
  */
-export async function authorizeRoute(c: Ctx): Promise<void> {
+export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): Promise<void> {
   const area = c.meta as Area;
   if (area === 'public') return;
   if (area === 'sapo-sync') return checkSyncToken(c);
+  if (area === 'synctime-sync') {
+    if (!options.authorizeSynctime) throw new AppError(503, 'Chưa cấu hình xác thực SyncTime.');
+    return options.authorizeSynctime(c.req, c.env.db);
+  }
   const token = readSessionToken(c.req.headers.get('cookie'));
   const tokenHash = sha256Hex(token);
   const member = await repo.findSessionMember(c.env.db, tokenHash, now(c));
@@ -174,7 +182,7 @@ async function activationHash(body: Record<string, unknown>): Promise<string> {
 /** Router của module staff: đã gắn chốt Origin/phương thức và chốt quyền; mọi route BẮT BUỘC khai báo khu vực. */
 /**
  * Đường dẫn đồng bộ Sapo được gọi từ máy chủ khác (không có Origin) nên bỏ qua kiểm tra Origin chống CSRF:
- * chúng không dùng cookie mà xác thực bằng mã bí mật. Test kiến trúc bắt buộc mọi route dưới đây thuộc khu vực 'sapo-sync'.
+ * chúng không dùng cookie mà xác thực bằng mã bí mật. Test kiến trúc bắt buộc mọi route dưới đây dùng khu vực xác thực riêng 'sapo-sync' hoặc 'synctime-sync'.
  */
 export const SYNC_PREFIX = '/api/staff/integrations/';
 export const isSyncPath = (url: URL) => url.pathname.startsWith(SYNC_PREFIX);
@@ -188,8 +196,8 @@ const AUDIT_AREAS = new Set<unknown>(['business', 'admin', 'ncc-admin', 'custome
 const AUDIT_SKIP = /^\/api\/staff\/(images\/fetch|chat\/|notifications\/read|push\/|csp-report)/;
 const auditable = (c: RouteContext<StaffEnv>) => AUDIT_AREAS.has(c.meta) && !AUDIT_SKIP.test(c.url.pathname);
 
-export function createStaffRouter(): Router<StaffEnv> {
-  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: authorizeRoute,
+export function createStaffRouter(options: StaffRouterOptions = {}): Router<StaffEnv> {
+  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: c => authorizeRoute(c, options),
     onSuccess: { wants: auditable, run: async (c, info) => {
       const member = (c.state.session as SessionState | undefined)?.member;
       const path = c.url.pathname.replace(/^\/api\/staff/, '') || '/';

@@ -2,6 +2,20 @@ import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, pr
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { SAPO_DOC_KINDS } from './domain/sapo-docs.ts';
 
+/** Chỉ lưu SHA-256 mã nhận webhook; không dùng khóa SyncTime Client hoặc phiên Sapo. */
+export const synctimeConnections = pgTable('synctime_connections', {
+  id: text('id').primaryKey(),
+  tokenHash: text('token_hash').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}).enableRLS();
+
+/** Hộp nhận chờ đối chiếu hợp đồng dữ liệu thực tế; chưa ghi ngày công / lương. */
+export const synctimeReceipts = pgTable('synctime_receipts', {
+  id: text('id').primaryKey(), // SHA-256 của JSON nhận được: retry cùng gói không ghi thêm
+  payload: text('payload').notNull(),
+  receivedAt: text('received_at').notNull(),
+}, t => [index('idx_synctime_received').on(t.receivedAt)]).enableRLS();
+
 export const sapoOrderStatuses = pgTable('sapo_order_statuses', {
   quoteNumber: text('quote_number').primaryKey(),
   status: text('status').notNull(),

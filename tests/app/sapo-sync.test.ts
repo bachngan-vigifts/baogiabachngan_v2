@@ -157,10 +157,11 @@ test('Manager xem tình trạng đồng bộ; nhân viên bị chặn; không l�
   assert.ok(!JSON.stringify(s.data).includes(SECRET));
 });
 
-test('mọi route đồng bộ dưới /integrations/ thuộc khu vực sapo-sync (bỏ qua kiểm Origin chỉ an toàn khi có mã bí mật)', () => {
+test('mọi route đồng bộ dưới /integrations/ thuộc khu vực xác thực Sapo hoặc SyncTime riêng (bỏ Origin chỉ khi có mã bí mật)', () => {
   for (const r of createAppRouter().list()) {
     const isSync = r.pattern.startsWith('^\\/integrations\\/');
-    assert.equal(isSync, r.meta === 'sapo-sync', r.pattern);
+    assert.equal(isSync, r.meta === 'sapo-sync' || r.meta === 'synctime-sync', r.pattern);
+    if (r.meta === 'synctime-sync') assert.equal(r.pattern, new RegExp('^/integrations/synctime/webhook/?$').source);
   }
 });
 

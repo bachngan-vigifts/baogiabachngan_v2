@@ -1,4 +1,5 @@
 // Chấm công từ máy ADMS: chỉ Manager mở từ Bảng lương. Mọi quyền kiểm lại ở API.
+import { renderSynctimeWebhook } from './synctime-webhook.js';
 const STATES = { 0: 'Vào', 1: 'Ra', 4: 'Vào tăng ca', 5: 'Ra tăng ca', 255: 'Chưa xác định' };
 function el(tag, text, cls) {
   const node = document.createElement(tag); if (text !== undefined) node.textContent = text;
@@ -11,9 +12,12 @@ function field(label, input) { const l = el('label', label); l.append(input); re
 function input(type, value = '') { const i = el('input'); i.type = type; i.value = value; return i; }
 export async function openAdms({ api, toast }, month) {
   const dlg = el('dialog', undefined, 'modal'); dlg.style.width = 'min(960px, 96vw)'; dlg.style.maxWidth = '960px';
-  const head = el('div', undefined, 'modal-head'); head.append(el('h2', 'Chấm công từ máy ADMS'), button('×', () => dlg.close(), 'icon-btn'));
-  const body = el('div', undefined, 'modal-body'); const message = el('p', 'Đang kiểm tra kết nối…', 'muted'); message.setAttribute('role', 'status'); body.append(message);
+  const head = el('div', undefined, 'modal-head'); head.append(el('h2', 'Kết nối chấm công'), button('×', () => dlg.close(), 'icon-btn'));
+  const body = el('div', undefined, 'modal-body'); const message = el('p', 'Đang kiểm tra kết nối ADMS…', 'muted'); message.setAttribute('role', 'status');
   dlg.append(head, body); document.body.append(dlg); dlg.addEventListener('close', () => dlg.remove(), { once: true }); dlg.showModal();
+  await renderSynctimeWebhook(body, { api, toast });
+  if (!dlg.open) return;
+  body.append(el('h3', 'Đồng bộ ADMS trực tiếp'), message);
   try {
     let config = await api('/hr/adms');
     if (!dlg.open) return;
