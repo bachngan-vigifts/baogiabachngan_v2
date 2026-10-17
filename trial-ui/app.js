@@ -29,6 +29,7 @@ import { initKhoHome, initStockLookup } from './kho.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
 import { initProductActions } from './product-actions.js';
+import { openSapoStockImport } from './sapo-stock-import.js';
 import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
@@ -1982,6 +1983,7 @@ function productActions() {
 $('#product-actions').addEventListener('click', e => {
   const action = e.target.closest('[data-product-action]')?.dataset.productAction;
   if (action === 'value' || action === 'audit') productActions().report(action);
+  else if (action === 'sapo-stock') openSapoStockImport({ api, isManager, onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } }).catch(ex => toast(ex.message, 'err'));
   else if (action === 'stock' || action === 'packing') productActions().openImport(action).catch(ex => toast(ex.message, 'err'));
 });
 function renderProducts() {
