@@ -1,4 +1,5 @@
 import { AppError } from '../../../core/errors.ts';
+import { purchasePrice } from './quote-math.ts';
 
 /*
  * Kiểm tra và làm sạch báo giá trước khi lưu. Port NGUYÊN VĂN logic của `validateQuotation` bản cũ
@@ -119,6 +120,13 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     for (const key of ['qty', 'price', 'discount', 'printFee', 'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) clean[key] = number(row[key] ?? 0, key === 'discount' ? (row.discountType === 'amount' ? Number(row.price || 0) : 100) : 1e12);
     if (row.purchaseDiscount !== undefined && row.purchaseDiscount !== null) clean.purchaseDiscount = number(row.purchaseDiscount, 100);
     if (row.costPrice !== undefined) clean.costPrice = number(row.costPrice, 1e12);
+    if (row.costMode !== undefined) {
+      if (row.costMode !== 'manual' && row.costMode !== 'discount') throw bad('Cách nhập giá vốn không hợp lệ.');
+      clean.costMode = row.costMode;
+      if (row.costMode === 'manual') delete clean.purchaseDiscount;
+      else if (clean.purchaseDiscount !== undefined) clean.costPrice = purchasePrice(clean.price, clean.purchaseDiscount);
+      else delete clean.costPrice;
+    }
     if (row.printing !== undefined) {
       if (!row.printing || typeof row.printing !== 'object' || Array.isArray(row.printing)) throw bad('Phí in gia công không hợp lệ.');
       clean.printing = { workshop: text(row.printing.workshop ?? '', 180), unitPrice: number(row.printing.unitPrice ?? 0, 1e12), workshopExplicit: row.printing.workshopExplicit === true };

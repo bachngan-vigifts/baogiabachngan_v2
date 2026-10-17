@@ -14,6 +14,8 @@ export interface QuoteRow {
   /** Thuế suất riêng của dòng; không hợp lệ/thiếu thì dùng `vat` chung của báo giá. */
   taxRate?: number | null;
   costPrice?: number;
+  costMode?: 'manual' | 'discount';
+  purchaseDiscount?: number;
   printing?: { unitPrice?: number; workshop?: string; workshopExplicit?: boolean };
   /**
    * CK cho khách ("tiền cà phê", chỉ Manager thấy ở Lợi nhuận tạm tính): theo % hoặc số tiền mỗi sản phẩm, tính trên
@@ -110,6 +112,45 @@ export const purchasePrice = (price: unknown, discount: unknown): number => {
   const value = Number(price) || 0, percent = Number(discount);
   return value <= 0 || !Number.isFinite(percent) ? 0 : Math.round(value * (100 - Math.min(100, Math.max(0, percent))) / 100);
 };
+
+type CostRow = Pick<QuoteRow, 'price' | 'costMode' | 'costPrice' | 'purchaseDiscount'>;
+/** Dòng cũ chỉ có costPrice là giá thủ công; dòng có CK giữ cách tính hiện tại. */
+export const costModeOf = (row: CostRow): 'manual' | 'discount' => row.costMode ??
+  (!Number.isFinite(row.purchaseDiscount) && Number.isFinite(row.costPrice) ? 'manual' : 'discount');
+
+/** Nhập 160k / 160.000 / 160,000 đ hoặc 58%; số không có hậu tố dùng chế độ đang chọn. */
+export function parsePurchaseCost(input: string, mode: 'manual' | 'discount'): { mode: 'manual' | 'discount'; value: number | null } | null {
+  let s = input.trim().replace(/\s+/g, ''), factor = 1;
+  if (!s) return { mode, value: null };
+  if (s.endsWith('%')) { mode = 'discount'; s = s.slice(0, -1); }
+  else if (/k$/i.test(s)) { mode = 'manual'; factor = 1000; s = s.slice(0, -1); }
+  else if (/(?:đ|₫|vnd)$/i.test(s)) { mode = 'manual'; s = s.replace(/(?:đ|₫|vnd)$/i, ''); }
+  if (/^\d{1,3}(?:[.]\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  else if (/^\d{1,3}(?:,\d{3})+$/.test(s)) s = s.replace(/,/g, '');
+  else if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  if (!/^\d+(?:\.\d+)?$/.test(s)) return null;
+  const value = Number(s) * factor;
+  if (!Number.isFinite(value) || value < 0 || value > (mode === 'discount' ? 100 : 1e12)) return null;
+  return { mode, value };
+}
+
+export function syncPurchaseCost(row: CostRow): void {
+  if (costModeOf(row) === 'discount') {
+    if (Number.isFinite(row.purchaseDiscount)) row.costPrice = purchasePrice(row.price, row.purchaseDiscount);
+    else delete row.costPrice;
+  }
+}
+
+export function applyPurchaseCost(row: CostRow, entry: NonNullable<ReturnType<typeof parsePurchaseCost>>): void {
+  row.costMode = entry.mode;
+  if (entry.mode === 'manual') {
+    delete row.purchaseDiscount;
+    if (entry.value === null) delete row.costPrice; else row.costPrice = entry.value;
+  } else {
+    if (entry.value === null) delete row.purchaseDiscount; else row.purchaseDiscount = entry.value;
+    syncPurchaseCost(row);
+  }
+}
 
 export const defaultCostPrice = (product: Parameters<typeof defaultCostDiscount>[0], price: unknown): number => {
   const discount = defaultCostDiscount(product);

@@ -533,7 +533,9 @@ label.btn.busy { opacity: .55; pointer-events: none; }
 .line-table .col-idx { width: 40px; } .line-table .col-img { width: 70px; } .line-table .col-product { width: auto; }
 .line-table .col-unit { width: 56px; } .line-table .col-qty { width: 76px; } .line-table .col-price { width: 120px; }
 .line-table .col-disc { width: 116px; } .line-table .col-print { width: 104px; } .line-table .col-after { width: 112px; }
-.line-table .col-total { width: 118px; } .line-table .col-pd { width: 92px; } .line-table .col-cost { width: 108px; } .line-table .col-act { width: 32px; }
+.line-table .col-total { width: 118px; } .line-table .col-pd { width: 152px; }
+.line-table .col-pd select { width: 100%; margin-bottom: 6px; }
+.line-table .col-cost { width: 108px; } .line-table .col-act { width: 32px; }
 .line-table td { vertical-align: top; padding: 12px 8px; }
 .line-table td.col-idx { padding-top: 22px !important; text-align: center; }
 .line-table .thumb { width: 54px; height: 54px; border-radius: 6px; }

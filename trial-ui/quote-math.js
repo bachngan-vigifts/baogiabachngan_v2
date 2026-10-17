@@ -52,6 +52,47 @@ var purchasePrice = (price, discount) => {
   const value = Number(price) || 0, percent = Number(discount);
   return value <= 0 || !Number.isFinite(percent) ? 0 : Math.round(value * (100 - Math.min(100, Math.max(0, percent))) / 100);
 };
+var costModeOf = (row) => row.costMode ?? (!Number.isFinite(row.purchaseDiscount) && Number.isFinite(row.costPrice) ? "manual" : "discount");
+function parsePurchaseCost(input, mode) {
+  let s = input.trim().replace(/\s+/g, ""), factor = 1;
+  if (!s) return { mode, value: null };
+  if (s.endsWith("%")) {
+    mode = "discount";
+    s = s.slice(0, -1);
+  } else if (/k$/i.test(s)) {
+    mode = "manual";
+    factor = 1e3;
+    s = s.slice(0, -1);
+  } else if (/(?:đ|₫|vnd)$/i.test(s)) {
+    mode = "manual";
+    s = s.replace(/(?:đ|₫|vnd)$/i, "");
+  }
+  if (/^\d{1,3}(?:[.]\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+  else if (/^\d{1,3}(?:,\d{3})+$/.test(s)) s = s.replace(/,/g, "");
+  else if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  if (!/^\d+(?:\.\d+)?$/.test(s)) return null;
+  const value = Number(s) * factor;
+  if (!Number.isFinite(value) || value < 0 || value > (mode === "discount" ? 100 : 1e12)) return null;
+  return { mode, value };
+}
+function syncPurchaseCost(row) {
+  if (costModeOf(row) === "discount") {
+    if (Number.isFinite(row.purchaseDiscount)) row.costPrice = purchasePrice(row.price, row.purchaseDiscount);
+    else delete row.costPrice;
+  }
+}
+function applyPurchaseCost(row, entry) {
+  row.costMode = entry.mode;
+  if (entry.mode === "manual") {
+    delete row.purchaseDiscount;
+    if (entry.value === null) delete row.costPrice;
+    else row.costPrice = entry.value;
+  } else {
+    if (entry.value === null) delete row.purchaseDiscount;
+    else row.purchaseDiscount = entry.value;
+    syncPurchaseCost(row);
+  }
+}
 var defaultCostPrice = (product, price) => {
   const discount = defaultCostDiscount(product);
   return discount === null ? 0 : purchasePrice(price, discount);
@@ -71,18 +112,22 @@ function customerDiscount(brand, discounts = {}, mode = "percent", price = 0) {
 }
 export {
   after,
+  applyPurchaseCost,
   brandDiscountKey,
   commissionOf,
+  costModeOf,
   customerDiscount,
   defaultCostDiscount,
   defaultCostPrice,
   discounted,
   netPrice,
   normalize,
+  parsePurchaseCost,
   printingInfo,
   printingWorkshops,
   profit,
   purchasePrice,
   rate,
+  syncPurchaseCost,
   totals
 };
