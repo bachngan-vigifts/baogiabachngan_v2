@@ -9,7 +9,7 @@ import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 
 /**
  * SỔ KHO giai đoạn 1 (chạy song song Sapo): chốt tồn đầu kỳ = tồn Sapo; phiếu nhận NCC tự cộng, huỷ phiếu tự trừ lại;
- * phiếu điều chỉnh của Manager; đối chiếu sổ kho ↔ Sapo; thẻ kho có tồn luỹ kế. Quyền: Manager + Kho.
+ * phiếu điều chỉnh của Manager; đối chiếu sổ kho ↔ Sapo; thẻ kho có tồn luỹ kế. Quyền: Manager + chức vụ được cấp "Sổ kho – xem" (trang Phân quyền).
  */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
 async function setup() {
@@ -34,6 +34,8 @@ async function setup() {
 test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, điều chỉnh, đối chiếu Sapo, thẻ kho, quyền', async () => {
   const { call, emp, mgr, kho } = await setup();
   assert.equal((await call('/inventory/status', emp)).status, 403, 'sale không xem sổ kho');
+  assert.equal((await call('/inventory/status', kho)).status, 403, 'mặc định chỉ Manager xem sổ kho (trang Phân quyền)');
+  assert.equal((await call('/permissions/positions/warehouse', mgr, 'PUT', { perms: ['page.deliveries', 'page.purchases', 'page.packing', 'page.stock-lookup', 'purchases.receive', 'inventory.view'] })).status, 200, 'Manager cấp "Sổ kho – xem" cho Kho');
   assert.deepEqual((await call('/stock-warehouses', emp)).data.warehouses.map((w: any) => w.id), ['ct', 'vg'], 'chỉ kho thật, không gồm kho NCC');
   let st = (await call('/inventory/status', kho)).data;
   assert.equal(st.openedAt, null); assert.equal(st.canManage, false);

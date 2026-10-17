@@ -5,7 +5,8 @@ import { AppError } from '../../../core/errors.ts';
 import { sendMail } from '../../../core/mail/send-mail.ts';
 import { postMoves, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
-import { syncIncomingStock } from './incoming-stock.ts';
+import { outstandingLines, syncIncomingStock } from './incoming-stock.ts';
+import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
@@ -147,6 +148,8 @@ async function activeSupplier(db: Db | Tx, id: unknown) {
 }
 
 export function registerPurchaseRoutes(router: Router<StaffEnv>) {
+  // Trang Tra tồn (sổ kho) đọc hàng đang về từ đơn mua NCC.
+  incomingLookup.read = (db, skus) => outstandingLines(db, skus);
   const guard = (c: Ctx) => { if (!canUsePurchasing(asActor(me(c)))) fail(403, 'Bạn không có quyền với đơn mua hàng.'); };
 
   router.get('/purchase-orders', async c => {

@@ -1,5 +1,6 @@
 import { departmentOwner } from '../../staff/api/department.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
+import { canApprove } from '../../staff/domain/permissions.ts';
 import { and, asc, count, desc, eq, exists, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -192,22 +193,22 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   router.post('/customers', c => save(c, false), 'business');
   router.put('/customers/:id', c => save(c, true), 'business');
 
-  /** Manager duyệt khách mới. */
+  /** Duyệt khách mới: Manager hoặc nhân viên được Manager bật cờ "Được duyệt". */
   router.post('/customers/:id/approve', async c => {
     const me = viewer(c);
-    if (me.role !== 'manager') throw new AppError(403, 'Chỉ Manager duyệt được khách hàng mới.');
+    if (!canApprove(me)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt khách hàng mới.', 'APPROVER_ONLY');
     const now = nowIso();
     const done = await c.env.db.update(customers).set({ approvalStatus: 'approved', approvedBy: me.id, approvedAt: now })
       .where(and(eq(customers.id, c.params.id!), eq(customers.approvalStatus, 'pending'))).returning({ id: customers.id });
     if (!done.length) throw new AppError(404, 'Không tìm thấy khách hàng đang chờ duyệt.');
     return json({ ok: true });
   }, 'business');
-  /** Từ chối (xoá) khách đang chờ duyệt: Manager hoặc người tạo. Khách đã duyệt không xoá được ở đây. */
+  /** Từ chối (xoá) khách đang chờ duyệt: Manager / người được duyệt, hoặc người tạo. Khách đã duyệt không xoá được ở đây. */
   router.delete('/customers/:id', async c => {
     const me = viewer(c), db = c.env.db;
     const [row] = await db.select({ approvalStatus: customers.approvalStatus, createdBy: customers.createdBy }).from(customers).where(eq(customers.id, c.params.id!)).limit(1);
     if (!row || row.approvalStatus !== 'pending') throw new AppError(404, 'Chỉ xoá được khách hàng đang chờ duyệt.');
-    if (me.role !== 'manager' && row.createdBy !== me.id) throw new AppError(403, 'Chỉ Manager hoặc người tạo xoá được khách hàng này.');
+    if (!canApprove(me) && row.createdBy !== me.id) throw new AppError(403, 'Chỉ Manager, người được duyệt hoặc người tạo xoá được khách hàng này.');
     await db.delete(customers).where(and(eq(customers.id, c.params.id!), eq(customers.approvalStatus, 'pending')));
     return json({ ok: true });
   }, 'business');

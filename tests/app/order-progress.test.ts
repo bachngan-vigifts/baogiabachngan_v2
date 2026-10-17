@@ -61,7 +61,7 @@ test('tiến trình: duyệt → kho xác nhận đóng gói → việc In mẫu
   await call(`/packing/${slip.id}/send`, emp, 'POST', {});
   assert.equal((await call(`/packing/${slip.id}/confirm`, kho, 'POST', { photos: [photo] })).status, 400, 'nguồn Kho: phải chọn kho xuất');
   assert.equal((await call(`/packing/${slip.id}/confirm`, kho, 'POST', { photos: [photo], warehouseId: 'ct' })).status, 200);
-  const card = (await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).data;
+  const card = (await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data;
   assert.deepEqual(card.lines.map((l: any) => [l.kind, l.qty, l.refNo]), [['issue', -10, slip.slipNo]], 'xác nhận đóng hàng → phiếu xuất vào sổ kho');
   p = await progress(id);
   assert.deepEqual([p.current, p.label, p.stages[1].by], ['sample', 'Đang in mẫu', 'auto']);

@@ -1,4 +1,5 @@
 import { AppError, forbidden } from '../../../core/errors.ts';
+import { can } from '../../staff/domain/permissions.ts';
 import { isSupplier, type Role } from '../../staff/domain/roles.ts';
 
 /*
@@ -55,7 +56,7 @@ export function defaultRecipients(contacts: readonly { kind: 'order' | 'cc'; ema
 
 /** Thêm / sửa danh bạ NCC (thông tin, email nhận đơn): Manager và Kế toán. */
 export const canEditSuppliers = (actor: { role: Role; active: boolean; positionId?: string | null } | null | undefined): boolean =>
-  Boolean(actor?.active && !isSupplier(actor) && (actor.role === 'manager' || (actor.role === 'employee' && actor.positionId === 'accounting')));
+  Boolean(actor?.active && !isSupplier(actor) && (actor.role === 'manager' || (actor.role === 'employee' && can(actor, 'suppliers.edit'))));
 
 /** Gắn tài khoản NCC đăng nhập (quyết định ai thấy đơn của NCC nào): chỉ Manager. */
 export const canManageSuppliers = (actor: { role: Role; active: boolean; positionId?: string | null } | null | undefined): boolean =>

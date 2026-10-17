@@ -25,6 +25,7 @@ import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
+import { initPermissions } from './permissions.js';
 import { initKhoHome, initStockLookup } from './kho.js';
 import { initCustomerDetail } from './customer-detail.js';
 import { initProductAdmin } from './product-admin.js';
@@ -274,13 +275,30 @@ const state = {
   products: null, productTotal: 0, productQuery: '', productBrand: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
+/** Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC): Manager hoặc người được Manager bật cờ "Được duyệt". Máy chủ kiểm lại. */
+const canApprove = () => isManager() || state.user?.approver === true;
 /** Tài khoản Kho (chức vụ "warehouse"): chỉ các trang cần cho kho – Công việc, Lịch giao hàng, Phiếu đóng gói, Sản phẩm, Tin nhắn. */
 const isWarehouse = () => state.user?.role === 'employee' && state.user?.positionId === 'warehouse';
-/** Danh bạ NCC: Manager và Kế toán (máy chủ kiểm lại). */
-const canEditSuppliers = () => isManager() || (state.user?.role === 'employee' && state.user?.positionId === 'accounting');
-// Kho: thêm Sơ đồ quy trình, Tổng quan doanh số, Sổ kho (chỉ Manager) – kho dùng Trang kho + Tra tồn.
-const WAREHOUSE_HIDDEN = new Set(['quotes', 'orders', 'contracts', 'receivables', 'stock-requests', 'customers', 'care', 'flow', 'dashboard', 'inventory']);
+/**
+ * Quyền theo chức vụ (trang Phân quyền – máy chủ trả trong /me, kiểm tra lại ở mọi API). Manager luôn có mọi quyền.
+ * Máy chủ chưa có bảng quyền (chưa chạy migration 0065) thì dùng đúng quyền cũ theo chức vụ.
+ */
+const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
+const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 'page.packing', 'page.stock-lookup', 'purchases.receive']
+  : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
+const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
+/** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
+const PAGE_PERM = {
+  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', deliveries: 'page.deliveries', receivables: 'page.receivables',
+  customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
+  purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
+};
+const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+/** Danh bạ NCC: Manager và chức vụ có quyền "Danh bạ NCC" (mặc định Kế toán; máy chủ kiểm lại). */
+const canEditSuppliers = () => can('suppliers.edit');
 const KHO_HOME = '#/kho';
+/** Trang mở đầu: kho → Trang kho; có Báo giá → Báo giá; còn lại → Công việc. */
+const homeHash = () => isWarehouse() ? KHO_HOME : can('page.quotes') ? '#/quotes' : '#/tasks';
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -344,15 +362,13 @@ async function enter() {
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
   showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
-  $$('.supplier-admin-only').forEach(el => el.hidden = !canEditSuppliers());
-  // Kho: ẩn các trang bán hàng (báo giá, đơn hàng, HĐKT, công nợ, khách hàng…); hiện mục Phiếu đóng gói (cả Manager).
-  $$('[data-nav]').forEach(el => { if (WAREHOUSE_HIDDEN.has(el.dataset.nav) && !el.classList.contains('manager-only')) el.hidden = isWarehouse(); });
-  $$('.packing-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
-  // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn); Tra tồn cho cả Manager.
+  // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn).
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
-  $$('.lookup-nav').forEach(el => el.hidden = !(isWarehouse() || isManager()));
+  // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.
+  $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
+  $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   document.body.classList.toggle('role-warehouse', isWarehouse());
-  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + (isWarehouse() ? KHO_HOME : '#/quotes'));
+  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
@@ -435,10 +451,10 @@ async function loadNavigationBadges() {
 }
 async function loadAll() {
   $('#global-error').hidden = true;
-  // Kho không xem được danh bạ khách (máy chủ chặn) → không tải, tránh báo lỗi đỏ khi mở app.
-  const jobs = isWarehouse() ? [loadQuotes()] : [loadQuotes(), loadCustomers()];
+  // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
+  const jobs = [can('page.quotes') && loadQuotes(), can('page.customers') && loadCustomers()].filter(Boolean);
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (!isWarehouse()) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
+  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (can('page.care')) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -447,6 +463,7 @@ function showGlobalError(message) { const el = $('#global-error'); el.textConten
 const quotePager = createPager($('#quote-pager'), 'quotes', () => loadQuotes(), 50);
 let quoteReq = 0;
 async function loadQuotes() {
+  if (!can('page.quotes')) return;
   const req = ++quoteReq, f = state.quoteFilter;
   try {
     const d = await api(`/quotes?limit=${quotePager.limit}&offset=${quotePager.offset}&q=${encodeURIComponent(f.q)}&type=${encodeURIComponent(f.type)}&owner=${encodeURIComponent(f.owner)}&sort=${encodeURIComponent(f.sort)}&month=${todayIso().slice(0, 7)}`);
@@ -462,7 +479,7 @@ async function loadQuotes() {
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
 let customerReq = 0, customerPager;
 async function loadCustomers() {
-  if (isWarehouse()) return;
+  if (!can('page.customers')) return;
   const req = ++customerReq;
   customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
@@ -565,7 +582,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -584,16 +601,16 @@ let lastRoutedHash = '';
 function route() {
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
-  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || (isWarehouse() ? KHO_HOME : '#/quotes')); if (lastRoutedHash) return; }
+  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || homeHash()); if (lastRoutedHash) return; }
   lastRoutedHash = location.hash;
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = 'quotes', id] = path.split('/');
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
-  if ((view === 'staff' || view === 'payroll') && !isManager()) view = isWarehouse() ? 'kho' : 'quotes';
-  if (view === 'suppliers' && !canEditSuppliers()) view = isWarehouse() ? 'kho' : 'quotes';
-  // Kho mở nhầm trang bán hàng (link cũ, thông báo…): về Trang kho.
-  if (isWarehouse() && WAREHOUSE_HIDDEN.has(view === 'editor' ? 'quotes' : view === 'order' ? 'orders' : view === 'customer' ? 'customers' : view)) { history.replaceState(null, '', KHO_HOME); return route(); }
+  if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
+  // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
+  const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
+  if (!canPage(detail) && location.hash.split('?')[0] !== homeHash()) { toast('Chức vụ của bạn chưa được cấp quyền vào trang này.', 'err'); history.replaceState(null, '', homeHash()); return route(); }
   if (view === 'quotes' && id) view = 'editor';
   if (view === 'orders' && id) view = 'order';
   // HĐKT là luồng riêng: #/contracts/<id> mở trang chi tiết HĐKT (dùng chung khung trang với đơn hàng, nội dung theo HĐKT).
@@ -619,6 +636,7 @@ function route() {
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
+  if (view === 'permissions') permissionsView().load();
   if (view === 'kho') khoHome().load();
   if (view === 'stock-lookup') stockLookup().load();
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
@@ -1973,7 +1991,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
@@ -2335,8 +2353,8 @@ function renderCustomers() {
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
       <td class="right" data-label="Báo giá">${quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
-        ${c.approvalStatus === 'pending' ? `${isManager() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
-        <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${isManager() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
+        ${c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
+        <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
@@ -2399,7 +2417,7 @@ function memberDetail() {
 /** Trang chi tiết khách hàng (trial-ui/customer-detail.js). */
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
-  return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
+  return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, canApprove, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
     onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, onReview: reviewCustomer });
 }
 function openCustomer(id, known) {
@@ -2442,7 +2460,8 @@ function renderMembers() {
     return `<tr>
       <td class="first"><span class="row-gap"><span class="avatar"${avAttr(m.avatar)}>${esc(initials(m.name))}</span><span><a class="name-btn strong" href="#/members/${esc(encodeURIComponent(m.id))}">${esc(m.name)}</a>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
       <td data-label="ĐT">${esc(m.phone) || '—'}</td>
-      <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}</td>
+      <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}
+        ${m.role === 'employee' ? `<label class="approver-toggle" title="Cho phép duyệt báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC (chỉ Manager bật / tắt)"><input type="checkbox" data-approver="${esc(m.id)}" ${m.approver ? 'checked' : ''}> Được duyệt</label>` : ''}</td>
       <td>${STATUS_PILL[st]}</td>
       <td class="actions-cell"><div class="row-actions">${self ? '' : `
         ${st !== 'locked' ? `<button class="btn ghost small" data-reset="${esc(m.id)}" title="Cấp liên kết đặt lại mật khẩu">${st === 'pending' ? 'Gửi lại liên kết' : 'Đặt lại mật khẩu'}</button>` : ''}
@@ -2521,6 +2540,15 @@ $('#member-form').addEventListener('submit', async e => {
     loadMembers();
   } catch (ex) { err.textContent = ex.message; }
   finally { btn.disabled = false; }
+});
+// Cờ "Được duyệt" (chỉ Manager – máy chủ kiểm lại ở PUT /admin/members/:id/approver).
+$('#member-list').addEventListener('change', async e => {
+  const box = e.target.closest('[data-approver]'); if (!box) return;
+  const m = state.members.find(x => x.id === box.dataset.approver), on = box.checked;
+  if (!await confirmBox(on ? `Cho ${m.name} quyền phê duyệt (báo giá, khách hàng mới, sản phẩm mới, đơn hàng / HĐKT, đơn mua NCC)?` : `Thu quyền phê duyệt của ${m.name}?`, { title: on ? 'Cấp quyền duyệt' : 'Thu quyền duyệt', ok: on ? 'Cấp quyền' : 'Thu quyền', danger: !on })) { box.checked = !on; return; }
+  box.disabled = true;
+  try { await api(`/admin/members/${encodeURIComponent(m.id)}/approver`, 'PUT', { approver: on }); m.approver = on; toast(on ? `Đã cho ${m.name} quyền duyệt.` : `Đã thu quyền duyệt của ${m.name}.`); }
+  catch (ex) { box.checked = !on; toast(ex.message, 'err'); } finally { box.disabled = false; }
 });
 $('#member-list').addEventListener('click', async e => {
   const t = e.target.closest('[data-edit-member],[data-reset],[data-lock],[data-unlock],[data-delete-member]'); if (!t) return;
@@ -2735,7 +2763,7 @@ var dataRefresh = setupDataRefresh({
   enabled: () => !!state.user,
   blocked: () => (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
-  primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : ['/quotes', '/orders', '/contracts'],
+  primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
   // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
   schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
@@ -2764,6 +2792,8 @@ let khoHomeUi = null, stockLookupUi = null;
 function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'), today: todayIso }); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
+var permissionsUi = null;
+function permissionsView() { return permissionsUi ||= initPermissions({ api, root: $('#view-permissions'), toast, confirmBox }); }
 var purchasesUi = null;
 function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso, kho: isWarehouse,
   compressPhoto: f => compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.') }); }
@@ -2777,7 +2807,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
+function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
@@ -2785,7 +2815,7 @@ function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId
 async function refreshData() {
   if (!state.user) return;
   const jobs = [loadQuotes(), loadStockBadge(), loadNavigationBadges(), tasksView().badge(), chatView().badge()];
-  if (!isWarehouse()) jobs.push(careView().badge());
+  if (can('page.care')) jobs.push(careView().badge());
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
   if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
@@ -2813,6 +2843,7 @@ async function refreshData() {
 let stockFilter = 'open';
 const stockShortageExports = new Map();
 async function loadStockBadge() {
+  if (!can('page.stock-requests')) return;
   try { const n = (await api('/stock-requests?status=open')).requests.length; $('#nav-stock-count').hidden = !n; $('#nav-stock-count').textContent = n; } catch { /* bỏ qua */ }
 }
 async function loadStockRequests(focusId) {
@@ -2978,7 +3009,7 @@ async function openOrder(id) {
   $('#order-actions').innerHTML = (isK ? '<button class="btn secondary" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / tải hồ sơ HĐKT</button>'
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
-    + (o.status === 'draft' ? (isManager() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
+    + (o.status === 'draft' ? (canApprove() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
       : o.submittedAt === null ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>`
       : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
     + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')

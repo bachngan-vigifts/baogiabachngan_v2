@@ -9,9 +9,12 @@ import { salesOrders } from '../../src/modules/sales/schema.ts';
 import { customerStockRequests } from '../../src/modules/portal/schema.ts';
 import { incomingShipments, suppliers } from '../../src/modules/suppliers/schema.ts';
 
-/** Sale Admin (tạm thời) xem toàn công ty: khách, đơn / HĐKT, khách hỏi tồn, đơn mua NCC; sale thường vẫn chỉ thấy phần mình. */
+/**
+ * Sale Admin (tạm thời, yêu cầu 17/10/2026): xem toàn công ty CHỈ ở báo giá, khách hàng, đơn hàng / HĐKT; khách hỏi tồn theo phạm vi thường.
+ * Đơn mua NCC xem tất cả (kể cả giá) nhờ quyền Kế toán. Sale thường vẫn chỉ thấy phần mình.
+ */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
-test('Sale Admin thấy toàn bộ đơn / HĐKT, khách hỏi tồn, đơn mua NCC của người khác; sale khác thì không', async () => {
+test('Sale Admin thấy toàn bộ đơn / HĐKT và đơn mua NCC (quyền Kế toán) của người khác, KHÔNG thấy khách hỏi tồn của người khác; sale khác thì không', async () => {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   for (const [id, pos] of [['sa', 'sale-admin'], ['s2', 'sales-ml']] as const) {
     await d1.sqlite.prepare(`INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'','employee',?,1,'2026-01-01T00:00:00.000Z')`).run(id, id + '@x.vn', 'Tên ' + id, pos);
@@ -35,10 +38,10 @@ test('Sale Admin thấy toàn bộ đơn / HĐKT, khách hỏi tồn, đơn mua 
 
   assert.equal((await call('/orders/o1', sa)).status, 200, 'Sale Admin xem đơn của người khác');
   assert.equal((await call('/orders/o1', s2)).status, 404, 'sale phòng khác không xem được');
-  assert.deepEqual((await call('/stock-requests', sa)).data.requests.map((r: any) => r.id), ['r1']);
+  assert.deepEqual((await call('/stock-requests', sa)).data.requests, [], 'khách hỏi tồn không thuộc nhóm xem toàn công ty');
   assert.deepEqual((await call('/stock-requests', s2)).data.requests, []);
   assert.equal((await call('/purchase-orders/p1', sa)).status, 200, 'Sale Admin xem cả đơn mua nháp của người khác');
-  assert.equal((await call('/purchase-orders/p1', sa)).data.priceHidden, true, 'giá mua vẫn ẩn');
+  assert.equal((await call('/purchase-orders/p1', sa)).data.priceHidden, false, 'Sale Admin có quyền Kế toán: thấy giá mua');
   assert.equal((await call('/purchase-orders/p1', s2)).status, 404);
   assert.equal((await call('/customers/K1/overview', sa)).data.orders.length, 1, 'chi tiết khách: thấy đơn của mọi người');
 });

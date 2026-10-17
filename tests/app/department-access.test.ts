@@ -38,10 +38,11 @@ test('cùng phòng ban xem/sửa báo giá nháp, giữ chủ, không sửa đã
   await s.call('/quotes/' + q.id + '/approve', s.mgr, 'POST', { revision: detail.data.revision });
   const approved = await s.call('/quotes/' + q.id, s.emp);
   assert.equal((await s.call('/quotes/' + q.id, s.emp, 'PUT', { revision: approved.data.revision, data: { ...approved.data.data, customer: 'Không được sửa' } })).status, 403);
+  // Chức vụ Kho / chưa có chức vụ: không được cấp trang Báo giá (trang Phân quyền) → 403.
   await s.db.update(employees).set({ positionId: 'warehouse' }).where(eq(employees.id, 'emp'));
-  assert.equal((await s.call('/quotes/' + q.id, s.emp)).status, 404);
+  assert.equal((await s.call('/quotes/' + q.id, s.emp)).status, 403);
   await s.db.update(employees).set({ positionId: null }).where(eq(employees.id, 'emp'));
-  assert.equal((await s.call('/quotes/' + q.id, s.emp)).status, 404);
+  assert.equal((await s.call('/quotes/' + q.id, s.emp)).status, 403);
   assert.equal((await s.call('/quotes/' + q.id, s.peer)).status, 200);
   await s.db.update(employees).set({ positionId: 'sale' }).where(eq(employees.id, 'emp'));
   await s.db.update(employees).set({ active: false }).where(eq(employees.id, 'new'));

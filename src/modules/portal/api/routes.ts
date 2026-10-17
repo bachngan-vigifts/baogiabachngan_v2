@@ -7,7 +7,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { credentials, employees, sessions } from '../../staff/schema.ts';
 import { ACTIVATION_TTL_SECONDS } from '../../staff/domain/members.ts';
 import { newToken, sha256Hex } from '../../staff/domain/session.ts';
-import { CUSTOMER_POSITION_ID, seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
+import { CUSTOMER_POSITION_ID } from '../../staff/domain/roles.ts';
 import { normalizePhone } from '../../staff/domain/login-id.ts';
 import { phoneKeySql } from '../../staff/repo/auth-repo.ts';
 import { customers } from '../../customers/schema.ts';
@@ -240,7 +240,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const me = member(c), status = c.url.searchParams.get('status');
     const rows = await c.env.db.select({ r: customerStockRequests, customerName: customers.name, askedBy: employees.name }).from(customerStockRequests)
       .innerJoin(customers, eq(customers.id, customerStockRequests.customerId)).innerJoin(employees, eq(employees.id, customerStockRequests.memberId))
-      .where(and(me.role === 'manager' || seesAllAsSaleAdmin(me) ? undefined : eq(customerStockRequests.ownerId, me.id), status === 'open' || status === 'answered' ? eq(customerStockRequests.status, status) : undefined))
+      .where(and(me.role === 'manager' ? undefined : eq(customerStockRequests.ownerId, me.id), status === 'open' || status === 'answered' ? eq(customerStockRequests.status, status) : undefined))
       .orderBy(desc(customerStockRequests.createdAt)).limit(200);
     return json({ requests: rows.map(({ r, customerName, askedBy }) => ({ id: r.id, customerName, askedBy, items: JSON.parse(r.items), note: r.note, status: r.status,
       answerItems: JSON.parse(r.answerItems), answer: r.answer, answeredAt: r.answeredAt, createdAt: r.createdAt })) });
@@ -250,7 +250,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const me = member(c), db = c.env.db, body = await readJson(c.req, 40_000);
     const [r] = await db.select().from(customerStockRequests).where(eq(customerStockRequests.id, c.params.id!)).limit(1);
     if (!r) throw new AppError(404, 'Không tìm thấy yêu cầu.');
-    if (me.role !== 'manager' && !seesAllAsSaleAdmin(me) && r.ownerId !== me.id) throw new AppError(403, 'Chỉ nhân viên phụ trách, Sale Admin hoặc Manager trả lời được.');
+    if (me.role !== 'manager' && r.ownerId !== me.id) throw new AppError(403, 'Chỉ nhân viên phụ trách hoặc Manager trả lời được.');
     const asked = JSON.parse(r.items) as { sku: string; name: string }[];
     const answerItems = (Array.isArray(body.items) ? body.items as Record<string, unknown>[] : []).filter(x => asked.some(a => a.sku === x.sku))
       .map(x => ({ sku: str(x.sku, 500), available: Math.max(0, Math.min(1e7, Number(x.available) || 0)) }));

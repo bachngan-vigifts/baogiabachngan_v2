@@ -278,7 +278,7 @@ test('đẩy Sapo sau: kiểm quyền server, kho hợp lệ, chứng từ đã 
   await s.db.update(credentials).set({ passwordHash: known!.passwordHash }).where(eq(credentials.memberId, 'new'));
   await s.db.update(employees).set({ positionId: 'warehouse' }).where(eq(employees.id, 'new'));
   const other = (await s.call('/login', '', 'POST', { email: 'new@x.vn', password: PASSWORD })).cookie;
-  assert.equal((await s.call(path, other, 'POST', { sapoLocationId: 7 })).status, 404);
+  assert.equal((await s.call(path, other, 'POST', { sapoLocationId: 7 })).status, 403, 'chức vụ Kho không được cấp trang Đơn hàng');
   assert.equal((await s.call(path, s.emp, 'POST', {})).data.code, 'SAPO_LOCATION_REQUIRED');
   assert.equal((await s.call(path, s.emp, 'POST', { sapoLocationId: 9 })).data.code, 'SAPO_LOCATION_INVALID');
   const bad = await s.call(path, s.emp, 'POST', { sapoLocationId: 7 });

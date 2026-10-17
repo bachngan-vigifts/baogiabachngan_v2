@@ -90,7 +90,7 @@ test('lập đơn mua: từ báo giá + HĐKT, chia 2 NCC, chống mua trùng, s
 });
 
 test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → thanh toán nhiều lần', async () => {
-  const { call, emp, mgr, kho, kt, a, files } = await setup();
+  const { db, call, emp, mgr, kho, kt, a, files } = await setup();
   const id = (await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 10, sources: [{ type: 'quote', id: 'q1', quantity: 10 }] }, { sku: 'DIA1', quantity: 5 }] }] })).data.ids[0];
   let v = (await call(`/purchase-orders/${id}`, mgr)).data;
   assert.equal((await call(`/purchase-orders/${id}/approve`, emp, 'POST', {})).status, 403, 'chỉ Manager duyệt');
@@ -100,6 +100,12 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
     payment: { deposit: { mode: 'percent', value: 30, dueDate: '2026-01-05' }, balanceDueDate: '2099-01-01' } });
   assert.equal(ap.status, 200, JSON.stringify(ap.data)); v = ap.data;
   assert.equal(v.state, 'awaiting_confirmation'); assert.equal(v.totals.total, 1900);
+  // Tra tồn (kho): đơn đã duyệt hiện ở "Hàng đang về" – số còn chờ, số đơn, NCC; không cộng vào tổng tồn, không có giá.
+  await db.insert(products).values({ sku: v.lines[0].sku, name: 'Ly sứ', unit: 'cái', updatedAt: now }).onConflictDoNothing();
+  const look = (await call('/inventory/lookup?q=' + v.lines[0].sku, kho)).data.products[0];
+  assert.equal(look.incoming.qty, v.lines[0].quantity);
+  assert.deepEqual(look.incoming.orders.map((o: any) => [o.ticketNumber, o.qty]), [[v.ticketNumber, v.lines[0].quantity]]);
+  assert.equal(JSON.stringify(look.incoming).includes('price'), false);
   assert.deepEqual(v.schedules.map((s: any) => [s.kind, s.amount]), [['deposit', 570], ['balance', 1330]]);
   assert.equal(v.supplierEmail, 'minhlong@ncc.vn', 'người nhận mặc định từ danh bạ');
   assert.equal(v.debt.status, 'overdue', 'cọc quá hạn');

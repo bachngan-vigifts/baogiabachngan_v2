@@ -109,11 +109,12 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.equal((await call('/portal/quotes/' + q.data.id, other.cookie)).status, 404);
   assert.equal((await call('/portal/quotes', other.cookie)).data.quotes.length, 0);
 
-  // Nhân viên phụ trách thấy báo giá khách gửi và tự xác nhận (duyệt) được.
+  // Nhân viên phụ trách thấy báo giá khách gửi nhưng KHÔNG tự xác nhận: phê duyệt chỉ do Manager / người được Manager chỉ định (17/10/2026).
   const staffQ = (await call('/quotes', emp)).data.quotes.find((x: any) => x.id === q.data.id);
   assert.equal(staffQ.fromCustomer, true); assert.equal(staffQ.approvalStatus, 'pending');
-  assert.equal((await call('/quotes/' + q.data.id, emp)).data.canApprove, true);
-  assert.equal((await call('/quotes/' + q.data.id + '/approve', emp, 'POST', { revision: 1 })).status, 200);
+  assert.equal((await call('/quotes/' + q.data.id, emp)).data.canApprove, false);
+  assert.equal((await call('/quotes/' + q.data.id + '/approve', emp, 'POST', { revision: 1 })).status, 403);
+  assert.equal((await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 })).status, 200);
   // Khách xác nhận đặt hàng → đơn "Chờ xác nhận"; nhân viên xác nhận đơn.
   assert.equal((await call('/portal/quotes/' + q.data.id + '/order', k.cookie, 'POST', { note: 'OK' })).data.code, 'CONFIRM_REQUIRED', 'khách phải xác thực thông tin trước khi gửi đơn');
   assert.equal((await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'LL-01', qty: 1 }], order: true })).data.code, 'CONFIRM_REQUIRED');

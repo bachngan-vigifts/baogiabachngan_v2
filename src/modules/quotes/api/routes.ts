@@ -1,4 +1,5 @@
 import { quotationPredicate } from './department-access.ts';
+import { canApprove } from '../../staff/domain/permissions.ts';
 import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { Router } from '../../../core/http/router.ts';
@@ -147,18 +148,16 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const [creator] = await c.env.db.select({ role: employees.role, name: employees.name }).from(employees).where(eq(employees.id, row.creatorId)).limit(1);
     const fromCustomer = creator?.role === 'customer';
     return json({ id: row.id, revision: row.revision, data: forViewer(viewer, JSON.parse(row.data)), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',
-      fromCustomer, canApprove: isManager(viewer) || (fromCustomer && row.assigneeId === viewer.id) });
+      fromCustomer, canApprove: canApprove(viewer) });
   }, 'business');
-  /** Manager duyệt đúng phiên bản đang xem (phiên bản đổi → 409). Duyệt không đổi nội dung nên không tăng `revision`. */
+  /**
+   * Duyệt đúng phiên bản đang xem (phiên bản đổi → 409). Duyệt không đổi nội dung nên không tăng `revision`.
+   * CHỈ Manager hoặc nhân viên được Manager bật cờ "Được duyệt" – kể cả báo giá khách gửi từ trang khách hàng (docs/PHAN-QUYEN.md).
+   */
   router.post('/quotes/:id/approve', async c => {
     const viewer = (c.state.session as SessionState).member;
     const body = await readJson(c.req, 1_024);
-    // Manager duyệt mọi báo giá; nhân viên phụ trách duyệt (xác nhận) báo giá do KHÁCH gửi từ trang khách hàng.
-    if (!isManager(viewer)) {
-      const [q] = await c.env.db.select({ assigneeId: quotations.assigneeId, creatorRole: employees.role }).from(quotations)
-        .innerJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.id, c.params.id!)).limit(1);
-      if (!q || q.creatorRole !== 'customer' || q.assigneeId !== viewer.id) throw new AppError(403, 'Chỉ Manager được duyệt báo giá.');
-    }
+    if (!canApprove(viewer)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt báo giá.', 'APPROVER_ONLY');
     if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
     const now = new Date().toISOString();
     const rows = await c.env.db.update(quotations).set({ approvalStatus: 'approved', approvedAt: now, approvedBy: viewer.id })
@@ -183,7 +182,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       .where(and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), eq(quotations.approvalStatus, 'draft'), quotationPredicate(viewer, true)))
       .returning({ quoteNo: quotations.quoteNo, customer: quotations.customer });
     if (!rows.length) throw new AppError(409, 'Không gửi duyệt được: báo giá đã thay đổi, đã gửi / đã duyệt, hoặc anh không có quyền. Vui lòng tải lại.');
-    await notifyMany(c.env, 'managers', { eventType: 'quote_pending', title: 'Báo giá mới chờ duyệt',
+    await notifyMany(c.env, 'approvers', { eventType: 'quote_pending', title: 'Báo giá mới chờ duyệt',
       body: `${viewer.name}: ${rows[0]!.quoteNo} – ${rows[0]!.customer || 'Chưa nhập khách'}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     await runAfterCommit(c.env);
     return json({ id: c.params.id, approvalStatus: 'pending' });
@@ -255,7 +254,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       return { revision: next, approvalStatus: revoke ? 'draft' : old.approvalStatus, revoked: revoke, pendingEdit };
     });
     // Sửa báo giá đang chờ duyệt → Manager được báo bản cập nhật. (Sửa báo giá đã duyệt → về nháp, chờ nhân viên gửi duyệt lại.)
-    if (saved.pendingEdit) await notifyMany(c.env, 'managers', { eventType: 'quote_pending',
+    if (saved.pendingEdit) await notifyMany(c.env, 'approvers', { eventType: 'quote_pending',
       title: 'Báo giá chờ duyệt vừa được sửa',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || ''}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     if (saved.revoked) await runAfterCommit(c.env);

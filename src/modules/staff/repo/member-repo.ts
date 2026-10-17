@@ -7,10 +7,20 @@ import type { Role } from '../domain/roles.ts';
 const actorIsManager = (actorId: string) =>
   sql`EXISTS (SELECT 1 FROM staff_members actor WHERE actor.id = ${actorId} AND actor.active = true AND actor.role = 'manager')`;
 
+/**
+ * Bật / tắt cờ "Được duyệt" của một nhân viên (role employee, chưa xoá). Điều kiện "người thao tác là Manager đang hoạt động"
+ * nằm ngay trong câu UPDATE. Trả về tên nhân viên nếu đổi được.
+ */
+export async function setApprover(db: AnyDb, actorId: string, id: string, on: boolean): Promise<string | null> {
+  const rows = await db.update(employees).set({ canApprove: on })
+    .where(and(eq(employees.id, id), eq(employees.role, 'employee'), isNull(employees.deletedAt), actorIsManager(actorId))).returning({ name: employees.name });
+  return rows[0]?.name ?? null;
+}
+
 export async function listMembers(db: AnyDb) {
   const members = await db.select({
     id: employees.id, name: employees.name, email: employees.email, phone: employees.phone, role: employees.role,
-    positionId: employees.positionId, active: employees.active, avatar: employees.avatarKey,
+    positionId: employees.positionId, active: employees.active, avatar: employees.avatarKey, approver: employees.canApprove,
     activated: sql<number>`CASE WHEN ${credentials.passwordHash} IS NULL THEN 0 ELSE 1 END`,
   }).from(employees).leftJoin(credentials, eq(credentials.memberId, employees.id)).where(and(ne(employees.role, 'customer'), isNull(employees.deletedAt))).orderBy(asc(employees.id));
   // Tài khoản khách hàng quản lý ở trang Khách hàng, không nằm trong danh sách nhân viên / chức vụ chọn được.
