@@ -85,7 +85,7 @@ export async function pushOrderInTx(api: SapoApi, tx: Tx, orderId: string, locat
     return { ...res, account, location, url: sapoOrderUrl(api.base, res.order.id) };
   })();
   const code = String(r.order.code || r.order.reference_number || input.code);
-  await tx.update(salesOrders).set({ sapoOrderId: String(r.order.id), sapoOrderCode: code }).where(eq(salesOrders.id, orderId));
+  await tx.update(salesOrders).set({ sapoOrderId: String(r.order.id), sapoOrderCode: code, sapoPushedAt: new Date().toISOString() }).where(eq(salesOrders.id, orderId));
   const warnings = [
     ...(r.account ? [] : [`Chưa tìm thấy tài khoản Sapo của ${owner.name || 'người phụ trách'} – đơn Sapo để người phụ trách theo phiên Sapo đang kết nối.`]),
     ...(sapoTotalMatches(r.order.total, order.total) ? [] : [`Tổng tiền trên Sapo (${Math.round(Number(r.order.total) || 0).toLocaleString('vi-VN')} đ) khác đơn web (${Math.round(order.total).toLocaleString('vi-VN')} đ) – kiểm tra lại đơn Sapo.`]),

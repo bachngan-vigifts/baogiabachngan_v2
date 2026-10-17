@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, bigint, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
@@ -52,6 +52,10 @@ export const salesOrders = pgTable('sales_orders', {
   /** Liên kết đơn Sapo khi đã chuyển sang Sapo (để sau). */
   sapoOrderId: text('sapo_order_id'),
   sapoOrderCode: text('sapo_order_code'),
+  /** Lúc đẩy sang Sapo: tồn Sapo cập nhật sau thời điểm này đã trừ hàng của đơn (Sapo "Đang giao dịch") → web thôi giữ. */
+  sapoPushedAt: text('sapo_pushed_at'),
+  /** Đơn / HĐKT tự giữ hàng từ lúc lập đến khi huỷ / giao xong / tồn Sapo đã trừ (docs/BAN-HANG.md "Giữ hàng"). Đơn có trước migration 0068 = false. */
+  holdsStock: boolean('holds_stock').notNull().default(true),
   /** Xuất hoá đơn: yêu cầu (tự động khi giao xong / nhân viên bấm) → việc cho nhóm Kế toán → kế toán nhập số hoá đơn. */
   invoiceStatus: text('invoice_status', { enum: INVOICE_STATUSES }).notNull().default('none'),
   invoiceRequestedAt: text('invoice_requested_at'),

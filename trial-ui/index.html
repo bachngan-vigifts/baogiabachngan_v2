@@ -434,12 +434,11 @@
       <div class="row-gap delivery-range">
         <label>Từ ngày<input type="date" id="deliveries-from"></label>
         <label>Đến ngày<input type="date" id="deliveries-to"></label>
-        <label>Trạng thái<select id="deliveries-status">
-          <option value="">Tất cả</option>
-          <option value="planned">Chưa giao</option>
-          <option value="in_transit">Đang giao</option>
-          <option value="delivered">Đã giao</option>
-        </select></label>
+        <div class="delivery-status"><span id="deliveries-status-label">Trạng thái</span>
+          <div class="chips" id="deliveries-status" role="group" aria-labelledby="deliveries-status-label">
+            <button type="button" class="chip active" data-status="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-status="planned" aria-pressed="false">Chưa giao</button><button type="button" class="chip" data-status="in_transit" aria-pressed="false">Đang giao</button><button type="button" class="chip" data-status="delivered" aria-pressed="false">Đã giao</button>
+          </div>
+        </div>
       </div>
       <div class="panel">
         <div class="toolbar">
