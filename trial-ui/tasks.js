@@ -33,8 +33,8 @@ function dueText(t) {
  */
 export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, isManager, userId, positionId = () => '' }) {
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
-  const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', approvals: null };
-  let searchTimer;
+  const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', due: '', approvals: null };
+  let searchTimer, loadSequence = 0;
 
   async function people() {
     if (!st.people) { try { st.people = (await api('/tasks/people')).people; } catch { st.people = []; } }
@@ -60,7 +60,8 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     const cards = [['mine', 'Việc của tôi', s.open, 'đang mở', ''], ['overdue', 'Quá hạn', s.overdue, 'cần xử lý ngay', s.overdue ? 'danger' : ''], ['today', 'Đến hạn hôm nay', s.today, 'trong ngày', s.today ? 'warn' : '']];
     if (isManager()) cards.push(['unassigned', 'Chưa giao', s.unassigned, 'chờ phân công', s.unassigned ? 'info' : ''], ['approvals', 'Cần duyệt', ap, 'chờ Manager duyệt', ap ? 'warn' : '']);
     else if (s.team) cards.push(['team', 'Việc nhóm', s.team, 'chưa ai nhận', 'info']);
-    q('#tasks-stats').innerHTML = cards.map(([k, label, n, sub, tone]) => `<button type="button" class="stat task-stat ${tone}" data-stat="${k}"><small>${label}</small><strong>${n}</strong><span class="muted">${sub}</span></button>`).join('');
+    const active = st.tab === 'approvals' ? 'approvals' : st.status === 'open' && !st.priority && !st.source && !st.search ? st.due || st.view : '';
+    q('#tasks-stats').innerHTML = cards.map(([k, label, n, sub, tone]) => `<button type="button" class="stat task-stat ${tone}" data-stat="${k}" aria-pressed="${k === active}"><small>${label}</small><strong>${n}</strong><span class="muted">${sub}</span></button>`).join('');
   }
 
   function row(t) {
@@ -106,11 +107,13 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
   }
 
   async function load(focusId) {
+    const request = ++loadSequence;
     if (focusId === 'approvals') { focusId = undefined; st.tab = 'approvals'; }
     q('#tasks-tabs').hidden = !isManager();
     const list = q('#tasks-list');
     if (!st.list.length) list.innerHTML = '<tr><td colspan="7" class="muted">Đang tải…</td></tr>';
     await people();
+    if (request !== loadSequence) return;
     q('#tasks-view [data-v="unassigned"]').hidden = !isManager();
     // Quyền đồng nghiệp do server cấp theo nhóm/chức vụ hiện có.
     const peers = !isManager() && st.canViewColleagues === true;
@@ -119,9 +122,11 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     q('#tasks-view [data-v="all"]').textContent = isManager() ? 'Tất cả' : 'Tất cả được xem';
     if (st.view === 'unassigned' && !isManager()) st.view = 'mine';
     const params = new URLSearchParams({ view: st.view, status: st.status });
+    if (st.due) params.set('due', st.due);
     if (st.priority) params.set('priority', st.priority); if (st.source) params.set('source', st.source); if (st.search) params.set('q', st.search);
     try {
       const [d, s] = await Promise.all([api('/tasks?' + params), badge(), loadApprovals()]);
+      if (request !== loadSequence) return;
       showTab(st.tab);
       st.canViewColleagues = d.canViewColleagues === true;
       q('#tasks-view [data-v="colleagues"]').hidden = !st.canViewColleagues;
@@ -130,9 +135,9 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
       const groups = st.status === 'open' ? TASK_UI.groups.map(([k, label]) => [label, d.tasks.filter(t => t.due === k), k]).filter(([, items]) => items.length) : [['', d.tasks, '']];
       list.innerHTML = groups.map(([label, items, k]) => (label ? `<tr class="task-group g-${k}"><th colspan="7">${label} <span>${items.length}</span></th></tr>` : '') + items.map(row).join('')).join('');
       q('#tasks-empty').hidden = d.tasks.length > 0;
-      q('#tasks-empty-text').textContent = st.status === 'open' ? 'Không có việc nào đang mở. Thêm việc mới ở ô phía trên.' : 'Chưa có việc nào.';
+      q('#tasks-empty-text').textContent = st.due ? 'Không có công việc phù hợp với hạn đã chọn.' : st.status === 'open' ? 'Không có việc nào đang mở. Thêm việc mới ở ô phía trên.' : 'Chưa có việc nào.';
       if (focusId) openDetail(focusId);
-    } catch (e) { list.innerHTML = `<tr><td colspan="7" class="error">${esc(e.message)}</td></tr>`; }
+    } catch (e) { if (request !== loadSequence) return; list.innerHTML = `<tr><td colspan="7" class="error">${esc(e.message)}</td></tr>`; }
   }
 
   async function update(id, body, msg) {
@@ -218,9 +223,10 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
   q('#tasks-quick').querySelectorAll('[data-due]').forEach(b => b.addEventListener('click', () => { q('#tasks-quick').dueDate.value = b.dataset.due === '' ? '' : addDays(todayIso(), Number(b.dataset.due)); }));
   const chips = (sel, key) => q(sel).addEventListener('click', e => {
     const b = e.target.closest('[data-v]'); if (!b) return;
-    st[key] = b.dataset.v; q(sel).querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); load();
+    st[key] = b.dataset.v; st.due = ''; q('#tasks-due').value = ''; q(sel).querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); load();
   });
   chips('#tasks-view', 'view'); chips('#tasks-status', 'status');
+  q('#tasks-due').addEventListener('change', e => { st.due = e.target.value; load(); });
   q('#tasks-priority').addEventListener('change', e => { st.priority = e.target.value; load(); });
   q('#tasks-source').addEventListener('change', e => { st.source = e.target.value; load(); });
   q('#tasks-search').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { st.search = e.target.value.trim(); load(); }, 250); });
@@ -232,11 +238,15 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
   q('#tasks-stats').addEventListener('click', e => {
     const b = e.target.closest('[data-stat]'); if (!b) return;
     const k = b.dataset.stat;
-    if (k === 'approvals') return showTab('approvals');
+    if (k === 'approvals') { showTab('approvals'); load(); return; }
+    if (!['mine', 'overdue', 'today', 'team', 'unassigned'].includes(k)) return;
+    clearTimeout(searchTimer); st.priority = ''; st.source = ''; st.search = '';
+    q('#tasks-priority').value = ''; q('#tasks-source').value = ''; q('#tasks-search').value = '';
+    st.due = k === 'overdue' || k === 'today' ? k : ''; q('#tasks-due').value = st.due;
     showTab('tasks'); st.view = k === 'unassigned' ? 'unassigned' : k === 'team' ? 'team' : 'mine'; st.status = 'open';
     q('#tasks-view').querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === st.view)));
     q('#tasks-status').querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === 'open')));
-    load().then(() => { const g = q(`.task-group.g-${k === 'overdue' ? 'overdue' : k === 'today' ? 'today' : ''}`); g?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    load();
   });
   q('#tasks-list').addEventListener('change', e => {
     const tr = e.target.closest('[data-task]'); if (!tr) return;
