@@ -112,7 +112,7 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   await call('/orders/' + o.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed', verified: true });
   assert.equal((await call('/notifications', kh)).data.notifications[0].eventType, 'order_confirmed');
   const qid = (await call('/portal/quotes', kh)).data.quotes.find((x: any) => !x.order)?.id;
-  await call('/quotes/' + qid + '/approve', emp, 'POST', { revision: 1 });
+  await call('/quotes/' + qid + '/approve', mgr, 'POST', { revision: 1 }); // phê duyệt: Manager / người được chỉ định
   assert.equal((await call('/notifications', kh)).data.notifications[0].eventType, 'quote_confirmed');
 });
 

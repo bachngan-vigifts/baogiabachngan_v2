@@ -31,7 +31,7 @@ function dueText(t) {
  * Gắn bảng công việc vào #view-tasks. `api(path, method, body)`, `toast(msg, kind)`, `go(hash)`, `isManager()`, `userId()`.
  * Trả về { load(id?), badge() }.
  */
-export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, isManager, userId, positionId = () => '' }) {
+export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '' }) {
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
   const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', approvals: null };
   let searchTimer;
@@ -58,8 +58,10 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
   function renderStats(s) {
     const ap = st.approvals?.counts.total ?? 0;
     const cards = [['mine', 'Việc của tôi', s.open, 'đang mở', ''], ['overdue', 'Quá hạn', s.overdue, 'cần xử lý ngay', s.overdue ? 'danger' : ''], ['today', 'Đến hạn hôm nay', s.today, 'trong ngày', s.today ? 'warn' : '']];
-    if (isManager()) cards.push(['unassigned', 'Chưa giao', s.unassigned, 'chờ phân công', s.unassigned ? 'info' : ''], ['approvals', 'Cần duyệt', ap, 'chờ Manager duyệt', ap ? 'warn' : '']);
+    if (isManager()) cards.push(['unassigned', 'Chưa giao', s.unassigned, 'chờ phân công', s.unassigned ? 'info' : '']);
     else if (s.team) cards.push(['team', 'Việc nhóm', s.team, 'chưa ai nhận', 'info']);
+    // Hộp "Cần duyệt": Manager + người được Manager bật cờ "Được duyệt" (máy chủ kiểm lại ở GET /approvals và từng nút duyệt).
+    if (canApprove()) cards.push(['approvals', 'Cần duyệt', ap, 'chờ duyệt', ap ? 'warn' : '']);
     q('#tasks-stats').innerHTML = cards.map(([k, label, n, sub, tone]) => `<button type="button" class="stat task-stat ${tone}" data-stat="${k}"><small>${label}</small><strong>${n}</strong><span class="muted">${sub}</span></button>`).join('');
   }
 
@@ -81,7 +83,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
   const KIND = { quote: ['Báo giá', 'quote'], order: ['Đơn hàng', 'order'], contract: ['HĐKT', 'contract'], customer: ['Khách hàng', 'manual'], product: ['Sản phẩm', 'purchase'] };
   const money = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
   async function loadApprovals() {
-    if (!isManager()) { st.approvals = null; return null; }
+    if (!canApprove()) { st.approvals = null; return null; }
     try { st.approvals = await api('/approvals'); } catch { st.approvals = null; }
     const n = st.approvals?.counts.total ?? 0, c = q('#tasks-approval-count');
     c.hidden = !n; c.textContent = n;
@@ -99,7 +101,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
       : '<p class="muted task-empty">Không có gì đang chờ duyệt. 🎉</p>'}`;
   }
   function showTab(tab) {
-    st.tab = isManager() && tab === 'approvals' ? 'approvals' : 'tasks';
+    st.tab = canApprove() && tab === 'approvals' ? 'approvals' : 'tasks';
     q('#tasks-tabs').querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === st.tab)));
     q('#tasks-approvals').hidden = st.tab !== 'approvals'; q('.task-board').hidden = st.tab === 'approvals';
     if (st.tab === 'approvals') renderApprovals();
@@ -107,7 +109,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
 
   async function load(focusId) {
     if (focusId === 'approvals') { focusId = undefined; st.tab = 'approvals'; }
-    q('#tasks-tabs').hidden = !isManager();
+    q('#tasks-tabs').hidden = !canApprove();
     const list = q('#tasks-list');
     if (!st.list.length) list.innerHTML = '<tr><td colspan="7" class="muted">Đang tải…</td></tr>';
     await people();

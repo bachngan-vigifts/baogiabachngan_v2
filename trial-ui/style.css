@@ -1516,3 +1516,6 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .perm-add form select { width: auto; flex: 0 1 220px; }
 .perm-pos-list li > .row-gap { gap: 6px; }
 .perm-pos-list li select { width: auto; }
+/* Cờ "Được duyệt" ở danh sách nhân viên (chỉ Manager). */
+.approver-toggle { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; font-size: .8rem; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.approver-toggle input { width: 16px; height: 16px; }

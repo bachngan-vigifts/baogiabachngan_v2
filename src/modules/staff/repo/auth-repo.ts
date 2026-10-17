@@ -9,7 +9,7 @@ import { RATE_WINDOW_SECONDS, sha256Hex, type MemberRow } from '../domain/sessio
  */
 const memberColumns = {
   id: employees.id, name: employees.name, phone: employees.phone, email: employees.email, role: employees.role,
-  positionId: employees.positionId, positionName: positions.name, active: employees.active, avatarKey: employees.avatarKey,
+  positionId: employees.positionId, positionName: positions.name, active: employees.active, avatarKey: employees.avatarKey, approver: employees.canApprove,
 };
 
 /** Xoá bộ đếm thử của một khoá (vd đăng nhập đúng thì xoá bộ đếm của tài khoản). */

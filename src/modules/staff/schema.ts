@@ -35,6 +35,8 @@ export const employees = pgTable('staff_members', {
   deletedAt: text('deleted_at'),
   /** Mã ảnh đại diện hiện tại (đổi mỗi lần tải ảnh mới → trình duyệt tự lấy ảnh mới); null = dùng chữ viết tắt. */
   avatarKey: text('avatar_key'),
+  /** Được Manager chỉ định phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC). Chỉ Manager bật / tắt – docs/PHAN-QUYEN.md. */
+  canApprove: boolean('can_approve').notNull().default(false),
 }, t => [uniqueIndex('idx_members_email').on(sql`lower(${t.email})`), uniqueIndex('idx_members_identity').on(t.identityId), index('idx_members_position').on(t.positionId)]).enableRLS();
 export const credentials = pgTable('staff_credentials', {
   memberId: text('member_id').primaryKey().references(() => employees.id),

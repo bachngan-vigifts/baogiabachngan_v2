@@ -274,6 +274,8 @@ const state = {
   products: null, productTotal: 0, productQuery: '', productBrand: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
+/** Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC): Manager hoặc người được Manager bật cờ "Được duyệt". Máy chủ kiểm lại. */
+const canApprove = () => isManager() || state.user?.approver === true;
 /** Tài khoản Kho (chức vụ "warehouse"): chỉ các trang cần cho kho – Công việc, Lịch giao hàng, Phiếu đóng gói, Sản phẩm, Tin nhắn. */
 const isWarehouse = () => state.user?.role === 'employee' && state.user?.positionId === 'warehouse';
 /**
@@ -1988,7 +1990,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
@@ -2349,8 +2351,8 @@ function renderCustomers() {
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
       <td class="right" data-label="Báo giá">${quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
-        ${c.approvalStatus === 'pending' ? `${isManager() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
-        <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${isManager() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
+        ${c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
+        <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
@@ -2413,7 +2415,7 @@ function memberDetail() {
 /** Trang chi tiết khách hàng (trial-ui/customer-detail.js). */
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
-  return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
+  return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, canApprove, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
     onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, onReview: reviewCustomer });
 }
 function openCustomer(id, known) {
@@ -2456,7 +2458,8 @@ function renderMembers() {
     return `<tr>
       <td class="first"><span class="row-gap"><span class="avatar"${avAttr(m.avatar)}>${esc(initials(m.name))}</span><span><a class="name-btn strong" href="#/members/${esc(encodeURIComponent(m.id))}">${esc(m.name)}</a>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
       <td data-label="ĐT">${esc(m.phone) || '—'}</td>
-      <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}</td>
+      <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}
+        ${m.role === 'employee' ? `<label class="approver-toggle" title="Cho phép duyệt báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC (chỉ Manager bật / tắt)"><input type="checkbox" data-approver="${esc(m.id)}" ${m.approver ? 'checked' : ''}> Được duyệt</label>` : ''}</td>
       <td>${STATUS_PILL[st]}</td>
       <td class="actions-cell"><div class="row-actions">${self ? '' : `
         ${st !== 'locked' ? `<button class="btn ghost small" data-reset="${esc(m.id)}" title="Cấp liên kết đặt lại mật khẩu">${st === 'pending' ? 'Gửi lại liên kết' : 'Đặt lại mật khẩu'}</button>` : ''}
@@ -2535,6 +2538,15 @@ $('#member-form').addEventListener('submit', async e => {
     loadMembers();
   } catch (ex) { err.textContent = ex.message; }
   finally { btn.disabled = false; }
+});
+// Cờ "Được duyệt" (chỉ Manager – máy chủ kiểm lại ở PUT /admin/members/:id/approver).
+$('#member-list').addEventListener('change', async e => {
+  const box = e.target.closest('[data-approver]'); if (!box) return;
+  const m = state.members.find(x => x.id === box.dataset.approver), on = box.checked;
+  if (!await confirmBox(on ? `Cho ${m.name} quyền phê duyệt (báo giá, khách hàng mới, sản phẩm mới, đơn hàng / HĐKT, đơn mua NCC)?` : `Thu quyền phê duyệt của ${m.name}?`, { title: on ? 'Cấp quyền duyệt' : 'Thu quyền duyệt', ok: on ? 'Cấp quyền' : 'Thu quyền', danger: !on })) { box.checked = !on; return; }
+  box.disabled = true;
+  try { await api(`/admin/members/${encodeURIComponent(m.id)}/approver`, 'PUT', { approver: on }); m.approver = on; toast(on ? `Đã cho ${m.name} quyền duyệt.` : `Đã thu quyền duyệt của ${m.name}.`); }
+  catch (ex) { box.checked = !on; toast(ex.message, 'err'); } finally { box.disabled = false; }
 });
 $('#member-list').addEventListener('click', async e => {
   const t = e.target.closest('[data-edit-member],[data-reset],[data-lock],[data-unlock],[data-delete-member]'); if (!t) return;
@@ -2793,7 +2805,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
+function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
@@ -2995,7 +3007,7 @@ async function openOrder(id) {
   $('#order-actions').innerHTML = (isK ? '<button class="btn secondary" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / tải hồ sơ HĐKT</button>'
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
-    + (o.status === 'draft' ? (isManager() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
+    + (o.status === 'draft' ? (canApprove() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
       : o.submittedAt === null ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>`
       : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
     + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')

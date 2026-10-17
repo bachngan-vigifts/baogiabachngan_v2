@@ -11,7 +11,7 @@ const origin = 'https://trial.test';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const pw = await hashPassword(PASSWORD, 1000);
-  for (const [id, pos] of [['kho', 'warehouse'], ['ketoan', 'accounting'], ['ml', 'sales-ml']] as const) {
+  for (const [id, pos] of [['kho', 'warehouse'], ['ketoan', 'accounting'], ['ml', 'sales-ml'], ['sa', 'sale-admin']] as const) {
     await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'0900','employee',?,1,'2026-01-01T00:00:00.000Z')").run(id, id + '@x.vn', 'Tên ' + id, pos);
     await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run(id, pw);
   }
@@ -25,7 +25,7 @@ async function setup() {
 }
 
 test('quyền mặc định sau migration = đúng quyền cũ: /me trả quyền; kho không vào báo giá / khách; sale không vào sổ kho', async () => {
-  const { call, mgr, emp, kho, ketoan } = await setup();
+  const { call, login, mgr, emp, kho, ketoan } = await setup();
   const me = async (c: string) => (await call('/me', c)).data.user;
   assert.equal((await me(mgr)).perms.length, PERMISSIONS.length, 'Manager có mọi quyền');
   const sale = await me(emp), wh = await me(kho), acc = await me(ketoan);
@@ -34,7 +34,7 @@ test('quyền mặc định sau migration = đúng quyền cũ: /me trả quyề
   assert.ok(acc.perms.includes('suppliers.edit') && acc.perms.includes('purchases.pay'));
   assert.equal(sale.dataScope, 'position'); assert.equal(sale.departmentId, 'kinh-doanh');
   // Mặc định khớp đúng danh mục (đối tượng không có `perms` dùng mặc định theo chức vụ).
-  for (const [pos, u] of [['sale', sale], ['warehouse', wh], ['accounting', acc]] as const)
+  for (const [pos, u] of [['sale', sale], ['warehouse', wh], ['accounting', acc], ['sale-admin', await me(await login('sa@x.vn'))]] as const)
     for (const p of PERMISSIONS) assert.equal(can({ role: 'employee', positionId: pos }, p.key), u.perms.includes(p.key), `${pos} ${p.key}`);
   assert.equal((await call('/quotes', kho)).status, 403);
   assert.equal((await call('/customers', kho)).status, 403);

@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { canApprove } from '../modules/staff/domain/permissions.ts';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import type { SessionState, StaffEnv } from '../modules/staff/api/auth-routes.ts';
@@ -14,7 +15,6 @@ import { customerActivities } from '../modules/care/schema.ts';
 import { tasks } from '../modules/tasks/schema.ts';
 import { OPEN_STATUSES } from '../modules/tasks/domain/task-config.ts';
 import { listPurchases } from '../modules/suppliers/api/purchase-store.ts';
-import { seesAllAsSaleAdmin } from '../modules/staff/domain/roles.ts';
 
 /**
  * SƠ ĐỒ QUY TRÌNH (trang #/flow) – API CHỈ ĐỌC, một lượt gọi trả số liệu + vài việc gần nhất cho mọi khối.
@@ -51,7 +51,7 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
   // ------------------------------------------------ KHÁCH HÀNG
   async customers({ db, me, manager, warehouse }) {
     if (warehouse) return null;
-    const pendingWhere = and(eq(customers.approvalStatus, 'pending'), manager ? undefined : eq(customers.createdBy, me.id));
+    const pendingWhere = and(eq(customers.approvalStatus, 'pending'), canApprove(me) ? undefined : eq(customers.createdBy, me.id));
     const mine = ex(sql`select 1 from ${customerStaff} where ${customerStaff.customerId} = ${customers.id} and ${customerStaff.memberId} = ${me.id} and ${customerStaff.role} = 'owner'`);
     const [pending, owned, rows] = await Promise.all([
       total(db.select({ n: count() }).from(customers).where(pendingWhere)),
@@ -63,13 +63,13 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
       metrics: [{ key: 'pending', label: manager ? 'Khách mới chờ duyệt' : 'Khách mình tạo chờ duyệt', value: pending, tone: pending ? 'warn' : '' }, { key: 'mine', label: 'Khách tôi phụ trách', value: owned }],
       items: rows.map(r => ({ id: r.id, title: r.name, sub: [r.phone, r.createdAt ? 'tạo ' + ddmm(r.createdAt) : ''].filter(Boolean).join(' · '),
         badge: r.status === 'pending' ? 'Chờ duyệt' : '', tone: r.status === 'pending' ? 'warn' as const : '' as const, hash: '#/customers/' + encodeURIComponent(r.id),
-        actions: r.status === 'pending' && manager ? ['approve-customer'] : [] })),
+        actions: r.status === 'pending' && canApprove(me) ? ['approve-customer'] : [] })),
     };
   },
 
   async 'stock-requests'({ db, me, manager, warehouse }) {
     if (warehouse) return null;
-    const where = and(eq(customerStockRequests.status, 'open'), manager || seesAllAsSaleAdmin(me) ? undefined : eq(customerStockRequests.ownerId, me.id));
+    const where = and(eq(customerStockRequests.status, 'open'), manager ? undefined : eq(customerStockRequests.ownerId, me.id));
     const [open, rows] = await Promise.all([
       total(db.select({ n: count() }).from(customerStockRequests).where(where)),
       db.select({ id: customerStockRequests.id, customer: customers.name, items: customerStockRequests.items, createdAt: customerStockRequests.createdAt })
@@ -117,7 +117,7 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
       metrics: [{ key: 'pending', label: 'Báo giá chờ duyệt', value: pending, tone: pending ? 'warn' : '' }, { key: 'ready', label: 'Đã duyệt, chưa sinh đơn', value: ready, tone: ready ? 'ok' : '' }],
       items: [...pRows, ...rRows].slice(0, ITEMS).map(r => ({ id: r.id, title: r.quoteNo, sub: r.customer, revision: r.revision,
         badge: r.status === 'pending' ? 'Chờ duyệt' : 'Chưa sinh đơn', tone: r.status === 'pending' ? 'warn' as const : 'ok' as const, hash: '#/quotes/' + encodeURIComponent(r.id),
-        actions: r.status === 'pending' && manager ? ['approve-quote'] : r.status === 'approved' ? ['make-order'] : [] })),
+        actions: r.status === 'pending' && canApprove(me) ? ['approve-quote'] : r.status === 'approved' ? ['make-order'] : [] })),
     };
   },
 

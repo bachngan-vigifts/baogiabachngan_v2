@@ -28,10 +28,9 @@ Trang **Quản trị › Phân quyền** (`#/permissions`, `trial-ui/permissions
 |---|---|---|
 | Trang được vào | Báo giá, Đơn đặt hàng, HĐKT, Công nợ, Khách hàng, Chăm sóc KH, Khách hỏi tồn, Tổng quan doanh số, Sơ đồ quy trình | Sale, Sale Admin, NVBH ML, NVBH LOCK, Kế toán |
 | Trang được vào | Lịch giao hàng, Đơn mua NCC | Mọi chức vụ (cả Kho) |
-| Kho | Phiếu đóng gói (xem tất cả, xác nhận đóng xong), Tra tồn, Nhận hàng NCC | Kho |
+| Kho | Phiếu đóng gói (xem tất cả, xác nhận đóng xong), Tra tồn, Nhận hàng NCC | Kho, Sale Admin |
 | Kho | Sổ kho – xem; Sổ kho – chốt tồn / phiếu điều chỉnh | Không ai (chỉ Manager) |
-| Duyệt / tài chính | Duyệt báo giá, Duyệt giá đơn mua NCC | Không ai (chỉ Manager) |
-| Duyệt / tài chính | Xem giá mua NCC, Ghi thanh toán NCC, Danh bạ NCC | Kế toán |
+| Tài chính NCC | Xem giá mua NCC, Ghi thanh toán NCC, Danh bạ NCC | Kế toán, Sale Admin |
 | Quản trị | Quản lý phân quyền | Không ai (chỉ Manager) |
 
 Một số mục không nằm trong bảng:
@@ -45,6 +44,53 @@ Một số mục không nằm trong bảng:
 - **Cùng chức vụ** (mặc định, đúng như cách chạy trước đây);
 - **Cả phòng ban** (mọi chức vụ cùng phòng);
 - **Toàn công ty (chỉ xem)** (mặc định của Sale Admin; không mở quyền sửa / duyệt).
+
+## Phê duyệt: cờ "Được duyệt" từng nhân viên
+
+Mọi phê duyệt chỉ do **Manager** hoặc **nhân viên được Manager bật cờ "Được duyệt"** (`staff_members.can_approve`, migration 0067):
+
+- **Ai bật / tắt cờ:** chỉ Manager, ở trang **Nhân viên** (ô "Được duyệt" cạnh chức vụ).
+  - API: `PUT /admin/members/:id/approver`, khu vực `admin`; câu UPDATE kiểm lại người thao tác là Manager.
+  - Mỗi lần bật / tắt được ghi vào Nhật ký phân quyền.
+- **Không nằm trong bảng quyền theo chức vụ:** người có "Quản lý phân quyền" không tự cấp duyệt được.
+- **Hàm kiểm tra:** `canApprove(member)` trong `src/modules/staff/domain/permissions.ts`.
+- **Endpoint đã kiểm quyền ở máy chủ:**
+
+| Phê duyệt | Endpoint |
+|---|---|
+| Báo giá (cả báo giá khách gửi từ trang khách hàng) | `POST /quotes/:id/approve`; ô `canApprove` của `GET /quotes/:id` |
+| Khách hàng mới | `POST /customers/:id/approve`; từ chối = `DELETE /customers/:id` (người được duyệt, hoặc người tạo xoá khách của mình) |
+| Sản phẩm mới | `POST /products/:sku/approve`; từ chối = `DELETE /products/:sku`; `GET /product-approvals` |
+| Đơn hàng / HĐKT | `PUT /orders/:id/status` với `confirmed` |
+| Đơn mua NCC (duyệt giá) | `POST /purchase-orders/:id/approve` (`checkPurchase('approve')`) |
+| Hộp "Cần duyệt" | `GET /approvals` |
+| Nút duyệt nhanh ở Sơ đồ quy trình | `GET /flow` (chỉ trả thao tác `approve-*` cho người được duyệt) |
+
+- **Người được duyệt còn thấy thêm:**
+  - báo giá đang chờ duyệt;
+  - đơn / HĐKT đã gửi duyệt;
+  - mọi khách / sản phẩm chờ duyệt;
+  - giá mua của đơn mua NCC (phải nhập giá khi duyệt).
+- **Thông báo "chờ duyệt"** (báo giá, đơn, HĐKT) gửi cho Manager và người được duyệt (`notifyMany(env, 'approvers')`).
+- **Giữ nguyên chỉ Manager** (không phải phê duyệt, hoặc ngoài phạm vi):
+  - Tự duyệt khi Manager tự tạo (báo giá, khách, sản phẩm, đơn mua).
+  - Nhập đơn mua từ file.
+  - Ghi nhận NCC xác nhận thay NCC.
+  - Sửa / huỷ chứng từ đã duyệt.
+  - Chốt lương `POST /hr/payroll/:month/confirm` (thuộc logic lương, không đụng).
+  - Việc tự sinh "Duyệt đơn mua" vẫn giao Manager.
+
+## Sale Admin (tạm thời, yêu cầu 17/10/2026)
+
+- **Quyền:** có quyền của **Sale + Kế toán + Kho** trong bảng quyền: các trang của Sale; xem giá / ghi thanh toán / danh bạ NCC; phiếu đóng gói, tra tồn, nhận hàng NCC.
+  - Không có phê duyệt, trừ khi Manager bật cờ "Được duyệt".
+- **Xem toàn công ty** (phạm vi "Toàn công ty (chỉ xem)", `seesAllAsSaleAdmin`): CHỈ ở báo giá, khách hàng, đơn hàng, HĐKT, kèm giao hàng / công nợ của đơn.
+  - Khách hỏi tồn, chăm sóc khách, doanh số theo phạm vi thường: của mình / cùng chức vụ.
+  - Đơn mua NCC xem tất cả nhờ quyền Kế toán.
+- **Chưa chốt:** quyền tạo / sửa dữ liệu của người khác.
+  - Hiện **không sửa** được báo giá / khách của người khác.
+  - Nhưng **thao tác được trên đơn hàng / HĐKT** của người khác như trước 17/10 (lập phiếu đóng gói, lịch giao, thu tiền…), vì phạm vi đơn dùng chung cho xem và sửa.
+  - Quyền trả lời khách hỏi tồn của người khác (có từ 15/10) đã bỏ cùng với phạm vi xem.
 
 ## Hiệu lực
 

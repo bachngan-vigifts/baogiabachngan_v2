@@ -4,6 +4,7 @@ import { ACTIVATION_TTL_SECONDS, SELF_MESSAGES, activationLink, assertNotSelf, c
 import { newToken, sha256Hex } from '../domain/session.ts';
 import * as repo from '../repo/member-repo.ts';
 import { CUSTOMER_POSITION_ID } from '../domain/roles.ts';
+import { permissionLog } from '../schema.ts';
 import type { SessionState, StaffEnv } from './auth-routes.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -59,6 +60,21 @@ export function registerMemberRoutes(router: Router<StaffEnv>): void {
     if (await repo.isCustomerMember(c.env.db, id)) throw new AppError(400, CUSTOMER_MSG);
     if (!await repo.deleteMember(c.env.db, actor(c).id, id, new Date().toISOString())) throw new AppError(404, 'Không tìm thấy nhân viên.');
     return json({ ok: true });
+  }, 'admin');
+
+  /**
+   * Cờ "Được duyệt" (phê duyệt báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC): CHỈ Manager bật / tắt –
+   * khu vực 'admin' chỉ Manager vào được, câu UPDATE kiểm lại người thao tác là Manager. Ghi nhật ký phân quyền.
+   */
+  router.put('/admin/members/:id/approver', async c => {
+    const body = await readJson(c.req, 1_000), m = actor(c);
+    if (m.role !== 'manager') throw new AppError(403, 'Chỉ Manager chỉ định người được duyệt.');
+    if (typeof body.approver !== 'boolean') throw new AppError(400, 'Thiếu giá trị bật / tắt.');
+    const name = await repo.setApprover(c.env.db, m.id, c.params.id!, body.approver);
+    if (!name) throw new AppError(404, 'Không tìm thấy nhân viên (Manager luôn được duyệt; NCC / khách hàng không áp dụng).');
+    await c.env.db.insert(permissionLog).values({ id: crypto.randomUUID(), at: new Date().toISOString(), by: m.id,
+      action: body.approver ? 'Cấp quyền duyệt' : 'Thu quyền duyệt', detail: name });
+    return json({ ok: true, approver: body.approver });
   }, 'admin');
 
   router.put('/admin/member', async c => {

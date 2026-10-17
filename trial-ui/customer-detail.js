@@ -92,8 +92,8 @@ export function initCustomerDetail(deps) {
         <div class="editor-actions">${a.canEdit ? '<button class="btn secondary" data-act="edit" title="Chỉ nhân viên phụ trách hoặc Manager">Sửa thông tin</button>' : ''}${pending ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
       </div>
       ${pending ? `<div class="approval-box"><div class="approval-head"><b>Khách hàng mới đang chờ Manager duyệt</b><small class="muted">Chưa lập báo giá, đặt hàng hay cấp tài khoản cho khách này được tới khi được duyệt.</small></div>
-        <div class="row-actions">${deps.isManager() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt khách hàng</button>' : ''}
-        <button type="button" class="btn ghost small danger-text" data-act="reject">${deps.isManager() ? 'Từ chối' : 'Xoá'}</button></div></div>` : ''}
+        <div class="row-actions">${(deps.canApprove || deps.isManager)() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt khách hàng</button>' : ''}
+        <button type="button" class="btn ghost small danger-text" data-act="reject">${(deps.canApprove || deps.isManager)() ? 'Từ chối' : 'Xoá'}</button></div></div>` : ''}
       <div class="stats cd-stats">
         <article class="stat"><small>Doanh số</small><strong>${money(s.revenue)}</strong><span class="muted">${s.orders} đơn hàng / HĐKT đã xác nhận</span></article>
         <article class="stat"><small>Đã thu</small><strong class="paid-text">${money(s.paid)}</strong><span class="muted">Phải thu ${money(s.due)}</span></article>

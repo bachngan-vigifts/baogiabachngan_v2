@@ -9,6 +9,7 @@ import { salesContracts, salesOrders } from '../modules/sales/schema.ts';
 import { customers } from '../modules/customers/schema.ts';
 import { products } from '../modules/catalog/schema.ts';
 import { docRef } from '../modules/sales/domain/doc-ref.ts';
+import { canApprove } from '../modules/staff/domain/permissions.ts';
 
 /** Loại việc cần duyệt (thứ tự hiển thị). */
 export const APPROVAL_KINDS = ['quote', 'order', 'contract', 'customer', 'product'] as const;
@@ -16,7 +17,7 @@ export type ApprovalKind = typeof APPROVAL_KINDS[number];
 export interface ApprovalItem { kind: ApprovalKind; id: string; title: string; sub: string; by: string; at: string; amount: number | null; link: string }
 
 /**
- * HỘP "CẦN DUYỆT" (Manager, thẻ trong trang Công việc): gom mọi thứ đang chờ Manager duyệt vào một chỗ.
+ * HỘP "CẦN DUYỆT" (Manager + người được Manager bật cờ "Được duyệt", thẻ trong trang Công việc): gom mọi thứ đang chờ duyệt vào một chỗ.
  *  - Báo giá `approval_status = pending` (nhân viên lập hoặc khách gửi)
  *  - Đơn hàng nháp chưa có HĐKT · HĐKT của đơn nháp (duyệt đơn = duyệt HĐKT)
  *  - Khách hàng nhân viên tạo chờ duyệt · Sản phẩm nhân viên thêm chờ duyệt
@@ -25,7 +26,7 @@ export interface ApprovalItem { kind: ApprovalKind; id: string; title: string; s
  */
 export function registerApprovalRoutes(router: Router<StaffEnv>) {
   router.get('/approvals', async c => {
-    if ((c.state.session as SessionState).member.role !== 'manager') throw new AppError(403, 'Chỉ Manager xem được hộp Cần duyệt.');
+    if (!canApprove((c.state.session as SessionState).member)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định xem được hộp Cần duyệt.', 'APPROVER_ONLY');
     const db = c.env.db, LIMIT = 200;
     const [qs, os, cs, ps] = await Promise.all([
       db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, createdAt: quotations.createdAt, updatedAt: quotations.updatedAt, by: employees.name, role: employees.role })

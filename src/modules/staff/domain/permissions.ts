@@ -9,6 +9,8 @@ export interface PermissionDef { key: string; group: string; label: string; hint
 const SALES = ['sale', 'sale-admin', 'sales-ml', 'sales-lock'] as const;
 const OFFICE = [...SALES, 'accounting'] as const;
 const ALL = [...OFFICE, 'warehouse'] as const;
+/** Sale Admin TẠM THỜI có quyền của Sale + Kế toán + Kho (yêu cầu 17/10/2026). */
+const KHO = ['warehouse', 'sale-admin'] as const, KE_TOAN = ['accounting', 'sale-admin'] as const;
 
 export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.quotes', group: 'Trang được vào', label: 'Báo giá', defaults: OFFICE },
@@ -22,16 +24,14 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.dashboard', group: 'Trang được vào', label: 'Tổng quan doanh số', defaults: OFFICE },
   { key: 'page.flow', group: 'Trang được vào', label: 'Sơ đồ quy trình', defaults: OFFICE },
   { key: 'page.purchases', group: 'Trang được vào', label: 'Đơn mua NCC', defaults: ALL },
-  { key: 'page.packing', group: 'Kho', label: 'Phiếu đóng gói – xem tất cả, xác nhận đóng xong', hint: 'Không có quyền này: chỉ xem phiếu của đơn mình phụ trách.', defaults: ['warehouse'] },
-  { key: 'page.stock-lookup', group: 'Kho', label: 'Tra tồn (không giá)', defaults: ['warehouse'] },
+  { key: 'page.packing', group: 'Kho', label: 'Phiếu đóng gói – xem tất cả, xác nhận đóng xong', hint: 'Không có quyền này: chỉ xem phiếu của đơn mình phụ trách.', defaults: KHO },
+  { key: 'page.stock-lookup', group: 'Kho', label: 'Tra tồn (không giá)', defaults: KHO },
   { key: 'inventory.view', group: 'Kho', label: 'Sổ kho – xem', defaults: [] },
   { key: 'inventory.manage', group: 'Kho', label: 'Sổ kho – chốt tồn đầu kỳ, phiếu điều chỉnh', defaults: [] },
-  { key: 'purchases.receive', group: 'Kho', label: 'Nhận hàng NCC về kho', defaults: ['warehouse'] },
-  { key: 'quotes.approve', group: 'Duyệt / tài chính', label: 'Duyệt báo giá', defaults: [] },
-  { key: 'purchases.approve', group: 'Duyệt / tài chính', label: 'Duyệt giá đơn mua NCC', defaults: [] },
-  { key: 'purchases.prices', group: 'Duyệt / tài chính', label: 'Xem giá mua NCC', defaults: ['accounting'] },
-  { key: 'purchases.pay', group: 'Duyệt / tài chính', label: 'Ghi thanh toán / lịch trả NCC', defaults: ['accounting'] },
-  { key: 'suppliers.edit', group: 'Duyệt / tài chính', label: 'Danh bạ NCC – xem, sửa', defaults: ['accounting'] },
+  { key: 'purchases.receive', group: 'Kho', label: 'Nhận hàng NCC về kho', defaults: KHO },
+  { key: 'purchases.prices', group: 'Tài chính NCC', label: 'Xem giá mua NCC', defaults: KE_TOAN },
+  { key: 'purchases.pay', group: 'Tài chính NCC', label: 'Ghi thanh toán / lịch trả NCC', defaults: KE_TOAN },
+  { key: 'suppliers.edit', group: 'Tài chính NCC', label: 'Danh bạ NCC – xem, sửa', defaults: KE_TOAN },
   { key: 'perm.manage', group: 'Quản trị', label: 'Quản lý phân quyền (trang này)', hint: 'Sửa phòng ban, chức vụ và bảng quyền. Không đụng được chức vụ Manager.', defaults: [] },
 ];
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map(p => p.key));
@@ -60,6 +60,15 @@ export function can(m: PermissionMember | null | undefined, key: string): boolea
   if (m.perms) return m.perms.includes(key);
   return PERMISSIONS.find(p => p.key === key)?.defaults.includes(m.positionId ?? '') ?? false;
 }
+
+/**
+ * PHÊ DUYỆT (báo giá, khách hàng mới, sản phẩm mới, đơn hàng / HĐKT, đơn mua NCC, hộp "Cần duyệt"):
+ * CHỈ Manager hoặc nhân viên được Manager bật cờ "Được duyệt" (`staff_members.can_approve`, trang Nhân viên).
+ * Không nằm trong bảng quyền theo chức vụ – người có quyền "Quản lý phân quyền" không tự cấp duyệt được.
+ * Đối tượng không mang cờ (dữ liệu dựng tay) coi như không được duyệt.
+ */
+export const canApprove = (m: { role: string; approver?: boolean | null } | null | undefined): boolean =>
+  Boolean(m && (m.role === 'manager' || (m.role === 'employee' && m.approver === true)));
 
 export const scopeOf = (m: PermissionMember): DataScope =>
   (DATA_SCOPES as readonly string[]).includes(m.dataScope ?? '') ? m.dataScope as DataScope : defaultScope(m.positionId);

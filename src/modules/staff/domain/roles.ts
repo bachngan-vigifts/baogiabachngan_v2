@@ -27,8 +27,9 @@ export const isCustomer = (m: MemberLike | null | undefined): boolean =>
 
 /**
  * Phạm vi "Toàn công ty (chỉ xem)" của chức vụ (trang Phân quyền; mặc định chỉ Sale Admin – domain/permissions.ts).
- * Sale Admin xem toàn công ty (TẠM THỜI, theo yêu cầu 15/10/2026): mọi khách hàng, đơn hàng / HĐKT (kèm giao hàng, công nợ),
- * khách hỏi tồn, đơn mua NCC (kể cả nháp; giá mua vẫn ẩn). Không mở quyền sửa / duyệt. Muốn thu hồi: cho hàm này trả false.
+ * CHỈ áp cho báo giá, khách hàng, đơn hàng / HĐKT (kèm giao hàng, công nợ của đơn) – yêu cầu 17/10/2026; các mục khác
+ * (khách hỏi tồn, chăm sóc, doanh số…) theo phạm vi thường. Không mở quyền duyệt (duyệt = cờ "Được duyệt", domain/permissions.ts).
+ * Quyền SỬA dữ liệu người khác của Sale Admin chưa chốt – xem docs/PHAN-QUYEN.md. Muốn thu hồi: cho hàm này trả false.
  */
 export const SALE_ADMIN_POSITION_ID = 'sale-admin';
 export const seesAllAsSaleAdmin = (m: { role: string; positionId?: string | null; dataScope?: string | null } | null | undefined): boolean =>

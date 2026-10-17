@@ -1,10 +1,11 @@
 import { createScheduledDelivery } from './delivery-store.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
+import { canApprove } from '../../staff/domain/permissions.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { orderNotesFromQuote, orderDeliveryAddress } from '../domain/order-notes.ts';
 import { cleanOrderInput } from '../domain/order-input.ts';
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -48,9 +49,11 @@ export const canIssueInvoice = (m: { role: string; positionId?: string | null })
  * Ai thấy đơn: Manager và Kế toán thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
  */
-export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m) ? undefined
+export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null; dataScope?: string | null; approver?: boolean | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m) ? undefined
   : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id), departmentOwner(salesOrders.ownerId, m), departmentOwner(salesOrders.createdBy, m),
-    sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`);
+    sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`,
+    // Người được duyệt mở được đơn / HĐKT đang chờ duyệt (đã gửi duyệt) để kiểm tra rồi duyệt.
+    canApprove(m) ? and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt)) : undefined);
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
 /** Lịch giao hàng: nhóm Kho (chức vụ `warehouse`) xem và đổi trạng thái mọi chuyến giao (không xem được đơn / công nợ). */
 const isWarehouseMember = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'warehouse';
@@ -357,7 +360,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, ...input,
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
-    if (submitted) await notifyMany(c.env, 'managers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
+    if (submitted) await notifyMany(c.env, 'approvers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
       url: `/index.html#/orders/${id}`, actorId: me.id, data: { orderId: id } });
     return json({ id, sapo }, 201);
   }, 'business');
@@ -372,7 +375,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       .where(and(eq(salesOrders.id, order.id), eq(salesOrders.status, 'draft'), isNull(salesOrders.submittedAt))).returning({ id: salesOrders.id });
     if (rows.length) {
       const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);
-      await notifyMany(c.env, 'managers', k
+      await notifyMany(c.env, 'approvers', k
         ? { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt', body: `${me.name}: ${k.no} – ${order.customerName}`, url: `/index.html#/contracts/${order.id}`, actorId: me.id, data: { orderId: order.id } }
         : { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${order.orderNo} – ${order.customerName} · ${new Intl.NumberFormat('vi-VN').format(order.total)} đ`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id } });
     }
@@ -407,7 +410,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
       if (Number(paid?.n) > 0 || lines.some(l => l.deliveredQty > 0)) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
     }
-    if (status === 'confirmed' && viewer(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager được duyệt đơn hàng / HĐKT.');
+    if (status === 'confirmed' && !canApprove(viewer(c))) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt đơn hàng / HĐKT.', 'APPROVER_ONLY');
     if (status === 'confirmed' && order.status !== 'draft') throw new AppError(409, 'Chỉ duyệt được đơn đang chờ duyệt.');
     // Bước xác thực: nhân viên phải đánh dấu đã kiểm tra các thông tin quan trọng trước khi duyệt đơn.
     if (status === 'confirmed' && body.verified !== true) throw new AppError(400, 'Kiểm tra và đánh dấu đủ các thông tin quan trọng trước khi xác nhận đơn.', 'VERIFY_REQUIRED');
@@ -619,7 +622,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       }
       throw e;
     } finally { await push?.done(); }
-    if (me.role === 'manager') await notifyMany(c.env, 'managers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
+    if (me.role === 'manager') await notifyMany(c.env, 'approvers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
       body: `${me.name}: ${contractNo} – ${text(data.customer) || quote.customer}`, url: `/index.html#/contracts/${orderId}`, actorId: me.id, data: { orderId, contractId: id } });
     return json({ id, orderId, contractNo, sapo }, 201);
   }, 'business');

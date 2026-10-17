@@ -5,7 +5,7 @@
 
 /** @param deps { api, toast, esc, money, confirmBox, isManager, userId, policies(), onChanged() } */
 export function initProductAdmin(deps) {
-  const { api, toast, esc, money, confirmBox, isManager } = deps;
+  const { api, toast, esc, money, confirmBox, isManager } = deps, canApprove = deps.canApprove || isManager;
   const box = document.getElementById('product-pending');
 
   async function loadPending() {
@@ -18,8 +18,8 @@ export function initProductAdmin(deps) {
       <ul class="approval-list">${rows.map(p => `<li>
         <span><b>${esc(p.name)}</b><small>${esc(p.sku)}${p.brand ? ' · ' + esc(p.brand) : ''}${p.unit ? ' · ' + esc(p.unit) : ''} · ${p.prices.map(x => `${esc(pol.get(x.policyId) || x.policyId)} ${money(x.price)}`).join(' · ') || 'chưa có giá'}</small>
           <small class="muted">Người thêm: ${esc(p.createdByName || '—')}</small></span>
-        <span class="row-actions">${isManager() ? `<button type="button" class="btn primary small" data-approve-product="${esc(p.sku)}">Duyệt</button>` : ''}
-          <button type="button" class="btn ghost small danger-text" data-reject-product="${esc(p.sku)}">${isManager() ? 'Từ chối' : 'Xoá'}</button></span></li>`).join('')}</ul>`;
+        <span class="row-actions">${canApprove() ? `<button type="button" class="btn primary small" data-approve-product="${esc(p.sku)}">Duyệt</button>` : ''}
+          <button type="button" class="btn ghost small danger-text" data-reject-product="${esc(p.sku)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button></span></li>`).join('')}</ul>`;
   }
   box.addEventListener('click', async e => {
     const ok = e.target.closest('[data-approve-product]'), no = e.target.closest('[data-reject-product]');
