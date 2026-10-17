@@ -687,8 +687,10 @@ a.flow-step:hover { border-color: var(--blue); }
 .plain-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .plain-list li:last-child { border-bottom: 0; }
 .plain-list small { display: block; color: var(--muted); font-size: .8rem; }
-.delivery-range { margin-bottom: 12px; gap: 12px; }
-.delivery-range label { display: grid; gap: 4px; font-size: .82rem; font-weight: 600; }
+.delivery-range { margin-bottom: 12px; display: grid; grid-template-columns: repeat(3, 170px); gap: 12px; }
+.delivery-range label { display: grid; gap: 4px; font-size: .82rem; font-weight: 600; min-width: 0; }
+.delivery-range input, .delivery-range select { width: 100%; height: 44px; box-sizing: border-box; margin: 0; }
+@media (max-width: 600px) { .delivery-range { grid-template-columns: 1fr 1fr; } .delivery-range label:last-child { grid-column: 1 / -1; } }
 @media (max-width: 680px) {
   .flow-arrow { display: none; }
   .flow-step { flex-basis: calc(50% - 6px); }
