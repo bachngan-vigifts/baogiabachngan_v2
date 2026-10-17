@@ -2175,6 +2175,30 @@ let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTim
 const hasSupplierStock = p => brandDiscountKey(p?.brand || p?.name) === 'lock'; // chưa có nhãn hiệu trên Sapo thì nhận theo tên
 const kindStock = (p, kind) => { const ws = state.warehouses.filter(w => w.kind === kind && p.stock?.[w.id] !== undefined); return ws.length ? ws.reduce((t, w) => t + Number(p.stock[w.id] || 0), 0) : null; };
 const stockText = v => v === null ? 'Chưa có số liệu' : fmtNum(v);
+/** Ô "Hàng chờ về": có số > 0 thì bấm được → hộp các đơn mua NCC đang về của mã (số đơn, NCC, ngày hẹn). */
+const incomingCell = p => { const v = kindStock(p, 'incoming'); return v > 0 ? `<button type="button" class="link-btn" data-incoming-sku="${esc(p.sku)}" title="Xem các đơn mua NCC đang về">${fmtNum(v)}</button>` : stockText(v); };
+document.addEventListener('click', e => { const b = e.target.closest('[data-incoming-sku]'); if (b) { e.preventDefault(); showIncoming(b.dataset.incomingSku); } });
+async function showIncoming(sku) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal incoming-dialog';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Hàng chờ về</span><h2>${esc(sku)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><p class="muted">Đang tải…</p></div><div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button></div>`;
+  document.body.append(dlg);
+  const close = () => { dlg.close(); dlg.remove(); };
+  // Bấm mở đơn mua: đóng luôn các hộp đang mở (Kiểm tồn…) để thấy trang đơn mua.
+  dlg.addEventListener('click', e => { if (e.target.closest('[data-x]')) close(); else if (e.target.closest('a')) { close(); $$('dialog[open]').forEach(d => d.close()); } });
+  dlg.addEventListener('cancel', close); dlg.showModal();
+  const body = dlg.querySelector('.modal-body');
+  try {
+    const p = (await api('/inventory/lookup?q=' + encodeURIComponent(sku))).products.find(x => x.sku.toLowerCase() === sku.toLowerCase());
+    const orders = p?.incoming?.orders || [], dmy = d => d ? d.slice(0, 10).split('-').reverse().join('/') : '';
+    body.innerHTML = !orders.length ? '<p class="muted">Không còn đơn mua NCC nào đang về cho mã này.</p>'
+      : `<p class="small muted">${esc(p.name)} · tổng đang về <b>${fmtNum(p.incoming.qty)}</b></p>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn mua</th><th>NCC</th><th>Ngày hẹn về</th><th class="right">Còn về</th></tr></thead><tbody>
+        ${orders.map(o => `<tr><td>${can('page.purchases') ? `<a href="#/purchases/${esc(encodeURIComponent(o.orderId))}">${esc(o.ticketNumber)}</a>` : esc(o.ticketNumber)}${o.internalNo ? `<small>Số NCC ${esc(o.internalNo)}</small>` : ''}</td>
+          <td>${esc(o.supplierName || '—')}</td><td>${o.arrivalDate ? esc(dmy(o.arrivalDate)) : '<span class="muted">Chưa hẹn</span>'}</td><td class="right">${fmtNum(o.qty)}</td></tr>`).join('')}
+        </tbody></table></div>`;
+  } catch (ex) { body.innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
+}
 /** Bộ lọc giống "Tìm nhanh sản phẩm" của web cũ: phạm vi theo loại báo giá, nhóm, khoảng giá theo chính sách đang chọn. */
 function pickerQuery(offset) {
   const v = id => $(id).value.trim(), params = new URLSearchParams({ limit: '40', offset: String(offset), q: v('#picker-search'), policy: currentPolicy() });
@@ -2868,7 +2892,7 @@ async function loadStockRequests(focusId) {
         return `<tr><td>${esc(i.name)}<small>${esc(i.sku)} · ${esc(i.unit || '')}</small></td><td class="right">${fmtNum(i.qty)}</td>
           ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>` : ''}
           <td class="right ${av !== null && av < i.qty ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
-          ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? stockText(kindStock(p, 'incoming')) : '—'}</td>
+          ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? incomingCell(p) : '—'}</td>
           <td class="right">${r.status === 'open' ? `<input class="num-input" inputmode="decimal" data-sku="${esc(i.sku)}" value="${av === null ? '' : Math.max(0, Math.min(i.qty, av))}" aria-label="Đáp ứng ${esc(i.name)}">` : fmtNum(a?.available ?? 0)}</td></tr>`; }).join('')}
       </tbody></table></div>
       ${r.status === 'open' ? `<label>Trả lời khách<textarea rows="2" maxlength="2000" data-answer placeholder="Ví dụ: Còn đủ hàng, giao được trong 2 ngày."></textarea></label>
@@ -3781,7 +3805,7 @@ $('#quote-stock').addEventListener('click', async () => {
       return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
         ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>` : ''}
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
-        ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? stockText(kindStock(p, 'incoming')) : '—'}</td>
+        ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? incomingCell(p) : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
     $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th>${anyHeld ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}${anyLock ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
