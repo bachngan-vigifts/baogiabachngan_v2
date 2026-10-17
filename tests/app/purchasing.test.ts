@@ -361,7 +361,7 @@ test('badge đơn mua: đếm toàn bộ tìm kiếm trên server, độc lập 
   const all = await call('/purchase-orders', mgr);
   assert.equal(all.status, 200, JSON.stringify(all.data));
   assert.equal(all.data.orders.length, 300);
-  assert.deepEqual(all.data.counts, { all: 317, draft: 311, awaiting_confirmation: 2, confirmed: 1, partially_received: 1, received: 1, cancelled: 1, late: 2, sapo: 1, debt: 4 });
+  assert.deepEqual(all.data.counts, { all: 317, draft: 311, awaiting_confirmation: 2, confirmed: 1, partially_received: 1, received: 1, cancelled: 1, late: 2, sapo: 1, debt: 3 }, 'còn nợ NCC: đơn đã huỷ không tính');
   const selected = await call('/purchase-orders?state=confirmed', mgr);
   assert.deepEqual(selected.data.counts, all.data.counts, 'chọn thẻ không làm các thẻ khác về 0');
   const searched = await call('/purchase-orders?q=COUNT-', mgr);

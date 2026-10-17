@@ -293,7 +293,13 @@ const PAGE_PERM = {
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
-const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+/** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
+const linkAllowed = hash => {
+  const [view, id] = String(hash).replace(/^#\//, '').split(/[/?]/);
+  const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
+  return canPage(detail);
+};
 /** Danh bạ NCC: Manager và chức vụ có quyền "Danh bạ NCC" (mặc định Kế toán; máy chủ kiểm lại). */
 const canEditSuppliers = () => can('suppliers.edit');
 const KHO_HOME = '#/kho';
@@ -877,7 +883,7 @@ async function openEditor(id) {
 function fillEditor(id, revision, data, meta = {}) {
   // Lưu xong (cùng báo giá) thì giữ nguyên mục lợi nhuận / cột giá nhập đang mở; mở báo giá khác thì đóng lại.
   const keepProfit = !!id && (editor.id === id || (!editor.id && saving));
-  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false) } : null;
+  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false), canEdit: meta.canEdit ?? (keepProfit ? editor.approval?.canEdit : undefined) } : null;
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
@@ -1163,7 +1169,7 @@ async function showProductCard(sku, name) {
       + `<div class="table-wrap"><table class="data-table pc-table"><thead><tr><th>Thời gian</th><th>Loại</th><th>Chứng từ</th><th>Khách / NCC · Kho</th><th class="right">Số lượng</th><th class="right">Đơn giá</th></tr></thead><tbody>
       ${rows.map(h => `<tr><td>${fmtDate(h.occurredAt)}<small>${new Date(h.occurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</small></td>
         <td><span class="pill src ${MOVE_UI[h.kind]?.[1] || ''}">${esc(MOVE_UI[h.kind]?.[0] || h.kind)}</span>${h.status ? `<small>${esc(h.status)}</small>` : ''}</td>
-        <td>${h.link ? `<a href="${esc(h.link)}" data-close-card>${esc(h.refCode)}</a>` : esc(h.refCode) || '—'}</td>
+        <td>${h.link && linkAllowed(h.link) ? `<a href="${esc(h.link)}" data-close-card>${esc(h.refCode)}</a>` : esc(h.refCode) || '—'}</td>
         <td>${esc(h.partner) || '<span class="muted">—</span>'}${h.location ? `<small>${esc(h.location)}</small>` : ''}${h.note ? `<small>${esc(h.note)}</small>` : ''}</td>
         <td class="right">${qtyCell(h)}</td><td class="right num">${h.unitPrice === null || h.unitPrice === undefined ? '—' : money(h.unitPrice)}</td></tr>`).join('')}</tbody></table></div>
       <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Xuất kho: chuyến giao "Đã giao" · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
@@ -2405,7 +2411,7 @@ function renderCustomers() {
       <td class="right" data-label="Báo giá">${quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
         ${c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
-        <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
+        ${canApprove() || c.createdBy === state.user?.id ? `<button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : '<span class="pill warn">Chờ duyệt</span>'}` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
@@ -2769,7 +2775,8 @@ const deliveryPhotos = x => x.photos?.length ? `<span class="ship-photos">${x.ph
 async function loadReceivables() {
   $('#receivables-list').innerHTML = skeleton(7);
   try {
-    const d = await api('/receivables?q=' + encodeURIComponent($('#receivables-search').value));
+    const status = $('#receivables-filters .chip.active')?.dataset.status ?? '';
+    const d = await api('/receivables?q=' + encodeURIComponent($('#receivables-search').value) + (status ? '&status=' + status : ''));
     $('#receivable-stats').innerHTML = [['Phải thu', d.totals.due, ''], ['Đã thu', d.totals.paid, ''], ['Còn lại', d.totals.balance, ''], ['Quá hạn', d.totals.overdue, d.totals.overdue > 0 ? 'danger-text' : '']]
       .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('');
     fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
@@ -2777,13 +2784,18 @@ async function loadReceivables() {
       <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : '<span class="muted">Chưa xuất</span>'}</td>
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
       <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) : '—'}</td></tr>`),
-      'Chưa có công nợ. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
+      status === 'paid' ? 'Chưa có đơn nào đã thu đủ.' : status === 'overdue' ? 'Không có công nợ quá hạn.' : 'Không còn công nợ phải thu. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
   } catch (e) { listError('receivables', e); }
 }
 $('#orders-search').addEventListener('input', debounce(() => { ordersPager?.reset(); loadOrders(); }));
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
 $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));
+$('#receivables-filters').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#receivables-filters .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  loadReceivables();
+});
 for (const id of ['#deliveries-from', '#deliveries-to']) $(id).addEventListener('change', loadDeliveries);
 $('#deliveries-status').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
@@ -3066,9 +3078,9 @@ async function openOrder(id) {
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
     + (o.status === 'draft' ? (canApprove() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
-      : o.submittedAt === null ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>`
+      : o.submittedAt === null ? (o.canEdit !== false ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>` : `<span class="pill" title="Người phụ trách chưa gửi duyệt">Nháp</span>`)
       : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
-    + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
+    + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
@@ -3171,7 +3183,7 @@ function renderInvoice(o) {
     : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Sau khi xuất, Kế toán hoặc nhân viên phụ trách nhập số hoá đơn vào đây.</p>
        <button type="button" class="btn ghost small" id="invoice-request" title="Đổi email nhận, cách xuất hoặc ghi chú">Sửa yêu cầu</button>${form('Đã xuất – lưu số hoá đơn')}`
     : `<p class="muted">Chưa yêu cầu xuất hoá đơn. Khi đơn giao xong, hệ thống tự yêu cầu và giao việc cho nhóm Kế toán.</p>
-       ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>'}${form('Lưu số hoá đơn')}`;
+       ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>' + form('Lưu số hoá đơn')}`;
 }
 document.addEventListener('click', async e => {
   if (e.target.id === 'invoice-edit') { const f = document.getElementById('invoice-form'); f.hidden = false; e.target.hidden = true; f.invoiceNo.focus(); return; }
@@ -3647,7 +3659,7 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#order-cancel')) {
     const w = isContractDoc() ? 'HĐKT' : 'đơn';
     if (!await confirmBox(`Huỷ ${w} ${docNo()}? ${isContractDoc() ? 'HĐKT' : 'Đơn'} huỷ không còn tính công nợ; báo giá có thể lập lại.`, { title: 'Huỷ ' + w, ok: 'Huỷ ' + w, danger: true })) return;
-    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
+    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.'); loadHolds(true); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-delete')) {
     const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';
@@ -3697,7 +3709,7 @@ $('#contract-form').addEventListener('submit', async e => {
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
       run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }) });
     if (!r) return;
-    $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo);
+    $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); loadHolds(true); // HĐKT giữ hàng thay báo giá
     target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
   } catch (ex) { err.textContent = ex.message; }
 });
@@ -3722,15 +3734,17 @@ $('#delivery-form').addEventListener('submit', async e => {
 });
 $('#order-new-payment').addEventListener('click', () => {
   const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); $('#payment-error').textContent = '';
-  $('#payment-title').textContent = 'Thu tiền ' + sales.order.orderNo; f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso();
+  $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
   $('#payment-dialog').showModal();
 });
 $('#payment-form').addEventListener('submit', async e => {
-  e.preventDefault(); const f = e.target, err = $('#payment-error'); err.textContent = '';
+  e.preventDefault(); const f = e.target, err = $('#payment-error'), btn = f.querySelector('.modal-foot .btn.primary'); err.textContent = '';
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true; // chống bấm hai lần ghi trùng phiếu thu
   try {
     await api('/payments', 'POST', { orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value });
     $('#payment-dialog').close(); toast('Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
-  } catch (ex) { err.textContent = ex.message; }
+  } catch (ex) { err.textContent = ex.message; } finally { if (btn) btn.disabled = false; }
 });
 // ----- Thanh nút báo giá như web cũ: Sinh HĐKT · Tạo đơn hàng · Tải báo giá · Lưu · Duyệt · Xoá
 /** Lý do chưa dùng được các nút cần báo giá đã duyệt (null = dùng được). */
@@ -3743,7 +3757,8 @@ function approvalBlock() {
 }
 function updateQuoteActions() {
   const saved = !!editor.id, approved = editor.approval?.status === 'approved', mgr = isManager(), block = approvalBlock();
-  const locked = saved && approved && !mgr;
+  const readOnly = saved && editor.approval?.canEdit === false; // xem được, không sửa được (máy chủ cũng chặn)
+  const locked = (saved && approved && !mgr) || readOnly;
   for (const el of qf.querySelectorAll('.editor-grid input, .editor-grid select, .editor-grid textarea, .editor-grid button, .card input, .card select, .card textarea, .card button')) {
     if (locked && !el.disabled) { el.dataset.approvalLock = '1'; el.disabled = true; }
     else if (!locked && el.dataset.approvalLock) { delete el.dataset.approvalLock; el.disabled = false; }
@@ -3769,10 +3784,10 @@ function updateQuoteActions() {
   const canApprove = mgr || !!editor.approval?.canApprove;
   const ap = $('#approve-quote'); ap.hidden = !canApprove || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : editor.approval?.fromCustomer ? 'Xác nhận báo giá khách' : 'Duyệt';
   // Nhân viên xoá được báo giá chưa duyệt của mình; "Gửi duyệt" chỉ hiện với báo giá nháp (Manager duyệt thẳng).
-  $('#delete-quote').hidden = !saved || (!mgr && approved);
+  $('#delete-quote').hidden = !saved || (!mgr && approved) || readOnly;
   // Nhân viên luôn thấy nút: nháp → "Gửi duyệt"; đã gửi (chờ duyệt) → "Đã gửi duyệt" (khoá). Báo giá khách gửi thì dùng nút xác nhận.
   const sb = $('#submit-quote');
-  sb.hidden = !saved || mgr || approved || !!editor.approval?.fromCustomer;
+  sb.hidden = !saved || mgr || approved || !!editor.approval?.fromCustomer || readOnly;
   sb.disabled = saving || !draft; sb.textContent = draft ? 'Gửi duyệt' : 'Đã gửi duyệt';
   sb.title = draft ? 'Gửi báo giá cho Manager duyệt' : 'Báo giá đã gửi, đang chờ Manager duyệt';
   $('#quote-history').hidden = !mgr || !saved;
@@ -3883,7 +3898,7 @@ function drawQuoteHold() {
   btn.hidden = !editor.id; ext.hidden = !h?.canExtend;
   if (!h) { btn.textContent = 'Giữ hàng 5 ngày'; btn.disabled = false; btn.title = editor.holdError || 'Treo tồn kho cho báo giá này 5 ngày'; return; }
   btn.textContent = active ? 'Bỏ giữ hàng' : `Giữ hàng ${h.days || 5} ngày`;
-  const block = active ? '' : editor.dirty ? 'Lưu thay đổi trước.' : !h.canHold ? 'Chỉ giữ hàng cho báo giá đã duyệt.' : '';
+  const block = active ? '' : editor.dirty ? 'Lưu thay đổi trước.' : !h.canHold ? (h.ordered ? 'Báo giá đã lập đơn / HĐKT – hàng do đơn giữ đến khi giao xong hoặc huỷ.' : 'Chỉ giữ hàng cho báo giá đã duyệt.') : '';
   btn.disabled = !!block; btn.title = block || (active ? 'Bỏ treo tồn kho cho báo giá này' : 'Treo tồn kho thật cho báo giá này 5 ngày; báo giá khác thấy khả dụng giảm tương ứng');
 }
 $('#quote-hold').addEventListener('click', async e => {

@@ -69,11 +69,11 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   const note = await phone.read(pushed.find(p => p.endpoint.includes('phone'))!.body);
   assert.deepEqual([note.eventType, note.title, note.url], ['customer_order', 'Khách đặt hàng', `/index.html#/orders/${o.data.orderId}`]);
   assert.match(note.body, /Công ty Hoàng Long đặt 1 sản phẩm/);
-  // Trang nhân viên tự làm mới: /notifications?since= trả thông báo mới; Manager không thấy thông báo gửi đích danh nhân viên.
+  // Trang nhân viên tự làm mới: /notifications?since= trả thông báo mới. Người được duyệt (Manager) nhận bản riêng để duyệt đơn khách gửi.
   let list = (await call('/notifications', emp)).data;
   assert.equal(list.unreadCount, 1); assert.equal(list.notifications[0].eventType, 'customer_order');
   assert.equal((await call('/notifications?since=' + encodeURIComponent(list.notifications[0].createdAt), emp)).data.notifications.length, 0);
-  assert.equal((await call('/notifications', mgr)).data.notifications.length, 0);
+  assert.deepEqual((await call('/notifications', mgr)).data.notifications.map((n: any) => n.eventType), ['customer_order']);
   assert.equal((await call('/notifications/read', emp, 'POST', { all: true })).data.read, 1);
   assert.equal((await call('/notifications', emp)).data.unreadCount, 0);
 

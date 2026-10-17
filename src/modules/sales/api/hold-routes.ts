@@ -37,7 +37,7 @@ export async function expireHolds(env: StaffEnv): Promise<number> {
   const done = await env.db.update(stockHolds).set({ status: 'expired', closedAt: now, notifiedAt: now })
     .where(and(eq(stockHolds.status, 'active'), lte(stockHolds.expiresAt, now))).returning({ quoteId: stockHolds.quoteId, by: stockHolds.createdBy, sku: stockHolds.sku });
   if (!done.length) return 0;
-  const quotes = await env.db.select({ id: quotations.id, no: quotations.quoteNo, customer: quotations.customer, owner: quotations.creatorId }).from(quotations)
+  const quotes = await env.db.select({ id: quotations.id, no: quotations.quoteNo, customer: quotations.customer, owner: sql<string>`coalesce(${quotations.assigneeId}, ${quotations.creatorId})` }).from(quotations)
     .where(inArray(quotations.id, [...new Set(done.map(d => d.quoteId))]));
   for (const q of quotes) {
     const rows = done.filter(d => d.quoteId === q.id), to = new Set([...rows.map(r => r.by), q.owner]);
@@ -64,6 +64,10 @@ export async function orderHolds(db: Db, skus?: string[]) {
     .groupBy(salesOrderLines.sku, salesOrders.id).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
 }
 
+/** Báo giá đã lập đơn / HĐKT còn hiệu lực: hàng do đơn giữ – không giữ thêm theo báo giá (tránh giữ trùng). */
+const hasActiveOrder = async (db: Db, quoteId: string) =>
+  (await db.select({ id: salesOrders.id }).from(salesOrders).where(and(eq(salesOrders.quoteId, quoteId), ne(salesOrders.status, 'cancelled'))).limit(1)).length > 0;
+
 async function loadQuote(c: Ctx, id: string) {
   const [q] = await c.env.db.select({ id: quotations.id, no: quotations.quoteNo, customer: quotations.customer, approvalStatus: quotations.approvalStatus })
     .from(quotations).where(and(eq(quotations.id, id), quotationPredicate(viewer(c)))).limit(1);
@@ -76,9 +80,9 @@ async function holdView(c: Ctx, quoteId: string) {
   const rows = await c.env.db.select({ sku: stockHolds.sku, qty: stockHolds.qty, expiresAt: stockHolds.expiresAt, name: products.name, by: employees.name })
     .from(stockHolds).innerJoin(products, eq(products.sku, stockHolds.sku)).leftJoin(employees, eq(employees.id, stockHolds.createdBy))
     .where(and(eq(stockHolds.quoteId, quoteId), live(now))).orderBy(asc(stockHolds.sku));
-  const active = rows.length > 0;
-  return { quoteId, holds: rows, expiresAt: active ? rows[0]!.expiresAt : null, by: active ? rows[0]!.by ?? '' : '', days: HOLD_DAYS,
-    canHold: !active && q.approvalStatus === 'approved', canRelease: active, canExtend: active && m.role === 'manager' };
+  const active = rows.length > 0, ordered = await hasActiveOrder(c.env.db, quoteId);
+  return { quoteId, holds: rows, expiresAt: active ? rows[0]!.expiresAt : null, by: active ? rows[0]!.by ?? '' : '', days: HOLD_DAYS, ordered,
+    canHold: !active && !ordered && q.approvalStatus === 'approved', canRelease: active, canExtend: active && m.role === 'manager' };
 }
 
 export function registerHoldRoutes(router: Router<StaffEnv>) {
@@ -95,6 +99,7 @@ export function registerHoldRoutes(router: Router<StaffEnv>) {
   router.post('/quotes/:id/hold', async c => {
     const m = viewer(c), q = await loadQuote(c, c.params.id!), db = c.env.db;
     if (q.approvalStatus !== 'approved') fail(409, 'Chỉ giữ hàng cho báo giá đã duyệt.', 'QUOTE_NOT_APPROVED');
+    if (await hasActiveOrder(db, q.id)) fail(409, 'Báo giá đã lập đơn / HĐKT – hàng đã được đơn giữ.', 'QUOTE_HAS_ORDER');
     await expireHolds(c.env).catch(() => 0);
     const result = { held: [] as { sku: string; name: string; need: number; qty: number }[], short: [] as { sku: string; name: string; need: number; qty: number }[] };
     await db.transaction(async tx => {

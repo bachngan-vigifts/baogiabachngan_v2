@@ -292,6 +292,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   /** Kho xác nhận đã đóng hàng: bắt buộc 1–3 ảnh. Người lập phiếu được báo; việc của kho tự hoàn thành. */
   router.post('/packing/:id/confirm', async c => {
     const m = viewer(c), body = await readJson(c.req, PHOTO_MAX * PHOTO_MAX_CHARS + 8_000), { slip, order } = await loadSlip(c, c.params.id!);
+    if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không xác nhận đóng hàng được.');
     if (!canConfirm(m, slip.status)) throw new AppError(slip.status === 'sent' ? 403 : 409, slip.status === 'sent' ? 'Chỉ nhóm Kho hoặc Manager xác nhận đóng hàng.' : 'Phiếu chưa gửi kho hoặc đã xác nhận.');
     const photos = Array.isArray(body.photos) ? body.photos : [];
     if (photos.length < PHOTO_MIN || photos.length > PHOTO_MAX) throw new AppError(400, `Chụp ${PHOTO_MIN}–${PHOTO_MAX} ảnh hàng đã đóng trước khi xác nhận.`);

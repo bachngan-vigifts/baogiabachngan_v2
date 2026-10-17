@@ -104,7 +104,8 @@ Báo giá ──[Sinh đơn hàng]──▶ Đơn đặt hàng
 - **Lập Đơn hàng / HĐKT từ báo giá:** treo của báo giá đóng lại (trạng thái `converted`), **đơn / HĐKT giữ thay** (migration `0069_order_stock_holds.sql`).
   - Mọi đơn / HĐKT lập từ nay (kể cả nháp, kể cả lập không qua giữ hàng) tự giữ **phần chưa giao** của từng dòng có mã hàng. Không hết hạn.
   - Thôi giữ khi: **huỷ** đơn / HĐKT; **giao xong** (giao bớt thì giữ phần còn lại); hoặc đơn **đã đẩy Sapo** và tồn của mã đó được cập nhật (đồng bộ Sapo / nhập file tồn) **sau lúc đẩy** – khi đó tồn Sapo đã trừ "Đang giao dịch", web không trừ lần hai.
-  - Cột "Đang treo" hiện số đơn / "HĐKT <số>" (bấm mở). Kiểm tồn của chính báo giá đã lập đơn không tự trừ hàng của đơn mình.
+  - Cột "Đang treo" hiện số đơn / "HĐKT <số>" (bấm mở). Kiểm tồn của chính báo giá đã lập đơn không tự trừ hàng của đơn mình. Báo giá đã lập đơn / HĐKT không bấm "Giữ hàng" thêm được (409 `QUOTE_HAS_ORDER`).
+  - Hết hạn giữ hàng báo cho người giữ và **người phụ trách** báo giá (báo giá khách tự gửi không báo cho khách).
   - Đơn có từ trước migration 0069 (`holds_stock = false`) không giữ.
   - Tính ngay khi đọc (`orderHolds` trong `sales/api/hold-routes.ts`), không có bảng riêng; `GET /stock-holds` trả cả dòng báo giá lẫn dòng đơn (`orderId`, `orderNo`, `contractNo`, `expiresAt: null`).
 - **Hết hạn:** hết 5 ngày thì không còn trừ khả dụng nữa.
@@ -175,9 +176,14 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 - **Công nợ:**
   - Phải thu = tổng kỳ; đã thu = tổng phiếu thu; còn lại = phải thu − đã thu.
   - Phiếu thu trừ dần vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã quá hạn tính là *quá hạn*.
-  - Không thu vượt số còn lại.
+  - Không thu vượt số còn lại (khoá dòng đơn khi ghi – bấm hai lần không ghi trùng); ngày thu không sau hôm nay; đơn đã huỷ không ghi thu.
+  - Trang Công nợ lọc **Còn phải thu** (mặc định) / **Quá hạn** / **Đã thu đủ**; lọc trong SQL trước khi giới hạn số dòng (đơn cũ còn nợ không bị đẩy khỏi danh sách).
+  - Số hoá đơn chỉ nhập cho đơn đã duyệt (không nhập trên đơn nháp / đã huỷ).
 - **Huỷ đơn:** chỉ huỷ được khi chưa giao và chưa thu tiền. Đơn huỷ không tính công nợ.
+  - Huỷ thì dọn việc còn treo: phiếu đóng gói chưa đóng và chuyến giao chưa giao huỷ theo (việc Kho / giao tự đóng); phiếu kho **đã đóng** ghi dòng đảo trong sổ kho (hàng về lại kho) rồi huỷ.
+  - Đơn đã huỷ: không đổi trạng thái chuyến giao (trừ huỷ), không xác nhận đóng hàng, không ghi thu.
 - **Quyền:** Manager và Kế toán thấy tất cả. Nhân viên thấy đơn mình phụ trách hoặc mình tạo; HĐKT, chuyến giao, công nợ theo quyền của đơn. NCC không vào được.
+  - **Sửa / huỷ / gửi duyệt / đổi ngày giao** đơn hoặc HĐKT nháp: chỉ người phụ trách, người tạo, đồng nghiệp cùng phòng (phạm vi "Cả phòng ban") hoặc Manager. Người chỉ được xem (Kế toán, Sale Admin "Toàn công ty (chỉ xem)", người được duyệt mở đơn chờ duyệt) không sửa đơn của người khác – máy chủ trả 403 `ORDER_EDIT_FORBIDDEN`, giao diện ẩn nút. Báo giá cũng vậy (`canEdit` trong `GET /quotes/:id`).
 
 ## API (khu vực `business`)
 

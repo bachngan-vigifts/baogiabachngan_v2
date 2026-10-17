@@ -148,7 +148,9 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const [creator] = await c.env.db.select({ role: employees.role, name: employees.name }).from(employees).where(eq(employees.id, row.creatorId)).limit(1);
     const fromCustomer = creator?.role === 'customer';
     return json({ id: row.id, revision: row.revision, data: forViewer(viewer, JSON.parse(row.data)), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',
-      fromCustomer, canApprove: canApprove(viewer) });
+      fromCustomer, canApprove: canApprove(viewer),
+      // Xem được nhưng không sửa được (Sale Admin "chỉ xem", người được duyệt mở báo giá chờ duyệt): giao diện ẩn Lưu / Xoá / Gửi duyệt.
+      canEdit: (await c.env.db.select({ id: quotations.id }).from(quotations).where(and(eq(quotations.id, row.id), quotationPredicate(viewer, true))).limit(1)).length > 0 });
   }, 'business');
   /**
    * Duyệt đúng phiên bản đang xem (phiên bản đổi → 409). Duyệt không đổi nội dung nên không tăng `revision`.

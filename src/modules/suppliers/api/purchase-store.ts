@@ -136,7 +136,7 @@ export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilte
       total: prices ? total : null, balance: prices ? debt.balance : null, overdue: prices ? debt.overdue : null, debtStatus: prices ? debt.status : null,
       nextDueDate: prices ? debt.nextDueDate : null, nextDueAmount: prices ? debt.nextDueAmount : null, approvedAt: o.approvedAt };
   });
-  return filter.state ? out.filter(r => r.state === filter.state || (filter.state === 'late' && r.late) || (filter.state === 'sapo' && r.sapoPending > 0) || (filter.state === 'debt' && (r.balance ?? 0) > 0)) : out;
+  return filter.state ? out.filter(r => r.state === filter.state || (filter.state === 'late' && r.late) || (filter.state === 'sapo' && r.sapoPending > 0) || (filter.state === 'debt' && (r.balance ?? 0) > 0 && r.state !== 'cancelled' && r.state !== 'draft')) : out;
 }
 
 /** Badge counts cover the entire scoped search, independently of selected state and list limits. */
@@ -168,7 +168,9 @@ export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilt
     late: sql<boolean>`${incomingShipments.approvalStatus} = 'approved' and ${incomingShipments.cancelledAt} is null
       and not (${fullyReceived}) and ${promised} <> '' and ${promised} < ${today}`.as('late'),
     sapo: sql<boolean>`${sapoPending}`.as('sapo'),
-    debt: (canSeePrices(asActor(m)) ? sql<boolean>`floor((${total} - ${paid}) + 0.5) > 0` : sql<boolean>`false`).as('debt'),
+    // Còn nợ NCC: chỉ đơn đã duyệt, chưa huỷ (đơn nháp / đã huỷ không phát sinh công nợ).
+    debt: (canSeePrices(asActor(m)) ? sql<boolean>`${incomingShipments.approvalStatus} = 'approved' and ${incomingShipments.cancelledAt} is null
+      and floor((${total} - ${paid}) + 0.5) > 0` : sql<boolean>`false`).as('debt'),
   }).from(incomingShipments).where(purchaseListScope(m, filter)));
   const count = (condition: ReturnType<typeof sql>) => sql<number>`count(*) filter (where ${condition})`.mapWith(Number);
   const query = db.with(data).select({

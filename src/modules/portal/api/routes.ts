@@ -22,7 +22,7 @@ import { customerPayments, deliveries, paymentSchedules, salesContracts, salesOr
 import { createOrderFromQuote } from '../../sales/api/routes.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../schema.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { cleanDiscounts, isPhoneOnly, nextQuoteNo, parseDiscounts, PHONE_ONLY_DOMAIN, portalBrandAllowed, publicQuote, shownEmail } from '../domain/portal.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -155,10 +155,12 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
     const orderId = wantsOrder ? await createOrderFromQuote(db, quote, { createdBy: me.id, status: 'draft', note }) : null;
-    // Báo ngay cho nhân viên phụ trách (Web Push + trang của họ tự làm mới).
-    await notify(c.env, wantsOrder
-      ? { eventType: 'customer_order', title: 'Khách đặt hàng', body: `${customer.name} đặt ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/orders/${orderId}`, targetMemberId: account.ownerId, actorId: me.id, data: { orderId, quoteId: id } }
-      : { eventType: 'customer_quote', title: 'Khách gửi yêu cầu báo giá', body: `${customer.name} · ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/quotes/${id}`, targetMemberId: account.ownerId, actorId: me.id, data: { quoteId: id } });
+    // Báo ngay cho nhân viên phụ trách (Web Push + trang của họ tự làm mới) và người được duyệt (duyệt báo giá / đơn khách gửi).
+    const n = wantsOrder
+      ? { eventType: 'customer_order', title: 'Khách đặt hàng', body: `${customer.name} đặt ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/orders/${orderId}`, actorId: me.id, data: { orderId, quoteId: id } }
+      : { eventType: 'customer_quote', title: 'Khách gửi yêu cầu báo giá', body: `${customer.name} · ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/quotes/${id}`, actorId: me.id, data: { quoteId: id } };
+    await notify(c.env, { ...n, targetMemberId: account.ownerId });
+    await notifyMany(c.env, 'approvers', n, [account.ownerId]);
     return json({ id, quoteNo: quote.quoteNo, orderId }, 201);
   }, 'customer-portal');
 
@@ -172,8 +174,9 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     if (body.confirmed !== true) throw new AppError(400, 'Vui lòng kiểm tra và xác nhận thông tin đơn hàng trước khi gửi.', 'CONFIRM_REQUIRED');
     const deliveryDate = /^\d{4}-\d{2}-\d{2}$/.test(str(body.deliveryDate)) ? str(body.deliveryDate) : null;
     const orderId = await createOrderFromQuote(c.env.db, q, { createdBy: me.id, status: 'draft', note: str(body.note, 2000), deliveryDate });
-    await notify(c.env, { eventType: 'customer_order', title: 'Khách xác nhận đặt hàng', body: `${customer.name} đặt hàng theo báo giá ${q.quoteNo}`, url: `/index.html#/orders/${orderId}`,
-      targetMemberId: q.assigneeId ?? account.ownerId, actorId: me.id, data: { orderId, quoteId: q.id } });
+    const n = { eventType: 'customer_order', title: 'Khách xác nhận đặt hàng', body: `${customer.name} đặt hàng theo báo giá ${q.quoteNo}`, url: `/index.html#/orders/${orderId}`, actorId: me.id, data: { orderId, quoteId: q.id } };
+    await notify(c.env, { ...n, targetMemberId: q.assigneeId ?? account.ownerId });
+    await notifyMany(c.env, 'approvers', n, [q.assigneeId ?? account.ownerId]);
     return json({ orderId }, 201);
   }, 'customer-portal');
 
