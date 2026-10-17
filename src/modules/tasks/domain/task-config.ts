@@ -24,6 +24,11 @@ export const SOURCE_LABEL: Record<TaskSource, string> = {
 export const TASK_TEAMS = { warehouse: 'Kho', accounting: 'Kế toán', 'sale-admin': 'Sale Admin' } as const;
 export type TaskTeam = keyof typeof TASK_TEAMS;
 export const isTeam = (v: unknown): v is TaskTeam => typeof v === 'string' && Object.hasOwn(TASK_TEAMS, v);
+/**
+ * Nhóm nhận việc theo QUYỀN (trang Phân quyền), ngoài chức vụ cùng tên: ai có quyền này cũng nhận việc của nhóm
+ * (VD Sale Admin có quyền ghi trả NCC → nhận việc "Xuất hoá đơn", "Thanh toán NCC" của nhóm Kế toán).
+ */
+export const TEAM_PERMISSION: Partial<Record<TaskTeam, string>> = { accounting: 'purchases.pay', warehouse: 'purchases.receive' };
 
 /** Mọi nhóm/chức vụ được gán đều xem việc đồng nghiệp cùng nhóm, không mở quyền sửa/trao đổi. */
 export const canViewPeers = (positionId: unknown): positionId is string =>

@@ -3,14 +3,15 @@ import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { employees } from '../../staff/schema.ts';
+import { employees, positionPermissions } from '../../staff/schema.ts';
+import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
 import { reconcileAutoTasks } from './auto-tasks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
-import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, canViewPeers, dueBucket, isTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
+import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { markProgress } from '../../sales/api/progress.ts';
@@ -49,8 +50,15 @@ export async function syncAutoTasks(env: StaffEnv, force = false, actorId: strin
 // Lưu báo giá chờ duyệt → tạo ngay việc "Duyệt báo giá" cho Manager và báo, không đợi ai mở trang Công việc.
 quoteSaveHooks.afterCommit.push(env => syncAutoTasks(env, true));
 
-/** Nhóm của tôi (theo chức vụ): Kho, Kế toán, Sale Admin… – null nếu chức vụ không phải nhóm nhận việc. */
-const myTeam = (c: Ctx) => { const p = (me(c) as { positionId?: string | null }).positionId; return isTeam(p) ? p : null; };
+/** Các nhóm của tôi: nhóm trùng chức vụ (Kho, Kế toán, Sale Admin…) + nhóm có quyền tương ứng (`TEAM_PERMISSION`). Manager thấy mọi việc nên không cần. */
+const myTeams = (c: Ctx): TaskTeam[] => {
+  const m = me(c), p = (m as { positionId?: string | null }).positionId;
+  if (m.role !== 'employee') return [];
+  const byPerm = (Object.entries(TEAM_PERMISSION) as [TaskTeam, string][]).filter(([, perm]) => can(m as PermissionMember, perm)).map(([t]) => t);
+  return [...new Set([...(isTeam(p) ? [p] : []), ...byPerm])];
+};
+/** Việc của nhóm tôi chưa ai nhận – điều kiện SQL (undefined nếu tôi không thuộc nhóm nào). */
+const teamOpenSql = (teams: TaskTeam[]) => teams.length ? and(isNull(tasks.assigneeId), inArray(tasks.assigneePosition, teams)) : undefined;
 /** Việc giao cho nhóm, chưa ai nhận. */
 const teamOpen = (t: Pick<Task, 'assigneeId' | 'assigneePosition'>) => !t.assigneeId && !!t.assigneePosition;
 /** Ai thấy việc: Manager thấy tất cả; nhân viên thấy việc mình nhận, mình giao, và việc giao cho nhóm của mình chưa ai nhận. */
@@ -70,15 +78,15 @@ const forViewer = (c: Ctx, t: Task) => ({ ...t, completionFromSource: completion
   ...(!involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { description: '' } : {}) });
 /** Điều kiện SQL "việc tôi trực tiếp liên quan" (để tìm kiếm trong mô tả chỉ trên các việc này). */
 const involvedSql = (c: Ctx): SQL | undefined => {
-  const m = me(c), team = myTeam(c);
-  return m.role === 'manager' ? undefined : or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined);
+  const m = me(c);
+  return m.role === 'manager' ? undefined : or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), teamOpenSql(myTeams(c)));
 };
 const visible = (c: Ctx): SQL | undefined => {
-  const m = me(c), team = myTeam(c), pos = peerPos(c);
+  const m = me(c), pos = peerPos(c);
   if (m.role === 'manager') return undefined;
-  return or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined, pos ? peerCond(pos) : undefined);
+  return or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), teamOpenSql(myTeams(c)), pos ? peerCond(pos) : undefined);
 };
-const inMyTeam = (c: Ctx, t: Task) => teamOpen(t) && t.assigneePosition === myTeam(c);
+const inMyTeam = (c: Ctx, t: Task) => teamOpen(t) && (myTeams(c) as string[]).includes(t.assigneePosition!);
 const canSee = (c: Ctx, t: Task) => involved(c, t);
 const canManage = (c: Ctx, t: Task) => me(c).role === 'manager' || (t.createdBy !== null && t.createdBy === me(c).id);
 const teamName = (pos: string | null) => (pos && isTeam(pos) ? TASK_TEAMS[pos] : '');
@@ -91,7 +99,10 @@ function parseAssignee(v: unknown): { assigneeId: string | null; assigneePositio
 }
 /** Báo cho mọi người đang hoạt động trong nhóm. */
 async function notifyTeam(env: StaffEnv, team: string, n: Omit<Parameters<typeof notify>[1], 'targetMemberId'>) {
-  const members = await env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.positionId, team), eq(employees.active, true)));
+  // Thành viên nhóm = cùng chức vụ, hoặc chức vụ có quyền tương ứng (TEAM_PERMISSION) – khớp với ai thấy / nhận được việc của nhóm.
+  const perm = isTeam(team) ? TEAM_PERMISSION[team] : undefined;
+  const members = await env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), isNull(employees.deletedAt),
+    or(eq(employees.positionId, team), perm ? sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = ${perm})` : undefined)));
   for (const x of members) if (x.id !== n.actorId) await notify(env, { ...n, targetMemberId: x.id });
 }
 
@@ -141,13 +152,13 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   /** Đếm cho huy hiệu menu: việc của tôi đang mở / quá hạn / hôm nay; Manager thêm số việc chưa giao. */
   router.get('/tasks/summary', async c => {
     await syncAuto(c);
-    const m = me(c), team = myTeam(c), today = vietnamDate().iso;
+    const m = me(c), teams: string[] = myTeams(c), today = vietnamDate().iso;
     const rows = await c.env.db.select({ assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate }).from(tasks)
-      .where(and(inArray(tasks.status, [...OPEN_STATUSES]), or(eq(tasks.assigneeId, m.id), m.role === 'manager' ? isNull(tasks.assigneeId) : team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : sql`false`)));
+      .where(and(inArray(tasks.status, [...OPEN_STATUSES]), or(eq(tasks.assigneeId, m.id), m.role === 'manager' ? isNull(tasks.assigneeId) : teamOpenSql(myTeams(c)) ?? sql`false`)));
     // "Của tôi" = việc tôi nhận + việc nhóm tôi chưa ai nhận.
-    const mine = rows.filter(r => r.assigneeId === m.id || (!r.assigneeId && r.assigneePosition && r.assigneePosition === team));
+    const mine = rows.filter(r => r.assigneeId === m.id || (!r.assigneeId && r.assigneePosition && teams.includes(r.assigneePosition)));
     return json({ open: mine.length, overdue: mine.filter(r => dueBucket(r.dueDate, today) === 'overdue').length, today: mine.filter(r => dueBucket(r.dueDate, today) === 'today').length,
-      team: rows.filter(r => !r.assigneeId && r.assigneePosition && (m.role === 'manager' || r.assigneePosition === team)).length,
+      team: rows.filter(r => !r.assigneeId && r.assigneePosition && (m.role === 'manager' || teams.includes(r.assigneePosition))).length,
       unassigned: m.role === 'manager' ? rows.filter(r => !r.assigneeId && !r.assigneePosition).length : 0 });
   }, 'business');
 
@@ -166,10 +177,10 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     else if (due === 'today') where.push(eq(tasks.dueDate, today));
     else if (due === 'upcoming') where.push(sql`${tasks.dueDate} > ${today}`);
     else if (due === 'none') where.push(or(isNull(tasks.dueDate), eq(tasks.dueDate, '')));
-    const team = myTeam(c);
-    if (view === 'mine') where.push(or(eq(tasks.assigneeId, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined));
+    const teams = myTeams(c);
+    if (view === 'mine') where.push(or(eq(tasks.assigneeId, m.id), teamOpenSql(teams)));
     else if (view === 'created') where.push(eq(tasks.createdBy, m.id));
-    else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`, m.role === 'manager' ? undefined : team ? eq(tasks.assigneePosition, team) : sql`false`));
+    else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`, m.role === 'manager' ? undefined : teams.length ? inArray(tasks.assigneePosition, teams) : sql`false`));
     else if (view === 'unassigned') where.push(and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)));
     else if (view === 'colleagues') { // việc của đồng nghiệp cùng chức vụ (không gồm việc của chính mình)
       const pos = peerPos(c);

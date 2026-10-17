@@ -90,6 +90,24 @@ export interface Receivable {
   /** Tiền cọc phải thu (kỳ `deposit`) và phần cọc đã thu. */
   deposit: number; depositPaid: number; payState: PayState;
 }
+/**
+ * Tuổi nợ: phần chưa thu của các kỳ đã quá hạn, chia theo số ngày quá hạn (1–30 / 31–60 / trên 60), và hạn quá lâu nhất.
+ * Phiếu thu trừ dần vào kỳ hạn sớm nhất trước – cùng cách `receivable`.
+ */
+export function debtAging(schedules: readonly { amount: number; dueDate: string | null }[], payments: readonly { amount: number }[], today: string) {
+  let left = payments.reduce((s, x) => s + x.amount, 0), oldestDue: string | null = null;
+  const buckets = { d30: 0, d60: 0, over60: 0 }, day = (d: string) => Date.parse(d + 'T00:00:00Z');
+  for (const s of [...schedules].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'))) {
+    const covered = Math.min(left, s.amount); left -= covered;
+    const open = s.amount - covered;
+    if (open <= 0 || !s.dueDate || s.dueDate >= today) continue;
+    oldestDue ??= s.dueDate;
+    const days = Math.round((day(today) - day(s.dueDate)) / 864e5);
+    buckets[days <= 30 ? 'd30' : days <= 60 ? 'd60' : 'over60'] += open;
+  }
+  return { oldestDue, overdueDays: oldestDue ? Math.round((day(today) - day(oldestDue)) / 864e5) : 0, buckets };
+}
+
 /** Công nợ chỉ tính khi đơn hàng đã được xác nhận (duyệt) hoặc HĐKT của đơn đã ký; đơn nháp / đã huỷ không phát sinh công nợ. */
 export function debtCounts(orderStatus: string, contractStatus?: string | null) {
   if (orderStatus === 'cancelled') return false;

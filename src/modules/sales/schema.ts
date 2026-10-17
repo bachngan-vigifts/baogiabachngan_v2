@@ -205,6 +205,10 @@ export const customerPayments = pgTable('customer_payments', {
   note: text('note').notNull().default(''),
   createdBy: text('created_by').notNull().references(() => employees.id),
   createdAt: text('created_at').notNull(),
+  /** Huỷ phiếu thu ghi nhầm (Manager / quyền "Huỷ phiếu thu"): giữ lại dòng + lý do, không tính vào đã thu. */
+  voidedAt: text('voided_at'),
+  voidedBy: text('voided_by').references(() => employees.id),
+  voidReason: text('void_reason').notNull().default(''),
 }, t => [
   index('idx_customer_payments_order').on(t.orderId, t.paidAt),
   index('idx_customer_payments_customer').on(t.customerId, t.paidAt),

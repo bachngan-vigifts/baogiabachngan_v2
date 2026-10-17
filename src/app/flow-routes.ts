@@ -209,7 +209,7 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
     // Thu tiền áp vào kỳ đến hạn sớm nhất trước (như `receivable`): quá hạn = phần đến hạn trước hôm nay chưa thu đủ.
     const dueBefore = sql<number>`coalesce((select sum(${paymentSchedules.amount}) from ${paymentSchedules} where ${paymentSchedules.orderId} = ${salesOrders.id} and ${paymentSchedules.dueDate} < ${today}), 0)`;
     const scheduled = sql<number>`coalesce((select sum(${paymentSchedules.amount}) from ${paymentSchedules} where ${paymentSchedules.orderId} = ${salesOrders.id}), 0)`;
-    const paid = sql<number>`coalesce((select sum(${customerPayments.amount}) from ${customerPayments} where ${customerPayments.orderId} = ${salesOrders.id}), 0)`;
+    const paid = sql<number>`coalesce((select sum(${customerPayments.amount}) from ${customerPayments} where ${customerPayments.orderId} = ${salesOrders.id} and ${customerPayments.voidedAt} is null), 0)`;
     const rows = await db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, contract: sql<boolean>`${hasContract}`,
       overdue: sql<number>`greatest(${dueBefore} - ${paid}, 0)`.mapWith(Number), balance: sql<number>`greatest(${scheduled} - ${paid}, 0)`.mapWith(Number) })
       .from(salesOrders).where(and(debtCounted, orderScopeFor(me), sql`${scheduled} > ${paid}`));

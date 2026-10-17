@@ -119,7 +119,7 @@ export const RULES: Record<string, Rule> = {
     const [orders, allSch, pays, ks] = await Promise.all([
       db.select().from(salesOrders).where(inArray(salesOrders.id, ids)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
-      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount }).from(customerPayments).where(inArray(customerPayments.orderId, ids)),
+      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount }).from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))),
       db.select({ orderId: salesContracts.orderId, status: salesContracts.status, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]);
     return orders.flatMap(o => {
@@ -129,7 +129,11 @@ export const RULES: Record<string, Rule> = {
       const oldest = allSch.filter(s => s.orderId === o.id && s.dueDate && s.dueDate < today).map(s => s.dueDate!).sort()[0] ?? today;
       const ref = docRef(o.id, o.orderNo, ks.find(k => k.orderId === o.id)?.no);
       return [{ autoKey: `debt-overdue:${o.id}`, source: 'receivable' as const, sourceId: o.id, title: `Thu công nợ quá hạn ${ref.label} – ${o.customerName}`,
-        description: `Quá hạn ${vnd(r.overdue)} (còn phải thu ${vnd(r.balance)}).`, link: ref.link, assigneeId: o.ownerId, priority: 'urgent' as const, dueDate: oldest }];
+        description: `Quá hạn ${vnd(r.overdue)} (còn phải thu ${vnd(r.balance)}).`, link: ref.link, assigneeId: o.ownerId, priority: 'urgent' as const, dueDate: oldest },
+      // Nhóm Kế toán theo dõi song song (đối chiếu tiền về, nhắc người phụ trách) – tự đóng khi khách trả hết phần quá hạn.
+      { autoKey: `debt-overdue-acc:${o.id}`, source: 'receivable' as const, sourceId: o.id, title: `Theo dõi nợ quá hạn ${ref.label} – ${o.customerName}`,
+        description: `Quá hạn ${vnd(r.overdue)} (còn phải thu ${vnd(r.balance)}). Đối chiếu tiền về và nhắc người phụ trách thu.`, link: ref.link,
+        assigneeId: null, assigneePosition: 'accounting', priority: 'high' as const, dueDate: oldest }];
     });
   },
   /** Đơn nhập hàng Sapo (60 ngày gần đây) chưa hoàn tất → theo dõi nhận hàng (chưa giao người). */

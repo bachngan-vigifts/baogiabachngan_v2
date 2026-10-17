@@ -1533,3 +1533,19 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .lookup-incoming li b { margin-left: auto; }
 .link-btn[data-incoming-sku] { font-size: inherit; }
 .incoming-dialog { width: min(680px, calc(100vw - 32px)); max-width: none; }
+
+/* Phiếu thu đã huỷ: gạch ngang số tiền, vẫn hiện lý do. */
+.payment-voided > span, .payment-voided > b { text-decoration: line-through; color: var(--muted); }
+.void-note { flex-basis: 100%; }
+.void-form { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin-top: 6px; }
+.void-form input { flex: 1 1 220px; min-width: 0; }
+.void-form small { flex-basis: 100%; }
+
+/* Công nợ: ô tuổi nợ quá hạn (3 khoảng). */
+.aging-stat { display: grid; gap: 2px; }
+.aging-stat span { font-size: .85rem; display: flex; justify-content: space-between; gap: 8px; }
+.aging-stat b { font-weight: 600; color: var(--muted); }
+/* Số đếm trên nút lọc (VD "Chờ xuất hoá đơn 3"); trống thì ẩn. */
+.chip .count:not(:empty) { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--red, #c8212b); color: #fff; font-size: .72rem; line-height: 18px; text-align: center; }
+.chip .count:empty { display: none; }
+.pur-payables { width: min(860px, calc(100vw - 32px)); max-width: none; }

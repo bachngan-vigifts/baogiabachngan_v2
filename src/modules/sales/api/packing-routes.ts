@@ -1,12 +1,12 @@
 import { createScheduledDelivery } from './delivery-store.ts';
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { employees } from '../../staff/schema.ts';
+import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
@@ -74,7 +74,9 @@ async function allocatedByLine(db: StaffEnv['db'] | Tx, orderId: string) {
   return new Map(rows.map(r => [r.lineId, Number(r.qty) || 0]));
 }
 async function notifyWarehouse(c: Ctx, title: string, body: string, url: string) {
-  const team = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.positionId, 'warehouse'), eq(employees.active, true)));
+  // Nhóm Kho = chức vụ Kho + chức vụ có quyền "Phiếu đóng gói" (VD Sale Admin) – khớp với ai xác nhận đóng hàng được.
+  const team = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), isNull(employees.deletedAt),
+    or(eq(employees.positionId, 'warehouse'), sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = 'page.packing')`)));
   for (const t of team) await notify(c.env, { eventType: 'packing', title, body, url, targetMemberId: t.id, actorId: viewer(c).id });
 }
 

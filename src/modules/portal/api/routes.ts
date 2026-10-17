@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -190,7 +190,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       db.select({ orderId: deliveries.orderId, deliveryNo: deliveries.deliveryNo, plannedDate: deliveries.plannedDate, timeSlot: deliveries.timeSlot, status: deliveries.status })
         .from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))).orderBy(asc(deliveries.plannedDate)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
-      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(inArray(customerPayments.orderId, ids)).orderBy(asc(customerPayments.paidAt)),
+      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))).orderBy(asc(customerPayments.paidAt)),
       db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo, status: salesContracts.status, signedDate: salesContracts.signedDate, value: salesContracts.value }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]) : [[], [], [], [], []];
     const today = vietnamDate().iso;

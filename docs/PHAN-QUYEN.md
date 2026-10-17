@@ -26,12 +26,16 @@ Trang **Quản trị › Phân quyền** (`#/permissions`, `trial-ui/permissions
 
 | Nhóm | Quyền | Mặc định |
 |---|---|---|
-| Trang được vào | Báo giá, Đơn đặt hàng, HĐKT, Công nợ, Khách hàng, Chăm sóc KH, Khách hỏi tồn, Tổng quan doanh số, Sơ đồ quy trình | Sale, Sale Admin, NVBH ML, NVBH LOCK, Kế toán |
+| Trang được vào | Đơn đặt hàng, HĐKT, Công nợ, Khách hàng, Tổng quan doanh số, Sơ đồ quy trình | Sale, Sale Admin, NVBH ML, NVBH LOCK, Kế toán |
+| Trang được vào | Báo giá, Chăm sóc KH, Khách hỏi tồn | Sale, Sale Admin, NVBH ML, NVBH LOCK (Kế toán bỏ từ migration 0070) |
 | Trang được vào | Lịch giao hàng, Đơn mua NCC | Mọi chức vụ (cả Kho) |
 | Kho | Phiếu đóng gói (xem tất cả, xác nhận đóng xong), Tra tồn, Nhận hàng NCC | Kho, Sale Admin |
 | Kho | Sổ kho – xem; Sổ kho – chốt tồn / phiếu điều chỉnh | Không ai (chỉ Manager) |
 | Tài chính NCC | Xem giá mua NCC, Ghi thanh toán NCC, Danh bạ NCC | Kế toán, Sale Admin |
+| Kế toán | Sổ thu / chi; Huỷ phiếu thu ghi nhầm; Doanh số toàn công ty | Kế toán (migration 0070) |
 | Quản trị | Quản lý phân quyền | Không ai (chỉ Manager) |
+
+**Nhóm nhận việc theo quyền:** việc giao cho nhóm Kế toán cũng đến người có quyền "Ghi thanh toán / lịch trả NCC"; nhóm Kho cũng đến người có quyền "Nhận hàng NCC" (thông báo "Kho: yêu cầu đóng gói" đến người có quyền "Phiếu đóng gói"). VD Sale Admin nhận việc "Xuất hoá đơn", "Thanh toán NCC".
 
 Một số mục không nằm trong bảng:
 

@@ -178,6 +178,12 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
   - Phiếu thu trừ dần vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã quá hạn tính là *quá hạn*.
   - Không thu vượt số còn lại (khoá dòng đơn khi ghi – bấm hai lần không ghi trùng); ngày thu không sau hôm nay; đơn đã huỷ không ghi thu.
   - Trang Công nợ lọc **Còn phải thu** (mặc định) / **Quá hạn** / **Đã thu đủ**; lọc trong SQL trước khi giới hạn số dòng (đơn cũ còn nợ không bị đẩy khỏi danh sách).
+  - Cột **Hạn thu**: "Quá N ngày" (kỳ quá hạn lâu nhất) hoặc hạn kỳ kế tiếp; ô **Tuổi nợ quá hạn** 1–30 / 31–60 / trên 60 ngày; nút **⬇ Excel** tải bảng đang xem.
+  - **Huỷ phiếu thu** ghi nhầm (migration `0070_accounting_tools.sql`): Manager / quyền "Huỷ phiếu thu" (mặc định Kế toán), bắt buộc lý do – `POST /payments/:id/void`. Phiếu huỷ vẫn hiện (gạch ngang, ai huỷ, lý do), không tính vào đã thu ở mọi nơi; muốn sửa thì huỷ rồi ghi phiếu mới. Nhật ký thay đổi ghi lại.
+  - Trang Đơn hàng / HĐKT có nút lọc **🧾 Chờ xuất hoá đơn** (kèm số) – `?invoice=requested`.
+  - Nợ quá hạn: ngoài việc "Thu công nợ quá hạn" cho người phụ trách, nhóm Kế toán có việc "Theo dõi nợ quá hạn" (tự đóng khi khách trả).
+- **Sổ thu / chi** (`#/cashbook`, quyền "Sổ thu / chi" – mặc định Kế toán): phiếu thu khách + phiếu chi NCC theo khoảng ngày (`GET /cashbook?from=&to=`), tổng thu / chi / chênh lệch, tách chuyển khoản / tiền mặt, lọc Thu / Chi, xuất Excel. Phiếu huỷ hiện gạch ngang, không cộng tổng.
+- **Công nợ NCC** (trang Đơn mua NCC → nút **💰 Công nợ NCC**, người xem được giá NCC): nợ theo từng NCC (còn nợ, quá hạn, kỳ trả sắp tới), xuất Excel 2 sheet (theo NCC / theo đơn) – `GET /supplier-payables`.
   - Số hoá đơn chỉ nhập cho đơn đã duyệt (không nhập trên đơn nháp / đã huỷ).
 - **Huỷ đơn:** chỉ huỷ được khi chưa giao và chưa thu tiền. Đơn huỷ không tính công nợ.
   - Huỷ thì dọn việc còn treo: phiếu đóng gói chưa đóng và chuyến giao chưa giao huỷ theo (việc Kho / giao tự đóng); phiếu kho **đã đóng** ghi dòng đảo trong sổ kho (hàng về lại kho) rồi huỷ.

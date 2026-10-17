@@ -1,7 +1,7 @@
 import { createScheduledDelivery } from './delivery-store.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
-import { canApprove } from '../../staff/domain/permissions.ts';
+import { can, canApprove, type PermissionMember } from '../../staff/domain/permissions.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { orderNotesFromQuote, orderDeliveryAddress } from '../domain/order-notes.ts';
 import { cleanOrderInput } from '../domain/order-input.ts';
@@ -29,7 +29,7 @@ import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, wantsSa
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
-  addDays, compactCode, contractNumber, debtCounts, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
+  addDays, compactCode, contractNumber, debtAging, debtCounts, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
   orderTotals, receivable, vietnamDate, type OrderStatus,
 } from '../domain/sales.ts';
 
@@ -41,6 +41,8 @@ const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.te
 const text = (v: unknown, max = 500) => { if (v !== undefined && v !== null && typeof v !== 'string') throw new AppError(400, 'Dữ liệu không hợp lệ.'); return String(v ?? '').trim().slice(0, max); };
 const money = (v: unknown, what: string) => { const n = Number(v); if (!Number.isFinite(n) || n < 0 || n > 1e13) throw new AppError(400, `${what} không hợp lệ.`); return Math.round(n); };
 
+/** Huỷ phiếu thu ghi nhầm: Manager hoặc chức vụ có quyền "Huỷ phiếu thu" (mặc định Kế toán). */
+export const canVoidPayment = (m: PermissionMember) => can(m, 'payments.void');
 /** Kế toán (chức vụ `accounting`): xem mọi đơn / HĐKT để nhập số hoá đơn, theo dõi công nợ. */
 export const isAccountant = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'accounting';
 /** Ai nhập được số hoá đơn: Manager và Kế toán. */
@@ -91,7 +93,7 @@ async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   if (!orderIds.length) return new Map<string, ReturnType<typeof receivable>>();
   const [sch, pay] = await Promise.all([
     db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, orderIds)),
-    db.select().from(customerPayments).where(inArray(customerPayments.orderId, orderIds)),
+    db.select().from(customerPayments).where(and(inArray(customerPayments.orderId, orderIds), isNull(customerPayments.voidedAt))),
   ]);
   const today = vietnamDate().iso;
   return new Map(orderIds.map(id => [id, receivable(sch.filter(s => s.orderId === id), pay.filter(p => p.orderId === id), today)]));
@@ -243,7 +245,7 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
 /** Không nhân đôi kỳ đã thu; giữ liên kết phiếu thu và tính lại hạn phần còn lại khi đã giao xong. */
 async function syncPaymentSchedules(tx: Tx, order: typeof salesOrders.$inferSelect, contract?: typeof salesContracts.$inferSelect) {
   const schedules = await tx.select().from(paymentSchedules).where(eq(paymentSchedules.orderId, order.id));
-  const payments = await tx.select({ id: customerPayments.scheduleId }).from(customerPayments).where(eq(customerPayments.orderId, order.id));
+  const payments = await tx.select({ id: customerPayments.scheduleId }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt)));
   const plans = contract ? contractSchedules(order.total, contract.depositRate, contract.signedDate || vietnamDate().iso)
     : [{ kind: 'balance' as const, amount: order.total, dueDate: null as string | null, note: 'Thanh toán khi giao hàng' }];
   const [latest] = await tx.select({ date: deliveries.deliveredAt }).from(deliveries)
@@ -277,9 +279,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined,
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.quoteNo, salesOrders.customerName, salesOrders.phone), q),
     );
-    const [[{ n: total = 0 } = {}], rows] = await Promise.all([
+    // Số đơn đang chờ xuất hoá đơn (cùng phạm vi + luồng, không theo ô tìm / bộ lọc) cho nút lọc "Chờ xuất hoá đơn".
+    const pendingWhere = and(orderScope(c), ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'),
+      flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined);
+    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}]] = await Promise.all([
       c.env.db.select({ n: count() }).from(salesOrders).where(where),
       c.env.db.select().from(salesOrders).where(where).orderBy(desc(salesOrders.orderDate), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(limit).offset(offset),
+      c.env.db.select({ n: count() }).from(salesOrders).where(pendingWhere),
     ]);
     const ids = rows.map(r => r.id);
     const [debts, contracts] = await Promise.all([
@@ -288,7 +294,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     ]);
     return json({ orders: rows.map(r => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
       // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
-      return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }), total: Number(total), limit, offset });
+      return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }), total: Number(total), limit, offset, invoicePending: Number(invoicePending) });
   }, 'business');
 
   /** Hồ sơ đang hiệu lực của báo giá: dùng ID chính xác, giữ nguyên quyền xem đơn. */
@@ -317,7 +323,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Cho bản in đơn đặt hàng: mã khách hàng, người phụ trách, người soạn.
     const [cust] = order.customerId ? await db.select({ code: customers.customerCode, email: customers.email }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
     const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
-      .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy].filter((x): x is string => !!x)));
+      .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy, ...payments.map(p => p.voidedBy)].filter((x): x is string => !!x)));
     const person = (id: string) => people.find(p => p.id === id);
     return json({
       order: { ...order, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
@@ -328,7 +334,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
         sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: viewer(c).role === 'manager' || order.status === 'draft', data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
-      schedules, payments, receivable: receivable(schedules, payments, vietnamDate().iso),
+      // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
+      schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
+      receivable: receivable(schedules, payments.filter(p => !p.voidedAt), vietnamDate().iso), canVoidPayment: canVoidPayment(viewer(c)),
       progress: (await progressOf(db, [order.id])).get(order.id),
     });
   }, 'business');
@@ -416,7 +424,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (order.status !== 'draft' && viewer(c).role !== 'manager') throw new AppError(403, 'Đơn đã duyệt. Chỉ Manager được chỉnh sửa hoặc huỷ.', 'ORDER_APPROVED');
     if (status === 'cancelled') await assertCanEditOrder(c, order);
     if (status === 'cancelled') {
-      const [paid] = await c.env.db.select({ n: sql<number>`count(*)` }).from(customerPayments).where(eq(customerPayments.orderId, order.id));
+      const [paid] = await c.env.db.select({ n: sql<number>`count(*)` }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt)));
       const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
       if (Number(paid?.n) > 0 || lines.some(l => l.deliveredQty > 0)) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
     }
@@ -547,18 +555,22 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   // ================= HĐKT =================
   router.get('/contracts', async c => {
     const { limit, offset } = paging(c.url, 200, 500);
-    const where = and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.quoteNo, salesOrders.customerName), c.url.searchParams.get('q')));
-    const [[{ n: total = 0 } = {}], rows] = await Promise.all([
+    const invoice = c.url.searchParams.get('invoice') || '';
+    const where = and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.quoteNo, salesOrders.customerName), c.url.searchParams.get('q')),
+      invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined);
+    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}]] = await Promise.all([
       c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(where),
       c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
       invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
       .where(where).orderBy(desc(salesContracts.createdAt), desc(salesContracts.id)).limit(limit).offset(offset),
+      c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
+        .where(and(orderScope(c), ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'))),
     ]);
     const debts = await receivableOf(c.env.db, [...new Set(rows.map(r => r.contract.orderId))]);
     return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo, orderStatus: r.orderStatus,
       invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo,
-      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })), total: Number(total), limit, offset });
+      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })), total: Number(total), limit, offset, invoicePending: Number(invoicePending) });
   }, 'business');
 
   /**
@@ -767,7 +779,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Lọc trong SQL trước khi giới hạn số dòng: chỉ đơn có công nợ (đã duyệt hoặc HĐKT đã ký) và – trừ khi xem "Đã thu đủ" – còn phải thu,
     // để đơn cũ còn nợ không bị đơn mới đã thu đủ đẩy ra khỏi danh sách.
     const due = sql`(SELECT coalesce(sum(${paymentSchedules.amount}), 0) FROM ${paymentSchedules} WHERE ${paymentSchedules.orderId} = ${salesOrders.id})`;
-    const paid = sql`(SELECT coalesce(sum(${customerPayments.amount}), 0) FROM ${customerPayments} WHERE ${customerPayments.orderId} = ${salesOrders.id})`;
+    const paid = sql`(SELECT coalesce(sum(${customerPayments.amount}), 0) FROM ${customerPayments} WHERE ${customerPayments.orderId} = ${salesOrders.id} AND ${customerPayments.voidedAt} IS NULL)`;
     const rows = await c.env.db.select().from(salesOrders).where(and(orderScope(c), ne(salesOrders.status, 'cancelled'),
       or(ne(salesOrders.status, 'draft'), sql`EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id} AND ${salesContracts.status} IN ('signed', 'completed'))`),
       want === 'paid' ? sql`${due} > 0 AND ${paid} >= ${due}` : sql`${due} > ${paid}`,
@@ -775,12 +787,22 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         sql`(SELECT ${salesContracts.contractNo} FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`), c.url.searchParams.get('q'))))
       .orderBy(desc(salesOrders.orderDate)).limit(2000);
     const contracts = rows.length ? await c.env.db.select({ orderId: salesContracts.orderId, status: salesContracts.status, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, rows.map(r => r.id))) : [];
-    const counted = rows.filter(r => debtCounts(r.status, contracts.find(x => x.orderId === r.id)?.status));
-    const debts = await receivableOf(c.env.db, counted.map(r => r.id));
-    const list = counted.map(r => ({ orderId: r.id, orderNo: r.orderNo, contractNo: contracts.find(x => x.orderId === r.id)?.no ?? null, customerId: r.customerId, customerName: r.customerName, phone: r.phone, orderDate: r.orderDate, orderStatus: r.status, invoiceNo: r.invoiceNo, ...debts.get(r.id)! }))
+    const counted = rows.filter(r => debtCounts(r.status, contracts.find(x => x.orderId === r.id)?.status)), ids = counted.map(r => r.id);
+    const [sch, pay] = ids.length ? await Promise.all([
+      c.env.db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
+      c.env.db.select().from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))),
+    ]) : [[], []];
+    const today = vietnamDate().iso, owners = new Map((ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees)
+      .where(inArray(employees.id, [...new Set(counted.map(r => r.ownerId))])) : []).map(e => [e.id, e.name]));
+    const list = counted.map(r => {
+      const s = sch.filter(x => x.orderId === r.id), p = pay.filter(x => x.orderId === r.id);
+      return { orderId: r.id, orderNo: r.orderNo, contractNo: contracts.find(x => x.orderId === r.id)?.no ?? null, customerId: r.customerId, customerName: r.customerName, phone: r.phone,
+        orderDate: r.orderDate, orderStatus: r.status, invoiceNo: r.invoiceNo, ownerName: owners.get(r.ownerId) ?? '', ...receivable(s, p, today), aging: debtAging(s, p, today) };
+    })
       .filter(r => r.status !== 'none' && (!want || r.status === want || (want === 'open' && r.status === 'overdue')));
     const sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => list.reduce((s, r) => s + r[k], 0);
-    return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue') } });
+    const aged = (k: 'd30' | 'd60' | 'over60') => list.reduce((s, r) => s + r.aging.buckets[k], 0);
+    return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue'), aging: { d30: aged('d30'), d60: aged('d60'), over60: aged('over60') } } });
   }, 'business');
 
   /** Ghi nhận phiếu thu. Không thu vượt số còn phải thu của đơn. */
@@ -807,6 +829,21 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
     });
     return json({ id }, 201);
+  }, 'business');
+
+  /** Huỷ phiếu thu ghi nhầm (bắt buộc lý do). Phiếu giữ lại trong lịch sử, không tính vào đã thu; muốn sửa thì huỷ rồi ghi phiếu mới. */
+  router.post('/payments/:id/void', async c => {
+    const me = viewer(c), body = await readJson(c.req, 2_000), reason = text(body.reason, 500);
+    if (!canVoidPayment(me)) throw new AppError(403, 'Chỉ Manager hoặc người có quyền "Huỷ phiếu thu" huỷ được phiếu thu.');
+    if (reason.length < 3) throw new AppError(400, 'Ghi lý do huỷ phiếu thu.');
+    const [p] = await c.env.db.select({ id: customerPayments.id, orderId: customerPayments.orderId, voidedAt: customerPayments.voidedAt }).from(customerPayments)
+      .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId)).where(and(eq(customerPayments.id, c.params.id!), orderScope(c))).limit(1);
+    if (!p) throw new AppError(404, 'Không tìm thấy phiếu thu.');
+    if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
+    const done = await c.env.db.update(customerPayments).set({ voidedAt: nowIso(), voidedBy: me.id, voidReason: reason })
+      .where(and(eq(customerPayments.id, p.id), isNull(customerPayments.voidedAt))).returning({ id: customerPayments.id });
+    if (!done.length) throw new AppError(409, 'Phiếu thu vừa được người khác huỷ.');
+    return json({ ok: true, orderId: p.orderId });
   }, 'business');
 }
 

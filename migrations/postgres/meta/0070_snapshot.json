@@ -1,6 +1,6 @@
 {
-  "id": "ec1b77ba-ee18-476b-8438-18a1f93d80fb",
-  "prevId": "0d1a7654-f92e-4642-8839-16439ca15771",
+  "id": "dd8bf417-d143-4de8-8a42-75582805f8f7",
+  "prevId": "ec1b77ba-ee18-476b-8438-18a1f93d80fb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9080,6 +9080,25 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "voided_at": {
+          "name": "voided_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voided_by": {
+          "name": "voided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "void_reason": {
+          "name": "void_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
         }
       },
       "indexes": {
@@ -9172,6 +9191,19 @@
           "tableTo": "staff_members",
           "columnsFrom": [
             "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "customer_payments_voided_by_staff_members_id_fk": {
+          "name": "customer_payments_voided_by_staff_members_id_fk",
+          "tableFrom": "customer_payments",
+          "tableTo": "staff_members",
+          "columnsFrom": [
+            "voided_by"
           ],
           "columnsTo": [
             "id"

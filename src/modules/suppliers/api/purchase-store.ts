@@ -139,6 +139,38 @@ export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilte
   return filter.state ? out.filter(r => r.state === filter.state || (filter.state === 'late' && r.late) || (filter.state === 'sapo' && r.sapoPending > 0) || (filter.state === 'debt' && (r.balance ?? 0) > 0 && r.state !== 'cancelled' && r.state !== 'draft')) : out;
 }
 
+/**
+ * CÔNG NỢ NCC theo nhà cung cấp (chỉ người xem được giá NCC): mọi đơn mua đã duyệt, chưa huỷ, còn phải trả.
+ * Mỗi NCC: tổng giá trị, đã trả, còn nợ, quá hạn, kỳ sắp tới; kèm từng đơn để xuất Excel chi tiết.
+ */
+export async function supplierPayables(db: Db, m: Member, today: string) {
+  if (!canSeePrices(asActor(m))) throw new AppError(403, 'Bạn không có quyền xem công nợ NCC.');
+  const rows = await db.select().from(incomingShipments)
+    .where(and(purchaseScope(m), eq(incomingShipments.approvalStatus, 'approved'), isNull(incomingShipments.cancelledAt)));
+  const ids = rows.map(r => r.id);
+  if (!ids.length) return { suppliers: [], orders: [] };
+  const [lines, schedules, payments] = await Promise.all([
+    db.select().from(incomingShipmentLines).where(inArray(incomingShipmentLines.shipmentId, ids)),
+    db.select().from(supplierPaymentSchedules).where(inArray(supplierPaymentSchedules.shipmentId, ids)),
+    db.select().from(supplierPayments).where(inArray(supplierPayments.shipmentId, ids)),
+  ]);
+  const orders = rows.map(o => {
+    const total = computeOrderTotals({ rows: lines.filter(l => l.shipmentId === o.id), depositRate: o.depositRate, paidAmount: 0 }).total;
+    const debt = supplierDebt(total, schedules.filter(x => x.shipmentId === o.id), payments.filter(x => x.shipmentId === o.id), today);
+    return { id: o.id, ticketNumber: o.ticketNumber, internalNo: o.supplierInternalOrderNumber, supplierId: o.supplierId, supplierName: o.supplierName, approvedAt: o.approvedAt, ...debt };
+  }).filter(o => o.balance > 0).sort((a, b) => (a.nextDueDate ?? '9999').localeCompare(b.nextDueDate ?? '9999'));
+  const bySupplier = new Map<string, { supplierId: string | null; supplierName: string; orders: number; total: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; nextDueAmount: number }>();
+  for (const o of orders) {
+    const key = o.supplierId ?? 'name:' + o.supplierName;
+    const x = bySupplier.get(key) ?? { supplierId: o.supplierId, supplierName: o.supplierName, orders: 0, total: 0, paid: 0, balance: 0, overdue: 0, nextDueDate: null, nextDueAmount: 0 };
+    x.orders++; x.total += o.total; x.paid += o.paid; x.balance += o.balance; x.overdue += o.overdue;
+    if (o.nextDueDate && (!x.nextDueDate || o.nextDueDate < x.nextDueDate)) { x.nextDueDate = o.nextDueDate; x.nextDueAmount = o.nextDueAmount; }
+    else if (o.nextDueDate && o.nextDueDate === x.nextDueDate) x.nextDueAmount += o.nextDueAmount;
+    bySupplier.set(key, x);
+  }
+  return { suppliers: [...bySupplier.values()].sort((a, b) => b.overdue - a.overdue || b.balance - a.balance), orders };
+}
+
 /** Badge counts cover the entire scoped search, independently of selected state and list limits. */
 export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
   const l = incomingShipmentLines, r = supplierReceipts, rl = supplierReceiptLines;

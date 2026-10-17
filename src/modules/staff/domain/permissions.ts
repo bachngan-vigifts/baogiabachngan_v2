@@ -9,18 +9,19 @@ export interface PermissionDef { key: string; group: string; label: string; hint
 const SALES = ['sale', 'sale-admin', 'sales-ml', 'sales-lock'] as const;
 const OFFICE = [...SALES, 'accounting'] as const;
 const ALL = [...OFFICE, 'warehouse'] as const;
-/** Sale Admin TẠM THỜI có quyền của Sale + Kế toán + Kho (yêu cầu 17/10/2026). */
+/** Sale Admin TẠM THỜI có quyền của Sale + Kế toán + Kho (yêu cầu 17/10/2026). Kế toán không vào Báo giá / Chăm sóc KH / Khách hỏi tồn (migration 0070).
+ * Sổ thu / chi, Huỷ phiếu thu, Doanh số toàn công ty: chỉ Kế toán – Sale Admin chỉ xem toàn công ty ở báo giá, khách, đơn, HĐKT. */
 const KHO = ['warehouse', 'sale-admin'] as const, KE_TOAN = ['accounting', 'sale-admin'] as const;
 
 export const PERMISSIONS: readonly PermissionDef[] = [
-  { key: 'page.quotes', group: 'Trang được vào', label: 'Báo giá', defaults: OFFICE },
+  { key: 'page.quotes', group: 'Trang được vào', label: 'Báo giá', defaults: SALES },
   { key: 'page.orders', group: 'Trang được vào', label: 'Đơn đặt hàng', defaults: OFFICE },
   { key: 'page.contracts', group: 'Trang được vào', label: 'HĐKT', defaults: OFFICE },
   { key: 'page.deliveries', group: 'Trang được vào', label: 'Lịch giao hàng', defaults: ALL },
   { key: 'page.receivables', group: 'Trang được vào', label: 'Công nợ', defaults: OFFICE },
   { key: 'page.customers', group: 'Trang được vào', label: 'Khách hàng', hint: 'Danh bạ, hồ sơ khách. Tắt vẫn chọn được khách khi lập báo giá / đơn.', defaults: OFFICE },
-  { key: 'page.care', group: 'Trang được vào', label: 'Chăm sóc KH', defaults: OFFICE },
-  { key: 'page.stock-requests', group: 'Trang được vào', label: 'Khách hỏi tồn', defaults: OFFICE },
+  { key: 'page.care', group: 'Trang được vào', label: 'Chăm sóc KH', defaults: SALES },
+  { key: 'page.stock-requests', group: 'Trang được vào', label: 'Khách hỏi tồn', defaults: SALES },
   { key: 'page.dashboard', group: 'Trang được vào', label: 'Tổng quan doanh số', defaults: OFFICE },
   { key: 'page.flow', group: 'Trang được vào', label: 'Sơ đồ quy trình', defaults: OFFICE },
   { key: 'page.purchases', group: 'Trang được vào', label: 'Đơn mua NCC', defaults: ALL },
@@ -32,6 +33,9 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'purchases.prices', group: 'Tài chính NCC', label: 'Xem giá mua NCC', defaults: KE_TOAN },
   { key: 'purchases.pay', group: 'Tài chính NCC', label: 'Ghi thanh toán / lịch trả NCC', defaults: KE_TOAN },
   { key: 'suppliers.edit', group: 'Tài chính NCC', label: 'Danh bạ NCC – xem, sửa', defaults: KE_TOAN },
+  { key: 'page.cashbook', group: 'Kế toán', label: 'Sổ thu / chi', hint: 'Phiếu thu khách + phiếu chi NCC theo ngày, xuất Excel để đối soát ngân hàng.', defaults: ['accounting'] },
+  { key: 'payments.void', group: 'Kế toán', label: 'Huỷ phiếu thu ghi nhầm', hint: 'Bắt buộc ghi lý do; phiếu huỷ vẫn giữ trong lịch sử.', defaults: ['accounting'] },
+  { key: 'dashboard.all', group: 'Kế toán', label: 'Doanh số toàn công ty', hint: 'Tổng quan doanh số xem cả công ty (không có: chỉ doanh số của mình).', defaults: ['accounting'] },
   { key: 'perm.manage', group: 'Quản trị', label: 'Quản lý phân quyền (trang này)', hint: 'Sửa phòng ban, chức vụ và bảng quyền. Không đụng được chức vụ Manager.', defaults: [] },
 ];
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map(p => p.key));
@@ -86,10 +90,11 @@ export function routePermission(method: string, path: string, query: URLSearchPa
   if (is(/^\/contracts(\/|$)/)) return ['page.contracts', 'page.orders'];
   if (is(/^\/deliveries(\/|$)/)) return ['page.deliveries', 'page.orders', 'page.contracts'];
   if (is(/^\/receivables(\/|$)/)) return ['page.receivables'];
+  if (is(/^\/cashbook(\/|$)/)) return ['page.cashbook'];
   if (is(/^\/care(\/|$)/)) return ['page.care'];
   if (is(/^\/stock-requests(\/|$)/)) return ['page.stock-requests'];
   if (is(/^\/dashboard(\/|$)/)) return ['page.dashboard'];
-  if (is(/^\/(purchase-orders|supplier-receipts|supplier-payments|purchase-sources|purchase-options)(\/|$)/)) return ['page.purchases'];
+  if (is(/^\/(purchase-orders|supplier-receipts|supplier-payments|supplier-payables|purchase-sources|purchase-options)(\/|$)/)) return ['page.purchases'];
   if (is(/^\/inventory\/lookup(\/|$)/)) return null; // tra tồn (không giá): mọi nhân viên như trước – quyền chỉ quyết định hiện menu
   if (is(/^\/inventory(\/|$)/)) return ['inventory.view'];
   if (is(/^\/(customer-duplicates|customer-accounts)(\/|$)/)) return ['page.customers'];
