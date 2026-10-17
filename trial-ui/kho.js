@@ -46,12 +46,13 @@ export function initKhoHome({ api, root, today }) {
 
   async function load() {
     const my = ++req, t = today(), tomorrow = addDays(t, 1);
-    cards.replaceChildren(card('📦', 'Cần đóng gói', '#/packing', null, 'Đang tải…'), card('🚚', 'Hàng NCC về – cần nhận', '#/purchases', null, 'Đang tải…'), card('🛻', 'Giao hàng hôm nay', '#/deliveries', null, 'Đang tải…'));
+    cards.replaceChildren(card('📦', 'Cần đóng gói', '#/packing', null, 'Đang tải…'), card('🚚', 'Hàng NCC về – cần nhận', '#/purchases', null, 'Đang tải…'), card('🛻', 'Giao hôm nay & trễ', '#/deliveries', null, 'Đang tải…'));
     lists.replaceChildren();
     const [packing, purchases, deliveries] = await Promise.all([
       api('/packing?status=sent').then(r => r.slips).catch(() => null),
       api('/purchase-orders').then(r => r.orders.filter(o => RECEIVABLE_STATES.has(o.state))).catch(() => null),
-      api(`/deliveries?from=${t}&to=${tomorrow}`).then(r => r.deliveries.filter(d => d.status === 'planned' || d.status === 'in_transit')).catch(() => null),
+      // Gồm cả chuyến trễ (lịch từ 7 ngày trước mà chưa giao) – không để chuyến quá hạn biến mất khỏi trang kho.
+      api(`/deliveries?from=${addDays(t, -7)}&to=${tomorrow}`).then(r => r.deliveries.filter(d => d.status === 'planned' || d.status === 'in_transit')).catch(() => null),
     ]);
     if (my !== req) return;
     const todayShips = deliveries?.filter(d => d.plannedDate <= t) ?? null;
@@ -59,7 +60,7 @@ export function initKhoHome({ api, root, today }) {
     cards.replaceChildren(
       card('📦', 'Cần đóng gói', '#/packing', packing?.length ?? '–', packing ? (packing.length ? 'phiếu chờ đóng' : 'Không có phiếu chờ') : 'Chưa tải được', packing?.length ? 'warn' : ''),
       card('🚚', 'Hàng NCC về – cần nhận', '#/purchases', purchases?.length ?? '–', purchases ? (dueIn?.length ? `${dueIn.length} đơn hẹn về đến mai` : 'đơn chờ nhận') : 'Chưa tải được', dueIn?.length ? 'warn' : ''),
-      card('🛻', 'Giao hàng hôm nay', '#/deliveries', todayShips?.length ?? '–', deliveries ? `${deliveries.length - (todayShips?.length ?? 0)} chuyến ngày mai` : 'Chưa tải được', todayShips?.length ? 'warn' : ''),
+      card('🛻', 'Giao hôm nay & trễ', '#/deliveries', todayShips?.length ?? '–', deliveries ? `${deliveries.length - (todayShips?.length ?? 0)} chuyến ngày mai` : 'Chưa tải được', todayShips?.length ? 'warn' : ''),
     );
     if (packing) lists.append(section('📦 Phiếu chờ đóng gói', '#/packing', packing.map(x => ({ href: '#/packing/' + encodeURIComponent(x.id), title: `${x.slipNo} · ${x.customerName}`,
       sub: [x.sourceLabel + (x.sourceNote ? ': ' + x.sourceNote : ''), x.expectedDeliveryDate ? 'giao ' + dmy(x.expectedDeliveryDate) : ''].filter(Boolean).join(' · ') })), 'Không có phiếu nào chờ đóng.'));

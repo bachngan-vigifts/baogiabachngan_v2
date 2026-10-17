@@ -197,6 +197,23 @@ function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = f
   });
 }
 $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+/** Hộp nhập lý do (trả lại báo giá…): trả chuỗi đã nhập (≥ 3 ký tự), hoặc null khi bấm Huỷ. */
+function reasonBox({ title, text = '', placeholder = '', ok = 'Gửi' }) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal narrow';
+  dlg.innerHTML = `<form method="dialog"><div class="modal-head"><h2></h2></div><div class="modal-body"><p class="muted"></p>
+    <textarea name="reason" rows="3" required minlength="3" maxlength="500" style="width:100%"></textarea></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-act="no">Huỷ</button><button class="btn primary" data-act="ok"></button></div></form>`;
+  dlg.querySelector('h2').textContent = title; dlg.querySelector('.modal-body > p').textContent = text;
+  const input = dlg.querySelector('textarea'); input.placeholder = placeholder; input.setAttribute('aria-label', title); dlg.querySelector('[data-act=ok]').textContent = ok;
+  document.body.append(dlg);
+  return new Promise(resolve => {
+    const done = v => { dlg.close(); dlg.remove(); resolve(v); };
+    dlg.querySelector('form').onsubmit = e => { e.preventDefault(); const v = input.value.trim(); if (v.length >= 3) done(v); else input.reportValidity(); };
+    dlg.querySelector('[data-act=no]').onclick = () => done(null);
+    dlg.oncancel = e => { e.preventDefault(); done(null); };
+    dlg.showModal(); input.focus();
+  });
+}
 /**
  * Hộp chụp ảnh xác nhận (đã giao hàng, hàng NCC bị hỏng…): 0–3 ảnh nén JPEG. `min` = số ảnh bắt buộc.
  * Trả mảng data URL, hoặc null khi bấm Huỷ.
@@ -294,6 +311,8 @@ const PAGE_PERM = {
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
+/** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
+const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
 const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
 /** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
 const linkAllowed = hash => {
@@ -2051,9 +2070,9 @@ function renderProducts() {
       <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
-      <td class="right num" data-label="Giá">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
+      <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
       <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}${heldQty(p.sku) ? ` · đang treo ${fmtNum(heldQty(p.sku))}` : ''}">${fmtNum(stock)}${heldQty(p.sku) ? `<small>treo ${fmtNum(heldQty(p.sku))}</small>` : ''}</td>
-      <td class="actions-cell"><div class="row-actions"><button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button></div></td>
+      <td class="actions-cell"><div class="row-actions">${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
@@ -2753,8 +2772,8 @@ async function loadContracts() {
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
 async function loadDeliveries() {
-  // Kho: mặc định hôm nay + ngày mai (việc cần làm ngay); người khác 7 ngày trước → 30 ngày tới.
-  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = isWarehouse() ? todayIso() : new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
+  // Kho: 7 ngày trước (chuyến trễ chưa giao) → ngày mai; người khác 7 ngày trước → 30 ngày tới.
+  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
   $('#deliveries-list').innerHTML = skeleton(6);
   try {
     const d = await api(`/deliveries?from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}&status=${encodeURIComponent($('#deliveries-status .chip.active')?.dataset.status ?? '')}`);
@@ -3201,7 +3220,7 @@ async function openOrder(id) {
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
   $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
-  $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
+  $('#order-new-payment').hidden = o.status === 'cancelled' || o.status === 'draft' || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
     ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
@@ -3872,6 +3891,8 @@ function updateQuoteActions() {
   // Manager duyệt mọi báo giá; nhân viên phụ trách xác nhận báo giá khách gửi từ trang khách hàng.
   const canApprove = mgr || !!editor.approval?.canApprove;
   const ap = $('#approve-quote'); ap.hidden = !canApprove || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : editor.approval?.fromCustomer ? 'Xác nhận báo giá khách' : 'Duyệt';
+  // Báo giá nhân viên gửi duyệt: người duyệt trả lại kèm lý do (về nháp để sửa).
+  $('#reject-quote').hidden = !canApprove || !saved || editor.approval?.status !== 'pending' || !!editor.approval?.fromCustomer;
   // Nhân viên xoá được báo giá chưa duyệt của mình; "Gửi duyệt" chỉ hiện với báo giá nháp (Manager duyệt thẳng).
   $('#delete-quote').hidden = !saved || (!mgr && approved) || readOnly;
   // Nhân viên luôn thấy nút: nháp → "Gửi duyệt"; đã gửi (chờ duyệt) → "Đã gửi duyệt" (khoá). Báo giá khách gửi thì dùng nút xác nhận.
@@ -4081,6 +4102,18 @@ $('#approve-quote').addEventListener('click', async () => {
     const r = await api('/quotes/' + encodeURIComponent(editor.id) + '/approve', 'POST', { revision: editor.revision });
     editor.approval = { ...editor.approval, status: 'approved', at: r.approvedAt, by: r.approvedByName };
     toast('Đã duyệt báo giá. Có thể tải file, tạo đơn hàng, sinh HĐKT.'); loadQuotes(); refreshQuoteHold(editor.id);
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { updateQuoteActions(); }
+});
+$('#reject-quote').addEventListener('click', async () => {
+  if (!(isManager() || editor.approval?.canApprove) || !editor.id || editor.approval?.status !== 'pending') return;
+  if (editor.dirty) return toast('Báo giá đang có thay đổi chưa lưu. Lưu hoặc tải lại trước khi trả lại.', 'err');
+  const reason = await reasonBox({ title: 'Trả lại báo giá', text: `Báo giá ${field('quoteNo').value} về nháp; người lập nhận thông báo kèm lý do để sửa rồi gửi duyệt lại.`, placeholder: 'VD: giá ly sứ thấp hơn giá sàn, kiểm tra lại chiết khấu', ok: 'Trả lại' });
+  if (!reason) return;
+  try {
+    await api('/quotes/' + encodeURIComponent(editor.id) + '/reject', 'POST', { revision: editor.revision, reason });
+    editor.approval = { ...editor.approval, status: 'draft' };
+    toast('Đã trả lại báo giá cho người lập.'); loadQuotes();
   } catch (ex) { toast(ex.message, 'err'); }
   finally { updateQuoteActions(); }
 });

@@ -108,8 +108,12 @@ export async function recordSaleMovements(db: StaffEnv['db'] | Tx, orderId: stri
     partner: order.customerName, refCode: ref.no, link: ref.link, status: 'Đã xác nhận', occurredAt: order.createdAt })));
 }
 /** Ghi ngày giao dự kiến mới cho đơn; đơn do khách đặt thì báo khách ngày mới. */
-export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
-  if (order.expectedDeliveryDate === date || (order.status !== 'draft' && viewer(c).role !== 'manager')) return;
+/**
+ * Ngày giao dự kiến. Đổi tay: nháp hoặc Manager. `fromSchedule`: lên lịch giao / phiếu đóng gói kèm lịch (chỉ làm được trên đơn đã duyệt)
+ * – ngày lịch giao luôn thành ngày dự kiến, kể cả khi nhân viên lên lịch (tránh việc "Trễ hạn giao" theo ngày cũ).
+ */
+export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string, fromSchedule = false) {
+  if (order.expectedDeliveryDate === date || (!fromSchedule && order.status !== 'draft' && viewer(c).role !== 'manager')) return;
   await c.env.db.update(salesOrders).set({ expectedDeliveryDate: date, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
   const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
   if (by?.role === 'customer') await notify(c.env, { eventType: 'order_delivery_date', targetMemberId: order.createdBy, actorId: viewer(c).id, title: 'Đổi ngày giao dự kiến',
@@ -210,6 +214,13 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
     .where(inArray(packingSlipLines.orderLineId, oldLines.map(l => l.id))) : [];
   const reserved = new Map<string, number>();
   for (const l of links) if (l.status !== 'cancelled') reserved.set(l.id, (reserved.get(l.id) || 0) + l.qty);
+  // Hàng đã lên phiếu đóng gói (chưa huỷ) cũng không được cắt bớt dưới mức đó (phiếu kho đã đóng đã ghi xuất sổ kho).
+  if (oldLines.length) {
+    const slipQty = await tx.select({ id: packingSlipLines.orderLineId, qty: sql<number>`sum(${packingSlipLines.qty})`.mapWith(Number) }).from(packingSlipLines)
+      .innerJoin(packingSlips, eq(packingSlips.id, packingSlipLines.slipId))
+      .where(and(inArray(packingSlipLines.orderLineId, oldLines.map(l => l.id)), ne(packingSlips.status, 'cancelled'))).groupBy(packingSlipLines.orderLineId);
+    for (const x of slipQty) if (x.id) reserved.set(x.id, Math.max(reserved.get(x.id) || 0, x.qty));
+  }
   let plan: ReturnType<typeof amendmentLines>;
   try { plan = amendmentLines(oldLines, lines, reserved, new Set([...links, ...packed].map(l => l.id))); }
   catch (e) { throw new AppError(409, (e as Error).message, 'ORDER_LINE_IN_USE'); }
@@ -332,7 +343,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && await canCreateSapoInDepartment(c, order), canEdit: await canCreateSapoInDepartment(c, order),
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
-        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: viewer(c).role === 'manager' || order.status === 'draft', data: JSON.parse(contract[0].data) } : null,
+        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: await canCreateSapoInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
@@ -433,6 +444,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Bước xác thực: nhân viên phải đánh dấu đã kiểm tra các thông tin quan trọng trước khi duyệt đơn.
     if (status === 'confirmed' && body.verified !== true) throw new AppError(400, 'Kiểm tra và đánh dấu đủ các thông tin quan trọng trước khi xác nhận đơn.', 'VERIFY_REQUIRED');
     await c.env.db.transaction(async tx => {
+      // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
+      const [locked] = await tx.select({ status: salesOrders.status }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
+      if (status === 'cancelled') {
+        const [[paidNow], shippedNow] = await Promise.all([
+          tx.select({ n: count() }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt))),
+          tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(and(eq(salesOrderLines.orderId, order.id), sql`${salesOrderLines.deliveredQty} > 0`)).limit(1),
+        ]);
+        if (Number(paidNow?.n) > 0 || shippedNow.length) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
+      }
       await tx.update(salesOrders).set({ status, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Huỷ: dọn việc còn treo của đơn – phiếu đóng gói chưa đóng / chuyến giao chưa giao huỷ theo (việc kho / giao tự đóng);
       // phiếu kho đã đóng (đã ghi xuất sổ kho) thì ghi dòng đảo – hàng về lại kho – rồi huỷ phiếu.
@@ -524,6 +545,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const now = nowIso();
     await c.env.db.update(salesOrders).set({ invoiceStatus: 'issued', invoiceNo, invoiceDate, invoiceIssuedAt: now, invoiceIssuedBy: viewer(c).id,
       invoiceRequestedAt: order.invoiceRequestedAt ?? now, updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+    if (order.invoiceStatus !== 'issued') {
+      const ref = docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id));
+      await notifyMany(c.env, [order.ownerId, order.invoiceRequestedBy], { eventType: 'invoice_issued', title: 'Đã xuất hoá đơn', body: `${ref.no} – ${order.customerName} · HĐ ${invoiceNo}`,
+        url: `/index.html${ref.link}`, actorId: viewer(c).id, data: { orderId: order.id } }).catch(() => 0);
+    }
     return json({ ok: true });
   }, 'business');
 
@@ -708,7 +734,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
     // Liên hệ / địa chỉ của khách trên đơn: kho (không xem được danh bạ khách) vẫn có đủ thông tin để liên hệ giao hàng.
     const photos = await photoUrls(c.env.db, c.env.files, 'delivery', rows.filter(r => r.d.status === 'delivered').map(r => r.d.id));
-    return json({ canCancel: !isWarehouseMember(viewer(c)), deliveries: rows.map(r => ({ ...r.d, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
+    return json({ canCancel: !isWarehouseMember(viewer(c)), deliveries: rows.map(r => ({ ...r.d, shippingFee: isWarehouseMember(viewer(c)) ? null : r.d.shippingFee, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
       customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress, photos: photos.get(r.d.id) ?? [] })) });
   }, 'business');
 
@@ -719,7 +745,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!isDate(date)) throw new AppError(400, 'Chọn ngày giao hợp lệ.');
     const order = await loadOrder(c, c.params.id!);
     if (order.status !== 'draft' && viewer(c).role !== 'manager') throw new AppError(403, 'Đơn đã duyệt. Chỉ Manager được đổi ngày giao.', 'ORDER_APPROVED');
-    await assertCanEditOrder(c, order);
+    // Người được duyệt chốt ngày giao ngay trong hộp "Duyệt" của đơn đã gửi duyệt (không phải người phụ trách vẫn được).
+    if (!(canApprove(viewer(c)) && order.status === 'draft' && order.submittedAt)) await assertCanEditOrder(c, order);
     if (order.status === 'cancelled' || order.status === 'delivered') throw new AppError(409, 'Đơn đã huỷ hoặc đã giao xong, không đổi ngày giao được.');
     await setExpectedDeliveryDate(c, order, date);
     return json({ ok: true, expectedDeliveryDate: date });
@@ -733,7 +760,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const made = await c.env.db.transaction(tx => createScheduledDelivery(tx, order.id, body, me.id));
     const { id, plannedDate } = made;
     // Ngày lên lịch giao trở thành ngày giao dự kiến của đơn (đơn của khách cũng cập nhật theo).
-    await setExpectedDeliveryDate(c, order, plannedDate);
+    await setExpectedDeliveryDate(c, order, plannedDate, true);
     return json({ id }, 201);
   }, 'business');
 
@@ -750,10 +777,17 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       .where(and(eq(deliveries.id, c.params.id!), deliveryScope(c))).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy lịch giao.');
     if (row.d.status === 'delivered') throw new AppError(409, 'Chuyến này đã giao xong, không đổi trạng thái được.');
+    if (row.d.status === 'cancelled') throw new AppError(409, 'Chuyến đã huỷ. Lên lịch chuyến mới nếu cần giao lại.');
     if (row.status === 'cancelled' && status !== 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không giao được.');
+    // Chỉ đi tới: Chờ giao ⇄ Đang giao → Đã giao / Thất bại; Thất bại → Chờ giao (giao lại); huỷ khi chưa giao. "Đã giao" chỉ từ Chờ / Đang giao.
+    const from: Record<string, readonly string[]> = { planned: ['in_transit', 'failed'], in_transit: ['planned', 'failed'], failed: ['planned'], delivered: ['planned', 'in_transit'], cancelled: ['planned', 'in_transit', 'failed'] };
+    if (!from[status]!.includes(row.d.status)) throw new AppError(409, 'Không đổi được trạng thái chuyến giao theo thứ tự này.', 'DELIVERY_STATUS_FLOW');
     const deliveredOn = status === 'delivered' ? (isDate(body.deliveredOn) ? String(body.deliveredOn) : vietnamDate().iso) : null;
     await c.env.db.transaction(async tx => {
-      await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() }).where(eq(deliveries.id, row.d.id));
+      // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
+      const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })
+        .where(and(eq(deliveries.id, row.d.id), inArray(deliveries.status, [...from[status]!] as typeof DELIVERY_STATUSES[number][]))).returning({ id: deliveries.id });
+      if (!done.length) throw new AppError(409, 'Chuyến giao vừa được người khác cập nhật. Tải lại trang.', 'DELIVERY_CHANGED');
       if (status !== 'delivered') return;
       await savePhotos(tx, c.env.files, me.id, 'delivery', row.d.id, photos);
       for (const l of await tx.select().from(deliveryLines).where(eq(deliveryLines.deliveryId, row.d.id)))
@@ -768,6 +802,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const ref = docRef(row.d.orderId, o?.orderNo ?? '', (await contractNosOf(c.env.db, [row.d.orderId])).get(row.d.orderId));
       await recordMovements(c.env.db, lines.map(l => ({ refKey: `delivery:${row.d.id}:${l.id}`, sku: l.sku, kind: 'delivery', name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
         partner: o?.customerName ?? '', location: row.d.address, refCode: `${row.d.deliveryNo} · ${ref.no}`, link: ref.link, status: 'Đã giao', occurredAt: nowIso() })));
+    }
+    // Giao xong / giao thất bại: báo nhân viên phụ trách đơn (giao lại, đòi tiền, xuất hoá đơn).
+    if (status === 'delivered' || status === 'failed') {
+      const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, ownerId: salesOrders.ownerId, customerName: salesOrders.customerName }).from(salesOrders).where(eq(salesOrders.id, row.d.orderId)).limit(1);
+      const ref = docRef(row.d.orderId, o?.orderNo ?? '', (await contractNosOf(c.env.db, [row.d.orderId])).get(row.d.orderId));
+      if (o) await notifyMany(c.env, [o.ownerId], { eventType: status === 'delivered' ? 'delivery_done' : 'delivery_failed', title: status === 'delivered' ? 'Đã giao hàng' : 'Giao hàng không thành công',
+        body: `${row.d.deliveryNo} · ${ref.no} – ${o.customerName}`, url: `/index.html${ref.link}`, actorId: me.id, data: { orderId: row.d.orderId, deliveryId: row.d.id } }).catch(() => 0);
     }
     return json({ ok: true });
   }, 'business');
@@ -810,6 +851,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const body = await readJson(c.req, 8_192), me = viewer(c);
     const order = await loadOrder(c, text(body.orderId, 80));
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
+    if (order.status === 'draft') throw new AppError(409, 'Đơn hàng / HĐKT chưa được duyệt, chưa ghi thu được (chưa phát sinh công nợ).', 'ORDER_NOT_APPROVED');
     const amount = money(body.amount, 'Số tiền');
     if (amount <= 0) throw new AppError(400, 'Số tiền phải lớn hơn 0.');
     const paidAt = String(body.paidAt || vietnamDate().iso);

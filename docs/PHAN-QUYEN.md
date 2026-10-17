@@ -63,11 +63,12 @@ Mọi phê duyệt chỉ do **Manager** hoặc **nhân viên được Manager b�
 | Phê duyệt | Endpoint |
 |---|---|
 | Báo giá (cả báo giá khách gửi từ trang khách hàng) | `POST /quotes/:id/approve`; ô `canApprove` của `GET /quotes/:id` |
+| Trả lại báo giá kèm lý do (về nháp, báo người lập) | `POST /quotes/:id/reject` – chỉ báo giá đang chờ duyệt, lý do ≥ 3 ký tự |
 | Khách hàng mới | `POST /customers/:id/approve`; từ chối = `DELETE /customers/:id` (người được duyệt, hoặc người tạo xoá khách của mình) |
 | Sản phẩm mới | `POST /products/:sku/approve`; từ chối = `DELETE /products/:sku`; `GET /product-approvals` |
 | Đơn hàng / HĐKT | `PUT /orders/:id/status` với `confirmed` |
 | Đơn mua NCC (duyệt giá) | `POST /purchase-orders/:id/approve` (`checkPurchase('approve')`) |
-| Hộp "Cần duyệt" | `GET /approvals` |
+| Hộp "Cần duyệt" | `GET /approvals` (báo giá, đơn, HĐKT, **đơn mua NCC đã gửi duyệt**, khách hàng, sản phẩm) |
 | Nút duyệt nhanh ở Sơ đồ quy trình | `GET /flow` (chỉ trả thao tác `approve-*` cho người được duyệt) |
 
 - **Người được duyệt còn thấy thêm:**

@@ -11,6 +11,7 @@ import { historyOf } from './product-history.ts';
 import { registerProductAdminRoutes } from './product-admin.ts';
 import { registerProductActionRoutes } from './product-actions.ts';
 import { PRODUCT_HISTORY_LIMIT } from '../domain/product-history.ts';
+import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
 
 const amount = z.number().finite().min(0).max(1e12).nullable();
 const size = z.number().finite().min(0).max(1e6).nullable().optional();
@@ -97,6 +98,10 @@ export async function snapshotVersion(db: StaffEnv['db']) {
   return { version: [...hash.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join(''), observedAt: ver?.observedAt ?? null };
 }
 
+/** Giá bán chỉ cho người làm báo giá / đơn / HĐKT (Manager, Sale, Kế toán…). Kho xem sản phẩm, tồn – không thấy giá. */
+const seesSalePrices = (m: PermissionMember) => m.role === 'manager' || ['page.quotes', 'page.orders', 'page.contracts'].some(k => can(m, k));
+const viewerOf = (c: { state: unknown }) => (c.state as { session: SessionState }).session.member as PermissionMember;
+
 export function registerCatalogRoutes(router: Router<StaffEnv>) {
   registerProductAdminRoutes(router);
   registerProductActionRoutes(router);
@@ -105,7 +110,9 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
    * `?v=<phiên bản đang có>`: nếu chưa đổi thì chỉ trả `{ version, unchanged: true }`.
    */
   router.get('/catalog-snapshot', async c => {
-    const db = c.env.db, { version, observedAt } = await snapshotVersion(db);
+    const db = c.env.db, priced = seesSalePrices(viewerOf(c)), snap = await snapshotVersion(db);
+    // Bản không giá có phiên bản riêng: trình duyệt không dùng lại bản có giá đã lưu của người khác chức vụ.
+    const version = priced ? snap.version : snap.version + ':np', observedAt = snap.observedAt;
     if (c.url.searchParams.get('v') === version) return json({ version, unchanged: true });
     const [rows, policies, stores, prices, stock] = await Promise.all([
       db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.sku)),
@@ -118,7 +125,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const policyAt = new Map(policies.map((p, i) => [p.id, i])), storeAt = new Map(stores.map((w, i) => [w.id, i]));
     const priceRows = rows.map(() => policies.map(() => null as number | null));
     const stockRows = rows.map(() => stores.map(() => null as number | null)), stockAt = rows.map(() => '');
-    for (const p of prices) { const i = index.get(p.sku), j = policyAt.get(p.policyId); if (i !== undefined && j !== undefined) priceRows[i]![j] = p.price; }
+    if (priced) for (const p of prices) { const i = index.get(p.sku), j = policyAt.get(p.policyId); if (i !== undefined && j !== undefined) priceRows[i]![j] = p.price; }
     for (const s of stock) {
       const i = index.get(s.sku), j = storeAt.get(s.warehouseId); if (i === undefined || j === undefined) continue;
       stockRows[i]![j] = s.quantity; if (s.updatedAt > stockAt[i]!) stockAt[i] = s.updatedAt;
@@ -133,7 +140,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.get('/products', async c => {
-    const db = c.env.db, paged = paging(c.url, 50, 200);
+    const db = c.env.db, paged = paging(c.url, 50, 200), priced = seesSalePrices(viewerOf(c));
     const brand = c.url.searchParams.get('brand') || '';
     // `skus=a,b,c`: lấy đúng các mã (kể cả đã ẩn) – dùng để bổ sung ảnh/thông tin cho dòng báo giá cũ.
     const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 300);
@@ -166,7 +173,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       pricePolicies: policies,
       products: rows.map(r => ({
         ...r,
-        prices: policies.filter(p => p.id in (priceMap.get(r.sku) ?? {})).map(p => ({ policyId: p.id, price: priceMap.get(r.sku)![p.id] ?? null })),
+        prices: !priced ? [] : policies.filter(p => p.id in (priceMap.get(r.sku) ?? {})).map(p => ({ policyId: p.id, price: priceMap.get(r.sku)![p.id] ?? null })),
         stock: stockMap.get(r.sku) ?? {},
         /** Lần cập nhật tồn gần nhất của mã này (đồng bộ Sapo / nhập file). */
         stockUpdatedAt: stockAt.get(r.sku) ?? null,
@@ -185,13 +192,13 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
    * + giá bán gần nhất / thấp / cao / trung bình từ các lần bán.
    */
   router.get('/products/:sku/history', async c => {
-    const sku = decodeURIComponent(c.params.sku!).trim().slice(0, 500);
-    const rows = await historyOf(c.env.db, sku);
-    const prices = rows.filter(r => r.kind === 'sale' && r.unitPrice !== null).map(r => r.unitPrice!);
+    const sku = c.params.sku!.trim().slice(0, 500); // router đã giải mã tham số đường dẫn
+    const rows = await historyOf(c.env.db, sku), priced = seesSalePrices(viewerOf(c));
+    const prices = priced ? rows.filter(r => r.kind === 'sale' && r.unitPrice !== null).map(r => r.unitPrice!) : [];
     // Giá nhập (giá vốn) và tên nhà cung cấp chỉ Manager xem: nhân viên chỉ thấy giá ở dòng bán / giao / khách trả.
     const mgr = (c.state.session as SessionState).member.role === 'manager';
     const COST_KINDS = new Set(['purchase', 'supplier_return', 'transfer', 'adjustment']), SUPPLIER_KINDS = new Set(['purchase', 'supplier_return']);
-    const shown = (r: typeof rows[number]) => mgr ? r : { ...r, unitPrice: COST_KINDS.has(r.kind) ? null : r.unitPrice, partner: SUPPLIER_KINDS.has(r.kind) ? '' : r.partner };
+    const shown = (r: typeof rows[number]) => mgr ? r : { ...r, unitPrice: !priced || COST_KINDS.has(r.kind) ? null : r.unitPrice, partner: SUPPLIER_KINDS.has(r.kind) ? '' : r.partner };
     return json({ sku, limit: PRODUCT_HISTORY_LIMIT, history: rows.map(shown).map(({ id, refKey, recordedAt, ...r }) => r),
       sales: prices.length ? { count: prices.length, last: prices[0], min: Math.min(...prices), max: Math.max(...prices), avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) } : null });
   }, 'business');
@@ -204,7 +211,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select().from(productPrices).where(eq(productPrices.sku, sku)),
       db.select().from(productStock).where(eq(productStock.sku, sku)),
     ]);
-    return json({ product: { ...row, prices: prices.map(p => ({ policyId: p.policyId, price: p.price })), stock: Object.fromEntries(stock.map(s => [s.warehouseId, s.quantity])) } });
+    return json({ product: { ...row, prices: seesSalePrices(viewerOf(c)) ? prices.map(p => ({ policyId: p.policyId, price: p.price })) : [], stock: Object.fromEntries(stock.map(s => [s.warehouseId, s.quantity])) } });
   }, 'business');
 
   /**

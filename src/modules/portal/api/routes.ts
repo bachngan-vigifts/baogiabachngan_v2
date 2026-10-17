@@ -210,8 +210,11 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const { customer } = await myAccount(c);
     const done = await c.env.db.update(salesOrders).set({ status: 'cancelled', updatedAt: nowIso() })
       .where(and(eq(salesOrders.id, c.params.id!), eq(salesOrders.customerId, customer.id), eq(salesOrders.status, 'draft'),
-        sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`)).returning({ id: salesOrders.id }); // HĐKT: huỷ qua nhân viên
+        sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`)).returning({ id: salesOrders.id, orderNo: salesOrders.orderNo, ownerId: salesOrders.ownerId }); // HĐKT: huỷ qua nhân viên
     if (!done.length) throw new AppError(409, 'Đơn đã được xác nhận hoặc không tồn tại, không huỷ được. Vui lòng liên hệ nhân viên phụ trách.');
+    // Báo nhân viên phụ trách (không có thì Manager) – đơn khách tự huỷ không còn nằm trong hàng chờ duyệt.
+    const o = done[0]!, n = { eventType: 'customer_order_cancelled', title: 'Khách đã huỷ đơn', body: `${o.orderNo} · ${customer.name}`, url: `/index.html#/orders/${o.id}`, actorId: member(c).id, data: { orderId: o.id } };
+    await (o.ownerId ? notify(c.env, { ...n, targetMemberId: o.ownerId }) : notifyMany(c.env, 'managers', n)).catch(() => 0);
     return json({ ok: true });
   }, 'customer-portal');
 

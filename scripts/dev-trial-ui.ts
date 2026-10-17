@@ -28,11 +28,11 @@ for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort(
   for (const stmt of readFileSync(join(migrations, file), 'utf8').split('--> statement-breakpoint')) if (stmt.trim()) await client.exec(stmt);
 }
 await seedStaff({ sqlite: new PgFixture(client) });
-// Tài khoản chạy thử theo chức vụ: kho@x.vn (Kho), ketoan@x.vn (Kế toán) / mat-khau-12345.
+// Tài khoản chạy thử theo chức vụ: kho@x.vn (Kho), ketoan@x.vn (Kế toán), saleadmin@x.vn (Sale Admin) / mat-khau-12345.
 {
   const { hashPassword } = await import('../src/core/auth/password.ts');
   const fx = new PgFixture(client);
-  for (const [id, name, pos] of [['kho', 'Thủ kho', 'warehouse'], ['ketoan', 'Kế toán', 'accounting']]) {
+  for (const [id, name, pos] of [['kho', 'Thủ kho', 'warehouse'], ['ketoan', 'Kế toán', 'accounting'], ['saleadmin', 'Sale Admin', 'sale-admin']]) {
     await fx.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'0900','employee',?,1,'2026-01-01T00:00:00.000Z')").run(id, id + '@x.vn', name, pos);
     await fx.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run(id, await hashPassword('mat-khau-12345', 1000));
   }

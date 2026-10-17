@@ -175,6 +175,27 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       body: `${q.quoteNo} – ${q.customer} · ${viewer.name} duyệt`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     return json({ id: c.params.id, approvalStatus: 'approved', approvedAt: now, approvedByName: viewer.name });
   }, 'business');
+  /**
+   * Trả lại báo giá đang chờ duyệt (người duyệt): về nháp kèm lý do – người lập / phụ trách nhận thông báo, sửa rồi gửi duyệt lại.
+   * Việc "Duyệt báo giá" tự đóng (không còn chờ duyệt). Lý do lưu ở nhật ký thay đổi.
+   */
+  router.post('/quotes/:id/reject', async c => {
+    const viewer = (c.state.session as SessionState).member;
+    const body = await readJson(c.req, 4_096), reason = String(body.reason ?? '').trim().slice(0, 500);
+    if (!canApprove(viewer)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định trả lại báo giá.', 'APPROVER_ONLY');
+    if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
+    if (reason.length < 3) throw new AppError(400, 'Nhập lý do trả lại để người lập biết cần sửa gì.');
+    const rows = await c.env.db.update(quotations).set({ approvalStatus: 'draft', updatedAt: new Date().toISOString() })
+      .where(and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), eq(quotations.approvalStatus, 'pending')))
+      .returning({ quoteNo: quotations.quoteNo, customer: quotations.customer, creatorId: quotations.creatorId, assigneeId: quotations.assigneeId });
+    if (!rows.length) throw new AppError(409, 'Báo giá không còn chờ duyệt hoặc vừa được sửa. Vui lòng tải lại.');
+    const q = rows[0]!, [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, q.creatorId)).limit(1);
+    // Báo giá khách gửi: chỉ báo nhân viên phụ trách (khách không mở trang nội bộ).
+    await notifyMany(c.env, [by?.role === 'customer' ? null : q.creatorId, q.assigneeId], { eventType: 'quote_rejected', title: 'Báo giá bị trả lại',
+      body: `${q.quoteNo} – ${q.customer || 'Chưa nhập khách'} · ${viewer.name}: ${reason}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
+    await runAfterCommit(c.env);
+    return json({ id: c.params.id, approvalStatus: 'draft' });
+  }, 'business');
   /** Nhân viên gửi báo giá nháp cho Manager duyệt (chỉ lúc này Manager mới nhận thông báo / việc "Duyệt báo giá"). */
   router.post('/quotes/:id/submit', async c => {
     const viewer = (c.state.session as SessionState).member;

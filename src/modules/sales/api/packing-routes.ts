@@ -10,7 +10,7 @@ import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, salesContracts, shippingCarriers } from '../schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { printingWorkshops as DEFAULT_WORKSHOPS } from '../../quotes/domain/quote-math.ts';
@@ -226,7 +226,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
         created.push({ id, slipNo });
       }
     });
-    if (deliveryId && body.schedule) await setExpectedDeliveryDate(c, order, (body.schedule as Record<string, unknown>).plannedDate as string);
+    if (deliveryId && body.schedule) await setExpectedDeliveryDate(c, order, (body.schedule as Record<string, unknown>).plannedDate as string, true);
     if (sentToWarehouse) for (const slip of created) await notifyWarehouse(c, 'Kho: yêu cầu đóng gói', `${slip.slipNo} · ${order.customerName}`, `/index.html#/packing/${slip.id}`);
     return json({ slips: created, sentToWarehouse, deliveryId }, 201);
   }, 'business');
@@ -319,8 +319,9 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     });
     const to = slip.sentBy ?? slip.createdBy;
     const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);
-    if (to !== m.id) await notify(c.env, { eventType: 'packing_done', title: 'Kho đã đóng hàng', body: `${slip.slipNo} · ${docRef(order.id, order.orderNo, k?.no).Label} – ${order.customerName}`,
-      url: `/index.html#/packing/${slip.id}`, targetMemberId: to, actorId: m.id });
+    // Người gửi phiếu + nhân viên phụ trách đơn (để lên lịch giao).
+    await notifyMany(c.env, [to, order.ownerId], { eventType: 'packing_done', title: 'Kho đã đóng hàng', body: `${slip.slipNo} · ${docRef(order.id, order.orderNo, k?.no).Label} – ${order.customerName}`,
+      url: `/index.html#/packing/${slip.id}`, actorId: m.id });
     return json({ ok: true });
   }, 'business');
 }

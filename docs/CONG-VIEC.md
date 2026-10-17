@@ -40,6 +40,9 @@ Mỗi lần mở bảng, hệ thống đồng bộ việc tự sinh, tối đa 1
 
 Quy định với việc tự sinh:
 - Không xoá được. Việc tự đóng khi chứng từ đã xử lý xong.
+- Việc duyệt (báo giá, báo giá khách, xác nhận đơn, đơn mua NCC) và việc nhận hàng NCC **không bấm xong tay được**: chỉ tự đóng khi duyệt / nhận xong ở màn hình gốc.
+- Một quy tắc lỗi khi đối chiếu thì lần đó **không đóng** việc nào (tránh đóng nhầm); việc tự đóng mà chứng từ lại cần xử lý (vd báo giá bị trả lại rồi gửi duyệt lại) được **mở lại**.
+- Báo giá khách gửi: việc "Xác nhận báo giá khách" chưa giao cho ai cụ thể – ai trong nhóm duyệt nhận trước thì làm.
 - Không sửa được tên và mô tả.
 - Đổi được người nhận, mức ưu tiên và hạn.
 

@@ -39,6 +39,9 @@ export function purchaseScope(m: Member) {
   return and(PURCHASE, or(eq(incomingShipments.approvalStatus, 'approved'), eq(incomingShipments.createdBy, m.id)));
 }
 
+const MONEY_EVENT_LABEL: Record<string, string> = { approve: 'Manager duyệt đơn', import: 'Nhập từ file đơn NCC', prices: 'Lưu giá nhập', schedule: 'Sửa lịch trả NCC',
+  pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC', update: 'Sửa đơn nháp' };
+const MONEY_EVENTS = new Set(Object.keys(MONEY_EVENT_LABEL));
 /** Toàn bộ dữ liệu một đơn mua (đúng phạm vi xem), đã tính tiến độ nhận / công nợ / nút được bấm. */
 export async function loadPurchase(db: Db, m: Member, id: string, today: string) {
   const [o] = await db.select().from(incomingShipments).where(and(eq(incomingShipments.id, id), purchaseScope(m))).limit(1);
@@ -92,7 +95,8 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
       receipts: receipts.map(({ r, by }) => ({ id: r.id, receiptNo: r.receiptNo, receivedDate: r.receivedDate, by, warehouse: r.warehouse, note: r.note,
         sapoStatus: r.sapoStatus, sapoReceiptCode: r.sapoReceiptCode, sapoNote: r.sapoNote, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
         lines: receiptLines.filter(x => x.l.receiptId === r.id).map(x => ({ lineId: x.l.lineId, sku: x.l.sku, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty, note: x.l.note })) })),
-      events: events.map(({ e, by }) => ({ at: e.at, by, action: e.action, summary: e.summary })),
+      // Nội dung lịch sử có số tiền (duyệt, nhập file, giá nhập, lịch trả, trả / huỷ trả, sửa nháp): người không xem được giá chỉ thấy tên thao tác.
+      events: events.map(({ e, by }) => ({ at: e.at, by, action: e.action, summary: prices || !MONEY_EVENTS.has(e.action) ? e.summary : MONEY_EVENT_LABEL[e.action] ?? 'Cập nhật đơn mua' })),
       actions: purchaseActions(a, flags, { anyReceived: progress.anyReceived, fullyReceived: progress.fullyReceived, paid: debt.paid }),
     },
   };
@@ -109,7 +113,7 @@ function purchaseListScope(m: Member, filter: PurchaseListFilter) {
 /** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
 export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
   const rows = await db.select().from(incomingShipments).where(purchaseListScope(m, filter))
-    .orderBy(desc(incomingShipments.createdAt)).limit(Math.min(filter.limit ?? 300, 500));
+    .orderBy(desc(incomingShipments.createdAt)).limit(Math.min(filter.limit ?? 300, filter.openOnly ? 5000 : 500));
   const ids = rows.map(r => r.id);
   if (!ids.length) return [];
   const [lines, rl, schedules, payments] = await Promise.all([
@@ -217,7 +221,8 @@ export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilt
 
 /** Đơn mua chưa huỷ, nhìn với quyền Manager – cho việc tự sinh (tasks) và sơ đồ quy trình. */
 export const SYSTEM_VIEWER = { id: 'system', role: 'manager', active: true, positionId: 'manager' } as unknown as Member;
-export const openPurchases = (db: Db, today: string) => listPurchases(db, SYSTEM_VIEWER, { openOnly: true, limit: 500 }, today);
+/** Việc tự động (nhận hàng, trả tiền NCC…): mọi đơn chưa huỷ – giới hạn rộng để đơn cũ còn nợ / chưa nhận đủ không bị bỏ sót. */
+export const openPurchases = (db: Db, today: string) => listPurchases(db, SYSTEM_VIEWER, { openOnly: true, limit: 5000 }, today);
 
 // ---------------------------------------------------------------- nguồn: báo giá / đơn-HĐKT / khách hỏi tồn
 export type SourceType = 'quote' | 'order' | 'stock_request';

@@ -53,14 +53,14 @@ export const RULES: Record<string, Rule> = {
       description: `Lần trước (${CARE_TYPE_LABEL[r.type].toLowerCase()}): ${(r.nextAction || r.content || r.subject).slice(0, 300)}`,
       link: `#/care/${r.id}`, assigneeId: r.ownerId, priority: r.nextAt! < today ? 'high' as const : 'normal' as const, dueDate: r.nextAt }));
   },
-  /** Báo giá chờ duyệt: khách gửi → nhân viên phụ trách duyệt; nhân viên lập → Manager duyệt (chưa giao người). */
+  /** Báo giá chờ duyệt (khách gửi hoặc nhân viên lập): việc chưa giao người – Manager / người được duyệt duyệt (người phụ trách có thông báo riêng). */
   async quoteApproval(db) {
     const rows = await db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, assigneeId: quotations.assigneeId, createdAt: quotations.createdAt,
       creatorRole: employees.role, creatorName: employees.name }).from(quotations).innerJoin(employees, eq(employees.id, quotations.creatorId))
       .where(eq(quotations.approvalStatus, 'pending')).limit(500);
     return rows.map(q => q.creatorRole === 'customer'
       ? { autoKey: `quote-customer:${q.id}`, source: 'quote' as const, sourceId: q.id, title: `Duyệt báo giá khách gửi ${q.quoteNo}`, description: `${q.customer} gửi yêu cầu báo giá từ trang khách hàng.`,
-        link: `#/quotes/${q.id}`, assigneeId: q.assigneeId, priority: 'high' as const, dueDate: addDaysIso(day(q.createdAt)!, 1) }
+        link: `#/quotes/${q.id}`, assigneeId: null, priority: 'high' as const, dueDate: addDaysIso(day(q.createdAt)!, 1) }
       : { autoKey: `quote-approve:${q.id}`, source: 'quote' as const, sourceId: q.id, title: `Duyệt báo giá ${q.quoteNo}`, description: `${q.creatorName} lập cho ${q.customer}, chờ Manager duyệt.`,
         link: `#/quotes/${q.id}`, assigneeId: null, priority: 'normal' as const, dueDate: addDaysIso(day(q.createdAt)!, 1) });
   },
@@ -110,12 +110,16 @@ export const RULES: Record<string, Rule> = {
     const rows = await db.select({ k: salesContracts, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId, orderStatus: salesOrders.status })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(and(eq(salesContracts.status, 'draft'), ne(salesOrders.status, 'cancelled'))).limit(500);
     return rows.map(({ k, customerName, ownerId }) => ({ autoKey: `contract-sign:${k.id}`, source: 'contract' as const, sourceId: k.orderId, title: `Ký HĐKT ${k.contractNo} – ${customerName}`,
-      description: 'Gửi hồ sơ HĐKT cho khách ký và đánh dấu đã ký.', link: `#/contracts/${k.orderId}`, assigneeId: ownerId, priority: 'normal' as const, dueDate: addDaysIso(day(k.createdAt)!, 3) }));
+      description: 'Gửi hồ sơ HĐKT cho khách ký; khách ký xong báo Manager đánh dấu "Đã ký".', link: `#/contracts/${k.orderId}`, assigneeId: ownerId, priority: 'normal' as const, dueDate: addDaysIso(day(k.createdAt)!, 3) }));
   },
   /** Công nợ quá hạn (đơn đã xác nhận / HĐKT đã ký). */
   async overdueDebt(db, today) {
-    const schedules = await db.select().from(paymentSchedules).where(and(isNotNull(paymentSchedules.dueDate), sql`${paymentSchedules.dueDate} < ${today}`)).limit(2000);
-    const ids = [...new Set(schedules.map(s => s.orderId))]; if (!ids.length) return [];
+    // Chỉ đơn còn nợ (tổng kỳ > đã thu, không tính phiếu huỷ) có kỳ đã quá hạn – lọc trong SQL, không cắt cụt theo số dòng.
+    const due = sql`(SELECT coalesce(sum(s2.amount), 0) FROM ${paymentSchedules} s2 WHERE s2.order_id = ${paymentSchedules.orderId})`;
+    const paid = sql`(SELECT coalesce(sum(p.amount), 0) FROM ${customerPayments} p WHERE p.order_id = ${paymentSchedules.orderId} AND p.voided_at IS NULL)`;
+    const ids = (await db.selectDistinct({ id: paymentSchedules.orderId }).from(paymentSchedules)
+      .where(and(isNotNull(paymentSchedules.dueDate), sql`${paymentSchedules.dueDate} < ${today}`, sql`${due} > ${paid}`))).map(r => r.id);
+    if (!ids.length) return [];
     const [orders, allSch, pays, ks] = await Promise.all([
       db.select().from(salesOrders).where(inArray(salesOrders.id, ids)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
@@ -246,8 +250,9 @@ export const RULES: Record<string, Rule> = {
 export async function reconcileAutoTasks(db: Db, now = new Date()) {
   const today = vietnamDate(now).iso, stamp = now.toISOString();
   const wanted = new Map<string, AutoTask>();
+  let failed = false;
   for (const [name, rule] of Object.entries(RULES)) {
-    try { for (const t of await rule(db, today)) wanted.set(t.autoKey, t); } catch (e) { console.error('auto task rule failed', name, e instanceof Error ? e.message : e); }
+    try { for (const t of await rule(db, today)) wanted.set(t.autoKey, t); } catch (e) { failed = true; console.error('auto task rule failed', name, e instanceof Error ? e.message : e); }
   }
   // Người nhận phải là nhân viên còn làm việc (chưa khoá / chưa xoá, không phải NCC / khách). Người phụ trách chứng từ
   // đã nghỉ thì việc về "chưa giao" để Manager thấy và giao lại – không để việc nằm ở tài khoản không ai đăng nhập.
@@ -255,17 +260,25 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
     .where(and(eq(employees.active, true), isNull(employees.deletedAt), notInArray(employees.role, ['customer', 'supplier'])))).map(e => e.id));
   const who = (id: string | null | undefined) => (id && usable.has(id) ? id : null);
   for (const t of wanted.values()) t.assigneeId = who(t.assigneeId);
-  const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
+  const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, completedBy: tasks.completedBy, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
     .from(tasks).where(isNotNull(tasks.autoKey));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
   const fresh = [...wanted.values()].filter(t => !byKey.has(t.autoKey));
   const created = fresh.map(t => ({ ...t, id: crypto.randomUUID() }));
   if (created.length) await db.insert(tasks).values(created.map(t => ({ id: t.id, title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
     sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing();
-  let closed = 0, updated = 0;
+  let closed = 0, updated = 0, reopened = 0;
   for (const t of existing) {
-    if (!isOpen(t.status)) continue;
     const w = wanted.get(t.autoKey!);
+    if (!isOpen(t.status)) {
+      // Hệ thống tự đóng (completedBy null) mà nay lại cần (VD huỷ phiếu thu → lại quá hạn, huỷ chuyến → lại phải lên lịch): mở lại.
+      if (w && t.status === 'done' && t.completedBy === null) {
+        await db.update(tasks).set({ status: 'todo', completedAt: null, updatedAt: stamp, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id)); reopened++;
+      }
+      continue;
+    }
+    // Quy tắc nào lỗi lượt này thì danh sách "cần" thiếu – không đóng việc nào (tránh đóng nhầm hàng loạt), để lượt sau.
+    if (!w && failed) continue;
     if (!w) { await db.update(tasks).set({ status: 'done', completedAt: stamp, completedBy: null, updatedAt: stamp, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id)); closed++; continue; }
     // Mức ưu tiên chỉ đặt lúc tạo (nhân viên có thể nâng / hạ). Việc "chưa giao" / giao cho nhóm mà đã có người nhận (giao tay / bấm Nhận việc) thì giữ người đó.
     const assigneeId = w.assigneeId ?? who(t.assigneeId), assigneePosition = assigneeId ? null : (w.assigneePosition ?? null);
@@ -274,5 +287,5 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
     }
   }
   // `fresh`: việc vừa tự sinh (để đẩy thông báo cho người / nhóm nhận).
-  return { created: fresh.length, closed, updated, fresh: created };
+  return { created: fresh.length, closed, updated, reopened, fresh: created };
 }

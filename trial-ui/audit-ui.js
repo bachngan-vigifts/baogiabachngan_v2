@@ -4,11 +4,11 @@ const when = iso => new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', min
 
 /** Tên dễ hiểu cho từng thao tác (route). Thao tác chưa có tên thì hiện nguyên route. */
 const ACTIONS = {
-  'POST /quotes': 'Tạo báo giá', 'PUT /quotes/:id': 'Sửa báo giá', 'POST /quotes/:id/approve': 'Duyệt báo giá', 'DELETE /quotes/:id': 'Xoá báo giá',
+  'POST /quotes': 'Tạo báo giá', 'PUT /quotes/:id': 'Sửa báo giá', 'POST /quotes/:id/approve': 'Duyệt báo giá', 'POST /quotes/:id/submit': 'Gửi duyệt báo giá', 'POST /quotes/:id/reject': 'Trả lại báo giá', 'DELETE /quotes/:id': 'Xoá báo giá',
   'POST /orders': 'Tạo đơn hàng', 'PUT /orders/:id/status': 'Duyệt / huỷ đơn hoặc HĐKT', 'PUT /orders/:id/delivery-date': 'Đổi ngày giao dự kiến',
   'POST /orders/:id/invoice-request': 'Yêu cầu xuất hoá đơn', 'PUT /orders/:id/invoice': 'Nhập số hoá đơn', 'POST /orders/:id/packing': 'Yêu cầu đóng gói',
   'POST /contracts': 'Lập HĐKT', 'PUT /contracts/:id': 'Sửa HĐKT', 'POST /deliveries': 'Lên lịch giao', 'PUT /deliveries/:id/status': 'Đổi trạng thái giao hàng',
-  'POST /payments': 'Ghi phiếu thu', 'POST /customers': 'Tạo khách hàng', 'PUT /customers/:id': 'Sửa khách hàng', 'POST /customers/:id/approve': 'Duyệt khách hàng',
+  'POST /payments': 'Ghi phiếu thu', 'POST /payments/:id/void': 'Huỷ phiếu thu', 'POST /orders/:id/submit': 'Gửi duyệt đơn', 'POST /customers': 'Tạo khách hàng', 'PUT /customers/:id': 'Sửa khách hàng', 'POST /customers/:id/approve': 'Duyệt khách hàng',
   'DELETE /customers/:id': 'Xoá / từ chối khách hàng', 'POST /packing/:id/send': 'Gửi phiếu đóng gói cho kho', 'POST /packing/:id/confirm': 'Kho xác nhận đã đóng',
   'POST /packing/:id/cancel': 'Huỷ phiếu đóng gói', 'POST /products/:sku/approve': 'Duyệt sản phẩm',
 };
@@ -24,6 +24,7 @@ function detail(e) {
   if (b.data?.rows) parts.push(`${b.data.rows.length} dòng hàng`);
   if (b.revision) parts.push('bản ' + b.revision);
   if (b.note) parts.push('“' + String(b.note).slice(0, 80) + '”');
+  if (b.reason) parts.push('lý do: “' + String(b.reason).slice(0, 120) + '”');
   return parts.join(' · ');
 }
 

@@ -10,6 +10,7 @@ import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierContacts, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
   supplierReceiptLines, supplierReceipts, suppliers,
@@ -75,6 +76,8 @@ async function lockAndCheck(c: Ctx, tx: Tx, id: string, action: PurchaseAction, 
 const bump = (tx: Tx, id: string, by: string, set: Partial<typeof incomingShipments.$inferInsert> = {}) =>
   tx.update(incomingShipments).set({ ...set, revision: sql`${incomingShipments.revision} + 1`, updatedAt: nowIso(), updatedBy: by }).where(eq(incomingShipments.id, id));
 /** Chi tiết đơn mua cho trình duyệt: kèm link ảnh hàng hỏng của từng phiếu nhận. */
+const poLabel = (v: { ticketNumber: string; supplier: { name: string } }) => `${v.ticketNumber} · ${v.supplier.name}`;
+
 async function viewOf(c: Ctx, id: string) {
   // Mọi thao tác ghi trả về qua đây: cập nhật tồn "Hàng chờ về" theo số còn thiếu của các đơn mua (chỉ ghi phần đổi).
   await syncIncomingStock(c.env.db).catch(() => {});
@@ -367,7 +370,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         depositRate: deposit?.mode === 'percent' ? Number(deposit.value) : deposit?.mode === 'none' || !deposit ? 0 : null });
       await event(tx, id, m.id, 'approve', `Manager duyệt đơn – tổng ${Math.round(total).toLocaleString('vi-VN')} đ, ${schedules.length} kỳ trả`, { rows, schedules });
     });
-    return json(await viewOf(c, id));
+    const v = await viewOf(c, id);
+    if (v.createdBy !== m.id) await notify(c.env, { eventType: 'purchase_approved', title: 'Đơn mua NCC đã được duyệt', body: poLabel(v), url: `/index.html#/purchases/${id}`, targetMemberId: v.createdBy, actorId: m.id, data: { purchaseId: id } }).catch(() => {});
+    return json(v);
   }, 'business');
 
   // ---- Gửi duyệt: nháp của nhân viên → vào hàng chờ duyệt của Manager
@@ -379,7 +384,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { submittedAt: nowIso() });
       await event(tx, id, m.id, 'submit', 'Gửi Manager duyệt đơn mua');
     });
-    return json(await viewOf(c, id));
+    const v = await viewOf(c, id);
+    await notifyMany(c.env, 'approvers', { eventType: 'purchase_pending', title: 'Đơn mua NCC chờ duyệt', body: `${m.name}: ${poLabel(v)}`, url: `/index.html#/purchases/${id}`, actorId: m.id, data: { purchaseId: id } }).catch(() => 0);
+    return json(v);
   }, 'business');
 
   // ---- Lưu giá nhập khi chưa duyệt (Manager): giá / CK / VAT từng dòng, đơn vẫn là nháp. Ô giá để trống = chưa có giá.
@@ -436,7 +443,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { cancelledAt: nowIso(), cancelledBy: m.id, cancelReason: reason });
       await event(tx, id, m.id, 'cancel', 'Huỷ đơn mua – ' + reason);
     });
-    return json(await viewOf(c, id));
+    const v = await viewOf(c, id);
+    if (v.createdBy !== m.id) await notify(c.env, { eventType: 'purchase_cancelled', title: 'Đơn mua NCC đã bị huỷ', body: `${poLabel(v)} – ${reason}`, url: `/index.html#/purchases/${id}`, targetMemberId: v.createdBy, actorId: m.id }).catch(() => {});
+    return json(v);
   }, 'business');
 
   // ---- Nhận hàng từng đợt (kho / Manager)
@@ -456,6 +465,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       receiptId = crypto.randomUUID();
       const no = await nextNumber(tx as unknown as Db, 'PNH', today());
       const whName = str(body.warehouse, 120) || p.raw.order.warehouse;
+      // Kho nhận phải có trong danh sách kho thật – không thì sổ kho không ghi được (trước đây bỏ qua âm thầm).
+      if (v.lines.some(l => l.goodQty > 0) && !(await stockWarehouseByName(tx as unknown as Db, whName))) fail(400, 'Chọn kho nhận hàng (kho có trong danh sách kho).');
       await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: v.receivedDate, receivedBy: m.id, warehouse: whName,
         note: str(body.note, 1000), clientKey, createdAt: nowIso() });
       await tx.insert(supplierReceiptLines).values(v.lines.map(l => ({ receiptId, lineId: l.lineId, sku: l.sku, goodQty: l.goodQty, damagedQty: l.damagedQty, note: l.note })));

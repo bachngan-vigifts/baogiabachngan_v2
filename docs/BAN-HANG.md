@@ -277,3 +277,17 @@ Hồ sơ đồng nghiệp chỉ trả thông tin nghiệp vụ: `payroll: null`,
 - Nếu giao về xưởng in, thông tin phiếu là nơi nhận của xưởng; lịch giao khách dùng thông tin khách trên đơn, tránh coi giao xưởng là giao xong cho khách.
 - Gỡ handler/nút ngầm và dòng trạng thái thuộc luồng yêu cầu đóng gói qua Công việc cũ trên UI. API cũ giữ tương thích dữ liệu/liên kết lịch sử; luồng thao tác hiện tại dùng phiếu đóng gói.
 - Không migration. Kiểm thử: packing.test.ts (bao gồm rollback/quyền/chống lặp và tự gửi), fulfilment-ui.test.ts, sales.test.ts; không thử tạo chứng từ trên production.
+
+
+## Rà soát CRM theo tài khoản (17/10/2026)
+
+- **Trả lại báo giá:** người duyệt bấm **Trả lại…** trên báo giá đang chờ duyệt, nhập lý do → báo giá về nháp, người lập / phụ trách nhận thông báo kèm lý do, sửa rồi gửi duyệt lại. Lý do lưu ở Lịch sử thay đổi.
+- **Đơn mua NCC** đã gửi duyệt vào hộp **Cần duyệt**; gửi duyệt báo người duyệt, duyệt / huỷ báo người lập. Việc "Duyệt đơn mua" tự đóng khi đơn được duyệt (không đóng tay).
+- **Thông báo thêm:** giao xong / giao thất bại → người phụ trách đơn; kho đóng hàng xong → cả người phụ trách đơn; nhập số hoá đơn → người phụ trách + người yêu cầu; khách tự huỷ đơn trên trang khách → người phụ trách (không có thì Manager).
+- **Chuyến giao** đi đúng thứ tự: Chờ giao ⇄ Đang giao → Đã giao / Thất bại; Thất bại → Chờ giao. Đã giao và đã huỷ là trạng thái cuối. Hai người bấm cùng lúc chỉ một lần được ghi (409 `DELIVERY_CHANGED`).
+- **Lên lịch giao** cập nhật ngày giao dự kiến của đơn (tránh việc "Trễ hạn giao" theo ngày cũ). Người duyệt đổi được ngày giao của đơn nháp đã gửi duyệt.
+- **Đơn nháp** không ghi thu tiền được (409 `ORDER_NOT_APPROVED`); huỷ đơn kiểm lại trong giao dịch (không huỷ nếu vừa có phiếu thu / hàng đã giao).
+- **Kho** không thấy giá bán (danh sách / chi tiết / lịch sử sản phẩm), phí ship chuyến giao, tiền trong lịch sử đơn mua. Phiếu nhận hàng NCC phải chọn kho nhận.
+- **Lịch sử đơn** (`/audit?entityType=orders&related=1`) gồm cả thao tác trên HĐKT, chuyến giao, phiếu thu, phiếu đóng gói của đơn.
+- **Sơ đồ quy trình** của Manager chỉ liệt kê đơn nháp đã gửi duyệt (khớp số đếm).
+- Không migration. Test: `tests/app/crm-audit.test.ts`.
