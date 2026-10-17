@@ -101,7 +101,12 @@ Báo giá ──[Sinh đơn hàng]──▶ Đơn đặt hàng
   - Hộp chọn sản phẩm và trang Sản phẩm cũng trừ phần đang treo.
   - Hàng chờ về / tồn NCC không bị treo.
 - **Bỏ giữ:** nhân viên xem được báo giá hoặc Manager. **Gia hạn +5 ngày:** chỉ Manager, tính thêm từ hạn hiện tại.
-- **Lập Đơn hàng / HĐKT từ báo giá:** tự bỏ treo (trạng thái `converted`).
+- **Lập Đơn hàng / HĐKT từ báo giá:** treo của báo giá đóng lại (trạng thái `converted`), **đơn / HĐKT giữ thay** (migration `0069_order_stock_holds.sql`).
+  - Mọi đơn / HĐKT lập từ nay (kể cả nháp, kể cả lập không qua giữ hàng) tự giữ **phần chưa giao** của từng dòng có mã hàng. Không hết hạn.
+  - Thôi giữ khi: **huỷ** đơn / HĐKT; **giao xong** (giao bớt thì giữ phần còn lại); hoặc đơn **đã đẩy Sapo** và tồn của mã đó được cập nhật (đồng bộ Sapo / nhập file tồn) **sau lúc đẩy** – khi đó tồn Sapo đã trừ "Đang giao dịch", web không trừ lần hai.
+  - Cột "Đang treo" hiện số đơn / "HĐKT <số>" (bấm mở). Kiểm tồn của chính báo giá đã lập đơn không tự trừ hàng của đơn mình.
+  - Đơn có từ trước migration 0069 (`holds_stock = false`) không giữ.
+  - Tính ngay khi đọc (`orderHolds` trong `sales/api/hold-routes.ts`), không có bảng riêng; `GET /stock-holds` trả cả dòng báo giá lẫn dòng đơn (`orderId`, `orderNo`, `contractNo`, `expiresAt: null`).
 - **Hết hạn:** hết 5 ngày thì không còn trừ khả dụng nữa.
   - Dòng giữ chuyển `expired`; người giữ và người phụ trách báo giá nhận thông báo "Hết hạn giữ hàng" (mỗi báo giá một lần).
   - Việc này chạy ở nhịp `/pulse` (khoảng 30 giây, khi có người đang dùng hệ thống) và khi tải danh sách giữ hàng.

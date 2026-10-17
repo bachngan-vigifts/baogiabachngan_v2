@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -8,7 +8,7 @@ import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { quotations, quoteLines } from '../../quotes/schema.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { stockHolds } from '../schema.ts';
+import { salesContracts, salesOrderLines, salesOrders, stockHolds } from '../schema.ts';
 import { HOLD_DAYS } from '../domain/statuses.ts';
 
 /**
@@ -19,9 +19,12 @@ import { HOLD_DAYS } from '../domain/statuses.ts';
  *  POST /quotes/:id/hold/release  bỏ giữ (nhân viên xem được báo giá / Manager)
  *  POST /quotes/:id/hold/extend   gia hạn thêm 5 ngày (chỉ Manager)
  * Hết hạn: dòng chuyển "expired" và báo người giữ (chạy khi có người dùng hệ thống – /pulse – và khi đọc danh sách giữ).
- * Lập đơn / HĐKT từ báo giá: tự bỏ treo (sales/api/routes.ts – createOrderFromQuote).
+ * Lập đơn / HĐKT từ báo giá: tự bỏ treo của báo giá – đơn / HĐKT giữ thay (`orderHolds`, không hết hạn):
+ *  giữ phần chưa giao của mỗi dòng có mã, từ lúc lập (kể cả nháp) đến khi huỷ / giao xong,
+ *  hoặc khi đơn đã đẩy Sapo VÀ tồn của mã đó cập nhật sau lúc đẩy (tồn Sapo đã trừ "Đang giao dịch" – không trừ hai lần).
  */
 type Ctx = RouteContext<StaffEnv>;
+type Db = StaffEnv['db'] | Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 const fail = (status: number, message: string, code?: string): never => { throw new AppError(status, message, code); };
 const nowIso = () => new Date().toISOString();
@@ -42,6 +45,23 @@ export async function expireHolds(env: StaffEnv): Promise<number> {
       body: `${q.no} · ${q.customer}: đã bỏ treo ${rows.length} mã. Bấm "Giữ hàng" lại nếu khách vẫn cần.`, url: `/index.html#/quotes/${q.id}` }).catch(() => {});
   }
   return done.length;
+}
+
+/** Hàng đơn / HĐKT đang giữ (theo mã): phần chưa giao, đơn còn hiệu lực, tồn Sapo chưa trừ. `skus` để lọc (không truyền = mọi mã). */
+export async function orderHolds(db: Db, skus?: string[]) {
+  if (skus && !skus.length) return [];
+  const sapoCounted = and(sql`${salesOrders.sapoOrderId} IS NOT NULL`, or(isNull(salesOrders.sapoPushedAt), sql`EXISTS (${db.select({ one: sql`1` }).from(productStock)
+    .innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId))
+    .where(and(eq(productStock.sku, salesOrderLines.sku), eq(warehouses.kind, 'stock'), gt(productStock.updatedAt, salesOrders.sapoPushedAt)))})`));
+  return db.select({
+    sku: salesOrderLines.sku, qty: sql<number>`sum(${salesOrderLines.qty} - ${salesOrderLines.deliveredQty})`.mapWith(Number),
+    orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName,
+    contractNo: sql<string | null>`max(${salesContracts.contractNo})`,
+  }).from(salesOrderLines).innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId))
+    .leftJoin(salesContracts, and(eq(salesContracts.orderId, salesOrders.id), ne(salesContracts.status, 'cancelled')))
+    .where(and(eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
+      gt(salesOrderLines.qty, salesOrderLines.deliveredQty), skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`))
+    .groupBy(salesOrderLines.sku, salesOrders.id).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
 }
 
 async function loadQuote(c: Ctx, id: string) {
@@ -66,7 +86,8 @@ export function registerHoldRoutes(router: Router<StaffEnv>) {
     await expireHolds(c.env).catch(() => 0);
     const rows = await c.env.db.select({ sku: stockHolds.sku, qty: stockHolds.qty, expiresAt: stockHolds.expiresAt, quoteId: stockHolds.quoteId, quoteNo: quotations.quoteNo, customer: quotations.customer })
       .from(stockHolds).innerJoin(quotations, eq(quotations.id, stockHolds.quoteId)).where(live(nowIso())).orderBy(asc(stockHolds.sku), asc(stockHolds.expiresAt)).limit(5000);
-    return json({ holds: rows });
+    const orders = (await orderHolds(c.env.db)).map(o => ({ ...o, expiresAt: null }));
+    return json({ holds: [...rows, ...orders] });
   }, 'business');
 
   router.get('/quotes/:id/hold', async c => json(await holdView(c, c.params.id!)), 'business');
@@ -88,14 +109,17 @@ export function registerHoldRoutes(router: Router<StaffEnv>) {
       for (const l of lines) if (l.qty > 0) { const x = need.get(l.sku) ?? { name: l.name, qty: 0 }; x.qty += l.qty; need.set(l.sku, x); }
       if (!need.size) fail(400, 'Báo giá chưa có mã hàng trong danh mục để giữ.');
       const skus = [...need.keys()];
-      const [stock, held] = await Promise.all([
+      const [stock, held, ordered] = await Promise.all([
         tx.select({ sku: productStock.sku, qty: sql<number>`sum(${productStock.quantity})`.mapWith(Number) }).from(productStock)
           .innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId)).where(and(inArray(productStock.sku, skus), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).groupBy(productStock.sku),
         tx.select({ sku: stockHolds.sku, qty: sql<number>`sum(${stockHolds.qty})`.mapWith(Number) }).from(stockHolds).where(and(inArray(stockHolds.sku, skus), live(now))).groupBy(stockHolds.sku),
+        orderHolds(tx, skus),
       ]);
+      // Đơn / HĐKT khác đang giữ cũng trừ khỏi khả dụng (đơn lập từ chính báo giá này là hàng của mình).
+      const orderedQty = (sku: string) => ordered.filter(o => o.sku === sku && o.quoteId !== q.id).reduce((t, o) => t + o.qty, 0);
       const expiresAt = new Date(Date.now() + HOLD_DAYS * 864e5).toISOString(), rows = [];
       for (const [sku, n] of need) {
-        const free = Math.max(0, (stock.find(s => s.sku === sku)?.qty ?? 0) - (held.find(h => h.sku === sku)?.qty ?? 0)), qty = Math.min(n.qty, free);
+        const free = Math.max(0, (stock.find(s => s.sku === sku)?.qty ?? 0) - (held.find(h => h.sku === sku)?.qty ?? 0) - orderedQty(sku)), qty = Math.min(n.qty, free);
         if (qty > 0) { rows.push({ id: crypto.randomUUID(), quoteId: q.id, sku, qty, status: 'active' as const, expiresAt, createdBy: m.id, createdAt: now }); result.held.push({ sku, name: n.name, need: n.qty, qty }); }
         if (qty < n.qty) result.short.push({ sku, name: n.name, need: n.qty, qty });
       }

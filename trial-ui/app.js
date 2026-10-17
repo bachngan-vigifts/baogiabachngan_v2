@@ -1903,7 +1903,8 @@ const priceOf = (p, policyId) => {
 /** Giá niêm yết theo bảng giá đang chọn (null = bảng giá này chưa có giá, như bản cũ). */
 const productPrice = p => priceOf(p, currentPolicy());
 /** Tồn khả dụng = tổng các kho thật (không tính NCC và hàng chờ về). */
-/** Hàng đang treo (giữ cho báo giá, GET /stock-holds): sku → [{ qty, quoteId, quoteNo, customer, expiresAt }]. Tải lại tối đa 30 giây/lần. */
+/** Hàng đang treo (GET /stock-holds): sku → [{ qty, quoteId, quoteNo, customer, expiresAt }] của báo giá giữ 5 ngày,
+ *  và [{ qty, quoteId, orderId, orderNo, contractNo, customer }] của đơn / HĐKT giữ đến khi giao / huỷ. Tải lại tối đa 30 giây/lần. */
 let holdsAt = 0, holdsReq = null;
 state.holds = new Map();
 function loadHolds(force = false) {
@@ -1914,10 +1915,13 @@ function loadHolds(force = false) {
 }
 /** Số đang treo của một mã (bỏ phần treo cho chính báo giá `exceptQuote`). */
 const heldQty = (sku, exceptQuote = '') => (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote).reduce((t, h) => t + h.qty, 0);
-/** Ô "Đang treo": số + link báo giá đang giữ (bấm mở báo giá). */
+/** Ô "Đang treo": số + link báo giá / đơn / HĐKT đang giữ (bấm mở). */
+const holdLink = h => h.orderId
+  ? `<a href="${docHref(h.orderId, h.contractNo)}" title="${esc(h.customer)} · ${fmtNum(h.qty)} · giữ đến khi giao xong hoặc huỷ">${esc(h.contractNo ? 'HĐKT ' + h.contractNo : h.orderNo)}</a>`
+  : `<a href="#/quotes/${esc(h.quoteId)}" title="${esc(h.customer)} · ${fmtNum(h.qty)} · giữ đến ${esc(new Date(h.expiresAt).toLocaleString('vi-VN'))}">${esc(h.quoteNo)}</a>`;
 const heldCell = (sku, exceptQuote = '') => {
   const list = (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote);
-  return list.length ? `${fmtNum(heldQty(sku, exceptQuote))}<small>${list.map(h => `<a href="#/quotes/${esc(h.quoteId)}" title="${esc(h.customer)} · giữ đến ${esc(new Date(h.expiresAt).toLocaleString('vi-VN'))}">${esc(h.quoteNo)}</a>`).join(', ')}</small>` : '<span class="muted">—</span>';
+  return list.length ? `${fmtNum(heldQty(sku, exceptQuote))}<small>${list.map(holdLink).join(', ')}</small>` : '<span class="muted">—</span>';
 };
 const stockTotal = p => state.warehouses.filter(w => w.kind === 'stock').reduce((s, w) => s + (Number(p.stock?.[w.id]) || 0), 0);
 /** Tồn khả dụng = tổng kho thật − đang treo cho báo giá khác (treo tự hết khi quá hạn 5 ngày). */
