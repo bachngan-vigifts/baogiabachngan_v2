@@ -21,6 +21,7 @@ import { registerCustomerDuplicateRoutes } from '../modules/customer-hub/api/dup
 import { registerCareRoutes } from '../modules/care/api/routes.ts';
 import { registerHrRoutes } from '../modules/hr/api/routes.ts';
 import { registerAdmsRoutes } from '../modules/hr/api/adms-routes.ts';
+import { authorizeSynctime } from '../modules/integrations/api/synctime-auth.ts';
 import { registerSynctimeRoutes } from '../modules/integrations/api/synctime-routes.ts';
 import { registerStaffHubRoutes, memberRevenues } from '../modules/staff-hub/api/routes.ts';
 import { registerAuditRoutes } from './audit-routes.ts';
@@ -32,7 +33,7 @@ import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
-  const router = createStaffRouter();
+  const router = createStaffRouter({ authorizeSynctime });
   registerQuoteRoutes(router);
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);

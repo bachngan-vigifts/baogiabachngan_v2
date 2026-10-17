@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createStaffRouter } from '../../src/modules/staff/api/auth-routes.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
@@ -99,4 +100,17 @@ test('SyncTime: bounded intake rate and 30-day receipt retention', async () => {
   await db.insert(authAttempts).values({ key, count: 120, expires: now + 900 }).onConflictDoUpdate({ target: authAttempts.key, set: { count: 120, expires: now + 900 } });
   assert.equal((await push(secret, '{"current":2}')).status, 429);
   assert.equal((await db.select().from(synctimeReceipts)).length, 1);
+});
+
+test('SyncTime: a staff router without an injected authorizer fails closed before running the handler', async () => {
+  const router = createStaffRouter();
+  let handled = false;
+  router.post('/integrations/synctime/webhook', () => {
+    handled = true;
+    return new Response('unexpected');
+  }, 'synctime-sync');
+  // No database or body access is needed to reject an unconfigured authorizer.
+  const response = await router.handle(new Request(origin + '/api/staff/integrations/synctime/webhook', { method: 'POST' }), { db: null as never });
+  assert.equal(response.status, 503);
+  assert.equal(handled, false);
 });
