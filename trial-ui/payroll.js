@@ -2,6 +2,8 @@
 // Chuyển khoản (VietQR) · Tham số · Xuất Excel. Mọi con số do máy chủ tính (src/modules/hr/domain/payroll.ts) – trang này chỉ hiển thị.
 // Sửa số liệu từng người ở trang chi tiết nhân viên (tab Lương & thưởng); số liệu chung của nhóm và tham số sửa ngay tại đây.
 
+import { openAdms } from './adms.js';
+
 const STATUS = { estimate: ['Tạm tính', 'muted'], confirmed: ['Đã chốt', 'info'], paid: ['Đã trả', 'ok'] };
 const monthLabel = m => `Tháng ${Number(m.slice(5))}/${m.slice(0, 4)}`;
 const shiftMonth = (m, d) => { const t = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5) - 1 + d, 1)); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`; };
@@ -85,7 +87,7 @@ export function initPayroll(deps) {
       <div class="page-head"><div><span class="eyebrow">Quản trị</span><h1>Bảng lương</h1><p class="muted">${esc(monthLabel(d.month))} · tham số áp dụng ${d.paramsMonth ? 'từ ' + esc(monthLabel(d.paramsMonth).toLowerCase()) : 'mặc định theo file mẫu'}.</p></div>
         <div class="row-actions pr-actions">
           <div class="md-month"><button type="button" class="icon-btn" data-month="-1" aria-label="Tháng trước">‹</button><input type="month" id="pr-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
-          <button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
+          <button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
           ${open ? `<button class="btn primary" data-act="confirm-all">Chốt lương (${open})</button>` : ''}</div></div>
       <div class="stats">
         <article class="stat"><small>Nhân sự</small><strong>${total.people}</strong><span class="muted">${open ? `${open} phiếu tạm tính` : 'Đã chốt tất cả'}</span></article>
@@ -194,7 +196,8 @@ export function initPayroll(deps) {
     const mb = t.closest('[data-month]'); if (mb) { go(shiftMonth(st.month, Number(mb.dataset.month))); return; }
     const act = t.closest('[data-act]')?.dataset.act; if (!act) return;
     try {
-      if (act === 'params') await editParams();
+      if (act === 'adms') await openAdms({ api, toast }, st.month);
+      else if (act === 'params') await editParams();
       else if (act === 'excel') { await exportExcel(); toast('Đã tải file Excel bảng lương.'); }
       else if (act === 'confirm-all') {
         const n = withProfile().filter(r => r.payslip.status === 'estimate').length;
