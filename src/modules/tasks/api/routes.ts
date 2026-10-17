@@ -154,16 +154,22 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   /**
    * Danh sách việc. `view`: mine (tôi nhận + nhóm tôi chưa ai nhận) · created (tôi giao) · team (việc giao cho nhóm, chưa ai nhận) · unassigned (chưa giao, Manager)
    * · colleagues (việc của đồng nghiệp cùng chức vụ – Sale Admin / Kho / NVBH LOCK / NVBH ML, chỉ xem) · all.
-   * `status`: open (mặc định) · done · all. Lọc thêm `priority`, `source`, `q`.
+   * `status`: open (mặc định) · done · all. Lọc thêm `priority`, `source`, `q`, `due=overdue|today|upcoming|none` (trước giới hạn 500 dòng).
    */
   router.get('/tasks', async c => {
     await syncAuto(c);
     const m = me(c), p = c.url.searchParams, view = p.get('view') || 'mine', status = p.get('status') || 'open', q = str(p.get('q'), 100).toLowerCase();
+    const due = p.get('due') || '', today = vietnamDate().iso;
+    if (due && !['overdue', 'today', 'upcoming', 'none'].includes(due)) throw new AppError(400, 'Bộ lọc hạn công việc không hợp lệ.');
     const where: (SQL | undefined)[] = [visible(c)];
+    if (due === 'overdue') where.push(sql`${tasks.dueDate} <> '' and ${tasks.dueDate} < ${today}`);
+    else if (due === 'today') where.push(eq(tasks.dueDate, today));
+    else if (due === 'upcoming') where.push(sql`${tasks.dueDate} > ${today}`);
+    else if (due === 'none') where.push(or(isNull(tasks.dueDate), eq(tasks.dueDate, '')));
     const team = myTeam(c);
     if (view === 'mine') where.push(or(eq(tasks.assigneeId, m.id), team ? and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, team)) : undefined));
     else if (view === 'created') where.push(eq(tasks.createdBy, m.id));
-    else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`));
+    else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`, m.role === 'manager' ? undefined : team ? eq(tasks.assigneePosition, team) : sql`false`));
     else if (view === 'unassigned') where.push(and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)));
     else if (view === 'colleagues') { // việc của đồng nghiệp cùng chức vụ (không gồm việc của chính mình)
       const pos = peerPos(c);
@@ -184,7 +190,6 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const name = (id: string | null) => id ? people.find(x => x.id === id)?.name ?? '' : '';
     const counts = await c.env.db.select({ taskId: taskComments.taskId, n: sql<number>`count(*)` }).from(taskComments)
       .where(rows.length ? inArray(taskComments.taskId, rows.map(r => r.id)) : sql`false`).groupBy(taskComments.taskId);
-    const today = vietnamDate().iso;
     // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
     return json({ today, canViewColleagues: !!peerPos(c), tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',

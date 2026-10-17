@@ -5,6 +5,7 @@ import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
+import { tasks } from '../../src/modules/tasks/schema.ts';
 import { dueBucket, addDaysIso } from '../../src/modules/tasks/domain/task-config.ts';
 
 const origin = 'https://trial.test';
@@ -195,4 +196,34 @@ test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận vi�
   const manual = await call('/tasks', mgr, 'POST', { title: 'Việc thủ công nhận hàng', assigneeId: 'kho' });
   assert.equal((await call(`/tasks/${manual.data.id}`, kho)).data.task.completionFromSource, false);
   assert.equal((await call(`/tasks/${manual.data.id}`, kho, 'PUT', { status: 'done' })).status, 200, 'việc thủ công vẫn có thể tick hoàn thành');
+});
+
+
+test('thẻ thống kê: hạn lọc ở server trước LIMIT, đúng ngày Việt Nam, không lộ việc người khác và đúng nhóm', async () => {
+  const { db, call, emp, mgr, kho } = await setup();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+  const old = addDaysIso(today, -1), next = addDaysIso(today, 1), now = new Date().toISOString();
+  const base = { createdBy: 'mgr', createdAt: now, updatedAt: now };
+  await db.insert(tasks).values(Array.from({ length: 501 }, (_, i) => ({ ...base, id: `over-${i}`, title: `Quá hạn ${i}`, assigneeId: 'emp', dueDate: old })));
+  await db.insert(tasks).values([
+    { ...base, id: 'due-today', title: 'Hôm nay', assigneeId: 'emp', dueDate: today },
+    { ...base, id: 'due-future', title: 'Ngày mai', assigneeId: 'emp', dueDate: next },
+    { ...base, id: 'due-none', title: 'Không hạn', assigneeId: 'emp' },
+    { ...base, id: 'due-done', title: 'Đã xong', assigneeId: 'emp', dueDate: today, status: 'done' },
+    { ...base, id: 'due-private', title: 'Riêng manager', assigneeId: 'mgr', dueDate: today },
+    { ...base, id: 'warehouse-today', title: 'Nhóm kho', assigneePosition: 'warehouse', dueDate: today },
+    { ...base, id: 'accounting-created-by-warehouse', title: 'Kho giao kế toán', assigneePosition: 'accounting', createdBy: 'kho', dueDate: today },
+    { ...base, id: 'unassigned-today', title: 'Chưa giao', dueDate: today },
+  ]);
+  const ids = (r: any) => r.data.tasks.map((t: any) => t.id);
+  const due = await call('/tasks?view=mine&status=open&due=today', emp);
+  assert.equal(due.status, 200); assert.deepEqual(ids(due), ['due-today'], 'không bị 501 việc cũ che mất và không gồm việc đã xong/người khác');
+  assert.deepEqual(ids(await call('/tasks?due=upcoming', emp)), ['due-future']);
+  assert.deepEqual(ids(await call('/tasks?due=none', emp)), ['due-none']);
+  assert.equal((await call('/tasks?due=overdue', emp)).data.tasks.length, 500);
+  assert.ok((await call('/tasks?due=overdue', emp)).data.tasks.every((t: any) => t.due === 'overdue'));
+  assert.equal((await call('/tasks?due=invalid', emp)).status, 400);
+  const summary = (await call('/tasks/summary', emp)).data; assert.equal(summary.today, 1); assert.equal(summary.overdue, 501);
+  assert.deepEqual(ids(await call('/tasks?view=team&due=today', kho)), ['warehouse-today'], 'việc nhóm đúng nhóm mình, không lấy việc mình giao cho nhóm khác');
+  assert.deepEqual(ids(await call('/tasks?view=unassigned&due=today', mgr)), ['unassigned-today']);
 });
