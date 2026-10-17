@@ -1526,3 +1526,5 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .lookup-incoming li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: .88rem; }
 .lookup-incoming li a { font-weight: 600; }
 .lookup-incoming li b { margin-left: auto; }
+.link-btn[data-incoming-sku] { font-size: inherit; }
+.incoming-dialog { width: min(680px, calc(100vw - 32px)); max-width: none; }
