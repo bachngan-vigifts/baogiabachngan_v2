@@ -214,3 +214,23 @@ test('Cash: RLS và REVOKE chặn truy cập trực tiếp ba bảng', async () 
   assert.equal(rows.length, 3);
   assert.ok(rows.every((r) => r.relrowsecurity && !r.allowed));
 });
+
+test('Cash: ghi lại phiếu POS sau huỷ vào ca hiện tại, không tạo lại đơn hay xuất kho lần nữa', async () => {
+  const f = await setup(),
+    s = await f.open(),
+    bill = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id));
+  await f.call('/cash/shifts/' + s.id + '/close', f.emp, 'POST', { countedCash: 694400 });
+  const [p] = await f.db.select().from(customerPayments);
+  await f.call('/payments/' + p!.id + '/void', f.mgr, 'POST', { reason: 'Ghi sai hình thức' });
+  const b = { key: crypto.randomUUID(), orderId: bill.data.id, amount: 194400, method: 'cash', confirmed: true };
+  assert.equal((await f.call('/payments', f.emp, 'POST', b)).status, 409);
+  const next = await f.open(),
+    [a, r] = await Promise.all([f.call('/payments', f.emp, 'POST', b), f.call('/payments', f.emp, 'POST', b)]);
+  assert.equal(a.status, 201, JSON.stringify(a.data));
+  assert.equal(a.data.id, r.data.id);
+  const [receipt] = await f.db.select().from(customerPayments).where(eq(customerPayments.id, a.data.id));
+  assert.equal(receipt!.shiftId, next.id);
+  assert.equal((await f.call('/cash/shifts/' + next.id, f.emp)).data.cashSales, 194400);
+  assert.equal((await f.call('/cash/shifts/' + s.id, f.emp)).data.expectedCash, 694400);
+  assert.equal((await f.call('/products/00123', f.emp)).data.product.stock['pos-wh'], 8);
+});

@@ -856,7 +856,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const order = await loadOrder(c, text(body.orderId, 80));
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
     if (order.status === 'draft') throw new AppError(409, 'Đơn hàng / HĐKT chưa được duyệt, chưa ghi thu được (chưa phát sinh công nợ).', 'ORDER_NOT_APPROVED');
-    if (order.channel === 'pos') throw new AppError(409, 'Đơn POS cần thu tại Bán hàng nhanh để ghi đúng ca.', 'POS_PAYMENT_REQUIRED');
+    const posReceipt = order.channel === 'pos';
+    if(posReceipt && order.fulfillmentMode==='cod') throw new AppError(409,'Thu COD tại Bán hàng nhanh để gắn đúng chuyến giao.','POS_PAYMENT_REQUIRED');
+    if(posReceipt && !can(me,'pos.sell')) throw new AppError(403,'Cần quyền POS để ghi lại khoản thu vào ca.');
     const amount = money(body.amount, 'Số tiền');
     if (amount <= 0) throw new AppError(400, 'Số tiền phải lớn hơn 0.');
     const paidAt = String(body.paidAt || vietnamDate().iso);
@@ -864,21 +866,26 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (paidAt > vietnamDate().iso) throw new AppError(400, 'Ngày thu không được sau hôm nay.');
     const method = (body.method ?? 'transfer') as typeof PAYMENT_METHODS[number];
     if (!PAYMENT_METHODS.includes(method)) throw new AppError(400, 'Hình thức thanh toán không hợp lệ.');
+    const requestKey = posReceipt ? text(body.key,100) : null;
+    if(posReceipt && (!requestKey || !/^[a-zA-Z0-9_-]{16,100}$/.test(requestKey) || !Number.isSafeInteger(amount) || !['cash','transfer'].includes(method) || body.confirmed!==true)) throw new AppError(400,'Xác nhận đã thực nhận tiền, chọn tiền mặt/chuyển khoản và cung cấp mã chống lặp hợp lệ.');
     const scheduleId = body.scheduleId ? text(body.scheduleId, 80) : null;
     if (scheduleId && !(await c.env.db.select({ id: paymentSchedules.id }).from(paymentSchedules).where(and(eq(paymentSchedules.id, scheduleId), eq(paymentSchedules.orderId, order.id))).limit(1)).length)
       throw new AppError(400, 'Kỳ thanh toán không thuộc đơn này.');
     const id = crypto.randomUUID();
+    let receiptId:string=id;
     // Khoá dòng đơn rồi mới tính số còn phải thu: hai lần bấm / hai người ghi cùng lúc không thu vượt.
     await c.env.db.transaction(async tx => {
       await cashLock(tx);
+      if(requestKey){const [prior]=await tx.select().from(customerPayments).where(eq(customerPayments.requestKey,requestKey));if(prior){if(prior.orderId!==order.id||prior.amount!==amount||prior.method!==method||prior.createdBy!==me.id||prior.voidedAt)throw new AppError(409,'Mã ghi thu đã dùng cho giao dịch khác.');receiptId=prior.id;return;}}
       let cashShiftId:string|null=null;
-      if(method==='cash' && (await drawerOf(tx)).openingSetAt){const [s]=await tx.select().from(posShifts).where(and(eq(posShifts.memberId,me.id),isNull(posShifts.closedAt)));if(!s)throw new AppError(409,'Cần ca đang mở để ghi tiền mặt vào két.');if(paidAt!==vietnamDate().iso)throw new AppError(400,'Tiền vào két ghi nhận ngày thực thu hôm nay.');cashShiftId=s.id;}
+      if(posReceipt || (method==='cash' && (await drawerOf(tx)).openingSetAt)){const [s]=await tx.select().from(posShifts).where(and(eq(posShifts.memberId,me.id),isNull(posShifts.closedAt)));if(!s)throw new AppError(409,'Cần ca đang mở để ghi tiền mặt vào két.');if(paidAt!==vietnamDate().iso)throw new AppError(400,'Tiền vào két ghi nhận ngày thực thu hôm nay.');cashShiftId=s.id;}
       await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
-      await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
+      await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, requestKey, paymentSource:posReceipt?'pos':'manual', amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
+      if(cashShiftId)await cashAudit(tx,me.id,'receipt','payments',id,{orderId:order.id,shiftId:cashShiftId,amount,method});
     });
-    return json({ id }, 201);
+    return json({ id:receiptId }, 201);
   }, 'business');
 
   /** Huỷ phiếu thu ghi nhầm (bắt buộc lý do). Phiếu giữ lại trong lịch sử, không tính vào đã thu; muốn sửa thì huỷ rồi ghi phiếu mới. */

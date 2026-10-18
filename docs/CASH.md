@@ -33,7 +33,7 @@ Sau thời điểm Manager kích hoạt số đầu kỳ, phiếu thu tiền m�
 
 ## Huỷ và tra soát
 
-Manager hoặc quyền `payments.void` (mặc định Kế toán) huỷ phiếu có lý do. Phiếu vẫn hiện gạch ngang, không tính vào số dư hiện tại. Huỷ một phiếu trong ca đã kết giữ nguyên báo cáo/tiền đếm của ca đó, mở hoặc mở lại tra soát liên quan; không sửa đầu ca kế tiếp. Huỷ ghi nhận không tự hoàn tiền thực tế hay nhập lại hàng.
+Manager hoặc quyền `payments.void` (mặc định Kế toán) huỷ phiếu có lý do. Phiếu vẫn hiện gạch ngang, không tính vào số dư hiện tại. Huỷ một phiếu trong ca đã kết giữ nguyên báo cáo/tiền đếm của ca đó, mở hoặc mở lại tra soát liên quan; không sửa đầu ca kế tiếp. Huỷ ghi nhận không tự hoàn tiền thực tế hay nhập lại hàng. Đơn POS bán tại quầy còn nợ sau huỷ có thể ghi lại phiếu thu tại chi tiết đơn: phải có ca đang mở, xác nhận thực nhận, tiền nguyên VNĐ và mã chống lặp; không tạo lại đơn/xuất kho. COD vẫn thu qua đúng chuyến giao trong POS.
 
 Nhân viên kết ca ghi giải trình. Manager đóng sau giải trình và bắt buộc nêu lý do. Đóng tra soát không tự sửa sổ. Nếu cần điều chỉnh tiền, Manager lập phiếu Điều chỉnh két có lý do và tham chiếu mã TS. Mỗi ca có một tra soát; nhiều lần huỷ sau kết ca cập nhật vấn đề trên cùng tra soát và lưu từng sự kiện audit.
 
