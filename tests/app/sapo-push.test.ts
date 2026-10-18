@@ -63,10 +63,16 @@ function fakeSapo(opts: { forbidOrders?: boolean; orderStatus?: number } = {}) {
   return { db, writes, fetch };
 }
 
-async function setup(opts: { forbidOrders?: boolean; orderStatus?: number; connect?: boolean } = {}) {
+async function setup(opts: { forbidOrders?: boolean; orderStatus?: number; connect?: boolean; viaClaw?: boolean } = {}) {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const sapo = fakeSapo(opts), router = createAppRouter();
-  const env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch: sapo.fetch };
+  const hooks: { url: string; body: Raw }[] = [];
+  const sapoWebhookFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    hooks.push({ url: String(input), body: JSON.parse(String(init?.body ?? '{}')) });
+    return Response.json({ success: true, runId: `run-${hooks.length}` });
+  }) as typeof fetch;
+  const env = { db, passwordIterations: 1000, sapoSyncToken: SECRET, sapoFetch: sapo.fetch,
+    ...(opts.viaClaw ? { sapoOrderMode: 'n8n' as const, sapoWebhookFetch } : {}) };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
@@ -84,8 +90,30 @@ async function setup(opts: { forbidOrders?: boolean; orderStatus?: number; conne
     return q.data.id as string;
   };
   const orderCount = async () => (await db.select({ id: salesOrders.id }).from(salesOrders)).length;
-  return { db, sapo, call, mgr, emp, makeQuote, orderCount };
+  return { db, sapo, hooks, router, env, call, mgr, emp, makeQuote, orderCount };
 }
+
+test('production: Sinh đơn và Sinh HĐKT giao đúng hai hook n8n/Claw, không gọi ghi Sapo trực tiếp', async () => {
+  const s = await setup({ viaClaw: true });
+  const order = await s.call('/orders', s.emp, 'POST', { quoteId: await s.makeQuote('B2B_N8N_001') });
+  assert.equal(order.status, 201, JSON.stringify(order.data));
+  assert.deepEqual([order.data.sapo.status, order.data.sapo.runId], ['updating', 'run-1']);
+  assert.match(s.hooks[0]!.url, /crm-order-from-web-to-claw$/);
+  assert.deepEqual([s.hooks[0]!.body.event, s.hooks[0]!.body.trigger_source], ['crm_create_sapo_order', 'order']);
+  assert.equal(s.hooks[0]!.body.idempotency_key, `order:${order.data.sapo.code}`);
+  assert.equal(s.hooks[0]!.body.items.length, 2);
+  const callback = await s.router.handle(new Request(origin + '/api/staff/integrations/sapo/order-status', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${SECRET}` }, body: JSON.stringify({ quote_number: order.data.sapo.code, status: 'created', sapo_order_id: '4321', sapo_order_code: order.data.sapo.code }) }), s.env);
+  assert.equal(callback.status, 200, await callback.text());
+  assert.equal((await s.call(`/orders/${order.data.id}`, s.emp)).data.order.sapoOrderId, '4321');
+
+  const contract = await s.call('/contracts', s.emp, 'POST', { quoteId: await s.makeQuote('B2B_N8N_002'), legalEntity: 'BN', depositRate: 30, paymentDays: 15 });
+  assert.equal(contract.status, 201, JSON.stringify(contract.data));
+  assert.deepEqual([contract.data.sapo.status, contract.data.sapo.code], ['updating', contract.data.contractNo]);
+  assert.match(s.hooks[1]!.url, /crm-hdkt-sapo-order-from-web-to-claw$/);
+  assert.deepEqual([s.hooks[1]!.body.event, s.hooks[1]!.body.trigger_source], ['crm_hdkt_create_sapo_order', 'hdkt']);
+  assert.equal(s.hooks[1]!.body.idempotency_key, `hdkt:${contract.data.contractNo}`);
+  assert.equal(s.sapo.writes.filter(w => w.path === '/orders.json').length, 0);
+});
 
 test('sinh đơn hàng: chọn kho → đơn web + đơn nháp Sapo cùng lúc; đúng mã, đúng NV phụ trách; tạo SKU thiếu; Sapo đã có cùng mã thì liên kết', async () => {
   const { sapo, call, emp, makeQuote, orderCount } = await setup();

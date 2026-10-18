@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-function setup(code = '', existingDocument = false, connected = true) {
+function setup(code = '', existingDocument = false, connected = true, viaClaw = false) {
   const events = new Map<string, Function>(), closeEvents = new Map<string, Function>();
   const radio = { value: 'yes', checked: true, addEventListener() {} };
   const no = { value: 'no', checked: !connected, addEventListener() {} };
@@ -15,9 +15,19 @@ function setup(code = '', existingDocument = false, connected = true) {
   const context: any = { URLSearchParams, localStorage: { getItem: () => '', setItem() {} }, document: { createElement: () => ({ addEventListener() {} }) } };
   const source = readFileSync(new URL('../../trial-ui/sapo-push.js', import.meta.url), 'utf8');
   runInNewContext(source.replace('export function initSapoPush', 'globalThis.init = function'), context);
-  const ui = context.init({ api: async () => ({ connected, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: connected ? [{ id: 7, name: 'Kho' }] : [], problems: [] }), esc: (s: string) => s, $: (id: string) => nodes[id] });
+  const ui = context.init({ api: async () => ({ connected, viaClaw, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: connected && !viaClaw ? [{ id: 7, name: 'Kho' }] : [], problems: [] }), esc: (s: string) => s, $: (id: string) => viaClaw && id === '#sapo-push-location' ? null : nodes[id] });
   return { ui, no, existingDocument, dialog, body, submit, label, error, send: () => events.get('submit')!({ preventDefault() {} }) };
 }
+
+test('popup production dùng n8n/Claw, không bắt chọn kho Sapo', async () => {
+  const s = setup('', false, true, true); let args: unknown[] = [];
+  const pending = s.ui.choose({ quoteId: 'q' }, { title: 'Sinh đơn hàng', action: 'Tạo', run: async (...a: unknown[]) => { args = a; return {}; } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(s.body.innerHTML, /n8n → Claw/);
+  assert.equal(s.submit.disabled, false);
+  await s.send(); await pending;
+  assert.deepEqual(args, [null, true]);
+});
 
 test('popup Sapo: chưa sinh chứng từ thì không hiện số báo giá làm mã đơn', async () => {
   const s = setup(); const pending = s.ui.choose({ quoteId: 'q' }, { title: 'Sinh đơn hàng', action: 'Tạo', run() {} });

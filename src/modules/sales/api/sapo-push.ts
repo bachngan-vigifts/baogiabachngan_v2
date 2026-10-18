@@ -21,6 +21,22 @@ type Db = StaffEnv['db'];
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
+const CLAW_HOOKS = {
+  order: 'https://n8nthai.moarchvn.com/webhook/crm-order-from-web-to-claw',
+  hdkt: 'https://n8nthai.moarchvn.com/webhook/crm-hdkt-sapo-order-from-web-to-claw',
+} as const;
+
+export const sapoPushViaClaw = (c: Ctx) => c.env.sapoOrderMode === 'n8n';
+
+function clawTarget(c: Ctx, source: 'order' | 'hdkt') {
+  const raw = source === 'hdkt' ? c.env.sapoHdktOrderWebhookUrl || CLAW_HOOKS.hdkt : c.env.sapoOrderWebhookUrl || CLAW_HOOKS.order;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.hostname !== 'n8nthai.moarchvn.com' || !url.pathname.startsWith('/webhook/') || url.username || url.password) return null;
+    return url.href;
+  } catch { return null; }
+}
+
 export const sapoPushRequired = (c: Ctx) => c.env.sapoOrderPush !== 'off';
 /** Lượt sinh đơn / lập HĐKT này có tạo đơn trên Sapo không: mặc định có; nhân viên bỏ chọn trong popup → `pushSapo: false`. */
 export const wantsSapoPush = (c: Ctx, body: Raw) => sapoPushRequired(c) && body.pushSapo !== false;
@@ -68,6 +84,56 @@ async function inputFromOrder(db: Db | Tx, orderId: string) {
   return { order: o, input, owner };
 }
 
+/** Giao n8n/Claw tạo đơn Sapo. Chỉ nhận HTTP 2xx là đã xếp hàng; idempotency key chống gửi trùng. */
+export async function sendOrderToClaw(c: Ctx, orderId: string, source: 'order' | 'hdkt') {
+  const target = clawTarget(c, source);
+  if (!target) throw new AppError(503, 'Chưa cấu hình webhook n8n tạo đơn Sapo.', 'SAPO_WEBHOOK_MISSING');
+  const { input } = await inputFromOrder(c.env.db, orderId);
+  const problems = sapoPushProblems(input);
+  if (problems.length) throw new AppError(400, 'Chưa giao được Claw tạo đơn Sapo: ' + problems.join(' '), 'SAPO_PUSH_INVALID');
+  const payload = {
+    event: source === 'hdkt' ? 'crm_hdkt_create_sapo_order' : 'crm_create_sapo_order',
+    trigger_source: source,
+    idempotency_key: `${source}:${input.code}`,
+    quote_number: input.code,
+    quote_no: input.quoteNo,
+    order_no: input.orderNo,
+    contract_no: input.contractNo,
+    quote_type: input.quoteType,
+    responsible: input.ownerName,
+    responsible_phone: input.ownerPhone,
+    customer: {
+      sapo_id: input.customer.sapoId,
+      customer_code: input.customer.customerCode,
+      name: input.customer.name,
+      tax_code: input.customer.taxCode,
+      contact: input.customer.contact,
+      phone: input.customer.phone,
+      email: input.customer.email,
+      address: input.customer.address,
+    },
+    items: input.lines.map((line, i) => ({ line: i + 1, sku: line.sku, name: line.name, unit: line.unit, quantity: line.qty, unit_price: line.unitPrice, tax_percent: line.taxRate, delivery_date: input.expectedDeliveryDate })),
+    subtotal: input.subtotal,
+    vat_amount: input.tax,
+    total: input.total,
+  };
+  let response: Response;
+  try {
+    response = await (c.env.sapoWebhookFetch ?? fetch)(target, {
+      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(payload),
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(45_000) : undefined,
+    });
+  } catch {
+    throw new AppError(504, 'Chưa kết nối được n8n. Chứng từ CRM đã được giữ; kiểm tra trước khi gửi lại.', 'SAPO_WEBHOOK_TIMEOUT');
+  }
+  const raw = await response.text(); let result: Raw = {};
+  try { result = raw ? JSON.parse(raw) : {}; } catch { /* n8n có thể trả text rỗng */ }
+  if (!response.ok || result.success === false || result.ok === false || result.error) {
+    throw new AppError(502, result.message || result.error || `n8n báo lỗi nhận yêu cầu (${response.status}).`, 'SAPO_WEBHOOK_FAILED');
+  }
+  return { status: 'updating' as const, code: input.code, runId: result.runId ?? null, warnings: [], message: source === 'hdkt' ? 'Đã giao Claw tạo đơn Sapo sau khi sinh HĐKT.' : 'Đã giao Claw tạo đơn Sapo sau khi sinh đơn.' };
+}
+
 /**
  * Đẩy đơn vừa tạo (trong giao dịch `tx`) sang Sapo rồi ghi liên kết vào đơn. Lỗi → ném ra để giao dịch huỷ.
  * Đơn Sapo cùng mã đã có (vd. lần trước Sapo tạo xong nhưng web lỗi) → chỉ liên kết, không tạo trùng.
@@ -92,7 +158,7 @@ export async function pushOrderInTx(api: SapoApi, tx: Tx, orderId: string, locat
   ];
   return { status: r.status, id: String(r.order.id), code, url: r.url, location: r.location.name, account: r.account?.name ?? null, warnings };
 }
-export type SapoPushOutcome = Awaited<ReturnType<typeof pushOrderInTx>>;
+export type SapoPushOutcome = Awaited<ReturnType<typeof pushOrderInTx>> | Awaited<ReturnType<typeof sendOrderToClaw>>;
 
 /**
  * Chuẩn bị đẩy Sapo cho một lượt tạo đơn / HĐKT: đọc phiên Sapo TRƯỚC khi mở giao dịch (không giữ giao dịch chờ DB khác),
@@ -110,6 +176,7 @@ export async function prepareSapoPush(c: Ctx, locationId: number) {
 export async function sapoPreview(c: Ctx, p: { code: string; ownerId: string; lines: Pick<SapoPushLine, 'sku'>[]; customerName: string }) {
   const owner = await ownerOf(c.env.db, p.ownerId);
   const problems = sapoPushProblems({ code: p.code, customer: { name: p.customerName }, lines: p.lines } as SapoPushInput, { requireCode: !!p.code });
+  if (sapoPushViaClaw(c)) return { connected: true, viaClaw: true, required: sapoPushRequired(c), code: p.code, owner: owner.name, account: null, locations: [], problems };
   try {
     return await withSapoSession(c, async api => {
       const [locations, accounts] = await Promise.all([sapoLocations(api), sapoAccounts(api)]);
@@ -120,4 +187,3 @@ export async function sapoPreview(c: Ctx, p: { code: string; ownerId: string; li
     return { connected: false, required: sapoPushRequired(c), message: e.message, code: p.code, owner: owner.name, account: null, locations: [], problems };
   }
 }
-

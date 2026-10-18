@@ -31,6 +31,11 @@ export interface StaffEnv {
   sapoFetch?: typeof fetch;
   /** Đẩy đơn sang Sapo khi sinh đơn hàng / lập HĐKT: mặc định BẮT BUỘC; 'off' chỉ dùng cho test các luồng không liên quan Sapo. */
   sapoOrderPush?: 'off';
+  /** Production routes việc tạo đơn Sapo qua n8n → Claw; bỏ trống giữ adapter trực tiếp cũ cho test/rollback. */
+  sapoOrderMode?: 'n8n';
+  sapoOrderWebhookUrl?: string;
+  sapoHdktOrderWebhookUrl?: string;
+  sapoWebhookFetch?: typeof fetch;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
   waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */

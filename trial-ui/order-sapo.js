@@ -15,7 +15,7 @@ export function orderSapoAction({ order, api, chooseSapo, onSaved, toast }) {
       const result = await chooseSapo({ orderId: order.id }, { title: 'Tạo đơn Sapo', action: 'Tạo đơn nháp Sapo', existingDocument: true,
         run: (locationId, push) => push ? api('/orders/' + encodeURIComponent(order.id) + '/sapo', 'POST', { sapoLocationId: locationId }) : Promise.resolve({ skipped: true }) });
       if (result) {
-        if (result.sapo) toast(result.sapo.status === 'existing' ? 'Đã liên kết đơn Sapo có sẵn.' : 'Đã tạo đơn nháp Sapo.');
+        if (result.sapo) toast(result.sapo.status === 'updating' ? (result.sapo.message || 'Đã giao Claw tạo đơn Sapo.') : result.sapo.status === 'existing' ? 'Đã liên kết đơn Sapo có sẵn.' : 'Đã tạo đơn nháp Sapo.');
         await onSaved();
       }
     } catch (e) { toast(e.message, 'err'); }

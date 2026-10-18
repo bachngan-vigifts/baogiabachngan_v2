@@ -2050,7 +2050,8 @@ const sapoPush = () => sapoPushUi ||= initSapoPush({ api, esc, $ });
 /** Báo kết quả đẩy Sapo (kèm cảnh báo: chưa khớp NV phụ trách Sapo, tổng tiền lệch…). */
 function sapoToast(s) {
   if (!s) return;
-  toast(`${s.status === 'existing' ? 'Đã liên kết đơn Sapo có sẵn' : 'Đã tạo đơn nháp Sapo'} ${s.code} · ${s.location}.`);
+  if (s.status === 'updating') toast(s.message || `Đã giao Claw tạo đơn Sapo ${s.code}.`);
+  else toast(`${s.status === 'existing' ? 'Đã liên kết đơn Sapo có sẵn' : 'Đã tạo đơn nháp Sapo'} ${s.code}${s.location ? ` · ${s.location}` : ''}.`);
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
