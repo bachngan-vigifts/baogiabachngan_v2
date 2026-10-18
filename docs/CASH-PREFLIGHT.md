@@ -99,4 +99,4 @@ Sau khi được duyệt, sinh hai migration mới bằng CLI (timestamp thực 
 - Chặn kết ca pending; lý do/ghi chú đúng; kết ca và tra soát idempotent, kể cả đồng thời.
 - Nhân viên giải trình, Manager đóng có lý do; tra soát không tự sửa sổ; điều chỉnh có liên kết.
 - Huỷ có lý do và audit; quy tắc ca đã kết theo lựa chọn được duyệt.
-- Typecheck, toàn bộ test và build UI. Chưa thể báo bộ test Sổ quỹ đạt khi chưa được duyệt và chưa triển khai.
+- Typecheck, toàn bộ test và build UI. Kết quả thực hiện được ghi tại PR #161 và #162; đây là bộ tiêu chí kiểm thử đã thống nhất.
