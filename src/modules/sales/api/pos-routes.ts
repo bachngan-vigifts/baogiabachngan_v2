@@ -1,45 +1,22 @@
-import {
-  cashLock,
-  nextCashOpening,
-  closeCashShift,
-  drawerOf,
-  cashAudit,
-} from "./cash-store.ts";
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
-import type { Router, RouteContext } from "../../../core/http/router.ts";
-import { json, readJson } from "../../../core/http/router.ts";
-import { AppError } from "../../../core/errors.ts";
-import { foldSql } from "../../../core/text/fold.ts";
-import type { StaffEnv, SessionState } from "../../staff/api/auth-routes.ts";
-import { can } from "../../staff/domain/permissions.ts";
-import { positions } from "../../staff/schema.ts";
-import { defaultPosRegister } from "../domain/pos-register.ts";
-import {
-  products,
-  productPrices,
-  productBarcodes,
-  pricePolicies,
-  warehouses,
-} from "../../catalog/schema.ts";
-import { stockBalances } from "../../inventory/schema.ts";
-import { customers, customerStaff } from "../../customers/schema.ts";
-import { customerWithTaxCode } from "../../customers/api/routes.ts";
-import {
-  customerPayments,
-  salesOrders,
-  salesOrderLines,
-  deliveries,
-} from "../schema.ts";
-import {
-  posRegisters,
-  posShifts,
-  posShiftTemplates,
-  posStockCounts,
-  posPaymentRequests,
-} from "../pos-schema.ts";
-import { posMoney } from "../domain/pos-money.ts";
-import { vietnamDate } from "../domain/sales.ts";
-import { notifyMany } from "../../notifications/api/routes.ts";
+import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit } from './cash-store.ts';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import type { Router, RouteContext } from '../../../core/http/router.ts';
+import { json, readJson } from '../../../core/http/router.ts';
+import { AppError } from '../../../core/errors.ts';
+import { foldSql } from '../../../core/text/fold.ts';
+import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
+import { can } from '../../staff/domain/permissions.ts';
+import { positions } from '../../staff/schema.ts';
+import { defaultPosRegister } from '../domain/pos-register.ts';
+import { products, productPrices, productBarcodes, pricePolicies, warehouses } from '../../catalog/schema.ts';
+import { stockBalances } from '../../inventory/schema.ts';
+import { customers, customerStaff } from '../../customers/schema.ts';
+import { customerWithTaxCode } from '../../customers/api/routes.ts';
+import { customerPayments, salesOrders, salesOrderLines, deliveries } from '../schema.ts';
+import { posRegisters, posShifts, posShiftTemplates, posStockCounts, posPaymentRequests } from '../pos-schema.ts';
+import { posMoney } from '../domain/pos-money.ts';
+import { vietnamDate } from '../domain/sales.ts';
+import { notifyMany } from '../../notifications/api/routes.ts';
 import {
   posNow,
   posText,
@@ -53,36 +30,24 @@ import {
   checkout,
   reservedBySku,
   shiftReport,
-} from "./pos-store.ts";
-const member = (c: RouteContext<StaffEnv>) =>
-  (c.state.session as SessionState).member;
+} from './pos-store.ts';
+const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 function config(c: RouteContext<StaffEnv>) {
-  if (!can(member(c), "pos.configure"))
-    throw new AppError(403, "Chỉ người được cấp cấu hình POS thao tác.");
+  if (!can(member(c), 'pos.configure')) throw new AppError(403, 'Chỉ người được cấp cấu hình POS thao tác.');
 }
 export function registerPosRoutes(router: Router<StaffEnv>) {
   router.get(
-    "/pos/options",
+    '/pos/options',
     async (c) => {
       const m = member(c);
-      if (!can(m, "pos.sell") && !can(m, "pos.configure"))
-        throw new AppError(403, "Chưa được cấp quyền POS.");
+      if (!can(m, 'pos.sell') && !can(m, 'pos.configure')) throw new AppError(403, 'Chưa được cấp quyền POS.');
       const [regs, templates, shifts] = await Promise.all([
-        c.env.db
-          .select()
-          .from(posRegisters)
-          .where(eq(posRegisters.active, true))
-          .orderBy(asc(posRegisters.name)),
-        c.env.db
-          .select()
-          .from(posShiftTemplates)
-          .where(eq(posShiftTemplates.active, true)),
+        c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name)),
+        c.env.db.select().from(posShiftTemplates).where(eq(posShiftTemplates.active, true)),
         c.env.db
           .select()
           .from(posShifts)
-          .where(
-            m.role === "manager" ? undefined : eq(posShifts.memberId, m.id),
-          )
+          .where(m.role === 'manager' ? undefined : eq(posShifts.memberId, m.id))
           .orderBy(desc(posShifts.openedAt))
           .limit(50),
       ]);
@@ -90,49 +55,35 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .select()
         .from(pricePolicies)
         .where(
-          can(m, "pos.configure")
+          can(m, 'pos.configure')
             ? undefined
-            : inArray(pricePolicies.id, [
-                ...new Set(
-                  regs.flatMap((r) => [r.pricePolicyId, r.secondPricePolicyId]),
-                ),
-              ]),
+            : inArray(pricePolicies.id, [...new Set(regs.flatMap((r) => [r.pricePolicyId, r.secondPricePolicyId]))]),
         )
         .orderBy(asc(pricePolicies.sortOrder));
-      const stores = can(m, "pos.configure")
+      const stores = can(m, 'pos.configure')
         ? await c.env.db
             .select()
             .from(warehouses)
-            .where(
-              and(eq(warehouses.kind, "stock"), eq(warehouses.active, true)),
-            )
+            .where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true)))
         : [];
       const [position] = m.positionId
-        ? await c.env.db
-            .select({ name: positions.name })
-            .from(positions)
-            .where(eq(positions.id, m.positionId))
-            .limit(1)
+        ? await c.env.db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1)
         : [];
       return json({
         registers: regs,
-        defaultRegisterId: defaultPosRegister(
-          m.positionId,
-          position?.name,
-          regs,
-        ),
+        defaultRegisterId: defaultPosRegister(m.positionId, position?.name, regs),
         templates,
         shifts,
         current: shifts.find((s) => s.memberId === m.id && !s.closedAt) ?? null,
-        canConfigure: can(m, "pos.configure"),
+        canConfigure: can(m, 'pos.configure'),
         policies,
         warehouses: stores,
       });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/registers",
+    '/pos/registers',
     async (c) => {
       config(c);
       const b = await readJson(c.req, 8000),
@@ -153,28 +104,18 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         taxRate < 0 ||
         taxRate > 100
       )
-        throw new AppError(
-          400,
-          "Chọn tên quầy, kho và hai bảng giá khác nhau, VAT hợp lệ.",
-        );
+        throw new AppError(400, 'Chọn tên quầy, kho và hai bảng giá khác nhau, VAT hợp lệ.');
       const [[wh], prices] = await Promise.all([
         db
           .select()
           .from(warehouses)
-          .where(
-            and(
-              eq(warehouses.id, warehouseId),
-              eq(warehouses.kind, "stock"),
-              eq(warehouses.active, true),
-            ),
-          ),
+          .where(and(eq(warehouses.id, warehouseId), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))),
         db
           .select()
           .from(pricePolicies)
           .where(inArray(pricePolicies.id, [policy, second])),
       ]);
-      if (!wh || prices.length !== 2)
-        throw new AppError(400, "Kho hoặc bảng giá không hợp lệ.");
+      if (!wh || prices.length !== 2) throw new AppError(400, 'Kho hoặc bảng giá không hợp lệ.');
       const fields = {
         name,
         warehouseId,
@@ -191,18 +132,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         updatedBy: member(c).id,
       };
       await db.transaction(async (tx) => {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${"pos-register:" + id}))`,
-        );
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-register:' + id}))`);
         const [open] = await tx
           .select({ id: posShifts.id })
           .from(posShifts)
           .where(and(eq(posShifts.registerId, id), isNull(posShifts.closedAt)));
-        if (open)
-          throw new AppError(
-            409,
-            "Quầy đang mở ca, kết ca trước khi sửa cấu hình.",
-          );
+        if (open) throw new AppError(409, 'Quầy đang mở ca, kết ca trước khi sửa cấu hình.');
         await tx
           .insert(posRegisters)
           .values({ id, ...fields, createdAt: posNow() })
@@ -210,10 +145,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       });
       return json({ id });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/templates",
+    '/pos/templates',
     async (c) => {
       config(c);
       const b = await readJson(c.req, 3000),
@@ -221,68 +156,42 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         name = posText(b.name, 100),
         startsAt = posText(b.startsAt),
         endsAt = posText(b.endsAt);
-      if (
-        !name ||
-        ![startsAt, endsAt].every((x) => /^([01]\d|2[0-3]):[0-5]\d$/.test(x)) ||
-        startsAt === endsAt
-      )
-        throw new AppError(400, "Nhập tên và giờ ca hợp lệ.");
-      await c.env.db
-        .insert(posShiftTemplates)
-        .values({ id, name, startsAt, endsAt })
-        .onConflictDoUpdate({
-          target: posShiftTemplates.id,
-          set: { name, startsAt, endsAt },
-        });
+      if (!name || ![startsAt, endsAt].every((x) => /^([01]\d|2[0-3]):[0-5]\d$/.test(x)) || startsAt === endsAt)
+        throw new AppError(400, 'Nhập tên và giờ ca hợp lệ.');
+      await c.env.db.insert(posShiftTemplates).values({ id, name, startsAt, endsAt }).onConflictDoUpdate({
+        target: posShiftTemplates.id,
+        set: { name, startsAt, endsAt },
+      });
       return json({ id });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/barcodes",
+    '/pos/barcodes',
     async (c) => {
       config(c);
       const b = await readJson(c.req, 2000),
         sku = posText(b.sku, 100),
         barcode = posText(b.barcode, 100);
-      if (!barcode || !/^[\x21-\x7e]+$/.test(barcode))
-        throw new AppError(400, "Mã vạch không hợp lệ.");
-      const [p] = await c.env.db
-        .select({ sku: products.sku })
-        .from(products)
-        .where(eq(products.sku, sku));
-      if (!p) throw new AppError(404, "Không có mã hàng.");
-      const [used] = await c.env.db
-        .select()
-        .from(productBarcodes)
-        .where(eq(productBarcodes.barcode, barcode));
-      if (used && used.sku !== sku)
-        throw new AppError(409, "Mã vạch đã gắn sản phẩm khác.");
-      await c.env.db
-        .insert(productBarcodes)
-        .values({ barcode, sku })
-        .onConflictDoNothing();
+      if (!barcode || !/^[\x21-\x7e]+$/.test(barcode)) throw new AppError(400, 'Mã vạch không hợp lệ.');
+      const [p] = await c.env.db.select({ sku: products.sku }).from(products).where(eq(products.sku, sku));
+      if (!p) throw new AppError(404, 'Không có mã hàng.');
+      const [used] = await c.env.db.select().from(productBarcodes).where(eq(productBarcodes.barcode, barcode));
+      if (used && used.sku !== sku) throw new AppError(409, 'Mã vạch đã gắn sản phẩm khác.');
+      await c.env.db.insert(productBarcodes).values({ barcode, sku }).onConflictDoNothing();
       return json({ ok: true });
     },
-    "business",
+    'business',
   );
   router.get(
-    "/pos/catalog",
+    '/pos/catalog',
     async (c) => {
       posPermission(member(c));
-      const r = await registerOf(
-          c.env.db,
-          posText(c.url.searchParams.get("registerId")),
-        ),
-        policy =
-          posText(c.url.searchParams.get("pricePolicyId")) || r.pricePolicyId,
-        q = posText(c.url.searchParams.get("q"), 100);
-      if (![r.pricePolicyId, r.secondPricePolicyId].includes(policy))
-        throw new AppError(400, "Bảng giá không hợp lệ.");
-      const offset = Math.max(
-        0,
-        Math.min(100000, Number(c.url.searchParams.get("offset")) || 0),
-      );
+      const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId'))),
+        policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId,
+        q = posText(c.url.searchParams.get('q'), 100);
+      if (![r.pricePolicyId, r.secondPricePolicyId].includes(policy)) throw new AppError(400, 'Bảng giá không hợp lệ.');
+      const offset = Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
       const rows = await c.env.db
         .select({
           sku: products.sku,
@@ -294,37 +203,25 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           onHand: stockBalances.qty,
         })
         .from(products)
-        .innerJoin(
-          productPrices,
-          and(
-            eq(productPrices.sku, products.sku),
-            eq(productPrices.policyId, policy),
-          ),
-        )
-        .leftJoin(
-          stockBalances,
-          and(
-            eq(stockBalances.sku, products.sku),
-            eq(stockBalances.warehouseId, r.warehouseId),
-          ),
-        )
+        .innerJoin(productPrices, and(eq(productPrices.sku, products.sku), eq(productPrices.policyId, policy)))
+        .leftJoin(stockBalances, and(eq(stockBalances.sku, products.sku), eq(stockBalances.warehouseId, r.warehouseId)))
         .where(
           and(
             eq(products.active, true),
-            eq(products.approvalStatus, "approved"),
+            eq(products.approvalStatus, 'approved'),
             sql`${productPrices.price} is not null`,
             q
               ? or(
                   eq(products.sku, q),
                   sql`exists (select 1 from ${productBarcodes} where ${productBarcodes.sku}=${products.sku} and ${productBarcodes.barcode}=${q})`,
                   sql`${foldSql(products.name)} like ${
-                    "%" +
+                    '%' +
                     q
-                      .normalize("NFD")
-                      .replace(/[\u0300-\u036f]/g, "")
-                      .replace(/đ/g, "d")
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/đ/g, 'd')
                       .toLowerCase() +
-                    "%"
+                    '%'
                   }`,
                 )
               : undefined,
@@ -350,13 +247,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         nextOffset: rows.length === 60 ? offset + 60 : null,
       });
     },
-    "business",
+    'business',
   );
   router.get(
-    "/pos/customers",
+    '/pos/customers',
     async (c) => {
       posPermission(member(c));
-      const q = posText(c.url.searchParams.get("q"), 100);
+      const q = posText(c.url.searchParams.get('q'), 100);
       const list = await c.env.db
         .select({
           id: customers.id,
@@ -367,19 +264,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .from(customers)
         .where(
           and(
-            eq(customers.approvalStatus, "approved"),
+            eq(customers.approvalStatus, 'approved'),
             q
               ? or(
                   sql`${foldSql(customers.name)} like ${
-                    "%" +
+                    '%' +
                     q
-                      .normalize("NFD")
-                      .replace(/[\u0300-\u036f]/g, "")
-                      .replace(/đ/g, "d")
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/đ/g, 'd')
                       .toLowerCase() +
-                    "%"
+                    '%'
                   }`,
-                  sql`${customers.phone} like ${"%" + q + "%"}`,
+                  sql`${customers.phone} like ${'%' + q + '%'}`,
                 )
               : undefined,
           ),
@@ -388,10 +285,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .limit(20);
       return json({ customers: list });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/customers",
+    '/pos/customers',
     async (c) => {
       const m = member(c);
       posPermission(m);
@@ -399,10 +296,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         name = posText(b.name, 200),
         phone = posText(b.phone, 40),
         taxCode = posText(b.taxCode, 50);
-      if (!name || !phone)
-        throw new AppError(400, "Nhập tên và số điện thoại khách.");
+      if (!name || !phone) throw new AppError(400, 'Nhập tên và số điện thoại khách.');
       if (taxCode && (await customerWithTaxCode(c.env.db, taxCode)))
-        throw new AppError(409, "MST đã có khách hàng, hãy tìm khách có sẵn.");
+        throw new AppError(409, 'MST đã có khách hàng, hãy tìm khách có sẵn.');
       const id = crypto.randomUUID(),
         now = posNow();
       await c.env.db.transaction(async (tx) => {
@@ -412,39 +308,34 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           phone,
           address: posText(b.address, 1000),
           contact: name,
-          email: "",
+          email: '',
           taxCode,
-          customerCode: "",
-          search: [name, phone, taxCode].join(" "),
+          customerCode: '',
+          search: [name, phone, taxCode].join(' '),
           sourceVersion: 0,
           syncedAt: now,
           createdAt: now,
           createdBy: m.id,
-          approvalStatus: "approved",
+          approvalStatus: 'approved',
           approvedAt: now,
           approvedBy: m.id,
         });
-        await tx
-          .insert(customerStaff)
-          .values({
-            customerId: id,
-            memberId: m.id,
-            role: "owner",
-            createdAt: now,
-          });
+        await tx.insert(customerStaff).values({
+          customerId: id,
+          memberId: m.id,
+          role: 'owner',
+          createdAt: now,
+        });
       });
       return json({ id, name, phone }, 201);
     },
-    "business",
+    'business',
   );
   router.get(
-    "/pos/opening-counts",
+    '/pos/opening-counts',
     async (c) => {
       posPermission(member(c));
-      const r = await registerOf(
-        c.env.db,
-        posText(c.url.searchParams.get("registerId")),
-      );
+      const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId')));
       await assertOpening(c.env.db, r.warehouseId);
       const rows = await c.env.db
         .select({
@@ -454,20 +345,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         })
         .from(stockBalances)
         .innerJoin(products, eq(products.sku, stockBalances.sku))
-        .where(
-          and(
-            eq(stockBalances.warehouseId, r.warehouseId),
-            eq(products.active, true),
-          ),
-        )
+        .where(and(eq(stockBalances.warehouseId, r.warehouseId), eq(products.active, true)))
         .orderBy(desc(stockBalances.qty), asc(products.sku))
         .limit(3);
       return json({ counts: rows });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/shifts/open",
+    '/pos/shifts/open',
     async (c) => {
       const m = member(c);
       posPermission(m);
@@ -477,96 +363,59 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         requestedOpening = b.openingCash;
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${"pos-register:" + registerId}))`,
-        );
-        const [prior] = await tx
-          .select()
-          .from(posShifts)
-          .where(eq(posShifts.openKey, key));
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-register:' + registerId}))`);
+        const [prior] = await tx.select().from(posShifts).where(eq(posShifts.openKey, key));
         if (prior) {
-          if (prior.memberId !== m.id || prior.registerId !== registerId)
-            throw new AppError(409, "Mã mở ca đã dùng.");
+          if (prior.memberId !== m.id || prior.registerId !== registerId) throw new AppError(409, 'Mã mở ca đã dùng.');
           return prior;
         }
         const r = await registerOf(tx, registerId);
         const inheritance = await nextCashOpening(tx);
         const openingCash = inheritance.openingCash;
-        if (
-          requestedOpening !== undefined &&
-          Number(requestedOpening) !== openingCash
-        )
-          throw new AppError(
-            409,
-            "Tiền đầu ca phải bằng tiền thực đếm bàn giao ca trước. Tải lại Sổ quỹ.",
-          );
+        if (requestedOpening !== undefined && Number(requestedOpening) !== openingCash)
+          throw new AppError(409, 'Tiền đầu ca phải bằng tiền thực đếm bàn giao ca trước. Tải lại Sổ quỹ.');
         await assertOpening(tx, r.warehouseId);
         const [open] = await tx
           .select({ id: posShifts.id })
           .from(posShifts)
           .where(
-            and(
-              or(
-                eq(posShifts.memberId, m.id),
-                eq(posShifts.registerId, registerId),
-              ),
-              isNull(posShifts.closedAt),
-            ),
+            and(or(eq(posShifts.memberId, m.id), eq(posShifts.registerId, registerId)), isNull(posShifts.closedAt)),
           );
-        if (open)
-          throw new AppError(409, "Nhân viên hoặc quầy đã có ca đang mở.");
+        if (open) throw new AppError(409, 'Nhân viên hoặc quầy đã có ca đang mở.');
         let templateId = posText(b.templateId);
         if (!templateId) {
-          const templates = await tx
-            .select()
-            .from(posShiftTemplates)
-            .where(eq(posShiftTemplates.active, true));
+          const templates = await tx.select().from(posShiftTemplates).where(eq(posShiftTemplates.active, true));
           if (!templates.length) {
             await tx
               .insert(posShiftTemplates)
               .values({
-                id: "morning",
-                name: "Ca sáng",
-                startsAt: "08:00",
-                endsAt: "14:00",
+                id: 'morning',
+                name: 'Ca sáng',
+                startsAt: '08:00',
+                endsAt: '14:00',
               })
               .onConflictDoNothing();
-            templateId = "morning";
+            templateId = 'morning';
           } else templateId = templates[0]!.id;
         }
         const [template] = await tx
           .select()
           .from(posShiftTemplates)
-          .where(
-            and(
-              eq(posShiftTemplates.id, templateId),
-              eq(posShiftTemplates.active, true),
-            ),
-          );
-        if (!template) throw new AppError(400, "Ca làm việc không hợp lệ.");
-        if (!Array.isArray(b.counts) || b.counts.length > 30)
-          throw new AppError(400, "Nhập bảng đếm nhanh tồn kho.");
+          .where(and(eq(posShiftTemplates.id, templateId), eq(posShiftTemplates.active, true)));
+        if (!template) throw new AppError(400, 'Ca làm việc không hợp lệ.');
+        if (!Array.isArray(b.counts) || b.counts.length > 30) throw new AppError(400, 'Nhập bảng đếm nhanh tồn kho.');
         const counts = b.counts as Record<string, unknown>[],
           ids = counts.map((x) => posText(x.sku, 100));
-        if (new Set(ids).size !== ids.length)
-          throw new AppError(400, "Trùng mã kiểm đếm.");
+        if (new Set(ids).size !== ids.length) throw new AppError(400, 'Trùng mã kiểm đếm.');
         const expected = await tx
           .select({ sku: stockBalances.sku, qty: stockBalances.qty })
           .from(stockBalances)
           .innerJoin(products, eq(products.sku, stockBalances.sku))
-          .where(
-            and(
-              eq(stockBalances.warehouseId, r.warehouseId),
-              eq(products.active, true),
-            ),
-          )
+          .where(and(eq(stockBalances.warehouseId, r.warehouseId), eq(products.active, true)))
           .orderBy(desc(stockBalances.qty), asc(stockBalances.sku))
           .limit(3);
         if (expected.some((x) => !ids.includes(x.sku)))
-          throw new AppError(
-            400,
-            "Danh sách đếm nhanh đã đổi, tải lại và kiểm đếm.",
-          );
+          throw new AppError(400, 'Danh sách đếm nhanh đã đổi, tải lại và kiểm đếm.');
         const id = crypto.randomUUID(),
           now = posNow(),
           [s] = await tx
@@ -589,19 +438,14 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           const balances = await tx
             .select()
             .from(stockBalances)
-            .where(
-              and(
-                eq(stockBalances.warehouseId, r.warehouseId),
-                inArray(stockBalances.sku, ids),
-              ),
-            );
+            .where(and(eq(stockBalances.warehouseId, r.warehouseId), inArray(stockBalances.sku, ids)));
           await tx.insert(posStockCounts).values(
             counts.map((x) => {
               const sku = posText(x.sku, 100),
                 qty = Number(x.countedQty),
                 systemQty = balances.find((z) => z.sku === sku)?.qty;
               if (systemQty == null || !Number.isFinite(qty) || qty < 0)
-                throw new AppError(400, "Số đếm không hợp lệ.");
+                throw new AppError(400, 'Số đếm không hợp lệ.');
               return {
                 shiftId: id,
                 sku,
@@ -612,7 +456,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             }),
           );
         }
-        await cashAudit(tx, m.id, "open", "pos-shifts", id, {
+        await cashAudit(tx, m.id, 'open', 'pos-shifts', id, {
           openingCash,
           previousShiftId: inheritance.previousShiftId,
         });
@@ -620,51 +464,44 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       });
       return json(result, 201);
     },
-    "business",
+    'business',
   );
   router.get(
-    "/pos/shifts/:id",
+    '/pos/shifts/:id',
     async (c) => {
       posPermission(member(c));
       const s = await shiftOf(c.env.db, member(c), c.params.id!);
-      return json(
-        s.reportSnapshot
-          ? JSON.parse(s.reportSnapshot)
-          : await shiftReport(c.env.db, s),
-      );
+      return json(s.reportSnapshot ? JSON.parse(s.reportSnapshot) : await shiftReport(c.env.db, s));
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/shifts/:id/close",
+    '/pos/shifts/:id/close',
     async (c) => {
       const m = member(c);
       posPermission(m);
       const b = await readJson(c.req, 5000);
-      const result = await c.env.db.transaction((tx) =>
-        closeCashShift(tx, m, c.params.id!, b, shiftReport),
-      );
+      const result = await c.env.db.transaction((tx) => closeCashShift(tx, m, c.params.id!, b, shiftReport));
       if (!result.replayed && result.cashDifference)
-        await notifyMany(c.env, "managers", {
-          eventType: "pos_shift_difference",
-          title: "Kết ca lệch tiền mặt",
-          body: `${m.name}: ${result.cashDifference.toLocaleString("vi-VN")} đ. ${result.differenceReason}`,
-          url: "/index.html#/pos",
+        await notifyMany(c.env, 'managers', {
+          eventType: 'pos_shift_difference',
+          title: 'Kết ca lệch tiền mặt',
+          body: `${m.name}: ${result.cashDifference.toLocaleString('vi-VN')} đ. ${result.differenceReason}`,
+          url: '/index.html#/pos',
           actorId: m.id,
         });
       return json(result);
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/preview",
+    '/pos/preview',
     async (c) => {
       posPermission(member(c));
       const b = await readJson(c.req, 64000),
         s = await shiftOf(c.env.db, member(c), posText(b.shiftId));
       assertOpen(s, member(c));
-      if (s.registerId !== posText(b.registerId))
-        throw new AppError(400, "Quầy không khớp ca.");
+      if (s.registerId !== posText(b.registerId)) throw new AppError(400, 'Quầy không khớp ca.');
       const calc = await calculateCart(c.env.db, b);
       return json({
         ...calc,
@@ -673,37 +510,34 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         createdAt: posNow(),
       });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/checkout",
-    async (c) =>
-      json(await checkout(c.env, member(c), await readJson(c.req, 64000)), 201),
-    "business",
+    '/pos/checkout',
+    async (c) => json(await checkout(c.env, member(c), await readJson(c.req, 64000)), 201),
+    'business',
   );
   router.get(
-    "/pos/bills/:id",
+    '/pos/bills/:id',
     async (c) => {
       const m = member(c);
       posPermission(m);
       const [o] = await c.env.db
         .select()
         .from(salesOrders)
-        .where(
-          and(eq(salesOrders.id, c.params.id!), eq(salesOrders.channel, "pos")),
-        );
-      if (!o?.shiftId) throw new AppError(404, "Không có bill POS.");
+        .where(and(eq(salesOrders.id, c.params.id!), eq(salesOrders.channel, 'pos')));
+      if (!o?.shiftId) throw new AppError(404, 'Không có bill POS.');
       await shiftOf(c.env.db, m, o.shiftId);
       return json({
         id: o.id,
         orderNo: o.orderNo,
-        ...JSON.parse(o.posSnapshot ?? "{}"),
+        ...JSON.parse(o.posSnapshot ?? '{}'),
       });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/qr",
+    '/pos/qr',
     async (c) => {
       const m = member(c);
       posPermission(m);
@@ -713,25 +547,16 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         await cashLock(tx);
         const s = await shiftOf(tx, m, posText(b.shiftId), true);
         assertOpen(s, m);
-        if (s.registerId !== posText(b.registerId))
-          throw new AppError(400, "Quầy không khớp ca.");
+        if (s.registerId !== posText(b.registerId)) throw new AppError(400, 'Quầy không khớp ca.');
         const calc = await calculateCart(tx, b);
         if (!calc.register.bankCode || !calc.register.bankAccount)
-          throw new AppError(409, "Manager cần cấu hình ngân hàng cho quầy.");
-        if (calc.total <= 0)
-          throw new AppError(400, "Số tiền QR phải lớn hơn 0.");
-        const [existing] = await tx
-          .select()
-          .from(posPaymentRequests)
-          .where(eq(posPaymentRequests.requestKey, key));
+          throw new AppError(409, 'Manager cần cấu hình ngân hàng cho quầy.');
+        if (calc.total <= 0) throw new AppError(400, 'Số tiền QR phải lớn hơn 0.');
+        const [existing] = await tx.select().from(posPaymentRequests).where(eq(posPaymentRequests.requestKey, key));
         if (existing) {
-          if (
-            existing.shiftId !== s.id ||
-            existing.fingerprint !== calc.fingerprint
-          )
-            throw new AppError(409, "Yêu cầu đã gắn giỏ hàng khác.");
-          if (existing.expiresAt < posNow() || existing.confirmedAt)
-            throw new AppError(409, "QR hết hạn hoặc đã thu.");
+          if (existing.shiftId !== s.id || existing.fingerprint !== calc.fingerprint)
+            throw new AppError(409, 'Yêu cầu đã gắn giỏ hàng khác.');
+          if (existing.expiresAt < posNow() || existing.confirmedAt) throw new AppError(409, 'QR hết hạn hoặc đã thu.');
           return { request: existing, register: calc.register };
         }
         const now = posNow(),
@@ -751,7 +576,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         return { request: request!, register: calc.register };
       });
       const { request: r, register: w } = result,
-        content = "POS " + r.id.replaceAll("-", "").slice(0, 12);
+        content = 'POS ' + r.id.replaceAll('-', '').slice(0, 12);
       return json({
         id: r.id,
         amount: r.amount,
@@ -760,18 +585,14 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         url: `https://img.vietqr.io/image/${encodeURIComponent(w.bankCode)}-${encodeURIComponent(w.bankAccount)}-compact2.png?amount=${r.amount}&addInfo=${encodeURIComponent(content)}&accountName=${encodeURIComponent(w.bankAccountName)}`,
       });
     },
-    "business",
+    'business',
   );
   router.get(
-    "/pos/cod",
+    '/pos/cod',
     async (c) => {
       const m = member(c);
       posPermission(m);
-      const s = await shiftOf(
-        c.env.db,
-        m,
-        posText(c.url.searchParams.get("shiftId")),
-      );
+      const s = await shiftOf(c.env.db, m, posText(c.url.searchParams.get('shiftId')));
       assertOpen(s, m);
       const rows = await c.env.db
         .select({
@@ -793,47 +614,32 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           and(
             eq(posShifts.cashDrawerId, s.cashDrawerId),
             sql`${deliveries.codAmount}>0`,
-            ne(deliveries.status, "cancelled"),
+            ne(deliveries.status, 'cancelled'),
           ),
         )
         .orderBy(desc(deliveries.plannedDate))
         .limit(200);
       return json({ deliveries: rows.filter((x) => x.codAmount > x.paid) });
     },
-    "business",
+    'business',
   );
   router.post(
-    "/pos/cod/:id/collect",
+    '/pos/cod/:id/collect',
     async (c) => {
       const m = member(c);
       posPermission(m);
       const b = await readJson(c.req, 4000),
         key = posKey(b.key),
-        method =
-          b.method === "cash"
-            ? "cash"
-            : b.method === "transfer"
-              ? "transfer"
-              : null;
+        method = b.method === 'cash' ? 'cash' : b.method === 'transfer' ? 'transfer' : null;
       if (!method || b.confirmed !== true)
-        throw new AppError(
-          400,
-          "Chọn hình thức và xác nhận cửa hàng đã thực nhận tiền COD.",
-        );
+        throw new AppError(400, 'Chọn hình thức và xác nhận cửa hàng đã thực nhận tiền COD.');
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         const s = await shiftOf(tx, m, posText(b.shiftId), true);
-        const [prior] = await tx
-          .select()
-          .from(customerPayments)
-          .where(eq(customerPayments.requestKey, key));
+        const [prior] = await tx.select().from(customerPayments).where(eq(customerPayments.requestKey, key));
         if (prior) {
-          if (
-            prior.shiftId !== s.id ||
-            prior.deliveryId !== c.params.id ||
-            prior.method !== method
-          )
-            throw new AppError(409, "Mã thu tiền đã dùng.");
+          if (prior.shiftId !== s.id || prior.deliveryId !== c.params.id || prior.method !== method)
+            throw new AppError(409, 'Mã thu tiền đã dùng.');
           return { id: prior.id, replayed: true };
         }
         assertOpen(s, m);
@@ -847,48 +653,26 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .from(deliveries)
           .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
           .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
-          .where(
-            and(
-              eq(deliveries.id, c.params.id!),
-              eq(posShifts.cashDrawerId, s.cashDrawerId),
-            ),
-          )
-          .for("update");
-        if (!d || d.d.status !== "delivered" || d.d.codAmount <= 0)
-          throw new AppError(409, "Chỉ thu COD của chuyến đã giao thuộc quầy.");
+          .where(and(eq(deliveries.id, c.params.id!), eq(posShifts.cashDrawerId, s.cashDrawerId)))
+          .for('update');
+        if (!d || d.d.status !== 'delivered' || d.d.codAmount <= 0)
+          throw new AppError(409, 'Chỉ thu COD của chuyến đã giao thuộc quầy.');
         const [paid] = await tx
           .select({
-            n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(
-              Number,
-            ),
+            n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number),
           })
           .from(customerPayments)
-          .where(
-            and(
-              eq(customerPayments.deliveryId, d.d.id),
-              isNull(customerPayments.voidedAt),
-            ),
-          );
+          .where(and(eq(customerPayments.deliveryId, d.d.id), isNull(customerPayments.voidedAt)));
         const amount = d.d.codAmount - (paid?.n ?? 0);
-        if (amount <= 0) throw new AppError(409, "COD đã thu đủ.");
+        if (amount <= 0) throw new AppError(409, 'COD đã thu đủ.');
         const [allPaid] = await tx
           .select({
-            n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(
-              Number,
-            ),
+            n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number),
           })
           .from(customerPayments)
-          .where(
-            and(
-              eq(customerPayments.orderId, d.d.orderId),
-              isNull(customerPayments.voidedAt),
-            ),
-          );
+          .where(and(eq(customerPayments.orderId, d.d.orderId), isNull(customerPayments.voidedAt)));
         if (amount > d.total - (allPaid?.n ?? 0))
-          throw new AppError(
-            409,
-            "Đơn đã có khoản thu khác. Kiểm tra công nợ trước.",
-          );
+          throw new AppError(409, 'Đơn đã có khoản thu khác. Kiểm tra công nợ trước.');
         const id = crypto.randomUUID();
         await tx.insert(customerPayments).values({
           id,
@@ -899,12 +683,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           requestKey: key,
           amount,
           method,
-          paymentSource: "cod",
+          paymentSource: 'cod',
           paidAt: vietnamDate().iso,
           createdBy: m.id,
           createdAt: posNow(),
         });
-        await cashAudit(tx, m.id, "collect-cod", "payments", id, {
+        await cashAudit(tx, m.id, 'collect-cod', 'payments', id, {
           shiftId: s.id,
           deliveryId: d.d.id,
           amount,
@@ -914,6 +698,6 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       });
       return json(result, 201);
     },
-    "business",
+    'business',
   );
 }
