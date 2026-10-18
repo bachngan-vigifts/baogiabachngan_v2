@@ -40,13 +40,13 @@ export async function cashAudit(
     createdAt: cashNow(),
   });
 }
-export async function drawerOf(db: CashDb) {
-  const [d] = await db.select().from(cashDrawers).where(eq(cashDrawers.id, CASH_DRAWER));
+export async function drawerOf(db: CashDb, drawerId = CASH_DRAWER) {
+  const [d] = await db.select().from(cashDrawers).where(eq(cashDrawers.id, drawerId));
   if (!d) throw new AppError(409, 'Chưa chạy migration cấu hình két.');
   return d;
 }
-export async function nextCashOpening(db: CashDb) {
-  const d = await drawerOf(db);
+export async function nextCashOpening(db: CashDb, drawerId = CASH_DRAWER) {
+  const d = await drawerOf(db, drawerId);
   if (d.openingSetAt === null || d.openingAmount === null)
     throw new AppError(
       409,
@@ -58,7 +58,7 @@ export async function nextCashOpening(db: CashDb) {
     .from(posShifts)
     .where(and(eq(posShifts.cashDrawerId, d.id), isNull(posShifts.closedAt)))
     .limit(1);
-  if (current) throw new AppError(409, 'Két chung đang có ca mở. Kết và bàn giao ca trước.', 'CASH_SHIFT_OPEN');
+  if (current) throw new AppError(409, 'Két này đang có ca mở. Kết và bàn giao ca trước.', 'CASH_SHIFT_OPEN');
   const [previous] = await db
     .select()
     .from(posShifts)
@@ -118,9 +118,9 @@ export async function cashShiftTotals(db: CashDb, shiftId: string) {
       .reduce((n, r) => n + (r.direction === 'in' ? r.amount : -r.amount), 0),
   };
 }
-export async function drawerBalance(db: CashDb) {
+export async function drawerBalance(db: CashDb, drawerId = CASH_DRAWER) {
   const [d, manual, payments] = await Promise.all([
-    drawerOf(db),
+    drawerOf(db, drawerId),
     db
       .select({
         total:
@@ -129,14 +129,14 @@ export async function drawerBalance(db: CashDb) {
           ),
       })
       .from(cashEntries)
-      .where(and(eq(cashEntries.drawerId, CASH_DRAWER), eq(cashEntries.status, 'posted'))),
+      .where(and(eq(cashEntries.drawerId, drawerId), eq(cashEntries.status, 'posted'))),
     db
       .select({ total: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number) })
       .from(customerPayments)
       .innerJoin(posShifts, eq(posShifts.id, customerPayments.shiftId))
       .where(
         and(
-          eq(posShifts.cashDrawerId, CASH_DRAWER),
+          eq(posShifts.cashDrawerId, drawerId),
           eq(customerPayments.method, 'cash'),
           isNull(customerPayments.voidedAt),
         ),

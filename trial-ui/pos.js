@@ -682,8 +682,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       el('p', 'pos-note', user().name + ' · ' + when(new Date())),
     );
     m.body.replaceChildren(heading, m.form);
-    const drawer = await api('/cash'),
-      openingCash = Number(drawer.nextOpeningCash ?? 0);
+    const drawer = await api('/cash?registerId=' + encodeURIComponent(reg.value));
+    let openingCash = Number(drawer.nextOpeningCash ?? 0);
     cash.input.type = 'text';
     cash.input.value = openingCash.toLocaleString('vi-VN');
     cash.input.readOnly = true;
@@ -717,8 +717,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       seq = 0;
     const getCounts = async () => {
       const n = ++seq,
-        d = await api('/pos/opening-counts?registerId=' + encodeURIComponent(reg.value));
+        registerId = reg.value,
+        [d, cashState] = await Promise.all([
+          api('/pos/opening-counts?registerId=' + encodeURIComponent(registerId)),
+          api('/cash?registerId=' + encodeURIComponent(registerId)),
+        ]);
       if (n !== seq) return;
+      openingCash = Number(cashState.nextOpeningCash ?? 0);
+      cash.input.value = openingCash.toLocaleString('vi-VN');
       products = d.counts;
       counts.replaceChildren(
         ...products.map((p) => {

@@ -370,7 +370,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           return prior;
         }
         const r = await registerOf(tx, registerId);
-        const inheritance = await nextCashOpening(tx);
+        const inheritance = await nextCashOpening(tx, r.cashDrawerId);
         const openingCash = inheritance.openingCash;
         if (requestedOpening !== undefined && Number(requestedOpening) !== openingCash)
           throw new AppError(409, 'Tiền đầu ca phải bằng tiền thực đếm bàn giao ca trước. Tải lại Sổ quỹ.');
