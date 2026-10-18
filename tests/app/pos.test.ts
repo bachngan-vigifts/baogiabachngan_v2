@@ -17,18 +17,43 @@ import {
   packingSlips,
   packingSlipLines,
 } from '../../src/modules/sales/schema.ts';
-import { posShifts, posStockCounts, posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
+import { posRegisters, posShifts, posStockCounts, posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { readFileSync } from 'node:fs';
 import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 import { readdirSync } from 'node:fs';
 const origin = 'https://trial.test';
 import { setup } from '../helpers/pos-fixture.ts';
+test('POS options trả quầy mặc định theo chức vụ và giữ ca hiện có', async () => {
+  const { db, call, emp, other, mgr, registerId, open } = await setup();
+  await db.update(posRegisters).set({ name: 'Quầy Lock' }).where(eq(posRegisters.id, registerId));
+  const ml = await call('/pos/registers', mgr, 'POST', {
+    name: 'Quầy Minh Long',
+    warehouseId: 'pos-wh',
+    pricePolicyId: 'retail-vat',
+    secondPricePolicyId: 'retail',
+  });
+  assert.equal(ml.status, 200, JSON.stringify(ml.data));
+  const lockOptions = await call('/pos/options', other);
+  assert.equal(lockOptions.status, 200);
+  assert.equal(lockOptions.data.defaultRegisterId, registerId);
+  const shift = await open();
+  await db.update(employees).set({ positionId: 'sales-ml' }).where(eq(employees.id, 'emp'));
+  const mlOptions = await call('/pos/options', emp);
+  assert.equal(mlOptions.status, 200);
+  assert.equal(mlOptions.data.defaultRegisterId, ml.data.id);
+  assert.equal(mlOptions.data.current.id, shift.id);
+  assert.equal(mlOptions.data.current.registerId, registerId);
+});
 test('POS: bill tạm và QR chỉ yêu cầu, không tạo đơn/ghi thu/trừ tồn; giá do server tính', async () => {
   const { db, call, emp, open, cart } = await setup(),
     s = await open(),
     b = cart(s.id);
-  const preview = await call('/pos/preview', emp, 'POST', { ...b, total: 1, rows: [{ ...b.rows[0], price: 1 }] });
+  const preview = await call('/pos/preview', emp, 'POST', {
+    ...b,
+    total: 1,
+    rows: [{ ...b.rows[0], price: 1 }],
+  });
   assert.equal(preview.status, 200, JSON.stringify(preview.data));
   assert.equal(preview.data.total, 194400);
   assert.equal(preview.data.temporary, true);
@@ -76,7 +101,10 @@ test('POS: checkout idempotent, đúng tiền thối và snapshot; chọn giá k
   );
   assert.equal(base.data.total, 100000);
   assert.equal(base.data.tax, 0);
-  const changed = await call('/pos/checkout', emp, 'POST', { ...b, rows: [{ sku: '00123', qty: 3 }] });
+  const changed = await call('/pos/checkout', emp, 'POST', {
+    ...b,
+    rows: [{ sku: '00123', qty: 3 }],
+  });
   assert.equal(changed.status, 409);
   assert.equal((await call('/pos/bills/' + a.data.id, emp)).status, 200);
 });
@@ -89,17 +117,34 @@ test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS 
   assert.equal((await call('/pos/shifts/' + s.id, other)).status, 404);
   assert.equal((await call('/pos/shifts/' + s.id, mgr)).status, 200);
   assert.equal(
-    (await call('/pos/shifts/open', emp, 'POST', { key: crypto.randomUUID(), registerId, openingCash: 0, counts: [] }))
-      .status,
+    (
+      await call('/pos/shifts/open', emp, 'POST', {
+        key: crypto.randomUUID(),
+        registerId,
+        openingCash: 0,
+        counts: [],
+      })
+    ).status,
     409,
   );
-  const customer = await call('/pos/customers', emp, 'POST', { name: 'Khách mới', phone: '0901234567' });
+  const customer = await call('/pos/customers', emp, 'POST', {
+    name: 'Khách mới',
+    phone: '0901234567',
+  });
   assert.equal(customer.status, 201, JSON.stringify(customer.data));
   assert.equal(
     (await db.select().from(customers).where(eq(customers.id, customer.data.id)))[0]!.approvalStatus,
     'approved',
   );
-  assert.equal((await call('/pos/barcodes', mgr, 'POST', { sku: '00123', barcode: '000008888' })).status, 200);
+  assert.equal(
+    (
+      await call('/pos/barcodes', mgr, 'POST', {
+        sku: '00123',
+        barcode: '000008888',
+      })
+    ).status,
+    200,
+  );
   const found = await call('/pos/catalog?registerId=' + registerId + '&q=000008888', emp);
   assert.equal(found.data.products[0].sku, '00123');
   assert.equal(found.data.products[0].available, 10);
@@ -128,7 +173,14 @@ test('POS: lệch tiền mặt khác 0 phải có lý do; kết ca idempotent v�
   assert.equal(bill.status, 201);
   const report = await call('/pos/shifts/' + s.id, emp);
   assert.equal(report.data.expectedCash, 694400);
-  assert.equal((await call('/pos/shifts/' + s.id + '/close', emp, 'POST', { countedCash: 694399 })).status, 400);
+  assert.equal(
+    (
+      await call('/pos/shifts/' + s.id + '/close', emp, 'POST', {
+        countedCash: 694399,
+      })
+    ).status,
+    400,
+  );
   const [a, b] = await Promise.all([
     call('/pos/shifts/' + s.id + '/close', emp, 'POST', {
       countedCash: 694399,
@@ -149,7 +201,14 @@ test('POS: lệch tiền mặt khác 0 phải có lý do; kết ca idempotent v�
   assert.equal((await call('/pos/shifts/' + s.id, other)).status, 404);
   assert.equal((await call('/pos/checkout', emp, 'POST', cart(s.id))).status, 409);
   const receipt = (await db.select().from(customerPayments))[0]!;
-  assert.equal((await call('/payments/' + receipt.id + '/void', emp, 'POST', { reason: 'Lý do thử' })).status, 403);
+  assert.equal(
+    (
+      await call('/payments/' + receipt.id + '/void', emp, 'POST', {
+        reason: 'Lý do thử',
+      })
+    ).status,
+    403,
+  );
   const next = await open(emp, 0);
   assert.notEqual(next.id, s.id);
   assert.equal((await call('/pos/shifts/' + s.id, emp)).data.cashDifference, -1);
@@ -163,7 +222,12 @@ test('POS: COD chưa thu không vào két, được kết ca; thu ca sau chỉ g
     'POST',
     cart(s.id, {
       fulfillmentMode: 'cod',
-      delivery: { address: '123 Test', plannedDate: '2026-10-18', receiverName: 'Khách', receiverPhone: '0901234567' },
+      delivery: {
+        address: '123 Test',
+        plannedDate: '2026-10-18',
+        receiverName: 'Khách',
+        receiverPhone: '0901234567',
+      },
     }),
   );
   assert.equal(order.status, 201, JSON.stringify(order.data));
@@ -180,17 +244,31 @@ test('POS: COD chưa thu không vào két, được kết ca; thu ca sau chỉ g
     ).status,
     409,
   );
-  assert.equal((await call('/deliveries/' + delivery.id + '/status', mgr, 'PUT', { status: 'delivered' })).status, 200);
+  assert.equal(
+    (
+      await call('/deliveries/' + delivery.id + '/status', mgr, 'PUT', {
+        status: 'delivered',
+      })
+    ).status,
+    200,
+  );
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 8);
   const report = await call('/pos/shifts/' + s.id, emp);
   assert.equal(report.data.cash, 0);
   assert.equal(report.data.expectedCash, 500000);
   assert.equal(report.data.cod.pending.count, 1);
   assert.equal(report.data.cod.pending.amount, 194400);
-  const closed = await call('/pos/shifts/' + s.id + '/close', emp, 'POST', { countedCash: 500000 });
+  const closed = await call('/pos/shifts/' + s.id + '/close', emp, 'POST', {
+    countedCash: 500000,
+  });
   assert.equal(closed.status, 200, JSON.stringify(closed.data));
   const next = await open(other, 0),
-    b = { shiftId: next.id, key: crypto.randomUUID(), method: 'cash', confirmed: true };
+    b = {
+      shiftId: next.id,
+      key: crypto.randomUUID(),
+      method: 'cash',
+      confirmed: true,
+    };
   const [a, r] = await Promise.all([
     call('/pos/cod/' + delivery.id + '/collect', other, 'POST', b),
     call('/pos/cod/' + delivery.id + '/collect', other, 'POST', b),
@@ -226,12 +304,17 @@ test('POS: không chốt lại tồn Sapo đè lên hàng đã bán; giảm 100%
     '/pos/checkout',
     emp,
     'POST',
-    cart(s.id, { rows: [{ sku: '00123', qty: 1, discountType: 'percent', discountValue: 100 }], tendered: 0 }),
+    cart(s.id, {
+      rows: [{ sku: '00123', qty: 1, discountType: 'percent', discountValue: 100 }],
+      tendered: 0,
+    }),
   );
   assert.equal(b.status, 201, JSON.stringify(b.data));
   assert.equal(b.data.total, 0);
   assert.equal((await db.select().from(customerPayments)).length, 0);
-  const reset = await call('/inventory/opening', mgr, 'POST', { confirm: true });
+  const reset = await call('/inventory/opening', mgr, 'POST', {
+    confirm: true,
+  });
   assert.equal(reset.status, 409, JSON.stringify(reset.data));
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 9);
 });
@@ -244,7 +327,11 @@ test('POS: COD đóng gói rồi giao chỉ trừ kho một lần; chuyển kho�
     'POST',
     cart(s.id, {
       fulfillmentMode: 'cod',
-      delivery: { address: '123 Test', receiverName: 'Khách', receiverPhone: '0901234567' },
+      delivery: {
+        address: '123 Test',
+        receiverName: 'Khách',
+        receiverPhone: '0901234567',
+      },
     }),
   );
   assert.equal(order.status, 201, JSON.stringify(order.data));
@@ -273,7 +360,10 @@ test('POS: COD đóng gói rồi giao chỉ trừ kho một lần; chuyển kho�
     qty: line.qty,
   });
   const photo = 'data:image/jpeg;base64,' + Buffer.from('anh-dong-goi').toString('base64');
-  const packed = await call('/packing/' + slipId + '/confirm', mgr, 'POST', { warehouseId: 'pos-wh', photos: [photo] });
+  const packed = await call('/packing/' + slipId + '/confirm', mgr, 'POST', {
+    warehouseId: 'pos-wh',
+    photos: [photo],
+  });
   assert.equal(packed.status, 200, JSON.stringify(packed.data));
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 8);
   const done = await call('/deliveries/' + delivery.id + '/status', mgr, 'PUT', { status: 'delivered' });

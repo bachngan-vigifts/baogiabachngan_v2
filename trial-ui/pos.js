@@ -69,6 +69,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function restorePending() {
     if (pendingUser === user().id) return;
     pendingUser = user().id;
+    st.register = null;
+    st.policy = '';
     st.cart = [];
     st.customer = null;
     st.preview = null;
@@ -136,6 +138,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.register =
       d.registers.find((x) => x.id === st.shift?.registerId) ||
       d.registers.find((x) => x.id === st.register?.id) ||
+      d.registers.find((x) => x.id === d.defaultRegisterId) ||
       d.registers[0] ||
       null;
     if (!st.register || ![st.register.pricePolicyId, st.register.secondPricePolicyId].includes(st.policy))
@@ -547,7 +550,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     };
     m.dlg.addEventListener('close', release);
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+      });
       if (!m.dlg.open) {
         release();
         return;
@@ -760,7 +765,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
             templateId: template.value,
             openingCash,
             note: note.input.value,
-            counts: products.map((p) => ({ sku: p.sku, countedQty: Number(p.input.value) })),
+            counts: products.map((p) => ({
+              sku: p.sku,
+              countedQty: Number(p.input.value),
+            })),
           });
           m.close();
           st.cart = [];
@@ -874,7 +882,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         date = field(
           'Ngày giao',
           'date',
-          new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()),
+          new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Ho_Chi_Minh',
+          }).format(new Date()),
         );
       address.input.required = phone.input.required = receiver.input.required = true;
       m.form.append(
@@ -1118,7 +1128,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       barcode.box,
       button('Gắn mã vạch', 'btn secondary', () =>
         run(async () => {
-          await api('/pos/barcodes', 'POST', { sku: sku.input.value, barcode: barcode.input.value });
+          await api('/pos/barcodes', 'POST', {
+            sku: sku.input.value,
+            barcode: barcode.input.value,
+          });
           toast('Đã gắn mã vạch.');
         }),
       ),

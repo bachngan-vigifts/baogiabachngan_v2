@@ -99,6 +99,60 @@ const sample = {
   tendered: 200000,
   change: 5600,
 };
+test('POS chọn quầy mặc định từ server, ưu tiên ca đang mở và đặt lại khi đổi tài khoản', async () => {
+  const prevDoc = globalThis.document,
+    prevWin = globalThis.window;
+  Object.assign(globalThis, {
+    document: doc,
+    window: { addEventListener() {} },
+  });
+  try {
+    let userId = 'emp',
+      defaultRegisterId = 'ml',
+      current: any = null;
+    const catalogs: string[] = [];
+    const api = async (path: string) => {
+      if (path === '/pos/options')
+        return {
+          registers: ['lock', 'ml'].map((id) => ({
+            id,
+            name: id,
+            pricePolicyId: 'vat',
+            secondPricePolicyId: 'retail',
+          })),
+          defaultRegisterId,
+          current,
+          shifts: [],
+          templates: [],
+          policies: [],
+        };
+      if (path.startsWith('/pos/catalog')) {
+        catalogs.push(path);
+        return { products: [], nextOffset: null };
+      }
+      throw Error(path);
+    };
+    const ui = initPos({
+      api,
+      root: new Element('section'),
+      toast() {},
+      user: () => ({ id: userId, name: 'NV' }),
+      confirmBox: async () => true,
+      go() {},
+    });
+    await ui.load();
+    assert.match(catalogs.at(-1)!, /registerId=ml/);
+    current = { id: 'shift', registerId: 'lock', memberId: 'emp' };
+    await ui.load();
+    assert.match(catalogs.at(-1)!, /registerId=lock/);
+    current = null;
+    userId = 'other';
+    await ui.load();
+    assert.match(catalogs.at(-1)!, /registerId=ml/);
+  } finally {
+    Object.assign(globalThis, { document: prevDoc, window: prevWin });
+  }
+});
 test('K80: bill tạm không có số chính thức, nhãn rõ ràng và dữ liệu độc hại chỉ là chữ', () => {
   const p = buildPosPrint(doc, { ...sample, temporary: true });
   assert.match(p.textContent, /BILL TẠM TÍNH - CHƯA THANH TOÁN/);
@@ -116,7 +170,10 @@ test('K80: bill tạm không có số chính thức, nhãn rõ ràng và dữ li
 test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá VAT; không render bằng innerHTML', async () => {
   const prevDoc = globalThis.document,
     prevWin = globalThis.window;
-  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  Object.assign(globalThis, {
+    document: doc,
+    window: { addEventListener() {} },
+  });
   try {
     const root = new Element('section'),
       calls: any[] = [];
@@ -124,7 +181,14 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
       calls.push({ path, method, body });
       if (path === '/pos/options')
         return {
-          registers: [{ id: 'r', name: 'Quầy 1', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }],
+          registers: [
+            {
+              id: 'r',
+              name: 'Quầy 1',
+              pricePolicyId: 'vat',
+              secondPricePolicyId: 'retail',
+            },
+          ],
           current: { id: 's', registerId: 'r', memberId: 'emp' },
           shifts: [],
           templates: [],
@@ -135,10 +199,23 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
         };
       if (path.startsWith('/pos/catalog'))
         return {
-          products: [{ sku: '001', name: 'Ly sứ', unit: 'cái', price: 108000, available: 10 }],
+          products: [
+            {
+              sku: '001',
+              name: 'Ly sứ',
+              unit: 'cái',
+              price: 108000,
+              available: 10,
+            },
+          ],
           nextOffset: null,
         };
-      if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }], temporary: true };
+      if (path === '/pos/preview')
+        return {
+          ...sample,
+          lines: [{ ...sample.lines[0], sku: '001' }],
+          temporary: true,
+        };
       throw Error(path);
     };
     const ui = initPos({

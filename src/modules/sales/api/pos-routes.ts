@@ -6,6 +6,8 @@ import { AppError } from '../../../core/errors.ts';
 import { foldSql } from '../../../core/text/fold.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
+import { positions } from '../../staff/schema.ts';
+import { defaultPosRegister } from '../domain/pos-register.ts';
 import { products, productPrices, productBarcodes, pricePolicies, warehouses } from '../../catalog/schema.ts';
 import { stockBalances } from '../../inventory/schema.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
@@ -64,8 +66,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             .from(warehouses)
             .where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true)))
         : [];
+      const [position] = m.positionId
+        ? await c.env.db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1)
+        : [];
       return json({
         registers: regs,
+        defaultRegisterId: defaultPosRegister(m.positionId, position?.name, regs),
         templates,
         shifts,
         current: shifts.find((s) => s.memberId === m.id && !s.closedAt) ?? null,
@@ -152,10 +158,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         endsAt = posText(b.endsAt);
       if (!name || ![startsAt, endsAt].every((x) => /^([01]\d|2[0-3]):[0-5]\d$/.test(x)) || startsAt === endsAt)
         throw new AppError(400, 'Nhập tên và giờ ca hợp lệ.');
-      await c.env.db
-        .insert(posShiftTemplates)
-        .values({ id, name, startsAt, endsAt })
-        .onConflictDoUpdate({ target: posShiftTemplates.id, set: { name, startsAt, endsAt } });
+      await c.env.db.insert(posShiftTemplates).values({ id, name, startsAt, endsAt }).onConflictDoUpdate({
+        target: posShiftTemplates.id,
+        set: { name, startsAt, endsAt },
+      });
       return json({ id });
     },
     'business',
@@ -249,7 +255,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       posPermission(member(c));
       const q = posText(c.url.searchParams.get('q'), 100);
       const list = await c.env.db
-        .select({ id: customers.id, name: customers.name, phone: customers.phone, address: customers.address })
+        .select({
+          id: customers.id,
+          name: customers.name,
+          phone: customers.phone,
+          address: customers.address,
+        })
         .from(customers)
         .where(
           and(
@@ -309,7 +320,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           approvedAt: now,
           approvedBy: m.id,
         });
-        await tx.insert(customerStaff).values({ customerId: id, memberId: m.id, role: 'owner', createdAt: now });
+        await tx.insert(customerStaff).values({
+          customerId: id,
+          memberId: m.id,
+          role: 'owner',
+          createdAt: now,
+        });
       });
       return json({ id, name, phone }, 201);
     },
@@ -322,7 +338,11 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId')));
       await assertOpening(c.env.db, r.warehouseId);
       const rows = await c.env.db
-        .select({ sku: products.sku, name: products.name, qty: stockBalances.qty })
+        .select({
+          sku: products.sku,
+          name: products.name,
+          qty: stockBalances.qty,
+        })
         .from(stockBalances)
         .innerJoin(products, eq(products.sku, stockBalances.sku))
         .where(and(eq(stockBalances.warehouseId, r.warehouseId), eq(products.active, true)))
@@ -368,7 +388,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           if (!templates.length) {
             await tx
               .insert(posShiftTemplates)
-              .values({ id: 'morning', name: 'Ca sáng', startsAt: '08:00', endsAt: '14:00' })
+              .values({
+                id: 'morning',
+                name: 'Ca sáng',
+                startsAt: '08:00',
+                endsAt: '14:00',
+              })
               .onConflictDoNothing();
             templateId = 'morning';
           } else templateId = templates[0]!.id;
@@ -421,7 +446,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
                 systemQty = balances.find((z) => z.sku === sku)?.qty;
               if (systemQty == null || !Number.isFinite(qty) || qty < 0)
                 throw new AppError(400, 'Số đếm không hợp lệ.');
-              return { shiftId: id, sku, systemQty, countedQty: qty, note: posText(x.note, 500) };
+              return {
+                shiftId: id,
+                sku,
+                systemQty,
+                countedQty: qty,
+                note: posText(x.note, 500),
+              };
             }),
           );
         }
@@ -472,7 +503,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       assertOpen(s, member(c));
       if (s.registerId !== posText(b.registerId)) throw new AppError(400, 'Quầy không khớp ca.');
       const calc = await calculateCart(c.env.db, b);
-      return json({ ...calc, temporary: true, memberName: member(c).name, createdAt: posNow() });
+      return json({
+        ...calc,
+        temporary: true,
+        memberName: member(c).name,
+        createdAt: posNow(),
+      });
     },
     'business',
   );
@@ -492,7 +528,11 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .where(and(eq(salesOrders.id, c.params.id!), eq(salesOrders.channel, 'pos')));
       if (!o?.shiftId) throw new AppError(404, 'Không có bill POS.');
       await shiftOf(c.env.db, m, o.shiftId);
-      return json({ id: o.id, orderNo: o.orderNo, ...JSON.parse(o.posSnapshot ?? '{}') });
+      return json({
+        id: o.id,
+        orderNo: o.orderNo,
+        ...JSON.parse(o.posSnapshot ?? '{}'),
+      });
     },
     'business',
   );
@@ -618,13 +658,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         if (!d || d.d.status !== 'delivered' || d.d.codAmount <= 0)
           throw new AppError(409, 'Chỉ thu COD của chuyến đã giao thuộc quầy.');
         const [paid] = await tx
-          .select({ n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number) })
+          .select({
+            n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number),
+          })
           .from(customerPayments)
           .where(and(eq(customerPayments.deliveryId, d.d.id), isNull(customerPayments.voidedAt)));
         const amount = d.d.codAmount - (paid?.n ?? 0);
         if (amount <= 0) throw new AppError(409, 'COD đã thu đủ.');
         const [allPaid] = await tx
-          .select({ n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number) })
+          .select({
+            n: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number),
+          })
           .from(customerPayments)
           .where(and(eq(customerPayments.orderId, d.d.orderId), isNull(customerPayments.voidedAt)));
         if (amount > d.total - (allPaid?.n ?? 0))
@@ -644,7 +688,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           createdBy: m.id,
           createdAt: posNow(),
         });
-        await cashAudit(tx, m.id, 'collect-cod', 'payments', id, { shiftId: s.id, deliveryId: d.d.id, amount, method });
+        await cashAudit(tx, m.id, 'collect-cod', 'payments', id, {
+          shiftId: s.id,
+          deliveryId: d.d.id,
+          amount,
+          method,
+        });
         return { id, amount, replayed: false };
       });
       return json(result, 201);
