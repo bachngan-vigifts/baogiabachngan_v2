@@ -1,10 +1,12 @@
 import { AppError } from '../../../core/errors.ts';
 import type { PolicyMember } from '../../staff/domain/area-policy.ts';
 import { canAccessArea } from '../../staff/domain/area-policy.ts';
+import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
 
 export function dashboardFilters(query: URLSearchParams, member: PolicyMember & { id: string }, today: string) {
   if (!canAccessArea(member, 'business')) throw new AppError(403, 'Bạn không có quyền xem doanh số.');
-  const manager = member.role === 'manager';
+  // Manager và người có quyền "Doanh số toàn công ty" (mặc định Kế toán) xem cả công ty, lọc theo nhóm / nhân viên.
+  const manager = member.role === 'manager' || can(member as PermissionMember, 'dashboard.all');
   const from = query.get('from') ?? today.slice(0, 7), to = query.get('to') ?? from;
   const month = (x: string) => /^\d{4}-(0[1-9]|1[0-2])$/.test(x) && Number(x.slice(0, 4)) >= 2000 && Number(x.slice(0, 4)) <= 2100;
   const index = (x: string) => Number(x.slice(0, 4)) * 12 + Number(x.slice(5));

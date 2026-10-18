@@ -1,16 +1,16 @@
 import { createScheduledDelivery } from './delivery-store.ts';
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { employees } from '../../staff/schema.ts';
+import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, salesContracts, shippingCarriers } from '../schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { printingWorkshops as DEFAULT_WORKSHOPS } from '../../quotes/domain/quote-math.ts';
@@ -74,7 +74,9 @@ async function allocatedByLine(db: StaffEnv['db'] | Tx, orderId: string) {
   return new Map(rows.map(r => [r.lineId, Number(r.qty) || 0]));
 }
 async function notifyWarehouse(c: Ctx, title: string, body: string, url: string) {
-  const team = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.positionId, 'warehouse'), eq(employees.active, true)));
+  // Nhóm Kho = chức vụ Kho + chức vụ có quyền "Phiếu đóng gói" (VD Sale Admin) – khớp với ai xác nhận đóng hàng được.
+  const team = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), isNull(employees.deletedAt),
+    or(eq(employees.positionId, 'warehouse'), sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = 'page.packing')`)));
   for (const t of team) await notify(c.env, { eventType: 'packing', title, body, url, targetMemberId: t.id, actorId: viewer(c).id });
 }
 
@@ -292,6 +294,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   /** Kho xác nhận đã đóng hàng: bắt buộc 1–3 ảnh. Người lập phiếu được báo; việc của kho tự hoàn thành. */
   router.post('/packing/:id/confirm', async c => {
     const m = viewer(c), body = await readJson(c.req, PHOTO_MAX * PHOTO_MAX_CHARS + 8_000), { slip, order } = await loadSlip(c, c.params.id!);
+    if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không xác nhận đóng hàng được.');
     if (!canConfirm(m, slip.status)) throw new AppError(slip.status === 'sent' ? 403 : 409, slip.status === 'sent' ? 'Chỉ nhóm Kho hoặc Manager xác nhận đóng hàng.' : 'Phiếu chưa gửi kho hoặc đã xác nhận.');
     const photos = Array.isArray(body.photos) ? body.photos : [];
     if (photos.length < PHOTO_MIN || photos.length > PHOTO_MAX) throw new AppError(400, `Chụp ${PHOTO_MIN}–${PHOTO_MAX} ảnh hàng đã đóng trước khi xác nhận.`);
@@ -316,8 +319,9 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     });
     const to = slip.sentBy ?? slip.createdBy;
     const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);
-    if (to !== m.id) await notify(c.env, { eventType: 'packing_done', title: 'Kho đã đóng hàng', body: `${slip.slipNo} · ${docRef(order.id, order.orderNo, k?.no).Label} – ${order.customerName}`,
-      url: `/index.html#/packing/${slip.id}`, targetMemberId: to, actorId: m.id });
+    // Người gửi phiếu + nhân viên phụ trách đơn (để lên lịch giao).
+    await notifyMany(c.env, [to, order.ownerId], { eventType: 'packing_done', title: 'Kho đã đóng hàng', body: `${slip.slipNo} · ${docRef(order.id, order.orderNo, k?.no).Label} – ${order.customerName}`,
+      url: `/index.html#/packing/${slip.id}`, actorId: m.id });
     return json({ ok: true });
   }, 'business');
 }

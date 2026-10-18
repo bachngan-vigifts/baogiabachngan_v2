@@ -1,5 +1,6 @@
 import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
 import { bindStockCheckFilter } from './stock-check-filter.js';
+import { downloadExcel } from './sheet-export.js';
 import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
 import { initOrderCreate } from './order-create.js';
@@ -196,6 +197,23 @@ function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = f
   });
 }
 $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+/** Hộp nhập lý do (trả lại báo giá…): trả chuỗi đã nhập (≥ 3 ký tự), hoặc null khi bấm Huỷ. */
+function reasonBox({ title, text = '', placeholder = '', ok = 'Gửi' }) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal narrow';
+  dlg.innerHTML = `<form method="dialog"><div class="modal-head"><h2></h2></div><div class="modal-body"><p class="muted"></p>
+    <textarea name="reason" rows="3" required minlength="3" maxlength="500" style="width:100%"></textarea></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-act="no">Huỷ</button><button class="btn primary" data-act="ok"></button></div></form>`;
+  dlg.querySelector('h2').textContent = title; dlg.querySelector('.modal-body > p').textContent = text;
+  const input = dlg.querySelector('textarea'); input.placeholder = placeholder; input.setAttribute('aria-label', title); dlg.querySelector('[data-act=ok]').textContent = ok;
+  document.body.append(dlg);
+  return new Promise(resolve => {
+    const done = v => { dlg.close(); dlg.remove(); resolve(v); };
+    dlg.querySelector('form').onsubmit = e => { e.preventDefault(); const v = input.value.trim(); if (v.length >= 3) done(v); else input.reportValidity(); };
+    dlg.querySelector('[data-act=no]').onclick = () => done(null);
+    dlg.oncancel = e => { e.preventDefault(); done(null); };
+    dlg.showModal(); input.focus();
+  });
+}
 /**
  * Hộp chụp ảnh xác nhận (đã giao hàng, hàng NCC bị hỏng…): 0–3 ảnh nén JPEG. `min` = số ảnh bắt buộc.
  * Trả mảng data URL, hoặc null khi bấm Huỷ.
@@ -289,11 +307,19 @@ const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 
 const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
-  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', deliveries: 'page.deliveries', receivables: 'page.receivables',
+  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
-const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+/** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
+const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
+const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+/** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
+const linkAllowed = hash => {
+  const [view, id] = String(hash).replace(/^#\//, '').split(/[/?]/);
+  const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
+  return canPage(detail);
+};
 /** Danh bạ NCC: Manager và chức vụ có quyền "Danh bạ NCC" (mặc định Kế toán; máy chủ kiểm lại). */
 const canEditSuppliers = () => can('suppliers.edit');
 const KHO_HOME = '#/kho';
@@ -582,7 +608,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -629,6 +655,7 @@ function route() {
   if (view === 'contracts') loadContracts();
   if (view === 'deliveries') loadDeliveries();
   if (view === 'receivables') loadReceivables();
+  if (view === 'cashbook') loadCashbook();
   if (view === 'stock-requests') loadStockRequests(id);
   if (view === 'tasks') tasksView().load(id);
   if (view === 'dashboard') dashboardView().load();
@@ -877,7 +904,7 @@ async function openEditor(id) {
 function fillEditor(id, revision, data, meta = {}) {
   // Lưu xong (cùng báo giá) thì giữ nguyên mục lợi nhuận / cột giá nhập đang mở; mở báo giá khác thì đóng lại.
   const keepProfit = !!id && (editor.id === id || (!editor.id && saving));
-  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false) } : null;
+  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false), canEdit: meta.canEdit ?? (keepProfit ? editor.approval?.canEdit : undefined) } : null;
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
@@ -1163,7 +1190,7 @@ async function showProductCard(sku, name) {
       + `<div class="table-wrap"><table class="data-table pc-table"><thead><tr><th>Thời gian</th><th>Loại</th><th>Chứng từ</th><th>Khách / NCC · Kho</th><th class="right">Số lượng</th><th class="right">Đơn giá</th></tr></thead><tbody>
       ${rows.map(h => `<tr><td>${fmtDate(h.occurredAt)}<small>${new Date(h.occurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</small></td>
         <td><span class="pill src ${MOVE_UI[h.kind]?.[1] || ''}">${esc(MOVE_UI[h.kind]?.[0] || h.kind)}</span>${h.status ? `<small>${esc(h.status)}</small>` : ''}</td>
-        <td>${h.link ? `<a href="${esc(h.link)}" data-close-card>${esc(h.refCode)}</a>` : esc(h.refCode) || '—'}</td>
+        <td>${h.link && linkAllowed(h.link) ? `<a href="${esc(h.link)}" data-close-card>${esc(h.refCode)}</a>` : esc(h.refCode) || '—'}</td>
         <td>${esc(h.partner) || '<span class="muted">—</span>'}${h.location ? `<small>${esc(h.location)}</small>` : ''}${h.note ? `<small>${esc(h.note)}</small>` : ''}</td>
         <td class="right">${qtyCell(h)}</td><td class="right num">${h.unitPrice === null || h.unitPrice === undefined ? '—' : money(h.unitPrice)}</td></tr>`).join('')}</tbody></table></div>
       <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Xuất kho: chuyến giao "Đã giao" · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
@@ -2043,9 +2070,9 @@ function renderProducts() {
       <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
-      <td class="right num" data-label="Giá">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
+      <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
       <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}${heldQty(p.sku) ? ` · đang treo ${fmtNum(heldQty(p.sku))}` : ''}">${fmtNum(stock)}${heldQty(p.sku) ? `<small>treo ${fmtNum(heldQty(p.sku))}</small>` : ''}</td>
-      <td class="actions-cell"><div class="row-actions"><button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button></div></td>
+      <td class="actions-cell"><div class="row-actions">${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
@@ -2382,6 +2409,8 @@ let customerId = null;
 /** Số báo giá của các khách trên trang đang xem (máy chủ đếm trong phạm vi người xem, so tên không dấu). */
 async function loadCustomerQuoteCounts(req) {
   const names = [...new Set((state.customers || []).map(c => c.name).filter(Boolean))];
+  // Không có quyền Báo giá (VD Kế toán): không đếm, cột hiện "—".
+  if (!can('page.quotes')) { state.customerQuoteCounts = {}; return; }
   try {
     const d = names.length ? await api('/quotes/customer-counts?' + names.map(n => 'name=' + encodeURIComponent(n)).join('&')) : { counts: {} };
     if (req !== customerReq) return;
@@ -2402,10 +2431,10 @@ function renderCustomers() {
       <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
       <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
-      <td class="right" data-label="Báo giá">${quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
+      <td class="right" data-label="Báo giá">${!can('page.quotes') ? '<span class="muted">—</span>' : quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
         ${c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
-        <button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
+        ${canApprove() || c.createdBy === state.user?.id ? `<button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : '<span class="pill warn">Chờ duyệt</span>'}` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
@@ -2705,7 +2734,9 @@ async function loadOrders() {
   $('#orders-list').innerHTML = skeleton(7);
   try {
     // Đơn hàng và HĐKT là 2 luồng song song: trang này chỉ hiện đơn không có HĐKT.
-    const d = await api(`/orders?flow=order&limit=${ordersPager.limit}&offset=${ordersPager.offset}&q=` + encodeURIComponent($('#orders-search').value));
+    const inv = $('#orders-filters .chip.active')?.dataset.invoice || '';
+    const d = await api(`/orders?flow=order&limit=${ordersPager.limit}&offset=${ordersPager.offset}${inv ? '&invoice=' + inv : ''}&q=` + encodeURIComponent($('#orders-search').value));
+    invoiceCount('orders', d.invoicePending);
     if (req !== ordersReq) return;
     ordersPager.render(d.total ?? d.orders.length);
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
@@ -2726,7 +2757,9 @@ async function loadContracts() {
   contractsPager ||= createPager($('#contracts-pager'), 'contracts', () => loadContracts(), 50);
   $('#contracts-list').innerHTML = skeleton(9);
   try {
-    const d = await api(`/contracts?limit=${contractsPager.limit}&offset=${contractsPager.offset}&q=` + encodeURIComponent($('#contracts-search').value));
+    const inv = $('#contracts-filters .chip.active')?.dataset.invoice || '';
+    const d = await api(`/contracts?limit=${contractsPager.limit}&offset=${contractsPager.offset}${inv ? '&invoice=' + inv : ''}&q=` + encodeURIComponent($('#contracts-search').value));
+    invoiceCount('contracts', d.invoicePending);
     if (req !== contractsReq) return;
     contractsPager.render(d.total ?? d.contracts.length);
     // HĐKT là luồng riêng: mở #/contracts/<id>, dòng phụ là số báo giá (không hiện số đơn).
@@ -2739,8 +2772,8 @@ async function loadContracts() {
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
 async function loadDeliveries() {
-  // Kho: mặc định hôm nay + ngày mai (việc cần làm ngay); người khác 7 ngày trước → 30 ngày tới.
-  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = isWarehouse() ? todayIso() : new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
+  // Kho: 7 ngày trước (chuyến trễ chưa giao) → ngày mai; người khác 7 ngày trước → 30 ngày tới.
+  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
   $('#deliveries-list').innerHTML = skeleton(6);
   try {
     const d = await api(`/deliveries?from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}&status=${encodeURIComponent($('#deliveries-status .chip.active')?.dataset.status ?? '')}`);
@@ -2769,21 +2802,94 @@ const deliveryPhotos = x => x.photos?.length ? `<span class="ship-photos">${x.ph
 async function loadReceivables() {
   $('#receivables-list').innerHTML = skeleton(7);
   try {
-    const d = await api('/receivables?q=' + encodeURIComponent($('#receivables-search').value));
+    const status = $('#receivables-filters .chip.active')?.dataset.status ?? '';
+    const d = await api('/receivables?q=' + encodeURIComponent($('#receivables-search').value) + (status ? '&status=' + status : ''));
+    const a = d.totals.aging || { d30: 0, d60: 0, over60: 0 };
     $('#receivable-stats').innerHTML = [['Phải thu', d.totals.due, ''], ['Đã thu', d.totals.paid, ''], ['Còn lại', d.totals.balance, ''], ['Quá hạn', d.totals.overdue, d.totals.overdue > 0 ? 'danger-text' : '']]
-      .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('');
+      .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('')
+      // Tuổi nợ quá hạn: 1–30 / 31–60 / trên 60 ngày.
+      + (d.totals.overdue > 0 ? `<article class="stat aging-stat"><small>Tuổi nợ quá hạn</small><span><b>1–30 ngày</b> ${money(a.d30)}</span><span><b>31–60 ngày</b> ${money(a.d60)}</span><span class="${a.over60 ? 'danger-text' : ''}"><b>Trên 60 ngày</b> ${money(a.over60)}</span></article>` : '');
+    state.receivables = d.receivables;
     fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
-      <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
+      <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}${r.ownerName ? ' · ' + esc(r.ownerName) : ''}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
+      <td>${r.aging?.oldestDue ? `<span class="danger-text">Quá ${r.aging.overdueDays} ngày</span><small>hạn ${fmtDate(r.aging.oldestDue)}</small>` : r.nextDueDate ? fmtDate(r.nextDueDate) : r.status === 'paid' ? '—' : '<span class="muted">Chưa có hạn</span>'}</td>
       <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : '<span class="muted">Chưa xuất</span>'}</td>
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
       <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) : '—'}</td></tr>`),
-      'Chưa có công nợ. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
+      status === 'paid' ? 'Chưa có đơn nào đã thu đủ.' : status === 'overdue' ? 'Không có công nợ quá hạn.' : 'Không còn công nợ phải thu. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
   } catch (e) { listError('receivables', e); }
 }
+/** Số trên nút "Chờ xuất hoá đơn" (ẩn khi 0). */
+function invoiceCount(key, n) { const c = $(`#${key}-filters [data-invoice-count]`); if (c) c.textContent = n ? String(n) : ''; }
+for (const [key, reload] of [['orders', () => { ordersPager?.reset(); loadOrders(); }], ['contracts', () => { contractsPager?.reset(); loadContracts(); }]])
+  $(`#${key}-filters`).addEventListener('click', e => {
+    const chip = e.target.closest('.chip'); if (!chip) return;
+    $$(`#${key}-filters .chip`).forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+    reload();
+  });
 $('#orders-search').addEventListener('input', debounce(() => { ordersPager?.reset(); loadOrders(); }));
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
 $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));
+// ---------------------------------------------------------------- Sổ thu / chi
+const PAY_METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
+async function loadCashbook() {
+  if (!$('#cashbook-from').value) { const t = todayIso(); $('#cashbook-from').value = t.slice(0, 8) + '01'; $('#cashbook-to').value = t; }
+  $('#cashbook-list').innerHTML = skeleton(7);
+  try {
+    const d = await api(`/cashbook?from=${$('#cashbook-from').value}&to=${$('#cashbook-to').value}`);
+    state.cashbook = d; renderCashbook();
+  } catch (e) { $('#cashbook-stats').innerHTML = ''; listError('cashbook', e); }
+}
+function cashbookRows() {
+  const d = state.cashbook, kind = $('#cashbook-kind .chip.active')?.dataset.kind || '', q = normalize($('#cashbook-search').value);
+  return (d?.entries || []).filter(e => (!kind || e.kind === kind) && (!q || normalize(`${e.partner} ${e.docNo} ${e.reference} ${e.note}`).includes(q)));
+}
+function renderCashbook() {
+  const d = state.cashbook; if (!d) return;
+  const t = d.totals, m = t.byMethod;
+  $('#cashbook-stats').innerHTML = [['Tổng thu', t.in, 'paid-text', `CK ${money(m.transfer.in)} · TM ${money(m.cash.in)}`], ['Tổng chi', t.out, 'danger-text', `CK ${money(m.transfer.out)} · TM ${money(m.cash.out)}`],
+    ['Chênh lệch thu − chi', t.net, t.net < 0 ? 'danger-text' : '', `${fmtDate(d.from)} – ${fmtDate(d.to)}`]]
+    .map(([k, v, c, note]) => `<article class="stat"><small>${k}</small><strong class="${c}">${money(v)}</strong><span class="muted">${note}</span></article>`).join('');
+  fillList('cashbook', cashbookRows().map(e => `<tr class="${e.voided ? 'payment-voided' : ''}">
+    <td>${fmtDate(e.date)}</td><td>${e.kind === 'in' ? '<span class="pill ok">Thu</span>' : '<span class="pill warn">Chi</span>'}${e.voided ? `<small class="danger-text">Đã huỷ: ${esc(e.voidReason)}</small>` : ''}</td>
+    <td>${esc(e.partner || '—')}<small>${e.link && linkAllowed(e.link) ? `<a href="${esc(e.link)}">${esc(e.docNo)}</a>` : esc(e.docNo)}${e.note ? ' · ' + esc(e.note) : ''}</small></td>
+    <td>${PAY_METHOD[e.method] || e.method}${e.reference ? `<small>${esc(e.reference)}</small>` : ''}</td>
+    <td class="right num">${e.kind === 'in' ? money(e.amount) : ''}</td><td class="right num">${e.kind === 'out' ? money(e.amount) : ''}</td><td>${esc(e.createdByName)}</td></tr>`),
+    'Không có phiếu thu / chi trong khoảng ngày này.');
+}
+for (const id of ['#cashbook-from', '#cashbook-to']) $(id).addEventListener('change', loadCashbook);
+$('#cashbook-search').addEventListener('input', debounce(renderCashbook, 150));
+$('#cashbook-kind').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#cashbook-kind .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  renderCashbook();
+});
+$('#cashbook-export').addEventListener('click', async e => {
+  const rows = cashbookRows(), b = e.currentTarget; if (!rows.length) return toast('Không có dòng để xuất.', 'err');
+  b.disabled = true;
+  try {
+    await downloadExcel('so-thu-chi', [{ name: 'Sổ thu chi', widths: [12, 8, 32, 20, 14, 18, 14, 14, 18, 26, 26],
+      header: ['Ngày', 'Loại', 'Khách / NCC', 'Chứng từ', 'Hình thức', 'Mã giao dịch', 'Thu', 'Chi', 'Người ghi', 'Ghi chú', 'Đã huỷ (lý do)'],
+      rows: rows.map(r => [r.date, r.kind === 'in' ? 'Thu' : 'Chi', r.partner, r.docNo, PAY_METHOD[r.method] || r.method, r.reference, r.kind === 'in' && !r.voided ? r.amount : 0, r.kind === 'out' && !r.voided ? r.amount : 0,
+        r.createdByName, r.note, r.voided ? r.voidReason || 'Đã huỷ' : '']) }]);
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+});
+$('#receivables-export').addEventListener('click', async e => {
+  const rows = state.receivables || [], b = e.currentTarget; if (!rows.length) return toast('Không có dòng công nợ để xuất.', 'err');
+  b.disabled = true;
+  try {
+    await downloadExcel('cong-no', [{ name: 'Công nợ', widths: [34, 18, 16, 14, 14, 16, 14, 14, 14, 14, 14, 12, 14, 14, 14, 18],
+      header: ['Khách hàng', 'Số đơn / HĐKT', 'Phụ trách', 'Ngày đặt', 'Tình trạng', 'Số hoá đơn', 'Phải thu', 'Đã thu', 'Còn lại', 'Quá hạn', 'Hạn thu kế tiếp', 'Số ngày quá hạn', 'Quá hạn 1–30', 'Quá hạn 31–60', 'Quá hạn >60', 'Điện thoại'],
+      rows: rows.map(r => [r.customerName, r.contractNo ? 'HĐKT ' + r.contractNo : r.orderNo, r.ownerName || '', r.orderDate, DEBT_STATUS[r.status]?.[0] || r.status, r.invoiceNo || '',
+        r.due, r.paid, r.balance, r.overdue, r.nextDueDate || '', r.aging?.overdueDays || 0, r.aging?.buckets.d30 || 0, r.aging?.buckets.d60 || 0, r.aging?.buckets.over60 || 0, r.phone || '']) }]);
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+});
+$('#receivables-filters').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#receivables-filters .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  loadReceivables();
+});
 for (const id of ['#deliveries-from', '#deliveries-to']) $(id).addEventListener('change', loadDeliveries);
 $('#deliveries-status').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
@@ -3066,9 +3172,9 @@ async function openOrder(id) {
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
     + (o.status === 'draft' ? (canApprove() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
-      : o.submittedAt === null ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>`
+      : o.submittedAt === null ? (o.canEdit !== false ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>` : `<span class="pill" title="Người phụ trách chưa gửi duyệt">Nháp</span>`)
       : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
-    + ((isManager() || o.status === 'draft') && o.status !== 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
+    + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
@@ -3114,13 +3220,14 @@ async function openOrder(id) {
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
   $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
-  $('#order-new-payment').hidden = o.status === 'cancelled' || r.balance <= 0;
+  $('#order-new-payment').hidden = o.status === 'cancelled' || o.status === 'draft' || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
     ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
     : `<div class="pay-summary ${r.overdue ? 'danger' : 'warn'}"><span>Còn phải thu${r.overdue ? ` <small class="danger-text">(quá hạn ${money(r.overdue)})</small>` : ''}</span><b>${money(r.balance)}</b>
        <small>Đã thu ${money(r.paid)} / ${money(r.due)}</small></div>`;
-  $('#order-payments').innerHTML = paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b></li>`).join('')}</ul>`
+  // Phiếu đã huỷ: gạch ngang + ai huỷ, lý do (không tính vào đã thu). Manager / quyền "Huỷ phiếu thu" huỷ phiếu ghi nhầm (bắt buộc lý do).
+  $('#order-payments').innerHTML = paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li class="${p.voidedAt ? 'payment-voided' : ''}" data-payment="${esc(p.id)}"><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b>${p.voidedAt ? `<small class="void-note danger-text">Đã huỷ${p.voidedByName ? ' bởi ' + esc(p.voidedByName) : ''} · ${fmtDate(p.voidedAt)}: ${esc(p.voidReason)}</small>` : ''}${!p.voidedAt && d.canVoidPayment ? `<button type="button" class="btn ghost small danger-text" data-void-payment="${esc(p.id)}">Huỷ phiếu…</button>` : ''}</li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>');
 }
 /**
@@ -3171,7 +3278,7 @@ function renderInvoice(o) {
     : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Sau khi xuất, Kế toán hoặc nhân viên phụ trách nhập số hoá đơn vào đây.</p>
        <button type="button" class="btn ghost small" id="invoice-request" title="Đổi email nhận, cách xuất hoặc ghi chú">Sửa yêu cầu</button>${form('Đã xuất – lưu số hoá đơn')}`
     : `<p class="muted">Chưa yêu cầu xuất hoá đơn. Khi đơn giao xong, hệ thống tự yêu cầu và giao việc cho nhóm Kế toán.</p>
-       ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>'}${form('Lưu số hoá đơn')}`;
+       ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>' + form('Lưu số hoá đơn')}`;
 }
 document.addEventListener('click', async e => {
   if (e.target.id === 'invoice-edit') { const f = document.getElementById('invoice-form'); f.hidden = false; e.target.hidden = true; f.invoiceNo.focus(); return; }
@@ -3647,7 +3754,7 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#order-cancel')) {
     const w = isContractDoc() ? 'HĐKT' : 'đơn';
     if (!await confirmBox(`Huỷ ${w} ${docNo()}? ${isContractDoc() ? 'HĐKT' : 'Đơn'} huỷ không còn tính công nợ; báo giá có thể lập lại.`, { title: 'Huỷ ' + w, ok: 'Huỷ ' + w, danger: true })) return;
-    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.'); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
+    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.'); loadHolds(true); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-delete')) {
     const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';
@@ -3697,7 +3804,7 @@ $('#contract-form').addEventListener('submit', async e => {
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
       run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }) });
     if (!r) return;
-    $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo);
+    $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); loadHolds(true); // HĐKT giữ hàng thay báo giá
     target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
   } catch (ex) { err.textContent = ex.message; }
 });
@@ -3722,15 +3829,30 @@ $('#delivery-form').addEventListener('submit', async e => {
 });
 $('#order-new-payment').addEventListener('click', () => {
   const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); $('#payment-error').textContent = '';
-  $('#payment-title').textContent = 'Thu tiền ' + sales.order.orderNo; f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso();
+  $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
   $('#payment-dialog').showModal();
 });
 $('#payment-form').addEventListener('submit', async e => {
-  e.preventDefault(); const f = e.target, err = $('#payment-error'); err.textContent = '';
+  e.preventDefault(); const f = e.target, err = $('#payment-error'), btn = f.querySelector('.modal-foot .btn.primary'); err.textContent = '';
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true; // chống bấm hai lần ghi trùng phiếu thu
   try {
     await api('/payments', 'POST', { orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value });
     $('#payment-dialog').close(); toast('Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
-  } catch (ex) { err.textContent = ex.message; }
+  } catch (ex) { err.textContent = ex.message; } finally { if (btn) btn.disabled = false; }
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-void-payment]'); if (!b) return;
+  const li = b.closest('li'); if (li.querySelector('.void-form')) return;
+  const f = document.createElement('form'); f.className = 'void-form';
+  f.innerHTML = '<input name="reason" required minlength="3" placeholder="Lý do huỷ, VD: ghi nhầm số tiền" aria-label="Lý do huỷ phiếu thu"><button class="btn small danger-outline">Huỷ phiếu thu</button><button type="button" class="btn ghost small" data-void-cancel>Thôi</button><small class="danger-text" role="alert"></small>';
+  li.append(f); f.reason.focus();
+  f.querySelector('[data-void-cancel]').addEventListener('click', () => f.remove());
+  f.addEventListener('submit', async ev => {
+    ev.preventDefault(); const ok = f.querySelector('.danger-outline'); ok.disabled = true;
+    try { await api(`/payments/${encodeURIComponent(b.dataset.voidPayment)}/void`, 'POST', { reason: f.reason.value }); toast('Đã huỷ phiếu thu.'); openOrder(sales.order.id); }
+    catch (ex) { f.querySelector('small').textContent = ex.message; ok.disabled = false; }
+  });
 });
 // ----- Thanh nút báo giá như web cũ: Sinh HĐKT · Tạo đơn hàng · Tải báo giá · Lưu · Duyệt · Xoá
 /** Lý do chưa dùng được các nút cần báo giá đã duyệt (null = dùng được). */
@@ -3743,7 +3865,8 @@ function approvalBlock() {
 }
 function updateQuoteActions() {
   const saved = !!editor.id, approved = editor.approval?.status === 'approved', mgr = isManager(), block = approvalBlock();
-  const locked = saved && approved && !mgr;
+  const readOnly = saved && editor.approval?.canEdit === false; // xem được, không sửa được (máy chủ cũng chặn)
+  const locked = (saved && approved && !mgr) || readOnly;
   for (const el of qf.querySelectorAll('.editor-grid input, .editor-grid select, .editor-grid textarea, .editor-grid button, .card input, .card select, .card textarea, .card button')) {
     if (locked && !el.disabled) { el.dataset.approvalLock = '1'; el.disabled = true; }
     else if (!locked && el.dataset.approvalLock) { delete el.dataset.approvalLock; el.disabled = false; }
@@ -3768,11 +3891,13 @@ function updateQuoteActions() {
   // Manager duyệt mọi báo giá; nhân viên phụ trách xác nhận báo giá khách gửi từ trang khách hàng.
   const canApprove = mgr || !!editor.approval?.canApprove;
   const ap = $('#approve-quote'); ap.hidden = !canApprove || !saved; ap.disabled = approved; ap.textContent = approved ? 'Đã duyệt' : editor.approval?.fromCustomer ? 'Xác nhận báo giá khách' : 'Duyệt';
+  // Báo giá nhân viên gửi duyệt: người duyệt trả lại kèm lý do (về nháp để sửa).
+  $('#reject-quote').hidden = !canApprove || !saved || editor.approval?.status !== 'pending' || !!editor.approval?.fromCustomer;
   // Nhân viên xoá được báo giá chưa duyệt của mình; "Gửi duyệt" chỉ hiện với báo giá nháp (Manager duyệt thẳng).
-  $('#delete-quote').hidden = !saved || (!mgr && approved);
+  $('#delete-quote').hidden = !saved || (!mgr && approved) || readOnly;
   // Nhân viên luôn thấy nút: nháp → "Gửi duyệt"; đã gửi (chờ duyệt) → "Đã gửi duyệt" (khoá). Báo giá khách gửi thì dùng nút xác nhận.
   const sb = $('#submit-quote');
-  sb.hidden = !saved || mgr || approved || !!editor.approval?.fromCustomer;
+  sb.hidden = !saved || mgr || approved || !!editor.approval?.fromCustomer || readOnly;
   sb.disabled = saving || !draft; sb.textContent = draft ? 'Gửi duyệt' : 'Đã gửi duyệt';
   sb.title = draft ? 'Gửi báo giá cho Manager duyệt' : 'Báo giá đã gửi, đang chờ Manager duyệt';
   $('#quote-history').hidden = !mgr || !saved;
@@ -3883,7 +4008,7 @@ function drawQuoteHold() {
   btn.hidden = !editor.id; ext.hidden = !h?.canExtend;
   if (!h) { btn.textContent = 'Giữ hàng 5 ngày'; btn.disabled = false; btn.title = editor.holdError || 'Treo tồn kho cho báo giá này 5 ngày'; return; }
   btn.textContent = active ? 'Bỏ giữ hàng' : `Giữ hàng ${h.days || 5} ngày`;
-  const block = active ? '' : editor.dirty ? 'Lưu thay đổi trước.' : !h.canHold ? 'Chỉ giữ hàng cho báo giá đã duyệt.' : '';
+  const block = active ? '' : editor.dirty ? 'Lưu thay đổi trước.' : !h.canHold ? (h.ordered ? 'Báo giá đã lập đơn / HĐKT – hàng do đơn giữ đến khi giao xong hoặc huỷ.' : 'Chỉ giữ hàng cho báo giá đã duyệt.') : '';
   btn.disabled = !!block; btn.title = block || (active ? 'Bỏ treo tồn kho cho báo giá này' : 'Treo tồn kho thật cho báo giá này 5 ngày; báo giá khác thấy khả dụng giảm tương ứng');
 }
 $('#quote-hold').addEventListener('click', async e => {
@@ -3977,6 +4102,18 @@ $('#approve-quote').addEventListener('click', async () => {
     const r = await api('/quotes/' + encodeURIComponent(editor.id) + '/approve', 'POST', { revision: editor.revision });
     editor.approval = { ...editor.approval, status: 'approved', at: r.approvedAt, by: r.approvedByName };
     toast('Đã duyệt báo giá. Có thể tải file, tạo đơn hàng, sinh HĐKT.'); loadQuotes(); refreshQuoteHold(editor.id);
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { updateQuoteActions(); }
+});
+$('#reject-quote').addEventListener('click', async () => {
+  if (!(isManager() || editor.approval?.canApprove) || !editor.id || editor.approval?.status !== 'pending') return;
+  if (editor.dirty) return toast('Báo giá đang có thay đổi chưa lưu. Lưu hoặc tải lại trước khi trả lại.', 'err');
+  const reason = await reasonBox({ title: 'Trả lại báo giá', text: `Báo giá ${field('quoteNo').value} về nháp; người lập nhận thông báo kèm lý do để sửa rồi gửi duyệt lại.`, placeholder: 'VD: giá ly sứ thấp hơn giá sàn, kiểm tra lại chiết khấu', ok: 'Trả lại' });
+  if (!reason) return;
+  try {
+    await api('/quotes/' + encodeURIComponent(editor.id) + '/reject', 'POST', { revision: editor.revision, reason });
+    editor.approval = { ...editor.approval, status: 'draft' };
+    toast('Đã trả lại báo giá cho người lập.'); loadQuotes();
   } catch (ex) { toast(ex.message, 'err'); }
   finally { updateQuoteActions(); }
 });

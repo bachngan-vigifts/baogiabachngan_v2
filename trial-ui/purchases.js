@@ -1,4 +1,5 @@
 import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } from './purchase-export-data.js';
+import { downloadExcel } from './sheet-export.js';
 /**
  * ĐƠN MUA HÀNG NCC (#/purchases) – xem docs/NCC-PAGE.md mục "Đơn mua hàng".
  *  #/purchases                 danh sách + lọc trạng thái
@@ -97,9 +98,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   const add = btn('+ Lập đơn mua', 'btn primary', () => openCreate());
   // Manager: nhập các đơn đã đặt với NCC từ file Excel tổng đơn của NCC (mẫu Minh Long) – trial-ui/purchase-import.js.
   const importBtn = btn('Nhập từ file NCC', 'btn secondary pur-import', () => importForm()); importBtn.hidden = true;
-  const headTools = el('div', 'row-gap head-actions'); headTools.append(importBtn, add);
+  // Công nợ NCC theo nhà cung cấp (người xem được giá NCC: Manager, Kế toán…): bảng tổng + xuất Excel.
+  const payBtn = btn('💰 Công nợ NCC', 'btn secondary', () => payablesDialog()); payBtn.hidden = true;
+  const headTools = el('div', 'row-gap head-actions'); headTools.append(payBtn, importBtn, add);
   head.append(titles, headTools);
-  options().then(o => { importBtn.hidden = !o.isManager || kho(); }).catch(() => {});
+  options().then(o => { importBtn.hidden = !o.isManager || kho(); payBtn.hidden = !o.canSeePrices || kho(); }).catch(() => {});
   const panel = el('div', 'panel'), bar = el('div', 'toolbar');
   const search = input('search', '', { placeholder: 'Tìm số đơn, số đơn NCC, NCC, mã hàng, số báo giá / HĐKT, khách…' }); search.setAttribute('aria-label', 'Tìm đơn mua');
   const label = el('label', 'search'); label.append(search);
@@ -627,6 +630,49 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       finally { download.disabled = false; }
     });
     document.body.append(dlg); dlg.showModal(); updateKind();
+  }
+
+  /** Công nợ NCC: mỗi NCC một dòng (còn nợ, quá hạn, kỳ trả sắp tới); bấm dòng → lọc danh sách "Còn nợ NCC" theo NCC đó. */
+  async function payablesDialog() {
+    const dlg = el('dialog', 'modal pur-payables'), head = el('div', 'modal-head'), body = el('div', 'modal-body'), footer = el('div', 'modal-foot');
+    const t = el('div'); t.append(el('span', 'eyebrow', 'Tài chính NCC'), el('h2', '', 'Công nợ NCC'));
+    const x = btn('×', 'icon-btn', () => dlg.close()); x.setAttribute('aria-label', 'Đóng'); head.append(t, x);
+    body.append(el('p', 'muted', 'Đang tải…'));
+    const exportBtn = btn('⬇ Xuất Excel', 'btn secondary'); exportBtn.disabled = true;
+    footer.append(btn('Đóng', 'btn secondary', () => dlg.close()), exportBtn); dlg.append(head, body, footer);
+    dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal();
+    try {
+      const d = await api('/supplier-payables');
+      const sum = k => d.suppliers.reduce((t, s) => t + s[k], 0);
+      const stats = el('div', 'stats');
+      for (const [label, v, cls] of [['Còn nợ NCC', sum('balance'), ''], ['Quá hạn', sum('overdue'), sum('overdue') > 0 ? 'danger-text' : ''], ['Số NCC', d.suppliers.length, '']]) {
+        const a = el('article', 'stat'); a.append(el('small', '', label), el('strong', cls, label === 'Số NCC' ? String(v) : money(v))); stats.append(a);
+      }
+      const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('tr'), tb = el('tbody');
+      for (const h of ['Nhà cung cấp', 'Số đơn', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới']) thead.append(el('th', h === 'Nhà cung cấp' || h === 'Kỳ trả sắp tới' ? '' : 'right', h));
+      table.append(el('thead'), tb); table.tHead.append(thead); wrap.append(table);
+      for (const r of d.suppliers) {
+        const tr = el('tr', 'clickable'); tr.tabIndex = 0;
+        const next = el('td', '', r.nextDueDate ? `${dmy(r.nextDueDate)} · ${money(r.nextDueAmount)}` : '—'); if (r.nextDueDate && r.nextDueDate <= d.today) next.className = 'pur-late';
+        tr.append(el('td', '', r.supplierName || '—'), el('td', 'num', String(r.orders)), el('td', 'num', money(r.balance)), el('td', 'num' + (r.overdue > 0 ? ' pur-late' : ''), r.overdue > 0 ? money(r.overdue) : '—'), next);
+        const pick = () => { dlg.close(); search.value = r.supplierName || ''; filter = 'debt'; chips.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === 'debt')); load(); };
+        tr.addEventListener('click', pick); tr.addEventListener('keydown', e => { if (e.key === 'Enter') pick(); });
+        tb.append(tr);
+      }
+      body.replaceChildren(stats, d.suppliers.length ? wrap : el('p', 'muted', 'Không còn công nợ NCC.'));
+      exportBtn.disabled = !d.suppliers.length;
+      exportBtn.addEventListener('click', async () => {
+        exportBtn.disabled = true;
+        try {
+          await downloadExcel('cong-no-ncc', [
+            { name: 'Theo NCC', widths: [34, 10, 16, 16, 16, 16, 16, 16], header: ['Nhà cung cấp', 'Số đơn', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
+              rows: d.suppliers.map(r => [r.supplierName, r.orders, r.total, r.paid, r.balance, r.overdue, r.nextDueDate || '', r.nextDueAmount]) },
+            { name: 'Theo đơn mua', widths: [18, 16, 34, 16, 16, 16, 16, 16, 16], header: ['Số đơn', 'Số đơn NCC', 'Nhà cung cấp', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
+              rows: d.orders.map(o => [o.ticketNumber, o.internalNo || '', o.supplierName, o.total, o.paid, o.balance, o.overdue, o.nextDueDate || '', o.nextDueAmount]) },
+          ]);
+        } catch (ex) { toast(ex.message, 'err'); } finally { exportBtn.disabled = false; }
+      });
+    } catch (ex) { body.replaceChildren(el('p', 'danger-text', ex.message || 'Không tải được công nợ NCC.')); }
   }
 
   const foot = (...buttons) => { const f = el('div', 'sup-drawer-foot'); f.append(...buttons); return f; };

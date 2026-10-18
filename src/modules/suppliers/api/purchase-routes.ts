@@ -10,6 +10,7 @@ import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierContacts, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
   supplierReceiptLines, supplierReceipts, suppliers,
@@ -18,7 +19,7 @@ import { computeOrderTotals } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { canEditSuppliers, defaultRecipients } from '../domain/directory.ts';
 import { buildSchedules, canPay, canReceive, canSeePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
-import { asActor, listPurchases, purchaseCounts, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
+import { asActor, listPurchases, purchaseCounts, supplierPayables, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
 
 /**
  * ĐƠN MUA HÀNG NCC (đợt 2) – khu vực 'business', quyền chi tiết kiểm trong domain/purchasing.ts.
@@ -75,6 +76,8 @@ async function lockAndCheck(c: Ctx, tx: Tx, id: string, action: PurchaseAction, 
 const bump = (tx: Tx, id: string, by: string, set: Partial<typeof incomingShipments.$inferInsert> = {}) =>
   tx.update(incomingShipments).set({ ...set, revision: sql`${incomingShipments.revision} + 1`, updatedAt: nowIso(), updatedBy: by }).where(eq(incomingShipments.id, id));
 /** Chi tiết đơn mua cho trình duyệt: kèm link ảnh hàng hỏng của từng phiếu nhận. */
+const poLabel = (v: { ticketNumber: string; supplier: { name: string } }) => `${v.ticketNumber} · ${v.supplier.name}`;
+
 async function viewOf(c: Ctx, id: string) {
   // Mọi thao tác ghi trả về qua đây: cập nhật tồn "Hàng chờ về" theo số còn thiếu của các đơn mua (chỉ ghi phần đổi).
   await syncIncomingStock(c.env.db).catch(() => {});
@@ -159,6 +162,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const [orders, counts] = await Promise.all([listPurchases(c.env.db, me(c), filter, day), purchaseCounts(c.env.db, me(c), filter, day)]);
     return json({ orders, counts, canSeePrices: canSeePrices(asActor(me(c))), today: day });
   }, 'business');
+  router.get('/supplier-payables', async c => { guard(c); return json({ ...(await supplierPayables(c.env.db, me(c), today())), today: today() }); }, 'business');
   router.get('/purchase-orders/:id', async c => { guard(c); return json(await viewOf(c, c.params.id!)); }, 'business');
   router.get('/purchase-options', async c => {
     guard(c);
@@ -366,7 +370,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         depositRate: deposit?.mode === 'percent' ? Number(deposit.value) : deposit?.mode === 'none' || !deposit ? 0 : null });
       await event(tx, id, m.id, 'approve', `Manager duyệt đơn – tổng ${Math.round(total).toLocaleString('vi-VN')} đ, ${schedules.length} kỳ trả`, { rows, schedules });
     });
-    return json(await viewOf(c, id));
+    const v = await viewOf(c, id);
+    if (v.createdBy !== m.id) await notify(c.env, { eventType: 'purchase_approved', title: 'Đơn mua NCC đã được duyệt', body: poLabel(v), url: `/index.html#/purchases/${id}`, targetMemberId: v.createdBy, actorId: m.id, data: { purchaseId: id } }).catch(() => {});
+    return json(v);
   }, 'business');
 
   // ---- Gửi duyệt: nháp của nhân viên → vào hàng chờ duyệt của Manager
@@ -378,7 +384,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { submittedAt: nowIso() });
       await event(tx, id, m.id, 'submit', 'Gửi Manager duyệt đơn mua');
     });
-    return json(await viewOf(c, id));
+    const v = await viewOf(c, id);
+    await notifyMany(c.env, 'approvers', { eventType: 'purchase_pending', title: 'Đơn mua NCC chờ duyệt', body: `${m.name}: ${poLabel(v)}`, url: `/index.html#/purchases/${id}`, actorId: m.id, data: { purchaseId: id } }).catch(() => 0);
+    return json(v);
   }, 'business');
 
   // ---- Lưu giá nhập khi chưa duyệt (Manager): giá / CK / VAT từng dòng, đơn vẫn là nháp. Ô giá để trống = chưa có giá.
@@ -435,7 +443,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await bump(tx, id, m.id, { cancelledAt: nowIso(), cancelledBy: m.id, cancelReason: reason });
       await event(tx, id, m.id, 'cancel', 'Huỷ đơn mua – ' + reason);
     });
-    return json(await viewOf(c, id));
+    const v = await viewOf(c, id);
+    if (v.createdBy !== m.id) await notify(c.env, { eventType: 'purchase_cancelled', title: 'Đơn mua NCC đã bị huỷ', body: `${poLabel(v)} – ${reason}`, url: `/index.html#/purchases/${id}`, targetMemberId: v.createdBy, actorId: m.id }).catch(() => {});
+    return json(v);
   }, 'business');
 
   // ---- Nhận hàng từng đợt (kho / Manager)

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -22,7 +22,7 @@ import { customerPayments, deliveries, paymentSchedules, salesContracts, salesOr
 import { createOrderFromQuote } from '../../sales/api/routes.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../schema.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { cleanDiscounts, isPhoneOnly, nextQuoteNo, parseDiscounts, PHONE_ONLY_DOMAIN, portalBrandAllowed, publicQuote, shownEmail } from '../domain/portal.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -155,10 +155,12 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
     const orderId = wantsOrder ? await createOrderFromQuote(db, quote, { createdBy: me.id, status: 'draft', note }) : null;
-    // Báo ngay cho nhân viên phụ trách (Web Push + trang của họ tự làm mới).
-    await notify(c.env, wantsOrder
-      ? { eventType: 'customer_order', title: 'Khách đặt hàng', body: `${customer.name} đặt ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/orders/${orderId}`, targetMemberId: account.ownerId, actorId: me.id, data: { orderId, quoteId: id } }
-      : { eventType: 'customer_quote', title: 'Khách gửi yêu cầu báo giá', body: `${customer.name} · ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/quotes/${id}`, targetMemberId: account.ownerId, actorId: me.id, data: { quoteId: id } });
+    // Báo ngay cho nhân viên phụ trách (Web Push + trang của họ tự làm mới) và người được duyệt (duyệt báo giá / đơn khách gửi).
+    const n = wantsOrder
+      ? { eventType: 'customer_order', title: 'Khách đặt hàng', body: `${customer.name} đặt ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/orders/${orderId}`, actorId: me.id, data: { orderId, quoteId: id } }
+      : { eventType: 'customer_quote', title: 'Khách gửi yêu cầu báo giá', body: `${customer.name} · ${rows.length} sản phẩm · ${quote.quoteNo}`, url: `/index.html#/quotes/${id}`, actorId: me.id, data: { quoteId: id } };
+    await notify(c.env, { ...n, targetMemberId: account.ownerId });
+    await notifyMany(c.env, 'approvers', n, [account.ownerId]);
     return json({ id, quoteNo: quote.quoteNo, orderId }, 201);
   }, 'customer-portal');
 
@@ -172,8 +174,9 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     if (body.confirmed !== true) throw new AppError(400, 'Vui lòng kiểm tra và xác nhận thông tin đơn hàng trước khi gửi.', 'CONFIRM_REQUIRED');
     const deliveryDate = /^\d{4}-\d{2}-\d{2}$/.test(str(body.deliveryDate)) ? str(body.deliveryDate) : null;
     const orderId = await createOrderFromQuote(c.env.db, q, { createdBy: me.id, status: 'draft', note: str(body.note, 2000), deliveryDate });
-    await notify(c.env, { eventType: 'customer_order', title: 'Khách xác nhận đặt hàng', body: `${customer.name} đặt hàng theo báo giá ${q.quoteNo}`, url: `/index.html#/orders/${orderId}`,
-      targetMemberId: q.assigneeId ?? account.ownerId, actorId: me.id, data: { orderId, quoteId: q.id } });
+    const n = { eventType: 'customer_order', title: 'Khách xác nhận đặt hàng', body: `${customer.name} đặt hàng theo báo giá ${q.quoteNo}`, url: `/index.html#/orders/${orderId}`, actorId: me.id, data: { orderId, quoteId: q.id } };
+    await notify(c.env, { ...n, targetMemberId: q.assigneeId ?? account.ownerId });
+    await notifyMany(c.env, 'approvers', n, [q.assigneeId ?? account.ownerId]);
     return json({ orderId }, 201);
   }, 'customer-portal');
 
@@ -187,7 +190,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       db.select({ orderId: deliveries.orderId, deliveryNo: deliveries.deliveryNo, plannedDate: deliveries.plannedDate, timeSlot: deliveries.timeSlot, status: deliveries.status })
         .from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))).orderBy(asc(deliveries.plannedDate)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
-      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(inArray(customerPayments.orderId, ids)).orderBy(asc(customerPayments.paidAt)),
+      db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))).orderBy(asc(customerPayments.paidAt)),
       db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo, status: salesContracts.status, signedDate: salesContracts.signedDate, value: salesContracts.value }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]) : [[], [], [], [], []];
     const today = vietnamDate().iso;
@@ -207,8 +210,11 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const { customer } = await myAccount(c);
     const done = await c.env.db.update(salesOrders).set({ status: 'cancelled', updatedAt: nowIso() })
       .where(and(eq(salesOrders.id, c.params.id!), eq(salesOrders.customerId, customer.id), eq(salesOrders.status, 'draft'),
-        sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`)).returning({ id: salesOrders.id }); // HĐKT: huỷ qua nhân viên
+        sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`)).returning({ id: salesOrders.id, orderNo: salesOrders.orderNo, ownerId: salesOrders.ownerId }); // HĐKT: huỷ qua nhân viên
     if (!done.length) throw new AppError(409, 'Đơn đã được xác nhận hoặc không tồn tại, không huỷ được. Vui lòng liên hệ nhân viên phụ trách.');
+    // Báo nhân viên phụ trách (không có thì Manager) – đơn khách tự huỷ không còn nằm trong hàng chờ duyệt.
+    const o = done[0]!, n = { eventType: 'customer_order_cancelled', title: 'Khách đã huỷ đơn', body: `${o.orderNo} · ${customer.name}`, url: `/index.html#/orders/${o.id}`, actorId: member(c).id, data: { orderId: o.id } };
+    await (o.ownerId ? notify(c.env, { ...n, targetMemberId: o.ownerId }) : notifyMany(c.env, 'managers', n)).catch(() => 0);
     return json({ ok: true });
   }, 'customer-portal');
 

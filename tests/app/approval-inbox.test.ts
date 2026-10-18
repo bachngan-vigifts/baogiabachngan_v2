@@ -25,7 +25,7 @@ async function setup() {
 test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ duyệt; chỉ Manager; duyệt xong thì biến mất', async () => {
   const { call, emp, mgr } = await setup();
   const inbox = async () => (await call('/approvals', mgr)).data;
-  assert.deepEqual((await inbox()).counts, { quote: 0, order: 0, contract: 0, customer: 0, product: 0, total: 0 });
+  assert.deepEqual((await inbox()).counts, { quote: 0, order: 0, contract: 0, purchase: 0, customer: 0, product: 0, total: 0 });
   assert.equal((await call('/approvals', emp)).status, 403, 'nhân viên không xem');
 
   // Báo giá chờ duyệt (nhân viên lập).
@@ -52,7 +52,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   assert.equal((await call('/products', emp, 'POST', { sku: 'NEW-01', name: 'Ly sứ mới', unit: 'cái' })).status, 201);
 
   let d = await inbox();
-  assert.deepEqual(d.counts, { quote: 1, order: 1, contract: 1, customer: 1, product: 1, total: 5 });
+  assert.deepEqual(d.counts, { quote: 1, order: 1, contract: 1, purchase: 0, customer: 1, product: 1, total: 5 });
   const byKind = Object.fromEntries(d.items.map((i: any) => [i.kind, i]));
   assert.deepEqual([byKind.quote.title, byKind.quote.by, byKind.quote.link], ['Báo giá HRC_I1', 'Tên emp', `#/quotes/${q1.data.id}`]);
   assert.equal(byKind.order.link, `#/orders/${o2.data.id}`); assert.ok(byKind.order.amount > 0, 'đơn kèm giá trị');

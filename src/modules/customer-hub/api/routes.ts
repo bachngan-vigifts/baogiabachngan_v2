@@ -1,6 +1,6 @@
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
-import { and, asc, desc, eq, inArray, or, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, ne, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json } from '../../../core/http/router.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -56,7 +56,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
         .from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))).orderBy(desc(deliveries.plannedDate)),
       db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)),
       db.select({ id: customerPayments.id, orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method, reference: customerPayments.reference, note: customerPayments.note })
-        .from(customerPayments).where(inArray(customerPayments.orderId, ids)).orderBy(desc(customerPayments.paidAt)),
+        .from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))).orderBy(desc(customerPayments.paidAt)),
       db.select({ id: salesContracts.id, orderId: salesContracts.orderId, contractNo: salesContracts.contractNo, status: salesContracts.status, signedDate: salesContracts.signedDate,
         value: salesContracts.value, legalEntity: salesContracts.legalEntity, updatedAt: salesContracts.updatedAt }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]) : [[], [], [], [], []];

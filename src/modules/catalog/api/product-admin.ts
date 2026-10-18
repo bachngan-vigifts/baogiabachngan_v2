@@ -64,13 +64,13 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
     if (!canApprove(me)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt sản phẩm mới.', 'APPROVER_ONLY');
     const now = new Date().toISOString();
     const done = await c.env.db.update(products).set({ approvalStatus: 'approved', active: true, approvedBy: me.id, approvedAt: now, updatedAt: now })
-      .where(and(eq(products.sku, decodeURIComponent(c.params.sku!)), eq(products.approvalStatus, 'pending'))).returning({ sku: products.sku });
+      .where(and(eq(products.sku, c.params.sku!), eq(products.approvalStatus, 'pending'))).returning({ sku: products.sku });
     if (!done.length) throw new AppError(404, 'Không tìm thấy sản phẩm đang chờ duyệt.');
     return json({ ok: true });
   }, 'business');
 
   router.delete('/products/:sku', async c => {
-    const me = viewer(c), sku = decodeURIComponent(c.params.sku!);
+    const me = viewer(c), sku = c.params.sku!;
     const [p] = await c.env.db.select({ createdBy: products.createdBy, approvalStatus: products.approvalStatus }).from(products).where(eq(products.sku, sku)).limit(1);
     if (!p || p.approvalStatus !== 'pending') throw new AppError(404, 'Chỉ xoá được sản phẩm đang chờ duyệt.');
     if (!canApprove(me) && p.createdBy !== me.id) throw new AppError(403, 'Chỉ Manager, người được duyệt hoặc người tạo xoá được sản phẩm này.');

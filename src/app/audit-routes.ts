@@ -1,16 +1,18 @@
-import { and, desc, eq, like, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, lt, or } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json, readJson } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
 import { auditLogs } from '../core/db/schema.ts';
 import type { SessionState, StaffEnv } from '../modules/staff/api/auth-routes.ts';
 import { employees } from '../modules/staff/schema.ts';
+import { customerPayments, deliveries, packingSlips, salesContracts } from '../modules/sales/schema.ts';
 
 const clean = (v: string | null, max: number) => (v ?? '').trim().slice(0, max);
 
 /**
  * Xem NHẬT KÝ THAY ĐỔI (chỉ Manager): `?entityType=orders&entityId=<id>` lịch sử một bản ghi (`&related=1`: kèm thao tác khác
- * nhắc tới mã này, vd phiếu thu / giao hàng / HĐKT của đơn có `orderId` trong nội dung); `?actorId=` theo người;
+ * nhắc tới mã này, vd phiếu thu / giao hàng / HĐKT của đơn có `orderId` trong nội dung; với đơn hàng còn kèm thao tác trên chính HĐKT / chuyến giao /
+ * phiếu thu / phiếu đóng gói của đơn – đổi trạng thái giao, huỷ phiếu thu… không ghi `orderId` trong nội dung); `?actorId=` theo người;
  * không lọc = 100 thao tác gần nhất. `before=<createdAt>` để xem tiếp trang cũ hơn.
  *
  * `POST /csp-report`: trang báo vi phạm Content-Security-Policy (đang ở chế độ chỉ báo cáo) → in ra log Edge Function
@@ -23,8 +25,15 @@ export function registerAuditRoutes(router: Router<StaffEnv>) {
     if (entityId && !entityType) throw new AppError(400, 'Thiếu loại bản ghi.');
     // Mã bản ghi chỉ gồm chữ, số, gạch (UUID, mã hàng) → dùng an toàn trong LIKE.
     const related = p.get('related') === '1' && /^[\w.-]+$/.test(entityId);
-    const rows = await c.env.db.select({ a: auditLogs, actorName: employees.name }).from(auditLogs).leftJoin(employees, eq(employees.id, auditLogs.actorId))
-      .where(and(entityId && related ? or(and(eq(auditLogs.entityType, entityType), eq(auditLogs.entityId, entityId)), like(auditLogs.data, `%"${entityId}"%`))
+    const db = c.env.db, children = related && entityType === 'orders' ? (await Promise.all([
+      db.select({ id: salesContracts.id }).from(salesContracts).where(eq(salesContracts.orderId, entityId)),
+      db.select({ id: deliveries.id }).from(deliveries).where(eq(deliveries.orderId, entityId)),
+      db.select({ id: customerPayments.id }).from(customerPayments).where(eq(customerPayments.orderId, entityId)),
+      db.select({ id: packingSlips.id }).from(packingSlips).where(eq(packingSlips.orderId, entityId)),
+    ])).flat().map(r => r.id) : [];
+    const rows = await db.select({ a: auditLogs, actorName: employees.name }).from(auditLogs).leftJoin(employees, eq(employees.id, auditLogs.actorId))
+      .where(and(entityId && related ? or(and(eq(auditLogs.entityType, entityType), eq(auditLogs.entityId, entityId)), like(auditLogs.data, `%"${entityId}"%`),
+          children.length ? inArray(auditLogs.entityId, children) : undefined)
           : and(entityType ? eq(auditLogs.entityType, entityType) : undefined, entityId ? eq(auditLogs.entityId, entityId) : undefined),
         actorId ? eq(auditLogs.actorId, actorId) : undefined, before ? lt(auditLogs.createdAt, before) : undefined))
       .orderBy(desc(auditLogs.createdAt)).limit(limit);

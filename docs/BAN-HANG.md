@@ -104,7 +104,8 @@ Báo giá ──[Sinh đơn hàng]──▶ Đơn đặt hàng
 - **Lập Đơn hàng / HĐKT từ báo giá:** treo của báo giá đóng lại (trạng thái `converted`), **đơn / HĐKT giữ thay** (migration `0069_order_stock_holds.sql`).
   - Mọi đơn / HĐKT lập từ nay (kể cả nháp, kể cả lập không qua giữ hàng) tự giữ **phần chưa giao** của từng dòng có mã hàng. Không hết hạn.
   - Thôi giữ khi: **huỷ** đơn / HĐKT; **giao xong** (giao bớt thì giữ phần còn lại); hoặc đơn **đã đẩy Sapo** và tồn của mã đó được cập nhật (đồng bộ Sapo / nhập file tồn) **sau lúc đẩy** – khi đó tồn Sapo đã trừ "Đang giao dịch", web không trừ lần hai.
-  - Cột "Đang treo" hiện số đơn / "HĐKT <số>" (bấm mở). Kiểm tồn của chính báo giá đã lập đơn không tự trừ hàng của đơn mình.
+  - Cột "Đang treo" hiện số đơn / "HĐKT <số>" (bấm mở). Kiểm tồn của chính báo giá đã lập đơn không tự trừ hàng của đơn mình. Báo giá đã lập đơn / HĐKT không bấm "Giữ hàng" thêm được (409 `QUOTE_HAS_ORDER`).
+  - Hết hạn giữ hàng báo cho người giữ và **người phụ trách** báo giá (báo giá khách tự gửi không báo cho khách).
   - Đơn có từ trước migration 0069 (`holds_stock = false`) không giữ.
   - Tính ngay khi đọc (`orderHolds` trong `sales/api/hold-routes.ts`), không có bảng riêng; `GET /stock-holds` trả cả dòng báo giá lẫn dòng đơn (`orderId`, `orderNo`, `contractNo`, `expiresAt: null`).
 - **Hết hạn:** hết 5 ngày thì không còn trừ khả dụng nữa.
@@ -175,9 +176,20 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
 - **Công nợ:**
   - Phải thu = tổng kỳ; đã thu = tổng phiếu thu; còn lại = phải thu − đã thu.
   - Phiếu thu trừ dần vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã quá hạn tính là *quá hạn*.
-  - Không thu vượt số còn lại.
+  - Không thu vượt số còn lại (khoá dòng đơn khi ghi – bấm hai lần không ghi trùng); ngày thu không sau hôm nay; đơn đã huỷ không ghi thu.
+  - Trang Công nợ lọc **Còn phải thu** (mặc định) / **Quá hạn** / **Đã thu đủ**; lọc trong SQL trước khi giới hạn số dòng (đơn cũ còn nợ không bị đẩy khỏi danh sách).
+  - Cột **Hạn thu**: "Quá N ngày" (kỳ quá hạn lâu nhất) hoặc hạn kỳ kế tiếp; ô **Tuổi nợ quá hạn** 1–30 / 31–60 / trên 60 ngày; nút **⬇ Excel** tải bảng đang xem.
+  - **Huỷ phiếu thu** ghi nhầm (migration `0071_accounting_tools.sql`): Manager / quyền "Huỷ phiếu thu" (mặc định Kế toán), bắt buộc lý do – `POST /payments/:id/void`. Phiếu huỷ vẫn hiện (gạch ngang, ai huỷ, lý do), không tính vào đã thu ở mọi nơi; muốn sửa thì huỷ rồi ghi phiếu mới. Nhật ký thay đổi ghi lại.
+  - Trang Đơn hàng / HĐKT có nút lọc **🧾 Chờ xuất hoá đơn** (kèm số) – `?invoice=requested`.
+  - Nợ quá hạn: ngoài việc "Thu công nợ quá hạn" cho người phụ trách, nhóm Kế toán có việc "Theo dõi nợ quá hạn" (tự đóng khi khách trả).
+- **Sổ thu / chi** (`#/cashbook`, quyền "Sổ thu / chi" – mặc định Kế toán): phiếu thu khách + phiếu chi NCC theo khoảng ngày (`GET /cashbook?from=&to=`), tổng thu / chi / chênh lệch, tách chuyển khoản / tiền mặt, lọc Thu / Chi, xuất Excel. Phiếu huỷ hiện gạch ngang, không cộng tổng.
+- **Công nợ NCC** (trang Đơn mua NCC → nút **💰 Công nợ NCC**, người xem được giá NCC): nợ theo từng NCC (còn nợ, quá hạn, kỳ trả sắp tới), xuất Excel 2 sheet (theo NCC / theo đơn) – `GET /supplier-payables`.
+  - Số hoá đơn chỉ nhập cho đơn đã duyệt (không nhập trên đơn nháp / đã huỷ).
 - **Huỷ đơn:** chỉ huỷ được khi chưa giao và chưa thu tiền. Đơn huỷ không tính công nợ.
+  - Huỷ thì dọn việc còn treo: phiếu đóng gói chưa đóng và chuyến giao chưa giao huỷ theo (việc Kho / giao tự đóng); phiếu kho **đã đóng** ghi dòng đảo trong sổ kho (hàng về lại kho) rồi huỷ.
+  - Đơn đã huỷ: không đổi trạng thái chuyến giao (trừ huỷ), không xác nhận đóng hàng, không ghi thu.
 - **Quyền:** Manager và Kế toán thấy tất cả. Nhân viên thấy đơn mình phụ trách hoặc mình tạo; HĐKT, chuyến giao, công nợ theo quyền của đơn. NCC không vào được.
+  - **Sửa / huỷ / gửi duyệt / đổi ngày giao** đơn hoặc HĐKT nháp: chỉ người phụ trách, người tạo, đồng nghiệp cùng phòng (phạm vi "Cả phòng ban") hoặc Manager. Người chỉ được xem (Kế toán, Sale Admin "Toàn công ty (chỉ xem)", người được duyệt mở đơn chờ duyệt) không sửa đơn của người khác – máy chủ trả 403 `ORDER_EDIT_FORBIDDEN`, giao diện ẩn nút. Báo giá cũng vậy (`canEdit` trong `GET /quotes/:id`).
 
 ## API (khu vực `business`)
 
@@ -265,3 +277,17 @@ Hồ sơ đồng nghiệp chỉ trả thông tin nghiệp vụ: `payroll: null`,
 - Nếu giao về xưởng in, thông tin phiếu là nơi nhận của xưởng; lịch giao khách dùng thông tin khách trên đơn, tránh coi giao xưởng là giao xong cho khách.
 - Gỡ handler/nút ngầm và dòng trạng thái thuộc luồng yêu cầu đóng gói qua Công việc cũ trên UI. API cũ giữ tương thích dữ liệu/liên kết lịch sử; luồng thao tác hiện tại dùng phiếu đóng gói.
 - Không migration. Kiểm thử: packing.test.ts (bao gồm rollback/quyền/chống lặp và tự gửi), fulfilment-ui.test.ts, sales.test.ts; không thử tạo chứng từ trên production.
+
+
+## Rà soát CRM theo tài khoản (17/10/2026)
+
+- **Trả lại báo giá:** người duyệt bấm **Trả lại…** trên báo giá đang chờ duyệt, nhập lý do → báo giá về nháp, người lập / phụ trách nhận thông báo kèm lý do, sửa rồi gửi duyệt lại. Lý do lưu ở Lịch sử thay đổi.
+- **Đơn mua NCC** đã gửi duyệt vào hộp **Cần duyệt**; gửi duyệt báo người duyệt, duyệt / huỷ báo người lập. Việc "Duyệt đơn mua" tự đóng khi đơn được duyệt (không đóng tay).
+- **Thông báo thêm:** giao xong / giao thất bại → người phụ trách đơn; kho đóng hàng xong → cả người phụ trách đơn; nhập số hoá đơn → người phụ trách + người yêu cầu; khách tự huỷ đơn trên trang khách → người phụ trách (không có thì Manager).
+- **Chuyến giao** đi đúng thứ tự: Chờ giao ⇄ Đang giao → Đã giao / Thất bại; Thất bại → Chờ giao. Đã giao và đã huỷ là trạng thái cuối. Hai người bấm cùng lúc chỉ một lần được ghi (409 `DELIVERY_CHANGED`).
+- Người duyệt đổi được ngày giao dự kiến của đơn nháp đã gửi duyệt (đơn đã duyệt vẫn chỉ Manager đổi; nhân viên lên lịch chuyến không đổi ngày đã chốt).
+- **Đơn nháp** không ghi thu tiền được (409 `ORDER_NOT_APPROVED`); huỷ đơn kiểm lại trong giao dịch (không huỷ nếu vừa có phiếu thu / hàng đã giao).
+- **Kho** không thấy giá bán (danh sách / chi tiết / lịch sử sản phẩm), phí ship chuyến giao, tiền trong lịch sử đơn mua.
+- **Lịch sử đơn** (`/audit?entityType=orders&related=1`) gồm cả thao tác trên HĐKT, chuyến giao, phiếu thu, phiếu đóng gói của đơn.
+- **Sơ đồ quy trình** của Manager chỉ liệt kê đơn nháp đã gửi duyệt (khớp số đếm).
+- Không migration. Test: `tests/app/crm-audit.test.ts`.

@@ -31,6 +31,7 @@ import { registerNavigationCounts } from './navigation-counts.ts';
 import { registerPulseRoutes } from './pulse-routes.ts';
 import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
+import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
   const router = createStaffRouter({ authorizeSynctime });
@@ -66,5 +67,6 @@ export function createAppRouter() {
   registerNavigationCounts(router);
   registerInventoryRoutes(router);
   registerFlowRoutes(router);
+  registerCashbookRoutes(router);
   return router;
 }

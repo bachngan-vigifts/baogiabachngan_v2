@@ -79,7 +79,7 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
     const [schedules, payments, quoteRows, monthQuotes, custRows, newCustomers, taskRows] = await Promise.all([
       ids.length ? db.select({ orderId: paymentSchedules.orderId, amount: paymentSchedules.amount, dueDate: paymentSchedules.dueDate, kind: paymentSchedules.kind }).from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids)) : [],
       ids.length ? db.select({ id: customerPayments.id, orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method,
-        reference: customerPayments.reference, note: customerPayments.note }).from(customerPayments).where(inArray(customerPayments.orderId, ids)).orderBy(desc(customerPayments.paidAt)) : [],
+        reference: customerPayments.reference, note: customerPayments.note }).from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))).orderBy(desc(customerPayments.paidAt)) : [],
       db.select({ id: quotations.id, quoteNo: quotations.quoteNo, quoteType: quotations.quoteType, customer: quotations.customer, quoteDate: quoteDay, approvalStatus: quotations.approvalStatus, data: quotations.data, updatedAt: quotations.updatedAt })
         .from(quotations).where(sql`${quoteOwner} = ${id}`).orderBy(desc(quotations.updatedAt)).limit(STAFF_HUB_LIMITS.quotes),
       db.select({ id: quotations.id, data: quotations.data }).from(quotations).where(and(sql`${quoteOwner} = ${id}`, sql`${quoteDay} >= ${r.from}`, sql`${quoteDay} < ${r.next}`)),

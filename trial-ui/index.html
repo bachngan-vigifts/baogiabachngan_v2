@@ -59,6 +59,7 @@
       <a class="nav" href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h3 M15 17l1.5 1.5L19 16"/></svg><span>HĐKT</span></a>
       <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg><span>Lịch giao hàng</span><b id="nav-deliveries-count" class="badge danger" hidden>0</b></a>
       <a class="nav" href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z M3 10h18 M7 15h4"/></svg><span>Công nợ</span></a>
+      <a class="nav" href="#/cashbook" data-nav="cashbook" hidden><svg viewBox="0 0 24 24"><path d="M5 4h12a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z M5 18a2 2 0 0 1 2-2h12 M9 8h6 M9 11h4"/></svg><span>Sổ thu / chi</span></a>
       <a class="nav" href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10"/></svg><span>Khách hỏi tồn</span><b id="nav-stock-count" class="badge" hidden>0</b></a>
       <a class="nav" href="#/packing" data-nav="packing" hidden><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg><span>Phiếu đóng gói</span><b id="nav-packing-count" class="badge danger" hidden>0</b></a>
       <a class="nav" href="#/stock-lookup" data-nav="stock-lookup" hidden><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4 M8 11h6 M11 8v6"/></svg><span>Tra tồn</span></a>
@@ -179,6 +180,7 @@
             <button type="button" class="btn secondary" id="duplicate-quote" hidden title="Tạo bản sao với số báo giá mới">Nhân bản</button>
             <button class="btn primary" id="save-quote" title="Ctrl + S">Lưu báo giá</button>
             <button type="button" class="btn ok" id="approve-quote" hidden>Duyệt</button>
+            <button type="button" class="btn danger-outline" id="reject-quote" hidden title="Trả báo giá về nháp kèm lý do để người lập sửa">Trả lại…</button>
             <button type="button" class="btn ghost" id="quote-history" hidden title="Ai tạo / sửa / duyệt báo giá, lúc nào">Lịch sử</button>
             <button type="button" class="btn danger-outline" id="delete-quote" hidden>Xoá báo giá</button>
             <button type="button" class="btn primary" id="submit-quote" hidden title="Gửi báo giá cho Manager duyệt">Gửi duyệt</button>
@@ -400,7 +402,7 @@
       <div class="panel">
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="orders-search" type="search" placeholder="Tìm số đơn, số báo giá, khách hàng, SĐT…" aria-label="Tìm"></label>
-          <span id="orders-filters"></span>
+          <div class="chips" id="orders-filters" role="group" aria-label="Lọc hoá đơn"><button type="button" class="chip active" data-invoice="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-invoice="requested" aria-pressed="false" title="Đã yêu cầu xuất hoá đơn, chưa nhập số hoá đơn">🧾 Chờ xuất hoá đơn <span class="count" data-invoice-count></span></button></div>
         </div>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn hàng</th><th>Khách hàng</th><th>Trạng thái</th><th>Hoá đơn</th><th class="right">Giá trị</th><th>Thanh toán / Đặt cọc</th><th>In / Tải</th></tr></thead><tbody id="orders-list"></tbody></table></div>
         <div id="orders-empty" class="empty" hidden><p class="muted" id="orders-empty-text"></p></div>
@@ -418,7 +420,7 @@
       <div class="panel">
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số báo giá, khách hàng…" aria-label="Tìm"></label>
-          <span id="contracts-filters"></span>
+          <div class="chips" id="contracts-filters" role="group" aria-label="Lọc hoá đơn"><button type="button" class="chip active" data-invoice="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-invoice="requested" aria-pressed="false" title="Đã yêu cầu xuất hoá đơn, chưa nhập số hoá đơn">🧾 Chờ xuất hoá đơn <span class="count" data-invoice-count></span></button></div>
         </div>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Báo giá</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hoá đơn</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
         <div id="contracts-empty" class="empty" hidden><p class="muted" id="contracts-empty-text"></p></div>
@@ -489,6 +491,28 @@
       <div id="stock-req-list"></div>
       <p class="muted card" id="stock-req-empty" hidden>Không có yêu cầu nào.</p>
     </section>
+    <section class="view" id="view-cashbook" hidden>
+      <div class="page-head">
+        <div><span class="eyebrow">Kế toán</span><h1>Sổ thu / chi</h1><p class="muted">Phiếu thu khách và phiếu chi NCC theo ngày – đối soát với sao kê ngân hàng. Phiếu đã huỷ hiện gạch ngang, không cộng vào tổng.</p></div>
+      </div>
+      <div class="row-gap delivery-range cashbook-range">
+        <label>Từ ngày<input type="date" id="cashbook-from"></label>
+        <label>Đến ngày<input type="date" id="cashbook-to"></label>
+        <div class="delivery-status"><span id="cashbook-kind-label">Loại</span>
+          <div class="chips" id="cashbook-kind" role="group" aria-labelledby="cashbook-kind-label"><button type="button" class="chip active" data-kind="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-kind="in" aria-pressed="false">Thu</button><button type="button" class="chip" data-kind="out" aria-pressed="false">Chi</button></div>
+        </div>
+      </div>
+      <div class="stats" id="cashbook-stats"></div>
+      <div class="panel">
+        <div class="toolbar">
+          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="cashbook-search" type="search" placeholder="Lọc theo khách / NCC, số chứng từ, mã giao dịch…" aria-label="Tìm"></label>
+          <button type="button" class="btn secondary small" id="cashbook-export" title="Tải sổ thu / chi đang xem ra Excel">⬇ Excel</button>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày</th><th>Loại</th><th>Khách / NCC · Chứng từ</th><th>Hình thức · Mã GD</th><th class="right">Thu</th><th class="right">Chi</th><th>Người ghi</th></tr></thead><tbody id="cashbook-list"></tbody></table></div>
+        <div id="cashbook-empty" class="empty" hidden><p class="muted" id="cashbook-empty-text"></p></div>
+      </div>
+    </section>
+
     <section class="view" id="view-receivables" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Bán hàng</span><h1>Công nợ</h1><p class="muted">Phải thu theo đơn: tổng các kỳ (cọc, phần còn lại) trừ số đã thu.</p></div>
@@ -497,9 +521,10 @@
       <div class="panel">
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="receivables-search" type="search" placeholder="Tìm khách hàng, số đơn, MST…" aria-label="Tìm"></label>
-          <span id="receivables-filters"></span>
+          <button type="button" class="btn secondary small" id="receivables-export" title="Tải bảng công nợ đang xem ra Excel">⬇ Excel</button>
+          <div class="chips" id="receivables-filters" role="group" aria-label="Lọc công nợ"><button type="button" class="chip active" data-status="" aria-pressed="true">Còn phải thu</button><button type="button" class="chip" data-status="overdue" aria-pressed="false">Quá hạn</button><button type="button" class="chip" data-status="paid" aria-pressed="false">Đã thu đủ</button></div>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn / HĐKT</th><th>Tình trạng</th><th>Số hoá đơn</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn / HĐKT</th><th>Tình trạng</th><th>Hạn thu</th><th>Số hoá đơn</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
         <div id="receivables-empty" class="empty" hidden><p class="muted" id="receivables-empty-text"></p></div>
       </div>
     </section>

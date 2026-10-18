@@ -209,7 +209,7 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
     // Thu tiền áp vào kỳ đến hạn sớm nhất trước (như `receivable`): quá hạn = phần đến hạn trước hôm nay chưa thu đủ.
     const dueBefore = sql<number>`coalesce((select sum(${paymentSchedules.amount}) from ${paymentSchedules} where ${paymentSchedules.orderId} = ${salesOrders.id} and ${paymentSchedules.dueDate} < ${today}), 0)`;
     const scheduled = sql<number>`coalesce((select sum(${paymentSchedules.amount}) from ${paymentSchedules} where ${paymentSchedules.orderId} = ${salesOrders.id}), 0)`;
-    const paid = sql<number>`coalesce((select sum(${customerPayments.amount}) from ${customerPayments} where ${customerPayments.orderId} = ${salesOrders.id}), 0)`;
+    const paid = sql<number>`coalesce((select sum(${customerPayments.amount}) from ${customerPayments} where ${customerPayments.orderId} = ${salesOrders.id} and ${customerPayments.voidedAt} is null), 0)`;
     const rows = await db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, contract: sql<boolean>`${hasContract}`,
       overdue: sql<number>`greatest(${dueBefore} - ${paid}, 0)`.mapWith(Number), balance: sql<number>`greatest(${scheduled} - ${paid}, 0)`.mapWith(Number) })
       .from(salesOrders).where(and(debtCounted, orderScopeFor(me), sql`${scheduled} > ${paid}`));
@@ -233,9 +233,11 @@ async function salesDocs({ db, me, manager, warehouse }: Ctx, contract: boolean)
     // Manager chỉ đếm đơn nhân viên đã bấm "Gửi duyệt"; nhân viên đếm mọi đơn nháp của mình.
     q(and(scope, eq(salesOrders.status, 'draft'), manager ? isNotNull(salesOrders.submittedAt) : undefined)), q(and(scope, eq(salesOrders.status, 'confirmed'))), q(and(scope, eq(salesOrders.status, 'delivering'))),
     contract ? q(and(scope, ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'), unsigned)) : Promise.resolve(0),
-    db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, status: salesOrders.status, due: salesOrders.expectedDeliveryDate,
+    // Danh sách khớp số đếm: Manager không thấy đơn nháp nhân viên chưa gửi duyệt.
+    db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, status: salesOrders.status, due: salesOrders.expectedDeliveryDate, submittedAt: salesOrders.submittedAt,
       contractNo: sql<string | null>`(select ${salesContracts.contractNo} from ${salesContracts} where ${salesContracts.orderId} = ${salesOrders.id} limit 1)` })
-      .from(salesOrders).where(and(scope, inArray(salesOrders.status, ['draft', 'confirmed'])))
+      .from(salesOrders).where(and(scope, manager ? or(eq(salesOrders.status, 'confirmed'), and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt)))
+        : inArray(salesOrders.status, ['draft', 'confirmed'])))
       .orderBy(sql`${salesOrders.status} = 'draft' desc`, sql`${salesOrders.expectedDeliveryDate} asc nulls last`).limit(ITEMS),
   ]);
   const metrics: FlowMetric[] = [{ key: 'draft', label: manager ? 'Chờ Manager duyệt' : 'Nháp – chờ duyệt', value: draft, tone: draft ? 'warn' : '' },
@@ -244,7 +246,7 @@ async function salesDocs({ db, me, manager, warehouse }: Ctx, contract: boolean)
   return {
     metrics,
     items: rows.map(r => ({ id: r.id, title: r.customer, sub: [r.contractNo || r.no, r.due ? 'giao ' + ddmm(r.due) : ''].filter(Boolean).join(' · '),
-      badge: r.status === 'draft' ? 'Chờ duyệt' : 'Chờ giao', tone: r.status === 'draft' ? 'warn' as const : 'ok' as const, hash: orderHash(r.id, contract) })),
+      badge: r.status === 'draft' ? (r.submittedAt ? 'Chờ duyệt' : 'Nháp') : 'Chờ giao', tone: r.status === 'draft' ? 'warn' as const : 'ok' as const, hash: orderHash(r.id, contract) })),
   };
 }
 

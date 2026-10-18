@@ -39,13 +39,13 @@ export interface NotifyInput {
  * Gửi cùng một thông báo cho nhiều người (mỗi người một bản ghi + Web Push), bỏ trùng và bỏ chính người thao tác (`actorId`).
  * `ids` = 'managers' → mọi Manager đang làm việc · 'approvers' → Manager + nhân viên được Manager bật cờ "Được duyệt" (việc chờ duyệt).
  */
-export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers' | 'approvers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>) {
+export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers' | 'approvers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>, except: readonly (string | null | undefined)[] = []) {
   const who = ids === 'managers' ? eq(employees.role, 'manager')
     : ids === 'approvers' ? or(eq(employees.role, 'manager'), and(eq(employees.role, 'employee'), eq(employees.canApprove, true))) : undefined;
   const list = who
     ? (await env.db.select({ id: employees.id }).from(employees).where(and(who, eq(employees.active, true), isNull(employees.deletedAt)))).map(r => r.id)
     : ids as (string | null | undefined)[];
-  const targets = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId))];
+  const targets = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId && !except.includes(x)))];
   await Promise.all(targets.map(id => notify(env, { ...n, targetMemberId: id })));
   return targets.length;
 }
