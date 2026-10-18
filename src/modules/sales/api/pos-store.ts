@@ -266,11 +266,13 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
   const drawer = await cashShiftTotals(db, s.id);
   const r = await registerOf(db, s.registerId);
   const [person] = await db.select({ name: employees.name }).from(employees).where(eq(employees.id, s.memberId));
+  const [counted] = await db.select({ count: count() }).from(posStockCounts).where(eq(posStockCounts.shiftId, s.id));
   return {
     shift: s,
     memberName: person?.name ?? s.memberId,
     register: r,
     asOf: cutoff,
+    openingCount: counted?.count ? { scope: 'partial', count: counted.count } : null,
     bills: bills[0] ?? { count: 0, revenue: 0, discount: 0 },
     payments,
     cash,

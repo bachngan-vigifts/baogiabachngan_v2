@@ -97,7 +97,6 @@ export async function setup() {
       key: crypto.randomUUID(),
       registerId,
       openingCash: (await call('/cash', cookie)).data.nextOpeningCash,
-      counts: [{ sku: '00123', countedQty: 10 }],
     });
     assert.equal(x.status, 201, JSON.stringify(x.data));
     return x.data;
