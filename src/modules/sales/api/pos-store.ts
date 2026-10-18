@@ -272,7 +272,7 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
     memberName: person?.name ?? s.memberId,
     register: r,
     asOf: cutoff,
-    openingCount: { scope: 'partial', count: counted?.count ?? 0, maxCount: 3 },
+    openingCount: counted?.count ? { scope: 'partial', count: counted.count } : null,
     bills: bills[0] ?? { count: 0, revenue: 0, discount: 0 },
     payments,
     cash,

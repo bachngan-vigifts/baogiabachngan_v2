@@ -13,7 +13,7 @@ import { stockBalances } from '../../inventory/schema.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { customerWithTaxCode } from '../../customers/api/routes.ts';
 import { customerPayments, salesOrders, salesOrderLines, deliveries } from '../schema.ts';
-import { posRegisters, posShifts, posShiftTemplates, posStockCounts, posPaymentRequests } from '../pos-schema.ts';
+import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests } from '../pos-schema.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { notifyMany } from '../../notifications/api/routes.ts';
@@ -405,22 +405,6 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .from(posShiftTemplates)
           .where(and(eq(posShiftTemplates.id, templateId), eq(posShiftTemplates.active, true)));
         if (!template) throw new AppError(400, 'Ca làm việc không hợp lệ.');
-        if (!Array.isArray(b.counts) || b.counts.length > 30) throw new AppError(400, 'Nhập bảng đếm nhanh tồn kho.');
-        const counts = b.counts as Record<string, unknown>[],
-          ids = counts.map((x) => {
-            if (!x || typeof x !== 'object' || Array.isArray(x)) throw new AppError(400, 'Dòng kiểm đếm không hợp lệ.');
-            return posText(x.sku, 100);
-          });
-        if (new Set(ids).size !== ids.length) throw new AppError(400, 'Trùng mã kiểm đếm.');
-        const expected = await tx
-          .select({ sku: stockBalances.sku, qty: stockBalances.qty })
-          .from(stockBalances)
-          .innerJoin(products, eq(products.sku, stockBalances.sku))
-          .where(and(eq(stockBalances.warehouseId, r.warehouseId), eq(products.active, true)))
-          .orderBy(desc(stockBalances.qty), asc(stockBalances.sku))
-          .limit(3);
-        if (ids.length !== expected.length || expected.some((x) => !ids.includes(x.sku)))
-          throw new AppError(400, 'Danh sách đếm nhanh đã đổi, tải lại và kiểm đếm.');
         const id = crypto.randomUUID(),
           now = posNow(),
           [s] = await tx
@@ -439,35 +423,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               note: posText(b.note, 2000),
             })
             .returning();
-        if (counts.length) {
-          const balances = await tx
-            .select()
-            .from(stockBalances)
-            .where(and(eq(stockBalances.warehouseId, r.warehouseId), inArray(stockBalances.sku, ids)));
-          await tx.insert(posStockCounts).values(
-            counts.map((x) => {
-              const sku = posText(x.sku, 100),
-                qty = Number(x.countedQty),
-                systemQty = balances.find((z) => z.sku === sku)?.qty;
-              if (
-                !(typeof x.countedQty === 'number' || (typeof x.countedQty === 'string' && x.countedQty.trim() !== '')) ||
-                systemQty == null || !Number.isFinite(qty) || qty < 0
-              )
-                throw new AppError(400, 'Số đếm không hợp lệ.');
-              return {
-                shiftId: id,
-                sku,
-                systemQty,
-                countedQty: qty,
-                note: posText(x.note, 500),
-              };
-            }),
-          );
-        }
         await cashAudit(tx, m.id, 'open', 'pos-shifts', id, {
           openingCash,
           previousShiftId: inheritance.previousShiftId,
-          openingCount: { scope: 'partial', maxCount: 3, count: counts.length, skus: ids },
         });
         return s!;
       });

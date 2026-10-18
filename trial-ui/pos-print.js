@@ -44,7 +44,7 @@ export function buildPosPrint(doc, data, kind = 'bill') {
             ' (không thu/chi tiền thực trong ca)',
         ),
       );
-    if (data.openingCount) sheet.append(node(doc, 'p', `Kiểm đếm đầu ca: đếm nhanh một phần (${data.openingCount.count} mã), không phải kiểm kê toàn kho.`));
+    if (data.openingCount?.count) sheet.append(node(doc, 'p', `Kiểm đếm đầu ca: đếm nhanh một phần (${data.openingCount.count} mã), không phải kiểm kê toàn kho.`));
     sheet.append(node(doc, 'h3', 'SHIP COD'));
     for (const [label, value] of shiftCodRows(data)) line(label, value);
     sheet.append(node(doc, 'p', 'COD chưa thu không nằm trong tiền két. Ca đã kết được lưu cố định.'));

@@ -25,26 +25,29 @@ import { readdirSync } from 'node:fs';
 const origin = 'https://trial.test';
 import { setup } from '../helpers/pos-fixture.ts';
 import { auditLogs } from '../../src/core/db/schema.ts';
-test('POS kiểm đếm: rỗng không thành 0; lưu đếm nhanh một phần và tên nhân viên', async () => {
+test('POS mở ca không cần kiểm đếm; không ghi số đếm giả, giữ lịch sử cũ', async () => {
   const f = await setup();
-  for (const countedQty of ['', '  ', null, undefined, false, [], {}]) {
-    const r = await f.call('/pos/shifts/open', f.emp, 'POST', {
-      key: crypto.randomUUID(), registerId: f.registerId, counts: [{ sku: '00123', countedQty }],
-    });
-    assert.equal(r.status, 400, JSON.stringify(r.data));
-    assert.equal((await f.db.select().from(posShifts)).length, 0);
-    assert.equal((await f.db.select().from(posStockCounts)).length, 0);
-  }
   const opened = await f.call('/pos/shifts/open', f.emp, 'POST', {
-    key: crypto.randomUUID(), registerId: f.registerId, counts: [{ sku: '00123', countedQty: 0 }],
+    key: crypto.randomUUID(), registerId: f.registerId,
   });
   assert.equal(opened.status, 201, JSON.stringify(opened.data));
-  const options = await f.call('/pos/options', f.emp);
-  assert.equal(options.data.shifts[0].memberName, 'Tên emp');
-  const report = await f.call('/pos/shifts/' + opened.data.id, f.emp);
-  assert.deepEqual(report.data.openingCount, { scope: 'partial', count: 1, maxCount: 3 });
+  assert.equal((await f.db.select().from(posStockCounts)).length, 0);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
+  assert.equal((await f.call('/pos/options', f.emp)).data.shifts[0].memberName, 'Tên emp');
+  assert.equal((await f.call('/pos/shifts/' + opened.data.id, f.emp)).data.openingCount, null);
   const audit = await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, opened.data.id));
-  assert.ok(audit.some(x => JSON.parse(x.data || '{}').openingCount?.scope === 'partial'));
+  assert.ok(!audit.some(x => JSON.parse(x.data || '{}').openingCount));
+  await f.db.insert(posStockCounts).values({ shiftId: opened.data.id, sku: '00123', systemQty: 10, countedQty: 7, note: 'Lịch sử cũ' });
+  assert.equal((await f.call('/pos/shifts/' + opened.data.id, f.emp)).data.openingCount.count, 1);
+  assert.equal((await f.call('/cash/shifts/' + opened.data.id + '/close', f.emp, 'POST', { countedCash: 500000 })).status, 200);
+  const next = await f.call('/pos/shifts/open', f.emp, 'POST', {
+    key: crypto.randomUUID(), registerId: f.registerId,
+    counts: [null, { sku: '00123', countedQty: '' }],
+  });
+  assert.equal(next.status, 201, JSON.stringify(next.data));
+  assert.equal((await f.db.select().from(posStockCounts)).length, 1);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
+  assert.equal((await f.call('/pos/shifts/' + next.data.id, f.emp)).data.openingCount, null);
 });
 test('POS giữ chính sách khách mới dùng ngay nhưng khách chờ duyệt sẵn có vẫn không được dùng', async () => {
   const f = await setup(), s = await f.open();

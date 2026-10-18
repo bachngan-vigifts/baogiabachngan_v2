@@ -200,7 +200,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       root.append(page);
       return;
     }
-    if (!active()) page.append(el('div', 'pos-warning', 'Mở ca và đếm nhanh tồn kho trước khi bán.'));
+    if (!active()) page.append(el('div', 'pos-warning', 'Mở ca trước khi bán.'));
     if (st.pending) {
       const warn = el('div', 'pos-warning');
       warn.append(
@@ -673,8 +673,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         st.options.templates[0]?.id || '',
       ),
       cash = field('Tiền đầu ca trong két', 'number', '0'),
-      note = field('Ghi chú ca'),
-      counts = el('div', 'pos-opening-counts');
+      note = field('Ghi chú ca');
     m.dlg.classList.add('pos-open-shift');
     reg.setAttribute('aria-label', 'Quầy bán hàng');
     template.setAttribute('aria-label', 'Ca làm việc');
@@ -696,8 +695,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       choices = el('div', 'pos-shift-choices'),
       registerField = el('label', 'pos-field'),
       templateField = el('label', 'pos-field'),
-      opening = el('section', 'pos-shift-opening'),
-      stock = el('section', 'pos-shift-stock');
+      opening = el('section', 'pos-shift-opening');
     registerField.append(el('span', '', 'Quầy bán hàng'), reg);
     templateField.append(el('span', '', 'Ca làm việc'), template);
     choices.append(registerField, templateField);
@@ -707,60 +705,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       cash.box,
       el('p', 'pos-note', 'Tiền bàn giao từ số thực đếm ca trước. Ca đầu tiên dùng số dư đầu kỳ Manager đã chốt.'),
     );
-    stock.append(
-      el('h3', '', 'Kiểm đếm nhanh tồn kho'),
-      el('p', 'pos-note', 'Đếm nhanh một phần: tối đa 3 mã có tồn theo sổ lớn nhất, không phải kiểm kê toàn kho. Tự nhập số lượng thực tế; nếu không có hàng, nhập 0.'),
-      counts,
-    );
     note.input.placeholder = 'Ghi chú bàn giao hoặc lưu ý trong ca (nếu có)';
-    content.append(choices, opening, stock, note.box);
+    content.append(choices, opening, note.box);
     m.form.append(content);
     if (!st.options.templates.length) template.append(new Option('Ca sáng 08:00–14:00', ''));
-    let products = [],
-      seq = 0;
-    const getCounts = async () => {
-      b.disabled = true;
-      const n = ++seq,
-        registerId = reg.value,
-        [d, cashState] = await Promise.all([
-          api('/pos/opening-counts?registerId=' + encodeURIComponent(registerId)),
-          api('/cash?registerId=' + encodeURIComponent(registerId)),
-        ]);
-      if (n !== seq) return;
-      openingCash = Number(cashState.nextOpeningCash ?? 0);
-      cash.input.value = openingCash.toLocaleString('vi-VN');
-      products = d.counts;
-      counts.replaceChildren(
-        ...products.map((p) => {
-          const row = el('label', 'pos-count-row'),
-            inp = el('input');
-          inp.type = 'number';
-          inp.min = '0';
-          inp.step = '.001';
-          inp.required = true;
-          inp.value = '';
-          inp.placeholder = 'Tự đếm';
-          p.input = inp;
-          inp.setAttribute('aria-label', 'Tồn thực tế ' + p.name);
-          const info = el('span', 'pos-count-name'),
-            status = el('small', 'pos-count-status', 'Chưa nhập');
-          info.append(el('b', '', p.name), el('small', 'pos-note', 'Theo sổ: ' + p.qty));
-          status.setAttribute('aria-live', 'polite');
-          status.classList.add('pos-danger');
-          inp.addEventListener('input', () => {
-            const difference = Number(inp.value) - p.qty;
-            status.textContent = inp.value === '' ? 'Chưa nhập' : difference === 0 ? 'Khớp' : 'Lệch ' + difference;
-            status.classList.toggle('pos-danger', inp.value === '' || difference !== 0);
-          });
-          row.append(info, inp, status);
-          return row;
-        }),
-      );
-      if (!products.length)
-        counts.append(el('p', 'pos-count-empty', 'Quầy này chưa có sản phẩm trong danh sách kiểm đếm nhanh.'));
-      b.disabled = false;
-    };
-    reg.addEventListener('change', () => run(getCounts));
     const b = el('button', 'btn primary', 'Bắt đầu bán');
     b.type = 'submit';
     const footer = el('div', 'pos-shift-footer');
@@ -778,10 +726,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
             templateId: template.value,
             openingCash,
             note: note.input.value,
-            counts: products.map((p) => {
-              if (p.input.value.trim() === '') throw new Error('Nhập số đếm thực tế cho ' + p.name + '. Nếu không có hàng, nhập 0.');
-              return { sku: p.sku, countedQty: Number(p.input.value) };
-            }),
           });
           m.close();
           st.cart = [];
@@ -792,7 +736,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       });
     });
     m.show();
-    await getCounts();
+    let cashSeq = 0;
+    reg.addEventListener('change', () => run(async () => {
+      const version = ++cashSeq;
+      b.disabled = true;
+      const cashState = await api('/cash?registerId=' + encodeURIComponent(reg.value));
+      if (version !== cashSeq) return;
+      openingCash = Number(cashState.nextOpeningCash ?? 0);
+      cash.input.value = openingCash.toLocaleString('vi-VN');
+      b.disabled = false;
+    }));
   }
   function reportRows(container, d) {
     for (const [k, v] of shiftSummaryRows(d)) {
@@ -801,7 +754,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       container.append(row);
     }
     for (const x of d.bookAdjustments || []) container.append(el('p', 'pos-note', 'Điều chỉnh két: ' + money(x.direction === 'in' ? x.amount : -x.amount) + ' (điều chỉnh sổ, không thu/chi tiền thực trong ca)'));
-    if (d.openingCount) container.append(el('p', 'pos-note', `Kiểm đếm đầu ca: đếm nhanh một phần (${d.openingCount.count} mã), không phải kiểm kê toàn kho.`));
+    if (d.openingCount?.count) container.append(el('p', 'pos-note', `Kiểm đếm đầu ca: đếm nhanh một phần (${d.openingCount.count} mã), không phải kiểm kê toàn kho.`));
     container.append(el('h3', '', 'Ship COD'));
     for (const [name, value] of shiftCodRows(d)) {
       const r = el('div', 'pos-total-row');

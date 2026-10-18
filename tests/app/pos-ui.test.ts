@@ -123,7 +123,7 @@ test('Báo cáo POS/K80 dùng nhãn tiếng Việt, phân biệt giá trị đơ
   assert.ok(text.includes('đếm nhanh một phần (3 mã)'));
   assert.equal(cashKindLabel('adjustment'), 'Điều chỉnh két');
 });
-test('Form mở ca không điền sẵn và không gửi ô đếm rỗng như số 0', async () => {
+test('Form mở ca không còn kiểm đếm hoặc gọi API kiểm đếm', async () => {
   const prevDoc = globalThis.document, prevWin = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
@@ -137,7 +137,7 @@ test('Form mở ca không điền sẵn và không gửi ô đếm rỗng như s
       };
       if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
       if (path.startsWith('/cash')) return { nextOpeningCash: 200000 };
-      if (path.startsWith('/pos/opening-counts')) return { counts: [{ sku: '001', name: 'Ly sứ', qty: 12 }] };
+      if (path.startsWith('/pos/opening-counts')) throw Error('Không được gọi API kiểm đếm');
       if (path === '/pos/shifts/open') return { id: 'new' };
       throw Error(path);
     };
@@ -147,18 +147,16 @@ test('Form mở ca không điền sẵn và không gửi ô đếm rỗng như s
     assert.ok(doc.body.children.at(-1)!.textContent.includes('Tên nhân viên'));
     assert.ok(!doc.body.children.at(-1)!.textContent.includes('internal-id'));
     await root.querySelectorAll('button').find(b => b.textContent === 'Mở ca')!.fire('click');
-    const dialog = doc.body.children.at(-1)!, row = dialog.querySelectorAll('label').find(e => e.className === 'pos-count-row')!;
-    const input = row.querySelectorAll('input')[0]!;
-    assert.equal(input.value, '');
-    assert.ok(dialog.textContent.includes('Chưa nhập'));
+    const dialog = doc.body.children.at(-1)!;
+    assert.ok(!dialog.textContent.includes('Kiểm đếm nhanh'));
+    assert.ok(!dialog.querySelectorAll('label').some(e => e.className === 'pos-count-row'));
+    assert.ok(!calls.some(c => c.path.startsWith('/pos/opening-counts')));
     await dialog.querySelectorAll('form')[0]!.fire('submit');
     await new Promise(r => setTimeout(r, 0));
-    assert.ok(!calls.some(c => c.path === '/pos/shifts/open'));
-    assert.ok(notices.some(s => s.includes('Nhập số đếm thực tế')));
-    input.value = '0';
-    await dialog.querySelectorAll('form')[0]!.fire('submit');
-    await new Promise(r => setTimeout(r, 0));
-    assert.equal(calls.find(c => c.path === '/pos/shifts/open')!.body.counts[0].countedQty, 0);
+    const sent = calls.find(c => c.path === '/pos/shifts/open');
+    assert.ok(sent);
+    assert.equal(sent.body.counts, undefined);
+    assert.equal(sent.body.openingCash, 200000);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
 test('POS chọn quầy mặc định từ server, ưu tiên ca đang mở và đặt lại khi đổi tài khoản', async () => {
