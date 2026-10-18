@@ -1,3 +1,4 @@
+import { cashEntries, cashReconciliations } from '../modules/sales/cash-schema.ts';
 import { and, desc, eq, inArray, like, lt, or } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json, readJson } from '../core/http/router.ts';
@@ -25,7 +26,8 @@ export function registerAuditRoutes(router: Router<StaffEnv>) {
     if (entityId && !entityType) throw new AppError(400, 'Thiếu loại bản ghi.');
     // Mã bản ghi chỉ gồm chữ, số, gạch (UUID, mã hàng) → dùng an toàn trong LIKE.
     const related = p.get('related') === '1' && /^[\w.-]+$/.test(entityId);
-    const db = c.env.db, children = related && entityType === 'orders' ? (await Promise.all([
+    const db = c.env.db, cashChildren = related && entityType === 'pos-shifts' ? (await Promise.all([db.select({id:cashEntries.id}).from(cashEntries).where(eq(cashEntries.shiftId,entityId)),db.select({id:cashReconciliations.id}).from(cashReconciliations).where(eq(cashReconciliations.shiftId,entityId))])).flat().map(r=>r.id) : [];
+    const children = related && entityType === 'orders' ? (await Promise.all([
       db.select({ id: salesContracts.id }).from(salesContracts).where(eq(salesContracts.orderId, entityId)),
       db.select({ id: deliveries.id }).from(deliveries).where(eq(deliveries.orderId, entityId)),
       db.select({ id: customerPayments.id }).from(customerPayments).where(eq(customerPayments.orderId, entityId)),
@@ -33,7 +35,7 @@ export function registerAuditRoutes(router: Router<StaffEnv>) {
     ])).flat().map(r => r.id) : [];
     const rows = await db.select({ a: auditLogs, actorName: employees.name }).from(auditLogs).leftJoin(employees, eq(employees.id, auditLogs.actorId))
       .where(and(entityId && related ? or(and(eq(auditLogs.entityType, entityType), eq(auditLogs.entityId, entityId)), like(auditLogs.data, `%"${entityId}"%`),
-          children.length ? inArray(auditLogs.entityId, children) : undefined)
+          [...children,...cashChildren].length ? inArray(auditLogs.entityId, [...children,...cashChildren]) : undefined)
           : and(entityType ? eq(auditLogs.entityType, entityType) : undefined, entityId ? eq(auditLogs.entityId, entityId) : undefined),
         actorId ? eq(auditLogs.actorId, actorId) : undefined, before ? lt(auditLogs.createdAt, before) : undefined))
       .orderBy(desc(auditLogs.createdAt)).limit(limit);

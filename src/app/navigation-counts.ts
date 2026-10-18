@@ -1,3 +1,6 @@
+import { cashReconciliations } from '../modules/sales/cash-schema.ts';
+import { posShifts } from '../modules/sales/pos-schema.ts';
+import { can } from '../modules/staff/domain/permissions.ts';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
@@ -14,7 +17,7 @@ export function registerNavigationCounts(router: Router<StaffEnv>) {
     const db = c.env.db, m = (c.state.session as SessionState).member;
     const warehouse = isWarehouseStaff(asActor(m));
     const count = sql<number>`count(*)`.mapWith(Number);
-    const [[packing], [shipping], purchases] = await Promise.all([
+    const [[packing], [shipping], purchases, [cash]] = await Promise.all([
       db.select({ count }).from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId))
         .where(and(m.role === 'manager' || warehouse ? undefined : orderScopeFor(m), eq(packingSlips.status, 'sent'),
           sql`${salesOrders.status} <> 'delivered' and not exists (select 1 from ${orderProgressMarks}
@@ -22,8 +25,9 @@ export function registerNavigationCounts(router: Router<StaffEnv>) {
       db.select({ count }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
         .where(and(warehouse ? undefined : orderScopeFor(m), inArray(deliveries.status, ['planned', 'in_transit', 'failed']))),
       purchaseCounts(db, m, {}, vietnamDate().iso),
+      db.select({count}).from(cashReconciliations).innerJoin(posShifts,eq(posShifts.id,cashReconciliations.shiftId)).where(and(can(m,'cash.view-all')?undefined:eq(posShifts.memberId,m.id),sql`${cashReconciliations.status}<>'closed'`)),
     ]);
-    return json({ packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
+    return json({ cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
       purchases: purchases.all - purchases.received - purchases.cancelled });
   }, 'business');
 }

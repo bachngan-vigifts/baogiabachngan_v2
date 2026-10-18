@@ -9,7 +9,7 @@ import { employees } from '../../staff/schema.ts';
 import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { stockBalances, stockMoves } from '../schema.ts';
 import { STOCK_KIND_LABEL } from '../domain/kinds.ts';
-import { postMoves } from './ledger.ts';
+import { postMoves, inventoryOpeningHooks } from './ledger.ts';
 
 /**
  * SỔ KHO – giai đoạn 1, chạy song song với Sapo (docs/SO-KHO.md).
@@ -133,7 +133,9 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     const refId = crypto.randomUUID(), refNo = 'ĐK-' + new Date().toISOString().slice(0, 10).replaceAll('-', '');
     let written = 0;
     await db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_ledger_opening'))`);
+      await inventoryOpeningHooks.guard?.(tx, ids);
       const [bal, sapo] = await Promise.all([
         tx.select().from(stockBalances).where(inArray(stockBalances.warehouseId, ids)),
         tx.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, qty: productStock.quantity }).from(productStock).where(inArray(productStock.warehouseId, ids)),

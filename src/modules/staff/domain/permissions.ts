@@ -14,6 +14,8 @@ const ALL = [...OFFICE, 'warehouse'] as const;
 const KHO = ['warehouse', 'sale-admin'] as const, KE_TOAN = ['accounting', 'sale-admin'] as const;
 
 export const PERMISSIONS: readonly PermissionDef[] = [
+  { key: 'pos.sell', group: 'Bán hàng nhanh', label: 'POS – bán, mở/kết ca, thu COD của quầy', defaults: SALES },
+  { key: 'pos.configure', group: 'Bán hàng nhanh', label: 'POS – cấu hình quầy và ca', defaults: [] },
   { key: 'page.quotes', group: 'Trang được vào', label: 'Báo giá', defaults: SALES },
   { key: 'page.orders', group: 'Trang được vào', label: 'Đơn đặt hàng', defaults: OFFICE },
   { key: 'page.contracts', group: 'Trang được vào', label: 'HĐKT', defaults: OFFICE },
@@ -33,6 +35,8 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'purchases.prices', group: 'Tài chính NCC', label: 'Xem giá mua NCC', defaults: KE_TOAN },
   { key: 'purchases.pay', group: 'Tài chính NCC', label: 'Ghi thanh toán / lịch trả NCC', defaults: KE_TOAN },
   { key: 'suppliers.edit', group: 'Tài chính NCC', label: 'Danh bạ NCC – xem, sửa', defaults: KE_TOAN },
+  { key: 'page.cash', group: 'Sổ quỹ', label: 'Két chung cửa hàng', defaults: [...SALES, 'accounting'] },
+  { key: 'cash.view-all', group: 'Sổ quỹ', label: 'Xem tất cả phiếu và ca két', defaults: ['accounting'] },
   { key: 'page.cashbook', group: 'Kế toán', label: 'Sổ thu / chi', hint: 'Phiếu thu khách + phiếu chi NCC theo ngày, xuất Excel để đối soát ngân hàng.', defaults: ['accounting'] },
   { key: 'payments.void', group: 'Kế toán', label: 'Huỷ phiếu thu ghi nhầm', hint: 'Bắt buộc ghi lý do; phiếu huỷ vẫn giữ trong lịch sử.', defaults: ['accounting'] },
   { key: 'dashboard.all', group: 'Kế toán', label: 'Doanh số toàn công ty', hint: 'Tổng quan doanh số xem cả công ty (không có: chỉ doanh số của mình).', defaults: ['accounting'] },
@@ -85,11 +89,13 @@ export const scopeOf = (m: PermissionMember): DataScope =>
 export function routePermission(method: string, path: string, query: URLSearchParams): readonly string[] | null {
   const p = path.replace(/^.*?\/api\/staff(?=\/|$)/, '');
   const is = (re: RegExp) => re.test(p);
+  if (is(/^\/pos(\/|$)/)) return ['pos.sell', 'pos.configure'];
   if (is(/^\/(quotes|quote-docs)(\/|$)/)) return ['page.quotes'];
   if (is(/^\/(orders|order-quote-candidates|payments)(\/|$)/)) return ['page.orders', 'page.contracts', 'page.receivables'];
   if (is(/^\/contracts(\/|$)/)) return ['page.contracts', 'page.orders'];
   if (is(/^\/deliveries(\/|$)/)) return ['page.deliveries', 'page.orders', 'page.contracts'];
   if (is(/^\/receivables(\/|$)/)) return ['page.receivables'];
+  if (is(/^\/cash(\/|$)/)) return ['page.cash', 'pos.sell'];
   if (is(/^\/cashbook(\/|$)/)) return ['page.cashbook'];
   if (is(/^\/care(\/|$)/)) return ['page.care'];
   if (is(/^\/stock-requests(\/|$)/)) return ['page.stock-requests'];

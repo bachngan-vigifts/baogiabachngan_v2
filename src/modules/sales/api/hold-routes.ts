@@ -1,3 +1,4 @@
+import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -115,8 +116,7 @@ export function registerHoldRoutes(router: Router<StaffEnv>) {
       if (!need.size) fail(400, 'Báo giá chưa có mã hàng trong danh mục để giữ.');
       const skus = [...need.keys()];
       const [stock, held, ordered] = await Promise.all([
-        tx.select({ sku: productStock.sku, qty: sql<number>`sum(${productStock.quantity})`.mapWith(Number) }).from(productStock)
-          .innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId)).where(and(inArray(productStock.sku, skus), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).groupBy(productStock.sku),
+        (async () => { const [rows, whs] = await Promise.all([readCatalogStock(tx, skus), tx.select({id:warehouses.id}).from(warehouses).where(and(eq(warehouses.kind,'stock'),eq(warehouses.active,true)))]); const ids=new Set(whs.map(w=>w.id)), totals=new Map<string,number>();for(const row of rows)if(ids.has(row.warehouseId))totals.set(row.sku,(totals.get(row.sku)??0)+row.quantity);return [...totals].map(([sku,qty])=>({sku,qty})); })(),
         tx.select({ sku: stockHolds.sku, qty: sql<number>`sum(${stockHolds.qty})`.mapWith(Number) }).from(stockHolds).where(and(inArray(stockHolds.sku, skus), live(now))).groupBy(stockHolds.sku),
         orderHolds(tx, skus),
       ]);

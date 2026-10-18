@@ -3,7 +3,7 @@ export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, pr
   doc = document, win = window, schedule = setInterval, cancel = clearInterval }) {
   let generation = 0;
   let key = routeKey(), records = new Map(), checking = new Set(), busy = false, pending = false, warned = false, draft = false, timer;
-  const watched = path => /^\/(quotes|orders|contracts|deliveries|receivables|stock-requests|packing|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path);
+  const watched = path => /^\/(cash|pos|quotes|orders|contracts|deliveries|receivables|stock-requests|packing|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path);
   const normalize = path => {
     const url = new URL(path, 'https://local.invalid');
     url.searchParams.delete('refresh');

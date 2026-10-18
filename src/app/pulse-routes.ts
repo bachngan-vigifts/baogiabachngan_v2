@@ -1,3 +1,6 @@
+import { cashEntries, cashReconciliations, cashDrawers } from '../modules/sales/cash-schema.ts';
+import { posShifts } from '../modules/sales/pos-schema.ts';
+import { stockBalances } from '../modules/inventory/schema.ts';
 import { sql } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
@@ -29,7 +32,7 @@ export function registerPulseRoutes(router: Router<StaffEnv>) {
     await expireHolds(c.env).catch(() => 0);
     const [[row], notifyAt, chatUnread] = await Promise.all([
       db.select({
-        s: sql<string>`concat_ws('|', ${latest(quotations.updatedAt)}, ${latest(salesOrders.updatedAt)}, ${latest(salesContracts.updatedAt)}, ${latest(deliveries.updatedAt)},
+        s: sql<string>`concat_ws('|', ${latest(cashEntries.updatedAt)}, ${latest(cashReconciliations.updatedAt)}, ${latest(cashDrawers.updatedAt)}, ${latest(customerPayments.voidedAt)}, ${latest(posShifts.openedAt)}, ${latest(posShifts.closedAt)}, ${latest(stockBalances.updatedAt)}, ${latest(quotations.updatedAt)}, ${latest(salesOrders.updatedAt)}, ${latest(salesContracts.updatedAt)}, ${latest(deliveries.updatedAt)},
           ${latest(packingSlips.updatedAt)}, ${latest(customerPayments.createdAt)}, ${latest(tasks.updatedAt)}, ${latest(incomingShipments.updatedAt)},
           ${latest(customerActivities.updatedAt)}, ${latest(customerStockRequests.createdAt)}, ${latest(customerStockRequests.answeredAt)}, ${latest(catalogVersions.observedAt)}, ${latest(stockHolds.createdAt)}, ${latest(stockHolds.closedAt)},
           ${total(quotations)}, ${total(salesOrders)}, ${total(tasks)}, ${total(incomingShipments)})`,

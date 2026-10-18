@@ -1,3 +1,5 @@
+import { initCash } from './cash.js';
+import { initPos } from './pos.js';
 import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
 import { bindStockCheckFilter } from './stock-check-filter.js';
 import { downloadExcel } from './sheet-export.js';
@@ -307,6 +309,7 @@ const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 
 const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
+  cash: 'page.cash', pos: 'pos.sell',
   quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
@@ -469,7 +472,7 @@ async function loadNavigationBadges() {
   try {
     const counts = await api('/navigation-counts');
     if (request !== navigationBadgeRequest || user !== state.user) return;
-    for (const [name, id] of [['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count']]) {
+    for (const [name, id] of [['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count'], ['cash', 'nav-cash-count']]) {
       const badge = document.getElementById(id); if (!badge) continue;
       const count = Number(counts[name] || 0); badge.textContent = count.toLocaleString('vi-VN'); badge.hidden = count <= 0;
     }
@@ -608,7 +611,11 @@ $('#sapo-pull').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- điều hướng
-const VIEWS = { permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+var posUi = null;
+var cashUi = null;
+const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();}});
+const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
+const VIEWS = { cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -649,6 +656,8 @@ function route() {
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
+  if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
+  if (view === 'pos') posView().load();
   if (view === 'products' && !state.products) loadProducts();
   if (view === 'products') { productAdmin().loadPending(); legacyImagesBox(); }
   if (view === 'orders') loadOrders();
@@ -2776,8 +2785,9 @@ async function loadDeliveries() {
   if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
   $('#deliveries-list').innerHTML = skeleton(6);
   try {
-    const d = await api(`/deliveries?from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}&status=${encodeURIComponent($('#deliveries-status .chip.active')?.dataset.status ?? '')}`);
-    const q = normalize($('#deliveries-search').value);
+    const focusId = new URLSearchParams(location.hash.split('?')[1] || '').get('deliveryId');
+    const d = await api(`/deliveries?id=${encodeURIComponent(focusId || '')}&from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}&status=${encodeURIComponent($('#deliveries-status .chip.active')?.dataset.status ?? '')}`);
+    const q = focusId ? '' : normalize($('#deliveries-search').value);
     const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.contractNo || x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(x.carrier)}</small></td>
@@ -2923,9 +2933,9 @@ const sales = { order: null, detail: null };
 var dataRefresh = setupDataRefresh({
   read: path => api(path), refresh: () => refreshData(),
   enabled: () => !!state.user,
-  blocked: () => (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
+  blocked: () => (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
-  primaryPaths: () => isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
+  primaryPaths: () => location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
   // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
   schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
@@ -2983,6 +2993,8 @@ async function refreshData() {
   if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
   else if (page === 'orders') jobs.push(id ? openOrder(id) : loadOrders());
   else if (page === 'contracts') jobs.push(id ? openOrder(id) : loadContracts());
+  else if (page === 'cash') jobs.push(cashView().load());
+  else if (page === 'pos') { if (!posUi?.dirty()) jobs.push(posView().load()); }
   else if (page === 'deliveries') jobs.push(loadDeliveries());
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : loadCustomers());
@@ -3220,7 +3232,7 @@ async function openOrder(id) {
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
   $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
-  $('#order-new-payment').hidden = o.status === 'cancelled' || o.status === 'draft' || r.balance <= 0;
+  $('#order-new-payment').hidden = o.channel === 'pos' || o.status === 'cancelled' || o.status === 'draft' || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
     ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
