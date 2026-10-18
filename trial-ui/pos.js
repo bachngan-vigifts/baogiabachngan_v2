@@ -675,6 +675,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       note = field('Ghi chú ca'),
       counts = el('div', 'pos-opening-counts');
     m.dlg.classList.add('pos-open-shift');
+    reg.setAttribute('aria-label', 'Quầy bán hàng');
+    template.setAttribute('aria-label', 'Ca làm việc');
     const heading = el('header', 'pos-shift-heading');
     heading.append(
       el('span', 'pos-shift-badge', 'BẮT ĐẦU CA LÀM VIỆC'),
@@ -716,6 +718,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     let products = [],
       seq = 0;
     const getCounts = async () => {
+      b.disabled = true;
       const n = ++seq,
         registerId = reg.value,
         [d, cashState] = await Promise.all([
@@ -752,6 +755,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       );
       if (!products.length)
         counts.append(el('p', 'pos-count-empty', 'Quầy này chưa có sản phẩm trong danh sách kiểm đếm nhanh.'));
+      b.disabled = false;
     };
     reg.addEventListener('change', () => run(getCounts));
     const b = el('button', 'btn primary', 'Bắt đầu bán');
