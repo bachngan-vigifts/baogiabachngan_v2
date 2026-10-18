@@ -48,6 +48,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     products: [],
     offset: 0,
     request: 0,
+    showMenu: false,
   };
   let searchTimer,
     previewTimer,
@@ -145,7 +146,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   }
   function draw() {
     root.replaceChildren();
-    const page = el('div', 'pos-page'),
+    const page = el('div', 'pos-page' + (st.showMenu ? ' pos-show-menu' : '')),
       head = el('div', 'pos-head'),
       title = el('div'),
       tools = el('div', 'pos-head-tools');
@@ -158,6 +159,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       ),
     );
     head.append(title, tools);
+    const menu = button('☰ Menu CRM', 'btn secondary pos-menu-toggle', () => {
+      st.showMenu = !st.showMenu;
+      page.classList.toggle('pos-show-menu', st.showMenu);
+      menu.setAttribute('aria-expanded', String(st.showMenu));
+    });
+    menu.setAttribute('aria-expanded', String(st.showMenu));
+    title.append(menu);
     page.append(head);
     tools.append(
       button('Báo cáo ca', 'btn secondary', () => run(history)),
@@ -198,8 +206,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       page.append(warn);
     }
     const layout = el('div', 'pos-layout'),
-      left = el('section', 'pos-card'),
-      right = el('section', 'pos-card'),
+      left = el('section', 'pos-card pos-catalog'),
+      right = el('section', 'pos-card pos-checkout'),
       searchBox = el('div', 'pos-search');
     const input = el('input');
     input.type = 'search';
@@ -254,7 +262,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       invalidate();
       run(() => search(false));
     });
-    right.append(el('span', 'pos-note', 'Chính sách giá'), price);
+    const priceField = el('label', 'pos-policy');
+    priceField.append(el('span', 'pos-note', 'Chính sách giá'), price);
+    right.append(priceField);
     nodes.lines = el('div', 'pos-lines');
     right.append(nodes.lines);
     nodes.totals = el('div', 'pos-totals');
@@ -317,10 +327,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.qr = button('Hiện QR', 'btn secondary', () => run(qr));
     nodes.pay = button('Thu tiền & in', 'btn primary', () => pay(false));
     actions.append(nodes.temp, nodes.qr, nodes.pay);
+    const help = el('details', 'pos-help');
+    help.append(
+      el('summary', '', 'Lưu ý bill tạm và chuyển khoản'),
+      el('p', 'pos-note', 'Bill tạm chưa thanh toán, không trừ kho. VietQR chỉ là yêu cầu; cần xác nhận đã nhận tiền.'),
+    );
     right.append(
       actions,
-      button('Tạo đơn Ship COD', 'btn secondary', () => run(() => pay(true))),
-      el('p', 'pos-note', 'Bill tạm chưa thanh toán, không trừ kho. VietQR chỉ là yêu cầu; cần xác nhận đã nhận tiền.'),
+      button('Tạo đơn Ship COD', 'btn secondary pos-cod-create', () => run(() => pay(true))),
+      help,
     );
     layout.append(left, right);
     page.append(layout);
@@ -494,11 +509,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         b.append(im);
       } else b.append(el('span', 'pos-image-empty', 'Sản phẩm'));
       b.append(
-        el('b', '', p.name),
-        el('small', '', p.sku),
+        el('b', 'pos-product-name', p.name),
+        el('small', 'pos-product-sku', p.sku),
         el('strong', '', money(p.price)),
-        el('small', p.available <= 0 ? 'pos-danger' : '', p.available <= 0 ? 'Hết hàng' : 'Khả dụng ' + p.available),
+        el('small', p.available <= 0 ? 'pos-danger' : '', p.available <= 0 ? 'Hết hàng' : 'Tồn ' + p.available),
       );
+      b.title = p.name + ' · ' + p.sku;
       b.disabled = !active() || p.available <= 0 || !!st.pending;
       nodes.grid.append(b);
     }
