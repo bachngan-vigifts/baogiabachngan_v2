@@ -6,6 +6,8 @@ import type { StockMoveKind, StockRefType } from '../domain/kinds.ts';
 
 /** Giao dịch hoặc kết nối Drizzle (ghi sổ kho luôn chạy TRONG giao dịch của chứng từ gốc). */
 export type LedgerDb = AnyDb | Parameters<Parameters<AnyDb['transaction']>[0]>[0];
+/** App-level guard protects warehouses that already operate from the local ledger. */
+export const inventoryOpeningHooks: { guard?: (db: LedgerDb, warehouseIds: string[]) => Promise<void> } = {};
 export interface MoveInput { sku: string; warehouseId: string; qty: number; kind: StockMoveKind; refType: StockRefType; refId: string; refNo?: string; note?: string }
 
 /**

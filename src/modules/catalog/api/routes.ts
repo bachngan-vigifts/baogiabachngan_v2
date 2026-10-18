@@ -1,3 +1,4 @@
+import { catalogStockHooks, effectiveCatalogStock } from './stock-source.ts';
 import { and, asc, count, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Router } from '../../../core/http/router.ts';
@@ -93,7 +94,8 @@ export async function snapshotVersion(db: StaffEnv['db']) {
     db.select({ n: count(), at: sql<string>`coalesce(max(${productStock.updatedAt}), '')`, sum: sql<string>`coalesce(sum(${productStock.quantity}), 0)::text` }).from(productStock),
     db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),
   ]);
-  const raw = [p?.n, p?.at, pr?.n, pr?.sum, st?.n, st?.at, st?.sum, ver?.observedAt ?? ''].join('|');
+  const extra = catalogStockHooks.stamp ? await catalogStockHooks.stamp(db) : '';
+  const raw = [p?.n, p?.at, pr?.n, pr?.sum, st?.n, st?.at, st?.sum, ver?.observedAt ?? '', extra].join('|');
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)));
   return { version: [...hash.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join(''), observedAt: ver?.observedAt ?? null };
 }
@@ -114,13 +116,14 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     // Bản không giá có phiên bản riêng: trình duyệt không dùng lại bản có giá đã lưu của người khác chức vụ.
     const version = priced ? snap.version : snap.version + ':np', observedAt = snap.observedAt;
     if (c.url.searchParams.get('v') === version) return json({ version, unchanged: true });
-    const [rows, policies, stores, prices, stock] = await Promise.all([
+    const [rows, policies, stores, prices, rawStock] = await Promise.all([
       db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.sku)),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
       db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
       db.select({ sku: productPrices.sku, policyId: productPrices.policyId, price: productPrices.price }).from(productPrices),
       db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock),
     ]);
+    const stock = await effectiveCatalogStock(db, rawStock);
     const index = new Map(rows.map((r, i) => [r.sku, i]));
     const policyAt = new Map(policies.map((p, i) => [p.id, i])), storeAt = new Map(stores.map((w, i) => [w.id, i]));
     const priceRows = rows.map(() => policies.map(() => null as number | null));
@@ -154,10 +157,11 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),
     ]);
     const skus = rows.map(r => r.sku);
-    const [prices, stock] = skus.length ? await Promise.all([
+    const [prices, rawStock] = skus.length ? await Promise.all([
       db.select().from(productPrices).where(inArray(productPrices.sku, skus)),
       db.select().from(productStock).where(inArray(productStock.sku, skus)),
     ]) : [[], []];
+    const stock = await effectiveCatalogStock(db, rawStock, skus);
     const priceMap = new Map<string, Record<string, number | null>>(), stockMap = new Map<string, Record<string, number>>();
     for (const p of prices) (priceMap.get(p.sku) ?? priceMap.set(p.sku, {}).get(p.sku)!)[p.policyId] = p.price;
     const stockAt = new Map<string, string>();
@@ -207,10 +211,11 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, sku = c.params.sku!;
     const [row] = await db.select().from(products).where(eq(products.sku, sku)).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy sản phẩm.');
-    const [prices, stock] = await Promise.all([
+    const [prices, rawStock] = await Promise.all([
       db.select().from(productPrices).where(eq(productPrices.sku, sku)),
       db.select().from(productStock).where(eq(productStock.sku, sku)),
     ]);
+    const stock = await effectiveCatalogStock(db, rawStock, [sku]);
     return json({ product: { ...row, prices: seesSalePrices(viewerOf(c)) ? prices.map(p => ({ policyId: p.policyId, price: p.price })) : [], stock: Object.fromEntries(stock.map(s => [s.warehouseId, s.quantity])) } });
   }, 'business');
 

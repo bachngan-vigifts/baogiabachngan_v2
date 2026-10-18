@@ -1,3 +1,4 @@
+import { posRegisters, posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
@@ -8,6 +9,7 @@ import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
+import { stockMoves } from '../../inventory/schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
@@ -304,10 +306,16 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     if (slip.source === 'warehouse') {
       const [w] = typeof body.warehouseId === 'string' ? await c.env.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, body.warehouseId), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).limit(1) : [];
       if (!w) throw new AppError(400, 'Chọn kho xuất hàng.');
+      if (order.channel === 'pos' && order.shiftId) { const [r] = await c.env.db.select({warehouseId:posRegisters.warehouseId}).from(posShifts).innerJoin(posRegisters,eq(posRegisters.id,posShifts.registerId)).where(eq(posShifts.id,order.shiftId));if(r && r.warehouseId !== w.id) throw new AppError(400,'Đơn POS cần xuất đúng kho của quầy.'); }
       stockWarehouseId = w.id;
     }
     const now = nowIso();
     await c.env.db.transaction(async tx => {
+      if (order.channel === 'pos') {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
+        const [issued] = await tx.select({id:stockMoves.id}).from(stockMoves).innerJoin(deliveries,eq(deliveries.id,stockMoves.refId)).where(and(eq(stockMoves.refType,'pos_delivery'),eq(deliveries.orderId,order.id))).limit(1);
+        if (issued) throw new AppError(409,'Đơn POS đã xuất kho khi giao hàng; không xác nhận thêm phiếu đóng gói.');
+      }
       const done = await tx.update(packingSlips).set({ status: 'packed', packedAt: now, packedBy: m.id, packedNote: text(body.note, 1000), stockWarehouseId, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'sent'))).returning({ id: packingSlips.id });
       if (!done.length) throw new AppError(409, 'Phiếu vừa được người khác xác nhận.');

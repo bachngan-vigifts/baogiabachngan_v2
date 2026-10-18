@@ -182,6 +182,7 @@ Bảng của web cũ vẫn giữ nguyên, không bị đụng tới:
   - **Huỷ phiếu thu** ghi nhầm (migration `0071_accounting_tools.sql`): Manager / quyền "Huỷ phiếu thu" (mặc định Kế toán), bắt buộc lý do – `POST /payments/:id/void`. Phiếu huỷ vẫn hiện (gạch ngang, ai huỷ, lý do), không tính vào đã thu ở mọi nơi; muốn sửa thì huỷ rồi ghi phiếu mới. Nhật ký thay đổi ghi lại.
   - Trang Đơn hàng / HĐKT có nút lọc **🧾 Chờ xuất hoá đơn** (kèm số) – `?invoice=requested`.
   - Nợ quá hạn: ngoài việc "Thu công nợ quá hạn" cho người phụ trách, nhóm Kế toán có việc "Theo dõi nợ quá hạn" (tự đóng khi khách trả).
+- **Sổ quỹ cửa hàng** (`#/cash`): một két chung, ca bàn giao dùng chung POS; phiếu thu/chi thủ công, duyệt phiếu lớn, kết ca đếm tiền và tra soát. Tiền chuyển khoản không vào két. Xem `docs/CASH.md`.
 - **Sổ thu / chi** (`#/cashbook`, quyền "Sổ thu / chi" – mặc định Kế toán): phiếu thu khách + phiếu chi NCC theo khoảng ngày (`GET /cashbook?from=&to=`), tổng thu / chi / chênh lệch, tách chuyển khoản / tiền mặt, lọc Thu / Chi, xuất Excel. Phiếu huỷ hiện gạch ngang, không cộng tổng.
 - **Công nợ NCC** (trang Đơn mua NCC → nút **💰 Công nợ NCC**, người xem được giá NCC): nợ theo từng NCC (còn nợ, quá hạn, kỳ trả sắp tới), xuất Excel 2 sheet (theo NCC / theo đơn) – `GET /supplier-payables`.
   - Số hoá đơn chỉ nhập cho đơn đã duyệt (không nhập trên đơn nháp / đã huỷ).

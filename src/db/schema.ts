@@ -19,3 +19,7 @@ export * from '../modules/hr/schema.ts';
 export * from '../modules/hr/adms-schema.ts';
 export * from '../modules/care/schema.ts';
 export * from '../modules/inventory/schema.ts';
+
+export * from '../modules/sales/pos-schema.ts';
+
+export * from '../modules/sales/cash-schema.ts';

@@ -1,3 +1,8 @@
+import { registerCashRoutes } from './cash-routes.ts';
+import { inventoryOpeningHooks } from '../modules/inventory/api/ledger.ts';
+import { catalogStockHooks } from '../modules/catalog/api/stock-source.ts';
+import { overlayPosStock, posStockStamp, guardPosOpening } from '../modules/sales/api/pos-stock.ts';
+import { registerPosRoutes } from '../modules/sales/api/pos-routes.ts';
 import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
 import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
 import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
@@ -34,6 +39,9 @@ import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
+  inventoryOpeningHooks.guard = guardPosOpening;
+  catalogStockHooks.overlay = overlayPosStock;
+  catalogStockHooks.stamp = posStockStamp;
   const router = createStaffRouter({ authorizeSynctime });
   registerQuoteRoutes(router);
   registerImageFetchRoutes(router);
@@ -42,6 +50,8 @@ export function createAppRouter() {
   registerSapoSyncRoutes(router);
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router);
+  registerPosRoutes(router);
+  registerCashRoutes(router);
   registerPackingRoutes(router);
   registerHoldRoutes(router);
   registerProgressRoutes(router);

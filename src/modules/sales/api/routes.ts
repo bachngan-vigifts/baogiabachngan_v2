@@ -1,3 +1,6 @@
+import { cashLock, drawerOf, cashAudit, voidClosedCashEffect } from './cash-store.ts';
+import { issuePosDelivery } from './pos-delivery-stock.ts';
+import { posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
@@ -86,6 +89,7 @@ async function assertCanEditOrder(c: Ctx, o: typeof salesOrders.$inferSelect, wh
   if (!await canCreateSapoInDepartment(c, o, db)) throw new AppError(403, `Chỉ người phụ trách / người tạo được sửa ${what} nháp; ${what} đã duyệt chỉ Manager được sửa hoặc huỷ.`, 'ORDER_EDIT_FORBIDDEN');
 }
 async function assertCanCreateSapo(c: Ctx, o: typeof salesOrders.$inferSelect) {
+  if (o.channel === 'pos') throw new AppError(409, 'Đơn POS ghi sổ kho CRM, không đẩy Sapo từ luồng này.');
   if (o.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không tạo đơn Sapo.', 'ORDER_CANCELLED');
   if (!await canCreateSapoInDepartment(c, o)) throw new AppError(403, 'Chỉ người phụ trách/người tạo được đẩy chứng từ nháp. Chứng từ đã duyệt chỉ Manager được đẩy Sapo.', 'SAPO_PUSH_FORBIDDEN');
 }
@@ -721,11 +725,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
 
   // ================= LỊCH GIAO HÀNG =================
   router.get('/deliveries', async c => {
-    const from = c.url.searchParams.get('from'), to = c.url.searchParams.get('to'), status = c.url.searchParams.get('status') || '';
+    const focusId = c.url.searchParams.get('id');
+    const from = focusId ? null : c.url.searchParams.get('from'), to = focusId ? null : c.url.searchParams.get('to'), status = focusId ? '' : c.url.searchParams.get('status') || '';
     const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
       contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
-      .where(and(deliveryScope(c), isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
+      .where(and(deliveryScope(c), focusId ? eq(deliveries.id, focusId) : undefined, isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
         status ? eq(deliveries.status, status as never) : undefined))
       .orderBy(desc(deliveries.plannedDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(500);
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
@@ -781,6 +786,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!from[status]!.includes(row.d.status)) throw new AppError(409, 'Không đổi được trạng thái chuyến giao theo thứ tự này.', 'DELIVERY_STATUS_FLOW');
     const deliveredOn = status === 'delivered' ? (isDate(body.deliveredOn) ? String(body.deliveredOn) : vietnamDate().iso) : null;
     await c.env.db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
       // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
       const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })
         .where(and(eq(deliveries.id, row.d.id), inArray(deliveries.status, [...from[status]!] as typeof DELIVERY_STATUSES[number][]))).returning({ id: deliveries.id });
@@ -789,6 +795,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       await savePhotos(tx, c.env.files, me.id, 'delivery', row.d.id, photos);
       for (const l of await tx.select().from(deliveryLines).where(eq(deliveryLines.deliveryId, row.d.id)))
         await tx.update(salesOrderLines).set({ deliveredQty: sql`LEAST(${salesOrderLines.qty}, ${salesOrderLines.deliveredQty} + ${l.qty})` }).where(eq(salesOrderLines.id, l.orderLineId));
+      if (status === 'delivered') await issuePosDelivery(tx, row.d.orderId, row.d.id, me.id);
       await refreshOrderStatus(tx, row.d.orderId, deliveredOn);
     });
     // Lịch sử sản phẩm: chuyến "Đã giao" = xuất kho cho khách.
@@ -849,6 +856,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const order = await loadOrder(c, text(body.orderId, 80));
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
     if (order.status === 'draft') throw new AppError(409, 'Đơn hàng / HĐKT chưa được duyệt, chưa ghi thu được (chưa phát sinh công nợ).', 'ORDER_NOT_APPROVED');
+    if (order.channel === 'pos') throw new AppError(409, 'Đơn POS cần thu tại Bán hàng nhanh để ghi đúng ca.', 'POS_PAYMENT_REQUIRED');
     const amount = money(body.amount, 'Số tiền');
     if (amount <= 0) throw new AppError(400, 'Số tiền phải lớn hơn 0.');
     const paidAt = String(body.paidAt || vietnamDate().iso);
@@ -862,10 +870,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const id = crypto.randomUUID();
     // Khoá dòng đơn rồi mới tính số còn phải thu: hai lần bấm / hai người ghi cùng lúc không thu vượt.
     await c.env.db.transaction(async tx => {
+      await cashLock(tx);
+      let cashShiftId:string|null=null;
+      if(method==='cash' && (await drawerOf(tx)).openingSetAt){const [s]=await tx.select().from(posShifts).where(and(eq(posShifts.memberId,me.id),isNull(posShifts.closedAt)));if(!s)throw new AppError(409,'Cần ca đang mở để ghi tiền mặt vào két.');if(paidAt!==vietnamDate().iso)throw new AppError(400,'Tiền vào két ghi nhận ngày thực thu hôm nay.');cashShiftId=s.id;}
       await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
-      await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
+      await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
     });
     return json({ id }, 201);
   }, 'business');
@@ -875,13 +886,18 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const me = viewer(c), body = await readJson(c.req, 2_000), reason = text(body.reason, 500);
     if (!canVoidPayment(me)) throw new AppError(403, 'Chỉ Manager hoặc người có quyền "Huỷ phiếu thu" huỷ được phiếu thu.');
     if (reason.length < 3) throw new AppError(400, 'Ghi lý do huỷ phiếu thu.');
-    const [p] = await c.env.db.select({ id: customerPayments.id, orderId: customerPayments.orderId, voidedAt: customerPayments.voidedAt }).from(customerPayments)
+    const [p] = await c.env.db.select({ id: customerPayments.id, orderId: customerPayments.orderId, voidedAt: customerPayments.voidedAt, shiftId: customerPayments.shiftId }).from(customerPayments)
       .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId)).where(and(eq(customerPayments.id, c.params.id!), orderScope(c))).limit(1);
     if (!p) throw new AppError(404, 'Không tìm thấy phiếu thu.');
     if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
-    const done = await c.env.db.update(customerPayments).set({ voidedAt: nowIso(), voidedBy: me.id, voidReason: reason })
+    await c.env.db.transaction(async tx=>{
+    await cashLock(tx);
+    const done = await tx.update(customerPayments).set({ voidedAt: nowIso(), voidedBy: me.id, voidReason: reason })
       .where(and(eq(customerPayments.id, p.id), isNull(customerPayments.voidedAt))).returning({ id: customerPayments.id });
     if (!done.length) throw new AppError(409, 'Phiếu thu vừa được người khác huỷ.');
+    if(p.shiftId) await voidClosedCashEffect(tx,p.shiftId,me.id,`Huỷ phiếu thu ${p.id}: ${reason}`);
+    await cashAudit(tx,me.id,'void','payments',p.id,{reason,shiftId:p.shiftId});
+    });
     return json({ ok: true, orderId: p.orderId });
   }, 'business');
 }

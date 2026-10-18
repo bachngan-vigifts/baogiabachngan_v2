@@ -309,6 +309,20 @@
       "when": 1792274856668,
       "tag": "0071_accounting_tools",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792315472142,
+      "tag": "20261018093740_pos_sales",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792326206665,
+      "tag": "20261018122409_cash_drawer",
+      "breakpoints": true
     }
   ]
 }

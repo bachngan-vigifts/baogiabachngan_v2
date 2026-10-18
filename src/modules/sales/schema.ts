@@ -1,3 +1,4 @@
+import { posShifts, posPaymentRequests } from './pos-schema.ts';
 import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
@@ -27,6 +28,12 @@ import { HOLD_STATUSES, CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INV
 export const salesOrders = pgTable('sales_orders', {
   id: text('id').primaryKey(),
   orderNo: text('order_no').notNull(),
+  channel: text('channel').notNull().default('crm'),
+  shiftId: text('shift_id').references(() => posShifts.id),
+  checkoutKey: text('checkout_key'),
+  posSnapshot: text('pos_snapshot'),
+  posPaymentRequestId: text('pos_payment_request_id').references(() => posPaymentRequests.id),
+  fulfillmentMode: text('fulfillment_mode').notNull().default('delivery'),
   quoteId: text('quote_id').references(() => quotations.id),
   quoteNo: text('quote_no').notNull().default(''),
   quoteType: text('quote_type', { enum: ['HRC', 'B2B', 'VIGIFTS'] }).notNull(),
@@ -75,6 +82,9 @@ export const salesOrders = pgTable('sales_orders', {
   updatedAt: text('updated_at').notNull(),
 }, t => [
   uniqueIndex('idx_sales_orders_no').on(t.orderNo),
+  uniqueIndex('uq_pos_checkout_key').on(t.checkoutKey),
+  uniqueIndex('uq_pos_order_qr').on(t.posPaymentRequestId),
+  index('idx_pos_orders_shift').on(t.shiftId),
   // Một báo giá chỉ có một đơn đang hiệu lực (đơn huỷ thì tạo lại được).
   uniqueIndex('idx_sales_orders_quote_active').on(t.quoteId).where(sql`${t.quoteId} IS NOT NULL AND ${t.status} <> 'cancelled'`),
   index('idx_sales_orders_customer').on(t.customerId, t.orderDate),
@@ -98,6 +108,10 @@ export const salesOrderLines = pgTable('sales_order_lines', {
   unit: text('unit').notNull().default(''),
   qty: doublePrecision('qty').notNull(),
   unitPrice: doublePrecision('unit_price').notNull().default(0),
+  listUnitPrice: doublePrecision('list_unit_price'),
+  discountType: text('discount_type').notNull().default('percent'),
+  discountValue: doublePrecision('discount_value').notNull().default(0),
+  discountAmount: doublePrecision('discount_amount').notNull().default(0),
   taxRate: doublePrecision('tax_rate').notNull().default(0),
   amount: doublePrecision('amount').notNull().default(0),
   deliveredQty: doublePrecision('delivered_qty').notNull().default(0),
@@ -143,6 +157,7 @@ export const salesContracts = pgTable('sales_contracts', {
 
 /** Lịch giao hàng: mỗi chuyến giao một phần hoặc toàn bộ đơn. */
 export const deliveries = pgTable('deliveries', {
+  codAmount: doublePrecision('cod_amount').notNull().default(0),
   id: text('id').primaryKey(),
   deliveryNo: text('delivery_no').notNull(),
   orderId: text('order_id').notNull().references(() => salesOrders.id),
@@ -194,6 +209,10 @@ export const paymentSchedules = pgTable('payment_schedules', {
 
 /** Phiếu thu tiền khách (ghi nhận thanh toán). */
 export const customerPayments = pgTable('customer_payments', {
+  shiftId: text('shift_id').references(() => posShifts.id),
+  deliveryId: text('delivery_id').references(() => deliveries.id),
+  requestKey: text('request_key'),
+  paymentSource: text('payment_source').notNull().default('manual'),
   id: text('id').primaryKey(),
   orderId: text('order_id').notNull().references(() => salesOrders.id),
   scheduleId: text('schedule_id').references(() => paymentSchedules.id),
@@ -211,6 +230,8 @@ export const customerPayments = pgTable('customer_payments', {
   voidReason: text('void_reason').notNull().default(''),
 }, t => [
   index('idx_customer_payments_order').on(t.orderId, t.paidAt),
+  index('idx_pos_payments_shift').on(t.shiftId),
+  uniqueIndex('uq_pos_payment_request').on(t.requestKey),
   index('idx_customer_payments_customer').on(t.customerId, t.paidAt),
   enumCheck('chk_customer_payments_method', t.method, PAYMENT_METHODS),
   check('chk_customer_payments_amount', sql`${t.amount} > 0`),

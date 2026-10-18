@@ -143,3 +143,8 @@ export const productMovements = pgTable('product_movements', {
   occurredAt: text('occurred_at').notNull(),
   recordedAt: text('recorded_at').notNull(),
 }, t => [uniqueIndex('idx_product_movements_ref').on(t.refKey), index('idx_product_movements_sku').on(t.sku, t.occurredAt), enumCheck('chk_product_movements_kind', t.kind, PRODUCT_MOVE_KINDS)]).enableRLS();
+
+/** Mã quét riêng, không bị nhập lại catalog Sapo ghi đè. */
+export const productBarcodes = pgTable('product_barcodes', {
+  barcode: text('barcode').primaryKey(), sku: text('sku').notNull().references(() => products.sku, { onDelete: 'cascade' }),
+}, t => [index('idx_product_barcodes_sku').on(t.sku)]).enableRLS();
