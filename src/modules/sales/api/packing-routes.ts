@@ -226,7 +226,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
         created.push({ id, slipNo });
       }
     });
-    if (deliveryId && body.schedule) await setExpectedDeliveryDate(c, order, (body.schedule as Record<string, unknown>).plannedDate as string, true);
+    if (deliveryId && body.schedule) await setExpectedDeliveryDate(c, order, (body.schedule as Record<string, unknown>).plannedDate as string);
     if (sentToWarehouse) for (const slip of created) await notifyWarehouse(c, 'Kho: yêu cầu đóng gói', `${slip.slipNo} · ${order.customerName}`, `/index.html#/packing/${slip.id}`);
     return json({ slips: created, sentToWarehouse, deliveryId }, 201);
   }, 'business');

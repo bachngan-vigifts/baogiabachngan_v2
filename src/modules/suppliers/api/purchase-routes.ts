@@ -465,8 +465,6 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       receiptId = crypto.randomUUID();
       const no = await nextNumber(tx as unknown as Db, 'PNH', today());
       const whName = str(body.warehouse, 120) || p.raw.order.warehouse;
-      // Kho nhận phải có trong danh sách kho thật – không thì sổ kho không ghi được (trước đây bỏ qua âm thầm).
-      if (v.lines.some(l => l.goodQty > 0) && !(await stockWarehouseByName(tx as unknown as Db, whName))) fail(400, 'Chọn kho nhận hàng (kho có trong danh sách kho).');
       await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: v.receivedDate, receivedBy: m.id, warehouse: whName,
         note: str(body.note, 1000), clientKey, createdAt: nowIso() });
       await tx.insert(supplierReceiptLines).values(v.lines.map(l => ({ receiptId, lineId: l.lineId, sku: l.sku, goodQty: l.goodQty, damagedQty: l.damagedQty, note: l.note })));

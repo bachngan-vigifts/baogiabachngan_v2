@@ -108,12 +108,9 @@ export async function recordSaleMovements(db: StaffEnv['db'] | Tx, orderId: stri
     partner: order.customerName, refCode: ref.no, link: ref.link, status: 'Đã xác nhận', occurredAt: order.createdAt })));
 }
 /** Ghi ngày giao dự kiến mới cho đơn; đơn do khách đặt thì báo khách ngày mới. */
-/**
- * Ngày giao dự kiến. Đổi tay: nháp hoặc Manager. `fromSchedule`: lên lịch giao / phiếu đóng gói kèm lịch (chỉ làm được trên đơn đã duyệt)
- * – ngày lịch giao luôn thành ngày dự kiến, kể cả khi nhân viên lên lịch (tránh việc "Trễ hạn giao" theo ngày cũ).
- */
-export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string, fromSchedule = false) {
-  if (order.expectedDeliveryDate === date || (!fromSchedule && order.status !== 'draft' && viewer(c).role !== 'manager')) return;
+/** Ngày giao dự kiến: đơn nháp hoặc Manager (đơn đã duyệt nhân viên lên lịch chuyến không đổi ngày đã chốt với khách). */
+export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
+  if (order.expectedDeliveryDate === date || (order.status !== 'draft' && viewer(c).role !== 'manager')) return;
   await c.env.db.update(salesOrders).set({ expectedDeliveryDate: date, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
   const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
   if (by?.role === 'customer') await notify(c.env, { eventType: 'order_delivery_date', targetMemberId: order.createdBy, actorId: viewer(c).id, title: 'Đổi ngày giao dự kiến',
@@ -760,7 +757,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const made = await c.env.db.transaction(tx => createScheduledDelivery(tx, order.id, body, me.id));
     const { id, plannedDate } = made;
     // Ngày lên lịch giao trở thành ngày giao dự kiến của đơn (đơn của khách cũng cập nhật theo).
-    await setExpectedDeliveryDate(c, order, plannedDate, true);
+    await setExpectedDeliveryDate(c, order, plannedDate);
     return json({ id }, 201);
   }, 'business');
 

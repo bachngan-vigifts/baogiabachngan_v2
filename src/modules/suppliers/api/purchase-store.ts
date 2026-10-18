@@ -40,7 +40,7 @@ export function purchaseScope(m: Member) {
 }
 
 const MONEY_EVENT_LABEL: Record<string, string> = { approve: 'Manager duyệt đơn', import: 'Nhập từ file đơn NCC', prices: 'Lưu giá nhập', schedule: 'Sửa lịch trả NCC',
-  pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC', update: 'Sửa đơn nháp' };
+  pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC' }; // 'update' (sửa nháp) chỉ có số lượng / NCC – không ẩn
 const MONEY_EVENTS = new Set(Object.keys(MONEY_EVENT_LABEL));
 /** Toàn bộ dữ liệu một đơn mua (đúng phạm vi xem), đã tính tiến độ nhận / công nợ / nút được bấm. */
 export async function loadPurchase(db: Db, m: Member, id: string, today: string) {
