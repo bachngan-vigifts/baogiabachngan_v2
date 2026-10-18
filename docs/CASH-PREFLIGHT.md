@@ -51,11 +51,11 @@ FK, index theo két/ca/ngày/trạng thái và CHECK tiền/trạng thái; RLS b
 
 **Đầu ca mới** = tiền thực đếm của ca trước đã kết; ca đầu = đầu kỳ. Server tự lấy, không cho nhân viên nhập thay tuỳ ý.
 
-**Tiền theo sổ trong ca** = đầu ca kế thừa + thu tiền mặt bán hàng/COD + thu/rút két − chi/tạm ứng/nộp két ± điều chỉnh. Kết ca bị chặn nếu còn phiếu chờ duyệt; có danh sách để xử lý. Chênh lệch khác 0 cần mã lý do; `other` cần ghi chú. Ghi snapshot + tạo tra soát trong cùng giao dịch, bấm lặp không sinh trùng.
+**Tiền theo sổ trong ca** = đầu ca kế thừa + thu tiền mặt bán hàng/COD + thu/rút két − chi/tạm ứng/nộp két. Phiếu điều chỉnh sổ không có giao nhận tiền thực được tách riêng, tránh tính lại khoản lệch cũ sau khi ca mới đã kế thừa tiền đếm. Kết ca bị chặn nếu còn phiếu chờ duyệt; có danh sách để xử lý. Chênh lệch khác 0 cần mã lý do; `other` cần ghi chú. Ghi snapshot + tạo tra soát trong cùng giao dịch, bấm lặp không sinh trùng.
 
 Hai số trên có thể khác vì ca trước bị lệch: giao diện phải ghi rõ số toàn két và số dự kiến của ca; không tự bù chênh lệch bằng phiếu điều chỉnh. Báo cáo ca đã kết giữ cố định; tra soát và audit ghi diễn biến tiếp theo.
 
-**Huỷ phiếu sau kết ca — cần chốt:** đề xuất Manager/Kế toán vẫn được huỷ có lý do; giữ nguyên snapshot ca đã kết, ghi audit và đưa vấn đề vào tra soát liên quan. Không tự sửa số đếm hay đầu ca sau. Các chứng từ sau ca cần hiển thị rõ thời điểm huỷ. Phương án đơn giản hơn là chỉ cho huỷ trong ca đang mở; ca đã kết xử lý bằng phiếu điều chỉnh do Manager lập. Chưa triển khai trước khi được chọn.
+**Huỷ phiếu sau kết ca — đã duyệt:** Manager/Kế toán vẫn được huỷ có lý do; giữ nguyên snapshot ca đã kết, ghi audit và đưa vấn đề vào tra soát liên quan. Không tự sửa số đếm hay đầu ca sau. Các chứng từ sau ca cần hiển thị rõ thời điểm huỷ. Quyết định đã chọn: cho huỷ sau kết ca, giữ báo cáo và tra soát.
 
 ## Danh sách file dự kiến
 

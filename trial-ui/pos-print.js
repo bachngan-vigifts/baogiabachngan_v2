@@ -52,6 +52,16 @@ export function buildPosPrint(doc, data, kind = 'bill') {
           }[x.kind] || x.kind),
         money(x.direction === 'in' ? x.amount : -x.amount),
       );
+    for (const a of data.bookAdjustments || [])
+      sheet.append(
+        node(
+          doc,
+          'p',
+          'Điều chỉnh sổ: ' +
+            money(a.direction === 'in' ? a.amount : -a.amount) +
+            ' (không thu/chi tiền thực trong ca)',
+        ),
+      );
     sheet.append(node(doc, 'h3', 'SHIP COD'));
     for (const [label, key] of [
       ['Đã giao & thu trong ca', 'receivedInShift'],

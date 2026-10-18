@@ -234,3 +234,31 @@ test('Cash: ghi lại phiếu POS sau huỷ vào ca hiện tại, không tạo l
   assert.equal((await f.call('/cash/shifts/' + s.id, f.emp)).data.expectedCash, 694400);
   assert.equal((await f.call('/products/00123', f.emp)).data.product.stock['pos-wh'], 8);
 });
+
+test('Cash: điều chỉnh sổ cho lệch ca trước không làm lệch tiền thực của ca mới thêm lần nữa', async () => {
+  const f = await setup(),
+    s = await f.open();
+  assert.equal(
+    (await f.call('/cash/shifts/' + s.id + '/close', f.emp, 'POST', { countedCash: 450000, reasonCode: 'counting' }))
+      .status,
+    200,
+  );
+  const [rec] = await f.db.select().from(cashReconciliations);
+  const next = await f.open();
+  const correction = await f.call('/cash/entries', f.mgr, 'POST', {
+    ...entry('adjustment', 50000),
+    direction: 'out',
+    reconciliationId: rec!.id,
+    reason: 'Đối chiếu và sửa số dư theo TS ca trước',
+  });
+  assert.equal(correction.status, 201, JSON.stringify(correction.data));
+  assert.equal((await f.call('/cash', f.mgr)).data.balance, 450000);
+  const report = (await f.call('/cash/shifts/' + next.id, f.emp)).data;
+  assert.equal(report.expectedCash, 450000);
+  assert.equal(report.bookAdjustments[0].amount, 50000);
+  assert.equal(
+    (await f.call('/cash/shifts/' + next.id + '/close', f.emp, 'POST', { countedCash: 450000 })).status,
+    200,
+  );
+  assert.equal((await f.db.select().from(cashReconciliations)).length, 1);
+});

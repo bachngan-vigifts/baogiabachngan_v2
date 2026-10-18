@@ -27,7 +27,7 @@ Manager cấu hình quầy (kho thật đã chốt đầu kỳ, đúng hai bản
 4. Số tiền từ ngưỡng cấu hình trở lên ở trạng thái **Chờ duyệt**, chưa vào két. Manager duyệt; người tạo không tự duyệt, kể cả người tạo là Manager. Muốn bỏ phiếu chờ thì Manager/Kế toán huỷ có lý do.
 5. **Kết ca** nhập tổng tiền thực đếm; không đếm theo mệnh giá. Nếu còn phiếu chờ duyệt thì hiện danh sách và chặn kết. Lệch khác 0 chọn Đếm sai/Đưa nhầm tiền/Thiếu tiền lẻ/Khác; chọn Khác cần ghi chú. Kết ca ghi snapshot và mở một tra soát, gọi lặp không sinh trùng. In báo cáo K80 hoặc xem/in lại trong tab Ca.
 
-Số dư toàn két = đầu kỳ + toàn bộ thu tiền mặt hợp lệ + thu/chi thủ công đã ghi. Không cộng đầu ca bàn giao thành một khoản thu mới. Tiền theo sổ trong ca = đầu ca kế thừa + thu tiền mặt/COD + thu thủ công − chi thủ công. Nếu ca trước bị lệch, hai số có thể khác; hệ thống không tự bù lệch.
+Số dư toàn két = đầu kỳ + toàn bộ thu tiền mặt hợp lệ + thu/chi thủ công đã ghi. Không cộng đầu ca bàn giao thành một khoản thu mới. Tiền theo sổ trong ca = đầu ca kế thừa + thu tiền mặt/COD + thu thủ công − chi thủ công. Nếu ca trước bị lệch, hai số có thể khác; hệ thống không tự bù lệch. Phiếu Điều chỉnh két sửa số dư theo sổ, không phải giao nhận tiền thực, nên tách khỏi công thức tiền thực của ca mới. Nếu có nhận/chi tiền thật, dùng Thu/Rút két hoặc Chi/Nộp két tương ứng. Nhờ vậy không tính lệch cũ thêm một lần sau khi ca mới đã kế thừa số đếm.
 
 Sau thời điểm Manager kích hoạt số đầu kỳ, phiếu thu tiền mặt tại trang công nợ cũng cần ca đang mở của người thu và ghi ngày thực thu hôm nay. Các phiếu lịch sử trước kích hoạt giữ nguyên, không tự gán vào két mới.
 

@@ -29,18 +29,16 @@ export async function cashAudit(
   entityId: string,
   data: unknown,
 ) {
-  await db
-    .insert(auditLogs)
-    .values({
-      id: crypto.randomUUID(),
-      actorId,
-      module: 'cash',
-      action,
-      entityType,
-      entityId,
-      data: JSON.stringify(sanitizeForAudit(data) ?? {}),
-      createdAt: cashNow(),
-    });
+  await db.insert(auditLogs).values({
+    id: crypto.randomUUID(),
+    actorId,
+    module: 'cash',
+    action,
+    entityType,
+    entityId,
+    data: JSON.stringify(sanitizeForAudit(data) ?? {}),
+    createdAt: cashNow(),
+  });
 }
 export async function drawerOf(db: CashDb) {
   const [d] = await db.select().from(cashDrawers).where(eq(cashDrawers.id, CASH_DRAWER));
@@ -109,11 +107,15 @@ export async function cashShiftTotals(db: CashDb, shiftId: string) {
       .where(and(eq(cashEntries.shiftId, shiftId), eq(cashEntries.status, 'pending'))),
   ]);
   return {
-    manual,
+    // A book correction has no physical cash flow; actual opening already inherited the prior count.
+    manual: manual.filter((p) => p.kind !== 'adjustment'),
+    bookAdjustments: manual.filter((p) => p.kind === 'adjustment'),
     pending,
     cashSales: payments.filter((p) => p.source !== 'cod').reduce((n, p) => n + p.amount, 0),
     cashCod: payments.filter((p) => p.source === 'cod').reduce((n, p) => n + p.amount, 0),
-    manualNet: manual.reduce((n, r) => n + (r.direction === 'in' ? r.amount : -r.amount), 0),
+    manualNet: manual
+      .filter((p) => p.kind !== 'adjustment')
+      .reduce((n, r) => n + (r.direction === 'in' ? r.amount : -r.amount), 0),
   };
 }
 export async function drawerBalance(db: CashDb) {
@@ -181,22 +183,20 @@ export async function reconciliationFor(
   const [n] = await db.select({ n: count() }).from(cashReconciliations),
     id = crypto.randomUUID(),
     reconciliationNo = 'TS-' + String((n?.n ?? 0) + 1).padStart(4, '0');
-  await db
-    .insert(cashReconciliations)
-    .values({
-      id,
-      reconciliationNo,
-      drawerId: s.cashDrawerId,
-      shiftId: s.id,
-      closedBy: s.memberId,
-      expectedCash,
-      countedCash,
-      difference,
-      reasonCode,
-      reasonNote,
-      createdAt: now,
-      updatedAt: now,
-    });
+  await db.insert(cashReconciliations).values({
+    id,
+    reconciliationNo,
+    drawerId: s.cashDrawerId,
+    shiftId: s.id,
+    closedBy: s.memberId,
+    expectedCash,
+    countedCash,
+    difference,
+    reasonCode,
+    reasonNote,
+    createdAt: now,
+    updatedAt: now,
+  });
   await cashAudit(db, actorId, 'open', 'cash-reconciliations', id, {
     shiftId: s.id,
     reconciliationNo,
