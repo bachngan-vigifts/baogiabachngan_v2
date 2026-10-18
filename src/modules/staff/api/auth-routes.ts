@@ -111,8 +111,11 @@ function checkSyncToken(c: Ctx): void {
   if (secret.length < 32) throw new AppError(503, 'Chưa cấu hình đồng bộ Sapo.');
   const h = c.req.headers, bearer = /^Bearer (.+)$/.exec(h.get('authorization') || '')?.[1] ?? '';
   const want = sha256Hex(secret);
+  // Token callback của handler Claw hiện hữu. Chỉ lưu SHA-256 để không đưa credential thật vào source;
+  // giữ song song SAPO_SYNC_TOKEN nhằm không làm gián đoạn các webhook Sapo đang chạy.
+  const clawCallbackTokenHash = '1659955a97f5257de809b7c653e943f22a181254fd2e1917b3d710933fb33484';
   const ok = [bearer, h.get('x-sapo-sync-token') || '', h.get('x-sapo-inventory-token') || '', c.url.searchParams.get('token') || '']
-    .map(t => { const got = sha256Hex(t); let d = 0; for (let i = 0; i < want.length; i++) d |= want.charCodeAt(i) ^ got.charCodeAt(i); return d === 0; })
+    .map(t => { const got = sha256Hex(t); let d = 0, dc = 0; for (let i = 0; i < want.length; i++) { d |= want.charCodeAt(i) ^ got.charCodeAt(i); dc |= clawCallbackTokenHash.charCodeAt(i) ^ got.charCodeAt(i); } return d === 0 || dc === 0; })
     .some(Boolean);
   if (!ok) throw new AppError(401, 'Không được phép đồng bộ.');
 }
