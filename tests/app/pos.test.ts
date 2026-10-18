@@ -24,6 +24,41 @@ import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 import { readdirSync } from 'node:fs';
 const origin = 'https://trial.test';
 import { setup } from '../helpers/pos-fixture.ts';
+import { auditLogs } from '../../src/core/db/schema.ts';
+test('POS kiểm đếm: rỗng không thành 0; lưu đếm nhanh một phần và tên nhân viên', async () => {
+  const f = await setup();
+  for (const countedQty of ['', '  ', null, undefined, false, [], {}]) {
+    const r = await f.call('/pos/shifts/open', f.emp, 'POST', {
+      key: crypto.randomUUID(), registerId: f.registerId, counts: [{ sku: '00123', countedQty }],
+    });
+    assert.equal(r.status, 400, JSON.stringify(r.data));
+    assert.equal((await f.db.select().from(posShifts)).length, 0);
+    assert.equal((await f.db.select().from(posStockCounts)).length, 0);
+  }
+  const opened = await f.call('/pos/shifts/open', f.emp, 'POST', {
+    key: crypto.randomUUID(), registerId: f.registerId, counts: [{ sku: '00123', countedQty: 0 }],
+  });
+  assert.equal(opened.status, 201, JSON.stringify(opened.data));
+  const options = await f.call('/pos/options', f.emp);
+  assert.equal(options.data.shifts[0].memberName, 'Tên emp');
+  const report = await f.call('/pos/shifts/' + opened.data.id, f.emp);
+  assert.deepEqual(report.data.openingCount, { scope: 'partial', count: 1, maxCount: 3 });
+  const audit = await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, opened.data.id));
+  assert.ok(audit.some(x => JSON.parse(x.data || '{}').openingCount?.scope === 'partial'));
+});
+test('POS giữ chính sách khách mới dùng ngay nhưng khách chờ duyệt sẵn có vẫn không được dùng', async () => {
+  const f = await setup(), s = await f.open();
+  const made = await f.call('/pos/customers', f.emp, 'POST', { name: 'Khách chờ duyệt', phone: '0901234567' });
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  await f.db.update(customers).set({ approvalStatus: 'pending' }).where(eq(customers.id, made.data.id));
+  const preview = await f.call('/pos/preview', f.emp, 'POST', f.cart(s.id, { customerId: made.data.id }));
+  assert.equal(preview.status, 400, JSON.stringify(preview.data));
+  const checkout = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id, { customerId: made.data.id }));
+  assert.equal(checkout.status, 400, JSON.stringify(checkout.data));
+  assert.equal((await f.db.select().from(salesOrders)).length, 0);
+  assert.equal((await f.db.select().from(customerPayments)).length, 0);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
+});
 test('POS options trả quầy mặc định theo chức vụ và giữ ca hiện có', async () => {
   const { db, call, emp, other, mgr, registerId, open } = await setup();
   await db.update(posRegisters).set({ name: 'Quầy Lock' }).where(eq(posRegisters.id, registerId));

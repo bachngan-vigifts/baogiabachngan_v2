@@ -1,4 +1,5 @@
 import { printPos } from './pos-print.js';
+import { shiftSummaryRows, shiftCodRows } from './pos-report.js';
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -708,7 +709,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     );
     stock.append(
       el('h3', '', 'Kiểm đếm nhanh tồn kho'),
-      el('p', 'pos-note', 'Nhập số lượng thực tế để đối chiếu với sổ kho.'),
+      el('p', 'pos-note', 'Đếm nhanh một phần: tối đa 3 mã có tồn theo sổ lớn nhất, không phải kiểm kê toàn kho. Tự nhập số lượng thực tế; nếu không có hàng, nhập 0.'),
       counts,
     );
     note.input.placeholder = 'Ghi chú bàn giao hoặc lưu ý trong ca (nếu có)';
@@ -737,13 +738,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           inp.min = '0';
           inp.step = '.001';
           inp.required = true;
-          inp.value = p.qty;
+          inp.value = '';
+          inp.placeholder = 'Tự đếm';
           p.input = inp;
           inp.setAttribute('aria-label', 'Tồn thực tế ' + p.name);
           const info = el('span', 'pos-count-name'),
-            status = el('small', 'pos-count-status', 'Khớp');
+            status = el('small', 'pos-count-status', 'Chưa nhập');
           info.append(el('b', '', p.name), el('small', 'pos-note', 'Theo sổ: ' + p.qty));
           status.setAttribute('aria-live', 'polite');
+          status.classList.add('pos-danger');
           inp.addEventListener('input', () => {
             const difference = Number(inp.value) - p.qty;
             status.textContent = inp.value === '' ? 'Chưa nhập' : difference === 0 ? 'Khớp' : 'Lệch ' + difference;
@@ -775,10 +778,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
             templateId: template.value,
             openingCash,
             note: note.input.value,
-            counts: products.map((p) => ({
-              sku: p.sku,
-              countedQty: Number(p.input.value),
-            })),
+            counts: products.map((p) => {
+              if (p.input.value.trim() === '') throw new Error('Nhập số đếm thực tế cho ' + p.name + '. Nếu không có hàng, nhập 0.');
+              return { sku: p.sku, countedQty: Number(p.input.value) };
+            }),
           });
           m.close();
           st.cart = [];
@@ -792,32 +795,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     await getCounts();
   }
   function reportRows(container, d) {
-    for (const [k, v] of [
-      ['Số bill', d.bills.count],
-      ['Doanh thu theo bill', money(d.bills.revenue)],
-      ['Giảm giá', money(d.bills.discount)],
-      ['Tiền mặt thực thu', money(d.cash)],
-      ['Chuyển khoản đã xác nhận', money(d.transfer)],
-      ['Tiền đầu ca', money(d.shift.openingCash)],
-      ...(d.manual || []).map((x) => [
-        (x.direction === 'in' ? '+ ' : '− ') + x.kind,
-        money(x.direction === 'in' ? x.amount : -x.amount),
-      ]),
-      ['Tiền két hệ thống', money(d.expectedCash)],
-    ]) {
+    for (const [k, v] of shiftSummaryRows(d)) {
       const row = el('div', 'pos-total-row');
       row.append(el('span', '', k), el('b', '', v));
       container.append(row);
     }
+    for (const x of d.bookAdjustments || []) container.append(el('p', 'pos-note', 'Điều chỉnh két: ' + money(x.direction === 'in' ? x.amount : -x.amount) + ' (điều chỉnh sổ, không thu/chi tiền thực trong ca)'));
+    if (d.openingCount) container.append(el('p', 'pos-note', `Kiểm đếm đầu ca: đếm nhanh một phần (${d.openingCount.count} mã), không phải kiểm kê toàn kho.`));
     container.append(el('h3', '', 'Ship COD'));
-    for (const [name, k] of [
-      ['Đã giao & đã thu trong ca', 'receivedInShift'],
-      ['Thu COD từ ca trước', 'receivedFromPrevious'],
-      ['Đã giao, chưa thu', 'pending'],
-    ]) {
-      const x = d.cod[k];
+    for (const [name, value] of shiftCodRows(d)) {
       const r = el('div', 'pos-total-row');
-      r.append(el('span', '', name), el('b', '', `${x.count} đơn · ${money(x.amount)}`));
+      r.append(el('span', '', name), el('b', '', value));
       container.append(r);
     }
     container.append(el('p', 'pos-note', 'COD chưa thu không tính vào tiền két; tiếp tục theo dõi sang ca sau.'));
@@ -834,7 +822,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       list = el('div', 'pos-customer-list');
     for (const s of st.options.shifts) {
       list.append(
-        button(`${when(s.openedAt)} · ${s.closedAt ? 'Đã kết' : 'Đang mở'} · ${s.memberId}`, 'btn secondary', () =>
+        button(`${when(s.openedAt)} · ${s.closedAt ? 'Đã kết' : 'Đang mở'} · ${s.memberName || 'Nhân viên không còn trong danh mục'}`, 'btn secondary', () =>
           run(async () => {
             const d = await api('/pos/shifts/' + s.id);
             const detail = modal('Báo cáo ca ' + when(s.openedAt));

@@ -11,7 +11,7 @@ POS dùng đơn bán, phiếu thu, lịch giao và sổ kho hiện có. Route: `
 3. `migrations/postgres/20261018122409_cash_drawer.sql`
 4. `migrations/postgres/20261018122409_supabase_access_cash_drawer.sql`
 
-Migration thứ nhất thêm cấu hình quầy, mẫu ca, ca bán, kiểm đếm đầu ca, yêu cầu QR, mã vạch và các cột liên kết vào chứng từ cũ. Không chuyển đổi hay ghi số dư tồn hiện có. Migration thứ hai thu hồi quyền truy cập trực tiếp sáu bảng mới từ PUBLIC/anon/authenticated; truy cập qua API có kiểm quyền. Các file chưa được áp dụng production trong quá trình phát triển.
+Migration thứ nhất thêm cấu hình quầy, mẫu ca, ca bán, kiểm đếm đầu ca, yêu cầu QR, mã vạch và các cột liên kết vào chứng từ cũ. Không chuyển đổi hay ghi số dư tồn hiện có. Migration thứ hai thu hồi quyền truy cập trực tiếp sáu bảng mới từ PUBLIC/anon/authenticated; truy cập qua API có kiểm quyền. Các migration này đã được áp dụng production ngày 18/10/2026.
 
 Manager mở **Bán hàng nhanh → Cấu hình**: chọn kho thật, gắn đúng hai bảng giá có sẵn, VAT và thông tin ngân hàng. Có thể thêm nhiều quầy; mỗi quầy chỉ mở một ca, mỗi nhân viên chỉ có một ca đang mở. Mẫu ca mặc định là ca sáng 08:00–14:00; có thể thêm mẫu khác. Quầy phải có tồn đầu kỳ trong sổ kho trước khi mở ca.
 
@@ -33,7 +33,7 @@ Danh mục, chi tiết sản phẩm và luồng giữ hàng báo giá đọc s�
 
 ## Thu tiền và in
 
-Phải mở ca trước khi bán. Manager thiết lập số dư đầu kỳ tại Sổ quỹ một lần. Mỗi két chỉ có một ca đang mở; tiền đầu ca lấy từ số thực đếm ca trước, nhân viên không nhập lại tuỳ ý. Mở ca kiểm đếm nhanh tối đa ba mã tồn nhiều nhất; kiểm đếm chỉ lưu đối chiếu, không tự điều chỉnh tồn.
+Phải mở ca trước khi bán. Manager thiết lập số dư đầu kỳ tại Sổ quỹ một lần. Mỗi két chỉ có một ca đang mở; tiền đầu ca lấy từ số thực đếm ca trước, nhân viên không nhập lại tuỳ ý. Mở ca kiểm đếm nhanh một phần: tối đa ba mã tồn theo sổ nhiều nhất. Ô đếm ban đầu để trống; nhân viên phải tự nhập, kể cả nhập 0 khi không có hàng. Server chặn giá trị rỗng/null và lưu phạm vi partial cùng danh sách mã trong audit của ca, số lượng thực đếm trong pos_shift_stock_counts. Báo cáo ca ghi rõ đếm nhanh một phần, không phải kiểm kê toàn kho. Kiểm đếm chỉ lưu đối chiếu, không tự điều chỉnh tồn.
 
 Tiền mặt có tiền khách đưa/tiền thối và nút **Đủ tiền**. Chuyển khoản và VietQR đều yêu cầu nhân viên xác nhận cửa hàng đã thực nhận tiền. QR chỉ tạo yêu cầu, hết hạn sau 15 phút; giỏ/giá thay đổi phải tạo QR mới. Không có xác nhận ngân hàng tự động.
 
@@ -48,3 +48,14 @@ Ca kết có snapshot cố định: số bill, giá trị bill, chiết khấu, 
 COD chưa thu không vào két. Cho kết ca khi còn COD chưa thu; danh sách tiếp tục theo cùng két của quầy sang ca sau, kể cả đổi nhân viên. Chỉ xác nhận thu sau khi chuyến đã giao và cửa hàng thực nhận tiền. Khoản thu gắn **ca đang mở lúc xác nhận**, không sửa báo cáo ca cũ. Thu COD bằng chuyển khoản không cộng tiền mặt. Báo cáo tách thu của chuyến giao trong ca, thu chuyến ca trước, và đã giao chưa thu.
 
 POS không đẩy đơn sang Sapo, không sửa module lương/cron/phiên Sapo. Chưa có nghiệp vụ hoàn tiền/đổi trả POS; Manager/Kế toán được huỷ phiếu thu có lý do. Ca đã kết giữ báo cáo và mở lại tra soát; nhân viên có ca mới được ghi lại khoản thực nhận tại chi tiết đơn tại quầy mà không xuất hàng lần nữa. COD vẫn thu qua đúng chuyến giao.
+
+
+## Rà soát prompt sửa lỗi POS (18/10/2026)
+
+Đối chiếu từ bf94d53 (#163) với main mới hơn đã có quầy mặc định theo chức vụ và két riêng (#164–165), không quay lùi các sửa này.
+
+- Người dùng đã xác nhận **giữ chính sách cũ**: khách tạo ở POS dùng ngay, nhân viên tự nhập chiết khấu trong giới hạn toán học. Không thêm `pos.discount`, ngưỡng 5%, lý do/luồng duyệt chiết khấu hoặc chặn bill 0đ theo quyền mới. Đây là thay đổi chính sách và tính năng phê duyệt mới, không phải lỗi của yêu cầu đã chốt. Khách pending từ luồng khác vẫn bị server POS từ chối; test bổ sung để giữ điều kiện này.
+- Sửa lỗi số đếm rỗng bị biến thành 0 ở cả giao diện và API; phải nhập 0 một cách tường minh. Giữ danh sách hiện hành tối đa **3 mã** có tồn theo sổ lớn nhất. Danh sách cấu hình khoảng 20 mã (A) hoặc toàn bộ mã (B) là phạm vi mở rộng; chưa tạo schema/migration vì người dùng chốt chỉ sửa lỗi kiểm đếm và báo cáo. Không giả danh sách top-3 là cấu hình 20 mã.
+- Lịch sử ca dùng tên nhân viên do server trả về; không dùng mã nội bộ làm tên hiển thị. Nhãn thu/chi, giá trị đơn, thu tiền và COD dùng helper `trial-ui/pos-report.js` chung cho popup/K80.
+- `bills.revenue` vốn là giá trị đơn đã lập, có cả đơn COD; `cash` vốn chỉ cộng phiếu thu tiền mặt hợp lệ. Không trừ `cod.pending` khỏi `cash` hoặc khỏi tổng bill: pending là số còn phải thu của **cùng két**, có thể gồm ca trước và có thể đã thu một phần, nên trừ tiếp sẽ sai. Đổi nhãn thành **Giá trị đơn đã lập (gồm COD)**; tiền mặt thực thu, chuyển khoản, COD đã giao chưa thu được hiển thị riêng, popup và bản in khớp nhau. Không sửa công thức, dữ liệu đã chốt hoặc snapshot ca cũ.
+- Không cần migration, schema hay quyền mới. Không đổi lương, Sapo, cron, tồn đã chốt hoặc quy tắc COD. Kiểm thử bằng DB cục bộ và Chromium với dữ liệu giả, không tạo giao dịch trên Supabase; chưa thử máy in K80 vật lý.

@@ -6,7 +6,7 @@ import { AppError } from '../../../core/errors.ts';
 import { foldSql } from '../../../core/text/fold.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
-import { positions } from '../../staff/schema.ts';
+import { employees, positions } from '../../staff/schema.ts';
 import { defaultPosRegister } from '../domain/pos-register.ts';
 import { products, productPrices, productBarcodes, pricePolicies, warehouses } from '../../catalog/schema.ts';
 import { stockBalances } from '../../inventory/schema.ts';
@@ -41,16 +41,18 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       const m = member(c);
       if (!can(m, 'pos.sell') && !can(m, 'pos.configure')) throw new AppError(403, 'Chưa được cấp quyền POS.');
-      const [regs, templates, shifts] = await Promise.all([
+      const [regs, templates, shiftRows] = await Promise.all([
         c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name)),
         c.env.db.select().from(posShiftTemplates).where(eq(posShiftTemplates.active, true)),
         c.env.db
-          .select()
+          .select({ shift: posShifts, memberName: employees.name })
           .from(posShifts)
+          .leftJoin(employees, eq(employees.id, posShifts.memberId))
           .where(m.role === 'manager' ? undefined : eq(posShifts.memberId, m.id))
           .orderBy(desc(posShifts.openedAt))
           .limit(50),
       ]);
+      const shifts = shiftRows.map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
       const policies = await c.env.db
         .select()
         .from(pricePolicies)
@@ -348,7 +350,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .where(and(eq(stockBalances.warehouseId, r.warehouseId), eq(products.active, true)))
         .orderBy(desc(stockBalances.qty), asc(products.sku))
         .limit(3);
-      return json({ counts: rows });
+      return json({ counts: rows, scope: 'partial', maxCount: 3 });
     },
     'business',
   );
@@ -405,7 +407,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         if (!template) throw new AppError(400, 'Ca làm việc không hợp lệ.');
         if (!Array.isArray(b.counts) || b.counts.length > 30) throw new AppError(400, 'Nhập bảng đếm nhanh tồn kho.');
         const counts = b.counts as Record<string, unknown>[],
-          ids = counts.map((x) => posText(x.sku, 100));
+          ids = counts.map((x) => {
+            if (!x || typeof x !== 'object' || Array.isArray(x)) throw new AppError(400, 'Dòng kiểm đếm không hợp lệ.');
+            return posText(x.sku, 100);
+          });
         if (new Set(ids).size !== ids.length) throw new AppError(400, 'Trùng mã kiểm đếm.');
         const expected = await tx
           .select({ sku: stockBalances.sku, qty: stockBalances.qty })
@@ -414,7 +419,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .where(and(eq(stockBalances.warehouseId, r.warehouseId), eq(products.active, true)))
           .orderBy(desc(stockBalances.qty), asc(stockBalances.sku))
           .limit(3);
-        if (expected.some((x) => !ids.includes(x.sku)))
+        if (ids.length !== expected.length || expected.some((x) => !ids.includes(x.sku)))
           throw new AppError(400, 'Danh sách đếm nhanh đã đổi, tải lại và kiểm đếm.');
         const id = crypto.randomUUID(),
           now = posNow(),
@@ -444,7 +449,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               const sku = posText(x.sku, 100),
                 qty = Number(x.countedQty),
                 systemQty = balances.find((z) => z.sku === sku)?.qty;
-              if (systemQty == null || !Number.isFinite(qty) || qty < 0)
+              if (
+                !(typeof x.countedQty === 'number' || (typeof x.countedQty === 'string' && x.countedQty.trim() !== '')) ||
+                systemQty == null || !Number.isFinite(qty) || qty < 0
+              )
                 throw new AppError(400, 'Số đếm không hợp lệ.');
               return {
                 shiftId: id,
@@ -459,6 +467,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         await cashAudit(tx, m.id, 'open', 'pos-shifts', id, {
           openingCash,
           previousShiftId: inheritance.previousShiftId,
+          openingCount: { scope: 'partial', maxCount: 3, count: counts.length, skus: ids },
         });
         return s!;
       });
