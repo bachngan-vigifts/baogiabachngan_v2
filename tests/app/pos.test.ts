@@ -1,14 +1,23 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { eq } from 'drizzle-orm';
-import { createTestDb } from '../helpers/postgres.ts';
-import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
-import { createAppRouter } from '../../src/app/router.ts';
-import { products, warehouses, pricePolicies, productPrices, productStock } from '../../src/modules/catalog/schema.ts';
-import { employees, credentials } from '../../src/modules/staff/schema.ts';
-import { hashPassword } from '../../src/core/auth/password.ts';
-import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
-import { stockBalances, stockMoves } from '../../src/modules/inventory/schema.ts';
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { eq } from "drizzle-orm";
+import { createTestDb } from "../helpers/postgres.ts";
+import { seedStaff, PASSWORD } from "../helpers/staff-fixture.ts";
+import { createAppRouter } from "../../src/app/router.ts";
+import {
+  products,
+  warehouses,
+  pricePolicies,
+  productPrices,
+  productStock,
+} from "../../src/modules/catalog/schema.ts";
+import { employees, credentials } from "../../src/modules/staff/schema.ts";
+import { hashPassword } from "../../src/core/auth/password.ts";
+import { postMoves } from "../../src/modules/inventory/api/ledger.ts";
+import {
+  stockBalances,
+  stockMoves,
+} from "../../src/modules/inventory/schema.ts";
 import {
   salesOrders,
   salesOrderLines,
@@ -16,154 +25,266 @@ import {
   deliveries,
   packingSlips,
   packingSlipLines,
-} from '../../src/modules/sales/schema.ts';
-import { posShifts, posStockCounts, posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
-import { customers } from '../../src/modules/customers/schema.ts';
-import { readFileSync } from 'node:fs';
-import { memoryFileStore } from '../../src/core/storage/file-store.ts';
-import { readdirSync } from 'node:fs';
-const origin = 'https://trial.test';
-import { setup } from '../helpers/pos-fixture.ts';
-test('POS: bill tạm và QR chỉ yêu cầu, không tạo đơn/ghi thu/trừ tồn; giá do server tính', async () => {
+} from "../../src/modules/sales/schema.ts";
+import {
+  posRegisters,
+  posShifts,
+  posStockCounts,
+  posPaymentRequests,
+} from "../../src/modules/sales/pos-schema.ts";
+import { customers } from "../../src/modules/customers/schema.ts";
+import { readFileSync } from "node:fs";
+import { memoryFileStore } from "../../src/core/storage/file-store.ts";
+import { readdirSync } from "node:fs";
+const origin = "https://trial.test";
+import { setup } from "../helpers/pos-fixture.ts";
+test("POS options trả quầy mặc định theo chức vụ và giữ ca hiện có", async () => {
+  const { db, call, emp, other, mgr, registerId, open } = await setup();
+  await db
+    .update(posRegisters)
+    .set({ name: "Quầy Lock" })
+    .where(eq(posRegisters.id, registerId));
+  const ml = await call("/pos/registers", mgr, "POST", {
+    name: "Quầy Minh Long",
+    warehouseId: "pos-wh",
+    pricePolicyId: "retail-vat",
+    secondPricePolicyId: "retail",
+  });
+  assert.equal(ml.status, 200, JSON.stringify(ml.data));
+  const lockOptions = await call("/pos/options", other);
+  assert.equal(lockOptions.status, 200);
+  assert.equal(lockOptions.data.defaultRegisterId, registerId);
+  const shift = await open();
+  await db
+    .update(employees)
+    .set({ positionId: "sales-ml" })
+    .where(eq(employees.id, "emp"));
+  const mlOptions = await call("/pos/options", emp);
+  assert.equal(mlOptions.status, 200);
+  assert.equal(mlOptions.data.defaultRegisterId, ml.data.id);
+  assert.equal(mlOptions.data.current.id, shift.id);
+  assert.equal(mlOptions.data.current.registerId, registerId);
+});
+test("POS: bill tạm và QR chỉ yêu cầu, không tạo đơn/ghi thu/trừ tồn; giá do server tính", async () => {
   const { db, call, emp, open, cart } = await setup(),
     s = await open(),
     b = cart(s.id);
-  const preview = await call('/pos/preview', emp, 'POST', { ...b, total: 1, rows: [{ ...b.rows[0], price: 1 }] });
+  const preview = await call("/pos/preview", emp, "POST", {
+    ...b,
+    total: 1,
+    rows: [{ ...b.rows[0], price: 1 }],
+  });
   assert.equal(preview.status, 200, JSON.stringify(preview.data));
   assert.equal(preview.data.total, 194400);
   assert.equal(preview.data.temporary, true);
   assert.equal(preview.data.orderNo, undefined);
-  const qr = await call('/pos/qr', emp, 'POST', b);
+  const qr = await call("/pos/qr", emp, "POST", b);
   assert.equal(qr.status, 200, JSON.stringify(qr.data));
   assert.match(qr.data.url, /amount=194400/);
   assert.equal((await db.select().from(salesOrders)).length, 0);
   assert.equal((await db.select().from(customerPayments)).length, 0);
   assert.equal((await db.select().from(stockMoves)).length, 1);
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 10);
-  const noConfirm = await call('/pos/checkout', emp, 'POST', {
+  const noConfirm = await call("/pos/checkout", emp, "POST", {
     ...b,
-    method: 'transfer',
+    method: "transfer",
     paymentRequestId: qr.data.id,
   });
   assert.equal(noConfirm.status, 400);
-  const paid = await call('/pos/checkout', emp, 'POST', {
+  const paid = await call("/pos/checkout", emp, "POST", {
     ...b,
-    method: 'transfer',
+    method: "transfer",
     confirmed: true,
     paymentRequestId: qr.data.id,
   });
   assert.equal(paid.status, 201, JSON.stringify(paid.data));
-  assert.equal((await db.select().from(customerPayments))[0]!.paymentSource, 'vietqr');
+  assert.equal(
+    (await db.select().from(customerPayments))[0]!.paymentSource,
+    "vietqr",
+  );
 });
-test('POS: checkout idempotent, đúng tiền thối và snapshot; chọn giá không VAT; trừ tồn dùng chung CRM', async () => {
+test("POS: checkout idempotent, đúng tiền thối và snapshot; chọn giá không VAT; trừ tồn dùng chung CRM", async () => {
   const { db, call, emp, open, cart } = await setup(),
     s = await open(),
     b = cart(s.id);
-  const [a, c] = await Promise.all([call('/pos/checkout', emp, 'POST', b), call('/pos/checkout', emp, 'POST', b)]);
+  const [a, c] = await Promise.all([
+    call("/pos/checkout", emp, "POST", b),
+    call("/pos/checkout", emp, "POST", b),
+  ]);
   assert.equal(a.status, 201, JSON.stringify(a.data));
   assert.equal(c.status, 201, JSON.stringify(c.data));
   assert.equal(a.data.id, c.data.id);
   assert.equal(a.data.change, 5600);
   assert.equal((await db.select().from(customerPayments)).length, 1);
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 8);
-  const product = await call('/products/00123', emp);
-  assert.equal(product.data.product.stock['pos-wh'], 8);
+  const product = await call("/products/00123", emp);
+  assert.equal(product.data.product.stock["pos-wh"], 8);
   const base = await call(
-    '/pos/preview',
+    "/pos/preview",
     emp,
-    'POST',
-    cart(s.id, { pricePolicyId: 'retail', rows: [{ sku: '00123', qty: 1 }] }),
+    "POST",
+    cart(s.id, { pricePolicyId: "retail", rows: [{ sku: "00123", qty: 1 }] }),
   );
   assert.equal(base.data.total, 100000);
   assert.equal(base.data.tax, 0);
-  const changed = await call('/pos/checkout', emp, 'POST', { ...b, rows: [{ sku: '00123', qty: 3 }] });
+  const changed = await call("/pos/checkout", emp, "POST", {
+    ...b,
+    rows: [{ sku: "00123", qty: 3 }],
+  });
   assert.equal(changed.status, 409);
-  assert.equal((await call('/pos/bills/' + a.data.id, emp)).status, 200);
+  assert.equal((await call("/pos/bills/" + a.data.id, emp)).status, 200);
 });
-test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0', async () => {
-  const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();
-  assert.equal((await call('/pos/options', ncc)).status, 403);
-  assert.equal((await call('/pos/registers', emp, 'POST', {})).status, 403);
-  assert.equal((await call('/pos/checkout', emp, 'POST', cart('not-open'))).status, 404);
-  const s = await open();
-  assert.equal((await call('/pos/shifts/' + s.id, other)).status, 404);
-  assert.equal((await call('/pos/shifts/' + s.id, mgr)).status, 200);
+test("POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0", async () => {
+  const { db, call, emp, mgr, other, ncc, registerId, open, cart } =
+    await setup();
+  assert.equal((await call("/pos/options", ncc)).status, 403);
+  assert.equal((await call("/pos/registers", emp, "POST", {})).status, 403);
   assert.equal(
-    (await call('/pos/shifts/open', emp, 'POST', { key: crypto.randomUUID(), registerId, openingCash: 0, counts: [] }))
-      .status,
+    (await call("/pos/checkout", emp, "POST", cart("not-open"))).status,
+    404,
+  );
+  const s = await open();
+  assert.equal((await call("/pos/shifts/" + s.id, other)).status, 404);
+  assert.equal((await call("/pos/shifts/" + s.id, mgr)).status, 200);
+  assert.equal(
+    (
+      await call("/pos/shifts/open", emp, "POST", {
+        key: crypto.randomUUID(),
+        registerId,
+        openingCash: 0,
+        counts: [],
+      })
+    ).status,
     409,
   );
-  const customer = await call('/pos/customers', emp, 'POST', { name: 'Khách mới', phone: '0901234567' });
+  const customer = await call("/pos/customers", emp, "POST", {
+    name: "Khách mới",
+    phone: "0901234567",
+  });
   assert.equal(customer.status, 201, JSON.stringify(customer.data));
   assert.equal(
-    (await db.select().from(customers).where(eq(customers.id, customer.data.id)))[0]!.approvalStatus,
-    'approved',
+    (
+      await db
+        .select()
+        .from(customers)
+        .where(eq(customers.id, customer.data.id))
+    )[0]!.approvalStatus,
+    "approved",
   );
-  assert.equal((await call('/pos/barcodes', mgr, 'POST', { sku: '00123', barcode: '000008888' })).status, 200);
-  const found = await call('/pos/catalog?registerId=' + registerId + '&q=000008888', emp);
-  assert.equal(found.data.products[0].sku, '00123');
+  assert.equal(
+    (
+      await call("/pos/barcodes", mgr, "POST", {
+        sku: "00123",
+        barcode: "000008888",
+      })
+    ).status,
+    200,
+  );
+  const found = await call(
+    "/pos/catalog?registerId=" + registerId + "&q=000008888",
+    emp,
+  );
+  assert.equal(found.data.products[0].sku, "00123");
   assert.equal(found.data.products[0].available, 10);
-  const bill = await call('/pos/checkout', emp, 'POST', cart(s.id, { customerId: customer.data.id }));
-  assert.equal((await call('/pos/bills/' + bill.data.id, other)).status, 404);
+  const bill = await call(
+    "/pos/checkout",
+    emp,
+    "POST",
+    cart(s.id, { customerId: customer.data.id }),
+  );
+  assert.equal((await call("/pos/bills/" + bill.data.id, other)).status, 404);
 });
-test('POS: thiếu tồn và CK vượt mức bị từ chối; không ghi một phần khi thất bại', async () => {
+test("POS: thiếu tồn và CK vượt mức bị từ chối; không ghi một phần khi thất bại", async () => {
   const { db, call, emp, open, cart } = await setup(),
     s = await open();
   for (const rows of [
-    [{ sku: '00123', qty: 11 }],
-    [{ sku: '00123', qty: 1, discountType: 'percent', discountValue: 101 }],
-    [{ sku: '00123', qty: 1, discountType: 'amount', discountValue: 108001 }],
+    [{ sku: "00123", qty: 11 }],
+    [{ sku: "00123", qty: 1, discountType: "percent", discountValue: 101 }],
+    [{ sku: "00123", qty: 1, discountType: "amount", discountValue: 108001 }],
   ]) {
-    const r = await call('/pos/checkout', emp, 'POST', cart(s.id, { rows, tendered: 99999999 }));
+    const r = await call(
+      "/pos/checkout",
+      emp,
+      "POST",
+      cart(s.id, { rows, tendered: 99999999 }),
+    );
     assert.ok([400, 409].includes(r.status), JSON.stringify(r.data));
   }
   assert.equal((await db.select().from(salesOrders)).length, 0);
   assert.equal((await db.select().from(customerPayments)).length, 0);
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 10);
 });
-test('POS: lệch tiền mặt khác 0 phải có lý do; kết ca idempotent và snapshot không đổi', async () => {
+test("POS: lệch tiền mặt khác 0 phải có lý do; kết ca idempotent và snapshot không đổi", async () => {
   const { db, call, emp, other, open, cart } = await setup(),
     s = await open();
-  const bill = await call('/pos/checkout', emp, 'POST', cart(s.id));
+  const bill = await call("/pos/checkout", emp, "POST", cart(s.id));
   assert.equal(bill.status, 201);
-  const report = await call('/pos/shifts/' + s.id, emp);
+  const report = await call("/pos/shifts/" + s.id, emp);
   assert.equal(report.data.expectedCash, 694400);
-  assert.equal((await call('/pos/shifts/' + s.id + '/close', emp, 'POST', { countedCash: 694399 })).status, 400);
+  assert.equal(
+    (
+      await call("/pos/shifts/" + s.id + "/close", emp, "POST", {
+        countedCash: 694399,
+      })
+    ).status,
+    400,
+  );
   const [a, b] = await Promise.all([
-    call('/pos/shifts/' + s.id + '/close', emp, 'POST', {
+    call("/pos/shifts/" + s.id + "/close", emp, "POST", {
       countedCash: 694399,
-      reasonCode: 'other',
-      reasonNote: 'Thiếu 1 đồng',
+      reasonCode: "other",
+      reasonNote: "Thiếu 1 đồng",
     }),
-    call('/pos/shifts/' + s.id + '/close', emp, 'POST', {
+    call("/pos/shifts/" + s.id + "/close", emp, "POST", {
       countedCash: 694399,
-      reasonCode: 'other',
-      reasonNote: 'Thiếu 1 đồng',
+      reasonCode: "other",
+      reasonNote: "Thiếu 1 đồng",
     }),
   ]);
   assert.equal(a.status, 200, JSON.stringify(a.data));
   assert.equal(b.status, 200, JSON.stringify(b.data));
   assert.equal(a.data.shift.closedAt, b.data.shift.closedAt);
   assert.equal(a.data.cashDifference, -1);
-  assert.equal((await db.select().from(posShifts)).filter((x) => x.closedAt).length, 1);
-  assert.equal((await call('/pos/shifts/' + s.id, other)).status, 404);
-  assert.equal((await call('/pos/checkout', emp, 'POST', cart(s.id))).status, 409);
+  assert.equal(
+    (await db.select().from(posShifts)).filter((x) => x.closedAt).length,
+    1,
+  );
+  assert.equal((await call("/pos/shifts/" + s.id, other)).status, 404);
+  assert.equal(
+    (await call("/pos/checkout", emp, "POST", cart(s.id))).status,
+    409,
+  );
   const receipt = (await db.select().from(customerPayments))[0]!;
-  assert.equal((await call('/payments/' + receipt.id + '/void', emp, 'POST', { reason: 'Lý do thử' })).status, 403);
+  assert.equal(
+    (
+      await call("/payments/" + receipt.id + "/void", emp, "POST", {
+        reason: "Lý do thử",
+      })
+    ).status,
+    403,
+  );
   const next = await open(emp, 0);
   assert.notEqual(next.id, s.id);
-  assert.equal((await call('/pos/shifts/' + s.id, emp)).data.cashDifference, -1);
+  assert.equal(
+    (await call("/pos/shifts/" + s.id, emp)).data.cashDifference,
+    -1,
+  );
 });
-test('POS: COD chưa thu không vào két, được kết ca; thu ca sau chỉ ghi một lần vào ca hiện tại', async () => {
+test("POS: COD chưa thu không vào két, được kết ca; thu ca sau chỉ ghi một lần vào ca hiện tại", async () => {
   const { db, call, emp, mgr, other, open, cart } = await setup(),
     s = await open();
   const order = await call(
-    '/pos/checkout',
+    "/pos/checkout",
     emp,
-    'POST',
+    "POST",
     cart(s.id, {
-      fulfillmentMode: 'cod',
-      delivery: { address: '123 Test', plannedDate: '2026-10-18', receiverName: 'Khách', receiverPhone: '0901234567' },
+      fulfillmentMode: "cod",
+      delivery: {
+        address: "123 Test",
+        plannedDate: "2026-10-18",
+        receiverName: "Khách",
+        receiverPhone: "0901234567",
+      },
     }),
   );
   assert.equal(order.status, 201, JSON.stringify(order.data));
@@ -171,44 +292,64 @@ test('POS: COD chưa thu không vào két, được kết ca; thu ca sau chỉ g
   assert.ok(delivery);
   assert.equal(
     (
-      await call('/pos/cod/' + delivery.id + '/collect', emp, 'POST', {
+      await call("/pos/cod/" + delivery.id + "/collect", emp, "POST", {
         shiftId: s.id,
         key: crypto.randomUUID(),
-        method: 'cash',
+        method: "cash",
         confirmed: true,
       })
     ).status,
     409,
   );
-  assert.equal((await call('/deliveries/' + delivery.id + '/status', mgr, 'PUT', { status: 'delivered' })).status, 200);
+  assert.equal(
+    (
+      await call("/deliveries/" + delivery.id + "/status", mgr, "PUT", {
+        status: "delivered",
+      })
+    ).status,
+    200,
+  );
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 8);
-  const report = await call('/pos/shifts/' + s.id, emp);
+  const report = await call("/pos/shifts/" + s.id, emp);
   assert.equal(report.data.cash, 0);
   assert.equal(report.data.expectedCash, 500000);
   assert.equal(report.data.cod.pending.count, 1);
   assert.equal(report.data.cod.pending.amount, 194400);
-  const closed = await call('/pos/shifts/' + s.id + '/close', emp, 'POST', { countedCash: 500000 });
+  const closed = await call("/pos/shifts/" + s.id + "/close", emp, "POST", {
+    countedCash: 500000,
+  });
   assert.equal(closed.status, 200, JSON.stringify(closed.data));
   const next = await open(other, 0),
-    b = { shiftId: next.id, key: crypto.randomUUID(), method: 'cash', confirmed: true };
+    b = {
+      shiftId: next.id,
+      key: crypto.randomUUID(),
+      method: "cash",
+      confirmed: true,
+    };
   const [a, r] = await Promise.all([
-    call('/pos/cod/' + delivery.id + '/collect', other, 'POST', b),
-    call('/pos/cod/' + delivery.id + '/collect', other, 'POST', b),
+    call("/pos/cod/" + delivery.id + "/collect", other, "POST", b),
+    call("/pos/cod/" + delivery.id + "/collect", other, "POST", b),
   ]);
   assert.equal(a.status, 201, JSON.stringify(a.data));
   assert.equal(r.status, 201, JSON.stringify(r.data));
   assert.equal(a.data.id, r.data.id);
-  const current = await call('/pos/shifts/' + next.id, other);
+  const current = await call("/pos/shifts/" + next.id, other);
   assert.equal(current.data.cash, 194400);
   assert.equal(current.data.cod.pending.count, 0);
-  assert.equal((await call('/pos/shifts/' + s.id, emp)).data.cod.pending.count, 1, 'báo cáo ca cũ giữ nguyên');
+  assert.equal(
+    (await call("/pos/shifts/" + s.id, emp)).data.cod.pending.count,
+    1,
+    "báo cáo ca cũ giữ nguyên",
+  );
   assert.equal((await db.select().from(customerPayments)).length, 1);
 });
-test('POS: bảng mới bật RLS và revoke truy cập trực tiếp', async () => {
+test("POS: bảng mới bật RLS và revoke truy cập trực tiếp", async () => {
   const { client } = await setup();
-  await client.exec('CREATE ROLE anon; CREATE ROLE authenticated;');
-  const file = readdirSync('migrations/postgres').find((x) => x.endsWith('_supabase_access_pos.sql'))!;
-  await client.exec(readFileSync('migrations/postgres/' + file, 'utf8'));
+  await client.exec("CREATE ROLE anon; CREATE ROLE authenticated;");
+  const file = readdirSync("migrations/postgres").find((x) =>
+    x.endsWith("_supabase_access_pos.sql"),
+  )!;
+  await client.exec(readFileSync("migrations/postgres/" + file, "utf8"));
   const { rows } = await client.query<{
     relname: string;
     relrowsecurity: boolean;
@@ -219,36 +360,50 @@ test('POS: bảng mới bật RLS và revoke truy cập trực tiếp', async ()
   assert.equal(rows.length, 6);
   assert.ok(rows.every((r) => r.relrowsecurity && !r.anon_select));
 });
-test('POS: không chốt lại tồn Sapo đè lên hàng đã bán; giảm 100% vẫn xuất hàng nhưng không tạo thu 0 đồng', async () => {
+test("POS: không chốt lại tồn Sapo đè lên hàng đã bán; giảm 100% vẫn xuất hàng nhưng không tạo thu 0 đồng", async () => {
   const { db, call, emp, mgr, open, cart } = await setup(),
     s = await open();
   const b = await call(
-    '/pos/checkout',
+    "/pos/checkout",
     emp,
-    'POST',
-    cart(s.id, { rows: [{ sku: '00123', qty: 1, discountType: 'percent', discountValue: 100 }], tendered: 0 }),
+    "POST",
+    cart(s.id, {
+      rows: [
+        { sku: "00123", qty: 1, discountType: "percent", discountValue: 100 },
+      ],
+      tendered: 0,
+    }),
   );
   assert.equal(b.status, 201, JSON.stringify(b.data));
   assert.equal(b.data.total, 0);
   assert.equal((await db.select().from(customerPayments)).length, 0);
-  const reset = await call('/inventory/opening', mgr, 'POST', { confirm: true });
+  const reset = await call("/inventory/opening", mgr, "POST", {
+    confirm: true,
+  });
   assert.equal(reset.status, 409, JSON.stringify(reset.data));
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 9);
 });
-test('POS: COD đóng gói rồi giao chỉ trừ kho một lần; chuyển khoản COD không cộng tiền két', async () => {
+test("POS: COD đóng gói rồi giao chỉ trừ kho một lần; chuyển khoản COD không cộng tiền két", async () => {
   const { db, call, emp, mgr, open, cart } = await setup(),
     s = await open();
   const order = await call(
-    '/pos/checkout',
+    "/pos/checkout",
     emp,
-    'POST',
+    "POST",
     cart(s.id, {
-      fulfillmentMode: 'cod',
-      delivery: { address: '123 Test', receiverName: 'Khách', receiverPhone: '0901234567' },
+      fulfillmentMode: "cod",
+      delivery: {
+        address: "123 Test",
+        receiverName: "Khách",
+        receiverPhone: "0901234567",
+      },
     }),
   );
   assert.equal(order.status, 201, JSON.stringify(order.data));
-  const [line] = await db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.data.id));
+  const [line] = await db
+    .select()
+    .from(salesOrderLines)
+    .where(eq(salesOrderLines.orderId, order.data.id));
   const [delivery] = await db.select().from(deliveries);
   assert.ok(line && delivery);
   const now = new Date().toISOString(),
@@ -256,10 +411,10 @@ test('POS: COD đóng gói rồi giao chỉ trừ kho một lần; chuyển kho�
   await db.insert(packingSlips).values({
     id: slipId,
     orderId: order.data.id,
-    slipNo: 'DG_POS_TEST',
-    source: 'warehouse',
-    status: 'sent',
-    createdBy: 'emp',
+    slipNo: "DG_POS_TEST",
+    source: "warehouse",
+    status: "sent",
+    createdBy: "emp",
     createdAt: now,
     updatedAt: now,
   });
@@ -272,21 +427,35 @@ test('POS: COD đóng gói rồi giao chỉ trừ kho một lần; chuyển kho�
     unit: line.unit,
     qty: line.qty,
   });
-  const photo = 'data:image/jpeg;base64,' + Buffer.from('anh-dong-goi').toString('base64');
-  const packed = await call('/packing/' + slipId + '/confirm', mgr, 'POST', { warehouseId: 'pos-wh', photos: [photo] });
+  const photo =
+    "data:image/jpeg;base64," + Buffer.from("anh-dong-goi").toString("base64");
+  const packed = await call("/packing/" + slipId + "/confirm", mgr, "POST", {
+    warehouseId: "pos-wh",
+    photos: [photo],
+  });
   assert.equal(packed.status, 200, JSON.stringify(packed.data));
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 8);
-  const done = await call('/deliveries/' + delivery.id + '/status', mgr, 'PUT', { status: 'delivered' });
+  const done = await call(
+    "/deliveries/" + delivery.id + "/status",
+    mgr,
+    "PUT",
+    { status: "delivered" },
+  );
   assert.equal(done.status, 200, JSON.stringify(done.data));
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 8);
-  const collected = await call('/pos/cod/' + delivery.id + '/collect', emp, 'POST', {
-    shiftId: s.id,
-    key: crypto.randomUUID(),
-    method: 'transfer',
-    confirmed: true,
-  });
+  const collected = await call(
+    "/pos/cod/" + delivery.id + "/collect",
+    emp,
+    "POST",
+    {
+      shiftId: s.id,
+      key: crypto.randomUUID(),
+      method: "transfer",
+      confirmed: true,
+    },
+  );
   assert.equal(collected.status, 201, JSON.stringify(collected.data));
-  const report = (await call('/pos/shifts/' + s.id, emp)).data;
+  const report = (await call("/pos/shifts/" + s.id, emp)).data;
   assert.equal(report.cash, 0);
   assert.equal(report.transfer, 194400);
   assert.equal(report.expectedCash, 500000);
