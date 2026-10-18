@@ -1,13 +1,14 @@
 import { auditLogs } from '../core/db/schema.ts';
-import { and, asc, count, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../core/http/router.ts';
 import { json, readJson } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
 import type { StaffEnv, SessionState } from '../modules/staff/api/auth-routes.ts';
-import { employees } from '../modules/staff/schema.ts';
+import { employees, positions } from '../modules/staff/schema.ts';
+import { defaultPosRegister } from '../modules/sales/domain/pos-register.ts';
 import { can } from '../modules/staff/domain/permissions.ts';
 import { cashDrawers, cashEntries, cashReconciliations } from '../modules/sales/cash-schema.ts';
-import { posShifts } from '../modules/sales/pos-schema.ts';
+import { posRegisters, posShifts } from '../modules/sales/pos-schema.ts';
 import { customerPayments, salesOrders } from '../modules/sales/schema.ts';
 import { posKey, posText, shiftReport } from '../modules/sales/api/pos-store.ts';
 import { cashEntryInput } from '../modules/sales/domain/cash.ts';
@@ -32,6 +33,22 @@ const manager = (c: Ctx) => {
   if (who(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager thao tác.');
 };
 const ownShift = (c: Ctx) => (seesAllCash(who(c)) ? undefined : eq(posShifts.memberId, who(c).id));
+async function selectedDrawer(c: Ctx) {
+  const explicit = posText(c.url.searchParams.get('drawerId'));
+  if (explicit) return (await drawerOf(c.env.db, explicit)).id;
+  const registerId = posText(c.url.searchParams.get('registerId'));
+  const regs = await c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name));
+  if (registerId) {
+    const r = regs.find(r => r.id === registerId);
+    if (!r) throw new AppError(404, 'Không tìm thấy quầy.');
+    return r.cashDrawerId;
+  }
+  const [current] = await c.env.db.select().from(posShifts).where(and(eq(posShifts.memberId, who(c).id), isNull(posShifts.closedAt))).limit(1);
+  if (current) return current.cashDrawerId;
+  const [position] = await c.env.db.select({ name: positions.name }).from(positions).where(eq(positions.id, who(c).positionId ?? '')).limit(1);
+  const preferred = defaultPosRegister(who(c).positionId, position?.name, regs);
+  return regs.find(r => r.id === preferred)?.cashDrawerId ?? regs[0]?.cashDrawerId ?? CASH_DRAWER;
+}
 function dates(c: Ctx) {
   const from = c.url.searchParams.get('from') ?? '',
     to = c.url.searchParams.get('to') ?? '';
@@ -47,32 +64,63 @@ function dates(c: Ctx) {
   };
 }
 export function registerCashRoutes(router: Router<StaffEnv>) {
+  router.post('/cash/drawers', async (c) => {
+    manager(c);
+    const b = await readJson(c.req, 4000),
+      id = posKey(b.key), name = posText(b.name, 100), registerId = posText(b.registerId);
+    if (!name || !registerId) throw new AppError(400, 'Nhập tên két và chọn quầy.');
+    await c.env.db.transaction(async tx => {
+      await cashLock(tx);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-register:' + registerId}))`);
+      const [r] = await tx.select().from(posRegisters).where(and(eq(posRegisters.id, registerId), eq(posRegisters.active, true)));
+      if (!r) throw new AppError(404, 'Không tìm thấy quầy.');
+      const [existing] = await tx.select().from(cashDrawers).where(eq(cashDrawers.id, id));
+      if (existing) {
+        if (existing.name !== name || r.cashDrawerId !== id) throw new AppError(409, 'Mã tạo két đã dùng.');
+        return;
+      }
+      const [history] = await tx.select({ id: posShifts.id }).from(posShifts).where(eq(posShifts.registerId, registerId)).limit(1);
+      if (history) throw new AppError(409, 'Quầy đã có ca; không đổi két để giữ lịch sử tiền và bàn giao.');
+      const linked = await tx.select({ id: posRegisters.id }).from(posRegisters).where(eq(posRegisters.cashDrawerId, r.cashDrawerId));
+      if (linked.length < 2 && r.cashDrawerId !== CASH_DRAWER) throw new AppError(409, 'Quầy đã có két riêng; dùng Cấu hình két để đổi tên hoặc nhập đầu kỳ.');
+      const now = cashNow();
+      await tx.insert(cashDrawers).values({ id, name, updatedAt: now, updatedBy: who(c).id });
+      await tx.update(posRegisters).set({ cashDrawerId: id, updatedAt: now, updatedBy: who(c).id }).where(eq(posRegisters.id, registerId));
+      await cashAudit(tx, who(c).id, 'split-drawer', 'cash-drawers', id, { name, registerId, previousDrawerId: r.cashDrawerId });
+    });
+    return json({ id }, 201);
+  }, 'business');
   router.get(
     '/cash',
     async (c) => {
       cashAccess(who(c));
       const db = c.env.db,
-        d = await drawerOf(db),
+        d = await drawerOf(db, await selectedDrawer(c)),
         [s] = await db
           .select({ s: posShifts, memberName: employees.name })
           .from(posShifts)
           .innerJoin(employees, eq(employees.id, posShifts.memberId))
-          .where(and(eq(posShifts.cashDrawerId, CASH_DRAWER), isNull(posShifts.closedAt)))
+          .where(and(eq(posShifts.cashDrawerId, d.id), isNull(posShifts.closedAt)))
           .limit(1),
         [last] = await db
           .select()
           .from(posShifts)
-          .where(and(eq(posShifts.cashDrawerId, CASH_DRAWER), sql`${posShifts.closedAt} is not null`))
+          .where(and(eq(posShifts.cashDrawerId, d.id), sql`${posShifts.closedAt} is not null`))
           .orderBy(desc(posShifts.closedAt))
           .limit(1),
         [open] = await db
           .select({ count: count() })
           .from(cashReconciliations)
           .innerJoin(posShifts, eq(posShifts.id, cashReconciliations.shiftId))
-          .where(and(ownShift(c), sql`${cashReconciliations.status}<>'closed'`));
+          .where(and(eq(cashReconciliations.drawerId, d.id), ownShift(c), sql`${cashReconciliations.status}<>'closed'`));
       return json({
         drawer: d,
-        balance: await drawerBalance(db),
+        drawers: await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers).where(or(
+          inArray(cashDrawers.id, db.select({ id: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.active, true))),
+          inArray(cashDrawers.id, db.select({ id: posShifts.cashDrawerId }).from(posShifts)),
+        )).orderBy(asc(cashDrawers.name)),
+        registers: await db.select({ id: posRegisters.id, name: posRegisters.name, cashDrawerId: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.active, true)),
+        balance: await drawerBalance(db, d.id),
         activeShift: s
           ? {
               id: s.s.id,
@@ -97,12 +145,13 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
     '/cash/config',
     async (c) => {
       manager(c);
-      const b = await readJson(c.req, 4000);
+      const b = await readJson(c.req, 4000), drawerId = await selectedDrawer(c);
       await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
-        const d = await drawerOf(tx);
+        const d = await drawerOf(tx, drawerId);
         const fields: {
           approvalThreshold?: number;
+          name?: string;
           openingAmount?: number;
           openingReason?: string;
           openingSetAt?: string;
@@ -110,6 +159,10 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           updatedAt: string;
           updatedBy: string;
         } = { updatedAt: cashNow(), updatedBy: who(c).id };
+        if (b.name !== undefined) {
+          fields.name = posText(b.name, 100);
+          if (!fields.name) throw new AppError(400, 'Nhập tên két.');
+        }
         if (b.approvalThreshold !== undefined) {
           fields.approvalThreshold = posMoney(b.approvalThreshold);
           if (!fields.approvalThreshold) throw new AppError(400, 'Ngưỡng phải lớn hơn 0.');
@@ -133,6 +186,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
     '/cash/entries',
     async (c) => {
       cashAccess(who(c));
+      const drawerId = await selectedDrawer(c);
       const { start, end } = dates(c),
         db = c.env.db,
         scope = ownShift(c),
@@ -163,6 +217,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(
             and(
               scope,
+              eq(cashEntries.drawerId, drawerId),
               gte(cashEntries.createdAt, start),
               lt(cashEntries.createdAt, end),
               before ? sql`(${cashEntries.createdAt} || '|' || ${cashEntries.id}) < ${before}` : undefined,
@@ -191,6 +246,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(
             and(
               scope,
+              eq(posShifts.cashDrawerId, drawerId),
               eq(customerPayments.method, 'cash'),
               gte(customerPayments.createdAt, start),
               lt(customerPayments.createdAt, end),
@@ -239,6 +295,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       const b = await readJson(c.req, 820000),
         input = cashEntryInput(b),
         key = posKey(b.key);
+      const drawerId = await selectedDrawer(c);
       if (input.kind === 'adjustment') manager(c);
       else if (!can(who(c), 'pos.sell')) throw new AppError(403, 'Chưa có quyền tạo phiếu trong ca.');
       if (b.photo !== undefined && typeof b.photo !== 'string') throw new AppError(400, 'Chỉ chọn một ảnh.');
@@ -251,6 +308,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           if (prior) {
             if (
               prior.createdBy !== who(c).id ||
+              prior.drawerId !== drawerId ||
               prior.amount !== input.amount ||
               prior.kind !== input.kind ||
               prior.reason !== input.reason ||
@@ -260,7 +318,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
               throw new AppError(409, 'Mã giao dịch đã dùng cho phiếu khác.');
             return { ...prior, replayed: true };
           }
-          const d = await drawerOf(tx),
+          const d = await drawerOf(tx, drawerId),
             [s] = await tx
               .select()
               .from(posShifts)
@@ -378,7 +436,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         .select({ s: posShifts, memberName: employees.name })
         .from(posShifts)
         .innerJoin(employees, eq(employees.id, posShifts.memberId))
-        .where(ownShift(c))
+        .where(and(ownShift(c), eq(posShifts.cashDrawerId, await selectedDrawer(c))))
         .orderBy(desc(posShifts.openedAt), desc(posShifts.id))
         .limit(51)
         .offset(offset);
@@ -421,7 +479,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         .from(cashReconciliations)
         .innerJoin(posShifts, eq(posShifts.id, cashReconciliations.shiftId))
         .innerJoin(employees, eq(employees.id, posShifts.memberId))
-        .where(ownShift(c))
+        .where(and(ownShift(c), eq(cashReconciliations.drawerId, await selectedDrawer(c))))
         .orderBy(desc(cashReconciliations.updatedAt), desc(cashReconciliations.id))
         .limit(51)
         .offset(offset);

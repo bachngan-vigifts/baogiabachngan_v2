@@ -12,6 +12,10 @@
 .cash-head h1 {
   margin: 0;
 }
+.cash-tools > select {
+  width: auto;
+  max-width: 240px;
+}
 .cash-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

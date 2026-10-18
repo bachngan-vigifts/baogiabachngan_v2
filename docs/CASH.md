@@ -1,4 +1,4 @@
-# Sổ quỹ — một két cửa hàng
+# Sổ quỹ theo két quầy
 
 Trang `#/cash` dùng cùng ca với POS. `#/cashbook` vẫn là sổ thu khách/chi NCC để đối soát, có cả chuyển khoản; hai báo cáo phục vụ mục đích khác nhau.
 
@@ -15,13 +15,19 @@ Kiểm tra migration nền của main, đặc biệt `0071_accounting_tools.sql`
 3. `20261018122409_cash_drawer.sql`
 4. `20261018122409_supabase_access_cash_drawer.sql`
 
-Schema POS thêm ca/giỏ/thu tiền; schema Sổ quỹ thêm `cash_drawers`, `cash_entries`, `cash_reconciliations`, liên kết két vào quầy và ca. RLS bật, quyền trực tiếp PUBLIC/anon/authenticated bị thu hồi. API kiểm quyền bằng vai trò/quyền CRM, không dùng token phía client. Migration sinh bằng Drizzle; tên migration Sổ quỹ được tạo bằng Supabase CLI. Chưa chạy các migration mới trên production.
+Schema POS thêm ca/giỏ/thu tiền; schema Sổ quỹ thêm `cash_drawers`, `cash_entries`, `cash_reconciliations`, liên kết két vào quầy và ca. RLS bật, quyền trực tiếp PUBLIC/anon/authenticated bị thu hồi. API kiểm quyền bằng vai trò/quyền CRM, không dùng token phía client. Migration sinh bằng Drizzle; tên migration Sổ quỹ được tạo bằng Supabase CLI. Các migration này đã được chạy trên production ngày 18/10/2026.
 
 Manager cấu hình quầy (kho thật đã chốt đầu kỳ, đúng hai bảng giá) tại POS và nhập **số dư két đầu kỳ kèm lý do một lần** tại Sổ quỹ. Ngưỡng duyệt mặc định 1.000.000 VNĐ nằm trong cấu hình két, Manager thay đổi được. Sau khi vận hành, sửa số dư bằng phiếu điều chỉnh; không sửa ngược đầu kỳ.
 
+## Tách két Lock / Minh Long
+
+Không thêm bảng hoặc cột: dùng `cash_drawers` và `pos_registers.cash_drawer_id` sẵn có. Manager mở Sổ quỹ → **+ Két riêng cho quầy**, chọn Quầy Lock, đặt tên Két Lock; làm tương tự cho Quầy Minh Long. Cả hai két mới chưa có tiền đầu kỳ. Chọn từng két → **Cấu hình két** để nhập tiền thực tế kèm lý do. Không sao chép khoản 1.000.000đ đã nhập ở két chung cũ: cấu hình cũ vẫn được lưu, không tính vào hai két mới. Két cũ không gắn quầy và chưa có ca không nằm trong danh sách két hoạt động.
+
+Chỉ tách quầy chưa từng có ca; nếu đã có lịch sử thì API từ chối để giữ nguyên liên kết bàn giao/phiếu. Tạo két có mã chống lặp, kiểm quyền Manager và nhật ký trong cùng transaction. Nhân viên được xem phiếu/ca của mình trong két đang chọn; Manager/Kế toán xem các két. Danh sách phiếu, ca, tra soát và số dư đều lọc ở server theo két. POS lấy đầu ca từ két gắn quầy, cập nhật khi đổi quầy trong form. Thu lại phiếu POS phải ở đúng két gốc của đơn; COD tiếp tục qua chuyến giao đúng két, không thu chéo.
+
 ## Thao tác hằng ngày
 
-1. Mở ca ở POS, kiểm đếm nhanh tồn. Đầu ca lấy tiền thực đếm của ca trước, ca đầu lấy số dư Manager chốt. Mỗi két chỉ có một ca giữ két đang mở, dùng chung giữa các quầy.
+1. Mở ca ở POS, kiểm đếm nhanh tồn. Đầu ca lấy tiền thực đếm của ca trước, ca đầu lấy số dư Manager chốt. Mỗi két chỉ có một ca giữ két đang mở. Lock và Minh Long dùng hai két riêng nên có thể mở ca đồng thời với hai nhân viên khác nhau.
 2. Tiền mặt bán hàng và COD thực nhận được ghi theo ca đang mở. Chuyển khoản không vào két. COD chưa nhận không vào két và được theo dõi sang ca sau.
 3. **Thu tiền** gồm Thu khác/Rút két; **Chi tiền** gồm Chi vặt/Tạm ứng/Nộp két. Số tiền nguyên VNĐ > 0, nội dung bắt buộc, một ảnh hoá đơn tuỳ chọn. Chỉ nhân viên đang giữ ca tạo phiếu thường; Manager tạo phiếu điều chỉnh cho két đang mở, có thể tham chiếu tra soát.
 4. Số tiền từ ngưỡng cấu hình trở lên ở trạng thái **Chờ duyệt**, chưa vào két. Manager duyệt; người tạo không tự duyệt, kể cả người tạo là Manager. Muốn bỏ phiếu chờ thì Manager/Kế toán huỷ có lý do.

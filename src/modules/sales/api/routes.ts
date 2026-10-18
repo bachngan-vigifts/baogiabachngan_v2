@@ -28,7 +28,7 @@ import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
 import { reverseRef } from '../../inventory/api/ledger.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
-import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, sapoPushViaClaw, sendOrderToClaw, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
+import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
@@ -278,20 +278,6 @@ quoteSaveHooks.beforeSave.push(async (tx, old, member) => {
 quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
 export function registerSalesRoutes(router: Router<StaffEnv>) {
-  /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
-  router.post('/integrations/sapo/order-status', async c => {
-    const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
-    const sapoId = text(body.sapo_order_id, 80), sapoCode = text(body.sapo_order_code, 160) || code;
-    if (!code) throw new AppError(400, 'Thiếu số đơn / HĐKT để cập nhật trạng thái Sapo.');
-    // Dry-run hoặc lỗi chỉ xác nhận callback; không ghi liên kết giả vào chứng từ.
-    if (!sapoId || !['created', 'created_after_error', 'existing'].includes(status)) return json({ ok: true, ignored: true });
-    const [found] = await c.env.db.select({ id: salesOrders.id }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
-      .where(or(eq(salesOrders.orderNo, code), eq(salesContracts.contractNo, code))).limit(1);
-    if (!found) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT tương ứng trên CRM.');
-    await c.env.db.update(salesOrders).set({ sapoOrderId: sapoId, sapoOrderCode: sapoCode, sapoPushedAt: text(body.updated_at, 60) || nowIso(), updatedAt: nowIso() }).where(eq(salesOrders.id, found.id));
-    return json({ ok: true, orderId: found.id });
-  }, 'sapo-sync');
-
   // ================= ĐƠN ĐẶT HÀNG =================
   router.get('/orders', async c => {
     const q = c.url.searchParams.get('q'), status = c.url.searchParams.get('status') || '', flow = c.url.searchParams.get('flow') || '';
@@ -395,14 +381,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const input = cleanOrderInput(body);
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
     // Có tạo đơn Sapo (mặc định): đẩy trong cùng giao dịch (Sapo lỗi → không tạo đơn); `pushSapo: false` → chỉ tạo đơn web. HĐKT là luồng riêng: POST /contracts { quoteId }.
-    const viaClaw = wantsSapoPush(c, body) && sapoPushViaClaw(c);
-    const push = wantsSapoPush(c, body) && !viaClaw ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    const push = wantsSapoPush(c, body) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let sapo: SapoPushOutcome = null;
     // Nhân viên sinh đơn: NHÁP, chỉ gửi Manager khi bấm "Gửi duyệt" (POST /orders/:id/submit). Manager sinh đơn: coi như đã gửi.
     const submitted = me.role === 'manager';
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, ...input,
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
-    if (viaClaw) sapo = await sendOrderToClaw(c, id, 'order');
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
     if (submitted) await notifyMany(c.env, 'approvers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
       url: `/index.html#/orders/${id}`, actorId: me.id, data: { orderId: id } });
@@ -434,7 +418,6 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Công tắc tắt đẩy Sapo (SAPO_ORDER_PUSH=off) áp dụng cho cả nút "Tạo đơn Sapo" trên chứng từ có sẵn.
     if (!sapoPushRequired(c)) throw new AppError(409, 'Đẩy đơn sang Sapo đang tắt trên hệ thống.', 'SAPO_PUSH_DISABLED');
     await assertCanCreateSapo(c, order);
-    if (sapoPushViaClaw(c)) return json({ sapo: await sendOrderToClaw(c, order.id, (await c.env.db.select({ id: salesContracts.id }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1)).length ? 'hdkt' : 'order') });
     const push = await prepareSapoPush(c, sapoLocationOf(body));
     const sapo = await c.env.db.transaction(async tx => {
       const [locked] = await tx.select().from(salesOrders).where(and(eq(salesOrders.id, order.id), orderScope(c))).limit(1).for('update');
@@ -658,8 +641,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const customNo = text(body.contractNo, 120).replace(/\s+/g, ' ');
     if (customNo && /[\u0000-\u001f<>]/.test(customNo)) throw new AppError(400, 'Số HĐKT không hợp lệ.');
     const now = nowIso(), id = crypto.randomUUID(), { year, month } = vietnamDate();
-    const viaClaw = wantsSapoPush(c, body) && sapoPushViaClaw(c);
-    const push = wantsSapoPush(c, body) && !viaClaw ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    const push = wantsSapoPush(c, body) ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
@@ -698,7 +680,6 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       }
       throw e;
     } finally { await push?.done(); }
-    if (viaClaw) sapo = await sendOrderToClaw(c, orderId, 'hdkt');
     if (me.role === 'manager') await notifyMany(c.env, 'approvers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
       body: `${me.name}: ${contractNo} – ${text(data.customer) || quote.customer}`, url: `/index.html#/contracts/${orderId}`, actorId: me.id, data: { orderId, contractId: id } });
     return json({ id, orderId, contractNo, sapo }, 201);
@@ -897,7 +878,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       await cashLock(tx);
       if(requestKey){const [prior]=await tx.select().from(customerPayments).where(eq(customerPayments.requestKey,requestKey));if(prior){if(prior.orderId!==order.id||prior.amount!==amount||prior.method!==method||prior.createdBy!==me.id||prior.voidedAt)throw new AppError(409,'Mã ghi thu đã dùng cho giao dịch khác.');receiptId=prior.id;return;}}
       let cashShiftId:string|null=null;
-      if(posReceipt || (method==='cash' && (await drawerOf(tx)).openingSetAt)){const [s]=await tx.select().from(posShifts).where(and(eq(posShifts.memberId,me.id),isNull(posShifts.closedAt)));if(!s)throw new AppError(409,'Cần ca đang mở để ghi tiền mặt vào két.');if(paidAt!==vietnamDate().iso)throw new AppError(400,'Tiền vào két ghi nhận ngày thực thu hôm nay.');cashShiftId=s.id;}
+      const [cashShift] = await tx.select().from(posShifts).where(and(eq(posShifts.memberId, me.id), isNull(posShifts.closedAt)));
+      if (posReceipt || (method === 'cash' && (cashShift || (await drawerOf(tx)).openingSetAt))) {
+        if (!cashShift) throw new AppError(409, 'Cần ca đang mở để ghi tiền mặt vào két.');
+        if (posReceipt && order.shiftId) {
+          const [originalShift] = await tx.select().from(posShifts).where(eq(posShifts.id, order.shiftId));
+          if (!originalShift || originalShift.cashDrawerId !== cashShift.cashDrawerId) throw new AppError(409, 'Cần mở ca tại đúng két của đơn POS để ghi thu.');
+        }
+        if (paidAt !== vietnamDate().iso) throw new AppError(400, 'Tiền vào két ghi nhận ngày thực thu hôm nay.');
+        cashShiftId = cashShift.id;
+      }
       await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
@@ -927,3 +917,5 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({ ok: true, orderId: p.orderId });
   }, 'business');
 }
+
+

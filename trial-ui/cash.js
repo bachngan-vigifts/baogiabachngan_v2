@@ -74,7 +74,7 @@ function table(headers) {
   t.append(h, body);
   return { t, body };
 }
-export function initCash({ root, api, user, toast, go, onShiftClosed = async () => {} }) {
+export function initCash({ root, api: request, user, toast, go, onShiftClosed = async () => {} }) {
   let summary = null,
     rows = [],
     tab = 'ledger',
@@ -84,7 +84,14 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
     nextCursor = null,
     offset = 0,
     owner = '',
-    busy = false;
+    busy = false,
+    drawerId = '',
+    loadVersion = 0,
+    listVersion = 0;
+  const api = (path, method, body) => request(
+    drawerId && path.startsWith('/cash') ? path + (path.includes('?') ? '&' : '?') + 'drawerId=' + encodeURIComponent(drawerId) : path,
+    method, body,
+  );
   const run = async (fn) => {
     try {
       await fn();
@@ -93,6 +100,8 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
     }
   };
   async function load() {
+    const version = ++loadVersion;
+    ++listVersion;
     if (owner !== user().id) {
       owner = user().id;
       rows = [];
@@ -100,8 +109,12 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
       from = to = today();
       cursor = null;
       offset = 0;
+      drawerId = '';
     }
-    summary = await api('/cash');
+    const result = await api('/cash');
+    if (version !== loadVersion) return;
+    summary = result;
+    drawerId = summary.drawer.id;
     render();
     if (tab === 'ledger') await entries();
     else if (tab === 'reconcile') await reconciliations();
@@ -112,7 +125,19 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
     const header = el('div', 'cash-head');
     header.append(el('div', '', null), el('h1', '', 'Sổ quỹ cửa hàng'));
     const tools = el('div', 'cash-tools');
-    if (summary.canManage) tools.append(button('Cấu hình két', () => run(configure)));
+    if (summary.drawers?.length) {
+      const drawer = select(summary.drawers.map(d => [d.id, d.name]), drawerId);
+      drawer.setAttribute('aria-label', 'Chọn két quầy');
+      drawer.addEventListener('change', () => {
+        drawerId = drawer.value; cursor = null; offset = 0; rows = [];
+        run(load);
+      });
+      tools.append(drawer);
+    }
+    if (summary.canManage) tools.append(
+      button('Cấu hình két', () => run(configure)),
+      button('+ Két riêng cho quầy', () => run(createDrawer)),
+    );
     tools.append(button('Bán hàng nhanh', () => go('#/pos')));
     header.append(tools);
     root.append(header);
@@ -178,7 +203,9 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
   }
   const content = () => root.querySelector('.cash-content');
   async function entries(append = false) {
+    const version = ++listVersion;
     const d = await api(`/cash/entries?from=${from}&to=${to}${cursor ? '&before=' + encodeURIComponent(cursor) : ''}`);
+    if (version !== listVersion) return;
     rows = append ? [...rows, ...d.entries] : d.entries;
     nextCursor = d.nextBefore;
     renderEntries();
@@ -385,13 +412,15 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
     });
   }
   function configure() {
-    const m = dialog('Cấu hình két cửa hàng'),
+    const m = dialog('Cấu hình ' + summary.drawer.name),
+      name = field('Tên két', 'text', summary.drawer.name),
       threshold = field('Ngưỡng cần Manager duyệt (VNĐ)', 'number', summary.drawer.approvalThreshold),
       opening = field('Số dư đầu kỳ (chỉ nhập một lần)', 'number', '0'),
       reason = field('Lý do đầu kỳ', 'textarea');
     threshold.input.min = '1';
     threshold.input.required = true;
-    m.body.append(threshold.box);
+    name.input.required = true;
+    m.body.append(name.box, threshold.box);
     if (!summary.drawer.openingSetAt) {
       opening.input.min = '0';
       opening.input.required = reason.input.required = true;
@@ -406,6 +435,7 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
       );
     submitForm(m, 'Lưu cấu hình', async () => {
       await api('/cash/config', 'POST', {
+        name: name.input.value,
         approvalThreshold: Number(threshold.input.value),
         ...(!summary.drawer.openingSetAt
           ? { openingAmount: Number(opening.input.value), reason: reason.input.value }
@@ -413,6 +443,21 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
       });
       m.close();
       await load();
+    });
+  }
+  function createDrawer() {
+    const m = dialog('Tạo két riêng cho quầy'),
+      registers = summary.registers || [],
+      reg = select(registers.map(r => [r.id, r.name]), registers[0]?.id),
+      name = field('Tên két', 'text', registers[0] ? 'Két ' + registers[0].name : '');
+    reg.addEventListener('change', () => { name.input.value = 'Két ' + (registers.find(r => r.id === reg.value)?.name || ''); });
+    name.input.required = true;
+    m.body.append(labeled('Quầy bán hàng', reg), name.box,
+      el('p', 'cash-note', 'Két mới chưa có số dư đầu kỳ. Manager nhập tiền thực tế riêng tại Cấu hình két. Chỉ tách quầy chưa có ca; giữ nguyên cấu hình và lịch sử két cũ.'));
+    const requestKey = crypto.randomUUID();
+    submitForm(m, 'Tạo két riêng', async () => {
+      const d = await api('/cash/drawers', 'POST', { key: requestKey, name: name.input.value, registerId: reg.value });
+      drawerId = d.id; m.close(); await load();
     });
   }
   function report(container, d) {
@@ -505,8 +550,10 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
     });
   }
   async function shifts() {
-    const data = await api('/cash/shifts?offset=' + offset),
-      box = content();
+    const version = ++listVersion;
+    const data = await api('/cash/shifts?offset=' + offset);
+    if (version !== listVersion) return;
+    const box = content();
     box.replaceChildren();
     const { t, body } = table(['Nhân viên', 'Mở ca', 'Đóng ca', 'Đầu ca', 'Thực đếm', '']);
     for (const s of data.items) {
@@ -554,8 +601,10 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
       );
   }
   async function reconciliations() {
-    const data = await api('/cash/reconciliations?offset=' + offset),
-      box = content();
+    const version = ++listVersion;
+    const data = await api('/cash/reconciliations?offset=' + offset);
+    if (version !== listVersion) return;
+    const box = content();
     box.replaceChildren();
     const { t, body } = table(['Mã', 'Người kết ca', 'Theo sổ', 'Thực đếm', 'Lệch', 'Trạng thái', '']);
     for (const r of data.items) {
@@ -643,7 +692,8 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
   return {
     load,
     closeCurrent: async () => {
-      summary = await api('/cash');
+      summary = await request('/cash');
+      drawerId = summary.drawer.id;
       if (!summary.ownShift) throw Error('Bạn chưa có ca đang mở.');
       await closeShift();
     },

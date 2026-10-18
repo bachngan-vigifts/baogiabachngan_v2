@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
 import { setup } from '../helpers/pos-fixture.ts';
 import { cashEntries, cashDrawers, cashReconciliations } from '../../src/modules/sales/cash-schema.ts';
-import { posShifts } from '../../src/modules/sales/pos-schema.ts';
+import { posRegisters, posShifts } from '../../src/modules/sales/pos-schema.ts';
 import { customerPayments, deliveries } from '../../src/modules/sales/schema.ts';
 import { employees, credentials } from '../../src/modules/staff/schema.ts';
 import { auditLogs } from '../../src/core/db/schema.ts';
@@ -17,6 +17,60 @@ const entry = (kind = 'other_income', amount = 100000) => ({
   reason: 'Phiếu kiểm thử',
 });
 const range = '?from=2026-01-01&to=2027-01-01';
+test('Hai két riêng: đầu kỳ không sao chép, ca mở độc lập, số dư/phiếu/tra soát không lẫn quầy', async () => {
+  const f = await setup();
+  await f.db.update(posRegisters).set({ name: 'Quầy Lock' }).where(eq(posRegisters.id, f.registerId));
+  const ml = await f.call('/pos/registers', f.mgr, 'POST', {
+    name: 'Quầy Minh Long', warehouseId: 'pos-wh', pricePolicyId: 'retail-vat', secondPricePolicyId: 'retail',
+  });
+  const lockKey = crypto.randomUUID(), mlKey = crypto.randomUUID();
+  const create = (key: string, name: string, registerId: string, cookie = f.mgr) => f.call('/cash/drawers', cookie, 'POST', { key, name, registerId });
+  assert.equal((await create(lockKey, 'Két Lock', f.registerId, f.emp)).status, 403);
+  assert.equal((await create(lockKey, 'Két Lock', f.registerId)).status, 201);
+  assert.equal((await create(lockKey, 'Két Lock', f.registerId)).status, 201);
+  assert.equal((await create(mlKey, 'Két Minh Long', ml.data.id)).status, 201);
+  const lock = '?drawerId=' + lockKey, other = '?drawerId=' + mlKey;
+  assert.equal((await f.call('/cash' + lock, f.mgr)).data.drawer.openingAmount, null);
+  assert.equal((await f.call('/cash' + other, f.mgr)).data.drawer.openingAmount, null);
+  assert.equal((await f.db.select().from(cashDrawers).where(eq(cashDrawers.id, 'store')))[0]!.openingAmount, 500000);
+  assert.equal((await f.call('/cash', f.mgr)).data.drawers.length, 2);
+  assert.equal((await f.call('/cash/config' + lock, f.mgr, 'POST', { openingAmount: 200000, reason: 'Két Lock' })).status, 200);
+  assert.equal((await f.call('/cash/config' + other, f.mgr, 'POST', { openingAmount: 700000, reason: 'Két ML' })).status, 200);
+  const open = (registerId: string, cash: number, cookie: string) => f.call('/pos/shifts/open', cookie, 'POST', { key: crypto.randomUUID(), registerId, openingCash: cash, counts: [{ sku: '00123', countedQty: 10 }] });
+  const s1 = await open(f.registerId, 200000, f.emp), s2 = await open(ml.data.id, 700000, f.other);
+  assert.equal(s1.status, 201, JSON.stringify(s1.data));
+  assert.equal(s2.status, 201, JSON.stringify(s2.data));
+  assert.equal(s1.data.cashDrawerId, lockKey);
+  assert.equal(s2.data.cashDrawerId, mlKey);
+  const e = await f.call('/cash/entries' + lock, f.emp, 'POST', entry('other_income', 100000));
+  assert.equal(e.status, 201, JSON.stringify(e.data));
+  assert.equal((await f.call('/cash/entries' + other, f.emp, 'POST', entry())).status, 409);
+  assert.equal((await f.call('/cash' + lock, f.mgr)).data.balance, 300000);
+  assert.equal((await f.call('/cash' + other, f.mgr)).data.balance, 700000);
+  assert.equal((await f.call('/cash/entries' + range + '&drawerId=' + mlKey, f.mgr)).data.entries.length, 0);
+  assert.equal((await f.call('/cash/entries' + range + '&drawerId=' + lockKey, f.mgr)).data.entries.length, 1);
+  assert.equal((await f.call('/cash/shifts' + other, f.mgr)).data.items.length, 1);
+  const closed = await f.call('/cash/shifts/' + s1.data.id + '/close', f.emp, 'POST', { countedCash: 290000, reasonCode: 'counting' });
+  assert.equal(closed.status, 200, JSON.stringify(closed.data));
+  assert.equal((await f.call('/cash' + lock, f.mgr)).data.nextOpeningCash, 290000);
+  assert.equal((await f.call('/cash' + lock, f.mgr)).data.openReconciliations, 1);
+  assert.equal((await f.call('/cash' + other, f.mgr)).data.openReconciliations, 0);
+  assert.equal((await f.call('/cash/reconciliations' + other, f.mgr)).data.items.length, 0);
+  assert.equal((await create(crypto.randomUUID(), 'Đổi két', f.registerId)).status, 409);
+  const sale = await f.call('/pos/checkout', f.other, 'POST', f.cart(s2.data.id, { registerId: ml.data.id }));
+  assert.equal(sale.status, 201, JSON.stringify(sale.data));
+  assert.equal((await f.call('/cash' + other, f.mgr)).data.balance, 894400);
+  assert.equal((await f.call('/cash' + lock, f.mgr)).data.balance, 300000);
+  const [receipt] = await f.db.select().from(customerPayments).where(eq(customerPayments.orderId, sale.data.id));
+  assert.equal((await f.call('/payments/' + receipt!.id + '/void', f.mgr, 'POST', { reason: 'Kiểm tra ghi thu đúng két' })).status, 200);
+  const next = await open(f.registerId, 290000, f.emp);
+  assert.equal(next.status, 201, JSON.stringify(next.data));
+  const repayment = { orderId: sale.data.id, key: crypto.randomUUID(), amount: 194400, method: 'cash', confirmed: true };
+  await f.db.update(employees).set({ role: 'manager' }).where(eq(employees.id, 'emp'));
+  const wrong = await f.call('/payments', f.emp, 'POST', repayment);
+  assert.equal(wrong.status, 409, JSON.stringify(wrong.data));
+  assert.equal((await f.call('/payments', f.other, 'POST', repayment)).status, 201);
+});
 async function account(
   f: Awaited<ReturnType<typeof setup>>,
   id: string,

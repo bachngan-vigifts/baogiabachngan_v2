@@ -675,6 +675,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       note = field('Ghi chú ca'),
       counts = el('div', 'pos-opening-counts');
     m.dlg.classList.add('pos-open-shift');
+    reg.setAttribute('aria-label', 'Quầy bán hàng');
+    template.setAttribute('aria-label', 'Ca làm việc');
     const heading = el('header', 'pos-shift-heading');
     heading.append(
       el('span', 'pos-shift-badge', 'BẮT ĐẦU CA LÀM VIỆC'),
@@ -682,8 +684,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       el('p', 'pos-note', user().name + ' · ' + when(new Date())),
     );
     m.body.replaceChildren(heading, m.form);
-    const drawer = await api('/cash'),
-      openingCash = Number(drawer.nextOpeningCash ?? 0);
+    const drawer = await api('/cash?registerId=' + encodeURIComponent(reg.value));
+    let openingCash = Number(drawer.nextOpeningCash ?? 0);
     cash.input.type = 'text';
     cash.input.value = openingCash.toLocaleString('vi-VN');
     cash.input.readOnly = true;
@@ -716,9 +718,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     let products = [],
       seq = 0;
     const getCounts = async () => {
+      b.disabled = true;
       const n = ++seq,
-        d = await api('/pos/opening-counts?registerId=' + encodeURIComponent(reg.value));
+        registerId = reg.value,
+        [d, cashState] = await Promise.all([
+          api('/pos/opening-counts?registerId=' + encodeURIComponent(registerId)),
+          api('/cash?registerId=' + encodeURIComponent(registerId)),
+        ]);
       if (n !== seq) return;
+      openingCash = Number(cashState.nextOpeningCash ?? 0);
+      cash.input.value = openingCash.toLocaleString('vi-VN');
       products = d.counts;
       counts.replaceChildren(
         ...products.map((p) => {
@@ -746,6 +755,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       );
       if (!products.length)
         counts.append(el('p', 'pos-count-empty', 'Quầy này chưa có sản phẩm trong danh sách kiểm đếm nhanh.'));
+      b.disabled = false;
     };
     reg.addEventListener('change', () => run(getCounts));
     const b = el('button', 'btn primary', 'Bắt đầu bán');
