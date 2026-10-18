@@ -668,24 +668,45 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       ),
       cash = field('Tiền đầu ca trong két', 'number', '0'),
       note = field('Ghi chú ca'),
-      counts = el('div');
-    const drawer = await api('/cash');
-    cash.input.value = drawer.nextOpeningCash ?? 0;
+      counts = el('div', 'pos-opening-counts');
+    m.dlg.classList.add('pos-open-shift');
+    const heading = el('header', 'pos-shift-heading');
+    heading.append(
+      el('span', 'pos-shift-badge', 'BẮT ĐẦU CA LÀM VIỆC'),
+      el('h2', '', 'Mở ca bán hàng'),
+      el('p', 'pos-note', user().name + ' · ' + when(new Date())),
+    );
+    m.body.replaceChildren(heading, m.form);
+    const drawer = await api('/cash'),
+      openingCash = Number(drawer.nextOpeningCash ?? 0);
+    cash.input.type = 'text';
+    cash.input.value = openingCash.toLocaleString('vi-VN');
     cash.input.readOnly = true;
     cash.input.min = '0';
     cash.input.required = true;
-    m.form.append(
-      el('p', '', user().name),
-      el('p', 'pos-note', 'Quầy'),
-      reg,
-      el('p', 'pos-note', 'Ca làm việc'),
-      template,
+    const content = el('div', 'pos-shift-content'),
+      choices = el('div', 'pos-shift-choices'),
+      registerField = el('label', 'pos-field'),
+      templateField = el('label', 'pos-field'),
+      opening = el('section', 'pos-shift-opening'),
+      stock = el('section', 'pos-shift-stock');
+    registerField.append(el('span', '', 'Quầy bán hàng'), reg);
+    templateField.append(el('span', '', 'Ca làm việc'), template);
+    choices.append(registerField, templateField);
+    cash.box.classList.add('pos-opening-money');
+    cash.box.append(el('span', 'pos-money-unit', 'VNĐ'));
+    opening.append(
       cash.box,
-      el('p', 'pos-note', 'Tiền đầu ca kế thừa từ tiền thực đếm ca trước; ca đầu lấy số dư Manager đã chốt.'),
-      el('h3', '', 'Đếm nhanh tồn kho'),
-      counts,
-      note.box,
+      el('p', 'pos-note', 'Tiền bàn giao từ số thực đếm ca trước. Ca đầu tiên dùng số dư đầu kỳ Manager đã chốt.'),
     );
+    stock.append(
+      el('h3', '', 'Kiểm đếm nhanh tồn kho'),
+      el('p', 'pos-note', 'Nhập số lượng thực tế để đối chiếu với sổ kho.'),
+      counts,
+    );
+    note.input.placeholder = 'Ghi chú bàn giao hoặc lưu ý trong ca (nếu có)';
+    content.append(choices, opening, stock, note.box);
+    m.form.append(content);
     if (!st.options.templates.length) template.append(new Option('Ca sáng 08:00–14:00', ''));
     let products = [],
       seq = 0;
@@ -704,15 +725,29 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           inp.required = true;
           inp.value = p.qty;
           p.input = inp;
-          row.append(el('span', '', p.name + ' · sổ ' + p.qty), inp);
+          inp.setAttribute('aria-label', 'Tồn thực tế ' + p.name);
+          const info = el('span', 'pos-count-name'),
+            status = el('small', 'pos-count-status', 'Khớp');
+          info.append(el('b', '', p.name), el('small', 'pos-note', 'Theo sổ: ' + p.qty));
+          status.setAttribute('aria-live', 'polite');
+          inp.addEventListener('input', () => {
+            const difference = Number(inp.value) - p.qty;
+            status.textContent = inp.value === '' ? 'Chưa nhập' : difference === 0 ? 'Khớp' : 'Lệch ' + difference;
+            status.classList.toggle('pos-danger', inp.value === '' || difference !== 0);
+          });
+          row.append(info, inp, status);
           return row;
         }),
       );
+      if (!products.length)
+        counts.append(el('p', 'pos-count-empty', 'Quầy này chưa có sản phẩm trong danh sách kiểm đếm nhanh.'));
     };
     reg.addEventListener('change', () => run(getCounts));
     const b = el('button', 'btn primary', 'Bắt đầu bán');
     b.type = 'submit';
-    m.form.append(b, button('Huỷ', 'btn secondary', m.close));
+    const footer = el('div', 'pos-shift-footer');
+    footer.append(button('Huỷ', 'btn secondary', m.close), b);
+    m.form.append(footer);
     const requestKey = key();
     m.form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -723,7 +758,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
             key: requestKey,
             registerId: reg.value,
             templateId: template.value,
-            openingCash: Number(cash.input.value),
+            openingCash,
             note: note.input.value,
             counts: products.map((p) => ({ sku: p.sku, countedQty: Number(p.input.value) })),
           });
