@@ -276,6 +276,7 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
     cash,
     transfer,
     manual: drawer.manual,
+    bookAdjustments: drawer.bookAdjustments,
     pendingEntries: drawer.pending,
     cashSales: drawer.cashSales,
     cashCod: drawer.cashCod,

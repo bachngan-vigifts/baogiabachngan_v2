@@ -155,7 +155,7 @@ test('POS: lệch tiền mặt khác 0 phải có lý do; kết ca idempotent v�
   assert.equal((await call('/pos/shifts/' + s.id, emp)).data.cashDifference, -1);
 });
 test('POS: COD chưa thu không vào két, được kết ca; thu ca sau chỉ ghi một lần vào ca hiện tại', async () => {
-  const { db, call, emp, mgr, open, cart } = await setup(),
+  const { db, call, emp, mgr, other, open, cart } = await setup(),
     s = await open();
   const order = await call(
     '/pos/checkout',
@@ -189,16 +189,16 @@ test('POS: COD chưa thu không vào két, được kết ca; thu ca sau chỉ g
   assert.equal(report.data.cod.pending.amount, 194400);
   const closed = await call('/pos/shifts/' + s.id + '/close', emp, 'POST', { countedCash: 500000 });
   assert.equal(closed.status, 200, JSON.stringify(closed.data));
-  const next = await open(emp, 0),
+  const next = await open(other, 0),
     b = { shiftId: next.id, key: crypto.randomUUID(), method: 'cash', confirmed: true };
   const [a, r] = await Promise.all([
-    call('/pos/cod/' + delivery.id + '/collect', emp, 'POST', b),
-    call('/pos/cod/' + delivery.id + '/collect', emp, 'POST', b),
+    call('/pos/cod/' + delivery.id + '/collect', other, 'POST', b),
+    call('/pos/cod/' + delivery.id + '/collect', other, 'POST', b),
   ]);
   assert.equal(a.status, 201, JSON.stringify(a.data));
   assert.equal(r.status, 201, JSON.stringify(r.data));
   assert.equal(a.data.id, r.data.id);
-  const current = await call('/pos/shifts/' + next.id, emp);
+  const current = await call('/pos/shifts/' + next.id, other);
   assert.equal(current.data.cash, 194400);
   assert.equal(current.data.cod.pending.count, 0);
   assert.equal((await call('/pos/shifts/' + s.id, emp)).data.cod.pending.count, 1, 'báo cáo ca cũ giữ nguyên');

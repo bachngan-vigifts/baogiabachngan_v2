@@ -3233,7 +3233,7 @@ async function openOrder(id) {
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
   $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
-  $('#order-new-payment').hidden = o.channel === 'pos' || o.status === 'cancelled' || o.status === 'draft' || r.balance <= 0;
+  $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || o.status === 'draft' || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
     ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
@@ -3841,7 +3841,7 @@ $('#delivery-form').addEventListener('submit', async e => {
   } catch (ex) { err.textContent = ex.message; }
 });
 $('#order-new-payment').addEventListener('click', () => {
-  const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); $('#payment-error').textContent = '';
+  const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); f.dataset.requestKey=crypto.randomUUID(); $('#payment-pos-confirm').hidden=sales.order.channel!=='pos'; f.confirmed.required=sales.order.channel==='pos'; f.method.querySelector('option[value=other]').disabled=sales.order.channel==='pos'; $('#payment-error').textContent = '';
   $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
   $('#payment-dialog').showModal();
 });
@@ -3850,7 +3850,7 @@ $('#payment-form').addEventListener('submit', async e => {
   if (btn?.disabled) return;
   if (btn) btn.disabled = true; // chống bấm hai lần ghi trùng phiếu thu
   try {
-    await api('/payments', 'POST', { orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value });
+    await api('/payments', 'POST', { key:f.dataset.requestKey, confirmed:f.confirmed.checked, orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value });
     $('#payment-dialog').close(); toast('Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; } finally { if (btn) btn.disabled = false; }
 });

@@ -27,13 +27,13 @@ Manager cấu hình quầy (kho thật đã chốt đầu kỳ, đúng hai bản
 4. Số tiền từ ngưỡng cấu hình trở lên ở trạng thái **Chờ duyệt**, chưa vào két. Manager duyệt; người tạo không tự duyệt, kể cả người tạo là Manager. Muốn bỏ phiếu chờ thì Manager/Kế toán huỷ có lý do.
 5. **Kết ca** nhập tổng tiền thực đếm; không đếm theo mệnh giá. Nếu còn phiếu chờ duyệt thì hiện danh sách và chặn kết. Lệch khác 0 chọn Đếm sai/Đưa nhầm tiền/Thiếu tiền lẻ/Khác; chọn Khác cần ghi chú. Kết ca ghi snapshot và mở một tra soát, gọi lặp không sinh trùng. In báo cáo K80 hoặc xem/in lại trong tab Ca.
 
-Số dư toàn két = đầu kỳ + toàn bộ thu tiền mặt hợp lệ + thu/chi thủ công đã ghi. Không cộng đầu ca bàn giao thành một khoản thu mới. Tiền theo sổ trong ca = đầu ca kế thừa + thu tiền mặt/COD + thu thủ công − chi thủ công. Nếu ca trước bị lệch, hai số có thể khác; hệ thống không tự bù lệch.
+Số dư toàn két = đầu kỳ + toàn bộ thu tiền mặt hợp lệ + thu/chi thủ công đã ghi. Không cộng đầu ca bàn giao thành một khoản thu mới. Tiền theo sổ trong ca = đầu ca kế thừa + thu tiền mặt/COD + thu thủ công − chi thủ công. Nếu ca trước bị lệch, hai số có thể khác; hệ thống không tự bù lệch. Phiếu Điều chỉnh két sửa số dư theo sổ, không phải giao nhận tiền thực, nên tách khỏi công thức tiền thực của ca mới. Nếu có nhận/chi tiền thật, dùng Thu/Rút két hoặc Chi/Nộp két tương ứng. Nhờ vậy không tính lệch cũ thêm một lần sau khi ca mới đã kế thừa số đếm.
 
 Sau thời điểm Manager kích hoạt số đầu kỳ, phiếu thu tiền mặt tại trang công nợ cũng cần ca đang mở của người thu và ghi ngày thực thu hôm nay. Các phiếu lịch sử trước kích hoạt giữ nguyên, không tự gán vào két mới.
 
 ## Huỷ và tra soát
 
-Manager hoặc quyền `payments.void` (mặc định Kế toán) huỷ phiếu có lý do. Phiếu vẫn hiện gạch ngang, không tính vào số dư hiện tại. Huỷ một phiếu trong ca đã kết giữ nguyên báo cáo/tiền đếm của ca đó, mở hoặc mở lại tra soát liên quan; không sửa đầu ca kế tiếp. Huỷ ghi nhận không tự hoàn tiền thực tế hay nhập lại hàng.
+Manager hoặc quyền `payments.void` (mặc định Kế toán) huỷ phiếu có lý do. Phiếu vẫn hiện gạch ngang, không tính vào số dư hiện tại. Huỷ một phiếu trong ca đã kết giữ nguyên báo cáo/tiền đếm của ca đó, mở hoặc mở lại tra soát liên quan; không sửa đầu ca kế tiếp. Huỷ ghi nhận không tự hoàn tiền thực tế hay nhập lại hàng. Đơn POS bán tại quầy còn nợ sau huỷ có thể ghi lại phiếu thu tại chi tiết đơn: phải có ca đang mở, xác nhận thực nhận, tiền nguyên VNĐ và mã chống lặp; không tạo lại đơn/xuất kho. COD vẫn thu qua đúng chuyến giao trong POS.
 
 Nhân viên kết ca ghi giải trình. Manager đóng sau giải trình và bắt buộc nêu lý do. Đóng tra soát không tự sửa sổ. Nếu cần điều chỉnh tiền, Manager lập phiếu Điều chỉnh két có lý do và tham chiếu mã TS. Mỗi ca có một tra soát; nhiều lần huỷ sau kết ca cập nhật vấn đề trên cùng tra soát và lưu từng sự kiện audit.
 

@@ -310,7 +310,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         try {
           printPos(d);
         } catch {
-          toast('Đơn đã lưu. Bấm In lại bill nếu máy in chưa sẵn sàng.', 'err');
+          toast('Chưa in được bill tạm. Kiểm tra máy in rồi thử lại.', 'err');
         }
       }),
     );

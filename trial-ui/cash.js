@@ -323,6 +323,14 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
           ' cần Manager khác người tạo duyệt; chưa tính vào két khi chờ.',
       ),
     );
+    if (adjustment)
+      m.body.append(
+        el(
+          'p',
+          'cash-warning',
+          'Điều chỉnh chỉ sửa số dư theo sổ, không ghi thêm thu/chi tiền thực vào ca đã kế thừa số đếm.',
+        ),
+      );
     if (recId) m.body.append(el('p', '', 'Phiếu tham chiếu tra soát đang xem.'));
     submitForm(m, 'Lưu phiếu', async () => {
       let img;
@@ -422,6 +430,16 @@ export function initCash({ root, api, user, toast, go, onShiftClosed = async () 
       r.append(el('span', '', label), el('b', '', money(value)));
       container.append(r);
     }
+    for (const a of d.bookAdjustments || [])
+      container.append(
+        el(
+          'p',
+          'cash-note',
+          'Điều chỉnh sổ quỹ ' +
+            money(a.direction === 'in' ? a.amount : -a.amount) +
+            '; không có thu/chi tiền thực trong ca.',
+        ),
+      );
     container.append(
       el(
         'p',
