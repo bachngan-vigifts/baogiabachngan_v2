@@ -48,6 +48,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     products: [],
     offset: 0,
     request: 0,
+    showMenu: false,
   };
   let searchTimer,
     previewTimer,
@@ -145,7 +146,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   }
   function draw() {
     root.replaceChildren();
-    const page = el('div', 'pos-page'),
+    const page = el('div', 'pos-page' + (st.showMenu ? ' pos-show-menu' : '')),
       head = el('div', 'pos-head'),
       title = el('div'),
       tools = el('div', 'pos-head-tools');
@@ -158,6 +159,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       ),
     );
     head.append(title, tools);
+    const menu = button('☰ Menu CRM', 'btn secondary pos-menu-toggle', () => {
+      st.showMenu = !st.showMenu;
+      page.classList.toggle('pos-show-menu', st.showMenu);
+      menu.setAttribute('aria-expanded', String(st.showMenu));
+    });
+    menu.setAttribute('aria-expanded', String(st.showMenu));
+    title.append(menu);
     page.append(head);
     tools.append(
       button('Báo cáo ca', 'btn secondary', () => run(history)),
@@ -198,8 +206,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       page.append(warn);
     }
     const layout = el('div', 'pos-layout'),
-      left = el('section', 'pos-card'),
-      right = el('section', 'pos-card'),
+      left = el('section', 'pos-card pos-catalog'),
+      right = el('section', 'pos-card pos-checkout'),
       searchBox = el('div', 'pos-search');
     const input = el('input');
     input.type = 'search';
@@ -254,7 +262,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       invalidate();
       run(() => search(false));
     });
-    right.append(el('span', 'pos-note', 'Chính sách giá'), price);
+    const priceField = el('label', 'pos-policy');
+    priceField.append(el('span', 'pos-note', 'Chính sách giá'), price);
+    right.append(priceField);
     nodes.lines = el('div', 'pos-lines');
     right.append(nodes.lines);
     nodes.totals = el('div', 'pos-totals');
@@ -317,10 +327,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.qr = button('Hiện QR', 'btn secondary', () => run(qr));
     nodes.pay = button('Thu tiền & in', 'btn primary', () => pay(false));
     actions.append(nodes.temp, nodes.qr, nodes.pay);
+    const help = el('details', 'pos-help');
+    help.append(
+      el('summary', '', 'Lưu ý bill tạm và chuyển khoản'),
+      el('p', 'pos-note', 'Bill tạm chưa thanh toán, không trừ kho. VietQR chỉ là yêu cầu; cần xác nhận đã nhận tiền.'),
+    );
     right.append(
       actions,
-      button('Tạo đơn Ship COD', 'btn secondary', () => run(() => pay(true))),
-      el('p', 'pos-note', 'Bill tạm chưa thanh toán, không trừ kho. VietQR chỉ là yêu cầu; cần xác nhận đã nhận tiền.'),
+      button('Tạo đơn Ship COD', 'btn secondary pos-cod-create', () => run(() => pay(true))),
+      help,
     );
     layout.append(left, right);
     page.append(layout);
@@ -494,11 +509,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         b.append(im);
       } else b.append(el('span', 'pos-image-empty', 'Sản phẩm'));
       b.append(
-        el('b', '', p.name),
-        el('small', '', p.sku),
+        el('b', 'pos-product-name', p.name),
+        el('small', 'pos-product-sku', p.sku),
         el('strong', '', money(p.price)),
-        el('small', p.available <= 0 ? 'pos-danger' : '', p.available <= 0 ? 'Hết hàng' : 'Khả dụng ' + p.available),
+        el('small', p.available <= 0 ? 'pos-danger' : '', p.available <= 0 ? 'Hết hàng' : 'Tồn ' + p.available),
       );
+      b.title = p.name + ' · ' + p.sku;
       b.disabled = !active() || p.available <= 0 || !!st.pending;
       nodes.grid.append(b);
     }
@@ -652,24 +668,45 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       ),
       cash = field('Tiền đầu ca trong két', 'number', '0'),
       note = field('Ghi chú ca'),
-      counts = el('div');
-    const drawer = await api('/cash');
-    cash.input.value = drawer.nextOpeningCash ?? 0;
+      counts = el('div', 'pos-opening-counts');
+    m.dlg.classList.add('pos-open-shift');
+    const heading = el('header', 'pos-shift-heading');
+    heading.append(
+      el('span', 'pos-shift-badge', 'BẮT ĐẦU CA LÀM VIỆC'),
+      el('h2', '', 'Mở ca bán hàng'),
+      el('p', 'pos-note', user().name + ' · ' + when(new Date())),
+    );
+    m.body.replaceChildren(heading, m.form);
+    const drawer = await api('/cash'),
+      openingCash = Number(drawer.nextOpeningCash ?? 0);
+    cash.input.type = 'text';
+    cash.input.value = openingCash.toLocaleString('vi-VN');
     cash.input.readOnly = true;
     cash.input.min = '0';
     cash.input.required = true;
-    m.form.append(
-      el('p', '', user().name),
-      el('p', 'pos-note', 'Quầy'),
-      reg,
-      el('p', 'pos-note', 'Ca làm việc'),
-      template,
+    const content = el('div', 'pos-shift-content'),
+      choices = el('div', 'pos-shift-choices'),
+      registerField = el('label', 'pos-field'),
+      templateField = el('label', 'pos-field'),
+      opening = el('section', 'pos-shift-opening'),
+      stock = el('section', 'pos-shift-stock');
+    registerField.append(el('span', '', 'Quầy bán hàng'), reg);
+    templateField.append(el('span', '', 'Ca làm việc'), template);
+    choices.append(registerField, templateField);
+    cash.box.classList.add('pos-opening-money');
+    cash.box.append(el('span', 'pos-money-unit', 'VNĐ'));
+    opening.append(
       cash.box,
-      el('p', 'pos-note', 'Tiền đầu ca kế thừa từ tiền thực đếm ca trước; ca đầu lấy số dư Manager đã chốt.'),
-      el('h3', '', 'Đếm nhanh tồn kho'),
-      counts,
-      note.box,
+      el('p', 'pos-note', 'Tiền bàn giao từ số thực đếm ca trước. Ca đầu tiên dùng số dư đầu kỳ Manager đã chốt.'),
     );
+    stock.append(
+      el('h3', '', 'Kiểm đếm nhanh tồn kho'),
+      el('p', 'pos-note', 'Nhập số lượng thực tế để đối chiếu với sổ kho.'),
+      counts,
+    );
+    note.input.placeholder = 'Ghi chú bàn giao hoặc lưu ý trong ca (nếu có)';
+    content.append(choices, opening, stock, note.box);
+    m.form.append(content);
     if (!st.options.templates.length) template.append(new Option('Ca sáng 08:00–14:00', ''));
     let products = [],
       seq = 0;
@@ -688,15 +725,29 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           inp.required = true;
           inp.value = p.qty;
           p.input = inp;
-          row.append(el('span', '', p.name + ' · sổ ' + p.qty), inp);
+          inp.setAttribute('aria-label', 'Tồn thực tế ' + p.name);
+          const info = el('span', 'pos-count-name'),
+            status = el('small', 'pos-count-status', 'Khớp');
+          info.append(el('b', '', p.name), el('small', 'pos-note', 'Theo sổ: ' + p.qty));
+          status.setAttribute('aria-live', 'polite');
+          inp.addEventListener('input', () => {
+            const difference = Number(inp.value) - p.qty;
+            status.textContent = inp.value === '' ? 'Chưa nhập' : difference === 0 ? 'Khớp' : 'Lệch ' + difference;
+            status.classList.toggle('pos-danger', inp.value === '' || difference !== 0);
+          });
+          row.append(info, inp, status);
           return row;
         }),
       );
+      if (!products.length)
+        counts.append(el('p', 'pos-count-empty', 'Quầy này chưa có sản phẩm trong danh sách kiểm đếm nhanh.'));
     };
     reg.addEventListener('change', () => run(getCounts));
     const b = el('button', 'btn primary', 'Bắt đầu bán');
     b.type = 'submit';
-    m.form.append(b, button('Huỷ', 'btn secondary', m.close));
+    const footer = el('div', 'pos-shift-footer');
+    footer.append(button('Huỷ', 'btn secondary', m.close), b);
+    m.form.append(footer);
     const requestKey = key();
     m.form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -707,7 +758,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
             key: requestKey,
             registerId: reg.value,
             templateId: template.value,
-            openingCash: Number(cash.input.value),
+            openingCash,
             note: note.input.value,
             counts: products.map((p) => ({ sku: p.sku, countedQty: Number(p.input.value) })),
           });
