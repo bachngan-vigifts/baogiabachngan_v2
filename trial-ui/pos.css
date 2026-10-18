@@ -16,33 +16,35 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-  padding: 12px 20px;
-  background: #111827;
-  border-radius: 12px;
-  color: #fff;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 14px;
+  background: #e0f5e8;
+  border: 1px solid #a6dfbb;
+  border-radius: 10px;
+  color: #14532d;
 }
 .pos-head h1 {
   margin: 0;
-  color: #fff;
-  font-size: 24px;
+  color: #14532d;
+  font-size: 21px;
 }
 .pos-head > div:first-child {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 6px 14px;
+  gap: 2px 10px;
 }
 .pos-head .pos-note {
   grid-column: 1 / -1;
   grid-row: 2;
-  color: #cbd5e1;
+  color: #326b48;
+  margin: 0;
 }
 .pos-head .btn.secondary {
-  color: #fff;
-  background: transparent;
-  border-color: #788396;
+  color: #14532d;
+  background: #f5fff8;
+  border-color: #9bceac;
 }
 .pos-head .btn.primary {
   background: #168148;
@@ -55,6 +57,23 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+}
+.pos-head-tools {
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 1;
+}
+.pos-head .btn {
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.pos-head-tools > select {
+  width: auto;
+  max-width: 180px;
+  min-height: 32px;
+  padding: 4px 28px 4px 9px;
+  font-size: 12px;
 }
 .pos-layout {
   display: grid;
@@ -554,6 +573,9 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
     right: auto;
     bottom: 18px;
   }
+  body:has(#view-pos:not([hidden]) .pos-show-menu) .chat-launcher {
+    left: 260px;
+  }
 }
 @media (max-width: 1050px) {
   .pos-grid {
@@ -596,7 +618,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
     font-size: 22px;
   }
   .pos-head {
-    padding: 14px;
+    padding: 8px 12px;
   }
   .pos-head h1 {
     font-size: 21px;
