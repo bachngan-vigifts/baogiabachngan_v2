@@ -54,6 +54,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     orderStatus: 'all',
     orderQuery: '',
     orderRegisterId: '',
+    productFilter: 'all',
     offset: 0,
     request: 0,
     showMenu: false,
@@ -174,14 +175,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       head = el('div', 'pos-head'),
       title = el('div'),
       tools = el('div', 'pos-head-tools');
-    title.append(
-      el('h1', '', 'Bán hàng nhanh'),
-      el(
-        'p',
-        'pos-note',
-        `${user().name} · ${st.register?.name || 'Chưa cấu hình quầy'} · ${active() ? 'Ca đang mở' : 'Chưa mở ca'}`,
-      ),
-    );
+    title.append(el('h1', '', 'Bán hàng nhanh'), el('span', 'pos-register-name', st.register?.name || 'Chưa cấu hình quầy'));
     head.append(title, tools);
     const menu = button('☰ Menu CRM', 'btn secondary pos-menu-toggle', () => {
       st.showMenu = !st.showMenu;
@@ -191,16 +185,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     menu.setAttribute('aria-expanded', String(st.showMenu));
     title.append(menu);
     page.append(head);
-    tools.append(
-      button('Trả / Đổi / Hoàn', 'btn pos-returns-button', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()})),
-      button('Báo cáo ca', 'btn secondary', () => run(history)),
-      button('Ship COD', 'btn secondary', () => run(codList)),
-    );
-    if (st.options.canConfigure)
-      tools.append(
-        button('Cấu hình', 'btn secondary', () => configure()),
-        button('+ Quầy', 'btn secondary', () => configure(true)),
-      );
+    const template = st.options.templates?.find(t => t.id === st.shift?.templateId),
+      shiftLabel = active()
+        ? `${template?.name || 'Ca bán hàng'}${template ? ` · ${template.startsAt}–${template.endsAt}` : ''} · Đang mở`
+        : 'Chưa mở ca';
+    tools.append(el('span', 'pos-shift-status' + (active() ? ' is-open' : ''), (active() ? '● ' : '○ ') + shiftLabel));
     if (!active() && st.options.registers.length > 1) {
       const regSelect = select(
         st.options.registers.map((r) => [r.id, r.name]),
@@ -217,7 +206,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       });
       tools.append(regSelect);
     }
-    tools.append(button(active() ? 'Kết ca' : 'Mở ca', 'btn primary', () => run(active() ? closeShift : openShift)));
+    tools.append(button(active() ? 'Kết ca' : 'Mở ca', active() ? 'btn pos-close-shift' : 'btn primary', () => run(active() ? closeShift : openShift)));
+    const more = el('details', 'pos-more-menu'), moreSummary = el('summary', '', '⋯'), morePanel = el('div', 'pos-more-panel');
+    moreSummary.setAttribute('aria-label', 'Thao tác khác');
+    const menuAction = (label, fn) => { const b = button(label, 'btn ghost', () => { more.open = false; fn(); }); morePanel.append(b); };
+    menuAction('Trả / Đổi / Hoàn', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()}));
+    menuAction('Báo cáo ca', () => run(history));
+    menuAction('Ship COD', () => run(codList));
+    menuAction('In bill tạm', () => run(printTemporary));
+    menuAction('Chọn bảng giá', choosePricePolicy);
+    if (st.options.canConfigure) { menuAction('Cấu hình', () => configure()); menuAction('+ Quầy', () => configure(true)); }
+    more.append(moreSummary, morePanel); tools.append(more);
     if (!st.register) {
       page.append(el('div', 'pos-warning', 'Manager cần cấu hình quầy, kho và hai chính sách giá trước khi bán.'));
       root.append(page);
@@ -258,17 +257,22 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       input,
       button('Quét mã', 'btn secondary', () => run(scan)),
     );
-    left.append(searchBox);
+    const filters = el('div', 'pos-product-filters');
+    for (const [id, label] of [['all','Tất cả'],['available','Còn hàng'],['low','Còn ít hàng'],['out','Hết hàng']]) {
+      const b = button(label, 'btn pos-filter' + (st.productFilter === id ? ' active' : ''), () => { st.productFilter = id; renderProducts(); });
+      b.dataset.filter = id; filters.append(b);
+    }
+    left.append(searchBox, filters);
     const grid = el('div', 'pos-grid');
     nodes.grid = grid;
     left.append(grid);
     nodes.more = button('Xem thêm sản phẩm', 'btn secondary', () => run(() => search(false, true)));
     left.append(nodes.more);
-    const bh = el('div', 'pos-basket-head');
-    bh.append(
-      el('h2', '', 'Giỏ hàng'),
-      button(st.customer?.name || 'Khách lẻ · Đổi', 'btn primary pos-customer-trigger', chooseCustomer),
-    );
+    const bh = el('div', 'pos-basket-head'), basketTitle = el('div');
+    nodes.cartCount = el('span', 'pos-cart-count', `${st.cart.length} món`);
+    basketTitle.append(el('h2', '', 'Đơn hiện tại'), nodes.cartCount);
+    bh.append(basketTitle);
+    bh.append(button((st.customer?.name || 'Khách lẻ') + '   Đổi ▾', 'btn primary pos-customer-trigger', chooseCustomer));
     right.append(bh);
     nodes.customer = bh.lastChild;
     const policies = st.options.policies || [];
@@ -292,89 +296,24 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       invalidate();
       run(() => search(false));
     });
-    const priceField = el('label', 'pos-policy');
+    const priceField = el('label', 'pos-policy pos-policy-compact');
     priceField.append(el('span', 'pos-note', 'Chính sách giá'), price);
+    priceField.hidden = true;
     right.append(priceField);
     nodes.lines = el('div', 'pos-lines');
     right.append(nodes.lines);
     drawFees(right);
     nodes.totals = el('div', 'pos-totals');
     right.append(nodes.totals);
-    const methods = el('div', 'pos-pay-method');
-    for (const [id, name] of [
-      ['cash', 'Tiền mặt'],
-      ['transfer', 'Chuyển khoản'],
-    ]) {
-      const b = button(name, 'btn secondary', () => {
-        st.method = id;
-        drawMethods();
-        refreshPay();
-      });
-      b.dataset.method = id;
-      methods.append(b);
-    }
-    nodes.methods = methods;
-    right.append(methods);
-    const tender = el('div', 'pos-tender'),
-      f = field('Khách đưa', 'number');
-    f.input.min = '0';
-    f.input.step = '1';
-    f.input.inputMode = 'numeric';
-    f.input.addEventListener('input', refreshPay);
-    nodes.tender = f.input;
-    nodes.change = el('b', 'pos-change', '0 đ');
-    const cb = el('div');
-    cb.append(el('p', 'pos-note', 'Tiền thối'), nodes.change);
-    f.box.append(
-      button('Đủ tiền', 'btn secondary small', () => {
-        if (st.preview) {
-          nodes.tender.value = st.preview.payable ?? st.preview.total;
-          refreshPay();
-        }
-      }),
+    const actions = el('div', 'pos-main-actions');
+    actions.append(
+      button('Hủy đơn', 'btn secondary pos-cancel-order', cancelCurrentOrder),
+      (nodes.pay = button('THANH TOÁN', 'btn primary pos-open-payment', openPayment)),
     );
-    tender.append(f.box, cb);
-    nodes.tenderBox = tender;
-    right.append(tender);
-    nodes.transfer = el('label', 'pos-field');
-    const check = el('input');
-    check.type = 'checkbox';
-    check.checked = !!st.qr?.paid;
-    check.disabled = !!st.qr?.paid;
-    check.addEventListener('change', refreshPay);
-    nodes.confirm = check;
-    nodes.transferLabel = el('span', '', st.qr?.paid ? 'SePay đã xác nhận cửa hàng nhận đủ ' + money(st.qr.amount) : 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản');
-    nodes.transfer.append(check, nodes.transferLabel);
-    right.append(nodes.transfer);
-    const actions = el('div', 'pos-actions');
-    nodes.temp = button('In bill tạm', 'btn secondary', () =>
-      run(async () => {
-        if (!st.cart.length) return;
-        const d = await api('/pos/preview', 'POST', payload());
-        try {
-          printPos(d);
-        } catch {
-          toast('Chưa in được bill tạm. Kiểm tra máy in rồi thử lại.', 'err');
-        }
-      }),
-    );
-    nodes.qr = button('Hiện QR', 'btn secondary', () => run(qr));
-    nodes.pay = button('Thu tiền & in', 'btn primary', () => pay(false));
-    actions.append(nodes.temp, nodes.qr, nodes.pay);
-    const help = el('details', 'pos-help');
-    help.append(
-      el('summary', '', 'Lưu ý bill tạm và chuyển khoản'),
-      el('p', 'pos-note', 'Bill tạm chưa thanh toán, không trừ kho. Bấm Hiện QR để SePay tự xác nhận khi nhận đủ tiền đúng nội dung; hoặc xác nhận thực nhận thủ công.'),
-    );
-    right.append(
-      actions,
-      button('Tạo đơn Ship COD', 'btn secondary pos-cod-create', () => run(() => pay(true))),
-      help,
-    );
+    right.append(actions);
     layout.append(left, right);
     page.append(layout, orderBoard);
     root.append(page);
-    drawMethods();
     drawCart();
     refreshPay();
   }
@@ -506,11 +445,69 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     try { setOptions(province.select, await loadLocations(), 'Chọn Tỉnh / Thành phố'); }
     catch (e) { toast(e.message, 'err'); province.select.disabled = true; }
   }
+  async function printTemporary() {
+    if (!st.cart.length || !active()) return toast('Mở ca và chọn hàng trước.', 'err');
+    const d = await api('/pos/preview', 'POST', payload());
+    try { printPos(d); }
+    catch { toast('Chưa in được bill tạm. Kiểm tra máy in rồi thử lại.', 'err'); }
+  }
+  function choosePricePolicy() {
+    if (!st.register) return;
+    const m = modal('Chọn bảng giá'), policies = st.options.policies || [];
+    const choices = el('div', 'pos-price-choices');
+    for (const id of [st.register.pricePolicyId, st.register.secondPricePolicyId]) {
+      const name = policies.find(p => p.id === id)?.name || (id === st.register.pricePolicyId ? 'Giá bán lẻ (+ VAT)' : 'Giá bán lẻ');
+      const b = button(name, 'btn secondary' + (st.policy === id ? ' active' : ''), () => {
+        st.policy = id; if (nodes.policy) nodes.policy.value = id; m.close(); invalidate(); run(() => search(false));
+      });
+      choices.append(b);
+    }
+    m.body.append(choices, button('Đóng', 'btn ghost', m.close)); m.show();
+  }
+  async function cancelCurrentOrder() {
+    if (!st.cart.length) return;
+    if (!await confirmBox('Hủy toàn bộ đơn hiện tại?', { ok: 'Hủy đơn' })) return;
+    st.cart = []; st.customer = null; st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
+    draw(); if (st.register) await search(false);
+  }
+  function openPayment() {
+    if (!active() || !st.preview || !st.cart.length || st.pending || st.busy) return;
+    const m = modal('Thanh toán'); m.dlg.classList.add('pos-payment-modal');
+    const headerMeta = el('span', 'pos-payment-meta', `Đơn hiện tại · ${st.customer?.name || 'Khách lẻ'}`),
+      due = el('section', 'pos-payment-due');
+    m.body.querySelectorAll?.('h2')?.[0]?.append?.(headerMeta);
+    due.append(el('span', '', 'Cần thu'), el('strong', '', money(st.preview.payable ?? st.preview.total)));
+    const methods = el('div', 'pos-payment-methods');
+    for (const [id, name, hint] of [['cash','Tiền mặt',''],['transfer','Chuyển khoản','Tạo mã QR'],['cod','Ship COD','Thu khi giao']]) {
+      const b = button('', 'pos-payment-method', () => {
+        st.method = id === 'cod' ? 'cod' : id; drawMethods(); refreshPay();
+      });
+      b.dataset.method = id; b.append(el('b', '', name), hint ? el('span', '', hint) : el('span', '', 'Thanh toán tại quầy')); methods.append(b);
+    }
+    nodes.methods = methods;
+    const tender = el('div', 'pos-payment-cash'), moneyFields = el('div', 'pos-tender'), f = field('Khách đưa', 'number');
+    f.input.min = '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; f.input.addEventListener('input', refreshPay); nodes.tender = f.input;
+    nodes.change = el('b', 'pos-change', '0 đ'); const cb = el('div', 'pos-change-card'); cb.append(el('span', 'pos-note', 'Tiền thối lại'), nodes.change); moneyFields.append(f.box, cb);
+    const quick = el('div', 'pos-cash-quick');
+    for (const [label, value] of [['Đủ tiền','due'],['100.000',100000],['200.000',200000],['500.000',500000],['1.000.000',1000000],['Xóa',0]]) quick.append(button(label, 'btn secondary', () => { nodes.tender.value = value === 'due' ? (st.preview.payable ?? st.preview.total) : value; refreshPay(); }));
+    tender.append(moneyFields, quick); nodes.tenderBox = tender;
+    const transfer = el('section', 'pos-payment-transfer'), check = el('input'); check.type = 'checkbox'; check.checked = !!st.qr?.paid; check.disabled = !!st.qr?.paid; check.addEventListener('change', refreshPay); nodes.confirm = check;
+    nodes.transferLabel = el('span', '', st.qr?.paid ? 'SePay đã xác nhận cửa hàng nhận đủ ' + money(st.qr.amount) : 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản');
+    const confirm = el('label', 'pos-transfer-confirm'); confirm.append(check, nodes.transferLabel);
+    nodes.qr = button('Tạo mã QR', 'btn secondary pos-create-qr', () => run(qr)); transfer.append(nodes.qr, confirm); nodes.transfer = transfer;
+    const cod = el('section', 'pos-payment-cod', 'Đơn sẽ được tạo ở trạng thái chưa thu và tiếp tục nhập thông tin giao hàng.'); nodes.cod = cod;
+    const footer = el('div', 'pos-payment-footer'); nodes.temp = button('In bill tạm', 'btn secondary', () => run(printTemporary));
+    nodes.modalPay = button('Thu tiền & in bill', 'btn primary', async () => { if (st.method === 'cod') await pay(true); else await pay(false); if (!st.pending && !st.cart.length) m.close(); });
+    footer.append(nodes.temp, nodes.modalPay);
+    m.body.append(due, methods, tender, transfer, cod, footer); m.show(); drawMethods(); refreshPay();
+  }
   function drawMethods() {
+    if (!nodes.methods) return;
     for (const b of nodes.methods.querySelectorAll('button'))
       b.setAttribute('aria-pressed', String(b.dataset.method === st.method));
     nodes.tenderBox.hidden = st.method !== 'cash';
     nodes.transfer.hidden = st.method !== 'transfer';
+    if (nodes.cod) nodes.cod.hidden = st.method !== 'cod';
   }
   function add(p) {
     if (!active()) return toast('Mở ca trước khi thêm hàng.', 'err');
@@ -526,6 +523,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function drawCart() {
     cartResizeObserver?.disconnect();
     nodes.lines.replaceChildren();
+    if (nodes.cartCount) nodes.cartCount.textContent = `${st.cart.reduce((n,x)=>n+Number(x.qty||0),0)} món`;
     lineTotals = new Map();
     if (!st.cart.length) nodes.lines.append(el('p', 'pos-note', 'Tìm hoặc quét sản phẩm để thêm vào giỏ.'));
     for (const x of st.cart) {
@@ -654,15 +652,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.totals.replaceChildren();
     const d = st.preview;
     for (const [label, value] of [
-      ['Tiền hàng trước thuế', d ? money(d.subtotal - (d.fees?.subtotal || 0)) : '—'],
-      ['Chiết khấu từng dòng', d ? '−' + money(d.discount) : '—'],
+      ['Tạm tính', d ? money(d.total + d.discount) : st.cart.length ? 'Đang tính…' : '0 đ'],
+      ['Giảm giá', d ? '−' + money(d.discount) : '—'],
       ...(d?.fees?.service?.amount ? [[d.fees.service.name + ' (trước thuế)', money(d.fees.service.subtotal)]] : []),
       ['VAT', d ? money(d.tax) : '—'],
-      ['Tổng cộng', d ? money(d.total) : st.cart.length ? 'Đang tính…' : '0 đ'],
+      ['Cần thu', d ? money(d.payable ?? d.total) : st.cart.length ? 'Đang tính…' : '0 đ'],
       ...(d?.exchange?.amount ? [['Tiền đổi hàng áp dụng', '−'+money(d.exchange.amount)],['Khách cần trả thêm',money(d.payable)]]:[]),
     ]) {
-      if (label === 'Tổng cộng') nodes.totals.append(nodes.shippingField);
-      const row = el('div', 'pos-total-row' + (label === 'Tổng cộng' ? ' pos-total' : ''));
+      if (label === 'Cần thu') nodes.totals.append(nodes.shippingField);
+      const row = el('div', 'pos-total-row' + (label === 'Cần thu' ? ' pos-total' : ''));
       row.append(el('span', '', label), el('strong', '', value));
       nodes.totals.append(row);
     }
@@ -673,16 +671,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function refreshPay() {
     if (!nodes.pay) return;
     const invalid = !active() || !st.preview || !st.cart.length || !!st.pending || st.busy;
-    nodes.temp.disabled = invalid;
-    nodes.qr.disabled = invalid || (st.preview?.payable ?? st.preview?.total ?? 0)<=0;
-    nodes.pay.disabled =
+    nodes.pay.disabled = invalid;
+    if (nodes.temp) nodes.temp.disabled = invalid;
+    if (nodes.qr) nodes.qr.disabled = invalid || (st.preview?.payable ?? st.preview?.total ?? 0)<=0;
+    if (nodes.modalPay) nodes.modalPay.disabled =
       invalid ||
       (st.method === 'transfer' && !nodes.confirm.checked) ||
-      (st.method === 'cash' && Number(nodes.tender.value) < (st.preview?.payable ?? st.preview?.total ?? 0));
-    nodes.change.textContent = money(Math.max(0, Number(nodes.tender.value || 0) - (st.preview?.payable ?? st.preview?.total ?? 0)));
+      (st.method === 'cash' && Number(nodes.tender?.value || 0) < (st.preview?.payable ?? st.preview?.total ?? 0));
+    if (nodes.change) nodes.change.textContent = money(Math.max(0, Number(nodes.tender?.value || 0) - (st.preview?.payable ?? st.preview?.total ?? 0)));
     nodes.lines?.classList.toggle('pos-busy', !!st.pending || st.busy);
     for (const i of nodes.lines?.querySelectorAll('input,select,button') || []) i.disabled = !!st.pending || st.busy;
-    nodes.policy.disabled = !!st.pending || st.busy;
+    if (nodes.policy) nodes.policy.disabled = !!st.pending || st.busy;
     for (const i of [...(nodes.feeControls?.querySelectorAll('input,textarea,button') || []), ...(nodes.shippingField?.querySelectorAll('input') || [])]) i.disabled = !!st.pending || st.busy;
   }
   async function preview() {
@@ -715,8 +714,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (seq !== searchSeq) return;
     st.offset = d.nextOffset;
     st.products = more ? [...st.products, ...d.products] : d.products;
+    renderProducts();
+    nodes.more.hidden = d.nextOffset == null;
+    if (addScanned) {
+      const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
+      if (p && p.available > 0) add(p);
+      else toast('Chọn đúng sản phẩm trong danh sách.');
+    }
+  }
+  function renderProducts() {
+    if (!nodes.grid) return;
     nodes.grid.replaceChildren();
-    for (const p of st.products) {
+    for (const p of st.products.filter(p => st.productFilter === 'all' || st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0)) {
       const b = button('', 'pos-product', () => add(p));
       if (p.imageUrl && /^https:\/\//.test(p.imageUrl)) {
         const im = el('img');
@@ -729,19 +738,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         el('b', 'pos-product-name', p.name),
         el('small', 'pos-product-sku', p.sku),
         el('strong', '', money(p.price)),
-        el('small', p.available <= 0 ? 'pos-danger' : '', p.available <= 0 ? 'Hết hàng' : 'Tồn ' + p.available),
+        el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', p.available <= 0 ? 'Hết hàng' : 'Còn ' + p.available),
       );
       b.title = p.name + ' · ' + p.sku;
       b.disabled = !active() || p.available <= 0 || !!st.pending;
       nodes.grid.append(b);
     }
-    if (!st.products.length) nodes.grid.append(el('p', 'pos-note', 'Không tìm thấy sản phẩm.'));
-    nodes.more.hidden = d.nextOffset == null;
-    if (addScanned) {
-      const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
-      if (p && p.available > 0) add(p);
-      else toast('Chọn đúng sản phẩm trong danh sách.');
-    }
+    if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', 'Không có sản phẩm phù hợp.'));
   }
   async function scan() {
     const m = modal('Quét mã bằng camera'), video = el('video', 'pos-camera'),

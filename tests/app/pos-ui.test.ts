@@ -337,9 +337,11 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
     assert.deepEqual(preview.body.rows, [{ sku: '001', qty: 1, discountType: 'percent', discountValue: 0 }]);
     assert.equal(preview.body.total, undefined);
     assert.equal(ui.dirty(), true);
-    const cash = root.querySelectorAll('button').find((x) => x.textContent === 'Đủ tiền')!;
+    await root.querySelectorAll('button').find((x) => x.textContent === 'THANH TOÁN')!.fire('click');
+    const payment = doc.body.children.at(-1)!;
+    const cash = payment.querySelectorAll('button').find((x) => x.textContent === 'Đủ tiền')!;
     await cash.fire('click');
-    const pay = root.querySelectorAll('button').find((x) => x.textContent === 'Thu tiền & in')!;
+    const pay = payment.querySelectorAll('button').find((x) => x.textContent === 'Thu tiền & in bill')!;
     assert.equal(pay.disabled, false);
   } finally {
     Object.assign(globalThis, { document: prevDoc, window: prevWin });
@@ -371,7 +373,7 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
     await ui.load();
     const open = async () => {
-      await root.querySelectorAll('button').find(b => /Khách lẻ · Đổi|<b>Cô Hồng<\/b>/.test(b.textContent))!.fire('click');
+      await root.querySelectorAll('button').find(b => /Khách lẻ.*Đổi|<b>Cô Hồng<\/b>/.test(b.textContent))!.fire('click');
       await new Promise(r => setTimeout(r, 0));
       return doc.body.children.at(-1)!;
     };
@@ -472,18 +474,20 @@ test('SePay chỉ tự tích sau server xác nhận đúng QR, tiếp tục khi 
     };
     const ui = initPos({ root, api, toast: (s: string) => notices.push(s), user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
     await ui.load();
-    const customerButton = root.querySelectorAll('button').find(b => b.textContent === 'Khách lẻ · Đổi')!;
+    const customerButton = root.querySelectorAll('button').find(b => /Khách lẻ.*Đổi/.test(b.textContent))!;
     assert.ok(customerButton.className.includes('pos-customer-trigger'));
     assert.ok(customerButton.className.includes('primary'));
     const product = root.querySelectorAll('button').find(b => b.className === 'pos-product')!;
     await product.fire('click');
     await new Promise(r => setTimeout(r, 230));
-    await root.querySelectorAll('button').find(b => b.textContent === 'Chuyển khoản')!.fire('click');
-    const check = root.querySelectorAll('input').find(i => i.type === 'checkbox')!;
-    const pay = root.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in')!;
+    await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
+    const payment = doc.body.children.at(-1)!;
+    await payment.querySelectorAll('button').find(b => b.textContent.includes('Chuyển khoản'))!.fire('click');
+    const check = payment.querySelectorAll('input').find(i => i.type === 'checkbox')!;
+    const pay = payment.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in bill')!;
     assert.equal(check.checked, false);
     assert.equal(pay.disabled, true);
-    await root.querySelectorAll('button').find(b => b.textContent === 'Hiện QR')!.fire('click');
+    await payment.querySelectorAll('button').find(b => b.textContent === 'Tạo mã QR')!.fire('click');
     assert.ok(poll);
     await poll!();
     assert.equal(check.checked, false, 'Kết nối SePay nhưng chưa có tiền vẫn không tích');
@@ -494,7 +498,7 @@ test('SePay chỉ tự tích sau server xác nhận đúng QR, tiếp tục khi 
     assert.equal(check.checked, true);
     assert.equal(check.disabled, true);
     assert.equal(pay.disabled, false);
-    assert.match(root.textContent, /SePay đã xác nhận cửa hàng nhận đủ/);
+    assert.match(payment.textContent, /SePay đã xác nhận cửa hàng nhận đủ/);
     assert.ok(!calls.some(c => c.path === '/pos/checkout'), 'Chờ nhân viên bấm thu tiền');
     await pay.fire('click');
     const sent = calls.find(c => c.path === '/pos/checkout');
@@ -526,8 +530,10 @@ test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản
     await ui.load();
     await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
-    await root.querySelectorAll('button').find(b => b.textContent === 'Chuyển khoản')!.fire('click');
-    const check = root.querySelectorAll('input').find(i => i.type === 'checkbox')!;
+    await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
+    const payment = doc.body.children.at(-1)!;
+    await payment.querySelectorAll('button').find(b => b.textContent.includes('Chuyển khoản'))!.fire('click');
+    const check = payment.querySelectorAll('input').find(i => i.type === 'checkbox')!;
     check.checked = true; await check.fire('change');
     const area = root.querySelectorAll('section').find(e => e.className === 'pos-extra-fees')!;
     assert.equal(area.children.at(-2)!.textContent, 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.');
@@ -535,7 +541,7 @@ test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản
     const text = '<img src=x onerror=alert(1)>\nGiao chiều';
     note.value = text; await note.fire('input');
     assert.equal(check.checked, true);
-    await root.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in')!.fire('click');
+    await payment.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in bill')!.fire('click');
     assert.equal(calls.find(c => c.path === '/pos/checkout').body.note, text);
     const print = buildPosPrint(doc, { ...sample, note: text });
     assert.ok(print.textContent.includes('Ghi chú: ' + text));
@@ -559,7 +565,10 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
     await ui.load(); await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
-    await root.querySelectorAll('button').find(b => b.textContent === 'Tạo đơn Ship COD')!.fire('click');
+    await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
+    const payment = doc.body.children.at(-1)!;
+    await payment.querySelectorAll('button').find(b => b.textContent.includes('Ship COD'))!.fire('click');
+    await payment.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in bill')!.fire('click');
     const modal = doc.body.children.at(-1)!;
     const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
     const method = modal.querySelectorAll('select')[0]!, confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
@@ -579,5 +588,38 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
       assert.ok(bill.textContent.includes('Còn lại thu COD' + Number(remaining).toLocaleString('vi-VN') + ' đ'));
       if (!remaining) assert.match(bill.textContent, /ĐƠN GIAO HÀNG - ĐÃ THU ĐỦ/);
     }
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});
+
+test('POS mới: THANH TOÁN theo ca/giỏ, menu thường ẩn cấu hình và tiền mặt tính đúng tiền thối', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'); let opened = false;
+    const api = async (path: string) => {
+      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Quầy Lock', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }], current: opened ? { id: 's', registerId: 'r', memberId: 'emp' } : null, shifts: [], templates: [], policies: [], canConfigure: false };
+      if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 194400, available: 3 }], nextOffset: null };
+      if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
+      if (path.startsWith('/pos/orders')) return { registers: [], counts: {}, orders: [], registerId: 'r' };
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV', role: 'employee' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    let checkout = root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!;
+    assert.equal(checkout.disabled, true, 'chưa mở ca thì khóa thanh toán');
+    assert.ok(!root.textContent.includes('Cấu hình'));
+    assert.ok(!root.textContent.includes('+ Quầy'));
+    opened = true; await ui.load();
+    checkout = root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!;
+    assert.equal(checkout.disabled, true, 'giỏ trống thì khóa thanh toán');
+    await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
+    await new Promise(r => setTimeout(r, 230));
+    assert.equal(checkout.disabled, false);
+    await checkout.fire('click');
+    const payment = doc.body.children.at(-1)!;
+    const tender = payment.querySelectorAll('input').find(i => i.type === 'number')!;
+    tender.value = '200000'; await tender.fire('input');
+    assert.match(payment.textContent, /5\.600 đ/);
+    assert.equal(payment.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in bill')!.disabled, false);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
