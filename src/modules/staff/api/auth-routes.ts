@@ -37,6 +37,7 @@ export interface StaffEnv {
   sapoHdktOrderWebhookUrl?: string;
   sapoPosOrderWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
+  sepayPosApiKeyHash?: string;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
   waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */
@@ -84,6 +85,15 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
   const area = c.meta as Area;
   if (area === 'public') return;
   if (area === 'sapo-sync') return checkSyncToken(c);
+  if (area === 'sepay-sync') {
+    const auth = c.req.headers.get('authorization') || '';
+    const key = /^Apikey\s+(.+)$/i.exec(auth)?.[1] || '';
+    const got = sha256Hex(key), want = c.env.sepayPosApiKeyHash || '5e2dac2cebd194b4aeaa945c9dd01ee50c3f474b99c8851cd32d2bea95c7d5d0';
+    let diff = got.length ^ want.length;
+    for (let i = 0; i < want.length; i++) diff |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
+    if (diff) throw new AppError(401, 'Webhook SePay không hợp lệ.');
+    return;
+  }
   if (area === 'synctime-sync') {
     if (!options.authorizeSynctime) throw new AppError(503, 'Chưa cấu hình xác thực SyncTime.');
     return options.authorizeSynctime(c.req, c.env.db);

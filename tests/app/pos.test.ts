@@ -165,6 +165,28 @@ test('POS production: checkout gửi đúng số đơn, chi nhánh và nhân vi�
   assert.equal(replay.status, 201);
   assert.equal(f.hooks.length, 1);
 });
+test('POS SePay: đúng mã, tài khoản và số tiền thì tự xác nhận QR; sai tiền không ghi nhận', async () => {
+  const f = await setup(), s = await f.open(), b = f.cart(s.id), qr = await f.call('/pos/qr', f.emp, 'POST', b);
+  assert.equal(qr.status, 200, JSON.stringify(qr.data));
+  const webhook = async (amount: number) => {
+    const r = await f.router.handle(new Request(origin + '/api/staff/integrations/sepay/pos-payment', {
+      method: 'POST', headers: { origin, 'content-type': 'application/json', authorization: 'Apikey test-sepay-key' },
+      body: JSON.stringify({ id: 92704, transferType: 'in', transferAmount: amount, accountNumber: '123456', code: qr.data.content, content: qr.data.content + ' thanh toan' }),
+    }), f.env);
+    return { status: r.status, data: await r.json() as any };
+  };
+  assert.equal((await webhook(qr.data.amount - 1)).status, 409);
+  assert.equal((await f.call(`/pos/qr/${qr.data.id}/status`, f.emp)).data.paid, false);
+  const paid = await webhook(qr.data.amount);
+  assert.equal(paid.status, 200, JSON.stringify(paid.data));
+  assert.equal((await f.call(`/pos/qr/${qr.data.id}/status`, f.emp)).data.paid, true);
+  const checkout = await f.call('/pos/checkout', f.emp, 'POST', { ...b, method: 'transfer', confirmed: true, paymentRequestId: qr.data.id });
+  assert.equal(checkout.status, 201, JSON.stringify(checkout.data));
+  const status = await f.call(`/pos/qr/${qr.data.id}/status`, f.emp);
+  assert.equal(status.data.consumed, true);
+  assert.equal(status.data.order.orderNo, checkout.data.orderNo);
+  assert.equal((await webhook(qr.data.amount)).status, 200, 'SePay retry phải idempotent');
+});
 test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0', async () => {
   const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();
   assert.equal((await call('/pos/options', ncc)).status, 403);

@@ -21,6 +21,7 @@ import { customers } from '../../src/modules/customers/schema.ts';
 import { readFileSync } from 'node:fs';
 import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 import { readdirSync } from 'node:fs';
+import type { StaffEnv } from '../../src/modules/staff/api/auth-routes.ts';
 const origin = 'https://trial.test';
 export async function setup(opts: { viaClaw?: boolean } = {}) {
   const { db, d1, client } = await createTestDb();
@@ -61,6 +62,7 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     hooks.push({ url: String(input), body: JSON.parse(String(init?.body || '{}')) });
     return Response.json({ success: true, runId: 'pos-run-1' });
   }) as typeof fetch;
+  const env: StaffEnv = { db, files, passwordIterations: 1000, sapoOrderPush: 'off', sepayPosApiKeyHash: '8670e3ad137cfc09a44e3316e36267a695abd71e002c4164f5acfe647665befd', ...(opts.viaClaw ? { sapoOrderMode: 'n8n' as const, sapoWebhookFetch } : {}) };
   const call = async (path: string, cookie = '', method = 'GET', body?: unknown) => {
     const r = await router.handle(
       new Request(origin + '/api/staff' + path, {
@@ -68,7 +70,7 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
         headers: { origin, cookie, 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
-      { db, files, passwordIterations: 1000, sapoOrderPush: 'off', ...(opts.viaClaw ? { sapoOrderMode: 'n8n' as const, sapoWebhookFetch } : {}) },
+      env,
     );
     return {
       status: r.status,
@@ -116,5 +118,5 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     tendered: 200000,
     ...extra,
   });
-  return { db, client, files, hooks, call, mgr, emp, other, ncc, registerId, open, cart };
+  return { db, client, files, hooks, router, env, call, mgr, emp, other, ncc, registerId, open, cart };
 }

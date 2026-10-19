@@ -37,6 +37,31 @@ function config(c: RouteContext<StaffEnv>) {
   if (!can(member(c), 'pos.configure')) throw new AppError(403, 'Chỉ người được cấp cấu hình POS thao tác.');
 }
 export function registerPosRoutes(router: Router<StaffEnv>) {
+  router.post(
+    '/integrations/sepay/pos-payment',
+    async (c) => {
+      const b = await readJson(c.req, 32000);
+      const transferType = posText(b.transferType ?? b.transfer_type, 20).toLowerCase();
+      const amount = Number(b.transferAmount ?? b.transfer_amount ?? b.amount);
+      const account = posText(b.accountNumber ?? b.account_number, 100).replace(/\s+/g, '');
+      const rawCode = posText(b.code, 100), content = posText(b.content ?? b.description, 1000);
+      const normalized = (rawCode || content).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      if (transferType !== 'in' || !Number.isFinite(amount) || amount <= 0 || !normalized.includes('POS'))
+        throw new AppError(400, 'Giao dịch SePay không hợp lệ.');
+      const rows = await c.env.db.select({ request: posPaymentRequests, bankAccount: posRegisters.bankAccount })
+        .from(posPaymentRequests)
+        .innerJoin(posShifts, eq(posShifts.id, posPaymentRequests.shiftId))
+        .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
+        .orderBy(desc(posPaymentRequests.createdAt)).limit(200);
+      const hit = rows.find(x => normalized.includes(('POS' + x.request.id.replaceAll('-', '').slice(0, 12)).toUpperCase()));
+      if (!hit) throw new AppError(404, 'Không tìm thấy yêu cầu QR POS tương ứng.');
+      if (account && account !== hit.bankAccount.replace(/\s+/g, '')) throw new AppError(400, 'Tài khoản nhận tiền không thuộc quầy POS này.');
+      if (Math.round(amount) !== Math.round(hit.request.amount)) throw new AppError(409, 'Số tiền SePay không khớp yêu cầu QR POS.');
+      if (!hit.request.confirmedAt) await c.env.db.update(posPaymentRequests).set({ confirmedAt: posNow() }).where(and(eq(posPaymentRequests.id, hit.request.id), isNull(posPaymentRequests.confirmedAt)));
+      return json({ success: true, paymentRequestId: hit.request.id, alreadyConfirmed: !!hit.request.confirmedAt });
+    },
+    'sepay-sync',
+  );
   router.get(
     '/pos/options',
     async (c) => {
@@ -147,6 +172,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .onConflictDoUpdate({ target: posRegisters.id, set: fields });
       });
       return json({ id });
+    },
+    'business',
+  );
+  router.get(
+    '/pos/qr/:id/status',
+    async (c) => {
+      const m = member(c);
+      posPermission(m);
+      const [r] = await c.env.db.select().from(posPaymentRequests).where(eq(posPaymentRequests.id, c.params.id!));
+      if (!r) throw new AppError(404, 'Không tìm thấy yêu cầu QR.');
+      await shiftOf(c.env.db, m, r.shiftId);
+      const [order] = await c.env.db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders).where(eq(salesOrders.posPaymentRequestId, r.id));
+      return json({ paid: !!r.confirmedAt, confirmedAt: r.confirmedAt, consumed: !!order, order: order ?? null });
     },
     'business',
   );

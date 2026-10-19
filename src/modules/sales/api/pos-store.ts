@@ -329,7 +329,6 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       if (
         !qr ||
         qr.expiresAt < posNow() ||
-        qr.confirmedAt ||
         qr.fingerprint !== c.fingerprint ||
         qr.amount !== c.total ||
         method !== 'transfer' ||

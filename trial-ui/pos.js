@@ -803,13 +803,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       m = modal('VietQR – chờ xác nhận thu');
     st.qr = d;
     const image = el('img', 'pos-qr');
+    const status = el('p', 'pos-note', 'Đang chờ SePay xác nhận tiền vào…');
+    let completing = false;
     image.src = d.url;
     image.alt = 'VietQR thanh toán';
     m.body.append(
       el('p', '', money(d.amount)),
       image,
       el('p', '', 'Nội dung: ' + d.content),
-      el('p', 'pos-note', 'Chỉ xác nhận khi cửa hàng thực nhận tiền. Hiện QR chưa ghi phiếu thu.'),
+      status,
       button('Đã nhận tiền – thu & in', 'btn primary', async () => {
         if (!(await confirmBox('Cửa hàng đã thực nhận đủ ' + money(d.amount) + ' qua chuyển khoản?'))) return;
         st.method = 'transfer';
@@ -821,6 +823,23 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       button('Đóng', 'btn secondary', m.close),
     );
     m.show();
+    const timer = setInterval(async () => {
+      if (!m.dlg.isConnected || completing) return clearInterval(timer);
+      try {
+        const state = await api('/pos/qr/' + encodeURIComponent(d.id) + '/status');
+        if (!state.paid) return;
+        completing = true;
+        clearInterval(timer);
+        status.textContent = 'SePay đã xác nhận nhận đủ tiền. Đang thu và in bill…';
+        st.method = 'transfer';
+        nodes.confirm.checked = true;
+        drawMethods();
+        if (state.consumed) { toast('Giao dịch đã được ghi nhận: ' + state.order.orderNo); m.close(); return; }
+        await pay(false, d.id);
+        if (!st.pending) m.close();
+      } catch { /* Mất mạng tạm thời: lượt kiểm tra tiếp theo sẽ thử lại. */ }
+    }, 2000);
+    m.dlg.addEventListener('close', () => clearInterval(timer), { once: true });
   }
   async function pay(cod = false, qrId) {
     if (st.busy || st.pending) return;
