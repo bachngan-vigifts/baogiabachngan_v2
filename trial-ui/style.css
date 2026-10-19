@@ -386,7 +386,6 @@ table { width: 100%; border-collapse: collapse; }
   #view-editor [data-quote-panel='products'] > .card-title-row { align-items: flex-start; }
   #view-editor [data-quote-panel='products'] > .card-title-row .row-gap { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
   #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 44px; white-space: normal; }
-  #view-editor [data-quote-panel='products'] > .card-title-row #pick-products { display: none; }
   /* Mobile: giữ dạng bảng một hàng và vuốt ngang thay vì gom mỗi sản phẩm thành thẻ. */
   #view-editor .lines-wrap { position: relative; border: 1px solid #dce5df; overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
   #view-editor #line-table { display: table; width: 1060px; min-width: 1060px !important; table-layout: fixed; }
@@ -397,8 +396,7 @@ table { width: 100%; border-collapse: collapse; }
   #view-editor #line-list td { display: table-cell; width: auto; min-width: 0; padding: 7px 6px !important; border-bottom: 1px solid #e3e9e5; text-align: left; vertical-align: top; }
   #view-editor #line-head .col-idx, #view-editor #line-list .col-idx,
   #view-editor #line-head .col-img, #view-editor #line-list .col-img { display: none; }
-  #view-editor #line-head .col-product, #view-editor #line-list .col-product { position: sticky; left: 0; z-index: 2; width: 250px; min-width: 250px; background: #fff; box-shadow: 5px 0 8px -8px #173b2980; }
-  #view-editor #line-head .col-product { z-index: 5; background: #f1f6f3; }
+  #view-editor #line-head .col-product, #view-editor #line-list .col-product { width: 250px; min-width: 250px; }
   #view-editor #line-list .col-unit { width: 58px; }
   #view-editor #line-list .col-qty { width: 78px; }
   #view-editor #line-list .col-price { width: 116px; }
