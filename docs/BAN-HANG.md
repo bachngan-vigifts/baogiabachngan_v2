@@ -20,6 +20,12 @@ Báo giá ──[Sinh đơn hàng]──▶ Đơn đặt hàng
   - **Lịch giao hàng**: lọc theo khoảng ngày; đổi trạng thái chuyến ngay trên danh sách.
   - **Công nợ**: tổng phải thu, đã thu, còn lại, quá hạn.
 
+## Độ chính xác đơn giá từ báo giá
+
+Khi sinh hoặc đồng bộ đơn hàng/HĐKT từ báo giá, giữ nguyên đơn giá sau chiết khấu (cộng phí in theo loại báo giá) và thành tiền dòng trước khi làm tròn. Màn hình chi tiết đơn, bản in/PDF, Excel và Word HĐKT hiển thị đơn giá tối đa 2 số lẻ (Word dùng đủ 2 số).
+
+Tổng trước thuế được làm tròn từ tổng dòng; tổng thanh toán được làm tròn một lần từ tổng dòng và VAT chưa làm tròn, khớp tổng VNĐ hiển thị trên báo giá. VAT ghi nhận bằng tổng thanh toán trừ tổng trước thuế để các tổng luôn cộng khớp (có thể chênh 1đ với việc làm tròn VAT độc lập). Không làm tròn đơn giá trước khi nhân số lượng. Không thay quy tắc POS hoặc tự cập nhật chứng từ cũ đã sinh.
+
 ## Hai luồng song song: Đơn hàng và HĐKT (migration `0034_invoice_request.sql`)
 
 - Trên báo giá đã duyệt có một nút **Sinh Đơn hàng / HĐKT**. Bấm vào thì hiện hộp cho nhân viên chọn 1 trong 2:

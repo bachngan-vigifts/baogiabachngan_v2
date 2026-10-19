@@ -49,13 +49,16 @@ export interface OrderLineDraft { lineNo: number; sku: string; name: string; uni
 export function orderLinesFromQuote(doc: QuoteDoc): OrderLineDraft[] {
   const rows = (doc.rows || []) as (QuoteRow & { sku?: string; name?: string; unit?: string })[];
   return rows.filter(r => str(r.name) && Number(r.qty) > 0).map((r, i) => {
-    const qty = Number(r.qty), unitPrice = round(after(r, doc));
-    return { lineNo: i + 1, sku: str(r.sku), name: str(r.name), unit: str(r.unit), qty, unitPrice, taxRate: rate(r, doc), amount: round(unitPrice * qty) };
+    const qty = Number(r.qty), unitPrice = after(r, doc);
+    return { lineNo: i + 1, sku: str(r.sku), name: str(r.name), unit: str(r.unit), qty, unitPrice, taxRate: rate(r, doc), amount: unitPrice * qty };
   });
 }
 export function orderTotals(lines: readonly Pick<OrderLineDraft, 'amount' | 'taxRate'>[]) {
-  const subtotal = lines.reduce((s, l) => s + l.amount, 0), tax = round(lines.reduce((s, l) => s + l.amount * l.taxRate / 100, 0));
-  return { subtotal, tax, total: subtotal + tax };
+  // Giữ phần lẻ khi nhân SL và cộng dòng, như báo giá; chỉ chốt tổng VNĐ ở cuối.
+  const rawSubtotal = lines.reduce((s, l) => s + l.amount, 0);
+  const rawTax = lines.reduce((s, l) => s + l.amount * l.taxRate / 100, 0);
+  const subtotal = round(rawSubtotal), total = round(rawSubtotal + rawTax);
+  return { subtotal, tax: total - subtotal, total };
 }
 
 // ---------------- Giao hàng ----------------

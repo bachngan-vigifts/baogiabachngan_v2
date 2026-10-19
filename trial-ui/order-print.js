@@ -3,6 +3,7 @@
 // Dùng chung cho xem trước (HTML), in / lưu PDF (trình duyệt) và tải Excel (exceljs).
 const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = v => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(Number(v) || 0);
+const unitVnd = v => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(Number(v) || 0) + ' đ';
 const vnd = v => new Intl.NumberFormat('vi-VN').format(Math.round(Number(v) || 0)) + ' đ';
 export const ORDER_SIGNER_LABELS = ['Người đặt', 'Người phụ trách', 'Người phê duyệt'];
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
@@ -53,7 +54,7 @@ export function orderSheetHtml(p, { prices = false, edit = false } = {}) {
     </div>
     <table class="ddh-table"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>
       ${p.lines.map((l, i) => `<tr><td class="c">${i + 1}</td><td${ce(`lines.${i}.sku`)}>${esc(l.sku)}</td><td${ce(`lines.${i}.name`)}>${esc(l.name)}</td><td class="c"${ce(`lines.${i}.unit`)}>${esc(l.unit)}</td>
-        <td class="n">${num(l.qty)}</td><td class="n">${l.delivered ? num(l.delivered) : ''}</td>${prices ? `<td class="n">${vnd(l.unitPrice)}</td><td class="n">${vnd(l.amount)}</td>` : ''}
+        <td class="n">${num(l.qty)}</td><td class="n">${l.delivered ? num(l.delivered) : ''}</td>${prices ? `<td class="n">${unitVnd(l.unitPrice)}</td><td class="n">${vnd(l.amount)}</td>` : ''}
         <td class="c"${ce(`lines.${i}.date`)}>${esc(l.date)}</td><td${ce(`lines.${i}.note`)}>${esc(l.note)}</td></tr>`).join('')}
       ${prices ? (p.charges || []).map(c => `<tr><td colspan="7">${esc(c.name)} (VAT ${num(c.taxRate)}%)</td><td class="n">${vnd(c.amount)}</td><td colspan="2"></td></tr>`).join('') : ''}
       <tr class="ddh-sum"><td colspan="4" class="c"><b>Tổng cộng</b></td><td class="n"><b>${num(totalQty)}</b></td><td></td>${prices ? `<td></td><td class="n"><b>${vnd(p.subtotal)}</b></td>` : ''}<td></td><td></td></tr>
@@ -168,7 +169,7 @@ export async function downloadOrderExcel(p, { prices = false } = {}) {
   const hr = 4 + info.length + 1; cols.forEach(([h], i) => { const c = put(`${ws.getColumn(i + 1).letter}${hr}`, h, { bold: true, align: 'center' }); c.border = border; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F2F2F2' } }; });
   p.lines.forEach((l, i) => {
     const r = hr + 1 + i, vals = [i + 1, l.sku, l.name, l.unit, Number(l.qty) || 0, Number(l.delivered) || null, ...(prices ? [l.unitPrice, l.amount] : []), l.date, l.note];
-    vals.forEach((v, j) => { const c = put(`${ws.getColumn(j + 1).letter}${r}`, v, { align: [0, 3].includes(j) || cols[j][0] === 'Ngày giao' ? 'center' : typeof v === 'number' ? 'right' : 'left' }); c.border = border; if (typeof v === 'number' && j >= 4) c.numFmt = j >= 6 && prices && j <= 7 ? '#,##0 "đ"' : '#,##0.###'; });
+    vals.forEach((v, j) => { const c = put(`${ws.getColumn(j + 1).letter}${r}`, v, { align: [0, 3].includes(j) || cols[j][0] === 'Ngày giao' ? 'center' : typeof v === 'number' ? 'right' : 'left' }); c.border = border; if (typeof v === 'number' && j >= 4) c.numFmt = j === 6 && prices ? '#,##0.## "đ"' : j === 7 && prices ? '#,##0 "đ"' : '#,##0.###'; });
   });
   let r = hr + 1 + p.lines.length;
   if (prices) for (const charge of p.charges || []) {

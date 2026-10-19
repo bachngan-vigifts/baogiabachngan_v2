@@ -61,10 +61,14 @@ test('Excel đơn đặt hàng giữ ghi chú và cùng ngày hẹn giao/ba ch�
   g.ExcelJS = { Workbook };
   g.document = { body: { append() {} }, createElement: () => ({ click() {}, remove() {} }) };
   try {
-    const p = print.orderPrintData({ order: { ...order, note: 'Ghi chú dòng 1\nDòng 2', ownerName: 'Nhân viên phụ trách' }, lines: [] }, 'Người tải');
+    const p = print.orderPrintData({ order: { ...order, note: 'Ghi chú dòng 1\nDòng 2', ownerName: 'Nhân viên phụ trách' }, lines: [{ name: 'Bình', qty: 110, unitPrice: 255851.64, amount: 28143680.4 }] }, 'Người tải');
     for (const prices of [false, true]) {
       await print.downloadOrderExcel(p, { prices });
       const values = [...cells.values()].map(c => c.value);
+      if (prices) {
+        const price = [...cells.values()].find(c => c.value === 255851.64);
+        assert.ok(price); assert.equal(price.numFmt, '#,##0.## \"đ\"');
+      }
       assert.ok(values.includes('Ngày hẹn giao')); assert.ok(values.includes('10/10/2026')); assert.ok(values.includes(p.note));
       assert.ok(values.includes('Người phê duyệt')); assert.ok(values.includes('Lê Minh Thái')); assert.ok(values.includes('Nhân viên phụ trách'));
       assert.ok(!values.includes('Người tiếp nhận') && !values.includes('Người soạn') && !values.includes('Người tải'));
@@ -113,4 +117,10 @@ test('Bản in đơn POS tách phí dịch vụ/ship, không cộng số lượn
   assert.ok(!html.includes('<img src=x'));
   assert.ok(html.includes('Phí ship (không VAT)'));
   assert.ok(html.includes('138.800'));
+});
+
+
+test('bản in đơn hiển thị 2 số lẻ đơn giá thay vì làm tròn trước khi nhân SL', () => {
+  const p = print.orderPrintData({ order, lines: [{ name: 'Bình', qty: 110, unitPrice: 255851.64, amount: 28143680.4 }] });
+  assert.match(print.orderSheetHtml(p, { prices: true }), /255\.851,64 đ/);
 });

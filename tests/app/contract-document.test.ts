@@ -47,3 +47,17 @@ test('đề nghị tạm ứng Vigifts: khối ký bên B không trôi, nằm b�
   assert.ok(cell, 'có ô đóng gói');
   assert.equal(cell.match(/<w:p\b/g)!.length, 1, 'chỉ còn một đoạn (không có dòng trống phía trên)');
 });
+
+
+test('HĐKT và biên bản giữ 2 số lẻ đơn giá trên file Word', async () => {
+  for (const [file, documentType] of [['hdkt', 'HDKT'], ['bien-ban', 'BBNT']]) {
+    const bytes = await g.ContractDocument.build({
+      quote: { quote_type: 'VIGIFTS', quote_date: '2026-10-19', customer: { name: 'Khách thử' }, subtotal: 28143680, vat_amount: 2251495, total: 30395175,
+        items: [{ name: 'Bình', quantity: 110, price_after_discount: 255851.64, line_total: 28143680.4, tax_percent: 8 }] },
+      contractNumber: 'TEST', templateBytes: readFileSync(join(ui, `mau-hop-dong-vigifts-${file}.docx`)), documentType,
+      details: { depositRate: 30, paymentDays: 5 },
+    });
+    const xml = g.fflate.strFromU8(g.fflate.unzipSync(bytes)['word/document.xml']!);
+    assert.match(xml, /255\.851,64/);
+  }
+});
