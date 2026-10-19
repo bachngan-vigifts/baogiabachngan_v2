@@ -38,6 +38,8 @@ export interface StaffEnv {
   sapoPosOrderWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
   sepayPosApiKeyHash?: string;
+  wooLockTokenHash?: string;
+  wooMinhLongTokenHash?: string;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
   waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */
@@ -92,6 +94,16 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     let diff = got.length ^ want.length;
     for (let i = 0; i < want.length; i++) diff |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
     if (diff) throw new AppError(401, 'Webhook SePay không hợp lệ.');
+    return;
+  }
+  if (area === 'web-order-sync') {
+    const token = c.url.searchParams.get('token') || '';
+    const got = sha256Hex(token), wants = [
+      c.env.wooLockTokenHash || '332555a87646e97c22b3496d8eaca19cbfb649b3c0fd3381ac2bd62b23311d6d',
+      c.env.wooMinhLongTokenHash || 'aa30c8ef850ad067688d7e91744cab2608546aaca978018e28b9aa5e97cc1415',
+    ];
+    if (!wants.some(want => { let d = got.length ^ want.length; for (let i = 0; i < want.length; i++) d |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i); return d === 0; }))
+      throw new AppError(401, 'Webhook đơn web không hợp lệ.');
     return;
   }
   if (area === 'synctime-sync') {

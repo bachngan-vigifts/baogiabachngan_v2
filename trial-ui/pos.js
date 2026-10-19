@@ -413,13 +413,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       row.append(
         el('b', '', o.orderNo),
         el('span', '', o.customerName + ' · ' + money(o.total)),
-        el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy')),
+        el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.external ? 'Đơn website' : o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy')),
         el('span', 'pos-order-state', orderLabels[o.bucket]),
       );
-      row.addEventListener('click', () => go('#/orders/' + encodeURIComponent(o.id)));
+      row.addEventListener('click', () => o.external ? showWebOrder(o) : go('#/orders/' + encodeURIComponent(o.id)));
       list.append(row);
     }
     box.append(list);
+  }
+  function showWebOrder(o) {
+    const m = modal(o.orderNo + ' · ' + (o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long'));
+    m.body.append(el('p', '', o.customerName + (o.phone ? ' · ' + o.phone : '')), el('p', '', o.address || 'Chưa có địa chỉ'), el('b', '', money(o.total)));
+    let lines = []; try { lines = JSON.parse(o.lines || '[]'); } catch {}
+    for (const x of lines) m.body.append(el('p', 'pos-note', `${x.sku || ''} · ${x.name || ''} × ${x.quantity || 0}`));
+    m.body.append(el('p', 'pos-note', 'Thanh toán: ' + (o.paymentMethod || 'Chưa cập nhật')), button('Đóng', 'btn secondary', m.close));
+    m.show();
   }
   function drawMethods() {
     for (const b of nodes.methods.querySelectorAll('button'))

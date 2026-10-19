@@ -7,6 +7,7 @@ import { AppError } from '../../../core/errors.ts';
 import { foldSql } from '../../../core/text/fold.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
+import { sha256Hex } from '../../staff/domain/session.ts';
 import { employees, positions } from '../../staff/schema.ts';
 import { defaultPosRegister } from '../domain/pos-register.ts';
 import { products, productPrices, productBarcodes, pricePolicies, warehouses } from '../../catalog/schema.ts';
@@ -14,7 +15,7 @@ import { stockBalances } from '../../inventory/schema.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { customerWithTaxCode } from '../../customers/api/routes.ts';
 import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlips } from '../schema.ts';
-import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests } from '../pos-schema.ts';
+import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { notifyMany } from '../../notifications/api/routes.ts';
@@ -56,7 +57,44 @@ function posOrderBucket(o: { status: string; fulfillmentMode: string; packingSta
   if (o.fulfillmentMode === 'cod') return 'waiting_delivery';
   return 'pending';
 }
+const webBucket = (status: string) => {
+  const s = status.toLowerCase();
+  if (['cancelled', 'refunded', 'failed', 'trash'].includes(s)) return 'cancelled';
+  if (['completed'].includes(s)) return 'completed';
+  if (['shipped', 'out-for-delivery', 'delivery', 'delivering'].includes(s)) return 'waiting_delivery';
+  if (['packing', 'packed'].includes(s)) return 'packing';
+  return 'pending';
+};
 export function registerPosRoutes(router: Router<StaffEnv>) {
+  router.post('/integrations/woocommerce/:source/order', async c => {
+    const source = c.params.source === 'lock' ? 'lock' : c.params.source === 'minhlong' ? 'minhlong' : '';
+    if (!source) throw new AppError(404, 'Nguồn website không hợp lệ.');
+    const tokenHash = sha256Hex(c.url.searchParams.get('token') || '');
+    const expected = source === 'lock' ? (c.env.wooLockTokenHash || '332555a87646e97c22b3496d8eaca19cbfb649b3c0fd3381ac2bd62b23311d6d') : (c.env.wooMinhLongTokenHash || 'aa30c8ef850ad067688d7e91744cab2608546aaca978018e28b9aa5e97cc1415');
+    if (tokenHash !== expected) throw new AppError(401, 'Webhook không đúng website.');
+    const b = await readJson(c.req, 256_000), externalId = posText(String(b.id ?? ''), 80), number = posText(String(b.number ?? b.id ?? ''), 100);
+    if (!externalId || !number) throw new AppError(400, 'Đơn WooCommerce thiếu ID hoặc số đơn.');
+    const wantedName = source === 'lock' ? 'CỬA HÀNG LOCKNLOCK CẦN THƠ' : 'Showroom Gốm Sứ Minh Long Cần Thơ';
+    const regs = await c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true));
+    const register = regs.find(r => r.name.trim().toLowerCase() === wantedName.toLowerCase());
+    if (!register) throw new AppError(409, `CRM chưa có quầy ${wantedName}.`);
+    const billing = b.billing && typeof b.billing === 'object' ? b.billing as Record<string, unknown> : {};
+    const shipping = b.shipping && typeof b.shipping === 'object' ? b.shipping as Record<string, unknown> : billing;
+    const fullName = posText([billing.first_name, billing.last_name].filter(Boolean).join(' '), 200) || 'Khách lẻ';
+    const address = posText([shipping.address_1, shipping.address_2, shipping.city, shipping.state].filter(Boolean).join(', '), 1000);
+    const lines = Array.isArray(b.line_items) ? b.line_items.slice(0, 300).map((x: Record<string, unknown>) => ({
+      sku: posText(x.sku, 100), name: posText(x.name, 500), quantity: Number(x.quantity) || 0, total: Number(x.total) || 0,
+    })) : [];
+    const now = posNow(), fields = {
+      orderNo: number, registerId: register.id, status: posText(b.status, 50) || 'pending',
+      customerName: fullName, phone: posText(billing.phone, 60), email: posText(billing.email, 200), address,
+      total: Math.max(0, Number(b.total) || 0), currency: posText(b.currency, 20) || 'VND', paymentMethod: posText(b.payment_method_title ?? b.payment_method, 200),
+      lines: JSON.stringify(lines), orderedAt: posText(b.date_created_gmt ?? b.date_created, 60) || now, updatedAt: posText(b.date_modified_gmt ?? b.date_modified, 60) || now,
+    };
+    await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
+      .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: fields });
+    return json({ ok: true, source, externalId, registerId: register.id });
+  }, 'web-order-sync');
   router.post(
     '/integrations/sepay/pos-payment',
     async (c) => {
@@ -103,7 +141,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
         .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId)))
         .orderBy(desc(salesOrders.createdAt)).limit(500);
-      const decorated = rows.map(o => ({ ...o, bucket: posOrderBucket(o) }));
+      const webRows = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.registerId, registerId)).orderBy(desc(webStoreOrders.updatedAt)).limit(500);
+      const decorated = [
+        ...rows.map(o => ({ ...o, bucket: posOrderBucket(o), source: 'crm', external: false })),
+        ...webRows.map(o => ({ id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
+          status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
+          packingStatus: '', deliveryStatus: '', bucket: webBucket(o.status), source: o.source, external: true, lines: o.lines, address: o.address, paymentMethod: o.paymentMethod })),
+      ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const counts = { all: decorated.length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
       for (const o of decorated) counts[o.bucket as keyof typeof counts]++;
       const orders = decorated.filter(o => (wanted === 'all' || o.bucket === wanted) && (!q || [o.orderNo, o.customerName, o.phone, o.ownerName, o.sapoOrderCode].some(v => String(v || '').toLowerCase().includes(q))));
