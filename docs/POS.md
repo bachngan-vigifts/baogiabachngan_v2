@@ -59,3 +59,9 @@ POS không đẩy đơn sang Sapo, không sửa module lương/cron/phiên Sapo.
 - Lịch sử ca dùng tên nhân viên do server trả về; không dùng mã nội bộ làm tên hiển thị. Nhãn thu/chi, giá trị đơn, thu tiền và COD dùng helper `trial-ui/pos-report.js` chung cho popup/K80.
 - `bills.revenue` vốn là giá trị đơn đã lập, có cả đơn COD; `cash` vốn chỉ cộng phiếu thu tiền mặt hợp lệ. Không trừ `cod.pending` khỏi `cash` hoặc khỏi tổng bill: pending là số còn phải thu của **cùng két**, có thể gồm ca trước và có thể đã thu một phần, nên trừ tiếp sẽ sai. Đổi nhãn thành **Giá trị đơn đã lập (gồm COD)**; tiền mặt thực thu, chuyển khoản, COD đã giao chưa thu được hiển thị riêng, popup và bản in khớp nhau. Không sửa công thức, dữ liệu đã chốt hoặc snapshot ca cũ.
 - Không cần migration, schema hay quyền mới. Không đổi lương, Sapo, cron, tồn đã chốt hoặc quy tắc COD. Kiểm thử bằng DB cục bộ và Chromium với dữ liệu giả, không tạo giao dịch trên Supabase; chưa thử máy in K80 vật lý.
+
+## Ngoại lệ phê duyệt tại POS
+
+Theo chính sách đã chốt: khách tạo tại POS dùng ngay, nhân viên bán được tự nhập chiết khấu tới 100% trong giới hạn giá trị dòng, và bill tổng 0 đồng được phép. Đây là ngoại lệ của POS đối với luồng duyệt chứng từ thông thường; không tự thêm bước Manager duyệt. Server vẫn tính lại tiền và chặn dữ liệu không hợp lệ. Phiếu thu/chi thủ công từ ngưỡng cấu hình vẫn phải duyệt và không được tự duyệt.
+
+Điện thoại có **Bán nhanh** và **Sổ quỹ** ở đầu thanh điều hướng dưới; từng mục chỉ hiện khi tài khoản có quyền tương ứng, cùng kiểm quyền như menu máy tính.

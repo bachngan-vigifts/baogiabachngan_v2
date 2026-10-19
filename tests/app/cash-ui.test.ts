@@ -105,3 +105,32 @@ test('Cash UI: dữ liệu phiếu chỉ là chữ, phiếu huỷ gạch ngang v
   assert.match(source, /reasonCode/);
   assert.match(source, /pendingEntries/);
 });
+
+test('Cash UI: người được chỉ định có nút duyệt phiếu người khác, không có nút tự duyệt hoặc quản trị két', async () => {
+  const previous = globalThis.document;
+  Object.assign(globalThis, { document: { createElement: (tag: string) => new E(tag), body: new E('body') } });
+  try {
+    const root = new E('section'), calls: string[] = [];
+    const ui = initCash({ root, user: () => ({ id: 'delegate' }), toast: () => {}, go: () => {},
+      api: async (path: string) => {
+        calls.push(path);
+        if (path.endsWith('/approve')) return { ok: true };
+        if (path === '/cash') return {
+          drawer: { openingSetAt: '2026-10-18', approvalThreshold: 1000000 }, balance: 500000,
+          activeShift: null, ownShift: null, canManage: false, canApprove: true, canVoid: false,
+          openReconciliations: 0, updatedAt: '2026-10-18T01:00:00Z',
+        };
+        return { entries: ['other', 'delegate'].map((createdBy, i) => ({
+          id: String(i), entryNo: 'PT-' + i, at: '2026-10-18T01:00:00Z', kind: 'other_income',
+          direction: 'in', amount: 1000000, reason: 'Thu tiền', createdBy, by: createdBy, status: 'pending',
+        })), nextBefore: null };
+      },
+    });
+    await ui.load();
+    const buttons = root.all().filter(e => e.tag === 'button' && e.textContent === 'Duyệt');
+    assert.equal(buttons.length, 1);
+    assert.ok(!root.all().some(e => e.tag === 'button' && e.textContent === 'Cấu hình két'));
+    await buttons[0]!.listeners.get('click')![0]!();
+    assert.ok(calls.includes('/cash/entries/0/approve'));
+  } finally { Object.assign(globalThis, { document: previous }); }
+});

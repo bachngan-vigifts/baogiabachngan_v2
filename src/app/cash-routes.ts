@@ -6,7 +6,7 @@ import { AppError } from '../core/errors.ts';
 import type { StaffEnv, SessionState } from '../modules/staff/api/auth-routes.ts';
 import { employees, positions } from '../modules/staff/schema.ts';
 import { defaultPosRegister } from '../modules/sales/domain/pos-register.ts';
-import { can } from '../modules/staff/domain/permissions.ts';
+import { can, canApprove } from '../modules/staff/domain/permissions.ts';
 import { cashDrawers, cashEntries, cashReconciliations } from '../modules/sales/cash-schema.ts';
 import { posRegisters, posShifts } from '../modules/sales/pos-schema.ts';
 import { customerPayments, salesOrders } from '../modules/sales/schema.ts';
@@ -33,6 +33,11 @@ const manager = (c: Ctx) => {
   if (who(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager thao tác.');
 };
 const ownShift = (c: Ctx) => (seesAllCash(who(c)) ? undefined : eq(posShifts.memberId, who(c).id));
+// Delegated approval reveals pending manual entries only, not other employees' receipts or reports.
+const entryScope = (c: Ctx) => {
+  const scope = ownShift(c);
+  return scope ? or(scope, canApprove(who(c)) ? eq(cashEntries.status, 'pending') : undefined) : undefined;
+};
 async function selectedDrawer(c: Ctx) {
   const explicit = posText(c.url.searchParams.get('drawerId'));
   if (explicit) return (await drawerOf(c.env.db, explicit)).id;
@@ -133,6 +138,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         ownShift: s?.s.memberId === who(c).id ? s.s : null,
         nextOpeningCash: last?.countedCash ?? d.openingAmount,
         canManage: who(c).role === 'manager',
+        canApprove: canApprove(who(c)),
         canVoid: can(who(c), 'payments.void'),
         canSell: can(who(c), 'pos.sell'),
         openReconciliations: open?.count ?? 0,
@@ -216,7 +222,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .innerJoin(employees, eq(employees.id, cashEntries.createdBy))
           .where(
             and(
-              scope,
+              entryScope(c),
               eq(cashEntries.drawerId, drawerId),
               gte(cashEntries.createdAt, start),
               lt(cashEntries.createdAt, end),
@@ -281,7 +287,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         .select({ key: cashEntries.photoFileKey })
         .from(cashEntries)
         .innerJoin(posShifts, eq(posShifts.id, cashEntries.shiftId))
-        .where(and(eq(cashEntries.id, c.params.id!), ownShift(c)));
+        .where(and(eq(cashEntries.id, c.params.id!), entryScope(c)));
       if (!e?.key) throw new AppError(404, 'Không có ảnh.');
       if (!c.env.files) throw new AppError(503, 'Chưa có kho file.');
       return json({ url: (await c.env.files.signedUrls([e.key], 600)).get(e.key) ?? null });
@@ -381,7 +387,8 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
   router.post(
     '/cash/entries/:id/approve',
     async (c) => {
-      manager(c);
+      cashAccess(who(c));
+      if (!canApprove(who(c))) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt phiếu.');
       await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         const [e] = await tx.select().from(cashEntries).where(eq(cashEntries.id, c.params.id!));

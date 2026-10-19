@@ -316,3 +316,41 @@ test('Cash: điều chỉnh sổ cho lệch ca trước không làm lệch tiề
   );
   assert.equal((await f.db.select().from(cashReconciliations)).length, 1);
 });
+
+test('Cash: người được chỉ định duyệt thay chỉ thấy phiếu chờ, không tự duyệt và thu quyền có hiệu lực ngay', async () => {
+  const f = await setup();
+  await f.open();
+  const pending = await f.call('/cash/entries', f.emp, 'POST', {
+    ...entry('other_income', 1000000), photo: 'data:image/jpeg;base64,' + Buffer.from('hoa-don').toString('base64'),
+  });
+  const posted = await f.call('/cash/entries', f.emp, 'POST', entry());
+  assert.equal(pending.status, 201);
+  assert.equal(posted.data.status, 'posted');
+  const path = '/cash/entries/' + pending.data.id;
+  assert.equal((await f.call(path + '/approve', f.other, 'POST', {})).status, 403);
+  await f.db.update(employees).set({ canApprove: true }).where(eq(employees.id, 'cashier2'));
+  const summary = (await f.call('/cash', f.other)).data;
+  assert.equal(summary.canApprove, true);
+  assert.equal(summary.canManage, false);
+  assert.deepEqual((await f.call('/cash/entries' + range, f.other)).data.entries.map((e: any) => e.id), [pending.data.id]);
+  assert.equal((await f.call(path + '/photo', f.other)).status, 200);
+  assert.equal((await f.call('/cash/shifts', f.other)).data.items.length, 0);
+  assert.equal((await f.call('/cash/reconciliations', f.other)).data.items.length, 0);
+  assert.equal((await f.call('/cash/config', f.other, 'POST', { approvalThreshold: 1 })).status, 403);
+  const approvals = await Promise.all([f.call(path + '/approve', f.other, 'POST', {}), f.call(path + '/approve', f.other, 'POST', {})]);
+  assert.deepEqual(approvals.map(r => r.status), [200, 200]);
+  const audits = await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, pending.data.id));
+  assert.equal(audits.filter(a => a.action === 'approve').length, 1);
+  assert.equal((await f.db.select().from(cashEntries).where(eq(cashEntries.id, pending.data.id)))[0]!.approvedBy, 'cashier2');
+  assert.equal((await f.call('/cash/entries' + range, f.other)).data.entries.length, 0);
+  assert.equal((await f.call(path + '/photo', f.other)).status, 404);
+  assert.equal((await f.call('/cash', f.mgr)).data.balance, 1600000);
+  const next = await f.call('/cash/entries', f.emp, 'POST', entry('other_income', 1000000));
+  await f.db.update(employees).set({ canApprove: true }).where(eq(employees.id, 'emp'));
+  assert.equal((await f.call('/cash/entries/' + next.data.id + '/approve', f.emp, 'POST', {})).status, 403);
+  await f.db.update(employees).set({ canApprove: false }).where(eq(employees.id, 'cashier2'));
+  assert.equal((await f.call('/cash', f.other)).data.canApprove, false);
+  assert.equal((await f.call('/cash/entries' + range, f.other)).data.entries.length, 0);
+  assert.equal((await f.call('/cash/entries/' + next.data.id + '/approve', f.other, 'POST', {})).status, 403);
+  assert.equal((await f.call('/cash', f.mgr)).data.balance, 1600000);
+});
