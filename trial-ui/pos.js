@@ -445,7 +445,20 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       el('p', '', 'Mã vận đơn GHN: ' + o.ghnOrderCode),
       el('p', 'pos-note', 'Trạng thái GHN: ' + (o.ghnStatus || 'Đã tạo vận đơn') + (o.ghnFee ? ' · Phí: ' + money(o.ghnFee) : '')),
     );
-    m.body.append(button('Đóng', 'btn secondary', m.close));
+    const actions = el('div', 'pos-actions');
+    if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chốt đơn & tạo vận đơn GHN', 'btn primary', async () => {
+      if (!await confirmBox(`Chốt đơn ${o.orderNo} và gửi tạo vận đơn Giao Hàng Nhanh?`, { ok: 'Chốt đơn' })) return;
+      await run(async () => { await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm' }); m.close(); toast('Đã chốt đơn và cập nhật vận đơn GHN.', 'ok'); await loadOrderBoard(); });
+    }));
+    if (o.actionsAvailable) actions.append(button('Cập nhật trạng thái', 'btn secondary', () => run(async () => {
+      await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'refresh' }); m.close(); toast('Đã cập nhật trạng thái đơn.', 'ok'); await loadOrderBoard();
+    })));
+    if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) actions.append(button('Huỷ đơn', 'btn danger', async () => {
+      if (!await confirmBox(`Huỷ đơn ${o.orderNo}${o.ghnOrderCode ? ' và vận đơn GHN ' + o.ghnOrderCode : ''}?`, { title: 'Huỷ đơn website', ok: 'Huỷ đơn', danger: true })) return;
+      await run(async () => { await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'cancel' }); m.close(); toast('Đã huỷ đơn' + (o.ghnOrderCode ? ' và vận đơn GHN.' : '.'), 'ok'); await loadOrderBoard(); });
+    }));
+    actions.append(button('Đóng', 'btn secondary', m.close));
+    m.body.append(actions);
     m.show();
   }
   function drawMethods() {

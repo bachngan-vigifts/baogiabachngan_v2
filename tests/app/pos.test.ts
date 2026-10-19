@@ -17,7 +17,7 @@ import {
   packingSlips,
   packingSlipLines,
 } from '../../src/modules/sales/schema.ts';
-import { posRegisters, posShifts, posStockCounts, posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
+import { posRegisters, posShifts, posStockCounts, posPaymentRequests, webStoreOrders } from '../../src/modules/sales/pos-schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { readFileSync } from 'node:fs';
 import { memoryFileStore } from '../../src/core/storage/file-store.ts';
@@ -239,6 +239,30 @@ test('WooCommerce webhook: nhập/cập nhật một lần và hiện đúng qu�
   assert.equal(board.data.orders[0].ghnOrderCode, 'GML123456');
   assert.equal(board.data.orders[0].ghnStatus, 'delivered');
   assert.equal(board.data.orders[0].ghnFee, 32000);
+});
+test('Đơn website: đúng quầy được chốt, làm mới và huỷ qua cầu nối máy chủ; ghi nhật ký', async () => {
+  const f = await setup();
+  const calls: { url: string; action: string; auth: string }[] = [];
+  f.env.webOrderAction = { token: 'server-only', lockUrl: 'https://lock.test/action', minhlongUrl: 'https://ml.test/action', fetch: (async (input, init) => {
+    const body = JSON.parse(String(init?.body)); calls.push({ url: String(input), action: body.action, auth: new Headers(init?.headers).get('authorization') || '' });
+    return Response.json(body.action === 'confirm' ? { status: 'processing', ghnOrderCode: 'GHN123', ghnStatus: 'ready_to_pick', ghnFee: 33000 }
+      : body.action === 'cancel' ? { status: 'cancelled', ghnOrderCode: 'GHN123', ghnStatus: 'cancel' }
+      : { status: 'processing', ghnOrderCode: 'GHN123', ghnStatus: 'picking', ghnFee: 33000 });
+  }) as typeof fetch };
+  const payload = { id: 900, number: 'WEB900', status: 'pending', total: '500000', billing: { first_name: 'Khách', phone: '0901' }, line_items: [] };
+  assert.equal((await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', payload)).status, 409);
+  const [reg] = await f.db.select().from(posRegisters).where(eq(posRegisters.id, f.registerId));
+  await f.db.update(posRegisters).set({ name: 'CỬA HÀNG LOCKNLOCK CẦN THƠ' }).where(eq(posRegisters.id, reg!.id));
+  assert.equal((await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', payload)).status, 200);
+  const [order] = await f.db.select().from(webStoreOrders);
+  assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.ncc, 'POST', { action: 'confirm' })).status, 403);
+  const confirmed = await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'confirm' });
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data)); assert.equal(confirmed.data.ghnOrderCode, 'GHN123');
+  assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'refresh' })).data.ghnStatus, 'picking');
+  assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'cancel' })).data.bucket, 'cancelled');
+  assert.deepEqual(calls.map(x => x.action), ['confirm', 'refresh', 'cancel']);
+  assert.ok(calls.every(x => x.auth === 'Bearer server-only'));
+  assert.ok((await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, order!.id))).some(x => x.action === 'web-order-cancel'));
 });
 test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0', async () => {
   const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();

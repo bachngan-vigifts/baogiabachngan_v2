@@ -15,6 +15,7 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
+      WEB_ORDER_ACTION_TOKEN: ${{ secrets.WEB_ORDER_ACTION_TOKEN }}
       PROJECT_REF: taceqfnsorewelsbdckg
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +56,9 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != ''
         # Truyền qua biến môi trường để mã không xuất hiện trong lệnh/log.
         run: supabase secrets set --project-ref "$PROJECT_REF" SAPO_SYNC_TOKEN="$SAPO_SYNC_TOKEN"
+      - name: Cập nhật mã bí mật thao tác đơn website
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.WEB_ORDER_ACTION_TOKEN != ''
+        run: supabase secrets set --project-ref "$PROJECT_REF" WEB_ORDER_ACTION_TOKEN="$WEB_ORDER_ACTION_TOKEN"
       - name: Triển khai Edge Function
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: supabase functions deploy baogia-v2-api --project-ref "$PROJECT_REF" --no-verify-jwt --use-api

@@ -22,6 +22,7 @@ import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStor
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { notifyMany } from '../../notifications/api/routes.ts';
+import { writeAudit } from '../../../core/audit.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
 import {
   posNow,
@@ -172,7 +173,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         ...webRows.map(o => ({ id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
-          paymentMethod: o.paymentMethod, ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee })),
+          paymentMethod: o.paymentMethod, ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
+          actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl })),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const counts = { all: decorated.length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
       for (const o of decorated) counts[o.bucket as keyof typeof counts]++;
@@ -181,6 +183,32 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     },
     'business',
   );
+  router.post('/pos/web-orders/:id/action', async c => {
+    const m = member(c); posPermission(m);
+    const action = posText((await readJson(c.req, 4000)).action, 20);
+    if (!['confirm', 'cancel', 'refresh'].includes(action)) throw new AppError(400, 'Thao tác đơn web không hợp lệ.');
+    const [order] = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.id, c.params.id!)).limit(1);
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
+    const scope = await allowedPosRegisters(c);
+    if (!scope.ids.has(order.registerId)) throw new AppError(403, 'Bạn không được thao tác đơn của cửa hàng này.');
+    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website.');
+    const terminal = webBucket(order.status, order.ghnStatus);
+    if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
+    if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
+    const url = order.source === 'lock' ? c.env.webOrderAction.lockUrl : c.env.webOrderAction.minhlongUrl;
+    if (!url) throw new AppError(503, 'Website này chưa được kết nối thao tác đơn.');
+    const response = await (c.env.webOrderAction.fetch ?? fetch)(url, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ orderId: order.externalId, action }) });
+    const raw = await response.text(); let result: Record<string, unknown> = {};
+    try { result = JSON.parse(raw); } catch {}
+    if (!response.ok) throw new AppError(response.status >= 500 ? 502 : 409, posText(result.message, 500) || 'Website chưa xử lý được đơn.');
+    const fields = { status: posText(result.status, 50) || order.status, ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
+      ghnStatus: posText(result.ghnStatus, 100), ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
+      ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };
+    await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
+    await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
+      data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus } });
+    return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
+  }, 'business');
   router.get(
     '/pos/options',
     async (c) => {
