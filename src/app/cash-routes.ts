@@ -22,6 +22,7 @@ import {
   drawerOf,
   drawerBalance,
   cashShiftTotals,
+  openingCashComparison,
   closeCashShift,
   voidClosedCashEffect,
   seesAllCash,
@@ -535,7 +536,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .orderBy(desc(auditLogs.createdAt))
           .limit(100),
       ]);
-      return json({ item: found.r, memberName: found.memberName, entries: [...entries, ...payments], audit });
+      return json({ openingComparison: await openingCashComparison(db, found.r.shiftId), item: found.r, memberName: found.memberName, entries: [...entries, ...payments], audit });
     },
     'business',
   );

@@ -33,7 +33,7 @@ Danh mục, chi tiết sản phẩm và luồng giữ hàng báo giá đọc s�
 
 ## Thu tiền và in
 
-Phải mở ca trước khi bán. Manager thiết lập số dư đầu kỳ tại Sổ quỹ một lần. Mỗi két chỉ có một ca đang mở; tiền đầu ca lấy từ số thực đếm ca trước, nhân viên không nhập lại tuỳ ý. Theo yêu cầu cập nhật ngày 18/10/2026, mở ca không còn bước kiểm đếm nhanh và API mở ca không yêu cầu hoặc ghi số đếm. Form chỉ gồm quầy, ca làm việc, tiền bàn giao và ghi chú. Chốt tồn đầu kỳ/kiểm kê thực hiện riêng tại Sổ kho. Dữ liệu kiểm đếm lịch sử vẫn được giữ và chỉ hiển thị trên báo cáo ca cũ nếu có.
+Phải mở ca trước khi bán. Manager thiết lập số dư đầu kỳ tại Sổ quỹ một lần. Mỗi két chỉ có một ca đang mở; tiền bàn giao tham chiếu lấy từ số thực đếm ca trước (ca đầu lấy đầu kỳ Manager chốt). Nhân viên bắt buộc tự nhập tổng tiền mặt thực đếm, ô ban đầu để trống; tiền nguyên VNĐ từ 0 trở lên. Nếu lệch, giao dịch mở ca tạo tra soát ngay nhưng vẫn cho bán. Tiền trong ca được tính từ số thực đếm mới, không cộng/trừ chênh lệch bàn giao thêm lần nữa. Theo yêu cầu cập nhật ngày 18/10/2026, mở ca không còn bước kiểm đếm nhanh và API mở ca không yêu cầu hoặc ghi số đếm. Form chỉ gồm quầy, ca làm việc, tiền thực đếm đầu ca và ghi chú. Chốt tồn đầu kỳ/kiểm kê thực hiện riêng tại Sổ kho. Dữ liệu kiểm đếm lịch sử vẫn được giữ và chỉ hiển thị trên báo cáo ca cũ nếu có.
 
 Tiền mặt có tiền khách đưa/tiền thối và nút **Đủ tiền**. Chuyển khoản và VietQR đều yêu cầu nhân viên xác nhận cửa hàng đã thực nhận tiền. QR chỉ tạo yêu cầu, hết hạn sau 15 phút; giỏ/giá thay đổi phải tạo QR mới. Không có xác nhận ngân hàng tự động.
 
@@ -65,3 +65,7 @@ POS không đẩy đơn sang Sapo, không sửa module lương/cron/phiên Sapo.
 Theo chính sách đã chốt: khách tạo tại POS dùng ngay, nhân viên bán được tự nhập chiết khấu tới 100% trong giới hạn giá trị dòng, và bill tổng 0 đồng được phép. Đây là ngoại lệ của POS đối với luồng duyệt chứng từ thông thường; không tự thêm bước Manager duyệt. Server vẫn tính lại tiền và chặn dữ liệu không hợp lệ. Phiếu thu/chi thủ công từ ngưỡng cấu hình vẫn phải duyệt và không được tự duyệt.
 
 Điện thoại có **Bán nhanh** và **Sổ quỹ** ở đầu thanh điều hướng dưới; từng mục chỉ hiện khi tài khoản có quyền tương ứng, cùng kiểm quyền như menu máy tính.
+
+## Tiền thực đếm khi mở ca (19/10/2026)
+
+Dùng lại `cash_reconciliations` và nhật ký đã có, không thêm migration. Một ca vẫn có tối đa một tra soát. So sánh mở ca được lưu bất biến trong audit mở ca và trả trong `openingComparison` trên báo cáo/chi tiết tra soát. Nếu cuối ca cũng lệch, cùng tra soát được cập nhật/mở lại với số cuối ca; phần so sánh đầu ca vẫn hiện riêng. Kết ca khớp không tự đóng tra soát đầu ca chưa xử lý. Manager giải quyết theo luồng giải trình/đóng hiện có; tra soát không tự sửa sổ két. Gửi lặp yêu cầu mở ca không tạo ca/tra soát trùng, đổi số tiền với cùng mã yêu cầu bị từ chối.

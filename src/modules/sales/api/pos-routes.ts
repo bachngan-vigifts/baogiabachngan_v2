@@ -1,4 +1,4 @@
-import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit } from './cash-store.ts';
+import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -402,19 +402,20 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         key = posKey(b.key),
         registerId = posText(b.registerId),
         requestedOpening = b.openingCash;
+      if ((typeof requestedOpening !== 'number' && typeof requestedOpening !== 'string') || String(requestedOpening).trim() === '')
+        throw new AppError(400, 'Nhập tiền thực đếm đầu ca.');
+      const countedOpening = posMoney(requestedOpening, 'Tiền thực đếm đầu ca');
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-register:' + registerId}))`);
         const [prior] = await tx.select().from(posShifts).where(eq(posShifts.openKey, key));
         if (prior) {
-          if (prior.memberId !== m.id || prior.registerId !== registerId) throw new AppError(409, 'Mã mở ca đã dùng.');
+          if (prior.memberId !== m.id || prior.registerId !== registerId || prior.openingCash !== countedOpening) throw new AppError(409, 'Mã mở ca đã dùng.');
           return prior;
         }
         const r = await registerOf(tx, registerId);
         const inheritance = await nextCashOpening(tx, r.cashDrawerId);
-        const openingCash = inheritance.openingCash;
-        if (requestedOpening !== undefined && Number(requestedOpening) !== openingCash)
-          throw new AppError(409, 'Tiền đầu ca phải bằng tiền thực đếm bàn giao ca trước. Tải lại Sổ quỹ.');
+        const openingCash = countedOpening, expectedOpeningCash = inheritance.openingCash;
         await assertOpening(tx, r.warehouseId);
         const [open] = await tx
           .select({ id: posShifts.id })
@@ -462,11 +463,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               note: posText(b.note, 2000),
             })
             .returning();
+        const openingReconciliationId = openingCash !== expectedOpeningCash
+          ? await reconciliationFor(tx, s!, m.id, 'opening_cash', posText(b.note, 2000) || 'Tiền thực đếm đầu ca khác tiền bàn giao.', { expectedCash: expectedOpeningCash, countedCash: openingCash })
+          : null;
         await cashAudit(tx, m.id, 'open', 'pos-shifts', id, {
           openingCash,
+          expectedOpeningCash,
+          openingDifference: openingCash - expectedOpeningCash,
+          openingReconciliationId,
           previousShiftId: inheritance.previousShiftId,
         });
-        return s!;
+        return { ...s!, openingReconciliationId };
       });
       return json(result, 201);
     },

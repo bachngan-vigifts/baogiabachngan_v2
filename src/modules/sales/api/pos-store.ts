@@ -1,4 +1,4 @@
-import { cashLock, cashShiftTotals, cashAudit } from './cash-store.ts';
+import { cashLock, cashShiftTotals, cashAudit, openingCashComparison } from './cash-store.ts';
 import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
@@ -270,6 +270,7 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
   return {
     shift: s,
     memberName: person?.name ?? s.memberId,
+    openingComparison: await openingCashComparison(db, s.id),
     register: r,
     asOf: cutoff,
     openingCount: counted?.count ? { scope: 'partial', count: counted.count } : null,

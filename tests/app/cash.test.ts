@@ -354,3 +354,54 @@ test('Cash: người được chỉ định duyệt thay chỉ thấy phiếu ch
   assert.equal((await f.call('/cash/entries/' + next.data.id + '/approve', f.other, 'POST', {})).status, 403);
   assert.equal((await f.call('/cash', f.mgr)).data.balance, 1600000);
 });
+
+test('Mở ca: tự nhập tiền thực đếm, lệch tự tạo tra soát nhưng vẫn bán; không tính lại lệch khi kết ca', async () => {
+  const f = await setup();
+  const request = { key: crypto.randomUUID(), registerId: f.registerId, openingCash: 450000, note: 'Đếm được thiếu 50.000' };
+  const opened = await f.call('/pos/shifts/open', f.emp, 'POST', request);
+  assert.equal(opened.status, 201, JSON.stringify(opened.data));
+  assert.equal(opened.data.openingCash, 450000);
+  const replay = await f.call('/pos/shifts/open', f.emp, 'POST', request);
+  assert.equal(replay.data.id, opened.data.id);
+  assert.equal((await f.call('/pos/shifts/open', f.emp, 'POST', { ...request, openingCash: 500000 })).status, 409);
+  const [rec] = await f.db.select().from(cashReconciliations);
+  assert.equal(rec!.expectedCash, 500000);
+  assert.equal(rec!.countedCash, 450000);
+  assert.equal(rec!.difference, -50000);
+  assert.equal(rec!.reasonCode, 'opening_cash');
+  assert.equal((await f.call('/cash', f.emp)).data.openReconciliations, 1);
+  assert.equal((await f.call('/cash/reconciliations/' + rec!.id, f.other)).status, 404);
+  const sale = await f.call('/pos/checkout', f.emp, 'POST', f.cart(opened.data.id));
+  assert.equal(sale.status, 201, JSON.stringify(sale.data));
+  const expected = 450000 + sale.data.total;
+  const report = await f.call('/pos/shifts/' + opened.data.id, f.emp);
+  assert.equal(report.data.expectedCash, expected);
+  assert.deepEqual(report.data.openingComparison, { expectedCash: 500000, countedCash: 450000, difference: -50000 });
+  const close = await f.call('/cash/shifts/' + opened.data.id + '/close', f.emp, 'POST', { countedCash: expected });
+  assert.equal(close.status, 200, JSON.stringify(close.data));
+  assert.equal(close.data.cashDifference, 0);
+  assert.equal((await f.db.select().from(cashReconciliations)).length, 1);
+  assert.equal((await f.db.select().from(cashReconciliations))[0]!.difference, -50000);
+  const next = await f.call('/pos/shifts/open', f.emp, 'POST', { key: crypto.randomUUID(), registerId: f.registerId, openingCash: expected });
+  assert.equal(next.status, 201);
+  assert.equal((await f.db.select().from(cashReconciliations)).length, 1);
+});
+test('Mở ca: chặn tiền trống/sai; ca mở lệch dương và lệch kết ca dùng chung tra soát, giữ bằng chứng đầu ca', async () => {
+  const f = await setup();
+  for (const openingCash of [undefined, null, '', ' ', true, [], -1, 1.5, 'NaN', 1e13]) {
+    assert.equal((await f.call('/pos/shifts/open', f.emp, 'POST', { key: crypto.randomUUID(), registerId: f.registerId, openingCash })).status, 400);
+  }
+  assert.equal((await f.db.select().from(posShifts)).length, 0);
+  const opened = await f.call('/pos/shifts/open', f.emp, 'POST', { key: crypto.randomUUID(), registerId: f.registerId, openingCash: 550000 });
+  assert.equal(opened.status, 201);
+  const [rec] = await f.db.select().from(cashReconciliations);
+  assert.equal(rec!.difference, 50000);
+  const close = await f.call('/cash/shifts/' + opened.data.id + '/close', f.emp, 'POST', { countedCash: 540000, reasonCode: 'counting' });
+  assert.equal(close.status, 200);
+  assert.equal(close.data.cashDifference, -10000);
+  const detail = await f.call('/cash/reconciliations/' + rec!.id, f.emp);
+  assert.equal(detail.data.item.difference, -10000);
+  assert.deepEqual(detail.data.openingComparison, { expectedCash: 500000, countedCash: 550000, difference: 50000 });
+  assert.equal((await f.db.select().from(cashReconciliations)).length, 1);
+  assert.equal((await f.call('/cash/shifts/' + opened.data.id + '/close', f.emp, 'POST', { countedCash: 540000, reasonCode: 'counting' })).data.replayed, true);
+});

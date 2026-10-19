@@ -672,7 +672,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         st.options.templates.map((t) => [t.id, `${t.name} ${t.startsAt}–${t.endsAt}`]),
         st.options.templates[0]?.id || '',
       ),
-      cash = field('Tiền đầu ca trong két', 'number', '0'),
+      cash = field('Tiền thực đếm đầu ca trong két', 'text', ''),
       note = field('Ghi chú ca');
     m.dlg.classList.add('pos-open-shift');
     reg.setAttribute('aria-label', 'Quầy bán hàng');
@@ -687,8 +687,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const drawer = await api('/cash?registerId=' + encodeURIComponent(reg.value));
     let openingCash = Number(drawer.nextOpeningCash ?? 0);
     cash.input.type = 'text';
-    cash.input.value = openingCash.toLocaleString('vi-VN');
-    cash.input.readOnly = true;
+    cash.input.value = '';
+    cash.input.inputMode = 'numeric';
+    cash.input.placeholder = 'Nhập tổng tiền mặt thực đếm';
     cash.input.min = '0';
     cash.input.required = true;
     const content = el('div', 'pos-shift-content'),
@@ -701,10 +702,22 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     choices.append(registerField, templateField);
     cash.box.classList.add('pos-opening-money');
     cash.box.append(el('span', 'pos-money-unit', 'VNĐ'));
-    opening.append(
-      cash.box,
-      el('p', 'pos-note', 'Tiền bàn giao từ số thực đếm ca trước. Ca đầu tiên dùng số dư đầu kỳ Manager đã chốt.'),
-    );
+    const comparisonNote = el('p', 'pos-note');
+    const countedValue = () => {
+      const raw = cash.input.value.trim();
+      if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/.test(raw)) return null;
+      const n = Number(raw.replace(/\./g, ''));
+      return Number.isSafeInteger(n) && n >= 0 && n <= 1e12 ? n : null;
+    };
+    const showComparison = () => {
+      const counted = countedValue(), difference = counted == null ? null : counted - openingCash;
+      comparisonNote.className = difference ? 'pos-note cash-warning' : 'pos-note';
+      comparisonNote.textContent = 'Tiền bàn giao tham chiếu: ' + money(openingCash) + '. ' +
+        (difference ? 'Lệch ' + money(difference) + '. Vẫn được mở bán; hệ thống tự tạo tra soát.' : 'Nhập tiền mặt thực đếm. Nếu lệch vẫn được mở bán và tự tạo tra soát.');
+    };
+    cash.input.addEventListener('input', showComparison);
+    showComparison();
+    opening.append(cash.box, comparisonNote);
     note.input.placeholder = 'Ghi chú bàn giao hoặc lưu ý trong ca (nếu có)';
     content.append(choices, opening, note.box);
     m.form.append(content);
@@ -718,15 +731,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.form.addEventListener('submit', (e) => {
       e.preventDefault();
       run(async () => {
+        const countedCash = countedValue();
+        if (countedCash == null) throw Error('Nhập tiền thực đếm đầu ca bằng số nguyên VNĐ, từ 0 trở lên.');
         b.disabled = true;
         try {
-          await api('/pos/shifts/open', 'POST', {
+          const opened = await api('/pos/shifts/open', 'POST', {
             key: requestKey,
             registerId: reg.value,
             templateId: template.value,
-            openingCash,
+            openingCash: countedCash,
             note: note.input.value,
           });
+          if (opened.openingReconciliationId) toast('Đã mở ca bán hàng. Chênh lệch đầu ca đã gửi tra soát tại Sổ quỹ.');
           m.close();
           st.cart = [];
           await load();
@@ -740,10 +756,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     reg.addEventListener('change', () => run(async () => {
       const version = ++cashSeq;
       b.disabled = true;
+      cash.input.value = '';
+      comparisonNote.textContent = 'Đang lấy tiền bàn giao của quầy…';
       const cashState = await api('/cash?registerId=' + encodeURIComponent(reg.value));
       if (version !== cashSeq) return;
       openingCash = Number(cashState.nextOpeningCash ?? 0);
-      cash.input.value = openingCash.toLocaleString('vi-VN');
+      cash.input.value = '';
+      showComparison();
       b.disabled = false;
     }));
   }

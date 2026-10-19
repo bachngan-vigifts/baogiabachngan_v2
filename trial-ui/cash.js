@@ -606,7 +606,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     if (version !== listVersion) return;
     const box = content();
     box.replaceChildren();
-    const { t, body } = table(['Mã', 'Người kết ca', 'Theo sổ', 'Thực đếm', 'Lệch', 'Trạng thái', '']);
+    const { t, body } = table(['Mã', 'Nhân viên', 'Theo sổ', 'Thực đếm', 'Lệch', 'Trạng thái', '']);
     for (const r of data.items) {
       const tr = el('tr'),
         td = el('td');
@@ -645,9 +645,10 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       r = d.item,
       m = dialog(r.reconciliationNo);
     for (const text of [
-      'Người kết ca: ' + d.memberName,
+      'Nhân viên: ' + d.memberName,
+      ...(d.openingComparison ? ['Mở ca: bàn giao ' + money(d.openingComparison.expectedCash) + ' / thực đếm ' + money(d.openingComparison.countedCash) + ' / lệch ' + money(d.openingComparison.difference)] : []),
       'Theo sổ ' + money(r.expectedCash) + ' / đếm ' + money(r.countedCash) + ' / lệch ' + money(r.difference),
-      'Lý do: ' + r.reasonCode + ' ' + r.reasonNote,
+      'Lý do: ' + (r.reasonCode === 'opening_cash' ? 'Chênh lệch tiền đầu ca' : r.reasonCode) + ' ' + r.reasonNote,
       'Giải trình: ' + (r.explanation || 'Chưa có'),
       'Lý do đóng: ' + (r.closeReason || '—'),
     ])
