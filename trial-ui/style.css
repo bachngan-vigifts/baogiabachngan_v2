@@ -386,6 +386,10 @@ table { width: 100%; border-collapse: collapse; }
   #view-editor [data-quote-panel='products'] > .card-title-row { align-items: flex-start; }
   #view-editor [data-quote-panel='products'] > .card-title-row .row-gap { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
   #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 44px; white-space: normal; }
+  #view-editor [data-quote-panel='products'] > .card-title-row #paste-lines { display: none; }
+  #view-editor [data-quote-panel='products'] > .card-title-row #toggle-subs { grid-column: 1 / -1; }
+  #view-editor [data-quote-panel='products'] > .card-title-row #pick-products { grid-column: 1; grid-row: 2; }
+  #view-editor [data-quote-panel='products'] > .card-title-row #add-line { grid-column: 2; grid-row: 2; }
   /* Mobile: giữ dạng bảng một hàng và vuốt ngang thay vì gom mỗi sản phẩm thành thẻ. */
   #view-editor .lines-wrap { position: relative; border: 1px solid #dce5df; overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
   #view-editor #line-table { display: table; width: 1060px; min-width: 1060px !important; table-layout: fixed; }

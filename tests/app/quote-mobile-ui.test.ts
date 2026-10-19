@@ -53,6 +53,14 @@ test('dòng trống mobile giữ số lượng, đơn giá và thành tiền; n�
   assert.doesNotMatch(css, /tr\.manual-line \.line-total[^}]*display: none/);
 });
 
+test('mobile ẩn dán Excel và đặt hai nút thêm trên cùng một hàng', () => {
+  const mobile = css.slice(css.indexOf('/* Soạn báo giá trên điện thoại'));
+  assert.match(mobile, /#paste-lines \{ display: none; \}/);
+  assert.match(mobile, /#pick-products \{ grid-column: 1; grid-row: 2; \}/);
+  assert.match(mobile, /#add-line \{ grid-column: 2; grid-row: 2; \}/);
+  assert.match(mobile, /\.row-gap \{ width: 100%; display: grid; grid-template-columns: repeat\(2, 1fr\); gap: 7px; \}/);
+});
+
 test('hộp tìm sản phẩm báo giá mobile ẩn bộ lọc, xếp phạm vi cùng chính sách và cuộn từng 20 mã', () => {
   assert.match(html, /id="picker-filter-toggle"[^>]*aria-expanded="false"[^>]*>Xem bộ lọc/);
   assert.match(html, /class="catalog-filters" id="picker-filters" hidden/);
