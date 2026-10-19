@@ -258,6 +258,14 @@ test('K80: bill tạm không có số chính thức, nhãn rõ ràng và dữ li
   assert.ok(!p.textContent.includes('POS_1'));
   assert.match(p.textContent, /<script>customer<\/script>/);
   assert.equal(p.querySelectorAll('script,img').length, 0);
+  assert.match(p.textContent, /TỔNG THÀNH TIỀN/);
+  assert.match(p.textContent, /VAT[\s\S]*TỔNG THANH TOÁN/);
+  assert.ok(!p.textContent.includes('Tiền trước thuế (gồm phí)'));
+  assert.ok(!p.textContent.includes('TỔNG CỘNG'));
+  const separatorIndex = p.children.findIndex((x: Element) => x.className === 'bill-total-separator');
+  const totalIndex = p.children.findIndex((x: Element) => x.textContent.includes('TỔNG THÀNH TIỀN'));
+  assert.equal(separatorIndex + 1, totalIndex);
+  assert.equal(p.children.filter((x: Element) => x.className.includes('strong') && /TỔNG THÀNH TIỀN|VAT|TỔNG THANH TOÁN/.test(x.textContent)).length, 3);
   const paid = buildPosPrint(doc, sample);
   assert.match(paid.textContent, /POS_1/);
   assert.match(paid.textContent, /Giảm 10%/);

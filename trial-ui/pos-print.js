@@ -84,9 +84,10 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     }
     if (data.fees?.service?.amount) line(data.fees.service.name + ' (trước thuế)', money(data.fees.service.subtotal));
     if (data.fees?.shippingFee) line('Phí ship (không VAT)', money(data.fees.shippingFee));
-    line('Tiền trước thuế (gồm phí)', money(data.subtotal));
-    line('VAT', money(data.tax));
-    line('TỔNG CỘNG', money(data.total), true);
+    sheet.append(node(doc, 'div', '', 'bill-total-separator'));
+    line('TỔNG THÀNH TIỀN', money(data.subtotal), true);
+    line('VAT', money(data.tax), true);
+    line('TỔNG THANH TOÁN', money(data.total), true);
     if(data.exchangeCredit){line('Thanh toán bằng tiền đổi hàng',money(data.exchangeCredit));line('Khách trả thêm',money(data.payable));}
     if (data.note) sheet.append(node(doc, 'p', 'Ghi chú: ' + data.note, 'order-note'));
     if (temporary) sheet.append(node(doc, 'p', 'Chưa ghi thu, chưa trừ kho. Không phải hóa đơn VAT.', 'center'));
@@ -120,7 +121,7 @@ export function printPos(data, kind = 'bill') {
   const style = node(
     doc,
     'style',
-    '@page{size:80mm auto;margin:0}body{margin:0;font:12px Arial;color:#000;background:#fff}.pos-paper{width:72mm;padding:4mm;overflow-wrap:anywhere}h2,h3,.center{text-align:center}h2{font-size:16px}h3{font-size:13px;border-top:1px dashed;padding-top:8px}p{margin:5px 0}.pair{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.pair span:last-child{text-align:right;white-space:nowrap}.strong{font-weight:bold;font-size:15px;border-top:1px dashed;padding-top:6px}.order-note{white-space:pre-wrap;overflow-wrap:anywhere}.item-name{font-weight:bold;border-top:1px dotted;padding-top:6px}',
+    '@page{size:80mm auto;margin:0}body{margin:0;font:12px Arial;color:#000;background:#fff}.pos-paper{width:72mm;padding:4mm;overflow-wrap:anywhere}h2,h3,.center{text-align:center}h2{font-size:16px}h3{font-size:13px;border-top:1px dashed;padding-top:8px}p{margin:5px 0}.pair{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.pair span:last-child{text-align:right;white-space:nowrap}.bill-total-separator{border-top:1px dashed;margin-top:6px;padding-top:2px}.strong{font-weight:bold;font-size:15px}.order-note{white-space:pre-wrap;overflow-wrap:anywhere}.item-name{font-weight:bold;border-top:1px dotted;padding-top:6px}',
   );
   doc.head.append(style);
   doc.body.append(buildPosPrint(doc, data, kind));
