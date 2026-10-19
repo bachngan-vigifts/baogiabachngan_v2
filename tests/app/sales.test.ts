@@ -303,3 +303,24 @@ test('đơn / HĐKT sinh từ báo giá luôn là nháp chờ Manager duyệt; c
 });
 
 
+
+test('đơn hàng và HĐKT giữ đơn giá thập phân từ báo giá, tổng VNĐ khớp báo giá', async () => {
+  const { call, emp, mgr } = await setup();
+  for (const kind of ['order', 'contract']) {
+    const doc = { type: 'VIGIFTS', quoteNo: `VG_DECIMAL_${kind}`, customer: 'Khách thử', customerTaxCode: '0101234567', vat: 8,
+      rows: Array.from({ length: 3 }, (_, i) => ({ name: `Bình ${i}`, sku: `DEC${i}`, qty: 110, price: 581481, discount: 56, taxRate: 8 })) };
+    const quote = await call('/quotes', emp, 'POST', doc); assert.equal(quote.status, 201, JSON.stringify(quote.data));
+    assert.equal((await call(`/quotes/${quote.data.id}/approve`, mgr, 'POST', { revision: 1 })).status, 200);
+    const made = await call(kind === 'order' ? '/orders' : '/contracts', emp, 'POST', { quoteId: quote.data.id, legalEntity: 'VG', depositRate: 30, paymentDays: 5 });
+    assert.equal(made.status, 201, JSON.stringify(made.data));
+    const detail = (await call('/orders/' + (kind === 'order' ? made.data.id : made.data.orderId), emp)).data;
+    for (const line of detail.lines) {
+      assert.ok(Math.abs(line.unitPrice - 255851.64) < 1e-8);
+      assert.ok(Math.abs(line.amount - 28143680.4) < 1e-6);
+    }
+    assert.equal(detail.order.total, 91185524);
+    assert.equal(detail.order.subtotal + detail.order.tax, detail.order.total);
+    assert.equal(detail.schedules.reduce((s: number, p: any) => s + p.amount, 0), detail.order.total);
+    if (kind === 'contract') assert.equal(detail.contract.value, detail.order.total);
+  }
+});
