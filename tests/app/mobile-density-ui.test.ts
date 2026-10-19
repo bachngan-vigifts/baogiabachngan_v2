@@ -5,6 +5,16 @@ import { readFileSync } from 'node:fs';
 const style = readFileSync(new URL('../../trial-ui/style.css', import.meta.url), 'utf8');
 const pos = readFileSync(new URL('../../trial-ui/pos.css', import.meta.url), 'utf8');
 const posJs = readFileSync(new URL('../../trial-ui/pos.js', import.meta.url), 'utf8');
+const htmlPages = ['index.html', 'customer.html', 'login.html'].map((name) => ({
+  name,
+  source: readFileSync(new URL(`../../trial-ui/${name}`, import.meta.url), 'utf8'),
+}));
+
+test('mọi trang web đều tắt phóng to trên điện thoại', () => {
+  for (const page of htmlPages) {
+    assert.match(page.source, /<meta name="viewport" content="[^"]*maximum-scale=1[^"]*user-scalable=no[^"]*">/, page.name);
+  }
+});
 
 test('toàn hệ thống dùng chuẩn giao diện gọn chỉ trên điện thoại', () => {
   const start = style.indexOf('Chuẩn giao diện gọn dùng chung cho toàn hệ thống');
