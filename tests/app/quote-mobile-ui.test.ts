@@ -45,3 +45,14 @@ test('dòng trống mobile là một hàng phụ phí gọn và không lặp nú
   assert.match(css, /#view-editor #line-list tr\.manual-line \{ grid-template-columns: minmax\(0, 1fr\) 110px 34px/);
   assert.match(css, /tr\.manual-line \.col-img,[\s\S]*?tr\.manual-line \.col-cost \{ display: none; \}/);
 });
+
+test('hộp tìm sản phẩm báo giá mobile ẩn bộ lọc, xếp phạm vi cùng chính sách và cuộn từng 20 mã', () => {
+  assert.match(html, /id="picker-filter-toggle"[^>]*aria-expanded="false"[^>]*>Xem bộ lọc/);
+  assert.match(html, /class="catalog-filters" id="picker-filters" hidden/);
+  assert.match(app, /limit: '20'/);
+  assert.match(app, /let pickerShown = 20/);
+  assert.match(app, /pickerShown = more \? pickerShown \+ 20 : 20/);
+  assert.match(app, /#picker-list'\)\.addEventListener\('scroll'/);
+  assert.match(css, /\.catalog-options \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(css, /#picker-dialog \.picker-list \{ max-height: 58dvh; overflow-y: auto/);
+});

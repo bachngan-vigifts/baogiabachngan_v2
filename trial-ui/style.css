@@ -720,6 +720,8 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 .search-box span { font-size: 1.2rem; color: var(--blue); }
 .search-box input { border: 0; box-shadow: none !important; padding: 12px 10px; font-size: 1rem; background: transparent; }
 .catalog-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 10px 12px; margin-top: 12px; align-items: start; }
+.catalog-filters[hidden] { display: none; }
+#picker-filter-toggle { margin-top: 8px; }
 .catalog-filters .btn { margin-top: 22px; }
 #picker-dialog { width: min(1040px, calc(100vw - 24px)); max-width: none; }
 .catalog-filters label span { display: block; font-size: .78rem; font-weight: 700; color: #49566a; margin-bottom: 5px; }
@@ -729,8 +731,13 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 @media (max-width: 900px) { .catalog-filters { grid-template-columns: 1fr 1fr; } }
 #picker-status { margin-bottom: 8px; }
 @media (max-width: 640px) {
-  .catalog-policy { max-width: none; }
+  .catalog-options { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; align-items: center; }
+  .catalog-policy { max-width: none; min-width: 0; gap: 6px; font-size: 10px; }
+  .catalog-policy select { min-width: 0; padding: 6px; font-size: 11px; }
+  .catalog-scope { gap: 4px; font-size: 10px; white-space: normal; }
+  .catalog-scope input { width: 15px; height: 15px; flex: none; }
   .catalog-filters { grid-template-columns: 1fr; }
+  #picker-dialog .picker-list { max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain; }
 }
 
 /* Tính đóng thùng & phí vận chuyển */

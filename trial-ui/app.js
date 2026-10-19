@@ -2378,7 +2378,7 @@ async function showIncoming(sku) {
 }
 /** Bộ lọc giống "Tìm nhanh sản phẩm" của web cũ: phạm vi theo loại báo giá, nhóm, khoảng giá theo chính sách đang chọn. */
 function pickerQuery(offset) {
-  const v = id => $(id).value.trim(), params = new URLSearchParams({ limit: '40', offset: String(offset), q: v('#picker-search'), policy: currentPolicy() });
+  const v = id => $(id).value.trim(), params = new URLSearchParams({ limit: '20', offset: String(offset), q: v('#picker-search'), policy: currentPolicy() });
   if (!$('#picker-all').checked) params.set('scope', editor.type === 'VIGIFTS' ? 'other' : 'minhlong');
   if (v('#picker-group')) params.set('group', v('#picker-group'));
   if (v('#picker-min')) params.set('min', v('#picker-min'));
@@ -2428,7 +2428,7 @@ function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
   })().finally(() => { catalog.loading = null; });
   return catalog.loading;
 }
-let pickerShown = 40;
+let pickerShown = 20;
 function pickerOptions() {
   const v = id => $(id).value.trim();
   return { q: v('#picker-search'), group: v('#picker-group'), policy: currentPolicy(), min: v('#picker-min'), max: v('#picker-max'),
@@ -2441,7 +2441,7 @@ async function loadPicker(more = false) {
     $('#picker-status').textContent = 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.'; $('#picker-list').innerHTML = ''; $('#picker-more-row').hidden = true; return;
   }
   if (catalog.items) { // lọc ngay trên máy
-    pickerShown = more ? pickerShown + 40 : 40;
+    pickerShown = more ? pickerShown + 20 : 20;
     const found = searchCatalog(catalog.items, pickerOptions()) || [];
     pickerItems = found.slice(0, pickerShown); pickerTotal = found.length;
     $('#picker-list').removeAttribute('aria-busy');
@@ -2495,10 +2495,29 @@ function addRowsToQuote(rows) {
 $('#pick-products').addEventListener('click', () => {
   pickerAdded = 0; $('#picker-added').textContent = '';
   pickerPolicyOptions();
+  $('#picker-filters').hidden = true;
+  $('#picker-filter-toggle').textContent = 'Xem bộ lọc ▾';
+  $('#picker-filter-toggle').setAttribute('aria-expanded', 'false');
   $('#picker-dialog').showModal(); $('#picker-search').focus(); loadHolds().then(loadPicker);
   loadCatalogSnapshot(); // kiểm tra nền: Sapo có dữ liệu mới thì cập nhật kết quả
 });
 $('#picker-search').addEventListener('input', reloadPicker);
+$('#picker-filter-toggle').addEventListener('click', () => {
+  const filters = $('#picker-filters'), show = filters.hidden;
+  filters.hidden = !show;
+  $('#picker-filter-toggle').textContent = show ? 'Ẩn bộ lọc ▴' : 'Xem bộ lọc ▾';
+  $('#picker-filter-toggle').setAttribute('aria-expanded', String(show));
+});
+let pickerScrollTimer;
+$('#picker-list').addEventListener('scroll', () => {
+  clearTimeout(pickerScrollTimer);
+  pickerScrollTimer = setTimeout(() => {
+    const list = $('#picker-list');
+    if (list.scrollTop + list.clientHeight < list.scrollHeight - 100 || pickerItems.length >= pickerTotal || list.dataset.loading === '1') return;
+    list.dataset.loading = '1';
+    loadPicker(true).finally(() => { delete list.dataset.loading; });
+  }, 80);
+});
 $('#picker-policy').addEventListener('change', e => {
   preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ }
   applyCatalogMeta({}); loadPicker();

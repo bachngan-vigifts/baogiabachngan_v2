@@ -1031,7 +1031,8 @@
     <p class="search-help" id="picker-snapshot"></p>
     <div class="search-box"><span aria-hidden="true">⌕</span><input id="picker-search" type="search" autocomplete="off" placeholder="Nhập mã hoặc tên, ví dụ: chén cơm jas…" aria-label="Tìm sản phẩm để thêm"></div>
     <p class="search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
-    <div class="catalog-filters">
+    <button type="button" class="btn ghost small" id="picker-filter-toggle" aria-expanded="false">Xem bộ lọc ▾</button>
+    <div class="catalog-filters" id="picker-filters" hidden>
       <label><span>Nhóm sản phẩm</span><select id="picker-group"><option value="">Tất cả nhóm</option><option value="dinner">Bộ đồ ăn</option><option value="tea">Bộ trà</option><option value="thermalCup">Ly / cốc giữ nhiệt</option><option value="thermalBottle">Bình giữ nhiệt</option><option value="tableware">Chén, tô, đĩa</option><option value="vase">Bình hoa</option><option value="cookware">Nồi, chảo</option></select></label>
       <label><span>Khoảng giá</span><select id="picker-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option><option value="custom">Tự nhập khoảng giá</option></select></label>
       <label><span>Giá từ (đ)</span><input id="picker-min" type="number" min="0" step="1000" inputmode="numeric" placeholder="Ví dụ: 1000000"></label>
