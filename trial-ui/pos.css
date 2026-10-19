@@ -205,9 +205,9 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   gap: 8px;
 }
 .pos-lines {
-  min-height: 140px;
-  max-height: clamp(180px, 23vh, 280px);
-  overflow: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
 }
 .pos-line {
   padding: 8px 0;
@@ -624,9 +624,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-head {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .pos-lines {
-    max-height: none;
   }
   body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
     display: none;

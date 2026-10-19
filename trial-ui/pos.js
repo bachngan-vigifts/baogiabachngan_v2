@@ -166,7 +166,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (st.register) await Promise.all([search(false), run(loadOrderBoard)]);
     if (st.cart.length && active()) await preview();
   }
+  let cartResizeObserver;
   function draw() {
+    cartResizeObserver?.disconnect();
     root.replaceChildren();
     const page = el('div', 'pos-page' + (st.showMenu ? ' pos-show-menu' : '')),
       head = el('div', 'pos-head'),
@@ -522,6 +524,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.search.select();
   }
   function drawCart() {
+    cartResizeObserver?.disconnect();
     nodes.lines.replaceChildren();
     lineTotals = new Map();
     if (!st.cart.length) nodes.lines.append(el('p', 'pos-note', 'Tìm hoặc quét sản phẩm để thêm vào giỏ.'));
@@ -596,7 +599,28 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       row.append(edit);
       nodes.lines.append(row);
     }
+    sizeCartLines();
     updateTotals();
+  }
+  function sizeCartLines() {
+    const host = nodes.lines, rows = [...host.children];
+    const scroll = st.cart.length > 10;
+    host.style.maxHeight = 'none';
+    host.style.overflowY = scroll ? 'auto' : 'visible';
+    host.style.overflowX = scroll ? 'hidden' : 'visible';
+    host.style.scrollbarGutter = scroll ? 'stable' : 'auto';
+    if (!scroll || typeof host.getBoundingClientRect !== 'function') return;
+    // Đo đủ 10 mã thực tế: tên dài, font và độ rộng màn hình có thể đổi chiều cao từng dòng.
+    const resize = () => {
+      const height = Math.ceil(rows[9].getBoundingClientRect().bottom - host.getBoundingClientRect().top + host.scrollTop);
+      if (height > 0 && host.style.maxHeight !== height + 'px') host.style.maxHeight = height + 'px';
+    };
+    resize();
+    if (typeof ResizeObserver !== 'undefined') {
+      cartResizeObserver = new ResizeObserver(resize);
+      cartResizeObserver.observe(host);
+      rows.slice(0, 10).forEach(row => cartResizeObserver.observe(row));
+    }
   }
   function drawFees(right) {
     const box = el('section', 'pos-extra-fees'), service = el('div', 'pos-service-fee');
