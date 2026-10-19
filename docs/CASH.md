@@ -54,3 +54,7 @@ Nhân viên kết ca ghi giải trình. Manager đóng sau giải trình và b�
 Chênh lệch khi mở ca được lưu ngay trong tra soát và audit, không tạo phiếu thu/chi hay tự bù sổ két. Báo cáo K80 và popup hiện tiền bàn giao tham chiếu, đầu ca thực đếm và lệch mở ca riêng. Nếu kết ca khớp, tra soát mở ca vẫn chờ xử lý; nếu kết ca lệch, dùng cùng tra soát và vẫn giữ bằng chứng đầu ca từ audit. Nhân viên được giải trình ngay khi ca đang mở, Manager đóng theo quyền cũ.
 
 Migration cho ngoại lệ Manager tự duyệt: `20261019020235_manager_cash_self_approval.sql` chỉ bỏ CHECK cấm mọi người tự duyệt. Triển khai trước API mới; server vẫn chặn nhân viên được chỉ định tự duyệt và audit ghi `selfApproved`.
+
+### Giới hạn két theo cửa hàng
+
+NVBH/CHT Lock chỉ thấy két gắn quầy Lock; NVBH/CHT Minh Long chỉ thấy két gắn quầy Minh Long (xem quy tắc nhận diện trong POS.md). Phạm vi áp dụng cả danh sách và ID truy cập trực tiếp, ảnh phiếu, duyệt/huỷ, ca và tra soát. Người được chỉ định duyệt không được vượt phạm vi này. Manager vẫn xem và thao tác cả hai theo quyền hiện có. Không thay đổi số dư hay báo cáo đã chốt.

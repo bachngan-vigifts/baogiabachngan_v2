@@ -62,7 +62,7 @@ test('POS giữ chính sách khách mới dùng ngay nhưng khách chờ duyệt
   assert.equal((await f.db.select().from(customerPayments)).length, 0);
   assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
 });
-test('POS options trả quầy mặc định theo chức vụ và giữ ca hiện có', async () => {
+test('POS options chỉ trả quầy đúng chức vụ và ẩn ca cũ thuộc cửa hàng khác', async () => {
   const { db, call, emp, other, mgr, registerId, open } = await setup();
   await db.update(posRegisters).set({ name: 'Quầy Lock' }).where(eq(posRegisters.id, registerId));
   const ml = await call('/pos/registers', mgr, 'POST', {
@@ -72,6 +72,7 @@ test('POS options trả quầy mặc định theo chức vụ và giữ ca hiệ
     secondPricePolicyId: 'retail',
   });
   assert.equal(ml.status, 200, JSON.stringify(ml.data));
+  assert.equal((await call('/cash/drawers', mgr, 'POST', { key: crypto.randomUUID(), name: 'Két Minh Long', registerId: ml.data.id })).status, 201);
   const lockOptions = await call('/pos/options', other);
   assert.equal(lockOptions.status, 200);
   assert.equal(lockOptions.data.defaultRegisterId, registerId);
@@ -80,8 +81,9 @@ test('POS options trả quầy mặc định theo chức vụ và giữ ca hiệ
   const mlOptions = await call('/pos/options', emp);
   assert.equal(mlOptions.status, 200);
   assert.equal(mlOptions.data.defaultRegisterId, ml.data.id);
-  assert.equal(mlOptions.data.current.id, shift.id);
-  assert.equal(mlOptions.data.current.registerId, registerId);
+  assert.equal(mlOptions.data.current, null);
+  assert.deepEqual(mlOptions.data.registers.map((r: any) => r.id), [ml.data.id]);
+  assert.equal((await call('/pos/shifts/' + shift.id, emp)).status, 403);
 });
 test('POS: bill tạm và QR chỉ yêu cầu, không tạo đơn/ghi thu/trừ tồn; giá do server tính', async () => {
   const { db, call, emp, open, cart } = await setup(),
@@ -158,7 +160,7 @@ test('POS production: checkout gửi đúng số đơn, chi nhánh và nhân vi�
   assert.equal(hook.body.order_no, made.data.orderNo);
   assert.equal(hook.body.external_reference, made.data.orderNo);
   assert.equal(hook.body.idempotency_key, `pos:${made.data.orderNo}`);
-  assert.deepEqual([hook.body.branch.name, hook.body.branch.warehouse_name], ['Quầy POS', 'Kho POS']);
+  assert.deepEqual([hook.body.branch.name, hook.body.branch.warehouse_name], ['Quầy Lock', 'Kho POS']);
   assert.deepEqual([hook.body.responsible, hook.body.responsible_email], ['Tên emp', 'emp@x.vn']);
   assert.equal(hook.body.items[0].sku, '00123');
   const replay = await f.call('/pos/checkout', f.emp, 'POST', b);

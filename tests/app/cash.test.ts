@@ -19,6 +19,7 @@ const entry = (kind = 'other_income', amount = 100000) => ({
 const range = '?from=2026-01-01&to=2027-01-01';
 test('Hai két riêng: đầu kỳ không sao chép, ca mở độc lập, số dư/phiếu/tra soát không lẫn quầy', async () => {
   const f = await setup();
+  await f.db.update(employees).set({ positionId: 'sales-ml' }).where(eq(employees.id, 'cashier2'));
   await f.db.update(posRegisters).set({ name: 'Quầy Lock' }).where(eq(posRegisters.id, f.registerId));
   const ml = await f.call('/pos/registers', f.mgr, 'POST', {
     name: 'Quầy Minh Long', warehouseId: 'pos-wh', pricePolicyId: 'retail-vat', secondPricePolicyId: 'retail',

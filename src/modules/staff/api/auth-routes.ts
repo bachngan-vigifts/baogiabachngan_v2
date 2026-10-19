@@ -76,6 +76,8 @@ export function clientIp(h: Headers): string {
 }
 
 export interface StaffRouterOptions {
+  /** Kiểm phạm vi nghiệp vụ do lớp ứng dụng lắp ráp sau khi xác thực và kiểm quyền. */
+  authorizeSession?: (c: Ctx) => Promise<void>;
   /** Lớp ứng dụng cung cấp xác thực webhook; staff không phụ thuộc module tích hợp. */
   authorizeSynctime?: (req: Request, db: AnyDb) => Promise<void>;
 }
@@ -122,6 +124,7 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     if (need && !need.some(k => can(member, k))) throw new AppError(403, 'Chức vụ của bạn chưa được cấp quyền dùng chức năng này. Liên hệ Manager.', 'NO_PERMISSION');
   }
   c.state.session = { member, tokenHash } satisfies SessionState;
+  await options.authorizeSession?.(c);
 }
 
 /**

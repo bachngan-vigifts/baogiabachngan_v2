@@ -84,7 +84,7 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     other = await login('cashier2@x.vn'),
     ncc = await login('ncc@x.vn');
   const made = await call('/pos/registers', mgr, 'POST', {
-    name: 'Quầy POS',
+    name: 'Quầy Lock',
     warehouseId: 'pos-wh',
     pricePolicyId: 'retail-vat',
     secondPricePolicyId: 'retail',

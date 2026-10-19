@@ -122,3 +122,7 @@ Các thao tác phê duyệt chỉ do **Manager** hoặc **nhân viên được M
 
 - `0065_staff_permissions.sql`: tạo bảng, thêm 4 phòng ban, xếp chức vụ vào phòng ban, ghi quyền mặc định. Kết quả là chạy xong mọi người giữ nguyên quyền như cũ.
 - `0066_supabase_access_staff_permissions.sql`: thu quyền truy cập trực tiếp (Data API) của 3 bảng mới.
+
+### Quầy và két của nhân viên cửa hàng
+
+NVBH/CHT Lock giới hạn quầy và két Lock; NVBH/CHT Minh Long giới hạn quầy và két Minh Long. Quyền bán hàng/cấu hình/duyệt được cấp thêm không mở rộng cửa hàng. Manager vẫn truy cập cả hai. API kiểm phạm vi trước khi đọc/ghi, không chỉ ẩn danh sách trên giao diện; xem POS.md và CASH.md.

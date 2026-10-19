@@ -1,3 +1,4 @@
+import { allowedRegister, posScope } from './pos-access.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -40,13 +41,14 @@ function config(c: RouteContext<StaffEnv>) {
 }
 async function allowedPosRegisters(c: RouteContext<StaffEnv>) {
   const m = member(c), db = c.env.db;
-  const regs = await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name));
+  const regs = (await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
+  if (posScope(c)) return { regs, ids: new Set(regs.map(r => r.id)), all: false };
   if (m.role === 'manager' || can(m, 'pos.configure')) return { regs, ids: new Set(regs.map(r => r.id)), all: true };
   const [[current], [position]] = await Promise.all([
     db.select({ registerId: posShifts.registerId }).from(posShifts).where(and(eq(posShifts.memberId, m.id), isNull(posShifts.closedAt))).limit(1),
     m.positionId ? db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1) : Promise.resolve([]),
   ]);
-  const id = current?.registerId || defaultPosRegister(m.positionId, position?.name, regs);
+  const id = (current && regs.some(r => r.id === current.registerId) ? current.registerId : '') || defaultPosRegister(m.positionId, position?.name, regs);
   return { regs: regs.filter(r => r.id === id), ids: new Set(id ? [id] : []), all: false };
 }
 function posOrderBucket(o: { status: string; fulfillmentMode: string; packingStatus: string; deliveryStatus: string }) {
@@ -159,8 +161,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/options',
     async (c) => {
       const m = member(c);
+      const canConfigure = can(m, 'pos.configure') && !posScope(c);
       if (!can(m, 'pos.sell') && !can(m, 'pos.configure')) throw new AppError(403, 'Chưa được cấp quyền POS.');
-      const [regs, templates, shiftRows] = await Promise.all([
+      const [allRegs, templates, shiftRows] = await Promise.all([
         c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name)),
         c.env.db.select().from(posShiftTemplates).where(eq(posShiftTemplates.active, true)),
         c.env.db
@@ -171,17 +174,18 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .orderBy(desc(posShifts.openedAt))
           .limit(50),
       ]);
-      const shifts = shiftRows.map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
+      const regs = allRegs.filter(r => allowedRegister(c, r.id));
+      const shifts = shiftRows.filter(x => allowedRegister(c, x.shift.registerId)).map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
       const policies = await c.env.db
         .select()
         .from(pricePolicies)
         .where(
-          can(m, 'pos.configure')
+          canConfigure
             ? undefined
             : inArray(pricePolicies.id, [...new Set(regs.flatMap((r) => [r.pricePolicyId, r.secondPricePolicyId]))]),
         )
         .orderBy(asc(pricePolicies.sortOrder));
-      const stores = can(m, 'pos.configure')
+      const stores = canConfigure
         ? await c.env.db
             .select()
             .from(warehouses)
@@ -196,7 +200,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         templates,
         shifts,
         current: shifts.find((s) => s.memberId === m.id && !s.closedAt) ?? null,
-        canConfigure: can(m, 'pos.configure'),
+        canConfigure,
         policies,
         warehouses: stores,
       });
