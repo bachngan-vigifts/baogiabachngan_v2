@@ -780,6 +780,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-stock-low { color: #b66b00; }
 .pos-stock-out { color: #b22b37; font-weight: 800; }
 .pos-product:disabled { opacity: .72; background: #f5f6f6; }
+.pos-product[aria-pressed='true'] { border-color: #16884d; background: #e7f6ec; box-shadow: 0 0 0 2px #16884d33; }
+.pos-product[aria-pressed='true']::after { content: '✓ Đã thêm'; align-self: flex-end; color: #116c3d; font-size: 11px; font-weight: 800; }
 .pos-basket-head { align-items: flex-start; flex-direction: column; padding-bottom: 12px; border-bottom: 1px solid #e7ece9; }
 .pos-basket-head > div { width: 100%; display: flex; align-items: center; justify-content: space-between; }
 .pos-basket-head h2 { margin: 0; font-size: 21px; }
@@ -884,6 +886,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-product-price-stock { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; width: 100%; margin-top: auto; }
   .pos-product-price-stock strong { margin-top: 0; font-size: 14px; white-space: nowrap; }
   .pos-product-price-stock .pos-stock { margin-left: auto; text-align: right; white-space: nowrap; font-size: 10px; }
+  .pos-product[aria-pressed='true']::after { font-size: 9px; }
   .pos-basket-head h2 { font-size: 13px; }
   .pos-basket-head .pos-customer-trigger { min-height: 38px; font-size: 10px; }
   .pos-checkout .pos-cart-count { font-size: 9px; }

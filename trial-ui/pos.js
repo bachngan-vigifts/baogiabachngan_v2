@@ -520,7 +520,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (nodes.cod) nodes.cod.hidden = st.method !== 'cod';
     if (nodes.modalPay) nodes.modalPay.textContent = st.method === 'cod' ? 'TIẾP TỤC TẠO ĐƠN COD' : 'Thu tiền & in bill';
   }
-  function add(p) {
+  function markProductsInCart() {
+    const skus = new Set(st.cart.map(x => x.sku));
+    for (const b of nodes.grid?.children || []) {
+      if (!b.classList?.contains?.('pos-product') && !String(b.className || '').split(/\s+/).includes('pos-product')) continue;
+      const selected = skus.has(b.dataset.sku);
+      b.classList.toggle('pos-product-in-cart', selected);
+      b.setAttribute('aria-pressed', String(selected));
+    }
+  }
+  function add(p, refocusSearch = false) {
     if (!active()) return toast('Mở ca trước khi thêm hàng.', 'err');
     if (st.pending || st.busy) return;
     const old = st.cart.find((x) => x.sku === p.sku);
@@ -528,12 +537,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     else st.cart.push({ ...p, qty: 1, discountType: 'percent', discountValue: 0 });
     drawCart();
     invalidate();
-    nodes.search.focus();
-    nodes.search.select();
+    if (refocusSearch) {
+      nodes.search.focus();
+      nodes.search.select();
+    }
   }
   function drawCart() {
     cartResizeObserver?.disconnect();
     nodes.lines.replaceChildren();
+    markProductsInCart();
     if (nodes.cartCount) nodes.cartCount.textContent = `${st.cart.reduce((n,x)=>n+Number(x.qty||0),0)} món`;
     updateMobileDock();
     lineTotals = new Map();
@@ -739,7 +751,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.more.hidden = d.nextOffset == null;
     if (addScanned) {
       const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
-      if (p && p.available > 0) add(p);
+      if (p && p.available > 0) add(p, true);
       else toast('Chọn đúng sản phẩm trong danh sách.');
     }
   }
@@ -748,6 +760,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.grid.replaceChildren();
     for (const p of st.products.filter(p => st.productFilter === 'all' || st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0)) {
       const b = button('', 'pos-product', () => add(p));
+      b.dataset.sku = p.sku;
+      b.setAttribute('aria-pressed', String(st.cart.some(x => x.sku === p.sku)));
       if (p.imageUrl && /^https:\/\//.test(p.imageUrl)) {
         const im = el('img');
         im.src = p.imageUrl;

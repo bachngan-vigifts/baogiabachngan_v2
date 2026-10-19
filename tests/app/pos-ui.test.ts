@@ -338,6 +338,7 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
     const product = root.querySelectorAll('button').find((x) => x.className === 'pos-product')!;
     assert.ok(product);
     await product.fire('click');
+    assert.equal(product.attributes['aria-pressed'], 'true');
     await new Promise((r) => setTimeout(r, 230));
     const preview = calls.find((x) => x.path === '/pos/preview');
     assert.ok(preview);
