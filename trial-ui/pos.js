@@ -190,7 +190,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     title.append(menu);
     page.append(head);
     tools.append(
-      button('Trả / Đổi / Hoàn', 'btn secondary', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()})),
+      button('Trả / Đổi / Hoàn', 'btn pos-returns-button', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()})),
       button('Báo cáo ca', 'btn secondary', () => run(history)),
       button('Ship COD', 'btn secondary', () => run(codList)),
     );

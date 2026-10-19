@@ -46,6 +46,19 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   background: #f5fff8;
   border-color: #9bceac;
 }
+.pos-head .btn.pos-returns-button {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+.pos-head .btn.pos-returns-button:hover {
+  background: #991b1b;
+  border-color: #991b1b;
+}
+.pos-head .btn.pos-returns-button:focus-visible {
+  outline: 2px solid #b91c1c;
+  outline-offset: 3px;
+}
 .pos-head .btn.primary {
   background: #168148;
   border-color: #168148;
