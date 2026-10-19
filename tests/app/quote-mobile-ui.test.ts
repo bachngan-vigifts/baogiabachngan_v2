@@ -30,22 +30,26 @@ test('CSS chỉ chuyển bố cục báo giá ở màn hình tối đa 850px và
   const mobile = css.slice(css.indexOf('/* Soạn báo giá trên điện thoại'));
   assert.match(mobile, /@media \(max-width: 850px\)/);
   assert.match(mobile, /#quote-form\[data-mobile-step='info'\]/);
-  assert.match(mobile, /#view-editor #line-table \{[\s\S]*?min-width: 0 !important/);
+  assert.match(mobile, /#view-editor #line-table \{[\s\S]*?min-width: 1060px !important/);
+  assert.match(mobile, /#view-editor #line-head \{ display: table-header-group; \}/);
+  assert.match(mobile, /#view-editor #line-list tr \{ display: table-row;/);
+  assert.match(mobile, /#view-editor #line-head \.col-product, #view-editor #line-list \.col-product \{ position: sticky; left: 0;/);
   assert.match(css, /Bản gọn cho trình soạn báo giá trên điện thoại/);
   assert.match(css, /#view-editor \.mobile-savebar \.btn \{ min-width: 72px; min-height: 40px/);
   assert.match(css, /font-size: 13px !important/);
   assert.doesNotMatch(css.slice(0, css.indexOf('/* Soạn báo giá trên điện thoại')), /quote-mobile-panel:not/);
 });
 
-test('dòng trống mobile là một hàng phụ phí gọn và không lặp nút thêm sản phẩm', () => {
+test('dòng trống mobile giữ số lượng, đơn giá và thành tiền trong bảng ngang', () => {
   assert.match(app, /const manual = !r\.sku && !r\.image/);
   assert.match(app, /class="\$\{manual \? 'manual-line' : ''\}"/);
   assert.match(app, /Tên phụ phí \/ nội dung thêm/);
   assert.match(css, /#view-editor \[data-quote-panel='products'\] > \.card-title-row #pick-products \{ display: none; \}/);
-  assert.match(css, /#view-editor #line-list tr\.manual-line \{ grid-template-columns: 72px minmax\(0, 1fr\) 34px/);
-  assert.match(css, /tr\.manual-line \.col-qty \{ display: block; grid-column: 1; grid-row: 2/);
-  assert.match(css, /tr\.manual-line \.line-total \{ display: block; grid-column: 1 \/ -1; grid-row: 3/);
+  assert.match(css, /Dòng nhập tay đi cùng bảng; giữ các cột tên, số lượng, đơn giá và thành tiền/);
   assert.match(css, /tr\.manual-line \.col-img,[\s\S]*?tr\.manual-line \.col-cost \{ display: none; \}/);
+  assert.doesNotMatch(css, /tr\.manual-line \.col-qty[^}]*display: none/);
+  assert.doesNotMatch(css, /tr\.manual-line \.col-price[^}]*display: none/);
+  assert.doesNotMatch(css, /tr\.manual-line \.line-total[^}]*display: none/);
 });
 
 test('hộp tìm sản phẩm báo giá mobile ẩn bộ lọc, xếp phạm vi cùng chính sách và cuộn từng 20 mã', () => {

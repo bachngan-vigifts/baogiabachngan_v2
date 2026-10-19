@@ -387,40 +387,38 @@ table { width: 100%; border-collapse: collapse; }
   #view-editor [data-quote-panel='products'] > .card-title-row .row-gap { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
   #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 44px; white-space: normal; }
   #view-editor [data-quote-panel='products'] > .card-title-row #pick-products { display: none; }
-  #view-editor .lines-wrap { border: 0; overflow: visible; }
-  #view-editor #line-table { display: block; min-width: 0 !important; width: 100%; }
-  #view-editor #line-head { display: none; }
-  #view-editor #line-list { display: grid; gap: 10px; }
-  #view-editor #line-list tr { position: relative; display: grid; grid-template-columns: 62px repeat(2, minmax(0, 1fr)); gap: 9px; padding: 12px; border: 1px solid #dce5df; border-radius: 14px; background: #fff; box-shadow: 0 2px 7px #173b2908; }
-  #view-editor #line-list td { display: block; width: auto !important; min-width: 0; padding: 0 !important; border: 0; text-align: left; }
-  #view-editor #line-list .col-idx { display: none; }
-  #view-editor #line-list .col-img { grid-column: 1; grid-row: 1; }
-  #view-editor #line-list .col-product { grid-column: 2 / -1; grid-row: 1; padding-right: 28px !important; }
-  #view-editor #line-list .col-unit, #view-editor #line-list .col-qty, #view-editor #line-list .col-price,
-  #view-editor #line-list .col-disc, #view-editor #line-list .col-print, #view-editor #line-list .col-after,
-  #view-editor #line-list .col-pd, #view-editor #line-list .col-cost { grid-column: span 1; }
-  #view-editor #line-list .line-total { grid-column: span 2; align-self: end; color: #155f37; font-size: 1.05rem; }
-  #view-editor #line-list td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #6b786f; font-size: .7rem; font-weight: 700; text-transform: uppercase; }
-  #view-editor #line-list .col-product::before, #view-editor #line-list .col-img::before { content: none; }
-  #view-editor #line-list input, #view-editor #line-list select { width: 100%; min-height: 44px; font-size: 16px; }
-  #view-editor #line-list .name-input { min-height: 40px; font-size: 1rem; }
-  #view-editor #line-list .line-actions { position: absolute; top: 8px; right: 8px; }
-  #view-editor #line-list .line-actions .icon-btn { width: 40px; height: 40px; }
-  #view-editor #line-list .line-empty { display: block; }
-  #view-editor #line-list .line-empty td { display: block; }
+  /* Mobile: giữ dạng bảng một hàng và vuốt ngang thay vì gom mỗi sản phẩm thành thẻ. */
+  #view-editor .lines-wrap { position: relative; border: 1px solid #dce5df; overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  #view-editor #line-table { display: table; width: 1060px; min-width: 1060px !important; table-layout: fixed; }
+  #view-editor #line-head { display: table-header-group; }
+  #view-editor #line-head th { position: sticky; top: 0; z-index: 3; padding: 7px 6px; background: #f1f6f3; font-size: 9px; }
+  #view-editor #line-list { display: table-row-group; }
+  #view-editor #line-list tr { display: table-row; background: #fff; }
+  #view-editor #line-list td { display: table-cell; width: auto; min-width: 0; padding: 7px 6px !important; border-bottom: 1px solid #e3e9e5; text-align: left; vertical-align: top; }
+  #view-editor #line-head .col-idx, #view-editor #line-list .col-idx,
+  #view-editor #line-head .col-img, #view-editor #line-list .col-img { display: none; }
+  #view-editor #line-head .col-product, #view-editor #line-list .col-product { position: sticky; left: 0; z-index: 2; width: 250px; min-width: 250px; background: #fff; box-shadow: 5px 0 8px -8px #173b2980; }
+  #view-editor #line-head .col-product { z-index: 5; background: #f1f6f3; }
+  #view-editor #line-list .col-unit { width: 58px; }
+  #view-editor #line-list .col-qty { width: 78px; }
+  #view-editor #line-list .col-price { width: 116px; }
+  #view-editor #line-list .col-disc { width: 96px; }
+  #view-editor #line-list .col-print { width: 102px; }
+  #view-editor #line-list .col-after { width: 105px; }
+  #view-editor #line-list .line-total { width: 112px; color: #155f37; font-weight: 800; }
+  #view-editor #line-list td[data-label]::before { content: none; }
+  #view-editor #line-list input, #view-editor #line-list select { width: 100%; min-height: 36px; font-size: 13px; }
+  #view-editor #line-list .name-input { min-height: 34px; font-size: 13px; }
+  #view-editor #line-list .line-actions { position: static; width: 38px; text-align: center; }
+  #view-editor #line-list .line-actions .icon-btn { width: 34px; height: 34px; }
+  #view-editor #line-list .line-empty { display: table-row; }
+  #view-editor #line-list .line-empty td { display: table-cell; position: static; }
   #view-editor #line-list .add-first { width: 100%; min-height: 54px; }
-  /* Dòng nhập tay/phụ phí là một hàng gọn, không giả dạng thẻ sản phẩm. */
-  #view-editor #line-list tr.manual-line { grid-template-columns: 72px minmax(0, 1fr) 34px; align-items: end; padding: 8px; }
-  #view-editor #line-list tr.manual-line .col-product { grid-column: 1 / -1; grid-row: 1; padding-right: 0 !important; }
-  #view-editor #line-list tr.manual-line .col-qty { display: block; grid-column: 1; grid-row: 2; }
-  #view-editor #line-list tr.manual-line .col-price { grid-column: 2; grid-row: 2; }
-  #view-editor #line-list tr.manual-line .line-actions { position: static; grid-column: 3; grid-row: 2; }
-  #view-editor #line-list tr.manual-line .line-total { display: block; grid-column: 1 / -1; grid-row: 3; padding-top: 5px !important; border-top: 1px dashed #d7e0da; text-align: right; font-weight: 800; }
+  /* Dòng nhập tay đi cùng bảng; giữ các cột tên, số lượng, đơn giá và thành tiền. */
   #view-editor #line-list tr.manual-line .col-img,
   #view-editor #line-list tr.manual-line .sku-line,
   #view-editor #line-list tr.manual-line .sub-field,
   #view-editor #line-list tr.manual-line .product-meta,
-  #view-editor #line-list tr.manual-line .col-unit,
   #view-editor #line-list tr.manual-line .col-disc,
   #view-editor #line-list tr.manual-line .col-print,
   #view-editor #line-list tr.manual-line .col-after,
@@ -1670,10 +1668,7 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   #view-editor .type-pick button { min-height: 44px; padding: 6px; font-size: 11px; }
   #view-editor .quote-mobile-panel button, #view-editor .quote-mobile-panel .btn,
   #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 38px; padding: 7px 9px; font-size: 11px; }
-  #view-editor #line-list { gap: 8px; }
-  #view-editor #line-list tr { grid-template-columns: 54px repeat(2, minmax(0, 1fr)); gap: 7px; padding: 10px; border-radius: 12px; }
   #view-editor #line-list .name-input { min-height: 34px; font-size: 13px !important; }
-  #view-editor #line-list td[data-label]::before { font-size: 9px; }
   #view-editor #line-list .line-actions .icon-btn { width: 34px; height: 34px; min-height: 34px; }
   #view-editor #line-list .line-total { font-size: 13px; }
   #view-editor .totals-card .grand dd { font-size: 18px; }
