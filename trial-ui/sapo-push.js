@@ -47,14 +47,16 @@ export function initSapoPush({ api, esc, $ }) {
       <dt>Luồng xử lý</dt><dd>${viaClaw ? `<b>n8n → Claw</b><small>Claw nhận dữ liệu đã kiểm tra và tạo đơn Sapo.</small>` : d.connected ? (d.account ? `<b>${esc(d.account.name)}</b>` : `<span class="pill warn">Chưa khớp tài khoản Sapo của ${esc(d.owner || 'người phụ trách')}</span><small>Đơn Sapo sẽ để người phụ trách theo phiên Sapo đang kết nối.</small>`) : esc(d.owner)}</dd></dl>`];
     if (d.problems.length) blocks.push(`<ul class="error">${d.problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul><p class="muted small">Sửa báo giá cho đủ rồi thử lại.</p>`);
     if (!d.connected) blocks.push(`<p class="error">${esc(d.message || 'Chưa kết nối Sapo.')}</p><p class="muted small">Chọn "Không – chỉ sinh trên web", hoặc Manager kết nối Sapo ở trang Nhân viên → Đồng bộ Sapo.</p>`);
-    else if (!viaClaw && !d.locations.length) blocks.push('<p class="error">Sapo chưa trả danh sách kho.</p>');
+    else if (viaClaw) blocks.push('<p class="muted small">Kho xuất hàng do luồng n8n/Claw xử lý. CRM chưa nhận danh sách kho cho luồng này; không cần chọn kho tại đây.</p>');
+    else if (!d.locations.length) blocks.push('<p class="error">Sapo chưa trả danh sách kho.</p>');
     else {
       const last = lastLocation(), pick = d.locations.length === 1 ? String(d.locations[0].id) : d.locations.some(l => String(l.id) === last) ? last : '';
       blocks.push(`<label>Kho xuất hàng trên Sapo<select id="sapo-push-location" required><option value="">— Chọn kho —</option>${d.locations.map(l => `<option value="${l.id}"${String(l.id) === pick ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`);
     }
     blocks.push(viaClaw ? '<p class="muted small">Chứng từ CRM được tạo trước, sau đó giao n8n/Claw tạo đơn Sapo. Nếu n8n lỗi, chứng từ CRM vẫn được giữ nguyên.</p>' : existingDocument ? '<p class="muted small">Chỉ tạo đơn nháp Sapo cho chứng từ đã có. Lỗi Sapo không xoá hay thay đổi chứng từ trên CRM.</p>' : '<p class="muted small">Tạo cùng lúc đơn NHÁP trên Sapo (khách / sản phẩm chưa có trên Sapo sẽ được tạo theo mã KH / MST / SKU). Sapo lỗi thì không sinh đơn / HĐKT.</p>');
     body.innerHTML = choice + `<div id="sapo-push-detail">${blocks.join('')}</div>` + '<p class="error" id="sapo-push-error" role="alert"></p>';
-    const sel = $('#sapo-push-location');
+    const sel = viaClaw ? null : $('#sapo-push-location');
+    me.location = sel;
     me.canPush = sapoOk && !d.problems.length;
     me.push = () => body.querySelector('input[name="sapo-push-mode"]:checked')?.value !== 'no';
     me.sync = () => {
@@ -70,7 +72,7 @@ export function initSapoPush({ api, esc, $ }) {
 
   $('#sapo-push-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const me = current, sel = $('#sapo-push-location'), push = me?.push?.() ?? true;
+    const me = current, sel = me?.location, push = me?.push?.() ?? true;
     if (!me || me.busy || (push && (!me.canPush || (sel && !sel.value)))) return;
     me.busy = true; me.sync?.(); const label = submit.textContent; submit.textContent = push ? 'Đang tạo đơn + đơn Sapo…' : 'Đang tạo…'; $('#sapo-push-error').textContent = '';
     try {

@@ -11,11 +11,11 @@ function setup(code = '', existingDocument = false, connected = true, viaClaw = 
   const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; closeEvents.get('close')?.(); }, addEventListener: (e: string, fn: Function) => closeEvents.set(e, fn) };
   const error = { textContent: '', children: [] as any[], append(...items: any[]) { this.children.push(...items); } };
   const submit = { disabled: true, textContent: '' }, label = { textContent: '' };
-  const nodes: Record<string, any> = { '#sapo-push-dialog': dialog, '#sapo-push-body': body, '#sapo-push-submit': submit, '#sapo-push-title': {}, '#sapo-push-code': label, '#sapo-push-form': { addEventListener: (e: string, fn: Function) => events.set(e, fn) }, '#sapo-push-location': { value: '7', addEventListener() {} }, '#sapo-push-detail': {}, '#sapo-push-error': error };
+  const nodes: Record<string, any> = { '#sapo-push-dialog': dialog, '#sapo-push-body': body, '#sapo-push-submit': submit, '#sapo-push-title': {}, '#sapo-push-code': label, '#sapo-push-form': { addEventListener: (e: string, fn: Function) => events.set(e, fn) }, '#sapo-push-location': { value: viaClaw ? '' : '7', addEventListener() {} }, '#sapo-push-detail': {}, '#sapo-push-error': error };
   const context: any = { URLSearchParams, localStorage: { getItem: () => '', setItem() {} }, document: { createElement: () => ({ addEventListener() {} }) } };
   const source = readFileSync(new URL('../../trial-ui/sapo-push.js', import.meta.url), 'utf8');
   runInNewContext(source.replace('export function initSapoPush', 'globalThis.init = function'), context);
-  const ui = context.init({ api: async () => ({ connected, viaClaw, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: connected && !viaClaw ? [{ id: 7, name: 'Kho' }] : [], problems: [] }), esc: (s: string) => s, $: (id: string) => viaClaw && id === '#sapo-push-location' ? null : nodes[id] });
+  const ui = context.init({ api: async () => ({ connected, viaClaw, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: connected && !viaClaw ? [{ id: 7, name: 'Kho' }] : [], problems: [] }), esc: (s: string) => s, $: (id: string) => nodes[id] });
   return { ui, no, existingDocument, dialog, body, submit, label, error, send: () => events.get('submit')!({ preventDefault() {} }) };
 }
 
@@ -24,6 +24,8 @@ test('popup production dùng n8n/Claw, không bắt chọn kho Sapo', async () =
   const pending = s.ui.choose({ quoteId: 'q' }, { title: 'Sinh đơn hàng', action: 'Tạo', run: async (...a: unknown[]) => { args = a; return {}; } });
   await new Promise(resolve => setImmediate(resolve));
   assert.match(s.body.innerHTML, /n8n → Claw/);
+  assert.doesNotMatch(s.body.innerHTML, /<select id="sapo-push-location"/);
+  assert.match(s.body.innerHTML, /Kho xuất hàng do luồng n8n\/Claw xử lý/);
   assert.equal(s.submit.disabled, false);
   await s.send(); await pending;
   assert.deepEqual(args, [null, true]);
