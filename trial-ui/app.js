@@ -773,7 +773,7 @@ const QUOTE_NOTES = {
 };
 const defaultNotes = type => withPaymentNotes(QUOTE_NOTES[type] || QUOTE_NOTES.HRC, defaultPaymentTerms(type), 0, moneyWords);
 function syncPaymentNotes(total = totals(currentDoc()).total) {
-  if (editor.base.paymentTerms) field('notes').value = withPaymentNotes(field('notes').value, editor.base.paymentTerms, total, moneyWords);
+  if (editor.base.paymentTerms && !editor.base.paymentNotesManual) field('notes').value = withPaymentNotes(field('notes').value, editor.base.paymentTerms, total, moneyWords);
 }
 /** Ngày giao dự kiến là nguồn cho dòng thời gian giao hàng; giữ nguyên các ghi chú khác. */
 function notesWithDeliveryDate(notes, date) {
@@ -797,6 +797,7 @@ $('#reset-notes').addEventListener('click', async () => {
   const notes = field('notes');
   if (notes.value.trim() && notes.value !== notesWithDeliveryDate(defaultNotes(editor.type), field('deliveryDate').value) && !await confirmBox('Thay nội dung ghi chú hiện tại bằng ghi chú mặc định?', { ok: 'Thay' })) return;
   notes.value = defaultNotes(editor.type);
+  editor.base.paymentNotesManual = false;
   editor.base.paymentTerms ||= defaultPaymentTerms(editor.type);
   syncPaymentNotes(); syncDeliveryNotes(); markDirty();
 });
@@ -822,6 +823,7 @@ $('#edit-terms').addEventListener('click', async () => {
       <label>Tỷ lệ đặt cọc (%)<input name="rate" inputmode="decimal" value="${esc(t.depositRate ?? '')}"></label>
       <label>Thời hạn thanh toán phần còn lại<input name="term" list="nq-payment-options" maxlength="500" value="${esc(t.balanceTerm ?? '')}"></label>
       ${credit != null ? `<p class="muted small span-2">Giới hạn công nợ của ${esc(profile.customer.name || 'khách')}: ${money(credit)}</p>` : ''}
+      <p class="muted small span-2">Áp dụng sẽ tạo lại dòng thanh toán trong ghi chú, thay phần thanh toán đã nhập tay.</p>
       <p class="muted small span-2">Nhập số ngày tính từ ngày giao hàng (0 = ngay sau giao), hoặc điều kiện bằng chữ. Đặt cọc 100% = thanh toán toàn bộ trước khi giao hàng.</p>
       ${brand ? `<label class="span-2 check-line"><input type="checkbox" name="brand"> Áp lại CK riêng của khách cho các dòng (${esc(brand)})</label>`
         : `<label class="span-2">Chiết khấu toàn bảng (%)<input name="disc" inputmode="decimal" placeholder="Để trống = giữ CK từng dòng"></label>`}
@@ -837,6 +839,7 @@ $('#edit-terms').addEventListener('click', async () => {
     const discText = f.disc?.value.trim() || '', disc = discText ? parseNum(discText) : null, err = termsError(depositRate, balanceTerm);
     if (err || (disc !== null && !(disc >= 0 && disc <= 100))) { dlg.querySelector('[data-err]').textContent = err || 'Chiết khấu toàn bảng phải từ 0 đến 100%.'; return; }
     editor.base.paymentTerms = { depositRate, balanceTerm };
+    editor.base.paymentNotesManual = false;
     const pct = r => f.brand?.checked ? customerDiscount(r.brand, profile.discounts, 'percent') : disc;
     if (f.brand?.checked || disc !== null) for (const r of editor.rows) {
       const p = pct(r); if (!(p > 0) && !(disc !== null)) continue; // áp lại CK khách: dòng ngoài 3 thương hiệu giữ nguyên
@@ -946,6 +949,7 @@ function fillEditor(id, revision, data, meta = {}) {
 }
 function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; updateQuoteActions(); } }
 qf.addEventListener('input', e => {
+  if (e.target.name === 'notes') editor.base.paymentNotesManual = true;
   markDirty();
   if (e.target.name === 'deliveryDate') syncDeliveryNotes();
   if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
