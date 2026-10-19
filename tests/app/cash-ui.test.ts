@@ -134,3 +134,29 @@ test('Cash UI: người được chỉ định có nút duyệt phiếu người
     assert.ok(calls.includes('/cash/entries/0/approve'));
   } finally { Object.assign(globalThis, { document: previous }); }
 });
+
+test('Cash UI: Manager có nút Duyệt cho phiếu mình tạo theo cờ server', async () => {
+  const previous = globalThis.document;
+  Object.assign(globalThis, { document: { createElement: (tag: string) => new E(tag), body: new E('body') } });
+  try {
+    const root = new E('section'), calls: string[] = [];
+    const ui = initCash({ root, user: () => ({ id: 'mgr' }), toast: () => {}, go: () => {},
+      api: async (path: string) => {
+        calls.push(path);
+        if (path.endsWith('/approve')) return { ok: true };
+        if (path === '/cash') return {
+          drawer: { openingSetAt: '2026-10-19', approvalThreshold: 1000000 }, balance: 0,
+          activeShift: null, ownShift: null, canManage: true, canApprove: true, canSelfApprove: true, canVoid: true,
+          openReconciliations: 0, updatedAt: '2026-10-19T01:00:00Z',
+        };
+        return { entries: [{ id: 'own', entryNo: 'PT-1', at: '2026-10-19T01:00:00Z', kind: 'adjustment',
+          direction: 'in', amount: 1000000, reason: 'Điều chỉnh', createdBy: 'mgr', by: 'Manager', status: 'pending' }], nextBefore: null };
+      },
+    });
+    await ui.load();
+    const approve = root.all().find(e => e.tag === 'button' && e.textContent === 'Duyệt');
+    assert.ok(approve);
+    await approve.listeners.get('click')![0]!();
+    assert.ok(calls.includes('/cash/entries/own/approve'));
+  } finally { Object.assign(globalThis, { document: previous }); }
+});

@@ -99,7 +99,7 @@ test('Cash: không ca không tạo, chỉ Manager cấu hình; số đầu kỳ 
     assert.equal((await f.call('/cash/entries', f.emp, 'POST', b)).status, 400);
   assert.equal((await f.db.select().from(cashEntries)).length, 0);
 });
-test('Cash: ngưỡng lấy cấu hình; chờ duyệt không vào két; kết ca bị chặn; người tạo không tự duyệt', async () => {
+test('Cash: ngưỡng lấy cấu hình; chờ duyệt không vào két; kết ca bị chặn; chỉ Manager được tự duyệt', async () => {
   const f = await setup(),
     s = await f.open();
   const made = await f.call('/cash/entries', f.emp, 'POST', entry('other_income', 1000000));
@@ -113,7 +113,15 @@ test('Cash: ngưỡng lấy cấu hình; chờ duyệt không vào két; kết c
   await f.call('/cash/config', f.mgr, 'POST', { approvalThreshold: 100 });
   const own = await f.call('/cash/entries', f.mgr, 'POST', { ...entry('adjustment', 100), direction: 'in' });
   assert.equal(own.status, 201, JSON.stringify(own.data));
-  assert.equal((await f.call('/cash/entries/' + own.data.id + '/approve', f.mgr, 'POST', {})).status, 403);
+  assert.equal(own.data.status, 'pending');
+  assert.equal((await f.call('/cash', f.mgr)).data.canSelfApprove, true);
+  assert.equal((await f.call('/cash', f.emp)).data.canSelfApprove, false);
+  assert.equal((await f.call('/cash/entries/' + own.data.id + '/approve', f.mgr, 'POST', {})).status, 200);
+  assert.equal((await f.call('/cash/entries/' + own.data.id + '/approve', f.mgr, 'POST', {})).status, 200);
+  const approvals = (await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, own.data.id))).filter(a => a.action === 'approve');
+  assert.equal(approvals.length, 1);
+  assert.equal(JSON.parse(approvals[0]!.data).selfApproved, true);
+  assert.equal((await f.db.select().from(cashEntries).where(eq(cashEntries.id, own.data.id)))[0]!.approvedBy, 'mgr');
   const otherManager = await account(f, 'mgr2', 'manager', 'manager');
   assert.equal((await f.call('/cash/entries/' + own.data.id + '/approve', otherManager, 'POST', {})).status, 200);
 });

@@ -107,7 +107,6 @@ export const cashEntries = pgTable(
       'chk_cash_entry_direction',
       sql`(${t.kind} in ('other_income','cash_in') and ${t.direction}='in') or (${t.kind} in ('petty_expense','advance','cash_out') and ${t.direction}='out') or (${t.kind}='adjustment' and ${t.direction} in ('in','out'))`,
     ),
-    check('chk_cash_approval_actor', sql`${t.approvedBy} is null or ${t.approvedBy}<>${t.createdBy}`),
     check(
       'chk_cash_void_reason',
       sql`${t.status}<>'voided' or (${t.voidedAt} is not null and length(trim(${t.voidReason}))>0)`,

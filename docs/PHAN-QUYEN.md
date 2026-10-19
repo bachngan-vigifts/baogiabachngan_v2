@@ -69,7 +69,7 @@ Các thao tác phê duyệt chỉ do **Manager** hoặc **nhân viên được M
 | Sản phẩm mới | `POST /products/:sku/approve`; từ chối = `DELETE /products/:sku`; `GET /product-approvals` |
 | Đơn hàng / HĐKT | `PUT /orders/:id/status` với `confirmed` |
 | Đơn mua NCC (duyệt giá) | `POST /purchase-orders/:id/approve` (`checkPurchase('approve')`) |
-| Phiếu thu/chi thủ công Sổ quỹ | `POST /cash/entries/:id/approve`; cần `page.cash` hoặc `pos.sell`; không tự duyệt, kể cả Manager. Người được chỉ định chỉ xem thêm phiếu thủ công chờ duyệt và ảnh kèm theo, không tự có quyền xem mọi ca/thu bán hàng/tra soát. |
+| Phiếu thu/chi thủ công Sổ quỹ | `POST /cash/entries/:id/approve`; cần `page.cash` hoặc `pos.sell`; Manager được tự duyệt phiếu của mình; nhân viên được chỉ định không được tự duyệt. Người được chỉ định chỉ xem thêm phiếu thủ công chờ duyệt và ảnh kèm theo, không tự có quyền xem mọi ca/thu bán hàng/tra soát. |
 | Hộp "Cần duyệt" | `GET /approvals` (báo giá, đơn, HĐKT, **đơn mua NCC đã gửi duyệt**, khách hàng, sản phẩm) |
 | Nút duyệt nhanh ở Sơ đồ quy trình | `GET /flow` (chỉ trả thao tác `approve-*` cho người được duyệt) |
 

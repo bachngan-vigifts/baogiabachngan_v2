@@ -43,7 +43,7 @@ FK, index theo két/ca/ngày/trạng thái và CHECK tiền/trạng thái; RLS b
 - `pos_shifts.cash_drawer_id`, `previous_shift_id`, `difference_reason_code`, `difference_reason_note`.
 - Tái sử dụng `opening_cash`, `counted_cash`, `expected_cash`, `cash_difference`, `report_snapshot`, `closed_at`; unique ca đang mở theo két và unique ca kế tiếp của một lần bàn giao.
 - `customer_payments` dùng lại `shift_id`, `payment_source`, `delivery_id`, `request_key` đã thêm trong POS. Không tạo phiếu thu thứ hai cho tiền bán hàng/COD.
-- Phiếu điều chỉnh két chỉ Manager tạo, gắn ca két đang mở và mã tra soát nếu dùng để xử lý lệch. Phiếu lớn của chính Manager cũng không tự duyệt: cần Manager khác.
+- Phiếu điều chỉnh két chỉ Manager tạo, gắn ca két đang mở và mã tra soát nếu dùng để xử lý lệch. Theo chính sách cập nhật 19/10/2026, Manager được tự duyệt phiếu mình tạo; nhân viên được chỉ định duyệt không được tự duyệt.
 
 ## Các phép tính phải tách rõ
 
@@ -92,7 +92,7 @@ Sau khi được duyệt, sinh hai migration mới bằng CLI (timestamp thực 
 ## Kiểm thử sẽ thực hiện sau triển khai
 
 - Không ca: không tạo phiếu; đúng ca mới xem được; Manager/Kế toán xem đầy đủ.
-- Ngưỡng lấy cấu hình; phiếu lớn chưa duyệt không vào két; người tạo không tự duyệt.
+- Ngưỡng lấy cấu hình; phiếu lớn chưa duyệt không vào két; chỉ Manager được tự duyệt; nhân viên được chỉ định vẫn bị chặn.
 - Thu/chi nguyên VNĐ, lý do bắt buộc, ảnh tối đa một, bucket private, ký URL sau kiểm quyền.
 - Bỏ chuyển khoản, COD chưa thu, phiếu huỷ và pending khỏi tiền két; phiếu bán hàng không bị ghi thu hai lần.
 - Đầu ca lấy thực đếm trước; kế thừa không tạo một khoản thu giả.
