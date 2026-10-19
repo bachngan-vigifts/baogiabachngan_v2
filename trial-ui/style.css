@@ -410,20 +410,20 @@ table { width: 100%; border-collapse: collapse; }
   #view-editor #line-list .line-empty td { display: block; }
   #view-editor #line-list .add-first { width: 100%; min-height: 54px; }
   /* Dòng nhập tay/phụ phí là một hàng gọn, không giả dạng thẻ sản phẩm. */
-  #view-editor #line-list tr.manual-line { grid-template-columns: minmax(0, 1fr) 110px 34px; align-items: end; padding: 8px; }
-  #view-editor #line-list tr.manual-line .col-product { grid-column: 1; grid-row: 1; padding-right: 0 !important; }
-  #view-editor #line-list tr.manual-line .col-price { grid-column: 2; grid-row: 1; }
-  #view-editor #line-list tr.manual-line .line-actions { position: static; grid-column: 3; grid-row: 1; }
+  #view-editor #line-list tr.manual-line { grid-template-columns: 72px minmax(0, 1fr) 34px; align-items: end; padding: 8px; }
+  #view-editor #line-list tr.manual-line .col-product { grid-column: 1 / -1; grid-row: 1; padding-right: 0 !important; }
+  #view-editor #line-list tr.manual-line .col-qty { display: block; grid-column: 1; grid-row: 2; }
+  #view-editor #line-list tr.manual-line .col-price { grid-column: 2; grid-row: 2; }
+  #view-editor #line-list tr.manual-line .line-actions { position: static; grid-column: 3; grid-row: 2; }
+  #view-editor #line-list tr.manual-line .line-total { display: block; grid-column: 1 / -1; grid-row: 3; padding-top: 5px !important; border-top: 1px dashed #d7e0da; text-align: right; font-weight: 800; }
   #view-editor #line-list tr.manual-line .col-img,
   #view-editor #line-list tr.manual-line .sku-line,
   #view-editor #line-list tr.manual-line .sub-field,
   #view-editor #line-list tr.manual-line .product-meta,
   #view-editor #line-list tr.manual-line .col-unit,
-  #view-editor #line-list tr.manual-line .col-qty,
   #view-editor #line-list tr.manual-line .col-disc,
   #view-editor #line-list tr.manual-line .col-print,
   #view-editor #line-list tr.manual-line .col-after,
-  #view-editor #line-list tr.manual-line .line-total,
   #view-editor #line-list tr.manual-line .col-pd,
   #view-editor #line-list tr.manual-line .col-cost { display: none; }
   #view-editor .line-keys { display: none; }

@@ -42,7 +42,9 @@ test('dòng trống mobile là một hàng phụ phí gọn và không lặp nú
   assert.match(app, /class="\$\{manual \? 'manual-line' : ''\}"/);
   assert.match(app, /Tên phụ phí \/ nội dung thêm/);
   assert.match(css, /#view-editor \[data-quote-panel='products'\] > \.card-title-row #pick-products \{ display: none; \}/);
-  assert.match(css, /#view-editor #line-list tr\.manual-line \{ grid-template-columns: minmax\(0, 1fr\) 110px 34px/);
+  assert.match(css, /#view-editor #line-list tr\.manual-line \{ grid-template-columns: 72px minmax\(0, 1fr\) 34px/);
+  assert.match(css, /tr\.manual-line \.col-qty \{ display: block; grid-column: 1; grid-row: 2/);
+  assert.match(css, /tr\.manual-line \.line-total \{ display: block; grid-column: 1 \/ -1; grid-row: 3/);
   assert.match(css, /tr\.manual-line \.col-img,[\s\S]*?tr\.manual-line \.col-cost \{ display: none; \}/);
 });
 
