@@ -40,6 +40,10 @@ import {
   shiftReport,
 } from './pos-store.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
+const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
+const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
+const cachedGhnLocations = (key: string) => { const hit = ghnLocationCache.get(key); if (!hit || hit.expires < Date.now()) { ghnLocationCache.delete(key); return null; } return hit.locations; };
+const rememberGhnLocations = (key: string, locations: unknown[]) => { ghnLocationCache.set(key, { expires: Date.now() + 24 * 60 * 60 * 1000, locations }); return locations; };
 function config(c: RouteContext<StaffEnv>) {
   if (!can(member(c), 'pos.configure')) throw new AppError(403, 'Chỉ người được cấp cấu hình POS thao tác.');
 }
@@ -203,6 +207,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (action === 'locations') {
       bridgeInput.provinceId = Math.max(0, Number(input.provinceId) || 0);
       bridgeInput.districtId = Math.max(0, Number(input.districtId) || 0);
+      const key = ghnCacheKey(order.source, bridgeInput.provinceId as number, bridgeInput.districtId as number), cached = cachedGhnLocations(key);
+      if (cached) return json({ ok: true, locations: cached, cached: true });
     } else if (action === 'confirm' && input.addressLine !== undefined) {
       bridgeInput.addressLine = posText(input.addressLine, 300);
       bridgeInput.provinceId = Math.max(0, Number(input.provinceId) || 0);
@@ -217,7 +223,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const raw = await response.text(); let result: Record<string, unknown> = {};
     try { result = JSON.parse(raw); } catch {}
     if (!response.ok) throw new AppError(response.status >= 500 ? 502 : 409, posText(result.message, 500) || 'Website chưa xử lý được đơn.', posText(result.code, 80) || undefined);
-    if (action === 'locations') return json({ ok: true, locations: Array.isArray(result.locations) ? result.locations : [] });
+    if (action === 'locations') {
+      const key = ghnCacheKey(order.source, bridgeInput.provinceId as number, bridgeInput.districtId as number);
+      return json({ ok: true, locations: rememberGhnLocations(key, Array.isArray(result.locations) ? result.locations : []) });
+    }
     const fields = { status: posText(result.status, 50) || order.status, ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
       ghnStatus: posText(result.ghnStatus, 100), ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };
@@ -233,14 +242,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const register = scope.regs.find(r => r.id === registerId);
     if (!register || !scope.ids.has(register.id)) throw new AppError(403, 'Bạn không được dùng quầy này.');
     if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối GHN.');
-    const isLock = /lock/i.test(register.name), url = isLock ? c.env.webOrderAction.lockUrl : c.env.webOrderAction.minhlongUrl;
+    const isLock = /lock/i.test(register.name), source = isLock ? 'lock' : 'minhlong', url = isLock ? c.env.webOrderAction.lockUrl : c.env.webOrderAction.minhlongUrl;
     if (!url) throw new AppError(503, 'Quầy này chưa được kết nối dữ liệu địa chỉ GHN.');
-    const bridgeInput = { action: 'locations', provinceId: Math.max(0, Number(input.provinceId) || 0), districtId: Math.max(0, Number(input.districtId) || 0) };
+    const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0), key = ghnCacheKey(source, provinceId, districtId);
+    const cached = cachedGhnLocations(key); if (cached) return json({ ok: true, locations: cached, cached: true });
+    const [contextOrder] = await c.env.db.select({ externalId: webStoreOrders.externalId }).from(webStoreOrders)
+      .where(and(eq(webStoreOrders.registerId, register.id), eq(webStoreOrders.source, source))).orderBy(desc(webStoreOrders.updatedAt)).limit(1);
+    if (!contextOrder) throw new AppError(409, 'Chưa có đơn web của cửa hàng để kết nối danh mục GHN.');
+    const bridgeInput = { orderId: contextOrder.externalId, action: 'locations', provinceId, districtId };
     const response = await (c.env.webOrderAction.fetch ?? fetch)(url, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify(bridgeInput) });
     const raw = await response.text(); let result: Record<string, unknown> = {};
     try { result = JSON.parse(raw); } catch {}
     if (!response.ok) throw new AppError(response.status >= 500 ? 502 : 409, posText(result.message, 500) || 'Không tải được địa chỉ GHN.', posText(result.code, 80) || undefined);
-    return json({ ok: true, locations: Array.isArray(result.locations) ? result.locations : [] });
+    return json({ ok: true, locations: rememberGhnLocations(key, Array.isArray(result.locations) ? result.locations : []) });
   }, 'business');
   router.get(
     '/pos/options',
