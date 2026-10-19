@@ -66,6 +66,10 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     if (/^[+-]?\d+(?:[.,]\d+)?\s*(?:ngày)?$/i.test(balanceTerm) && (!/^\d+\s*(?:ngày)?$/i.test(balanceTerm) || parseInt(balanceTerm, 10) > 3650)) throw bad('Số ngày thanh toán phải từ 0 đến 3650.');
     result.paymentTerms = { depositRate, balanceTerm };
   }
+  if (inp.paymentNotesManual !== undefined) {
+    if (typeof inp.paymentNotesManual !== 'boolean') throw bad('Chế độ ghi chú thanh toán không hợp lệ.');
+    result.paymentNotesManual = inp.paymentNotesManual;
+  }
   if (inp.notesVersion === 2) result.notesVersion = 2;
   if (inp.careStatus !== undefined || inp.careDueDate !== undefined || inp.careAssigneeId !== undefined || inp.careNote !== undefined) {
     const careStatus = text(inp.careStatus ?? '', 20);

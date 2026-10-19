@@ -82,3 +82,39 @@ test('new quote popup accepts pre-delivery text, preserves chosen terms, rejects
     }
   }
 });
+
+test('manual payment notes survive editing totals, saving and reopening; automatic notes still recalculate', () => {
+  const app = readFileSync(new URL('../trial-ui/app.js', import.meta.url), 'utf8');
+  const fields: Record<string, any> = Object.fromEntries(['notes', 'quoteNo', 'date', 'vat', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'owner', 'ownerPhone', 'deliveryDate', 'internalNote'].map(k => [k, { value: '' }]));
+  Object.assign(fields.quoteNo, { value: 'TEST-1' }); fields.vat.value = '8';
+  const manual = '- Thanh toán: Cọc 20%, còn lại sau khi nghiệm thu.\n- Gói riêng từng bộ.';
+  fields.notes.value = manual;
+  const editor: any = { base: { paymentTerms: { depositRate: 30, balanceTerm: '5' } }, type: 'B2B', rows: [{ name: 'Ly', qty: 1, price: 1000 }] };
+  let onInput: Function = () => {};
+  const ctx = vm.createContext({ editor, field: (k: string) => fields[k], totals: () => ({ total: 2000 }), currentDoc: () => ({}), moneyWords: words,
+    withPaymentNotes: terms.withPaymentNotes, parseNum: Number, syncDeliveryNotes() {}, markDirty() {},
+    qf: { addEventListener: (_: string, fn: Function) => { onInput = fn; } } });
+  const syncStart = app.indexOf('function syncPaymentNotes(');
+  vm.runInContext(app.slice(syncStart, app.indexOf('/** Ngày giao', syncStart)), ctx);
+  const inputStart = app.indexOf("qf.addEventListener('input',");
+  vm.runInContext(app.slice(inputStart, app.indexOf("field('vat').addEventListener", inputStart)), ctx);
+  onInput({ target: { name: 'notes' } });
+  const collectStart = app.indexOf('function collectQuote()');
+  vm.runInContext(app.slice(collectStart, app.indexOf('function validateQuote', collectStart)), ctx);
+  const saved = cleanQuotation(vm.runInContext('collectQuote()', ctx));
+  assert.equal(saved.notes, manual); assert.equal(saved.paymentNotesManual, true);
+  editor.base = JSON.parse(JSON.stringify(saved)); fields.notes.value = saved.notes;
+  vm.runInContext('syncPaymentNotes(9000)', ctx);
+  assert.equal(fields.notes.value, manual);
+  editor.base.paymentNotesManual = false;
+  vm.runInContext('syncPaymentNotes(9000)', ctx);
+  assert.match(fields.notes.value, /2\.700 đồng/);
+  assert.match(fields.notes.value, /Gói riêng từng bộ/);
+});
+
+test('manual payment-note preference validates type and preserves legacy quote behavior', () => {
+  assert.equal(cleanQuotation({ ...quote, paymentNotesManual: true }).paymentNotesManual, true);
+  assert.equal(cleanQuotation({ ...quote, paymentNotesManual: false }).paymentNotesManual, false);
+  assert.equal(cleanQuotation(quote).paymentNotesManual, undefined);
+  assert.throws(() => cleanQuotation({ ...quote, paymentNotesManual: 'true' }));
+});
