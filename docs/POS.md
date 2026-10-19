@@ -69,3 +69,13 @@ Theo chính sách đã chốt: khách tạo tại POS dùng ngay, nhân viên b�
 ## Tiền thực đếm khi mở ca (19/10/2026)
 
 Dùng lại `cash_reconciliations` và nhật ký đã có, không thêm migration. Một ca vẫn có tối đa một tra soát. So sánh mở ca được lưu bất biến trong audit mở ca và trả trong `openingComparison` trên báo cáo/chi tiết tra soát. Nếu cuối ca cũng lệch, cùng tra soát được cập nhật/mở lại với số cuối ca; phần so sánh đầu ca vẫn hiện riêng. Kết ca khớp không tự đóng tra soát đầu ca chưa xử lý. Manager giải quyết theo luồng giải trình/đóng hiện có; tra soát không tự sửa sổ két. Gửi lặp yêu cầu mở ca không tạo ca/tra soát trùng, đổi số tiền với cùng mã yêu cầu bị từ chối.
+
+## Sửa đơn đã sinh từ POS
+
+Manager mở chi tiết Đơn đặt hàng → **Sửa đơn POS**. Form chọn khách có sẵn hoặc sửa thông tin khách trên riêng đơn (không sửa hồ sơ khách gốc), địa chỉ/người nhận của chuyến chờ giao hoặc đang giao, và ghi chú điều kiện thanh toán. Mọi lần lưu cần lý do và revision; form cũ bị từ chối khi đơn đã đổi. Nhật ký ghi giá trị trước/sau.
+
+Đơn COD chưa thu, chưa giao/xuất, chưa có phiếu đóng gói hay HĐKT, có tối đa một chuyến chờ giao toàn bộ hàng được sửa số lượng, giá niêm yết và CK trên các dòng hiện có. Giá nhập theo chính sách bill gốc (có VAT/không VAT), giữ thuế suất, server dùng posLine tính lại tiền; không nhận tổng từ client. Giao dịch kiểm tồn khả dụng trừ hàng giữ khác, cập nhật dòng hàng, snapshot bill, lịch thu, số tiền COD, số lượng chuyến giao và lịch sử sản phẩm. Không ghi xuất kho hoặc tạo phiếu thu khi sửa. Không đổi SKU/thêm/xoá dòng trong form này.
+
+Đơn đã thu/xuất hàng vẫn sửa được thông tin liên hệ và ghi chú; không sửa lùi số lượng/giá trị hoặc chuyển khách liên kết khi còn phiếu thu hiệu lực. Phiếu thu sai dùng **Huỷ phiếu…** có lý do rồi ghi thu lại theo luồng hiện có; báo cáo ca đã chốt giữ nguyên. Chuyến đã giao giữ thông tin giao lịch sử.
+
+Chi tiết đơn COD có nút **Thu COD** cho chuyến đã giao còn tiền chưa thu. Nút dùng lại `/pos/cod/:id/collect`, yêu cầu xác nhận thực nhận và ca đang mở đúng két, tiền mặt/chuyển khoản. Không mở cơ chế thu khác hay sửa trực tiếp phiếu thu. Ghi chú thanh toán không làm thay đổi trạng thái đã thu. Không thêm bảng/cột/quyền/migration.

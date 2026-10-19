@@ -1,3 +1,4 @@
+import { editPosOrder } from './pos-order-edit.ts';
 import { cashLock, drawerOf, cashAudit, voidClosedCashEffect } from './cash-store.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
 import { posShifts } from '../pos-schema.ts';
@@ -334,6 +335,21 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
 
   // The form checks capabilities so a UI deploy cannot silently lose notes on an older API.
   router.get('/orders/create-config', async () => json({ version: 1, noteMaxLength: 20000 }), 'business');
+
+  router.put('/orders/:id/pos', async c => {
+    const b = await readJson(c.req, 100000);
+    return json(await c.env.db.transaction(async tx => {
+      await cashLock(tx);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
+      const o = await loadOrder(c, c.params.id!, tx);
+      await assertCanEditOrder(c, o, 'đơn POS', tx);
+      const [locked] = await tx.select().from(salesOrders).where(eq(salesOrders.id, o.id)).for('update');
+      const result = await editPosOrder(tx, locked!, viewer(c), b);
+      await removeMovements(tx, `sale:${o.id}:`);
+      await recordSaleMovements(tx, o.id);
+      return result;
+    }));
+  }, 'business');
 
   router.get('/orders/:id', async c => {
     const db = c.env.db, order = await loadOrder(c, c.params.id!);
