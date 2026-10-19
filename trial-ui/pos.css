@@ -869,6 +869,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-more-menu > summary { width: 40px; height: 38px; font-size: 20px; }
   .pos-more-panel .btn { min-height: 36px; font-size: 10px; }
   .pos-catalog, .pos-checkout { padding: 10px; }
+  .pos-checkout { font-size: 10px; }
   .pos-search { height: 44px; margin-bottom: 9px; }
   .pos-search input { padding-inline: 10px; font-size: 13px !important; }
   .pos-search .btn { min-width: 92px; min-height: 40px; font-size: 11px; }
@@ -881,17 +882,23 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-product-price-stock { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; width: 100%; margin-top: auto; }
   .pos-product-price-stock strong { margin-top: 0; font-size: 14px; white-space: nowrap; }
   .pos-product-price-stock .pos-stock { margin-left: auto; text-align: right; white-space: nowrap; font-size: 10px; }
-  .pos-basket-head h2 { font-size: 15px; }
-  .pos-basket-head .pos-customer-trigger { min-height: 40px; font-size: 11px; }
+  .pos-basket-head h2 { font-size: 13px; }
+  .pos-basket-head .pos-customer-trigger { min-height: 38px; font-size: 10px; }
+  .pos-checkout .pos-cart-count { font-size: 9px; }
   .pos-line { padding: 9px 0; }
-  .pos-line-top b { font-size: 11px; }
-  .pos-line .pos-qty .btn { width: 36px; min-height: 36px; font-size: 16px; }
-  .pos-line .pos-qty input { width: 36px; font-size: 13px !important; }
+  .pos-line-top b { font-size: 10px; line-height: 1.35; }
+  .pos-line-top strong { font-size: 10px; }
+  .pos-line .pos-note, .pos-line-edit .pos-note { font-size: 9px; }
+  .pos-line-edit input, .pos-line-edit select { font-size: 10px !important; }
+  .pos-line .pos-qty .btn { width: 34px; min-height: 34px; font-size: 14px; }
+  .pos-line .pos-qty input { width: 34px; font-size: 11px !important; }
   .pos-extra-fees { font-size: 10px; }
-  .pos-total { font-size: 13px; }
-  .pos-total strong { font-size: 20px; }
-  .pos-main-actions .btn { min-height: 46px; font-size: 12px; }
-  .pos-open-payment { font-size: 13px !important; }
+  .pos-totals, .pos-totals label, .pos-total-row { font-size: 10px; }
+  .pos-totals input, .pos-totals select, .pos-order-note textarea { font-size: 11px !important; }
+  .pos-total { font-size: 12px; }
+  .pos-total strong { font-size: 17px; }
+  .pos-main-actions .btn { min-height: 42px; font-size: 11px; }
+  .pos-open-payment { font-size: 12px !important; }
   .pos-payment-modal h2 { padding: 12px; font-size: 15px; }
   .pos-payment-due { padding: 12px 12px 10px; }
   .pos-payment-due strong { font-size: 24px; }

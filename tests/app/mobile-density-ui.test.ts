@@ -35,8 +35,11 @@ test('POS có lớp thu gọn riêng vì pos.css được tải sau style.css', 
   const compact = pos.slice(start);
   assert.match(compact, /@media \(max-width: 850px\)/);
   assert.match(compact, /\.pos-payment-due strong \{ font-size: 24px/);
-  assert.match(compact, /\.pos-main-actions \.btn \{ min-height: 46px; font-size: 12px/);
+  assert.match(compact, /\.pos-main-actions \.btn \{ min-height: 42px; font-size: 11px/);
   assert.match(compact, /\.pos-customer-input \{ min-height: 40px/);
   assert.match(compact, /\.pos-product-price-stock \{ display: flex; align-items: baseline; justify-content: space-between/);
   assert.match(posJs, /el\('span', 'pos-product-price-stock'\)/);
+  assert.match(compact, /\.pos-checkout \{ font-size: 10px; \}/);
+  assert.match(compact, /\.pos-line-top b \{ font-size: 10px/);
+  assert.match(compact, /\.pos-total strong \{ font-size: 17px; \}/);
 });
