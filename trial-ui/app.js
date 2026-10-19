@@ -1,3 +1,4 @@
+import { posOrderEditor, posCodReceipt, posPaymentText } from './pos-order-edit.js';
 import { initCash } from './cash.js';
 import { initPos } from './pos.js';
 import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
@@ -3190,6 +3191,7 @@ async function openOrder(id) {
     + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
+  if (o.channel === 'pos' && o.canEdit && o.status !== 'cancelled' && !isK) $('#order-actions').append(posOrderEditor({ api, detail: d, onSaved: () => openOrder(o.id) }));
   const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
   if (sapoAction) $('#order-actions').append(sapoAction);
   if (o.status !== 'cancelled' && !isWarehouse()) {
@@ -3221,7 +3223,7 @@ async function openOrder(id) {
     : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</dd>
     <dt>Ngày đặt</dt><dd>${fmtDate(o.orderDate)}</dd>${o.quoteNo ? `<dt>Từ báo giá</dt><dd>${o.quoteId ? `<a href="#/quotes/${encodeURIComponent(o.quoteId)}">${esc(o.quoteNo)}</a>` : esc(o.quoteNo)}</dd>` : ''}
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd><dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
-    <dt>Thanh toán</dt><dd>Theo HĐ nguyên tắc với khách</dd></dl>
+    <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
   renderInvoice(o); renderProgress(d);
   // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
@@ -3242,6 +3244,10 @@ async function openOrder(id) {
   // Phiếu đã huỷ: gạch ngang + ai huỷ, lý do (không tính vào đã thu). Manager / quyền "Huỷ phiếu thu" huỷ phiếu ghi nhầm (bắt buộc lý do).
   $('#order-payments').innerHTML = paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li class="${p.voidedAt ? 'payment-voided' : ''}" data-payment="${esc(p.id)}"><span>${fmtDate(p.paidAt)} · ${p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b>${p.voidedAt ? `<small class="void-note danger-text">Đã huỷ${p.voidedByName ? ' bởi ' + esc(p.voidedByName) : ''} · ${fmtDate(p.voidedAt)}: ${esc(p.voidReason)}</small>` : ''}${!p.voidedAt && d.canVoidPayment ? `<button type="button" class="btn ghost small danger-text" data-void-payment="${esc(p.id)}">Huỷ phiếu…</button>` : ''}</li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>');
+  if (o.channel === 'pos' && o.fulfillmentMode === 'cod' && o.status !== 'cancelled' && r.balance > 0 && can('pos.sell')) {
+    for (const delivery of d.deliveries.filter(x => x.status === 'delivered' && x.codAmount > d.payments.filter(p => !p.voidedAt && p.deliveryId === x.id).reduce((n, p) => n + p.amount, 0)))
+      $('#order-payments').append(posCodReceipt({ api, delivery, onSaved: () => openOrder(o.id) }));
+  }
 }
 /**
  * Tiến trình sản phẩm (mọi người cùng theo dõi): Duyệt → Xuất kho → In mẫu → Sản xuất → Giao hàng (đơn không in thì bỏ In mẫu / Sản xuất).
