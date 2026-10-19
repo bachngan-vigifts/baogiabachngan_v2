@@ -10,7 +10,7 @@ const money = '#,##0.00';
 /** Layout/style descriptors are extracted from the three supplied workbooks, without sample orders/catalogs. */
 export async function buildSupplierWorkbook(v, kind, { ExcelJS, templates }, options = {}) {
   if (!['lock', 'minh-long', 'minh-long-logo'].includes(kind)) throw Error('Chọn mẫu Excel Minh Long hoặc Lock.');
-  const data = purchaseExportData(v, options), template = templates[kind];
+  const data = purchaseExportData(v, kind === 'lock' ? { ...options, entity: 'VG' } : options), template = templates[kind];
   if (!template) throw Error('Không tải được mẫu Excel NCC.');
   const wb = new ExcelJS.Workbook(); wb.creator = data.buyer.name; wb.calcProperties.fullCalcOnLoad = true;
   function create(def) {

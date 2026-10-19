@@ -611,7 +611,14 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         status.textContent = '';
       } catch { if (dlg.open) status.textContent = 'Không lấy được quy cách từ danh mục; anh/chị có thể nhập bổ sung.'; }
     }
-    const updateKind = () => { logo.hidden = kind.value !== 'minh-long-logo'; specs.hidden = kind.value === 'pdf'; catalog(); };
+    const updateKind = () => {
+      if (kind.value === 'lock') entity.value = 'VG';
+      entity.disabled = kind.value === 'lock';
+      entity.title = kind.value === 'lock' ? 'Mẫu Lock dùng pháp nhân VIGIFTS.' : '';
+      logo.hidden = kind.value !== 'minh-long-logo';
+      specs.hidden = kind.value === 'pdf';
+      catalog();
+    };
     kind.addEventListener('change', updateKind);
     const cancel = btn('Đóng', 'btn secondary', () => dlg.close()), download = el('button', 'btn primary', 'Tải file'); download.type = 'submit';
     footer.append(cancel, download); body.append(g, logo, specs, hint, status, err); form.append(head, body, footer); dlg.append(form);
