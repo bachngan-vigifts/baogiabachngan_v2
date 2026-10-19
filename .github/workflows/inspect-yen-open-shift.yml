@@ -14,8 +14,8 @@ jobs:
         shell: bash
         run: |
           query="select json_build_object(
-            'staff', (select coalesce(json_agg(x), '[]'::json) from (select id,name,position_id from staff_members where lower(name)=lower('Thái Thị Yến')) x),
-            'open_shifts', (select coalesce(json_agg(x), '[]'::json) from (select s.id,s.member_id,s.register_id,s.cash_drawer_id,s.opened_at,s.opening_cash,r.name as register_name,w.name as warehouse_name from pos_shifts s join staff_members m on m.id=s.member_id join pos_registers r on r.id=s.register_id join warehouses w on w.id=r.warehouse_id where s.closed_at is null and lower(m.name)=lower('Thái Thị Yến')) x),
+            'staff', (select coalesce(json_agg(x), '[]'::json) from (select id,name,position_id from staff_members where lower(name) like lower('Thái Thị Y%')) x),
+            'open_shifts', (select coalesce(json_agg(x), '[]'::json) from (select s.id,s.member_id,m.name as member_name,s.register_id,s.cash_drawer_id,s.opened_at,s.opening_cash,r.name as register_name,w.name as warehouse_name from pos_shifts s join staff_members m on m.id=s.member_id join pos_registers r on r.id=s.register_id join warehouses w on w.id=r.warehouse_id where s.closed_at is null and lower(m.name) like lower('Thái Thị Y%')) x),
             'registers', (select coalesce(json_agg(x), '[]'::json) from (select r.id,r.name,r.cash_drawer_id,w.name as warehouse_name from pos_registers r join warehouses w on w.id=r.warehouse_id where r.active=true order by r.name) x),
             'drawers', (select coalesce(json_agg(x), '[]'::json) from (select id,name from cash_drawers order by name) x)
           ) as result"
