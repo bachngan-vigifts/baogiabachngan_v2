@@ -42,3 +42,23 @@ test('biên bản: danh xưng theo lựa chọn khi mẫu không có Ông sẵn'
   const xml = docContext.fflate.strFromU8(docContext.fflate.unzipSync(bytes)['word/document.xml']);
   assert.match(textOf(xml), /Bà Trần Thị Mai/);
 });
+
+test('đọc ô chọn hiện tại khi dựng hồ sơ dù input không phát; không lấy lại danh xưng cũ', async () => {
+  const formContext: any = {};
+  runInNewContext(ui.slice(0, ui.indexOf('/**\n * Mở hộp xem')).replaceAll('export ', '') + '\nglobalThis.readForm = readContractForm;', formContext);
+  const old = { representativeHonorific: 'Ông', representativeName: 'Vũ Thị Lệ Hà', depositRate: 30, paymentDays: 5 };
+  const selected = { dataset: { d: 'representativeHonorific' }, value: 'Bà' };
+  const form = { querySelectorAll: () => [selected, { dataset: { d: 'depositRate' }, value: '99', readOnly: true }] };
+  const details = formContext.readForm(form, old);
+  assert.equal(details.representativeHonorific, 'Bà');
+  assert.equal(details.depositRate, 30);
+  for (const [set, file, documentType] of [['vigifts', 'hdkt', 'HDKT'], ['bach-ngan', 'hdkt', 'HDKT'], ['vigifts', 'bien-ban', 'BBNT']]) {
+    const bytes = await docContext.ContractDocument.build({ quote: { quote_type: set === 'vigifts' ? 'VIGIFTS' : 'B2B', items: [], customer: { name: 'Khách thử' } }, contractNumber: 'TEST',
+      templateBytes: readFileSync(new URL(`../../trial-ui/mau-hop-dong-${set}-${file}.docx`, import.meta.url)), details, documentType });
+    const xml = docContext.fflate.strFromU8(docContext.fflate.unzipSync(bytes)['word/document.xml']);
+    const representative = (xml.match(/<w:p\b[\s\S]*?<\/w:p>/g) || []).map(textOf).find((p: string) => p.includes('Vũ Thị Lệ Hà'));
+    assert.ok(representative, `${set}-${file}`);
+    assert.match(representative, /Bà\s+Vũ Thị Lệ Hà/);
+    assert.doesNotMatch(representative, /Ông/);
+  }
+});
