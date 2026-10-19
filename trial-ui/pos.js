@@ -74,6 +74,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function restorePending() {
     if (pendingUser === user().id) return;
     pendingUser = user().id;
+    st.qr = null;
     st.register = null;
     st.policy = '';
     st.cart = [];
@@ -109,6 +110,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function invalidate() {
     st.qr = null;
     st.preview = null;
+    if (nodes.confirm) { nodes.confirm.checked = false; nodes.confirm.disabled = false; }
+    if (nodes.transferLabel) nodes.transferLabel.textContent = 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản';
     refreshPay();
     clearTimeout(previewTimer);
     previewTimer = setTimeout(preview, 180);
@@ -255,7 +258,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const bh = el('div', 'pos-basket-head');
     bh.append(
       el('h2', '', 'Giỏ hàng'),
-      button(st.customer?.name || 'Khách lẻ · Đổi', 'btn ghost small', chooseCustomer),
+      button(st.customer?.name || 'Khách lẻ · Đổi', 'btn primary pos-customer-trigger', chooseCustomer),
     );
     right.append(bh);
     nodes.customer = bh.lastChild;
@@ -326,9 +329,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.transfer = el('label', 'pos-field');
     const check = el('input');
     check.type = 'checkbox';
+    check.checked = !!st.qr?.paid;
+    check.disabled = !!st.qr?.paid;
     check.addEventListener('change', refreshPay);
     nodes.confirm = check;
-    nodes.transfer.append(check, el('span', '', 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản'));
+    nodes.transferLabel = el('span', '', st.qr?.paid ? 'SePay đã xác nhận cửa hàng nhận đủ ' + money(st.qr.amount) : 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản');
+    nodes.transfer.append(check, nodes.transferLabel);
     right.append(nodes.transfer);
     const actions = el('div', 'pos-actions');
     nodes.temp = button('In bill tạm', 'btn secondary', () =>
@@ -348,7 +354,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const help = el('details', 'pos-help');
     help.append(
       el('summary', '', 'Lưu ý bill tạm và chuyển khoản'),
-      el('p', 'pos-note', 'Bill tạm chưa thanh toán, không trừ kho. VietQR chỉ là yêu cầu; cần xác nhận đã nhận tiền.'),
+      el('p', 'pos-note', 'Bill tạm chưa thanh toán, không trừ kho. Bấm Hiện QR để SePay tự xác nhận khi nhận đủ tiền đúng nội dung; hoặc xác nhận thực nhận thủ công.'),
     );
     right.append(
       actions,
@@ -996,23 +1002,35 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       button('Đóng', 'btn secondary', m.close),
     );
     m.show();
+    const ownerId = user().id;
     const timer = setInterval(async () => {
-      if (!m.dlg.isConnected || completing) return clearInterval(timer);
+      if (st.qr !== d || completing || user().id !== ownerId || Date.now() > Date.parse(d.expiresAt)) return clearInterval(timer);
       try {
         const state = await api('/pos/qr/' + encodeURIComponent(d.id) + '/status');
-        if (!state.paid) return;
+        if (st.qr !== d || user().id !== ownerId || !state.paid) return;
         completing = true;
         clearInterval(timer);
-        status.textContent = 'SePay đã xác nhận nhận đủ tiền. Đang thu và in bill…';
+        if (state.consumed) {
+          st.qr = null;
+          nodes.confirm.checked = false;
+          refreshPay();
+          toast('Giao dịch đã được ghi nhận: ' + state.order.orderNo);
+          if (m.dlg.open) m.close();
+          return;
+        }
+        d.paid = true;
+        status.textContent = 'SePay đã xác nhận nhận đủ tiền.';
         st.method = 'transfer';
         nodes.confirm.checked = true;
         drawMethods();
-        if (state.consumed) { toast('Giao dịch đã được ghi nhận: ' + state.order.orderNo); m.close(); return; }
-        await pay(false, d.id);
-        if (!st.pending) m.close();
+        nodes.confirm.disabled = true;
+        nodes.transferLabel.textContent = 'SePay đã xác nhận cửa hàng nhận đủ ' + money(d.amount);
+        refreshPay();
+        toast('SePay đã xác nhận nhận đủ tiền. Bấm Thu tiền & in để hoàn tất.');
+        if (m.dlg.open) m.close();
       } catch { /* Mất mạng tạm thời: lượt kiểm tra tiếp theo sẽ thử lại. */ }
     }, 2000);
-    m.dlg.addEventListener('close', () => clearInterval(timer), { once: true });
+    // Continue watching this QR after closing the popup; cart changes invalidate it.
   }
   async function pay(cod = false, qrId) {
     if (st.busy || st.pending) return;
@@ -1067,7 +1085,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       method: st.method,
       tendered: Number(nodes.tender.value || 0),
       confirmed: st.method === 'transfer',
-      ...(qrId ? { paymentRequestId: qrId } : {}),
+      ...(st.method === 'transfer' && (qrId || st.qr?.paid) ? { paymentRequestId: qrId || st.qr.id } : {}),
     });
   }
   async function submit(body) {

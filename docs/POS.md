@@ -88,3 +88,7 @@ Chi tiết đơn COD có nút **Thu COD** cho chuyến đã giao còn tiền ch�
 ## Chọn khách tại POS
 
 Popup chọn khách dùng ô tìm kiếm có gợi ý theo tên/số điện thoại, không hiện sẵn danh bạ. Ba nút **Khách lẻ – Khách B2B – Khách mới** tách rõ: hai nút đầu lọc kết quả tìm theo phân loại khách đã có (`kind=retail`/`business`), nút cuối mở form tạo nhanh hiện tại. Khách B2B là nhóm không đánh dấu `is_retail`; không tự phân loại lại khách cũ. Nút Khách lẻ chỉ hiện theo quyền danh sách khách lẻ do server trả về. **Khách vãng lai · Không lưu hồ sơ** giữ luồng bán không gắn khách. Có thể dùng phím ↑/↓ và Enter để chọn gợi ý. Không đổi dữ liệu, schema hoặc quyền.
+
+## Xác nhận chuyển khoản SePay trên giỏ hàng
+
+Nút đổi khách ở giỏ hàng dùng màu xanh lá cùng nút Mở ca, rộng tối thiểu 170px trên máy tính và 150px trên điện thoại, cao 44px. Khi dùng **Hiện QR**, POS theo dõi yêu cầu thanh toán hiện tại kể cả sau khi đóng popup. Server báo đã nhận đủ tiền đúng QR thì ô chuyển khoản tự tích, hiện xác nhận SePay và bật **Thu tiền & in** để nhân viên hoàn tất. Nút này gửi đúng paymentRequestId để giữ liên kết với khoản chuyển tiền. Kết nối SePay hoặc tạo QR chưa được tính là đã nhận tiền; webhook vẫn đối chiếu mã/tài khoản/số tiền tại server. Thay đổi giỏ/bảng giá/khách hoặc tài khoản đăng nhập làm mất hiệu lực xác nhận cũ. Giữ lựa chọn xác nhận thủ công khi cửa hàng đã kiểm tra thực nhận.

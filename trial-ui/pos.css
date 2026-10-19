@@ -674,3 +674,20 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-customer-actions { gap: 8px; }
   .pos-customer-actions .btn { padding-inline: 10px; font-size: 13px; }
 }
+
+.pos-basket-head .pos-customer-trigger {
+  background: #168148;
+  border-color: #168148;
+  color: #fff;
+  min-width: 170px;
+  min-height: 44px;
+  max-width: 70%;
+  padding: 10px 20px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.pos-basket-head .pos-customer-trigger:hover { background: #116b3b; border-color: #116b3b; }
+@media (max-width: 480px) {
+  .pos-basket-head .pos-customer-trigger { min-width: 150px; padding-inline: 14px; }
+}
