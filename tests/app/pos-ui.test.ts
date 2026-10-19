@@ -57,6 +57,8 @@ class Element {
   get lastChild() {
     return this.children.at(-1)!;
   }
+  get options() { return this.children; }
+  get selectedIndex() { const i = this.children.findIndex(x => x.value === this.value); return i < 0 ? 0 : i; }
   focus() {}
   select() {}
   remove() {}
@@ -582,6 +584,11 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
       if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
       if (path === '/pos/preview') return { ...sample, total: 108000, lines: [{ ...sample.lines[0], sku: '001' }] };
+      if (path === '/pos/ghn/locations') {
+        if (body?.districtId) return { locations: [{ id: 'w1', name: 'Phường GHN' }] };
+        if (body?.provinceId) return { locations: [{ id: 'd1', name: 'Quận GHN' }] };
+        return { locations: [{ id: 'p1', name: 'Tỉnh GHN' }] };
+      }
       if (path === '/pos/checkout') throw Object.assign(Error('Kiểm tra payload'), { status: 400 });
       throw Error(path);
     };
@@ -599,14 +606,19 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     assert.match(modal.textContent, /Giao Hàng Nhanh · nhập địa chỉ/);
     assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
     const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
-    const method = modal.querySelectorAll('select')[0]!, confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
-    const form = modal.querySelectorAll('form')[0]!, save = modal.querySelectorAll('button').find(b => b.textContent === 'Tạo đơn COD')!;
+    await new Promise(r => setTimeout(r, 0));
+    const selects = modal.querySelectorAll('select'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects[3]!;
+    province.value = 'p1'; await province.fire('change'); await new Promise(r => setTimeout(r, 0));
+    district.value = 'd1'; await district.fire('change'); await new Promise(r => setTimeout(r, 0)); ward.value = 'w1';
+    const confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
+    const form = modal.querySelectorAll('form')[0]!, save = modal.querySelectorAll('button').find(b => b.textContent === 'Tiếp tục trên GHN')!;
     deposit.value = '50000'; await deposit.fire('input'); method.value = 'transfer'; await method.fire('change');
     assert.match(modal.textContent, /Còn lại thu COD: 58.000 đ/); assert.equal(save.disabled, true);
     await form.fire('submit'); assert.equal(calls.some(c => c.path === '/pos/checkout'), false);
     confirmed.checked = true; await confirmed.fire('change'); assert.equal(save.disabled, false);
     deposit.value = '108001'; await deposit.fire('input'); assert.equal(save.disabled, true);
     deposit.value = '50000'; await deposit.fire('input'); confirmed.checked = true; await confirmed.fire('change');
+    await form.fire('submit'); assert.equal(save.textContent, 'Xác nhận & tạo đơn COD');
     await form.fire('submit'); await new Promise(r => setTimeout(r, 0));
     const sent = calls.find(c => c.path === '/pos/checkout')!;
     assert.equal(sent.body.depositAmount, 50000); assert.equal(sent.body.method, 'transfer'); assert.equal(sent.body.confirmed, true);

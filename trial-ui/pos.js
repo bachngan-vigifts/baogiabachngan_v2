@@ -1199,7 +1199,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (!active() || !st.preview || !st.cart.length) return toast('Mở ca và chọn hàng trước.', 'err');
     if (cod) {
       const m = formModal('Giao Hàng Nhanh · nhập địa chỉ'),
-        address = field('Địa chỉ giao'),
+        address = field('Số nhà, tên đường'),
         phone = field('Điện thoại người nhận', 'tel', st.customer?.phone || ''),
         receiver = field('Người nhận', 'text', st.customer?.name || ''),
         date = field(
@@ -1210,8 +1210,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           }).format(new Date()),
         );
       m.dlg.classList.add('pos-cod-modal');
-      const ghnIntro = el('p', 'pos-note', 'Thông tin đơn hàng và người nhận đã được lấy sẵn. Vui lòng nhập hoặc kiểm tra địa chỉ giao trước khi tạo đơn COD.');
+      const ghnIntro = el('p', 'pos-note', 'Thông tin đơn hàng và người nhận đã được lấy sẵn. Chọn địa chỉ chuẩn Giao Hàng Nhanh trước khi xác nhận đơn COD.');
       address.input.required = phone.input.required = receiver.input.required = true;
+      address.input.placeholder = 'Ví dụ: 123 Nguyễn Trãi';
+      const locationField = (label) => { const box = el('label', 'pos-field'), s = select([['', 'Đang tải…']], ''); box.append(el('span', '', label), s); return { box, select: s }; };
+      const province = locationField('Tỉnh / Thành phố'), district = locationField('Quận / Huyện'), ward = locationField('Phường / Xã');
+      district.select.disabled = true; ward.select.disabled = true;
+      const setOptions = (s, rows, placeholder) => { s.replaceChildren(); const first = el('option', '', placeholder); first.value = ''; s.append(first); for (const x of rows || []) { const op = el('option', '', x.name); op.value = x.id; s.append(op); } s.disabled = false; };
+      const loadLocations = async (extra = {}) => (await api('/pos/ghn/locations', 'POST', { registerId: st.register.id, ...extra })).locations;
+      province.select.addEventListener('change', () => run(async () => {
+        district.select.disabled = true; ward.select.disabled = true; setOptions(ward.select, [], 'Chọn Phường / Xã'); ward.select.disabled = true;
+        setOptions(district.select, await loadLocations({ provinceId: province.select.value }), 'Chọn Quận / Huyện');
+      }));
+      district.select.addEventListener('change', () => run(async () => {
+        ward.select.disabled = true; setOptions(ward.select, await loadLocations({ districtId: district.select.value }), 'Chọn Phường / Xã');
+      }));
       const deposit = field('Đã thu trước / tạm ứng (VNĐ)', 'number', '0');
       deposit.input.min = '0'; deposit.input.max = String(st.preview.total); deposit.input.step = '1'; deposit.input.inputMode = 'numeric'; deposit.input.required = true;
       const method = el('select'), methodBox = el('label', 'pos-field');
@@ -1240,18 +1253,29 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         receiver.box,
         phone.box,
         address.box,
+        province.box, district.box, ward.box,
         date.box,
         el('p', '', 'Tổng đơn: ' + money(st.preview.total)),
         deposit.box, methodBox, confirmation, remaining, validation,
         el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
       );
-      const save = el('button', 'btn primary', 'Tạo đơn COD');
+      const save = el('button', 'btn primary', 'Tiếp tục trên GHN');
       save.type = 'submit';
       m.form.append(save, button('Huỷ', 'btn secondary', m.close));
       updateDeposit();
+      let reviewing = false;
       m.form.addEventListener('submit', (e) => {
         e.preventDefault();
         updateDeposit(); if (save.disabled) return;
+        if (!province.select.value || !district.select.value || !ward.select.value) return toast('Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã theo GHN.', 'err');
+        const chosen = s => s.options[s.selectedIndex]?.textContent || '';
+        if (!reviewing) {
+          reviewing = true;
+          ghnIntro.textContent = 'Kiểm tra lần cuối thông tin người nhận, địa chỉ và tiền thu COD. Bấm xác nhận để tạo đơn.';
+          for (const input of m.form.querySelectorAll('input, select')) input.disabled = true;
+          save.disabled = false; save.textContent = 'Xác nhận & tạo đơn COD';
+          return;
+        }
         save.disabled = true;
         const body = {
           ...payload(),
@@ -1259,16 +1283,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           fulfillmentMode: 'cod',
           ...(Number(deposit.input.value) > 0 ? { depositAmount: Number(deposit.input.value), method: method.value, confirmed: method.value === 'transfer' && confirmed.checked } : {}),
           delivery: {
-            address: address.input.value,
+            address: [address.input.value, chosen(ward.select), chosen(district.select), chosen(province.select)].filter(Boolean).join(', '),
             receiverName: receiver.input.value,
             receiverPhone: phone.input.value,
             plannedDate: date.input.value,
+            ghnProvinceId: province.select.value, ghnDistrictId: district.select.value, ghnWardCode: ward.select.value,
           },
         };
         m.close();
         submit(body);
       });
       m.show();
+      run(async () => setOptions(province.select, await loadLocations(), 'Chọn Tỉnh / Thành phố'));
       return;
     }
     if (st.method === 'transfer' && !nodes.confirm.checked) return toast('Xác nhận đã thực nhận chuyển khoản.', 'err');

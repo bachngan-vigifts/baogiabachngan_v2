@@ -226,6 +226,22 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus } });
     return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
   }, 'business');
+  router.post('/pos/ghn/locations', async c => {
+    const m = member(c); posPermission(m);
+    const input = await readJson(c.req, 2000), registerId = posText(input.registerId, 100);
+    const scope = await allowedPosRegisters(c);
+    const register = scope.regs.find(r => r.id === registerId);
+    if (!register || !scope.ids.has(register.id)) throw new AppError(403, 'Bạn không được dùng quầy này.');
+    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối GHN.');
+    const isLock = /lock/i.test(register.name), url = isLock ? c.env.webOrderAction.lockUrl : c.env.webOrderAction.minhlongUrl;
+    if (!url) throw new AppError(503, 'Quầy này chưa được kết nối dữ liệu địa chỉ GHN.');
+    const bridgeInput = { action: 'locations', provinceId: Math.max(0, Number(input.provinceId) || 0), districtId: Math.max(0, Number(input.districtId) || 0) };
+    const response = await (c.env.webOrderAction.fetch ?? fetch)(url, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify(bridgeInput) });
+    const raw = await response.text(); let result: Record<string, unknown> = {};
+    try { result = JSON.parse(raw); } catch {}
+    if (!response.ok) throw new AppError(response.status >= 500 ? 502 : 409, posText(result.message, 500) || 'Không tải được địa chỉ GHN.', posText(result.code, 80) || undefined);
+    return json({ ok: true, locations: Array.isArray(result.locations) ? result.locations : [] });
+  }, 'business');
   router.get(
     '/pos/options',
     async (c) => {
