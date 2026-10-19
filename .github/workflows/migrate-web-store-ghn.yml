@@ -15,7 +15,7 @@ jobs:
       - name: Thêm trường vận đơn GHN
         shell: bash
         run: |
-          payload=$(jq -n --arg query 'alter table "web_store_orders" add column if not exists "ghn_order_code" text default '\''''' not null; alter table "web_store_orders" add column if not exists "ghn_status" text default '\''''' not null; alter table "web_store_orders" add column if not exists "ghn_sort_code" text default '\''''' not null; alter table "web_store_orders" add column if not exists "ghn_fee" double precision default 0 not null;' '{query:$query}')
+          payload=$(jq -n --arg query "alter table \"web_store_orders\" add column if not exists \"ghn_order_code\" text default '' not null; alter table \"web_store_orders\" add column if not exists \"ghn_status\" text default '' not null; alter table \"web_store_orders\" add column if not exists \"ghn_sort_code\" text default '' not null; alter table \"web_store_orders\" add column if not exists \"ghn_fee\" double precision default 0 not null;" '{query:$query}')
           curl --fail-with-body --silent --show-error \
             -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
