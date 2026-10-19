@@ -772,6 +772,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-product-name { height: 40px; flex-basis: 40px; font-size: 14px; font-weight: 800; }
 .pos-product-sku { color: #7b8580; }
 .pos-product-price-stock { display: contents; }
+.pos-mobile-cart-dock { display: none; }
 .pos-product strong { margin-top: auto; font-size: 18px; }
 .pos-stock { color: #238251; font-weight: 650; }
 .pos-stock-low { color: #b66b00; }
@@ -910,4 +911,10 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-customer-subtitle, .pos-customer-hint, .pos-customer-option span { font-size: 10px; }
   .pos-customer-input { min-height: 40px; padding: 7px 9px; font-size: 13px !important; }
   .pos-customer-option { min-height: 42px; padding: 7px 9px; }
+  .pos-mobile-cart-dock { position: fixed; z-index: 35; left: 0; right: 0; bottom: var(--nav-h, calc(62px + env(safe-area-inset-bottom))); display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; padding: 7px 10px; border-top: 1px solid #d6e1da; background: #fff; box-shadow: 0 -5px 18px #173b291c; }
+  .pos-mobile-cart-info { display: grid; min-width: 0; }
+  .pos-mobile-cart-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .pos-mobile-cart-info small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6b786f; font-size: 9px; }
+  .pos-mobile-cart-dock > b { color: #155f37; font-size: 13px; white-space: nowrap; }
+  .pos-mobile-cart-open { min-height: 40px; padding-inline: 11px; background: #16884d !important; border-color: #16884d !important; font-size: 11px; }
 }

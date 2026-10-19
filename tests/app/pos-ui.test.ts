@@ -612,9 +612,14 @@ test('POS mới: THANH TOÁN theo ca/giỏ, menu thường ẩn cấu hình và 
     opened = true; await ui.load();
     checkout = root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!;
     assert.equal(checkout.disabled, true, 'giỏ trống thì khóa thanh toán');
+    const mobileDock = root.querySelectorAll('div').find(e => e.className === 'pos-mobile-cart-dock')!;
+    assert.match(mobileDock.textContent, /Đơn hiện tại · 0 món/);
     await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
     assert.equal(checkout.disabled, false);
+    assert.match(mobileDock.textContent, /Đơn hiện tại · 1 món/);
+    assert.match(mobileDock.textContent, /194\.400 đ/);
+    assert.equal(mobileDock.querySelectorAll('button').find(b => b.textContent === 'Xem đơn ›')!.disabled, false);
     await checkout.fire('click');
     const payment = doc.body.children.at(-1)!;
     const tender = payment.querySelectorAll('input').find(i => i.type === 'number')!;

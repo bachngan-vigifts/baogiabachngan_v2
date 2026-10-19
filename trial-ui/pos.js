@@ -312,7 +312,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     );
     right.append(actions);
     layout.append(left, right);
-    page.append(layout, orderBoard);
+    const mobileDock = el('div', 'pos-mobile-cart-dock'), mobileInfo = el('div', 'pos-mobile-cart-info');
+    nodes.mobileCartCount = el('strong', '', 'Đơn hiện tại · 0 món');
+    nodes.mobileCartCustomer = el('small', '', 'Khách lẻ');
+    nodes.mobileCartTotal = el('b', '', '0 đ');
+    nodes.mobileCartOpen = button('Xem đơn ›', 'btn primary pos-mobile-cart-open', () => right.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    mobileInfo.append(nodes.mobileCartCount, nodes.mobileCartCustomer);
+    mobileDock.append(mobileInfo, nodes.mobileCartTotal, nodes.mobileCartOpen);
+    page.append(layout, mobileDock, orderBoard);
     root.append(page);
     drawCart();
     refreshPay();
@@ -524,6 +531,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     cartResizeObserver?.disconnect();
     nodes.lines.replaceChildren();
     if (nodes.cartCount) nodes.cartCount.textContent = `${st.cart.reduce((n,x)=>n+Number(x.qty||0),0)} món`;
+    updateMobileDock();
     lineTotals = new Map();
     if (!st.cart.length) nodes.lines.append(el('p', 'pos-note', 'Tìm hoặc quét sản phẩm để thêm vào giỏ.'));
     for (const x of st.cart) {
@@ -665,8 +673,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       nodes.totals.append(row);
     }
     for (const x of d?.lines || []) lineTotals.get(x.sku)?.replaceChildren(document.createTextNode(money(x.total)));
+    updateMobileDock();
     if(st.exchangeAllocationId)nodes.totals.append(button('Bỏ áp dụng tiền đổi hàng','btn secondary small',()=>run(async()=>{await api('/pos/exchanges/'+st.exchangeAllocationId+'/cancel','POST',{});st.exchangeAllocationId='';invalidate();await preview();})));
     refreshPay();
+  }
+  function updateMobileDock() {
+    if (!nodes.mobileCartCount) return;
+    const count = st.cart.reduce((n, x) => n + Number(x.qty || 0), 0), d = st.preview;
+    nodes.mobileCartCount.textContent = `Đơn hiện tại · ${count} món`;
+    nodes.mobileCartCustomer.textContent = st.customer?.name || 'Khách lẻ';
+    nodes.mobileCartTotal.textContent = d ? money(d.payable ?? d.total) : count ? 'Đang tính…' : '0 đ';
+    nodes.mobileCartOpen.disabled = !count;
   }
   function refreshPay() {
     if (!nodes.pay) return;
