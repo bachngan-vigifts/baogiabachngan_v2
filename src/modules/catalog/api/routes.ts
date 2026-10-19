@@ -7,7 +7,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { catalogVersions, pricePolicies, productPrices, products, productStock, warehouses } from '../schema.ts';
+import { catalogVersions, pricePolicies, productBarcodes, productPrices, products, productStock, warehouses } from '../schema.ts';
 import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../domain/product-filters.ts';
 import { historyOf } from './product-history.ts';
 import { registerProductAdminRoutes } from './product-admin.ts';
@@ -187,6 +187,34 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     });
   }, 'business');
 
+  router.get('/products-export', async c => {
+    const db = c.env.db, priced = seesSalePrices(viewerOf(c));
+    const brand = c.url.searchParams.get('brand') || '';
+    const selected = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50000);
+    const where = selected.length ? and(eq(products.active, true), inArray(products.sku, selected)) : searchFilter(c.url.searchParams, brand);
+    const [rows, policies, stores] = await Promise.all([
+      db.select().from(products).where(where).orderBy(asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(50000),
+      db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
+      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
+    ]);
+    const skus = rows.map(r => r.sku);
+    const [prices, rawStock, barcodes] = skus.length ? await Promise.all([
+      priced ? db.select().from(productPrices).where(inArray(productPrices.sku, skus)) : Promise.resolve([]),
+      db.select().from(productStock).where(inArray(productStock.sku, skus)),
+      db.select().from(productBarcodes).where(inArray(productBarcodes.sku, skus)),
+    ]) : [[], [], []];
+    const stock = await effectiveCatalogStock(db, rawStock, skus);
+    const bySku = <T extends { sku: string }>(xs: T[]) => {
+      const m = new Map<string, T[]>(); for (const x of xs) (m.get(x.sku) ?? m.set(x.sku, []).get(x.sku)!).push(x); return m;
+    };
+    const priceMap = bySku(prices), stockMap = bySku(stock), barcodeMap = bySku(barcodes);
+    return json({ priced, policies: priced ? policies.map(p => ({ id: p.id, name: p.name })) : [], warehouses: stores.map(w => ({ id: w.id, name: w.name })),
+      products: rows.map(r => ({ ...r, barcodes: (barcodeMap.get(r.sku) ?? []).map(x => x.barcode),
+        prices: Object.fromEntries((priceMap.get(r.sku) ?? []).map(x => [x.policyId, x.price])),
+        stock: Object.fromEntries((stockMap.get(r.sku) ?? []).map(x => [x.warehouseId, x.quantity])),
+        stockUpdatedAt: (stockMap.get(r.sku) ?? []).reduce((a, x) => x.updatedAt > a ? x.updatedAt : a, '') || null })) });
+  }, 'business');
+
   router.get('/product-brands', async c => {
     const rows = await c.env.db.select({ brand: products.brand, n: count() }).from(products)
       .where(and(eq(products.active, true), sql`${products.brand} <> ''`)).groupBy(products.brand).orderBy(asc(products.brand));
@@ -277,4 +305,3 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     return json({ count: data.products.length, replaced: data.replaceAll, policies: data.pricePolicies.length, warehouses: data.warehouses.length, message: `Đã nhập ${data.products.length} sản phẩm.` });
   }, 'admin');
 }
-

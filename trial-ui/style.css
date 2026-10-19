@@ -603,6 +603,11 @@ img.thumb { object-fit: cover; background: var(--surface-2); }
 .image-preview span.thumb.big { width: 80px; height: 80px; }
 .file-btn { justify-self: start; }
 .modal-foot .spacer { flex: 1; }
+.export-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-height: 52vh; overflow: auto; margin-top: 12px; }
+.export-columns fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 7px; }
+.export-columns legend { color: var(--brand-navy); font-weight: 700; padding: 0 4px; }
+.export-columns label { display: flex; gap: 8px; align-items: center; }
+@media (max-width: 600px) { .export-columns { grid-template-columns: 1fr; } }
 
 /* Ô đồng bộ Sapo trên trang Nhân viên */
 .sync-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

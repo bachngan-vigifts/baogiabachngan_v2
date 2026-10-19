@@ -2067,6 +2067,71 @@ var productActionsUi = null;
 function productActions() {
   return productActionsUi ||= initProductActions({ api, toast, esc, money, isManager, policy: currentPolicy, warehouses: () => state.warehouses || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } });
 }
+const PRODUCT_EXPORT_PREF = 'bn-product-export-columns-v1';
+const productExportColumns = d => [
+  { id: 'sku', label: 'Mã SKU', group: 'Cơ bản', width: 18, get: p => p.sku },
+  { id: 'barcodes', label: 'Barcode', group: 'Cơ bản', width: 20, get: p => (p.barcodes || []).join(', ') },
+  { id: 'name', label: 'Tên sản phẩm', group: 'Cơ bản', width: 55, get: p => p.name },
+  { id: 'brand', label: 'Thương hiệu', group: 'Cơ bản', width: 18, get: p => p.brand },
+  { id: 'pattern', label: 'Mẫu / phiên bản', group: 'Cơ bản', width: 20, get: p => p.pattern },
+  { id: 'unit', label: 'Đơn vị tính', group: 'Cơ bản', width: 14, get: p => p.unit },
+  { id: 'sapoProductId', label: 'Sapo Product ID', group: 'Sapo', width: 18, get: p => p.sapoProductId },
+  { id: 'taxBasis', label: 'Loại giá / thuế', group: 'Thuế', width: 22, get: p => p.taxBasis },
+  { id: 'taxIn', label: 'Thuế đầu vào (%)', group: 'Thuế', width: 16, get: p => p.taxIn },
+  { id: 'taxOut', label: 'Thuế đầu ra (%)', group: 'Thuế', width: 16, get: p => p.taxOut },
+  { id: 'perCarton', label: 'Số lượng / thùng', group: 'Quy cách', width: 18, get: p => p.perCarton },
+  { id: 'cartonWeight', label: 'Kg / thùng', group: 'Quy cách', width: 14, get: p => p.cartonWeight },
+  { id: 'cartonLength', label: 'Dài thùng (cm)', group: 'Quy cách', width: 16, get: p => p.cartonLength },
+  { id: 'cartonWidth', label: 'Rộng thùng (cm)', group: 'Quy cách', width: 16, get: p => p.cartonWidth },
+  { id: 'cartonHeight', label: 'Cao thùng (cm)', group: 'Quy cách', width: 16, get: p => p.cartonHeight },
+  { id: 'imageUrl', label: 'Link hình ảnh', group: 'Khác', width: 45, get: p => p.imageUrl },
+  { id: 'stockUpdatedAt', label: 'Cập nhật tồn lúc', group: 'Tồn kho', width: 22, get: p => p.stockUpdatedAt },
+  ...(d.priced ? d.policies.map(x => ({ id: 'price:' + x.id, label: x.name, group: 'Bảng giá', width: 18, get: p => p.prices?.[x.id] ?? null })) : []),
+  ...d.warehouses.map(x => ({ id: 'stock:' + x.id, label: 'Tồn · ' + x.name, group: 'Tồn kho', width: 18, get: p => p.stock?.[x.id] ?? 0 })),
+  { id: 'stock:total', label: 'Tổng tồn', group: 'Tồn kho', width: 14, get: p => Object.values(p.stock || {}).reduce((a, v) => a + (Number(v) || 0), 0) },
+];
+async function openProductExport() {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal';
+  const defaults = ['sku', 'barcodes', 'name', 'brand', 'unit', 'stock:total'];
+  let saved = defaults; try { saved = JSON.parse(localStorage.getItem(PRODUCT_EXPORT_PREF)) || defaults; } catch { /* mặc định */ }
+  const known = [
+    ['sku', 'Mã SKU', 'Cơ bản'], ['barcodes', 'Barcode', 'Cơ bản'], ['name', 'Tên sản phẩm', 'Cơ bản'], ['brand', 'Thương hiệu', 'Cơ bản'],
+    ['pattern', 'Mẫu / phiên bản', 'Cơ bản'], ['unit', 'Đơn vị tính', 'Cơ bản'], ['sapoProductId', 'Sapo Product ID', 'Sapo'],
+    ['taxBasis', 'Loại giá / thuế', 'Thuế'], ['taxIn', 'Thuế đầu vào (%)', 'Thuế'], ['taxOut', 'Thuế đầu ra (%)', 'Thuế'],
+    ['perCarton', 'Số lượng / thùng', 'Quy cách'], ['cartonWeight', 'Kg / thùng', 'Quy cách'], ['cartonLength', 'Dài thùng', 'Quy cách'],
+    ['cartonWidth', 'Rộng thùng', 'Quy cách'], ['cartonHeight', 'Cao thùng', 'Quy cách'], ['imageUrl', 'Link hình ảnh', 'Khác'],
+    ['stockUpdatedAt', 'Cập nhật tồn lúc', 'Tồn kho'],
+    ...((seesPrices() ? state.policies : []) || []).map(x => ['price:' + x.id, x.name, 'Bảng giá']),
+    ...(state.warehouses || []).map(x => ['stock:' + x.id, 'Tồn · ' + x.name, 'Tồn kho']), ['stock:total', 'Tổng tồn', 'Tồn kho'],
+  ];
+  const grouped = Map.groupBy ? Map.groupBy(known, x => x[2]) : known.reduce((m, x) => (m.set(x[2], [...(m.get(x[2]) || []), x]), m), new Map());
+  dlg.innerHTML = `<form method="dialog"><div class="modal-head"><div><span class="eyebrow">Sản phẩm</span><h2>Xuất danh sách Excel</h2></div><button class="icon-btn" value="cancel" aria-label="Đóng">×</button></div>
+    <div class="modal-body"><div class="form-grid cols-2"><label>Phạm vi<select data-scope><option value="filter">Kết quả đang lọc (${fmtNum(state.productTotal || 0)})</option><option value="all">Toàn bộ danh mục</option>${state.selected.size ? `<option value="selected">${fmtNum(state.selected.size)} sản phẩm đã chọn</option>` : ''}</select></label></div>
+    <div class="toolbar"><button type="button" class="btn ghost small" data-all>Chọn tất cả</button><button type="button" class="btn ghost small" data-none>Bỏ chọn</button><button type="button" class="btn ghost small" data-default>Mặc định</button></div>
+    <div class="export-columns">${[...grouped].map(([g, xs]) => `<fieldset><legend>${esc(g)}</legend>${xs.map(x => `<label><input type="checkbox" value="${esc(x[0])}" ${saved.includes(x[0]) ? 'checked' : ''}> ${esc(x[1])}</label>`).join('')}</fieldset>`).join('')}</div>
+    <p class="error" data-error></p></div><div class="modal-foot"><button class="btn secondary" value="cancel">Huỷ</button><button type="button" class="btn primary" data-export>Xuất Excel</button></div></form>`;
+  document.body.append(dlg); const boxes = () => [...dlg.querySelectorAll('input[type=checkbox]')];
+  dlg.querySelector('[data-all]').onclick = () => boxes().forEach(x => x.checked = true);
+  dlg.querySelector('[data-none]').onclick = () => boxes().forEach(x => x.checked = false);
+  dlg.querySelector('[data-default]').onclick = () => boxes().forEach(x => x.checked = defaults.includes(x.value));
+  dlg.addEventListener('close', () => dlg.remove(), { once: true });
+  dlg.querySelector('[data-export]').onclick = async e => {
+    const ids = boxes().filter(x => x.checked).map(x => x.value), err = dlg.querySelector('[data-error]');
+    if (!ids.length) { err.textContent = 'Chọn ít nhất một cột.'; return; }
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang tạo file…';
+    try {
+      const scope = dlg.querySelector('[data-scope]').value, params = new URLSearchParams();
+      if (scope === 'selected') params.set('skus', [...state.selected].join(','));
+      else if (scope === 'filter') { if (state.productQuery) params.set('q', state.productQuery); if (state.productBrand) params.set('brand', state.productBrand); }
+      const d = await api('/products-export?' + params), cols = productExportColumns(d).filter(x => ids.includes(x.id));
+      localStorage.setItem(PRODUCT_EXPORT_PREF, JSON.stringify(ids));
+      await downloadExcel('danh-sach-san-pham', [{ name: 'Sản phẩm', header: cols.map(x => x.label), rows: d.products.map(p => cols.map(x => x.get(p))), widths: cols.map(x => x.width), autoFilter: true }]);
+      dlg.close(); toast(`Đã xuất ${fmtNum(d.products.length)} sản phẩm.`);
+    } catch (ex) { err.textContent = ex.message; b.disabled = false; b.textContent = 'Xuất Excel'; }
+  };
+  dlg.showModal();
+}
+$('#product-export').addEventListener('click', openProductExport);
 $('#product-actions').addEventListener('click', e => {
   const action = e.target.closest('[data-product-action]')?.dataset.productAction;
   if (action === 'value' || action === 'audit') productActions().report(action);

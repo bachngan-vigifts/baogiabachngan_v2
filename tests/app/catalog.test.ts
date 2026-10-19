@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
-import { pricePolicies, productPrices, products, productStock, warehouses, catalogVersions } from '../../src/modules/catalog/schema.ts';
+import { pricePolicies, productBarcodes, productPrices, products, productStock, warehouses, catalogVersions } from '../../src/modules/catalog/schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { fold } from '../../src/core/text/fold.ts';
 import { hydrateSnapshot, searchProducts } from '../../src/modules/catalog/domain/product-search.ts';
@@ -39,6 +39,7 @@ test('sản phẩm: tìm không dấu nhiều từ, lọc thương hiệu, phân
   ]);
   await db.insert(productPrices).values([{ sku: 'LHC4125', policyId: 'le', price: 185000 }, { sku: 'LHC4125', policyId: 'si', price: null }]);
   await db.insert(productStock).values([{ sku: 'LHC4125', warehouseId: 'k1', quantity: 12, updatedAt: t }]);
+  await db.insert(productBarcodes).values({ sku: 'LHC4125', barcode: '893000000001' });
   await db.insert(catalogVersions).values({ id: 'v1', observedAt: t, productCount: 8, isCurrent: true, createdBy: 'mgr', createdAt: t });
 
   assert.equal((await call('/products', ncc)).status, 403);
@@ -59,6 +60,12 @@ test('sản phẩm: tìm không dấu nhiều từ, lọc thương hiệu, phân
   // skus=: lấy đúng các mã, kể cả mã đã ngừng bán (để bổ sung ảnh cho dòng báo giá cũ).
   assert.deepEqual((await call('/products?skus=OLD,ML-01,KHONG-CO', emp)).data.products.map((p: any) => p.sku).sort(), ['ML-01', 'OLD']);
   assert.equal((await call('/products/KHONG-CO', emp)).status, 404);
+  const exported = await call('/products-export?q=' + encodeURIComponent('binh GIU'), emp);
+  assert.equal(exported.status, 200, JSON.stringify(exported.data));
+  assert.deepEqual(exported.data.products.map((p: any) => p.sku), ['LHC4125']);
+  assert.deepEqual(exported.data.products[0].barcodes, ['893000000001']);
+  assert.equal(exported.data.products[0].prices.le, 185000);
+  assert.equal(exported.data.products[0].stock.k1, 12);
 });
 
 test('khách hàng: tìm không dấu theo tên/điện thoại/MST, phân trang có tổng; lưu mới tạo cột search', async () => {
