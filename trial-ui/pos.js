@@ -406,16 +406,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       el('p', 'pos-note', 'Trạng thái GHN: ' + (o.ghnStatus || 'Đã tạo vận đơn') + (o.ghnFee ? ' · Phí: ' + money(o.ghnFee) : '')),
     );
     const actions = el('div', 'pos-actions');
-    if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chốt đơn & tạo vận đơn GHN', 'btn primary', async () => {
-      if (!await confirmBox(`Chốt đơn ${o.orderNo} và gửi tạo vận đơn Giao Hàng Nhanh?`, { ok: 'Chốt đơn' })) return;
-      try {
-        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm' });
-        m.close(); toast('Đã chốt đơn và cập nhật vận đơn GHN.', 'ok'); await loadOrderBoard();
-      } catch (e) {
-        if (e.code === 'address_invalid' || /địa chỉ|phường|xã|quận|huyện/i.test(e.message || '')) { m.close(); await showGhnAddress(o, e.message); }
-        else toast(e.message, 'err');
-      }
-    }));
+    if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Tiếp tục trên GHN', 'btn primary', () => { m.close(); showGhnAddress(o); }));
     if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Sửa địa chỉ GHN', 'btn secondary', () => { m.close(); showGhnAddress(o); }));
     if (o.actionsAvailable) actions.append(button('Cập nhật trạng thái', 'btn secondary', () => run(async () => {
       await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'refresh' }); m.close(); toast('Đã cập nhật trạng thái đơn.', 'ok'); await loadOrderBoard();
@@ -446,12 +437,20 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     district.select.addEventListener('change', () => run(async () => {
       ward.select.disabled = true; setOptions(ward.select, await loadLocations({ districtId: district.select.value }), 'Chọn Phường / Xã');
     }));
-    const actions = el('div', 'pos-actions'), submit = button('Lưu địa chỉ & tạo vận đơn GHN', 'btn primary'); submit.type = 'submit';
+    const actions = el('div', 'pos-actions'), submit = button('Tiếp tục trên GHN', 'btn primary'); submit.type = 'submit';
     actions.append(button('Đóng', 'btn secondary', m.close), submit);
     m.form.append(address.box, province.box, district.box, ward.box, actions);
+    let reviewing = false;
     m.form.addEventListener('submit', async e => {
       e.preventDefault();
       if (!province.select.value || !district.select.value || !ward.select.value) return toast('Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã.', 'err');
+      if (!reviewing) {
+        reviewing = true;
+        for (const input of m.form.querySelectorAll('input, select')) input.disabled = true;
+        submit.textContent = 'Xác nhận & tạo vận đơn GHN';
+        m.form.insertBefore(el('p', 'pos-cod-remaining', 'Kiểm tra lần cuối địa chỉ và thông tin đơn trước khi tạo vận đơn.'), actions);
+        return;
+      }
       submit.disabled = true;
       try {
         const chosen = s => s.options[s.selectedIndex]?.textContent || '';
