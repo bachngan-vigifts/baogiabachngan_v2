@@ -71,3 +71,11 @@ Module `customer-hub` chỉ đọc. Module này được import `staff`, `custom
 - `GET /customers/:id/notes` đọc nội dung; `PUT /customers/:id/notes` nhận `{ text, revision }`. Lần đầu `revision=0`; server trả phiên bản mới. Bản cũ bị từ chối 409 thay vì ghi đè thay đổi của người khác. `GET /customers/:id` và `/overview` có `generalNote` (null nếu không có quyền).
 - Gộp khách trùng giữ ghi chú của cả hai bản. Tổng nội dung quá 5.000 ký tự thì từ chối gộp, giữ nguyên dữ liệu để Manager rút gọn trước.
 - Chạy `0055_customer_notes.sql`, rồi `0056_supabase_access_customer_notes.sql` **trước khi deploy API mới**. Bảng bật RLS, không cấp quyền trực tiếp cho PUBLIC/anon/authenticated; quyền đọc/sửa kiểm tra ở API.
+
+## Bổ sung khách lẻ từ Sapo
+
+Migration `20261019030603_retail_customers.sql` thêm `sapo_customers.is_retail`, mặc định false cho hồ sơ cũ. Không phân loại hay ghi đè hồ sơ cũ. Đợt nhập riêng quét toàn bộ các trang Sapo, chỉ thêm khách thuộc nhóm Khách lẻ hoặc khách cá nhân không MST; tổ chức thiếu MST không tự coi là cá nhân. Khách trùng ID Sapo, mã khách, MST có giá trị hoặc điện thoại chuẩn hoá bị bỏ qua (không tự gộp). Cùng tên khác điện thoại vẫn có thể là hai người khác nhau. Khách bổ sung được đánh dấu is_retail=true và dùng ngay.
+
+GET /customers và GET /pos/customers hỗ trợ `kind=retail|business`; NVBH LOCK/ML và Manager được thấy bộ lọc Khách lẻ, các chức vụ nhân viên khác luôn loại nhóm này khỏi danh sách/tìm kiếm/phân trang kể cả tự thêm query. Quyền xem liên kết khách trên chứng từ cũ không đổi. Khách doanh nghiệp giữ nguyên luồng hiện tại; đồng bộ thường không ghi đè hồ sơ đã đánh dấu retail.
+
+Chạy workflow **Đồng bộ Sapo**, scope=retail: mỗi lần gọi đọc tối đa hai trang, lưu con trỏ riêng trong sapo_health_monitor_state, chạy lại tiếp tục và không thêm trùng. Không reset cursor sản phẩm/nhân viên, không đổi cron. API `/integrations/sapo/retail-customers/pull` dùng mã đồng bộ sẵn có; `/admin/sapo-retail-customers` chỉ Manager. Không trả dữ liệu liên hệ hay credential trong kết quả. Nhận completed=true mới hết trang; nếu có warning nhóm thì cần đối chiếu trước khi tuyên bố đủ cả hai nhóm.

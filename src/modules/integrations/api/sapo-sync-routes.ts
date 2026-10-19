@@ -92,14 +92,14 @@ export async function syncCustomers(db: AnyDb, body: Record<string, unknown>) {
         set: { name: sql`excluded.name`, contact: sql`excluded.contact`, phone: sql`excluded.phone`, email: sql`excluded.email`, address: sql`excluded.address`,
           taxCode: sql`excluded.tax_code`, customerCode: sql`excluded.customer_code`, search: sql`excluded.search`, sourceVersion: sql`excluded.source_version`, syncedAt: sql`excluded.synced_at` },
         // Bản Sapo cũ hơn bản đang có thì bỏ qua (webhook có thể đến không theo thứ tự).
-        setWhere: sql`excluded.source_version >= ${customers.sourceVersion}`,
+        setWhere: sql`excluded.source_version >= ${customers.sourceVersion} and ${customers.isRetail} = false`,
       }).returning({ id: customers.id });
       applied = done.length;
     }
     // Khách lẻ / không MST: không tạo mới; nếu đã có thì chỉ cập nhật tên và MST (giống web cũ).
     for (const r of others)
       await tx.update(customers).set({ name: r.name, taxCode: r.taxCode, search: search(r), sourceVersion: r.version, syncedAt: now })
-        .where(and(eq(customers.id, r.id), sql`${customers.sourceVersion} <= ${r.version}`));
+        .where(and(eq(customers.id, r.id), eq(customers.isRetail, false), sql`${customers.sourceVersion} <= ${r.version}`));
   });
   return { received: raw.length, applied, skipped: raw.length - kept, duplicates };
 }

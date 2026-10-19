@@ -677,12 +677,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         list,
         button('Đóng', 'btn secondary', m.close),
       );
+      const retailWrap = el('label'), retail = el('input');
+      retail.type = 'checkbox'; retailWrap.hidden = true; retailWrap.append(retail, document.createTextNode(' Chỉ khách lẻ'));
+      m.body.insertBefore(retailWrap, list);
       let seq = 0,
         timer;
       const find = async () => {
         const n = ++seq,
-          d = await api('/pos/customers?q=' + encodeURIComponent(input.value));
+          d = await api('/pos/customers?q=' + encodeURIComponent(input.value) + (retail.checked ? '&kind=retail' : ''));
         if (n !== seq || !m.dlg.open) return;
+        retailWrap.hidden = !d.canListRetail;
+        if (!d.canListRetail) retail.checked = false;
         list.replaceChildren(
           ...d.customers.map((c) =>
             button(c.name + ' · ' + c.phone, 'btn secondary', () => {
@@ -694,6 +699,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           ),
         );
       };
+      retail.addEventListener('change', () => run(find));
       input.addEventListener('input', () => {
         clearTimeout(timer);
         timer = setTimeout(() => run(find), 200);

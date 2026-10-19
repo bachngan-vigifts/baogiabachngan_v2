@@ -1,3 +1,4 @@
+import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -354,6 +355,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .where(
           and(
             eq(customers.approvalStatus, 'approved'),
+            !canListRetailCustomers(member(c)) ? eq(customers.isRetail, false) : c.url.searchParams.get('kind') === 'retail' ? eq(customers.isRetail, true) : c.url.searchParams.get('kind') === 'business' ? eq(customers.isRetail, false) : undefined,
             q
               ? or(
                   sql`${foldSql(customers.name)} like ${
@@ -372,7 +374,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         )
         .orderBy(asc(customers.name))
         .limit(20);
-      return json({ customers: list });
+      return json({ customers: list, canListRetail: canListRetailCustomers(member(c)) });
     },
     'business',
   );
