@@ -5,6 +5,7 @@ import { employees } from '../staff/schema.ts';
 import { APPROVAL_STATUSES, CUSTOMER_STAFF_ROLES } from './domain/customer-config.ts';
 
 export const customers = pgTable('sapo_customers', {
+  isRetail: boolean('is_retail').notNull().default(false),
   createdAt: text('created_at').notNull().default(''),
   taxCode: text('tax_code').notNull().default(''),
   customerCode: text('customer_code').notNull().default(''),

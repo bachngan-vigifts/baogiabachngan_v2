@@ -1,3 +1,4 @@
+import { authorizePosStore } from '../modules/sales/api/pos-access.ts';
 import { registerCashRoutes } from './cash-routes.ts';
 import { inventoryOpeningHooks } from '../modules/inventory/api/ledger.ts';
 import { catalogStockHooks } from '../modules/catalog/api/stock-source.ts';
@@ -42,7 +43,7 @@ export function createAppRouter() {
   inventoryOpeningHooks.guard = guardPosOpening;
   catalogStockHooks.overlay = overlayPosStock;
   catalogStockHooks.stamp = posStockStamp;
-  const router = createStaffRouter({ authorizeSynctime });
+  const router = createStaffRouter({ authorizeSynctime, authorizeSession: authorizePosStore });
   registerQuoteRoutes(router);
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);

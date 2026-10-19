@@ -146,3 +146,25 @@ export const posPaymentRequests = pgTable(
     check('chk_pos_qr_amount', sql`${t.amount} > 0`),
   ],
 ).enableRLS();
+
+export const webStoreOrders = pgTable('web_store_orders', {
+  id: text('id').primaryKey(),
+  source: text('source').notNull(),
+  externalId: text('external_id').notNull(),
+  orderNo: text('order_no').notNull(),
+  registerId: text('register_id').notNull().references(() => posRegisters.id),
+  status: text('status').notNull(),
+  customerName: text('customer_name').notNull().default('Khách lẻ'),
+  phone: text('phone').notNull().default(''),
+  email: text('email').notNull().default(''),
+  address: text('address').notNull().default(''),
+  total: doublePrecision('total').notNull().default(0),
+  currency: text('currency').notNull().default('VND'),
+  paymentMethod: text('payment_method').notNull().default(''),
+  lines: text('lines').notNull().default('[]'),
+  orderedAt: text('ordered_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('uq_web_store_order').on(t.source, t.externalId),
+  index('idx_web_store_orders_register').on(t.registerId, t.updatedAt),
+]).enableRLS();

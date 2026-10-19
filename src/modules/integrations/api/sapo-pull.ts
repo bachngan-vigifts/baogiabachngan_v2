@@ -1,3 +1,4 @@
+import { pullRetailCustomers } from './retail-pull.ts';
 import { and, eq, inArray, lt } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -261,6 +262,9 @@ export function registerSapoPullRoutes(router: Router<StaffEnv>) {
     await c.env.db.delete(sapoRuntimeSessions).where(eq(sapoRuntimeSessions.id, SESSION_ID));
     return json({ connected: false });
   }, 'admin');
+
+  router.post('/integrations/sapo/retail-customers/pull', async c => json(await withSapoSession(c, api => pullRetailCustomers(c.env.db, api))), 'sapo-sync');
+  router.post('/admin/sapo-retail-customers', async c => json(await withSapoSession(c, api => pullRetailCustomers(c.env.db, api))), 'admin');
 
   router.post('/admin/sapo-pull', async c => {
     const state = await runPull(c, 'manager:' + (c.state.session as SessionState).member.id);

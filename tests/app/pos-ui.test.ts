@@ -318,3 +318,10 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
   for (const p of ['trial-ui/pos.js', 'trial-ui/pos-print.js'])
     assert.ok(!/\.innerHTML\s*=|insertAdjacentHTML/.test(readFileSync(p, 'utf8')), p);
 });
+test('Bán hàng nhanh có bảng đơn theo cửa hàng và đủ bộ lọc trạng thái vận hành', () => {
+  const source = readFileSync('trial-ui/pos.js', 'utf8');
+  for (const label of ['Đơn hàng cửa hàng', 'Tất cả đơn', 'Chờ xử lý', 'Đang đóng hàng', 'Đợi giao', 'Hoàn thành', 'Đã hủy'])
+    assert.ok(source.includes(label), label);
+  assert.match(source, /\/pos\/orders\?/);
+  assert.match(source, /registerId/);
+});

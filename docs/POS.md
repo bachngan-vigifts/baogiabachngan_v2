@@ -75,3 +75,12 @@ Dùng lại `cash_reconciliations` và nhật ký đã có, không thêm migrati
 NVBH LOCK và CHT LOCK chỉ truy cập quầy/két Lock; NVBH ML và CHT Minh Long chỉ truy cập quầy/két Minh Long. Server xác định cửa hàng từ chức vụ hệ thống hoặc tên chức vụ CHT, đối chiếu kho gắn với quầy (Lock được nhận diện trước vì tên kho có cả chữ Minh Long). Với tên kho chung chưa định danh, dùng tên quầy Lock/Minh Long. Không có quầy phù hợp thì không tự chuyển sang cửa hàng khác. Manager vẫn truy cập cả hai.
 
 Danh sách POS, ca và Sổ quỹ chỉ trả quầy/két trong phạm vi. API từ chối truy cập chéo bằng registerId, drawerId, shiftId hoặc ID bill, QR, COD, phiếu/ảnh, tra soát; quyền duyệt được chỉ định không mở rộng cửa hàng. Đổi chức vụ có hiệu lực ở yêu cầu tiếp theo, kể cả ca cũ của chính nhân viên tại cửa hàng khác. Không thay đổi quyền của các chức vụ khác; không thêm bảng/cột/quyền/migration.
+## Sửa đơn đã sinh từ POS
+
+Manager mở chi tiết Đơn đặt hàng → **Sửa đơn POS**. Form chọn khách có sẵn hoặc sửa thông tin khách trên riêng đơn (không sửa hồ sơ khách gốc), địa chỉ/người nhận của chuyến chờ giao hoặc đang giao, và ghi chú điều kiện thanh toán. Mọi lần lưu cần lý do và revision; form cũ bị từ chối khi đơn đã đổi. Nhật ký ghi giá trị trước/sau.
+
+Đơn COD chưa thu, chưa giao/xuất, chưa có phiếu đóng gói hay HĐKT, có tối đa một chuyến chờ giao toàn bộ hàng được sửa số lượng, giá niêm yết và CK trên các dòng hiện có. Giá nhập theo chính sách bill gốc (có VAT/không VAT), giữ thuế suất, server dùng posLine tính lại tiền; không nhận tổng từ client. Giao dịch kiểm tồn khả dụng trừ hàng giữ khác, cập nhật dòng hàng, snapshot bill, lịch thu, số tiền COD, số lượng chuyến giao và lịch sử sản phẩm. Không ghi xuất kho hoặc tạo phiếu thu khi sửa. Không đổi SKU/thêm/xoá dòng trong form này.
+
+Đơn đã thu/xuất hàng vẫn sửa được thông tin liên hệ và ghi chú; không sửa lùi số lượng/giá trị hoặc chuyển khách liên kết khi còn phiếu thu hiệu lực. Phiếu thu sai dùng **Huỷ phiếu…** có lý do rồi ghi thu lại theo luồng hiện có; báo cáo ca đã chốt giữ nguyên. Chuyến đã giao giữ thông tin giao lịch sử.
+
+Chi tiết đơn COD có nút **Thu COD** cho chuyến đã giao còn tiền chưa thu. Nút dùng lại `/pos/cod/:id/collect`, yêu cầu xác nhận thực nhận và ca đang mở đúng két, tiền mặt/chuyển khoản. Không mở cơ chế thu khác hay sửa trực tiếp phiếu thu. Ghi chú thanh toán không làm thay đổi trạng thái đã thu. Không thêm bảng/cột/quyền/migration.

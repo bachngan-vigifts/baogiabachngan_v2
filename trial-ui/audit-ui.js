@@ -4,6 +4,7 @@ const when = iso => new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', min
 
 /** Tên dễ hiểu cho từng thao tác (route). Thao tác chưa có tên thì hiện nguyên route. */
 const ACTIONS = {
+  'PUT /orders/:id/pos': 'Sửa đơn POS', 'amend-pos-order': 'Sửa đơn POS (trước / sau)',
   'POST /quotes': 'Tạo báo giá', 'PUT /quotes/:id': 'Sửa báo giá', 'POST /quotes/:id/approve': 'Duyệt báo giá', 'POST /quotes/:id/submit': 'Gửi duyệt báo giá', 'POST /quotes/:id/reject': 'Trả lại báo giá', 'DELETE /quotes/:id': 'Xoá báo giá',
   'POST /orders': 'Tạo đơn hàng', 'PUT /orders/:id/status': 'Duyệt / huỷ đơn hoặc HĐKT', 'PUT /orders/:id/delivery-date': 'Đổi ngày giao dự kiến',
   'POST /orders/:id/invoice-request': 'Yêu cầu xuất hoá đơn', 'PUT /orders/:id/invoice': 'Nhập số hoá đơn', 'POST /orders/:id/packing': 'Yêu cầu đóng gói',
@@ -16,7 +17,7 @@ const STATUS = { confirmed: 'Đã duyệt', cancelled: 'Đã huỷ', delivered: 
 
 /** Tóm tắt ngắn nội dung thao tác (trạng thái mới, số tiền, ngày…) thay vì in cả thân yêu cầu. */
 function detail(e) {
-  const b = e.data?.body || {}, parts = [];
+  const b = e.data?.body || (e.action === 'amend-pos-order' ? e.data : {}) || {}, parts = [];
   if (b.status) parts.push('→ ' + (STATUS[b.status] || b.status));
   if (b.amount) parts.push(new Intl.NumberFormat('vi-VN').format(b.amount) + ' đ');
   if (b.date || b.plannedDate) parts.push('ngày ' + String(b.date || b.plannedDate).split('-').reverse().join('/'));

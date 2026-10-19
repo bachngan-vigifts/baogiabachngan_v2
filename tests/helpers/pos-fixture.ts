@@ -62,7 +62,7 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     hooks.push({ url: String(input), body: JSON.parse(String(init?.body || '{}')) });
     return Response.json({ success: true, runId: 'pos-run-1' });
   }) as typeof fetch;
-  const env: StaffEnv = { db, files, passwordIterations: 1000, sapoOrderPush: 'off', sepayPosApiKeyHash: '8670e3ad137cfc09a44e3316e36267a695abd71e002c4164f5acfe647665befd', ...(opts.viaClaw ? { sapoOrderMode: 'n8n' as const, sapoWebhookFetch } : {}) };
+  const env: StaffEnv = { db, files, passwordIterations: 1000, sapoOrderPush: 'off', sepayPosApiKeyHash: '8670e3ad137cfc09a44e3316e36267a695abd71e002c4164f5acfe647665befd', wooLockTokenHash: '1c71edfcc47c4d1f168a858fbfe643fe90e9d52c058894f1754c6f4b6c879e20', wooMinhLongTokenHash: '268737b3767d678ff42efe0546f93fd8199c9da722fe1aa12c892483775f4fcd', ...(opts.viaClaw ? { sapoOrderMode: 'n8n' as const, sapoWebhookFetch } : {}) };
   const call = async (path: string, cookie = '', method = 'GET', body?: unknown) => {
     const r = await router.handle(
       new Request(origin + '/api/staff' + path, {

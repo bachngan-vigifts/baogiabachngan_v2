@@ -1,4 +1,3 @@
-import { authorizePosStore } from '../../sales/api/pos-access.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { FileStore } from '../../../core/storage/file-store.ts';
 import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
@@ -39,6 +38,8 @@ export interface StaffEnv {
   sapoPosOrderWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
   sepayPosApiKeyHash?: string;
+  wooLockTokenHash?: string;
+  wooMinhLongTokenHash?: string;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
   waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */
@@ -75,6 +76,8 @@ export function clientIp(h: Headers): string {
 }
 
 export interface StaffRouterOptions {
+  /** Kiểm phạm vi nghiệp vụ do lớp ứng dụng lắp ráp sau khi xác thực và kiểm quyền. */
+  authorizeSession?: (c: Ctx) => Promise<void>;
   /** Lớp ứng dụng cung cấp xác thực webhook; staff không phụ thuộc module tích hợp. */
   authorizeSynctime?: (req: Request, db: AnyDb) => Promise<void>;
 }
@@ -95,6 +98,16 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     if (diff) throw new AppError(401, 'Webhook SePay không hợp lệ.');
     return;
   }
+  if (area === 'web-order-sync') {
+    const token = c.url.searchParams.get('token') || '';
+    const got = sha256Hex(token), wants = [
+      c.env.wooLockTokenHash || '332555a87646e97c22b3496d8eaca19cbfb649b3c0fd3381ac2bd62b23311d6d',
+      c.env.wooMinhLongTokenHash || 'aa30c8ef850ad067688d7e91744cab2608546aaca978018e28b9aa5e97cc1415',
+    ];
+    if (!wants.some(want => { let d = got.length ^ want.length; for (let i = 0; i < want.length; i++) d |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i); return d === 0; }))
+      throw new AppError(401, 'Webhook đơn web không hợp lệ.');
+    return;
+  }
   if (area === 'synctime-sync') {
     if (!options.authorizeSynctime) throw new AppError(503, 'Chưa cấu hình xác thực SyncTime.');
     return options.authorizeSynctime(c.req, c.env.db);
@@ -111,7 +124,7 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     if (need && !need.some(k => can(member, k))) throw new AppError(403, 'Chức vụ của bạn chưa được cấp quyền dùng chức năng này. Liên hệ Manager.', 'NO_PERMISSION');
   }
   c.state.session = { member, tokenHash } satisfies SessionState;
-  await authorizePosStore(c);
+  await options.authorizeSession?.(c);
 }
 
 /**

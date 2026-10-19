@@ -30,6 +30,7 @@ jobs:
           npm run typecheck &&
           node --import tsx --test
           tests/app/pos.test.ts
+          tests/app/retail-customers.test.ts
           tests/app/sapo-push.test.ts
           tests/app/sapo-push-ui.test.ts
           tests/app/order-sapo-ui.test.ts

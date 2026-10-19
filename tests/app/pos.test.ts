@@ -189,6 +189,51 @@ test('POS SePay: đúng mã, tài khoản và số tiền thì tự xác nhận 
   assert.equal(status.data.order.orderNo, checkout.data.orderNo);
   assert.equal((await webhook(qr.data.amount)).status, 200, 'SePay retry phải idempotent');
 });
+test('POS dashboard: đếm đúng trạng thái theo quầy và nhân viên không xem quầy khác', async () => {
+  const f = await setup();
+  const second = await f.call('/pos/registers', f.mgr, 'POST', {
+    name: 'Quầy Minh Long', warehouseId: 'pos-wh', pricePolicyId: 'retail-vat', secondPricePolicyId: 'retail', taxRate: 8,
+  });
+  assert.equal(second.status, 200, JSON.stringify(second.data));
+  const s = await f.open();
+  const counter = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id));
+  const cod = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id, {
+    fulfillmentMode: 'cod',
+    delivery: { address: '123 Test', receiverName: 'Khách', receiverPhone: '0901234567' },
+  }));
+  assert.equal(counter.status, 201, JSON.stringify(counter.data));
+  assert.equal(cod.status, 201, JSON.stringify(cod.data));
+  const board = await f.call(`/pos/orders?registerId=${f.registerId}`, f.emp);
+  assert.equal(board.status, 200, JSON.stringify(board.data));
+  assert.equal(board.data.counts.all, 2);
+  assert.equal(board.data.counts.completed, 1);
+  assert.equal(board.data.counts.waiting_delivery, 1);
+  assert.equal((await f.call(`/pos/orders?registerId=${second.data.id}`, f.emp)).status, 403);
+  const manager = await f.call(`/pos/orders?registerId=${second.data.id}`, f.mgr);
+  assert.equal(manager.status, 200);
+  assert.equal(manager.data.counts.all, 0);
+  assert.equal(manager.data.registers.length, 2);
+});
+test('WooCommerce webhook: nhập/cập nhật một lần và hiện đúng quầy Minh Long', async () => {
+  const f = await setup();
+  const reg = await f.call('/pos/registers', f.mgr, 'POST', {
+    name: 'Showroom Gốm Sứ Minh Long Cần Thơ', warehouseId: 'pos-wh', pricePolicyId: 'retail-vat', secondPricePolicyId: 'retail', taxRate: 8,
+  });
+  assert.equal(reg.status, 200, JSON.stringify(reg.data));
+  const order = { id: 456, number: '456', status: 'processing', total: '1250000', currency: 'VND', date_created: '2026-10-19T10:00:00',
+    billing: { first_name: 'Nguyễn', last_name: 'An', phone: '0901000000', email: 'an@example.com' },
+    shipping: { address_1: '1 Nguyễn Trãi', city: 'Cần Thơ' }, payment_method_title: 'Chuyển khoản',
+    line_items: [{ sku: '072017000', name: 'Tô sứ', quantity: 2, total: '500000' }] };
+  assert.equal((await f.call('/integrations/woocommerce/minhlong/order?token=bad', '', 'POST', order)).status, 401);
+  const first = await f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token', '', 'POST', order);
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal((await f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token', '', 'POST', { ...order, status: 'completed' })).status, 200);
+  const board = await f.call(`/pos/orders?registerId=${reg.data.id}`, f.mgr);
+  assert.equal(board.data.counts.all, 1);
+  assert.equal(board.data.counts.completed, 1);
+  assert.equal(board.data.orders[0].orderNo, '456');
+  assert.equal(board.data.orders[0].external, true);
+});
 test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0', async () => {
   const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();
   assert.equal((await call('/pos/options', ncc)).status, 403);
