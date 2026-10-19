@@ -2,7 +2,7 @@
 
 > File này được **sinh tự động** từ schema (`npm run docs:data-model`). Đừng sửa tay.
 
-Tổng: **98 bảng**.
+Tổng: **131 bảng**.
 
 Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = bản cũ có, đã thêm/bỏ cột · **hợp thức hoá** = bản cũ tự tạo lúc chạy, nay có migration · **mới** = chưa có ở bản cũ.
 
@@ -19,8 +19,11 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `staff_auth_attempts` | 3 | giữ nguyên |  |
 | `staff_avatars` | 4 | mới |  |
 | `staff_credentials` | 5 | giữ nguyên |  |
-| `staff_members` | 11 | đổi | thêm: deleted_at, avatar_key |
-| `staff_positions` | 2 | giữ nguyên |  |
+| `staff_departments` | 4 | mới |  |
+| `staff_members` | 12 | đổi | thêm: deleted_at, avatar_key, can_approve |
+| `staff_permission_log` | 5 | mới |  |
+| `staff_position_permissions` | 2 | mới |  |
+| `staff_positions` | 4 | đổi | thêm: department_id, data_scope |
 | `staff_sapo_links` | 4 | giữ nguyên |  |
 | `staff_sessions` | 4 | giữ nguyên |  |
 | `staff_setup` | 1 | giữ nguyên |  |
@@ -32,8 +35,9 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `customer_brand_discounts` | 3 | mới |  |
 | `customer_contacts` | 11 | mới |  |
 | `customer_contract_profiles` | 3 | giữ nguyên |  |
+| `customer_notes` | 5 | mới |  |
 | `customer_staff` | 5 | mới |  |
-| `sapo_customers` | 16 | đổi | thêm: approval_status, created_by, approved_by, approved_at; bỏ: discounts |
+| `sapo_customers` | 20 | đổi | thêm: is_retail, approval_status, created_by, approved_by, approved_at, deposit_rate, payment_term, credit_limit; bỏ: discounts |
 
 ## catalog — Sản phẩm, giá, kho, tồn kho
 
@@ -41,12 +45,13 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 |---|---|---|---|
 | `catalog_versions` | 7 | mới |  |
 | `price_policies` | 3 | mới |  |
+| `product_barcodes` | 2 | mới |  |
 | `product_edits` | 5 | giữ nguyên |  |
 | `product_movements` | 16 | mới |  |
 | `product_prices` | 3 | mới |  |
 | `product_stock` | 4 | mới |  |
 | `products` | 22 | mới |  |
-| `stock_import_lines` | 4 | mới |  |
+| `stock_import_lines` | 6 | mới |  |
 | `stock_imports` | 7 | giữ nguyên |  |
 | `warehouses` | 5 | mới |  |
 
@@ -77,9 +82,15 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 |---|---|---|---|
 | `incoming_shipment_files` | 11 | mới |  |
 | `incoming_shipment_lines` | 29 | mới |  |
-| `incoming_shipments` | 42 | mới |  |
+| `incoming_shipments` | 49 | mới |  |
 | `supplier_accounts` | 4 | mới |  |
 | `supplier_contacts` | 7 | mới |  |
+| `supplier_order_events` | 7 | mới |  |
+| `supplier_order_sources` | 10 | mới |  |
+| `supplier_payment_schedules` | 7 | mới |  |
+| `supplier_payments` | 15 | mới |  |
+| `supplier_receipt_lines` | 6 | mới |  |
+| `supplier_receipts` | 17 | mới |  |
 | `supplier_stock_request_lines` | 9 | mới |  |
 | `supplier_stock_requests` | 12 | mới |  |
 | `suppliers` | 13 | mới |  |
@@ -135,23 +146,26 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `sapo_inventory_docs` | 15 | mới |  |
 | `sapo_order_statuses` | 9 | giữ nguyên |  |
 | `sapo_runtime_sessions` | 4 | hợp thức hoá |  |
+| `synctime_connections` | 3 | mới |  |
+| `synctime_receipts` | 3 | mới |  |
 
 ## sales — Đơn hàng, HĐKT, giao hàng, thu tiền, phiếu đóng gói
 
 | Bảng | Số cột | Trạng thái | Ghi chú |
 |---|---|---|---|
-| `customer_payments` | 11 | mới |  |
-| `deliveries` | 17 | mới |  |
+| `customer_payments` | 18 | mới |  |
+| `deliveries` | 18 | mới |  |
 | `delivery_lines` | 3 | mới |  |
 | `order_progress_marks` | 5 | mới |  |
 | `packing_slip_lines` | 11 | mới |  |
 | `packing_slip_photos` | 6 | mới |  |
-| `packing_slips` | 24 | mới |  |
+| `packing_slips` | 25 | mới |  |
 | `payment_schedules` | 8 | mới |  |
 | `sales_contracts` | 19 | mới |  |
-| `sales_order_lines` | 11 | mới |  |
-| `sales_orders` | 36 | mới |  |
+| `sales_order_lines` | 15 | mới |  |
+| `sales_orders` | 45 | mới |  |
 | `shipping_carriers` | 6 | mới |  |
+| `stock_holds` | 11 | mới |  |
 
 ## tasks — Công việc
 
@@ -168,6 +182,50 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `chat_conversations` | 7 | mới |  |
 | `chat_members` | 4 | mới |  |
 | `chat_messages` | 7 | mới |  |
+
+## pos — POS và ca bán hàng
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `pos_payment_requests` | 9 | mới |  |
+| `pos_registers` | 17 | mới |  |
+| `pos_shift_stock_counts` | 5 | mới |  |
+| `pos_shift_templates` | 5 | mới |  |
+| `pos_shifts` | 19 | mới |  |
+| `web_store_orders` | 20 | mới |  |
+
+## cash — Sổ quỹ và tra soát
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `cash_drawers` | 9 | mới |  |
+| `cash_entries` | 21 | mới |  |
+| `cash_reconciliations` | 19 | mới |  |
+
+## returns — Trả hàng, đổi hàng và hoàn tiền POS
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `pos_exchange_allocations` | 12 | mới |  |
+| `pos_refunds` | 14 | mới |  |
+| `pos_return_lines` | 14 | mới |  |
+| `pos_returns` | 28 | mới |  |
+
+## inventory — Sổ kho và ảnh nghiệp vụ
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `stock_balances` | 4 | mới |  |
+| `stock_moves` | 11 | mới |  |
+| `warehouse_photos` | 7 | mới |  |
+
+## adms — Thiết bị chấm công
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `hr_adms_logs` | 9 | mới |  |
+| `hr_adms_members` | 5 | mới |  |
+| `hr_adms_sync_state` | 6 | mới |  |
 
 ## care — Chăm sóc khách hàng
 

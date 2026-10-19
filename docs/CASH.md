@@ -58,3 +58,9 @@ Migration cho ngoại lệ Manager tự duyệt: `20261019020235_manager_cash_se
 ### Giới hạn két theo cửa hàng
 
 NVBH/CHT Lock chỉ thấy két gắn quầy Lock; NVBH/CHT Minh Long chỉ thấy két gắn quầy Minh Long (xem quy tắc nhận diện trong POS.md). Phạm vi áp dụng cả danh sách và ID truy cập trực tiếp, ảnh phiếu, duyệt/huỷ, ca và tra soát. Người được chỉ định duyệt không được vượt phạm vi này. Manager vẫn xem và thao tác cả hai theo quyền hiện có. Không thay đổi số dư hay báo cáo đã chốt.
+
+## Hoàn tiền hàng POS
+
+Phiếu trả hàng được duyệt và xác nhận thực nhận mới phát sinh giá trị trả. Tiền thực hoàn ghi bằng `pos_refunds`; hoàn tiền mặt kèm `cash_entries.kind=customer_refund`, hướng chi, vào ca/két đang mở lúc thực trả. Dùng người duyệt của yêu cầu, không bắt duyệt lần hai sau khi đã trả tiền. Chuyển khoản hoàn không trừ két. Thanh toán bằng tiền đổi hàng là `method=other`, `payment_source=pos_exchange_credit`, không tính tiền thực thu trong két hoặc Sổ thu/chi.
+
+Huỷ phiếu thông thường bị chặn cho hoàn tiền đã xác nhận và các phiếu thu có chứng từ trả/đổi liên kết, để không âm thầm làm sai tiền được hoàn. Báo cáo ca đã kết giữ nguyên; hoàn ở ca sau ghi chi ở ca sau. Xem [POS-RETURNS-PREFLIGHT.md](POS-RETURNS-PREFLIGHT.md) để biết migration và giới hạn triển khai.

@@ -1,3 +1,5 @@
+import { assertNoReturnActivity } from './pos-return-credit.ts';
+import { posOrderNote } from '../domain/pos-order-note.ts';
 import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
@@ -26,12 +28,14 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
   ]);
   const snapshot = JSON.parse(order.posSnapshot || '{}');
   const customerId = b.customerId === undefined ? order.customerId : posText(b.customerId) || null;
+  if (customerId !== order.customerId) await assertNoReturnActivity(db, order.id);
   if (customerId !== order.customerId && receipts.length) throw new AppError(409, 'Đơn đã thu tiền: cần xử lý phiếu thu trước khi đổi khách liên kết.');
   if (customerId) {
     const [customer] = await db.select({ id: customers.id }).from(customers).where(and(eq(customers.id, customerId), eq(customers.approvalStatus, 'approved')));
     if (!customer) throw new AppError(400, 'Khách hàng chưa dùng được.');
   }
   const fields = {
+    note: b.note === undefined ? order.note : posOrderNote(b.note),
     customerId, customerName: b.customerName === undefined ? order.customerName : posText(b.customerName, 500),
     contact: b.contact === undefined ? order.contact : posText(b.contact, 500),
     phone: b.phone === undefined ? order.phone : posText(b.phone, 100),
@@ -53,6 +57,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
       return Number(row.qty) !== l.qty || Number(row.price) !== (l.listUnitPrice ?? l.unitPrice) || row.discountType !== l.discountType || Number(row.discountValue) !== l.discountValue;
     });
     if (changed) {
+      await assertNoReturnActivity(db,order.id);
       const active = ships.filter(s => s.status !== 'cancelled');
       if (order.fulfillmentMode !== 'cod' || receipts.length || oldLines.some(l => l.deliveredQty > 0) || packs.length || contracts.length || active.some(s => s.status !== 'planned') || active.length > 1)
         throw new AppError(409, 'Chỉ đổi số lượng/giá khi COD chưa xuất hàng, chưa thu và có tối đa một chuyến chờ giao. Phiếu đã đóng gói cần xử lý trước.');
@@ -110,6 +115,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
     await db.update(deliveries).set({ address, receiverName, receiverPhone, updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
   }
   snapshot.customer = fields.customerName;
+  snapshot.note = fields.note;
   await db.update(salesOrders).set({ ...fields, ...totals, posSnapshot: JSON.stringify(snapshot), revision: order.revision + 1, updatedAt: now }).where(eq(salesOrders.id, order.id));
   await cashAudit(db, actor.id, 'amend-pos-order', 'orders', order.id, { reason, before: { ...order, lines: oldLines }, after: { ...fields, ...totals, lines: computed, delivery: b.delivery, paymentNote }, revision: order.revision + 1 });
   return { id: order.id, revision: order.revision + 1, ...totals };

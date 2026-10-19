@@ -23,3 +23,5 @@ export * from '../modules/inventory/schema.ts';
 export * from '../modules/sales/pos-schema.ts';
 
 export * from '../modules/sales/cash-schema.ts';
+
+export * from '../modules/sales/return-schema.ts';

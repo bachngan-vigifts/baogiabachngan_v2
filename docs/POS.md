@@ -103,3 +103,19 @@ Cụm **Đơn hàng cửa hàng** nằm cuối trang, sau danh mục sản phẩ
 ## Xác nhận chuyển khoản SePay trên giỏ hàng
 
 Nút đổi khách ở giỏ hàng dùng màu xanh lá cùng nút Mở ca, rộng tối thiểu 170px trên máy tính và 150px trên điện thoại, cao 44px. Khi dùng **Hiện QR**, POS theo dõi yêu cầu thanh toán hiện tại kể cả sau khi đóng popup. Server báo đã nhận đủ tiền đúng QR thì ô chuyển khoản tự tích, hiện xác nhận SePay và bật **Thu tiền & in** để nhân viên hoàn tất. Nút này gửi đúng paymentRequestId để giữ liên kết với khoản chuyển tiền. Kết nối SePay hoặc tạo QR chưa được tính là đã nhận tiền; webhook vẫn đối chiếu mã/tài khoản/số tiền tại server. Thay đổi giỏ/bảng giá/khách hoặc tài khoản đăng nhập làm mất hiệu lực xác nhận cũ. Giữ lựa chọn xác nhận thủ công khi cửa hàng đã kiểm tra thực nhận.
+
+## Ghi chú đơn hàng
+
+Ngay dưới hướng dẫn phí dịch vụ có ô **Ghi chú đơn hàng** (tối đa 2.000 ký tự). Ghi chú lưu trên đơn và snapshot, hiện trong bill tạm/K80/chi tiết đơn và ghi chú payload outbound. Nhập ghi chú không thay số tiền hoặc mất xác nhận QR. Gửi lại cùng checkoutKey phải giữ ghi chú như lần đầu; đổi ghi chú sau hoàn tất dùng luồng sửa đơn có kiểm quyền/audit. Không thêm migration hoặc quyền.
+
+Luồng đổi/trả/hoàn tiền và schema đã duyệt được mô tả tại [POS-RETURNS-PREFLIGHT.md](POS-RETURNS-PREFLIGHT.md). Cần áp dụng hai migration mới trước khi triển khai API này lên live.
+
+## Trả hàng, đổi hàng, hoàn tiền
+
+Vào **Trả / Đổi / Hoàn** trên POS hoặc **Trả / Đổi / Hoàn tiền** trong chi tiết bill POS. Người được chỉ định duyệt nhưng không có quyền bán vào **Sổ quỹ → Duyệt đổi / trả hàng**; quyền duyệt không cấp quyền nhận hàng/hoàn tiền. Tìm bill gốc, chọn SL đã giao cần trả và tình trạng hàng, nhập lý do rồi gửi duyệt. Manager/người được chỉ định duyệt; người được chỉ định không tự duyệt, Manager được tự duyệt có audit. Mặc định hoàn hàng; phí dịch vụ/ship chỉ hoàn thêm khi Manager duyệt.
+
+Sau duyệt, nhân viên có ca mở tại đúng quầy xác nhận **thực nhận hàng**. Hàng bán được tăng tồn, hàng hỏng không tăng tồn bán. Giá/CK/VAT lấy bill gốc. Xác nhận **đã hoàn tiền** chỉ khi cửa hàng thực trả: tiền mặt trừ két ca hiện tại, chuyển khoản cần tham chiếu và không vào két. COD chưa thu chỉ giảm công nợ, không phát sinh tiền hoàn.
+
+Đổi hàng: thêm hàng mới vào giỏ, mở phiếu trả đã thực nhận, chọn **Dùng tiền trả để đổi hàng**. Bill mới chỉ thu thêm chênh lệch; phần dư hoàn riêng nếu khách đổi hàng rẻ hơn. Tín dụng gắn cùng khách/quầy/nhân viên, giữ 15 phút; QR còn hiệu lực hoặc đã nhận tiền giữ khoản này để chống dùng/hoàn trùng. Bill cũ và báo cáo ca cũ giữ nguyên, báo cáo ca hiện tại tách hàng trả/tiền thực hoàn/tín dụng đổi hàng.
+
+Không dùng huỷ phiếu thu để giả lập trả hàng. Phiếu hoàn thực tế không được huỷ như phiếu ghi nhầm; bản này chưa có màn đảo chứng từ hoàn. Không tự sửa Sapo, hoá đơn VAT đã phát hành hoặc chuyển tiền qua ngân hàng.

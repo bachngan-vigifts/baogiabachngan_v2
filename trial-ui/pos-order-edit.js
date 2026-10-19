@@ -118,6 +118,6 @@ export function posCodReceipt({ api, delivery, onSaved }) {
 
 export function posPaymentText(detail) {
   const terms = detail.schedules.map(s => s.note).filter(n => n && !['POS', 'Ship COD'].includes(n)).join(' · ') || (detail.order.fulfillmentMode === 'cod' ? 'Thu COD sau khi giao hàng' : 'Thanh toán tại quầy');
-  const methods = [...new Set(detail.payments.filter(p => !p.voidedAt).map(p => p.method === 'cash' ? 'tiền mặt' : p.method === 'transfer' ? 'chuyển khoản' : 'khác'))];
+  const methods = [...new Set(detail.payments.filter(p => !p.voidedAt).map(p => p.paymentSource==='pos_exchange_credit'?'tiền đổi hàng':p.method === 'cash' ? 'tiền mặt' : p.method === 'transfer' ? 'chuyển khoản' : 'khác'))];
   return terms + ' · ' + (methods.length ? 'Đã thu bằng ' + methods.join(', ') : 'Chưa thu');
 }

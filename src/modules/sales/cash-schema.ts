@@ -105,7 +105,7 @@ export const cashEntries = pgTable(
     check('chk_cash_entry_status', sql`${t.status} in ('pending','posted','voided')`),
     check(
       'chk_cash_entry_direction',
-      sql`(${t.kind} in ('other_income','cash_in') and ${t.direction}='in') or (${t.kind} in ('petty_expense','advance','cash_out') and ${t.direction}='out') or (${t.kind}='adjustment' and ${t.direction} in ('in','out'))`,
+      sql`(${t.kind} in ('other_income','cash_in') and ${t.direction}='in') or (${t.kind} in ('petty_expense','advance','cash_out','customer_refund') and ${t.direction}='out') or (${t.kind}='adjustment' and ${t.direction} in ('in','out'))`,
     ),
     check(
       'chk_cash_void_reason',

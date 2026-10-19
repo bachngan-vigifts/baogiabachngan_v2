@@ -18,7 +18,14 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     node(doc, 'h2', data.register?.name || 'Bách Ngân'),
     node(doc, 'p', data.register?.address || '', 'center'),
   );
-  if (kind === 'shift') {
+  if (kind === 'return') {
+    const r=data.return;
+    sheet.append(node(doc,'h3','PHIẾU ĐỔI / TRẢ HÀNG'),node(doc,'p',r.returnNo),node(doc,'p','Bill gốc: '+data.order.orderNo),node(doc,'p',data.order.customerName),node(doc,'p','Lý do: '+r.reason));
+    for(const l of r.lines||[])line(l.name+' × '+l.requestedQty,money(l.total));
+    line('Phí được duyệt hoàn',money(r.approvedServiceFee+r.approvedShippingFee));line('Giá trị trả',money(r.total),true);
+    for(const f of r.refunds||[])line('Đã hoàn '+(f.method==='cash'?'tiền mặt':'chuyển khoản'),money(f.amount));
+    sheet.append(node(doc,'p',r.receivedAt?'Đã xác nhận thực nhận hàng':'Chưa xác nhận nhận hàng'),node(doc,'p','Giá trị trả hàng không đồng nghĩa đã hoàn tiền.'));
+  } else if (kind === 'shift') {
     sheet.append(node(doc, 'h3', 'BÁO CÁO KẾT CA'), node(doc, 'p', data.memberName || data.shift.memberId));
     line('Mở ca', new Date(data.shift.openedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }));
     line(
@@ -80,6 +87,8 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     line('Tiền trước thuế (gồm phí)', money(data.subtotal));
     line('VAT', money(data.tax));
     line('TỔNG CỘNG', money(data.total), true);
+    if(data.exchangeCredit){line('Thanh toán bằng tiền đổi hàng',money(data.exchangeCredit));line('Khách trả thêm',money(data.payable));}
+    if (data.note) sheet.append(node(doc, 'p', 'Ghi chú: ' + data.note, 'order-note'));
     if (temporary) sheet.append(node(doc, 'p', 'Chưa ghi thu, chưa trừ kho. Không phải hóa đơn VAT.', 'center'));
     else if (cod) sheet.append(node(doc, 'p', 'Thu COD sau khi giao và cửa hàng thực nhận tiền.'));
     else {
@@ -107,7 +116,7 @@ export function printPos(data, kind = 'bill') {
   const style = node(
     doc,
     'style',
-    '@page{size:80mm auto;margin:0}body{margin:0;font:12px Arial;color:#000;background:#fff}.pos-paper{width:72mm;padding:4mm;overflow-wrap:anywhere}h2,h3,.center{text-align:center}h2{font-size:16px}h3{font-size:13px;border-top:1px dashed;padding-top:8px}p{margin:5px 0}.pair{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.pair span:last-child{text-align:right;white-space:nowrap}.strong{font-weight:bold;font-size:15px;border-top:1px dashed;padding-top:6px}.item-name{font-weight:bold;border-top:1px dotted;padding-top:6px}',
+    '@page{size:80mm auto;margin:0}body{margin:0;font:12px Arial;color:#000;background:#fff}.pos-paper{width:72mm;padding:4mm;overflow-wrap:anywhere}h2,h3,.center{text-align:center}h2{font-size:16px}h3{font-size:13px;border-top:1px dashed;padding-top:8px}p{margin:5px 0}.pair{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.pair span:last-child{text-align:right;white-space:nowrap}.strong{font-weight:bold;font-size:15px;border-top:1px dashed;padding-top:6px}.order-note{white-space:pre-wrap;overflow-wrap:anywhere}.item-name{font-weight:bold;border-top:1px dotted;padding-top:6px}',
   );
   doc.head.append(style);
   doc.body.append(buildPosPrint(doc, data, kind));

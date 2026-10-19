@@ -1,3 +1,5 @@
+import { assertNoReturnActivity, returnAdjustments, netReturnInputs } from './pos-return-credit.ts';
+import { posReturns, posRefunds, posExchangeAllocations } from '../return-schema.ts';
 import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { editPosOrder } from './pos-order-edit.ts';
 import { cashLock, drawerOf, cashAudit, voidClosedCashEffect } from './cash-store.ts';
@@ -102,7 +104,8 @@ async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
     db.select().from(customerPayments).where(and(inArray(customerPayments.orderId, orderIds), isNull(customerPayments.voidedAt))),
   ]);
   const today = vietnamDate().iso;
-  return new Map(orderIds.map(id => [id, receivable(sch.filter(s => s.orderId === id), pay.filter(p => p.orderId === id), today)]));
+  const adjustments=await returnAdjustments(db,orderIds);
+  return new Map(orderIds.map(id => {const net=netReturnInputs(sch.filter(s => s.orderId === id),pay.filter(p => p.orderId === id),adjustments.get(id));return [id,receivable(net.schedules,net.payments,today)];}));
 }
 /** Lịch sử sản phẩm: các dòng (có mã hàng) của đơn đã xác nhận → biến động "Bán" (khoá `sale:<đơn>:<dòng>`). */
 export async function recordSaleMovements(db: StaffEnv['db'] | Tx, orderId: string) {
@@ -368,7 +371,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
       .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy, ...payments.map(p => p.voidedBy)].filter((x): x is string => !!x)));
     const person = (id: string) => people.find(p => p.id === id);
+    const adjustment=(await returnAdjustments(db,[order.id])).get(order.id);
+    const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     return json({
+      returnAdjustment: adjustment || null,
+      effectiveSchedules: net.schedules,
       order: { ...order, posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
@@ -379,7 +386,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
-      receivable: receivable(schedules, payments.filter(p => !p.voidedAt), vietnamDate().iso), canVoidPayment: canVoidPayment(viewer(c)),
+      receivable: receivable(net.schedules, net.payments, vietnamDate().iso), canVoidPayment: canVoidPayment(viewer(c)),
       progress: (await progressOf(db, [order.id])).get(order.id),
     });
   }, 'business');
@@ -859,8 +866,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const want = c.url.searchParams.get('status') || '';
     // Lọc trong SQL trước khi giới hạn số dòng: chỉ đơn có công nợ (đã duyệt hoặc HĐKT đã ký) và – trừ khi xem "Đã thu đủ" – còn phải thu,
     // để đơn cũ còn nợ không bị đơn mới đã thu đủ đẩy ra khỏi danh sách.
-    const due = sql`(SELECT coalesce(sum(${paymentSchedules.amount}), 0) FROM ${paymentSchedules} WHERE ${paymentSchedules.orderId} = ${salesOrders.id})`;
-    const paid = sql`(SELECT coalesce(sum(${customerPayments.amount}), 0) FROM ${customerPayments} WHERE ${customerPayments.orderId} = ${salesOrders.id} AND ${customerPayments.voidedAt} IS NULL)`;
+    const due = sql`((SELECT coalesce(sum(${paymentSchedules.amount}), 0) FROM ${paymentSchedules} WHERE ${paymentSchedules.orderId} = ${salesOrders.id}) - (select coalesce(sum(${posReturns.total}),0) from ${posReturns} where ${posReturns.orderId}=${salesOrders.id} and ${posReturns.creditEffectiveAt} is not null))`;
+    const paid = sql`((SELECT coalesce(sum(${customerPayments.amount}), 0) FROM ${customerPayments} WHERE ${customerPayments.orderId} = ${salesOrders.id} AND ${customerPayments.voidedAt} IS NULL) - (select coalesce(sum(${posRefunds.amount}),0) from ${posRefunds} inner join ${posReturns} on ${posReturns.id}=${posRefunds.returnId} where ${posReturns.orderId}=${salesOrders.id}) - (select coalesce(sum(${posExchangeAllocations.amount}),0) from ${posExchangeAllocations} inner join ${posReturns} on ${posReturns.id}=${posExchangeAllocations.returnId} where ${posReturns.orderId}=${salesOrders.id} and ${posExchangeAllocations.status}='applied'))`;
     const rows = await c.env.db.select().from(salesOrders).where(and(orderScope(c), ne(salesOrders.status, 'cancelled'),
       or(ne(salesOrders.status, 'draft'), sql`EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id} AND ${salesContracts.status} IN ('signed', 'completed'))`),
       want === 'paid' ? sql`${due} > 0 AND ${paid} >= ${due}` : sql`${due} > ${paid}`,
@@ -875,8 +882,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     ]) : [[], []];
     const today = vietnamDate().iso, owners = new Map((ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees)
       .where(inArray(employees.id, [...new Set(counted.map(r => r.ownerId))])) : []).map(e => [e.id, e.name]));
+    const adjustments=await returnAdjustments(c.env.db,ids);
     const list = counted.map(r => {
-      const s = sch.filter(x => x.orderId === r.id), p = pay.filter(x => x.orderId === r.id);
+      const net=netReturnInputs(sch.filter(x=>x.orderId===r.id),pay.filter(x=>x.orderId===r.id),adjustments.get(r.id)),s=net.schedules,p=net.payments;
       return { orderId: r.id, orderNo: r.orderNo, contractNo: contracts.find(x => x.orderId === r.id)?.no ?? null, customerId: r.customerId, customerName: r.customerName, phone: r.phone,
         orderDate: r.orderDate, orderStatus: r.status, invoiceNo: r.invoiceNo, ownerName: owners.get(r.ownerId) ?? '', ...receivable(s, p, today), aging: debtAging(s, p, today) };
     })
@@ -944,6 +952,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
     await c.env.db.transaction(async tx=>{
     await cashLock(tx);
+    await assertNoReturnActivity(tx,p.orderId);
     const done = await tx.update(customerPayments).set({ voidedAt: nowIso(), voidedBy: me.id, voidReason: reason })
       .where(and(eq(customerPayments.id, p.id), isNull(customerPayments.voidedAt))).returning({ id: customerPayments.id });
     if (!done.length) throw new AppError(409, 'Phiếu thu vừa được người khác huỷ.');

@@ -1,3 +1,5 @@
+import { posExchangeAllocations } from '../return-schema.ts';
+import { returnAccount } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
@@ -127,8 +129,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (!hit) throw new AppError(404, 'Không tìm thấy yêu cầu QR POS tương ứng.');
       if (account && account !== hit.bankAccount.replace(/\s+/g, '')) throw new AppError(400, 'Tài khoản nhận tiền không thuộc quầy POS này.');
       if (Math.round(amount) !== Math.round(hit.request.amount)) throw new AppError(409, 'Số tiền SePay không khớp yêu cầu QR POS.');
-      if (!hit.request.confirmedAt) await c.env.db.update(posPaymentRequests).set({ confirmedAt: posNow() }).where(and(eq(posPaymentRequests.id, hit.request.id), isNull(posPaymentRequests.confirmedAt)));
-      return json({ success: true, paymentRequestId: hit.request.id, alreadyConfirmed: !!hit.request.confirmedAt });
+      const requiresReconciliation=await c.env.db.transaction(async tx=>{
+        await cashLock(tx);
+        const [request]=await tx.select().from(posPaymentRequests).where(eq(posPaymentRequests.id,hit.request.id));
+        const allocationId=JSON.parse(request!.cart).exchangeAllocationId;
+        const [allocation]=allocationId?await tx.select().from(posExchangeAllocations).where(eq(posExchangeAllocations.id,allocationId)):[];
+        const late=!!allocationId&&(!allocation||allocation.status==='cancelled');
+        if(!request!.confirmedAt){
+          await tx.update(posPaymentRequests).set({confirmedAt:posNow()}).where(eq(posPaymentRequests.id,request!.id));
+          if(late){const [shift]=await tx.select().from(posShifts).where(eq(posShifts.id,request!.shiftId));await cashAudit(tx,shift!.memberId,'late-exchange-transfer','pos-qr',request!.id,{amount,allocationId,requiresReconciliation:true});}
+        }
+        return late;
+      });
+      return json({ success: true, paymentRequestId: hit.request.id, alreadyConfirmed: !!hit.request.confirmedAt, ...(requiresReconciliation?{requiresReconciliation:true}:{} ) });
     },
     'sepay-sync',
   );
@@ -292,7 +305,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (!r) throw new AppError(404, 'Không tìm thấy yêu cầu QR.');
       await shiftOf(c.env.db, m, r.shiftId);
       const [order] = await c.env.db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders).where(eq(salesOrders.posPaymentRequestId, r.id));
-      return json({ paid: !!r.confirmedAt, confirmedAt: r.confirmedAt, consumed: !!order, order: order ?? null });
+      const allocationId=JSON.parse(r.cart).exchangeAllocationId;
+      const [allocation]=allocationId?await c.env.db.select().from(posExchangeAllocations).where(eq(posExchangeAllocations.id,allocationId)):[];
+      return json({ paid: !!r.confirmedAt, confirmedAt: r.confirmedAt, consumed: !!order, order: order ?? null, ...(r.confirmedAt && allocationId && (!allocation||allocation.status==='cancelled')?{requiresReconciliation:true}:{} ) });
     },
     'business',
   );
@@ -686,7 +701,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         const calc = await calculateCart(tx, b);
         if (!calc.register.bankCode || !calc.register.bankAccount)
           throw new AppError(409, 'Manager cần cấu hình ngân hàng cho quầy.');
-        if (calc.total <= 0) throw new AppError(400, 'Số tiền QR phải lớn hơn 0.');
+        if (calc.payable <= 0) throw new AppError(400, 'Số tiền QR phải lớn hơn 0.');
         const [existing] = await tx.select().from(posPaymentRequests).where(eq(posPaymentRequests.requestKey, key));
         if (existing) {
           if (existing.shiftId !== s.id || existing.fingerprint !== calc.fingerprint)
@@ -703,7 +718,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               requestKey: key,
               cart: JSON.stringify(calc.canonical),
               fingerprint: calc.fingerprint,
-              amount: calc.total,
+              amount: calc.payable,
               createdAt: now,
               expiresAt: new Date(Date.now() + 15 * 60000).toISOString(),
             })
@@ -732,6 +747,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const rows = await c.env.db
         .select({
           id: deliveries.id,
+          orderId: salesOrders.id,
           deliveryNo: deliveries.deliveryNo,
           status: deliveries.status,
           deliveredAt: deliveries.deliveredAt,
@@ -754,7 +770,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         )
         .orderBy(desc(deliveries.plannedDate))
         .limit(200);
-      return json({ deliveries: rows.filter((x) => x.codAmount > x.paid) });
+      return json({ deliveries: (await Promise.all(rows.map(async x=>({...x,codAmount: Math.min(x.codAmount, x.paid+Math.max(0,(await returnAccount(c.env.db,x.orderId)).balance))})))).filter(x=>x.codAmount>x.paid) });
     },
     'business',
   );
@@ -798,7 +814,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           })
           .from(customerPayments)
           .where(and(eq(customerPayments.deliveryId, d.d.id), isNull(customerPayments.voidedAt)));
-        const amount = d.d.codAmount - (paid?.n ?? 0);
+        const account=await returnAccount(tx,d.d.orderId);
+        const amount = Math.min(d.d.codAmount - (paid?.n ?? 0), Math.max(0,account.balance));
         if (amount <= 0) throw new AppError(409, 'COD đã thu đủ.');
         const [allPaid] = await tx
           .select({

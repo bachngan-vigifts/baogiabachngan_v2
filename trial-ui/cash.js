@@ -1,3 +1,4 @@
+import { openPosReturns } from './pos-returns.js';
 import { downloadExcel } from './sheet-export.js';
 import { printPos } from './pos-print.js';
 const money = (n) => Number(n ?? 0).toLocaleString('vi-VN') + ' đ';
@@ -12,6 +13,7 @@ const kinds = {
   adjustment: 'Điều chỉnh két',
   sale: 'Bán hàng',
   cod: 'COD',
+  customer_refund: 'Hoàn tiền khách',
 };
 const states = { posted: 'Ghi', pending: 'Chờ duyệt', voided: 'Đã huỷ', explained: 'Đã giải trình', closed: 'Đã đóng' };
 function el(tag, cls = '', text) {
@@ -138,6 +140,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       button('Cấu hình két', () => run(configure)),
       button('+ Két riêng cho quầy', () => run(createDrawer)),
     );
+    if(summary.canApprove)tools.append(button('Duyệt đổi / trả hàng',()=>openPosReturns({api,toast})));
     tools.append(button('Bán hàng nhanh', () => go('#/pos')));
     header.append(tools);
     root.append(header);
@@ -280,7 +283,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
             }),
           ),
         );
-      if (r.status !== 'voided' && summary.canVoid) actions.append(button('Huỷ phiếu', () => voidEntry(r)));
+      if (r.status !== 'voided' && summary.canVoid && r.kind!=='customer_refund') actions.append(button('Huỷ phiếu', () => voidEntry(r)));
       if (r.voidReason) actions.append(el('small', '', 'Huỷ: ' + r.voidReason));
       tr.append(actions);
       body.append(tr);

@@ -429,6 +429,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         await cashLock(tx);
         const [e] = await tx.select().from(cashEntries).where(eq(cashEntries.id, c.params.id!));
         if (!e) throw new AppError(404, 'Không có phiếu.');
+        if (e.kind === 'customer_refund') throw new AppError(409, 'Phiếu hoàn tiền đã xác nhận thực trả, không huỷ như phiếu ghi nhầm.');
         if (e.status === 'voided') return;
         const now = cashNow();
         await tx

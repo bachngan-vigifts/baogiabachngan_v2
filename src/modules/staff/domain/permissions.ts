@@ -89,6 +89,8 @@ export const scopeOf = (m: PermissionMember): DataScope =>
 export function routePermission(method: string, path: string, query: URLSearchParams): readonly string[] | null {
   const p = path.replace(/^.*?\/api\/staff(?=\/|$)/, '');
   const is = (re: RegExp) => re.test(p);
+  // Review endpoints also admit Sổ quỹ viewers; handlers still require canApprove or pos.sell.
+  if (is(/^\/pos\/(returns|exchanges)(\/|$)/)) return ['pos.sell', 'pos.configure', 'page.cash'];
   if (is(/^\/pos(\/|$)/)) return ['pos.sell', 'pos.configure'];
   if (is(/^\/(quotes|quote-docs)(\/|$)/)) return ['page.quotes'];
   if (is(/^\/(orders|order-quote-candidates|payments)(\/|$)/)) return ['page.orders', 'page.contracts', 'page.receivables'];
