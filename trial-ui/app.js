@@ -1,3 +1,4 @@
+import { openBarcodeImport } from './barcode-import.js';
 import { posOrderEditor, posCodReceipt, posPaymentText } from './pos-order-edit.js';
 import { initCash } from './cash.js';
 import { initPos } from './pos.js';
@@ -1999,6 +2000,7 @@ async function loadProducts() {
   }
 }
 /** Thêm sản phẩm + duyệt sản phẩm mới (trial-ui/product-admin.js). */
+$('#barcode-import').addEventListener('click', () => openBarcodeImport({ api, isManager, toast }).catch(e => toast(e.message, 'err')));
 var productAdminUi = null; // eslint-disable-line no-var
 /**
  * Ảnh sản phẩm còn nằm trên web cũ (chỉ xem được khi đăng nhập web cũ → PDF / Excel không chèn được): Manager bấm chuyển
