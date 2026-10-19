@@ -1217,6 +1217,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       district.select.disabled = true; ward.select.disabled = true;
       const setOptions = (s, rows, placeholder) => { s.replaceChildren(); const first = el('option', '', placeholder); first.value = ''; s.append(first); for (const x of rows || []) { const op = el('option', '', x.name); op.value = x.id; s.append(op); } s.disabled = false; };
       const loadLocations = async (extra = {}) => (await api('/pos/ghn/locations', 'POST', { registerId: st.register.id, ...extra })).locations;
+      const retryLocations = button('Tải lại địa chỉ GHN', 'btn secondary small'); retryLocations.type = 'button'; retryLocations.hidden = true;
+      const loadProvinces = async () => {
+        retryLocations.disabled = true; setOptions(province.select, [], 'Đang tải Tỉnh / Thành phố…'); province.select.disabled = true;
+        try { setOptions(province.select, await loadLocations(), 'Chọn Tỉnh / Thành phố'); retryLocations.hidden = true; }
+        catch (e) { setOptions(province.select, [], 'Không tải được địa chỉ GHN'); province.select.disabled = true; retryLocations.hidden = false; toast(e.message, 'err'); }
+        finally { retryLocations.disabled = false; }
+      };
+      retryLocations.addEventListener('click', () => run(loadProvinces));
       province.select.addEventListener('change', () => run(async () => {
         district.select.disabled = true; ward.select.disabled = true; setOptions(ward.select, [], 'Chọn Phường / Xã'); ward.select.disabled = true;
         setOptions(district.select, await loadLocations({ provinceId: province.select.value }), 'Chọn Quận / Huyện');
@@ -1252,7 +1260,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         receiver.box,
         phone.box,
         address.box,
-        province.box, district.box, ward.box,
+        province.box, district.box, ward.box, retryLocations,
         date.box,
         el('p', '', 'Tổng đơn: ' + money(st.preview.total)),
         deposit.box, methodBox, confirmation, remaining, validation,
@@ -1293,7 +1301,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         submit(body);
       });
       m.show();
-      run(async () => setOptions(province.select, await loadLocations(), 'Chọn Tỉnh / Thành phố'));
+      run(loadProvinces);
       return;
     }
     if (st.method === 'transfer' && !nodes.confirm.checked) return toast('Xác nhận đã thực nhận chuyển khoản.', 'err');

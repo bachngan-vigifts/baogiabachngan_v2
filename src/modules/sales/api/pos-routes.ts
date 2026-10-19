@@ -246,8 +246,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!url) throw new AppError(503, 'Quầy này chưa được kết nối dữ liệu địa chỉ GHN.');
     const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0), key = ghnCacheKey(source, provinceId, districtId);
     const cached = cachedGhnLocations(key); if (cached) return json({ ok: true, locations: cached, cached: true });
-    const [contextOrder] = await c.env.db.select({ externalId: webStoreOrders.externalId }).from(webStoreOrders)
+    let [contextOrder] = await c.env.db.select({ externalId: webStoreOrders.externalId }).from(webStoreOrders)
       .where(and(eq(webStoreOrders.registerId, register.id), eq(webStoreOrders.source, source))).orderBy(desc(webStoreOrders.updatedAt)).limit(1);
+    if (!contextOrder) [contextOrder] = await c.env.db.select({ externalId: webStoreOrders.externalId }).from(webStoreOrders)
+      .where(eq(webStoreOrders.source, source)).orderBy(desc(webStoreOrders.updatedAt)).limit(1);
     if (!contextOrder) throw new AppError(409, 'Chưa có đơn web của cửa hàng để kết nối danh mục GHN.');
     const bridgeInput = { orderId: contextOrder.externalId, action: 'locations', provinceId, districtId };
     const response = await (c.env.webOrderAction.fetch ?? fetch)(url, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify(bridgeInput) });
