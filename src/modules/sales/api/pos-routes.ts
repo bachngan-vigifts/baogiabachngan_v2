@@ -44,6 +44,25 @@ const ghnLocationCache = new Map<string, { expires: number; locations: unknown[]
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
 const cachedGhnLocations = (key: string) => { const hit = ghnLocationCache.get(key); if (!hit || hit.expires < Date.now()) { ghnLocationCache.delete(key); return null; } return hit.locations; };
 const rememberGhnLocations = (key: string, locations: unknown[]) => { ghnLocationCache.set(key, { expires: Date.now() + 24 * 60 * 60 * 1000, locations }); return locations; };
+let lockGhnNonceCache: { nonce: string; expires: number } | null = null;
+async function lockGhnCheckoutNonce() {
+  if (lockGhnNonceCache && lockGhnNonceCache.expires > Date.now()) return lockGhnNonceCache.nonce;
+  const cart = await fetch('https://locknlockonline.com/?add-to-cart=19320', { redirect: 'manual' }), rawCookie = cart.headers.get('set-cookie') || '';
+  const cookie = [...rawCookie.matchAll(/(?:^|, )([^=;, ]+=[^;]*)/g)].map(x => x[1]).join('; ');
+  const page = await fetch('https://locknlockonline.com/thanh-toan/', { headers: cookie ? { cookie } : undefined }), html = await page.text();
+  const nonce = /var\s+nonce\s*=\s*["']([a-f0-9]+)["']/.exec(html)?.[1] || '';
+  if (!nonce) throw new AppError(502, 'Không lấy được phiên danh mục địa chỉ từ web Lock.');
+  lockGhnNonceCache = { nonce, expires: Date.now() + 6 * 60 * 60 * 1000 }; return nonce;
+}
+async function lockGhnLocations(provinceId: number, districtId: number) {
+  const nonce = await lockGhnCheckoutNonce(), form = new URLSearchParams({ nonce });
+  form.set('action', districtId ? 'lnl_ghn_checkout_communes' : provinceId ? 'lnl_ghn_checkout_districts' : 'lnl_ghn_checkout_provinces');
+  if (districtId) form.set('district_id', String(districtId)); else if (provinceId) form.set('province_id', String(provinceId));
+  const response = await fetch('https://locknlockonline.com/wp-admin/admin-ajax.php', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: form });
+  const result = await response.json() as { success?: boolean; data?: unknown[] };
+  if (!response.ok || !result.success || !Array.isArray(result.data)) { lockGhnNonceCache = null; throw new AppError(502, 'Web Lock không trả danh mục địa chỉ GHN.'); }
+  return result.data;
+}
 function config(c: RouteContext<StaffEnv>) {
   if (!can(member(c), 'pos.configure')) throw new AppError(403, 'Chỉ người được cấp cấu hình POS thao tác.');
 }
@@ -246,6 +265,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!url) throw new AppError(503, 'Quầy này chưa được kết nối dữ liệu địa chỉ GHN.');
     const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0), key = ghnCacheKey(source, provinceId, districtId);
     const cached = cachedGhnLocations(key); if (cached) return json({ ok: true, locations: cached, cached: true });
+    if (c.env.ghnToken) {
+      const path = districtId ? `/master-data/ward?district_id=${districtId}` : provinceId ? '/master-data/district' : '/master-data/province';
+      const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: c.env.ghnToken, 'content-type': 'application/json' } };
+      if (provinceId && !districtId) init.body = JSON.stringify({ province_id: provinceId });
+      const response = await fetch('https://online-gateway.ghn.vn/shiip/public-api' + path, init), result = await response.json() as Record<string, unknown>;
+      if (!response.ok || !Array.isArray(result.data)) throw new AppError(502, posText(result.message, 500) || 'GHN không trả danh mục địa chỉ.');
+      const locations = (result.data as Record<string, unknown>[]).filter(x => Number(x.Status ?? 1) === 1).map(x => ({
+        id: districtId ? posText(x.WardCode, 50) : Number(x.DistrictID ?? x.ProvinceID),
+        name: posText(x.WardName ?? x.DistrictName ?? x.ProvinceName, 100),
+      })).filter(x => x.id && x.name).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+      return json({ ok: true, locations: rememberGhnLocations(key, locations) });
+    }
+    if (source === 'lock') return json({ ok: true, locations: rememberGhnLocations(key, await lockGhnLocations(provinceId, districtId)) });
     let [contextOrder] = await c.env.db.select({ externalId: webStoreOrders.externalId }).from(webStoreOrders)
       .where(and(eq(webStoreOrders.registerId, register.id), eq(webStoreOrders.source, source))).orderBy(desc(webStoreOrders.updatedAt)).limit(1);
     if (!contextOrder) [contextOrder] = await c.env.db.select({ externalId: webStoreOrders.externalId }).from(webStoreOrders)

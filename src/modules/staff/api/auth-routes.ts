@@ -44,6 +44,8 @@ export interface StaffEnv {
   wooMinhLongTokenHash?: string;
   /** Cầu nối máy chủ → WooCommerce để chốt/huỷ/làm mới đơn web; token không bao giờ gửi ra trình duyệt. */
   webOrderAction?: { token: string; lockUrl: string; minhlongUrl: string; fetch?: typeof fetch };
+  /** Token GHN phía máy chủ để tải danh mục tỉnh/huyện/xã; không bao giờ gửi ra trình duyệt. */
+  ghnToken?: string;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
   waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */
