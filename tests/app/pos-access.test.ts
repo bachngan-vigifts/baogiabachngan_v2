@@ -27,6 +27,9 @@ test('NVBH Lock/Minh Long: scope options, catalog, drawer, shifts, bill, QR and 
     const options = await f.call('/pos/options', cookie);
     assert.equal(options.status, 200);
     assert.deepEqual(options.data.registers.map((r: any) => r.id), [own]);
+    const orders = await f.call('/pos/orders', cookie);
+    assert.equal(orders.status, 200);
+    assert.deepEqual(orders.data.registers.map((r: any) => r.id), [own]);
     const cash = await f.call('/cash', cookie);
     assert.equal(cash.status, 200);
     assert.equal(cash.data.drawer.id, ownDrawer);
@@ -34,6 +37,7 @@ test('NVBH Lock/Minh Long: scope options, catalog, drawer, shifts, bill, QR and 
     assert.deepEqual(cash.data.registers.map((r: any) => r.id), [own]);
     for (const path of [
       '/pos/catalog?registerId=' + forbidden,
+      '/pos/orders?registerId=' + forbidden,
       '/pos/opening-counts?registerId=' + forbidden,
       '/cash?registerId=' + forbidden,
       '/cash?drawerId=' + forbiddenDrawer,
@@ -68,9 +72,10 @@ test('NVBH Lock/Minh Long: scope options, catalog, drawer, shifts, bill, QR and 
   assert.equal((await f.call('/cash?drawerId=' + mlDrawer, f.mgr)).status, 200);
   // CHT has the same store boundary, even when granted a broad business permission set.
   await f.db.insert(positions).values({ id: 'custom-cht', name: 'CHT MINH LONG' });
-  await f.db.insert(positionPermissions).values(['pos.sell', 'page.cashbook', 'approval.approve'].map(permission => ({ positionId: 'custom-cht', permission })));
+  await f.db.insert(positionPermissions).values(['pos.sell', 'pos.configure', 'page.cashbook', 'approval.approve'].map(permission => ({ positionId: 'custom-cht', permission })));
   await f.db.update(employees).set({ positionId: 'custom-cht' }).where(eq(employees.id, 'emp'));
   assert.equal((await f.call('/pos/catalog?registerId=' + f.registerId, f.emp)).status, 403);
+  assert.deepEqual((await f.call('/pos/orders', f.emp)).data.registers.map((r: any) => r.id), [ml.data.id]);
 });
 
 test('Không tự chuyển sang cửa hàng khác khi thiếu cấu hình; két gắn nhầm hai cửa hàng không lộ số dư', async () => {

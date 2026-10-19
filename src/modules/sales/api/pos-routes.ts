@@ -41,13 +41,14 @@ function config(c: RouteContext<StaffEnv>) {
 }
 async function allowedPosRegisters(c: RouteContext<StaffEnv>) {
   const m = member(c), db = c.env.db;
-  const regs = await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name));
+  const regs = (await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
+  if (posScope(c)) return { regs, ids: new Set(regs.map(r => r.id)), all: false };
   if (m.role === 'manager' || can(m, 'pos.configure')) return { regs, ids: new Set(regs.map(r => r.id)), all: true };
   const [[current], [position]] = await Promise.all([
     db.select({ registerId: posShifts.registerId }).from(posShifts).where(and(eq(posShifts.memberId, m.id), isNull(posShifts.closedAt))).limit(1),
     m.positionId ? db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1) : Promise.resolve([]),
   ]);
-  const id = current?.registerId || defaultPosRegister(m.positionId, position?.name, regs);
+  const id = (current && regs.some(r => r.id === current.registerId) ? current.registerId : '') || defaultPosRegister(m.positionId, position?.name, regs);
   return { regs: regs.filter(r => r.id === id), ids: new Set(id ? [id] : []), all: false };
 }
 function posOrderBucket(o: { status: string; fulfillmentMode: string; packingStatus: string; deliveryStatus: string }) {
