@@ -765,6 +765,37 @@ const catalog = { version: '', observedAt: null, items: null, checkedAt: 0, load
 const editor = { id: null, revision: 0, base: {}, rows: [], type: 'B2B', dirty: false, customerId: '', pending: null, loading: false, approval: null };
 const qf = $('#quote-form');
 const field = name => qf.elements.namedItem(name);
+const MOBILE_QUOTE_STEPS = ['info', 'products', 'review'];
+function setMobileQuoteStep(step, scroll = true) {
+  if (!MOBILE_QUOTE_STEPS.includes(step)) step = 'info';
+  qf.dataset.mobileStep = step;
+  const index = MOBILE_QUOTE_STEPS.indexOf(step);
+  $$('.quote-mobile-steps [data-quote-step]', qf).forEach((b, i) => {
+    b.setAttribute('aria-current', i === index ? 'step' : 'false');
+    b.classList.toggle('done', i < index);
+  });
+  $('#quote-step-back').disabled = index === 0;
+  $('#quote-step-next').hidden = index === MOBILE_QUOTE_STEPS.length - 1;
+  $('#save-quote-m').hidden = index !== MOBILE_QUOTE_STEPS.length - 1;
+  $('#m-step-label').textContent = `Bước ${index + 1}/3 · ${['Thông tin', 'Sản phẩm', 'Kiểm tra'][index]}`;
+  if (scroll && matchMedia('(max-width: 850px)').matches) $('#view-editor').scrollIntoView({ block: 'start' });
+}
+$('.quote-mobile-steps').addEventListener('click', e => {
+  const b = e.target.closest('[data-quote-step]'); if (b) setMobileQuoteStep(b.dataset.quoteStep);
+});
+$('#quote-step-back').addEventListener('click', () => setMobileQuoteStep(MOBILE_QUOTE_STEPS[Math.max(0, MOBILE_QUOTE_STEPS.indexOf(qf.dataset.mobileStep) - 1)]));
+$('#quote-step-next').addEventListener('click', () => setMobileQuoteStep(MOBILE_QUOTE_STEPS[Math.min(2, MOBILE_QUOTE_STEPS.indexOf(qf.dataset.mobileStep) + 1)]));
+$('#quote-mobile-more').addEventListener('click', e => {
+  e.stopPropagation();
+  const open = qf.classList.toggle('quote-mobile-actions-open');
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.quote-actions, #quote-mobile-more')) {
+    qf.classList.remove('quote-mobile-actions-open');
+    $('#quote-mobile-more').setAttribute('aria-expanded', 'false');
+  }
+});
 /** Ghi chú & điều kiện mặc định theo loại báo giá – lấy nguyên từ web báo giá cũ (`public/quote-notes.js`). */
 const QUOTE_NOTES = {
   HRC: '- Tổng thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Báo giá có hiệu lực 7 ngày kể ngày ký.\n- Phương thức thanh toán: Chuyển khoản.\n- Đơn vị bán hàng: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN\n- Mã số thuế: 1801686576\n- Số tài khoản: 579268 tại Ngân hàng TMCP Á Châu - Chi Nhánh Cần Thơ\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Thanh toán: 100% giá trị hợp đồng trong vòng 30 ngày kể từ ngày nhận được hàng và hóa đơn GTGT.\nTrân trọng kính chào.',
@@ -926,6 +957,7 @@ function fillEditor(id, revision, data, meta = {}) {
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
   editor.rows = (data.rows || []).map(r => ({ ...r, id: r.id || uid(), discountType: r.discountType || 'percent' }));
+  setMobileQuoteStep('info', false);
   qf.reset();
   for (const name of ['quoteNo', 'date', 'owner', 'ownerPhone', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'notes', 'internalNote'])
     field(name).value = data[name] ?? '';
@@ -1059,6 +1091,7 @@ function renderLines(focus) {
   $('#line-list').innerHTML = editor.rows.length ? editor.rows.map(lineCell).join('')
     : `<tr class="line-empty"><td colspan="${$$('#line-head th').length || 1}"><button type="button" class="add-first" data-add-first>＋ Thêm sản phẩm</button></td></tr>`;
   $('#line-count').textContent = `(${editor.rows.length})`;
+  $('#m-line-count').textContent = `${editor.rows.length} sản phẩm`;
   if ($('#shipping-card').open) renderShippingRows();
   qf.classList.toggle('type-hrc', editor.type === 'HRC');
   $('#toggle-subs').hidden = editor.type === 'HRC'; // HRC không có 3 dòng mô tả
@@ -1735,7 +1768,11 @@ async function saveQuote() {
   if (editor.id && !isManager() && editor.approval?.status === 'approved') return toast('Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'err');
   const err = $('#quote-error'); err.textContent = '';
   const data = collectQuote(), problem = validateQuote(data);
-  if (problem) { err.textContent = problem; toast(problem, 'err'); qf.querySelector('.invalid')?.focus(); return; }
+  if (problem) {
+    const invalid = qf.querySelector('.invalid'), panel = invalid?.closest('[data-quote-panel]');
+    setMobileQuoteStep(panel?.dataset.quotePanel || (data.rows.length ? 'products' : 'products'));
+    err.textContent = problem; toast(problem, 'err'); invalid?.focus(); return;
+  }
   const saveSequence = editorLoadSequence, saveHash = location.hash, wasNew = !editor.id;
   saving = true; $('#save-quote').disabled = $('#save-quote-m').disabled = true;
   try {

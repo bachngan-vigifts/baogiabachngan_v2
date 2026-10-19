@@ -185,6 +185,7 @@
             <span class="pill" id="editor-approval" hidden></span>
             <span class="pill blue" id="editor-hold" hidden></span>
           </div>
+          <button type="button" class="icon-btn quote-mobile-more" id="quote-mobile-more" aria-label="Thao tác báo giá" aria-expanded="false">⋯</button>
           <!-- Như web cũ: chỉ báo giá ĐÃ DUYỆT mới Sinh Đơn hàng / HĐKT, Tải báo giá. Duyệt, Xoá: chỉ Manager. -->
           <div class="editor-actions quote-actions">
             <button type="button" class="btn secondary" id="quote-stock" title="Kiểm tồn khả dụng, NCC, hàng chờ về cho cả báo giá">Kiểm tồn</button>
@@ -215,7 +216,13 @@
           <button type="button" class="btn secondary small" id="reload-quote">Tải bản mới nhất</button>
         </div>
 
-        <div class="editor-grid">
+        <nav class="quote-mobile-steps" aria-label="Các bước tạo báo giá">
+          <button type="button" data-quote-step="info" aria-current="step"><span>1</span>Thông tin</button>
+          <button type="button" data-quote-step="products"><span>2</span>Sản phẩm</button>
+          <button type="button" data-quote-step="review"><span>3</span>Kiểm tra</button>
+        </nav>
+
+        <div class="editor-grid quote-mobile-panel" data-quote-panel="info">
           <div class="card">
             <h2 class="card-title">Thông tin báo giá</h2>
             <div class="type-pick" id="type-seg" role="radiogroup" aria-label="Loại báo giá">
@@ -256,7 +263,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card quote-mobile-panel" data-quote-panel="products">
           <div class="card-title-row">
             <div><h2 class="card-title">Sản phẩm báo giá <span class="muted" id="line-count"></span></h2><small class="muted" id="type-hint"></small></div>
             <div class="row-gap">
@@ -276,7 +283,7 @@
         </div>
 
         <!-- Như web cũ: Tổng cộng → nút xem lợi nhuận → Lợi nhuận nhanh → Ghi chú, xếp dọc toàn chiều rộng. -->
-        <div class="editor-bottom">
+        <div class="editor-bottom quote-mobile-panel" data-quote-panel="review">
           <div class="card totals-card">
             <dl class="totals">
               <div><dt>Tạm tính</dt><dd id="sum-subtotal">0 ₫</dd></div>
@@ -318,7 +325,7 @@
           </div>
         </div>
         <!-- Như web cũ: phần tính đóng thùng & phí vận chuyển ở dưới cùng trang báo giá. -->
-        <details class="card shipping-card" id="shipping-card">
+        <details class="card shipping-card quote-mobile-panel" data-quote-panel="review" id="shipping-card">
           <summary><h2 class="card-title">Tính đóng thùng &amp; phí vận chuyển</h2></summary>
           <button type="button" class="btn secondary small" id="fill-packing">Điền quy cách còn thiếu từ danh mục</button>
           <p class="muted small">Quy cách lấy từ danh mục theo SKU. Nhập bổ sung ô trống; kích thước tính bằng cm. Mỗi mã đóng riêng. Số thùng hiển thị dạng lẻ theo số lượng / SP thùng.</p>
@@ -333,10 +340,12 @@
           <p class="muted small">Cước dự toán: <b id="ship-fee"></b></p>
           <div class="table-wrap"><table class="data-table ship-table"><thead><tr><th>SKU</th><th>Số lượng</th><th>Số thùng</th><th>Ghi chú đóng thùng</th><th>D × R × C (cm)</th><th>Kg/thùng dự toán</th></tr></thead><tbody id="ship-groups"></tbody></table></div>
         </details>
-        <p id="quote-error" class="error" role="alert"></p>
+        <p id="quote-error" class="error quote-mobile-panel" data-quote-panel="review" role="alert"></p>
         <div class="mobile-savebar">
-          <div><small class="muted">Tổng thanh toán</small><strong id="m-total">0 ₫</strong></div>
-          <button class="btn primary" id="save-quote-m">Lưu</button>
+          <button type="button" class="btn secondary" id="quote-step-back">Quay lại</button>
+          <div class="mobile-quote-summary"><small class="muted" id="m-step-label">Bước 1/3 · Thông tin</small><strong id="m-total">0 ₫</strong><span id="m-line-count">0 sản phẩm</span></div>
+          <button type="button" class="btn primary" id="quote-step-next">Tiếp tục</button>
+          <button class="btn primary" id="save-quote-m">Lưu báo giá</button>
         </div>
       </form>
     </section>

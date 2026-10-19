@@ -283,6 +283,7 @@ table { width: 100%; border-collapse: collapse; }
 #words-total { margin-top: 12px; font-style: italic; }
 .note-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .mobile-savebar { display: none; }
+.quote-mobile-steps, .quote-mobile-more { display: none; }
 
 /* ---------- Hộp thoại ---------- */
 .modal { border: 0; padding: 0; border-radius: 14px; width: 560px; max-width: calc(100vw - 24px); box-shadow: var(--shadow-lg); color: var(--ink); }
@@ -342,6 +343,79 @@ table { width: 100%; border-collapse: collapse; }
   body:has(#view-editor:not([hidden])) .chat-launcher { bottom: calc(var(--nav-h, calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h, 68px) + 12px); }
   .mobile-savebar strong { display: block; font-size: 1.1rem; color: var(--red); }
   .view.editor { padding-bottom: 180px; }
+}
+
+/* Soạn báo giá trên điện thoại: mỗi màn chỉ làm một việc chính. */
+@media (max-width: 850px) {
+  #view-editor { padding: 0 12px calc(190px + env(safe-area-inset-bottom)); background: #f7f9f8; }
+  #quote-form { --quote-green: #16884d; --quote-pale: #e7f6ec; }
+  #view-editor .editor-head { position: sticky; top: 0; z-index: 24; min-height: 66px; margin: 0 -12px 12px; padding: 8px 12px; border-bottom: 1px solid #bfd8c8; background: var(--quote-pale); flex-wrap: nowrap; }
+  #view-editor .editor-head .back { width: 44px; min-width: 44px; min-height: 44px; padding: 0; overflow: hidden; color: transparent; gap: 0; }
+  #view-editor .editor-head .back svg { color: #155f37; margin: auto; }
+  #view-editor .editor-title { min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; }
+  #view-editor .editor-title h1 { grid-column: 1 / -1; font-size: 1.15rem; color: #173b29; }
+  #view-editor .editor-title .pill { width: max-content; max-width: 100%; }
+  .quote-mobile-more { display: grid; place-items: center; flex: none; width: 46px; min-width: 46px; height: 44px; border: 1px solid #c9d5ce; border-radius: 12px; background: #fff; color: #244736; font-size: 24px; }
+  #view-editor .quote-actions { display: none; position: fixed; z-index: 52; top: 62px; right: 10px; width: min(310px, calc(100vw - 20px)); max-height: calc(100dvh - 150px); padding: 8px; border: 1px solid #d9e3dd; border-radius: 14px; background: #fff; box-shadow: 0 18px 50px #173b2940; overflow-y: auto; }
+  #view-editor .quote-mobile-actions-open .quote-actions { display: grid; gap: 4px; }
+  #view-editor .quote-actions .btn, #view-editor .editor .quote-actions .btn.primary { display: flex !important; width: 100%; min-height: 46px; justify-content: flex-start; margin: 0; }
+  #view-editor .quote-actions [hidden] { display: none !important; }
+  #view-editor .quote-actions .menu-wrap { display: grid; }
+  #view-editor .quote-actions .menu-wrap > .btn { width: 100%; }
+  #view-editor .quote-actions .menu { position: static; box-shadow: none; border: 0; padding-left: 10px; }
+
+  .quote-mobile-steps { display: grid; position: sticky; top: 66px; z-index: 20; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 -2px 12px; padding: 8px 2px; background: #f7f9f8; }
+  .quote-mobile-steps button { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #d5dfd9; border-radius: 12px; background: #fff; color: #66736c; font: inherit; font-size: .78rem; font-weight: 750; }
+  .quote-mobile-steps button span { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #edf2ef; }
+  .quote-mobile-steps button[aria-current='step'] { border-color: var(--quote-green); background: #eefaf3; color: #155f37; }
+  .quote-mobile-steps button[aria-current='step'] span, .quote-mobile-steps button.done span { background: var(--quote-green); color: #fff; }
+  #quote-form[data-mobile-step='info'] .quote-mobile-panel:not([data-quote-panel='info']),
+  #quote-form[data-mobile-step='products'] .quote-mobile-panel:not([data-quote-panel='products']),
+  #quote-form[data-mobile-step='review'] .quote-mobile-panel:not([data-quote-panel='review']) { display: none !important; }
+  #quote-form:not([data-mobile-step]) .quote-mobile-panel:not([data-quote-panel='info']) { display: none !important; }
+  #view-editor .editor-grid { grid-template-columns: 1fr; gap: 12px; margin-bottom: 0; }
+  #view-editor .card { border-radius: 14px; padding: 14px; }
+  #view-editor .quote-mobile-panel button, #view-editor .quote-mobile-panel .btn { min-height: 44px; }
+  #view-editor .form-grid.cols-2 { grid-template-columns: 1fr 1fr; gap: 11px; }
+  #view-editor .form-grid label { min-width: 0; }
+  #view-editor .form-grid input, #view-editor .form-grid select, #view-editor .form-grid textarea { min-height: 46px; }
+  #view-editor .type-pick { gap: 7px; }
+  #view-editor .type-pick button { min-height: 58px; padding: 8px; }
+  #view-editor [data-quote-panel='products'] > .card-title-row { align-items: flex-start; }
+  #view-editor [data-quote-panel='products'] > .card-title-row .row-gap { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+  #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 44px; white-space: normal; }
+  #view-editor .lines-wrap { border: 0; overflow: visible; }
+  #view-editor #line-table { display: block; min-width: 0 !important; width: 100%; }
+  #view-editor #line-head { display: none; }
+  #view-editor #line-list { display: grid; gap: 10px; }
+  #view-editor #line-list tr { position: relative; display: grid; grid-template-columns: 62px repeat(2, minmax(0, 1fr)); gap: 9px; padding: 12px; border: 1px solid #dce5df; border-radius: 14px; background: #fff; box-shadow: 0 2px 7px #173b2908; }
+  #view-editor #line-list td { display: block; width: auto !important; min-width: 0; padding: 0 !important; border: 0; text-align: left; }
+  #view-editor #line-list .col-idx { display: none; }
+  #view-editor #line-list .col-img { grid-column: 1; grid-row: 1; }
+  #view-editor #line-list .col-product { grid-column: 2 / -1; grid-row: 1; padding-right: 28px !important; }
+  #view-editor #line-list .col-unit, #view-editor #line-list .col-qty, #view-editor #line-list .col-price,
+  #view-editor #line-list .col-disc, #view-editor #line-list .col-print, #view-editor #line-list .col-after,
+  #view-editor #line-list .col-pd, #view-editor #line-list .col-cost { grid-column: span 1; }
+  #view-editor #line-list .line-total { grid-column: span 2; align-self: end; color: #155f37; font-size: 1.05rem; }
+  #view-editor #line-list td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #6b786f; font-size: .7rem; font-weight: 700; text-transform: uppercase; }
+  #view-editor #line-list .col-product::before, #view-editor #line-list .col-img::before { content: none; }
+  #view-editor #line-list input, #view-editor #line-list select { width: 100%; min-height: 44px; font-size: 16px; }
+  #view-editor #line-list .name-input { min-height: 40px; font-size: 1rem; }
+  #view-editor #line-list .line-actions { position: absolute; top: 8px; right: 8px; }
+  #view-editor #line-list .line-actions .icon-btn { width: 40px; height: 40px; }
+  #view-editor #line-list .line-empty { display: block; }
+  #view-editor #line-list .line-empty td { display: block; }
+  #view-editor #line-list .add-first { width: 100%; min-height: 54px; }
+  #view-editor .line-keys { display: none; }
+  #view-editor .editor-bottom { margin-top: 0; }
+  #view-editor .totals-card .grand { padding: 12px; border-radius: 10px; background: #e7f6ec; }
+  #view-editor .totals-card .grand dd { color: #155f37; font-size: 1.45rem; }
+  #view-editor .mobile-savebar { bottom: var(--nav-h, calc(62px + env(safe-area-inset-bottom))); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 9px 12px; }
+  #view-editor .mobile-savebar .btn { min-width: 86px; min-height: 48px; padding-inline: 12px; }
+  #view-editor .mobile-quote-summary { min-width: 0; text-align: center; }
+  #view-editor .mobile-quote-summary small, #view-editor .mobile-quote-summary span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .7rem; }
+  #view-editor .mobile-quote-summary strong { font-size: 1rem; color: #155f37; }
+  #view-editor #save-quote-m { background: var(--quote-green); border-color: var(--quote-green); }
 }
 @media (max-width: 680px) {
   h1 { font-size: 1.35rem; }
