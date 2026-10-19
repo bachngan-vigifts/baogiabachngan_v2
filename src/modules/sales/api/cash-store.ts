@@ -144,16 +144,27 @@ export async function drawerBalance(db: CashDb, drawerId = CASH_DRAWER) {
   ]);
   return (d.openingAmount ?? 0) + (manual[0]?.total ?? 0) + (payments[0]?.total ?? 0);
 }
+/** Immutable opening comparison lives in the existing shift audit, independently of later reconciliation updates. */
+export async function openingCashComparison(db: CashDb, shiftId: string) {
+  const [event] = await db.select({ data: auditLogs.data }).from(auditLogs)
+    .where(and(eq(auditLogs.entityType, 'pos-shifts'), eq(auditLogs.entityId, shiftId), eq(auditLogs.action, 'open')))
+    .orderBy(auditLogs.createdAt).limit(1);
+  if (!event) return null;
+  const data = JSON.parse(event.data);
+  if (!Number.isSafeInteger(data.expectedOpeningCash) || !Number.isSafeInteger(data.openingCash)) return null;
+  return { expectedCash: data.expectedOpeningCash, countedCash: data.openingCash, difference: data.openingCash - data.expectedOpeningCash };
+}
 export async function reconciliationFor(
   db: CashDb,
   s: typeof posShifts.$inferSelect,
   actorId: string,
   reasonCode: string,
   reasonNote: string,
+  comparison?: { expectedCash: number; countedCash: number },
 ) {
-  const totals = await cashShiftTotals(db, s.id),
-    expectedCash = s.openingCash + totals.cashSales + totals.cashCod + totals.manualNet,
-    countedCash = s.countedCash ?? 0,
+  const totals = comparison ? null : await cashShiftTotals(db, s.id),
+    expectedCash = comparison?.expectedCash ?? (s.openingCash + totals!.cashSales + totals!.cashCod + totals!.manualNet),
+    countedCash = comparison?.countedCash ?? s.countedCash ?? 0,
     difference = countedCash - expectedCash;
   const [existing] = await db.select().from(cashReconciliations).where(eq(cashReconciliations.shiftId, s.id));
   const now = cashNow();
@@ -162,6 +173,7 @@ export async function reconciliationFor(
       .update(cashReconciliations)
       .set({
         status: 'pending',
+        reasonCode,
         expectedCash,
         countedCash,
         difference,
@@ -176,6 +188,8 @@ export async function reconciliationFor(
       shiftId: s.id,
       reasonCode,
       reasonNote,
+      expectedCash,
+      countedCash,
       difference,
     });
     return existing.id;
@@ -202,6 +216,8 @@ export async function reconciliationFor(
     reconciliationNo,
     reasonCode,
     reasonNote,
+    expectedCash,
+    countedCash,
     difference,
   });
   return id;

@@ -28,7 +28,7 @@ import { auditLogs } from '../../src/core/db/schema.ts';
 test('POS mở ca không cần kiểm đếm; không ghi số đếm giả, giữ lịch sử cũ', async () => {
   const f = await setup();
   const opened = await f.call('/pos/shifts/open', f.emp, 'POST', {
-    key: crypto.randomUUID(), registerId: f.registerId,
+    key: crypto.randomUUID(), registerId: f.registerId, openingCash: 500000,
   });
   assert.equal(opened.status, 201, JSON.stringify(opened.data));
   assert.equal((await f.db.select().from(posStockCounts)).length, 0);
@@ -41,7 +41,7 @@ test('POS mở ca không cần kiểm đếm; không ghi số đếm giả, gi�
   assert.equal((await f.call('/pos/shifts/' + opened.data.id, f.emp)).data.openingCount.count, 1);
   assert.equal((await f.call('/cash/shifts/' + opened.data.id + '/close', f.emp, 'POST', { countedCash: 500000 })).status, 200);
   const next = await f.call('/pos/shifts/open', f.emp, 'POST', {
-    key: crypto.randomUUID(), registerId: f.registerId,
+    key: crypto.randomUUID(), registerId: f.registerId, openingCash: 500000,
     counts: [null, { sku: '00123', countedQty: '' }],
   });
   assert.equal(next.status, 201, JSON.stringify(next.data));

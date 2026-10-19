@@ -14,6 +14,7 @@ class Element {
   hidden = false;
   disabled = false;
   type = '';
+  placeholder = '';
   src = '';
   className = '';
   dataset: Record<string, string> = {};
@@ -151,12 +152,21 @@ test('Form mở ca không còn kiểm đếm hoặc gọi API kiểm đếm', as
     assert.ok(!dialog.textContent.includes('Kiểm đếm nhanh'));
     assert.ok(!dialog.querySelectorAll('label').some(e => e.className === 'pos-count-row'));
     assert.ok(!calls.some(c => c.path.startsWith('/pos/opening-counts')));
+    const cash = dialog.querySelectorAll('input').find(e => e.placeholder === 'Nhập tổng tiền mặt thực đếm')!;
+    assert.equal(cash.value, '');
+    assert.notEqual((cash as any).readOnly, true);
+    await dialog.querySelectorAll('form')[0]!.fire('submit');
+    await new Promise(r => setTimeout(r, 0));
+    assert.ok(!calls.some(c => c.path === '/pos/shifts/open'));
+    cash.value = '150.000';
+    await cash.fire('input');
+    assert.match(dialog.textContent, /Vẫn được mở bán/);
     await dialog.querySelectorAll('form')[0]!.fire('submit');
     await new Promise(r => setTimeout(r, 0));
     const sent = calls.find(c => c.path === '/pos/shifts/open');
     assert.ok(sent);
     assert.equal(sent.body.counts, undefined);
-    assert.equal(sent.body.openingCash, 200000);
+    assert.equal(sent.body.openingCash, 150000);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
 test('POS chọn quầy mặc định từ server, ưu tiên ca đang mở và đặt lại khi đổi tài khoản', async () => {

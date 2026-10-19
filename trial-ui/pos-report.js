@@ -11,7 +11,11 @@ export function shiftSummaryRows(d) {
     ['Chiết khấu', money(d.bills.discount)],
     ['Tiền mặt thực thu', money(d.cash)],
     ['Chuyển khoản đã xác nhận', money(d.transfer)],
-    ['Tiền đầu ca', money(d.shift.openingCash)],
+    ['Tiền đầu ca thực đếm', money(d.shift.openingCash)],
+    ...(d.openingComparison ? [
+      ['Tiền bàn giao tham chiếu', money(d.openingComparison.expectedCash)],
+      ['Chênh lệch khi mở ca (tra soát riêng)', money(d.openingComparison.difference)],
+    ] : []),
     ...(d.manual || []).map(x => [(x.direction === 'in' ? '+ ' : '− ') + cashKindLabel(x.kind), money(x.direction === 'in' ? x.amount : -x.amount)]),
     ['Tiền két hệ thống', money(d.expectedCash)],
   ];
