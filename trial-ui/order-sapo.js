@@ -1,7 +1,7 @@
 /** Action for an existing CRM document. Permissions are supplied and enforced by the server. */
 export function orderSapoAction({ order, api, chooseSapo, onSaved, toast }) {
   if (order.sapoOrderUrl) {
-    const link = document.createElement('a'); link.className = 'btn secondary';
+    const link = document.createElement('a'); link.className = 'btn ok';
     link.href = order.sapoOrderUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
     link.textContent = 'Xem đơn Sapo'; link.title = order.sapoOrderCode || 'Mở đơn trên Sapo';
     return link;
