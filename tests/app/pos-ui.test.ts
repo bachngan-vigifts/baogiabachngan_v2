@@ -18,6 +18,7 @@ class Element {
   src = '';
   className = '';
   dataset: Record<string, string> = {};
+  attributes: Record<string, string> = {};
   style: Record<string, string> = {};
   listeners = new Map<string, Function[]>();
   checked = false;
@@ -39,13 +40,14 @@ class Element {
     this.text = '';
   }
   setAttribute(k: string, v: string) {
+    this.attributes[k] = v;
     if (k.startsWith('data-')) this.dataset[k.slice(5)] = v;
   }
   addEventListener(k: string, f: Function) {
     this.listeners.set(k, [...(this.listeners.get(k) || []), f]);
   }
-  async fire(k: string) {
-    for (const f of this.listeners.get(k) || []) await f({ target: this, preventDefault() {} });
+  async fire(k: string, event: Record<string, unknown> = {}) {
+    for (const f of this.listeners.get(k) || []) await f({ target: this, preventDefault() {}, stopPropagation() {}, ...event });
   }
   querySelectorAll(selector: string): Element[] {
     const all = this.children.flatMap((x) => [x, ...x.querySelectorAll('*')]);
@@ -324,4 +326,61 @@ test('Bán hàng nhanh có bảng đơn theo cửa hàng và đủ bộ lọc tr
     assert.ok(source.includes(label), label);
   assert.match(source, /\/pos\/orders\?/);
   assert.match(source, /registerId/);
+});
+
+test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn phím và khách vãng lai', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: string[] = [];
+    let allowRetail = true;
+    const api = async (path: string) => {
+      calls.push(path);
+      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock' }], current: null, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
+      if (path.startsWith('/pos/customers')) return { canListRetail: allowRetail, customers: [{ id: 'c', name: '<b>Cô Hồng</b>', phone: '0901234567' }] };
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    const open = async () => {
+      await root.querySelectorAll('button').find(b => /Khách lẻ · Đổi|<b>Cô Hồng<\/b>/.test(b.textContent))!.fire('click');
+      await new Promise(r => setTimeout(r, 0));
+      return doc.body.children.at(-1)!;
+    };
+    let dialog = await open();
+    const actions = dialog.querySelectorAll('div').find(e => e.className === 'pos-customer-actions')!;
+    assert.deepEqual(actions.children.map(e => e.textContent), ['Khách lẻ', 'Khách B2B', '+ Khách mới']);
+    const input = dialog.querySelectorAll('input')[0]!, list = dialog.querySelectorAll('div').find(e => e.className === 'pos-customer-suggestions')!;
+    assert.equal(input.attributes.role, 'combobox');
+    assert.equal(list.hidden, true);
+    assert.equal(list.children.length, 0, 'Không hiện danh sách khách khi chưa tìm');
+    assert.equal(dialog.querySelectorAll('input').length, 1, 'Không còn checkbox lọc rời');
+    input.value = 'hồng';
+    await input.fire('input');
+    await new Promise(r => setTimeout(r, 230));
+    assert.equal(list.hidden, false);
+    assert.equal(list.children[0]!.textContent, '<b>Cô Hồng</b>0901234567');
+    assert.equal(list.querySelectorAll('b').length, 0, 'Tên khách chỉ render bằng text');
+    await actions.children[0]!.fire('click');
+    await new Promise(r => setTimeout(r, 0));
+    assert.match(calls.at(-1)!, /kind=retail/);
+    await actions.children[1]!.fire('click');
+    await new Promise(r => setTimeout(r, 0));
+    assert.match(calls.at(-1)!, /kind=business/);
+    await input.fire('keydown', { key: 'ArrowDown' });
+    assert.equal(list.children[0]!.attributes['aria-selected'], 'true');
+    await input.fire('keydown', { key: 'Enter' });
+    assert.ok(root.textContent.includes('<b>Cô Hồng</b>'));
+    assert.equal(dialog.open, false);
+    allowRetail = false;
+    dialog = await open();
+    assert.equal(dialog.querySelectorAll('button').find(b => b.textContent === 'Khách lẻ')!.hidden, true);
+    await dialog.querySelectorAll('button').find(b => b.textContent === 'Khách vãng lai · Không lưu hồ sơ')!.fire('click');
+    assert.ok(root.textContent.includes('Khách lẻ · Đổi'));
+    dialog = await open();
+    await dialog.querySelectorAll('button').find(b => b.textContent === '+ Khách mới')!.fire('click');
+    assert.ok(doc.body.children.at(-1)!.textContent.includes('Khách mới – dùng ngay'));
+    await new Promise(r => setTimeout(r, 230));
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });

@@ -650,3 +650,27 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
     left: 0;
   }
 }
+
+/* Customer search: one combobox, with transient suggestions instead of a directory. */
+.pos-customer-picker { width: min(560px, 95vw); overflow: visible; }
+.pos-customer-picker .pos-modal-content { padding: 26px; }
+.pos-customer-picker h2 { margin-bottom: 6px; font-size: 22px; }
+.pos-customer-subtitle, .pos-customer-hint { color: #64748b; font-size: 13px; line-height: 1.5; }
+.pos-customer-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 16px; }
+.pos-customer-actions .btn { flex: 1; border-radius: 10px; white-space: nowrap; }
+.pos-customer-actions .btn[aria-pressed="true"] { color: #087b48; background: #e8f8ef; border-color: #20a665; box-shadow: 0 0 0 1px #20a665; }
+.pos-customer-search { position: relative; }
+.pos-customer-input { width: 100%; box-sizing: border-box; min-height: 50px; border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px 15px; font-size: 16px; background: #f8fafc; }
+.pos-customer-input:focus { outline: 3px solid #d8f4e5; border-color: #15965b; background: #fff; }
+.pos-customer-suggestions { position: absolute; z-index: 2; top: calc(100% + 6px); left: 0; right: 0; max-height: min(280px, 35dvh); overflow-y: auto; border: 1px solid #dce5df; border-radius: 12px; background: #fff; box-shadow: 0 12px 30px #102d201f; padding: 5px; }
+.pos-customer-suggestions[hidden] { display: none; }
+.pos-customer-option { display: flex; flex-direction: column; gap: 4px; text-align: left; width: 100%; min-height: 58px; border: 0; border-radius: 8px; background: #fff; padding: 10px 12px; cursor: pointer; color: #172b42; }
+.pos-customer-option span { font-size: 13px; color: #64748b; }
+.pos-customer-option:hover, .pos-customer-option:focus, .pos-customer-option[aria-selected="true"] { background: #eaf8f0; outline: none; }
+.pos-customer-hint { min-height: 39px; margin: 12px 0 20px; }
+.pos-customer-footer { border-top: 1px solid #e5eaf0; padding-top: 16px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .pos-customer-picker .pos-modal-content { padding: 18px; }
+  .pos-customer-actions { gap: 8px; }
+  .pos-customer-actions .btn { padding-inline: 10px; font-size: 13px; }
+}
