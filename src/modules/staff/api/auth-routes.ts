@@ -37,6 +37,8 @@ export interface StaffEnv {
   sapoHdktOrderWebhookUrl?: string;
   sapoPosOrderWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
+  /** Báo cáo kết ca POS được đẩy bất đồng bộ sang hàng đợi Claw/Zalo. */
+  posShiftReportWebhook?: { url: string; token: string; fetch?: typeof fetch };
   sepayPosApiKeyHash?: string;
   wooLockTokenHash?: string;
   wooMinhLongTokenHash?: string;

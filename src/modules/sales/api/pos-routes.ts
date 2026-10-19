@@ -24,6 +24,7 @@ import { vietnamDate } from '../domain/sales.ts';
 import { notifyMany } from '../../notifications/api/routes.ts';
 import { writeAudit } from '../../../core/audit.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
+import { sendPosShiftReport } from './pos-shift-report-webhook.ts';
 import {
   posNow,
   posText,
@@ -679,6 +680,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           url: '/index.html#/pos',
           actorId: m.id,
         });
+      if (!result.replayed && c.env.posShiftReportWebhook) {
+        const task = sendPosShiftReport(c.env, result).catch((error) =>
+          console.error('POS_SHIFT_REPORT_WEBHOOK_FAILED', result.shift?.id, error instanceof Error ? error.message : error),
+        );
+        if (c.env.waitUntil) c.env.waitUntil(task); else await task;
+      }
       return json(result);
     },
     'business',
