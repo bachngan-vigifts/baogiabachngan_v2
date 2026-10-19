@@ -1,3 +1,4 @@
+import { rollbackImportedRetail } from './retail-correction.ts';
 import { and, eq, lt, inArray } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
@@ -32,7 +33,9 @@ export async function pullRetailCustomers(db: AnyDb, api: SapoApi) {
       const imported = await db.select({ id: customers.id }).from(customers).where(and(eq(customers.isRetail, true), inArray(customers.id, initial.items.map((x: any) => String(x.id)))));
       const ids = new Set(imported.map(x => x.id));
       const outside = initial.items.filter((x: any) => ids.has(String(x.id)) && !retailCandidate(x, groups));
-      if (outside.length) throw new AppError(409, `Cần đối chiếu ${outside.length} hồ sơ lô đầu theo trường MST của Sapo trước khi tiếp tục.`, 'RETAIL_REVIEW_REQUIRED');
+      if (outside.length) {
+        await rollbackImportedRetail(db, outside.map((x: any) => String(x.id)), state);
+      }
       state.initialBatchChecked = true;
     }
     const page = await api.list('/customers.json', 'customers', state.page, 2);

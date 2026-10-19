@@ -7,6 +7,8 @@ import { employees } from '../../src/modules/staff/schema.ts';
 import { retailCandidate, retailPhone } from '../../src/modules/integrations/domain/retail-customer.ts';
 import { addRetailCustomers } from '../../src/modules/integrations/api/retail-customers.ts';
 import { pullRetailCustomers } from '../../src/modules/integrations/api/retail-pull.ts';
+import { rollbackImportedRetail } from '../../src/modules/integrations/api/retail-correction.ts';
+import { customerStaff } from '../../src/modules/customers/schema.ts';
 import { syncCustomers } from '../../src/modules/integrations/api/sapo-sync-routes.ts';
 test('Khách lẻ: nhóm Sapo hoặc cá nhân không MST; tổ chức thiếu MST không bị suy diễn, chuẩn hoá điện thoại', () => {
   assert.ok(retailCandidate({ id: 1, name: 'Nguyễn A' }));
@@ -57,4 +59,13 @@ test('Quét đủ trang khách riêng, tiếp tục đúng con trỏ, gọi lặ
   assert.equal(b.completed, true); assert.equal(b.totals.added, 2);
   assert.deepEqual(await pullRetailCustomers(f.db, api), b);
   assert.ok(paths.every(p => ['/customers.json', '/customer_groups.json'].includes(p)));
+});
+
+test('Thu hồi nhầm phân loại: chỉ bản retail mới chưa dùng, giữ snapshot; có người phụ trách thì chặn, không xoá cascade', async () => {
+  const f = await setup();
+  await addRetailCustomers(f.db, [{ id: 301, name: 'Hồ sơ mới A' }, { id: 302, name: 'Hồ sơ mới B' }]);
+  assert.equal(await rollbackImportedRetail(f.db, ['301']), 1);
+  await f.db.insert(customerStaff).values({ customerId: '302', memberId: 'emp', role: 'owner', createdBy: 'mgr', createdAt: new Date().toISOString() });
+  await assert.rejects(() => rollbackImportedRetail(f.db, ['302']), /đã được sử dụng/);
+  assert.equal((await f.db.select().from(customers).where(eq(customers.id, '302'))).length, 1);
 });
