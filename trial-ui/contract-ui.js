@@ -67,6 +67,14 @@ const saveBlob = (bytes, name, type) => {
 };
 const cleanDetails = d => representativeDetails({ ...d, depositRate: Number(d.depositRate), paymentDays: Number(d.paymentDays) });
 
+// Đọc lại giá trị thật khi thao tác: select/autofill có thể chỉ phát change, không phát input.
+function readContractForm(form, details) {
+  for (const el of form.querySelectorAll('[data-d]')) {
+    if (!el.disabled && !el.readOnly) details[el.dataset.d] = el.value;
+  }
+  return cleanDetails(details);
+}
+
 /**
  * Mở hộp xem / sửa / tải HĐKT. `api(path, method, body)` gọi máy chủ; `onSaved()` tải lại đơn sau khi lưu.
  */
@@ -92,18 +100,22 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   for (const el of dlg.querySelectorAll('[data-d]')) {
     el.value = details[el.dataset.d] ?? '';
     if (!canEdit || (['depositRate', 'paymentDays'].includes(el.dataset.d) && !canEditFinancial)) { el.readOnly = true; if (el.tagName === 'SELECT') el.disabled = true; el.title = 'Theo HĐKT đã lập (khớp kỳ công nợ)'; continue; }
-    el.addEventListener('input', () => { details[el.dataset.d] = el.value; markDirty(); });
+    const changed = () => { details[el.dataset.d] = el.value; markDirty(); };
+    el.addEventListener('input', changed);
+    el.addEventListener('change', changed);
   }
   for (const selector of ['[data-save]', '[data-refresh]', '[data-rebuild]']) $d(selector).hidden = !canEdit;
   const markDirty = () => { dirty = true; $d('[data-dirty]').textContent = 'Có thay đổi chưa lưu'; };
   const close = () => { if (dirty && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
 
+  const currentDetails = () => canEdit ? readContractForm(dlg, details) : cleanDetails(details);
   const quote = () => legacyQuote(detail, quoteRows, edits);
   async function buildDoc(type, withEdits = true) {
+    const selectedDetails = currentDetails();
     const q = quote(); if (!withEdits) { q.contract_word_edits = []; q.contract_document_edits = {}; }
     const t = (await templatesFor(q)).find(x => x.file === type);
-    return globalThis.ContractDocument.build({ quote: q, contractNumber: k.contractNo, details: cleanDetails(details), templateBytes: t.templateBytes, documentType: type });
+    return globalThis.ContractDocument.build({ quote: q, contractNumber: k.contractNo, details: selectedDetails, templateBytes: t.templateBytes, documentType: type });
   }
   async function render() {
     const seq = ++renderSeq; status('Đang dựng bản xem từ file Word…');
@@ -150,7 +162,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   $d('[data-save]').addEventListener('click', async e => {
     if (!canEdit) return;
     e.target.disabled = true;
-    try { await api('/contracts/' + encodeURIComponent(k.id), 'PUT', { revision: k.revision, signedDate: details.signedDate, paymentMethod: details.paymentMethod, deliveryAddress: details.deliveryAddress, ...(canEditFinancial ? { depositRate: Number(details.depositRate), paymentDays: Number(details.paymentDays) } : {}), details: { ...(k.data || {}), details: cleanDetails(details), edits } }); k.revision += 1; dirty = false; $d('[data-dirty]').textContent = 'Đã lưu'; toast('Đã lưu hồ sơ HĐKT.'); onSaved?.(); }
+    try { const selectedDetails = currentDetails(); await api('/contracts/' + encodeURIComponent(k.id), 'PUT', { revision: k.revision, signedDate: selectedDetails.signedDate, paymentMethod: selectedDetails.paymentMethod, deliveryAddress: selectedDetails.deliveryAddress, ...(canEditFinancial ? { depositRate: selectedDetails.depositRate, paymentDays: selectedDetails.paymentDays } : {}), details: { ...(k.data || {}), details: selectedDetails, edits } }); k.revision += 1; dirty = false; $d('[data-dirty]').textContent = 'Đã lưu'; toast('Đã lưu hồ sơ HĐKT.'); onSaved?.(); }
     catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
   });
   const wordName = type => `${type}_${String(k.contractNo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[^a-zA-Z0-9]+/g, '-')}.docx`;
@@ -162,8 +174,8 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   $d('[data-zip]').addEventListener('click', async e => {
     e.target.disabled = true;
     try {
-      await loadBuilder(); const q = quote();
-      const pack = await globalThis.ContractDocument.buildPack({ quote: q, contractNumber: k.contractNo, details: cleanDetails(details), templateFiles: await templatesFor(q) });
+      const selectedDetails = currentDetails(); await loadBuilder(); const q = quote();
+      const pack = await globalThis.ContractDocument.buildPack({ quote: q, contractNumber: k.contractNo, details: selectedDetails, templateFiles: await templatesFor(q) });
       saveBlob(pack.bytes, `${pack.folder}.zip`, 'application/zip');
     } catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
   });
