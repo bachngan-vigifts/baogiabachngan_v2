@@ -1,6 +1,6 @@
-# Trả hàng, đổi hàng, hoàn tiền POS — phương án chờ duyệt
+# Trả hàng, đổi hàng, hoàn tiền POS — phương án đã duyệt
 
-Ngày 19/10/2026. Tài liệu đề xuất, chưa tạo migration hoặc thao tác dữ liệu thật.
+Ngày 19/10/2026. Anh đã duyệt phương án và cho tạo migration. Đã tạo hai migration bên dưới; chưa áp dụng lên production hoặc thao tác dữ liệu thật.
 
 ## Chính sách đã chốt
 
@@ -57,7 +57,7 @@ Không thêm cột vào bảng cũ. Không sửa migration đã áp dụng. Đ�
 1. Tạo 4 bảng trên, FK/index/check; mở rộng loại phát sinh kho `customer_return`, tham chiếu `pos_return`; mở rộng CHECK hướng tiền của `cash_entries` cho loại `customer_refund` chỉ là chi. Lịch sử sản phẩm đã có `customer_return`, không cần thêm loại mới ở bảng này. `customer_payments` đã hỗ trợ `other`/`payment_source`, không đổi enum thanh toán.
 2. RLS và thu hồi quyền truy cập trực tiếp anon/authenticated cho bảng mới theo pattern bảng POS server-only. Mọi API vẫn kiểm quyền và phạm vi quầy ở server.
 
-Chưa tạo file migration. Tạo migration không đồng nghĩa tự chạy lên production; cần kiểm tra môi trường và quyền triển khai trước khi áp dụng.
+Đã tạo bằng Supabase CLI và đưa vào thư mục migration chuẩn của repo: `20261019072149_pos_returns.sql`, `20261019072202_supabase_access_pos_returns.sql`. Tạo migration không đồng nghĩa tự chạy lên production. Phải áp dụng hai file trước khi API có truy vấn bảng mới được đưa lên live.
 
 ## File/module dự kiến đụng
 
@@ -83,3 +83,13 @@ Chưa tạo file migration. Tạo migration không đồng nghĩa tự chạy l�
 ## Ô ghi chú đơn hàng (độc lập, không migration)
 
 Đã triển khai trong nhánh này: ô dưới hướng dẫn phí, tối đa 2.000 ký tự, lưu `sales_orders.note` và snapshot, bill tạm/K80/chi tiết đơn/payload outbound. Ghi chú không đổi số tiền nên không làm mất xác nhận QR; retry cùng checkoutKey nhưng sửa ghi chú bị từ chối để tránh ghi đè kết quả cũ. Không thêm bảng/cột/quyền hoặc migration cho ghi chú.
+
+## Triển khai sau duyệt
+
+Luồng được đặt trong `src/modules/sales/api/pos-return-routes.ts`; các hàm tài chính/giữ tiền dùng chung trong `pos-return-credit.ts` (không tạo thêm `pos-return-store.ts`). Có nút **Trả / Đổi / Hoàn** ở POS và chi tiết đơn; tìm bill gốc, gửi duyệt, nhận hàng và xác nhận thực hoàn là các thao tác tách biệt. Phiếu K80 ghi rõ giá trị trả không đồng nghĩa đã hoàn tiền.
+
+Sổ thu/chi (`src/app/cashbook-routes.ts`) bổ sung hoàn tiền khách và loại khoản thanh toán bằng tín dụng đổi hàng khỏi tiền thực thu. Các lịch thu và phiếu thu gốc giữ nguyên; API công nợ trả thêm lịch thu hiệu lực đã trừ hàng trả cho phần hiển thị. COD chưa thu được giới hạn theo công nợ ròng sau trả.
+
+Chuyển khoản SePay đến sau khi tín dụng đổi hàng đã hết hạn/giải phóng được ghi audit `late-exchange-transfer`, đánh dấu `requiresReconciliation`; không tự chi lại tiền hoặc sử dụng lại tín dụng. Manager cần đối soát khoản đến muộn. Chứng từ hoàn thực tế và tín dụng đã dùng không được huỷ bằng nút huỷ phiếu thông thường; bản này chưa có màn đảo chứng từ hoàn ghi sai.
+
+Giới hạn: không tự điều chỉnh Sapo/website/hóa đơn VAT đã phát hành, không tự chuyển khoản ngân hàng. Các chứng từ nguồn bên ngoài cần đối soát riêng. Kiểm thử dùng DB PostgreSQL WASM cô lập và giao diện giả lập, không phát sinh đơn hoặc hoàn tiền thật.

@@ -18,7 +18,14 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     node(doc, 'h2', data.register?.name || 'Bách Ngân'),
     node(doc, 'p', data.register?.address || '', 'center'),
   );
-  if (kind === 'shift') {
+  if (kind === 'return') {
+    const r=data.return;
+    sheet.append(node(doc,'h3','PHIẾU ĐỔI / TRẢ HÀNG'),node(doc,'p',r.returnNo),node(doc,'p','Bill gốc: '+data.order.orderNo),node(doc,'p',data.order.customerName),node(doc,'p','Lý do: '+r.reason));
+    for(const l of r.lines||[])line(l.name+' × '+l.requestedQty,money(l.total));
+    line('Phí được duyệt hoàn',money(r.approvedServiceFee+r.approvedShippingFee));line('Giá trị trả',money(r.total),true);
+    for(const f of r.refunds||[])line('Đã hoàn '+(f.method==='cash'?'tiền mặt':'chuyển khoản'),money(f.amount));
+    sheet.append(node(doc,'p',r.receivedAt?'Đã xác nhận thực nhận hàng':'Chưa xác nhận nhận hàng'),node(doc,'p','Giá trị trả hàng không đồng nghĩa đã hoàn tiền.'));
+  } else if (kind === 'shift') {
     sheet.append(node(doc, 'h3', 'BÁO CÁO KẾT CA'), node(doc, 'p', data.memberName || data.shift.memberId));
     line('Mở ca', new Date(data.shift.openedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }));
     line(
@@ -80,6 +87,7 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     line('Tiền trước thuế (gồm phí)', money(data.subtotal));
     line('VAT', money(data.tax));
     line('TỔNG CỘNG', money(data.total), true);
+    if(data.exchangeCredit){line('Thanh toán bằng tiền đổi hàng',money(data.exchangeCredit));line('Khách trả thêm',money(data.payable));}
     if (data.note) sheet.append(node(doc, 'p', 'Ghi chú: ' + data.note, 'order-note'));
     if (temporary) sheet.append(node(doc, 'p', 'Chưa ghi thu, chưa trừ kho. Không phải hóa đơn VAT.', 'center'));
     else if (cod) sheet.append(node(doc, 'p', 'Thu COD sau khi giao và cửa hàng thực nhận tiền.'));

@@ -1,3 +1,4 @@
+import { registerPosReturnRoutes } from '../modules/sales/api/pos-return-routes.ts';
 import { authorizePosStore } from '../modules/sales/api/pos-access.ts';
 import { registerCashRoutes } from './cash-routes.ts';
 import { inventoryOpeningHooks } from '../modules/inventory/api/ledger.ts';
@@ -52,6 +53,7 @@ export function createAppRouter() {
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router);
   registerPosRoutes(router);
+  registerPosReturnRoutes(router);
   registerCashRoutes(router);
   registerPackingRoutes(router);
   registerHoldRoutes(router);

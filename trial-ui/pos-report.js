@@ -1,7 +1,7 @@
 const money = (n) => Number(n ?? 0).toLocaleString('vi-VN') + ' đ';
 export const cashKindLabel = (kind) => ({
   other_income: 'Thu khác', cash_in: 'Rút két', petty_expense: 'Chi vặt',
-  advance: 'Tạm ứng', cash_out: 'Nộp két', adjustment: 'Điều chỉnh két',
+  customer_refund: 'Hoàn tiền khách', advance: 'Tạm ứng', cash_out: 'Nộp két', adjustment: 'Điều chỉnh két',
 }[kind] || 'Thu/chi khác');
 /** Cùng nhãn và cùng số liệu trên popup, Sổ quỹ và bản in; giá trị đơn không phải tiền thu. */
 export function shiftSummaryRows(d) {
@@ -9,6 +9,7 @@ export function shiftSummaryRows(d) {
     ['Số bill', d.bills.count],
     ['Giá trị đơn đã lập (gồm COD)', money(d.bills.revenue)],
     ['Chiết khấu', money(d.bills.discount)],
+    ...(d.returns ? [['Giá trị trả hàng đã thực nhận', money(d.returns.credit)], ['Giá trị bán trừ hàng trả trong ca',money(d.bills.revenue-d.returns.credit)], ['Hoàn chuyển khoản thực tế', money(d.returns.refundedTransfer)], ['Thanh toán bằng tiền đổi hàng', money(d.returns.exchanged)]] : []),
     ['Tiền mặt thực thu', money(d.cash)],
     ['Chuyển khoản đã xác nhận', money(d.transfer)],
     ['Tiền đầu ca thực đếm', money(d.shift.openingCash)],

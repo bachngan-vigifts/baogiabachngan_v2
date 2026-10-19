@@ -1,3 +1,5 @@
+import { exchangeForCart, returnAccount } from './pos-return-credit.ts';
+import { posExchangeAllocations, posReturns, posRefunds } from '../return-schema.ts';
 import { posOrderNote } from '../domain/pos-order-note.ts';
 import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
 import { cashLock, cashShiftTotals, cashAudit, openingCashComparison } from './cash-store.ts';
@@ -87,6 +89,7 @@ export const emptyCart = (b: Record<string, unknown>) => {
     rows: b.rows,
     ...posFeeInput(b),
     ...(note ? { note } : {}),
+    ...(b.exchangeAllocationId ? { exchangeAllocationId: posKey(b.exchangeAllocationId) } : {}),
   };
 };
 export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
@@ -137,6 +140,8 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     tax = posMoney(lines.reduce((s, l) => s + l.tax, 0) + fees.tax),
     discount = lines.reduce((s, l) => s + l.discountAmount, 0),
     total = posMoney(subtotal + tax);
+  const exchange = await exchangeForCart(db, input.exchangeAllocationId || '', input.shiftId, r.id, total, input.customerId);
+  const payable = total - exchange.amount;
   const canonical = {
     registerId: r.id,
     shiftId: input.shiftId,
@@ -144,12 +149,14 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     customerId: input.customerId,
     vatEnabled: withVat,
     ...posFeeInput(b),
+    ...(input.exchangeAllocationId ? { exchangeAllocationId: input.exchangeAllocationId } : {}),
     rows: lines.map((l) => ({ sku: l.sku, qty: l.qty, discountType: l.discountType, discountValue: l.discountValue })),
   };
   return {
     register: r,
     customer,
     note: input.note ?? '',
+    exchange, payable,
     fees,
     lines,
     subtotal,
@@ -237,11 +244,8 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
       ),
     db
       .select({
-        count: count(),
-        amount:
-          sql<number>`coalesce(sum(greatest(0,${deliveries.codAmount}-(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.deliveryId}=${deliveries.id} and ${customerPayments.createdAt}<=${cutoff} and (${customerPayments.voidedAt} is null or ${customerPayments.voidedAt}>${cutoff})))),0)`.mapWith(
-            Number,
-          ),
+        orderId: salesOrders.id,
+        amount: sql<number>`greatest(0,${deliveries.codAmount}-(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.deliveryId}=${deliveries.id} and ${customerPayments.createdAt}<=${cutoff} and (${customerPayments.voidedAt} is null or ${customerPayments.voidedAt}>${cutoff})))`.mapWith(Number),
       })
       .from(deliveries)
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
@@ -274,6 +278,10 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
   ]);
   const cash = payments.filter((p) => p.method === 'cash').reduce((v, p) => v + p.total, 0),
     transfer = payments.filter((p) => p.method === 'transfer').reduce((v, p) => v + p.total, 0);
+  const pendingByOrder=new Map<string,number>();
+  for(const p of pending)pendingByOrder.set(p.orderId,(pendingByOrder.get(p.orderId)||0)+p.amount);
+  let pendingCount=0,pendingAmount=0;
+  for(const [id,amount] of pendingByOrder){const a=await returnAccount(db,id,cutoff);const remaining=Math.min(amount,Math.max(0,a.balance));if(remaining>0){pendingCount++;pendingAmount+=remaining;}}
   const drawer = await cashShiftTotals(db, s.id);
   const r = await registerOf(db, s.registerId);
   const [person] = await db.select({ name: employees.name }).from(employees).where(eq(employees.id, s.memberId));
@@ -284,6 +292,12 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
     openingComparison: await openingCashComparison(db, s.id),
     register: r,
     asOf: cutoff,
+    returns: {
+      credit: Number((await db.select({n:sql<number>`coalesce(sum(${posReturns.total}),0)`}).from(posReturns).where(eq(posReturns.receivedShiftId,s.id)))[0]?.n||0),
+      refundedCash: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'cash'))))[0]?.n||0),
+      refundedTransfer: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'transfer'))))[0]?.n||0),
+      exchanged: payments.filter(p=>p.source==='pos_exchange_credit').reduce((n,p)=>n+p.total,0),
+    },
     openingCount: counted?.count ? { scope: 'partial', count: counted.count } : null,
     bills: bills[0] ?? { count: 0, revenue: 0, discount: 0 },
     payments,
@@ -296,7 +310,7 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
     cashCod: drawer.cashCod,
     expectedCash: s.openingCash + cash + drawer.manualNet,
     cod: {
-      pending: pending[0] ?? { count: 0, amount: 0 },
+      pending: {count:pendingCount,amount:pendingAmount},
       receivedInShift: received
         .filter((x) => !x.previous)
         .reduce((a, x) => ({ count: a.count + x.count, amount: a.amount + x.amount }), { count: 0, amount: 0 }),
@@ -329,6 +343,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     assertOpen(s, m);
     if (posText(b.registerId) !== s.registerId) throw new AppError(400, 'Quầy không khớp ca.');
     const c = await calculateCart(tx, b);
+    if (c.exchange.amount && mode === 'cod') throw new AppError(400, 'Đổi hàng thanh toán tại quầy, không chuyển COD.');
     if (c.total === 0 && mode === 'cod') throw new AppError(400, 'Đơn COD phải có số tiền cần thu.');
     await assertOpening(tx, c.register.warehouseId);
     let qr: typeof posPaymentRequests.$inferSelect | undefined;
@@ -340,9 +355,9 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
         .for('update');
       if (
         !qr ||
-        qr.expiresAt < posNow() ||
+        (qr.expiresAt < posNow() && !qr.confirmedAt) ||
         qr.fingerprint !== c.fingerprint ||
-        qr.amount !== c.total ||
+        qr.amount !== c.payable ||
         method !== 'transfer' ||
         mode === 'cod'
       )
@@ -362,8 +377,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       if (l.qty > available + 1e-9)
         throw new AppError(409, `${l.name}: chỉ còn khả dụng ${Math.max(0, available)}.`, 'POS_STOCK_SHORT');
     }
-    const tendered = method === 'cash' && mode === 'counter' ? posMoney(b.tendered, 'Tiền khách đưa') : c.total;
-    if (mode === 'counter' && tendered < c.total) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
+    const tendered = method === 'cash' && mode === 'counter' ? posMoney(b.tendered, 'Tiền khách đưa') : c.payable;
+    if (mode === 'counter' && tendered < c.payable) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
     const now = posNow(),
       date = vietnamDate().iso;
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-number:' + date}))`);
@@ -389,7 +404,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       total: c.total,
       method: mode === 'cod' ? 'cod' : method,
       tendered,
-      change: mode === 'counter' ? tendered - c.total : 0,
+      change: mode === 'counter' ? tendered - c.payable : 0,
+      ...(c.exchange.amount ? { exchangeCredit: c.exchange.amount, payable: c.payable } : {}),
       createdAt: now,
       memberName: m.name,
       pricePolicyId: c.canonical.pricePolicyId,
@@ -468,14 +484,14 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
         })),
         now,
       );
-      if (c.total > 0)
+      if (c.payable > 0)
         await tx.insert(customerPayments).values({
           id: crypto.randomUUID(),
           orderId: id,
           scheduleId,
           customerId: c.customer?.id,
           shiftId: s.id,
-          amount: c.total,
+          amount: c.payable,
           method: method!,
           requestKey: key,
           paymentSource: qr ? 'vietqr' : 'pos',
@@ -488,6 +504,12 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       if (!posText(ship.address)) throw new AppError(400, 'Nhập địa chỉ giao COD.');
       const d = await createScheduledDelivery(tx, id, { ...ship, plannedDate: ship.plannedDate || date }, m.id);
       await tx.update(deliveries).set({ codAmount: c.total }).where(eq(deliveries.id, d.id));
+    }
+    if (c.exchange.allocation) {
+      const allocation = c.exchange.allocation, paymentId = crypto.randomUUID();
+      await tx.insert(customerPayments).values({id:paymentId,orderId:id,scheduleId,customerId:c.customer?.id,shiftId:s.id,amount:allocation.amount,method:'other',paymentSource:'pos_exchange_credit',requestKey:allocation.id,reference:allocation.returnId,paidAt:date,createdBy:m.id,createdAt:now});
+      await tx.update(posExchangeAllocations).set({status:'applied',paymentId,replacementOrderId:id,appliedAt:now}).where(eq(posExchangeAllocations.id,allocation.id));
+      await cashAudit(tx,m.id,'apply-exchange','pos-returns',allocation.returnId,{allocationId:allocation.id,orderId:id,amount:allocation.amount});
     }
     if (qr) await tx.update(posPaymentRequests).set({ confirmedAt: now }).where(eq(posPaymentRequests.id, qr.id));
     await cashAudit(tx, m.id, 'sale', 'orders', id, { orderNo, total: c.total, method, mode, shiftId: s.id });

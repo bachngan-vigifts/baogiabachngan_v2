@@ -1,4 +1,5 @@
-import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { posReturns, posRefunds } from '../modules/sales/return-schema.ts';
+import { and, asc, eq, gte, inArray, lte, ne } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
@@ -25,15 +26,16 @@ export function registerCashbookRoutes(router: Router<StaffEnv>) {
     if (!isDate(from) || !isDate(to) || to < from) throw new AppError(400, 'Chọn khoảng ngày hợp lệ.');
     if ((Date.parse(to) - Date.parse(from)) / 864e5 > MAX_DAYS) throw new AppError(400, 'Khoảng ngày tối đa khoảng 13 tháng.');
     const db = c.env.db;
-    const [ins, outs] = await Promise.all([
+    const [ins, outs, refunds] = await Promise.all([
       db.select({ p: customerPayments, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName }).from(customerPayments)
         .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId))
-        .where(and(gte(customerPayments.paidAt, from), lte(customerPayments.paidAt, to))).orderBy(asc(customerPayments.paidAt), asc(customerPayments.createdAt)),
+        .where(and(ne(customerPayments.paymentSource,'pos_exchange_credit'), gte(customerPayments.paidAt, from), lte(customerPayments.paidAt, to))).orderBy(asc(customerPayments.paidAt), asc(customerPayments.createdAt)),
       db.select({ p: supplierPayments, ticketNumber: incomingShipments.ticketNumber, supplierName: incomingShipments.supplierName }).from(supplierPayments)
         .innerJoin(incomingShipments, eq(incomingShipments.id, supplierPayments.shipmentId))
         .where(and(gte(supplierPayments.paidDate, from), lte(supplierPayments.paidDate, to))).orderBy(asc(supplierPayments.paidDate), asc(supplierPayments.createdAt)),
+      db.select({p:posRefunds,orderId:salesOrders.id,orderNo:salesOrders.orderNo,customerName:salesOrders.customerName}).from(posRefunds).innerJoin(posReturns,eq(posReturns.id,posRefunds.returnId)).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(gte(posRefunds.confirmedAt,new Date(from+'T00:00:00+07:00').toISOString()),lte(posRefunds.confirmedAt,new Date(to+'T23:59:59.999+07:00').toISOString()))),
     ]);
-    const orderIds = [...new Set(ins.map(r => r.p.orderId))], people = [...new Set([...ins, ...outs].map(r => r.p.createdBy))];
+    const orderIds = [...new Set(ins.map(r => r.p.orderId))], people = [...new Set([...ins.map(r=>r.p.createdBy),...outs.map(r=>r.p.createdBy),...refunds.map(r=>r.p.confirmedBy)])];
     const [contracts, names] = await Promise.all([
       orderIds.length ? db.select({ orderId: salesContracts.orderId, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, orderIds)) : [],
       people.length ? db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, people)) : [],
@@ -45,6 +47,7 @@ export function registerCashbookRoutes(router: Router<StaffEnv>) {
         return { id: x.id, kind: 'in' as const, date: x.paidAt, amount: x.amount, method: x.method, reference: x.reference, note: x.note, partner: customerName,
           docNo: ref.Label, link: ref.link, createdByName: name(x.createdBy), voided: !!x.voidedAt, voidReason: x.voidReason };
       }),
+      ...refunds.map(({p:x,orderId,orderNo,customerName})=>({id:x.id,kind:'out' as const,date:new Date(Date.parse(x.confirmedAt)+7*3600000).toISOString().slice(0,10),amount:x.amount,method:x.method,reference:x.reference,note:x.confirmationNote,partner:customerName,docNo:x.refundNo+' · '+orderNo,link:'#/orders/'+orderId,createdByName:name(x.confirmedBy),voided:false,voidReason:''})),
       ...outs.map(({ p: x, ticketNumber, supplierName }) => ({ id: x.id, kind: 'out' as const, date: x.paidDate, amount: x.amount, method: x.method, reference: x.reference, note: x.note,
         partner: supplierName, docNo: ticketNumber, link: `#/purchases/${x.shipmentId}`, createdByName: name(x.createdBy), voided: !!x.voidedAt, voidReason: x.voidReason })),
     ].sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));

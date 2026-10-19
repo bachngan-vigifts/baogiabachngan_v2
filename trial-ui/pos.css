@@ -702,3 +702,15 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 
 .pos-order-note { margin: 12px 0 4px; }
 .pos-order-note textarea { min-height: 64px; resize: vertical; }
+.pos-return-modal { width:min(760px,calc(100vw - 24px)); max-height:90dvh; }
+.pos-return-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.pos-return-head h2 { margin:0; font-size:20px; }
+.pos-return-summary { display:grid; grid-template-columns:1fr auto; gap:8px 16px; padding:16px; background:#effaf4; border-radius:12px; margin:16px 0; }
+.pos-return-card { border:1px solid #dce5e0; border-radius:12px; padding:16px; margin-top:16px; }
+.pos-return-card h3 { margin-top:0; }
+.pos-return-actions,.pos-return-list,.pos-return-search-results { display:flex; flex-direction:column; gap:10px; }
+.pos-return-actions label { margin:0; }
+.pos-return-line { display:grid; grid-template-columns:1fr 1fr; align-items:end; gap:12px; margin:12px 0; }
+.pos-return-card select { width:100%; min-height:40px; border:1px solid #cad6e3; border-radius:8px; background:white; padding:8px; }
+.pos-return-card input[type=checkbox] { width:20px; height:20px; }
+@media(max-width:600px){.pos-return-line {grid-template-columns:1fr}.pos-return-head{align-items:flex-start}.pos-return-card{padding:12px}.pos-return-modal .pos-modal-content{padding:16px}}

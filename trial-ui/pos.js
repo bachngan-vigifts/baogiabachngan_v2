@@ -1,3 +1,4 @@
+import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
 import { printPos } from './pos-print.js';
 import { shiftSummaryRows, shiftCodRows } from './pos-report.js';
@@ -42,7 +43,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     policy: '',
     cart: [],
     customer: null,
-    feeName: '', feeAmount: '', shippingFee: '', feeVisible: false, note: '',
+    feeName: '', feeAmount: '', shippingFee: '', feeVisible: false, note: '', exchangeAllocationId: '',
     preview: null,
     method: 'cash',
     qr: null,
@@ -81,7 +82,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.policy = '';
     st.cart = [];
     st.customer = null;
-    st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = '';
+    st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
     st.preview = null;
     st.pending = null;
     st.orderBoard = null;
@@ -104,6 +105,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     pricePolicyId: st.policy,
     customerId: st.customer?.id || '',
     ...(st.note.trim() ? { note: st.note } : {}),
+    ...(st.exchangeAllocationId ? {exchangeAllocationId:st.exchangeAllocationId} : {}),
     ...(st.feeName || st.feeAmount || st.shippingFee ? { feeName: st.feeName, feeAmount: st.feeAmount || 0, shippingFee: st.shippingFee || 0 } : {}),
     rows: st.cart.map((x) => ({
       sku: x.sku,
@@ -188,6 +190,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     title.append(menu);
     page.append(head);
     tools.append(
+      button('Trả / Đổi / Hoàn', 'btn secondary', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()})),
       button('Báo cáo ca', 'btn secondary', () => run(history)),
       button('Ship COD', 'btn secondary', () => run(codList)),
     );
@@ -323,7 +326,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     f.box.append(
       button('Đủ tiền', 'btn secondary small', () => {
         if (st.preview) {
-          nodes.tender.value = st.preview.total;
+          nodes.tender.value = st.preview.payable ?? st.preview.total;
           refreshPay();
         }
       }),
@@ -576,6 +579,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       ...(d?.fees?.service?.amount ? [[d.fees.service.name + ' (trước thuế)', money(d.fees.service.subtotal)]] : []),
       ['VAT', d ? money(d.tax) : '—'],
       ['Tổng cộng', d ? money(d.total) : st.cart.length ? 'Đang tính…' : '0 đ'],
+      ...(d?.exchange?.amount ? [['Tiền đổi hàng áp dụng', '−'+money(d.exchange.amount)],['Khách cần trả thêm',money(d.payable)]]:[]),
     ]) {
       if (label === 'Tổng cộng') nodes.totals.append(nodes.shippingField);
       const row = el('div', 'pos-total-row' + (label === 'Tổng cộng' ? ' pos-total' : ''));
@@ -583,18 +587,19 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       nodes.totals.append(row);
     }
     for (const x of d?.lines || []) lineTotals.get(x.sku)?.replaceChildren(document.createTextNode(money(x.total)));
+    if(st.exchangeAllocationId)nodes.totals.append(button('Bỏ áp dụng tiền đổi hàng','btn secondary small',()=>run(async()=>{await api('/pos/exchanges/'+st.exchangeAllocationId+'/cancel','POST',{});st.exchangeAllocationId='';invalidate();await preview();})));
     refreshPay();
   }
   function refreshPay() {
     if (!nodes.pay) return;
     const invalid = !active() || !st.preview || !st.cart.length || !!st.pending || st.busy;
     nodes.temp.disabled = invalid;
-    nodes.qr.disabled = invalid;
+    nodes.qr.disabled = invalid || (st.preview?.payable ?? st.preview?.total ?? 0)<=0;
     nodes.pay.disabled =
       invalid ||
       (st.method === 'transfer' && !nodes.confirm.checked) ||
-      (st.method === 'cash' && Number(nodes.tender.value) < (st.preview?.total || 0));
-    nodes.change.textContent = money(Math.max(0, Number(nodes.tender.value || 0) - (st.preview?.total || 0)));
+      (st.method === 'cash' && Number(nodes.tender.value) < (st.preview?.payable ?? st.preview?.total ?? 0));
+    nodes.change.textContent = money(Math.max(0, Number(nodes.tender.value || 0) - (st.preview?.payable ?? st.preview?.total ?? 0)));
     nodes.lines?.classList.toggle('pos-busy', !!st.pending || st.busy);
     for (const i of nodes.lines?.querySelectorAll('input,select,button') || []) i.disabled = !!st.pending || st.busy;
     nodes.policy.disabled = !!st.pending || st.busy;
@@ -1025,6 +1030,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         if (st.qr !== d || user().id !== ownerId || !state.paid) return;
         completing = true;
         clearInterval(timer);
+        if(state.requiresReconciliation){st.qr=null;nodes.confirm.checked=false;refreshPay();status.textContent='Chuyển khoản đến sau khi hết giữ tiền đổi hàng. Cần Manager tra soát trước khi bán.';toast(status.textContent,'err');return;}
         if (state.consumed) {
           st.qr = null;
           nodes.confirm.checked = false;
@@ -1113,7 +1119,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       persistPending(null);
       st.cart = [];
       st.customer = null;
-      st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = '';
+      st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
       st.preview = null;
       st.qr = null;
       st.policy = st.register.pricePolicyId;

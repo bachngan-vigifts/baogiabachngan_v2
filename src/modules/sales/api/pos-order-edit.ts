@@ -1,3 +1,4 @@
+import { assertNoReturnActivity } from './pos-return-credit.ts';
 import { posOrderNote } from '../domain/pos-order-note.ts';
 import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
@@ -55,6 +56,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
       return Number(row.qty) !== l.qty || Number(row.price) !== (l.listUnitPrice ?? l.unitPrice) || row.discountType !== l.discountType || Number(row.discountValue) !== l.discountValue;
     });
     if (changed) {
+      await assertNoReturnActivity(db,order.id);
       const active = ships.filter(s => s.status !== 'cancelled');
       if (order.fulfillmentMode !== 'cod' || receipts.length || oldLines.some(l => l.deliveredQty > 0) || packs.length || contracts.length || active.some(s => s.status !== 'planned') || active.length > 1)
         throw new AppError(409, 'Chỉ đổi số lượng/giá khi COD chưa xuất hàng, chưa thu và có tối đa một chuyến chờ giao. Phiếu đã đóng gói cần xử lý trước.');
