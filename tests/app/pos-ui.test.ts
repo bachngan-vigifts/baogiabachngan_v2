@@ -542,3 +542,42 @@ test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản
     assert.equal(print.querySelectorAll('img').length, 0);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
+
+test('form COD hiển thị thu trước và còn lại, chuyển khoản cần xác nhận; bill tách khoản đã thu', async () => {
+  const prevDoc = (globalThis as any).document, prevWin = (globalThis as any).window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('main'), calls: any[] = [];
+    const api = async (path: string, method = 'GET', body?: any) => {
+      calls.push({ path, method, body });
+      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
+      if (path === '/pos/preview') return { ...sample, total: 108000, lines: [{ ...sample.lines[0], sku: '001' }] };
+      if (path === '/pos/checkout') throw Object.assign(Error('Kiểm tra payload'), { status: 400 });
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load(); await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
+    await new Promise(r => setTimeout(r, 230));
+    await root.querySelectorAll('button').find(b => b.textContent === 'Tạo đơn Ship COD')!.fire('click');
+    const modal = doc.body.children.at(-1)!;
+    const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
+    const method = modal.querySelectorAll('select')[0]!, confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
+    const form = modal.querySelectorAll('form')[0]!, save = modal.querySelectorAll('button').find(b => b.textContent === 'Tạo đơn COD')!;
+    deposit.value = '50000'; await deposit.fire('input'); method.value = 'transfer'; await method.fire('change');
+    assert.match(modal.textContent, /Còn lại thu COD: 58.000 đ/); assert.equal(save.disabled, true);
+    await form.fire('submit'); assert.equal(calls.some(c => c.path === '/pos/checkout'), false);
+    confirmed.checked = true; await confirmed.fire('change'); assert.equal(save.disabled, false);
+    deposit.value = '108001'; await deposit.fire('input'); assert.equal(save.disabled, true);
+    deposit.value = '50000'; await deposit.fire('input'); confirmed.checked = true; await confirmed.fire('change');
+    await form.fire('submit'); await new Promise(r => setTimeout(r, 0));
+    const sent = calls.find(c => c.path === '/pos/checkout')!;
+    assert.equal(sent.body.depositAmount, 50000); assert.equal(sent.body.method, 'transfer'); assert.equal(sent.body.confirmed, true);
+    for (const [amount, remaining] of [[50000, 58000], [108000, 0]]) {
+      const bill = buildPosPrint(doc, { ...sample, method: 'cod', total: 108000, depositAmount: amount, codAmount: remaining, depositMethod: 'transfer' });
+      assert.match(bill.textContent, /Đã thu trước \/ tạm ứng \(chuyển khoản\)/);
+      assert.ok(bill.textContent.includes('Còn lại thu COD' + Number(remaining).toLocaleString('vi-VN') + ' đ'));
+      if (!remaining) assert.match(bill.textContent, /ĐƠN GIAO HÀNG - ĐÃ THU ĐỦ/);
+    }
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});

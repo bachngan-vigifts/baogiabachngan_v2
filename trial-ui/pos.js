@@ -1130,24 +1130,53 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
             timeZone: 'Asia/Ho_Chi_Minh',
           }).format(new Date()),
         );
+      m.dlg.classList.add('pos-cod-modal');
       address.input.required = phone.input.required = receiver.input.required = true;
+      const deposit = field('Đã thu trước / tạm ứng (VNĐ)', 'number', '0');
+      deposit.input.min = '0'; deposit.input.max = String(st.preview.total); deposit.input.step = '1'; deposit.input.inputMode = 'numeric'; deposit.input.required = true;
+      const method = el('select'), methodBox = el('label', 'pos-field');
+      method.setAttribute('aria-label', 'Hình thức thu trước');
+      for (const [value, name] of [['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản']]) {
+        const option = el('option', '', name); option.value = value; method.append(option);
+      }
+      methodBox.append(el('span', '', 'Hình thức thu trước'), method);
+      const confirmed = el('input'), confirmation = el('label', 'pos-note pos-cod-confirm'); confirmed.type = 'checkbox';
+      confirmation.append(confirmed, document.createTextNode(' Tôi xác nhận cửa hàng đã thực nhận chuyển khoản thu trước'));
+      const remaining = el('p', 'pos-cod-remaining'), validation = el('p', 'error'); validation.setAttribute('role', 'alert');
+      const updateDeposit = () => {
+        const n = Number(deposit.input.value), valid = deposit.input.value !== '' && Number.isSafeInteger(n) && n >= 0 && n <= st.preview.total;
+        remaining.textContent = 'Còn lại thu COD: ' + money(valid ? st.preview.total - n : st.preview.total);
+        validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
+        methodBox.hidden = !valid || n === 0;
+        confirmation.hidden = !valid || n === 0 || method.value !== 'transfer';
+        save.disabled = !valid || (n > 0 && method.value === 'transfer' && !confirmed.checked);
+      };
+      deposit.input.addEventListener('input', () => { confirmed.checked = false; updateDeposit(); });
+      method.addEventListener('change', () => { confirmed.checked = false; updateDeposit(); });
+      confirmed.addEventListener('change', updateDeposit);
+
       m.form.append(
         receiver.box,
         phone.box,
         address.box,
         date.box,
-        el('p', 'pos-note', 'Chưa ghi thu. Đơn dùng chung lịch giao hàng và phiếu đóng gói hiện có.'),
+        el('p', '', 'Tổng đơn: ' + money(st.preview.total)),
+        deposit.box, methodBox, confirmation, remaining, validation,
+        el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
       );
       const save = el('button', 'btn primary', 'Tạo đơn COD');
       save.type = 'submit';
       m.form.append(save, button('Huỷ', 'btn secondary', m.close));
+      updateDeposit();
       m.form.addEventListener('submit', (e) => {
         e.preventDefault();
+        updateDeposit(); if (save.disabled) return;
         save.disabled = true;
         const body = {
           ...payload(),
           key: key(),
           fulfillmentMode: 'cod',
+          ...(Number(deposit.input.value) > 0 ? { depositAmount: Number(deposit.input.value), method: method.value, confirmed: method.value === 'transfer' && confirmed.checked } : {}),
           delivery: {
             address: address.input.value,
             receiverName: receiver.input.value,
