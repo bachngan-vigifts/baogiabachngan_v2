@@ -36,3 +36,12 @@ test('CSS chỉ chuyển bố cục báo giá ở màn hình tối đa 850px và
   assert.match(css, /font-size: 13px !important/);
   assert.doesNotMatch(css.slice(0, css.indexOf('/* Soạn báo giá trên điện thoại')), /quote-mobile-panel:not/);
 });
+
+test('dòng trống mobile là một hàng phụ phí gọn và không lặp nút thêm sản phẩm', () => {
+  assert.match(app, /const manual = !r\.sku && !r\.image/);
+  assert.match(app, /class="\$\{manual \? 'manual-line' : ''\}"/);
+  assert.match(app, /Tên phụ phí \/ nội dung thêm/);
+  assert.match(css, /#view-editor \[data-quote-panel='products'\] > \.card-title-row #pick-products \{ display: none; \}/);
+  assert.match(css, /#view-editor #line-list tr\.manual-line \{ grid-template-columns: minmax\(0, 1fr\) 110px 34px/);
+  assert.match(css, /tr\.manual-line \.col-img,[\s\S]*?tr\.manual-line \.col-cost \{ display: none; \}/);
+});

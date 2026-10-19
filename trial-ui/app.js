@@ -1052,11 +1052,12 @@ function lineCell(r, i) {
   const meta = [r.brand, r.pattern, r.pricePolicy, Number.isFinite(r.taxRate) ? `VAT ${fmtNum(r.taxRate)}%` : ''].filter(Boolean).join(' · ');
   const text = (k, label, ph) => `<label class="sub-field"><span>${label}</span><input data-k="${k}" value="${esc(r[k] ?? '')}" placeholder="${ph}" maxlength="2000"></label>`;
   if (!hrc && r.packagingDescription === undefined) r.packagingDescription = PACKAGING_DEFAULT;
-  return `<tr data-i="${i}">
+  const manual = !r.sku && !r.image;
+  return `<tr data-i="${i}" class="${manual ? 'manual-line' : ''}">
     <td class="col-idx">${i + 1}</td>
     <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
     <td class="col-product" data-label="Sản phẩm">
-      <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="Gõ tên hoặc mã để tìm sản phẩm…" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
+      <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="${manual ? 'Tên phụ phí / nội dung thêm…' : 'Gõ tên hoặc mã để tìm sản phẩm…'}" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
       <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>
       ${meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
       ${hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
