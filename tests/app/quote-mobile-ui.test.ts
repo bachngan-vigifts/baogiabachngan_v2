@@ -26,11 +26,13 @@ test('điều hướng mobile chỉ đổi panel giao diện, không thay hàm l
   assert.match(app, /\$\('#m-line-count'\)\.textContent = `\$\{editor\.rows\.length\} sản phẩm`/);
 });
 
-test('CSS chỉ chuyển bố cục báo giá ở màn hình tối đa 850px và vùng chạm đạt 44px', () => {
+test('CSS chỉ chuyển bố cục báo giá ở màn hình tối đa 850px và dùng bản điều khiển gọn', () => {
   const mobile = css.slice(css.indexOf('/* Soạn báo giá trên điện thoại'));
   assert.match(mobile, /@media \(max-width: 850px\)/);
   assert.match(mobile, /#quote-form\[data-mobile-step='info'\]/);
   assert.match(mobile, /#view-editor #line-table \{[\s\S]*?min-width: 0 !important/);
-  assert.match(mobile, /min-height: 44px/);
+  assert.match(css, /Bản gọn cho trình soạn báo giá trên điện thoại/);
+  assert.match(css, /#view-editor \.mobile-savebar \.btn \{ min-width: 72px; min-height: 40px/);
+  assert.match(css, /font-size: 13px !important/);
   assert.doesNotMatch(css.slice(0, css.indexOf('/* Soạn báo giá trên điện thoại')), /quote-mobile-panel:not/);
 });

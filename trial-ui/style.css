@@ -1622,6 +1622,40 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .void-form input { flex: 1 1 220px; min-width: 0; }
 .void-form small { flex-basis: 100%; }
 
+/* Bản gọn cho trình soạn báo giá trên điện thoại. */
+@media (max-width: 850px) {
+  #view-editor { font-size: 12px; }
+  #view-editor .editor-head { min-height: 56px; padding-block: 6px; }
+  #view-editor .editor-head .back { width: 38px; min-width: 38px; min-height: 38px; }
+  #view-editor .editor-title h1 { font-size: 15px; }
+  #view-editor .editor-title .pill { padding: 2px 7px; font-size: 9px; }
+  #view-editor .quote-mobile-more { width: 40px; min-width: 40px; height: 38px; border-radius: 10px; font-size: 20px; }
+  #view-editor .quote-actions .btn, #view-editor .editor .quote-actions .btn.primary { min-height: 38px; padding: 7px 10px; font-size: 11px; }
+  #view-editor .quote-mobile-steps { top: 56px; gap: 5px; margin-bottom: 8px; padding-block: 6px; }
+  #view-editor .quote-mobile-steps button { min-height: 38px; gap: 4px; padding: 4px 6px; border-radius: 10px; font-size: 10px; }
+  #view-editor .quote-mobile-steps button span { width: 18px; height: 18px; font-size: 9px; }
+  #view-editor .card { padding: 11px; border-radius: 12px; }
+  #view-editor .card-title { font-size: 13px; }
+  #view-editor .muted, #view-editor small, #view-editor label { font-size: 10px; }
+  #view-editor .form-grid.cols-2 { gap: 8px; }
+  #view-editor .form-grid input, #view-editor .form-grid select, #view-editor .form-grid textarea,
+  #view-editor #line-list input, #view-editor #line-list select { min-height: 38px; padding: 6px 8px; font-size: 13px !important; }
+  #view-editor .type-pick button { min-height: 44px; padding: 6px; font-size: 11px; }
+  #view-editor .quote-mobile-panel button, #view-editor .quote-mobile-panel .btn,
+  #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 38px; padding: 7px 9px; font-size: 11px; }
+  #view-editor #line-list { gap: 8px; }
+  #view-editor #line-list tr { grid-template-columns: 54px repeat(2, minmax(0, 1fr)); gap: 7px; padding: 10px; border-radius: 12px; }
+  #view-editor #line-list .name-input { min-height: 34px; font-size: 13px !important; }
+  #view-editor #line-list td[data-label]::before { font-size: 9px; }
+  #view-editor #line-list .line-actions .icon-btn { width: 34px; height: 34px; min-height: 34px; }
+  #view-editor #line-list .line-total { font-size: 13px; }
+  #view-editor .totals-card .grand dd { font-size: 18px; }
+  #view-editor .mobile-savebar { gap: 6px; padding: 7px 10px; }
+  #view-editor .mobile-savebar .btn { min-width: 72px; min-height: 40px; padding: 6px 9px; font-size: 11px; }
+  #view-editor .mobile-quote-summary small, #view-editor .mobile-quote-summary span { font-size: 9px; }
+  #view-editor .mobile-quote-summary strong { font-size: 13px; }
+}
+
 /* Công nợ: ô tuổi nợ quá hạn (3 khoảng). */
 .aging-stat { display: grid; gap: 2px; }
 .aging-stat span { font-size: .85rem; display: flex; justify-content: space-between; gap: 8px; }
