@@ -17,6 +17,7 @@ import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests } from '
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { notifyMany } from '../../notifications/api/routes.ts';
+import { sendPosOrderToClaw } from './pos-sapo.ts';
 import {
   posNow,
   posText,
@@ -481,7 +482,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
   );
   router.post(
     '/pos/checkout',
-    async (c) => json(await checkout(c.env, member(c), await readJson(c.req, 64000)), 201),
+    async (c) => {
+      const result = await checkout(c.env, member(c), await readJson(c.req, 64000));
+      if (result.replayed || c.env.sapoOrderMode !== 'n8n') return json(result, 201);
+      try { return json({ ...result, sapo: await sendPosOrderToClaw(c.env, result.id) }, 201); }
+      catch (e) { return json({ ...result, sapo: { status: 'error', message: e instanceof Error ? e.message : 'Không gửi được đơn sang Claw.' } }, 201); }
+    },
     'business',
   );
   router.get(

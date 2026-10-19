@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 import { readdirSync } from 'node:fs';
 const origin = 'https://trial.test';
-export async function setup() {
+export async function setup(opts: { viaClaw?: boolean } = {}) {
   const { db, d1, client } = await createTestDb();
   await seedStaff(d1);
   await db.insert(employees).values({
@@ -56,6 +56,11 @@ export async function setup() {
   );
   const router = createAppRouter(),
     files = memoryFileStore();
+  const hooks: { url: string; body: any }[] = [];
+  const sapoWebhookFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    hooks.push({ url: String(input), body: JSON.parse(String(init?.body || '{}')) });
+    return Response.json({ success: true, runId: 'pos-run-1' });
+  }) as typeof fetch;
   const call = async (path: string, cookie = '', method = 'GET', body?: unknown) => {
     const r = await router.handle(
       new Request(origin + '/api/staff' + path, {
@@ -63,7 +68,7 @@ export async function setup() {
         headers: { origin, cookie, 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
-      { db, files, passwordIterations: 1000, sapoOrderPush: 'off' },
+      { db, files, passwordIterations: 1000, sapoOrderPush: 'off', ...(opts.viaClaw ? { sapoOrderMode: 'n8n' as const, sapoWebhookFetch } : {}) },
     );
     return {
       status: r.status,
@@ -111,5 +116,5 @@ export async function setup() {
     tendered: 200000,
     ...extra,
   });
-  return { db, client, files, call, mgr, emp, other, ncc, registerId, open, cart };
+  return { db, client, files, hooks, call, mgr, emp, other, ncc, registerId, open, cart };
 }

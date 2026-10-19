@@ -35,6 +35,7 @@ export interface StaffEnv {
   sapoOrderMode?: 'n8n';
   sapoOrderWebhookUrl?: string;
   sapoHdktOrderWebhookUrl?: string;
+  sapoPosOrderWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
   waitUntil?: (p: Promise<unknown>) => void;

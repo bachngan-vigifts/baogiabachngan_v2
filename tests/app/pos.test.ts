@@ -146,6 +146,25 @@ test('POS: checkout idempotent, đúng tiền thối và snapshot; chọn giá k
   assert.equal(changed.status, 409);
   assert.equal((await call('/pos/bills/' + a.data.id, emp)).status, 200);
 });
+test('POS production: checkout gửi đúng số đơn, chi nhánh và nhân viên qua n8n/Claw; replay không gửi lại', async () => {
+  const f = await setup({ viaClaw: true }), s = await f.open(), b = f.cart(s.id);
+  const made = await f.call('/pos/checkout', f.emp, 'POST', b);
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  assert.equal(made.data.sapo.status, 'updating');
+  assert.equal(f.hooks.length, 1);
+  const hook = f.hooks[0]!;
+  assert.match(hook.url, /crm-pos-order-from-web-to-claw$/);
+  assert.equal(hook.body.event, 'crm_pos_create_sapo_order');
+  assert.equal(hook.body.order_no, made.data.orderNo);
+  assert.equal(hook.body.external_reference, made.data.orderNo);
+  assert.equal(hook.body.idempotency_key, `pos:${made.data.orderNo}`);
+  assert.deepEqual([hook.body.branch.name, hook.body.branch.warehouse_name], ['Quầy POS', 'Kho POS']);
+  assert.deepEqual([hook.body.responsible, hook.body.responsible_email], ['Tên emp', 'emp@x.vn']);
+  assert.equal(hook.body.items[0].sku, '00123');
+  const replay = await f.call('/pos/checkout', f.emp, 'POST', b);
+  assert.equal(replay.status, 201);
+  assert.equal(f.hooks.length, 1);
+});
 test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0', async () => {
   const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();
   assert.equal((await call('/pos/options', ncc)).status, 403);
