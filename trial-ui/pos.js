@@ -657,56 +657,118 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function chooseCustomer() {
     if (st.pending || st.busy) return;
     run(async () => {
-      const m = modal('Chọn khách hàng'),
-        input = el('input'),
-        list = el('div', 'pos-customer-list');
+      const m = modal('Chọn khách hàng');
+      m.dlg.classList.add('pos-customer-picker');
+      const search = el('div', 'pos-customer-search'),
+        input = el('input', 'pos-customer-input'),
+        suggestions = el('div', 'pos-customer-suggestions'),
+        status = el('p', 'pos-customer-hint', 'Gõ tên hoặc số điện thoại để tìm khách.'),
+        actions = el('div', 'pos-customer-actions'),
+        footer = el('div', 'pos-customer-footer');
+      const listId = 'pos-customer-options-' + key();
+      let kind = '', seq = 0, timer, matches = [], activeIndex = -1, canRetail = false;
       input.type = 'search';
-      input.placeholder = 'Tên hoặc điện thoại';
-      m.body.append(
-        input,
-        button('Khách lẻ', 'btn secondary', () => {
-          st.customer = null;
-          nodes.customer.textContent = 'Khách lẻ · Đổi';
-          invalidate();
-          m.close();
-        }),
-        button('+ Khách mới', 'btn secondary', () => {
-          m.close();
-          newCustomer();
-        }),
-        list,
-        button('Đóng', 'btn secondary', m.close),
-      );
-      const retailWrap = el('label'), retail = el('input');
-      retail.type = 'checkbox'; retailWrap.hidden = true; retailWrap.append(retail, document.createTextNode(' Chỉ khách lẻ'));
-      m.body.insertBefore(retailWrap, list);
-      let seq = 0,
-        timer;
-      const find = async () => {
-        const n = ++seq,
-          d = await api('/pos/customers?q=' + encodeURIComponent(input.value) + (retail.checked ? '&kind=retail' : ''));
-        if (n !== seq || !m.dlg.open) return;
-        retailWrap.hidden = !d.canListRetail;
-        if (!d.canListRetail) retail.checked = false;
-        list.replaceChildren(
-          ...d.customers.map((c) =>
-            button(c.name + ' · ' + c.phone, 'btn secondary', () => {
-              st.customer = c;
-              nodes.customer.textContent = c.name;
-              invalidate();
-              m.close();
-            }),
-          ),
-        );
-      };
-      retail.addEventListener('change', () => run(find));
+      input.placeholder = 'Tìm tên hoặc số điện thoại…';
+      input.autocomplete = 'off';
+      input.setAttribute('aria-label', 'Tìm khách hàng');
+      input.setAttribute('role', 'combobox');
+      input.setAttribute('aria-autocomplete', 'list');
+      input.setAttribute('aria-controls', listId);
+      suggestions.id = listId;
+      suggestions.setAttribute('role', 'listbox');
+      suggestions.hidden = true;
+      status.setAttribute('role', 'status');
+      function collapse() {
+        suggestions.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
+        input.setAttribute('aria-activedescendant', '');
+        activeIndex = -1;
+      }
+      function close() { clearTimeout(timer); ++seq; m.close(); }
+      function pick(c) {
+        st.customer = c;
+        nodes.customer.textContent = c ? c.name : 'Khách lẻ · Đổi';
+        invalidate();
+        close();
+      }
+      function filter(value) {
+        kind = value;
+        for (const [b, v] of [[retail, 'retail'], [business, 'business']]) {
+          b.setAttribute('aria-pressed', String(kind === v));
+        }
+        input.placeholder = value === 'retail' ? 'Tìm khách lẻ theo tên, điện thoại…' : 'Tìm khách B2B theo tên, điện thoại…';
+        clearTimeout(timer);
+        ++seq;
+        matches = [];
+        collapse();
+        run(find);
+        input.focus();
+      }
+      const retail = button('Khách lẻ', 'btn secondary', () => filter('retail')),
+        business = button('Khách B2B', 'btn secondary', () => filter('business')),
+        create = button('+ Khách mới', 'btn primary', () => { close(); newCustomer(); });
+      retail.hidden = true;
+      actions.append(retail, business, create);
+      footer.append(button('Khách vãng lai · Không lưu hồ sơ', 'btn ghost', () => pick(null)), button('Đóng', 'btn secondary', close));
+      search.append(input, suggestions);
+      m.body.append(el('p', 'pos-customer-subtitle', 'Tìm và chọn khách ngay trong ô bên dưới.'), actions, search, status, footer);
+      async function find() {
+        const n = ++seq, query = input.value.trim();
+        collapse();
+        matches = [];
+        if (!query) {
+          status.textContent = 'Gõ tên hoặc số điện thoại để tìm khách.';
+          return;
+        }
+        status.textContent = 'Đang tìm khách…';
+        try {
+          const d = await api('/pos/customers?q=' + encodeURIComponent(query) + (kind ? '&kind=' + kind : ''));
+          if (n !== seq || !m.dlg.open) return;
+          canRetail = !!d.canListRetail;
+          retail.hidden = !canRetail;
+          if (!canRetail && kind === 'retail') kind = '';
+          matches = d.customers;
+          suggestions.replaceChildren(...matches.map((c, i) => {
+            const option = button('', 'pos-customer-option', () => pick(c));
+            option.id = listId + '-' + i;
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', 'false');
+            option.append(el('strong', '', c.name), el('span', '', c.phone || 'Chưa có số điện thoại'));
+            return option;
+          }));
+          suggestions.hidden = !matches.length;
+          input.setAttribute('aria-expanded', String(!!matches.length));
+          status.textContent = matches.length ? 'Chọn khách trong gợi ý · ↑ ↓ để di chuyển, Enter để chọn.' : 'Không tìm thấy khách. Thử tên, số điện thoại khác hoặc tạo khách mới.';
+        } catch (e) {
+          if (n === seq && m.dlg.open) { collapse(); status.textContent = 'Không tải được khách. Vui lòng thử lại.'; }
+          throw e;
+        }
+      }
       input.addEventListener('input', () => {
+        ++seq;
+        collapse();
         clearTimeout(timer);
         timer = setTimeout(() => run(find), 200);
       });
+      input.addEventListener('focus', () => { if (input.value.trim()) run(find); });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !suggestions.hidden) { e.preventDefault(); e.stopPropagation(); collapse(); return; }
+        if (suggestions.hidden || !matches.length) return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          activeIndex = activeIndex < 0 ? (e.key === 'ArrowDown' ? 0 : matches.length - 1) : (activeIndex + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length;
+          Array.from(suggestions.children).forEach((o, i) => o.setAttribute('aria-selected', String(i === activeIndex)));
+          input.setAttribute('aria-activedescendant', listId + '-' + activeIndex);
+          suggestions.children[activeIndex].scrollIntoView?.({ block: 'nearest' });
+        } else if (e.key === 'Enter' && activeIndex >= 0) { e.preventDefault(); pick(matches[activeIndex]); }
+      });
+      m.dlg.addEventListener('close', () => { ++seq; clearTimeout(timer); });
+      collapse();
       m.show();
-      await find();
       input.focus();
+      // Load permissions without presenting an unfiltered customer directory.
+      const d = await api('/pos/customers?q=');
+      if (m.dlg.open) { canRetail = !!d.canListRetail; retail.hidden = !canRetail; }
     });
   }
   function newCustomer() {
