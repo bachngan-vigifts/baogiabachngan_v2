@@ -568,8 +568,12 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
     const payment = doc.body.children.at(-1)!;
     await payment.querySelectorAll('button').find(b => b.textContent.includes('Ship COD'))!.fire('click');
-    await payment.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in bill')!.fire('click');
+    const continueCod = payment.querySelectorAll('button').find(b => b.textContent === 'TIẾP TỤC TẠO ĐƠN COD')!;
+    assert.ok(continueCod);
+    await continueCod.fire('click');
     const modal = doc.body.children.at(-1)!;
+    assert.match(modal.textContent, /Giao Hàng Nhanh · nhập địa chỉ/);
+    assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
     const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
     const method = modal.querySelectorAll('select')[0]!, confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
     const form = modal.querySelectorAll('form')[0]!, save = modal.querySelectorAll('button').find(b => b.textContent === 'Tạo đơn COD')!;

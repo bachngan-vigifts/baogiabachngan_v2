@@ -502,7 +502,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.transferLabel = el('span', '', st.qr?.paid ? 'SePay đã xác nhận cửa hàng nhận đủ ' + money(st.qr.amount) : 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản');
     const confirm = el('label', 'pos-transfer-confirm'); confirm.append(check, nodes.transferLabel);
     nodes.qr = button('Tạo mã QR', 'btn secondary pos-create-qr', () => run(qr)); transfer.append(nodes.qr, confirm); nodes.transfer = transfer;
-    const cod = el('section', 'pos-payment-cod', 'Đơn sẽ được tạo ở trạng thái chưa thu và tiếp tục nhập thông tin giao hàng.'); nodes.cod = cod;
+    const cod = el('section', 'pos-payment-cod', 'Bước tiếp theo mở màn Giao Hàng Nhanh để nhập địa chỉ và thông tin người nhận.'); nodes.cod = cod;
     const footer = el('div', 'pos-payment-footer'); nodes.temp = button('In bill tạm', 'btn secondary', () => run(printTemporary));
     nodes.modalPay = button('Thu tiền & in bill', 'btn primary', async () => { if (st.method === 'cod') await pay(true); else await pay(false); if (!st.pending && !st.cart.length) m.close(); });
     footer.append(nodes.temp, nodes.modalPay);
@@ -515,6 +515,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.tenderBox.hidden = st.method !== 'cash';
     nodes.transfer.hidden = st.method !== 'transfer';
     if (nodes.cod) nodes.cod.hidden = st.method !== 'cod';
+    if (nodes.modalPay) nodes.modalPay.textContent = st.method === 'cod' ? 'TIẾP TỤC TẠO ĐƠN COD' : 'Thu tiền & in bill';
   }
   function add(p) {
     if (!active()) return toast('Mở ca trước khi thêm hàng.', 'err');
@@ -1163,7 +1164,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (st.busy || st.pending) return;
     if (!active() || !st.preview || !st.cart.length) return toast('Mở ca và chọn hàng trước.', 'err');
     if (cod) {
-      const m = formModal('Giao Ship COD'),
+      const m = formModal('Giao Hàng Nhanh · nhập địa chỉ'),
         address = field('Địa chỉ giao'),
         phone = field('Điện thoại người nhận', 'tel', st.customer?.phone || ''),
         receiver = field('Người nhận', 'text', st.customer?.name || ''),
@@ -1175,6 +1176,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           }).format(new Date()),
         );
       m.dlg.classList.add('pos-cod-modal');
+      const ghnIntro = el('p', 'pos-note', 'Thông tin đơn hàng và người nhận đã được lấy sẵn. Vui lòng nhập hoặc kiểm tra địa chỉ giao trước khi tạo đơn COD.');
       address.input.required = phone.input.required = receiver.input.required = true;
       const deposit = field('Đã thu trước / tạm ứng (VNĐ)', 'number', '0');
       deposit.input.min = '0'; deposit.input.max = String(st.preview.total); deposit.input.step = '1'; deposit.input.inputMode = 'numeric'; deposit.input.required = true;
@@ -1200,6 +1202,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       confirmed.addEventListener('change', updateDeposit);
 
       m.form.append(
+        ghnIntro,
         receiver.box,
         phone.box,
         address.box,
