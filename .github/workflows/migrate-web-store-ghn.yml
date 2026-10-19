@@ -1,0 +1,33 @@
+name: Migration GHN cho đơn web
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: taceqfnsorewelsbdckg
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Kiểm tra secret Supabase
+        run: test -n "$SUPABASE_ACCESS_TOKEN"
+      - name: Thêm trường vận đơn GHN
+        shell: bash
+        run: |
+          payload=$(jq -n --arg query 'alter table "web_store_orders" add column if not exists "ghn_order_code" text default '\''''' not null; alter table "web_store_orders" add column if not exists "ghn_status" text default '\''''' not null; alter table "web_store_orders" add column if not exists "ghn_sort_code" text default '\''''' not null; alter table "web_store_orders" add column if not exists "ghn_fee" double precision default 0 not null;' '{query:$query}')
+          curl --fail-with-body --silent --show-error \
+            -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "$payload"
+      - name: Xác minh đủ bốn trường
+        shell: bash
+        run: |
+          payload=$(jq -n --arg query "select count(*)::int as count from information_schema.columns where table_schema='public' and table_name='web_store_orders' and column_name in ('ghn_order_code','ghn_status','ghn_sort_code','ghn_fee')" '{query:$query}')
+          result=$(curl --fail-with-body --silent --show-error \
+            -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "$payload")
+          test "$(jq -r '.[0].count' <<<"$result")" = "4"
