@@ -102,7 +102,7 @@ test('production: Sinh đơn và Sinh HĐKT giao đúng hai hook n8n/Claw, khôn
   assert.deepEqual([s.hooks[0]!.body.event, s.hooks[0]!.body.trigger_source], ['crm_create_sapo_order', 'order']);
   assert.equal(s.hooks[0]!.body.idempotency_key, `order:${order.data.sapo.code}`);
   assert.equal(s.hooks[0]!.body.items.length, 2);
-  const callback = await s.router.handle(new Request(origin + '/api/staff/integrations/sapo/order-status', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${SECRET}` }, body: JSON.stringify({ quote_number: order.data.sapo.code, status: 'created', sapo_order_id: '4321', sapo_order_code: order.data.sapo.code }) }), s.env);
+  const callback = await s.router.handle(new Request(origin + '/api/staff/integrations/sapo/order-status', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${SECRET}` }, body: JSON.stringify({ quote_number: order.data.sapo.code, status: 'created', sapo_order_id: 4321, sapo_order_code: order.data.sapo.code }) }), s.env);
   assert.equal(callback.status, 200, await callback.text());
   assert.equal((await s.call(`/orders/${order.data.id}`, s.emp)).data.order.sapoOrderId, '4321');
 

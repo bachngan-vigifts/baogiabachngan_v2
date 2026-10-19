@@ -281,7 +281,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
-    const sapoId = text(body.sapo_order_id, 80), sapoCode = text(body.sapo_order_code, 160) || code;
+    const sapoId = text(body.sapo_order_id == null ? '' : String(body.sapo_order_id), 80), sapoCode = text(body.sapo_order_code, 160) || code;
     if (!code) throw new AppError(400, 'Thiếu số đơn / HĐKT để cập nhật trạng thái Sapo.');
     // Dry-run hoặc lỗi chỉ xác nhận callback; không ghi liên kết giả vào chứng từ.
     if (!sapoId || !['created', 'created_after_error', 'existing'].includes(status)) return json({ ok: true, ignored: true });
@@ -936,4 +936,3 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({ ok: true, orderId: p.orderId });
   }, 'business');
 }
-
