@@ -12,7 +12,7 @@ import { products, productPrices, productBarcodes, pricePolicies, warehouses } f
 import { stockBalances } from '../../inventory/schema.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { customerWithTaxCode } from '../../customers/api/routes.ts';
-import { customerPayments, salesOrders, salesOrderLines, deliveries } from '../schema.ts';
+import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlips } from '../schema.ts';
 import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests } from '../pos-schema.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
@@ -35,6 +35,25 @@ import {
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 function config(c: RouteContext<StaffEnv>) {
   if (!can(member(c), 'pos.configure')) throw new AppError(403, 'Chỉ người được cấp cấu hình POS thao tác.');
+}
+async function allowedPosRegisters(c: RouteContext<StaffEnv>) {
+  const m = member(c), db = c.env.db;
+  const regs = await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name));
+  if (m.role === 'manager' || can(m, 'pos.configure')) return { regs, ids: new Set(regs.map(r => r.id)), all: true };
+  const [[current], [position]] = await Promise.all([
+    db.select({ registerId: posShifts.registerId }).from(posShifts).where(and(eq(posShifts.memberId, m.id), isNull(posShifts.closedAt))).limit(1),
+    m.positionId ? db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1) : Promise.resolve([]),
+  ]);
+  const id = current?.registerId || defaultPosRegister(m.positionId, position?.name, regs);
+  return { regs: regs.filter(r => r.id === id), ids: new Set(id ? [id] : []), all: false };
+}
+function posOrderBucket(o: { status: string; fulfillmentMode: string; packingStatus: string; deliveryStatus: string }) {
+  if (o.status === 'cancelled') return 'cancelled';
+  if (o.status === 'delivered') return 'completed';
+  if (o.deliveryStatus === 'planned' || o.deliveryStatus === 'in_transit' || o.deliveryStatus === 'failed' || o.status === 'delivering') return 'waiting_delivery';
+  if (o.packingStatus === 'draft' || o.packingStatus === 'sent') return 'packing';
+  if (o.fulfillmentMode === 'cod') return 'waiting_delivery';
+  return 'pending';
 }
 export function registerPosRoutes(router: Router<StaffEnv>) {
   router.post(
@@ -61,6 +80,35 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       return json({ success: true, paymentRequestId: hit.request.id, alreadyConfirmed: !!hit.request.confirmedAt });
     },
     'sepay-sync',
+  );
+  router.get(
+    '/pos/orders',
+    async (c) => {
+      const m = member(c);
+      posPermission(m);
+      const scope = await allowedPosRegisters(c), requested = posText(c.url.searchParams.get('registerId'));
+      if (requested && !scope.ids.has(requested)) throw new AppError(403, 'Bạn không được xem đơn của cửa hàng này.');
+      const registerId = requested || scope.regs[0]?.id || '';
+      if (!registerId) return json({ registers: scope.regs, registerId: '', counts: { all: 0, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 }, orders: [] });
+      const q = posText(c.url.searchParams.get('q'), 200).toLowerCase(), wanted = posText(c.url.searchParams.get('status'), 40) || 'all';
+      const rows = await c.env.db.select({
+        id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, phone: salesOrders.phone,
+        ownerName: employees.name, total: salesOrders.total, status: salesOrders.status, fulfillmentMode: salesOrders.fulfillmentMode,
+        orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
+        packingStatus: sql<string>`coalesce((select ${packingSlips.status} from ${packingSlips} where ${packingSlips.orderId}=${salesOrders.id} and ${packingSlips.status}<>'cancelled' order by ${packingSlips.updatedAt} desc limit 1),'')`,
+        deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.plannedDate} desc limit 1),'')`,
+      }).from(salesOrders)
+        .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
+        .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
+        .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId)))
+        .orderBy(desc(salesOrders.createdAt)).limit(500);
+      const decorated = rows.map(o => ({ ...o, bucket: posOrderBucket(o) }));
+      const counts = { all: decorated.length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
+      for (const o of decorated) counts[o.bucket as keyof typeof counts]++;
+      const orders = decorated.filter(o => (wanted === 'all' || o.bucket === wanted) && (!q || [o.orderNo, o.customerName, o.phone, o.ownerName, o.sapoOrderCode].some(v => String(v || '').toLowerCase().includes(q))));
+      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, counts, orders });
+    },
+    'business',
   );
   router.get(
     '/pos/options',

@@ -47,6 +47,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     busy: false,
     pending: null,
     products: [],
+    orderBoard: null,
+    orderStatus: 'all',
+    orderQuery: '',
+    orderRegisterId: '',
     offset: 0,
     request: 0,
     showMenu: false,
@@ -76,6 +80,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.customer = null;
     st.preview = null;
     st.pending = null;
+    st.orderBoard = null;
+    st.orderStatus = 'all';
+    st.orderQuery = '';
+    st.orderRegisterId = '';
     try {
       st.pending = JSON.parse(sessionStorage.getItem(pendingKey()) || 'null');
     } catch {}
@@ -145,7 +153,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (!st.register || ![st.register.pricePolicyId, st.register.secondPricePolicyId].includes(st.policy))
       st.policy = st.register?.pricePolicyId || '';
     draw();
-    if (st.register) await search(false);
+    if (st.register) await Promise.all([search(false), run(loadOrderBoard)]);
     if (st.cart.length && active()) await preview();
   }
   function draw() {
@@ -189,8 +197,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       regSelect.addEventListener('change', () => {
         st.register = st.options.registers.find((r) => r.id === regSelect.value);
         st.policy = st.register.pricePolicyId;
+        st.orderRegisterId = st.register.id;
+        st.orderBoard = null;
         draw();
-        run(() => search(false));
+        run(() => Promise.all([search(false), loadOrderBoard()]));
       });
       tools.append(regSelect);
     }
@@ -209,6 +219,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       );
       page.append(warn);
     }
+    const orderBoard = el('section', 'pos-card pos-order-board');
+    nodes.orderBoard = orderBoard;
+    page.append(orderBoard);
+    renderOrderBoard();
     const layout = el('div', 'pos-layout'),
       left = el('section', 'pos-card pos-catalog'),
       right = el('section', 'pos-card pos-checkout'),
@@ -347,6 +361,65 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     drawMethods();
     drawCart();
     refreshPay();
+  }
+  const orderLabels = {
+    all: 'Tất cả đơn', pending: 'Chờ xử lý', packing: 'Đang đóng hàng',
+    waiting_delivery: 'Đợi giao', completed: 'Hoàn thành', cancelled: 'Đã hủy',
+  };
+  async function loadOrderBoard() {
+    if (!st.register) return;
+    const registerId = st.orderRegisterId || st.register.id;
+    const p = new URLSearchParams({ registerId, status: st.orderStatus });
+    if (st.orderQuery) p.set('q', st.orderQuery);
+    const d = await api('/pos/orders?' + p);
+    st.orderBoard = d;
+    st.orderRegisterId = d.registerId;
+    renderOrderBoard();
+  }
+  function renderOrderBoard() {
+    const box = nodes.orderBoard;
+    if (!box) return;
+    box.replaceChildren();
+    const head = el('div', 'pos-order-head'), title = el('div');
+    title.append(el('h2', '', 'Đơn hàng cửa hàng'), el('p', 'pos-note', 'Theo dõi đơn Lock và Minh Long theo đúng quầy phát sinh.'));
+    head.append(title);
+    const d = st.orderBoard;
+    if (d?.registers?.length > 1) {
+      const reg = select(d.registers.map(r => [r.id, r.name]), st.orderRegisterId || d.registerId);
+      reg.setAttribute('aria-label', 'Lọc đơn theo cửa hàng');
+      reg.addEventListener('change', () => { st.orderRegisterId = reg.value; run(loadOrderBoard); });
+      head.append(reg);
+    }
+    box.append(head);
+    if (!d) { box.append(el('p', 'pos-note', 'Đang tải đơn hàng…')); return; }
+    const cards = el('div', 'pos-order-counts');
+    for (const id of ['all', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled']) {
+      const b = button('', 'pos-order-count' + (st.orderStatus === id ? ' active' : ''), () => {
+        st.orderStatus = id; run(loadOrderBoard);
+      });
+      b.append(el('strong', '', d.counts[id] || 0), el('span', '', orderLabels[id]));
+      cards.append(b);
+    }
+    box.append(cards);
+    const search = el('input', 'pos-order-search');
+    search.type = 'search'; search.placeholder = 'Tìm số đơn, khách hàng, điện thoại, nhân viên…'; search.value = st.orderQuery;
+    let timer;
+    search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { st.orderQuery = search.value.trim(); run(loadOrderBoard); }, 250); });
+    box.append(search);
+    const list = el('div', 'pos-order-list');
+    if (!d.orders.length) list.append(el('p', 'pos-note', 'Không có đơn trong trạng thái này.'));
+    for (const o of d.orders) {
+      const row = el('button', 'pos-order-row'); row.type = 'button';
+      row.append(
+        el('b', '', o.orderNo),
+        el('span', '', o.customerName + ' · ' + money(o.total)),
+        el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy')),
+        el('span', 'pos-order-state', orderLabels[o.bucket]),
+      );
+      row.addEventListener('click', () => go('#/orders/' + encodeURIComponent(o.id)));
+      list.append(row);
+    }
+    box.append(list);
   }
   function drawMethods() {
     for (const b of nodes.methods.querySelectorAll('button'))
