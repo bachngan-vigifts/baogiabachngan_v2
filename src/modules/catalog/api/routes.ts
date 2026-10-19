@@ -1,3 +1,4 @@
+import { registerBarcodeImportRoutes } from './barcode-import.ts';
 import { catalogStockHooks, effectiveCatalogStock } from './stock-source.ts';
 import { and, asc, count, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -106,6 +107,7 @@ const viewerOf = (c: { state: unknown }) => (c.state as { session: SessionState 
 
 export function registerCatalogRoutes(router: Router<StaffEnv>) {
   registerProductAdminRoutes(router);
+  registerBarcodeImportRoutes(router);
   registerProductActionRoutes(router);
   /**
    * Bản chụp toàn bộ danh mục cho "Tìm nhanh sản phẩm" lọc ngay trên trình duyệt như web cũ (`GET /api/staff/catalog` bản cũ).

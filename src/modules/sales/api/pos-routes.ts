@@ -325,6 +325,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (!barcode || !/^[\x21-\x7e]+$/.test(barcode)) throw new AppError(400, 'Mã vạch không hợp lệ.');
       const [p] = await c.env.db.select({ sku: products.sku }).from(products).where(eq(products.sku, sku));
       if (!p) throw new AppError(404, 'Không có mã hàng.');
+      const [otherSku] = barcode !== sku ? await c.env.db.select({ sku: products.sku }).from(products).where(eq(products.sku, barcode)).limit(1) : [];
+      if (otherSku) throw new AppError(409, 'Barcode trùng SKU của sản phẩm khác.');
       const [used] = await c.env.db.select().from(productBarcodes).where(eq(productBarcodes.barcode, barcode));
       if (used && used.sku !== sku) throw new AppError(409, 'Mã vạch đã gắn sản phẩm khác.');
       await c.env.db.insert(productBarcodes).values({ barcode, sku }).onConflictDoNothing();
@@ -340,6 +342,11 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId,
         q = posText(c.url.searchParams.get('q'), 100);
       if (![r.pricePolicyId, r.secondPricePolicyId].includes(policy)) throw new AppError(400, 'Bảng giá không hợp lệ.');
+      const [barcodeHit] = q ? await c.env.db.select().from(productBarcodes).where(eq(productBarcodes.barcode, q)).limit(1) : [];
+      if (barcodeHit && barcodeHit.sku !== q) {
+        const [conflict] = await c.env.db.select({ sku: products.sku }).from(products).where(eq(products.sku, q)).limit(1);
+        if (conflict) throw new AppError(409, 'Mã đang trùng SKU và barcode của hai sản phẩm. Nhờ Manager kiểm tra trước khi bán.');
+      }
       const offset = Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
       const rows = await c.env.db
         .select({
@@ -359,6 +366,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             eq(products.active, true),
             eq(products.approvalStatus, 'approved'),
             sql`${productPrices.price} is not null`,
+            barcodeHit ? eq(products.sku, barcodeHit.sku) : undefined,
             q
               ? or(
                   eq(products.sku, q),
