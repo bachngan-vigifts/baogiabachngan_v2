@@ -119,3 +119,11 @@ Sau duyệt, nhân viên có ca mở tại đúng quầy xác nhận **thực nh
 Đổi hàng: thêm hàng mới vào giỏ, mở phiếu trả đã thực nhận, chọn **Dùng tiền trả để đổi hàng**. Bill mới chỉ thu thêm chênh lệch; phần dư hoàn riêng nếu khách đổi hàng rẻ hơn. Tín dụng gắn cùng khách/quầy/nhân viên, giữ 15 phút; QR còn hiệu lực hoặc đã nhận tiền giữ khoản này để chống dùng/hoàn trùng. Bill cũ và báo cáo ca cũ giữ nguyên, báo cáo ca hiện tại tách hàng trả/tiền thực hoàn/tín dụng đổi hàng.
 
 Không dùng huỷ phiếu thu để giả lập trả hàng. Phiếu hoàn thực tế không được huỷ như phiếu ghi nhầm; bản này chưa có màn đảo chứng từ hoàn. Không tự sửa Sapo, hoá đơn VAT đã phát hành hoặc chuyển tiền qua ngân hàng.
+
+### Thu trước khi tạo đơn giao COD
+
+Form Giao Ship COD hiển thị tổng đơn, đã thu trước/tạm ứng, hình thức thu và còn lại thu COD. Số tiền thu trước là số nguyên VNĐ từ 0 đến tổng đơn; server tính lại từ giỏ, không tin tổng/còn lại do client gửi. Chuyển khoản cần xác nhận thực nhận; phần này xác nhận thủ công, không tự coi kết nối SePay là đã nhận tiền. Không thay luồng QR thanh toán toàn bộ giỏ.
+
+Tạo đơn và phiếu thu trước trong cùng giao dịch, cùng khoá chống lặp. Phiếu thu (`payment_source=pos_cod_deposit`) thuộc ca đang mở; tiền mặt vào két, chuyển khoản không vào két. Tổng công nợ ban đầu giữ toàn bộ giá trị đơn, phần đã thu là phiếu thu, chuyến giao chỉ thu COD phần còn lại. Được thu đủ trước khi giao (COD còn 0). Bản in K80 tách tổng/đã thu/còn lại. Chưa giao vẫn giữ hàng theo luồng COD cũ.
+
+Huỷ phiếu thu trước ghi nhầm vẫn cần quyền/lý do, không phải hoàn tiền; phần đã huỷ được trả lại số phải thu của chuyến giao gốc. Ca đã kết giữ báo cáo và tra soát như trước. Không sửa tự động bill cũ hoặc phát sinh giao dịch ngân hàng/Sapo. Không thêm bảng, cột, quyền hoặc migration.

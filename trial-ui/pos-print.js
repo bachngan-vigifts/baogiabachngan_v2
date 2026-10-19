@@ -62,7 +62,7 @@ export function buildPosPrint(doc, data, kind = 'bill') {
       node(
         doc,
         'h3',
-        temporary ? 'BILL TẠM TÍNH - CHƯA THANH TOÁN' : cod ? 'ĐƠN SHIP COD - CHƯA THU' : 'BILL BÁN HÀNG',
+        temporary ? 'BILL TẠM TÍNH - CHƯA THANH TOÁN' : cod ? (data.depositAmount ? (data.codAmount === 0 ? 'ĐƠN GIAO HÀNG - ĐÃ THU ĐỦ' : 'ĐƠN SHIP COD - ĐÃ THU MỘT PHẦN') : 'ĐƠN SHIP COD - CHƯA THU') : 'BILL BÁN HÀNG',
       ),
     );
     if (!temporary) line('Số đơn', data.orderNo || '');
@@ -90,7 +90,11 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     if(data.exchangeCredit){line('Thanh toán bằng tiền đổi hàng',money(data.exchangeCredit));line('Khách trả thêm',money(data.payable));}
     if (data.note) sheet.append(node(doc, 'p', 'Ghi chú: ' + data.note, 'order-note'));
     if (temporary) sheet.append(node(doc, 'p', 'Chưa ghi thu, chưa trừ kho. Không phải hóa đơn VAT.', 'center'));
-    else if (cod) sheet.append(node(doc, 'p', 'Thu COD sau khi giao và cửa hàng thực nhận tiền.'));
+    else if (cod) {
+      line('Đã thu trước / tạm ứng' + (data.depositAmount ? (data.depositMethod === 'cash' ? ' (tiền mặt)' : ' (chuyển khoản)') : ''), money(data.depositAmount || 0));
+      line('Còn lại thu COD', money(data.codAmount ?? data.total));
+      sheet.append(node(doc, 'p', 'Phần COD chỉ ghi thu sau khi cửa hàng thực nhận tiền.'));
+    }
     else {
       line('Thanh toán', data.method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản đã xác nhận');
       if (data.method === 'cash') {

@@ -946,7 +946,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const me = viewer(c), body = await readJson(c.req, 2_000), reason = text(body.reason, 500);
     if (!canVoidPayment(me)) throw new AppError(403, 'Chỉ Manager hoặc người có quyền "Huỷ phiếu thu" huỷ được phiếu thu.');
     if (reason.length < 3) throw new AppError(400, 'Ghi lý do huỷ phiếu thu.');
-    const [p] = await c.env.db.select({ id: customerPayments.id, orderId: customerPayments.orderId, voidedAt: customerPayments.voidedAt, shiftId: customerPayments.shiftId }).from(customerPayments)
+    const [p] = await c.env.db.select({ id: customerPayments.id, orderId: customerPayments.orderId, voidedAt: customerPayments.voidedAt, shiftId: customerPayments.shiftId, paymentSource: customerPayments.paymentSource, amount: customerPayments.amount }).from(customerPayments)
       .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId)).where(and(eq(customerPayments.id, c.params.id!), orderScope(c))).limit(1);
     if (!p) throw new AppError(404, 'Không tìm thấy phiếu thu.');
     if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
@@ -956,6 +956,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const done = await tx.update(customerPayments).set({ voidedAt: nowIso(), voidedBy: me.id, voidReason: reason })
       .where(and(eq(customerPayments.id, p.id), isNull(customerPayments.voidedAt))).returning({ id: customerPayments.id });
     if (!done.length) throw new AppError(409, 'Phiếu thu vừa được người khác huỷ.');
+    if (p.paymentSource === 'pos_cod_deposit') {
+      const [order] = await tx.select({ snapshot: salesOrders.posSnapshot }).from(salesOrders).where(eq(salesOrders.id, p.orderId));
+      const deliveryId = JSON.parse(order?.snapshot || '{}').codDeliveryId;
+      if (deliveryId) await tx.update(deliveries).set({ codAmount: sql`${deliveries.codAmount} + ${p.amount}`, updatedAt: nowIso() })
+        .where(and(eq(deliveries.id, deliveryId), eq(deliveries.orderId, p.orderId)));
+    }
     if(p.shiftId) await voidClosedCashEffect(tx,p.shiftId,me.id,`Huỷ phiếu thu ${p.id}: ${reason}`);
     await cashAudit(tx,me.id,'void','payments',p.id,{reason,shiftId:p.shiftId});
     });

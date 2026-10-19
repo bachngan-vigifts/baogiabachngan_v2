@@ -326,6 +326,12 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     shiftId = posText(b.shiftId),
     mode = b.fulfillmentMode === 'cod' ? 'cod' : 'counter',
     method = b.method === 'cash' ? 'cash' : b.method === 'transfer' ? 'transfer' : null;
+  const depositAmount = posMoney(b.depositAmount ?? 0, 'Tiền thu trước COD');
+  if (depositAmount > 0 && mode !== 'cod') throw new AppError(400, 'Thu trước chỉ áp dụng cho đơn giao COD.');
+  if (depositAmount > 0 && !method) throw new AppError(400, 'Chọn hình thức thu trước COD.');
+  if (depositAmount > 0 && method === 'transfer' && b.confirmed !== true)
+    throw new AppError(400, 'Xác nhận cửa hàng đã thực nhận tiền chuyển khoản thu trước.');
+  const requestHash = sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method, ...(depositAmount ? { depositAmount } : {}) }));
   if (!method && mode !== 'cod') throw new AppError(400, 'Chọn tiền mặt hoặc chuyển khoản.');
   if (method === 'transfer' && b.confirmed !== true && mode !== 'cod')
     throw new AppError(400, 'Nhân viên cần xác nhận đã thực nhận chuyển khoản.');
@@ -336,7 +342,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     if (prior) {
       if (prior.shiftId !== s.id) throw new AppError(409, 'Mã giao dịch đã dùng ở ca khác.');
       const snap = JSON.parse(prior.posSnapshot ?? '{}');
-      if (snap.requestHash !== sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method })))
+      if (snap.requestHash !== requestHash)
         throw new AppError(409, 'Mã giao dịch đã dùng cho giỏ khác.');
       return { id: prior.id, orderNo: prior.orderNo, ...snap, replayed: true };
     }
@@ -344,6 +350,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     if (posText(b.registerId) !== s.registerId) throw new AppError(400, 'Quầy không khớp ca.');
     const c = await calculateCart(tx, b);
     if (c.exchange.amount && mode === 'cod') throw new AppError(400, 'Đổi hàng thanh toán tại quầy, không chuyển COD.');
+    if (depositAmount > c.total) throw new AppError(400, 'Tiền thu trước không được vượt tổng đơn.');
     if (c.total === 0 && mode === 'cod') throw new AppError(400, 'Đơn COD phải có số tiền cần thu.');
     await assertOpening(tx, c.register.warehouseId);
     let qr: typeof posPaymentRequests.$inferSelect | undefined;
@@ -377,7 +384,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       if (l.qty > available + 1e-9)
         throw new AppError(409, `${l.name}: chỉ còn khả dụng ${Math.max(0, available)}.`, 'POS_STOCK_SHORT');
     }
-    const tendered = method === 'cash' && mode === 'counter' ? posMoney(b.tendered, 'Tiền khách đưa') : c.payable;
+    const tendered = mode === 'cod' ? depositAmount : method === 'cash' ? posMoney(b.tendered, 'Tiền khách đưa') : c.payable;
     if (mode === 'counter' && tendered < c.payable) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
     const now = posNow(),
       date = vietnamDate().iso;
@@ -403,6 +410,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       discount: c.discount,
       total: c.total,
       method: mode === 'cod' ? 'cod' : method,
+      ...(depositAmount ? { depositAmount, depositMethod: method, codAmount: c.total - depositAmount, codDeliveryId: '' } : {}),
       tendered,
       change: mode === 'counter' ? tendered - c.payable : 0,
       ...(c.exchange.amount ? { exchangeCredit: c.exchange.amount, payable: c.payable } : {}),
@@ -410,7 +418,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       memberName: m.name,
       pricePolicyId: c.canonical.pricePolicyId,
       vatEnabled: c.canonical.vatEnabled,
-      requestHash: sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method })),
+      requestHash,
     };
     await tx.insert(salesOrders).values({
       id,
@@ -503,7 +511,16 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       const ship = b.delivery && typeof b.delivery === 'object' ? (b.delivery as Record<string, unknown>) : {};
       if (!posText(ship.address)) throw new AppError(400, 'Nhập địa chỉ giao COD.');
       const d = await createScheduledDelivery(tx, id, { ...ship, plannedDate: ship.plannedDate || date }, m.id);
-      await tx.update(deliveries).set({ codAmount: c.total }).where(eq(deliveries.id, d.id));
+      await tx.update(deliveries).set({ codAmount: c.total - depositAmount }).where(eq(deliveries.id, d.id));
+      if (depositAmount > 0) {
+        snapshot.codDeliveryId = d.id;
+        await tx.update(salesOrders).set({ posSnapshot: JSON.stringify(snapshot) }).where(eq(salesOrders.id, id));
+        await tx.insert(customerPayments).values({
+          id: crypto.randomUUID(), orderId: id, scheduleId, customerId: c.customer?.id,
+          shiftId: s.id, amount: depositAmount, method: method!, requestKey: key,
+          paymentSource: 'pos_cod_deposit', note: 'Thu trước / tạm ứng Ship COD', paidAt: date, createdBy: m.id, createdAt: now,
+        });
+      }
     }
     if (c.exchange.allocation) {
       const allocation = c.exchange.allocation, paymentId = crypto.randomUUID();
@@ -512,7 +529,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       await cashAudit(tx,m.id,'apply-exchange','pos-returns',allocation.returnId,{allocationId:allocation.id,orderId:id,amount:allocation.amount});
     }
     if (qr) await tx.update(posPaymentRequests).set({ confirmedAt: now }).where(eq(posPaymentRequests.id, qr.id));
-    await cashAudit(tx, m.id, 'sale', 'orders', id, { orderNo, total: c.total, method, mode, shiftId: s.id });
+    await cashAudit(tx, m.id, 'sale', 'orders', id, { orderNo, total: c.total, method, mode, shiftId: s.id, ...(depositAmount ? { depositAmount, codAmount: c.total - depositAmount } : {}) });
     return { id, orderNo, ...snapshot, replayed: false };
   });
 }

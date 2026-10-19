@@ -727,3 +727,17 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-return-card select { width:100%; min-height:40px; border:1px solid #cad6e3; border-radius:8px; background:white; padding:8px; }
 .pos-return-card input[type=checkbox] { width:20px; height:20px; }
 @media(max-width:600px){.pos-return-line {grid-template-columns:1fr}.pos-return-head{align-items:flex-start}.pos-return-card{padding:12px}.pos-return-modal .pos-modal-content{padding:16px}}
+
+.pos-cod-remaining {
+  padding: 12px;
+  border: 1px solid #a6dfbb;
+  border-radius: 8px;
+  background: #e0f5e8;
+  color: #14532d;
+  font-weight: 700;
+}
+
+.pos-cod-modal form { padding: 0; }
+.pos-cod-modal form > button { margin-right: 8px; }
+.pos-cod-confirm { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+.pos-cod-confirm input[type=checkbox] { width: 18px; min-width: 18px; height: 18px; min-height: 18px; flex: none; padding: 0; margin: 2px 0 0; }
