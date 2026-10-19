@@ -567,6 +567,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     await new Promise(r => setTimeout(r, 230));
     await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
     const payment = doc.body.children.at(-1)!;
+    assert.ok(payment.querySelectorAll('button').find(b => b.className.includes('pos-modal-close')));
     await payment.querySelectorAll('button').find(b => b.textContent.includes('Ship COD'))!.fire('click');
     const continueCod = payment.querySelectorAll('button').find(b => b.textContent === 'TIẾP TỤC TẠO ĐƠN COD')!;
     assert.ok(continueCod);

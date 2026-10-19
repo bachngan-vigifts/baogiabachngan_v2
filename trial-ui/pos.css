@@ -377,6 +377,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-modal-content {
   padding: 22px;
 }
+.pos-modal-content { position: relative; }
+.pos-modal-close { position: absolute; z-index: 3; top: 12px; right: 12px; width: 40px; height: 40px; border: 1px solid #cfd9d3; border-radius: 10px; background: #fff; color: #4c5e54; font-size: 24px; }
 .pos-modal h2 {
   margin-top: 0;
 }
@@ -806,7 +808,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 
 .pos-payment-modal { width: min(760px, 94vw); border-radius: 20px; box-shadow: 0 26px 80px #10251a4d; }
 .pos-payment-modal .pos-modal-content { padding: 0; }
-.pos-payment-modal h2 { display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 20px 24px; background: #e7f6ec; color: #145c35; font-size: 21px; }
+.pos-payment-modal h2 { display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 20px 72px 20px 24px; background: #e7f6ec; color: #145c35; font-size: 21px; }
 .pos-payment-meta { color: #68756e; font-size: 13px; font-weight: 500; }
 .pos-payment-due { display: grid; justify-items: center; gap: 3px; padding: 20px 20px 16px; }
 .pos-payment-due span { color: #6b746f; }
@@ -899,7 +901,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-total strong { font-size: 17px; }
   .pos-main-actions .btn { min-height: 42px; font-size: 11px; }
   .pos-open-payment { font-size: 12px !important; }
-  .pos-payment-modal h2 { padding: 12px; font-size: 15px; }
+  .pos-payment-modal h2 { padding: 12px 56px 12px 12px; font-size: 15px; }
+  .pos-modal-close { top: 8px; right: 8px; width: 36px; height: 36px; font-size: 21px; }
   .pos-payment-due { padding: 12px 12px 10px; }
   .pos-payment-due strong { font-size: 24px; }
   .pos-payment-methods { gap: 7px; padding: 0 12px 10px; }

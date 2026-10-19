@@ -127,13 +127,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function modal(title) {
     const dlg = el('dialog', 'pos-modal'),
       body = el('div', 'pos-modal-content');
-    body.append(el('h2', '', title));
-    dlg.append(body);
-    document.body.append(dlg);
     const close = () => {
       dlg.close();
       dlg.remove();
     };
+    const closeButton = button('×', 'icon-btn pos-modal-close', close);
+    closeButton.setAttribute('aria-label', 'Đóng');
+    closeButton.title = 'Đóng';
+    body.append(el('h2', '', title), closeButton);
+    dlg.append(body);
+    document.body.append(dlg);
     dlg.addEventListener('close', () => dlg.remove());
     dlg.addEventListener('cancel', close);
     return { dlg, body, close, show: () => dlg.showModal() };
