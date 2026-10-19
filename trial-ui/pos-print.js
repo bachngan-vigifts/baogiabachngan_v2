@@ -75,7 +75,9 @@ export function buildPosPrint(doc, data, kind = 'bill') {
         );
       line('Thành tiền', money(item.total));
     }
-    line('Tiền trước thuế', money(data.subtotal));
+    if (data.fees?.service?.amount) line(data.fees.service.name + ' (trước thuế)', money(data.fees.service.subtotal));
+    if (data.fees?.shippingFee) line('Phí ship (không VAT)', money(data.fees.shippingFee));
+    line('Tiền trước thuế (gồm phí)', money(data.subtotal));
     line('VAT', money(data.tax));
     line('TỔNG CỘNG', money(data.total), true);
     if (temporary) sheet.append(node(doc, 'p', 'Chưa ghi thu, chưa trừ kho. Không phải hóa đơn VAT.', 'center'));

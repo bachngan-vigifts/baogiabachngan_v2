@@ -88,3 +88,15 @@ Chi tiết đơn COD có nút **Thu COD** cho chuyến đã giao còn tiền ch�
 ## Chọn khách tại POS
 
 Popup chọn khách dùng ô tìm kiếm có gợi ý theo tên/số điện thoại, không hiện sẵn danh bạ. Ba nút **Khách lẻ – Khách B2B – Khách mới** tách rõ: hai nút đầu lọc kết quả tìm theo phân loại khách đã có (`kind=retail`/`business`), nút cuối mở form tạo nhanh hiện tại. Khách B2B là nhóm không đánh dấu `is_retail`; không tự phân loại lại khách cũ. Nút Khách lẻ chỉ hiện theo quyền danh sách khách lẻ do server trả về. **Khách vãng lai · Không lưu hồ sơ** giữ luồng bán không gắn khách. Có thể dùng phím ↑/↓ và Enter để chọn gợi ý. Không đổi dữ liệu, schema hoặc quyền.
+
+## Phí dịch vụ và phí ship
+
+Trong giỏ có **+ Thêm khoản phí**: một dòng tên tự nhập (ví dụ Phí in, Phí gói quà) và số tiền nguyên VNĐ không âm; có nút Bỏ phí. Ngay trên Tổng cộng có **Phí ship · Không VAT**. Phí dịch vụ theo bảng giá: giá lẻ + VAT là số khách trả đã gồm VAT theo quầy; giá lẻ không thêm VAT. Phí ship không tính VAT. Chiết khấu sản phẩm không áp dụng lên hai khoản phí.
+
+Server tính lại phí và tổng; tiền trước thuế gồm hàng sau CK, phí dịch vụ trước thuế và ship; tổng = tiền trước thuế + VAT. Lưu chi tiết `fees` trong `sales_orders.pos_snapshot` hiện có, và phí đầu vào trong canonical QR/request hash. Không thêm bảng/cột/migration/quyền. Bill cũ không phí giữ input hash cũ; phí đổi không được dùng QR cũ hay replay checkoutKey cũ.
+
+Bill tạm/K80 và bản in/Excel đơn có tách phí. Chi tiết đơn có dòng phí riêng bằng DOM text; phí không phải SKU, không thêm số lượng vào kho/giao hàng và không tạo phát sinh tồn. Khoản thu, công nợ, COD, báo cáo ca lấy tổng đã gồm phí. COD chưa thu vẫn không vào két. Manager đổi SL/giá đơn COD giữ phí gốc, cập nhật đồng thời lịch thu và COD chuyến giao. Sau bán xong/đổi tài khoản, hai khoản phí trở về trống.
+
+Payload POS → n8n/Claw bổ sung `additional_fees` (dịch vụ gồm amount/subtotal/tax_amount/tax_percent; ship amount/tax_percent=0), giữ tổng đã gồm phí và diễn giải trong notes. Đã kiểm payload bằng adapter giả; cần kiểm dry-run downstream n8n/Claw trước khi kết luận khoản phí đã được ghi đúng ở Sapo. Không kiểm thử bằng đơn thật.
+
+Cụm **Đơn hàng cửa hàng** nằm cuối trang, sau danh mục sản phẩm và thanh toán; giữ bộ lọc, liên kết và nguồn đồng bộ hiện có. Đơn website (`web_store_orders`) hiện chỉ xem thông tin/theo dõi trạng thái: các bước xử lý đơn, tạo vận đơn và đối soát thực hiện trên hệ thống nguồn; không tự tạo bản sao đơn bán CRM khi bấm xem.

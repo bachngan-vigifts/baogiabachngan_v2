@@ -41,6 +41,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     policy: '',
     cart: [],
     customer: null,
+    feeName: '', feeAmount: '', shippingFee: '', feeVisible: false,
     preview: null,
     method: 'cash',
     qr: null,
@@ -78,6 +79,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.policy = '';
     st.cart = [];
     st.customer = null;
+    st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false;
     st.preview = null;
     st.pending = null;
     st.orderBoard = null;
@@ -99,6 +101,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     shiftId: st.shift.id,
     pricePolicyId: st.policy,
     customerId: st.customer?.id || '',
+    ...(st.feeName || st.feeAmount || st.shippingFee ? { feeName: st.feeName, feeAmount: st.feeAmount || 0, shippingFee: st.shippingFee || 0 } : {}),
     rows: st.cart.map((x) => ({
       sku: x.sku,
       qty: x.qty,
@@ -221,7 +224,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }
     const orderBoard = el('section', 'pos-card pos-order-board');
     nodes.orderBoard = orderBoard;
-    page.append(orderBoard);
     renderOrderBoard();
     const layout = el('div', 'pos-layout'),
       left = el('section', 'pos-card pos-catalog'),
@@ -285,6 +287,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     right.append(priceField);
     nodes.lines = el('div', 'pos-lines');
     right.append(nodes.lines);
+    drawFees(right);
     nodes.totals = el('div', 'pos-totals');
     right.append(nodes.totals);
     const methods = el('div', 'pos-pay-method');
@@ -356,7 +359,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       help,
     );
     layout.append(left, right);
-    page.append(layout);
+    page.append(layout, orderBoard);
     root.append(page);
     drawMethods();
     drawCart();
@@ -528,15 +531,39 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }
     updateTotals();
   }
+  function drawFees(right) {
+    const box = el('section', 'pos-extra-fees'), service = el('div', 'pos-service-fee');
+    service.hidden = !st.feeVisible;
+    const name = field('Khoản phí'), amount = field('Số tiền phí', 'number', st.feeAmount), shipping = field('Phí ship · Không VAT', 'number', st.shippingFee);
+    name.input.value = st.feeName;
+    name.input.placeholder = 'Ví dụ: Phí in, phí gói quà…';
+    name.input.maxLength = 200;
+    for (const [f, property] of [[name, 'feeName'], [amount, 'feeAmount'], [shipping, 'shippingFee']]) {
+      if (property !== 'feeName') { f.input.min = '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; f.input.placeholder = '0 đ'; }
+      f.input.addEventListener('input', () => { st[property] = f.input.value; invalidate(); });
+    }
+    const add = button('+ Thêm khoản phí', 'btn secondary small', () => { st.feeVisible = true; service.hidden = false; add.hidden = true; name.input.focus(); });
+    add.hidden = st.feeVisible;
+    service.append(name.box, amount.box, button('Bỏ phí', 'btn ghost small', () => {
+      st.feeVisible = false; st.feeName = ''; st.feeAmount = '';
+      name.input.value = ''; amount.input.value = ''; service.hidden = true; add.hidden = false; invalidate();
+    }));
+    box.append(add, service, el('p', 'pos-note', 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.'));
+    right.append(box);
+    nodes.feeControls = box;
+    nodes.shippingField = shipping.box;
+  }
   function updateTotals() {
     nodes.totals.replaceChildren();
     const d = st.preview;
     for (const [label, value] of [
-      ['Tiền trước thuế', d ? money(d.subtotal) : '—'],
+      ['Tiền hàng trước thuế', d ? money(d.subtotal - (d.fees?.subtotal || 0)) : '—'],
       ['Chiết khấu từng dòng', d ? '−' + money(d.discount) : '—'],
+      ...(d?.fees?.service?.amount ? [[d.fees.service.name + ' (trước thuế)', money(d.fees.service.subtotal)]] : []),
       ['VAT', d ? money(d.tax) : '—'],
       ['Tổng cộng', d ? money(d.total) : st.cart.length ? 'Đang tính…' : '0 đ'],
     ]) {
+      if (label === 'Tổng cộng') nodes.totals.append(nodes.shippingField);
       const row = el('div', 'pos-total-row' + (label === 'Tổng cộng' ? ' pos-total' : ''));
       row.append(el('span', '', label), el('strong', '', value));
       nodes.totals.append(row);
@@ -557,6 +584,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.lines?.classList.toggle('pos-busy', !!st.pending || st.busy);
     for (const i of nodes.lines?.querySelectorAll('input,select,button') || []) i.disabled = !!st.pending || st.busy;
     nodes.policy.disabled = !!st.pending || st.busy;
+    for (const i of [...(nodes.feeControls?.querySelectorAll('input,button') || []), ...(nodes.shippingField?.querySelectorAll('input') || [])]) i.disabled = !!st.pending || st.busy;
   }
   async function preview() {
     const seq = ++previewSeq;
@@ -922,6 +950,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   }
   function reportRows(container, d) {
     for (const [k, v] of shiftSummaryRows(d)) {
+      if (label === 'Tổng cộng') nodes.totals.append(nodes.shippingField);
       const row = el('div', 'pos-total-row');
       row.append(el('span', '', k), el('b', '', v));
       container.append(row);
@@ -1080,6 +1109,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       persistPending(null);
       st.cart = [];
       st.customer = null;
+      st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false;
       st.preview = null;
       st.qr = null;
       st.policy = st.register.pricePolicyId;

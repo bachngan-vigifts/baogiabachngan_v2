@@ -1,3 +1,4 @@
+import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { asc, eq } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -43,6 +44,7 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
   if (!row) throw new AppError(404, 'Không tìm thấy đơn POS vừa tạo.', 'POS_ORDER_NOT_FOUND');
   const lines = await env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
   const o = row.order;
+  const fees = snapshotPosFees(JSON.parse(o.posSnapshot || '{}'));
   const payload = {
     event: 'crm_pos_create_sapo_order',
     trigger_source: 'pos',
@@ -59,11 +61,12 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
     responsible_sapo_id: /^\d+$/.test(row.sapoAccountId || '') ? Number(row.sapoAccountId) : null,
     customer: { local_id: o.customerId, customer_code: row.customerCode || '', name: o.customerName, contact: o.contact, phone: o.phone, email: o.email, tax_code: o.taxCode, address: o.address },
     items: lines.map(l => ({ line: l.lineNo, sku: l.sku, name: l.name, unit: l.unit, quantity: l.qty, unit_price: l.unitPrice, discount_type: l.discountType, discount_amount: l.discountAmount, price_after_discount: l.unitPrice, line_total: l.amount, tax_percent: l.taxRate })),
+    ...(fees.total ? { additional_fees: { service: { name: fees.service.name, amount: fees.service.amount, subtotal: fees.service.subtotal, tax_amount: fees.service.tax, tax_percent: fees.service.taxRate }, shipping: { amount: fees.shippingFee, tax_percent: 0 } } } : {}),
     subtotal: o.subtotal,
     vat_amount: o.tax,
     total: o.total,
     fulfillment_mode: o.fulfillmentMode,
-    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}`,
+    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + (fees.service.amount ? ` · ${fees.service.name}: ${fees.service.amount}đ (VAT ${fees.service.taxRate}%)` : '') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (không VAT)` : ''),
   };
   let response: Response;
   try {

@@ -674,3 +674,12 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-customer-actions { gap: 8px; }
   .pos-customer-actions .btn { padding-inline: 10px; font-size: 13px; }
 }
+
+.pos-extra-fees { border-top: 1px solid #e3e7ee; padding-top: 12px; margin-top: 8px; }
+.pos-service-fee { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(80px, 1fr) auto; align-items: end; gap: 8px; }
+.pos-service-fee .pos-field { min-width: 0; margin-bottom: 0; }
+.pos-service-fee .btn { min-height: 42px; }
+.pos-totals > .pos-field { display: grid; grid-template-columns: 1fr minmax(100px, 130px); align-items: center; gap: 8px; margin: 8px 0; }
+.pos-totals > .pos-field input { text-align: right; }
+.pos-order-board { margin-top: 18px; }
+@media (max-width: 480px) { .pos-service-fee { grid-template-columns: minmax(0, 1fr) 110px; } .pos-service-fee .btn { grid-column: 1 / -1; justify-self: end; } }

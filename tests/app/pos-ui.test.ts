@@ -384,3 +384,45 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     await new Promise(r => setTimeout(r, 230));
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
+
+test('POS: bảng đơn nằm cuối, thêm/bỏ một dòng phí và phí ship gửi server, bill K80 có phí', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: any[] = [];
+    const fees = { service: { name: '<script>Phí in</script>', amount: 10800, subtotal: 10000, tax: 800, taxRate: 8 }, shippingFee: 20000, subtotal: 30000, tax: 800, total: 30800 };
+    const api = async (path: string, method = 'GET', body?: any) => {
+      calls.push({ path, method, body });
+      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
+      if (path === '/pos/preview') return { ...sample, fees, subtotal: 210000, tax: 15200, total: 225200 };
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    assert.equal(root.children[0]!.children.at(-1)!.className, 'pos-card pos-order-board');
+    await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
+    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm khoản phí')!.fire('click');
+    const fee = root.querySelectorAll('div').find(e => e.className === 'pos-service-fee')!;
+    assert.equal(fee.hidden, false);
+    const [name, amount] = fee.querySelectorAll('input');
+    name!.value = 'Phí in'; await name!.fire('input');
+    amount!.value = '10800'; await amount!.fire('input');
+    const shipping = root.querySelectorAll('label').find(e => e.textContent === 'Phí ship · Không VAT')!.querySelectorAll('input')[0]!;
+    shipping.value = '20000'; await shipping.fire('input');
+    await new Promise(r => setTimeout(r, 230));
+    const request = calls.filter(c => c.path === '/pos/preview').at(-1)!;
+    assert.equal(request.body.feeName, 'Phí in'); assert.equal(request.body.feeAmount, '10800'); assert.equal(request.body.shippingFee, '20000');
+    const totals = root.querySelectorAll('div').find(e => e.className === 'pos-totals')!;
+    assert.equal(totals.children.at(-2)!.tag, 'label', 'Ô phí ship ngay trên tổng cộng');
+    const printed = buildPosPrint(doc, { ...sample, fees });
+    assert.match(printed.textContent, /Phí ship \(không VAT\)20.000/);
+    assert.ok(printed.textContent.includes('<script>Phí in</script>'));
+    assert.equal(printed.querySelectorAll('script').length, 0);
+    await root.querySelectorAll('button').find(b => b.textContent === 'Bỏ phí')!.fire('click');
+    assert.equal(fee.hidden, true);
+    await new Promise(r => setTimeout(r, 230));
+    const cleared = calls.filter(c => c.path === '/pos/preview').at(-1)!.body;
+    assert.equal(cleared.feeName, ''); assert.equal(cleared.feeAmount, 0); assert.equal(cleared.shippingFee, '20000');
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});

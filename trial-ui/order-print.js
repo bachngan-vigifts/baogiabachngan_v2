@@ -28,6 +28,7 @@ export function orderPrintData(d, me = '') {
     customerCode: o.customerCode ? `${o.customerCode}: ${o.customerName}` : o.customerName, taxCode: o.taxCode || '', address: o.address || '',
     contact: [o.contact, o.phone].filter(Boolean).join(' · '), orderDate: dmy(o.orderDate), expectedDeliveryDate: dmy(o.expectedDeliveryDate),
     lines: d.lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty || 0, date: dmy(o.expectedDeliveryDate), note: '', unitPrice: l.unitPrice, taxRate: l.taxRate, amount: l.amount })),
+    charges: [...(o.posFees?.service?.amount ? [{ name: o.posFees.service.name, amount: o.posFees.service.subtotal, taxRate: o.posFees.service.taxRate }] : []), ...(o.posFees?.shippingFee ? [{ name: 'Phí ship (không VAT)', amount: o.posFees.shippingFee, taxRate: 0 }] : [])],
     subtotal: o.subtotal, tax: o.tax, total: o.total, note: o.note || '',
     signDate: `Ngày ${String(today.getDate()).padStart(2, '0')} Tháng ${String(today.getMonth() + 1).padStart(2, '0')} Năm ${today.getFullYear()}`,
     // Người đặt: tên người liên hệ của khách (không ghi tên công ty); trống thì để ký tay.
@@ -54,6 +55,7 @@ export function orderSheetHtml(p, { prices = false, edit = false } = {}) {
       ${p.lines.map((l, i) => `<tr><td class="c">${i + 1}</td><td${ce(`lines.${i}.sku`)}>${esc(l.sku)}</td><td${ce(`lines.${i}.name`)}>${esc(l.name)}</td><td class="c"${ce(`lines.${i}.unit`)}>${esc(l.unit)}</td>
         <td class="n">${num(l.qty)}</td><td class="n">${l.delivered ? num(l.delivered) : ''}</td>${prices ? `<td class="n">${vnd(l.unitPrice)}</td><td class="n">${vnd(l.amount)}</td>` : ''}
         <td class="c"${ce(`lines.${i}.date`)}>${esc(l.date)}</td><td${ce(`lines.${i}.note`)}>${esc(l.note)}</td></tr>`).join('')}
+      ${prices ? (p.charges || []).map(c => `<tr><td colspan="7">${esc(c.name)} (VAT ${num(c.taxRate)}%)</td><td class="n">${vnd(c.amount)}</td><td colspan="2"></td></tr>`).join('') : ''}
       <tr class="ddh-sum"><td colspan="4" class="c"><b>Tổng cộng</b></td><td class="n"><b>${num(totalQty)}</b></td><td></td>${prices ? `<td></td><td class="n"><b>${vnd(p.subtotal)}</b></td>` : ''}<td></td><td></td></tr>
       ${prices ? `<tr class="ddh-sum"><td colspan="7" class="n">Thuế VAT</td><td class="n">${vnd(p.tax)}</td><td colspan="2"></td></tr><tr class="ddh-sum"><td colspan="7" class="n"><b>Tổng thanh toán</b></td><td class="n"><b>${vnd(p.total)}</b></td><td colspan="2"></td></tr>` : ''}
     </tbody></table>
@@ -169,6 +171,10 @@ export async function downloadOrderExcel(p, { prices = false } = {}) {
     vals.forEach((v, j) => { const c = put(`${ws.getColumn(j + 1).letter}${r}`, v, { align: [0, 3].includes(j) || cols[j][0] === 'Ngày giao' ? 'center' : typeof v === 'number' ? 'right' : 'left' }); c.border = border; if (typeof v === 'number' && j >= 4) c.numFmt = j >= 6 && prices && j <= 7 ? '#,##0 "đ"' : '#,##0.###'; });
   });
   let r = hr + 1 + p.lines.length;
+  if (prices) for (const charge of p.charges || []) {
+    ws.mergeCells(`A${r}:G${r}`); put(`A${r}`, charge.name + ' (VAT ' + charge.taxRate + '%)');
+    const c = put(`H${r}`, charge.amount, { align: 'right' }); c.numFmt = '#,##0 \"đ\"'; r++;
+  }
   ws.mergeCells(`A${r}:D${r}`); put(`A${r}`, 'Tổng cộng', { bold: true, align: 'center' });
   const tq = put(`E${r}`, p.lines.reduce((s, l) => s + Number(l.qty || 0), 0), { bold: true, align: 'right' }); tq.numFmt = '#,##0.###';
   if (prices) { const c = put(`H${r}`, p.subtotal, { bold: true, align: 'right' }); c.numFmt = '#,##0 "đ"'; }
