@@ -223,16 +223,22 @@ test('WooCommerce webhook: nhập/cập nhật một lần và hiện đúng qu�
   const order = { id: 456, number: '456', status: 'processing', total: '1250000', currency: 'VND', date_created: '2026-10-19T10:00:00',
     billing: { first_name: 'Nguyễn', last_name: 'An', phone: '0901000000', email: 'an@example.com' },
     shipping: { address_1: '1 Nguyễn Trãi', city: 'Cần Thơ' }, payment_method_title: 'Chuyển khoản',
-    line_items: [{ sku: '072017000', name: 'Tô sứ', quantity: 2, total: '500000' }] };
+    line_items: [{ sku: '072017000', name: 'Tô sứ', quantity: 2, total: '500000' }],
+    meta_data: [{ key: '_lnl_ghn_order_code', value: 'GML123456' }, { key: '_lnl_ghn_last_status', value: 'transporting' },
+      { key: '_lnl_ghn_sort_code', value: 'C-01' }, { key: '_lnl_ghn_total_fee', value: '32000' }] };
   assert.equal((await f.call('/integrations/woocommerce/minhlong/order?token=bad', '', 'POST', order)).status, 401);
   const first = await f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token', '', 'POST', order);
   assert.equal(first.status, 200, JSON.stringify(first.data));
-  assert.equal((await f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token', '', 'POST', { ...order, status: 'completed' })).status, 200);
+  assert.equal((await f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token', '', 'POST', { ...order, status: 'completed',
+    meta_data: order.meta_data.map(x => x.key === '_lnl_ghn_last_status' ? { ...x, value: 'delivered' } : x) })).status, 200);
   const board = await f.call(`/pos/orders?registerId=${reg.data.id}`, f.mgr);
   assert.equal(board.data.counts.all, 1);
   assert.equal(board.data.counts.completed, 1);
   assert.equal(board.data.orders[0].orderNo, '456');
   assert.equal(board.data.orders[0].external, true);
+  assert.equal(board.data.orders[0].ghnOrderCode, 'GML123456');
+  assert.equal(board.data.orders[0].ghnStatus, 'delivered');
+  assert.equal(board.data.orders[0].ghnFee, 32000);
 });
 test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0', async () => {
   const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();

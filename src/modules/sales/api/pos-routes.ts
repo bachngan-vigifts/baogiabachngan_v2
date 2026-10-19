@@ -59,7 +59,11 @@ function posOrderBucket(o: { status: string; fulfillmentMode: string; packingSta
   if (o.fulfillmentMode === 'cod') return 'waiting_delivery';
   return 'pending';
 }
-const webBucket = (status: string) => {
+const webBucket = (status: string, ghnStatus = '') => {
+  const g = ghnStatus.toLowerCase();
+  if (g === 'delivered') return 'completed';
+  if (['return', 'returned', 'returning', 'return_transporting', 'return_sorting', 'waiting_to_return'].includes(g)) return 'cancelled';
+  if (['ready_to_pick', 'picking', 'money_collect_picking', 'picked', 'storing', 'transporting', 'sorting', 'delivering', 'delivery_fail', 'delivery_failed', 'exception'].includes(g)) return 'waiting_delivery';
   const s = status.toLowerCase();
   if (['cancelled', 'refunded', 'failed', 'trash'].includes(s)) return 'cancelled';
   if (['completed'].includes(s)) return 'completed';
@@ -87,11 +91,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const lines = Array.isArray(b.line_items) ? b.line_items.slice(0, 300).map((x: Record<string, unknown>) => ({
       sku: posText(x.sku, 100), name: posText(x.name, 500), quantity: Number(x.quantity) || 0, total: Number(x.total) || 0,
     })) : [];
+    const metadata = new Map<string, unknown>();
+    if (Array.isArray(b.meta_data)) for (const row of b.meta_data) {
+      if (row && typeof row === 'object') metadata.set(posText((row as Record<string, unknown>).key, 200), (row as Record<string, unknown>).value);
+    }
     const now = posNow(), fields = {
       orderNo: number, registerId: register.id, status: posText(b.status, 50) || 'pending',
       customerName: fullName, phone: posText(billing.phone, 60), email: posText(billing.email, 200), address,
       total: Math.max(0, Number(b.total) || 0), currency: posText(b.currency, 20) || 'VND', paymentMethod: posText(b.payment_method_title ?? b.payment_method, 200),
       lines: JSON.stringify(lines), orderedAt: posText(b.date_created_gmt ?? b.date_created, 60) || now, updatedAt: posText(b.date_modified_gmt ?? b.date_modified, 60) || now,
+      ghnOrderCode: posText(metadata.get('_lnl_ghn_order_code'), 100), ghnStatus: posText(metadata.get('_lnl_ghn_last_status'), 100),
+      ghnSortCode: posText(metadata.get('_lnl_ghn_sort_code'), 100), ghnFee: Math.max(0, Number(metadata.get('_lnl_ghn_total_fee')) || 0),
     };
     await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
       .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: fields });
@@ -148,7 +158,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         ...rows.map(o => ({ ...o, bucket: posOrderBucket(o), source: 'crm', external: false })),
         ...webRows.map(o => ({ id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
-          packingStatus: '', deliveryStatus: '', bucket: webBucket(o.status), source: o.source, external: true, lines: o.lines, address: o.address, paymentMethod: o.paymentMethod })),
+          packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
+          paymentMethod: o.paymentMethod, ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee })),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const counts = { all: decorated.length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
       for (const o of decorated) counts[o.bucket as keyof typeof counts]++;

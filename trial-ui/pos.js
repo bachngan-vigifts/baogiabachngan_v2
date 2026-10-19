@@ -426,7 +426,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.body.append(el('p', '', o.customerName + (o.phone ? ' · ' + o.phone : '')), el('p', '', o.address || 'Chưa có địa chỉ'), el('b', '', money(o.total)));
     let lines = []; try { lines = JSON.parse(o.lines || '[]'); } catch {}
     for (const x of lines) m.body.append(el('p', 'pos-note', `${x.sku || ''} · ${x.name || ''} × ${x.quantity || 0}`));
-    m.body.append(el('p', 'pos-note', 'Thanh toán: ' + (o.paymentMethod || 'Chưa cập nhật')), button('Đóng', 'btn secondary', m.close));
+    m.body.append(el('p', 'pos-note', 'Thanh toán: ' + (o.paymentMethod || 'Chưa cập nhật')));
+    if (o.ghnOrderCode) m.body.append(
+      el('p', '', 'Mã vận đơn GHN: ' + o.ghnOrderCode),
+      el('p', 'pos-note', 'Trạng thái GHN: ' + (o.ghnStatus || 'Đã tạo vận đơn') + (o.ghnFee ? ' · Phí: ' + money(o.ghnFee) : '')),
+    );
+    m.body.append(button('Đóng', 'btn secondary', m.close));
     m.show();
   }
   function drawMethods() {
