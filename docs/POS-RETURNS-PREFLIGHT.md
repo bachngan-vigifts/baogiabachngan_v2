@@ -93,3 +93,5 @@ Sổ thu/chi (`src/app/cashbook-routes.ts`) bổ sung hoàn tiền khách và lo
 Chuyển khoản SePay đến sau khi tín dụng đổi hàng đã hết hạn/giải phóng được ghi audit `late-exchange-transfer`, đánh dấu `requiresReconciliation`; không tự chi lại tiền hoặc sử dụng lại tín dụng. Manager cần đối soát khoản đến muộn. Chứng từ hoàn thực tế và tín dụng đã dùng không được huỷ bằng nút huỷ phiếu thông thường; bản này chưa có màn đảo chứng từ hoàn ghi sai.
 
 Giới hạn: không tự điều chỉnh Sapo/website/hóa đơn VAT đã phát hành, không tự chuyển khoản ngân hàng. Các chứng từ nguồn bên ngoài cần đối soát riêng. Kiểm thử dùng DB PostgreSQL WASM cô lập và giao diện giả lập, không phát sinh đơn hoặc hoàn tiền thật.
+
+Người được chỉ định duyệt không có quyền bán được vào danh sách duyệt từ Sổ quỹ. Chỉ thêm ánh xạ route review sang quyền `page.cash` hiện có trong `permissions.ts`, không thêm quyền/chức vụ; handler vẫn bắt buộc `canApprove`, và thao tác nhận hàng/hoàn tiền vẫn cần `pos.sell` cùng ca đang mở.

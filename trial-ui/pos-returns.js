@@ -237,7 +237,7 @@ export async function openPosReturns({
           ),
         );
       }
-      if (r.status === 'approved') {
+      if (r.status === 'approved' && shift?.registerId === d.registerId) {
         const received = field(
           'Tôi đã nhận đủ số hàng và kiểm tra tình trạng như trên',
           'checkbox',
@@ -258,7 +258,11 @@ export async function openPosReturns({
           ),
         );
       }
-      if (r.receivedAt && r.status !== 'completed') {
+      if (
+        r.receivedAt &&
+        r.status !== 'completed' &&
+        shift?.registerId === d.registerId
+      ) {
         const used =
           r.refunds.reduce((n, x) => n + x.amount, 0) +
           r.allocations

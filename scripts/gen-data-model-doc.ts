@@ -25,6 +25,11 @@ import * as care from '../src/modules/care/schema.ts';
 import * as hr from '../src/modules/hr/schema.ts';
 import * as portal from '../src/modules/portal/schema.ts';
 import * as core from '../src/core/db/schema.ts';
+import * as pos from '../src/modules/sales/pos-schema.ts';
+import * as cash from '../src/modules/sales/cash-schema.ts';
+import * as returns from '../src/modules/sales/return-schema.ts';
+import * as inventory from '../src/modules/inventory/schema.ts';
+import * as adms from '../src/modules/hr/adms-schema.ts';
 
 const mods: [string, Record<string, unknown>, string][] = [
   ['core', core, 'Dùng chung'], ['staff', staff, 'Nhân viên, chức vụ, đăng nhập'], ['customers', customers, 'Khách hàng'],
@@ -32,6 +37,8 @@ const mods: [string, Record<string, unknown>, string][] = [
   ['suppliers', suppliers, 'Hàng sắp về và đơn nhà cung cấp'], ['printing', printing, 'Xưởng in'], ['crm', crm, 'CRM và bản sao AppSheet VIGIFTS'],
   ['work', work, 'Báo cáo công việc, ca, tiền mặt'], ['notifications', notifications, 'Thông báo web/push'], ['integrations', integrations, 'Sapo'],
   ['sales', sales, 'Đơn hàng, HĐKT, giao hàng, thu tiền, phiếu đóng gói'], ['tasks', tasks, 'Công việc'], ['chat', chat, 'Tin nhắn nội bộ'],
+  ['pos', pos, 'POS và ca bán hàng'], ['cash', cash, 'Sổ quỹ và tra soát'], ['returns', returns, 'Trả hàng, đổi hàng và hoàn tiền POS'],
+  ['inventory', inventory, 'Sổ kho và ảnh nghiệp vụ'], ['adms', adms, 'Thiết bị chấm công'],
   ['care', care, 'Chăm sóc khách hàng'], ['hr', hr, 'Nhân sự, lương'], ['portal', portal, 'Trang khách hàng'],
 ];
 const legacyCols = new Map(legacyTablesIn(legacy).map(getLegacyConfig).map(t => [t.name, new Set(t.columns.map(c => c.name))]));

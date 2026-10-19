@@ -28,6 +28,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
   ]);
   const snapshot = JSON.parse(order.posSnapshot || '{}');
   const customerId = b.customerId === undefined ? order.customerId : posText(b.customerId) || null;
+  if (customerId !== order.customerId) await assertNoReturnActivity(db, order.id);
   if (customerId !== order.customerId && receipts.length) throw new AppError(409, 'Đơn đã thu tiền: cần xử lý phiếu thu trước khi đổi khách liên kết.');
   if (customerId) {
     const [customer] = await db.select({ id: customers.id }).from(customers).where(and(eq(customers.id, customerId), eq(customers.approvalStatus, 'approved')));

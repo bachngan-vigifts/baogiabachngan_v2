@@ -717,3 +717,43 @@ test('QR đổi hàng hết giữ chỗ: ngân hàng đến muộn không dùng 
   assert.equal((await f.db.select().from(posRefunds)).length, 1);
   assert.equal((await f.db.select().from(salesOrders)).length, 1);
 });
+
+test('Người được chỉ định không có quyền bán vẫn duyệt qua Sổ quỹ; không tự nhận hàng/hoàn tiền', async () => {
+  const f = await setup(),
+    shift = await f.open(),
+    { o, lines } = await sale(f, shift),
+    { r } = await request(f, shift, o, lines);
+  await f.db
+    .update(employees)
+    .set({ positionId: 'accounting', canApprove: true })
+    .where(eq(employees.id, 'cashier2'));
+  assert.equal((await f.call('/pos/options', f.other)).status, 403);
+  ok(await f.call('/pos/returns', f.other));
+  ok(await f.call('/pos/returns/' + r.id + '/approve', f.other, 'POST', {}));
+  assert.equal(
+    (
+      await f.call('/pos/returns/' + r.id + '/receive', f.other, 'POST', {
+        shiftId: shift.id,
+        confirmed: true,
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.call('/pos/returns/' + r.id + '/refund', f.other, 'POST', {
+        key: crypto.randomUUID(),
+        shiftId: shift.id,
+        amount: 194400,
+        method: 'cash',
+        confirmed: true,
+      })
+    ).status,
+    403,
+  );
+  await f.db
+    .update(employees)
+    .set({ canApprove: false })
+    .where(eq(employees.id, 'cashier2'));
+  assert.equal((await f.call('/pos/returns', f.other)).status, 403);
+});

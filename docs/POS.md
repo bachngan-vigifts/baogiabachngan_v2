@@ -112,7 +112,7 @@ Luồng đổi/trả/hoàn tiền và schema đã duyệt được mô tả tạ
 
 ## Trả hàng, đổi hàng, hoàn tiền
 
-Vào **Trả / Đổi / Hoàn** trên POS hoặc **Trả / Đổi / Hoàn tiền** trong chi tiết bill POS. Tìm bill gốc, chọn SL đã giao cần trả và tình trạng hàng, nhập lý do rồi gửi duyệt. Manager/người được chỉ định duyệt; người được chỉ định không tự duyệt, Manager được tự duyệt có audit. Mặc định hoàn hàng; phí dịch vụ/ship chỉ hoàn thêm khi Manager duyệt.
+Vào **Trả / Đổi / Hoàn** trên POS hoặc **Trả / Đổi / Hoàn tiền** trong chi tiết bill POS. Người được chỉ định duyệt nhưng không có quyền bán vào **Sổ quỹ → Duyệt đổi / trả hàng**; quyền duyệt không cấp quyền nhận hàng/hoàn tiền. Tìm bill gốc, chọn SL đã giao cần trả và tình trạng hàng, nhập lý do rồi gửi duyệt. Manager/người được chỉ định duyệt; người được chỉ định không tự duyệt, Manager được tự duyệt có audit. Mặc định hoàn hàng; phí dịch vụ/ship chỉ hoàn thêm khi Manager duyệt.
 
 Sau duyệt, nhân viên có ca mở tại đúng quầy xác nhận **thực nhận hàng**. Hàng bán được tăng tồn, hàng hỏng không tăng tồn bán. Giá/CK/VAT lấy bill gốc. Xác nhận **đã hoàn tiền** chỉ khi cửa hàng thực trả: tiền mặt trừ két ca hiện tại, chuyển khoản cần tham chiếu và không vào két. COD chưa thu chỉ giảm công nợ, không phát sinh tiền hoàn.
 

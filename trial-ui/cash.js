@@ -1,3 +1,4 @@
+import { openPosReturns } from './pos-returns.js';
 import { downloadExcel } from './sheet-export.js';
 import { printPos } from './pos-print.js';
 const money = (n) => Number(n ?? 0).toLocaleString('vi-VN') + ' đ';
@@ -139,6 +140,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       button('Cấu hình két', () => run(configure)),
       button('+ Két riêng cho quầy', () => run(createDrawer)),
     );
+    if(summary.canApprove)tools.append(button('Duyệt đổi / trả hàng',()=>openPosReturns({api,toast})));
     tools.append(button('Bán hàng nhanh', () => go('#/pos')));
     header.append(tools);
     root.append(header);
