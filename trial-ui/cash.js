@@ -271,7 +271,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
             }),
           ),
         );
-      if (r.status === 'pending' && (summary.canApprove ?? summary.canManage) && r.createdBy !== user().id)
+      if (r.status === 'pending' && (summary.canApprove ?? summary.canManage) && (r.createdBy !== user().id || summary.canSelfApprove))
         actions.append(
           button('Duyệt', () =>
             run(async () => {

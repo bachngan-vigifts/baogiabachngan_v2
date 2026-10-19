@@ -140,6 +140,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         nextOpeningCash: last?.countedCash ?? d.openingAmount,
         canManage: who(c).role === 'manager',
         canApprove: canApprove(who(c)),
+        canSelfApprove: who(c).role === 'manager',
         canVoid: can(who(c), 'payments.void'),
         canSell: can(who(c), 'pos.sell'),
         openReconciliations: open?.count ?? 0,
@@ -394,7 +395,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         await cashLock(tx);
         const [e] = await tx.select().from(cashEntries).where(eq(cashEntries.id, c.params.id!));
         if (!e) throw new AppError(404, 'Không có phiếu.');
-        if (e.createdBy === who(c).id) throw new AppError(403, 'Không tự duyệt phiếu của mình.');
+        if (e.createdBy === who(c).id && who(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager được tự duyệt phiếu của mình.');
         if (e.status === 'posted') return;
         if (e.status !== 'pending') throw new AppError(409, 'Phiếu đã huỷ.');
         const [s] = await tx.select().from(posShifts).where(eq(posShifts.id, e.shiftId));
@@ -404,7 +405,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .update(cashEntries)
           .set({ status: 'posted', approvedBy: who(c).id, approvedAt: now, updatedAt: now })
           .where(eq(cashEntries.id, e.id));
-        await cashAudit(tx, who(c).id, 'approve', 'cash-entries', e.id, { shiftId: e.shiftId });
+        await cashAudit(tx, who(c).id, 'approve', 'cash-entries', e.id, { shiftId: e.shiftId, selfApproved: e.createdBy === who(c).id });
       });
       return json({ ok: true });
     },
