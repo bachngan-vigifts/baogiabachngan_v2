@@ -185,8 +185,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
   );
   router.post('/pos/web-orders/:id/action', async c => {
     const m = member(c); posPermission(m);
-    const action = posText((await readJson(c.req, 4000)).action, 20);
-    if (!['confirm', 'cancel', 'refresh'].includes(action)) throw new AppError(400, 'Thao tác đơn web không hợp lệ.');
+    const input = await readJson(c.req, 4000);
+    const action = posText(input.action, 20);
+    if (!['confirm', 'cancel', 'refresh', 'locations'].includes(action)) throw new AppError(400, 'Thao tác đơn web không hợp lệ.');
     const [order] = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.id, c.params.id!)).limit(1);
     if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
     const scope = await allowedPosRegisters(c);
@@ -197,10 +198,25 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
     const url = order.source === 'lock' ? c.env.webOrderAction.lockUrl : c.env.webOrderAction.minhlongUrl;
     if (!url) throw new AppError(503, 'Website này chưa được kết nối thao tác đơn.');
-    const response = await (c.env.webOrderAction.fetch ?? fetch)(url, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ orderId: order.externalId, action }) });
+    const bridgeInput: Record<string, unknown> = { orderId: order.externalId, action };
+    if (action === 'locations') {
+      bridgeInput.provinceId = Math.max(0, Number(input.provinceId) || 0);
+      bridgeInput.districtId = Math.max(0, Number(input.districtId) || 0);
+    } else if (action === 'confirm' && input.addressLine !== undefined) {
+      bridgeInput.addressLine = posText(input.addressLine, 300);
+      bridgeInput.provinceId = Math.max(0, Number(input.provinceId) || 0);
+      bridgeInput.provinceName = posText(input.provinceName, 100);
+      bridgeInput.districtId = Math.max(0, Number(input.districtId) || 0);
+      bridgeInput.districtName = posText(input.districtName, 100);
+      bridgeInput.wardCode = posText(input.wardCode, 50);
+      bridgeInput.wardName = posText(input.wardName, 100);
+      if (!bridgeInput.addressLine || !bridgeInput.provinceId || !bridgeInput.districtId || !bridgeInput.wardCode) throw new AppError(400, 'Vui lòng nhập đủ địa chỉ giao hàng GHN.', 'address_invalid');
+    }
+    const response = await (c.env.webOrderAction.fetch ?? fetch)(url, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify(bridgeInput) });
     const raw = await response.text(); let result: Record<string, unknown> = {};
     try { result = JSON.parse(raw); } catch {}
-    if (!response.ok) throw new AppError(response.status >= 500 ? 502 : 409, posText(result.message, 500) || 'Website chưa xử lý được đơn.');
+    if (!response.ok) throw new AppError(response.status >= 500 ? 502 : 409, posText(result.message, 500) || 'Website chưa xử lý được đơn.', posText(result.code, 80) || undefined);
+    if (action === 'locations') return json({ ok: true, locations: Array.isArray(result.locations) ? result.locations : [] });
     const fields = { status: posText(result.status, 50) || order.status, ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
       ghnStatus: posText(result.ghnStatus, 100), ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };

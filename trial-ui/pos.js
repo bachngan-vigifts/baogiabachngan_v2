@@ -448,8 +448,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const actions = el('div', 'pos-actions');
     if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chốt đơn & tạo vận đơn GHN', 'btn primary', async () => {
       if (!await confirmBox(`Chốt đơn ${o.orderNo} và gửi tạo vận đơn Giao Hàng Nhanh?`, { ok: 'Chốt đơn' })) return;
-      await run(async () => { await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm' }); m.close(); toast('Đã chốt đơn và cập nhật vận đơn GHN.', 'ok'); await loadOrderBoard(); });
+      try {
+        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm' });
+        m.close(); toast('Đã chốt đơn và cập nhật vận đơn GHN.', 'ok'); await loadOrderBoard();
+      } catch (e) {
+        if (e.code === 'address_invalid' || /địa chỉ|phường|xã|quận|huyện/i.test(e.message || '')) { m.close(); await showGhnAddress(o, e.message); }
+        else toast(e.message, 'err');
+      }
     }));
+    if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Sửa địa chỉ GHN', 'btn secondary', () => { m.close(); showGhnAddress(o); }));
     if (o.actionsAvailable) actions.append(button('Cập nhật trạng thái', 'btn secondary', () => run(async () => {
       await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'refresh' }); m.close(); toast('Đã cập nhật trạng thái đơn.', 'ok'); await loadOrderBoard();
     })));
@@ -460,6 +467,42 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     actions.append(button('Đóng', 'btn secondary', m.close));
     m.body.append(actions);
     m.show();
+  }
+  async function showGhnAddress(o, reason = '') {
+    const m = formModal('Hoàn thiện địa chỉ GHN · ' + o.orderNo);
+    if (reason) m.form.append(el('p', 'pos-danger', reason));
+    m.form.append(el('p', 'pos-note', 'Thông tin khách, điện thoại, sản phẩm, COD và khối lượng được giữ nguyên. Chỉ cần chọn lại địa chỉ giao hàng.'));
+    const address = field('Số nhà, tên đường', 'text', o.address || '');
+    address.input.required = true; address.input.placeholder = 'Ví dụ: 123 Nguyễn Trãi';
+    const locationField = (label) => { const box = el('label', 'pos-field'), s = select([['', 'Đang tải…']], ''); box.append(el('span', '', label), s); return { box, select: s }; };
+    const province = locationField('Tỉnh / Thành phố'), district = locationField('Quận / Huyện'), ward = locationField('Phường / Xã');
+    district.select.disabled = true; ward.select.disabled = true;
+    const setOptions = (s, rows, placeholder) => { s.replaceChildren(); const first = el('option', '', placeholder); first.value = ''; s.append(first); for (const x of rows || []) { const op = el('option', '', x.name); op.value = x.id; s.append(op); } s.disabled = false; };
+    const loadLocations = async (extra = {}) => (await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'locations', ...extra })).locations;
+    province.select.addEventListener('change', () => run(async () => {
+      district.select.disabled = true; ward.select.disabled = true; setOptions(ward.select, [], 'Chọn Phường / Xã'); ward.select.disabled = true;
+      setOptions(district.select, await loadLocations({ provinceId: province.select.value }), 'Chọn Quận / Huyện');
+    }));
+    district.select.addEventListener('change', () => run(async () => {
+      ward.select.disabled = true; setOptions(ward.select, await loadLocations({ districtId: district.select.value }), 'Chọn Phường / Xã');
+    }));
+    const actions = el('div', 'pos-actions'), submit = button('Lưu địa chỉ & tạo vận đơn GHN', 'btn primary'); submit.type = 'submit';
+    actions.append(button('Đóng', 'btn secondary', m.close), submit);
+    m.form.append(address.box, province.box, district.box, ward.box, actions);
+    m.form.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (!province.select.value || !district.select.value || !ward.select.value) return toast('Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã.', 'err');
+      submit.disabled = true;
+      try {
+        const chosen = s => s.options[s.selectedIndex]?.textContent || '';
+        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm', addressLine: address.input.value.trim(),
+          provinceId: province.select.value, provinceName: chosen(province.select), districtId: district.select.value, districtName: chosen(district.select), wardCode: ward.select.value, wardName: chosen(ward.select) });
+        m.close(); toast('Đã lưu địa chỉ và tạo vận đơn GHN.', 'ok'); await loadOrderBoard();
+      } catch (err) { toast(err.message, 'err'); submit.disabled = false; }
+    });
+    m.show();
+    try { setOptions(province.select, await loadLocations(), 'Chọn Tỉnh / Thành phố'); }
+    catch (e) { toast(e.message, 'err'); province.select.disabled = true; }
   }
   function drawMethods() {
     for (const b of nodes.methods.querySelectorAll('button'))
