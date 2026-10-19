@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const style = readFileSync(new URL('../../trial-ui/style.css', import.meta.url), 'utf8');
 const pos = readFileSync(new URL('../../trial-ui/pos.css', import.meta.url), 'utf8');
+const posJs = readFileSync(new URL('../../trial-ui/pos.js', import.meta.url), 'utf8');
 
 test('toàn hệ thống dùng chuẩn giao diện gọn chỉ trên điện thoại', () => {
   const start = style.indexOf('Chuẩn giao diện gọn dùng chung cho toàn hệ thống');
@@ -25,4 +26,6 @@ test('POS có lớp thu gọn riêng vì pos.css được tải sau style.css', 
   assert.match(compact, /\.pos-payment-due strong \{ font-size: 24px/);
   assert.match(compact, /\.pos-main-actions \.btn \{ min-height: 46px; font-size: 12px/);
   assert.match(compact, /\.pos-customer-input \{ min-height: 40px/);
+  assert.match(compact, /\.pos-product-price-stock \{ display: flex; align-items: baseline; justify-content: space-between/);
+  assert.match(posJs, /el\('span', 'pos-product-price-stock'\)/);
 });

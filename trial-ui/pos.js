@@ -734,12 +734,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         im.loading = 'lazy';
         b.append(im);
       } else b.append(el('span', 'pos-image-empty', 'Sản phẩm'));
-      b.append(
-        el('b', 'pos-product-name', p.name),
-        el('small', 'pos-product-sku', p.sku),
-        el('strong', '', money(p.price)),
+      const priceStock = el('span', 'pos-product-price-stock');
+      priceStock.append(
+        el('strong', 'pos-product-price', money(p.price)),
         el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', p.available <= 0 ? 'Hết hàng' : 'Còn ' + p.available),
       );
+      b.append(el('b', 'pos-product-name', p.name), el('small', 'pos-product-sku', p.sku), priceStock);
       b.title = p.name + ' · ' + p.sku;
       b.disabled = !active() || p.available <= 0 || !!st.pending;
       nodes.grid.append(b);
