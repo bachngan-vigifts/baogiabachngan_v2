@@ -16,6 +16,8 @@ test('Khách lẻ: nhóm Sapo hoặc cá nhân không MST; tổ chức thiếu M
   assert.ok(retailCandidate({ id: 5, name: 'A', tax_code: '123456', group_id: 7 }, new Map([['7', 'Khách lẻ']])));
   assert.equal(retailPhone('+84 901 234 567'), '0901234567');
   assert.equal(retailPhone(''), '');
+  assert.equal(retailCandidate({ id: 8, name: 'A', tax_number: '12345678' }), null);
+  assert.equal(retailCandidate({ id: 9, name: 'A', is_company: true }), null);
 });
 test('Bổ sung khách: chỉ insert, bỏ ID/mã/điện thoại có sẵn, không ghi đè; danh sách lọc server theo chức vụ', async () => {
   const f = await setup();

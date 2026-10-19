@@ -1,8 +1,10 @@
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, lt, inArray } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import type { SapoApi } from './sapo-pull.ts';
 import { sapoHealthMonitorState } from '../schema.ts';
+import { customers } from '../../customers/schema.ts';
+import { retailCandidate } from '../domain/retail-customer.ts';
 import { addRetailCustomers } from './retail-customers.ts';
 const STATE = 'retail-customer-import', LOCK = STATE + '-lock';
 export async function pullRetailCustomers(db: AnyDb, api: SapoApi) {
@@ -25,7 +27,16 @@ export async function pullRetailCustomers(db: AnyDb, api: SapoApi) {
       if (e instanceof AppError && /^SAPO_HTTP_4/.test(e.code ?? '')) groupWarning = 'Sapo chưa trả danh mục nhóm; đã nhận nhóm nhúng trong khách và khách cá nhân không MST. Cần đối chiếu nhóm.';
       else throw e;
     }
+    if (state.totals.added > 0 && !state.initialBatchChecked) {
+      const initial = await api.list('/customers.json', 'customers', 1, 2);
+      const imported = await db.select({ id: customers.id }).from(customers).where(and(eq(customers.isRetail, true), inArray(customers.id, initial.items.map((x: any) => String(x.id)))));
+      const ids = new Set(imported.map(x => x.id));
+      const outside = initial.items.filter((x: any) => ids.has(String(x.id)) && !retailCandidate(x, groups));
+      if (outside.length) throw new AppError(409, `Cần đối chiếu ${outside.length} hồ sơ lô đầu theo trường MST của Sapo trước khi tiếp tục.`, 'RETAIL_REVIEW_REQUIRED');
+      state.initialBatchChecked = true;
+    }
     const page = await api.list('/customers.json', 'customers', state.page, 2);
+    state.sourceFields = page.items[0] ? Object.keys(page.items[0]).sort() : [];
     const result = await addRetailCustomers(db, page.items, groups);
     for (const [key, n] of Object.entries(result)) state.totals[key] = (state.totals[key] ?? 0) + n;
     state.page = page.nextPage ?? state.page;
