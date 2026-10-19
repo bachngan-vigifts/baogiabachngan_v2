@@ -171,6 +171,33 @@ test('Form mở ca không còn kiểm đếm hoặc gọi API kiểm đếm', as
     assert.equal(sent.body.openingCash, 150000);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
+test('Báo cáo ca đóng danh sách trước khi mở chi tiết và hiện trạng thái tải', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section');
+    const report = { shift: { openedAt: '2026-10-18T01:00:00Z', openingCash: 0 }, register: { name: 'Két Minh Long' }, memberName: 'Thái Thị Yến',
+      bills: { count: 0, revenue: 0, discount: 0 }, manual: [], bookAdjustments: [], cash: 0, transfer: 0, expectedCash: 0,
+      cod: { receivedInShift: { count: 0, amount: 0 }, receivedFromPrevious: { count: 0, amount: 0 }, pending: { count: 0, amount: 0 } } };
+    const api = async (path: string) => {
+      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Két Minh Long', pricePolicyId: 'vat' }], current: null,
+        shifts: [{ id: 's', memberName: 'Thái Thị Yến', openedAt: '2026-10-18T01:00:00Z', closedAt: null }], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
+      if (path.startsWith('/pos/orders')) return { registers: [], counts: {}, orders: [] };
+      if (path === '/pos/shifts/s') return report;
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'Thái Thị Yến' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    await root.querySelectorAll('button').find(b => b.textContent === 'Báo cáo ca')!.fire('click');
+    const list = doc.body.children.at(-1)!;
+    const view = list.querySelectorAll('button').find(b => b.textContent.includes('Thái Thị Yến'))!;
+    await view.fire('click');
+    assert.equal(list.open, false);
+    assert.equal(doc.body.children.at(-1)!.open, true);
+    assert.match(doc.body.children.at(-1)!.textContent, /Giá trị đơn đã lập/);
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});
 test('POS chọn quầy mặc định từ server, ưu tiên ca đang mở và đặt lại khi đổi tài khoản', async () => {
   const prevDoc = globalThis.document,
     prevWin = globalThis.window;

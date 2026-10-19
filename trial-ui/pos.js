@@ -1003,7 +1003,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   }
   function reportRows(container, d) {
     for (const [k, v] of shiftSummaryRows(d)) {
-      if (label === 'Tổng cộng') nodes.totals.append(nodes.shippingField);
       const row = el('div', 'pos-total-row');
       row.append(el('span', '', k), el('b', '', v));
       container.append(row);
@@ -1029,9 +1028,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const m = modal('Báo cáo ca'),
       list = el('div', 'pos-customer-list');
     for (const s of st.options.shifts) {
-      list.append(
-        button(`${when(s.openedAt)} · ${s.closedAt ? 'Đã kết' : 'Đang mở'} · ${s.memberName || 'Nhân viên không còn trong danh mục'}`, 'btn secondary', () =>
-          run(async () => {
+      const label = `${when(s.openedAt)} · ${s.closedAt ? 'Đã kết' : 'Đang mở'} · ${s.memberName || 'Nhân viên không còn trong danh mục'}`;
+      const view = button(label, 'btn secondary', async () => {
+        view.disabled = true;
+        view.textContent = 'Đang tải báo cáo…';
+        try {
             const d = await api('/pos/shifts/' + s.id);
             const detail = modal('Báo cáo ca ' + when(s.openedAt));
             reportRows(detail.body, d);
@@ -1045,10 +1046,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
               button('In K80', 'btn primary', () => printPos(d, 'shift')),
               button('Đóng', 'btn secondary', detail.close),
             );
+            m.close();
             detail.show();
-          }),
-        ),
-      );
+        } catch (e) {
+          toast(e.message, 'err');
+          view.disabled = false;
+          view.textContent = label;
+        }
+      });
+      list.append(view);
     }
     m.body.append(list, button('Đóng', 'btn secondary', m.close));
     m.show();
