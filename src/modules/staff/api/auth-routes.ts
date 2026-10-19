@@ -1,3 +1,4 @@
+import { authorizePosStore } from '../../sales/api/pos-access.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { FileStore } from '../../../core/storage/file-store.ts';
 import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
@@ -110,6 +111,7 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     if (need && !need.some(k => can(member, k))) throw new AppError(403, 'Chức vụ của bạn chưa được cấp quyền dùng chức năng này. Liên hệ Manager.', 'NO_PERMISSION');
   }
   c.state.session = { member, tokenHash } satisfies SessionState;
+  await authorizePosStore(c);
 }
 
 /**

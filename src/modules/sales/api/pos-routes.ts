@@ -1,3 +1,4 @@
+import { allowedRegister, posScope } from './pos-access.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -66,8 +67,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/options',
     async (c) => {
       const m = member(c);
+      const canConfigure = can(m, 'pos.configure') && !posScope(c);
       if (!can(m, 'pos.sell') && !can(m, 'pos.configure')) throw new AppError(403, 'Chưa được cấp quyền POS.');
-      const [regs, templates, shiftRows] = await Promise.all([
+      const [allRegs, templates, shiftRows] = await Promise.all([
         c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name)),
         c.env.db.select().from(posShiftTemplates).where(eq(posShiftTemplates.active, true)),
         c.env.db
@@ -78,17 +80,18 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .orderBy(desc(posShifts.openedAt))
           .limit(50),
       ]);
-      const shifts = shiftRows.map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
+      const regs = allRegs.filter(r => allowedRegister(c, r.id));
+      const shifts = shiftRows.filter(x => allowedRegister(c, x.shift.registerId)).map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
       const policies = await c.env.db
         .select()
         .from(pricePolicies)
         .where(
-          can(m, 'pos.configure')
+          canConfigure
             ? undefined
             : inArray(pricePolicies.id, [...new Set(regs.flatMap((r) => [r.pricePolicyId, r.secondPricePolicyId]))]),
         )
         .orderBy(asc(pricePolicies.sortOrder));
-      const stores = can(m, 'pos.configure')
+      const stores = canConfigure
         ? await c.env.db
             .select()
             .from(warehouses)
@@ -103,7 +106,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         templates,
         shifts,
         current: shifts.find((s) => s.memberId === m.id && !s.closedAt) ?? null,
-        canConfigure: can(m, 'pos.configure'),
+        canConfigure,
         policies,
         warehouses: stores,
       });

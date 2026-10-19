@@ -1,3 +1,4 @@
+import { allowedRegister, allowedDrawer, posScope } from '../modules/sales/api/pos-access.ts';
 import { auditLogs } from '../core/db/schema.ts';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../core/http/router.ts';
@@ -33,27 +34,32 @@ const who = (c: Ctx) => (c.state.session as SessionState).member;
 const manager = (c: Ctx) => {
   if (who(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager thao tác.');
 };
-const ownShift = (c: Ctx) => (seesAllCash(who(c)) ? undefined : eq(posShifts.memberId, who(c).id));
+const storeShift = (c: Ctx) => posScope(c) ? inArray(posShifts.registerId, posScope(c)!.registers) : undefined;
+const ownShift = (c: Ctx) => and(storeShift(c), seesAllCash(who(c)) ? undefined : eq(posShifts.memberId, who(c).id));
 // Delegated approval reveals pending manual entries only, not other employees' receipts or reports.
 const entryScope = (c: Ctx) => {
   const scope = ownShift(c);
-  return scope ? or(scope, canApprove(who(c)) ? eq(cashEntries.status, 'pending') : undefined) : undefined;
+  return scope ? and(storeShift(c), or(scope, canApprove(who(c)) ? eq(cashEntries.status, 'pending') : undefined)) : undefined;
 };
 async function selectedDrawer(c: Ctx) {
   const explicit = posText(c.url.searchParams.get('drawerId'));
   if (explicit) return (await drawerOf(c.env.db, explicit)).id;
   const registerId = posText(c.url.searchParams.get('registerId'));
-  const regs = await c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name));
+  const regs = (await c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
+  if (posScope(c) && !regs.length) throw new AppError(403, 'Chưa có quầy thuộc cửa hàng của bạn.');
   if (registerId) {
     const r = regs.find(r => r.id === registerId);
     if (!r) throw new AppError(404, 'Không tìm thấy quầy.');
+    if (!allowedDrawer(c, r.cashDrawerId)) throw new AppError(403, 'Két chưa tách riêng theo cửa hàng. Liên hệ Manager.');
     return r.cashDrawerId;
   }
   const [current] = await c.env.db.select().from(posShifts).where(and(eq(posShifts.memberId, who(c).id), isNull(posShifts.closedAt))).limit(1);
-  if (current) return current.cashDrawerId;
+  if (current && allowedRegister(c, current.registerId) && allowedDrawer(c, current.cashDrawerId)) return current.cashDrawerId;
   const [position] = await c.env.db.select({ name: positions.name }).from(positions).where(eq(positions.id, who(c).positionId ?? '')).limit(1);
   const preferred = defaultPosRegister(who(c).positionId, position?.name, regs);
-  return regs.find(r => r.id === preferred)?.cashDrawerId ?? regs[0]?.cashDrawerId ?? CASH_DRAWER;
+  const drawerId = regs.find(r => r.id === preferred)?.cashDrawerId ?? regs[0]?.cashDrawerId ?? CASH_DRAWER;
+  if (!allowedDrawer(c, drawerId)) throw new AppError(403, 'Két chưa tách riêng theo cửa hàng. Liên hệ Manager.');
+  return drawerId;
 }
 function dates(c: Ctx) {
   const from = c.url.searchParams.get('from') ?? '',
@@ -106,12 +112,12 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .select({ s: posShifts, memberName: employees.name })
           .from(posShifts)
           .innerJoin(employees, eq(employees.id, posShifts.memberId))
-          .where(and(eq(posShifts.cashDrawerId, d.id), isNull(posShifts.closedAt)))
+          .where(and(storeShift(c), eq(posShifts.cashDrawerId, d.id), isNull(posShifts.closedAt)))
           .limit(1),
         [last] = await db
           .select()
           .from(posShifts)
-          .where(and(eq(posShifts.cashDrawerId, d.id), sql`${posShifts.closedAt} is not null`))
+          .where(and(storeShift(c), eq(posShifts.cashDrawerId, d.id), sql`${posShifts.closedAt} is not null`))
           .orderBy(desc(posShifts.closedAt))
           .limit(1),
         [open] = await db
@@ -121,11 +127,11 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(and(eq(cashReconciliations.drawerId, d.id), ownShift(c), sql`${cashReconciliations.status}<>'closed'`));
       return json({
         drawer: d,
-        drawers: await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers).where(or(
+        drawers: (await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers).where(or(
           inArray(cashDrawers.id, db.select({ id: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.active, true))),
           inArray(cashDrawers.id, db.select({ id: posShifts.cashDrawerId }).from(posShifts)),
-        )).orderBy(asc(cashDrawers.name)),
-        registers: await db.select({ id: posRegisters.id, name: posRegisters.name, cashDrawerId: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.active, true)),
+        )).orderBy(asc(cashDrawers.name))).filter(d => allowedDrawer(c, d.id)),
+        registers: (await db.select({ id: posRegisters.id, name: posRegisters.name, cashDrawerId: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.active, true))).filter(r => allowedRegister(c, r.id)),
         balance: await drawerBalance(db, d.id),
         activeShift: s
           ? {

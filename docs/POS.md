@@ -69,3 +69,9 @@ Theo chính sách đã chốt: khách tạo tại POS dùng ngay, nhân viên b�
 ## Tiền thực đếm khi mở ca (19/10/2026)
 
 Dùng lại `cash_reconciliations` và nhật ký đã có, không thêm migration. Một ca vẫn có tối đa một tra soát. So sánh mở ca được lưu bất biến trong audit mở ca và trả trong `openingComparison` trên báo cáo/chi tiết tra soát. Nếu cuối ca cũng lệch, cùng tra soát được cập nhật/mở lại với số cuối ca; phần so sánh đầu ca vẫn hiện riêng. Kết ca khớp không tự đóng tra soát đầu ca chưa xử lý. Manager giải quyết theo luồng giải trình/đóng hiện có; tra soát không tự sửa sổ két. Gửi lặp yêu cầu mở ca không tạo ca/tra soát trùng, đổi số tiền với cùng mã yêu cầu bị từ chối.
+
+## Phạm vi cửa hàng
+
+NVBH LOCK và CHT LOCK chỉ truy cập quầy/két Lock; NVBH ML và CHT Minh Long chỉ truy cập quầy/két Minh Long. Server xác định cửa hàng từ chức vụ hệ thống hoặc tên chức vụ CHT, đối chiếu kho gắn với quầy (Lock được nhận diện trước vì tên kho có cả chữ Minh Long). Với tên kho chung chưa định danh, dùng tên quầy Lock/Minh Long. Không có quầy phù hợp thì không tự chuyển sang cửa hàng khác. Manager vẫn truy cập cả hai.
+
+Danh sách POS, ca và Sổ quỹ chỉ trả quầy/két trong phạm vi. API từ chối truy cập chéo bằng registerId, drawerId, shiftId hoặc ID bill, QR, COD, phiếu/ảnh, tra soát; quyền duyệt được chỉ định không mở rộng cửa hàng. Đổi chức vụ có hiệu lực ở yêu cầu tiếp theo, kể cả ca cũ của chính nhân viên tại cửa hàng khác. Không thay đổi quyền của các chức vụ khác; không thêm bảng/cột/quyền/migration.
