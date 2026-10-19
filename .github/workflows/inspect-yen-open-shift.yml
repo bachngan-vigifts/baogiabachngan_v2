@@ -1,4 +1,4 @@
-name: Kiểm tra ca đang mở của Thái Thị Yến
+name: Kiểm tra ca POS và báo cáo kết ca
 
 on:
   workflow_dispatch:
@@ -10,14 +10,23 @@ jobs:
       PROJECT_REF: taceqfnsorewelsbdckg
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
-      - name: Đọc ca, quầy và két liên quan
+      - name: Đọc ca, quầy, két và báo cáo kết ca hôm nay
         shell: bash
         run: |
           query="select json_build_object(
             'staff', (select coalesce(json_agg(x), '[]'::json) from (select id,name,position_id from staff_members where lower(name) like lower('Thái Thị Y%')) x),
             'open_shifts', (select coalesce(json_agg(x), '[]'::json) from (select s.id,s.member_id,m.name as member_name,s.register_id,s.cash_drawer_id,s.opened_at,s.opening_cash,r.name as register_name,w.name as warehouse_name from pos_shifts s join staff_members m on m.id=s.member_id join pos_registers r on r.id=s.register_id join warehouses w on w.id=r.warehouse_id where s.closed_at is null and lower(m.name) like lower('Thái Thị Y%')) x),
             'registers', (select coalesce(json_agg(x), '[]'::json) from (select r.id,r.name,r.cash_drawer_id,w.name as warehouse_name from pos_registers r join warehouses w on w.id=r.warehouse_id where r.active=true order by r.name) x),
-            'drawers', (select coalesce(json_agg(x), '[]'::json) from (select id,name from cash_drawers order by name) x)
+            'drawers', (select coalesce(json_agg(x), '[]'::json) from (select id,name from cash_drawers order by name) x),
+            'closed_today', (select coalesce(json_agg(x order by x.closed_at), '[]'::json) from (
+              select s.id,s.member_id,m.name as member_name,s.register_id,r.name as register_name,
+                s.opened_at,s.closed_at,s.report_snapshot
+              from pos_shifts s
+              join staff_members m on m.id=s.member_id
+              join pos_registers r on r.id=s.register_id
+              where s.closed_at is not null
+                and (s.closed_at::timestamptz at time zone 'Asia/Ho_Chi_Minh')::date = (now() at time zone 'Asia/Ho_Chi_Minh')::date
+            ) x)
           ) as result"
           payload=$(jq -n --arg query "$query" '{query:$query}')
           curl --fail-with-body --silent --show-error \
