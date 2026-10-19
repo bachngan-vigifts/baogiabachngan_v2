@@ -66,7 +66,7 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
     vat_amount: o.tax,
     total: o.total,
     fulfillment_mode: o.fulfillmentMode,
-    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + (fees.service.amount ? ` · ${fees.service.name}: ${fees.service.amount}đ (VAT ${fees.service.taxRate}%)` : '') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (không VAT)` : ''),
+    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + (fees.service.amount ? ` · ${fees.service.name}: ${fees.service.amount}đ (VAT ${fees.service.taxRate}%)` : '') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (không VAT)` : '') + (o.note ? ` · Ghi chú: ${o.note}` : ''),
   };
   let response: Response;
   try {

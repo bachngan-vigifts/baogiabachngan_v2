@@ -3214,6 +3214,12 @@ async function openOrder(id) {
     <ul class="plain-list">${allocatePayments(d.schedules, r.paid).map(s => `<li class="${s.left <= 0 ? 'installment-paid' : ''}"><span>${esc(s.note || s.kind)}<small>${installmentStatus(s)}</small></span><b>${money(s.amount)}</b><small>${s.left <= 0 ? 'Đã hoàn tất' : s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
   $('#order-lines').innerHTML = d.lines.map(l => `<tr><td>${esc(l.name)}<small>${esc([l.sku, l.unit].filter(Boolean).join(' · '))}</small></td><td class="right">${fmtNum(l.qty)}</td>
     <td class="right">${fmtNum(l.deliveredQty)}</td><td class="right num">${money(l.unitPrice)}</td><td class="right">${fmtNum(l.taxRate)}%</td><td class="right num">${money(l.amount)}</td></tr>`).join('');
+  const noteId = 'pos-order-saved-note';
+  document.getElementById(noteId)?.remove();
+  if (o.channel === 'pos' && o.note) {
+    const p = document.createElement('p'); p.id = noteId; p.style.whiteSpace = 'pre-wrap'; p.textContent = 'Ghi chú đơn hàng: ' + o.note;
+    $('#order-lines-title').parentElement.after(p);
+  }
   const fees = o.posFees;
   for (const charge of [
     ...(fees?.service?.amount ? [{ name: fees.service.name, amount: fees.service.subtotal, taxRate: fees.service.taxRate }] : []),

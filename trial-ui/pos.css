@@ -699,3 +699,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 @media (max-width: 480px) {
   .pos-basket-head .pos-customer-trigger { min-width: 150px; padding-inline: 14px; }
 }
+
+.pos-order-note { margin: 12px 0 4px; }
+.pos-order-note textarea { min-height: 64px; resize: vertical; }

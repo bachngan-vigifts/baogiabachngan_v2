@@ -1,3 +1,4 @@
+import { posOrderNote } from '../domain/pos-order-note.ts';
 import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
 import { cashLock, cashShiftTotals, cashAudit, openingCashComparison } from './cash-store.ts';
 import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -75,15 +76,19 @@ export async function assertOpening(db: PosDb, warehouseId: string) {
       'POS_OPENING_REQUIRED',
     );
 }
-export const emptyCart = (b: Record<string, unknown>) => ({
-  registerId: posText(b.registerId),
-  shiftId: posText(b.shiftId),
-  pricePolicyId: posText(b.pricePolicyId),
-  customerId: posText(b.customerId),
-  vatEnabled: b.vatEnabled !== false,
-  rows: b.rows,
-  ...posFeeInput(b),
-});
+export const emptyCart = (b: Record<string, unknown>) => {
+  const note = posOrderNote(b.note);
+  return {
+    registerId: posText(b.registerId),
+    shiftId: posText(b.shiftId),
+    pricePolicyId: posText(b.pricePolicyId),
+    customerId: posText(b.customerId),
+    vatEnabled: b.vatEnabled !== false,
+    rows: b.rows,
+    ...posFeeInput(b),
+    ...(note ? { note } : {}),
+  };
+};
 export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
   const input = emptyCart(b),
     r = await registerOf(db, input.registerId);
@@ -144,6 +149,7 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
   return {
     register: r,
     customer,
+    note: input.note ?? '',
     fees,
     lines,
     subtotal,
@@ -374,6 +380,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     const snapshot = {
       register: c.register,
       customer: c.customer?.name ?? 'Khách lẻ',
+      note: c.note,
       lines: c.lines,
       fees: c.fees,
       subtotal: c.subtotal,
@@ -401,6 +408,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       fulfillmentMode: mode,
       customerId: c.customer?.id,
       customerName: snapshot.customer,
+      note: c.note,
       contact: c.customer?.contact ?? '',
       phone: c.customer?.phone ?? '',
       email: c.customer?.email ?? '',

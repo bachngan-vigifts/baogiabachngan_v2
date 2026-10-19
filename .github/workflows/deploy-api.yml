@@ -31,6 +31,7 @@ jobs:
           node --import tsx --test
           tests/app/pos.test.ts
           tests/app/pos-fees.test.ts
+          tests/app/pos-note.test.ts
           tests/app/retail-customers.test.ts
           tests/app/sapo-push.test.ts
           tests/app/sapo-push-ui.test.ts

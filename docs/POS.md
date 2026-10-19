@@ -103,3 +103,9 @@ Cụm **Đơn hàng cửa hàng** nằm cuối trang, sau danh mục sản phẩ
 ## Xác nhận chuyển khoản SePay trên giỏ hàng
 
 Nút đổi khách ở giỏ hàng dùng màu xanh lá cùng nút Mở ca, rộng tối thiểu 170px trên máy tính và 150px trên điện thoại, cao 44px. Khi dùng **Hiện QR**, POS theo dõi yêu cầu thanh toán hiện tại kể cả sau khi đóng popup. Server báo đã nhận đủ tiền đúng QR thì ô chuyển khoản tự tích, hiện xác nhận SePay và bật **Thu tiền & in** để nhân viên hoàn tất. Nút này gửi đúng paymentRequestId để giữ liên kết với khoản chuyển tiền. Kết nối SePay hoặc tạo QR chưa được tính là đã nhận tiền; webhook vẫn đối chiếu mã/tài khoản/số tiền tại server. Thay đổi giỏ/bảng giá/khách hoặc tài khoản đăng nhập làm mất hiệu lực xác nhận cũ. Giữ lựa chọn xác nhận thủ công khi cửa hàng đã kiểm tra thực nhận.
+
+## Ghi chú đơn hàng
+
+Ngay dưới hướng dẫn phí dịch vụ có ô **Ghi chú đơn hàng** (tối đa 2.000 ký tự). Ghi chú lưu trên đơn và snapshot, hiện trong bill tạm/K80/chi tiết đơn và ghi chú payload outbound. Nhập ghi chú không thay số tiền hoặc mất xác nhận QR. Gửi lại cùng checkoutKey phải giữ ghi chú như lần đầu; đổi ghi chú sau hoàn tất dùng luồng sửa đơn có kiểm quyền/audit. Không thêm migration hoặc quyền.
+
+Phương án đổi/trả/hoàn tiền đang chờ duyệt schema tại [POS-RETURNS-PREFLIGHT.md](POS-RETURNS-PREFLIGHT.md); chưa có migration và chưa bật chức năng này.

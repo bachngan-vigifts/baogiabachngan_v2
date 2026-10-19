@@ -481,3 +481,37 @@ test('SePay chỉ tự tích sau server xác nhận đúng QR, tiếp tục khi 
     await new Promise(r => setTimeout(r, 230));
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin, setInterval: prevInterval, clearInterval: prevClear }); }
 });
+
+test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản, gửi cùng đơn và in dạng chữ', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: any[] = [];
+    const api = async (path: string, method = 'GET', body?: any) => {
+      calls.push({ path, body });
+      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
+      if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
+      if (path === '/pos/checkout') throw Object.assign(Error('Kiểm tra payload'), { status: 400 });
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
+    await new Promise(r => setTimeout(r, 230));
+    await root.querySelectorAll('button').find(b => b.textContent === 'Chuyển khoản')!.fire('click');
+    const check = root.querySelectorAll('input').find(i => i.type === 'checkbox')!;
+    check.checked = true; await check.fire('change');
+    const area = root.querySelectorAll('section').find(e => e.className === 'pos-extra-fees')!;
+    assert.equal(area.children.at(-2)!.textContent, 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.');
+    const note = area.querySelectorAll('textarea')[0]!;
+    const text = '<img src=x onerror=alert(1)>\nGiao chiều';
+    note.value = text; await note.fire('input');
+    assert.equal(check.checked, true);
+    await root.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in')!.fire('click');
+    assert.equal(calls.find(c => c.path === '/pos/checkout').body.note, text);
+    const print = buildPosPrint(doc, { ...sample, note: text });
+    assert.ok(print.textContent.includes('Ghi chú: ' + text));
+    assert.equal(print.querySelectorAll('img').length, 0);
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});

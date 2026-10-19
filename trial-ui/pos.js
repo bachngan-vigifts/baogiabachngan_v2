@@ -41,7 +41,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     policy: '',
     cart: [],
     customer: null,
-    feeName: '', feeAmount: '', shippingFee: '', feeVisible: false,
+    feeName: '', feeAmount: '', shippingFee: '', feeVisible: false, note: '',
     preview: null,
     method: 'cash',
     qr: null,
@@ -80,7 +80,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.policy = '';
     st.cart = [];
     st.customer = null;
-    st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false;
+    st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = '';
     st.preview = null;
     st.pending = null;
     st.orderBoard = null;
@@ -102,6 +102,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     shiftId: st.shift.id,
     pricePolicyId: st.policy,
     customerId: st.customer?.id || '',
+    ...(st.note.trim() ? { note: st.note } : {}),
     ...(st.feeName || st.feeAmount || st.shippingFee ? { feeName: st.feeName, feeAmount: st.feeAmount || 0, shippingFee: st.shippingFee || 0 } : {}),
     rows: st.cart.map((x) => ({
       sku: x.sku,
@@ -554,7 +555,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       st.feeVisible = false; st.feeName = ''; st.feeAmount = '';
       name.input.value = ''; amount.input.value = ''; service.hidden = true; add.hidden = false; invalidate();
     }));
-    box.append(add, service, el('p', 'pos-note', 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.'));
+    const noteBox = el('label', 'pos-field pos-order-note'), note = el('textarea');
+    note.rows = 2; note.maxLength = 2000; note.value = st.note;
+    note.placeholder = 'Ví dụ: Gói riêng từng món, giao sau 17h…';
+    note.setAttribute('aria-label', 'Ghi chú đơn hàng');
+    note.addEventListener('input', () => { st.note = note.value; });
+    noteBox.append(el('span', '', 'Ghi chú đơn hàng'), note);
+    box.append(add, service, el('p', 'pos-note', 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.'), noteBox);
     right.append(box);
     nodes.feeControls = box;
     nodes.shippingField = shipping.box;
@@ -590,7 +597,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.lines?.classList.toggle('pos-busy', !!st.pending || st.busy);
     for (const i of nodes.lines?.querySelectorAll('input,select,button') || []) i.disabled = !!st.pending || st.busy;
     nodes.policy.disabled = !!st.pending || st.busy;
-    for (const i of [...(nodes.feeControls?.querySelectorAll('input,button') || []), ...(nodes.shippingField?.querySelectorAll('input') || [])]) i.disabled = !!st.pending || st.busy;
+    for (const i of [...(nodes.feeControls?.querySelectorAll('input,textarea,button') || []), ...(nodes.shippingField?.querySelectorAll('input') || [])]) i.disabled = !!st.pending || st.busy;
   }
   async function preview() {
     const seq = ++previewSeq;
@@ -1127,7 +1134,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       persistPending(null);
       st.cart = [];
       st.customer = null;
-      st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false;
+      st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = '';
       st.preview = null;
       st.qr = null;
       st.policy = st.register.pricePolicyId;

@@ -1,3 +1,4 @@
+import { posOrderNote } from '../domain/pos-order-note.ts';
 import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
@@ -32,6 +33,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
     if (!customer) throw new AppError(400, 'Khách hàng chưa dùng được.');
   }
   const fields = {
+    note: b.note === undefined ? order.note : posOrderNote(b.note),
     customerId, customerName: b.customerName === undefined ? order.customerName : posText(b.customerName, 500),
     contact: b.contact === undefined ? order.contact : posText(b.contact, 500),
     phone: b.phone === undefined ? order.phone : posText(b.phone, 100),
@@ -110,6 +112,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
     await db.update(deliveries).set({ address, receiverName, receiverPhone, updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
   }
   snapshot.customer = fields.customerName;
+  snapshot.note = fields.note;
   await db.update(salesOrders).set({ ...fields, ...totals, posSnapshot: JSON.stringify(snapshot), revision: order.revision + 1, updatedAt: now }).where(eq(salesOrders.id, order.id));
   await cashAudit(db, actor.id, 'amend-pos-order', 'orders', order.id, { reason, before: { ...order, lines: oldLines }, after: { ...fields, ...totals, lines: computed, delivery: b.delivery, paymentNote }, revision: order.revision + 1 });
   return { id: order.id, revision: order.revision + 1, ...totals };
