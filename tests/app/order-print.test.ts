@@ -102,3 +102,15 @@ test('phiếu giao hàng: ngày ký và tên người nhận để ghi tay, bỏ
   assert.ok(packing.info.some(([label]: string[]) => label === 'Ngày giao'));
   assert.notEqual(packing.signDate, 'Ngày …… Tháng …… Năm ……');
 });
+
+test('Bản in đơn POS tách phí dịch vụ/ship, không cộng số lượng kho, tên phí được escape', () => {
+  const p = print.orderPrintData({ order: { ...order, subtotal: 130000, tax: 8800, total: 138800, posFees: { service: { name: '<img src=x onerror=alert(1)>', amount: 10800, subtotal: 10000, taxRate: 8 }, shippingFee: 20000 } }, lines: [{ sku: '001', name: 'Ly', qty: 1, unitPrice: 100000, amount: 100000 }], contract: null });
+  assert.equal(p.lines.length, 1);
+  assert.equal(p.charges.length, 2);
+  assert.equal(p.charges[1].taxRate, 0);
+  const html = print.orderSheetHtml(p, { prices: true });
+  assert.ok(html.includes('&lt;img'));
+  assert.ok(!html.includes('<img src=x'));
+  assert.ok(html.includes('Phí ship (không VAT)'));
+  assert.ok(html.includes('138.800'));
+});
