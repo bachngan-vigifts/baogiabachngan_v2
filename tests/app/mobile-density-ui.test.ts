@@ -26,6 +26,7 @@ test('toàn hệ thống dùng chuẩn giao diện gọn chỉ trên điện tho
   assert.match(compact, /font-size: 13px !important/);
   assert.match(compact, /\.modal-body \{ padding: 12px; font-size: 11px/);
   assert.match(compact, /\.auth, \.auth \* \{ font-size: revert; \}/);
+  assert.match(style, /body:has\(#view-pos:not\(\[hidden\]\)\) \.chat-launcher \{ bottom: calc\([^}]+\+ 66px\); \}/);
 });
 
 test('POS có lớp thu gọn riêng vì pos.css được tải sau style.css', () => {
