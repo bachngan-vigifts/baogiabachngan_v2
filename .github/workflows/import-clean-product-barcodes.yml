@@ -1,0 +1,136 @@
+name: Cập nhật barcode sản phẩm đã lọc lỗi
+
+on:
+  workflow_dispatch:
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: taceqfnsorewelsbdckg
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SOURCE_URL: https://file-stal-20.dlfl.vn/no/7e5084d3cec31d9d44d2/2aOboR6Zx8upEVtxnVPBCgj22w05cdLhKFZOVFBo
+    steps:
+      - name: Lọc lỗi, cập nhật và kiểm tra lại barcode
+        shell: bash
+        run: |
+          node <<'NODE'
+          const crypto = require('crypto');
+
+          const query = async sql => {
+            const response = await fetch(`https://api.supabase.com/v1/projects/${process.env.PROJECT_REF}/database/query`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${process.env.SUPABASE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: sql }),
+            });
+            const body = await response.text();
+            if (!response.ok) throw new Error(`Database query failed (${response.status}): ${body}`);
+            return JSON.parse(body);
+          };
+          const quote = value => `'${String(value).replaceAll("'", "''")}'`;
+          const jsonSql = value => `convert_from(decode(${quote(Buffer.from(JSON.stringify(value)).toString('base64'))}, 'base64'), 'utf8')::jsonb`;
+          const parseCsvLine = line => {
+            const fields = []; let value = '', quoted = false;
+            for (let i = 0; i < line.length; i++) {
+              const ch = line[i];
+              if (ch === '"') {
+                if (quoted && line[i + 1] === '"') { value += '"'; i++; }
+                else quoted = !quoted;
+              } else if (ch === ',' && !quoted) { fields.push(value); value = ''; }
+              else value += ch;
+            }
+            fields.push(value);
+            return fields;
+          };
+
+          const response = await fetch(process.env.SOURCE_URL);
+          if (!response.ok) throw new Error(`Không tải được CSV (${response.status}).`);
+          const text = (await response.text()).replace(/^\uFEFF/, '');
+          const lines = text.split(/\r?\n/).filter((line, index, all) => line.length || index < all.length - 1);
+          const header = parseCsvLine(lines.shift()).map(x => x.trim().toLowerCase());
+          if (header[0] !== 'sku' || header[1] !== 'barcode') throw new Error('CSV không đúng hai cột SKU,Barcode.');
+          const source = lines.map((line, index) => {
+            const [sku = '', barcode = '', ...extra] = parseCsvLine(line);
+            return { row: index + 2, sku: sku.trim(), barcode: barcode.trim(), extra: extra.join(',') };
+          });
+
+          const formatBad = source.filter(r => !r.sku || !r.barcode || r.extra || r.sku.length > 500 || r.barcode.length > 100 || !/^[\x21-\x7e]+$/.test(r.barcode));
+          const initiallyValid = source.filter(r => !formatBad.includes(r));
+          const owners = new Map();
+          for (const row of initiallyValid) {
+            if (!owners.has(row.barcode)) owners.set(row.barcode, new Set());
+            owners.get(row.barcode).add(row.sku);
+          }
+          const conflictCodes = new Set([...owners].filter(([, skus]) => skus.size > 1).map(([barcode]) => barcode));
+          const fileConflict = initiallyValid.filter(r => conflictCodes.has(r.barcode));
+          const seenPair = new Set();
+          const candidates = initiallyValid.filter(r => !conflictCodes.has(r.barcode)).filter(r => {
+            const key = `${r.sku}\u0000${r.barcode}`;
+            if (seenPair.has(key)) return false;
+            seenPair.add(key); return true;
+          }).map(({ sku, barcode }) => ({ sku, barcode }));
+
+          const incoming = jsonSql(candidates);
+          const previewSql = `
+            with incoming as (
+              select * from jsonb_to_recordset(${incoming}) as x(sku text, barcode text)
+            ), checked as (
+              select i.sku, i.barcode,
+                case
+                  when p.sku is null then 'SKU chưa có trong CRM.'
+                  when not p.active or p.approval_status <> 'approved' then 'Sản phẩm chưa hoạt động/được duyệt.'
+                  when collision.sku is not null then 'Barcode trùng SKU của sản phẩm khác.'
+                  when pb.sku is not null and pb.sku <> i.sku then 'Barcode đã gắn sản phẩm khác trong CRM.'
+                  else null
+                end as issue,
+                (pb.sku = i.sku) as already
+              from incoming i
+              left join products p on p.sku = i.sku
+              left join products collision on collision.sku = i.barcode and collision.sku <> i.sku
+              left join product_barcodes pb on pb.barcode = i.barcode
+            )
+            select json_build_object(
+              'issues', coalesce(json_agg(json_build_object('sku',sku,'barcode',barcode,'reason',issue)) filter (where issue is not null), '[]'::json),
+              'existing', coalesce(json_agg(json_build_object('sku',sku,'barcode',barcode)) filter (where issue is null and already), '[]'::json)
+            ) as result from checked`;
+          const previewRows = await query(previewSql);
+          const preview = previewRows[0]?.result || { issues: [], existing: [] };
+          const issueKeys = new Set(preview.issues.map(r => `${r.sku}\u0000${r.barcode}`));
+          const existingKeys = new Set(preview.existing.map(r => `${r.sku}\u0000${r.barcode}`));
+          const safe = candidates.filter(r => !issueKeys.has(`${r.sku}\u0000${r.barcode}`));
+          const additions = safe.filter(r => !existingKeys.has(`${r.sku}\u0000${r.barcode}`));
+          const fingerprint = crypto.createHash('sha256').update(JSON.stringify(safe)).digest('hex');
+
+          if (additions.length) {
+            const additionsSql = jsonSql(additions);
+            const audit = JSON.stringify({ filename: 'cap nhat barcode web crm.csv', source: 'Zalo Anh Thai 2026-10-19', total: source.length, removed_format: formatBad.length, removed_file_conflict: fileConflict.length, removed_database_conflict: preview.issues.length, existing: preview.existing.length, added: additions.length });
+            await query(`begin;
+              select pg_advisory_xact_lock(hashtext('product-barcode-import'));
+              with incoming as (
+                select * from jsonb_to_recordset(${additionsSql}) as x(sku text, barcode text)
+              ), valid as (
+                select i.sku, i.barcode from incoming i
+                join products p on p.sku=i.sku and p.active and p.approval_status='approved'
+                left join products collision on collision.sku=i.barcode and collision.sku<>i.sku
+                left join product_barcodes pb on pb.barcode=i.barcode
+                where collision.sku is null and pb.barcode is null
+              )
+              insert into product_barcodes(barcode, sku) select barcode, sku from valid on conflict do nothing;
+              insert into audit_logs(id, actor_id, module, action, entity_type, entity_id, data, created_at)
+              values (${quote(crypto.randomUUID())}, null, 'catalog', 'barcode-import-cleaned', 'product-barcodes', ${quote(fingerprint)}, ${quote(audit)}, ${quote(new Date().toISOString())});
+              commit;`);
+          }
+
+          const verifyRows = await query(`with expected as (
+              select * from jsonb_to_recordset(${jsonSql(safe)}) as x(sku text, barcode text)
+            )
+            select count(*)::int as expected,
+              count(*) filter (where pb.sku=e.sku)::int as matched,
+              count(*) filter (where pb.sku is null or pb.sku<>e.sku)::int as mismatched
+            from expected e left join product_barcodes pb on pb.barcode=e.barcode`);
+          const verified = verifyRows[0];
+          if (!verified || verified.mismatched !== 0 || verified.matched !== safe.length) throw new Error(`Kiểm tra sau cập nhật thất bại: ${JSON.stringify(verified)}`);
+
+          const reasons = Object.fromEntries(preview.issues.reduce((map, row) => map.set(row.reason, (map.get(row.reason) || 0) + 1), new Map()));
+          console.log(JSON.stringify({ ok: true, sourceRows: source.length, removedFormat: formatBad.length, removedFileConflict: fileConflict.length, removedDatabase: preview.issues.length, databaseIssueReasons: reasons, existing: preview.existing.length, added: additions.length, verified: verified.matched, fingerprint }, null, 2));
+          NODE
