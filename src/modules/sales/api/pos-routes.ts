@@ -408,6 +408,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         if (conflict) throw new AppError(409, 'Mã đang trùng SKU và barcode của hai sản phẩm. Nhờ Manager kiểm tra trước khi bán.');
       }
       const offset = Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
+      const limit = Math.max(1, Math.min(60, Number(c.url.searchParams.get('limit')) || 60));
       const rows = await c.env.db
         .select({
           sku: products.sku,
@@ -445,7 +446,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           ),
         )
         .orderBy(asc(products.name), asc(products.sku))
-        .limit(60)
+        .limit(limit)
         .offset(offset);
       const reserved = rows.length
         ? await reservedBySku(
@@ -461,7 +462,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           reserved: reserved.get(p.sku) ?? 0,
           available: Math.max(0, (p.onHand ?? 0) - (reserved.get(p.sku) ?? 0)),
         })),
-        nextOffset: rows.length === 60 ? offset + 60 : null,
+        nextOffset: rows.length === limit ? offset + limit : null,
       });
     },
     'business',

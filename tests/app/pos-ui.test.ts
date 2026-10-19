@@ -335,6 +335,13 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
     });
     await ui.load();
     assert.match(root.textContent, /Bán hàng nhanh/);
+    const filters = root.querySelectorAll('div').find((x) => x.className === 'pos-product-filters')!;
+    assert.equal(filters.hidden, true);
+    const showFilters = root.querySelectorAll('button').find((x) => x.textContent === 'Xem bộ lọc ▾')!;
+    await showFilters.fire('click');
+    assert.equal(filters.hidden, false);
+    assert.equal(showFilters.textContent, 'Ẩn bộ lọc ▴');
+    assert.ok(root.querySelectorAll('button').find((x) => x.textContent === 'Tìm tất cả SP'));
     const product = root.querySelectorAll('button').find((x) => x.className === 'pos-product')!;
     assert.ok(product);
     await product.fire('click');
@@ -357,6 +364,13 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
   }
   for (const p of ['trial-ui/pos.js', 'trial-ui/pos-print.js'])
     assert.ok(!/\.innerHTML\s*=|insertAdjacentHTML/.test(readFileSync(p, 'utf8')), p);
+});
+
+test('POS mobile lấy 20 sản phẩm mỗi lượt và tự tải tiếp khi cuộn', () => {
+  const js = readFileSync('trial-ui/pos.js', 'utf8'), css = readFileSync('trial-ui/pos.css', 'utf8');
+  assert.match(js, /mobile \? 20 : 60/);
+  assert.match(js, /grid\.scrollTop \+ grid\.clientHeight >= grid\.scrollHeight - 120/);
+  assert.match(css, /max-height: calc\(164px \* 10 \+ 8px \* 9\); overflow-y: auto/);
 });
 test('Bán hàng nhanh có bảng đơn theo cửa hàng và đủ bộ lọc trạng thái vận hành', () => {
   const source = readFileSync('trial-ui/pos.js', 'utf8');

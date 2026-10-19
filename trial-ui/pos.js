@@ -55,6 +55,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     orderQuery: '',
     orderRegisterId: '',
     productFilter: 'all',
+    catalogLoading: false,
     offset: 0,
     request: 0,
     showMenu: false,
@@ -260,35 +261,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       input,
       button('Quét mã', 'btn secondary', () => run(scan)),
     );
-    const filters = el('div', 'pos-product-filters');
-    for (const [id, label] of [['all','Tất cả'],['available','Còn hàng'],['low','Còn ít hàng'],['out','Hết hàng']]) {
-      const b = button(label, 'btn pos-filter' + (st.productFilter === id ? ' active' : ''), () => { st.productFilter = id; renderProducts(); });
-      b.dataset.filter = id; filters.append(b);
-    }
-    left.append(searchBox, filters);
-    const grid = el('div', 'pos-grid');
-    nodes.grid = grid;
-    left.append(grid);
-    nodes.more = button('Xem thêm sản phẩm', 'btn secondary', () => run(() => search(false, true)));
-    left.append(nodes.more);
-    const bh = el('div', 'pos-basket-head'), basketTitle = el('div');
-    nodes.cartCount = el('span', 'pos-cart-count', `${st.cart.length} món`);
-    basketTitle.append(el('h2', '', 'Đơn hiện tại'), nodes.cartCount);
-    bh.append(basketTitle);
-    bh.append(button((st.customer?.name || 'Khách lẻ') + '   Đổi ▾', 'btn primary pos-customer-trigger', chooseCustomer));
-    right.append(bh);
-    nodes.customer = bh.lastChild;
     const policies = st.options.policies || [];
     const price = select(
       [
-        [
-          st.register.pricePolicyId,
-          policies.find((p) => p.id === st.register.pricePolicyId)?.name || 'Giá bán lẻ (+ VAT)',
-        ],
-        [
-          st.register.secondPricePolicyId,
-          policies.find((p) => p.id === st.register.secondPricePolicyId)?.name || 'Giá bán lẻ',
-        ],
+        [st.register.pricePolicyId, policies.find((p) => p.id === st.register.pricePolicyId)?.name || 'Giá bán lẻ (+ VAT)'],
+        [st.register.secondPricePolicyId, policies.find((p) => p.id === st.register.secondPricePolicyId)?.name || 'Giá bán lẻ'],
       ],
       st.policy,
     );
@@ -299,10 +276,42 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       invalidate();
       run(() => search(false));
     });
-    const priceField = el('label', 'pos-policy pos-policy-compact');
+    const catalogTools = el('div', 'pos-catalog-tools'), priceField = el('label', 'pos-policy pos-policy-compact');
     priceField.append(el('span', 'pos-note', 'Chính sách giá'), price);
-    priceField.hidden = true;
-    right.append(priceField);
+    catalogTools.append(priceField, button('Tìm tất cả SP', 'btn secondary pos-find-all', () => {
+      nodes.search.value = '';
+      st.productFilter = 'all';
+      run(() => search(false));
+    }));
+    const filters = el('div', 'pos-product-filters');
+    for (const [id, label] of [['all','Tất cả'],['available','Còn hàng'],['low','Còn ít hàng'],['out','Hết hàng']]) {
+      const b = button(label, 'btn pos-filter' + (st.productFilter === id ? ' active' : ''), () => { st.productFilter = id; renderProducts(); });
+      b.dataset.filter = id; filters.append(b);
+    }
+    filters.hidden = true;
+    const filterToggle = button('Xem bộ lọc ▾', 'btn ghost pos-filter-toggle', () => {
+      filters.hidden = !filters.hidden;
+      filterToggle.textContent = filters.hidden ? 'Xem bộ lọc ▾' : 'Ẩn bộ lọc ▴';
+      filterToggle.setAttribute('aria-expanded', String(!filters.hidden));
+    });
+    filterToggle.setAttribute('aria-expanded', 'false');
+    left.append(searchBox, catalogTools, filterToggle, filters);
+    const grid = el('div', 'pos-grid');
+    nodes.grid = grid;
+    grid.addEventListener('scroll', () => {
+      if (st.offset != null && !st.catalogLoading && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 120)
+        run(() => search(false, true));
+    });
+    left.append(grid);
+    nodes.more = button('Xem thêm sản phẩm', 'btn secondary', () => run(() => search(false, true)));
+    left.append(nodes.more);
+    const bh = el('div', 'pos-basket-head'), basketTitle = el('div');
+    nodes.cartCount = el('span', 'pos-cart-count', `${st.cart.length} món`);
+    basketTitle.append(el('h2', '', 'Đơn hiện tại'), nodes.cartCount);
+    bh.append(basketTitle);
+    bh.append(button((st.customer?.name || 'Khách lẻ') + '   Đổi ▾', 'btn primary pos-customer-trigger', chooseCustomer));
+    right.append(bh);
+    nodes.customer = bh.lastChild;
     nodes.lines = el('div', 'pos-lines');
     right.append(nodes.lines);
     drawFees(right);
@@ -738,21 +747,29 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   }
   async function search(addScanned = false, more = false) {
     if (!st.register) return;
+    if (more && st.catalogLoading) return;
+    st.catalogLoading = true;
     const seq = ++searchSeq,
       q = nodes.search?.value.trim() || '',
-      offset = more ? st.offset : 0;
-    const d = await api(
-      `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}&q=${encodeURIComponent(q)}&offset=${offset}`,
-    );
-    if (seq !== searchSeq) return;
-    st.offset = d.nextOffset;
-    st.products = more ? [...st.products, ...d.products] : d.products;
-    renderProducts();
-    nodes.more.hidden = d.nextOffset == null;
-    if (addScanned) {
-      const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
-      if (p && p.available > 0) add(p, true);
-      else toast('Chọn đúng sản phẩm trong danh sách.');
+      offset = more ? st.offset : 0,
+      mobile = window.matchMedia?.('(max-width: 850px)')?.matches === true,
+      limit = mobile ? 20 : 60;
+    try {
+      const d = await api(
+        `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`,
+      );
+      if (seq !== searchSeq) return;
+      st.offset = d.nextOffset;
+      st.products = more ? [...st.products, ...d.products] : d.products;
+      renderProducts();
+      nodes.more.hidden = d.nextOffset == null;
+      if (addScanned) {
+        const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
+        if (p && p.available > 0) add(p, true);
+        else toast('Chọn đúng sản phẩm trong danh sách.');
+      }
+    } finally {
+      st.catalogLoading = false;
     }
   }
   function renderProducts() {
