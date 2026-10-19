@@ -854,3 +854,57 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-cash-quick { grid-template-columns: repeat(3, 1fr); }
   .pos-payment-footer { grid-template-columns: 1fr; }
 }
+
+/* POS dùng cùng chuẩn gọn của toàn hệ thống trên điện thoại. */
+@media (max-width: 850px) {
+  #view-pos { font-size: 11px; }
+  .pos-head { min-height: 56px; padding: 6px 10px; }
+  .pos-head h1 { font-size: 16px; }
+  .pos-register-name, .pos-cart-count, .pos-payment-meta { font-size: 10px; }
+  .pos-head-tools { gap: 6px; }
+  .pos-shift-status { min-height: 36px; padding-inline: 9px; font-size: 10px; }
+  .pos-close-shift { min-height: 38px !important; padding-inline: 12px !important; font-size: 11px !important; }
+  .pos-more-menu > summary { width: 40px; height: 38px; font-size: 20px; }
+  .pos-more-panel .btn { min-height: 36px; font-size: 10px; }
+  .pos-catalog, .pos-checkout { padding: 10px; }
+  .pos-search { height: 44px; margin-bottom: 9px; }
+  .pos-search input { padding-inline: 10px; font-size: 13px !important; }
+  .pos-search .btn { min-width: 92px; min-height: 40px; font-size: 11px; }
+  .pos-product-filters { gap: 6px; margin-bottom: 10px; }
+  .pos-filter { min-height: 34px; padding-inline: 10px; font-size: 10px; }
+  .pos-grid { grid-auto-rows: 164px; gap: 8px; }
+  .pos-product { padding: 9px; border-radius: 12px; }
+  .pos-product img, .pos-product .pos-image-empty { height: 58px; flex-basis: 58px; }
+  .pos-product-name { height: 34px; flex-basis: 34px; font-size: 11px; }
+  .pos-product strong { font-size: 14px; }
+  .pos-basket-head h2 { font-size: 15px; }
+  .pos-basket-head .pos-customer-trigger { min-height: 40px; font-size: 11px; }
+  .pos-line { padding: 9px 0; }
+  .pos-line-top b { font-size: 11px; }
+  .pos-line .pos-qty .btn { width: 36px; min-height: 36px; font-size: 16px; }
+  .pos-line .pos-qty input { width: 36px; font-size: 13px !important; }
+  .pos-extra-fees { font-size: 10px; }
+  .pos-total { font-size: 13px; }
+  .pos-total strong { font-size: 20px; }
+  .pos-main-actions .btn { min-height: 46px; font-size: 12px; }
+  .pos-open-payment { font-size: 13px !important; }
+  .pos-payment-modal h2 { padding: 12px; font-size: 15px; }
+  .pos-payment-due { padding: 12px 12px 10px; }
+  .pos-payment-due strong { font-size: 24px; }
+  .pos-payment-methods { gap: 7px; padding: 0 12px 10px; }
+  .pos-payment-method { min-height: 64px; padding: 6px; }
+  .pos-payment-method b { font-size: 12px; }
+  .pos-payment-method span { font-size: 9px; }
+  .pos-payment-cash, .pos-payment-transfer, .pos-payment-cod { padding: 0 12px 10px; }
+  .pos-payment-cash .pos-field, .pos-change-card { min-height: 64px; padding: 9px; }
+  .pos-payment-cash .pos-field input, .pos-change { font-size: 20px !important; }
+  .pos-cash-quick { gap: 5px; margin-top: 7px; }
+  .pos-cash-quick .btn, .pos-create-qr { min-height: 38px; font-size: 10px; }
+  .pos-payment-footer { grid-template-columns: 120px 1fr; gap: 7px; padding: 10px 12px 12px; }
+  .pos-payment-footer .btn { min-height: 44px; font-size: 11px; }
+  .pos-modal .btn { min-height: 38px; font-size: 11px; }
+  .pos-customer-picker h2, .pos-return-head h2 { font-size: 15px; }
+  .pos-customer-subtitle, .pos-customer-hint, .pos-customer-option span { font-size: 10px; }
+  .pos-customer-input { min-height: 40px; padding: 7px 9px; font-size: 13px !important; }
+  .pos-customer-option { min-height: 42px; padding: 7px 9px; }
+}

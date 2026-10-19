@@ -1663,4 +1663,65 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 /* Số đếm trên nút lọc (VD "Chờ xuất hoá đơn 3"); trống thì ẩn. */
 .chip .count:not(:empty) { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--red, #c8212b); color: #fff; font-size: .72rem; line-height: 18px; text-align: center; }
 .chip .count:empty { display: none; }
+
+/* Chuẩn giao diện gọn dùng chung cho toàn hệ thống trên điện thoại. */
+@media (max-width: 850px) {
+  :root { font-size: 12px; }
+  body { font-size: 12px; }
+  .view { padding: 12px 10px 100px; }
+  h1, .page-head h1 { font-size: 16px; }
+  h2 { font-size: 14px; }
+  h3 { font-size: 13px; }
+  .eyebrow, .muted, .small, small, .field-label, label { font-size: 10px; }
+  .page-head { gap: 8px; margin-bottom: 12px; }
+  .page-head p { font-size: 10px; }
+  .topbar { height: 46px; padding: 0 10px; }
+  .crumbs, .topbar-right { font-size: 10px; }
+  .card, .panel { border-radius: 10px; }
+  .card { padding: 10px; }
+  .card-title { margin-bottom: 9px; font-size: 13px; }
+  .card-title-row { gap: 7px; margin-bottom: 9px; }
+  .stats { gap: 7px; margin-bottom: 10px; }
+  .stat { padding: 9px 10px; }
+  .stat small, .stat span { font-size: 9px; }
+  .stat strong { font-size: 17px; }
+  .toolbar { gap: 7px; padding: 9px; }
+  .toolbar select { padding: 6px 8px; font-size: 11px; }
+  .search { min-height: 38px; padding-inline: 9px; }
+  .search input { min-height: 36px; padding-block: 5px; }
+  .chips { gap: 5px; }
+  .chip { padding: 4px 9px; font-size: 10px; }
+  .btn { min-height: 38px; padding: 6px 10px; gap: 5px; border-radius: 7px; font-size: 11px; }
+  .btn.small, .btn.ghost { min-height: 34px; padding: 5px 8px; font-size: 10px; }
+  .icon-btn { width: 34px; height: 34px; font-size: 17px; }
+  input:not([type=checkbox]):not([type=radio]), select, textarea { min-height: 38px; padding: 6px 8px; font-size: 13px !important; }
+  input[type=checkbox], input[type=radio] { width: 16px; height: 16px; }
+  .form-grid { gap: 9px; }
+  .field-row { gap: 8px; margin: 10px 0; }
+  .pill { padding: 2px 7px; font-size: 9px; }
+  .banner { margin: 8px 10px 0; padding: 8px 10px; font-size: 10px; }
+  .data-table th { padding: 7px 9px; font-size: 9px; }
+  .data-table td { padding: 8px 9px; font-size: 11px; }
+  .data-table td small { font-size: 9px; }
+  .modal { border-radius: 12px 12px 0 0; }
+  .modal-head { padding: 12px 12px 0; }
+  .modal-head h2 { font-size: 15px; }
+  .modal-body { padding: 12px; font-size: 11px; }
+  .modal-foot { gap: 6px; padding: 9px 12px 10px; }
+  .modal-foot .btn { min-height: 38px; }
+  .bottom-nav { padding-top: 4px; }
+  .bottom-nav a { gap: 1px; padding: 3px 0; font-size: 9px; }
+  .bottom-nav svg { width: 18px; height: 18px; }
+  .empty { padding: 26px 12px; }
+  .empty-icon { width: 42px; height: 42px; }
+  .toasts { bottom: 112px; }
+  .toast { padding: 8px 10px; font-size: 10px; }
+  .progress-steps li { min-height: 48px; padding: 8px 9px 8px 36px; }
+  .progress-steps li .dot { left: 9px; top: 9px; width: 18px; height: 18px; font-size: 9px; }
+  .big-btn, .big-select, .recv-field input, .recv-full, .lookup-bar input { min-height: 40px; font-size: 12px; }
+  .kho-card { padding: 10px 12px; }
+  .kho-card-title, .lookup-sku { font-size: 12px; }
+  .kho-count, .lookup-total strong, .recv-need strong { font-size: 20px; }
+  .auth, .auth * { font-size: revert; }
+}
 .pur-payables { width: min(860px, calc(100vw - 32px)); max-width: none; }
