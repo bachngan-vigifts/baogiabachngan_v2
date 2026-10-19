@@ -30,6 +30,7 @@ jobs:
           npm run typecheck &&
           node --import tsx --test
           tests/app/pos.test.ts
+          tests/app/pos-fees.test.ts
           tests/app/retail-customers.test.ts
           tests/app/barcode-import.test.ts
           tests/app/sapo-push.test.ts

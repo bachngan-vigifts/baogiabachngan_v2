@@ -3216,6 +3216,18 @@ async function openOrder(id) {
     <ul class="plain-list">${allocatePayments(d.schedules, r.paid).map(s => `<li class="${s.left <= 0 ? 'installment-paid' : ''}"><span>${esc(s.note || s.kind)}<small>${installmentStatus(s)}</small></span><b>${money(s.amount)}</b><small>${s.left <= 0 ? 'Đã hoàn tất' : s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
   $('#order-lines').innerHTML = d.lines.map(l => `<tr><td>${esc(l.name)}<small>${esc([l.sku, l.unit].filter(Boolean).join(' · '))}</small></td><td class="right">${fmtNum(l.qty)}</td>
     <td class="right">${fmtNum(l.deliveredQty)}</td><td class="right num">${money(l.unitPrice)}</td><td class="right">${fmtNum(l.taxRate)}%</td><td class="right num">${money(l.amount)}</td></tr>`).join('');
+  const fees = o.posFees;
+  for (const charge of [
+    ...(fees?.service?.amount ? [{ name: fees.service.name, amount: fees.service.subtotal, taxRate: fees.service.taxRate }] : []),
+    ...(fees?.shippingFee ? [{ name: 'Phí ship (không VAT)', amount: fees.shippingFee, taxRate: 0 }] : []),
+  ]) {
+    const tr = document.createElement('tr'), title = document.createElement('td');
+    title.colSpan = 3; title.textContent = charge.name; tr.append(title);
+    for (const value of [money(charge.amount), charge.taxRate + '%', money(charge.amount)]) {
+      const td = document.createElement('td'); td.className = 'right'; td.textContent = value; tr.append(td);
+    }
+    $('#order-lines').append(tr);
+  }
   const k = d.contract;
   // Đơn hàng và HĐKT là 2 luồng: đơn không có HĐKT (khách có HĐ nguyên tắc) hiện ô "Đơn hàng" thay cho ô HĐKT.
   $('#order-contract-title').textContent = k ? 'HĐKT' : 'Đơn hàng';

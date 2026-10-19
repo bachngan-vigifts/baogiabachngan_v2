@@ -1,3 +1,4 @@
+import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { PosDb, PosMember } from './pos-store.ts';
@@ -77,7 +78,8 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
         const available = (balances.find(r => r.sku === sku)?.qty ?? 0) - (reserved.get(sku) ?? 0) + own;
         if (wanted > available + 1e-9) throw new AppError(409, `${sku}: chỉ còn khả dụng ${Math.max(0, available)}.`, 'POS_STOCK_SHORT');
       }
-      totals = { subtotal: computed.reduce((n, l) => n + l.subtotal, 0), tax: computed.reduce((n, l) => n + l.tax, 0), total: posMoney(computed.reduce((n, l) => n + l.total, 0)) };
+      const fees = snapshotPosFees(snapshot);
+      totals = { subtotal: posMoney(computed.reduce((n, l) => n + l.subtotal, 0) + fees.subtotal), tax: posMoney(computed.reduce((n, l) => n + l.tax, 0) + fees.tax), total: posMoney(computed.reduce((n, l) => n + l.total, 0) + fees.total) };
       if (schedules.length !== 1) throw new AppError(409, 'Đơn có lịch thanh toán riêng, cần xử lý lịch thu trước khi đổi giá trị.');
     }
   }

@@ -1,3 +1,4 @@
+import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
 import { cashLock, cashShiftTotals, cashAudit, openingCashComparison } from './cash-store.ts';
 import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
@@ -81,6 +82,7 @@ export const emptyCart = (b: Record<string, unknown>) => ({
   customerId: posText(b.customerId),
   vatEnabled: b.vatEnabled !== false,
   rows: b.rows,
+  ...posFeeInput(b),
 });
 export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
   const input = emptyCart(b),
@@ -125,8 +127,9 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
         .where(and(eq(customers.id, input.customerId), eq(customers.approvalStatus, 'approved')))
     : [];
   if (input.customerId && !customer) throw new AppError(400, 'Khách hàng chưa dùng được.');
-  const subtotal = lines.reduce((s, l) => s + l.subtotal, 0),
-    tax = lines.reduce((s, l) => s + l.tax, 0),
+  const fees = calculatePosFees(b, withVat ? r.taxRate : 0);
+  const subtotal = posMoney(lines.reduce((s, l) => s + l.subtotal, 0) + fees.subtotal),
+    tax = posMoney(lines.reduce((s, l) => s + l.tax, 0) + fees.tax),
     discount = lines.reduce((s, l) => s + l.discountAmount, 0),
     total = posMoney(subtotal + tax);
   const canonical = {
@@ -135,11 +138,13 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     pricePolicyId: policy,
     customerId: input.customerId,
     vatEnabled: withVat,
+    ...posFeeInput(b),
     rows: lines.map((l) => ({ sku: l.sku, qty: l.qty, discountType: l.discountType, discountValue: l.discountValue })),
   };
   return {
     register: r,
     customer,
+    fees,
     lines,
     subtotal,
     tax,
@@ -370,6 +375,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       register: c.register,
       customer: c.customer?.name ?? 'Khách lẻ',
       lines: c.lines,
+      fees: c.fees,
       subtotal: c.subtotal,
       tax: c.tax,
       discount: c.discount,

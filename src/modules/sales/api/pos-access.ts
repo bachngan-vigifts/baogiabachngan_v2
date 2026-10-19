@@ -32,7 +32,13 @@ export async function authorizePosStore(c: Ctx) {
     const s = fold(value);
     return lock ? /lock/.test(s) : /minh long/.test(s) && !/lock/.test(s);
   };
-  const visible = rows.filter(x => belongs(x.warehouse) || (!/lock|minh long/.test(fold(x.warehouse)) && belongs(x.r.name)));
+  const visible = rows.filter(x => {
+    const warehouse = fold(x.warehouse), register = fold(x.r.name);
+    const ambiguousWarehouse = /lock/.test(warehouse) && /minh long/.test(warehouse);
+    return ambiguousWarehouse
+      ? belongs(register)
+      : belongs(warehouse) || (!/lock|minh long/.test(warehouse) && belongs(register));
+  });
   const foreignDrawers = new Set(rows.filter(x => !visible.includes(x)).map(x => x.r.cashDrawerId));
   c.state.posScope = {
     registers: visible.map(x => x.r.id),

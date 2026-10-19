@@ -97,3 +97,17 @@ test('Không tự chuyển sang cửa hàng khác khi thiếu cấu hình; két 
   assert.equal((await f.call('/pos/catalog?registerId=' + ml.data.id, f.other)).status, 403);
   assert.equal((await f.call('/pos/options', f.mgr)).data.registers.length, 2);
 });
+
+test('Kho dùng tên chung Minh Long - LocknLock: phân cửa hàng theo tên quầy', async () => {
+  const f = await setup();
+  const { posRegisters } = await import('../../src/modules/sales/pos-schema.ts');
+  await f.db.update(warehouses).set({ name: 'MINH LONG - LOCKNLOCK CẦN THƠ' }).where(eq(warehouses.id, 'pos-wh'));
+  await f.db.update(posRegisters).set({ name: 'CỬA HÀNG LOCKNLOCK CẦN THƠ' }).where(eq(posRegisters.id, f.registerId));
+  const ml = await f.call('/pos/registers', f.mgr, 'POST', {
+    name: 'Showroom Gốm Sứ Minh Long Cần Thơ', warehouseId: 'pos-wh', pricePolicyId: 'retail-vat', secondPricePolicyId: 'retail',
+  });
+  assert.equal(ml.status, 200);
+  await f.db.update(employees).set({ positionId: 'sales-ml' }).where(eq(employees.id, 'emp'));
+  assert.deepEqual((await f.call('/pos/options', f.emp)).data.registers.map((r: any) => r.id), [ml.data.id]);
+  assert.deepEqual((await f.call('/pos/options', f.other)).data.registers.map((r: any) => r.id), [f.registerId]);
+});
