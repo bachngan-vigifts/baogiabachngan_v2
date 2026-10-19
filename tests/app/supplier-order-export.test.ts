@@ -101,3 +101,17 @@ test('keeps the main email attachment helper producing a real PDF as base64', as
     assert.equal((await pdfDependencies.PDFLib.PDFDocument.load(bytes)).getTitle(), 'Đơn đặt hàng DMH_20261015_TEST');
   } finally { globalThis.fetch = previous; }
 });
+
+test('Excel Lock luôn dùng pháp nhân VIGIFTS, kể cả lựa chọn cũ đang là Bách Ngân', async () => {
+  const name = 'CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS';
+  for (const entity of [undefined, 'BN', 'VG']) {
+    const wb = await buildSupplierWorkbook(purchase(), 'lock', dependencies, { entity });
+    const { loaded } = await roundtrip(wb);
+    assert.equal(loaded.worksheets[0].getCell('A4').value, 'Customer (Khách hàng): ' + name);
+    assert.equal(loaded.creator, name);
+  }
+  for (const [entity, expected] of [['BN', 'CTY TNHH SX TM BÁCH NGÂN'], ['VG', 'CTY TNHH SX TM QC VIGIFTS']]) {
+    const wb = await buildSupplierWorkbook(purchase(), 'minh-long-logo', dependencies, { entity });
+    assert.equal(wb.worksheets[0].getCell('C4').value, expected);
+  }
+});
