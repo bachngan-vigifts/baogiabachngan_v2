@@ -426,3 +426,58 @@ test('POS: bảng đơn nằm cuối, thêm/bỏ một dòng phí và phí ship 
     assert.equal(cleared.feeName, ''); assert.equal(cleared.feeAmount, 0); assert.equal(cleared.shippingFee, '20000');
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
+
+test('SePay chỉ tự tích sau server xác nhận đúng QR, tiếp tục khi đóng popup và bỏ xác nhận khi đổi giỏ', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window, prevInterval = globalThis.setInterval, prevClear = globalThis.clearInterval;
+  let poll: (() => Promise<void>) | undefined, paid = false;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} }, setInterval: (fn: () => Promise<void>) => { poll = fn; return 1; }, clearInterval() {} });
+  try {
+    const root = new Element('section'), calls: any[] = [], notices: string[] = [];
+    const api = async (path: string, method = 'GET', body?: any) => {
+      calls.push({ path, method, body });
+      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
+      if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
+      if (path === '/pos/qr') return { id: 'qr-1', amount: sample.total, content: 'POS qr1', url: 'https://example.test/qr', expiresAt: new Date(Date.now() + 600000).toISOString() };
+      if (path === '/pos/qr/qr-1/status') return { paid, consumed: false };
+      if (path === '/pos/checkout') throw Object.assign(Error('Kiểm tra payload, không ghi đơn'), { status: 400 });
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast: (s: string) => notices.push(s), user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    const customerButton = root.querySelectorAll('button').find(b => b.textContent === 'Khách lẻ · Đổi')!;
+    assert.ok(customerButton.className.includes('pos-customer-trigger'));
+    assert.ok(customerButton.className.includes('primary'));
+    const product = root.querySelectorAll('button').find(b => b.className === 'pos-product')!;
+    await product.fire('click');
+    await new Promise(r => setTimeout(r, 230));
+    await root.querySelectorAll('button').find(b => b.textContent === 'Chuyển khoản')!.fire('click');
+    const check = root.querySelectorAll('input').find(i => i.type === 'checkbox')!;
+    const pay = root.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in')!;
+    assert.equal(check.checked, false);
+    assert.equal(pay.disabled, true);
+    await root.querySelectorAll('button').find(b => b.textContent === 'Hiện QR')!.fire('click');
+    assert.ok(poll);
+    await poll!();
+    assert.equal(check.checked, false, 'Kết nối SePay nhưng chưa có tiền vẫn không tích');
+    const qrDialog = doc.body.children.at(-1)!;
+    await qrDialog.querySelectorAll('button').find(b => b.textContent === 'Đóng')!.fire('click');
+    paid = true;
+    await poll!();
+    assert.equal(check.checked, true);
+    assert.equal(check.disabled, true);
+    assert.equal(pay.disabled, false);
+    assert.match(root.textContent, /SePay đã xác nhận cửa hàng nhận đủ/);
+    assert.ok(!calls.some(c => c.path === '/pos/checkout'), 'Chờ nhân viên bấm thu tiền');
+    await pay.fire('click');
+    const sent = calls.find(c => c.path === '/pos/checkout');
+    assert.equal(sent.body.paymentRequestId, 'qr-1');
+    assert.equal(sent.body.method, 'transfer');
+    await product.fire('click');
+    assert.equal(check.checked, false, 'Giỏ thay đổi phải bỏ xác nhận cũ');
+    assert.equal(check.disabled, false);
+    await poll!();
+    assert.equal(check.checked, false, 'QR cũ không xác nhận cho giỏ mới');
+    await new Promise(r => setTimeout(r, 230));
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin, setInterval: prevInterval, clearInterval: prevClear }); }
+});
