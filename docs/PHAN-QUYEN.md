@@ -51,8 +51,9 @@ Một số mục không nằm trong bảng:
 
 ## Phê duyệt: cờ "Được duyệt" từng nhân viên
 
-Mọi phê duyệt chỉ do **Manager** hoặc **nhân viên được Manager bật cờ "Được duyệt"** (`staff_members.can_approve`, migration 0067):
+Các thao tác phê duyệt chỉ do **Manager** hoặc **nhân viên được Manager bật cờ "Được duyệt"** (`staff_members.can_approve`, migration 0067):
 
+- **Ngoại lệ POS đã chốt:** khách tạo tại POS dùng ngay, nhân viên tự nhập chiết khấu hợp lệ tới 100%, bill 0 đồng được phép; các thao tác này không phát sinh yêu cầu duyệt. Phiếu thu/chi thủ công từ ngưỡng cấu hình vẫn phải duyệt.
 - **Ai bật / tắt cờ:** chỉ Manager, ở trang **Nhân viên** (ô "Được duyệt" cạnh chức vụ).
   - API: `PUT /admin/members/:id/approver`, khu vực `admin`; câu UPDATE kiểm lại người thao tác là Manager.
   - Mỗi lần bật / tắt được ghi vào Nhật ký phân quyền.
@@ -68,6 +69,7 @@ Mọi phê duyệt chỉ do **Manager** hoặc **nhân viên được Manager b�
 | Sản phẩm mới | `POST /products/:sku/approve`; từ chối = `DELETE /products/:sku`; `GET /product-approvals` |
 | Đơn hàng / HĐKT | `PUT /orders/:id/status` với `confirmed` |
 | Đơn mua NCC (duyệt giá) | `POST /purchase-orders/:id/approve` (`checkPurchase('approve')`) |
+| Phiếu thu/chi thủ công Sổ quỹ | `POST /cash/entries/:id/approve`; cần `page.cash` hoặc `pos.sell`; không tự duyệt, kể cả Manager. Người được chỉ định chỉ xem thêm phiếu thủ công chờ duyệt và ảnh kèm theo, không tự có quyền xem mọi ca/thu bán hàng/tra soát. |
 | Hộp "Cần duyệt" | `GET /approvals` (báo giá, đơn, HĐKT, **đơn mua NCC đã gửi duyệt**, khách hàng, sản phẩm) |
 | Nút duyệt nhanh ở Sơ đồ quy trình | `GET /flow` (chỉ trả thao tác `approve-*` cho người được duyệt) |
 

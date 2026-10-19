@@ -271,7 +271,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
             }),
           ),
         );
-      if (r.status === 'pending' && summary.canManage && r.createdBy !== user().id)
+      if (r.status === 'pending' && (summary.canApprove ?? summary.canManage) && r.createdBy !== user().id)
         actions.append(
           button('Duyệt', () =>
             run(async () => {
@@ -414,7 +414,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
   function configure() {
     const m = dialog('Cấu hình ' + summary.drawer.name),
       name = field('Tên két', 'text', summary.drawer.name),
-      threshold = field('Ngưỡng cần Manager duyệt (VNĐ)', 'number', summary.drawer.approvalThreshold),
+      threshold = field('Ngưỡng cần duyệt (VNĐ)', 'number', summary.drawer.approvalThreshold),
       opening = field('Số dư đầu kỳ (chỉ nhập một lần)', 'number', '0'),
       reason = field('Lý do đầu kỳ', 'textarea');
     threshold.input.min = '1';
