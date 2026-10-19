@@ -1,3 +1,4 @@
+import { startBarcodeCamera } from './barcode-camera.js';
 import { printPos } from './pos-print.js';
 import { shiftSummaryRows, shiftCodRows } from './pos-report.js';
 const el = (tag, cls, text) => {
@@ -651,54 +652,32 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }
   }
   async function scan() {
-    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
-      nodes.search.focus();
-      toast('Dùng máy quét cầm tay hoặc nhập mã vào ô tìm kiếm. Camera chưa được trình duyệt này hỗ trợ.');
-      return;
-    }
-    const m = modal('Quét mã vạch'),
-      video = el('video');
-    video.autoplay = true;
-    video.playsInline = true;
+    const m = modal('Quét mã bằng camera'), video = el('video', 'pos-camera'),
+      hint = el('p', 'pos-note', 'Cho phép camera, đưa mã vạch vào giữa khung và giữ máy ổn định.');
     video.style.width = '100%';
-    m.body.append(video, button('Đóng', 'btn secondary', m.close));
+    m.body.append(video, hint, button('Đóng camera', 'btn secondary', m.close));
+    let handle, closed = false;
+    const controller = new AbortController();
+    const leave = () => m.close();
+    window.addEventListener('hashchange', leave);
+    m.dlg.addEventListener('close', () => { closed = true; window.removeEventListener('hashchange', leave); controller.abort(); handle?.stop(); });
     m.show();
-    let stream = null,
-      stop = false;
-    const release = () => {
-      stop = true;
-      stream?.getTracks().forEach((t) => t.stop());
-    };
-    m.dlg.addEventListener('close', release);
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-      });
-      if (!m.dlg.open) {
-        release();
-        return;
-      }
-      video.srcObject = stream;
-      await video.play();
-      const detector = new BarcodeDetector();
-      const tick = async () => {
-        if (stop) return;
-        try {
-          const codes = await detector.detect(video);
-          if (codes.length) {
-            nodes.search.value = codes[0].rawValue;
-            m.close();
-            await search(true);
-            return;
-          }
-        } catch {}
-        if (!stop) setTimeout(tick, 250);
-      };
-      tick();
+      handle = await startBarcodeCamera(video, code => {
+        if (closed) return;
+        nodes.search.value = code;
+        m.close();
+        run(() => search(true));
+      }, { signal: controller.signal });
+      if (closed) handle.stop();
     } catch (e) {
-      release();
-      m.close();
-      throw e;
+      handle?.stop();
+      if (closed) return;
+      hint.textContent = e.name === 'NotAllowedError' ? 'Chưa được cấp quyền camera. Anh bật quyền Camera cho trang CRM trong cài đặt trình duyệt rồi thử lại.'
+        : e.name === 'NotFoundError' ? 'Không tìm thấy camera trên thiết bị này.'
+        : e.name === 'NotReadableError' ? 'Camera đang được ứng dụng khác sử dụng. Đóng ứng dụng đó rồi thử lại.' : e.message;
+      video.hidden = true;
+      m.body.append(button('Nhập mã thủ công', 'btn secondary', () => { m.close(); nodes.search.focus(); }));
     }
   }
   function chooseCustomer() {

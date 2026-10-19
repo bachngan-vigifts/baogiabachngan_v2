@@ -30,3 +30,5 @@
 - Xem trước không ghi dữ liệu. Chỉ nút **Xác nhận cập nhật** ghi sau khi có mã khớp. Nếu danh mục/tồn hoặc nội dung file đổi sau xem trước thì API trả 409, yêu cầu xem trước lại. File tồn cũ hơn lần nhập gần nhất của các kho nhận bị từ chối.
 - API quản trị (`product-actions.ts`) kiểm tra Manager phía máy chủ; nhập mỗi lượt trong một giao dịch, lưu `stock_imports`/`stock_import_lines` hoặc `product_edits`. Các bảng đã có, không cần migration.
 
+
+Manager có thêm **Cập nhật barcode từ file** (Excel/CSV, xem trước rồi lưu). Quy tắc mã trùng, file mẫu và quét camera POS xem [Barcode và camera](BARCODES.md).
