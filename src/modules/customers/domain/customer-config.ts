@@ -9,3 +9,7 @@ export const CUSTOMER_LIMITS = { contacts: 50, shared: 30, contactName: 200, con
 /** Duyệt khách hàng mới: nhân viên tạo → `pending` (chưa dùng được cho báo giá / đơn), Manager duyệt → `approved`. Khách Sapo luôn `approved`. */
 export const APPROVAL_STATUSES = ['pending', 'approved'] as const;
 export type ApprovalStatus = typeof APPROVAL_STATUSES[number];
+
+/** Retail is a list/picker segment; existing document access is unchanged. */
+export const canListRetailCustomers = (m: { role: string; positionId?: string | null }) =>
+  m.role === 'manager' || ['sales-lock', 'sales-ml'].includes(m.positionId ?? '');

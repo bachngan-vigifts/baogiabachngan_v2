@@ -9,7 +9,7 @@ import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { customerBrandDiscounts, customerContacts, customerNotes, customers, customerStaff } from '../schema.ts';
-import { CUSTOMER_LIMITS } from '../domain/customer-config.ts';
+import { CUSTOMER_LIMITS, canListRetailCustomers } from '../domain/customer-config.ts';
 import { NORM_TAX_SQL, normTaxCode } from '../domain/tax-code.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -138,15 +138,17 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     // `?status=pending`: khách chờ Manager duyệt; `?usable=1`: chỉ khách đã duyệt (chọn cho báo giá / đơn).
     const status = c.url.searchParams.get('status'), usable = c.url.searchParams.get('usable') === '1';
     const approval = status === 'pending' || status === 'approved' ? eq(customers.approvalStatus, status) : usable ? eq(customers.approvalStatus, 'approved') : undefined;
-    const where = and(matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval);
+    const retailVisible = canListRetailCustomers(me), kind = c.url.searchParams.get('kind');
+    const segment = !retailVisible ? eq(customers.isRetail, false) : kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined;
+    const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval);
     const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}]] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
       c.env.db.select().from(customers).where(where).orderBy(desc(customers.createdAt), asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
-      c.env.db.select({ pending: count() }).from(customers).where(eq(customers.approvalStatus, 'pending')),
+      c.env.db.select({ pending: count() }).from(customers).where(and(eq(customers.approvalStatus, 'pending'), segment)),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));
     return json({ customers: rows.map(r => ({ ...r, owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
-      total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
+      canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
 
   const save = async (c: Ctx, update: boolean) => {

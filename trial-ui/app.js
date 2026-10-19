@@ -513,12 +513,14 @@ async function loadCustomers() {
   const req = ++customerReq;
   customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
-    const d = await api(`/customers?limit=${customerPager.limit}&offset=${customerPager.offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}${$('#customer-pending').checked ? '&status=pending' : ''}`);
+    const d = await api(`/customers?limit=${customerPager.limit}&offset=${customerPager.offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}${$('#customer-pending').checked ? '&status=pending' : ''}${$('#customer-retail').checked ? '&kind=retail' : ''}`);
     if (req !== customerReq) return;
+    $('#customer-retail-chip').hidden = !d.canListRetail;
+    if (!d.canListRetail) $('#customer-retail').checked = false;
     state.customers = d.customers; state.customerQuoteCounts = null;
     state.customerTotal = d.total ?? d.customers.length;
     loadCustomerQuoteCounts(req);
-    if (!state.customerQuery && !$('#customer-mine').checked && !$('#customer-pending').checked) state.customerGrandTotal = state.customerTotal;
+    if (!state.customerQuery && !$('#customer-mine').checked && !$('#customer-pending').checked && !$('#customer-retail').checked) state.customerGrandTotal = state.customerTotal;
     $('#customer-pending-count').textContent = d.pendingCount || 0; $('#customer-pending-chip').hidden = !d.pendingCount && !$('#customer-pending').checked;
   } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
   renderCustomers(); renderStats(); loadCustomerDuplicates();
@@ -2474,6 +2476,7 @@ $('#customer-list').addEventListener('click', e => {
   // Bấm vào dòng: mở trang chi tiết khách hàng.
   const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
 });
+$('#customer-retail').addEventListener('change', reloadCustomers);
 $('#customer-mine').addEventListener('change', reloadCustomers);
 $('#customer-pending').addEventListener('change', reloadCustomers);
 /** Manager duyệt khách mới; từ chối (hoặc người tạo xoá) khách đang chờ duyệt. */
