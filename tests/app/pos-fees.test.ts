@@ -7,7 +7,7 @@ import { posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
 
 test('POS có phí: bill tạm/QR không ghi thu/xuất, checkout khớp tiền, chống replay đổi phí và chỉ xuất hàng thật', async () => {
   const f = await setup({ viaClaw: true }), shift = await f.open();
-  const body = f.cart(shift.id, { feeName: 'Phí gói quà', feeAmount: 10800, shippingFee: 20000, tendered: 300000, total: 1, tax: 0 });
+  const body = f.cart(shift.id, { feeName: 'Phí gói quà', feeAmount: 5400, feeQuantity: 2, shippingFee: 20000, tendered: 300000, total: 1, tax: 0 });
   const preview = await f.call('/pos/preview', f.emp, 'POST', body);
   assert.equal(preview.status, 200, JSON.stringify(preview.data));
   assert.equal(preview.data.subtotal, 210000); assert.equal(preview.data.tax, 15200); assert.equal(preview.data.total, 225200);
@@ -33,6 +33,9 @@ test('POS có phí: bill tạm/QR không ghi thu/xuất, checkout khớp tiền,
   assert.equal(f.hooks[0]!.body.total, 225200);
   assert.equal(f.hooks[0]!.body.additional_fees.shipping.tax_percent, 0);
   assert.equal(f.hooks[0]!.body.additional_fees.service.tax_amount, 800);
+  assert.equal(f.hooks[0]!.body.additional_fees.service.kind, 'other_service');
+  assert.equal(f.hooks[0]!.body.additional_fees.service.quantity, 2);
+  assert.equal(f.hooks[0]!.body.additional_fees.service.unit_price, 5400);
   for (const input of [{ shippingFee: -1 }, { feeAmount: 10, feeName: '' }, { shippingFee: 1.2 }]) assert.equal((await f.call('/pos/preview', f.emp, 'POST', { ...body, ...input })).status, 400);
 });
 test('COD kèm phí: chưa thu không vào két, đổi SL giữ phí và cập nhật công nợ/chuyến giao; bảng không VAT đúng tiền', async () => {

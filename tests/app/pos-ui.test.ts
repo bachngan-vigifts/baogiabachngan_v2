@@ -473,14 +473,16 @@ test('POS: bảng đơn nằm cuối, thêm/bỏ một dòng phí và phí ship 
     await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm khoản phí')!.fire('click');
     const fee = root.querySelectorAll('div').find(e => e.className === 'pos-service-fee')!;
     assert.equal(fee.hidden, false);
-    const [name, amount] = fee.querySelectorAll('input');
+    const [name, quantity, amount, feeTotal] = fee.querySelectorAll('input');
     name!.value = 'Phí in'; await name!.fire('input');
+    quantity!.value = '2'; await quantity!.fire('input');
     amount!.value = '10800'; await amount!.fire('input');
+    assert.equal(feeTotal!.value, '21.600 đ');
     const shipping = root.querySelectorAll('label').find(e => e.textContent === 'Phí ship · Không VAT')!.querySelectorAll('input')[0]!;
     shipping.value = '20000'; await shipping.fire('input');
     await new Promise(r => setTimeout(r, 230));
     const request = calls.filter(c => c.path === '/pos/preview').at(-1)!;
-    assert.equal(request.body.feeName, 'Phí in'); assert.equal(request.body.feeAmount, '10800'); assert.equal(request.body.shippingFee, '20000');
+    assert.equal(request.body.feeName, 'Phí in'); assert.equal(request.body.feeQuantity, '2'); assert.equal(request.body.feeAmount, '10800'); assert.equal(request.body.shippingFee, '20000');
     const totals = root.querySelectorAll('div').find(e => e.className === 'pos-totals')!;
     assert.equal(totals.children.at(-2)!.tag, 'label', 'Ô phí ship ngay trên tổng cộng');
     const printed = buildPosPrint(doc, { ...sample, fees });

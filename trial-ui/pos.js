@@ -53,7 +53,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     policy: '',
     cart: [],
     customer: null,
-    feeName: '', feeAmount: '', shippingFee: '', feeVisible: false, note: '', exchangeAllocationId: '',
+    feeName: '', feeAmount: '', feeQuantity: '1', shippingFee: '', feeVisible: false, note: '', exchangeAllocationId: '',
     preview: null,
     method: 'cash',
     qr: null,
@@ -94,7 +94,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.policy = '';
     st.cart = [];
     st.customer = null;
-    st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
+    st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1'; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
     st.preview = null;
     st.pending = null;
     st.orderBoard = null;
@@ -118,7 +118,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     customerId: st.customer?.id || '',
     ...(st.note.trim() ? { note: st.note } : {}),
     ...(st.exchangeAllocationId ? {exchangeAllocationId:st.exchangeAllocationId} : {}),
-    ...(st.feeName || st.feeAmount || st.shippingFee ? { feeName: st.feeName, feeAmount: st.feeAmount || 0, shippingFee: st.shippingFee || 0 } : {}),
+    ...(st.feeName || st.feeAmount || st.shippingFee ? { feeName: st.feeName, feeAmount: st.feeAmount || 0, feeQuantity: st.feeQuantity || 1, shippingFee: st.shippingFee || 0 } : {}),
     rows: st.cart.map((x) => ({
       sku: x.sku,
       qty: x.qty,
@@ -504,7 +504,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   async function cancelCurrentOrder() {
     if (!st.cart.length) return;
     if (!await confirmBox('Hủy toàn bộ đơn hiện tại?', { ok: 'Hủy đơn' })) return;
-    st.cart = []; st.customer = null; st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
+    st.cart = []; st.customer = null; st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1'; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
     draw(); if (st.register) await search(false);
   }
   async function flowOrders(orderId=''){
@@ -686,19 +686,22 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function drawFees(right) {
     const box = el('section', 'pos-extra-fees'), service = el('div', 'pos-service-fee');
     service.hidden = !st.feeVisible;
-    const name = field('Khoản phí'), amount = field('Số tiền phí', 'number', st.feeAmount), shipping = field('Phí ship · Không VAT', 'number', st.shippingFee);
+    const name = field('Khoản phí'), quantity = field('Số lượng', 'number', st.feeQuantity), amount = field('Đơn giá', 'number', st.feeAmount), total = field('Thành tiền', 'text', ''), shipping = field('Phí ship · Không VAT', 'number', st.shippingFee);
     name.input.value = st.feeName;
     name.input.placeholder = 'Ví dụ: Phí in, phí gói quà…';
     name.input.maxLength = 200;
-    for (const [f, property] of [[name, 'feeName'], [amount, 'feeAmount'], [shipping, 'shippingFee']]) {
+    total.input.readOnly = true; total.input.tabIndex = -1;
+    const updateFeeTotal = () => { total.input.value = money((Number(st.feeQuantity) || 0) * (Number(st.feeAmount) || 0)); };
+    updateFeeTotal();
+    for (const [f, property] of [[name, 'feeName'], [quantity, 'feeQuantity'], [amount, 'feeAmount'], [shipping, 'shippingFee']]) {
       if (property !== 'feeName') { f.input.min = '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; f.input.placeholder = '0 đ'; }
-      f.input.addEventListener('input', () => { st[property] = f.input.value; invalidate(); });
+      f.input.addEventListener('input', () => { st[property] = f.input.value; updateFeeTotal(); invalidate(); });
     }
     const add = button('+ Thêm khoản phí', 'btn secondary small', () => { st.feeVisible = true; service.hidden = false; add.hidden = true; name.input.focus(); });
     add.hidden = st.feeVisible;
-    service.append(name.box, amount.box, button('Bỏ phí', 'btn ghost small', () => {
-      st.feeVisible = false; st.feeName = ''; st.feeAmount = '';
-      name.input.value = ''; amount.input.value = ''; service.hidden = true; add.hidden = false; invalidate();
+    service.append(name.box, quantity.box, amount.box, total.box, button('Bỏ phí', 'btn ghost small', () => {
+      st.feeVisible = false; st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1';
+      name.input.value = ''; amount.input.value = ''; quantity.input.value = '1'; updateFeeTotal(); service.hidden = true; add.hidden = false; invalidate();
     }));
     const noteBox = el('label', 'pos-field pos-order-note'), note = el('textarea');
     note.rows = 2; note.maxLength = 2000; note.value = st.note;
@@ -1355,7 +1358,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       persistPending(null);
       st.cart = [];
       st.customer = null;
-      st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
+      st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1'; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
       st.preview = null;
       st.qr = null;
       st.policy = st.register.pricePolicyId;
