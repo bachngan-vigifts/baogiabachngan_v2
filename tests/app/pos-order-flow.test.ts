@@ -1014,3 +1014,12 @@ test('QR đã nhận chưa gắn bill không được bỏ qua để tạo cọc
  ok(await f.call('/pos/checkout',f.emp,'POST',{...body,method:'transfer',confirmed:true,paymentRequestId:qr.data.id}),201);
  ok(await f.call('/pos/order-flows/checkout',f.emp,'POST',flow),201);assert.equal((await f.db.select().from(customerPayments)).length,2);
 });
+
+test('yêu cầu lại chuyển khoản ship trả trước vẫn vào nhóm trả trước, không thành tiền thu nốt đơn cọc',async()=>{
+ const f=await setup(),s=await f.open(),a=await f.call('/pos/order-flows/checkout',f.emp,'POST',f.cart(s.id,{saleFlow:'prepaid',method:'transfer',delivery}));ok(a,201);
+ const [first]=await f.db.select().from(posPaymentIntents);ok(await f.call('/pos/order-flow-intents/'+first!.id+'/cancel',f.emp,'POST',{shiftId:s.id,reason:'Khách đổi lần chuyển'}));
+ ok(await f.call('/pos/order-flows/'+a.data.id+'/collect',f.emp,'POST',{key:key(),shiftId:s.id,amount:194400,method:'transfer'}),201);
+ const pending=(await f.db.select().from(posPaymentIntents)).find(i=>i.status==='pending')!;assert.equal(pending.kind,'prepaid');
+ ok(await f.call('/pos/order-flow-intents/'+pending.id+'/confirm',f.emp,'POST',{shiftId:s.id,confirmed:true,reference:'PREPAID-RETRY'}));
+ const report=(await f.call('/pos/shifts/'+s.id,f.emp)).data;assert.equal(report.orderFlows.prepaid,194400);assert.equal(report.orderFlows.balance,0);
+});

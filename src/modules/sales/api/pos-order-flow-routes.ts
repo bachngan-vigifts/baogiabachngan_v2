@@ -221,7 +221,7 @@ export function registerPosOrderFlowRoutes(router: Router<StaffEnv>) {
               id: crypto.randomUUID(),
               orderId: o.id,
               requestedShiftId: s.id,
-              kind: 'balance',
+              kind: a.saleFlow === 'prepaid' ? 'prepaid' : 'balance',
               method: 'transfer',
               amount,
               requestKey: key,
