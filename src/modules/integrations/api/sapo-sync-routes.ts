@@ -150,7 +150,7 @@ export async function syncStaff(db: AnyDb, body: Record<string, unknown>) {
 // ---------------- Sản phẩm ----------------
 const keep = <T>(value: T | null | '', column: AnyColumn) => value === null || value === '' ? sql`${column}` : value;
 
-export async function syncProducts(db: AnyDb, body: Record<string, unknown>, locations: Map<string, string> = new Map()) {
+export async function syncProducts(db: AnyDb, body: Record<string, unknown>, locations: Map<string, string> = new Map(), options: { createOnly?: boolean; syncStock?: boolean } = {}) {
   if (body.dry_run === true || body.test === true) return { ok: true, dryRun: true };
   const variants: SapoVariant[] = []; let skipped = 0;
   for (const p of records(body, 'products', 'product')) { const m = mapSapoProduct(p, locations); variants.push(...m.variants); skipped += m.skipped; }
@@ -165,6 +165,7 @@ export async function syncProducts(db: AnyDb, body: Record<string, unknown>, loc
     const policyId = new Map(policies.map(p => [p.name, p.id])), storeId = new Map(stores.filter(w => w.kind !== 'incoming').map(w => [w.name, w.id])), incomingNames = new Set(stores.filter(w => w.kind === 'incoming').map(w => w.name));
     const existing = new Set((await tx.select({ sku: products.sku }).from(products).where(inArray(products.sku, [...new Set(variants.map(v => v.sku))]))).map(r => r.sku));
     for (const v of variants) {
+      if (options.createOnly && existing.has(v.sku)) { result.skipped++; continue; }
       if (!v.active) {
         // Ngừng bán trên Sapo: ẩn nếu đã có, không tạo mới.
         if (existing.has(v.sku)) { await tx.update(products).set({ active: false, updatedAt: now }).where(eq(products.sku, v.sku)); result.hidden++; } else result.skipped++;
@@ -189,10 +190,12 @@ export async function syncProducts(db: AnyDb, body: Record<string, unknown>, loc
         const id = policyId.get(name); if (!id) { unknownPolicies.add(name); continue; }
         await tx.insert(productPrices).values({ sku: v.sku, policyId: id, price }).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price } });
       }
-      for (const [name, quantity] of Object.entries(v.stock)) {
-        if (incomingNames.has(name)) continue;
-        const id = storeId.get(name); if (!id) { unknownWarehouses.add(name); continue; }
-        await tx.insert(productStock).values({ sku: v.sku, warehouseId: id, quantity, updatedAt: now }).onConflictDoUpdate({ target: [productStock.sku, productStock.warehouseId], set: { quantity, updatedAt: now } });
+      if (options.syncStock !== false) {
+        for (const [name, quantity] of Object.entries(v.stock)) {
+          if (incomingNames.has(name)) continue;
+          const id = storeId.get(name); if (!id) { unknownWarehouses.add(name); continue; }
+          await tx.insert(productStock).values({ sku: v.sku, warehouseId: id, quantity, updatedAt: now }).onConflictDoUpdate({ target: [productStock.sku, productStock.warehouseId], set: { quantity, updatedAt: now } });
+        }
       }
     }
   });

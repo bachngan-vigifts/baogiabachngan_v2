@@ -160,12 +160,12 @@ export async function syncSapoDocs(db: AnyDb, kind: SapoDocKind, raws: Record<st
 }
 
 /** Ghi sản phẩm (giá, tồn) theo lô ≤ 400 mã như luồng nhận đẩy. */
-async function syncProductPages(db: AnyDb, items: Record<string, any>[], locations: Map<string, string>, unknown: { policies: Set<string>; warehouses: Set<string> }) {
+async function syncProductPages(db: AnyDb, items: Record<string, any>[], locations: Map<string, string>, unknown: { policies: Set<string>; warehouses: Set<string> }, options: { createOnly?: boolean; syncStock?: boolean } = {}) {
   const pr: Record<string, number> = {};
   let batch: unknown[] = [], count = 0;
   const flush = async () => {
     if (!batch.length) return;
-    const r = await syncProducts(db, { products: batch }, locations) as Record<string, unknown>;
+    const r = await syncProducts(db, { products: batch }, locations, options) as Record<string, unknown>;
     add(pr, r); for (const n of (r.unknownPolicies as string[] ?? [])) unknown.policies.add(n); for (const n of (r.unknownWarehouses as string[] ?? [])) unknown.warehouses.add(n);
     batch = []; count = 0;
   };
@@ -208,23 +208,8 @@ export async function runPull(c: Ctx, trigger: string) {
     try { for (const l of (await api.list('/locations.json', 'locations', 1, 2)).items) locations.set(String(l.id), String(l.name ?? l.label ?? '')); } catch { /* không bắt buộc */ }
     const unknown = { policies: new Set<string>(), warehouses: new Set<string>() };
     const prod = await readSince(api, '/products.json', 'products', state.cursors!.products ?? {}, runStart);
-    state.results!.products = await syncProductPages(db, prod.items, locations, unknown); state.cursors!.products = prod.next;
-    // Tồn kho: quét xoay vòng mọi sản phẩm (không lọc ngày sửa), mỗi lần vài trang, hết vòng thì quay lại trang 1.
-    const sweepFrom = state.cursors!.stock?.page ?? 1, sweep = await api.list('/products.json', 'products', sweepFrom, STOCK_SWEEP_PAGES);
-    state.results!.stock = { ...await syncProductPages(db, sweep.items, locations, unknown), fromPage: sweepFrom, wrapped: sweep.nextPage ? 0 : 1 };
-    state.cursors!.stock = { page: sweep.nextPage ?? 1 };
-    // Chứng từ kho: đơn nhập hàng, đơn điều chuyển, phiếu kiểm hàng (mới/đổi). Loại nào Sapo không cho đọc thì ghi nhận, không làm hỏng lượt chạy.
-    for (const kind of SAPO_DOC_KINDS) {
-      const src = SAPO_DOC_SOURCES[kind];
-      try {
-        const docs = await readSince(api, src.path, src.key, state.cursors![kind] ?? {}, runStart, DOC_PAGES);
-        state.results![kind] = await syncSapoDocs(db, kind, docs.items, locations); state.cursors![kind] = docs.next;
-      } catch (e) {
-        if (!(e instanceof AppError) || /^SAPO_SESSION_/.test(e.code ?? '')) throw e;
-        state.results![kind] = { unavailable: 1 };
-        (state.warnings ??= []).push(`${src.label}: ${e.message}`);
-      }
-    }
+    // Nút đồng bộ chỉ bổ sung SKU mới. Không cập nhật sản phẩm cũ và tuyệt đối không ghi tồn kho.
+    state.results!.products = await syncProductPages(db, prod.items, locations, unknown, { createOnly: true, syncStock: false }); state.cursors!.products = prod.next;
     Object.assign(state, { ok: true, unknownPolicies: [...unknown.policies], unknownWarehouses: [...unknown.warehouses] });
   } catch (e) {
     state.ok = false;
@@ -273,7 +258,8 @@ export function registerSapoPullRoutes(router: Router<StaffEnv>) {
   }, 'admin');
 
   // Lịch tự động (GitHub Actions mỗi 30 phút) gọi bằng mã bí mật; luôn trả 200 kèm ok=false để lịch không báo lỗi liên tục khi phiên hết hạn.
-  router.post('/integrations/sapo/pull', async c => json(await runPull(c, 'schedule')), 'sapo-sync');
+  // Đường lịch cũ được giữ để các cron đã cài không lỗi 404, nhưng không còn kéo/ghi dữ liệu.
+  router.post('/integrations/sapo/pull', async c => json({ ok: false, disabled: true, code: 'SAPO_AUTO_PULL_DISABLED', error: 'Đồng bộ Sapo tự động đã tắt.' }), 'sapo-sync');
   router.post('/integrations/sapo/keepalive', async c => json(await keepAlive(c)), 'sapo-sync');
 }
 

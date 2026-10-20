@@ -12,13 +12,13 @@ Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy t
 - Các đường đọc:
   - `/accounts.json` lấy nhân viên,
   - `/customers.json` lấy khách hàng,
-  - `/products.json` lấy sản phẩm,
-  - `/locations.json` lấy tên chi nhánh để ghép tồn kho.
+  - `/products.json` lấy SKU mới,
+  - `/locations.json` lấy tên chi nhánh phục vụ ánh xạ dữ liệu sản phẩm mới; không ghi tồn kho.
 
   App đọc mỗi trang 250 dòng, tối đa 12 trang mỗi loại mỗi lần chạy, lần sau đọc tiếp. Từ lần thứ hai app chỉ lấy bản ghi sửa sau lần trước: gửi kèm `modified_on_min` và lọc lại phía app.
 - **Khi nào chạy:**
-  - Nút **Đồng bộ ngay**.
-  - Lịch trong Supabase (`pg_cron` + `pg_net`, file `supabase/sapo-cron.sql`): **giữ phiên 10 phút/lần**, **lấy dữ liệu 30 phút/lần** (phút 7 và 37). Không tốn phút GitHub Actions.
+  - Nút **Đồng bộ ngay**: khách hàng, nhân viên và chỉ bổ sung SKU mới. Không sửa sản phẩm cũ, giá, tồn kho hoặc chứng từ kho.
+  - Không còn lịch kéo dữ liệu tự động. Supabase chỉ **giữ phiên 10 phút/lần** để phục vụ đẩy đơn sang Sapo.
     - Chủ dự án tự chạy file này **một lần** trong Supabase → SQL Editor, sau khi thay chỗ `DAN_MA_BI_MAT_VAO_DAY` bằng giá trị `SAPO_SYNC_TOKEN`. Mã được lưu trong Supabase Vault.
     - Đổi mã thì chạy lại file với mã mới.
   - Workflow `.github/workflows/sapo-pull.yml` chỉ còn để chạy tay khi cần.
@@ -130,7 +130,7 @@ Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùn
 
 ## Tồn kho xoay vòng và chứng từ kho (đơn nhập, điều chuyển, kiểm hàng)
 
-Mỗi lần **Đồng bộ ngay** hoặc chạy theo lịch tự động, ngoài nhân viên, khách hàng mới/đổi và sản phẩm mới/đổi, app còn làm thêm hai việc.
+Phần quét tồn kho và chứng từ kho dưới đây đã ngừng chạy từ 20/10/2026. Dữ liệu cũ được giữ để tra cứu; nút **Đồng bộ ngay** không cập nhật các bảng này.
 
 - **Quét tồn kho xoay vòng:**
   - Mỗi lần đọc 6 trang `products.json`, tức 1.500 sản phẩm, không lọc theo ngày sửa, và cập nhật giá cùng tồn. Lần sau đọc tiếp từ trang kế; hết danh mục thì quay lại trang 1.

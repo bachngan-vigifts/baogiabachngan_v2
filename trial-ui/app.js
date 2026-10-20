@@ -608,8 +608,7 @@ $('#sapo-pull').addEventListener('click', async () => {
   const btn = $('#sapo-pull'); btn.disabled = true; btn.textContent = 'Đang đồng bộ…';
   try {
     const r = await api('/admin/sapo-pull', 'POST', {}), x = r.results || {};
-    const docs = ['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + (x[k]?.created || 0) + (x[k]?.updated || 0), 0);
-    toast(`Đã đồng bộ: ${(x.products?.created || 0) + (x.products?.updated || 0)} sản phẩm, tồn kho ${(x.stock?.created || 0) + (x.stock?.updated || 0)} mã, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới, ${docs} chứng từ kho (nhập hàng, điều chuyển, kiểm hàng).`
+    toast(`Đã đồng bộ: ${x.products?.created || 0} sản phẩm mới, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới. Không đồng bộ giá, tồn kho hoặc chứng từ kho.`
       + (r.warnings?.length ? ' Chưa đọc được: ' + r.warnings.join('; ') : ''));
     loadMembers(); state.products = null; loadCustomers();
   } catch (ex) { toast(ex.message, 'error'); }

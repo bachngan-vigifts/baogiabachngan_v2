@@ -1,4 +1,4 @@
--- Lịch đồng bộ Sapo chạy trong Supabase (pg_cron + pg_net): giữ phiên 10 phút/lần, lấy dữ liệu mới 30 phút/lần.
+-- Chỉ giữ phiên Sapo 10 phút/lần để phục vụ đẩy đơn. Đồng bộ dữ liệu tự động đã tắt.
 -- Không tốn phút GitHub Actions. CHỦ DỰ ÁN tự chạy một lần trong Supabase → SQL Editor:
 --   thay  DAN_MA_BI_MAT_VAO_DAY  bằng đúng giá trị secret SAPO_SYNC_TOKEN trên GitHub, rồi bấm Run.
 -- Chạy lại nhiều lần an toàn (đổi mã thì chạy lại với mã mới). KHÔNG commit file này khi đã điền mã.
@@ -27,9 +27,9 @@ language sql security definer set search_path = '' as $fn$
 $fn$;
 revoke all on function public.sapo_sync_call(text, int) from public, anon, authenticated;
 
--- Cùng tên thì pg_cron cập nhật lịch cũ.
+-- Cùng tên thì pg_cron cập nhật lịch giữ phiên cũ.
 select cron.schedule('sapo-keepalive', '*/10 * * * *', $job$ select public.sapo_sync_call('keepalive'); $job$);
-select cron.schedule('sapo-pull', '7,37 * * * *', $job$ select public.sapo_sync_call('pull', 300000); $job$);
+select cron.unschedule(jobid) from cron.job where jobname = 'sapo-pull';
 
--- Kiểm tra: phải thấy 2 dòng sapo-keepalive và sapo-pull.
+-- Kiểm tra: chỉ còn sapo-keepalive.
 select jobname, schedule, active from cron.job where jobname like 'sapo-%' order by jobname;

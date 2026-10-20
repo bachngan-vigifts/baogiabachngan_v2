@@ -8,6 +8,7 @@ import { pricePolicies, productPrices, products, productStock, warehouses } from
 import { customers } from '../../src/modules/customers/schema.ts';
 import { credentials, employees, sessions, staffSapoLinks } from '../../src/modules/staff/schema.ts';
 import { mapSapoProduct, mapSapoStaff, isEligibleSapoCustomer } from '../../src/modules/integrations/domain/sapo-mapping.ts';
+import { syncProducts } from '../../src/modules/integrations/api/sapo-sync-routes.ts';
 
 const origin = 'https://trial.test', SECRET = 'bi-mat-dong-bo-sapo-0123456789abcdef';
 async function setup(sapoSyncToken = SECRET) {
@@ -144,6 +145,22 @@ test('đồng bộ sản phẩm: webhook Sapo tạo/cập nhật giá theo bản
   assert.equal((await push('product', { id: 9, name: 'x' })).status, 400);
 });
 
+test('nút đồng bộ Sapo chỉ tạo SKU mới, không sửa sản phẩm cũ hoặc ghi tồn kho', async () => {
+  const { db } = await setup();
+  await db.insert(pricePolicies).values({ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 });
+  await db.insert(warehouses).values({ id: 'q1', name: 'Kho Q1', sortOrder: 0 });
+  await db.insert(products).values({ sku: 'CU', name: 'Tên đang dùng', unit: 'cái', updatedAt: '2026-01-01T00:00:00.000Z' });
+  await db.insert(productStock).values({ sku: 'CU', warehouseId: 'q1', quantity: 9, updatedAt: '2026-01-01T00:00:00.000Z' });
+  const result = await syncProducts(db, { products: [{ id: 1, name: 'Tên từ Sapo', variants: [
+    { sku: 'CU', price: 100, inventories: [{ location_name: 'Kho Q1', available: 1 }] },
+    { sku: 'MOI', name: 'Mã mới', price: 200, inventories: [{ location_name: 'Kho Q1', available: 7 }] },
+  ] }] }, new Map(), { createOnly: true, syncStock: false });
+  assert.ok('created' in result); assert.equal(result.created, 1); assert.equal(result.updated, 0);
+  assert.equal((await db.select().from(products).where(eq(products.sku, 'CU')))[0]!.name, 'Tên đang dùng');
+  assert.equal((await db.select().from(productStock).where(eq(productStock.sku, 'CU')))[0]!.quantity, 9);
+  assert.equal((await db.select().from(productStock).where(eq(productStock.sku, 'MOI'))).length, 0);
+});
+
 test('Manager xem tình trạng đồng bộ; nhân viên bị chặn; không lộ mã bí mật', async () => {
   const { push, call, login } = await setup();
   await push('customers', { customers: [{ id: 7, name: 'Công ty A', tax_code: '0311111111' }] });
@@ -177,7 +194,7 @@ test('ánh xạ Sapo: trạng thái nhân viên dạng chuỗi, khách lẻ, bi�
 });
 
 // ---------------- Kéo dữ liệu từ Sapo bằng phiên Manager ----------------
-import { sapoRuntimeSessions, sapoHealthMonitorState, sapoInventoryDocs, sapoInventoryDocLines } from '../../src/modules/integrations/schema.ts';
+import { sapoRuntimeSessions, sapoHealthMonitorState } from '../../src/modules/integrations/schema.ts';
 
 function fakeSapo(data: Record<string, any[]>, opts: { expired?: boolean } = {}) {
   const calls: string[] = [];
@@ -193,7 +210,7 @@ function fakeSapo(data: Record<string, any[]>, opts: { expired?: boolean } = {})
   return { fetch, calls };
 }
 
-test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, lịch tự động dùng mã bí mật; phiên hết hạn được báo rõ', async () => {
+test('kéo từ Sapo: nút chỉ lấy khách, nhân viên và SKU mới; không tồn kho/chứng từ; lịch tự động bị tắt', async () => {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   await db.insert(pricePolicies).values({ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 });
   await db.insert(warehouses).values({ id: 'q1', name: 'Kho Q1' });
@@ -234,24 +251,16 @@ test('kéo từ Sapo: Manager lưu phiên (mã hoá), bấm Đồng bộ ngay, l
   assert.equal(run.data.results.staff.created, 1);
   assert.equal(run.data.results.customers.applied, 1);
   assert.equal(run.data.results.products.created, 1);
-  assert.equal((await db.select().from(productStock)).find(s => s.sku === 'N-24')!.quantity, 5, 'ghép tồn theo location_id');
+  assert.equal((await db.select().from(productStock)).find(s => s.sku === 'N-24'), undefined, 'không ghi tồn kho từ nút đồng bộ');
   assert.ok(sapo.calls.some(u => u.startsWith('/admin/customers.json?limit=250&page=2')), 'đọc đủ các trang');
-  // Chứng từ kho: đơn nhập, điều chuyển, kiểm hàng; quét tồn kho xoay vòng.
-  assert.deepEqual([run.data.results.purchase_order.created, run.data.results.stock_transfer.created, run.data.results.stock_adjustment.created], [1, 1, 1]);
-  assert.equal(run.data.results.stock.wrapped, 1, 'quét hết vòng tồn kho');
-  const docs = await db.select().from(sapoInventoryDocs);
-  const po = docs.find(d => d.kind === 'purchase_order')!, tr = docs.find(d => d.kind === 'stock_transfer')!, adj = docs.find(d => d.kind === 'stock_adjustment')!;
-  assert.deepEqual([po.code, po.partnerName, po.locationName, po.totalQty, po.totalAmount], ['PON001', 'Minh Long I', 'Kho Q1', 10, 3_000_000]);
-  assert.deepEqual([tr.locationName, tr.toLocationName, tr.totalQty], ['Kho Q1', '8', 3]);
-  const adjLines = await db.select().from(sapoInventoryDocLines).where(eq(sapoInventoryDocLines.docId, adj.id));
-  assert.deepEqual([adj.locationName, adjLines[0]!.qty, adjLines[0]!.diffQty], ['Kho Q1', 4, -1]);
-  // Lần sau chỉ lấy bản ghi sửa sau lần trước (gửi kèm bộ lọc modified_on_min).
+  assert.equal(run.data.results.stock, undefined);
+  assert.equal(run.data.results.purchase_order, undefined);
+  assert.ok(!sapo.calls.some(u => /purchase_orders|stock_transfers|stock_adjustments/.test(u)), 'không đọc chứng từ kho');
+  // Endpoint lịch cũ vẫn xác thực nhưng không gọi Sapo hoặc ghi dữ liệu.
   sapo.calls.length = 0;
   const cron = await call('/integrations/sapo/pull', '', 'POST', {}, { authorization: 'Bearer ' + SECRET });
-  assert.equal(cron.status, 200); assert.equal(cron.data.ok, true);
-  assert.ok(sapo.calls.some(u => u.includes('modified_on_min=')));
-  assert.equal(cron.data.results.customers.applied ?? 0, 0, 'không có gì mới'); assert.equal(cron.data.results.customers.received, 300, 'bản ghi thiếu mốc thời gian vẫn được xét lại');
-  assert.equal((await db.select().from(sapoInventoryDocs)).length, 3, 'đồng bộ lại không tạo trùng chứng từ');
+  assert.equal(cron.status, 200); assert.equal(cron.data.disabled, true); assert.equal(cron.data.code, 'SAPO_AUTO_PULL_DISABLED');
+  assert.deepEqual(sapo.calls, []);
   assert.equal((await call('/integrations/sapo/pull', '', 'POST', {}, {})).status, 401);
 
   // Phiên hết hạn: báo rõ cho Manager; trang tình trạng hiện "hết hạn"; cookie không bao giờ trả về.
@@ -342,7 +351,7 @@ test('kết nối lại Sapo: lỗi của lần đồng bộ trước đó khôn
   assert.equal(st.pull.ok, false); assert.equal(st.pull.stale, true, 'lỗi cũ được đánh dấu đã qua');
 });
 
-test('kéo từ Sapo: loại chứng từ Sapo không cho đọc (404/403) thì ghi cảnh báo, các phần khác vẫn đồng bộ', async () => {
+test('kéo từ Sapo: không gọi API chứng từ kho dù tài khoản có hoặc không có quyền', async () => {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const sapoFetch = (async (input: string | URL | Request) => {
     const url = new URL(String(input)), key = url.pathname.replace(/^\/admin\//, '').replace(/\.json$/, '');
@@ -359,10 +368,10 @@ test('kéo từ Sapo: loại chứng từ Sapo không cho đọc (404/403) thì 
   await call('/admin/sapo-session', mgr, 'POST', { cookie: '_admin_session_id=abc' });
   const run = await call('/admin/sapo-pull', mgr, 'POST', {});
   assert.equal(run.status, 200, JSON.stringify(run.data));
-  assert.equal(run.data.results.purchase_order.created, 1);
-  assert.equal(run.data.results.stock_adjustment.unavailable, 1);
-  assert.equal(run.data.results.stock_transfer.unavailable, 1);
-  assert.equal(run.data.warnings.length, 2);
+  assert.equal(run.data.results.purchase_order, undefined);
+  assert.equal(run.data.results.stock_adjustment, undefined);
+  assert.equal(run.data.results.stock_transfer, undefined);
+  assert.equal(run.data.warnings, undefined);
 });
 
 test('kết nối Sapo chỉ với cookie sapo-admin: tự mở trang admin lấy _admin_session_id rồi mới gọi API, lưu cookie đã gộp', async () => {
