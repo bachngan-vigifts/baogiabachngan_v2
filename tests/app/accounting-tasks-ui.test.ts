@@ -34,3 +34,20 @@ test('Kế toán UI: đơn web không có link hiển thị nhãn/mã GHN, tên 
   const mobile: Element = c.accountingTable(data, () => {}, () => {}, true);
   assert.equal(nodes(mobile).filter(e => e.tagName === 'thead')[0]!.children[0]!.children.length, 7);
 });
+
+test('cảnh báo dữ liệu nguồn: số thật, link NCC, trạng thái web, giờ Việt Nam; toàn bộ nội dung chỉ dùng DOM text', () => {
+  const c = fixture();
+  assert.equal(c.accountingSourceWarnings(), null);
+  assert.equal(c.accountingSourceWarnings({ purchases: { count: 0 }, web: { count: 0 } }), null);
+  const box: Element = c.accountingSourceWarnings({ purchases: { count: 2, orderCount: 1, orders: [{ docNo: '<img onerror=x>', missingPeriods: 2, link: '#/purchases/BUY', linkLabel: 'Bổ sung hạn trả' }] }, web: { count: 3, missingCode: 1, missingStatus: 1, delivered: 1, orders: [
+    { docNo: 'WEB-1', source: 'lock', issue: 'missing_code', updatedAt: '2026-10-20T06:52:01' },
+    { docNo: 'WEB-2', source: 'minhlong', issue: 'missing_status', ghnCode: '<script>x</script>', updatedAt: 'invalid' },
+    { docNo: 'WEB-3', source: 'lock', issue: 'delivered', ghnCode: 'GHN-3', ghnStatus: 'delivered', updatedAt: '2026-10-20T06:52:01Z' },
+  ] } });
+  assert.match(box.textContent, /2 kỳ · 1 đơn mua/); assert.match(box.textContent, /Chưa có mã vận đơn/); assert.match(box.textContent, /Chưa nhận trạng thái GHN/); assert.match(box.textContent, /Đã giao thành công/);
+  assert.match(box.textContent, /13:52/); assert.match(box.textContent, /Chưa có mốc cập nhật/); assert.match(box.textContent, /không phải thời điểm kiểm tra GHN/);
+  assert.equal(nodes(box).filter(e => e.tagName === 'a').length, 1);
+  assert.equal(nodes(box).find(e => e.tagName === 'a')!.href, '#/purchases/BUY');
+  assert.equal(nodes(box).filter(e => e.tagName === 'details').length, 2);
+  assert.equal(nodes(box).some(e => ['img', 'script'].includes(e.tagName)), false); assert.match(box.textContent, /<script>x<\/script>/);
+});

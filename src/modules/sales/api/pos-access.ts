@@ -6,7 +6,7 @@ import { fold,foldSql } from '../../../core/text/fold.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { positions } from '../../staff/schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
-import { posRegisters, posShifts, posPaymentRequests } from '../pos-schema.ts';
+import { posRegisters, posShifts, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
 import { cashEntries, cashReconciliations } from '../cash-schema.ts';
 import { salesOrders, deliveries } from '../schema.ts';
 type Ctx = RouteContext<StaffEnv>;
@@ -92,7 +92,7 @@ export async function authorizePosStore(c: Ctx) {
 }
 
 /** Store assignment is a hard boundary even if customer sharing/department ownership grants document access. */
-export function posOrderStoreScope(m: {
+function registerStoreMatch(m: {
   role: string;
   positionId?: string | null;
   positionName?: string | null;
@@ -113,7 +113,7 @@ export function posOrderStoreScope(m: {
       ? sql`${v} like '%lock%'`
       : sql`${v} like '%minh long%' and ${v} not like '%lock%'`;
   const ambiguous = sql`${w} like '%lock%' and ${w} like '%minh long%'`;
-  const matching = or(
+  return or(
     and(ambiguous, belongs(r)),
     and(
       sql`not (${ambiguous})`,
@@ -126,8 +126,17 @@ export function posOrderStoreScope(m: {
       ),
     ),
   );
+}
+/** Same store boundary for order documents and accounting web-data diagnostics. */
+export function posOrderStoreScope(m: Parameters<typeof registerStoreMatch>[0]): SQL | undefined {
+  const matching = registerStoreMatch(m); if (!matching) return;
   return or(
     ne(salesOrders.channel, 'pos'),
     sql`exists(select 1 from ${posShifts} inner join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} inner join ${warehouses} on ${warehouses.id}=${posRegisters.warehouseId} where ${posShifts.id}=${salesOrders.shiftId} and ${matching})`,
   );
+}
+
+export function posWebOrderStoreScope(m: Parameters<typeof registerStoreMatch>[0]): SQL | undefined {
+  const matching = registerStoreMatch(m); if (!matching) return;
+  return sql`exists(select 1 from ${posRegisters} inner join ${warehouses} on ${warehouses.id}=${posRegisters.warehouseId} where ${posRegisters.id}=${webStoreOrders.registerId} and ${matching})`;
 }
