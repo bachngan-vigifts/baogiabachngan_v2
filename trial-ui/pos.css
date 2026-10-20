@@ -779,9 +779,11 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-product img, .pos-product .pos-image-empty { height: 72px; flex-basis: 72px; border-radius: 10px; background: linear-gradient(135deg,#ecfaf2,#f9fffb); }
 .pos-product-name { height: 40px; flex-basis: 40px; font-size: 14px; font-weight: 800; }
 .pos-product-sku { color: #7b8580; }
-.pos-product-price-stock { display: contents; }
+.pos-product-price-stock { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; margin-top: auto; }
 .pos-mobile-cart-dock { display: none; }
 .pos-product strong { margin-top: auto; font-size: 18px; }
+.pos-product-price-stock .pos-product-price { margin-top: 0; white-space: nowrap; }
+.pos-product-price-stock .pos-stock { margin-left: auto; text-align: right; white-space: nowrap; }
 .pos-stock { color: #238251; font-weight: 650; }
 .pos-stock-low { color: #b66b00; }
 .pos-stock-out { color: #b22b37; font-weight: 800; }
