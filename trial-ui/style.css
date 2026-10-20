@@ -806,6 +806,15 @@ a.flow-step:hover { border-color: var(--blue); }
 .cashbook-range select { width: 100%; height: 44px; box-sizing: border-box; }
 .cashbook-table td small { display: block; margin-top: 3px; color: var(--muted); }
 .cashbook-table td:nth-child(6), .cashbook-table td:nth-child(7) { font-weight: 750; white-space: nowrap; }
+.orders-head { align-items: flex-end; }
+.orders-status-tabs { margin: 4px 0 12px; padding-bottom: 2px; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: thin; }
+.orders-status-tabs .chip { flex: 0 0 auto; }
+.orders-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) 150px 150px auto; gap: 10px; align-items: end; margin: 12px 0 16px; padding: 14px; background: #f7f9f8; border: 1px solid var(--line); border-radius: 10px; }
+.orders-filter-grid label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.orders-filter-grid select, .orders-filter-grid input { width: 100%; height: 40px; box-sizing: border-box; margin: 0; }
+.orders-table { min-width: 1200px; }
+.orders-table td small { display: block; margin-top: 4px; color: var(--muted); }
+.orders-table td:nth-child(8) { white-space: nowrap; }
 @media (max-width: 600px) { .delivery-range { grid-template-columns: 1fr 1fr; } .delivery-status { grid-column: 1 / -1; } .delivery-status .chips { min-height: 0; overflow: visible; } .delivery-status .chip { flex: 1 1 0; padding: 6px 4px; white-space: nowrap; text-align: center; } }
 @media (max-width: 850px) {
   .cashbook-head { align-items: stretch; }
@@ -815,6 +824,16 @@ a.flow-step:hover { border-color: var(--blue); }
   .cashbook-range label { font-size: 10px; }
   .cashbook-range input, .cashbook-range select { height: 36px; min-height: 36px; font-size: 10px; }
   .cashbook-table { min-width: 980px; }
+  .orders-head { align-items: stretch; }
+  .orders-head .row-gap { display: grid; grid-template-columns: 1fr 1fr; }
+  .orders-head .btn { min-height: 36px; padding: 7px 10px; font-size: 10px; }
+  .orders-head .btn.primary { display: block; }
+  .orders-toolbar { display: grid; grid-template-columns: 1fr; }
+  .orders-filter-grid { grid-template-columns: 1fr 1fr; padding: 10px; gap: 8px; }
+  .orders-filter-grid label { font-size: 10px; }
+  .orders-filter-grid select, .orders-filter-grid input { height: 34px; min-height: 34px; font-size: 10px; }
+  .orders-filter-grid .btn { min-height: 34px; font-size: 10px; }
+  .orders-table { min-width: 1050px; }
 }
 @media (max-width: 680px) {
   .flow-arrow { display: none; }

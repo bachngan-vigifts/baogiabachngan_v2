@@ -9,7 +9,7 @@ import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { editPosOrder } from './pos-order-edit.ts';
 import { cashLock, drawerOf, cashAudit, voidClosedCashEffect } from './cash-store.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
-import { posShifts } from '../pos-schema.ts';
+import { posRegisters, posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
@@ -334,31 +334,51 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   router.get('/orders', async c => {
     const q = c.url.searchParams.get('q'), status = c.url.searchParams.get('status') || '', flow = c.url.searchParams.get('flow') || '';
     const invoice = c.url.searchParams.get('invoice') || '';
-    const { limit, offset } = paging(c.url, 200, 500);
+    const owner = c.url.searchParams.get('owner') || '', branch = c.url.searchParams.get('branch') || '', source = c.url.searchParams.get('source') || '';
+    const from = c.url.searchParams.get('from') || '', to = c.url.searchParams.get('to') || '';
+    if ((from && !isDate(from)) || (to && !isDate(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày tạo không hợp lệ.');
+    const exportMode = c.url.searchParams.get('export') === '1';
+    const { limit, offset } = exportMode ? { limit: 5000, offset: 0 } : paging(c.url, 200, 500);
+    const isGhn = or(eq(salesOrders.fulfillmentMode, 'cod'), sql`EXISTS (SELECT 1 FROM ${deliveries} WHERE ${deliveries.orderId}=${salesOrders.id} AND lower(${deliveries.carrier}) LIKE '%ghn%')`);
+    const scopedFlow = and(orderScope(c), flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined);
     const where = and(
-      orderScope(c),
-      status ? eq(salesOrders.status, status as OrderStatus) : undefined,
+      scopedFlow,
+      status === 'unsubmitted' ? and(eq(salesOrders.status, 'draft'), isNull(salesOrders.submittedAt))
+        : status ? eq(salesOrders.status, status as OrderStatus) : undefined,
       // Đơn hàng và HĐKT là 2 luồng song song: trang Đơn hàng (flow=order) chỉ hiện đơn KHÔNG có HĐKT (khách đã có HĐ nguyên tắc).
-      flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined,
       invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined,
+      owner ? eq(salesOrders.ownerId, owner) : undefined,
+      branch === 'crm' ? ne(salesOrders.channel, 'pos') : branch ? sql`EXISTS (SELECT 1 FROM ${posShifts} WHERE ${posShifts.id}=${salesOrders.shiftId} AND ${posShifts.registerId}=${branch})` : undefined,
+      source === 'crm' ? ne(salesOrders.channel, 'pos') : source === 'pos' ? and(eq(salesOrders.channel, 'pos'), sql`NOT (${isGhn})`) : source === 'ghn' ? isGhn : undefined,
+      from ? gte(salesOrders.createdAt, new Date(from + 'T00:00:00+07:00').toISOString()) : undefined,
+      to ? lte(salesOrders.createdAt, new Date(to + 'T23:59:59.999+07:00').toISOString()) : undefined,
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.quoteNo, salesOrders.customerName, salesOrders.phone), q),
     );
     // Số đơn đang chờ xuất hoá đơn (cùng phạm vi + luồng, không theo ô tìm / bộ lọc) cho nút lọc "Chờ xuất hoá đơn".
     const pendingWhere = and(orderScope(c), ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'),
       flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined);
-    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}]] = await Promise.all([
+    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}], ownerOptions, branchOptions, [{ n: crmCount = 0 } = {}]] = await Promise.all([
       c.env.db.select({ n: count() }).from(salesOrders).where(where),
-      c.env.db.select().from(salesOrders).where(where).orderBy(desc(salesOrders.orderDate), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(limit).offset(offset),
+      c.env.db.select({ order: salesOrders, ownerName: employees.name,
+        branchName: sql<string>`coalesce((select ${posRegisters.name} from ${posShifts} inner join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} where ${posShifts.id}=${salesOrders.shiftId} limit 1),'VIGIFTS / CRM')`,
+        deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.updatedAt} desc limit 1),'')`,
+        deliveryCarrier: sql<string>`coalesce((select ${deliveries.carrier} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.updatedAt} desc limit 1),'')`,
+      }).from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.ownerId)).where(where).orderBy(desc(salesOrders.orderDate), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(limit).offset(offset),
       c.env.db.select({ n: count() }).from(salesOrders).where(pendingWhere),
+      c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(scopedFlow).orderBy(asc(employees.name)),
+      c.env.db.selectDistinct({ id: posRegisters.id, name: posRegisters.name }).from(salesOrders).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId)).where(scopedFlow).orderBy(asc(posRegisters.name)),
+      c.env.db.select({ n: count() }).from(salesOrders).where(and(scopedFlow, ne(salesOrders.channel, 'pos'))),
     ]);
-    const ids = rows.map(r => r.id);
+    const ids = rows.map(r => r.order.id);
     const [debts, contracts] = await Promise.all([
       receivableOf(c.env.db, ids),
       ids.length ? c.env.db.select({ orderId: salesContracts.orderId, id: salesContracts.id, contractNo: salesContracts.contractNo, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, ids)) : [],
     ]);
-    return json({ orders: rows.map(r => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
+    return json({ orders: rows.map(({ order: r, ownerName, branchName, deliveryStatus, deliveryCarrier }) => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
       // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
-      return { ...r, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }), total: Number(total), limit, offset, invoicePending: Number(invoicePending) });
+      const orderSource = r.channel !== 'pos' ? 'crm' : r.fulfillmentMode === 'cod' || /ghn/i.test(deliveryCarrier) ? 'ghn' : 'pos';
+      return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }),
+      total: Number(total), limit, offset, invoicePending: Number(invoicePending), filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...branchOptions] } });
   }, 'business');
 
   /** Hồ sơ đang hiệu lực của báo giá: dùng ID chính xác, giữ nguyên quyền xem đơn. */

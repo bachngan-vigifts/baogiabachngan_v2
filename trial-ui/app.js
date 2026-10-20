@@ -2871,25 +2871,43 @@ const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gó
 const slipButtons = (orderId, status) => status === 'draft' || status === 'cancelled' ? ''
   : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng">Phiếu GH</button>`;
 // ----- danh sách đơn
-let ordersPager, ordersReq = 0;
+let ordersPager, ordersReq = 0, ordersData = null;
+const ORDER_SOURCE = { crm: 'CRM', pos: 'POS tại quầy', ghn: 'COD / GHN' };
+function ordersQuery(exportMode = false) {
+  const status = $('#orders-status-tabs .chip.active')?.dataset.status || '', inv = $('#orders-filters .chip.active')?.dataset.invoice || '';
+  const p = new URLSearchParams({ flow: 'order', q: $('#orders-search').value, limit: String(exportMode ? 5000 : ordersPager.limit), offset: String(exportMode ? 0 : ordersPager.offset) });
+  for (const [key, value] of [['status', status], ['invoice', inv], ['source', $('#orders-source').value], ['owner', $('#orders-owner').value], ['branch', $('#orders-branch').value], ['from', $('#orders-from').value], ['to', $('#orders-to').value]]) if (value) p.set(key, value);
+  if (exportMode) p.set('export', '1');
+  return p.toString();
+}
+function fillOrderFilter(id, first, rows) {
+  const select = $(id), value = select.value;
+  select.replaceChildren(Object.assign(document.createElement('option'), { value: '', textContent: first }));
+  for (const row of rows || []) select.append(Object.assign(document.createElement('option'), { value: row.id, textContent: row.name }));
+  if ([...select.options].some(x => x.value === value)) select.value = value;
+}
 async function loadOrders() {
   const req = ++ordersReq;
   ordersPager ||= createPager($('#orders-pager'), 'orders', () => loadOrders(), 50);
   $('#orders-list').innerHTML = skeleton(7);
   try {
     // Đơn hàng và HĐKT là 2 luồng song song: trang này chỉ hiện đơn không có HĐKT.
-    const inv = $('#orders-filters .chip.active')?.dataset.invoice || '';
-    const d = await api(`/orders?flow=order&limit=${ordersPager.limit}&offset=${ordersPager.offset}${inv ? '&invoice=' + inv : ''}&q=` + encodeURIComponent($('#orders-search').value));
+    const d = await api('/orders?' + ordersQuery());
+    ordersData = d;
+    fillOrderFilter('#orders-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#orders-branch', 'Tất cả chi nhánh', d.filterOptions?.branches);
     invoiceCount('orders', d.invoicePending);
     if (req !== ordersReq) return;
     ordersPager.render(d.total ?? d.orders.length);
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
-      <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.quoteNo || 'Không từ báo giá')} · ${fmtDate(o.orderDate)}</small></td>
+      <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.quoteNo || 'Không từ báo giá')} · ${fmtDate(String(o.createdAt || o.orderDate).slice(0, 10))}</small></td>
       <td>${esc(o.customerName)}<small>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</small></td>
+      <td><span class="pill ${o.orderSource === 'ghn' ? 'warn' : o.orderSource === 'pos' ? 'ok' : 'blue'}">${esc(ORDER_SOURCE[o.orderSource] || o.orderSource)}</span><small>${esc(o.branchName || '—')}</small></td>
+      <td>${esc(o.ownerName || '—')}</td>
       <td>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
-      <td>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</td>
-      <td class="right num">${money(o.total)}</td>
+      <td>${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small></td>
       <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
+      <td class="right num"><b>${money(o.total)}</b><small>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
       <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
   } catch (e) { if (req === ordersReq) { listError('orders', e); ordersPager.render(0); } }
@@ -2973,6 +2991,31 @@ for (const [key, reload] of [['orders', () => { ordersPager?.reset(); loadOrders
     reload();
   });
 $('#orders-search').addEventListener('input', debounce(() => { ordersPager?.reset(); loadOrders(); }));
+$('#orders-status-tabs').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#orders-status-tabs .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  ordersPager?.reset(); loadOrders();
+});
+for (const id of ['#orders-source', '#orders-owner', '#orders-branch', '#orders-from', '#orders-to']) $(id).addEventListener('change', () => { ordersPager?.reset(); loadOrders(); });
+$('#orders-clear').addEventListener('click', () => {
+  for (const id of ['#orders-source', '#orders-owner', '#orders-branch', '#orders-from', '#orders-to']) $(id).value = '';
+  $('#orders-search').value = '';
+  $$('#orders-status-tabs .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  $$('#orders-filters .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  ordersPager?.reset(); loadOrders();
+});
+$('#orders-export').addEventListener('click', async e => {
+  const b = e.currentTarget; b.disabled = true;
+  try {
+    const d = await api('/orders?' + ordersQuery(true));
+    if (!d.orders.length) return toast('Không có đơn hàng để xuất.', 'err');
+    await downloadExcel('danh-sach-don-hang', [{ name: 'Đơn hàng', widths: [20, 14, 28, 18, 22, 22, 16, 16, 18, 18],
+      header: ['Số đơn', 'Ngày tạo', 'Khách hàng', 'Điện thoại', 'Nguồn', 'Chi nhánh', 'Nhân viên', 'Trạng thái', 'Giao hàng', 'Giá trị'],
+      rows: d.orders.map(o => [o.orderNo, String(o.createdAt || o.orderDate).slice(0, 10), o.customerName, o.phone, ORDER_SOURCE[o.orderSource] || o.orderSource,
+        o.branchName, o.ownerName, ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0] || o.status,
+        DELIVERY_STATUS[o.deliveryStatus]?.[0] || (o.orderSource === 'ghn' ? 'Chờ tạo vận đơn' : ''), o.total]) }]);
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+});
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
 $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));

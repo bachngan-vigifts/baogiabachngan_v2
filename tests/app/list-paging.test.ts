@@ -82,6 +82,16 @@ test('đơn hàng / HĐKT: phân trang trên máy chủ, trả tổng số', asy
   assert.deepEqual([p1.total, p1.orders.length, p2.orders.length], [3, 2, 1], 'đơn có HĐKT không nằm ở trang Đơn hàng');
   assert.equal(new Set([...p1.orders, ...p2.orders].map((o: any) => o.id)).size, 3);
   assert.equal((await call('/orders?flow=order&q=khach%20dao', mgr)).data.total, 1);
+  assert.equal((await call('/orders?flow=order&source=crm', mgr)).data.total, 3);
+  assert.equal((await call('/orders?flow=order&source=pos', mgr)).data.total, 0);
+  assert.equal((await call('/orders?flow=order&branch=crm', mgr)).data.total, 3);
+  assert.equal((await call('/orders?flow=order&status=draft', mgr)).data.total, 3);
+  assert.equal((await call('/orders?flow=order&status=unsubmitted', mgr)).data.total, 0);
+  assert.equal((await call('/orders?flow=order&from=2026-01-01&to=2027-01-01', mgr)).data.total, 3);
+  assert.equal((await call('/orders?flow=order&from=2027-01-02&to=2026-01-01', mgr)).status, 400);
+  assert.ok(p1.filterOptions.owners.some((x: any) => x.name === 'Tên mgr'));
+  assert.ok(p1.filterOptions.branches.some((x: any) => x.id === 'crm' && x.name === 'VIGIFTS / CRM'));
+  assert.equal(p1.orders.every((x: any) => x.orderSource === 'crm' && x.ownerName === 'Tên mgr' && x.branchName === 'VIGIFTS / CRM'), true);
   const k = (await call('/contracts?limit=1', mgr)).data;
   assert.deepEqual([k.total, k.contracts.length], [1, 1]);
   assert.equal((await call('/contracts?limit=1&offset=1', mgr)).data.contracts.length, 0);
