@@ -153,8 +153,8 @@ test('Cash: công thức gồm tiền bán/COD và thu/chi, loại chuyển kho�
   await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id));
   await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id, { method: 'transfer', confirmed: true }));
   const inc = await f.call('/cash/entries', f.emp, 'POST', entry('cash_in', 100000));
-  await f.call('/cash/entries', f.emp, 'POST', entry('petty_expense', 20000));
-  await f.call('/cash/entries', f.emp, 'POST', entry('cash_out', 50000));
+  const petty = await f.call('/cash/entries', f.emp, 'POST', entry('petty_expense', 20000));
+  const cashOut = await f.call('/cash/entries', f.emp, 'POST', entry('cash_out', 50000));
   const voided = await f.call('/cash/entries', f.emp, 'POST', entry('other_income', 12345));
   assert.equal(
     (await f.call('/cash/entries/' + voided.data.id + '/void', f.mgr, 'POST', { reason: 'Ghi nhầm' })).status,
@@ -178,6 +178,10 @@ test('Cash: công thức gồm tiền bán/COD và thu/chi, loại chuyển kho�
   assert.equal(report.transfer, 194400);
   assert.equal(report.cod.pending.amount, 194400);
   assert.equal((await f.call('/cash', f.mgr)).data.balance, 724400);
+  const book = (await f.call('/cashbook?from=2026-01-01&to=2027-01-01', f.mgr)).data;
+  assert.ok(book.entries.some((x: { id: string; kind: string; method: string }) => x.id === petty.data.id && x.kind === 'out' && x.method === 'cash'));
+  assert.ok(book.entries.some((x: { id: string; kind: string }) => x.id === cashOut.data.id && x.kind === 'out'));
+  assert.equal(book.totals.out, 70000, 'Sổ thu chi phải cộng khoản chi thủ công từ Sổ quỹ');
   assert.equal((await f.call('/cash/entries/' + inc.data.id + '/void', f.emp, 'POST', { reason: 'Sai' })).status, 403);
 });
 test('Cash: lệch cần lý do, Khác cần ghi chú; đóng ca/tra soát một lần; ca sau lấy thực đếm, một két chỉ một ca', async () => {

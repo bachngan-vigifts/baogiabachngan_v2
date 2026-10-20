@@ -206,7 +206,13 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         scope = ownShift(c),
         cursor = c.url.searchParams.get('before'),
         before = cursor ? posText(cursor, 80) : null;
-      const [manual, receipts] = await Promise.all([
+      const manualWhere = and(
+          entryScope(c), eq(cashEntries.drawerId, drawerId), gte(cashEntries.createdAt, start), lt(cashEntries.createdAt, end),
+        ),
+        receiptWhere = and(
+          scope, eq(posShifts.cashDrawerId, drawerId), eq(customerPayments.method, 'cash'), gte(customerPayments.createdAt, start), lt(customerPayments.createdAt, end),
+        );
+      const [manual, receipts, manualPeriod, receiptPeriod] = await Promise.all([
         db
           .select({
             id: cashEntries.id,
@@ -230,10 +236,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .innerJoin(employees, eq(employees.id, cashEntries.createdBy))
           .where(
             and(
-              entryScope(c),
-              eq(cashEntries.drawerId, drawerId),
-              gte(cashEntries.createdAt, start),
-              lt(cashEntries.createdAt, end),
+              manualWhere,
               before ? sql`(${cashEntries.createdAt} || '|' || ${cashEntries.id}) < ${before}` : undefined,
             ),
           )
@@ -259,16 +262,16 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .innerJoin(employees, eq(employees.id, customerPayments.createdBy))
           .where(
             and(
-              scope,
-              eq(posShifts.cashDrawerId, drawerId),
-              eq(customerPayments.method, 'cash'),
-              gte(customerPayments.createdAt, start),
-              lt(customerPayments.createdAt, end),
+              receiptWhere,
               before ? sql`(${customerPayments.createdAt} || '|' || ${customerPayments.id}) < ${before}` : undefined,
             ),
           )
           .orderBy(desc(customerPayments.createdAt), desc(customerPayments.id))
           .limit(101),
+        db.select({ direction: cashEntries.direction, amount: cashEntries.amount, status: cashEntries.status })
+          .from(cashEntries).innerJoin(posShifts, eq(posShifts.id, cashEntries.shiftId)).where(manualWhere),
+        db.select({ amount: customerPayments.amount, voidedAt: customerPayments.voidedAt })
+          .from(customerPayments).innerJoin(posShifts, eq(posShifts.id, customerPayments.shiftId)).where(receiptWhere),
       ]);
       const entries = [
         ...manual.map((r) => ({ ...r, source: 'manual', hasPhoto: !!r.photo, photo: undefined })),
@@ -283,7 +286,12 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       ].sort((a, b) => (b.at + '|' + b.id).localeCompare(a.at + '|' + a.id));
       const page = entries.slice(0, 100),
         last = page.at(-1);
-      return json({ entries: page, nextBefore: entries.length > 100 && last ? last.at + '|' + last.id : null });
+      const postedManual = manualPeriod.filter(x => x.status === 'posted');
+      const totalIn = postedManual.filter(x => x.direction === 'in').reduce((n, x) => n + x.amount, 0)
+        + receiptPeriod.filter(x => !x.voidedAt).reduce((n, x) => n + x.amount, 0);
+      const totalOut = postedManual.filter(x => x.direction === 'out').reduce((n, x) => n + x.amount, 0);
+      return json({ entries: page, nextBefore: entries.length > 100 && last ? last.at + '|' + last.id : null,
+        totals: { in: totalIn, out: totalOut, net: totalIn - totalOut } });
     },
     'business',
   );

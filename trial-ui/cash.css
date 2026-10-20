@@ -12,6 +12,9 @@
 .cash-head h1 {
   margin: 0;
 }
+.cash-title { display: grid; gap: 4px; }
+.cash-eyebrow { color: var(--green, #16884d); font-size: 11px; font-weight: 800; letter-spacing: .09em; }
+.cash-title .cash-note { margin: 0; }
 .cash-tools > select {
   width: auto;
   max-width: 240px;
@@ -40,10 +43,15 @@
 .cash-content {
   overflow: auto;
   background: white;
+  border: 1px solid #e2e8e5;
   border-radius: 12px;
   margin-top: 16px;
   padding: 16px;
 }
+.cash-period-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+.cash-period-stats .cash-stat { cursor: default; background: #f7f9f8; border-color: #e1e9e4; }
+.cash-kind-tabs { display: flex; gap: 6px; margin-right: auto; }
+.cash-kind-tabs .chip.active { color: #fff; background: var(--green, #16884d); border-color: var(--green, #16884d); }
 .cash-field {
   display: flex;
   flex-direction: column;
@@ -133,11 +141,10 @@
   display: block;
 }
 @media (max-width: 700px) {
-  .cash-stats {
-    grid-template-columns: 1fr;
-  }
+  .cash-overview { display: flex; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+  .cash-overview .cash-stat { flex: 0 0 190px; scroll-snap-align: start; }
   .cash-stat strong {
-    font-size: 22px;
+    font-size: 16px;
   }
   .cash-tools > .btn {
     flex: 1;
@@ -145,4 +152,8 @@
   .cash-content {
     padding: 8px;
   }
+  .cash-period-stats { grid-template-columns: 1fr 1fr; }
+  .cash-period-stats .cash-stat strong { font-size: 16px; }
+  .cash-kind-tabs { width: 100%; }
+  .cash-kind-tabs .btn { min-height: 34px; padding: 6px 10px; }
 }

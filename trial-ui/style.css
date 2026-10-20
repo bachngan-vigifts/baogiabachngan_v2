@@ -801,7 +801,21 @@ a.flow-step:hover { border-color: var(--blue); }
 .delivery-range label, .delivery-status { display: grid; gap: 4px; font-size: .82rem; font-weight: 600; min-width: 0; }
 .delivery-range input { width: 100%; height: 44px; box-sizing: border-box; margin: 0; }
 .delivery-status .chips { min-height: 44px; align-items: center; }
+.cashbook-head { align-items: flex-end; }
+.cashbook-range { grid-template-columns: 150px 150px minmax(250px, auto) 170px 150px; align-items: end; }
+.cashbook-range select { width: 100%; height: 44px; box-sizing: border-box; }
+.cashbook-table td small { display: block; margin-top: 3px; color: var(--muted); }
+.cashbook-table td:nth-child(6), .cashbook-table td:nth-child(7) { font-weight: 750; white-space: nowrap; }
 @media (max-width: 600px) { .delivery-range { grid-template-columns: 1fr 1fr; } .delivery-status { grid-column: 1 / -1; } .delivery-status .chips { min-height: 0; overflow: visible; } .delivery-status .chip { flex: 1 1 0; padding: 6px 4px; white-space: nowrap; text-align: center; } }
+@media (max-width: 850px) {
+  .cashbook-head { align-items: stretch; }
+  .cashbook-head .btn { width: 100%; min-height: 36px; }
+  .cashbook-range { grid-template-columns: 1fr 1fr; }
+  .cashbook-range .delivery-status { grid-column: 1 / -1; }
+  .cashbook-range label { font-size: 10px; }
+  .cashbook-range input, .cashbook-range select { height: 36px; min-height: 36px; font-size: 10px; }
+  .cashbook-table { min-width: 980px; }
+}
 @media (max-width: 680px) {
   .flow-arrow { display: none; }
   .flow-step { flex-basis: calc(50% - 6px); }

@@ -2977,6 +2977,8 @@ $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150))
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));
 // ---------------------------------------------------------------- Sổ thu / chi
 const PAY_METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
+const CASHBOOK_STATUS = { posted: 'Đã ghi nhận', pending: 'Chờ duyệt', voided: 'Đã huỷ' };
+const CASHBOOK_SOURCE = { other_income: 'Thu khác', cash_in: 'Rút két', petty_expense: 'Chi vặt', advance: 'Tạm ứng', cash_out: 'Nộp két' };
 async function loadCashbook() {
   if (!$('#cashbook-from').value) { const t = todayIso(); $('#cashbook-from').value = t.slice(0, 8) + '01'; $('#cashbook-to').value = t; }
   $('#cashbook-list').innerHTML = skeleton(7);
@@ -2986,8 +2988,10 @@ async function loadCashbook() {
   } catch (e) { $('#cashbook-stats').innerHTML = ''; listError('cashbook', e); }
 }
 function cashbookRows() {
-  const d = state.cashbook, kind = $('#cashbook-kind .chip.active')?.dataset.kind || '', q = normalize($('#cashbook-search').value);
-  return (d?.entries || []).filter(e => (!kind || e.kind === kind) && (!q || normalize(`${e.partner} ${e.docNo} ${e.reference} ${e.note}`).includes(q)));
+  const d = state.cashbook, kind = $('#cashbook-kind .chip.active')?.dataset.kind || '', method = $('#cashbook-method').value,
+    status = $('#cashbook-status').value, q = normalize($('#cashbook-search').value);
+  return (d?.entries || []).filter(e => (!kind || e.kind === kind) && (!method || e.method === method) && (!status || (e.status || (e.voided ? 'voided' : 'posted')) === status)
+    && (!q || normalize(`${e.partner} ${e.docNo} ${e.reference} ${e.note} ${CASHBOOK_SOURCE[e.source] || ''}`).includes(q)));
 }
 function renderCashbook() {
   const d = state.cashbook; if (!d) return;
@@ -2995,15 +2999,19 @@ function renderCashbook() {
   $('#cashbook-stats').innerHTML = [['Tổng thu', t.in, 'paid-text', `CK ${money(m.transfer.in)} · TM ${money(m.cash.in)}`], ['Tổng chi', t.out, 'danger-text', `CK ${money(m.transfer.out)} · TM ${money(m.cash.out)}`],
     ['Chênh lệch thu − chi', t.net, t.net < 0 ? 'danger-text' : '', `${fmtDate(d.from)} – ${fmtDate(d.to)}`]]
     .map(([k, v, c, note]) => `<article class="stat"><small>${k}</small><strong class="${c}">${money(v)}</strong><span class="muted">${note}</span></article>`).join('');
-  fillList('cashbook', cashbookRows().map(e => `<tr class="${e.voided ? 'payment-voided' : ''}">
-    <td>${fmtDate(e.date)}</td><td>${e.kind === 'in' ? '<span class="pill ok">Thu</span>' : '<span class="pill warn">Chi</span>'}${e.voided ? `<small class="danger-text">Đã huỷ: ${esc(e.voidReason)}</small>` : ''}</td>
-    <td>${esc(e.partner || '—')}<small>${e.link && linkAllowed(e.link) ? `<a href="${esc(e.link)}">${esc(e.docNo)}</a>` : esc(e.docNo)}${e.note ? ' · ' + esc(e.note) : ''}</small></td>
-    <td>${PAY_METHOD[e.method] || e.method}${e.reference ? `<small>${esc(e.reference)}</small>` : ''}</td>
-    <td class="right num">${e.kind === 'in' ? money(e.amount) : ''}</td><td class="right num">${e.kind === 'out' ? money(e.amount) : ''}</td><td>${esc(e.createdByName)}</td></tr>`),
+  fillList('cashbook', cashbookRows().map(e => { const status = e.status || (e.voided ? 'voided' : 'posted'); return `<tr class="${status === 'voided' ? 'payment-voided' : ''}">
+    <td>${fmtDate(e.date)}</td><td>${e.link && linkAllowed(e.link) ? `<a href="${esc(e.link)}"><b>${esc(e.docNo)}</b></a>` : `<b>${esc(e.docNo)}</b>`}</td>
+    <td>${e.kind === 'in' ? '<span class="pill ok">Phiếu thu</span>' : '<span class="pill warn">Phiếu chi</span>'}<small>${esc(CASHBOOK_SOURCE[e.source] || '')}</small></td>
+    <td>${esc(e.partner || '—')}<small>${esc(e.note || '')}</small></td>
+    <td>${PAY_METHOD[e.method] || e.method || '—'}${e.reference ? `<small>${esc(e.reference)}</small>` : ''}</td>
+    <td class="right num paid-text">${e.kind === 'in' ? money(e.amount) : '—'}</td><td class="right num danger-text">${e.kind === 'out' ? money(e.amount) : '—'}</td>
+    <td>${status === 'posted' ? '<span class="pill ok">Đã ghi nhận</span>' : status === 'pending' ? '<span class="pill warn">Chờ duyệt</span>' : '<span class="pill danger">Đã huỷ</span>'}${e.voidReason ? `<small>${esc(e.voidReason)}</small>` : ''}</td>
+    <td>${esc(e.createdByName)}</td></tr>`; }),
     'Không có phiếu thu / chi trong khoảng ngày này.');
 }
 for (const id of ['#cashbook-from', '#cashbook-to']) $(id).addEventListener('change', loadCashbook);
 $('#cashbook-search').addEventListener('input', debounce(renderCashbook, 150));
+for (const id of ['#cashbook-method', '#cashbook-status']) $(id).addEventListener('change', renderCashbook);
 $('#cashbook-kind').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
   $$('#cashbook-kind .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
@@ -3015,8 +3023,8 @@ $('#cashbook-export').addEventListener('click', async e => {
   try {
     await downloadExcel('so-thu-chi', [{ name: 'Sổ thu chi', widths: [12, 8, 32, 20, 14, 18, 14, 14, 18, 26, 26],
       header: ['Ngày', 'Loại', 'Khách / NCC', 'Chứng từ', 'Hình thức', 'Mã giao dịch', 'Thu', 'Chi', 'Người ghi', 'Ghi chú', 'Đã huỷ (lý do)'],
-      rows: rows.map(r => [r.date, r.kind === 'in' ? 'Thu' : 'Chi', r.partner, r.docNo, PAY_METHOD[r.method] || r.method, r.reference, r.kind === 'in' && !r.voided ? r.amount : 0, r.kind === 'out' && !r.voided ? r.amount : 0,
-        r.createdByName, r.note, r.voided ? r.voidReason || 'Đã huỷ' : '']) }]);
+      rows: rows.map(r => { const posted = (r.status || (r.voided ? 'voided' : 'posted')) === 'posted'; return [r.date, r.kind === 'in' ? 'Thu' : 'Chi', r.partner, r.docNo, PAY_METHOD[r.method] || r.method, r.reference, r.kind === 'in' && posted ? r.amount : 0, r.kind === 'out' && posted ? r.amount : 0,
+        r.createdByName, r.note, r.voided ? r.voidReason || 'Đã huỷ' : '']; }) }]);
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
 });
 $('#receivables-export').addEventListener('click', async e => {
