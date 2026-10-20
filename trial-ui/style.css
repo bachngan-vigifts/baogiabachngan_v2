@@ -1785,3 +1785,53 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   .auth, .auth * { font-size: revert; }
 }
 .pur-payables { width: min(860px, calc(100vw - 32px)); max-width: none; }
+
+/* ---------- Hàng đợi Công việc Kế toán ---------- */
+.accounting-tasks { color: var(--ink); }
+.acct-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.acct-head > div { flex: 1; min-width: 0; } .acct-head h1 { margin-bottom: 4px; }
+.acct-head p { font-size: .82rem; margin: 0; } .acct-head input { width: 250px; }
+.acct-warning { border: 1px solid #ecd797; background: #fff9e6; color: #765d19; padding: 12px 16px; border-radius: 9px; margin: 0 0 16px; font-size: .83rem; }
+.acct-warning-line { display: flex; gap: 12px; justify-content: space-between; align-items: center; padding-top: 7px; }
+.acct-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.acct-kpi { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 9px; padding: 16px; display: grid; gap: 6px; }
+.acct-kpi.invoice { border-left-color: #c48632; } .acct-kpi.purchase { border-left-color: #bd4545; } .acct-kpi.debt { border-left-color: #3976ad; }
+.acct-kpi small { color: var(--muted); font-size: .8rem; } .acct-kpi strong { font-size: 1.65rem; } .acct-kpi > span { font-size: .76rem; }
+.acct-filters { display: grid; gap: 12px; margin: 0 0 12px; }
+.acct-tabs { display: flex; flex-wrap: wrap; gap: 0; width: fit-content; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; overflow: hidden; }
+.acct-tabs .chip { border: 0; border-radius: 0; padding: 9px 14px; }
+.acct-tabs .chip[aria-pressed=true] { color: white; background: var(--green); }
+.acct-filters .chips .chip[aria-pressed=true] { color: white; background: var(--navy); }
+.acct-table { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.acct-table th { font-size: .69rem; letter-spacing: .04em; }
+.acct-table td { padding: 14px 12px; vertical-align: middle; }
+.acct-table .task-main { width: 44%; min-width: 220px; }
+.acct-row { cursor: pointer; } .acct-row:hover { background: #f4faf7; } .acct-row:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.acct-subline { font-size: .75rem; margin-top: 4px; } .acct-row-tags { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.acct-table .num { white-space: nowrap; } .acct-table .task-go { min-width: 128px; } .acct-table .task-go .btn { margin: 3px 0 3px 6px; }
+.acct-table .task-go small, .acct-due small, .acct-table .task-people small { display: block; margin-top: 3px; }
+.acct-table .task-people { min-width: 120px; font-size: .8rem; } .acct-table .task-go .pill { white-space: normal; }
+.acct-mobile { display: none; }
+.acct-drawer { position: fixed; inset: 0 0 0 auto; width: min(560px, 100%); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; background: var(--surface); box-shadow: -10px 0 40px #13233629; overflow-y: auto; color: var(--ink); }
+.acct-drawer::backdrop { background: #172b2852; } .acct-detail-head { padding: 24px 24px 12px; position: relative; }
+.acct-detail-head h2 { font-size: 1.2rem; margin: 8px 32px 12px 0; } .acct-close { position: absolute; right: 18px; top: 18px; }
+.acct-detail-head .eyebrow { color: var(--muted); } .acct-detail-head p { margin-bottom: 0; }
+.acct-detail-body { padding: 0 24px 24px; } .acct-detail-body h3 { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 10px; }
+.acct-detail-body p { font-size: .83rem; overflow-wrap: anywhere; } .acct-detail-body textarea { width: 100%; min-height: 72px; margin: 8px 0; }
+.acct-money { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; } .acct-money h3 { padding: 14px 16px 0; margin-top: 0; }
+.acct-money-row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 16px; border-top: 1px solid var(--line); font-size: .85rem; }
+.acct-money-row strong { text-align: right; white-space: nowrap; } .acct-money-row.due { background: #fff0ed; color: #9c3434; }
+.acct-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; } .acct-detail-actions .btn { min-height: 36px; }
+.acct-history { padding-left: 18px; font-size: .8rem; line-height: 1.8; } .acct-comments article { padding: 12px; background: var(--surface-2); border-radius: 8px; margin: 8px 0; font-size: .83rem; }
+.acct-comments small { display: block; } .acct-comments p { margin-bottom: 0; }
+@media (max-width: 850px) {
+  .acct-head { flex-wrap: wrap; } .acct-head > div { flex-basis: 100%; } .acct-head input { flex: 1; width: auto; min-width: 0; }
+  .acct-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .acct-kpi { padding: 12px; }
+  .acct-desktop { display: none; } .acct-mobile { display: block; background: var(--surface); border-radius: 9px; }
+  .acct-tabs { width: 100%; } .acct-tabs .chip { flex: 1 1 auto; padding: 8px; }
+  .acct-head .btn { font-size: .72rem; } .acct-warning-line { flex-wrap: wrap; }
+  .acct-detail-head { padding: 20px 16px 12px; } .acct-detail-body { padding: 0 16px 24px; }
+  .acct-money-row { gap: 10px; padding: 10px 12px; } .acct-money-row strong { white-space: normal; }
+}
+.acct-detail-actions .btn.primary { background: var(--green); border-color: var(--green); }
+.accounting-tasks .task-go .btn.secondary { color: #236d4d; border-color: #b4cfc0; }

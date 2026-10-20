@@ -1,3 +1,5 @@
+import { registerAccountingTaskRoutes } from './accounting-routes.ts';
+import { accountingKind, canUseAccountingTasks, sourceManaged, sourceCompletionHelp } from '../domain/accounting.ts';
 import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -86,9 +88,9 @@ const involved = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'mana
 const PRIVATE_DESC_SOURCES = new Set<string>(['care', 'receivable', 'invoice']);
 /** Bản gửi cho người xem: việc chỉ xem của đồng nghiệp bị ẩn mô tả nhạy cảm. */
 /** Việc tự hoàn thành theo chứng từ (nhận hàng NCC, các việc duyệt): không đánh dấu xong / huỷ tay – làm trên chứng từ thì việc tự đóng. */
-const SOURCE_MANAGED = ['po-receive:', 'quote-approve:', 'quote-customer:', 'order-confirm:', 'po-approve:', 'invoice:'];
-const completionFromSource = (t: Task) => !!t.autoKey && SOURCE_MANAGED.some(k => t.autoKey!.startsWith(k));
-const forViewer = (c: Ctx, t: Task) => ({ ...t, completionFromSource: completionFromSource(t),
+const completionFromSource = (t: Task) => sourceManaged(t.autoKey);
+const canComment = (c: Ctx, t: Task) => accountingKind(t.autoKey) ? me(c).role === 'manager' || t.assigneeId === me(c).id : involved(c, t);
+const forViewer = (c: Ctx, t: Task) => ({ ...t, canComment: canComment(c, t), completionFromSource: completionFromSource(t), completionHelp: sourceCompletionHelp(t.autoKey),
   ...(!involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { description: '' } : {}) });
 /** Điều kiện SQL "việc tôi trực tiếp liên quan" (để tìm kiếm trong mô tả chỉ trên các việc này). */
 const involvedSql = (c: Ctx): SQL | undefined => {
@@ -156,6 +158,8 @@ const statusPatch = (status: TaskStatus, by: string, t?: Task) => ({
 });
 
 export function registerTaskRoutes(router: Router<StaffEnv>) {
+  registerAccountingTaskRoutes(router, { sync: syncAuto, visible, colleagues: c => peerPos(c) ? peerCond(peerPos(c)!) : undefined, loadTask, private: involved,
+    serialize: (c, t) => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, viewOnly: !involved(c, t), canClaim: inMyTeam(c, t) || me(c).role === 'manager' && teamOpen(t) }) });
   /** Người nhận việc chọn được: nhân viên + Manager đang hoạt động. */
   router.get('/tasks/people', async c => {
     const rows = await c.env.db.select({ id: employees.id, name: employees.name, role: employees.role }).from(employees)
@@ -171,7 +175,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       .where(and(inArray(tasks.status, [...OPEN_STATUSES]), or(eq(tasks.assigneeId, m.id), m.role === 'manager' ? isNull(tasks.assigneeId) : teamOpenSql(myTeams(c)) ?? sql`false`)));
     // "Của tôi" = việc tôi nhận + việc nhóm tôi chưa ai nhận.
     const mine = rows.filter(r => r.assigneeId === m.id || (!r.assigneeId && r.assigneePosition && teams.includes(r.assigneePosition)));
-    return json({ open: mine.length, overdue: mine.filter(r => dueBucket(r.dueDate, today) === 'overdue').length, today: mine.filter(r => dueBucket(r.dueDate, today) === 'today').length,
+    return json({ accountingAvailable: me(c).role === 'employee' && canUseAccountingTasks(me(c)), open: mine.length, overdue: mine.filter(r => dueBucket(r.dueDate, today) === 'overdue').length, today: mine.filter(r => dueBucket(r.dueDate, today) === 'today').length,
       team: rows.filter(r => !r.assigneeId && r.assigneePosition && (m.role === 'manager' || teams.includes(r.assigneePosition))).length,
       unassigned: m.role === 'manager' ? rows.filter(r => !r.assigneeId && !r.assigneePosition).length : 0 });
   }, 'business');
@@ -218,7 +222,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
     return json({ today, canViewColleagues: !!peerPos(c), tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
-      completedByName: name(t.completedBy), comments: Number(counts.find(x => x.taskId === t.id)?.n ?? 0), due: dueBucket(t.dueDate, today),
+      completedByName: name(t.completedBy), comments: canComment(c, t) ? Number(counts.find(x => x.taskId === t.id)?.n ?? 0) : 0, due: dueBucket(t.dueDate, today),
       canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) })) });
   }, 'business');
 
@@ -266,14 +270,15 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     if (b.status !== undefined) {
       if (completionFromSource(t) && (b.status === 'done' || b.status === 'cancelled' ||
         ((t.status === 'done' || t.status === 'cancelled') && b.status !== t.status))) {
-        throw new AppError(409, t.autoKey?.startsWith('invoice:') ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : t.autoKey?.startsWith('po-receive:') ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
+        throw new AppError(409, accountingKind(t.autoKey) ? sourceCompletionHelp(t.autoKey) : t.autoKey?.startsWith('invoice:') ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : t.autoKey?.startsWith('po-receive:') ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
           : 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt, không đánh dấu hoàn thành thủ công.', 'TASK_SOURCE_MANAGED');
       }
       if (!TASK_STATUSES.includes(b.status as TaskStatus)) throw new AppError(400, 'Trạng thái không hợp lệ.');
       if (b.status === 'cancelled' && !manage) throw new AppError(403, 'Chỉ người giao việc hoặc Manager huỷ được việc.');
       Object.assign(set, statusPatch(b.status as TaskStatus, m.id, t));
     }
-    await c.env.db.update(tasks).set({ ...set, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id));
+    const changed = await c.env.db.update(tasks).set({ ...set, revision: sql`${tasks.revision} + 1` }).where(and(eq(tasks.id, t.id), eq(tasks.revision, t.revision))).returning({ id: tasks.id });
+    if (!changed.length) throw new AppError(409, 'Công việc vừa được người khác nhận hoặc cập nhật. Tải lại để xem.', 'REVISION_CONFLICT');
     // Việc hẹn chăm sóc khách hoàn thành ở "Công việc" → lịch hẹn bên nhật ký chăm sóc cũng xong (khoá việc = care:<id>:<ngày hẹn>).
     if (b.status === 'done' && t.source === 'care' && t.sourceId && t.autoKey) await completeFollowUp(c.env.db, t.sourceId, t.autoKey.split(':')[2] ?? '');
     // Hoàn thành việc "In mẫu" / "Sản xuất" → bước tương ứng trên thanh tiến trình đơn / HĐKT xong (khoá việc = print-sample:<đơn> / production:<đơn>).
@@ -353,6 +358,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   router.get('/tasks/:id/comments', async c => {
     // Trao đổi là chuyện riêng của người giao ↔ người nhận: đồng nghiệp cùng chức vụ (chỉ xem việc) không đọc được.
     const t = await loadOwnTask(c, c.params.id!, 'Chỉ người giao, người nhận và Manager xem được trao đổi của việc này.');
+    if (!canComment(c, t)) throw new AppError(403, 'Chỉ người nhận và Manager xem trao đổi của công việc kế toán.');
     const rows = await c.env.db.select({ id: taskComments.id, body: taskComments.body, createdAt: taskComments.createdAt, memberId: taskComments.memberId, name: employees.name })
       .from(taskComments).innerJoin(employees, eq(employees.id, taskComments.memberId)).where(eq(taskComments.taskId, t.id)).orderBy(asc(taskComments.createdAt)).limit(300);
     return json({ comments: rows });
@@ -361,6 +367,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
   /** Trao đổi trong việc: báo người còn lại (người giao ↔ người nhận). */
   router.post('/tasks/:id/comments', async c => {
     const m = me(c), t = await loadOwnTask(c, c.params.id!, 'Chỉ người giao, người nhận và Manager trao đổi được trong việc này.'), body = str((await readJson(c.req, 8_000)).body, 2000);
+    if (!canComment(c, t)) throw new AppError(403, 'Chỉ người nhận và Manager trao đổi trong công việc kế toán.');
     if (!body) throw new AppError(400, 'Nhập nội dung trao đổi.');
     const id = crypto.randomUUID();
     await c.env.db.insert(taskComments).values({ id, taskId: t.id, memberId: m.id, body, createdAt: nowIso() });

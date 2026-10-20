@@ -103,3 +103,27 @@ Giao diện nhận `canViewColleagues` từ API `/tasks` để hiện bộ lọc
 ### Việc nhận hàng NCC tự hoàn thành theo chứng từ
 
 Việc tự sinh có khoá `po-receive:` không có ô tick hoàn thành, không có lựa chọn Hoàn thành/Huỷ ở bảng hay chi tiết. Người dùng vẫn nhận việc và chuyển sang Đang làm được. Ghi nhận đủ hàng trên đơn mua thì việc tự hoàn thành qua cơ chế đồng bộ việc hiện có. API trả `completionFromSource` và chặn hoàn thành/huỷ/mở lại thủ công (kể cả Manager), mã `TASK_SOURCE_MANAGED`. Việc thủ công và các loại việc tự sinh khác giữ nguyên.
+
+## Hàng đợi Kế toán
+
+Chức vụ `accounting` mở `#/tasks` mặc định bằng hàng đợi Kế toán. Người có `purchases.pay` (bao gồm Sale Admin theo quyền hiện có) có nút **Nhóm Kế toán** trên bảng chung. Nút **Công việc khác / Thêm việc** quay lại bảng chung. Manager giữ bảng chung, không đổi chức vụ, quyền hay luồng duyệt hiện có.
+
+- API `GET /tasks/accounting?view=team|mine|colleagues|closed_today&kind=invoice|purchase|debt|web&q=...&offset=...`: kiểm tư cách nhóm ở server, sau đó dùng cùng phạm vi nhiệm vụ hiện có. Phân trang 100 dòng, KPI/tổng tab tính trước phân trang và bộ lọc loại/tìm kiếm.
+- `GET /tasks/accounting/:id`: kiểm tư cách nhóm và quyền xem đúng nhiệm vụ; trả dữ liệu nguồn, hướng dẫn và lịch sử từ các mốc thật trên nhiệm vụ. Không có mốc thì không tự dựng lịch sử.
+- Bốn KPI: xuất HĐ chờ (gồm web), kỳ NCC chưa trả đủ có hạn tới hôm nay +3 ngày (gồm quá hạn), nợ quá hạn đang theo dõi, việc nhóm chưa nhận. Việc đã đóng không cộng vào các KPI đang mở.
+- Hai hàng lọc: nhóm/của tôi/đồng nghiệp/đóng hôm nay và loại việc. Đồng nghiệp chỉ gồm việc chỉ xem, không lẫn việc nhóm chưa nhận. Đóng hôm nay dùng `completed_at` theo giờ Việt Nam, không suy đoán từ giờ cập nhật khác.
+- `sourceData` lấy trực tiếp đơn, lịch thu/chi, phiếu thu/chi chưa huỷ, đơn mua và dữ liệu đơn web. Công nợ giữ các hàm `receivable`, `supplierDebt`, `computeOrderTotals` hiện có. Không tách tiền trong mô tả; không thêm cột/bảng hay migration. Kỳ NCC giữ nhiệm vụ khi chuyển sang quá hạn, chỉ tự đóng khi kỳ được trả đủ, đơn bị huỷ hoặc không còn điều kiện.
+- Quyền số tiền và link kiểm lại theo quyền trang/phạm vi đơn và quyền giá NCC. Không được xem nguồn thì API không trả số tiền hay mô tả có số tiền; giao diện báo dữ liệu bị ẩn. Web không có trang đơn cho Kế toán hiện nhãn **Không có link đơn** và mã GHN nếu được xem chi tiết.
+- `invoice:`, `po-pay:`, `debt-overdue-acc:` chỉ hoàn thành theo chứng từ. Đóng/huỷ/mở lại tay bị chặn `409 TASK_SOURCE_MANAGED`, kể cả Manager. Vẫn nhận việc và chuyển Đang làm được.
+- Việc tự sinh không xoá được. Nhận/sửa việc kiểm revision tại UPDATE để hai người không cùng nhận đè nhau.
+- Trao đổi của các nhiệm vụ kế toán tự sinh chỉ người đang nhận và Manager được đọc/gửi. Người cùng chức vụ chỉ xem không được đọc/gửi, người trong nhóm chưa nhận cũng không đọc/gửi được. Bảng Công việc chung của các loại khác giữ quyền cũ.
+
+### Các điểm chưa chốt
+
+**B — Mở lại việc đã đóng tay:** mặc định không mở lại. API trả `warnings` cho việc đóng tay có điều kiện nguồn còn đúng, gồm số tiền tồn và link theo quyền; chỉ cảnh báo. Nguồn không được xem hoặc không xác định được tồn thì không suy đoán. Việc hệ thống tự đóng vẫn giữ cơ chế mở lại theo chứng từ cũ.
+
+**C — Đóng việc web:** `invoice-web:` vẫn đóng tay; hướng dẫn ghi số hoá đơn trong Trao đổi. Vì web chưa có trạng thái xuất HĐ, không suy luận rằng việc đã đóng tay còn chờ HĐ và không tự mở lại hay cảnh báo tồn giả cho trường hợp này.
+
+**C — Trang đơn web cho Kế toán:** chưa có trang được cấp quyền phù hợp để gắn link. Giữ nhãn Không có link đơn, không mở thêm quyền POS và không tạo trang mới.
+
+Kiểm thử: `tests/app/accounting-tasks.test.ts`, `accounting-tasks-ui.test.ts`, cùng hồi quy `tasks`, `task-peers`, `task-cards-ui`, `invoice-tasks`. Kiểm thử giao diện dùng dữ liệu mẫu; chưa kiểm thử live hoặc máy in.
