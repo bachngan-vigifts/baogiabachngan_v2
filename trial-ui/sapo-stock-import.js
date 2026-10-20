@@ -14,7 +14,7 @@ function el(tag, text, attrs = {}) { const node = document.createElement(tag); i
 function labelled(label, input) { const node = el('label', label); node.append(input); return node; }
 function option(value, label) { return el('option', label, { value }); }
 const normal = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
-export async function openSapoStockImport({ api, isManager, onChanged }) {
+export async function openSapoStockImport({ api, isManager, onChanged, toast = () => {} }) {
   if (!isManager()) return;
   const data = await api('/products?limit=1'), stores = data.warehouses.filter(w => w.kind === 'stock');
   if (!stores.length) throw Error('CRM chưa có kho thực để nhận dữ liệu.');
@@ -24,7 +24,7 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
   body.append(el('p', '1. Mở Sapo, đăng nhập bằng tài khoản của anh và xuất tồn kho cho từng nguồn: KHO VIGIFTS, Hoá đơn Lock, Hoá đơn Bách Ngân. Giữ hai cột Mã hàng và Tồn.'));
   const link = el('a', 'Mở Sapo để tải file', { href: 'https://bachngankiengiang.mysapo.com/admin', target: '_blank', rel: 'noopener noreferrer', class: 'btn secondary' }); body.append(link);
   body.append(el('p', '2. Chọn ít nhất một file Excel/CSV bên dưới. Nguồn không cập nhật được để trống. CRM lấy trực tiếp số lượng ở cột Tồn. Nếu chọn nhiều file cùng kho CRM, số tồn được cộng trong một lần lưu; không cộng vào số tồn cũ.'));
-  body.append(el('p', 'Mã hàng phải giữ dạng chữ để không mất số 0 đầu. Ô trống và mã trùng trong một file sẽ báo lỗi. Chỉ thay số lượng của mã có trong file; mã không nằm trong file giữ nguyên. Mã không có trong CRM được liệt kê và bỏ qua.', { class: 'muted small' }));
+  body.append(el('p', 'Mã hàng phải giữ dạng chữ để không mất số 0 đầu. Ô trống và mã trùng trong một file sẽ báo lỗi. Chỉ thay số lượng của mã có trong file; mã không nằm trong file giữ nguyên. Mã không có trong CRM được tự động bỏ qua.', { class: 'muted small' }));
   const date = el('input', undefined, { type: 'datetime-local', required: '', 'aria-label': 'Thời điểm số liệu Sapo' });
   const now = new Date(); date.value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   body.append(labelled('Thời điểm số liệu trên Sapo', date));
@@ -96,7 +96,13 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
   };
   apply.onclick = async () => {
     if (busy || !preview) return; lock(true);
-    try { const p = await api('/admin/products/import/sapo-stock/apply', 'POST', preview); preview = null; status.textContent = `Đã cập nhật ${fmt(p.matched)} mã lúc ${new Date(p.updatedAt).toLocaleString('vi-VN')}.`; await onChanged(); }
+    try {
+      const p = await api('/admin/products/import/sapo-stock/apply', 'POST', preview); preview = null;
+      const message = `Đã cập nhật ${fmt(p.matched)} mã lúc ${new Date(p.updatedAt).toLocaleString('vi-VN')}.`;
+      status.textContent = message;
+      try { await onChanged(); } catch { /* cập nhật đã lưu; lỗi tải lại danh sách không đổi kết quả */ }
+      dialog.close(); toast(message);
+    }
     catch (e) { invalidate(); status.textContent = e.message + ' Xem trước lại trước khi cập nhật.'; } finally { lock(false); }
   };
   lock(false); dialog.showModal();

@@ -2179,7 +2179,7 @@ $('#product-export').addEventListener('click', openProductExport);
 $('#product-actions').addEventListener('click', e => {
   const action = e.target.closest('[data-product-action]')?.dataset.productAction;
   if (action === 'value' || action === 'audit') productActions().report(action);
-  else if (action === 'sapo-stock') openSapoStockImport({ api, isManager, onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } }).catch(ex => toast(ex.message, 'err'));
+  else if (action === 'sapo-stock') openSapoStockImport({ api, isManager, toast, onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } }).catch(ex => toast(ex.message, 'err'));
   else if (action === 'stock' || action === 'packing') productActions().openImport(action).catch(ex => toast(ex.message, 'err'));
 });
 function renderProducts() {

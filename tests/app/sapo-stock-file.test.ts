@@ -71,6 +71,7 @@ test('API Sapo file: quyền Manager, snapshot nguyên tử, lưu raw totals, kh
 
 // Exercise the real dialog handlers: selecting files, mapping warehouses, preview invalidation and apply.
 test('form Cập nhật kho: nhập một file được, đổi kho phải xem trước lại, không render HTML từ SKU', async () => {
+  let closes = 0;
   class Element {
     tagName: string; children: Element[] = []; attributes: Record<string, string> = {}; parent: Element | null = null; textContent = ''; value = ''; disabled = false; files: any[] = []; onchange: any; onclick: any; listeners: Record<string, Function> = {};
     constructor(tag: string) { this.tagName = tag; }
@@ -80,17 +81,17 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
     get options() { return this.children.filter(c => c.tagName === 'option'); }
     querySelectorAll(query: string): Element[] { const tags = query.split(',').map(x => x.trim()); return this.children.flatMap(c => [...(tags.includes(c.tagName) || query === '*' ? [c] : []), ...c.querySelectorAll(query)]); }
     addEventListener(event: string, fn: Function) { this.listeners[event] = fn; }
-    showModal() {} close() { this.listeners.close?.(); } remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); }
+    showModal() {} close() { closes++; this.listeners.close?.(); } remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); }
   }
   const document = { body: new Element('body'), head: new Element('head'), createElement: (tag: string) => new Element(tag) };
-  const calls: any[] = []; let refreshed = 0;
+  const calls: any[] = [], notices: string[] = []; let refreshed = 0;
   const ctx: any = { document, Date, URL, console, XLSX: { read: (value: any) => value, utils: { decode_range: () => ({ e: { r: 2 } }), sheet_to_json: (ws: any) => ws.rows, encode_cell: ({ r, c }: any) => `${r}:${c}` } } };
   vm.createContext(ctx);
   const pure = readFileSync(new URL('../../trial-ui/product-file.js', import.meta.url), 'utf8').replace(/export /g, '');
   const parse = readFileSync(new URL('../../trial-ui/sapo-stock-file.js', import.meta.url), 'utf8').replace(/^import .*;$/m, '').replace(/export /g, '');
   const ui = readFileSync(new URL('../../trial-ui/sapo-stock-import.js', import.meta.url), 'utf8').replace(/^import .*;$/m, '').replace(/export /g, '').replaceAll('import.meta.url', "'https://trial.test/sapo-stock-import.js'");
   vm.runInContext(pure + '\n' + parse + '\n' + ui, ctx);
-  await ctx.openSapoStockImport({ isManager: () => true, onChanged: () => { refreshed++; }, api: async (path: string, method: string, body?: any) => {
+  await ctx.openSapoStockImport({ isManager: () => true, toast: (message: string) => notices.push(message), onChanged: () => { refreshed++; }, api: async (path: string, method: string, body?: any) => {
     if (!method) return { warehouses: [{ id: 'v', name: 'KHO VIGIFTS', kind: 'stock' }, { id: 'm', name: 'Minh Long Lock', kind: 'stock' }, { id: 'ncc', name: 'NCC', kind: 'supplier' }] };
     calls.push({ path, body: plain(body) });
     return { version: 'a'.repeat(64), matched: 1, unknownCount: 2, ambiguousCount: 0, unknown: ['MISSING-1', 'MISSING-2'], samples: [{ sku: '<img onerror=alert(1)>', warehouse: 'Kho', before: 0, after: 10 }], updatedAt: new Date().toISOString() };
@@ -108,4 +109,5 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   assert.ok(!all().some(x => String(x.textContent).includes('MISSING-1') || String(x.textContent).includes('Mã không tìm thấy')));
   targets[0]!.onchange(); assert.equal(apply.disabled, true, 'đổi kho vô hiệu hoá preview'); await apply.onclick(); assert.equal(calls.length, 1);
   await review.onclick(); await apply.onclick(); assert.equal(calls.at(-1).path, '/admin/products/import/sapo-stock/apply'); assert.equal(refreshed, 1); assert.equal(apply.disabled, true);
+  assert.equal(closes, 1); assert.match(notices[0]!, /^Đã cập nhật 1 mã lúc /);
 });
