@@ -17,6 +17,31 @@ const entry = (kind = 'other_income', amount = 100000) => ({
   reason: 'Phiếu kiểm thử',
 });
 const range = '?from=2026-01-01&to=2027-01-01';
+test('Cash: chốt ca từ Sổ quỹ gửi báo cáo một lần và không gửi lại khi replay', async () => {
+  const f = await setup();
+  const reports: any[] = [];
+  f.env.posShiftReportWebhook = {
+    url: 'https://n8n.test/webhook/shift',
+    token: 'test-shift-token',
+    fetch: (async (_input: string | URL | Request, init?: RequestInit) => {
+      reports.push({ headers: init?.headers, body: JSON.parse(String(init?.body || '{}')) });
+      return Response.json({ ok: true, queued: true });
+    }) as typeof fetch,
+  };
+  const shift = await f.open();
+  const body = { countedCash: 500000 };
+  const first = await f.call('/cash/shifts/' + shift.id + '/close', f.emp, 'POST', body);
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].body.event, 'crm_pos_shift_closed');
+  assert.equal(reports[0].body.shift_id, shift.id);
+  assert.equal(reports[0].body.employee.name, 'Tên emp');
+  assert.match(String((reports[0].headers as Record<string, string>).authorization), /^Bearer /);
+  const replay = await f.call('/cash/shifts/' + shift.id + '/close', f.emp, 'POST', body);
+  assert.equal(replay.status, 200, JSON.stringify(replay.data));
+  assert.equal(replay.data.replayed, true);
+  assert.equal(reports.length, 1);
+});
 test('Hai két riêng: đầu kỳ không sao chép, ca mở độc lập, số dư/phiếu/tra soát không lẫn quầy', async () => {
   const f = await setup();
   await f.db.update(employees).set({ positionId: 'sales-ml' }).where(eq(employees.id, 'cashier2'));

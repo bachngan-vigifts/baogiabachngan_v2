@@ -12,6 +12,7 @@ import { cashDrawers, cashEntries, cashReconciliations } from '../modules/sales/
 import { posRegisters, posShifts } from '../modules/sales/pos-schema.ts';
 import { customerPayments, salesOrders } from '../modules/sales/schema.ts';
 import { posKey, posText, shiftReport } from '../modules/sales/api/pos-store.ts';
+import { sendPosShiftReport } from '../modules/sales/api/pos-shift-report-webhook.ts';
 import { cashEntryInput } from '../modules/sales/domain/cash.ts';
 import { posMoney } from '../modules/sales/domain/pos-money.ts';
 import { parsePhotos } from '../modules/inventory/api/photos.ts';
@@ -487,9 +488,17 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
   router.post(
     '/cash/shifts/:id/close',
     async (c) => {
-      cashAccess(who(c));
+      const member = who(c);
+      cashAccess(member);
       const b = await readJson(c.req, 5000);
-      return json(await c.env.db.transaction((tx) => closeCashShift(tx, who(c), c.params.id!, b, shiftReport)));
+      const result = await c.env.db.transaction((tx) => closeCashShift(tx, member, c.params.id!, b, shiftReport));
+      if (!result.replayed && c.env.posShiftReportWebhook) {
+        const task = sendPosShiftReport(c.env, result).catch((error) =>
+          console.error('POS_SHIFT_REPORT_WEBHOOK_FAILED', result.shift?.id, error instanceof Error ? error.message : error),
+        );
+        if (c.env.waitUntil) c.env.waitUntil(task); else await task;
+      }
+      return json(result);
     },
     'business',
   );
