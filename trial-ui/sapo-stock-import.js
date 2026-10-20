@@ -32,7 +32,7 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
   const close = el('button', 'Đóng', { type: 'button', class: 'btn secondary' }), review = el('button', 'Xem trước', { type: 'button', class: 'btn secondary' }), apply = el('button', 'Xác nhận cập nhật kho', { type: 'button', class: 'btn primary' });
   let preview = null, busy = false;
   function invalidate() { preview = null; apply.disabled = true; previewBox.replaceChildren(); }
-  function lock(value) { busy = value; dialog.querySelectorAll('input, select, button').forEach(n => n.disabled = value); if (!value) { review.disabled = !cards.some(c => c.book); apply.disabled = !preview; } }
+  function lock(value) { busy = value; dialog.querySelectorAll('input, select, button').forEach(n => n.disabled = value); if (!value) { review.disabled = false; apply.disabled = !preview; } }
   date.onchange = invalidate;
   for (const source of sources) {
     const card = el('fieldset'), grid = el('div', undefined, { class: 'form-grid cols-2' }); card.append(el('legend', source), grid);

@@ -98,7 +98,7 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   const all = () => document.body.querySelectorAll('*');
   const button = (text: string) => all().find(x => x.tagName === 'button' && x.textContent === text)!;
   const inputs = all().filter(x => x.tagName === 'input' && x.attributes.type === 'file'); assert.equal(inputs.length, 3);
-  const review = button('Xem trước'), apply = button('Xác nhận cập nhật kho'); assert.equal(review.disabled, true); assert.equal(apply.disabled, true);
+  const review = button('Xem trước'), apply = button('Xác nhận cập nhật kho'); assert.equal(review.disabled, false); assert.equal(apply.disabled, true);
   inputs[0]!.files = [{ name: '0.csv', size: 100, arrayBuffer: async () => ({ SheetNames: ['Sapo'], Sheets: { Sapo: { rows: [['Mã hàng', 'Tồn'], ['00123', 10]] } } }) }]; await inputs[0]!.onchange();
   const targets = all().filter(x => x.tagName === 'select' && x.attributes['aria-label']?.startsWith('Kho CRM nhận'));
   assert.ok(!targets[1]!.options.some(x => x.value === 'ncc'));
