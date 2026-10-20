@@ -762,6 +762,13 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-card { border: 0; border-radius: 0; background: #f7f9f8; }
 .pos-catalog { padding: 18px 20px 26px; }
 .pos-checkout { position: sticky; top: 68px; height: calc(100vh - 68px); box-sizing: border-box; padding: 18px 18px 20px; border-left: 1px solid #dce5df; background: #fff; overflow-y: auto; }
+@media (min-width: 851px) {
+  /* The desktop panel scrolls; its sections must not shrink over visible cart rows. */
+  .pos-checkout > * { flex-shrink: 0; }
+  .pos-checkout .pos-line-edit { grid-template-columns: auto auto minmax(0, 1fr) 65px; }
+  .pos-checkout .pos-line-edit > input,
+  .pos-checkout .pos-line-edit > select { width: 100%; min-width: 0; }
+}
 .pos-search { height: 60px; margin-bottom: 14px; }
 .pos-search input { border: 2px solid #19844e; border-radius: 14px; padding: 0 18px; background: #fff; font-size: 17px; }
 .pos-search .btn { min-width: 140px; border-radius: 13px; background: #16884d; border-color: #16884d; color: #fff; font-size: 16px; font-weight: 800; }
