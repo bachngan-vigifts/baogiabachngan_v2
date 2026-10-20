@@ -23,7 +23,7 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
   head.append(el('h2', 'Cập nhật kho'));
   body.append(el('p', '1. Mở Sapo, đăng nhập bằng tài khoản của anh và xuất tồn kho cho từng nguồn: KHO VIGIFTS, Hoá đơn Lock, Hoá đơn Bách Ngân. Giữ hai cột Mã hàng và Tồn.'));
   const link = el('a', 'Mở Sapo để tải file', { href: 'https://bachngankiengiang.mysapo.com/admin', target: '_blank', rel: 'noopener noreferrer', class: 'btn secondary' }); body.append(link);
-  body.append(el('p', '2. Chọn đủ ba file Excel/CSV bên dưới. CRM lấy trực tiếp số lượng ở cột Tồn. File cùng kho CRM được cộng với nhau trong một lần lưu; không cộng vào số tồn cũ.'));
+  body.append(el('p', '2. Chọn ít nhất một file Excel/CSV bên dưới. Nguồn không cập nhật được để trống. CRM lấy trực tiếp số lượng ở cột Tồn. Nếu chọn nhiều file cùng kho CRM, số tồn được cộng trong một lần lưu; không cộng vào số tồn cũ.'));
   body.append(el('p', 'Mã hàng phải giữ dạng chữ để không mất số 0 đầu. Ô trống và mã trùng trong một file sẽ báo lỗi. Chỉ thay số lượng của mã có trong file; mã không nằm trong file giữ nguyên. Mã không có trong CRM được liệt kê và bỏ qua.', { class: 'muted small' }));
   const date = el('input', undefined, { type: 'datetime-local', required: '', 'aria-label': 'Thời điểm số liệu Sapo' });
   const now = new Date(); date.value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -32,7 +32,7 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
   const close = el('button', 'Đóng', { type: 'button', class: 'btn secondary' }), review = el('button', 'Xem trước', { type: 'button', class: 'btn secondary' }), apply = el('button', 'Xác nhận cập nhật kho', { type: 'button', class: 'btn primary' });
   let preview = null, busy = false;
   function invalidate() { preview = null; apply.disabled = true; previewBox.replaceChildren(); }
-  function lock(value) { busy = value; dialog.querySelectorAll('input, select, button').forEach(n => n.disabled = value); if (!value) { review.disabled = cards.some(c => !c.book); apply.disabled = !preview; } }
+  function lock(value) { busy = value; dialog.querySelectorAll('input, select, button').forEach(n => n.disabled = value); if (!value) { review.disabled = !cards.some(c => c.book); apply.disabled = !preview; } }
   date.onchange = invalidate;
   for (const source of sources) {
     const card = el('fieldset'), grid = el('div', undefined, { class: 'form-grid cols-2' }); card.append(el('legend', source), grid);
@@ -76,8 +76,9 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
   review.onclick = async () => {
     if (busy) return; invalidate(); lock(true);
     try {
-      const parsed = cards.map(c => {
-        if (!c.book || !c.file.files[0]) throw Error('Chọn đủ ba file Sapo trước khi xem trước.');
+      const selectedCards = cards.filter(c => c.book && c.file.files[0]);
+      if (!selectedCards.length) throw Error('Chọn ít nhất một file Sapo trước khi xem trước.');
+      const parsed = selectedCards.map(c => {
         const mapping = Object.fromEntries(Object.entries(c.mapping).map(([key, select]) => [key, select.value === '' ? -1 : Number(select.value)]));
         const rows = c.rows.map(r => [...r]);
         // Excel SKU numeric cells with a zero-padding format must retain their displayed zeros.
@@ -85,7 +86,7 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
         return { source: c.source, warehouseId: c.target.value, ...parseSapoStockFile(rows, Number(c.header.value) - 1, mapping, c.hidden) };
       });
       const time = new Date(date.value); if (!Number.isFinite(time.getTime())) throw Error('Nhập thời điểm số liệu Sapo.');
-      const input = { filename: cards.map(c => c.file.files[0].name).join(' + ').slice(0, 300), observedAt: time.toISOString(), rows: combineSapoStockFiles(parsed) };
+      const input = { filename: selectedCards.map(c => c.file.files[0].name).join(' + ').slice(0, 300), observedAt: time.toISOString(), rows: combineSapoStockFiles(parsed) };
       const p = await api('/admin/products/import/sapo-stock/preview', 'POST', input); preview = p.matched ? { ...input, version: p.version } : null;
       status.textContent = `${fmt(p.matched)} mã sẽ cập nhật · ${fmt(p.unknownCount)} mã không có · ${fmt(p.ambiguousCount)} mã không xác định. Xem trước tối đa 30 dòng; bỏ qua ${fmt(parsed.reduce((n, f) => n + f.hidden, 0))} dòng ẩn.`;
       const table = el('table', undefined, { class: 'data-table' }), tr = el('tr'); for (const h of ['Mã hàng', 'Kho CRM', 'Tồn cũ', 'Tồn mới']) tr.append(el('th', h)); const thead = el('thead'); thead.append(tr); table.append(thead);

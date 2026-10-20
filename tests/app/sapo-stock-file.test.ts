@@ -70,7 +70,7 @@ test('API Sapo file: quyền Manager, snapshot nguyên tử, lưu raw totals, kh
 });
 
 // Exercise the real dialog handlers: selecting files, mapping warehouses, preview invalidation and apply.
-test('form Cập nhật kho: ba file, cùng kho cộng đúng, đổi kho phải xem trước lại, không render HTML từ SKU', async () => {
+test('form Cập nhật kho: nhập một file được, đổi kho phải xem trước lại, không render HTML từ SKU', async () => {
   class Element {
     tagName: string; children: Element[] = []; attributes: Record<string, string> = {}; parent: Element | null = null; textContent = ''; value = ''; disabled = false; files: any[] = []; onchange: any; onclick: any; listeners: Record<string, Function> = {};
     constructor(tag: string) { this.tagName = tag; }
@@ -99,14 +99,12 @@ test('form Cập nhật kho: ba file, cùng kho cộng đúng, đổi kho phải
   const button = (text: string) => all().find(x => x.tagName === 'button' && x.textContent === text)!;
   const inputs = all().filter(x => x.tagName === 'input' && x.attributes.type === 'file'); assert.equal(inputs.length, 3);
   const review = button('Xem trước'), apply = button('Xác nhận cập nhật kho'); assert.equal(review.disabled, true); assert.equal(apply.disabled, true);
-  for (let i = 0; i < 3; i++) {
-    inputs[i]!.files = [{ name: `${i}.csv`, size: 100, arrayBuffer: async () => ({ SheetNames: ['Sapo'], Sheets: { Sapo: { rows: [['Mã hàng', 'Tồn'], ['00123', 10]] } } }) }]; await inputs[i]!.onchange();
-  }
+  inputs[0]!.files = [{ name: '0.csv', size: 100, arrayBuffer: async () => ({ SheetNames: ['Sapo'], Sheets: { Sapo: { rows: [['Mã hàng', 'Tồn'], ['00123', 10]] } } }) }]; await inputs[0]!.onchange();
   const targets = all().filter(x => x.tagName === 'select' && x.attributes['aria-label']?.startsWith('Kho CRM nhận'));
-  for (let i = 1; i < 3; i++) { assert.ok(!targets[i]!.options.some(x => x.value === 'ncc')); targets[i]!.value = 'm'; targets[i]!.onchange(); }
+  assert.ok(!targets[1]!.options.some(x => x.value === 'ncc'));
   assert.equal(review.disabled, false); await review.onclick(); assert.equal(apply.disabled, false);
-  assert.equal(calls[0].body.rows[0].stock.v, 10); assert.equal(calls[0].body.rows[0].stock.m, 20);
+  assert.equal(calls[0].body.rows[0].stock.v, 10); assert.equal(calls[0].body.rows[0].stock.m, undefined);
   assert.ok(all().some(x => x.tagName === 'td' && x.textContent === '<img onerror=alert(1)>')); assert.ok(!all().some(x => x.tagName === 'img'));
-  targets[1]!.onchange(); assert.equal(apply.disabled, true, 'đổi kho vô hiệu hoá preview'); await apply.onclick(); assert.equal(calls.length, 1);
+  targets[0]!.onchange(); assert.equal(apply.disabled, true, 'đổi kho vô hiệu hoá preview'); await apply.onclick(); assert.equal(calls.length, 1);
   await review.onclick(); await apply.onclick(); assert.equal(calls.at(-1).path, '/admin/products/import/sapo-stock/apply'); assert.equal(refreshed, 1); assert.equal(apply.disabled, true);
 });
