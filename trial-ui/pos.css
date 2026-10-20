@@ -763,6 +763,12 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-catalog { padding: 18px 20px 26px; }
 .pos-checkout { position: sticky; top: 68px; height: calc(100vh - 68px); box-sizing: border-box; padding: 18px 18px 20px; border-left: 1px solid #dce5df; background: #fff; overflow-y: auto; }
 @media (min-width: 851px) {
+  .pos-checkout .pos-service-fee { grid-template-columns: 80px minmax(0, 1fr) auto; }
+  .pos-checkout .pos-service-fee > .pos-field:nth-child(1) { grid-column: 1 / -1; }
+  .pos-checkout .pos-service-fee > .pos-field:nth-child(3) { grid-column: 2 / -1; }
+  .pos-checkout .pos-service-fee > .pos-field:nth-child(4) { grid-column: 1 / 3; }
+  .pos-checkout .pos-service-fee > .btn { grid-column: 3; }
+  .pos-checkout .pos-service-fee .pos-field > span { white-space: nowrap; }
   /* The desktop panel scrolls; its sections must not shrink over visible cart rows. */
   .pos-checkout > * { flex-shrink: 0; }
   .pos-checkout .pos-line-edit { grid-template-columns: auto auto minmax(0, 1fr) 65px; }
