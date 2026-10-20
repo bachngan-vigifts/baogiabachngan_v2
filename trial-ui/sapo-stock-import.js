@@ -39,7 +39,10 @@ export async function openSapoStockImport({ api, isManager, onChanged, toast = (
     const file = el('input', undefined, { type: 'file', accept: '.xlsx,.xls,.csv', 'aria-label': 'File ' + source }), sheet = el('select', undefined, { 'aria-label': 'Trang tính ' + source });
     const target = el('select', undefined, { 'aria-label': 'Kho CRM nhận ' + source }), header = el('input', undefined, { type: 'number', min: '1', max: '200', value: '1', 'aria-label': 'Dòng tiêu đề ' + source });
     target.append(option('', '— Chọn kho CRM nhận dữ liệu —')); for (const w of stores) target.append(option(w.id, w.name));
-    if (source === sources[0]) target.value = stores.find(w => normal(w.name).includes('vigifts'))?.id || '';
+    const expected = source === sources[0]
+      ? stores.find(w => normal(w.name).includes('vigifts'))
+      : stores.find(w => normal(w.name).includes('minh long') && normal(w.name).includes('lock'));
+    target.value = expected?.id || '';
     const mapping = {}, controls = el('div', undefined, { class: 'form-grid cols-2' });
     grid.append(labelled('File Excel / CSV (tối đa 20 MB)', file), labelled('Trang tính', sheet), labelled('Kho CRM nhận dữ liệu', target), labelled('Dòng tiêu đề', header)); card.append(controls);
     const state = { source, file, sheet, target, header, mapping, book: null, rows: [], hidden: [], ws: null }; cards.push(state);

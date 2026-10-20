@@ -103,6 +103,7 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   inputs[0]!.files = [{ name: '0.csv', size: 100, arrayBuffer: async () => ({ SheetNames: ['Sapo'], Sheets: { Sapo: { rows: [['Mã hàng', 'Tồn'], ['00123', 10]] } } }) }]; await inputs[0]!.onchange();
   const targets = all().filter(x => x.tagName === 'select' && x.attributes['aria-label']?.startsWith('Kho CRM nhận'));
   assert.ok(!targets[1]!.options.some(x => x.value === 'ncc'));
+  assert.deepEqual(targets.map(x => x.value), ['v', 'm', 'm'], 'tự chọn đúng kho VIGIFTS và kho Minh Long–Lock');
   assert.equal(review.disabled, false); await review.onclick(); assert.equal(apply.disabled, false);
   assert.equal(calls[0].body.rows[0].stock.v, 10); assert.equal(calls[0].body.rows[0].stock.m, undefined);
   assert.ok(all().some(x => x.tagName === 'td' && x.textContent === '<img onerror=alert(1)>')); assert.ok(!all().some(x => x.tagName === 'img'));
