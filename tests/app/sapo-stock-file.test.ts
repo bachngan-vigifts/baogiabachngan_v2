@@ -92,20 +92,26 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   const ui = readFileSync(new URL('../../trial-ui/sapo-stock-import.js', import.meta.url), 'utf8').replace(/^import .*;$/m, '').replace(/export /g, '').replaceAll('import.meta.url', "'https://trial.test/sapo-stock-import.js'");
   vm.runInContext(pure + '\n' + parse + '\n' + ui, ctx);
   await ctx.openSapoStockImport({ isManager: () => true, toast: (message: string) => notices.push(message), onChanged: () => { refreshed++; }, api: async (path: string, method: string, body?: any) => {
-    if (!method) return { warehouses: [{ id: 'v', name: 'KHO VIGIFTS', kind: 'stock' }, { id: 'm', name: 'Minh Long Lock', kind: 'stock' }, { id: 'ncc', name: 'NCC', kind: 'supplier' }] };
+    if (!method) return { warehouses: [
+      { id: 'sr', name: 'MINH LONG - LOCKNLOCK CẦN THƠ', kind: 'stock' },
+      { id: 'v', name: 'KHO VIGIFTS', kind: 'stock' },
+      { id: 'lock', name: 'LOCKNLOCK (HÓA ĐƠN)', kind: 'stock' },
+      { id: 'ml', name: 'BÁCH NGÂN HÓA ĐƠN', kind: 'stock' },
+      { id: 'ncc', name: 'NCC', kind: 'supplier' },
+    ] };
     calls.push({ path, body: plain(body) });
     return { version: 'a'.repeat(64), matched: 1, unknownCount: 2, ambiguousCount: 0, unknown: ['MISSING-1', 'MISSING-2'], samples: [{ sku: '<img onerror=alert(1)>', warehouse: 'Kho', before: 0, after: 10 }], updatedAt: new Date().toISOString() };
   } });
   const all = () => document.body.querySelectorAll('*');
   const button = (text: string) => all().find(x => x.tagName === 'button' && x.textContent === text)!;
-  const inputs = all().filter(x => x.tagName === 'input' && x.attributes.type === 'file'); assert.equal(inputs.length, 3);
+  const inputs = all().filter(x => x.tagName === 'input' && x.attributes.type === 'file'); assert.equal(inputs.length, 4);
   const review = button('Xem trước'), apply = button('Xác nhận cập nhật kho'); assert.equal(review.disabled, false); assert.equal(apply.disabled, true);
   inputs[0]!.files = [{ name: '0.csv', size: 100, arrayBuffer: async () => ({ SheetNames: ['Sapo'], Sheets: { Sapo: { rows: [['Mã hàng', 'Tồn'], ['00123', 10]] } } }) }]; await inputs[0]!.onchange();
   const targets = all().filter(x => x.tagName === 'select' && x.attributes['aria-label']?.startsWith('Kho CRM nhận'));
   assert.ok(!targets[1]!.options.some(x => x.value === 'ncc'));
-  assert.deepEqual(targets.map(x => x.value), ['v', 'm', 'm'], 'tự chọn đúng kho VIGIFTS và kho Minh Long–Lock');
+  assert.deepEqual(targets.map(x => x.value), ['sr', 'v', 'lock', 'ml'], 'tự chọn đúng bốn kho riêng');
   assert.equal(review.disabled, false); await review.onclick(); assert.equal(apply.disabled, false);
-  assert.equal(calls[0].body.rows[0].stock.v, 10); assert.equal(calls[0].body.rows[0].stock.m, undefined);
+  assert.equal(calls[0].body.rows[0].stock.sr, 10); assert.equal(calls[0].body.rows[0].stock.v, undefined);
   assert.ok(all().some(x => x.tagName === 'td' && x.textContent === '<img onerror=alert(1)>')); assert.ok(!all().some(x => x.tagName === 'img'));
   assert.ok(!all().some(x => String(x.textContent).includes('MISSING-1') || String(x.textContent).includes('Mã không tìm thấy')));
   targets[0]!.onchange(); assert.equal(apply.disabled, true, 'đổi kho vô hiệu hoá preview'); await apply.onclick(); assert.equal(calls.length, 1);

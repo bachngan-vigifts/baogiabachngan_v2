@@ -30,7 +30,7 @@ export function parseSapoStockFile(rows, header, mapping, hiddenRows = []) {
 }
 /** Files from different Sapo locations mapped to one CRM warehouse are added once, not overwritten. */
 export function combineSapoStockFiles(files) {
-  if (!files.length || files.length > 3 || new Set(files.map(f => f.source)).size !== files.length) throw Error('Mỗi nguồn Sapo chỉ được chọn một lần.');
+  if (!files.length || files.length > 4 || new Set(files.map(f => f.source)).size !== files.length) throw Error('Mỗi nguồn Sapo chỉ được chọn một lần.');
   const merged = new Map();
   for (const file of files) {
     if (!file.warehouseId) throw Error('Chọn kho CRM nhận dữ liệu cho từng file.');

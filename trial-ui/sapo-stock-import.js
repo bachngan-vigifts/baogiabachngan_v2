@@ -8,12 +8,17 @@ function excel() {
     s.onload = () => resolve(globalThis.XLSX); s.onerror = () => { excelPromise = null; s.remove(); reject(Error('Không tải được bộ đọc Excel.')); }; document.head.append(s);
   });
 }
-const sources = ['KHO VIGIFTS', 'Hoá đơn Lock', 'Hoá đơn Bách Ngân'];
+const sources = [
+  { label: 'Kho Minh Long - Lock (showroom)', match: name => name.includes('minh long') && name.includes('lock') && !name.includes('hoa don') },
+  { label: 'KHO VIGIFTS', match: name => name.includes('vigifts') },
+  { label: 'Hoá đơn Lock', match: name => name.includes('lock') && name.includes('hoa don') },
+  { label: 'Hoá đơn Minh Long', match: name => name.includes('hoa don') && (name.includes('bach ngan') || (name.includes('minh long') && !name.includes('lock'))) },
+];
 const fmt = n => n === null || n === undefined ? '—' : Number(n).toLocaleString('vi-VN');
 function el(tag, text, attrs = {}) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v); return node; }
 function labelled(label, input) { const node = el('label', label); node.append(input); return node; }
 function option(value, label) { return el('option', label, { value }); }
-const normal = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
+const normal = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
 export async function openSapoStockImport({ api, isManager, onChanged, toast = () => {} }) {
   if (!isManager()) return;
   const data = await api('/products?limit=1'), stores = data.warehouses.filter(w => w.kind === 'stock');
@@ -21,7 +26,7 @@ export async function openSapoStockImport({ api, isManager, onChanged, toast = (
   const dialog = el('dialog', undefined, { class: 'modal', 'aria-label': 'Cập nhật kho từ Sapo' });
   const head = el('div', undefined, { class: 'modal-head' }), body = el('div', undefined, { class: 'modal-body' }), foot = el('div', undefined, { class: 'modal-foot' });
   head.append(el('h2', 'Cập nhật kho'));
-  body.append(el('p', '1. Mở Sapo, đăng nhập bằng tài khoản của anh và xuất tồn kho cho từng nguồn: KHO VIGIFTS, Hoá đơn Lock, Hoá đơn Bách Ngân. Giữ hai cột Mã hàng và Tồn.'));
+  body.append(el('p', '1. Mở Sapo, đăng nhập bằng tài khoản của anh và xuất tồn kho cho từng nguồn: kho Minh Long - Lock (showroom), KHO VIGIFTS, Hoá đơn Lock và Hoá đơn Minh Long. Giữ hai cột Mã hàng và Tồn.'));
   const link = el('a', 'Mở Sapo để tải file', { href: 'https://bachngankiengiang.mysapo.com/admin', target: '_blank', rel: 'noopener noreferrer', class: 'btn secondary' }); body.append(link);
   body.append(el('p', '2. Chọn ít nhất một file Excel/CSV bên dưới. Nguồn không cập nhật được để trống. CRM lấy trực tiếp số lượng ở cột Tồn. Nếu chọn nhiều file cùng kho CRM, số tồn được cộng trong một lần lưu; không cộng vào số tồn cũ.'));
   body.append(el('p', 'Mã hàng phải giữ dạng chữ để không mất số 0 đầu. Ô trống và mã trùng trong một file sẽ báo lỗi. Chỉ thay số lượng của mã có trong file; mã không nằm trong file giữ nguyên. Mã không có trong CRM được tự động bỏ qua.', { class: 'muted small' }));
@@ -35,17 +40,15 @@ export async function openSapoStockImport({ api, isManager, onChanged, toast = (
   function lock(value) { busy = value; dialog.querySelectorAll('input, select, button').forEach(n => n.disabled = value); if (!value) { review.disabled = false; apply.disabled = !preview; } }
   date.onchange = invalidate;
   for (const source of sources) {
-    const card = el('fieldset'), grid = el('div', undefined, { class: 'form-grid cols-2' }); card.append(el('legend', source), grid);
-    const file = el('input', undefined, { type: 'file', accept: '.xlsx,.xls,.csv', 'aria-label': 'File ' + source }), sheet = el('select', undefined, { 'aria-label': 'Trang tính ' + source });
-    const target = el('select', undefined, { 'aria-label': 'Kho CRM nhận ' + source }), header = el('input', undefined, { type: 'number', min: '1', max: '200', value: '1', 'aria-label': 'Dòng tiêu đề ' + source });
+    const card = el('fieldset'), grid = el('div', undefined, { class: 'form-grid cols-2' }); card.append(el('legend', source.label), grid);
+    const file = el('input', undefined, { type: 'file', accept: '.xlsx,.xls,.csv', 'aria-label': 'File ' + source.label }), sheet = el('select', undefined, { 'aria-label': 'Trang tính ' + source.label });
+    const target = el('select', undefined, { 'aria-label': 'Kho CRM nhận ' + source.label }), header = el('input', undefined, { type: 'number', min: '1', max: '200', value: '1', 'aria-label': 'Dòng tiêu đề ' + source.label });
     target.append(option('', '— Chọn kho CRM nhận dữ liệu —')); for (const w of stores) target.append(option(w.id, w.name));
-    const expected = source === sources[0]
-      ? stores.find(w => normal(w.name).includes('vigifts'))
-      : stores.find(w => normal(w.name).includes('minh long') && normal(w.name).includes('lock'));
+    const expected = stores.find(w => source.match(normal(w.name)));
     target.value = expected?.id || '';
     const mapping = {}, controls = el('div', undefined, { class: 'form-grid cols-2' });
     grid.append(labelled('File Excel / CSV (tối đa 20 MB)', file), labelled('Trang tính', sheet), labelled('Kho CRM nhận dữ liệu', target), labelled('Dòng tiêu đề', header)); card.append(controls);
-    const state = { source, file, sheet, target, header, mapping, book: null, rows: [], hidden: [], ws: null }; cards.push(state);
+    const state = { source: source.label, file, sheet, target, header, mapping, book: null, rows: [], hidden: [], ws: null }; cards.push(state);
     function mapColumns() {
       invalidate(); controls.replaceChildren(); const h = state.rows[Number(header.value) - 1] || [], detected = detectSapoColumns([h]).mapping;
       for (const [key, label] of [['sku', 'Mã hàng'], ['onHand', 'Tồn']]) {
