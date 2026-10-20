@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { and,eq,ne,or,sql,type SQL } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { RouteContext } from '../../../core/http/router.ts';
 import { readJson } from '../../../core/http/router.ts';
-import { fold } from '../../../core/text/fold.ts';
+import { fold,foldSql } from '../../../core/text/fold.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { positions } from '../../staff/schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
@@ -89,4 +89,45 @@ export async function authorizePosStore(c: Ctx) {
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, id));
     if (r) await shift(r.shiftId);
   }
+}
+
+/** Store assignment is a hard boundary even if customer sharing/department ownership grants document access. */
+export function posOrderStoreScope(m: {
+  role: string;
+  positionId?: string | null;
+  positionName?: string | null;
+}): SQL | undefined {
+  if (m.role === 'manager') return;
+  const name = fold(m.positionName);
+  const lock =
+    m.positionId === 'sales-lock' ||
+    /^(nvbh|cht|cua hang truong) lock$/.test(name);
+  const ml =
+    m.positionId === 'sales-ml' ||
+    /^(nvbh|cht|cua hang truong) (ml|minh long)$/.test(name);
+  if (!lock && !ml) return;
+  const w = sql`regexp_replace(${foldSql(warehouses.name)},'[[:space:]]+',' ','g')`,
+    r = sql`regexp_replace(${foldSql(posRegisters.name)},'[[:space:]]+',' ','g')`;
+  const belongs = (v: SQL) =>
+    lock
+      ? sql`${v} like '%lock%'`
+      : sql`${v} like '%minh long%' and ${v} not like '%lock%'`;
+  const ambiguous = sql`${w} like '%lock%' and ${w} like '%minh long%'`;
+  const matching = or(
+    and(ambiguous, belongs(r)),
+    and(
+      sql`not (${ambiguous})`,
+      or(
+        belongs(w),
+        and(
+          sql`${w} not like '%lock%' and ${w} not like '%minh long%'`,
+          belongs(r),
+        ),
+      ),
+    ),
+  );
+  return or(
+    ne(salesOrders.channel, 'pos'),
+    sql`exists(select 1 from ${posShifts} inner join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} inner join ${warehouses} on ${warehouses.id}=${posRegisters.warehouseId} where ${posShifts.id}=${salesOrders.shiftId} and ${matching})`,
+  );
 }

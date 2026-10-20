@@ -1,3 +1,4 @@
+import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 import { saleFlowOf, flowHoldUntil } from '../domain/pos-order-flow.ts';
 import { posOrderReservations } from '../pos-order-flow-schema.ts';
@@ -63,11 +64,39 @@ export const canIssueInvoice = (m: { role: string; positionId?: string | null })
  * Ai thấy đơn: Manager và Kế toán thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
  */
-export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null; dataScope?: string | null; approver?: boolean | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m) ? undefined
-  : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id), departmentOwner(salesOrders.ownerId, m), departmentOwner(salesOrders.createdBy, m),
-    sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`,
-    // Người được duyệt mở được đơn / HĐKT đang chờ duyệt (đã gửi duyệt) để kiểm tra rồi duyệt.
-    canApprove(m) ? and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt)) : undefined);
+export const orderScopeFor = (m: {
+  id: string;
+  role: string;
+  positionId?: string | null;
+  positionName?: string | null;
+  dataScope?: string | null;
+  approver?: boolean | null;
+}): SQL | undefined =>
+  and(
+    posOrderStoreScope(m),
+    m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m)
+      ? undefined
+      : or(
+          eq(salesOrders.ownerId, m.id),
+          eq(salesOrders.createdBy, m.id),
+          departmentOwner(salesOrders.ownerId, m),
+          departmentOwner(salesOrders.createdBy, m),
+          can(m, 'pos.sell')
+            ? and(
+                eq(salesOrders.channel, 'pos'),
+                sql`${salesOrders.posSnapshot}::jsonb->>'saleFlow' in ('deposit','prepaid')`,
+              )
+            : undefined,
+          sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`,
+          // Người được duyệt mở được đơn / HĐKT đang chờ duyệt (đã gửi duyệt) để kiểm tra rồi duyệt.
+          canApprove(m)
+            ? and(
+                eq(salesOrders.status, 'draft'),
+                isNotNull(salesOrders.submittedAt),
+              )
+            : undefined,
+        ),
+  );
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
 /** Lịch giao hàng: nhóm Kho (chức vụ `warehouse`) xem và đổi trạng thái mọi chuyến giao (không xem được đơn / công nợ). */
 const isWarehouseMember = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'warehouse';

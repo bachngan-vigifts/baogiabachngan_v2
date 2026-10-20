@@ -71,8 +71,9 @@ test('cọc 30% giữ đúng một lần; thu nốt ca khác và xuất đúng m
     }),
   );
   const frozen = (await f.call('/pos/shifts/' + s.id, f.emp)).data;
-  const next = await f.open(f.other),
-    collect = {
+  const next = await f.open(f.other);
+  ok(await f.call('/orders/'+a.data.id,f.other));
+  const collect = {
       key: key(),
       shiftId: next.id,
       amount: 136080,
@@ -709,7 +710,9 @@ test('huỷ cọc dùng tín dụng đổi hàng không trả tiền hay nhập 
 });
 test('NVBH Lock và Minh Long không đọc/thu/xác nhận/huỷ chéo đơn, kể cả được chỉ định duyệt', async () => {
   const f = await setup();
-  const { employees } = await import('../../src/modules/staff/schema.ts');
+  const { employees, positionPermissions } = await import(
+    '../../src/modules/staff/schema.ts'
+  );
   const { warehouses } = await import('../../src/modules/catalog/schema.ts');
   const { postMoves } = await import(
     '../../src/modules/inventory/api/ledger.ts'
@@ -767,7 +770,7 @@ test('NVBH Lock và Minh Long không đọc/thu/xác nhận/huỷ chéo đơn, k
       '/pos/checkout',
       f.other,
       'POST',
-      f.cart(s.id, { saleFlow: 'deposit', method: 'transfer' }),
+      f.cart(s.id, { saleFlow: 'prepaid', method: 'transfer', delivery }),
     );
   ok(a, 201);
   const ms = await f.call('/pos/shifts/open', f.emp, 'POST', {
@@ -782,16 +785,70 @@ test('NVBH Lock và Minh Long không đọc/thu/xác nhận/huỷ chéo đơn, k
     'POST',
     f.cart(ms.data.id, {
       registerId: ml.data.id,
-      saleFlow: 'deposit',
+      saleFlow: 'prepaid',
       method: 'transfer',
+      delivery,
     }),
   );
   ok(b, 201);
+  // Former owners/customer sharing must never bypass a changed store assignment.
+  await f.db
+    .update(salesOrders)
+    .set({ ownerId: 'emp' })
+    .where(eq(salesOrders.id, a.data.id));
+  await f.db
+    .update(salesOrders)
+    .set({ ownerId: 'cashier2' })
+    .where(eq(salesOrders.id, b.data.id));
+  await f.db
+    .insert(positionPermissions)
+    .values([
+      { positionId: 'sales-lock', permission: 'page.packing' },
+      { positionId: 'sales-ml', permission: 'page.packing' },
+    ])
+    .onConflictDoNothing();
+  const packIds = new Map<string, string>();
+  for (const o of [a.data.id, b.data.id]) {
+    const id = key();
+    packIds.set(o, id);
+    await f.db
+      .insert(packingSlips)
+      .values({
+        id,
+        slipNo: 'SCOPE-' + id,
+        orderId: o,
+        status: 'sent',
+        createdBy: 'mgr',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+  }
+  const ships = await f.db.select().from(deliveries);
   const intents = await f.db.select().from(posPaymentIntents);
   for (const [cookie, foreign, ownShift] of [
     [f.emp, a.data.id, ms.data.id],
     [f.other, b.data.id, s.id],
   ]) {
+    for (const path of [
+      '/orders/' + foreign,
+      '/orders/' + foreign + '/packing',
+      '/packing/' + packIds.get(foreign),
+    ])
+      ok(await f.call(path, cookie), 404);
+    const ship = ships.find((d) => d.orderId === foreign)!;
+    ok(
+      await f.call('/deliveries/' + ship.id + '/status', cookie, 'PUT', {
+        status: 'cancelled',
+      }),
+      404,
+    );
+    const generic = await f.call('/orders', cookie);
+    ok(generic);
+    assert.ok(!generic.data.orders.some((o: any) => o.id === foreign));
+    const packing = await f.call('/packing?status=all', cookie);
+    ok(packing);
+    assert.ok(!packing.data.slips.some((p: any) => p.orderId === foreign));
+    const holds=await f.call('/stock-holds',cookie);ok(holds);assert.ok(!holds.data.holds.some((h:any)=>h.orderId===foreign));
     const i = intents.find((i) => i.orderId === foreign)!;
     ok(await f.call('/pos/order-flows/' + foreign, cookie), 403);
     for (const action of ['hold', 'collect', 'cancel'])
@@ -901,18 +958,16 @@ test('danh sách mặc định không để đơn nhận sau cũ bị chìm bở
     .update(salesOrders)
     .set({ createdAt: '2020-01-01T00:00:00Z' })
     .where(eq(salesOrders.id, a.data.id));
-  await f.db
-    .insert(salesOrders)
-    .values(
-      Array.from({ length: 105 }, (_, i) => ({
-        ...o!,
-        id: key(),
-        checkoutKey: key(),
-        orderNo: 'COMPLETED_' + i,
-        status: 'delivered' as const,
-        createdAt: '2026-10-20T00:00:00Z',
-      })),
-    );
+  await f.db.insert(salesOrders).values(
+    Array.from({ length: 105 }, (_, i) => ({
+      ...o!,
+      id: key(),
+      checkoutKey: key(),
+      orderNo: 'COMPLETED_' + i,
+      status: 'delivered' as const,
+      createdAt: '2026-10-20T00:00:00Z',
+    })),
+  );
   const open = await f.call('/pos/order-flows?shiftId=' + s.id, f.emp);
   ok(open);
   assert.equal(open.data.orders.length, 1);

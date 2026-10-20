@@ -1,7 +1,8 @@
+import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 import { posOrderReservations } from '../pos-order-flow-schema.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
-import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -51,7 +52,7 @@ export async function expireHolds(env: StaffEnv): Promise<number> {
 }
 
 /** Hàng đơn / HĐKT đang giữ (theo mã): phần chưa giao, đơn còn hiệu lực, tồn Sapo chưa trừ. `skus` để lọc (không truyền = mọi mã). */
-export async function orderHolds(db: Db, skus?: string[], warehouseId?: string) {
+export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, storeScope?: SQL) {
   if (skus && !skus.length) return [];
   const sapoCounted = and(sql`${salesOrders.sapoOrderId} IS NOT NULL`, or(isNull(salesOrders.sapoPushedAt), sql`EXISTS (${db.select({ one: sql`1` }).from(productStock)
     .innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId))
@@ -62,13 +63,13 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string) 
     contractNo: sql<string | null>`max(${salesContracts.contractNo})`,
   }).from(salesOrderLines).innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId))
     .leftJoin(salesContracts, and(eq(salesContracts.orderId, salesOrders.id), ne(salesContracts.status, 'cancelled')))
-    .where(and(eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
+    .where(and(storeScope,eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
       gt(salesOrderLines.qty, salesOrderLines.deliveredQty), skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`))
     .groupBy(salesOrderLines.sku, salesOrders.id).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
   const issued = sql`coalesce((select -sum(${stockMoves.qty}) from ${stockMoves} where ${stockMoves.sku}=${salesOrderLines.sku} and ${stockMoves.warehouseId}=${posOrderReservations.warehouseId} and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id})) or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;
   const timed = await db.select({ sku: salesOrderLines.sku, qty: sql<number>`sum(greatest(0,${posOrderReservations.qty}-greatest(${salesOrderLines.deliveredQty},${issued})))`.mapWith(Number), orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, contractNo: sql<string | null>`null` })
     .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId)).innerJoin(salesOrderLines, eq(salesOrderLines.id, posOrderReservations.orderLineId))
-    .where(and(eq(posOrderReservations.status, 'active'), gt(posOrderReservations.expiresAt, nowIso()), inArray(salesOrders.status, ['draft','confirmed','delivering']), skus ? inArray(salesOrderLines.sku, skus) : undefined, warehouseId ? eq(posOrderReservations.warehouseId, warehouseId) : undefined))
+    .where(and(storeScope,eq(posOrderReservations.status, 'active'), gt(posOrderReservations.expiresAt, nowIso()), inArray(salesOrders.status, ['draft','confirmed','delivering']), skus ? inArray(salesOrderLines.sku, skus) : undefined, warehouseId ? eq(posOrderReservations.warehouseId, warehouseId) : undefined))
     .groupBy(salesOrderLines.sku, salesOrders.id).limit(5000);
   return [...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true}))];
 }
@@ -99,7 +100,7 @@ export function registerHoldRoutes(router: Router<StaffEnv>) {
     await expireHolds(c.env).catch(() => 0);
     const rows = await c.env.db.select({ sku: stockHolds.sku, qty: stockHolds.qty, expiresAt: stockHolds.expiresAt, quoteId: stockHolds.quoteId, quoteNo: quotations.quoteNo, customer: quotations.customer })
       .from(stockHolds).innerJoin(quotations, eq(quotations.id, stockHolds.quoteId)).where(live(nowIso())).orderBy(asc(stockHolds.sku), asc(stockHolds.expiresAt)).limit(5000);
-    const orders = (await orderHolds(c.env.db)).map(o => ({ ...o, expiresAt: null }));
+    const orders = (await orderHolds(c.env.db,undefined,undefined,posOrderStoreScope(viewer(c)))).map(o => ({ ...o, expiresAt: null }));
     return json({ holds: [...rows, ...orders] });
   }, 'business');
 

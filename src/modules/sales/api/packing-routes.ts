@@ -1,3 +1,4 @@
+import { posOrderStoreScope } from './pos-access.ts';
 import { assertPosFlowFulfillable } from './pos-order-flow-guards.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { cashLock } from './cash-store.ts';
@@ -58,7 +59,7 @@ async function loadOrder(c: Ctx, id: string) {
 async function loadSlip(c: Ctx, id: string) {
   const m = viewer(c);
   const [row] = await c.env.db.select({ slip: packingSlips, order: salesOrders }).from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId))
-    .where(and(eq(packingSlips.id, id), isPacker(m) ? undefined : orderScopeFor(m))).limit(1);
+    .where(and(eq(packingSlips.id, id),posOrderStoreScope(m), isPacker(m) ? undefined : orderScopeFor(m))).limit(1);
   if (!row) throw new AppError(404, 'Không tìm thấy phiếu đóng gói.');
   return row;
 }
@@ -271,7 +272,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     if (all) await closeSlipsOfDeliveredOrders(c.env.db);
     const rows = await c.env.db.select({ slip: packingSlips, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, expectedDeliveryDate: salesOrders.expectedDeliveryDate })
       .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, packingSlips.orderId))
-      .where(and(all ? undefined : orderScopeFor(m),
+      .where(and(posOrderStoreScope(m),all ? undefined : orderScopeFor(m),
         (PACKING_STATUSES as readonly string[]).includes(status) ? eq(packingSlips.status, status as typeof PACKING_STATUSES[number]) : undefined,
         matchAllWords(foldSql(packingSlips.slipNo, salesOrders.orderNo, salesContracts.contractNo, salesOrders.customerName), p.get('q'))))
       .orderBy(desc(packingSlips.updatedAt)).limit(200);
