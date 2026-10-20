@@ -40,5 +40,23 @@ globalThis.ContractWordEdit=(()=>{
   for(const {index} of visible){const p=paragraphs[index],mark=xml.createElementNS(W,'w:bookmarkStart');mark.setAttributeNS(W,'w:name','bnword_'+index);mark.setAttributeNS(W,'w:id',String(900000+index));p.appendChild(mark);const end=xml.createElementNS(W,'w:bookmarkEnd');end.setAttributeNS(W,'w:id',String(900000+index));p.appendChild(end);}
   return {bytes:saved,preview:pack(files,xml),paragraphs:visible};
  }
- return {apply,prepare};
+ // Khi đổi danh xưng/tên đại diện, đoạn Word đã sửa trước đó có hash và chữ cũ.
+ // Cập nhật riêng đoạn chứa người đại diện theo bản dựng mới, giữ mọi sửa đổi khác.
+ function representativeText(value,details={}){
+  const name=String(details.representativeName||'').trim(),honorific=['Ông','Bà'].includes(details.representativeHonorific)?details.representativeHonorific:'';
+  if(!name)return String(value??'');
+  const escaped=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),prefix=new RegExp('(?:Ông|Bà)\\s*(?='+escaped+')','i'),text=String(value??'');
+  return prefix.test(text)?text.replace(prefix,honorific?honorific+' ':''):text;
+ }
+ async function rebaseRepresentative(bytes,edits=[],details={}){
+  const name=String(details.representativeName||'').trim();
+  if(!name||!edits.length)return edits;
+  const {paragraphs}=open(bytes);
+  return Promise.all(edits.map(async edit=>{
+   const current=paragraphs[edit.index],text=String(edit.text??'');
+   if(!current||!text.toLocaleLowerCase('vi').includes(name.toLocaleLowerCase('vi')))return edit;
+   return {...edit,hash:await digest(serialize(current)),text:representativeText(text,details)};
+  }));
+ }
+ return {apply,prepare,rebaseRepresentative,representativeText};
 })();

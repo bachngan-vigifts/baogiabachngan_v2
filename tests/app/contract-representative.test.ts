@@ -22,6 +22,15 @@ const docContext: any = {};
 runInNewContext(readFileSync(new URL('../../trial-ui/fflate.min.js', import.meta.url), 'utf8'), docContext);
 runInNewContext(readFileSync(new URL('../../trial-ui/contract-document.js', import.meta.url), 'utf8'), docContext);
 const textOf = (xml: string) => [...xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(m => m[1]).join(' ');
+test('đoạn Word đã sửa giữ nội dung nhưng danh xưng cũ phải theo lựa chọn mới', () => {
+  const editContext: any = {};
+  runInNewContext(readFileSync(new URL('../../trial-ui/contract-word-edit.js', import.meta.url), 'utf8'), editContext);
+  const old = 'Đại diện: Ông Vũ Thị Lệ Hà – Giám đốc (đã chỉnh tay)';
+  assert.equal(editContext.ContractWordEdit.representativeText(old, { representativeHonorific: 'Bà', representativeName: 'Vũ Thị Lệ Hà' }),
+    'Đại diện: Bà Vũ Thị Lệ Hà – Giám đốc (đã chỉnh tay)');
+  assert.equal(editContext.ContractWordEdit.representativeText(old, { representativeHonorific: '', representativeName: 'Vũ Thị Lệ Hà' }),
+    'Đại diện: Vũ Thị Lệ Hà – Giám đốc (đã chỉnh tay)');
+});
 test('file Word thật: chọn Ông/Bà, không lặp danh xưng; khối ký tên chỉ có họ tên', async () => {
   for (const honorific of ['Ông', 'Bà', '']) {
     const bytes = await docContext.ContractDocument.build({ quote: { quote_type: 'VIGIFTS', items: [], customer: { name: 'Công ty thử' } }, contractNumber: 'TEST',

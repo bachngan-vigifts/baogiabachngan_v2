@@ -278,7 +278,11 @@ globalThis.ContractDocument = (() => {
     addWebSourceFooter(files, quote, documentType);
     const output=zipSync(files, {level: 6});
     const edits=documentType==='HDKT'?quote.contract_word_edits:quote.contract_document_edits?.[documentType];
-    if(edits?.length){if(!globalThis.ContractWordEdit)throw new Error('Chưa tải công cụ chỉnh Word.');return globalThis.ContractWordEdit.apply(output,edits);}
+    if(edits?.length){
+      if(!globalThis.ContractWordEdit)throw new Error('Chưa tải công cụ chỉnh Word.');
+      const rebased=globalThis.ContractWordEdit.rebaseRepresentative?await globalThis.ContractWordEdit.rebaseRepresentative(output,edits,details||{}):edits;
+      return globalThis.ContractWordEdit.apply(output,rebased);
+    }
     return output;
   }
   async function buildPack({quote, contractNumber, details, templateFiles}) {
