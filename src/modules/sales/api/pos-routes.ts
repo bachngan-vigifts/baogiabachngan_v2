@@ -25,6 +25,7 @@ import { notifyMany } from '../../notifications/api/routes.ts';
 import { writeAudit } from '../../../core/audit.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
 import { sendPosShiftReport } from './pos-shift-report-webhook.ts';
+import ghnLocations from '../data/ghn-locations.json';
 import {
   posNow,
   posText,
@@ -44,6 +45,13 @@ const ghnLocationCache = new Map<string, { expires: number; locations: unknown[]
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
 const cachedGhnLocations = (key: string) => { const hit = ghnLocationCache.get(key); if (!hit || hit.expires < Date.now()) { ghnLocationCache.delete(key); return null; } return hit.locations; };
 const rememberGhnLocations = (key: string, locations: unknown[]) => { ghnLocationCache.set(key, { expires: Date.now() + 24 * 60 * 60 * 1000, locations }); return locations; };
+type GhnPair = [number | string, string];
+const bundledGhnLocations = (provinceId: number, districtId: number) => {
+  const data = ghnLocations as unknown as { p: GhnPair[]; d: Record<string, GhnPair[]>; w: Record<string, GhnPair[]> };
+  const rows = districtId ? data.w[String(districtId)] : provinceId ? data.d[String(provinceId)] : data.p;
+  if (!rows) return null;
+  return rows.map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+};
 let lockGhnNonceCache: { nonce: string; expires: number } | null = null;
 async function lockGhnCheckoutNonce() {
   if (lockGhnNonceCache && lockGhnNonceCache.expires > Date.now()) return lockGhnNonceCache.nonce;
@@ -260,11 +268,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const scope = await allowedPosRegisters(c);
     const register = scope.regs.find(r => r.id === registerId);
     if (!register || !scope.ids.has(register.id)) throw new AppError(403, 'Bạn không được dùng quầy này.');
-    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối GHN.');
-    const isLock = /lock/i.test(register.name), source = isLock ? 'lock' : 'minhlong', url = isLock ? c.env.webOrderAction.lockUrl : c.env.webOrderAction.minhlongUrl;
-    if (!url) throw new AppError(503, 'Quầy này chưa được kết nối dữ liệu địa chỉ GHN.');
+    const isLock = /lock/i.test(register.name), source = isLock ? 'lock' : 'minhlong', url = isLock ? c.env.webOrderAction?.lockUrl : c.env.webOrderAction?.minhlongUrl;
     const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0), key = ghnCacheKey(source, provinceId, districtId);
     const cached = cachedGhnLocations(key); if (cached) return json({ ok: true, locations: cached, cached: true });
+    const bundled = bundledGhnLocations(provinceId, districtId);
+    if (bundled) return json({ ok: true, locations: rememberGhnLocations(key, bundled), bundled: true });
+    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối GHN.');
+    if (!url) throw new AppError(503, 'Quầy này chưa được kết nối dữ liệu địa chỉ GHN.');
     if (c.env.ghnToken) {
       const path = districtId ? `/master-data/ward?district_id=${districtId}` : provinceId ? '/master-data/district' : '/master-data/province';
       const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: c.env.ghnToken, 'content-type': 'application/json' } };
