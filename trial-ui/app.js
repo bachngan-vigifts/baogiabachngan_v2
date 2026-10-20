@@ -3417,7 +3417,7 @@ async function openOrder(id) {
   }
   const fees = o.posFees;
   for (const charge of [
-    ...(fees?.service?.amount ? [{ name: fees.service.name, amount: fees.service.subtotal, taxRate: fees.service.taxRate }] : []),
+    ...((fees?.services ?? (fees?.service ? [fees.service] : [])).filter(f => f.amount).map(f => ({ name: f.name, amount: f.subtotal, taxRate: f.taxRate }))),
     ...(fees?.shippingFee ? [{ name: 'Phí ship (không VAT)', amount: fees.shippingFee, taxRate: 0 }] : []),
   ]) {
     const tr = document.createElement('tr'), title = document.createElement('td');

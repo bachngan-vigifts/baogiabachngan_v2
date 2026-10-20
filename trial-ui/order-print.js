@@ -29,7 +29,7 @@ export function orderPrintData(d, me = '') {
     customerCode: o.customerCode ? `${o.customerCode}: ${o.customerName}` : o.customerName, taxCode: o.taxCode || '', address: o.address || '',
     contact: [o.contact, o.phone].filter(Boolean).join(' · '), orderDate: dmy(o.orderDate), expectedDeliveryDate: dmy(o.expectedDeliveryDate),
     lines: d.lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty || 0, date: dmy(o.expectedDeliveryDate), note: '', unitPrice: l.unitPrice, taxRate: l.taxRate, amount: l.amount })),
-    charges: [...(o.posFees?.service?.amount ? [{ name: o.posFees.service.name, amount: o.posFees.service.subtotal, taxRate: o.posFees.service.taxRate }] : []), ...(o.posFees?.shippingFee ? [{ name: 'Phí ship (không VAT)', amount: o.posFees.shippingFee, taxRate: 0 }] : [])],
+    charges: [...((o.posFees?.services ?? (o.posFees?.service ? [o.posFees.service] : [])).filter(f => f.amount).map(f => ({ name: f.name, amount: f.subtotal, taxRate: f.taxRate }))), ...(o.posFees?.shippingFee ? [{ name: 'Phí ship (không VAT)', amount: o.posFees.shippingFee, taxRate: 0 }] : [])],
     subtotal: o.subtotal, tax: o.tax, total: o.total, note: o.note || '',
     signDate: `Ngày ${String(today.getDate()).padStart(2, '0')} Tháng ${String(today.getMonth() + 1).padStart(2, '0')} Năm ${today.getFullYear()}`,
     // Người đặt: tên người liên hệ của khách (không ghi tên công ty); trống thì để ký tay.

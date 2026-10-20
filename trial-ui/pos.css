@@ -691,6 +691,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-service-fee { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(80px, 1fr) auto; align-items: end; gap: 8px; }
 .pos-service-fee .pos-field { min-width: 0; margin-bottom: 0; }
 .pos-service-fee .btn { min-height: 42px; }
+.pos-service-fees { display: grid; gap: 12px; margin-bottom: 8px; }
+.pos-service-fees > .pos-service-fee + .pos-service-fee { border-top: 1px solid #e3e7ee; padding-top: 12px; }
 .pos-totals > .pos-field { display: grid; grid-template-columns: 1fr minmax(100px, 130px); align-items: center; gap: 8px; margin: 8px 0; }
 .pos-totals > .pos-field input { text-align: right; }
 .pos-order-board { margin-top: 18px; }

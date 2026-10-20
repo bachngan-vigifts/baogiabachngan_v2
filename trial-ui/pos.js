@@ -53,7 +53,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     policy: '',
     cart: [],
     customer: null,
-    feeName: '', feeAmount: '', feeQuantity: '1', shippingFee: '', feeVisible: false, note: '', exchangeAllocationId: '',
+    serviceFees: [], shippingFee: '', note: '', exchangeAllocationId: '',
     preview: null,
     method: 'cash',
     qr: null,
@@ -94,7 +94,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.policy = '';
     st.cart = [];
     st.customer = null;
-    st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1'; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
+    st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.exchangeAllocationId = '';
     st.preview = null;
     st.pending = null;
     st.orderBoard = null;
@@ -118,7 +118,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     customerId: st.customer?.id || '',
     ...(st.note.trim() ? { note: st.note } : {}),
     ...(st.exchangeAllocationId ? {exchangeAllocationId:st.exchangeAllocationId} : {}),
-    ...(st.feeName || st.feeAmount || st.shippingFee ? { feeName: st.feeName, feeAmount: st.feeAmount || 0, feeQuantity: st.feeQuantity || 1, shippingFee: st.shippingFee || 0 } : {}),
+    ...(st.serviceFees.length || st.shippingFee ? { serviceFees: st.serviceFees.map(f => ({ name: f.name, quantity: f.quantity || 1, unitPrice: f.unitPrice || 0 })), shippingFee: st.shippingFee || 0 } : {}),
     rows: st.cart.map((x) => ({
       sku: x.sku,
       qty: x.qty,
@@ -504,7 +504,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   async function cancelCurrentOrder() {
     if (!st.cart.length) return;
     if (!await confirmBox('Hủy toàn bộ đơn hiện tại?', { ok: 'Hủy đơn' })) return;
-    st.cart = []; st.customer = null; st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1'; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
+    st.cart = []; st.customer = null; st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
     draw(); if (st.register) await search(false);
   }
   async function flowOrders(orderId=''){
@@ -684,32 +684,40 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }
   }
   function drawFees(right) {
-    const box = el('section', 'pos-extra-fees'), service = el('div', 'pos-service-fee');
-    service.hidden = !st.feeVisible;
-    const name = field('Khoản phí'), quantity = field('Số lượng', 'number', st.feeQuantity), amount = field('Đơn giá', 'number', st.feeAmount), total = field('Thành tiền', 'text', ''), shipping = field('Phí ship · Không VAT', 'number', st.shippingFee);
-    name.input.value = st.feeName;
-    name.input.placeholder = 'Ví dụ: Phí in, phí gói quà…';
-    name.input.maxLength = 200;
-    total.input.readOnly = true; total.input.tabIndex = -1;
-    const updateFeeTotal = () => { total.input.value = money((Number(st.feeQuantity) || 0) * (Number(st.feeAmount) || 0)); };
-    updateFeeTotal();
-    for (const [f, property] of [[name, 'feeName'], [quantity, 'feeQuantity'], [amount, 'feeAmount'], [shipping, 'shippingFee']]) {
-      if (property !== 'feeName') { f.input.min = '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; f.input.placeholder = '0 đ'; }
-      f.input.addEventListener('input', () => { st[property] = f.input.value; updateFeeTotal(); invalidate(); });
+    const box = el('section', 'pos-extra-fees'), list = el('div', 'pos-service-fees');
+    const shipping = field('Phí ship · Không VAT', 'number', st.shippingFee);
+    shipping.input.min = '0'; shipping.input.step = '1'; shipping.input.inputMode = 'numeric'; shipping.input.placeholder = '0 đ';
+    shipping.input.addEventListener('input', () => { st.shippingFee = shipping.input.value; invalidate(); });
+    const add = button('+ Thêm khoản phí', 'btn secondary small', () => {
+      if (st.serviceFees.length >= 50) return;
+      st.serviceFees.push({ name: '', quantity: '1', unitPrice: '' }); renderServices()?.focus(); invalidate();
+    });
+    function renderServices() {
+      list.replaceChildren(); let lastName;
+      for (const fee of st.serviceFees) {
+        const service = el('div', 'pos-service-fee'), name = field('Khoản phí'), quantity = field('Số lượng', 'number', fee.quantity), amount = field('Đơn giá', 'number', fee.unitPrice), total = field('Thành tiền', 'text', '');
+        name.input.value = fee.name; name.input.placeholder = 'Ví dụ: Phí in, phí gói quà…'; name.input.maxLength = 200;
+        total.input.readOnly = true; total.input.tabIndex = -1;
+        const update = () => { total.input.value = money((Number(fee.quantity) || 0) * (Number(fee.unitPrice) || 0)); }; update();
+        for (const [f, property] of [[name, 'name'], [quantity, 'quantity'], [amount, 'unitPrice']]) {
+          if (property !== 'name') { f.input.min = property === 'quantity' ? '1' : '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; }
+          f.input.addEventListener('input', () => { fee[property] = f.input.value; update(); invalidate(); });
+        }
+        service.append(name.box, quantity.box, amount.box, total.box, button('Bỏ phí', 'btn ghost small', () => {
+          st.serviceFees = st.serviceFees.filter(row => row !== fee); renderServices(); invalidate();
+        }));
+        list.append(service); lastName = name.input;
+      }
+      add.disabled = st.serviceFees.length >= 50; return lastName;
     }
-    const add = button('+ Thêm khoản phí', 'btn secondary small', () => { st.feeVisible = true; service.hidden = false; add.hidden = true; name.input.focus(); });
-    add.hidden = st.feeVisible;
-    service.append(name.box, quantity.box, amount.box, total.box, button('Bỏ phí', 'btn ghost small', () => {
-      st.feeVisible = false; st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1';
-      name.input.value = ''; amount.input.value = ''; quantity.input.value = '1'; updateFeeTotal(); service.hidden = true; add.hidden = false; invalidate();
-    }));
+    renderServices();
     const noteBox = el('label', 'pos-field pos-order-note'), note = el('textarea');
     note.rows = 2; note.maxLength = 2000; note.value = st.note;
     note.placeholder = 'Ví dụ: Gói riêng từng món, giao sau 17h…';
     note.setAttribute('aria-label', 'Ghi chú đơn hàng');
     note.addEventListener('input', () => { st.note = note.value; });
     noteBox.append(el('span', '', 'Ghi chú đơn hàng'), note);
-    box.append(add, service, el('p', 'pos-note', 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.'), noteBox);
+    box.append(list, add, el('p', 'pos-note', 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.'), noteBox);
     right.append(box);
     nodes.feeControls = box;
     nodes.shippingField = shipping.box;
@@ -720,7 +728,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     for (const [label, value] of [
       ['Tạm tính', d ? money(d.total + d.discount) : st.cart.length ? 'Đang tính…' : '0 đ'],
       ['Giảm giá', d ? '−' + money(d.discount) : '—'],
-      ...(d?.fees?.service?.amount ? [[d.fees.service.name + ' (trước thuế)', money(d.fees.service.subtotal)]] : []),
+      ...((d?.fees?.services ?? (d?.fees?.service ? [d.fees.service] : [])).filter(f => f.amount).map(f => [f.name + ' (trước thuế)', money(f.subtotal)])),
       ['VAT', d ? money(d.tax) : '—'],
       ['Cần thu', d ? money(d.payable ?? d.total) : st.cart.length ? 'Đang tính…' : '0 đ'],
       ...(d?.exchange?.amount ? [['Tiền đổi hàng áp dụng', '−'+money(d.exchange.amount)],['Khách cần trả thêm',money(d.payable)]]:[]),
@@ -1358,7 +1366,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       persistPending(null);
       st.cart = [];
       st.customer = null;
-      st.feeName = ''; st.feeAmount = ''; st.feeQuantity = '1'; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = '';
+      st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.exchangeAllocationId = '';
       st.preview = null;
       st.qr = null;
       st.policy = st.register.pricePolicyId;

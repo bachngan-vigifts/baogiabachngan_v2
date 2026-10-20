@@ -453,7 +453,7 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
 
-test('POS: bảng đơn nằm cuối, thêm/bỏ một dòng phí và phí ship gửi server, bill K80 có phí', async () => {
+test('POS: bảng đơn nằm cuối, thêm/xoá nhiều dòng phí và phí ship gửi server, bill K80 có phí', async () => {
   const prevDoc = globalThis.document, prevWin = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
@@ -482,18 +482,32 @@ test('POS: bảng đơn nằm cuối, thêm/bỏ một dòng phí và phí ship 
     shipping.value = '20000'; await shipping.fire('input');
     await new Promise(r => setTimeout(r, 230));
     const request = calls.filter(c => c.path === '/pos/preview').at(-1)!;
-    assert.equal(request.body.feeName, 'Phí in'); assert.equal(request.body.feeQuantity, '2'); assert.equal(request.body.feeAmount, '10800'); assert.equal(request.body.shippingFee, '20000');
+    assert.deepEqual(request.body.serviceFees, [{ name: 'Phí in', quantity: '2', unitPrice: '10800' }]); assert.equal(request.body.shippingFee, '20000');
+    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm khoản phí')!.fire('click');
+    const second = root.querySelectorAll('div').filter(e => e.className === 'pos-service-fee')[1]!;
+    const [n2,q2,p2,t2] = second.querySelectorAll('input');
+    n2!.value = 'Phí gói quà'; await n2!.fire('input'); q2!.value = '3'; await q2!.fire('input'); p2!.value = '65000'; await p2!.fire('input');
+    assert.equal(t2!.value, '195.000 đ');
+    await new Promise(r => setTimeout(r, 230));
+    assert.deepEqual(calls.filter(c => c.path === '/pos/preview').at(-1)!.body.serviceFees, [{ name: 'Phí in', quantity: '2', unitPrice: '10800' }, { name: 'Phí gói quà', quantity: '3', unitPrice: '65000' }]);
+    await second.querySelectorAll('button').find(b => b.textContent === 'Bỏ phí')!.fire('click');
+    assert.equal(root.querySelectorAll('div').filter(e => e.className === 'pos-service-fee')[0]!.querySelectorAll('input')[0]!.value, 'Phí in');
     const totals = root.querySelectorAll('div').find(e => e.className === 'pos-totals')!;
     assert.equal(totals.children.at(-2)!.tag, 'label', 'Ô phí ship ngay trên tổng cộng');
     const printed = buildPosPrint(doc, { ...sample, fees });
     assert.match(printed.textContent, /Phí ship \(không VAT\)20.000/);
     assert.ok(printed.textContent.includes('<script>Phí in</script>'));
     assert.equal(printed.querySelectorAll('script').length, 0);
+    const multiBill = buildPosPrint(doc, { ...sample, fees: { services: [{ name: 'Phí in', quantity: 2, unitPrice: 10800, amount: 21600, subtotal: 20000 }, { name: '<script>Gói quà</script>', quantity: 3, unitPrice: 65000, amount: 195000, subtotal: 180556 }], shippingFee: 20000 } });
+    assert.ok(multiBill.textContent.includes('Phí in (trước thuế)20.000 đ'));
+    assert.ok(multiBill.textContent.includes('<script>Gói quà</script> (trước thuế)180.556 đ'));
+    assert.ok(multiBill.textContent.includes('3 × 65.000 đ195.000 đ'));
+    assert.equal(multiBill.querySelectorAll('script').length, 0);
     await root.querySelectorAll('button').find(b => b.textContent === 'Bỏ phí')!.fire('click');
-    assert.equal(fee.hidden, true);
+    assert.equal(root.querySelectorAll('div').filter(e => e.className === 'pos-service-fee').length, 0);
     await new Promise(r => setTimeout(r, 230));
     const cleared = calls.filter(c => c.path === '/pos/preview').at(-1)!.body;
-    assert.equal(cleared.feeName, ''); assert.equal(cleared.feeAmount, 0); assert.equal(cleared.shippingFee, '20000');
+    assert.deepEqual(cleared.serviceFees, []); assert.equal(cleared.shippingFee, '20000');
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
 

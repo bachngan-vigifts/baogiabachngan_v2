@@ -61,12 +61,12 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
     responsible_sapo_id: /^\d+$/.test(row.sapoAccountId || '') ? Number(row.sapoAccountId) : null,
     customer: { local_id: o.customerId, customer_code: row.customerCode || '', name: o.customerName, contact: o.contact, phone: o.phone, email: o.email, tax_code: o.taxCode, address: o.address },
     items: lines.map(l => ({ line: l.lineNo, sku: l.sku, name: l.name, unit: l.unit, quantity: l.qty, unit_price: l.unitPrice, discount_type: l.discountType, discount_amount: l.discountAmount, price_after_discount: l.unitPrice, line_total: l.amount, tax_percent: l.taxRate })),
-    ...(fees.total ? { additional_fees: { service: { kind: 'other_service', name: fees.service.name, quantity: fees.service.quantity, unit_price: fees.service.unitPrice, amount: fees.service.amount, subtotal: fees.service.subtotal, tax_amount: fees.service.tax, tax_percent: fees.service.taxRate }, shipping: { amount: fees.shippingFee, tax_percent: 0 } } } : {}),
+    ...(fees.total ? { additional_fees: { service: { kind: 'other_service', name: fees.service.name, quantity: fees.service.quantity, unit_price: fees.service.unitPrice, amount: fees.service.amount, subtotal: fees.service.subtotal, tax_amount: fees.service.tax, tax_percent: fees.service.taxRate, lines: fees.services.map(f => ({ name: f.name, quantity: f.quantity, unit_price: f.unitPrice, amount: f.amount, subtotal: f.subtotal, tax_amount: f.tax, tax_percent: f.taxRate })) }, shipping: { amount: fees.shippingFee, tax_percent: 0 } } } : {}),
     subtotal: o.subtotal,
     vat_amount: o.tax,
     total: o.total,
     fulfillment_mode: o.fulfillmentMode,
-    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + (fees.service.amount ? ` · ${fees.service.name}: ${fees.service.amount}đ (VAT ${fees.service.taxRate}%)` : '') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (không VAT)` : '') + (o.note ? ` · Ghi chú: ${o.note}` : ''),
+    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + fees.services.filter(f => f.amount).map(f => ` · ${f.name}: ${f.quantity} × ${f.unitPrice}đ = ${f.amount}đ (VAT ${f.taxRate}%)`).join('') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (không VAT)` : '') + (o.note ? ` · Ghi chú: ${o.note}` : ''),
   };
   let response: Response;
   try {
