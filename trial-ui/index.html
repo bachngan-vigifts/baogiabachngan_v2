@@ -536,14 +536,15 @@
       <div class="row-gap delivery-range cashbook-range">
         <label>Từ ngày<input type="date" id="cashbook-from"></label>
         <label>Đến ngày<input type="date" id="cashbook-to"></label>
-        <div class="delivery-status"><span id="cashbook-kind-label">Loại</span>
-          <div class="chips" id="cashbook-kind" role="group" aria-labelledby="cashbook-kind-label"><button type="button" class="chip active" data-kind="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-kind="in" aria-pressed="false">Thu</button><button type="button" class="chip" data-kind="out" aria-pressed="false">Chi</button></div>
-        </div>
         <label>Phương thức<select id="cashbook-method"><option value="">Tất cả</option><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option><option value="other">Khác</option></select></label>
         <label>Trạng thái<select id="cashbook-status"><option value="">Tất cả</option><option value="posted">Đã ghi nhận</option><option value="pending">Chờ duyệt</option><option value="voided">Đã huỷ</option></select></label>
+        <label>Người tạo<select id="cashbook-creator"><option value="">Tất cả người tạo</option></select></label>
       </div>
       <div class="stats" id="cashbook-stats"></div>
       <div class="panel">
+        <div class="cashbook-kind-bar">
+          <div class="chips" id="cashbook-kind" role="group" aria-label="Lọc loại phiếu"><button type="button" class="chip active" data-kind="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-kind="in" aria-pressed="false">Thu</button><button type="button" class="chip" data-kind="out" aria-pressed="false">Chi</button></div>
+        </div>
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="cashbook-search" type="search" placeholder="Tìm mã phiếu, khách/NCC, nội dung, mã giao dịch…" aria-label="Tìm"></label>
         </div>

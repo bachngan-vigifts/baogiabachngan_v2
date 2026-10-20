@@ -58,13 +58,13 @@ export function registerCashbookRoutes(router: Router<StaffEnv>) {
       ...ins.map(({ p: x, orderNo, customerName }) => {
         const ref = docRef(x.orderId, orderNo, contracts.find(k => k.orderId === x.orderId)?.no);
         return { id: x.id, kind: 'in' as const, date: x.paidAt, amount: x.amount, method: x.method, reference: x.reference, note: x.note, partner: customerName,
-          docNo: ref.Label, link: ref.link, createdByName: name(x.createdBy), status: x.voidedAt ? 'voided' : 'posted', voided: !!x.voidedAt, voidReason: x.voidReason };
+          docNo: ref.Label, link: ref.link, createdBy: x.createdBy, createdByName: name(x.createdBy), status: x.voidedAt ? 'voided' : 'posted', voided: !!x.voidedAt, voidReason: x.voidReason };
       }),
-      ...refunds.map(({p:x,orderId,orderNo,customerName})=>({id:x.id,kind:'out' as const,date:new Date(Date.parse(x.confirmedAt)+7*3600000).toISOString().slice(0,10),amount:x.amount,method:x.method,reference:x.reference,note:x.confirmationNote,partner:customerName,docNo:x.refundNo+' · '+orderNo,link:'#/orders/'+orderId,createdByName:name(x.confirmedBy),status:'posted',voided:false,voidReason:''})),
+      ...refunds.map(({p:x,orderId,orderNo,customerName})=>({id:x.id,kind:'out' as const,date:new Date(Date.parse(x.confirmedAt)+7*3600000).toISOString().slice(0,10),amount:x.amount,method:x.method,reference:x.reference,note:x.confirmationNote,partner:customerName,docNo:x.refundNo+' · '+orderNo,link:'#/orders/'+orderId,createdBy:x.confirmedBy,createdByName:name(x.confirmedBy),status:'posted',voided:false,voidReason:''})),
       ...outs.map(({ p: x, ticketNumber, supplierName }) => ({ id: x.id, kind: 'out' as const, date: x.paidDate, amount: x.amount, method: x.method, reference: x.reference, note: x.note,
-        partner: supplierName, docNo: ticketNumber, link: `#/purchases/${x.shipmentId}`, createdByName: name(x.createdBy), status: x.voidedAt ? 'voided' : 'posted', voided: !!x.voidedAt, voidReason: x.voidReason })),
+        partner: supplierName, docNo: ticketNumber, link: `#/purchases/${x.shipmentId}`, createdBy: x.createdBy, createdByName: name(x.createdBy), status: x.voidedAt ? 'voided' : 'posted', voided: !!x.voidedAt, voidReason: x.voidReason })),
       ...manual.map(({ p: x, drawerName, createdByName }) => ({ id: x.id, kind: x.direction as 'in' | 'out', date: localDate(x.createdAt), amount: x.amount,
-        method: 'cash', reference: '', note: x.reason, partner: drawerName, docNo: x.entryNo, link: '', createdByName,
+        method: 'cash', reference: '', note: x.reason, partner: drawerName, docNo: x.entryNo, link: '', createdBy: x.createdBy, createdByName,
         source: x.kind, status: x.status, voided: x.status === 'voided', voidReason: x.voidReason })),
     ].sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
     const sum = (kind: 'in' | 'out', method?: string) => entries.filter(e => e.kind === kind && e.status === 'posted' && (!method || e.method === method)).reduce((t, e) => t + e.amount, 0);
