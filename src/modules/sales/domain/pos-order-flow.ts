@@ -19,12 +19,14 @@ export function flowInitialAmount(
 ): number {
   if (total <= 0)
     throw new AppError(400, 'Đơn cọc/trả trước phải có giá trị lớn hơn 0.');
-  const amount =
+  const amount = posMoney(
     value === undefined
       ? flow === 'prepaid'
         ? total
         : Math.max(1, Math.round(total * 0.3))
-      : posMoney(value, 'Số thu trước');
+      : value,
+    'Số thu trước',
+  );
   if (amount <= 0 || amount > total || (flow === 'prepaid' && amount !== total))
     throw new AppError(
       400,

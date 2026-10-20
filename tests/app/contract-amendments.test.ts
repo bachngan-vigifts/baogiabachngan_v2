@@ -1,7 +1,8 @@
+import { posOrderStoreScope } from '../../src/modules/sales/api/pos-access.ts';
 import assert from 'node:assert/strict';
 import { seesAllAsSaleAdmin } from '../../src/modules/staff/domain/roles.ts';
 import { test } from 'node:test';
-import { canApprove } from '../../src/modules/staff/domain/permissions.ts';
+import { canApprove, can } from '../../src/modules/staff/domain/permissions.ts';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
@@ -74,7 +75,7 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   };
   const table = new Proxy({}, { get: (_, key) => String(key) });
   const ctx: any = {
-    departmentOwner, quotationPredicate, seesAllAsSaleAdmin, canApprove, isNotNull: () => null, isNull: () => null, quoteSaveHooks: { beforeSave: [], afterSave: [] },
+    departmentOwner, quotationPredicate, seesAllAsSaleAdmin, canApprove, can, posOrderStoreScope, isNotNull: () => null, isNull: () => null, quoteSaveHooks: { beforeSave: [], afterSave: [] },
     customerStaff: table, salesOrders: table, salesContracts: table, paymentSchedules: table, customerPayments: table, deliveries: table,
     or: () => null, eq: () => null, and: () => null, desc: () => null, sql: () => null,
     CONTRACT_STATUSES: ['draft', 'signed', 'completed', 'cancelled'],

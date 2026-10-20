@@ -17,6 +17,8 @@ test('cọc 30% nguyên đồng, ít nhất 1; tùy chọn 50%/khác, trả trư
     assert.throws(() => flowInitialAmount('deposit', 194400, n));
   assert.throws(() => flowInitialAmount('prepaid', 194400, 50000));
   assert.throws(() => flowInitialAmount('deposit', 0, undefined));
+  assert.throws(() => flowInitialAmount('prepaid', 1000000000001, undefined));
+  assert.throws(() => flowInitialAmount('deposit', NaN, undefined));
 });
 test('hạn giữ 5 ngày độc lập múi giờ; ship đã trả đủ giữ đến xuất; dư nợ không âm', () => {
   assert.equal(
