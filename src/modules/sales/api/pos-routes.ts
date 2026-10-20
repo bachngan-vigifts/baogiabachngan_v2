@@ -25,7 +25,7 @@ import { notifyMany } from '../../notifications/api/routes.ts';
 import { writeAudit } from '../../../core/audit.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
 import { sendPosShiftReport } from './pos-shift-report-webhook.ts';
-import ghnLocations from '../data/ghn-locations.json';
+import ghnLocations from '../data/ghn-locations.json' with { type: 'json' };
 import {
   posNow,
   posText,
