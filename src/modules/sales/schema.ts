@@ -59,7 +59,7 @@ export const salesOrders = pgTable('sales_orders', {
   /** Liên kết đơn Sapo khi đã chuyển sang Sapo (để sau). */
   sapoOrderId: text('sapo_order_id'),
   sapoOrderCode: text('sapo_order_code'),
-  /** Lúc đẩy sang Sapo: tồn Sapo cập nhật sau thời điểm này đã trừ hàng của đơn (Sapo "Đang giao dịch") → web thôi giữ. */
+  /** Lúc đẩy sang Sapo: khi có lần cập nhật tồn nguồn sau thời điểm này, web thôi giữ để không trừ hai lần. */
   sapoPushedAt: text('sapo_pushed_at'),
   /** Đơn / HĐKT tự giữ hàng từ lúc lập đến khi huỷ / giao xong / tồn Sapo đã trừ (docs/BAN-HANG.md "Giữ hàng"). Đơn có trước migration 0068 = false. */
   holdsStock: boolean('holds_stock').notNull().default(true),
