@@ -103,6 +103,7 @@ test('Kế toán: GHN delivered tự đẩy cả khi Woo chưa completed; webhoo
   assert.ok(task); assert.match(task.description, /GHN901/); assert.match(task.description, /an@example.com/); assert.match(task.description, /00123 Ly × 2/);
   assert.equal((await f.call('/pos/orders', accountant)).status, 403);
   assert.equal(ok(await f.call(`/tasks/${task.id}`, accountant)).task.viewOnly, false);
+  ok(await f.call(`/tasks/${task.id}`, accountant, 'PUT', { assigneeId: 'kt' }));
   ok(await f.call(`/tasks/${task.id}/comments`, accountant, 'POST', { body: 'Đã xuất hoá đơn WEB-001' }), 201);
   ok(await f.call(`/tasks/${task.id}`, accountant, 'PUT', { status: 'done' }));
   ok(await send(delivered)); await reconcileAutoTasks(f.db);

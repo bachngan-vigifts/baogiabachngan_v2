@@ -18,7 +18,7 @@ const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/')
 const todayIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
 const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 const pill = (map, k, extra = '') => `<span class="pill ${map[k]?.[1] || ''} ${extra}">${esc(map[k]?.[0] || k)}</span>`;
-const completionHint = t => t.source === 'invoice' ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : /duyệt/i.test(t.title) ? 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt.' : 'Việc nhận hàng tự hoàn thành theo đơn mua. Mở chứng từ để ghi nhận hàng đã nhận.';
+const completionHint = t => t.completionHelp || (t.source === 'invoice' ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : /duyệt/i.test(t.title) ? 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt.' : 'Việc nhận hàng tự hoàn thành theo đơn mua. Mở chứng từ để ghi nhận hàng đã nhận.');
 const ago = iso => { const s = (Date.now() - Date.parse(iso)) / 1000; return s < 60 ? 'vừa xong' : s < 3600 ? `${Math.floor(s / 60)} phút trước` : s < 86400 ? `${Math.floor(s / 3600)} giờ trước` : dmy(iso); };
 function dueText(t) {
   if (!t.dueDate) return '<span class="muted">—</span>';
@@ -35,7 +35,7 @@ function dueText(t) {
 export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '' }) {
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
   const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', due: '', approvals: null };
-  let searchTimer, loadSequence = 0;
+  let searchTimer, loadSequence = 0, accountingMode, accountingBoard, accountingEntry;
 
   async function people() {
     if (!st.people) { try { st.people = (await api('/tasks/people')).people; } catch { st.people = []; } }
@@ -130,6 +130,19 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     try {
       const [d, s] = await Promise.all([api('/tasks?' + params), badge(), loadApprovals()]);
       if (request !== loadSequence) return;
+      if (s?.accountingAvailable) {
+        if (!accountingEntry) {
+          accountingEntry = document.createElement('button'); accountingEntry.type = 'button'; accountingEntry.className = 'btn secondary'; accountingEntry.textContent = 'Nhóm Kế toán';
+          accountingEntry.addEventListener('click', () => { accountingMode = true; load(); }); root.querySelector('.page-head').append(accountingEntry);
+        }
+        if (accountingMode === undefined) accountingMode = positionId() === 'accounting';
+        if (accountingMode && st.tab !== 'approvals') {
+          if (!accountingBoard) { const { initAccountingTasks } = await import('./accounting-tasks.js'); accountingBoard = initAccountingTasks({ root, api, toast, userId, back: () => { accountingMode = false; accountingBoard.hide(); load(); } }); }
+          if (request !== loadSequence) return;
+          await accountingBoard.load(focusId); return;
+        }
+      } else { accountingMode = false; if (accountingEntry) accountingEntry.hidden = true; }
+      accountingBoard?.hide();
       showTab(st.tab);
       st.canViewColleagues = d.canViewColleagues === true;
       q('#tasks-view [data-v="colleagues"]').hidden = !st.canViewColleagues;
@@ -169,7 +182,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
         </div>
         <label class="task-desc-field"><span>Mô tả</span>${text ? `<textarea name="description" rows="3" maxlength="5000">${esc(t.description)}</textarea>` : `<p class="pre">${esc(t.description) || '<span class="muted">—</span>'}</p>`}</label>
         <p class="muted small">${t.teamName && !t.assigneeId ? `Giao cho <b>nhóm ${esc(t.teamName)}</b> – người trong nhóm bấm "Nhận việc" hoặc chuyển sang Đang làm để nhận. · ` : ''}Giao bởi <b>${esc(t.creatorName)}</b> · ${ago(t.createdAt)}${t.completedAt ? ` · Hoàn thành ${dmy(t.completedAt)}${t.completedByName ? ' bởi ' + esc(t.completedByName) : ''}` : ''}${t.link ? ` · <a href="${esc(t.link)}" data-open-link>Mở chứng từ →</a>` : ''}</p>
-        ${ro ? '<p class="muted small task-peer-note">Việc của đồng nghiệp cùng chức vụ: chỉ xem. Trao đổi trong việc chỉ người giao, người nhận và Manager xem được.</p>'
+        ${ro || t.canComment === false ? '<p class="muted small task-peer-note">Việc của đồng nghiệp cùng chức vụ: chỉ xem. Trao đổi trong việc chỉ người giao, người nhận và Manager xem được.</p>'
           : `<h3 class="task-cmt-title">Trao đổi</h3><ul class="task-comments" data-comments><li class="muted">Đang tải…</li></ul>
         <div class="task-cmt-add"><input name="comment" placeholder="Nhắn người giao / người nhận… (Enter để gửi)" maxlength="2000"><button type="button" class="btn secondary small" data-send>Gửi</button></div>`}
       </div>
@@ -208,7 +221,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
       if (text) { body.title = f.title.value; body.description = f.description.value; }
       if (await update(t.id, body, 'Đã lưu công việc.')) close();
     });
-    loadComments();
+    if (t.canComment !== false && !ro) loadComments();
     if (location.hash !== '#/tasks/' + t.id) history.replaceState(null, '', '#/tasks/' + t.id);
     dlg.addEventListener('close', () => { if (location.hash.startsWith('#/tasks/')) history.replaceState(null, '', '#/tasks'); });
   }

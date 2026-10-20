@@ -1,3 +1,4 @@
+import { supplierPaymentTasks } from './accounting-sources.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
 import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -168,10 +169,9 @@ export const RULES: Record<string, Rule> = {
         assigneeId: null, assigneePosition: 'warehouse', priority: p.arrivalDate <= today ? 'high' : 'normal', dueDate: p.arrivalDate });
       if (p.sapoPending > 0) out.push({ ...base, autoKey: `po-sapo:${p.id}`, title: `Nhập kho Sapo ${who}`, description: `${p.sapoPending} phiếu nhận chưa nhập kho Sapo (hoặc lỗi). Nhập trên Sapo rồi ghi mã phiếu Sapo vào phiếu nhận.`,
         assigneeId: null, assigneePosition: 'warehouse', priority: 'high', dueDate: today });
-      if ((p.balance ?? 0) > 0 && p.nextDueDate && p.nextDueDate <= addDaysIso(today, 3)) out.push({ ...base, autoKey: `po-pay:${p.id}:${p.nextDueDate}`, title: `Trả NCC ${who}`,
-        description: `Kỳ ${vnd(p.nextDueAmount ?? 0)} hạn ${fmt(p.nextDueDate)} · còn nợ ${vnd(p.balance ?? 0)}. Ghi khoản trả kèm chứng từ trên đơn mua.`,
-        assigneeId: null, assigneePosition: 'accounting', priority: p.nextDueDate < today ? 'urgent' : 'high', dueDate: p.nextDueDate });
+
     }
+    out.push(...await supplierPaymentTasks(db, today));
     return out;
   },
   /** Đơn đến hạn giao (hôm nay / ngày mai / đã trễ) mà chưa giao xong → nhân viên phụ trách. */
