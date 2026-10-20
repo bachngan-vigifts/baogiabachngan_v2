@@ -3028,22 +3028,34 @@ async function loadCashbook() {
   $('#cashbook-list').innerHTML = skeleton(7);
   try {
     const d = await api(`/cashbook?from=${$('#cashbook-from').value}&to=${$('#cashbook-to').value}`);
-    state.cashbook = d; renderCashbook();
+    state.cashbook = d;
+    const select = $('#cashbook-creator'), selected = select.value;
+    const creators = new Map(d.entries.map(e => [cashbookCreator(e), e.createdByName || 'Không rõ người tạo']));
+    if (selected && !creators.has(selected)) creators.set(selected, select.selectedOptions[0].textContent);
+    select.innerHTML = '<option value="">Tất cả người tạo</option>' + [...creators].sort((a, b) => a[1].localeCompare(b[1], 'vi'))
+      .map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+    select.value = selected;
+    renderCashbook();
   } catch (e) { $('#cashbook-stats').innerHTML = ''; listError('cashbook', e); }
 }
+function cashbookCreator(entry) { return entry.createdBy || entry.createdByName || '__unknown'; }
 function cashbookRows() {
   const d = state.cashbook, kind = $('#cashbook-kind .chip.active')?.dataset.kind || '', method = $('#cashbook-method').value,
-    status = $('#cashbook-status').value, q = normalize($('#cashbook-search').value);
+    status = $('#cashbook-status').value, creator = $('#cashbook-creator').value, q = normalize($('#cashbook-search').value);
   return (d?.entries || []).filter(e => (!kind || e.kind === kind) && (!method || e.method === method) && (!status || (e.status || (e.voided ? 'voided' : 'posted')) === status)
+    && (!creator || cashbookCreator(e) === creator)
     && (!q || normalize(`${e.partner} ${e.docNo} ${e.reference} ${e.note} ${CASHBOOK_SOURCE[e.source] || ''}`).includes(q)));
 }
 function renderCashbook() {
   const d = state.cashbook; if (!d) return;
-  const t = d.totals, m = t.byMethod;
+  const rows = cashbookRows(), posted = rows.filter(e => (e.status || (e.voided ? 'voided' : 'posted')) === 'posted');
+  const sum = (kind, method) => posted.filter(e => e.kind === kind && (!method || e.method === method)).reduce((total, e) => total + e.amount, 0);
+  const t = { in: sum('in'), out: sum('out'), net: sum('in') - sum('out') };
+  const m = Object.fromEntries(['cash', 'transfer'].map(method => [method, { in: sum('in', method), out: sum('out', method) }]));
   $('#cashbook-stats').innerHTML = [['Tổng thu', t.in, 'paid-text', `CK ${money(m.transfer.in)} · TM ${money(m.cash.in)}`], ['Tổng chi', t.out, 'danger-text', `CK ${money(m.transfer.out)} · TM ${money(m.cash.out)}`],
     ['Chênh lệch thu − chi', t.net, t.net < 0 ? 'danger-text' : '', `${fmtDate(d.from)} – ${fmtDate(d.to)}`]]
     .map(([k, v, c, note]) => `<article class="stat"><small>${k}</small><strong class="${c}">${money(v)}</strong><span class="muted">${note}</span></article>`).join('');
-  fillList('cashbook', cashbookRows().map(e => { const status = e.status || (e.voided ? 'voided' : 'posted'); return `<tr class="${status === 'voided' ? 'payment-voided' : ''}">
+  fillList('cashbook', rows.map(e => { const status = e.status || (e.voided ? 'voided' : 'posted'); return `<tr class="${status === 'voided' ? 'payment-voided' : ''}">
     <td>${fmtDate(e.date)}</td><td>${e.link && linkAllowed(e.link) ? `<a href="${esc(e.link)}"><b>${esc(e.docNo)}</b></a>` : `<b>${esc(e.docNo)}</b>`}</td>
     <td>${e.kind === 'in' ? '<span class="pill ok">Phiếu thu</span>' : '<span class="pill warn">Phiếu chi</span>'}<small>${esc(CASHBOOK_SOURCE[e.source] || '')}</small></td>
     <td>${esc(e.partner || '—')}<small>${esc(e.note || '')}</small></td>
@@ -3051,11 +3063,11 @@ function renderCashbook() {
     <td class="right num paid-text">${e.kind === 'in' ? money(e.amount) : '—'}</td><td class="right num danger-text">${e.kind === 'out' ? money(e.amount) : '—'}</td>
     <td>${status === 'posted' ? '<span class="pill ok">Đã ghi nhận</span>' : status === 'pending' ? '<span class="pill warn">Chờ duyệt</span>' : '<span class="pill danger">Đã huỷ</span>'}${e.voidReason ? `<small>${esc(e.voidReason)}</small>` : ''}</td>
     <td>${esc(e.createdByName)}</td></tr>`; }),
-    'Không có phiếu thu / chi trong khoảng ngày này.');
+    'Không có phiếu thu / chi phù hợp với bộ lọc.');
 }
 for (const id of ['#cashbook-from', '#cashbook-to']) $(id).addEventListener('change', loadCashbook);
 $('#cashbook-search').addEventListener('input', debounce(renderCashbook, 150));
-for (const id of ['#cashbook-method', '#cashbook-status']) $(id).addEventListener('change', renderCashbook);
+for (const id of ['#cashbook-method', '#cashbook-status', '#cashbook-creator']) $(id).addEventListener('change', renderCashbook);
 $('#cashbook-kind').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
   $$('#cashbook-kind .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
