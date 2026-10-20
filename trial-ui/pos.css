@@ -816,6 +816,48 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-price-choices { display: grid; gap: 10px; margin-bottom: 18px; }
 .pos-price-choices .active { border-color: #17844d; background: #eaf8f0; color: #12673a; }
 
+/* Desktop: keep long product details in their own row so they cannot paint over fees/totals. */
+@media (min-width: 851px) {
+  .pos-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    min-width: 0;
+  }
+  .pos-line-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content 28px;
+    gap: 8px;
+  }
+  .pos-line-top b {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .pos-line-edit {
+    grid-template-columns: minmax(0, 1fr) auto minmax(52px, 64px) minmax(58px, 66px);
+    min-width: 0;
+  }
+  .pos-line-edit > input,
+  .pos-line-edit > select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .pos-line .pos-qty {
+    min-width: 0;
+  }
+  .pos-line .pos-qty .btn {
+    width: 38px;
+  }
+  .pos-line .pos-qty input {
+    width: 36px;
+  }
+  .pos-extra-fees {
+    position: relative;
+    clear: both;
+  }
+}
+
 .pos-payment-modal { width: min(760px, 94vw); border-radius: 20px; box-shadow: 0 26px 80px #10251a4d; }
 .pos-payment-modal .pos-modal-content { padding: 0; }
 .pos-payment-modal h2 { display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 20px 72px 20px 24px; background: #e7f6ec; color: #145c35; font-size: 21px; }

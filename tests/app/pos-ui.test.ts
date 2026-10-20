@@ -78,6 +78,17 @@ const doc = {
   },
   body: new Element('body'),
 };
+
+test('Bán hàng nhanh PC giữ chi tiết dòng trong cột đơn, không áp dụng luật này cho mobile', () => {
+  const css = readFileSync('trial-ui/pos.css', 'utf8');
+  const start = css.indexOf('/* Desktop: keep long product details');
+  const desktop = css.slice(start, css.indexOf('.pos-payment-modal', start));
+  assert.match(desktop, /\.pos-line-top\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) max-content 28px/);
+  assert.match(desktop, /\.pos-line-top b\s*\{[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.match(desktop, /\.pos-line-edit\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(desktop, /\.pos-extra-fees\s*\{[\s\S]*position:\s*relative/);
+  assert.doesNotMatch(desktop, /max-width:\s*850px/);
+});
 const sample = {
   register: { name: 'Cửa hàng' },
   customer: '<script>customer</script>',
