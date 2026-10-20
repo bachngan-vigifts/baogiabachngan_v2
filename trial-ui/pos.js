@@ -16,6 +16,15 @@ const button = (text, cls, fn) => {
   if (fn) b.addEventListener('click', fn);
   return b;
 };
+const ghnPortalLink = (orderCode = '', label = '') => {
+  const a = el('a', 'btn primary', label || (orderCode ? 'Mở đơn trên GHN' : 'Mở GHN tạo vận đơn'));
+  a.href = orderCode
+    ? 'https://khachhang.ghn.vn/order/detail?order_code=' + encodeURIComponent(orderCode)
+    : 'https://khachhang.ghn.vn/order/create';
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
+};
 const field = (label, type = 'text', value = '') => {
   const box = el('label', 'pos-field'),
     input = el('input');
@@ -404,6 +413,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (o.ghnOrderCode) m.body.append(
       el('p', '', 'Mã vận đơn GHN: ' + o.ghnOrderCode),
       el('p', 'pos-note', 'Trạng thái GHN: ' + (o.ghnStatus || 'Đã tạo vận đơn') + (o.ghnFee ? ' · Phí: ' + money(o.ghnFee) : '')),
+      ghnPortalLink(o.ghnOrderCode),
     );
     const actions = el('div', 'pos-actions');
     if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Tiếp tục trên GHN', 'btn primary', () => { m.close(); showGhnAddress(o); }));
@@ -454,9 +464,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       submit.disabled = true;
       try {
         const chosen = s => s.options[s.selectedIndex]?.textContent || '';
-        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm', addressLine: address.input.value.trim(),
+        const result = await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm', addressLine: address.input.value.trim(),
           provinceId: province.select.value, provinceName: chosen(province.select), districtId: district.select.value, districtName: chosen(district.select), wardCode: ward.select.value, wardName: chosen(ward.select) });
-        m.close(); toast('Đã lưu địa chỉ và tạo vận đơn GHN.', 'ok'); await loadOrderBoard();
+        m.close(); toast('Đã lưu địa chỉ và tạo vận đơn GHN.', 'ok');
+        const done = modal('Đã tạo vận đơn GHN');
+        done.body.append(
+          el('p', '', 'Mã vận đơn: ' + (result.ghnOrderCode || 'Đã tạo thành công')),
+          ghnPortalLink(result.ghnOrderCode || ''),
+          button('Đóng', 'btn secondary', done.close),
+        );
+        done.show(); await loadOrderBoard();
       } catch (err) { toast(err.message, 'err'); submit.disabled = false; }
     });
     m.show();
@@ -1339,6 +1356,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       saved.body.append(
         el('p', '', money(d.total)),
         button('In lại bill', 'btn secondary', () => printPos(d)),
+        ...(body.fulfillmentMode === 'cod' ? [ghnPortalLink(d.ghnOrderCode || '')] : []),
         button('Bán đơn tiếp', 'btn primary', saved.close),
       );
       saved.show();

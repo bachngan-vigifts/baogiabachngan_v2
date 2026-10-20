@@ -380,6 +380,9 @@ test('Bán hàng nhanh có bảng đơn theo cửa hàng và đủ bộ lọc tr
     assert.ok(source.includes(label), label);
   assert.match(source, /\/pos\/orders\?/);
   assert.match(source, /registerId/);
+  assert.match(source, /Mở đơn trên GHN/);
+  assert.match(source, /khachhang\.ghn\.vn\/order\/detail\?order_code=/);
+  assert.match(source, /khachhang\.ghn\.vn\/order\/create/);
 });
 
 test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn phím và khách vãng lai', async () => {
