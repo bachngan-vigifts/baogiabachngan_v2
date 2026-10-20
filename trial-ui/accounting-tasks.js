@@ -57,6 +57,36 @@ export function accountingWarning(warnings) {
   for (const w of warnings) { const line = node('div', 'acct-warning-line'); line.append(node('span', '', `${w.source.docNo || w.title} · còn tồn ${money(w.source.kind === 'purchase' ? w.source.balance : w.source.kind === 'debt' ? w.source.overdue : w.source.amount)}`)); const a = link(w.source); if (a) line.append(a); alert.append(line); }
   return alert;
 }
+export function accountingSourceWarnings(data) {
+  if (!data || (!data.purchases?.count && !data.web?.count)) return null;
+  const box = node('section', 'acct-source-diagnostics'); box.setAttribute('aria-label', 'Chứng từ cần bổ sung dữ liệu');
+  const p = data.purchases, w = data.web;
+  if (p?.count) {
+    const card = node('details', 'acct-source-card'), summary = node('summary');
+    summary.append(node('strong', '', 'NCC chưa có hạn trả'), node('span', '', `${p.count} kỳ · ${p.orderCount} đơn mua`)); card.append(summary);
+    card.append(node('p', 'muted', 'Bổ sung ngày đến hạn trên đơn mua. Kỳ chưa trả đủ có hạn trong 3 ngày hoặc đã quá hạn sẽ tự sinh việc Trả NCC.'));
+    const list = node('div', 'acct-source-list');
+    for (const o of p.orders) { const row = node('div', 'acct-source-row'); row.append(node('span', '', `${o.docNo} · ${o.missingPeriods} kỳ chưa có hạn`)); const a = link(o); if (a) row.append(a); list.append(row); }
+    card.append(list); box.append(card);
+  }
+  if (w?.count) {
+    const card = node('details', 'acct-source-card'), summary = node('summary');
+    summary.append(node('strong', '', 'Theo dõi dữ liệu GHN'), node('span', '', `${w.missingCode} chưa có mã · ${w.missingStatus} có mã, thiếu trạng thái · ${w.delivered} đã giao`)); card.append(summary);
+    card.append(node('p', 'muted', 'Chỉ tự sinh yêu cầu xuất HĐ khi dữ liệu GHN báo giao thành công. Nhờ cửa hàng kiểm tra đơn trên website nếu thiếu mã hoặc trạng thái.'));
+    const list = node('div', 'acct-source-list');
+    const labels = { missing_code: 'Chưa có mã vận đơn', missing_status: 'Chưa nhận trạng thái GHN', delivered: 'Đã giao thành công', tracking: 'Đang theo dõi GHN' };
+    for (const o of w.orders) {
+      const row = node('div', 'acct-source-row'), info = node('div');
+      info.append(node('strong', '', `${o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long'} · ${o.docNo}`), node('span', '', `${labels[o.issue] || 'Chưa xác định'}${o.ghnCode ? ' · ' + o.ghnCode : ''}${o.ghnStatus && o.issue !== 'delivered' ? ' · GHN: ' + o.ghnStatus : ''}`));
+      // WooCommerce normally sends date_modified_gmt without an offset. Label it as source data, not a GHN poll time.
+      const at = o.updatedAt && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?$/.test(o.updatedAt) ? o.updatedAt + 'Z' : o.updatedAt;
+      info.append(node('small', 'muted', `Dữ liệu web cập nhật: ${stamp(at) || 'Chưa có mốc cập nhật'}`));
+      row.append(info, node('span', 'pill warn', 'Không có link đơn')); list.append(row);
+    }
+    card.append(list, node('p', 'muted small', 'Mốc cập nhật do website gửi; không phải thời điểm kiểm tra GHN. Chưa có trang đơn web dành cho Kế toán.')); box.append(card);
+  }
+  return box;
+}
 export function initAccountingTasks({ root, api, toast, userId, back }) {
   const box = node('section', 'accounting-tasks'), saved = new Map(), st = { view: 'team', kind: '', q: '', limit: 0 }, title = node('div', 'acct-head');
   let sequence = 0, searchTimer, drawer = null, detailId = null, returnFocus = null;
@@ -71,6 +101,7 @@ export function initAccountingTasks({ root, api, toast, userId, back }) {
   function render(data) {
     content.replaceChildren();
     const warning = accountingWarning(data.warnings); if (warning) content.append(warning);
+    const sourceWarnings = accountingSourceWarnings(data.sourceWarnings); if (sourceWarnings) content.append(sourceWarnings);
     content.append(accountingKpis(data));
     if (data.kpis.unavailableAmounts) content.append(node('p', 'muted small', 'Một số số tiền không hiển thị do quyền xem chứng từ. Tổng tiền chỉ gồm số liệu được phép xem.'));
     const filters = node('div', 'acct-filters'), tabs = node('div', 'acct-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Nhóm công việc kế toán');

@@ -127,3 +127,13 @@ Chức vụ `accounting` mở `#/tasks` mặc định bằng hàng đợi Kế t
 **C — Trang đơn web cho Kế toán:** chưa có trang được cấp quyền phù hợp để gắn link. Giữ nhãn Không có link đơn, không mở thêm quyền POS và không tạo trang mới.
 
 Kiểm thử: `tests/app/accounting-tasks.test.ts`, `accounting-tasks-ui.test.ts`, cùng hồi quy `tasks`, `task-peers`, `task-cards-ui`, `invoice-tasks`. Kiểm thử giao diện dùng dữ liệu mẫu; chưa kiểm thử live hoặc máy in.
+
+### Cảnh báo thiếu dữ liệu NCC và GHN
+
+Hàng đợi Kế toán trả thêm `sourceWarnings` từ `GET /tasks/accounting`, độc lập với tab, bộ lọc loại và tìm kiếm. Hai khối thu gọn ở đầu trang không cộng vào KPI/nhiệm vụ đang mở:
+
+- **NCC chưa có hạn trả:** đếm các kỳ chưa được trả đủ và chưa có `due_date` trên đơn mua đã duyệt, chưa huỷ, còn nợ. Phân bổ phiếu chi chưa huỷ theo thứ tự hạn/độ làm tròn hiện có; bỏ kỳ đã được trả đủ. Kiểm `page.purchases`, quyền xem giá và `purchaseScope` tại server trước khi đọc/trả danh sách. Link **Bổ sung hạn trả** mở đơn mua hiện có, không tự sửa hay đoán ngày. Khi bổ sung ngày, cơ chế đối soát nhiệm vụ hiện có sinh việc Trả NCC cho kỳ đủ điều kiện.
+- **Theo dõi dữ liệu GHN:** metadata của đơn web chưa huỷ/hoàn tiền/thất bại/trash, tách **Chưa có mã vận đơn**, **Có mã nhưng chưa nhận trạng thái GHN**, **Đã giao thành công**, và trạng thái đang theo dõi. `missingStatus` chỉ đếm đơn đã có mã, tránh đếm trùng với `missingCode`. Chỉ nhóm Kế toán/Manager được đọc qua API kế toán; người thuộc cửa hàng vẫn bị giới hạn quầy dù được cấp thêm `purchases.pay`. Không trả tên khách, điện thoại, địa chỉ, email hay số tiền trong diagnostics; không thêm link/quyền POS. Đơn web giao thành công vẫn qua quy tắc invoice hiện có, không suy đoán từ trạng thái website `completed`.
+- Mốc **Dữ liệu web cập nhật** dùng `web_store_orders.updated_at` do website gửi (`date_modified_gmt`, thường không có hậu tố múi giờ), hiển thị giờ Việt Nam. Đây không phải thời điểm kiểm tra GHN hoặc một lần đồng bộ được ghi riêng; không tự khẳng định dữ liệu còn mới. Chưa có mốc riêng thì không tạo số liệu thay thế.
+
+Không migration, không thay công thức công nợ/số tiền, không thêm quyền hoặc cron; không tự mở lại việc đóng tay. Kiểm thử API/DOM tại `tests/app/accounting-tasks*.test.ts`.

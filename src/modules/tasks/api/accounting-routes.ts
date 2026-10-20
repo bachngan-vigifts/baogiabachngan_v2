@@ -10,6 +10,7 @@ import { dueBucket, isOpen } from '../domain/task-config.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { addDaysIso } from '../domain/task-config.ts';
 import { accountingSources } from './accounting-sources.ts';
+import { accountingDiagnostics } from './accounting-diagnostics.ts';
 type Ctx = RouteContext<StaffEnv>;
 type Task = typeof tasks.$inferSelect;
 export interface AccountingAccess {
@@ -53,7 +54,8 @@ export function registerAccountingTaskRoutes(router: Router<StaffEnv>, access: A
     result.sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || a.createdAt.localeCompare(b.createdAt));
     const list = result.slice(offset, offset + 100).map(t => ({ ...access.serialize(c, t), link: sources.get(t.id)?.link || '', ...(!sources.get(t.id)?.available ? { description: '' } : {}), assigneeName: name(t.assigneeId), creatorName: name(t.createdBy) || 'Hệ thống',
       completedByName: name(t.completedBy), due: dueBucket(t.dueDate, today), sourceData: sources.get(t.id) }));
-    return json({ today, syncedAt: new Date().toISOString(), canViewColleagues: !!peers,
+    const sourceWarnings = await accountingDiagnostics(c.env.db, member, today);
+    return json({ today, syncedAt: new Date().toISOString(), canViewColleagues: !!peers, sourceWarnings,
       tabs: { team: open.filter(team).length, mine: open.filter(t => t.assigneeId === member.id).length, colleagues: peers ? open.filter(colleague).length : 0, closed_today: rows.filter(closedToday).length },
       kpis: { invoices: { count: invoices.length, overdue: invoices.filter(past).length }, purchases: { count: periods(purchases), amount: sum(purchases), overdue: periods(purchases.filter(past)) },
         debts: { count: new Set(debts.map(t => t.sourceId)).size, amount: sum(debts) }, unclaimed: open.filter(team).length,

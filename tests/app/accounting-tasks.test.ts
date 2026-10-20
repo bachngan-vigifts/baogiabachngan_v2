@@ -124,3 +124,69 @@ test('quyền nguồn được kiểm lại: bỏ quyền giá / quyền trang k
   assert.equal(ok(await f.call('/tasks/accounting?q=400', f.kt1)).tasks.length, 0, 'không dò được mô tả có số tiền bị ẩn');
   const other = ok(await f.call('/tasks/accounting', f.sa)); assert.equal(other.kpis.purchases.amount, 800);
 });
+
+test('cảnh báo NCC: chỉ kỳ thiếu hạn chưa được trả đủ; không đoán hạn, không đổi KPI, kiểm lại quyền nguồn', async () => {
+  const f = await setup(); await f.purchase();
+  await f.db.update(supplierPaymentSchedules).set({ dueDate: null }).where(eq(supplierPaymentSchedules.shipmentId, 'BUY'));
+  const read = async (cookie = f.kt1) => ok(await f.call('/tasks/accounting?kind=invoice&view=mine&refresh=1', cookie));
+  let d = await read();
+  assert.equal(d.sourceWarnings.purchases.count, 3); assert.equal(d.sourceWarnings.purchases.orderCount, 1);
+  assert.deepEqual(d.sourceWarnings.purchases.orders[0], { id: 'BUY', docNo: 'BUY', missingPeriods: 3, link: '#/purchases/BUY', linkLabel: 'Bổ sung hạn trả' });
+  assert.equal(d.kpis.purchases.count, 0); assert.equal(d.tasks.length, 0, 'cảnh báo độc lập bộ lọc việc');
+  assert.equal((await f.db.select().from(tasks)).some(t => t.autoKey?.startsWith('po-pay:')), false);
+  await f.db.insert(supplierPayments).values({ id: 'PAY-PART', shipmentId: 'BUY', amount: 450, paidDate: f.today, method: 'transfer', clientKey: 'PAY-PART', createdBy: 'mgr', createdAt: now() });
+  assert.equal((await read()).sourceWarnings.purchases.count, 2, 'không đếm kỳ đã được phân bổ trả đủ');
+  await f.db.update(supplierPaymentSchedules).set({ dueDate: f.yesterday }).where(eq(supplierPaymentSchedules.id, 'BUY-S2'));
+  d = await read(); assert.equal(d.sourceWarnings.purchases.count, 2); assert.equal(d.kpis.purchases.count, 0, 'kỳ có hạn được trả trước theo công thức cũ');
+  await f.db.update(supplierPaymentSchedules).set({ dueDate: f.today }).where(eq(supplierPaymentSchedules.id, 'BUY-S3'));
+  d = await read(); assert.equal(d.sourceWarnings.purchases.count, 1); assert.equal(d.kpis.purchases.count, 0);
+  await f.db.update(supplierPaymentSchedules).set({ dueDate: f.today }).where(eq(supplierPaymentSchedules.id, 'BUY-S1'));
+  d = await read(); assert.equal(d.sourceWarnings.purchases.count, 0); assert.equal(d.kpis.purchases.amount, 350, 'bổ sung hạn dùng luồng tự sinh hiện có');
+  await f.db.update(supplierPaymentSchedules).set({ dueDate: null }).where(eq(supplierPaymentSchedules.shipmentId, 'BUY'));
+  await f.db.delete(positionPermissions).where(and(eq(positionPermissions.positionId, 'accounting'), eq(positionPermissions.permission, 'purchases.prices')));
+  assert.equal((await read()).sourceWarnings.purchases.available, false);
+  assert.equal((await read()).sourceWarnings.purchases.orders.length, 0);
+  assert.equal((await read(f.sa)).sourceWarnings.purchases.count, 2, 'Sale Admin giữ quyền hiện có');
+  await f.db.insert(supplierPayments).values({ id: 'PAY-REST', shipmentId: 'BUY', amount: 350, paidDate: f.today, method: 'transfer', clientKey: 'PAY-REST', createdBy: 'mgr', createdAt: now() });
+  assert.equal((await read(f.sa)).sourceWarnings.purchases.count, 0);
+  await f.db.update(supplierPayments).set({ voidedAt: now() }).where(eq(supplierPayments.id, 'PAY-REST'));
+  assert.equal((await read(f.sa)).sourceWarnings.purchases.count, 2, 'phiếu chi huỷ không được coi là đã trả');
+  await f.db.update(incomingShipments).set({ cancelledAt: now() }).where(eq(incomingShipments.id, 'BUY'));
+  assert.equal((await read(f.sa)).sourceWarnings.purchases.count, 0);
+});
+
+test('cảnh báo web: tách thiếu mã/trạng thái/đã giao, không rò PII và không tạo invoice trước xác nhận GHN', async () => {
+  const f = await setup();
+  await f.db.insert(warehouses).values({ id: 'W-D', name: 'Kho web', kind: 'stock' });
+  await f.db.insert(pricePolicies).values([{ id: 'PD', name: 'Giá web' }, { id: 'PD2', name: 'Giá web 2' }]);
+  await f.db.insert(posRegisters).values({ id: 'R-D', name: 'Quầy web', warehouseId: 'W-D', pricePolicyId: 'PD', secondPricePolicyId: 'PD2', updatedBy: 'mgr', createdAt: now(), updatedAt: now() });
+  for (const [id, code, status, webStatus] of [['NO-CODE', '', '', 'processing'], ['NO-STATUS', 'GHN-NO-STATUS', '', 'completed'], ['DELIVERED', 'GHN-OK', 'delivered', 'processing'], ['TRACKING', 'GHN-WAIT', 'delivering', 'processing'], ['CANCELLED', '', '', 'cancelled'], ['REFUNDED', '', '', 'refunded']]) {
+    await f.db.insert(webStoreOrders).values({ id: id!, source: 'lock', externalId: id!, orderNo: id!, registerId: 'R-D', status: webStatus!, ghnOrderCode: code, ghnStatus: status, customerName: 'PII-NAME', phone: 'PII-PHONE', address: 'PII-ADDRESS', email: 'PII-EMAIL', total: 987654, orderedAt: now(), updatedAt: '2026-10-20T06:52:01' });
+  }
+  const d = ok(await f.call('/tasks/accounting?kind=purchase&refresh=1', f.kt1)), web = d.sourceWarnings.web;
+  assert.deepEqual([web.count, web.missingCode, web.missingStatus, web.delivered], [4, 1, 1, 1]);
+  assert.equal(web.orders.find((o: any) => o.id === 'DELIVERED').issue, 'delivered');
+  assert.equal(web.orders.find((o: any) => o.id === 'NO-STATUS').issue, 'missing_status');
+  assert.equal(web.orders[0].updatedAt, '2026-10-20T06:52:01');
+  for (const secret of ['PII-NAME', 'PII-PHONE', 'PII-ADDRESS', 'PII-EMAIL', '987654']) assert.equal(JSON.stringify(web).includes(secret), false);
+  assert.ok(web.orders.every((o: any) => !o.link)); assert.equal(d.kpis.invoices.count, 1);
+  const invoiceKeys = (await f.db.select().from(tasks)).filter(t => t.autoKey?.startsWith('invoice-web:')).map(t => t.autoKey);
+  assert.deepEqual(invoiceKeys, ['invoice-web:DELIVERED']);
+  assert.equal((await f.call('/tasks/accounting', f.emp)).status, 403);
+  assert.equal(ok(await f.call('/tasks/accounting', f.sa)).sourceWarnings.web.count, 4);
+});
+
+test('cảnh báo web vẫn giữ ranh giới quầy khi NVBH được cấp purchases.pay', async () => {
+  const f = await setup();
+  await f.db.update(employees).set({ positionId: 'sales-lock' }).where(eq(employees.id, 'emp'));
+  await f.db.insert(positionPermissions).values({ positionId: 'sales-lock', permission: 'purchases.pay' });
+  await f.db.insert(warehouses).values([{ id: 'WL', name: 'MINH LONG - LOCKNLOCK CẦN THƠ', kind: 'stock' }]);
+  await f.db.insert(pricePolicies).values([{ id: 'PL', name: 'Giá L' }, { id: 'PL2', name: 'Giá L2' }]);
+  for (const [id, name, source] of [['LOCK', 'CỬA HÀNG LOCKNLOCK CẦN THƠ', 'lock'], ['ML', 'Showroom Gốm Sứ Minh Long Cần Thơ', 'minhlong']]) {
+    await f.db.insert(posRegisters).values({ id: id!, name: name!, warehouseId: 'WL', pricePolicyId: 'PL', secondPricePolicyId: 'PL2', updatedBy: 'mgr', createdAt: now(), updatedAt: now() });
+    await f.db.insert(webStoreOrders).values({ id: id!, source: source!, externalId: id!, orderNo: id!, registerId: id!, status: 'processing', orderedAt: now(), updatedAt: now() });
+  }
+  const d = ok(await f.call('/tasks/accounting', f.emp));
+  assert.deepEqual(d.sourceWarnings.web.orders.map((o: any) => o.docNo), ['LOCK']);
+  assert.equal(ok(await f.call('/tasks/accounting', f.kt1)).sourceWarnings.web.count, 2);
+});
