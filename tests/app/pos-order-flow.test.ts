@@ -1,3 +1,4 @@
+import { posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq, sql } from 'drizzle-orm';
@@ -1003,4 +1004,13 @@ test('danh sách mặc định không để đơn nhận sau cũ bị chìm bở
   );
   ok(search);
   assert.equal(search.data.orders.length, 1);
+});
+
+test('QR đã nhận chưa gắn bill không được bỏ qua để tạo cọc; QR đã hoàn tất không chặn lần mua sau',async()=>{
+ const f=await setup(),s=await f.open(),body=f.cart(s.id),qr=await f.call('/pos/qr',f.emp,'POST',body);ok(qr);
+ await f.db.update(posPaymentRequests).set({confirmedAt:new Date().toISOString()}).where(eq(posPaymentRequests.id,qr.data.id));
+ const flow={...body,key:key(),saleFlow:'deposit'};
+ ok(await f.call('/pos/order-flows/checkout',f.emp,'POST',flow),409);assert.equal((await f.db.select().from(customerPayments)).length,0);assert.equal((await f.db.select().from(stockBalances))[0]!.qty,10);
+ ok(await f.call('/pos/checkout',f.emp,'POST',{...body,method:'transfer',confirmed:true,paymentRequestId:qr.data.id}),201);
+ ok(await f.call('/pos/order-flows/checkout',f.emp,'POST',flow),201);assert.equal((await f.db.select().from(customerPayments)).length,2);
 });

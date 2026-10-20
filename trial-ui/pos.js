@@ -513,6 +513,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function createFlow(flow,close){
     if(!(st.options.orderFlowVersion>=1))return toast('Chức năng đang cập nhật. Tải lại POS rồi thử lại.','err');
     if(!active()||!st.preview||!st.cart.length||st.pending||st.busy)return;
+    if(st.qr)return toast('Giỏ đang có giao dịch QR. Hoàn tất giao dịch QR trước khi chuyển sang cọc/trả trước.','err');
     if(st.exchangeAllocationId)return toast('Thanh toán tín dụng đổi hàng tại quầy trước; không ghép vào đơn cọc.','err');
     if(st.preview.total<=0)return toast('Đơn cọc/trả trước phải có giá trị lớn hơn 0.','err');
     close();openPosFlowCheckout({flow,total:st.preview.total,customer:st.customer,toast,onSubmit:extra=>submit({...payload(),key:key(),...extra})});
