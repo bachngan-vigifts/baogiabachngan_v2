@@ -88,11 +88,10 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
       const time = new Date(date.value); if (!Number.isFinite(time.getTime())) throw Error('Nhập thời điểm số liệu Sapo.');
       const input = { filename: selectedCards.map(c => c.file.files[0].name).join(' + ').slice(0, 300), observedAt: time.toISOString(), rows: combineSapoStockFiles(parsed) };
       const p = await api('/admin/products/import/sapo-stock/preview', 'POST', input); preview = p.matched ? { ...input, version: p.version } : null;
-      status.textContent = `${fmt(p.matched)} mã sẽ cập nhật · ${fmt(p.unknownCount)} mã không có · ${fmt(p.ambiguousCount)} mã không xác định. Xem trước tối đa 30 dòng; bỏ qua ${fmt(parsed.reduce((n, f) => n + f.hidden, 0))} dòng ẩn.`;
+      status.textContent = `${fmt(p.matched)} mã sẽ cập nhật${p.ambiguousCount ? ` · ${fmt(p.ambiguousCount)} mã không xác định` : ''}. Xem trước tối đa 30 dòng; bỏ qua ${fmt(parsed.reduce((n, f) => n + f.hidden, 0))} dòng ẩn.`;
       const table = el('table', undefined, { class: 'data-table' }), tr = el('tr'); for (const h of ['Mã hàng', 'Kho CRM', 'Tồn cũ', 'Tồn mới']) tr.append(el('th', h)); const thead = el('thead'); thead.append(tr); table.append(thead);
       const tbody = el('tbody'); for (const s of p.samples) { const r = el('tr'); for (const value of [s.sku, s.warehouse, fmt(s.before), fmt(s.after)]) r.append(el('td', value)); tbody.append(r); } table.append(tbody); const wrap = el('div', undefined, { class: 'table-wrap' }); wrap.append(table); previewBox.append(wrap);
       for (const c of cards) previewBox.append(el('p', `${c.source} → ${stores.find(w => w.id === c.target.value)?.name || '?'}`));
-      if (p.unknown.length) previewBox.append(el('p', 'Mã không tìm thấy (tối đa 100): ' + p.unknown.join(', ')));
     } catch (e) { status.textContent = e.message; } finally { lock(false); }
   };
   apply.onclick = async () => {

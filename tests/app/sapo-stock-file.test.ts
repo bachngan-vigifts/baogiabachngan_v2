@@ -93,7 +93,7 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   await ctx.openSapoStockImport({ isManager: () => true, onChanged: () => { refreshed++; }, api: async (path: string, method: string, body?: any) => {
     if (!method) return { warehouses: [{ id: 'v', name: 'KHO VIGIFTS', kind: 'stock' }, { id: 'm', name: 'Minh Long Lock', kind: 'stock' }, { id: 'ncc', name: 'NCC', kind: 'supplier' }] };
     calls.push({ path, body: plain(body) });
-    return { version: 'a'.repeat(64), matched: 1, unknownCount: 0, ambiguousCount: 0, unknown: [], samples: [{ sku: '<img onerror=alert(1)>', warehouse: 'Kho', before: 0, after: 10 }], updatedAt: new Date().toISOString() };
+    return { version: 'a'.repeat(64), matched: 1, unknownCount: 2, ambiguousCount: 0, unknown: ['MISSING-1', 'MISSING-2'], samples: [{ sku: '<img onerror=alert(1)>', warehouse: 'Kho', before: 0, after: 10 }], updatedAt: new Date().toISOString() };
   } });
   const all = () => document.body.querySelectorAll('*');
   const button = (text: string) => all().find(x => x.tagName === 'button' && x.textContent === text)!;
@@ -105,6 +105,7 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   assert.equal(review.disabled, false); await review.onclick(); assert.equal(apply.disabled, false);
   assert.equal(calls[0].body.rows[0].stock.v, 10); assert.equal(calls[0].body.rows[0].stock.m, undefined);
   assert.ok(all().some(x => x.tagName === 'td' && x.textContent === '<img onerror=alert(1)>')); assert.ok(!all().some(x => x.tagName === 'img'));
+  assert.ok(!all().some(x => String(x.textContent).includes('MISSING-1') || String(x.textContent).includes('Mã không tìm thấy')));
   targets[0]!.onchange(); assert.equal(apply.disabled, true, 'đổi kho vô hiệu hoá preview'); await apply.onclick(); assert.equal(calls.length, 1);
   await review.onclick(); await apply.onclick(); assert.equal(calls.at(-1).path, '/admin/products/import/sapo-stock/apply'); assert.equal(refreshed, 1); assert.equal(apply.disabled, true);
 });
