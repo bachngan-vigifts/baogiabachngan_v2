@@ -25,3 +25,5 @@ export * from '../modules/sales/pos-schema.ts';
 export * from '../modules/sales/cash-schema.ts';
 
 export * from '../modules/sales/return-schema.ts';
+
+export * from '../modules/sales/pos-order-flow-schema.ts';

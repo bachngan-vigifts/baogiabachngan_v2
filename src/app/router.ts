@@ -1,3 +1,4 @@
+import { registerPosOrderFlowRoutes } from '../modules/sales/api/pos-order-flow-routes.ts';
 import { registerPosReturnRoutes } from '../modules/sales/api/pos-return-routes.ts';
 import { authorizePosStore } from '../modules/sales/api/pos-access.ts';
 import { registerCashRoutes } from './cash-routes.ts';
@@ -54,6 +55,7 @@ export function createAppRouter() {
   registerSalesRoutes(router);
   registerPosRoutes(router);
   registerPosReturnRoutes(router);
+  registerPosOrderFlowRoutes(router);
   registerCashRoutes(router);
   registerPackingRoutes(router);
   registerHoldRoutes(router);

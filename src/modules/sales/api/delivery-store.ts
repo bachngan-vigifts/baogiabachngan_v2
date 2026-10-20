@@ -1,3 +1,4 @@
+import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -14,6 +15,7 @@ const text = (value: unknown, max: number) => {
 export async function createScheduledDelivery(tx: Tx, orderId: string, body: Record<string, unknown>, actorId: string) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1).for('update');
   if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
+  if (saleFlowOf(order.posSnapshot)==='deposit') throw new AppError(409,'Đơn cọc nhận tại quầy, dùng Thu nốt và xuất hàng.');
   if (order.status === 'draft') throw new AppError(409, 'Đơn chưa được Manager duyệt, chưa lên lịch giao được.', 'ORDER_NOT_APPROVED');
   if (order.status === 'cancelled' || order.status === 'delivered') throw new AppError(409, 'Đơn đã huỷ hoặc đã giao xong.');
   const date = text(body.plannedDate, 100);

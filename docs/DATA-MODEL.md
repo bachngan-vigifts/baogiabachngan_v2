@@ -2,7 +2,7 @@
 
 > File này được **sinh tự động** từ schema (`npm run docs:data-model`). Đừng sửa tay.
 
-Tổng: **131 bảng**.
+Tổng: **133 bảng**.
 
 Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = bản cũ có, đã thêm/bỏ cột · **hợp thức hoá** = bản cũ tự tạo lúc chạy, nay có migration · **mới** = chưa có ở bản cũ.
 
@@ -194,6 +194,13 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `pos_shifts` | 19 | mới |  |
 | `web_store_orders` | 20 | mới |  |
 
+## pos-flow — Đặt cọc, giữ hàng và chuyển khoản chờ theo đơn
+
+| Bảng | Số cột | Trạng thái | Ghi chú |
+|---|---|---|---|
+| `pos_order_reservations` | 13 | mới |  |
+| `pos_payment_intents` | 19 | mới |  |
+
 ## cash — Sổ quỹ và tra soát
 
 | Bảng | Số cột | Trạng thái | Ghi chú |
@@ -209,7 +216,7 @@ Trạng thái: **giữ nguyên** = cùng cột với bản cũ · **đổi** = b
 | `pos_exchange_allocations` | 12 | mới |  |
 | `pos_refunds` | 14 | mới |  |
 | `pos_return_lines` | 14 | mới |  |
-| `pos_returns` | 28 | mới |  |
+| `pos_returns` | 29 | mới |  |
 
 ## inventory — Sổ kho và ảnh nghiệp vụ
 

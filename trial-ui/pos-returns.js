@@ -156,6 +156,7 @@ export async function openPosReturns({
       card.append(
         el('h3', '', r.returnNo + ' · ' + status[r.status]),
         el('p', '', r.reason),
+        ...(r.requestContext==='before_fulfillment'?[el('p','pos-note','Huỷ trước xuất: không có hàng cần nhập lại. Chỉ xác nhận thực hoàn tiền sau khi duyệt.')]:[]),
       );
       for (const l of r.lines)
         card.append(
@@ -259,7 +260,7 @@ export async function openPosReturns({
         );
       }
       if (
-        r.receivedAt &&
+        (r.receivedAt || (r.requestContext==='before_fulfillment'&&r.creditEffectiveAt)) &&
         r.status !== 'completed' &&
         shift?.registerId === d.registerId
       ) {
@@ -383,21 +384,21 @@ export async function openPosReturns({
     if (shift?.registerId === d.registerId && d.order.status !== 'cancelled') {
       const form = el('section', 'pos-return-card');
       form.append(
-        el('h3', '', 'Lập yêu cầu mới'),
+        el('h3', '', d.recoveringIssued?'Thu hồi toàn bộ đơn chưa giao':'Lập yêu cầu mới'),
         el(
           'p',
           'pos-note',
-          'Chọn số lượng thực trả. Mặc định hoàn tiền hàng; phí chỉ hoàn thêm khi Manager duyệt.',
+          d.recoveringIssued?'Thu hồi toàn bộ hàng đã xuất. Sau duyệt sẽ dừng giao đơn và giải phóng phần chưa xuất; chỉ hoàn tiền sau khi thực nhận lại hàng.':'Chọn số lượng thực trả. Mặc định hoàn tiền hàng; phí chỉ hoàn thêm khi Manager duyệt.',
         ),
       );
       const rows = [];
-      for (const l of d.lines.filter((l) => l.deliveredQty > 0)) {
+      for (const l of d.lines.filter((l) => (l.returnableQty??l.deliveredQty) > 0)) {
         const claimed = d.returns
             .filter((r) => !['cancelled', 'rejected'].includes(r.status))
             .flatMap((r) => r.lines)
             .filter((x) => x.orderLineId === l.id)
             .reduce((n, x) => n + x.requestedQty, 0),
-          left = l.deliveredQty - claimed;
+          left = (l.returnableQty??l.deliveredQty) - claimed;
         if (left <= 0) continue;
         const row = el('div', 'pos-return-line'),
           qty = field(l.name + ' · Còn được trả ' + left, 'number'),
@@ -405,6 +406,7 @@ export async function openPosReturns({
             ['restock', 'Hàng bán được · Nhập lại kho'],
             ['damaged', 'Hàng hỏng · Không cộng tồn bán'],
           ]);
+        if(d.recoveringIssued){qty.input.value=left;qty.input.readOnly=true;}
         qty.input.max = left;
         qty.input.step = '0.001';
         condition.setAttribute('aria-label', 'Tình trạng ' + l.name);

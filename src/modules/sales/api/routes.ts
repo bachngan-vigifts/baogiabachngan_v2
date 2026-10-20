@@ -1,3 +1,8 @@
+import { posOrderStoreScope } from './pos-access.ts';
+import { stockMoves } from '../../inventory/schema.ts';
+import { saleFlowOf, flowHoldUntil } from '../domain/pos-order-flow.ts';
+import { posOrderReservations } from '../pos-order-flow-schema.ts';
+import { assertPosFlowFulfillable, flowIssued } from './pos-order-flow-guards.ts';
 import { assertNoReturnActivity, returnAdjustments, netReturnInputs } from './pos-return-credit.ts';
 import { posReturns, posRefunds, posExchangeAllocations } from '../return-schema.ts';
 import { snapshotPosFees } from '../domain/pos-fees.ts';
@@ -59,11 +64,39 @@ export const canIssueInvoice = (m: { role: string; positionId?: string | null })
  * Ai thấy đơn: Manager và Kế toán thấy tất cả; nhân viên thấy đơn mình phụ trách hoặc mình tạo, và mọi đơn của khách hàng
  * mình phụ trách / được chia sẻ (`customer_staff`). Mọi bảng con theo quyền của đơn.
  */
-export const orderScopeFor = (m: { id: string; role: string; positionId?: string | null; dataScope?: string | null; approver?: boolean | null }): SQL | undefined => m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m) ? undefined
-  : or(eq(salesOrders.ownerId, m.id), eq(salesOrders.createdBy, m.id), departmentOwner(salesOrders.ownerId, m), departmentOwner(salesOrders.createdBy, m),
-    sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`,
-    // Người được duyệt mở được đơn / HĐKT đang chờ duyệt (đã gửi duyệt) để kiểm tra rồi duyệt.
-    canApprove(m) ? and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt)) : undefined);
+export const orderScopeFor = (m: {
+  id: string;
+  role: string;
+  positionId?: string | null;
+  positionName?: string | null;
+  dataScope?: string | null;
+  approver?: boolean | null;
+}): SQL | undefined =>
+  and(
+    posOrderStoreScope(m),
+    m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m)
+      ? undefined
+      : or(
+          eq(salesOrders.ownerId, m.id),
+          eq(salesOrders.createdBy, m.id),
+          departmentOwner(salesOrders.ownerId, m),
+          departmentOwner(salesOrders.createdBy, m),
+          can(m, 'pos.sell')
+            ? and(
+                eq(salesOrders.channel, 'pos'),
+                sql`${salesOrders.posSnapshot}::jsonb->>'saleFlow' in ('deposit','prepaid')`,
+              )
+            : undefined,
+          sql`EXISTS (SELECT 1 FROM ${customerStaff} WHERE ${customerStaff.customerId} = ${salesOrders.customerId} AND ${customerStaff.memberId} = ${m.id})`,
+          // Người được duyệt mở được đơn / HĐKT đang chờ duyệt (đã gửi duyệt) để kiểm tra rồi duyệt.
+          canApprove(m)
+            ? and(
+                eq(salesOrders.status, 'draft'),
+                isNotNull(salesOrders.submittedAt),
+              )
+            : undefined,
+        ),
+  );
 const orderScope = (c: Ctx): SQL | undefined => orderScopeFor(viewer(c));
 /** Lịch giao hàng: nhóm Kho (chức vụ `warehouse`) xem và đổi trạng thái mọi chuyến giao (không xem được đơn / công nợ). */
 const isWarehouseMember = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && m.positionId === 'warehouse';
@@ -475,6 +508,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (status !== 'cancelled' && status !== 'confirmed') throw new AppError(400, 'Chỉ đổi được sang "Đã xác nhận" hoặc "Huỷ".');
     const order = await loadOrder(c, c.params.id!);
     if (order.status !== 'draft' && viewer(c).role !== 'manager') throw new AppError(403, 'Đơn đã duyệt. Chỉ Manager được chỉnh sửa hoặc huỷ.', 'ORDER_APPROVED');
+    if (status === 'cancelled' && saleFlowOf(order.posSnapshot)) throw new AppError(409,'Đơn cọc/trả trước: dùng Huỷ/hoàn tại POS để xử lý tiền và hàng.');
     if (status === 'cancelled') await assertCanEditOrder(c, order);
     if (status === 'cancelled') {
       const [paid] = await c.env.db.select({ n: sql<number>`count(*)` }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt)));
@@ -829,11 +863,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!from[status]!.includes(row.d.status)) throw new AppError(409, 'Không đổi được trạng thái chuyến giao theo thứ tự này.', 'DELIVERY_STATUS_FLOW');
     const deliveredOn = status === 'delivered' ? (isDate(body.deliveredOn) ? String(body.deliveredOn) : vietnamDate().iso) : null;
     await c.env.db.transaction(async tx => {
+      const [flowOrder] = await tx.select().from(salesOrders).where(eq(salesOrders.id,row.d.orderId));
+      if(saleFlowOf(flowOrder?.posSnapshot)){await cashLock(tx);if(['in_transit','delivered'].includes(status))await assertPosFlowFulfillable(tx,row.d.orderId);if(status==='cancelled'&&(await tx.select({id:stockMoves.id}).from(stockMoves).where(and(eq(stockMoves.refType,'pos_delivery'),eq(stockMoves.refId,row.d.id))).limit(1)).length)throw new AppError(409,'Chuyến đã xuất hàng: dùng yêu cầu trả/thu hồi, không huỷ lịch thẳng.');}
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
       // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
       const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })
         .where(and(eq(deliveries.id, row.d.id), inArray(deliveries.status, [...from[status]!] as typeof DELIVERY_STATUSES[number][]))).returning({ id: deliveries.id });
       if (!done.length) throw new AppError(409, 'Chuyến giao vừa được người khác cập nhật. Tải lại trang.', 'DELIVERY_CHANGED');
+      if(status==='in_transit'&&saleFlowOf(flowOrder?.posSnapshot)==='prepaid')await issuePosDelivery(tx,row.d.orderId,row.d.id,me.id,true);
       if (status !== 'delivered') return;
       await savePhotos(tx, c.env.files, me.id, 'delivery', row.d.id, photos);
       for (const l of await tx.select().from(deliveryLines).where(eq(deliveryLines.deliveryId, row.d.id)))
@@ -898,6 +935,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   router.post('/payments', async c => {
     const body = await readJson(c.req, 8_192), me = viewer(c);
     const order = await loadOrder(c, text(body.orderId, 80));
+    if(saleFlowOf(order.posSnapshot))throw new AppError(409,'Đơn cọc/trả trước: dùng Thu tiền trong POS để kiểm tra ca và giữ hàng.');
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
     if (order.status === 'draft') throw new AppError(409, 'Đơn hàng / HĐKT chưa được duyệt, chưa ghi thu được (chưa phát sinh công nợ).', 'ORDER_NOT_APPROVED');
     const posReceipt = order.channel === 'pos';
@@ -962,6 +1000,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (deliveryId) await tx.update(deliveries).set({ codAmount: sql`${deliveries.codAmount} + ${p.amount}`, updatedAt: nowIso() })
         .where(and(eq(deliveries.id, deliveryId), eq(deliveries.orderId, p.orderId)));
     }
+    const [flowOrder] = await tx.select().from(salesOrders).where(eq(salesOrders.id,p.orderId));
+    if(saleFlowOf(flowOrder?.posSnapshot) && ((await flowIssued(tx,p.orderId)).some(r=>r.qty>0)||flowOrder?.status==='delivered'))throw new AppError(409,'Đã xuất hàng: xử lý trả/hoàn thay vì huỷ phiếu thu.');
+    if (saleFlowOf(flowOrder?.posSnapshot) && flowOrder?.status!=='delivered') await tx.update(posOrderReservations).set({expiresAt:sql`least(${posOrderReservations.expiresAt},${flowHoldUntil(nowIso())})`,updatedAt:nowIso()}).where(and(eq(posOrderReservations.orderId,p.orderId),eq(posOrderReservations.status,'active')));
     if(p.shiftId) await voidClosedCashEffect(tx,p.shiftId,me.id,`Huỷ phiếu thu ${p.id}: ${reason}`);
     await cashAudit(tx,me.id,'void','payments',p.id,{reason,shiftId:p.shiftId});
     });

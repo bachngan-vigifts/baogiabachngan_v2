@@ -64,3 +64,9 @@ NVBH/CHT Lock chỉ thấy két gắn quầy Lock; NVBH/CHT Minh Long chỉ th�
 Phiếu trả hàng được duyệt và xác nhận thực nhận mới phát sinh giá trị trả. Tiền thực hoàn ghi bằng `pos_refunds`; hoàn tiền mặt kèm `cash_entries.kind=customer_refund`, hướng chi, vào ca/két đang mở lúc thực trả. Dùng người duyệt của yêu cầu, không bắt duyệt lần hai sau khi đã trả tiền. Chuyển khoản hoàn không trừ két. Thanh toán bằng tiền đổi hàng là `method=other`, `payment_source=pos_exchange_credit`, không tính tiền thực thu trong két hoặc Sổ thu/chi.
 
 Huỷ phiếu thông thường bị chặn cho hoàn tiền đã xác nhận và các phiếu thu có chứng từ trả/đổi liên kết, để không âm thầm làm sai tiền được hoàn. Báo cáo ca đã kết giữ nguyên; hoàn ở ca sau ghi chi ở ca sau. Xem [POS-RETURNS-PREFLIGHT.md](POS-RETURNS-PREFLIGHT.md) để biết migration và giới hạn triển khai.
+
+## Cọc nhận sau / ship trả trước
+
+Chỉ `customer_payments` thực nhận mới vào báo cáo: `pos_deposit`, `pos_balance`, `pos_prepaid`. Tiền mặt vào két ca thực thu; chuyển khoản không vào két. `pos_payment_intents` đang chờ không phải phiếu thu; xác nhận sau khi ca gốc kết thì ghi ca mới cùng quầy/két, không sửa snapshot ca gốc. Đơn còn cọc/chờ chuyển khoản không chặn kết ca, ngưỡng duyệt phiếu thủ công không áp cho tiền bán thực nhận.
+
+Huỷ đơn trước xuất dùng `pos_returns.request_context=before_fulfillment`: chỉ giảm công nợ khi được duyệt; không cần và không được nhập kho. Sau duyệt mới thực hoàn hoặc dùng tín dụng, không vượt tiền thực nhận còn lại. Hàng đã xuất chưa giao dùng `after_issue`: duyệt dừng giao, thực nhận lại mới ghi nhập/giảm công nợ và mở tiền hoàn. Tiền mặt hoàn thuộc ca đang mở khi thực trả, chuyển khoản cần tham chiếu. Manager được tự duyệt có audit; người được chỉ định không tự duyệt và không vượt scope cửa hàng. Xem [POS.md](POS.md) và [phương án dữ liệu đã duyệt](POS-DEPOSIT-PREPAID-PREFLIGHT.md).

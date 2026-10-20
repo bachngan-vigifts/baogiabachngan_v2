@@ -1,3 +1,5 @@
+import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
+import { flowInitialAmount, flowHoldUntil, saleFlowOf } from '../domain/pos-order-flow.ts';
 import { exchangeForCart, returnAccount } from './pos-return-credit.ts';
 import { posExchangeAllocations, posReturns, posRefunds } from '../return-schema.ts';
 import { posOrderNote } from '../domain/pos-order-note.ts';
@@ -175,7 +177,7 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
       .from(stockHolds)
       .where(and(inArray(stockHolds.sku, skus), eq(stockHolds.status, 'active'), sql`${stockHolds.expiresAt}>${now}`))
       .groupBy(stockHolds.sku),
-    orderHolds(db, skus),
+    orderHolds(db, skus, warehouseId),
   ]);
   const issued =
     warehouseId && orders.length
@@ -202,7 +204,7 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
   const out = new Map<string, number>();
   for (const r of quotes) out.set(r.sku, (out.get(r.sku) ?? 0) + r.qty);
   for (const r of orders) {
-    const quantity = Math.max(0, r.qty - (issued.find((x) => x.orderId === r.orderId && x.sku === r.sku)?.qty ?? 0));
+    const quantity = Math.max(0, r.qty - (r.timed ? 0 : issued.find((x) => x.orderId === r.orderId && x.sku === r.sku)?.qty ?? 0));
     out.set(r.sku, (out.get(r.sku) ?? 0) + quantity);
   }
   return out;
@@ -282,6 +284,11 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
   for(const p of pending)pendingByOrder.set(p.orderId,(pendingByOrder.get(p.orderId)||0)+p.amount);
   let pendingCount=0,pendingAmount=0;
   for(const [id,amount] of pendingByOrder){const a=await returnAccount(db,id,cutoff);const remaining=Math.min(amount,Math.max(0,a.balance));if(remaining>0){pendingCount++;pendingAmount+=remaining;}}
+  const flowOrders = await db.select({amount:sql<number>`greatest(0,${salesOrders.total}-(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.createdAt}<=${cutoff} and (${customerPayments.voidedAt} is null or ${customerPayments.voidedAt}>${cutoff})))`.mapWith(Number)}).from(salesOrders).innerJoin(posShifts,eq(posShifts.id,salesOrders.shiftId)).where(and(eq(posShifts.cashDrawerId,s.cashDrawerId),sql`${salesOrders.posSnapshot}::jsonb->>'saleFlow' in ('deposit','prepaid')`,inArray(salesOrders.status,['draft','confirmed','delivering']),sql`${salesOrders.createdAt}<=${cutoff}`));
+  const flowPending = await db.select({n:count(),amount:sql<number>`coalesce(sum(${posPaymentIntents.amount}),0)`.mapWith(Number)}).from(posPaymentIntents).where(and(eq(posPaymentIntents.requestedShiftId,s.id),sql`${posPaymentIntents.createdAt}<=${cutoff}`,sql`(${posPaymentIntents.confirmedAt} is null or ${posPaymentIntents.confirmedAt}>${cutoff}) and (${posPaymentIntents.cancelledAt} is null or ${posPaymentIntents.cancelledAt}>${cutoff})`));
+  let flowOutstandingCount=0,flowOutstandingAmount=0;
+  for(const {amount} of flowOrders){if(amount>0){flowOutstandingCount++;flowOutstandingAmount+=amount;}}
+  const flowSum=(source:string)=>payments.filter(p=>p.source===source).reduce((n,p)=>n+p.total,0);
   const drawer = await cashShiftTotals(db, s.id);
   const r = await registerOf(db, s.registerId);
   const [person] = await db.select({ name: employees.name }).from(employees).where(eq(employees.id, s.memberId));
@@ -301,6 +308,7 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
     openingCount: counted?.count ? { scope: 'partial', count: counted.count } : null,
     bills: bills[0] ?? { count: 0, revenue: 0, discount: 0 },
     payments,
+    orderFlows:{deposit:flowSum('pos_deposit'),balance:flowSum('pos_balance'),prepaid:flowSum('pos_prepaid'),pending:{count:flowPending[0]?.n||0,amount:flowPending[0]?.amount||0},outstanding:{count:flowOutstandingCount,amount:flowOutstandingAmount}},
     cash,
     transfer,
     manual: drawer.manual,
@@ -322,18 +330,20 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
 }
 export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, unknown>) {
   posPermission(m);
+  const flow = saleFlowOf(b);
+  if (b.saleFlow !== undefined && !flow) throw new AppError(400, 'Chọn loại đơn cọc/trả trước hợp lệ.');
   const key = posKey(b.key),
     shiftId = posText(b.shiftId),
-    mode = b.fulfillmentMode === 'cod' ? 'cod' : 'counter',
+    mode = flow ? (flow === 'prepaid' ? 'delivery' : 'counter') : b.fulfillmentMode === 'cod' ? 'cod' : 'counter',
     method = b.method === 'cash' ? 'cash' : b.method === 'transfer' ? 'transfer' : null;
-  const depositAmount = posMoney(b.depositAmount ?? 0, 'Tiền thu trước COD');
+  const depositAmount = flow ? 0 : posMoney(b.depositAmount ?? 0, 'Tiền thu trước COD');
   if (depositAmount > 0 && mode !== 'cod') throw new AppError(400, 'Thu trước chỉ áp dụng cho đơn giao COD.');
   if (depositAmount > 0 && !method) throw new AppError(400, 'Chọn hình thức thu trước COD.');
   if (depositAmount > 0 && method === 'transfer' && b.confirmed !== true)
     throw new AppError(400, 'Xác nhận cửa hàng đã thực nhận tiền chuyển khoản thu trước.');
-  const requestHash = sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method, ...(depositAmount ? { depositAmount } : {}) }));
+  const requestHash = sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method, ...(depositAmount ? { depositAmount } : {}), ...(flow ? { saleFlow: flow, initialAmount: b.initialAmount ?? null, confirmed: b.confirmed === true, delivery: b.delivery ?? null } : {}) }));
   if (!method && mode !== 'cod') throw new AppError(400, 'Chọn tiền mặt hoặc chuyển khoản.');
-  if (method === 'transfer' && b.confirmed !== true && mode !== 'cod')
+  if (method === 'transfer' && b.confirmed !== true && mode !== 'cod' && !flow)
     throw new AppError(400, 'Nhân viên cần xác nhận đã thực nhận chuyển khoản.');
   return env.db.transaction(async (tx) => {
     await cashLock(tx);
@@ -349,6 +359,14 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     assertOpen(s, m);
     if (posText(b.registerId) !== s.registerId) throw new AppError(400, 'Quầy không khớp ca.');
     const c = await calculateCart(tx, b);
+    const initialAmount = flow ? flowInitialAmount(flow, c.total, b.initialAmount) : 0;
+    const receivedInitial = flow && (method === 'cash' || b.confirmed === true) ? initialAmount : 0;
+    if (flow && (c.exchange.amount || b.paymentRequestId)) throw new AppError(400, 'Đơn cọc/trả trước không dùng QR hoặc tín dụng giỏ đang thanh toán.');
+    if(flow){
+      const [paidQr]=await tx.select({id:posPaymentRequests.id}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
+      if(paidQr)throw new AppError(409,'Giỏ đã nhận chuyển khoản qua QR. Hoàn tất giao dịch QR trước, không chuyển thành đơn cọc/trả trước.');
+    }
+
     if (c.exchange.amount && mode === 'cod') throw new AppError(400, 'Đổi hàng thanh toán tại quầy, không chuyển COD.');
     if (depositAmount > c.total) throw new AppError(400, 'Tiền thu trước không được vượt tổng đơn.');
     if (c.total === 0 && mode === 'cod') throw new AppError(400, 'Đơn COD phải có số tiền cần thu.');
@@ -384,8 +402,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       if (l.qty > available + 1e-9)
         throw new AppError(409, `${l.name}: chỉ còn khả dụng ${Math.max(0, available)}.`, 'POS_STOCK_SHORT');
     }
-    const tendered = mode === 'cod' ? depositAmount : method === 'cash' ? posMoney(b.tendered, 'Tiền khách đưa') : c.payable;
-    if (mode === 'counter' && tendered < c.payable) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
+    const tendered = flow ? receivedInitial : mode === 'cod' ? depositAmount : method === 'cash' ? posMoney(b.tendered, 'Tiền khách đưa') : c.payable;
+    if (!flow && mode === 'counter' && tendered < c.payable) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
     const now = posNow(),
       date = vietnamDate().iso;
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-number:' + date}))`);
@@ -409,10 +427,11 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       tax: c.tax,
       discount: c.discount,
       total: c.total,
-      method: mode === 'cod' ? 'cod' : method,
+      method: flow || (mode === 'cod' ? 'cod' : method),
+      ...(flow ? { saleFlow: flow, initialAmount, receivedAmount: receivedInitial, remaining: c.total - receivedInitial, paymentMethod: method, pendingTransfer: method === 'transfer' && !receivedInitial, holdUntil: flowHoldUntil(now, flow === 'prepaid' && receivedInitial === c.total) } : {}),
       ...(depositAmount ? { depositAmount, depositMethod: method, codAmount: c.total - depositAmount, codDeliveryId: '' } : {}),
       tendered,
-      change: mode === 'counter' ? tendered - c.payable : 0,
+      change: !flow && mode === 'counter' ? tendered - c.payable : 0,
       ...(c.exchange.amount ? { exchangeCredit: c.exchange.amount, payable: c.payable } : {}),
       createdAt: now,
       memberName: m.name,
@@ -440,8 +459,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       ownerId: m.id,
       createdBy: m.id,
       orderDate: date,
-      status: mode === 'cod' ? 'confirmed' : 'delivered',
-      holdsStock: mode === 'cod',
+      status: flow || mode === 'cod' ? 'confirmed' : 'delivered',
+      holdsStock: flow ? false : mode === 'cod',
       subtotal: c.subtotal,
       tax: c.tax,
       total: c.total,
@@ -464,7 +483,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
         discountAmount: l.discountAmount,
         taxRate: l.taxRate,
         amount: l.subtotal,
-        deliveredQty: mode === 'counter' ? l.qty : 0,
+        deliveredQty: !flow && mode === 'counter' ? l.qty : 0,
       })),
     );
     const scheduleId = crypto.randomUUID();
@@ -473,11 +492,21 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       orderId: id,
       kind: 'balance',
       amount: c.total,
-      dueDate: mode === 'counter' ? date : null,
-      note: mode === 'cod' ? 'Ship COD' : 'POS',
+      dueDate: !flow && mode === 'counter' ? date : null,
+      note: flow === 'deposit' ? 'Đặt cọc - nhận sau' : flow === 'prepaid' ? 'Ship trả trước 100%' : mode === 'cod' ? 'Ship COD' : 'POS',
       createdAt: now,
     });
-    if (mode === 'counter') {
+    if (flow) {
+      const orderLines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, id));
+      await tx.insert(posOrderReservations).values(orderLines.map(line => ({ id: crypto.randomUUID(), orderId: id, orderLineId: line.id, warehouseId: c.register.warehouseId, qty: line.qty, status: 'active', expiresAt: flowHoldUntil(now, flow === 'prepaid' && receivedInitial === c.total), createdBy: m.id, createdAt: now, updatedAt: now })));
+      if (receivedInitial > 0) await tx.insert(customerPayments).values({ id: crypto.randomUUID(), orderId: id, scheduleId, customerId: c.customer?.id, shiftId: s.id, amount: receivedInitial, method: method!, requestKey: key, paymentSource: flow === 'deposit' ? 'pos_deposit' : 'pos_prepaid', note: flow === 'deposit' ? 'Đặt cọc nhận sau' : 'Ship trả trước', paidAt: date, createdBy: m.id, createdAt: now });
+      else await tx.insert(posPaymentIntents).values({ id: crypto.randomUUID(), orderId: id, requestedShiftId: s.id, kind: flow === 'deposit' ? 'deposit' : 'prepaid', method: 'transfer', amount: initialAmount, requestKey: key, requestHash, status: 'pending', createdBy: m.id, createdAt: now });
+      if (flow === 'prepaid') {
+        const ship = b.delivery && typeof b.delivery === 'object' ? b.delivery as Record<string, unknown> : {};
+        if (!posText(ship.address)) throw new AppError(400, 'Nhập địa chỉ ship trả trước.');
+        await createScheduledDelivery(tx, id, { ...ship, plannedDate: ship.plannedDate || date }, m.id);
+      }
+    } else if (mode === 'counter') {
       await postMoves(
         tx,
         m.id,

@@ -2,10 +2,22 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { stockBalances, stockMoves } from '../../inventory/schema.ts';
 import { postMoves, type LedgerDb } from '../../inventory/api/ledger.ts';
-import { salesOrders, salesOrderLines, packingSlips, deliveries } from '../schema.ts';
+import {
+  salesOrders,
+  salesOrderLines,
+  packingSlips,
+  deliveries,
+  deliveryLines,
+} from '../schema.ts';
 import { posShifts, posRegisters } from '../pos-schema.ts';
-/** Existing delivery transaction calls this after updating delivered_qty. Packing already issued the goods => zero extra debit. */
-export async function issuePosDelivery(db: LedgerDb, orderId: string, deliveryId: string, actorId: string) {
+/** COD issues when delivered; prepaid shipping may issue at dispatch. Existing packing/dispatch debits are always subtracted once. */
+export async function issuePosDelivery(
+  db: LedgerDb,
+  orderId: string,
+  deliveryId: string,
+  actorId: string,
+  dispatch = false,
+) {
   const [row] = await db
     .select({ o: salesOrders, warehouseId: posRegisters.warehouseId })
     .from(salesOrders)
@@ -13,16 +25,27 @@ export async function issuePosDelivery(db: LedgerDb, orderId: string, deliveryId
     .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
     .where(and(eq(salesOrders.id, orderId), eq(salesOrders.channel, 'pos')));
   if (!row) return;
-  const lines = await db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
+  const lines = await db
+    .select()
+    .from(salesOrderLines)
+    .where(eq(salesOrderLines.orderId, orderId));
   const skus = [...new Set(lines.map((l) => l.sku))].sort();
   const balances = await db
     .select()
     .from(stockBalances)
-    .where(and(eq(stockBalances.warehouseId, row.warehouseId), inArray(stockBalances.sku, skus)))
+    .where(
+      and(
+        eq(stockBalances.warehouseId, row.warehouseId),
+        inArray(stockBalances.sku, skus),
+      ),
+    )
     .orderBy(asc(stockBalances.sku))
     .for('update');
   const issued = await db
-    .select({ sku: stockMoves.sku, qty: sql<number>`-sum(${stockMoves.qty})`.mapWith(Number) })
+    .select({
+      sku: stockMoves.sku,
+      qty: sql<number>`-sum(${stockMoves.qty})`.mapWith(Number),
+    })
     .from(stockMoves)
     .where(
       and(
@@ -31,9 +54,33 @@ export async function issuePosDelivery(db: LedgerDb, orderId: string, deliveryId
       ),
     )
     .groupBy(stockMoves.sku);
+  const dispatched = dispatch
+    ? await db
+        .select({
+          sku: salesOrderLines.sku,
+          qty: sql<number>`sum(${deliveryLines.qty})`.mapWith(Number),
+        })
+        .from(deliveryLines)
+        .innerJoin(deliveries, eq(deliveries.id, deliveryLines.deliveryId))
+        .innerJoin(
+          salesOrderLines,
+          eq(salesOrderLines.id, deliveryLines.orderLineId),
+        )
+        .where(
+          and(
+            eq(deliveries.orderId, orderId),
+            sql`(${deliveries.status} in ('in_transit','delivered') or exists(select 1 from ${stockMoves} where ${stockMoves.refType}='pos_delivery' and ${stockMoves.refId}=${deliveries.id}))`,
+          ),
+        )
+        .groupBy(salesOrderLines.sku)
+    : [];
   const moves = skus.flatMap((sku) => {
     const need =
-      lines.filter((l) => l.sku === sku).reduce((n, l) => n + l.deliveredQty, 0) -
+      (dispatch
+        ? dispatched.find((l) => l.sku === sku)?.qty || 0
+        : lines
+            .filter((l) => l.sku === sku)
+            .reduce((n, l) => n + l.deliveredQty, 0)) -
       (issued.find((x) => x.sku === sku)?.qty ?? 0);
     if (need <= 1e-9) return [];
     if ((balances.find((x) => x.sku === sku)?.qty ?? 0) < need)
