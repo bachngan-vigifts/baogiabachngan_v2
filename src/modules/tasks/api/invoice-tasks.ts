@@ -1,10 +1,12 @@
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
-import type { StaffEnv } from '../../staff/api/auth-routes.ts';
+import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
+import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
-import { customerPayments, orderProgressMarks, salesContracts, salesOrders } from '../../sales/schema.ts';
+import { customerPayments, orderProgressMarks, paymentSchedules, salesContracts, salesOrders } from '../../sales/schema.ts';
 import { webStoreOrders } from '../../sales/pos-schema.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
-import { vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { openPurchases } from '../../suppliers/api/purchase-store.ts';
 import { addDaysIso } from '../domain/task-config.ts';
 import type { AutoTask } from './auto-tasks.ts';
 
@@ -54,3 +56,56 @@ export async function invoiceTasks(db: StaffEnv['db'], ref?: InvoiceTaskRef): Pr
   }
   return out;
 }
+
+type Db = StaffEnv['db'];
+type Member = SessionState['member'];
+type TaskLike = { id: string; autoKey: string | null; sourceId: string | null; link: string; dueDate: string | null };
+export type AccountingKind = 'invoice' | 'payable' | 'receivable' | 'web';
+export interface AccountingTaskInfo {
+  kind: AccountingKind; typeLabel: string; amount: number; subline: string; actionLabel: string;
+  noLink: boolean; detail: Record<string, string | number | boolean | null>;
+}
+
+export const isAccountingMember = (m: Member) => m.role === 'manager' || m.positionId === 'accounting' || can(m as PermissionMember, 'purchases.pay');
+export const accountingPrefix = (key: string | null) => key?.startsWith('invoice-web:') ? 'web' : key?.startsWith('invoice:') ? 'invoice'
+  : key?.startsWith('po-pay:') ? 'payable' : key?.startsWith('debt-overdue-acc:') ? 'receivable' : null;
+
+export async function accountingTaskInfo(db: Db, _member: Member, rows: TaskLike[], today: string) {
+  const out = new Map<string, AccountingTaskInfo>();
+  const ids = (kind: AccountingKind) => [...new Set(rows.filter(t => accountingPrefix(t.autoKey) === kind).map(t => t.sourceId).filter((x): x is string => !!x))];
+  const orderIds = [...new Set([...ids('invoice'), ...ids('receivable')])];
+  const [orders, contracts, schedules, payments, purchases, web] = await Promise.all([
+    orderIds.length ? db.select().from(salesOrders).where(inArray(salesOrders.id, orderIds)) : [],
+    orderIds.length ? db.select({ orderId: salesContracts.orderId, no: salesContracts.contractNo, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, orderIds)) : [],
+    ids('receivable').length ? db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, ids('receivable'))) : [],
+    ids('receivable').length ? db.select().from(customerPayments).where(and(inArray(customerPayments.orderId, ids('receivable')), isNull(customerPayments.voidedAt))) : [],
+    ids('payable').length ? openPurchases(db, today) : [],
+    ids('web').length ? db.select().from(webStoreOrders).where(inArray(webStoreOrders.id, ids('web'))) : [],
+  ]);
+  for (const t of rows) {
+    const kind = accountingPrefix(t.autoKey); if (!kind || !t.sourceId) continue;
+    if (kind === 'invoice') {
+      const o = orders.find(x => x.id === t.sourceId); if (!o) continue;
+      const contractNo = contracts.find(x => x.orderId === o.id)?.no ?? '';
+      out.set(t.id, { kind, typeLabel: 'Xuất HĐ', amount: o.total, subline: `${o.invoiceMode === 'draft' ? 'Gửi bản nháp' : 'Phát hành chính thức'}${o.taxCode ? ' · MST ' + o.taxCode : ''}`,
+        actionLabel: contractNo ? 'Mở HĐKT' : 'Mở đơn', noLink: !t.link, detail: { value: o.total, taxCode: o.taxCode, invoiceMode: o.invoiceMode, contractNo, orderNo: o.orderNo, active: o.invoiceStatus === 'requested' } });
+    } else if (kind === 'payable') {
+      const p = purchases.find(x => x.id === t.sourceId); if (!p) continue;
+      out.set(t.id, { kind, typeLabel: 'Trả NCC', amount: p.nextDueAmount ?? 0, subline: `Kỳ ${fmtMoney(p.nextDueAmount ?? 0)} hạn ${fmtDate(p.nextDueDate)} · còn nợ ${fmtMoney(p.balance ?? 0)}`,
+        actionLabel: 'Mở đơn mua NCC', noLink: !t.link, detail: { total: p.total ?? 0, paid: Math.max(0, (p.total ?? 0) - (p.balance ?? 0)), dueAmount: p.nextDueAmount ?? 0, dueDate: p.nextDueDate, balance: p.balance ?? 0, ticketNumber: p.ticketNumber, supplierName: p.supplierName, active: (p.balance ?? 0) > 0 } });
+    } else if (kind === 'receivable') {
+      const o = orders.find(x => x.id === t.sourceId), k = contracts.find(x => x.orderId === t.sourceId); if (!o || !debtCounts(o.status, k?.status)) continue;
+      const r = receivable(schedules.filter(x => x.orderId === o.id), payments.filter(x => x.orderId === o.id), today);
+      out.set(t.id, { kind, typeLabel: 'Thu nợ', amount: r.overdue, subline: `Quá hạn ${fmtMoney(r.overdue)} · còn phải thu ${fmtMoney(r.balance)}`,
+        actionLabel: k?.no ? 'Mở HĐKT' : 'Mở đơn', noLink: !t.link, detail: { overdue: r.overdue, balance: r.balance, contractNo: k?.no ?? '', orderNo: o.orderNo, active: r.overdue > 0 } });
+    } else {
+      const o = web.find(x => x.id === t.sourceId);
+      out.set(t.id, { kind, typeLabel: 'Đơn web', amount: o?.total ?? 0, subline: `Đơn web${o?.ghnOrderCode ? ' · GHN ' + o.ghnOrderCode : ''}`,
+        actionLabel: t.link ? 'Mở đơn' : 'Không có link đơn', noLink: !t.link, detail: { value: o?.total ?? 0, orderNo: o?.orderNo ?? t.sourceId, ghnOrderCode: o?.ghnOrderCode ?? '', manualCompletion: true } });
+    }
+  }
+  return out;
+}
+
+const fmtMoney = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
+const fmtDate = (v: string | null) => v ? v.split('-').reverse().join('/') : '—';

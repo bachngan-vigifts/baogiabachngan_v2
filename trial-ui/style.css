@@ -1078,6 +1078,21 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .pill.src.packing { background: #fff4e0; color: #9a5b00; }
 .team-tag { display: inline-block; background: #fff4e0; color: #9a5b00; border-radius: 6px; padding: 0 6px; font-size: .86em; }
 .claim-btn { margin-top: 4px; padding: 3px 9px; }
+.task-source-warning { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 0 0 12px; padding: 11px 14px; border: 1px solid #ead59b; border-radius: 10px; background: #fff9df; color: #72520a; font-size: .86rem; }
+.task-source-warning a { color: #276b55; font-weight: 700; white-space: nowrap; }
+.task-kind-filter { width: 100%; justify-content: flex-end; }
+.task-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.accounting-task-dialog.modal { width: min(520px, 100vw); max-width: 520px; height: 100dvh; max-height: 100dvh; margin: 0 0 0 auto; border-radius: 0; }
+.accounting-task-dialog .task-form { min-height: 100%; display: flex; flex-direction: column; }
+.accounting-task-dialog .modal-body { flex: 1; }
+.accounting-money { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
+.accounting-money h3 { margin: 0; padding: 12px; background: var(--surface-2); font-size: .78rem; text-transform: uppercase; color: var(--muted); }
+.accounting-money > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.accounting-money > div.total { background: #fff0ec; color: #9b2c20; }
+.accounting-money > small { display: block; padding: 9px 12px; color: var(--muted); border-top: 1px solid var(--line); }
+.task-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 8px; }
+.task-auto-note { margin: 18px 0 0; padding: 10px 12px; background: #fff9df; color: #72520a; border-radius: 8px; font-size: .82rem; }
+@media (max-width: 680px) { .task-kind-filter { justify-content: flex-start; } .task-source-warning { align-items: flex-start; flex-direction: column; } .accounting-task-dialog.modal { width: 100vw; } }
 .pack-slot:empty { display: none; } .pack-slot .pill { text-decoration: none; }
 /* ---------- Tin nhắn (chat.js) ---------- */
 /* Nút chat nổi + khung chat nổi góc dưới phải */

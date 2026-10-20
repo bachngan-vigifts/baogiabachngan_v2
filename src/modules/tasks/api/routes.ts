@@ -18,6 +18,7 @@ import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { markProgress } from '../../sales/api/progress.ts';
 import { orderScopeFor } from '../../sales/api/routes.ts';
+import { accountingPrefix, accountingTaskInfo, isAccountingMember } from './invoice-tasks.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Task = typeof tasks.$inferSelect;
@@ -86,7 +87,7 @@ const involved = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'mana
 const PRIVATE_DESC_SOURCES = new Set<string>(['care', 'receivable', 'invoice']);
 /** Bản gửi cho người xem: việc chỉ xem của đồng nghiệp bị ẩn mô tả nhạy cảm. */
 /** Việc tự hoàn thành theo chứng từ (nhận hàng NCC, các việc duyệt): không đánh dấu xong / huỷ tay – làm trên chứng từ thì việc tự đóng. */
-const SOURCE_MANAGED = ['po-receive:', 'quote-approve:', 'quote-customer:', 'order-confirm:', 'po-approve:', 'invoice:'];
+const SOURCE_MANAGED = ['po-receive:', 'quote-approve:', 'quote-customer:', 'order-confirm:', 'po-approve:', 'invoice:', 'po-pay:', 'debt-overdue-acc:'];
 const completionFromSource = (t: Task) => !!t.autoKey && SOURCE_MANAGED.some(k => t.autoKey!.startsWith(k));
 const forViewer = (c: Ctx, t: Task) => ({ ...t, completionFromSource: completionFromSource(t),
   ...(!involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { description: '' } : {}) });
@@ -125,6 +126,7 @@ async function loadTask(c: Ctx, id: string) {
   const [t] = await c.env.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
   if (!t) throw new AppError(404, 'Không tìm thấy công việc.');
   if (canSee(c, t)) return t;
+  if (isAccountingMember(me(c)) && accountingPrefix(t.autoKey)) return t;
   const pos = peerPos(c);
   if (pos && (await c.env.db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.id, t.id), peerCond(pos))).limit(1)).length) return t;
   throw new AppError(404, 'Không tìm thấy công việc.');
@@ -154,6 +156,8 @@ const statusPatch = (status: TaskStatus, by: string, t?: Task) => ({
   status, ...(status === 'in_progress' && !t?.startedAt ? { startedAt: nowIso() } : {}),
   ...(status === 'done' ? { completedAt: nowIso(), completedBy: by } : { completedAt: null, completedBy: null }),
 });
+const accountingTaskSql = () => or(sql`${tasks.autoKey} like 'invoice:%'`, sql`${tasks.autoKey} like 'invoice-web:%'`, sql`${tasks.autoKey} like 'po-pay:%'`, sql`${tasks.autoKey} like 'debt-overdue-acc:%'`)!;
+const vnDay = (iso: string | null) => iso ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(iso)) : '';
 
 export function registerTaskRoutes(router: Router<StaffEnv>) {
   /** Người nhận việc chọn được: nhân viên + Manager đang hoạt động. */
@@ -185,14 +189,20 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     await syncAuto(c);
     const m = me(c), p = c.url.searchParams, view = p.get('view') || 'mine', status = p.get('status') || 'open', q = str(p.get('q'), 100).toLowerCase();
     const due = p.get('due') || '', today = vietnamDate().iso;
+    const accountingView = view.startsWith('accounting-');
+    if (accountingView && !isAccountingMember(m)) throw new AppError(403, 'Bạn không thuộc nhóm Kế toán.');
     if (due && !['overdue', 'today', 'upcoming', 'none'].includes(due)) throw new AppError(400, 'Bộ lọc hạn công việc không hợp lệ.');
-    const where: (SQL | undefined)[] = [visible(c)];
+    const where: (SQL | undefined)[] = [accountingView ? accountingTaskSql() : visible(c)];
     if (due === 'overdue') where.push(sql`${tasks.dueDate} <> '' and ${tasks.dueDate} < ${today}`);
     else if (due === 'today') where.push(eq(tasks.dueDate, today));
     else if (due === 'upcoming') where.push(sql`${tasks.dueDate} > ${today}`);
     else if (due === 'none') where.push(or(isNull(tasks.dueDate), eq(tasks.dueDate, '')));
     const teams = myTeams(c);
-    if (view === 'mine') where.push(or(eq(tasks.assigneeId, m.id), teamOpenSql(teams)));
+    if (view === 'accounting-team') where.push(inArray(tasks.status, [...OPEN_STATUSES]));
+    else if (view === 'accounting-mine') where.push(and(inArray(tasks.status, [...OPEN_STATUSES]), eq(tasks.assigneeId, m.id)));
+    else if (view === 'accounting-colleagues') where.push(and(inArray(tasks.status, [...OPEN_STATUSES]), sql`${tasks.assigneeId} is not null`, sql`${tasks.assigneeId} <> ${m.id}`));
+    else if (view === 'accounting-done-today') where.push(eq(tasks.status, 'done'));
+    else if (view === 'mine') where.push(or(eq(tasks.assigneeId, m.id), teamOpenSql(teams)));
     else if (view === 'created') where.push(eq(tasks.createdBy, m.id));
     else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`, m.role === 'manager' ? undefined : teams.length ? inArray(tasks.assigneePosition, teams) : sql`false`));
     else if (view === 'unassigned') where.push(and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)));
@@ -205,6 +215,12 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const priority = p.get('priority'), source = p.get('source');
     if (priority && TASK_PRIORITIES.includes(priority as TaskPriority)) where.push(eq(tasks.priority, priority as TaskPriority));
     if (source && (TASK_SOURCES as readonly string[]).includes(source)) where.push(eq(tasks.source, source as Task['source']));
+    const kind = p.get('kind');
+    if (kind) {
+      const prefixes: Record<string, string[]> = { invoice: ['invoice:', 'invoice-web:'], payable: ['po-pay:'], receivable: ['debt-overdue-acc:'], web: ['invoice-web:'] };
+      if (!prefixes[kind]) throw new AppError(400, 'Loại việc kế toán không hợp lệ.');
+      where.push(or(...prefixes[kind].map(x => sql`${tasks.autoKey} like ${x + '%'}`)));
+    }
     if (q) { // tìm theo tiêu đề; mô tả chỉ tìm trong việc mình liên quan (không dò được mô tả đã ẩn của đồng nghiệp)
       const pat = '%' + q.replace(/[%_\\]/g, '') + '%', inv = involvedSql(c);
       where.push(or(sql`lower(${tasks.title}) like ${pat}`, and(sql`lower(${tasks.description}) like ${pat}`, inv)));
@@ -217,7 +233,24 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       .where(rows.length ? inArray(taskComments.taskId, rows.map(r => r.id)) : sql`false`).groupBy(taskComments.taskId);
     // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
-    return json({ today, canViewColleagues: !!peerPos(c), tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    const info = isAccountingMember(m) ? await accountingTaskInfo(c.env.db, m, sorted, today) : new Map();
+    let accounting = null;
+    if (isAccountingMember(m)) {
+      const all = await c.env.db.select().from(tasks).where(accountingTaskSql()).limit(1000), allInfo = await accountingTaskInfo(c.env.db, m, all, today);
+      const open = all.filter(t => OPEN_STATUSES.includes(t.status as never)), active = open.map(t => ({ t, i: allInfo.get(t.id) })).filter(x => x.i);
+      const doneToday = all.filter(t => t.status === 'done' && vnDay(t.completedAt) === today).length;
+      const warnings = all.filter(t => (t.status === 'done' || t.status === 'cancelled') && !!t.completedBy).map(t => ({ t, i: allInfo.get(t.id) }))
+        .filter(x => x.i && x.i.kind !== 'web' && x.i.detail.active !== false && (x.i.kind !== 'receivable' || x.i.amount > 0))
+        .map(({ t, i }) => ({ taskId: t.id, title: t.title, amount: i!.kind === 'payable' ? Number(i!.detail.balance) : i!.amount, link: t.link }));
+      const countKind = (ks: string[]) => active.filter(x => ks.includes(x.i!.kind)).length;
+      accounting = { kpis: { invoice: { count: countKind(['invoice', 'web']), overdue: active.filter(x => ['invoice', 'web'].includes(x.i!.kind) && x.t.dueDate && x.t.dueDate < today).length },
+        payable: { count: countKind(['payable']), amount: active.filter(x => x.i!.kind === 'payable').reduce((s, x) => s + x.i!.amount, 0), overdue: active.filter(x => x.i!.kind === 'payable' && x.t.dueDate && x.t.dueDate < today).length },
+        receivable: { count: countKind(['receivable']), amount: active.filter(x => x.i!.kind === 'receivable').reduce((s, x) => s + x.i!.amount, 0) },
+        unclaimed: open.filter(t => !t.assigneeId).length }, warnings,
+        tabs: { team: open.length, mine: open.filter(t => t.assigneeId === m.id).length, colleagues: open.filter(t => t.assigneeId && t.assigneeId !== m.id).length, doneToday },
+        types: { all: open.length, invoice: countKind(['invoice']), payable: countKind(['payable']), receivable: countKind(['receivable']), web: countKind(['web']) } };
+    }
+    return json({ today, canViewColleagues: !!peerPos(c), accounting, tasks: sorted.filter(t => view !== 'accounting-done-today' || vnDay(t.completedAt) === today).map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, accounting: info.get(t.id) ?? null, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), comments: Number(counts.find(x => x.taskId === t.id)?.n ?? 0), due: dueBucket(t.dueDate, today),
       canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) })) });
   }, 'business');
@@ -266,8 +299,12 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     if (b.status !== undefined) {
       if (completionFromSource(t) && (b.status === 'done' || b.status === 'cancelled' ||
         ((t.status === 'done' || t.status === 'cancelled') && b.status !== t.status))) {
-        throw new AppError(409, t.autoKey?.startsWith('invoice:') ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : t.autoKey?.startsWith('po-receive:') ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
-          : 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt, không đánh dấu hoàn thành thủ công.', 'TASK_SOURCE_MANAGED');
+        const message = t.autoKey?.startsWith('invoice:') ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.'
+          : t.autoKey?.startsWith('po-receive:') ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
+          : t.autoKey?.startsWith('po-pay:') ? 'Việc trả NCC tự hoàn thành theo khoản trả trên đơn mua. Vui lòng ghi khoản trả kèm chứng từ, không đánh dấu hoàn thành thủ công.'
+          : t.autoKey?.startsWith('debt-overdue-acc:') ? 'Việc theo dõi nợ tự hoàn thành theo công nợ của đơn. Vui lòng ghi nhận khoản thu trên chứng từ, không đánh dấu hoàn thành thủ công.'
+          : 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt, không đánh dấu hoàn thành thủ công.';
+        throw new AppError(409, message, 'TASK_SOURCE_MANAGED');
       }
       if (!TASK_STATUSES.includes(b.status as TaskStatus)) throw new AppError(400, 'Trạng thái không hợp lệ.');
       if (b.status === 'cancelled' && !manage) throw new AppError(403, 'Chỉ người giao việc hoặc Manager huỷ được việc.');
@@ -338,7 +375,8 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const ids = [t.assigneeId, t.createdBy, t.completedBy].filter(Boolean) as string[];
     const people = ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
     const name = (id: string | null) => id ? people.find(x => x.id === id)?.name ?? '' : '';
-    return json({ task: { ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (me(c).role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    const info = isAccountingMember(me(c)) ? (await accountingTaskInfo(c.env.db, me(c), [t], vietnamDate().iso)).get(t.id) ?? null : null;
+    return json({ task: { ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, accounting: info, history: [], assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (me(c).role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), due: dueBucket(t.dueDate, vietnamDate().iso), canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) } });
   }, 'business');
 
@@ -369,4 +407,3 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     return json({ id }, 201);
   }, 'business');
 }
-

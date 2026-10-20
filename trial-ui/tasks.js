@@ -34,7 +34,7 @@ function dueText(t) {
  */
 export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '' }) {
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
-  const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', due: '', approvals: null };
+  const st = { view: 'mine', status: 'open', priority: '', source: '', search: '', people: null, list: [], tab: 'tasks', kind: '', taskKind: '', due: '', approvals: null, accounting: false };
   let searchTimer, loadSequence = 0;
 
   async function people() {
@@ -65,6 +65,34 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     if (canApprove()) cards.push(['approvals', 'Cần duyệt', ap, 'chờ duyệt', ap ? 'warn' : '']);
     const active = st.tab === 'approvals' ? 'approvals' : st.status === 'open' && !st.priority && !st.source && !st.search ? st.due || st.view : '';
     q('#tasks-stats').innerHTML = cards.map(([k, label, n, sub, tone]) => `<button type="button" class="stat task-stat ${tone}" data-stat="${k}" aria-pressed="${k === active}"><small>${label}</small><strong>${n}</strong><span class="muted">${sub}</span></button>`).join('');
+  }
+
+  function renderAccountingHead(a) {
+    const k = a.kpis, cards = [
+      ['Xuất hoá đơn chờ', k.invoice.count, `${k.invoice.overdue} quá hạn`, 'warn'],
+      ['Trả NCC trong 3 ngày', k.payable.count, `Kỳ tổng ${money(k.payable.amount)} · ${k.payable.overdue} quá hạn`, 'danger'],
+      ['Nợ quá hạn đang theo dõi', `${k.receivable.count} đơn`, `${money(k.receivable.amount)} đã quá hạn`, 'info'],
+      ['Việc nhóm chưa ai nhận', k.unclaimed, 'Bấm “Nhận việc” để làm', 'ok'],
+    ];
+    q('#tasks-stats').innerHTML = cards.map(([label, n, sub, tone]) => `<div class="stat task-stat ${tone}"><small>${esc(label)}</small><strong>${esc(n)}</strong><span class="muted">${esc(sub)}</span></div>`).join('');
+    const tabs = [['accounting-team', 'Nhóm Kế toán', a.tabs.team], ['accounting-mine', 'Của tôi', a.tabs.mine], ['accounting-colleagues', 'Đồng nghiệp', a.tabs.colleagues], ['accounting-done-today', 'Đã đóng hôm nay', a.tabs.doneToday]];
+    q('#tasks-view').innerHTML = tabs.map(([v, label, n]) => `<button type="button" class="chip" data-v="${v}" aria-pressed="${st.view === v}">${esc(label)} · ${n}</button>`).join('');
+    q('#tasks-view [data-v="accounting-colleagues"]').hidden = !st.canViewColleagues;
+    const kinds = [['', 'Tất cả', a.types.all], ['invoice', 'Xuất HĐ', a.types.invoice], ['payable', 'Trả NCC', a.types.payable], ['receivable', 'Thu nợ', a.types.receivable], ['web', 'Đơn web GHN', a.types.web]];
+    const box = q('#tasks-kind'); box.hidden = false; box.innerHTML = kinds.map(([v, label, n]) => `<button type="button" class="chip" data-kind="${v}" aria-pressed="${st.taskKind === v}">${esc(label)} · ${n}</button>`).join('');
+    q('#tasks-status').hidden = true; q('#tasks-due').hidden = true; q('#tasks-priority').hidden = true; q('#tasks-source').hidden = true;
+    const warning = q('#tasks-source-warning'); warning.hidden = !a.warnings.length;
+    warning.innerHTML = a.warnings.map(w => `<span>⚠ 1 việc đã đóng tay nhưng chứng từ vẫn còn tồn: <b>${esc(w.title)}</b> còn ${money(w.amount)}.</span>${w.link ? `<a href="${esc(w.link)}">Xem đơn</a>` : ''}`).join('');
+    q('.task-table thead').innerHTML = '<tr><th>Việc</th><th>Loại</th><th class="right">Số tiền</th><th>Hạn</th><th>Phụ trách</th><th>Hành động</th></tr>';
+  }
+
+  function accountingRow(t) {
+    const i = t.accounting || {}, action = t.canClaim ? '<button type="button" class="btn secondary small" data-claim>Nhận việc</button>'
+      : t.link ? `<a class="btn ghost small" href="${esc(t.link)}" data-open-link>${esc(i.actionLabel || 'Mở chứng từ')}</a>`
+      : `<span class="pill off">${esc(i.actionLabel || 'Không có link đơn')}</span>`;
+    return `<tr class="task-row prio-${t.priority}" data-task="${esc(t.id)}"><td class="task-main"><div class="task-title">${esc(t.title)}</div><div class="task-meta">${esc(i.subline || t.description || '')} ${pill(TASK_UI.priority, t.priority, 'prio')}<span class="pill off">Tự động</span></div></td>
+      <td data-label="Loại"><b>${esc(i.typeLabel || TASK_UI.source[t.source]?.[0] || '')}</b></td><td data-label="Số tiền" class="right num">${money(i.amount || 0)}</td><td data-label="Hạn">${dueText(t)}</td>
+      <td data-label="Phụ trách" class="task-people"><b>${who(t)}</b><small class="muted">${t.assigneeName ? (t.status === 'in_progress' ? 'đang làm' : 'chưa nhận') : 'chưa ai nhận'}</small></td><td class="task-go">${action}</td></tr>`;
   }
 
   function row(t) {
@@ -117,14 +145,15 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     if (!st.list.length) list.innerHTML = '<tr><td colspan="7" class="muted">Đang tải…</td></tr>';
     await people();
     if (request !== loadSequence) return;
-    q('#tasks-view [data-v="unassigned"]').hidden = !isManager();
+    const unassignedChip = q('#tasks-view [data-v="unassigned"]'); if (unassignedChip) unassignedChip.hidden = !isManager();
     // Quyền đồng nghiệp do server cấp theo nhóm/chức vụ hiện có.
     const peers = !isManager() && st.canViewColleagues === true;
-    q('#tasks-view [data-v="colleagues"]').hidden = !peers;
+    const peerChip = q('#tasks-view [data-v="colleagues"]'); if (peerChip) peerChip.hidden = !peers;
     if (st.view === 'colleagues' && !peers) st.view = 'mine';
-    q('#tasks-view [data-v="all"]').textContent = isManager() ? 'Tất cả' : 'Tất cả được xem';
+    const allChip = q('#tasks-view [data-v="all"]'); if (allChip) allChip.textContent = isManager() ? 'Tất cả' : 'Tất cả được xem';
     if (st.view === 'unassigned' && !isManager()) st.view = 'mine';
     const params = new URLSearchParams({ view: st.view, status: st.status });
+    if (st.accounting && st.taskKind) params.set('kind', st.taskKind);
     if (st.due) params.set('due', st.due);
     if (st.priority) params.set('priority', st.priority); if (st.source) params.set('source', st.source); if (st.search) params.set('q', st.search);
     try {
@@ -132,11 +161,12 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
       if (request !== loadSequence) return;
       showTab(st.tab);
       st.canViewColleagues = d.canViewColleagues === true;
-      q('#tasks-view [data-v="colleagues"]').hidden = !st.canViewColleagues;
-      st.list = d.tasks; if (s) renderStats(s);
+      if (d.accounting && !st.accounting) { st.accounting = true; st.view = 'accounting-team'; st.status = 'open'; return load(focusId); }
+      const colleaguesChip = q('#tasks-view [data-v="colleagues"]'); if (colleaguesChip) colleaguesChip.hidden = !st.canViewColleagues;
+      st.list = d.tasks; if (d.accounting) renderAccountingHead(d.accounting); else if (s) renderStats(s);
       if (!q('#tasks-quick-assignee').options.length) q('#tasks-quick-assignee').innerHTML = personOptions(userId(), isManager());
       const groups = st.status === 'open' ? TASK_UI.groups.map(([k, label]) => [label, d.tasks.filter(t => t.due === k), k]).filter(([, items]) => items.length) : [['', d.tasks, '']];
-      list.innerHTML = groups.map(([label, items, k]) => (label ? `<tr class="task-group g-${k}"><th colspan="7">${label} <span>${items.length}</span></th></tr>` : '') + items.map(row).join('')).join('');
+      list.innerHTML = groups.map(([label, items, k]) => (label ? `<tr class="task-group g-${k}"><th colspan="${st.accounting ? 6 : 7}">${label} <span>${items.length}</span></th></tr>` : '') + items.map(st.accounting ? accountingRow : row).join('')).join('');
       q('#tasks-empty').hidden = d.tasks.length > 0;
       q('#tasks-empty-text').textContent = st.due ? 'Không có công việc phù hợp với hạn đã chọn.' : st.status === 'open' ? 'Không có việc nào đang mở. Thêm việc mới ở ô phía trên.' : 'Chưa có việc nào.';
       if (focusId) openDetail(focusId);
@@ -153,6 +183,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     let t;
     try { t = (await api('/tasks/' + encodeURIComponent(id))).task; } catch (e) { toast(e.message, 'err'); return; }
     await people();
+    if (t.accounting) return openAccountingDetail(t);
     const me = userId(), ro = !!t.viewOnly, canEdit = t.canManage && !ro, isAssignee = !ro && (t.assigneeId === me || t.canClaim), edit = canEdit || isAssignee, text = canEdit && !t.auto;
     const dlg = document.createElement('dialog'); dlg.className = 'modal task-dialog';
     dlg.innerHTML = `<form class="task-form">
@@ -213,6 +244,25 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     dlg.addEventListener('close', () => { if (location.hash.startsWith('#/tasks/')) history.replaceState(null, '', '#/tasks'); });
   }
 
+  function openAccountingDetail(t) {
+    const i = t.accounting, d = i.detail || {}, me = userId(), ro = !!t.viewOnly;
+    const labels = i.kind === 'payable' ? [['Tổng đơn mua', d.total], ['Đã trả', d.paid], [`Kỳ đến hạn ${d.dueDate ? dmy(d.dueDate) : ''}`, d.dueAmount], ['Còn nợ sau kỳ này', d.balance]]
+      : i.kind === 'receivable' ? [['Quá hạn', d.overdue], ['Còn phải thu', d.balance]] : [['Giá trị', d.value], ...(d.taxCode ? [['Mã số thuế', d.taxCode]] : []), ['Hình thức', d.invoiceMode === 'draft' ? 'Bản nháp' : 'Phát hành chính thức']];
+    const dlg = document.createElement('dialog'); dlg.className = 'modal task-dialog accounting-task-dialog';
+    dlg.innerHTML = `<form class="task-form"><div class="modal-head"><div><span class="eyebrow">${esc(i.typeLabel)} · ${t.auto ? 'Tự động' : ''}</span><h2>${esc(t.title)}</h2><div class="task-meta">${pill(TASK_UI.priority, t.priority, 'prio')} · ${who(t)}</div></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+      <div class="modal-body"><section class="accounting-money"><h3>Số tiền</h3>${labels.map(([l, v], n) => `<div class="${n === labels.length - 1 ? 'total' : ''}"><span>${esc(l)}</span><b>${typeof v === 'number' ? money(v) : esc(v || '—')}</b></div>`).join('')}<small>Số liệu lấy trực tiếp từ chứng từ nguồn.</small></section>
+      <h3>Cần làm</h3><p class="pre">${esc(t.description || i.subline || '')}</p><div class="task-detail-actions">${t.canClaim ? '<button type="button" class="btn primary" data-claim-dlg>Nhận việc</button>' : ''}${t.link ? `<a class="btn secondary" href="${esc(t.link)}">${esc(i.actionLabel)}</a>` : `<span class="pill off">Không có link đơn${d.ghnOrderCode ? ' · ' + esc(d.ghnOrderCode) : ''}</span>`}${i.kind === 'web' ? '<button type="button" class="btn secondary" data-complete>Hoàn thành</button>' : '<button type="button" class="btn secondary" disabled>Hoàn thành (tự động)</button>'}</div>
+      <p class="muted small">${i.kind === 'web' ? 'Việc xuất hoá đơn đơn web hiện vẫn đóng bằng tay trong lúc chờ chốt nguồn trạng thái xuất HĐ.' : 'Hoàn thành tự động khi chứng từ nguồn được xử lý đầy đủ.'}</p>
+      ${!ro ? '<h3 class="task-cmt-title">Trao đổi</h3><ul class="task-comments" data-comments><li class="muted">Đang tải…</li></ul><div class="task-cmt-add"><input name="comment" placeholder="Viết trao đổi…" maxlength="2000"><button type="button" class="btn secondary small" data-send>Gửi</button></div>' : ''}
+      <p class="task-auto-note">Việc này do hệ thống tạo, không xoá được.</p></div></form>`;
+    document.body.append(dlg); dlg.showModal(); const close = () => { dlg.close(); dlg.remove(); };
+    dlg.querySelector('[data-x]').addEventListener('click', close); dlg.querySelector('[data-claim-dlg]')?.addEventListener('click', async () => { if (await update(t.id, { assigneeId: me }, 'Đã nhận việc.')) close(); });
+    dlg.querySelector('[data-complete]')?.addEventListener('click', async () => { if (await update(t.id, { status: 'done' }, 'Đã hoàn thành.')) close(); });
+    const loadComments = async () => { const ul = dlg.querySelector('[data-comments]'); if (!ul) return; try { const x = await api(`/tasks/${encodeURIComponent(t.id)}/comments`); ul.innerHTML = x.comments.length ? x.comments.map(c => `<li><b>${esc(c.name)}</b><span>${esc(c.body)}</span><small>${ago(c.createdAt)}</small></li>`).join('') : '<li class="muted">Chưa có trao đổi.</li>'; } catch (e) { ul.textContent = e.message; } };
+    dlg.querySelector('[data-send]')?.addEventListener('click', async () => { const inp = dlg.querySelector('[name=comment]'), body = inp.value.trim(); if (!body) return; await api(`/tasks/${encodeURIComponent(t.id)}/comments`, 'POST', { body }); inp.value = ''; loadComments(); });
+    loadComments();
+  }
+
   // ----- Sự kiện
   q('#tasks-quick').addEventListener('submit', async e => {
     e.preventDefault();
@@ -229,6 +279,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     st[key] = b.dataset.v; st.due = ''; q('#tasks-due').value = ''; q(sel).querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); load();
   });
   chips('#tasks-view', 'view'); chips('#tasks-status', 'status');
+  q('#tasks-kind').addEventListener('click', e => { const b = e.target.closest('[data-kind]'); if (!b) return; st.taskKind = b.dataset.kind; load(); });
   q('#tasks-due').addEventListener('change', e => { st.due = e.target.value; load(); });
   q('#tasks-priority').addEventListener('change', e => { st.priority = e.target.value; load(); });
   q('#tasks-source').addEventListener('change', e => { st.source = e.target.value; load(); });
@@ -270,4 +321,3 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
   });
   return { load, badge, refreshPeople: () => { st.people = null; } };
 }
-

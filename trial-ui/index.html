@@ -141,6 +141,7 @@
         <div><span class="eyebrow">Kinh doanh</span><h1>Báo giá</h1><p class="muted">Tạo, sửa và in báo giá gửi khách hàng.</p></div>
         <a class="btn-add" href="#/quotes/new" data-new-quote title="Tạo báo giá" aria-label="Tạo báo giá"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
       </div>
+      <div class="task-source-warning" id="tasks-source-warning" hidden></div>
       <div class="stats">
         <article class="stat"><small>Báo giá</small><strong id="stat-count">–</strong><span id="stat-count-note" class="muted">Đang hiển thị</span></article>
         <article class="stat"><small>Tổng giá trị</small><strong id="stat-value">–</strong><span id="stat-value-note" class="muted">Đã gồm VAT</span></article>
@@ -520,6 +521,7 @@
         <div class="task-filters">
           <div class="chips" id="tasks-view" role="group" aria-label="Nhóm việc"><button type="button" class="chip" data-v="mine" aria-pressed="true">Tôi nhận</button><button type="button" class="chip" data-v="created" aria-pressed="false">Tôi giao</button><button type="button" class="chip" data-v="team" aria-pressed="false">Việc nhóm</button><button type="button" class="chip" data-v="colleagues" aria-pressed="false" hidden>Cùng chức vụ</button><button type="button" class="chip" data-v="unassigned" aria-pressed="false">Chưa giao</button><button type="button" class="chip" data-v="all" aria-pressed="false">Tất cả</button></div>
           <div class="chips" id="tasks-status" role="group" aria-label="Trạng thái"><button type="button" class="chip" data-v="open" aria-pressed="true">Đang mở</button><button type="button" class="chip" data-v="done" aria-pressed="false">Đã xong</button><button type="button" class="chip" data-v="all" aria-pressed="false">Tất cả</button></div>
+          <div class="chips task-kind-filter" id="tasks-kind" role="group" aria-label="Loại việc kế toán" hidden></div>
           <select id="tasks-due" aria-label="Lọc hạn công việc"><option value="">Mọi hạn</option><option value="overdue">Quá hạn</option><option value="today">Đến hạn hôm nay</option><option value="upcoming">Sắp tới</option><option value="none">Chưa đặt hạn</option></select>
           <select id="tasks-priority" aria-label="Lọc ưu tiên"><option value="">Mọi mức ưu tiên</option><option value="urgent">Khẩn</option><option value="high">Cao</option><option value="normal">Bình thường</option><option value="low">Thấp</option></select>
           <select id="tasks-source" aria-label="Lọc nguồn"><option value="">Mọi nguồn</option><option value="manual">Giao việc</option><option value="quote">Báo giá</option><option value="stock_request">Check tồn</option><option value="order">Đơn hàng</option><option value="delivery">Giao hàng</option><option value="packing">Xuất kho / đóng hàng</option><option value="contract">HĐKT</option><option value="receivable">Công nợ</option><option value="purchase">Nhập hàng</option></select>

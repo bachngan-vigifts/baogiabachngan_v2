@@ -58,3 +58,11 @@ test('bấm nhanh các thẻ: response cũ không ghi đè kết quả mới; th
   f.click('unassigned'); await flush(); assert.match(f.calls.filter(x => x.startsWith('/tasks?')).at(-1)!, /view=unassigned/);
   f.click('approvals'); await flush(); assert.equal(f.node('#tasks-approvals').hidden, false); assert.equal(f.node('.task-board').hidden, true);
 });
+
+test('giao diện kế toán có nhãn đơn web không link, KPI và cảnh báo chứng từ còn tồn', () => {
+  assert.match(source, /Không có link đơn/);
+  assert.match(source, /Xuất hoá đơn chờ/);
+  assert.match(source, /Trả NCC trong 3 ngày/);
+  assert.match(source, /đã đóng tay nhưng chứng từ vẫn còn tồn/);
+  assert.match(source, /Hoàn thành \(tự động\)/);
+});

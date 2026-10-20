@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
@@ -14,13 +15,17 @@ async function setup() {
   // Nhân viên kho (chức vụ "warehouse" = nhóm Kho).
   await d1.sqlite.prepare("INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES ('kho','kho@x.vn','Thủ kho','0900','employee','warehouse',1,'2026-01-01T00:00:00.000Z')").run();
   await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run('kho', await hashPassword(PASSWORD, 1000));
+  for (const [id, pos] of [['kt', 'accounting'], ['sa', 'sale-admin']] as const) {
+    await d1.sqlite.prepare('INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,\'0900\',\'employee\',?,1,\'2026-01-01T00:00:00.000Z\')').run(id, `${id}@x.vn`, 'Tên ' + id, pos);
+    await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run(id, await hashPassword(PASSWORD, 1000));
+  }
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc@x.vn'), kho: await login('kho@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc@x.vn'), kho: await login('kho@x.vn'), kt: await login('kt@x.vn'), sa: await login('sa@x.vn') };
 }
 
 test('hạn công việc', () => {
@@ -226,4 +231,40 @@ test('thẻ thống kê: hạn lọc ở server trước LIMIT, đúng ngày Vi�
   const summary = (await call('/tasks/summary', emp)).data; assert.equal(summary.today, 1); assert.equal(summary.overdue, 501);
   assert.deepEqual(ids(await call('/tasks?view=team&due=today', kho)), ['warehouse-today'], 'việc nhóm đúng nhóm mình, không lấy việc mình giao cho nhóm khác');
   assert.deepEqual(ids(await call('/tasks?view=unassigned&due=today', mgr)), ['unassigned-today']);
+});
+
+test('Kế toán: việc Trả NCC và Theo dõi nợ không đóng tay; quyền tab nhóm và đơn web không link', async () => {
+  const { db, call, emp, mgr, kt, sa } = await setup(), now = new Date().toISOString();
+  await db.insert(tasks).values([
+    { id: 'pay-managed', title: 'Trả NCC kiểm thử', source: 'purchase', sourceId: 'po-x', autoKey: 'po-pay:po-x:2026-10-20', link: '#/purchases/po-x', assigneeId: 'kt', assigneePosition: null, createdBy: null, createdAt: now, updatedAt: now },
+    { id: 'debt-managed', title: 'Theo dõi nợ kiểm thử', source: 'receivable', sourceId: 'order-x', autoKey: 'debt-overdue-acc:order-x', link: '#/orders/order-x', assigneeId: 'kt', assigneePosition: null, createdBy: null, createdAt: now, updatedAt: now },
+    { id: 'web-no-link', title: 'Xuất HĐ đơn web GHN TEST', source: 'invoice', sourceId: 'WEB-X', autoKey: 'invoice-web:WEB-X', link: '', assigneeId: null, assigneePosition: 'accounting', createdBy: null, createdAt: now, updatedAt: now },
+  ]);
+  for (const id of ['pay-managed', 'debt-managed']) {
+    const r = await call(`/tasks/${id}`, kt, 'PUT', { status: 'done' });
+    assert.equal(r.status, 409); assert.equal(r.data.code, 'TASK_SOURCE_MANAGED');
+  }
+  const web = (await call('/tasks/web-no-link', kt)).data.task;
+  assert.equal(web.accounting.noLink, true); assert.equal(web.accounting.actionLabel, 'Không có link đơn');
+  assert.equal((await call('/tasks?view=accounting-team', emp)).status, 403, 'Sale thường không xem tab Nhóm Kế toán');
+  assert.equal((await call('/tasks?view=accounting-team', kt)).status, 200);
+  const saleAdmin = await call('/tasks?view=accounting-team', sa);
+  assert.equal(saleAdmin.status, 200); assert.ok(saleAdmin.data.tasks.some((t: any) => t.id === 'web-no-link'), 'Sale Admin thấy việc nhóm Kế toán');
+  assert.equal((await call('/tasks/pay-managed/comments', sa)).status, 403, 'đồng nghiệp không thấy trao đổi');
+  void mgr;
+});
+
+test('Kế toán: KPI lấy số tiền nguồn và banner cảnh báo việc đóng tay khi chứng từ còn tồn', async () => {
+  const { db, call, emp, mgr, kt } = await setup();
+  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'BG-KPI', customer: 'Công ty KPI', vat: 8, rows: [{ name: 'Ly', sku: 'KPI', unit: 'cái', qty: 2, price: 500000, taxRate: 8 }] });
+  await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 }); await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
+  const order = await call('/orders', emp, 'POST', { quoteId: quote.data.id }); await call(`/orders/${order.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  assert.equal((await call(`/orders/${order.data.id}/invoice-request`, emp, 'POST', { mode: 'issue', email: 'kpi@example.com' })).status, 200);
+  let board = await call('/tasks?view=accounting-team&refresh=1', kt); assert.equal(board.status, 200, JSON.stringify(board.data));
+  const invoice = board.data.tasks.find((t: any) => t.sourceId === order.data.id && t.accounting?.kind === 'invoice');
+  assert.ok(invoice); assert.equal(invoice.accounting.amount, 1080000); assert.ok(board.data.accounting.kpis.invoice.count >= 1);
+  await db.update(tasks).set({ status: 'done', completedBy: 'kt', completedAt: new Date().toISOString() }).where(eq(tasks.id, invoice.id));
+  board = await call('/tasks?view=accounting-team', kt);
+  const warning = board.data.accounting.warnings.find((x: any) => x.taskId === invoice.id);
+  assert.ok(warning); assert.equal(warning.amount, 1080000); assert.ok(warning.link);
 });
