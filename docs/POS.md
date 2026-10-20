@@ -144,4 +144,6 @@ Chọn chuyển khoản mà chưa đánh dấu thực nhận chỉ tạo `pos_pa
 
 Báo cáo tách cọc thực nhận, thu nốt, trả trước, chuyển khoản chờ và đơn còn phải thu cùng két. Tiền mặt thực thu vào két ca thực nhận; chuyển khoản không vào két. Đơn chưa tất toán không chặn kết ca; báo cáo ca đã kết không đổi. Huỷ phiếu thu ghi nhầm không tự mở lại intent hay gia hạn giữ đã hết hạn; hàng đã xuất dùng trả/hoàn thay vì huỷ phiếu thu.
 
+Giao diện chỉ mở lựa chọn mới khi `/pos/options.orderFlowVersion >= 1` và gửi tạo đơn qua `/pos/order-flows/checkout` riêng; API cũ/rollback trả lỗi thay vì coi cọc là bán đã thanh toán đủ. Bán tại quầy/COD vẫn dùng `/pos/checkout`.
+
 Dữ liệu được duyệt ngày 20/10/2026: `20261020010950_pos_deposit_prepaid.sql` và `20261020011018_supabase_access_pos_deposit_prepaid.sql` — hai bảng và `pos_returns.request_context`, RLS server-only. **Chưa áp dụng production; phải được duyệt riêng trước khi chạy DB live, rồi mới triển khai API/UI.** Không tạo giao dịch ngân hàng hay tự đồng bộ hai luồng mới sang Sapo/Claw trong thay đổi này. Không thay chính sách giảm giá/khách POS, lương hay cron.

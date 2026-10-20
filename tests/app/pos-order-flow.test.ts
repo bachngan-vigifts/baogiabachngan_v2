@@ -35,8 +35,9 @@ test('cọc 30% giữ đúng một lần; thu nốt ca khác và xuất đúng m
   const f = await setup({ viaClaw: true }),
     s = await f.open(),
     b = f.cart(s.id, { saleFlow: 'deposit' });
+  assert.equal((await f.call('/pos/options', f.emp)).data.orderFlowVersion, 1);
   const [a, retry] = await Promise.all([
-    f.call('/pos/checkout', f.emp, 'POST', b),
+    f.call('/pos/order-flows/checkout', f.emp, 'POST', b),
     f.call('/pos/checkout', f.emp, 'POST', b),
   ]);
   ok(a, 201);
@@ -72,14 +73,14 @@ test('cọc 30% giữ đúng một lần; thu nốt ca khác và xuất đúng m
   );
   const frozen = (await f.call('/pos/shifts/' + s.id, f.emp)).data;
   const next = await f.open(f.other);
-  ok(await f.call('/orders/'+a.data.id,f.other));
+  ok(await f.call('/orders/' + a.data.id, f.other));
   const collect = {
-      key: key(),
-      shiftId: next.id,
-      amount: 136080,
-      method: 'cash',
-      pickup: true,
-    };
+    key: key(),
+    shiftId: next.id,
+    amount: 136080,
+    method: 'cash',
+    pickup: true,
+  };
   const [c, d] = await Promise.all([
     f.call(
       '/pos/order-flows/' + a.data.id + '/collect',
@@ -394,6 +395,10 @@ test('huỷ cọc trước xuất: duyệt riêng, không nhập giả; hoàn kh
 test('từ chối số tiền sai, khóa giá/SL, chặn ghi thu và huỷ qua endpoint chung', async () => {
   const f = await setup(),
     s = await f.open();
+  ok(
+    await f.call('/pos/order-flows/checkout', f.emp, 'POST', f.cart(s.id)),
+    400,
+  );
   for (const initialAmount of [0, -1, 1.5, 194401, 'abc'])
     ok(
       await f.call(
@@ -811,17 +816,15 @@ test('NVBH Lock và Minh Long không đọc/thu/xác nhận/huỷ chéo đơn, k
   for (const o of [a.data.id, b.data.id]) {
     const id = key();
     packIds.set(o, id);
-    await f.db
-      .insert(packingSlips)
-      .values({
-        id,
-        slipNo: 'SCOPE-' + id,
-        orderId: o,
-        status: 'sent',
-        createdBy: 'mgr',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+    await f.db.insert(packingSlips).values({
+      id,
+      slipNo: 'SCOPE-' + id,
+      orderId: o,
+      status: 'sent',
+      createdBy: 'mgr',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
   }
   const ships = await f.db.select().from(deliveries);
   const intents = await f.db.select().from(posPaymentIntents);
@@ -848,7 +851,9 @@ test('NVBH Lock và Minh Long không đọc/thu/xác nhận/huỷ chéo đơn, k
     const packing = await f.call('/packing?status=all', cookie);
     ok(packing);
     assert.ok(!packing.data.slips.some((p: any) => p.orderId === foreign));
-    const holds=await f.call('/stock-holds',cookie);ok(holds);assert.ok(!holds.data.holds.some((h:any)=>h.orderId===foreign));
+    const holds = await f.call('/stock-holds', cookie);
+    ok(holds);
+    assert.ok(!holds.data.holds.some((h: any) => h.orderId === foreign));
     const i = intents.find((i) => i.orderId === foreign)!;
     ok(await f.call('/pos/order-flows/' + foreign, cookie), 403);
     for (const action of ['hold', 'collect', 'cancel'])

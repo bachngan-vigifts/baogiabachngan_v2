@@ -14,6 +14,7 @@ import {
 import { saleFlowOf, flowHoldUntil } from '../domain/pos-order-flow.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import {
+  checkout,
   assertOpen,
   posPermission,
   posKey,
@@ -49,6 +50,18 @@ async function source(c: Ctx, db: PosDb, id: string) {
   return o;
 }
 export function registerPosOrderFlowRoutes(router: Router<StaffEnv>) {
+  // A distinct write path makes new UI fail closed against an older/rolled-back API.
+  router.post(
+    '/pos/order-flows/checkout',
+    async (c) => {
+      const body = await readJson(c.req, 64000);
+      if (!saleFlowOf(body))
+        throw new AppError(400, 'Chọn Đặt cọc hoặc Ship trả trước.');
+      return json(await checkout(c.env, actor(c), body), 201);
+    },
+    'business',
+  );
+
   router.get(
     '/pos/order-flows',
     async (c) => {

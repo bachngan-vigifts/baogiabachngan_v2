@@ -227,7 +227,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     menuAction('Trả / Đổi / Hoàn', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()}));
     menuAction('Báo cáo ca', () => run(history));
     menuAction('Ship COD', () => run(codList));
-    menuAction('Đơn cọc / Ship trả trước',()=>run(flowOrders));
+    if(st.options.orderFlowVersion>=1)menuAction('Đơn cọc / Ship trả trước',()=>run(flowOrders));
     menuAction('In bill tạm', () => run(printTemporary));
     menuAction('Chọn bảng giá', choosePricePolicy);
     if (st.options.canConfigure) { menuAction('Cấu hình', () => configure()); menuAction('+ Quầy', () => configure(true)); }
@@ -508,9 +508,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     draw(); if (st.register) await search(false);
   }
   async function flowOrders(orderId=''){
-    return openPosOrderFlows({api,toast,shift:st.shift,register:st.register,orderId,onChanged:()=>search(),onReturns:id=>openPosReturns({api,toast,shift:st.shift,register:st.register,orderId:id,onChanged:()=>search()})});
+    return openPosOrderFlows({api,toast,shift:st.shift,register:st.register,orderId,onChanged:()=>Promise.all([search(),loadOrderBoard()]),onReturns:id=>openPosReturns({api,toast,shift:st.shift,register:st.register,orderId:id,onChanged:()=>search()})});
   }
   function createFlow(flow,close){
+    if(!(st.options.orderFlowVersion>=1))return toast('Chức năng đang cập nhật. Tải lại POS rồi thử lại.','err');
     if(!active()||!st.preview||!st.cart.length||st.pending||st.busy)return;
     if(st.exchangeAllocationId)return toast('Thanh toán tín dụng đổi hàng tại quầy trước; không ghép vào đơn cọc.','err');
     if(st.preview.total<=0)return toast('Đơn cọc/trả trước phải có giá trị lớn hơn 0.','err');
@@ -545,7 +546,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const footer = el('div', 'pos-payment-footer'); nodes.temp = button('In bill tạm', 'btn secondary', () => run(printTemporary));
     nodes.modalPay = button('Thu tiền & in bill', 'btn primary', async () => { if (st.method === 'cod') await pay(true); else await pay(false); if (!st.pending && !st.cart.length) m.close(); });
     footer.append(nodes.temp, nodes.modalPay);
-    const future=el('div','pos-flow-actions');future.append(button('Đặt cọc · Nhận sau','btn secondary',()=>createFlow('deposit',m.close)),button('Ship trả trước 100%','btn secondary',()=>createFlow('prepaid',m.close)));
+    const future=el('div','pos-flow-actions');if(st.options.orderFlowVersion>=1)future.append(button('Đặt cọc · Nhận sau','btn secondary',()=>createFlow('deposit',m.close)),button('Ship trả trước 100%','btn secondary',()=>createFlow('prepaid',m.close)));
     m.body.append(due, methods, tender, transfer, cod, future, footer); m.show(); drawMethods(); refreshPay();
   }
   function drawMethods() {
@@ -1349,7 +1350,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.busy = true;
     refreshPay();
     try {
-      const d = await api('/pos/checkout', 'POST', body);
+      const d = await api(body.saleFlow?'/pos/order-flows/checkout':'/pos/checkout', 'POST', body);
       persistPending(null);
       st.cart = [];
       st.customer = null;
@@ -1377,7 +1378,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     } catch (e) {
       if (e.status >= 400 && e.status < 500) {
         persistPending(null);
-        toast(e.message, 'err');
+        toast(body.saleFlow && [404,405].includes(e.status)?'Chức năng đặt cọc/trả trước đang cập nhật. Giỏ hàng được giữ nguyên; tải lại POS rồi thử lại.':e.message, 'err');
       } else {
         toast('Chưa rõ kết quả. Bấm Kiểm tra lại giao dịch để lấy đúng đơn, không thu lần nữa.', 'err');
         draw();

@@ -343,6 +343,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         templates,
         shifts,
         current: shifts.find((s) => s.memberId === m.id && !s.closedAt) ?? null,
+        orderFlowVersion:1,
         canConfigure,
         policies,
         warehouses: stores,
