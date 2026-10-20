@@ -1,3 +1,4 @@
+import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
@@ -162,8 +163,7 @@ export function registerPosOrderFlowRoutes(router: Router<StaffEnv>) {
           reference: b.reference || '',
         }),
       );
-      return json(
-        await c.env.db.transaction(async (tx) => {
+      const result = await c.env.db.transaction(async (tx) => {
           await cashLock(tx);
           const o = await source(c, tx, c.params.id!),
             s = await flowCurrent(tx, actor(c), posText(b.shiftId), o),
@@ -290,9 +290,9 @@ export function registerPosOrderFlowRoutes(router: Router<StaffEnv>) {
               .where(eq(salesOrders.id, o.id));
           }
           return flowAccount(tx, updated!);
-        }),
-        201,
-      );
+        });
+      await invoiceTasksChanged(c.env, { orderId: c.params.id! }, actor(c).id);
+      return json(result, 201);
     },
     'business',
   );

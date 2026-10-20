@@ -9,7 +9,9 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
-import { reconcileAutoTasks } from './auto-tasks.ts';
+import { reconcileAutoTasks, reconcileTaskSet } from './auto-tasks.ts';
+import { invoiceTasks } from './invoice-tasks.ts';
+import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
 import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
@@ -38,6 +40,16 @@ export async function syncAutoTasks(env: StaffEnv, force = false, actorId: strin
   lastReconcile = Date.now();
   let fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'] = [];
   try { fresh = (await reconcileAutoTasks(env.db)).fresh; } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
+  await notifyAutoTasks(env, fresh, actorId);
+}
+/** Narrow event reconciliation: a sale need not rescan quotes, purchases or all other task rules. */
+export async function syncInvoiceTasks(env: StaffEnv, ref: InvoiceTaskRef, actorId: string | null = null) {
+  const wanted = await invoiceTasks(env.db, ref);
+  const key = 'orderId' in ref ? `invoice:${ref.orderId}` : `invoice-web:${ref.webOrderId}`;
+  const result = await reconcileTaskSet(env.db, new Map(wanted.map(t => [t.autoKey, t])), new Date(), eq(tasks.autoKey, key));
+  await notifyAutoTasks(env, result.fresh, actorId);
+}
+async function notifyAutoTasks(env: StaffEnv, fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'], actorId: string | null) {
   if (!fresh.length) return;
   const job = Promise.all(fresh.slice(0, 30).map(t => {
     const n = { eventType: 'task_assigned', title: 'Việc mới', body: t.title, url: `/index.html#/tasks/${t.id}`, data: { taskId: t.id } };
@@ -74,7 +86,7 @@ const involved = (c: Ctx, t: Task) => { const m = me(c); return m.role === 'mana
 const PRIVATE_DESC_SOURCES = new Set<string>(['care', 'receivable', 'invoice']);
 /** Bản gửi cho người xem: việc chỉ xem của đồng nghiệp bị ẩn mô tả nhạy cảm. */
 /** Việc tự hoàn thành theo chứng từ (nhận hàng NCC, các việc duyệt): không đánh dấu xong / huỷ tay – làm trên chứng từ thì việc tự đóng. */
-const SOURCE_MANAGED = ['po-receive:', 'quote-approve:', 'quote-customer:', 'order-confirm:', 'po-approve:'];
+const SOURCE_MANAGED = ['po-receive:', 'quote-approve:', 'quote-customer:', 'order-confirm:', 'po-approve:', 'invoice:'];
 const completionFromSource = (t: Task) => !!t.autoKey && SOURCE_MANAGED.some(k => t.autoKey!.startsWith(k));
 const forViewer = (c: Ctx, t: Task) => ({ ...t, completionFromSource: completionFromSource(t),
   ...(!involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { description: '' } : {}) });
@@ -254,7 +266,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     if (b.status !== undefined) {
       if (completionFromSource(t) && (b.status === 'done' || b.status === 'cancelled' ||
         ((t.status === 'done' || t.status === 'cancelled') && b.status !== t.status))) {
-        throw new AppError(409, t.autoKey?.startsWith('po-receive:') ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
+        throw new AppError(409, t.autoKey?.startsWith('invoice:') ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : t.autoKey?.startsWith('po-receive:') ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
           : 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt, không đánh dấu hoàn thành thủ công.', 'TASK_SOURCE_MANAGED');
       }
       if (!TASK_STATUSES.includes(b.status as TaskStatus)) throw new AppError(400, 'Trạng thái không hợp lệ.');

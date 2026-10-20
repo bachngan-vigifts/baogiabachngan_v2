@@ -1,3 +1,4 @@
+import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
 import { returnAccount } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
@@ -138,8 +139,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       ghnOrderCode: posText(metadata.get('_lnl_ghn_order_code'), 100), ghnStatus: posText(metadata.get('_lnl_ghn_last_status'), 100),
       ghnSortCode: posText(metadata.get('_lnl_ghn_sort_code'), 100), ghnFee: Math.max(0, Number(metadata.get('_lnl_ghn_total_fee')) || 0),
     };
-    await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
-      .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: fields });
+    const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
+      .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: fields }).returning({ id: webStoreOrders.id });
+    await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
     return json({ ok: true, source, externalId, registerId: register.id });
   }, 'web-order-sync');
   router.post(
@@ -258,6 +260,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       ghnStatus: posText(result.ghnStatus, 100), ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };
     await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
+    await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
     await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
       data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus } });
     return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
@@ -788,6 +791,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/checkout',
     async (c) => {
       const result = await checkout(c.env, member(c), await readJson(c.req, 64000));
+      await invoiceTasksChanged(c.env, { orderId: result.id }, member(c).id);
       if (result.replayed || result.saleFlow || c.env.sapoOrderMode !== 'n8n') return json(result, 201);
       try { return json({ ...result, sapo: await sendPosOrderToClaw(c.env, result.id) }, 201); }
       catch (e) { return json({ ...result, sapo: { status: 'error', message: e instanceof Error ? e.message : 'Không gửi được đơn sang Claw.' } }, 201); }
