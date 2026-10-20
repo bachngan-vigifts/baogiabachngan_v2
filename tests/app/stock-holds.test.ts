@@ -102,7 +102,7 @@ test('đơn / HĐKT tự giữ hàng: lập là giữ (kể cả nháp), giao b�
   // Giao bớt 10 → còn giữ 20.
   await db.update(salesOrderLines).set({ deliveredQty: 10 }).where(and(eq(salesOrderLines.orderId, orderId), eq(salesOrderLines.sku, 'LY1')));
   assert.deepEqual(await holds(), [['LY1', 20, 'đơn']]);
-  // Đã đẩy Sapo: còn giữ đến khi tồn Sapo của mã cập nhật SAU lúc đẩy (lúc đó Sapo đã trừ "Đang giao dịch").
+  // Đã đẩy Sapo: còn giữ đến khi tồn nguồn của mã cập nhật SAU lúc đẩy.
   const pushedAt = new Date(Date.now() - 60_000).toISOString();
   await db.update(salesOrders).set({ sapoOrderId: '999', sapoOrderCode: 'SON999', sapoPushedAt: pushedAt }).where(eq(salesOrders.id, orderId));
   assert.deepEqual(await holds(), [['LY1', 20, 'đơn']], 'tồn chưa cập nhật sau lúc đẩy');

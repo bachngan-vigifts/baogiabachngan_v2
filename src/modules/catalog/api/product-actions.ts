@@ -29,15 +29,8 @@ async function plan(db: Db | Tx, kind: string, input: Payload, lock = false) {
   for (const r of input.rows) {
     if (isStock ? !r.stock || !Object.keys(r.stock).length || !!r.fields : !r.fields || !Object.keys(r.fields).length || !!r.stock)
       throw new AppError(400, 'Dòng nhập không có dữ liệu đúng loại.');
-    if (kind !== 'sapo-stock' && r.transactions) throw new AppError(400, 'Thông tin đang giao dịch chỉ dùng cho file Sapo.');
+    if (r.transactions) throw new AppError(400, 'Dữ liệu cập nhật tồn không nhận cột Đang giao dịch.');
     if (kind === 'stock' && Object.values(r.stock!).some(n => !Number.isInteger(n))) throw new AppError(400, 'Tồn của file cũ phải là số nguyên.');
-    if (kind === 'sapo-stock') {
-      if (!r.transactions || Object.keys(r.transactions).length !== Object.keys(r.stock!).length) throw new AppError(400, 'Thiếu cột Tồn hoặc Đang giao dịch.');
-      for (const [warehouseId, available] of Object.entries(r.stock!)) {
-        const raw = r.transactions[warehouseId];
-        if (!raw || Math.abs(available - (raw.onHand - raw.committed)) > 0.000001) throw new AppError(400, 'Tồn khả dụng phải bằng Tồn trừ Đang giao dịch.');
-      }
-    }
   }
   const query = db.select().from(products).where(and(eq(products.active, true), inArray(sql<string>`lower(${products.sku})`, keys))).orderBy(asc(products.sku));
   const found = lock ? await query.for('update') : await query;

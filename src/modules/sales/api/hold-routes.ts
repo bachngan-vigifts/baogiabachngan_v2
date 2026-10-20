@@ -25,7 +25,7 @@ import { HOLD_DAYS } from '../domain/statuses.ts';
  * Hết hạn: dòng chuyển "expired" và báo người giữ (chạy khi có người dùng hệ thống – /pulse – và khi đọc danh sách giữ).
  * Lập đơn / HĐKT từ báo giá: tự bỏ treo của báo giá – đơn / HĐKT giữ thay (`orderHolds`, không hết hạn):
  *  giữ phần chưa giao của mỗi dòng có mã, từ lúc lập (kể cả nháp) đến khi huỷ / giao xong,
- *  hoặc khi đơn đã đẩy Sapo VÀ tồn của mã đó cập nhật sau lúc đẩy (tồn Sapo đã trừ "Đang giao dịch" – không trừ hai lần).
+ *  hoặc khi đơn đã đẩy Sapo VÀ tồn của mã đó cập nhật sau lúc đẩy (lần cập nhật tồn mới được coi là số liệu nguồn – không trừ hai lần).
  */
 type Ctx = RouteContext<StaffEnv>;
 type Db = StaffEnv['db'] | Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];

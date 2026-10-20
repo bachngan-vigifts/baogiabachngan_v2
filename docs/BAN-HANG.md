@@ -111,7 +111,7 @@ Tổng trước thuế được làm tròn từ tổng dòng; tổng thanh toán
 - **Bỏ giữ:** nhân viên xem được báo giá hoặc Manager. **Gia hạn +5 ngày:** chỉ Manager, tính thêm từ hạn hiện tại.
 - **Lập Đơn hàng / HĐKT từ báo giá:** treo của báo giá đóng lại (trạng thái `converted`), **đơn / HĐKT giữ thay** (migration `0069_order_stock_holds.sql`).
   - Mọi đơn / HĐKT lập từ nay (kể cả nháp, kể cả lập không qua giữ hàng) tự giữ **phần chưa giao** của từng dòng có mã hàng. Không hết hạn.
-  - Thôi giữ khi: **huỷ** đơn / HĐKT; **giao xong** (giao bớt thì giữ phần còn lại); hoặc đơn **đã đẩy Sapo** và tồn của mã đó được cập nhật (đồng bộ Sapo / nhập file tồn) **sau lúc đẩy** – khi đó tồn Sapo đã trừ "Đang giao dịch", web không trừ lần hai.
+  - Thôi giữ khi: **huỷ** đơn / HĐKT; **giao xong** (giao bớt thì giữ phần còn lại); hoặc đơn **đã đẩy Sapo** và tồn nguồn của mã đó được cập nhật **sau lúc đẩy** – web coi lần cập nhật mới là số liệu nguồn và không trừ lần hai.
   - Cột "Đang treo" hiện số đơn / "HĐKT <số>" (bấm mở). Kiểm tồn của chính báo giá đã lập đơn không tự trừ hàng của đơn mình. Báo giá đã lập đơn / HĐKT không bấm "Giữ hàng" thêm được (409 `QUOTE_HAS_ORDER`).
   - Hết hạn giữ hàng báo cho người giữ và **người phụ trách** báo giá (báo giá khách tự gửi không báo cho khách).
   - Đơn có từ trước migration 0069 (`holds_stock = false`) không giữ.

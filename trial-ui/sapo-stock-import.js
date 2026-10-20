@@ -21,9 +21,9 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
   const dialog = el('dialog', undefined, { class: 'modal', 'aria-label': 'Cập nhật kho từ Sapo' });
   const head = el('div', undefined, { class: 'modal-head' }), body = el('div', undefined, { class: 'modal-body' }), foot = el('div', undefined, { class: 'modal-foot' });
   head.append(el('h2', 'Cập nhật kho'));
-  body.append(el('p', '1. Mở Sapo, đăng nhập bằng tài khoản của anh và xuất tồn kho cho từng nguồn: KHO VIGIFTS, Hoá đơn Lock, Hoá đơn Bách Ngân. Giữ ba cột Mã hàng, Tồn, Đang giao dịch.'));
+  body.append(el('p', '1. Mở Sapo, đăng nhập bằng tài khoản của anh và xuất tồn kho cho từng nguồn: KHO VIGIFTS, Hoá đơn Lock, Hoá đơn Bách Ngân. Giữ hai cột Mã hàng và Tồn.'));
   const link = el('a', 'Mở Sapo để tải file', { href: 'https://bachngankiengiang.mysapo.com/admin', target: '_blank', rel: 'noopener noreferrer', class: 'btn secondary' }); body.append(link);
-  body.append(el('p', '2. Chọn đủ ba file Excel/CSV bên dưới. CRM dùng tồn khả dụng = Tồn − Đang giao dịch. File cùng kho CRM được cộng với nhau trong một lần lưu; không cộng vào số tồn cũ.'));
+  body.append(el('p', '2. Chọn đủ ba file Excel/CSV bên dưới. CRM lấy trực tiếp số lượng ở cột Tồn. File cùng kho CRM được cộng với nhau trong một lần lưu; không cộng vào số tồn cũ.'));
   body.append(el('p', 'Mã hàng phải giữ dạng chữ để không mất số 0 đầu. Ô trống và mã trùng trong một file sẽ báo lỗi. Chỉ thay số lượng của mã có trong file; mã không nằm trong file giữ nguyên. Mã không có trong CRM được liệt kê và bỏ qua.', { class: 'muted small' }));
   const date = el('input', undefined, { type: 'datetime-local', required: '', 'aria-label': 'Thời điểm số liệu Sapo' });
   const now = new Date(); date.value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -45,7 +45,7 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
     const state = { source, file, sheet, target, header, mapping, book: null, rows: [], hidden: [], ws: null }; cards.push(state);
     function mapColumns() {
       invalidate(); controls.replaceChildren(); const h = state.rows[Number(header.value) - 1] || [], detected = detectSapoColumns([h]).mapping;
-      for (const [key, label] of [['sku', 'Mã hàng'], ['onHand', 'Tồn (không chọn Có thể bán)'], ['committed', 'Đang giao dịch']]) {
+      for (const [key, label] of [['sku', 'Mã hàng'], ['onHand', 'Tồn']]) {
         const select = el('select', undefined, { 'aria-label': label + ' ' + source }); select.append(option('', '— Chọn cột —'));
         h.forEach((name, i) => select.append(option(String(i), `${i + 1} · ${name ?? ''}`))); select.value = detected[key] >= 0 ? String(detected[key]) : ''; select.onchange = invalidate; mapping[key] = select; controls.append(labelled(label, select));
       }
@@ -66,7 +66,7 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
         for (const name of [...sheet.options].map(o => o.value)) {
           if (detectSapoColumns(x.utils.sheet_to_json(book.Sheets[name], { header: 1, raw: true, range: 0 }).slice(0, 200)).header >= 0) { sheet.value = name; break; }
         }
-        readSheet(); status.textContent = `Đã đọc ${source}. Kiểm tra kho và ba cột trước khi xem trước.`;
+        readSheet(); status.textContent = `Đã đọc ${source}. Kiểm tra kho và hai cột trước khi xem trước.`;
       } catch (e) { state.book = null; status.textContent = `${source}: ${e.message}`; } finally { lock(false); }
     };
     sheet.onchange = () => { try { readSheet(); } catch (e) { state.rows = []; invalidate(); status.textContent = e.message; } }; header.onchange = mapColumns; target.onchange = invalidate; body.append(card);
@@ -88,8 +88,8 @@ export async function openSapoStockImport({ api, isManager, onChanged }) {
       const input = { filename: cards.map(c => c.file.files[0].name).join(' + ').slice(0, 300), observedAt: time.toISOString(), rows: combineSapoStockFiles(parsed) };
       const p = await api('/admin/products/import/sapo-stock/preview', 'POST', input); preview = p.matched ? { ...input, version: p.version } : null;
       status.textContent = `${fmt(p.matched)} mã sẽ cập nhật · ${fmt(p.unknownCount)} mã không có · ${fmt(p.ambiguousCount)} mã không xác định. Xem trước tối đa 30 dòng; bỏ qua ${fmt(parsed.reduce((n, f) => n + f.hidden, 0))} dòng ẩn.`;
-      const table = el('table', undefined, { class: 'data-table' }), tr = el('tr'); for (const h of ['Mã hàng', 'Kho CRM', 'Khả dụng cũ', 'Tồn Sapo', 'Đang giao dịch', 'Khả dụng mới']) tr.append(el('th', h)); const thead = el('thead'); thead.append(tr); table.append(thead);
-      const tbody = el('tbody'); for (const s of p.samples) { const r = el('tr'); for (const value of [s.sku, s.warehouse, fmt(s.before), fmt(s.onHand), fmt(s.committed), fmt(s.after)]) r.append(el('td', value)); tbody.append(r); } table.append(tbody); const wrap = el('div', undefined, { class: 'table-wrap' }); wrap.append(table); previewBox.append(wrap);
+      const table = el('table', undefined, { class: 'data-table' }), tr = el('tr'); for (const h of ['Mã hàng', 'Kho CRM', 'Tồn cũ', 'Tồn mới']) tr.append(el('th', h)); const thead = el('thead'); thead.append(tr); table.append(thead);
+      const tbody = el('tbody'); for (const s of p.samples) { const r = el('tr'); for (const value of [s.sku, s.warehouse, fmt(s.before), fmt(s.after)]) r.append(el('td', value)); tbody.append(r); } table.append(tbody); const wrap = el('div', undefined, { class: 'table-wrap' }); wrap.append(table); previewBox.append(wrap);
       for (const c of cards) previewBox.append(el('p', `${c.source} → ${stores.find(w => w.id === c.target.value)?.name || '?'}`));
       if (p.unknown.length) previewBox.append(el('p', 'Mã không tìm thấy (tối đa 100): ' + p.unknown.join(', ')));
     } catch (e) { status.textContent = e.message; } finally { lock(false); }
