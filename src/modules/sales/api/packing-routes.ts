@@ -1,3 +1,6 @@
+import { assertPosFlowFulfillable } from './pos-order-flow-guards.ts';
+import { saleFlowOf } from '../domain/pos-order-flow.ts';
+import { cashLock } from './cash-store.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -9,7 +12,7 @@ import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
-import { stockMoves } from '../../inventory/schema.ts';
+import { stockMoves, stockBalances } from '../../inventory/schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
@@ -181,6 +184,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       if (!line) throw new AppError(400, 'Dòng hàng không thuộc đơn này.');
       if (!Number.isFinite(qty) || qty <= 0 || qty > 1e9) throw new AppError(400, `Số lượng của "${line.name}" không hợp lệ.`);
       if (!(PACKING_SOURCES as readonly string[]).includes(String(x.source))) throw new AppError(400, `Chọn nguồn hàng cho "${line.name}".`);
+      if(saleFlowOf(order.posSnapshot)&&x.source!=='warehouse')throw new AppError(400,'Đơn trả trước xuất từ kho đã giữ của quầy.');
       const source = x.source as PackingSource, sourceNote = text(x.sourceNote, 200);
       if (source !== 'warehouse' && !sourceNote) throw new AppError(400, `Ghi rõ lấy "${line.name}" từ ${PACKING_SOURCE_LABEL[source].toLowerCase()} nào.`);
       want.set(line.id, (want.get(line.id) ?? 0) + qty);
@@ -199,6 +203,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     const sentToWarehouse = body.sendToWarehouse === true && groups.size === 1;
     let deliveryId: string | null = null;
     await c.env.db.transaction(async tx => {
+      if(saleFlowOf(order.posSnapshot)){await cashLock(tx);await assertPosFlowFulfillable(tx,order.id);}
       const [locked] = await tx.select().from(salesOrders).where(eq(salesOrders.id, order.id)).limit(1).for('update');
       if (!locked || ['draft', 'cancelled', 'delivered'].includes(locked.status)) throw new AppError(409, 'Đơn chưa xác nhận, đã huỷ hoặc đã giao xong.');
       const allocatedNow = await allocatedByLine(tx, order.id);
@@ -279,8 +284,11 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     if (!(await canManageOrder(c, order.id))) throw new AppError(403, 'Chỉ nhân viên phụ trách đơn hoặc Manager gửi được phiếu.');
     if (slip.status !== 'draft') throw new AppError(409, 'Phiếu đã gửi kho hoặc đã huỷ.');
     const now = nowIso();
-    await c.env.db.update(packingSlips).set({ status: 'sent', sentAt: now, sentBy: viewer(c).id, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
-      .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'draft')));
+    await c.env.db.transaction(async tx=>{
+      if(saleFlowOf(order.posSnapshot)){await cashLock(tx);await assertPosFlowFulfillable(tx,order.id);}
+      await tx.update(packingSlips).set({ status: 'sent', sentAt: now, sentBy: viewer(c).id, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
+        .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'draft')));
+    });
     await notifyWarehouse(c, 'Kho: yêu cầu đóng gói', `${slip.slipNo} · ${order.customerName} (${PACKING_SOURCE_LABEL[slip.source]}${slip.sourceNote ? ': ' + slip.sourceNote : ''})`, `/index.html#/packing/${slip.id}`);
     return json({ ok: true });
   }, 'business');
@@ -311,17 +319,20 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
     }
     const now = nowIso();
     await c.env.db.transaction(async tx => {
+      if (saleFlowOf(order.posSnapshot)) { await cashLock(tx); await assertPosFlowFulfillable(tx,order.id); }
       if (order.channel === 'pos') {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
         const [issued] = await tx.select({id:stockMoves.id}).from(stockMoves).innerJoin(deliveries,eq(deliveries.id,stockMoves.refId)).where(and(eq(stockMoves.refType,'pos_delivery'),eq(deliveries.orderId,order.id))).limit(1);
         if (issued) throw new AppError(409,'Đơn POS đã xuất kho khi giao hàng; không xác nhận thêm phiếu đóng gói.');
       }
+      await assertPosFlowFulfillable(tx,order.id);
       const done = await tx.update(packingSlips).set({ status: 'packed', packedAt: now, packedBy: m.id, packedNote: text(body.note, 1000), stockWarehouseId, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'sent'))).returning({ id: packingSlips.id });
       if (!done.length) throw new AppError(409, 'Phiếu vừa được người khác xác nhận.');
       await tx.insert(packingSlipPhotos).values((photos as string[]).map(dataUrl => ({ id: crypto.randomUUID(), slipId: slip.id, dataUrl, bytes: Math.floor(dataUrl.length * 3 / 4), createdBy: m.id, createdAt: now })));
       if (stockWarehouseId) {
         const lines = await tx.select({ sku: packingSlipLines.sku, qty: packingSlipLines.qty }).from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id));
+        if(saleFlowOf(order.posSnapshot)){const balances=await tx.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,stockWarehouseId),inArray(stockBalances.sku,lines.map(l=>l.sku)))).orderBy(asc(stockBalances.sku)).for('update');for(const sku of new Set(lines.map(l=>l.sku))){if((balances.find(b=>b.sku===sku)?.qty||0)<lines.filter(l=>l.sku===sku).reduce((n,l)=>n+l.qty,0))throw new AppError(409,'Tồn thực tế không đủ để xuất: '+sku);}}
         await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: stockWarehouseId!, qty: -l.qty, kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` })), now);
       }
     });

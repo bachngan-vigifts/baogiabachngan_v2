@@ -127,3 +127,21 @@ Form Giao Ship COD hiển thị tổng đơn, đã thu trước/tạm ứng, hì
 Tạo đơn và phiếu thu trước trong cùng giao dịch, cùng khoá chống lặp. Phiếu thu (`payment_source=pos_cod_deposit`) thuộc ca đang mở; tiền mặt vào két, chuyển khoản không vào két. Tổng công nợ ban đầu giữ toàn bộ giá trị đơn, phần đã thu là phiếu thu, chuyến giao chỉ thu COD phần còn lại. Được thu đủ trước khi giao (COD còn 0). Bản in K80 tách tổng/đã thu/còn lại. Chưa giao vẫn giữ hàng theo luồng COD cũ.
 
 Huỷ phiếu thu trước ghi nhầm vẫn cần quyền/lý do, không phải hoàn tiền; phần đã huỷ được trả lại số phải thu của chuyến giao gốc. Ca đã kết giữ báo cáo và tra soát như trước. Không sửa tự động bill cũ hoặc phát sinh giao dịch ngân hàng/Sapo. Không thêm bảng, cột, quyền hoặc migration.
+
+## Đặt cọc nhận sau và ship trả trước 100%
+
+Ở màn **Thanh toán**, chọn **Đặt cọc · Nhận sau** hoặc **Ship trả trước 100%**. Trong menu **⋯ → Đơn cọc / Ship trả trước** xem lại đơn; chi tiết đơn cũng có nút **Cọc / Thu nốt / Trả trước**. Giá, số lượng và CK của đơn giữ nguyên. Hai luồng độc lập với bán tại quầy và COD hiện có.
+
+Cọc mặc định 30%, có nút 50% và ô số khác >0 đến tổng đơn. Hàng giữ 5 ngày; hết hạn chỉ nhả giữ, không tự huỷ đơn/hoàn tiền. **Kiểm tra tồn và giữ lại hàng** trước khi thu nốt sau hết hạn. Thu nốt và giao tại quầy thực hiện cùng transaction; thiếu hàng/tiền thì không xuất. Được thu nốt trước rồi nhận hàng sau; nút nhận hàng khi đã đủ tiền không tạo phiếu thu 0đ.
+
+Ship trả trước yêu cầu đủ 100%, nhập người nhận, điện thoại, địa chỉ và ngày giao. Chuyển khoản đang chờ giữ hàng 5 ngày nhưng không cho đóng gói/xuất/giao. Đã nhận đủ thì giữ đến lúc xuất hoặc xử lý huỷ; đóng gói từ đúng kho quầy, chuyến giao COD 0. Đóng gói đã ghi xuất thì giao không xuất lần thứ hai. Kho thiếu tồn thực tế thì chặn xuất.
+
+Chọn chuyển khoản mà chưa đánh dấu thực nhận chỉ tạo `pos_payment_intents`; chưa có phiếu thu, không vào két. Vào đơn, kiểm tra thực nhận, nhập mã tham chiếu rồi xác nhận. Phiếu thu thuộc **ca đang mở lúc xác nhận**, có thể khác ca lập đơn nhưng phải cùng quầy/két. Nếu ngân hàng thực nhận sau khi giữ đã hết hạn và hàng đã bán, vẫn ghi đúng khoản thực nhận, báo cần giữ lại hàng và chặn xuất; không giả lập đã giữ đủ. Chức năng này xác nhận thủ công, không tự suy ra đã nhận tiền chỉ vì kết nối SePay.
+
+**Huỷ trước xuất** giải phóng giữ, huỷ các khoản chờ và lập đề nghị hoàn toàn bộ tiền đã nhận hoặc tín dụng đổi hàng. Manager/người chỉ định duyệt theo cơ chế đổi/trả; duyệt không chi tiền. Ngữ cảnh `before_fulfillment` không có bước nhập lại hàng. Giá trị giảm công nợ là toàn đơn nhưng tiền được hoàn không vượt thực thu còn hiệu lực sau các hoàn/tín dụng đã dùng. Yêu cầu bị từ chối/huỷ có thể lập lại từ đơn đã huỷ.
+
+**Đã đóng gói/xuất nhưng chưa giao**: dùng **Trả / Đổi / Hoàn**, thu hồi toàn bộ hàng đã xuất của đơn; không huỷ thẳng. Sau duyệt, dừng giao đơn và nhả phần chưa xuất; phải xác nhận thực nhận lại hàng mới nhập tồn và cho hoàn/đổi. Phần chưa xuất chỉ giảm công nợ, không tạo nhập kho giả. Mặc định hoàn tiền hàng, hoàn thêm phí chỉ Manager duyệt. Sau khi đã giao dùng nghiệp vụ trả hàng hiện có theo số lượng đã giao.
+
+Báo cáo tách cọc thực nhận, thu nốt, trả trước, chuyển khoản chờ và đơn còn phải thu cùng két. Tiền mặt thực thu vào két ca thực nhận; chuyển khoản không vào két. Đơn chưa tất toán không chặn kết ca; báo cáo ca đã kết không đổi. Huỷ phiếu thu ghi nhầm không tự mở lại intent hay gia hạn giữ đã hết hạn; hàng đã xuất dùng trả/hoàn thay vì huỷ phiếu thu.
+
+Dữ liệu được duyệt ngày 20/10/2026: `20261020010950_pos_deposit_prepaid.sql` và `20261020011018_supabase_access_pos_deposit_prepaid.sql` — hai bảng và `pos_returns.request_context`, RLS server-only. **Chưa áp dụng production; phải được duyệt riêng trước khi chạy DB live, rồi mới triển khai API/UI.** Không tạo giao dịch ngân hàng hay tự đồng bộ hai luồng mới sang Sapo/Claw trong thay đổi này. Không thay chính sách giảm giá/khách POS, lương hay cron.

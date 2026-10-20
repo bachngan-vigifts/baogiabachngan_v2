@@ -1,3 +1,9 @@
+import { flowIssued } from './pos-order-flow-guards.ts';
+import { saleFlowOf } from '../domain/pos-order-flow.ts';
+import {
+  posOrderReservations,
+  posPaymentIntents,
+} from '../pos-order-flow-schema.ts';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -28,7 +34,12 @@ import {
   posRefunds,
   posExchangeAllocations,
 } from '../return-schema.ts';
-import { salesOrders, salesOrderLines } from '../schema.ts';
+import {
+  salesOrders,
+  salesOrderLines,
+  deliveries,
+  packingSlips,
+} from '../schema.ts';
 import { posShifts } from '../pos-schema.ts';
 import { cashDrawers, cashEntries } from '../cash-schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
@@ -94,12 +105,23 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
       allocations: account.allocations.filter((x) => x.returnId === r.id),
     })),
   );
+  const issued = saleFlowOf(o.posSnapshot) ? await flowIssued(db, o.id) : [];
+  const recoveringIssued =
+    !!saleFlowOf(o.posSnapshot) &&
+    lines.every((l) => l.deliveredQty === 0) &&
+    issued.some((i) => i.qty > 0);
   const { returns: unused, ...summary } = account;
   const reserved = await activeReservations(db, account.allocations);
   return {
     order: o,
     registerId: s.registerId,
-    lines,
+    lines: lines.map((l) => ({
+      ...l,
+      returnableQty: recoveringIssued
+        ? issued.find((i) => i.sku === l.sku)?.qty || 0
+        : l.deliveredQty,
+    })),
+    recoveringIssued,
     returns,
     account: {
       ...summary,
@@ -187,6 +209,13 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           .from(salesOrderLines)
           .where(eq(salesOrderLines.orderId, o.id))
           .for('update');
+        const issued = saleFlowOf(o.posSnapshot)
+          ? await flowIssued(tx, o.id)
+          : [];
+        const recoveringIssued =
+          !!saleFlowOf(o.posSnapshot) &&
+          old.every((l) => l.deliveredQty === 0) &&
+          issued.some((i) => i.qty > 0);
         const rs = await tx
           .select()
           .from(posReturns)
@@ -215,18 +244,40 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             b.lines.length
         )
           throw new AppError(400, 'Chọn dòng hàng cần trả, không trùng.');
+        if (
+          recoveringIssued &&
+          (rs.length ||
+            old.some((l) => {
+              const qty = issued.find((i) => i.sku === l.sku)?.qty || 0;
+              return (
+                qty > 0 &&
+                !(b.lines as any[]).some(
+                  (x: any) => x.orderLineId === l.id && Number(x.qty) === qty,
+                )
+              );
+            }))
+        )
+          throw new AppError(
+            409,
+            'Thu hồi đơn chưa giao phải nhận lại toàn bộ hàng đã xuất; xử lý yêu cầu hiện có trước.',
+          );
         const id = crypto.randomUUID(),
           at = now(),
           returnNo = 'TH-' + id.slice(0, 8).toUpperCase();
         const lines = b.lines.map((x: any) => {
           const l = old.find((l) => l.id === x?.orderLineId);
-          if (!l || l.deliveredQty <= 0)
+          const returnable = l
+            ? recoveringIssued
+              ? issued.find((i) => i.sku === l.sku)?.qty || 0
+              : l.deliveredQty
+            : 0;
+          if (!l || returnable <= 0)
             throw new AppError(400, 'Chỉ trả hàng đã giao của bill gốc.');
           const previous = claimed.filter((p) => p.orderLineId === l.id),
             qty = previous.reduce((n, p) => n + p.requestedQty, 0),
             wanted = Number(x.qty);
           // Validate both sold and delivered caps; allocate money against all active requests, including pending.
-          returnPortion(0, l.deliveredQty, qty, x.qty, 0);
+          returnPortion(0, returnable, qty, x.qty, 0);
           const original = snap.lines?.find(
             (row: { sku: string }) => row.sku === l.sku,
           );
@@ -289,14 +340,21 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             registerId: s.registerId,
             warehouseId: snap.register.warehouseId,
             createdShiftId: shift.id,
+            requestContext: recoveringIssued ? 'after_issue' : 'after_delivery',
             kind: b.kind === 'exchange' ? 'exchange' : 'return',
             status: 'pending',
             reason,
             requestedServiceFee: service,
             requestedShippingFee: shipping,
-            subtotal: lines.reduce((n, l) => n + l.subtotal, 0),
-            tax: lines.reduce((n, l) => n + l.tax, 0),
-            total: lines.reduce((n, l) => n + l.total, 0),
+            subtotal: recoveringIssued
+              ? o.subtotal - fees.service.subtotal - fees.shippingFee
+              : lines.reduce((n, l) => n + l.subtotal, 0),
+            tax: recoveringIssued
+              ? o.tax - fees.service.tax
+              : lines.reduce((n, l) => n + l.tax, 0),
+            total: recoveringIssued
+              ? o.total - fees.service.amount - fees.shippingFee
+              : lines.reduce((n, l) => n + l.total, 0),
             sourceSnapshot: JSON.stringify({
               order: o,
               lines: old,
@@ -397,7 +455,13 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           if (service - subService > fees.service.tax - allocatedTax)
             throw new AppError(409, 'Phân bổ VAT phí cần kiểm tra lại.');
           const fields = {
-            status: 'approved',
+            ...(r.requestContext === 'before_fulfillment'
+              ? { creditEffectiveAt: now() }
+              : {}),
+            status:
+              r.requestContext === 'before_fulfillment'
+                ? 'processing'
+                : 'approved',
             approvedServiceFee: service,
             approvedShippingFee: shipping,
             subtotal: r.subtotal + subService + shipping,
@@ -412,6 +476,69 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             .update(posReturns)
             .set(fields)
             .where(eq(posReturns.id, r.id));
+          if (r.requestContext === 'after_issue') {
+            const at = now();
+            await tx
+              .update(salesOrders)
+              .set({
+                status: 'cancelled',
+                holdsStock: false,
+                updatedAt: at,
+                revision: sql`${salesOrders.revision}+1`,
+              })
+              .where(eq(salesOrders.id, r.orderId));
+            await tx
+              .update(posOrderReservations)
+              .set({
+                status: 'released',
+                updatedAt: at,
+                closedAt: at,
+                closedBy: who(c).id,
+                closeReason: r.reason,
+              })
+              .where(
+                and(
+                  eq(posOrderReservations.orderId, r.orderId),
+                  eq(posOrderReservations.status, 'active'),
+                ),
+              );
+            await tx
+              .update(posPaymentIntents)
+              .set({
+                status: 'cancelled',
+                cancelledAt: at,
+                cancelledBy: who(c).id,
+                cancelReason: r.reason,
+              })
+              .where(
+                and(
+                  eq(posPaymentIntents.orderId, r.orderId),
+                  eq(posPaymentIntents.status, 'pending'),
+                ),
+              );
+            await tx
+              .update(deliveries)
+              .set({ status: 'cancelled', updatedAt: at })
+              .where(
+                and(
+                  eq(deliveries.orderId, r.orderId),
+                  inArray(deliveries.status, [
+                    'planned',
+                    'in_transit',
+                    'failed',
+                  ]),
+                ),
+              );
+            await tx
+              .update(packingSlips)
+              .set({ status: 'cancelled', updatedAt: at })
+              .where(
+                and(
+                  eq(packingSlips.orderId, r.orderId),
+                  inArray(packingSlips.status, ['draft', 'sent']),
+                ),
+              );
+          }
           await cashAudit(
             tx,
             who(c).id,
@@ -441,7 +568,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             throw new AppError(403, 'Không có quyền huỷ yêu cầu này.');
           if (['cancelled', 'rejected'].includes(r.status))
             return { ok: true, replayed: true };
-          if (r.receivedAt)
+          if (
+            r.receivedAt ||
+            r.creditEffectiveAt ||
+            (r.requestContext === 'after_issue' && r.approvedAt)
+          )
             throw new AppError(409, 'Đã thực nhận hàng, không huỷ chứng từ.');
           await tx
             .update(posReturns)
@@ -471,6 +602,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           await cashLock(tx);
           const r = await getReturn(c, tx, c.params.id!);
           const s = await current(c, tx, b.shiftId, r.registerId);
+          if (r.requestContext === 'before_fulfillment')
+            throw new AppError(
+              409,
+              'Huỷ trước xuất không phát sinh nhập hàng.',
+            );
           if (r.receivedAt) return { id: r.id, replayed: true };
           if (r.status !== 'approved')
             throw new AppError(409, 'Yêu cầu chưa được duyệt.');
@@ -683,7 +819,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
         await c.env.db.transaction(async (tx) => {
           await cashLock(tx);
           const r = await getReturn(c, tx, c.params.id!);
-          if (!r.receivedAt) throw new AppError(409, 'Chưa nhận hàng.');
+          if (
+            !r.creditEffectiveAt ||
+            (!r.receivedAt && r.requestContext !== 'before_fulfillment')
+          )
+            throw new AppError(409, 'Chưa nhận hàng.');
           const a = await returnAccount(tx, r.orderId);
           if (
             a.available > 0 ||

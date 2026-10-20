@@ -12,6 +12,7 @@ export function shiftSummaryRows(d) {
     ...(d.returns ? [['Giá trị trả hàng đã thực nhận', money(d.returns.credit)], ['Giá trị bán trừ hàng trả trong ca',money(d.bills.revenue-d.returns.credit)], ['Hoàn chuyển khoản thực tế', money(d.returns.refundedTransfer)], ['Thanh toán bằng tiền đổi hàng', money(d.returns.exchanged)]] : []),
     ['Tiền mặt thực thu', money(d.cash)],
     ['Chuyển khoản đã xác nhận', money(d.transfer)],
+    ...(d.orderFlows?[[ 'Tiền cọc thực nhận',money(d.orderFlows.deposit)],['Thu nốt đơn nhận sau',money(d.orderFlows.balance)],['Ship trả trước thực nhận',money(d.orderFlows.prepaid)],['Chuyển khoản cọc/trả trước đang chờ (không vào két)',`${d.orderFlows.pending.count} khoản · ${money(d.orderFlows.pending.amount)}`],['Đơn nhận sau còn phải thu (cùng két)',`${d.orderFlows.outstanding.count} đơn · ${money(d.orderFlows.outstanding.amount)}`]]:[]),
     ['Tiền đầu ca thực đếm', money(d.shift.openingCash)],
     ...(d.openingComparison ? [
       ['Tiền bàn giao tham chiếu', money(d.openingComparison.expectedCash)],

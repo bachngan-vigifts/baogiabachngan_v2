@@ -29,6 +29,7 @@ export const posReturns = pgTable(
     createdShiftId: text('created_shift_id')
       .notNull()
       .references(() => posShifts.id),
+    requestContext: text('request_context').notNull().default('after_delivery'),
     kind: text('kind').notNull(),
     status: text('status').notNull(),
     reason: text('reason').notNull(),
@@ -65,6 +66,7 @@ export const posReturns = pgTable(
   (t) => [
     uniqueIndex('uq_pos_return_no').on(t.returnNo),
     uniqueIndex('uq_pos_return_key').on(t.requestKey),
+    check('chk_pos_return_context', sql`${t.requestContext} in ('before_fulfillment','after_issue','after_delivery')`),
     check('chk_pos_return_kind', sql`${t.kind} in ('return','exchange')`),
     check(
       'chk_pos_return_status',

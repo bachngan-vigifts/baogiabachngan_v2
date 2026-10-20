@@ -941,3 +941,15 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-mobile-cart-dock > b { color: #155f37; font-size: 13px; white-space: nowrap; }
   .pos-mobile-cart-open { min-height: 40px; padding-inline: 11px; background: #16884d !important; border-color: #16884d !important; font-size: 11px; }
 }
+
+/* Đơn nhận sau: dùng chung popup, dễ thao tác trên điện thoại. */
+.pos-flow-modal{width:min(660px,calc(100vw - 24px));max-height:90dvh}
+.pos-flow-head,.pos-flow-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pos-flow-head{justify-content:space-between;margin-bottom:16px}
+.pos-flow-head h2{margin:0;font-size:20px}.pos-flow-form,.pos-flow-list{display:grid;gap:12px}
+.pos-flow-card{padding:16px;margin:14px 0;border:1px solid #d9e3ed;border-radius:12px;display:grid;gap:10px}
+.pos-flow-card h3{margin:0}.pos-flow-total,.pos-flow-state{font-weight:700;color:#137d49}
+.pos-flow-summary{display:grid;grid-template-columns:1fr auto;gap:10px;padding:14px;background:#f0faf5;border-radius:12px}
+.pos-flow-summary dd{margin:0;font-weight:700;text-align:right}.pos-flow-order{display:grid;gap:6px;text-align:left;padding:14px;background:white;border:1px solid #d9e3ed;border-radius:10px;color:inherit;cursor:pointer}
+.pos-flow-order:hover{background:#effaf3}.pos-flow-card input[type=checkbox],.pos-flow-form input[type=checkbox]{width:20px;height:20px}
+@media(max-width:560px){.pos-flow-actions>.btn{flex:1}.pos-flow-modal .pos-modal-content{padding:16px}.pos-flow-summary{font-size:13px}}

@@ -24,7 +24,7 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     for(const l of r.lines||[])line(l.name+' × '+l.requestedQty,money(l.total));
     line('Phí được duyệt hoàn',money(r.approvedServiceFee+r.approvedShippingFee));line('Giá trị trả',money(r.total),true);
     for(const f of r.refunds||[])line('Đã hoàn '+(f.method==='cash'?'tiền mặt':'chuyển khoản'),money(f.amount));
-    sheet.append(node(doc,'p',r.receivedAt?'Đã xác nhận thực nhận hàng':'Chưa xác nhận nhận hàng'),node(doc,'p','Giá trị trả hàng không đồng nghĩa đã hoàn tiền.'));
+    sheet.append(node(doc,'p',r.requestContext==='before_fulfillment'?'Huỷ trước xuất: không phát sinh nhập hàng':r.receivedAt?'Đã xác nhận thực nhận hàng':'Chưa xác nhận nhận hàng'),node(doc,'p','Giá trị trả hàng không đồng nghĩa đã hoàn tiền.'));
   } else if (kind === 'shift') {
     sheet.append(node(doc, 'h3', 'BÁO CÁO KẾT CA'), node(doc, 'p', data.memberName || data.shift.memberId));
     line('Mở ca', new Date(data.shift.openedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }));
@@ -57,12 +57,12 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     sheet.append(node(doc, 'p', 'COD chưa thu không nằm trong tiền két. Ca đã kết được lưu cố định.'));
   } else {
     const temporary = data.temporary === true,
-      cod = data.method === 'cod';
+      cod = data.method === 'cod',flow=data.saleFlow;
     sheet.append(
       node(
         doc,
         'h3',
-        temporary ? 'BILL TẠM TÍNH - CHƯA THANH TOÁN' : cod ? (data.depositAmount ? (data.codAmount === 0 ? 'ĐƠN GIAO HÀNG - ĐÃ THU ĐỦ' : 'ĐƠN SHIP COD - ĐÃ THU MỘT PHẦN') : 'ĐƠN SHIP COD - CHƯA THU') : 'BILL BÁN HÀNG',
+        temporary ? 'BILL TẠM TÍNH - CHƯA THANH TOÁN' : flow==='deposit'?'PHIẾU ĐẶT CỌC - NHẬN HÀNG SAU':flow==='prepaid'?'ĐƠN SHIP TRẢ TRƯỚC 100%': cod ? (data.depositAmount ? (data.codAmount === 0 ? 'ĐƠN GIAO HÀNG - ĐÃ THU ĐỦ' : 'ĐƠN SHIP COD - ĐÃ THU MỘT PHẦN') : 'ĐƠN SHIP COD - CHƯA THU') : 'BILL BÁN HÀNG',
       ),
     );
     if (!temporary) line('Số đơn', data.orderNo || '');
@@ -91,6 +91,12 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     if(data.exchangeCredit){line('Thanh toán bằng tiền đổi hàng',money(data.exchangeCredit));line('Khách trả thêm',money(data.payable));}
     if (data.note) sheet.append(node(doc, 'p', 'Ghi chú: ' + data.note, 'order-note'));
     if (temporary) sheet.append(node(doc, 'p', 'Chưa ghi thu, chưa trừ kho. Không phải hóa đơn VAT.', 'center'));
+    else if(flow){
+      line('Đã thực nhận',money(data.receivedAmount));line('Chuyển khoản đang chờ',money(data.pendingAmount??(data.pendingTransfer?data.initialAmount:0)));line('Còn phải thu',money(data.remaining??(data.total-(data.receivedAmount||0))),true);
+      if(data.holdUntil&&!data.holdUntil.startsWith('9999'))line('Giữ hàng đến',new Date(data.holdUntil).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}));
+      sheet.append(node(doc,'p',flow==='deposit'?'Mang số đơn khi nhận hàng. Chỉ xuất hàng sau khi thu đủ.':'Chỉ đóng gói/giao sau khi thực nhận đủ. COD: 0 đ.'));
+      sheet.append(node(doc,'p','Chuyển khoản đang chờ chưa phải tiền đã thu. Huỷ/hoàn theo xác nhận và phê duyệt.'));
+    }
     else if (cod) {
       line('Đã thu trước / tạm ứng' + (data.depositAmount ? (data.depositMethod === 'cash' ? ' (tiền mặt)' : ' (chuyển khoản)') : ''), money(data.depositAmount || 0));
       line('Còn lại thu COD', money(data.codAmount ?? data.total));

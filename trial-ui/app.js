@@ -1,3 +1,4 @@
+import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { openBarcodeImport } from './barcode-import.js';
 import { posOrderEditor, posCodReceipt, posPaymentText } from './pos-order-edit.js';
@@ -3324,6 +3325,7 @@ async function openOrder(id) {
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   if(o.channel==='pos' && can('pos.sell')){const b=document.createElement('button');b.className='btn secondary';b.textContent='Trả / Đổi / Hoàn tiền';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosReturns({api,toast,orderId:o.id,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
+  if(o.channel==='pos'&&can('pos.sell')&&['deposit','prepaid'].includes(JSON.parse(o.posSnapshot||'{}').saleFlow)){const b=document.createElement('button');b.className='btn primary';b.textContent='Cọc / Thu nốt / Trả trước';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosOrderFlows({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:o.id,onChanged:()=>openOrder(o.id),onReturns:id=>openPosReturns({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:id,onChanged:()=>openOrder(o.id)})});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
   if (o.channel === 'pos' && o.canEdit && o.status !== 'cancelled' && !isK) $('#order-actions').append(posOrderEditor({ api, detail: d, onSaved: () => openOrder(o.id) }));
   const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
   if (sapoAction) $('#order-actions').append(sapoAction);

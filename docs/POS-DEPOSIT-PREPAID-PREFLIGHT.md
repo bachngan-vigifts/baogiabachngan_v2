@@ -1,6 +1,6 @@
-# Đặt cọc tại quầy và ship trả trước — phương án dữ liệu cần duyệt
+# Đặt cọc tại quầy và ship trả trước — phương án dữ liệu đã duyệt
 
-Ngày 20/10/2026. Anh đã duyệt quy tắc nghiệp vụ trong cuộc trao đổi. Tài liệu này trình chi tiết schema, migration dự kiến và phạm vi file trước khi viết mã nghiệp vụ. Chưa tạo migration, chưa sửa production. Phương án đã duyệt trong cuộc trao đổi thay thế các mục chưa chốt của prompt; chưa nhận file thiết kế riêng được nhắc tới trong prompt.
+Ngày 20/10/2026. Anh đã duyệt quy tắc nghiệp vụ trong cuộc trao đổi. Anh đã duyệt phương án dữ liệu và cho tạo migration ngày 20/10/2026. Đang triển khai cục bộ; chưa áp dụng lên production. Phương án đã duyệt trong cuộc trao đổi thay thế các mục chưa chốt của prompt; chưa nhận file thiết kế riêng được nhắc tới trong prompt.
 
 ## Quy tắc đã được duyệt
 
@@ -48,7 +48,7 @@ Ngày 20/10/2026. Anh đã duyệt quy tắc nghiệp vụ trong cuộc trao đ�
 
 - Một migration nghiệp vụ: tạo hai bảng, cột request_context, CHECK/FK/unique/index; không sửa migration cũ, không cập nhật tiền/đơn cũ.
 - Một migration quyền: bật RLS, thu hồi quyền trực tiếp anon/authenticated cho hai bảng mới theo mô hình server-only hiện có. Không tạo policy cho phép client ghi tiền.
-- Chỉ tạo file bằng Supabase CLI sau khi anh duyệt phương án này. Bước chạy lên production cần được duyệt riêng trước triển khai API phụ thuộc các bảng mới.
+- Đã tạo file bằng Supabase CLI sau khi anh duyệt phương án này: `20261020010950_pos_deposit_prepaid.sql` và `20261020011018_supabase_access_pos_deposit_prepaid.sql`. Bước chạy lên production cần được duyệt riêng trước triển khai API phụ thuộc các bảng mới.
 
 ## Trạng thái và tiền
 
@@ -86,4 +86,4 @@ Sửa:
 
 Cọc tiền mặt và chuyển khoản chờ/xác nhận; 30%/50%/số khác và làm tròn; thu nốt qua ca khác; thiếu tiền không xuất; hết hạn cạnh tranh giữ hàng và giữ lại trước thu; không tính giữ hai lần; không xuất/thu/hoàn hai lần khi retry đồng thời; huỷ intent/phiếu thu/đơn theo từng trạng thái; hoàn/tín dụng không quá tiền thực nhận; quyền nhân viên/Manager/người chỉ định và scope Lock/ML; báo cáo ca cũ bất biến; COD cũ và đổi/trả cũ không hồi quy.
 
-Chạy typecheck, toàn bộ test suite và kiểm tra trình duyệt desktop/mobile. Báo số pass/fail/skip và phần chưa thử trên máy in K80 hoặc Supabase live. Hiện chưa chạy các kiểm thử này vì đây mới là phương án trước triển khai.
+Chạy typecheck, toàn bộ test suite và kiểm tra trình duyệt desktop/mobile. Báo số pass/fail/skip và phần chưa thử trên máy in K80 hoặc Supabase live. Kết quả triển khai và kiểm thử được ghi trong PR #189. Hai migration mới chưa được chạy lên production; bước đó cần anh duyệt riêng.

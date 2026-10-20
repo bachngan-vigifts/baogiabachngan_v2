@@ -1,3 +1,4 @@
+import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { assertNoReturnActivity } from './pos-return-credit.ts';
 import { posOrderNote } from '../domain/pos-order-note.ts';
 import { snapshotPosFees } from '../domain/pos-fees.ts';
@@ -57,6 +58,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
       return Number(row.qty) !== l.qty || Number(row.price) !== (l.listUnitPrice ?? l.unitPrice) || row.discountType !== l.discountType || Number(row.discountValue) !== l.discountValue;
     });
     if (changed) {
+      if (saleFlowOf(order.posSnapshot)) throw new AppError(409,'Đơn cọc/trả trước giữ nguyên giá, chiết khấu và số lượng.');
       await assertNoReturnActivity(db,order.id);
       const active = ships.filter(s => s.status !== 'cancelled');
       if (order.fulfillmentMode !== 'cod' || receipts.length || oldLines.some(l => l.deliveredQty > 0) || packs.length || contracts.length || active.some(s => s.status !== 'planned') || active.length > 1)

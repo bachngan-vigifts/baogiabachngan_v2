@@ -1,3 +1,5 @@
+import { stockMoves } from '../../inventory/schema.ts';
+import { posOrderReservations } from '../pos-order-flow-schema.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -9,7 +11,7 @@ import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { quotations, quoteLines } from '../../quotes/schema.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { salesContracts, salesOrderLines, salesOrders, stockHolds } from '../schema.ts';
+import { salesContracts, salesOrderLines, salesOrders, stockHolds, packingSlips, deliveries } from '../schema.ts';
 import { HOLD_DAYS } from '../domain/statuses.ts';
 
 /**
@@ -49,12 +51,12 @@ export async function expireHolds(env: StaffEnv): Promise<number> {
 }
 
 /** Hàng đơn / HĐKT đang giữ (theo mã): phần chưa giao, đơn còn hiệu lực, tồn Sapo chưa trừ. `skus` để lọc (không truyền = mọi mã). */
-export async function orderHolds(db: Db, skus?: string[]) {
+export async function orderHolds(db: Db, skus?: string[], warehouseId?: string) {
   if (skus && !skus.length) return [];
   const sapoCounted = and(sql`${salesOrders.sapoOrderId} IS NOT NULL`, or(isNull(salesOrders.sapoPushedAt), sql`EXISTS (${db.select({ one: sql`1` }).from(productStock)
     .innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId))
     .where(and(eq(productStock.sku, salesOrderLines.sku), eq(warehouses.kind, 'stock'), gt(productStock.updatedAt, salesOrders.sapoPushedAt)))})`));
-  return db.select({
+  const legacy = await db.select({
     sku: salesOrderLines.sku, qty: sql<number>`sum(${salesOrderLines.qty} - ${salesOrderLines.deliveredQty})`.mapWith(Number),
     orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName,
     contractNo: sql<string | null>`max(${salesContracts.contractNo})`,
@@ -63,6 +65,12 @@ export async function orderHolds(db: Db, skus?: string[]) {
     .where(and(eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
       gt(salesOrderLines.qty, salesOrderLines.deliveredQty), skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`))
     .groupBy(salesOrderLines.sku, salesOrders.id).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
+  const issued = sql`coalesce((select -sum(${stockMoves.qty}) from ${stockMoves} where ${stockMoves.sku}=${salesOrderLines.sku} and ${stockMoves.warehouseId}=${posOrderReservations.warehouseId} and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id})) or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;
+  const timed = await db.select({ sku: salesOrderLines.sku, qty: sql<number>`sum(greatest(0,${posOrderReservations.qty}-greatest(${salesOrderLines.deliveredQty},${issued})))`.mapWith(Number), orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, contractNo: sql<string | null>`null` })
+    .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId)).innerJoin(salesOrderLines, eq(salesOrderLines.id, posOrderReservations.orderLineId))
+    .where(and(eq(posOrderReservations.status, 'active'), gt(posOrderReservations.expiresAt, nowIso()), inArray(salesOrders.status, ['draft','confirmed','delivering']), skus ? inArray(salesOrderLines.sku, skus) : undefined, warehouseId ? eq(posOrderReservations.warehouseId, warehouseId) : undefined))
+    .groupBy(salesOrderLines.sku, salesOrders.id).limit(5000);
+  return [...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true}))];
 }
 
 /** Báo giá đã lập đơn / HĐKT còn hiệu lực: hàng do đơn giữ – không giữ thêm theo báo giá (tránh giữ trùng). */

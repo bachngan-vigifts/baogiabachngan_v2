@@ -33,6 +33,9 @@ jobs:
           node --import tsx --test
           tests/app/pos.test.ts
           tests/app/pos-cod-deposit.test.ts
+          tests/db/pos-order-flow-access.test.ts
+          tests/app/pos-order-flow.test.ts
+          tests/app/pos-order-flow-ui.test.ts
           tests/app/pos-fees.test.ts
           tests/app/pos-note.test.ts
           tests/app/pos-returns.test.ts

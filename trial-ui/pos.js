@@ -1,3 +1,4 @@
+import { openPosFlowCheckout, openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
 import { printPos } from './pos-print.js';
@@ -226,6 +227,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     menuAction('Trả / Đổi / Hoàn', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()}));
     menuAction('Báo cáo ca', () => run(history));
     menuAction('Ship COD', () => run(codList));
+    menuAction('Đơn cọc / Ship trả trước',()=>run(flowOrders));
     menuAction('In bill tạm', () => run(printTemporary));
     menuAction('Chọn bảng giá', choosePricePolicy);
     if (st.options.canConfigure) { menuAction('Cấu hình', () => configure()); menuAction('+ Quầy', () => configure(true)); }
@@ -505,6 +507,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.cart = []; st.customer = null; st.feeName = ''; st.feeAmount = ''; st.shippingFee = ''; st.feeVisible = false; st.note = ''; st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
     draw(); if (st.register) await search(false);
   }
+  async function flowOrders(orderId=''){
+    return openPosOrderFlows({api,toast,shift:st.shift,register:st.register,orderId,onChanged:()=>search(),onReturns:id=>openPosReturns({api,toast,shift:st.shift,register:st.register,orderId:id,onChanged:()=>search()})});
+  }
+  function createFlow(flow,close){
+    if(!active()||!st.preview||!st.cart.length||st.pending||st.busy)return;
+    if(st.exchangeAllocationId)return toast('Thanh toán tín dụng đổi hàng tại quầy trước; không ghép vào đơn cọc.','err');
+    if(st.preview.total<=0)return toast('Đơn cọc/trả trước phải có giá trị lớn hơn 0.','err');
+    close();openPosFlowCheckout({flow,total:st.preview.total,customer:st.customer,toast,onSubmit:extra=>submit({...payload(),key:key(),...extra})});
+  }
   function openPayment() {
     if (!active() || !st.preview || !st.cart.length || st.pending || st.busy) return;
     const m = modal('Thanh toán'); m.dlg.classList.add('pos-payment-modal');
@@ -534,7 +545,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const footer = el('div', 'pos-payment-footer'); nodes.temp = button('In bill tạm', 'btn secondary', () => run(printTemporary));
     nodes.modalPay = button('Thu tiền & in bill', 'btn primary', async () => { if (st.method === 'cod') await pay(true); else await pay(false); if (!st.pending && !st.cart.length) m.close(); });
     footer.append(nodes.temp, nodes.modalPay);
-    m.body.append(due, methods, tender, transfer, cod, footer); m.show(); drawMethods(); refreshPay();
+    const future=el('div','pos-flow-actions');future.append(button('Đặt cọc · Nhận sau','btn secondary',()=>createFlow('deposit',m.close)),button('Ship trả trước 100%','btn secondary',()=>createFlow('prepaid',m.close)));
+    m.body.append(due, methods, tender, transfer, cod, future, footer); m.show(); drawMethods(); refreshPay();
   }
   function drawMethods() {
     if (!nodes.methods) return;
@@ -1357,6 +1369,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         el('p', '', money(d.total)),
         button('In lại bill', 'btn secondary', () => printPos(d)),
         ...(body.fulfillmentMode === 'cod' ? [ghnPortalLink(d.ghnOrderCode || '')] : []),
+        ...(body.saleFlow?[button('Xem đơn nhận sau','btn secondary',()=>{saved.close();run(()=>flowOrders(d.id));})]:[]),
         button('Bán đơn tiếp', 'btn primary', saved.close),
       );
       saved.show();
