@@ -1,3 +1,4 @@
+import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 import { saleFlowOf, flowHoldUntil } from '../domain/pos-order-flow.ts';
@@ -623,10 +624,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Đã yêu cầu (vd tự động khi giao xong) mà kế toán chưa xuất: cập nhật email / ghi chú / cách xuất.
     if (order.invoiceStatus === 'requested') {
       await c.env.db.update(salesOrders).set({ ...fields, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(and(eq(salesOrders.id, order.id), eq(salesOrders.invoiceStatus, 'requested')));
+      await invoiceTasksChanged(c.env, { orderId: order.id }, viewer(c).id);
       return json({ ok: true, updated: true });
     }
     await c.env.db.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: viewer(c).id, ...fields,
       updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(and(eq(salesOrders.id, order.id), eq(salesOrders.invoiceStatus, 'none')));
+    await invoiceTasksChanged(c.env, { orderId: order.id }, viewer(c).id);
     return json({ ok: true });
   }, 'business');
 
@@ -641,6 +644,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const now = nowIso();
     await c.env.db.update(salesOrders).set({ invoiceStatus: 'issued', invoiceNo, invoiceDate, invoiceIssuedAt: now, invoiceIssuedBy: viewer(c).id,
       invoiceRequestedAt: order.invoiceRequestedAt ?? now, updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+    await invoiceTasksChanged(c.env, { orderId: order.id }, viewer(c).id);
     if (order.invoiceStatus !== 'issued') {
       const ref = docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id));
       await notifyMany(c.env, [order.ownerId, order.invoiceRequestedBy], { eventType: 'invoice_issued', title: 'Đã xuất hoá đơn', body: `${ref.no} – ${order.customerName} · HĐ ${invoiceNo}`,
@@ -898,6 +902,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (status === 'delivered') await issuePosDelivery(tx, row.d.orderId, row.d.id, me.id);
       await refreshOrderStatus(tx, row.d.orderId, deliveredOn);
     });
+    if (status === 'delivered') await invoiceTasksChanged(c.env, { orderId: row.d.orderId }, me.id);
     // Lịch sử sản phẩm: chuyến "Đã giao" = xuất kho cho khách.
     if (status === 'delivered') {
       const [o] = await c.env.db.select().from(salesOrders).where(eq(salesOrders.id, row.d.orderId)).limit(1);

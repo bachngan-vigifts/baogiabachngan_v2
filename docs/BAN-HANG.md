@@ -52,8 +52,10 @@ Tổng trước thuế được làm tròn từ tổng dòng; tổng thanh toán
     - **cách xuất**: *Phát hành hoá đơn* (`issue`) hoặc *Gửi bản nháp* cho khách kiểm tra trước (`draft`);
     - **ghi chú** cho kế toán.
   - Đơn đã yêu cầu mà chưa xuất: bấm *Sửa yêu cầu* để đổi email / cách xuất / ghi chú. Hai cột `invoice_email`, `invoice_mode` (migration `0039_invoice_email_mode.sql`).
-  - Đơn giao xong **trước** bản này không tự yêu cầu; nhân viên bấm tay nếu cần.
-- **Việc tự sinh "Xuất hoá đơn"** (nguồn `invoice`) giao cho **nhóm Kế toán** (chức vụ `accounting`), dẫn tới trang đơn.
+  - POS chuyển khoản đã hoàn thành: tự yêu cầu khi có phiếu thu chuyển khoản thật, chưa huỷ và đơn đã thu đủ; QR/khoản chờ, cọc chưa nhận hàng không được coi là hoàn thành. POS tiền mặt tại quầy chỉ yêu cầu khi nhân viên bấm; đơn giao tận nơi áp dụng quy tắc giao xong.
+  - Các đơn CRM đã giao / Manager đánh dấu xong giao hàng và POS chuyển khoản cũ đủ điều kiện được bổ sung khi đồng bộ Công việc, không tạo lại đơn đã xuất hoá đơn.
+- **Việc tự sinh "Xuất hoá đơn"** (nguồn `invoice`) giao cho **nhóm Kế toán** ngay sau khi giao xong / POS chuyển khoản hoàn thành / nhân viên gửi yêu cầu; có thông báo cho nhóm. Nhãn **Đã giao hàng · Chờ hoá đơn**, hoặc **Yêu cầu xuất hoá đơn** nếu nhân viên yêu cầu trước khi giao. Một khoá `invoice:<orderId>` cho mỗi đơn/HĐKT, giữ người đã nhận việc; không đánh dấu xong tay trước khi nhập số hoá đơn.
+- **Đơn website GHN:** webhook WooCommerce hoặc thao tác làm mới đơn đồng bộ `ghn_status=delivered` → nhiệm vụ `invoice-web:<id>` cho Kế toán, kể cả website chưa chuyển `completed`. Không tạo việc cho đơn đang giao, thất bại, hoàn/huỷ. Nhiệm vụ có khách, điện thoại, email, địa chỉ, hàng, tổng tiền và mã GHN; kế toán ghi số hoá đơn vào Trao đổi rồi hoàn thành nhiệm vụ. Webhook gửi lại không nhân đôi hay mở lại nhiệm vụ kế toán đã hoàn thành. Không yêu cầu quyền bán POS để đọc nhiệm vụ.
 - **Kế toán hoặc Manager nhập số hoá đơn** (`PUT /orders/:id/invoice {invoiceNo, invoiceDate}`). Khi đó việc tự hoàn thành. Nhập nhầm thì bấm "Sửa số hoá đơn".
 - **Kế toán xem được mọi đơn / HĐKT** để nhập số hoá đơn.
 - Danh sách Đơn hàng và HĐKT có cột **Hoá đơn**. Lọc đơn chờ xuất: `GET /orders?invoice=requested`.

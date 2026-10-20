@@ -1,4 +1,5 @@
-import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
+import { invoiceTasks } from './invoice-tasks.ts';
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -226,14 +227,8 @@ export const RULES: Record<string, Rule> = {
    * Xuất hoá đơn: đơn / HĐKT đã được yêu cầu (tự động khi giao xong, hoặc nhân viên phụ trách bấm) → nhóm Kế toán.
    * Kế toán nhập số hoá đơn vào đơn (PUT /orders/:id/invoice) thì việc tự hoàn thành.
    */
-  async invoiceIssue(db) {
-    const rows = await db.select({ o: salesOrders, contractNo: salesContracts.contractNo }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
-      .where(and(eq(salesOrders.invoiceStatus, 'requested'), ne(salesOrders.status, 'cancelled'))).limit(500);
-    return rows.map(({ o, contractNo }) => ({ autoKey: `invoice:${o.id}`, source: 'invoice' as const, sourceId: o.id,
-      title: `${o.invoiceMode === 'draft' ? 'Gửi nháp hoá đơn' : 'Xuất hoá đơn'} ${contractNo ? 'HĐKT ' + contractNo : 'đơn ' + o.orderNo} – ${o.customerName}`,
-      description: `${vnd(o.total)}${o.taxCode ? ' · MST ' + o.taxCode : ''}${o.invoiceMode === 'draft' ? ' · GỬI BẢN NHÁP cho khách kiểm tra' : ' · Phát hành chính thức'}${o.invoiceEmail ? ' · Gửi tới: ' + o.invoiceEmail : ''}${o.invoiceRequestNote ? ' · ' + o.invoiceRequestNote : ''}. Nhập số hoá đơn vào ${contractNo ? 'HĐKT' : 'đơn'} sau khi xuất.`,
-      link: docRef(o.id, o.orderNo, contractNo).link, assigneeId: null, assigneePosition: 'accounting', priority: 'normal' as const, dueDate: o.invoiceRequestedAt ? addDaysIso(day(o.invoiceRequestedAt)!, 1) : null }));
-  },
+  invoiceIssue: db => invoiceTasks(db),
+
   /**
    * Xuất kho / đóng hàng: KHÔNG tự tạo – sinh khi nhân viên bấm "Yêu cầu kho đóng hàng" (POST /tasks/packing).
    * Quy tắc này chỉ giữ việc còn mở khi chuyến giao vẫn đang chờ giao; chuyến đã đi / đã giao / huỷ thì việc tự hoàn thành.
@@ -248,12 +243,18 @@ export const RULES: Record<string, Rule> = {
 
 /** Chạy mọi quy tắc rồi đồng bộ bảng `tasks`. Một quy tắc lỗi không chặn các quy tắc khác. */
 export async function reconcileAutoTasks(db: Db, now = new Date()) {
-  const today = vietnamDate(now).iso, stamp = now.toISOString();
+  const today = vietnamDate(now).iso;
   const wanted = new Map<string, AutoTask>();
   let failed = false;
   for (const [name, rule] of Object.entries(RULES)) {
     try { for (const t of await rule(db, today)) wanted.set(t.autoKey, t); } catch (e) { failed = true; console.error('auto task rule failed', name, e instanceof Error ? e.message : e); }
   }
+  return reconcileTaskSet(db, wanted, now, undefined, failed);
+}
+
+/** Reconcile only the selected keys after a committed business event; never close unrelated tasks. */
+export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, now = new Date(), scope?: SQL, failed = false) {
+  const stamp = now.toISOString();
   // Người nhận phải là nhân viên còn làm việc (chưa khoá / chưa xoá, không phải NCC / khách). Người phụ trách chứng từ
   // đã nghỉ thì việc về "chưa giao" để Manager thấy và giao lại – không để việc nằm ở tài khoản không ai đăng nhập.
   const usable = new Set((await db.select({ id: employees.id }).from(employees)
@@ -261,12 +262,13 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
   const who = (id: string | null | undefined) => (id && usable.has(id) ? id : null);
   for (const t of wanted.values()) t.assigneeId = who(t.assigneeId);
   const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, completedBy: tasks.completedBy, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
-    .from(tasks).where(isNotNull(tasks.autoKey));
+    .from(tasks).where(and(isNotNull(tasks.autoKey), scope));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
   const fresh = [...wanted.values()].filter(t => !byKey.has(t.autoKey));
   const created = fresh.map(t => ({ ...t, id: crypto.randomUUID() }));
-  if (created.length) await db.insert(tasks).values(created.map(t => ({ id: t.id, title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
-    sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing();
+  const inserted = created.length ? await db.insert(tasks).values(created.map(t => ({ id: t.id, title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
+    sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing().returning({ id: tasks.id }) : [];
+  const insertedIds = new Set(inserted.map(t => t.id));
   let closed = 0, updated = 0, reopened = 0;
   for (const t of existing) {
     const w = wanted.get(t.autoKey!);
@@ -287,5 +289,5 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
     }
   }
   // `fresh`: việc vừa tự sinh (để đẩy thông báo cho người / nhóm nhận).
-  return { created: fresh.length, closed, updated, reopened, fresh: created };
+  return { created: inserted.length, closed, updated, reopened, fresh: created.filter(t => insertedIds.has(t.id)) };
 }

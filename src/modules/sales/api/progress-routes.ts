@@ -1,3 +1,4 @@
+import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { and, eq } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -36,7 +37,10 @@ export function registerProgressRoutes(router: Router<StaffEnv>) {
     } else {
       await markProgress(c.env.db, order.id, stagesUpTo(printing, stage), 'manual', viewer(c).id);
       // Manager đánh dấu đã giao hàng → phiếu đóng gói còn treo tự hoàn tất.
-      if (stage === 'all' || stage === 'delivered') await closeSlipsOfDeliveredOrders(c.env.db, [order.id]);
+      if (stage === 'all' || stage === 'delivered') {
+        await closeSlipsOfDeliveredOrders(c.env.db, [order.id]);
+        await invoiceTasksChanged(c.env, { orderId: order.id }, viewer(c).id);
+      }
     }
     return json({ progress: (await progressOf(c.env.db, [order.id])).get(order.id) });
   }, 'business');

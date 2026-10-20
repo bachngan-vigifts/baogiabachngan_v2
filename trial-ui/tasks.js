@@ -18,6 +18,7 @@ const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/')
 const todayIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
 const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 const pill = (map, k, extra = '') => `<span class="pill ${map[k]?.[1] || ''} ${extra}">${esc(map[k]?.[0] || k)}</span>`;
+const completionHint = t => t.source === 'invoice' ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : /duyệt/i.test(t.title) ? 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt.' : 'Việc nhận hàng tự hoàn thành theo đơn mua. Mở chứng từ để ghi nhận hàng đã nhận.';
 const ago = iso => { const s = (Date.now() - Date.parse(iso)) / 1000; return s < 60 ? 'vừa xong' : s < 3600 ? `${Math.floor(s / 60)} phút trước` : s < 86400 ? `${Math.floor(s / 3600)} giờ trước` : dmy(iso); };
 function dueText(t) {
   if (!t.dueDate) return '<span class="muted">—</span>';
@@ -69,7 +70,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
   function row(t) {
     const done = t.status === 'done' || t.status === 'cancelled', ro = t.viewOnly;
     return `<tr class="task-row ${ro ? 'is-peer' : ''} ${done ? 'is-done' : ''} prio-${t.priority}" data-task="${esc(t.id)}">
-      <td class="task-check">${t.completionFromSource ? `<span class="muted" title="${!/duyệt/i.test(t.title) ? 'Tự hoàn thành theo số hàng đã nhận trên đơn mua' : 'Tự hoàn thành khi chứng từ được duyệt'}">—</span>` : `<input type="checkbox" ${t.status === 'done' ? 'checked' : ''} ${t.status === 'cancelled' || ro ? 'disabled' : ''} aria-label="Hoàn thành ${esc(t.title)}" data-toggle>`}</td>
+      <td class="task-check">${t.completionFromSource ? `<span class="muted" title="${esc(completionHint(t))}">—</span>` : `<input type="checkbox" ${t.status === 'done' ? 'checked' : ''} ${t.status === 'cancelled' || ro ? 'disabled' : ''} aria-label="Hoàn thành ${esc(t.title)}" data-toggle>`}</td>
       <td class="task-main"><div class="task-title">${esc(t.title)}${ro ? ' <span class="pill off" title="Việc của đồng nghiệp cùng chức vụ – chỉ xem">Đồng nghiệp · chỉ xem</span>' : ''}</div>
         <div class="task-meta">${pill(TASK_UI.source, t.source, 'src')}${t.auto && !t.createdBy ? '<span class="pill off" title="Hệ thống tự tạo, tự hoàn thành khi chứng từ xử lý xong">Tự động</span>' : ''}${t.description ? `<span class="muted task-desc">${esc(t.description)}</span>` : ''}${t.comments ? `<span class="task-cmt" title="Trao đổi">💬 ${t.comments}</span>` : ''}</div></td>
       <td data-label="Ưu tiên">${pill(TASK_UI.priority, t.priority, 'prio')}</td>
@@ -159,7 +160,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
         ${text ? `<input name="title" class="task-title-input" value="${esc(t.title)}" maxlength="300" required>` : `<h2>${esc(t.title)}</h2>`}</div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body">
         <div class="seg" role="group" aria-label="Trạng thái">${Object.entries(TASK_UI.status).filter(([k]) => (!t.completionFromSource || k === t.status || (k !== 'done' && k !== 'cancelled')) && (k !== 'cancelled' || canEdit)).map(([k, [l, c]]) => `<button type="button" class="seg-btn ${c}" data-set-status="${k}" aria-pressed="${k === t.status}" ${edit && !(t.completionFromSource && (t.status === 'done' || t.status === 'cancelled')) ? '' : 'disabled'}>${l}</button>`).join('')}</div>
-        ${t.completionFromSource ? `<p class="muted small">${/duyệt/i.test(t.title) ? 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt.' : 'Việc nhận hàng tự hoàn thành theo đơn mua. Mở chứng từ để ghi nhận hàng đã nhận.'}</p>` : ''}
+        ${t.completionFromSource ? `<p class="muted small">${esc(completionHint(t))}</p>` : ''}
         <div class="task-grid">
           <label><span>Người nhận</span><select name="assigneeId" ${edit ? '' : 'disabled'}>${personOptions(t.assigneeId, isManager(), t.assigneePosition || '')}</select></label>
           <label><span>Ưu tiên</span><select name="priority" ${edit ? '' : 'disabled'}>${Object.entries(TASK_UI.priority).map(([k, [l]]) => `<option value="${k}" ${k === t.priority ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
