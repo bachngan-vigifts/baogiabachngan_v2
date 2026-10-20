@@ -124,3 +124,10 @@ test('bản in đơn hiển thị 2 số lẻ đơn giá thay vì làm tròn tr�
   const p = print.orderPrintData({ order, lines: [{ name: 'Bình', qty: 110, unitPrice: 255851.64, amount: 28143680.4 }] });
   assert.match(print.orderSheetHtml(p, { prices: true }), /255\.851,64 đ/);
 });
+
+test('đơn POS nhiều phí: bản in tách đủ khoản, ship không VAT và tên độc hại được escape', () => {
+  const p = print.orderPrintData({ order: { ...order, posFees: { services: [{ name: 'Phí in', amount: 21600, subtotal: 20000, taxRate: 8 }, { name: '<img src=x onerror=1>', amount: 5400, subtotal: 5000, taxRate: 8 }], shippingFee: 20000 } }, lines: [] });
+  assert.deepEqual(p.charges, [{ name: 'Phí in', amount: 20000, taxRate: 8 }, { name: '<img src=x onerror=1>', amount: 5000, taxRate: 8 }, { name: 'Phí ship (không VAT)', amount: 20000, taxRate: 0 }]);
+  const html = print.orderSheetHtml(p, { prices: true });
+  assert.ok(html.includes('Phí in')); assert.ok(html.includes('&lt;img src=x onerror=1&gt;')); assert.ok(!html.includes('<img src=x onerror=1>'));
+});

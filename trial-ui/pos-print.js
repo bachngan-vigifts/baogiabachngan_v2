@@ -82,7 +82,11 @@ export function buildPosPrint(doc, data, kind = 'bill') {
         );
       line('Thành tiền', money(item.total));
     }
-    if (data.fees?.service?.amount) line(data.fees.service.name + ' (trước thuế)', money(data.fees.service.subtotal));
+    for (const fee of data.fees?.services ?? (data.fees?.service ? [data.fees.service] : [])) {
+      if (!fee.amount) continue;
+      line(fee.name + ' (trước thuế)', money(fee.subtotal));
+      if (fee.quantity != null && fee.unitPrice != null) line(`${fee.quantity} × ${money(fee.unitPrice)}`, money(fee.amount));
+    }
     if (data.fees?.shippingFee) line('Phí ship (không VAT)', money(data.fees.shippingFee));
     sheet.append(node(doc, 'div', '', 'bill-total-separator'));
     line('TỔNG THÀNH TIỀN', money(data.subtotal), true);

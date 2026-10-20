@@ -58,3 +58,30 @@ test('COD kèm phí: chưa thu không vào két, đổi SL giữ phí và cập 
   assert.equal(JSON.parse(after.order.posSnapshot).fees.service.amount, 10800);
   assert.equal((await f.db.select().from(posPaymentRequests)).length, 0);
 });
+
+test('POS nhiều phí: snapshot/chi tiết/COD giữ từng dòng, server tính tổng, QR và replay chặn đổi một phí', async () => {
+  const f = await setup({ viaClaw:true }), shift = await f.open();
+  const serviceFees = [{ name: 'Phí in', quantity: 3, unitPrice: 65000 }, { name: 'Gói quà', quantity: 2, unitPrice: 5400 }];
+  const body = f.cart(shift.id, { serviceFees, shippingFee:20000, tendered:500000 });
+  const preview = await f.call('/pos/preview',f.emp,'POST',body);
+  assert.equal(preview.status,200,JSON.stringify(preview.data)); assert.equal(preview.data.total,420200);
+  assert.deepEqual(preview.data.fees.services.map((x:any)=>[x.name,x.quantity,x.unitPrice,x.amount]),[['Phí in',3,65000,195000],['Gói quà',2,5400,10800]]);
+  const qr = await f.call('/pos/qr',f.emp,'POST',{...body,key:crypto.randomUUID()}); assert.equal(qr.status,200);
+  const renamed = [{...serviceFees[0],name:'Đổi tên phí'},serviceFees[1]];
+  assert.equal((await f.call('/pos/checkout',f.emp,'POST',{...body,key:crypto.randomUUID(),method:'transfer',confirmed:true,paymentRequestId:qr.data.id,serviceFees:renamed})).status,409);
+  const sale = await f.call('/pos/checkout',f.emp,'POST',body); assert.equal(sale.status,201,JSON.stringify(sale.data));
+  assert.equal(sale.data.total,420200); assert.equal(sale.data.fees.services.length,2);
+  const detail = (await f.call('/orders/'+sale.data.id,f.mgr)).data;
+  assert.equal(detail.order.posFees.services.length,2); assert.equal(JSON.parse(detail.order.posSnapshot).fees.services[1].quantity,2);
+  assert.equal((await f.call('/pos/checkout',f.emp,'POST',body)).data.replayed,true);
+  assert.equal((await f.call('/pos/checkout',f.emp,'POST',{...body,serviceFees:renamed})).status,409);
+  assert.equal((await f.db.select().from(customerPayments))[0]!.amount,420200);
+  assert.equal((await f.db.select().from(salesOrderLines)).length,1,'phí không tạo dòng hàng trừ tồn');
+  assert.equal(f.hooks[0]!.body.additional_fees.service.lines.length,2);
+  assert.match(f.hooks[0]!.body.notes,/Phí in: 3 × 65000/);
+  const cod = await f.call('/pos/checkout',f.emp,'POST',{...body,key:crypto.randomUUID(),fulfillmentMode:'cod',delivery:{address:'Địa chỉ thử'}});
+  assert.equal(cod.status,201,JSON.stringify(cod.data));
+  const codDetail = (await f.call('/orders/'+cod.data.id,f.mgr)).data;
+  assert.equal(codDetail.deliveries[0].codAmount,420200);
+  assert.equal(codDetail.order.posFees.services[0].amount,195000);
+});
