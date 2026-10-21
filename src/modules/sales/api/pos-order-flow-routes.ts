@@ -33,6 +33,7 @@ import {
   recordFlowMoney,
   cancelFlowOrder,
 } from './pos-order-flow-store.ts';
+import { notifyPosOrderCreated } from './pos-notifications.ts';
 import type { PosDb } from './pos-store.ts';
 type Ctx = RouteContext<StaffEnv>;
 const actor = (c: Ctx) => (c.state.session as SessionState).member;
@@ -58,7 +59,10 @@ export function registerPosOrderFlowRoutes(router: Router<StaffEnv>) {
       const body = await readJson(c.req, 64000);
       if (!saleFlowOf(body))
         throw new AppError(400, 'Chọn Đặt cọc hoặc Ship trả trước.');
-      return json(await checkout(c.env, actor(c), body), 201);
+      const member = actor(c);
+      const result = await checkout(c.env, member, body);
+      await notifyPosOrderCreated(c.env, member, result);
+      return json(result, 201);
     },
     'business',
   );

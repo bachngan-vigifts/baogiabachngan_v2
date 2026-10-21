@@ -4196,7 +4196,7 @@ $('#download-menu').addEventListener('click', () => closeDownloadMenu());
  * HĐKT dùng form riêng. Báo giá đã có đơn → mở đơn đó. Trả id đơn, null khi huỷ.
  */
 var orderCreateUi = null;
-const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
+const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, confirmBox, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
 async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false) {
   let existed = null;
   const post = async (fields, loc, push) => {

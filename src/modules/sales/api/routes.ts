@@ -229,6 +229,7 @@ async function contractCustomerCode(db: StaffEnv['db'] | Tx, quote: QuoteRow) {
  */
 export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; debtWarningAccepted?: boolean; submitted?: boolean; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string;
   /** Kho bán (đã kiểm quyền bằng pickSaleWarehouse). */ warehouseId?: string | null;
+  orderNo?: string;
   /** Chạy cuối giao dịch tạo đơn (vd. đẩy đơn sang Sapo); lỗi → huỷ, không có đơn. */
   inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
@@ -239,21 +240,24 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   }
   const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
   if (!lines.length) throw new AppError(400, 'Báo giá chưa có dòng sản phẩm nào có số lượng.');
-  const t = orderTotals(lines), today = vietnamDate().iso, now = nowIso(), id = crypto.randomUUID();
+  const t = orderTotals(lines), today = vietnamDate().iso, orderDate = o.orderDate ?? today, now = nowIso(), id = crypto.randomUUID();
   const [cust] = data.customerId ? await db.select({ id: customers.id, name: customers.name, approvalStatus: customers.approvalStatus }).from(customers).where(eq(customers.id, data.customerId)).limit(1) : [];
   // Khách mới do nhân viên tạo phải được Manager duyệt mới đặt hàng được.
   if (cust?.approvalStatus === 'pending') throw new AppError(409, `Khách hàng "${cust.name}" đang chờ Manager duyệt, chưa tạo đơn được.`, 'CUSTOMER_PENDING');
   const customerId = cust ? cust.id : null;
   assertApprovalDebt(await approvalDebt(db, customerId, String(data.customerTaxCode || '')), o.debtWarningAccepted);
   await db.transaction(async tx => {
-    const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
+    const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + orderDate.replaceAll('-', '') + '_%'}`)).map(r => r.n);
+    const orderNo = o.orderNo || nextDocNo('DH', orderDate, used);
+    const [duplicateNo] = await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.orderNo, orderNo)).limit(1);
+    if (duplicateNo) throw new AppError(409, `Số đơn hàng ${orderNo} đã tồn tại. Vui lòng chọn số khác.`, 'ORDER_NO_EXISTS');
     // Báo giá đang giữ hàng: lập đơn / HĐKT thì tự bỏ treo (hàng đi theo đơn).
     await tx.update(stockHolds).set({ status: 'converted', closedAt: now, closedBy: o.createdBy }).where(and(eq(stockHolds.quoteId, quote.id), eq(stockHolds.status, 'active')));
     await tx.insert(salesOrders).values({
-      id, orderNo: nextDocNo('DH', today, used), quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
+      id, orderNo, quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
       taxCode: text(data.customerTaxCode, 100), address: o.deliveryAddress === undefined ? text(orderDeliveryAddress(data), 2000) : text(o.deliveryAddress, 2000),
-      ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, warehouseId: o.warehouseId ?? null, orderDate: o.orderDate ?? today,
+      ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, warehouseId: o.warehouseId ?? null, orderDate,
       expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, submittedAt: o.submitted === false ? null : now, ...t, note: text(o.note ?? orderNotesFromQuote(data), 20000), createdAt: now, updatedAt: now,
     });
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
@@ -429,7 +433,19 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   // The form checks capabilities so a UI deploy cannot silently lose notes on an older API.
-  router.get('/orders/create-config', async () => json({ version: 1, noteMaxLength: 20000 }), 'business');
+  router.get('/orders/create-config', async () => json({ version: 2, noteMaxLength: 20000 }), 'business');
+
+  /** Xem trước số đơn kế tiếp; không giữ số, lúc tạo máy chủ kiểm tra/cấp lại để tránh trùng. */
+  router.get('/orders/next-no', async c => {
+    const me = viewer(c), quoteId = text(c.url.searchParams.get('quoteId'), 80);
+    const orderDate = text(c.url.searchParams.get('orderDate'), 10) || vietnamDate().iso;
+    if (!isDate(orderDate)) throw new AppError(400, 'Ngày đặt không hợp lệ.');
+    const [quote] = await c.env.db.select({ id: quotations.id }).from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
+    if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
+    const prefix = `DH_${orderDate.replaceAll('-', '')}_`;
+    const used = (await c.env.db.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${prefix + '%'}`)).map(r => r.n);
+    return json({ orderNo: nextDocNo('DH', orderDate, used) });
+  }, 'business');
 
   router.put('/orders/:id/pos', async c => {
     const b = await readJson(c.req, 100000);
@@ -508,6 +524,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
     const input = cleanOrderInput(body);
+    const customOrderNo = text(body.orderNo, 120).replace(/\s+/g, ' ');
+    if (customOrderNo && /[\u0000-\u001f<>]/.test(customOrderNo)) throw new AppError(400, 'Số đơn hàng không hợp lệ.');
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
     // Có tạo đơn Sapo (mặc định): đẩy trong cùng giao dịch (Sapo lỗi → không tạo đơn); `pushSapo: false` → chỉ tạo đơn web. HĐKT là luồng riêng: POST /contracts { quoteId }.
     const viaClaw = wantsSapoPush(c, body) && sapoPushViaClaw(c);
@@ -516,13 +534,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     // Nhân viên sinh đơn: NHÁP, chỉ gửi Manager khi bấm "Gửi duyệt" (POST /orders/:id/submit). Manager sinh đơn: coi như đã gửi.
     const submitted = me.role === 'manager';
     const warehouseId = await pickSaleWarehouse(c.env.db, quote.assigneeId ?? quote.creatorId, me, body.warehouseId);
-    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, warehouseId, ...input, debtWarningAccepted: body.debtWarningAccepted === true,
+    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, warehouseId, ...input,
+      debtWarningAccepted: body.debtWarningAccepted === true, orderNo: customOrderNo || undefined,
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
     if (viaClaw) sapo = await sendOrderToClaw(c, id, 'order');
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
     if (submitted) await notifyMany(c.env, 'approvers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
       url: `/index.html#/orders/${id}`, actorId: me.id, data: { orderId: id } });
-    return json({ id, sapo }, 201);
+    return json({ id, orderNo: o!.orderNo, sapo }, 201);
   }, 'business');
 
   /** Nhân viên xem kỹ đơn / HĐKT nháp rồi bấm "Gửi duyệt" → Manager nhận thông báo + việc "Duyệt". */

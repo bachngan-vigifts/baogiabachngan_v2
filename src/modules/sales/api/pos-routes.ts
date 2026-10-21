@@ -30,6 +30,7 @@ import { notifyMany } from '../../notifications/api/routes.ts';
 import { writeAudit } from '../../../core/audit.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
 import { sendPosShiftReport } from './pos-shift-report-webhook.ts';
+import { notifyPosOrderCreated } from './pos-notifications.ts';
 import ghnLocations from '../data/ghn-locations.json' with { type: 'json' };
 import {
   posNow,
@@ -833,8 +834,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
   router.post(
     '/pos/checkout',
     async (c) => {
-      const result = await checkout(c.env, member(c), await readJson(c.req, 64000));
-      await invoiceTasksChanged(c.env, { orderId: result.id }, member(c).id);
+      const actor = member(c);
+      const result = await checkout(c.env, actor, await readJson(c.req, 64000));
+      await invoiceTasksChanged(c.env, { orderId: result.id }, actor.id);
+      await notifyPosOrderCreated(c.env, actor, result);
       if (result.replayed || result.saleFlow || c.env.sapoOrderMode !== 'n8n') return json(result, 201);
       try { return json({ ...result, sapo: await sendPosOrderToClaw(c.env, result.id) }, 201); }
       catch (e) { return json({ ...result, sapo: { status: 'error', message: e instanceof Error ? e.message : 'Không gửi được đơn sang Claw.' } }, 201); }
