@@ -28,6 +28,10 @@ test('POS có phí: bill tạm/QR không ghi thu/xuất, checkout khớp tiền,
   assert.equal((await f.call('/pos/checkout', f.emp, 'POST', { ...body, feeAmount: 20000 })).status, 409);
   const detail = (await f.call('/orders/' + sale.data.id, f.mgr)).data;
   assert.equal(detail.order.posFees.shippingFee, 20000);
+  assert.deepEqual(detail.lines.map((l:any)=>[l.listUnitPrice,l.discountType,l.discountValue,l.discountAmount,l.qty,l.unitPrice,l.amount]),
+    [[108000,'percent',10,21600,2,90000,180000]], 'Order API preserves the original POS price, discount and net price');
+  assert.equal(JSON.parse(detail.order.posSnapshot).lines[0].total,194400);
+
   const report = (await f.call('/cash/shifts/' + shift.id, f.emp)).data;
   assert.equal(report.cash, 225200);
   assert.equal(f.hooks[0]!.body.total, 225200);
