@@ -197,7 +197,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       head = el('div', 'pos-head'),
       title = el('div'),
       tools = el('div', 'pos-head-tools');
-    title.append(el('h1', '', 'Bán hàng nhanh'), el('span', 'pos-register-name', st.register?.name || 'Chưa cấu hình quầy'));
+    title.append(el('h1', '', 'Bán hàng nhanh'), button('← Về CRM', 'btn secondary small', () => go('#/tasks')), el('span', 'pos-register-name', st.register?.name || 'Chưa cấu hình quầy'));
     head.append(title, tools);
     const menu = button('☰ Menu CRM', 'btn secondary pos-menu-toggle', () => {
       st.showMenu = !st.showMenu;
@@ -605,8 +605,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       else { await pay(false); if (!st.pending && !st.cart.length) m.close(); }
     });
     footer.append(nodes.temp, nodes.modalPay);
-    const future=el('div','pos-flow-actions');if(st.options.orderFlowVersion>=1)future.append(button('Đặt cọc · Nhận sau','btn secondary',()=>createFlow('deposit',m.close)),button('Ship trả trước 100%','btn secondary',()=>createFlow('prepaid',m.close)));
-    m.body.append(due, methods, tender, transfer, cod, future, footer); m.show(); drawMethods(); refreshPay();
+    m.body.append(due, methods, tender, transfer, cod, footer); m.show(); drawMethods(); refreshPay();
   }
   function drawMethods() {
     if (!nodes.methods) return;
