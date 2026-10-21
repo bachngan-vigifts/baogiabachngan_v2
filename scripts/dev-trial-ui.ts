@@ -50,6 +50,14 @@ await client.exec(`
   INSERT INTO product_stock (sku, warehouse_id, quantity, updated_at) VALUES ('LHC4125', 'q1', 120, now()::text), ('ML-LY-02', 'q1', 6, now()::text);
   INSERT INTO sapo_customers (id, name, contact, phone, email, address, search, tax_code, customer_code, source_version, synced_at) VALUES
     ('9001', 'Công ty Mẫu An Phát', 'Chị Mai', '0909000111', 'mai@anphat.test', '12 Nguyễn Huệ, Q1', 'cong ty mau an phat', '0300000001', 'AP01', 0, now()::text);
+  -- Kho bán theo chức vụ (docs/SO-KHO.md): VIGIFTS (Sale, Sale Admin), SR Minh Long - Lock (NVBH), Hoá đơn (Kế toán, kho riêng) – đã chốt tồn đầu kỳ.
+  INSERT INTO warehouses (id, name, kind, sort_order, stock_private) VALUES ('vig', 'KHO VIGIFTS', 'stock', 1, false), ('mll', 'SR Minh Long - Lock', 'stock', 2, false), ('hd', 'Hoá đơn Lock', 'stock', 3, true);
+  INSERT INTO warehouse_sellers (warehouse_id, position_id) VALUES ('vig', 'sale'), ('vig', 'sale-admin'), ('mll', 'sales-ml'), ('mll', 'sales-lock'), ('hd', 'accounting');
+  INSERT INTO stock_moves (id, sku, warehouse_id, qty, kind, ref_type, ref_id, ref_no, note, created_by, created_at) VALUES
+    ('dev-op1', 'ML-LY-02', 'vig', 40, 'opening', 'opening', 'dev-op', 'ĐK-DEV', 'Dữ liệu thử', 'mgr', now()::text),
+    ('dev-op2', 'ML-LY-02', 'mll', 12, 'opening', 'opening', 'dev-op', 'ĐK-DEV', 'Dữ liệu thử', 'mgr', now()::text),
+    ('dev-op3', 'ML-LY-02', 'hd', 5, 'opening', 'opening', 'dev-op', 'ĐK-DEV', 'Dữ liệu thử', 'mgr', now()::text);
+  INSERT INTO stock_balances (sku, warehouse_id, qty, updated_at) VALUES ('ML-LY-02', 'vig', 40, now()::text), ('ML-LY-02', 'mll', 12, now()::text), ('ML-LY-02', 'hd', 5, now()::text);
 `);
 const db = drizzle(client, { schema }) as unknown as AnyDb;
 const router = createAppRouter();
