@@ -62,8 +62,8 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
 
   // Duyệt ở màn hình gốc → biến khỏi hộp.
   await call(`/quotes/${q1.data.id}/approve`, mgr, 'POST', { revision: 1 });
-  await call(`/orders/${o2.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
-  await call(`/orders/${o3.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  await call(`/orders/${o2.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await call(`/orders/${o3.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
   await call(`/customers/${byKind.customer.id}/approve`, mgr, 'POST', {});
   await call('/products/NEW-01/approve', mgr, 'POST', {});
   d = await inbox();

@@ -1,3 +1,4 @@
+import { showApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { openBarcodeImport } from './barcode-import.js';
@@ -1454,8 +1455,8 @@ $$('input[name="profitShippingPayer"]').forEach(i => i.addEventListener('change'
   markDirty(); renderProfit();
 }));
 /** "Cập nhật CK mua vào": tự điền CK nhập theo nhóm hàng (Healthy Cook 15, Lys 19, Lock&Lock 58, Minh Long 25), rồi lưu báo giá. */
-$('#refresh-profit-costs').addEventListener('click', async e => {
-  const btn = e.currentTarget; if (!isManager() || btn.disabled) return;
+async function refreshPurchaseCosts() {
+  const btn = $('#refresh-profit-costs'); if (!isManager() || btn.disabled) return;
   btn.disabled = true; btn.textContent = 'Đang lưu CK…';
   try {
     const skus = [...new Set(editor.rows.map(r => (r.sku || '').trim()).filter(Boolean))], found = [];
@@ -1477,9 +1478,11 @@ $('#refresh-profit-costs').addEventListener('click', async e => {
       alert(`Có ${missing.length} sản phẩm chưa xác định được CK nhập rõ ràng. Vui lòng nhập giá trực tiếp hoặc CK ở cột Giá nhập / CK mua rồi bấm Lưu báo giá.\n\n${list}${more}`);
       toast(`Đã lưu ${updated} dòng CK, còn ${missing.length} dòng cần nhập thủ công`);
     } else toast(`Đã cập nhật và lưu CK mua vào cho ${updated} dòng${manual ? `; giữ nguyên ${manual} dòng giá thủ công` : ''}`);
+    return missing.length === 0;
   } catch (err) { toast(err.message || 'Chưa lưu được CK mua vào.', 'err'); }
   finally { btn.disabled = false; btn.textContent = 'Cập nhật CK mua vào'; }
-});
+}
+$('#refresh-profit-costs').addEventListener('click', refreshPurchaseCosts);
 
 // ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
 const nq = { type: 'HRC', customer: null, autoNo: '', brandDiscounts: null, onCustomerChange: () => { nqApplyTerms(); nqBrandDiscounts(); } };
@@ -3837,6 +3840,11 @@ document.addEventListener('click', async e => {
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
 async function verifyAndConfirmOrder() {
   const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
+  try {
+    const review = await api(`/orders/${encodeURIComponent(o.id)}/approval-preflight`);
+    if (review.debt.total > 0) { showApprovalDebt(review); return; }
+    if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast})) return;
+  } catch (ex) { toast(ex.message, 'err'); return; }
   const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
   const v = await verifyBox({
     title: `Duyệt ${isContractDoc(d) ? 'HĐKT' : 'đơn'} ${docNo(d)}`, eyebrow: 'Kiểm tra trước khi duyệt',
@@ -3852,9 +3860,13 @@ async function verifyAndConfirmOrder() {
   if (!v) return;
   try {
     if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
-    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true });
+    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
     toast(isContractDoc(d) ? 'Đã duyệt HĐKT. Báo giá của HĐKT đã được khoá.' : 'Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
-  } catch (ex) { toast(ex.message, 'err'); }
+  } catch (ex) {
+    if (ex.code === 'CUSTOMER_DEBT_OVERDUE') {
+      try { showApprovalDebt(await api(`/orders/${encodeURIComponent(o.id)}/approval-preflight`)); } catch { toast(ex.message, 'err'); }
+    } else toast(ex.message, 'err');
+  }
 }
 /** Xem trước đơn đặt hàng (mẫu đơn Minh Long), sửa trực tiếp trên phiếu rồi in / lưu PDF hoặc tải Excel. */
 function openOrderPrint(detail = sales.detail) {
@@ -4223,6 +4235,8 @@ function chooseFlow(label) {
  * `q`: { quoteId, quoteNo, quoteType, customer, address }. Trả true khi đã sinh / đã mở hộp lập HĐKT.
  */
 async function makeFromQuote(flow, q, done) {
+  const review = await api('/quotes/' + encodeURIComponent(q.quoteId) + '/approval-preflight');
+  if (review.debt.total > 0) { showApprovalDebt(review); return false; }
   if (flow === 'contract') { openContractForm({ ...q, done }); return true; }
   const id = await createOrderForQuote(q.quoteId, q.quoteNo);
   if (!id) return false;
@@ -4334,6 +4348,10 @@ $('#approve-quote').addEventListener('click', async () => {
   if (!(isManager() || editor.approval?.canApprove) || !editor.id) return;
   const btn = $('#approve-quote'); btn.disabled = true;
   try {
+    const preflight = await api('/quotes/' + encodeURIComponent(editor.id) + '/approval-preflight');
+    if (!isManager() && !preflight.purchaseCostsReady) { toast('Vui lòng nhờ Manager cập nhật giá mua trước khi duyệt báo giá.', 'err'); return; }
+    if (!await confirmBox('Vui lòng cập nhật giá mua trước khi duyệt. CK mua vào sẽ được cập nhật theo nhóm hàng; các giá nhập tay được giữ nguyên.', {title:'Kiểm tra giá mua',ok:isManager()?'Cập nhật giá mua & duyệt':'Đã kiểm tra giá mua'})) return;
+    if (isManager() && !await refreshPurchaseCosts()) return;
     if (editor.dirty) { await saveQuote(); if (editor.dirty) return; }
     const r = await api('/quotes/' + encodeURIComponent(editor.id) + '/approve', 'POST', { revision: editor.revision });
     editor.approval = { ...editor.approval, status: 'approved', at: r.approvedAt, by: r.approvedByName };

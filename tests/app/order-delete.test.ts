@@ -29,7 +29,7 @@ test('xoá đơn hàng đã huỷ: chỉ Manager, phải huỷ trước, báo gi
   const id = (await call('/orders', emp, 'POST', { quoteId: qid })).data.id as string;
   assert.equal((await call(`/orders/${id}`, mgr, 'DELETE')).status, 409, 'chưa huỷ thì không xoá');
   // Đã duyệt + có chuyến giao (chưa giao) → huỷ → xoá được, chuyến giao xoá theo.
-  await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
   const line = (await call(`/orders/${id}`, mgr)).data.lines[0];
   assert.equal((await call('/deliveries', mgr, 'POST', { orderId: id, plannedDate: '2030-01-15', lines: [{ orderLineId: line.id, qty: 5 }] })).status, 201);
   assert.equal((await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'cancelled' })).status, 200);
@@ -52,7 +52,7 @@ test('xoá HĐKT đã huỷ (kèm lịch thanh toán); đơn đã thu tiền th�
 
   // Đơn đã thu tiền: không huỷ được → không xoá được.
   const id2 = (await call('/orders', emp, 'POST', { quoteId: await quote('B2B_DEL3') })).data.id as string;
-  await call(`/orders/${id2}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  await call(`/orders/${id2}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
   const pay = await call('/payments', mgr, 'POST', { orderId: id2, amount: 100000, paidAt: '2026-10-09', method: 'transfer' });
   assert.equal(pay.status, 201, JSON.stringify(pay.data));
   assert.equal((await call(`/orders/${id2}/status`, mgr, 'PUT', { status: 'cancelled' })).status, 409);

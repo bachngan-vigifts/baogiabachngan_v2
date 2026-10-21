@@ -28,7 +28,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_2' });
   await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 1_000_000, paidAt: day(2), method: 'transfer' })).status, 201);
 
   // Quyền: nhân viên không xem hồ sơ người khác, không sửa lương.

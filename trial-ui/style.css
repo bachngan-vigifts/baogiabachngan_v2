@@ -1844,3 +1844,17 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 }
 .acct-detail-actions .btn.primary { background: var(--green); border-color: var(--green); }
 .accounting-tasks .task-go .btn.secondary { color: #236d4d; border-color: #b4cfc0; }
+
+/* Approval debt card: a clean customer-facing area suitable for a screenshot. */
+.approval-debt-dialog{width:min(680px,calc(100vw - 32px));padding:0;border:0;border-radius:18px;overflow:hidden}
+.approval-debt-card{padding:32px;background:#fff;color:#173047}
+.approval-debt-card .eyebrow{color:#a64b24;letter-spacing:.1em}
+.approval-debt-card h2{font-size:24px;margin:12px 0}
+.approval-debt-customer{font-weight:700;font-size:18px;margin-bottom:6px;overflow-wrap:anywhere}
+.approval-debt-total{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:22px;margin:24px 0;background:#fff3ed;border:1px solid #f4d9cb;border-radius:12px}
+.approval-debt-total strong{font-size:26px;color:#ab3427;white-space:nowrap}
+.approval-debt-card table{width:100%;border-collapse:collapse}
+.approval-debt-card th,.approval-debt-card td{padding:12px 0;border-bottom:1px solid #e7edf0;text-align:left;overflow-wrap:anywhere}
+.approval-debt-card .num-cell{text-align:right;white-space:nowrap}
+.approval-debt-message{line-height:1.7;margin-top:24px;color:#4a6172}
+@media(max-width:600px){.approval-debt-card{padding:20px}.approval-debt-total{align-items:flex-start;flex-direction:column}.approval-debt-total strong{font-size:23px}}
