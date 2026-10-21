@@ -1,7 +1,7 @@
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
 import { flowInitialAmount, flowHoldUntil, saleFlowOf } from '../domain/pos-order-flow.ts';
-import { exchangeForCart, returnAccount } from './pos-return-credit.ts';
+import { exchangeForCart, returnBalances } from './pos-return-credit.ts';
 import { posExchangeAllocations, posReturns, posRefunds } from '../return-schema.ts';
 import { posOrderNote } from '../domain/pos-order-note.ts';
 import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
@@ -302,7 +302,8 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
   const pendingByOrder=new Map<string,number>();
   for(const p of pending)pendingByOrder.set(p.orderId,(pendingByOrder.get(p.orderId)||0)+p.amount);
   let pendingCount=0,pendingAmount=0;
-  for(const [id,amount] of pendingByOrder){const a=await returnAccount(db,id,cutoff);const remaining=Math.min(amount,Math.max(0,a.balance));if(remaining>0){pendingCount++;pendingAmount+=remaining;}}
+  const pendingBalances=await returnBalances(db,[...pendingByOrder.keys()],cutoff);
+  for(const [id,amount] of pendingByOrder){const remaining=Math.min(amount,Math.max(0,pendingBalances.get(id)??0));if(remaining>0){pendingCount++;pendingAmount+=remaining;}}
   const flowOrders = await db.select({amount:sql<number>`greatest(0,${salesOrders.total}-(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.createdAt}<=${cutoff} and (${customerPayments.voidedAt} is null or ${customerPayments.voidedAt}>${cutoff})))`.mapWith(Number)}).from(salesOrders).innerJoin(posShifts,eq(posShifts.id,salesOrders.shiftId)).where(and(eq(posShifts.cashDrawerId,s.cashDrawerId),sql`${salesOrders.posSnapshot}::jsonb->>'saleFlow' in ('deposit','prepaid')`,inArray(salesOrders.status,['draft','confirmed','delivering']),sql`${salesOrders.createdAt}<=${cutoff}`));
   const flowPending = await db.select({n:count(),amount:sql<number>`coalesce(sum(${posPaymentIntents.amount}),0)`.mapWith(Number)}).from(posPaymentIntents).where(and(eq(posPaymentIntents.requestedShiftId,s.id),sql`${posPaymentIntents.createdAt}<=${cutoff}`,sql`(${posPaymentIntents.confirmedAt} is null or ${posPaymentIntents.confirmedAt}>${cutoff}) and (${posPaymentIntents.cancelledAt} is null or ${posPaymentIntents.cancelledAt}>${cutoff})`));
   let flowOutstandingCount=0,flowOutstandingAmount=0;

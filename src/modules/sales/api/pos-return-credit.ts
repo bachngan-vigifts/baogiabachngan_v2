@@ -65,6 +65,27 @@ export async function returnAccount(
     allocations,
   };
 }
+/**
+ * Số còn phải thu của nhiều bill cùng lúc (theo mốc `cutoff`): bill có phiếu trả đi qua `returnAccount` đầy đủ,
+ * bill không có phiếu trả tính bằng một truy vấn gộp (tổng − đã thu). Tránh 3–5 truy vấn cho mỗi bill
+ * ở báo cáo ca và danh sách Ship COD.
+ */
+export async function returnBalances(db: CashDb, orderIds: string[], cutoff = new Date().toISOString()) {
+  const out = new Map<string, number>();
+  const ids = [...new Set(orderIds)];
+  if (!ids.length) return out;
+  const withReturns = new Set((await db.selectDistinct({ orderId: posReturns.orderId }).from(posReturns).where(inArray(posReturns.orderId, ids))).map(r => r.orderId));
+  for (const id of withReturns) out.set(id, (await returnAccount(db, id, cutoff)).balance);
+  const plain = ids.filter(id => !withReturns.has(id));
+  if (plain.length) {
+    const rows = await db.select({
+      id: salesOrders.id, total: salesOrders.total,
+      paid: sql<number>`(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.createdAt}<=${cutoff} and (${customerPayments.voidedAt} is null or ${customerPayments.voidedAt}>${cutoff}))`.mapWith(Number),
+    }).from(salesOrders).where(inArray(salesOrders.id, plain));
+    for (const r of rows) out.set(r.id, returnBalance(r.total, r.paid, 0, 0, 0).balance);
+  }
+  return out;
+}
 export async function allocationProtected(db: CashDb, id: string) {
   const [qr] = await db
     .select({ id: posPaymentRequests.id })

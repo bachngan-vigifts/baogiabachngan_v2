@@ -215,3 +215,17 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
 - Đơn cọc / trả trước tạo xong đồng bộ ngay việc xuất hoá đơn.
 - Cập nhật đơn web không còn xoá trạng thái GHN khi website không gửi trạng thái.
 - Huỷ đơn cọc chưa xuất hàng đóng cả chuyến giao thất bại.
+
+## Quyết định 21/10/2026 (sau khi soát)
+- **Bỏ tạo đơn cọc / ship trả trước.** Giao diện không còn nơi tạo. API trả 410 `POS_ORDER_FLOW_DISABLED`. Đơn cũ vẫn xử lý trong menu **⋯ → Đơn cọc đang xử lý**.
+- **Chỉ bán tại quầy được giao.** Máy chủ chặn mở ca, xem danh mục/tồn, đếm đầu ca và xử lý trả hàng ở quầy khác (403 `POS_REGISTER_NOT_ALLOWED`).
+  - Manager và người có quyền cấu hình POS: mọi quầy.
+  - NVBH / CHT Lock, Minh Long: quầy của cửa hàng mình.
+  - Nhân viên khác: chỉ quầy đang mở ca của mình. Nếu không có ca đang mở thì không bán được, kể cả Sale / Sale Admin.
+  - Người duyệt vẫn xem mọi yêu cầu trả hàng để duyệt.
+- **Thông báo mỗi bill cho Manager:** giữ nguyên, không gom.
+- **Xác nhận "đã nhận" chuyển khoản QR bằng tay:** giữ nguyên, dùng khi SePay chậm.
+- **Tốc độ:**
+  - Bảng đơn cửa hàng lọc trong SQL. Chưa chọn ngày thì đơn đã xong chỉ lấy 30 ngày gần nhất; đơn dang dở luôn hiện. Danh sách 100 đơn/trang, tổng tiền tính trên toàn bộ kết quả lọc.
+  - Báo cáo ca và Ship COD tính số còn phải thu bằng truy vấn gộp.
+- **Webhook SePay / WooCommerce không còn mã dự phòng trong code.** Cần 3 secret GitHub: `SEPAY_POS_API_KEY_HASH`, `WOO_LOCK_TOKEN_HASH`, `WOO_MINHLONG_TOKEN_HASH` (SHA-256 hex). Thiếu secret thì bước deploy API dừng lại, không triển khai.

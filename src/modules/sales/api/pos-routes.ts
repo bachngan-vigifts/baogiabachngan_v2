@@ -5,7 +5,7 @@ import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
-import { returnAccount } from './pos-return-credit.ts';
+import { returnAccount, returnBalances } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
 import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
@@ -982,7 +982,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         )
         .orderBy(desc(deliveries.plannedDate))
         .limit(200);
-      return json({ deliveries: (await Promise.all(rows.map(async x=>({...x,codAmount: Math.min(x.codAmount, x.paid+Math.max(0,(await returnAccount(c.env.db,x.orderId)).balance))})))).filter(x=>x.codAmount>x.paid) });
+      const balances = await returnBalances(c.env.db, rows.map(x => x.orderId));
+      return json({ deliveries: rows.map(x => ({ ...x, codAmount: Math.min(x.codAmount, x.paid + Math.max(0, balances.get(x.orderId) ?? 0)) })).filter(x => x.codAmount > x.paid) });
     },
     'business',
   );
