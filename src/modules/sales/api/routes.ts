@@ -195,7 +195,7 @@ async function contractCustomerCode(db: StaffEnv['db'] | Tx, quote: QuoteRow) {
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
  */
-export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; debtWarningAccepted?: boolean; submitted?: boolean; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string;
+export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; debtWarningAccepted?: boolean; submitted?: boolean; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string; receiverName?: string; receiverPhone?: string;
   /** Chạy cuối giao dịch tạo đơn (vd. đẩy đơn sang Sapo); lỗi → huỷ, không có đơn. */
   inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
@@ -218,6 +218,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
     await tx.update(stockHolds).set({ status: 'converted', closedAt: now, closedBy: o.createdBy }).where(and(eq(stockHolds.quoteId, quote.id), eq(stockHolds.status, 'active')));
     await tx.insert(salesOrders).values({
       id, orderNo: nextDocNo('DH', today, used), quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
+      receiverName: o.receiverName ?? '', receiverPhone: o.receiverPhone ?? '',
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
       taxCode: text(data.customerTaxCode, 100), address: o.deliveryAddress === undefined ? text(orderDeliveryAddress(data), 2000) : text(o.deliveryAddress, 2000),
       ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: o.orderDate ?? today,
@@ -394,7 +395,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   // The form checks capabilities so a UI deploy cannot silently lose notes on an older API.
-  router.get('/orders/create-config', async () => json({ version: 1, noteMaxLength: 20000 }), 'business');
+  router.get('/orders/create-config', async () => json({ version: 1, noteMaxLength: 20000, recipientFields: true }), 'business');
 
   router.put('/orders/:id/pos', async c => {
     const b = await readJson(c.req, 100000);

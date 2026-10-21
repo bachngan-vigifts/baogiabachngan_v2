@@ -853,7 +853,7 @@
         <div class="form-grid" id="pack-schedule-fields">
           <label>Ngày giao<input type="date" name="plannedDate" required></label>
           <label>Khung giờ<input name="timeSlot" maxlength="100" placeholder="Ví dụ: trước 9h"></label>
-          <label class="span-2">Người nhận hàng<input name="receiverName" maxlength="180"></label>
+          <label class="span-2">Người nhận hàng<input name="receiverName" maxlength="500"></label>
         </div>
         <p class="muted small">Giao thẳng: dùng địa chỉ và SĐT bên dưới. Nếu đưa hàng về xưởng in, lịch giao cho khách vẫn dùng địa chỉ/SĐT của đơn.</p>
       </fieldset>
@@ -869,7 +869,7 @@
         </div>
         <div class="form-grid" data-ship="customer">
           <label class="span-2">Địa chỉ giao<input name="custAddress" maxlength="1000"></label>
-          <label class="span-2">Người nhận / SĐT<input name="custPhone" maxlength="40"></label>
+          <label class="span-2">SĐT người nhận<input name="custPhone" maxlength="100"></label>
         </div>
         <div class="form-grid">
           <label>Gửi xe (nhà xe / chành)<input name="carrierName" list="pack-carrier-list" maxlength="120" placeholder="Chọn hoặc gõ nhà xe mới · để trống nếu giao trực tiếp" autocomplete="off"></label>
@@ -959,6 +959,9 @@
     <div class="modal-body form-grid cols-2">
       <label>Ngày đặt<input name="orderDate" type="date" required></label>
       <label>Ngày hẹn giao<input name="deliveryDate" type="date"></label>
+      <label>Người nhận hàng<input name="receiverName" maxlength="500" autocomplete="name"></label>
+      <label>SĐT người nhận<input name="receiverPhone" type="tel" maxlength="100" autocomplete="tel"></label>
+      <p class="muted small span-2">Người nhận có thể khác người mua. Có thể sửa lại khi lập lịch giao hàng.</p>
       <label class="span-2">Địa chỉ giao hàng<textarea name="deliveryAddress" rows="2" maxlength="2000"></textarea></label>
       <label class="span-2">Ghi chú đơn hàng <small class="muted">Lấy từ báo giá, có thể chỉnh riêng cho đơn hàng.</small><textarea name="note" rows="8" maxlength="20000"></textarea></label>
       <fieldset class="span-2 sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>

@@ -1,6 +1,6 @@
 # Người nhận hàng riêng khi sinh đơn từ báo giá
 
-Trạng thái: đề xuất để duyệt trước khi đổi schema hoặc tạo migration. Chưa tạo migration, chưa sửa DB live.
+Trạng thái: người dùng đã duyệt phương án hai cột và tạo migration. Đã triển khai code và migration `20261021083428_order_delivery_recipient.sql`; chưa áp dụng lên DB CRM live.
 
 ## Kết quả đối chiếu
 
@@ -51,3 +51,10 @@ Ví dụ: người mua “Anh A · 0901000001”, form đổi người nhận th
 ## Phạm vi phê duyệt cần thiết
 
 Duyệt phương án hai cột và tạo migration để triển khai code/test. Việc áp dụng migration lên DB CRM live cần được duyệt riêng như các lần trước; tài liệu này chưa yêu cầu chạy DB live.
+
+## Kết quả triển khai
+
+- 49 test liên quan đạt, 0 fail, 0 skip; typecheck và UI build đạt.
+- Chromium 1440px và 390px: điền gợi ý từ người mua, sửa người nhận riêng, gửi đúng dữ liệu, phiếu in dùng người nhận riêng. Hai ô Người giao / SĐT người giao sửa trực tiếp được.
+- Thay nhãn MST và Thời gian trên phiếu giao theo yêu cầu bổ sung, giữ nguyên mẫu đơn đặt hàng và phiếu đóng gói.
+- Chưa kiểm DB live và máy in thật. Cần áp dụng migration trước khi merge vì triển khai main tự động dùng schema mới.

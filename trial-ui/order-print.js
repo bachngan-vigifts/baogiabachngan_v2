@@ -1,3 +1,4 @@
+import { orderRecipient } from './order-notes.js';
 // Bản in / tải ĐƠN ĐẶT HÀNG theo mẫu đơn của Minh Long (BM đơn đặt hàng): đầu trang công ty + "ĐƠN ĐẶT HÀNG",
 // thông tin đơn, bảng hàng (STT, Mã hàng, Chủng loại, ĐVT, SL đặt, SL giao, Ngày giao, Ghi chú), tổng cộng, ghi chú và 3 chữ ký.
 // Dùng chung cho xem trước (HTML), in / lưu PDF (trình duyệt) và tải Excel (exceljs).
@@ -104,11 +105,12 @@ export function packingPrintData({ seller, order, contract = null, slip = null, 
  * `lines` = [{ sku, name, unit, ordered, qty }] (ordered = SL đặt, qty = SL giao chuyến này).
  */
 export function deliveryPrintData({ seller, order, contract = null, delivery = null, lines }, me = '') {
-  const receiver = delivery && (delivery.receiverName || delivery.receiverPhone) ? [delivery.receiverName, delivery.receiverPhone].filter(Boolean).join(' · ') : contactOf(order);
+  const recipient = orderRecipient(order, delivery);
+  const receiver = [recipient.receiverName, recipient.receiverPhone].filter(Boolean).join(' · ');
   return {
     kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || orderReference(order, contract).number,
-    info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['MST', order.taxCode || ''],
-      ['Địa chỉ giao', delivery?.address || order.address || ''], ['Thời gian', delivery?.timeSlot || ''], ['Người nhận', receiver], ['', ''],
+    info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['Người giao', delivery?.senderName || ''],
+      ['Địa chỉ giao', delivery?.address || order.address || ''], ['SĐT người giao', delivery?.senderPhone || ''], ['Người nhận', receiver], ['', ''],
       ...(delivery?.carrier ? [['Nhà xe', delivery.carrier], ['SĐT bác tài', delivery.carrierPhone || '']] : [])],
     cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Hình ảnh', k: 'imageUrl', image: true }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],

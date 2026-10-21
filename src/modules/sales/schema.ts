@@ -39,6 +39,9 @@ export const salesOrders = pgTable('sales_orders', {
   quoteType: text('quote_type', { enum: ['HRC', 'B2B', 'VIGIFTS'] }).notNull(),
   customerId: text('customer_id').references(() => customers.id),
   customerName: text('customer_name').notNull(),
+  /** Default recipient for future deliveries; buyer contact/phone remain separate. */
+  receiverName: text('receiver_name').notNull().default(''),
+  receiverPhone: text('receiver_phone').notNull().default(''),
   contact: text('contact').notNull().default(''),
   phone: text('phone').notNull().default(''),
   email: text('email').notNull().default(''),
