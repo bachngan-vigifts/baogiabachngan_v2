@@ -126,3 +126,7 @@ Các thao tác phê duyệt chỉ do **Manager** hoặc **nhân viên được M
 ### Quầy và két của nhân viên cửa hàng
 
 NVBH/CHT Lock giới hạn quầy và két Lock; NVBH/CHT Minh Long giới hạn quầy và két Minh Long. Quyền bán hàng/cấu hình/duyệt được cấp thêm không mở rộng cửa hàng. Manager vẫn truy cập cả hai. API kiểm phạm vi trước khi đọc/ghi, không chỉ ẩn danh sách trên giao diện; xem POS.md và CASH.md.
+
+## Kho bán theo chức vụ (18/10/2026)
+- Bảng kho ↔ chức vụ được bán + cờ **kho riêng** ở cuối trang Phân quyền (`GET/PUT /warehouse-sellers`, cần quyền "Quản lý phân quyền"). Chi tiết: docs/SO-KHO.md.
+- Quyền mới **`stock.transfer`** – "Điều chuyển kho – xác nhận đã chuyển" (mặc định Kho, Sale Admin). Duyệt phiếu điều chuyển: Manager / người được duyệt (`canApprove`).

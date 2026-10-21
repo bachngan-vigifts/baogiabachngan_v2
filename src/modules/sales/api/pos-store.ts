@@ -5,6 +5,7 @@ import { posExchangeAllocations, posReturns, posRefunds } from '../return-schema
 import { posOrderNote } from '../domain/pos-order-note.ts';
 import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
 import { cashLock, cashShiftTotals, cashAudit, openingCashComparison } from './cash-store.ts';
+import { cashEntries } from '../cash-schema.ts';
 import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
@@ -331,6 +332,10 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
     manual: drawer.manual,
     bookAdjustments: drawer.bookAdjustments,
     pendingEntries: drawer.pending,
+    // Từng phiếu thu / chi tay trong ca (giờ, loại, nội dung, trạng thái) cho bảng trên báo cáo ca – không đổi công thức két.
+    entries: await db.select({ id: cashEntries.id, entryNo: cashEntries.entryNo, at: cashEntries.createdAt, kind: cashEntries.kind, direction: cashEntries.direction,
+      amount: cashEntries.amount, reason: cashEntries.reason, status: cashEntries.status }).from(cashEntries)
+      .where(and(eq(cashEntries.shiftId, s.id), sql`${cashEntries.createdAt} <= ${cutoff}`)).orderBy(asc(cashEntries.createdAt)).limit(200),
     cashSales: drawer.cashSales,
     cashCod: drawer.cashCod,
     expectedCash: s.openingCash + cash + drawer.manualNet,

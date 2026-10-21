@@ -57,6 +57,9 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
   const sapoCounted = and(sql`${salesOrders.sapoOrderId} IS NOT NULL`, or(isNull(salesOrders.sapoPushedAt), sql`EXISTS (${db.select({ one: sql`1` }).from(productStock)
     .innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId))
     .where(and(eq(productStock.sku, salesOrderLines.sku), eq(warehouses.kind, 'stock'), gt(productStock.updatedAt, salesOrders.sapoPushedAt)))})`));
+  // Đơn / HĐKT CRM đã trừ kho bán lúc duyệt (sổ kho) ở kho đã chốt đầu kỳ: tồn hiển thị đã trừ – không giữ thêm lần nữa.
+  const ledgerCounted = sql`EXISTS (SELECT 1 FROM ${stockMoves} m WHERE m.ref_type = 'sales_order' AND (m.ref_id = ${salesOrders.id} OR m.ref_id LIKE ${salesOrders.id} || '#%')
+    AND EXISTS (SELECT 1 FROM ${stockMoves} o WHERE o.warehouse_id = m.warehouse_id AND o.ref_type = 'opening'))`;
   const legacy = await db.select({
     sku: salesOrderLines.sku, qty: sql<number>`sum(${salesOrderLines.qty} - ${salesOrderLines.deliveredQty})`.mapWith(Number),
     orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName,
@@ -64,7 +67,7 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
   }).from(salesOrderLines).innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId))
     .leftJoin(salesContracts, and(eq(salesContracts.orderId, salesOrders.id), ne(salesContracts.status, 'cancelled')))
     .where(and(storeScope,eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
-      gt(salesOrderLines.qty, salesOrderLines.deliveredQty), skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`))
+      gt(salesOrderLines.qty, salesOrderLines.deliveredQty), skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`, sql`NOT (${ledgerCounted})`))
     .groupBy(salesOrderLines.sku, salesOrders.id).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
   const issued = sql`coalesce((select -sum(${stockMoves.qty}) from ${stockMoves} where ${stockMoves.sku}=${salesOrderLines.sku} and ${stockMoves.warehouseId}=${posOrderReservations.warehouseId} and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id})) or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;
   const timed = await db.select({ sku: salesOrderLines.sku, qty: sql<number>`sum(greatest(0,${posOrderReservations.qty}-greatest(${salesOrderLines.deliveredQty},${issued})))`.mapWith(Number), orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, contractNo: sql<string | null>`null` })

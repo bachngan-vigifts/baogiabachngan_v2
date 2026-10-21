@@ -10,6 +10,7 @@ import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { stockBalances, stockMoves } from '../schema.ts';
 import { STOCK_KIND_LABEL } from '../domain/kinds.ts';
 import { postMoves, inventoryOpeningHooks } from './ledger.ts';
+import { hiddenStockWarehouses, readCatalogStock } from '../../catalog/api/stock-source.ts';
 
 /**
  * SỔ KHO – giai đoạn 1, chạy song song với Sapo (docs/SO-KHO.md).
@@ -49,20 +50,22 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
   router.get('/inventory/lookup', async c => {
     const db = c.env.db, raw = (c.url.searchParams.get('q') || '').trim().slice(0, 80);
     if (raw.length < 2) return json({ products: [], warehouses: [], source: 'sapo' });
-    const whs = await stockWarehouses(db), ids = whs.map(w => w.id);
+    let whs = await stockWarehouses(db);
     // Mã quét từ máy quét / camera: khớp đúng mã trước, không có thì tìm theo chữ.
     const cols = { sku: products.sku, name: products.name, unit: products.unit, imageUrl: products.imageUrl, brand: products.brand };
     let found = await db.select(cols).from(products).where(sql`lower(${products.sku}) = ${raw.toLowerCase()}`).limit(1);
     if (!found.length) found = await db.select(cols).from(products).where(and(eq(products.active, true), matchAllWords(foldSql(products.sku, products.name, products.brand), raw)))
       .orderBy(asc(products.sku)).limit(30);
     const skus = found.map(p => p.sku);
-    const [[open], ledger, sapo, incoming] = await Promise.all([
+    // Tồn theo cùng nguồn với danh mục: kho đã chốt đầu kỳ = sổ kho, kho chưa chốt = tồn Sapo. Kho riêng (Hoá đơn) ẩn với người không bán kho đó.
+    const [[open], rows, incoming, hidden] = await Promise.all([
       db.select({ id: stockMoves.id }).from(stockMoves).where(eq(stockMoves.refType, 'opening')).limit(1),
-      skus.length && ids.length ? db.select({ sku: stockBalances.sku, wh: stockBalances.warehouseId, qty: stockBalances.qty }).from(stockBalances).where(and(inArray(stockBalances.sku, skus), inArray(stockBalances.warehouseId, ids))) : [],
-      skus.length && ids.length ? db.select({ sku: productStock.sku, wh: productStock.warehouseId, qty: productStock.quantity }).from(productStock).where(and(inArray(productStock.sku, skus), inArray(productStock.warehouseId, ids))) : [],
+      readCatalogStock(db, skus),
       skus.length && incomingLookup.read ? incomingLookup.read(db, skus).catch(() => [] as IncomingLine[]) : [] as IncomingLine[],
+      hiddenStockWarehouses(db, me(c)),
     ]);
-    const src = open ? ledger : sapo, at = (sku: string, wh: string) => num(src.find(r => r.sku === sku && r.wh === wh)?.qty ?? 0);
+    whs = whs.filter(w => !hidden.has(w.id));
+    const at = (sku: string, wh: string) => num(rows.find(r => r.sku === sku && r.warehouseId === wh)?.quantity ?? 0);
     return json({ source: open ? 'ledger' : 'sapo', warehouses: whs, products: found.map(p => {
       const stock = whs.map(w => ({ warehouseId: w.id, warehouse: w.name, qty: at(p.sku, w.id) }));
       // Hàng đang về: đơn mua NCC đã duyệt còn chờ (không cộng vào tổng tồn); đơn hẹn sớm lên trước.
