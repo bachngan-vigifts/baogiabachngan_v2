@@ -349,10 +349,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const sharedCurrent = sharedRows.find(x => x.shift.registerId === defaultRegisterId && allowedRegister(c, x.shift.registerId))
         ?? sharedRows.find(x => allowedRegister(c, x.shift.registerId)) ?? null;
       const ownCurrent = shifts.find(s => s.memberId === m.id && !s.closedAt) ?? null;
-      const current = ownCurrent ?? (sharedCurrent ? {
-        id: sharedCurrent.shift.id, registerId: sharedCurrent.shift.registerId, memberId: sharedCurrent.shift.memberId,
-        templateId: sharedCurrent.shift.templateId, businessDate: sharedCurrent.shift.businessDate,
-        openedAt: sharedCurrent.shift.openedAt, closedAt: sharedCurrent.shift.closedAt, memberName: sharedCurrent.memberName,
+      const requestedRegister = c.url.searchParams.get('registerId');
+      if (requestedRegister && !regs.some(r => r.id === requestedRegister)) throw new AppError(403, 'Không được sử dụng quầy này.');
+      const selected = requestedRegister ? sharedRows.find(x => x.shift.registerId === requestedRegister) : sharedCurrent;
+      const current = (requestedRegister ? ownCurrent?.registerId === requestedRegister ? ownCurrent : null : ownCurrent) ?? (selected ? {
+        id: selected.shift.id, registerId: selected.shift.registerId, memberId: selected.shift.memberId,
+        templateId: selected.shift.templateId, businessDate: selected.shift.businessDate,
+        openedAt: selected.shift.openedAt, closedAt: selected.shift.closedAt, memberName: selected.memberName,
       } : null);
       return json({
         registers: regs,
@@ -360,6 +363,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         templates,
         shifts,
         current,
+        canChooseOpenRegister: m.role === 'manager',
         canCloseCurrent: !!current && current.memberId === m.id,
         orderFlowVersion:1,
         canConfigure,

@@ -58,14 +58,20 @@ test('Ca chung: từ chối NVBH khác cửa hàng, vai trò không gán cửa h
   assert.equal((await f.call('/pos/preview',f.other,'POST',f.cart(s.id))).status,403);
 });
 
-test('CHT được nhận diện theo chức vụ, không dựa tên nhân viên; Manager không tự có quyền bán trong ca người khác', async () => {
+test('CHT được nhận diện theo chức vụ, không dựa tên nhân viên; Manager bán được ca cửa hàng đang mở', async () => {
   const f = await setup(); await store(f,'sales-lock'); const s = await f.open();
   await f.db.insert(positions).values({id:'cht-lock-test',name:'CHT LOCK'});
   await f.db.insert(positionPermissions).values({positionId:'cht-lock-test',permission:'pos.sell'});
   await f.db.update(employees).set({positionId:'cht-lock-test',name:'Tên không chứa Lock'}).where(eq(employees.id,'cashier2'));
   assert.equal(ok(await f.call('/pos/options',f.other)).current.id,s.id);
   ok(await f.call('/pos/preview',f.other,'POST',f.cart(s.id)));
-  assert.equal((await f.call('/pos/preview',f.mgr,'POST',f.cart(s.id))).status,404);
+  const options = ok(await f.call('/pos/options?registerId='+f.registerId,f.mgr));
+  assert.equal(options.current.id,s.id); assert.equal(options.canChooseOpenRegister,true); assert.equal(options.canCloseCurrent,false);
+  ok(await f.call('/pos/preview',f.mgr,'POST',f.cart(s.id)));
+  const sale=ok(await f.call('/pos/checkout',f.mgr,'POST',f.cart(s.id)),201);
+  const [order]=await f.db.select().from(salesOrders).where(eq(salesOrders.id,sale.id));
+  assert.equal(order!.ownerId,'mgr'); assert.equal(order!.shiftId,s.id);
+  assert.equal((await f.call('/pos/options?registerId=unknown',f.mgr)).status,403);
   ok(await f.call('/pos/shifts/'+s.id,f.mgr));
 });
 

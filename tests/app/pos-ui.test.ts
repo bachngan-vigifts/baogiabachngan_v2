@@ -146,7 +146,7 @@ test('Form mở ca không còn kiểm đếm hoặc gọi API kiểm đếm', as
     const root = new Element('section'), calls: any[] = [], notices: string[] = [];
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({ path, method, body });
-      if (path === '/pos/options') return {
+      if (path.startsWith('/pos/options')) return {
         registers: [{ id: 'r', name: 'Quầy Lock', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }],
         current: null, shifts: [{ id: 's', memberId: 'internal-id', memberName: 'Tên nhân viên', openedAt: '2026-10-18T01:00:00Z' }],
         templates: [{ id: 'morning', name: 'Ca sáng', startsAt: '08:00', endsAt: '14:00' }], policies: [],
@@ -193,7 +193,7 @@ test('Báo cáo ca đóng danh sách trước khi mở chi tiết và hiện tr�
       bills: { count: 0, revenue: 0, discount: 0 }, manual: [], bookAdjustments: [], cash: 0, transfer: 0, expectedCash: 0,
       cod: { receivedInShift: { count: 0, amount: 0 }, receivedFromPrevious: { count: 0, amount: 0 }, pending: { count: 0, amount: 0 } } };
     const api = async (path: string) => {
-      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Két Minh Long', pricePolicyId: 'vat' }], current: null,
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Két Minh Long', pricePolicyId: 'vat' }], current: null,
         shifts: [{ id: 's', memberName: 'Thái Thị Yến', openedAt: '2026-10-18T01:00:00Z', closedAt: null }], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
       if (path.startsWith('/pos/orders')) return { registers: [], counts: {}, orders: [] };
@@ -224,7 +224,7 @@ test('POS chọn quầy mặc định từ server, ưu tiên ca đang mở và �
       current: any = null;
     const catalogs: string[] = [];
     const api = async (path: string) => {
-      if (path === '/pos/options')
+      if (path.startsWith('/pos/options'))
         return {
           registers: ['lock', 'ml'].map((id) => ({
             id,
@@ -299,7 +299,7 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
       calls: any[] = [];
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({ path, method, body });
-      if (path === '/pos/options')
+      if (path.startsWith('/pos/options'))
         return {
           registers: [
             {
@@ -404,7 +404,7 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     let allowRetail = true;
     const api = async (path: string) => {
       calls.push(path);
-      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock' }], current: null, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Lock' }], current: null, shifts: [], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
       if (path.startsWith('/pos/customers')) return { canListRetail: allowRetail, customers: [{ id: 'c', name: '<b>Cô Hồng</b>', phone: '0901234567' }] };
       throw Error(path);
@@ -461,7 +461,7 @@ test('POS: bảng đơn nằm cuối, thêm/xoá nhiều dòng phí và phí shi
     const fees = { service: { name: '<script>Phí in</script>', amount: 10800, subtotal: 10000, tax: 800, taxRate: 8 }, shippingFee: 20000, subtotal: 30000, tax: 800, total: 30800 };
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({ path, method, body });
-      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
       if (path === '/pos/preview') return { ...sample, fees, subtotal: 210000, tax: 15200, total: 225200 };
       throw Error(path);
@@ -519,7 +519,7 @@ test('SePay chỉ tự tích sau server xác nhận đúng QR, tiếp tục khi 
     const root = new Element('section'), calls: any[] = [], notices: string[] = [];
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({ path, method, body });
-      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
       if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
       if (path === '/pos/qr') return { id: 'qr-1', amount: sample.total, content: 'POS qr1', url: 'https://example.test/qr', expiresAt: new Date(Date.now() + 600000).toISOString() };
@@ -575,7 +575,7 @@ test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản
     const root = new Element('section'), calls: any[] = [];
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({ path, body });
-      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
       if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
       if (path === '/pos/checkout') throw Object.assign(Error('Kiểm tra payload'), { status: 400 });
@@ -611,7 +611,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     const root = new Element('main'), calls: any[] = [];
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({ path, method, body });
-      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
       if (path === '/pos/preview') return { ...sample, total: 108000, lines: [{ ...sample.lines[0], sku: '001' }] };
       if (path === '/pos/ghn/locations') {
@@ -667,7 +667,7 @@ test('POS mới: THANH TOÁN theo ca/giỏ, menu thường ẩn cấu hình và 
   try {
     const root = new Element('section'); let opened = false;
     const api = async (path: string) => {
-      if (path === '/pos/options') return { registers: [{ id: 'r', name: 'Quầy Lock', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }], current: opened ? { id: 's', registerId: 'r', memberId: 'emp' } : null, shifts: [], templates: [], policies: [], canConfigure: false };
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy Lock', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }], current: opened ? { id: 's', registerId: 'r', memberId: 'emp' } : null, shifts: [], templates: [], policies: [], canConfigure: false };
       if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 194400, available: 3 }], nextOffset: null };
       if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
       if (path.startsWith('/pos/orders')) return { registers: [], counts: {}, orders: [], registerId: 'r' };
@@ -706,7 +706,7 @@ test('Ca chung: mở POS hoặc bấm Mở ca sau khi đồng nghiệp mở thì
     const root = new Element('section'), calls: any[] = []; let shared = false;
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({path,method,body});
-      if(path==='/pos/options') return { registers:[{id:'r',name:'Quầy Lock',pricePolicyId:'vat'}],current:shared?{id:'shared-shift',memberId:'opener',memberName:'NV mở ca',registerId:'r'}:null,canCloseCurrent:false,shifts:[],templates:[],policies:[] };
+      if(path.startsWith('/pos/options')) return { registers:[{id:'r',name:'Quầy Lock',pricePolicyId:'vat'}],current:shared?{id:'shared-shift',memberId:'opener',memberName:'NV mở ca',registerId:'r'}:null,canCloseCurrent:false,shifts:[],templates:[],policies:[] };
       if(path.startsWith('/pos/catalog'))return {products:[{sku:'001',name:'Ly',price:194400,available:3}],nextOffset:null};
       if(path==='/pos/preview')return {...sample,lines:[{...sample.lines[0],sku:'001'}]};
       throw Error(path);
@@ -722,4 +722,30 @@ test('Ca chung: mở POS hoặc bấm Mở ca sau khi đồng nghiệp mở thì
     assert.equal(root.querySelectorAll('button').find(b=>b.textContent==='THANH TOÁN')!.disabled,false);
     assert.equal(calls.some(c=>c.path==='/pos/shifts/open'),false,'không tạo ca/thực đếm giả khi chỉ tham gia ca có sẵn');
   } finally { Object.assign(globalThis,{document:prevDoc,window:prevWin}); }
+});
+
+test('Manager đổi quầy đang mở; giỏ có hàng không được đổi ca', async () => {
+  const prevDoc=globalThis.document,prevWin=globalThis.window;
+  Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+  try {
+    const root=new Element('section'),calls:any[]=[],notices:string[]=[];
+    const registers=[{id:'lock',name:'Lock',pricePolicyId:'vat'},{id:'ml',name:'Minh Long',pricePolicyId:'vat'}];
+    const api=async(path:string,method='GET',body?:any)=>{
+      calls.push({path,method,body});
+      if(path.startsWith('/pos/options')) {const registerId=new URL('http://test'+path).searchParams.get('registerId')||'lock'; return {registers,current:{id:'shift-'+registerId,memberId:'opener',registerId},canChooseOpenRegister:true,canCloseCurrent:false,templates:[],shifts:[],policies:[]};}
+      if(path.startsWith('/pos/catalog'))return {products:[{sku:'001',name:'Ly',price:194400,available:3}],nextOffset:null};
+      if(path==='/pos/preview')return {...sample,lines:[{...sample.lines[0],sku:'001'}]};
+      throw Error(path);
+    };
+    const ui=initPos({root,api,toast:(s:string)=>notices.push(s),user:()=>({id:'mgr',role:'manager'}),confirmBox:async()=>true,go(){}});
+    await ui.load();
+    let choose=root.querySelectorAll('select').find(e=>e.attributes['aria-label']==='Chọn quầy')!;
+    assert.ok(choose); choose.value='ml'; await choose.fire('change'); await new Promise(r=>setTimeout(r,30));
+    assert.ok(calls.some(c=>c.path==='/pos/options?registerId=ml'));
+    await root.querySelectorAll('button').find(b=>b.className==='pos-product')!.fire('click'); await new Promise(r=>setTimeout(r,230));
+    assert.equal(calls.find(c=>c.path==='/pos/preview')!.body.shiftId,'shift-ml');
+    choose=root.querySelectorAll('select').find(e=>e.attributes['aria-label']==='Chọn quầy')!;
+    choose.value='lock'; await choose.fire('change');
+    assert.equal(choose.value,'ml'); assert.ok(notices.some(s=>s.includes('Hoàn tất hoặc huỷ')));
+  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });

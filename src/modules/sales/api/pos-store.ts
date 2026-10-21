@@ -66,6 +66,7 @@ export async function shiftOf(db: PosDb, m: PosMember, id: string, lock = false)
 }
 export async function sharedSaleShiftScope(db: PosDb, m: PosMember) {
   if (!can(m, 'pos.sell')) return;
+  if (m.role === 'manager') return sql`true`;
   const [p] = m.positionId ? await db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)) : [];
   return posSharedShiftStoreScope({ ...m, positionName: p?.name });
 }

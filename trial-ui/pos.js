@@ -165,7 +165,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   async function load() {
     restorePending();
     const seq = ++st.request;
-    const d = await run(() => api('/pos/options'));
+    const d = await run(() => api('/pos/options' + (st.register?.id ? '?registerId=' + encodeURIComponent(st.register.id) : '')));
     if (!d || seq !== st.request) return;
     st.options = d;
     st.shift = d.current;
@@ -204,19 +204,22 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         ? `${template?.name || 'Ca bán hàng'}${template ? ` · ${template.startsAt}–${template.endsAt}` : ''} · Đang mở`
         : 'Chưa mở ca';
     tools.append(el('span', 'pos-shift-status' + (active() ? ' is-open' : ''), (active() ? '● ' : '○ ') + shiftLabel));
-    if (!active() && st.options.registers.length > 1) {
+    if ((!active() || st.options.canChooseOpenRegister) && st.options.registers.length > 1) {
       const regSelect = select(
         st.options.registers.map((r) => [r.id, r.name]),
         st.register?.id,
       );
       regSelect.setAttribute('aria-label', 'Chọn quầy');
       regSelect.addEventListener('change', () => {
+        if (dirty()) { regSelect.value = st.register.id; toast('Hoàn tất hoặc huỷ đơn hiện tại trước khi đổi quầy.', 'err'); return; }
         st.register = st.options.registers.find((r) => r.id === regSelect.value);
         st.policy = st.register.pricePolicyId;
         st.orderRegisterId = st.register.id;
         st.orderBoard = null;
+        st.shift = null;
+        invalidate();
         draw();
-        run(() => Promise.all([search(false), loadOrderBoard()]));
+        run(load);
       });
       tools.append(regSelect);
     }
@@ -1018,7 +1021,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.show();
   }
   async function openShift() {
-    const latest = await api('/pos/options');
+    const latest = await api('/pos/options' + (st.register?.id ? '?registerId=' + encodeURIComponent(st.register.id) : ''));
     if (latest.current && !latest.current.closedAt) { await load(); toast('Đã sử dụng ca đang mở của cửa hàng.'); return; }
     if (!st.register) return toast('Cấu hình quầy trước.', 'err');
     const m = formModal('Mở ca bán hàng'),
