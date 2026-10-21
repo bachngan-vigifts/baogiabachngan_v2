@@ -179,7 +179,14 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const a = asActor(me(c));
     return json({ suppliers: rows, canSeePrices: canSeePrices(a), canReceive: canReceive(a), canPay: canPay(a), isManager: a.role === 'manager', canEditSuppliers: canEditSuppliers(me(c)) });
   }, 'business');
-  router.get('/purchase-sources', async c => { guard(c); return json({ sources: await sourceCandidates(c.env.db, me(c), c.url.searchParams.get('q') ?? '') }); }, 'business');
+  router.get('/purchase-sources', async c => {
+    guard(c);
+    const offset = Number(c.url.searchParams.get('offset') ?? 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) fail(400, 'Trang chứng từ không hợp lệ.');
+    const sources = await sourceCandidates(c.env.db, me(c), c.url.searchParams.get('q') ?? '', offset);
+    const hasMore = ['quote', 'order', 'stock_request'].some(type => sources.filter(s => s.type === type).length === 8);
+    return json({ sources, nextOffset: hasMore ? offset + 8 : null });
+  }, 'business');
   router.get('/purchase-sources/:type/:id', async c => { guard(c); return json(await sourceWithRemaining(c.env.db, me(c), c.params.type!, c.params.id!)); }, 'business');
 
   // ---- Tạo 1..n đơn nháp (mỗi NCC một đơn)

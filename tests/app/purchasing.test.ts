@@ -466,3 +466,22 @@ test('Sale Admin/Kế toán: đủ sáu thao tác đơn mua trên API, giữ ch�
   }
   assert.equal(sent.length,2,'mail test double only; no real supplier email');
 });
+
+test('purchase source pages include all quotes without duplicates, retain search and reject invalid offsets', async () => {
+  const { db, call, emp, ncc, mgr, a } = await setup();
+  await db.insert(quotations).values(Array.from({ length: 19 }, (_, i) => ({ id: `page-q-${i.toString().padStart(2, '0')}`, creatorId: 'emp', quoteNo: `PAGE-${i}`, quoteType: 'B2B' as const, customer: 'Page customer', quoteDate: '2026-09-10', data: '{"rows":[]}', createdAt: now, updatedAt: now })));
+  const ids: string[] = [];
+  let offset: number | null = 0;
+  while (offset != null) {
+    const response = await call(`/purchase-sources?q=PAGE-&offset=${offset}`, emp);
+    assert.equal(response.status, 200); ids.push(...response.data.sources.map((s: any) => s.id)); offset = response.data.nextOffset;
+  }
+  assert.equal(ids.length, 19); assert.equal(new Set(ids).size, 19);
+  assert.equal((await call('/purchase-sources?offset=-1', emp)).status, 400);
+  assert.equal((await call('/purchase-sources?offset=1.5', emp)).status, 400);
+  assert.equal((await call('/purchase-sources?offset=0', ncc)).status, 403);
+  const created = await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, warehouse: 'Kho bổ sung', lines: [{ sku: '031106000', name: 'Chén', unit: 'Cái', quantity: 7, sources: [] }] }] });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const detail = (await call('/purchase-orders/' + created.data.ids[0], mgr)).data;
+  assert.equal(detail.state, 'draft'); assert.equal(detail.lines[0].sku, '031106000'); assert.equal(detail.lines[0].quantity, 7);
+});
