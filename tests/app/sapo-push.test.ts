@@ -231,9 +231,11 @@ test('đẩy Sapo: hàm thuần – kiểm dữ liệu, khớp đơn đúng mã,
 
 test('sinh đơn: lọc ghi chú đúng ba phần, giữ điều khoản dài, sửa riêng và xoá ghi chú; không qua Sapo không cần phiên', async () => {
   const s = await setup({ connect: false });
-  assert.deepEqual((await s.call('/orders/create-config', s.emp)).data, { version: 1, noteMaxLength: 20000, recipientFields: true });
+  assert.deepEqual((await s.call('/orders/create-config', s.emp)).data, { version: 2, noteMaxLength: 20000, recipientFields: true });
   assert.equal((await s.call('/orders/create-config')).status, 401);
   const quoteId = await s.makeQuote('B2B_BG20261009_101');
+  const preview = await s.call(`/orders/next-no?quoteId=${quoteId}&orderDate=2026-10-10`, s.emp);
+  assert.equal(preview.status, 200); assert.match(preview.data.orderNo, /^DH_20261010_\d{3}$/);
   const longNote = '- Thanh toán: ' + 'Thanh toán sau khi giao hàng. '.repeat(100).trim();
   const [quote] = await s.db.select().from(quotations).where(eq(quotations.id, quoteId));
   const data = JSON.parse(quote!.data); data.notes = longNote; data.deliveryDate = '2026-10-30';
@@ -245,13 +247,17 @@ test('sinh đơn: lọc ghi chú đúng ba phần, giữ điều khoản dài, s
   assert.ok(inheritedNote.includes(longNote), 'payment terms are not truncated at old 2000-char limit');
   assert.equal(inheritedNote.split('\n').length, 3);
   const q2 = await s.makeQuote('B2B_BG20261009_102');
-  const made = await s.call('/orders', s.emp, 'POST', { quoteId: q2, pushSapo: false, note: 'Giao từng đợt\nGọi trước 30 phút', deliveryAddress: 'Kho khách hàng', receiverName: 'Người nhận riêng', receiverPhone: '0902000002', orderDate: '2026-10-10', deliveryDate: '2026-10-31' });
+  const made = await s.call('/orders', s.emp, 'POST', { quoteId: q2, pushSapo: false, orderNo: 'PO-KHACH-001', note: 'Giao từng đợt\nGọi trước 30 phút', deliveryAddress: 'Kho khách hàng', receiverName: 'Người nhận riêng', receiverPhone: '0902000002', orderDate: '2026-10-10', deliveryDate: '2026-10-31' });
   assert.equal(made.status, 201, JSON.stringify(made.data));
   const o = await read(made.data.id);
-  assert.deepEqual([o.note, o.address, o.orderDate, o.expectedDeliveryDate], ['Giao từng đợt\nGọi trước 30 phút', 'Kho khách hàng', '2026-10-10', '2026-10-31']);
+  assert.deepEqual([o.orderNo, o.note, o.address, o.orderDate, o.expectedDeliveryDate], ['PO-KHACH-001', 'Giao từng đợt\nGọi trước 30 phút', 'Kho khách hàng', '2026-10-10', '2026-10-31']);
   assert.equal(o.receiverName, 'Người nhận riêng'); assert.equal(o.receiverPhone, '0902000002');
   const q2data = (await s.call('/quotes/' + q2, s.emp)).data.data;
   assert.equal(o.contact, q2data.contact || ''); assert.equal(o.phone, q2data.phone || '');
+  assert.equal(made.data.orderNo, 'PO-KHACH-001');
+  const duplicateQuote = await s.makeQuote('B2B_BG20261009_102_DUP');
+  const duplicate = await s.call('/orders', s.emp, 'POST', { quoteId: duplicateQuote, pushSapo: false, orderNo: 'PO-KHACH-001' });
+  assert.equal(duplicate.status, 409); assert.equal(duplicate.data.code, 'ORDER_NO_EXISTS');
   assert.equal((await s.call('/quotes/' + q2, s.emp)).data.data.notes, '', 'order overrides do not change quote');
   const q3 = await s.makeQuote('B2B_BG20261009_103');
   const [q3row] = await s.db.select().from(quotations).where(eq(quotations.id, q3));

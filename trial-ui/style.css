@@ -1,5 +1,6 @@
 /* Bách Ngân · Báo giá – giao diện dùng thử v2 */
 :root {
+  --app-content-max: 1800px;
   --red: #c8212b; --red-700: #a51b24; --red-50: #fdf0f1;
   --navy: #142036; --navy-700: #1d2c46; --navy-600: #283a58;
   --ink: #17243c; --muted: #66748a; --line: #e3e8ef; --line-strong: #cfd7e2;
@@ -145,7 +146,7 @@ textarea { resize: vertical; }
 .crumbs { display: flex; gap: 8px; align-items: center; font-size: .9rem; }
 .slash { color: #b8c1ce; }
 .topbar-right { display: flex; gap: 14px; align-items: center; font-size: .86rem; }
-.view { padding: 26px 28px 48px; max-width: 1320px; width: 100%; margin: 0 auto; }
+.view { padding: 26px 28px 48px; max-width: var(--app-content-max); width: 100%; margin: 0 auto; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; }
 .page-head p { margin-top: 4px; }
 .eyebrow { display: block; font-size: .68rem; font-weight: 800; color: #7a8699; letter-spacing: .13em; text-transform: uppercase; margin-bottom: 6px; }
@@ -855,7 +856,7 @@ a.flow-step:hover { border-color: var(--blue); }
 .portal-who { margin-left: auto; text-align: right; min-width: 0; }
 .portal-who b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .portal-head .btn.ghost { color: #fff; border-color: rgba(255,255,255,.35); }
-.portal-main { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+.portal-main { max-width: var(--app-content-max); margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
 .portal-owner { display: flex; flex-wrap: wrap; gap: 8px 28px; }
 .portal-owner small { display: block; }
 /* Thanh chức năng trang khách: nổi bật, nút to có biểu tượng, nút đang chọn đỏ thương hiệu */
