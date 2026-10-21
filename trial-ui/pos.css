@@ -1046,3 +1046,15 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-saved-total { flex-direction: column; align-items: flex-start; padding: 16px; gap: 6px; }
   .pos-saved-actions { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Báo cáo ca: lọc + ca đang mở (xanh) / đã kết (xám) + nội dung gom theo mục. */
+.pos-shift-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 4px 0 6px; }
+.pos-shift-filters label { display: grid; gap: 2px; font-size: 12px; color: var(--muted, #667085); }
+.pos-shift-list .pos-shift-open { background: #e7f6ec; border-color: #2e9e5b; color: #17663a; font-weight: 600; }
+.pos-shift-list .pos-shift-open:hover { background: #d3efdd; }
+.pos-shift-list .pos-shift-closed { background: #f2f4f7; border-color: #d0d5dd; color: #475467; }
+.pos-report-section { border: 1px solid var(--line, #e4e7ec); border-radius: 10px; padding: 6px 10px 8px; margin: 8px 0; }
+.pos-report-head { display: flex; width: 100%; justify-content: space-between; align-items: baseline; background: none; border: 0; padding: 4px 0 6px; cursor: pointer;
+  font-weight: 700; font-size: 15px; color: var(--ink, #101828); border-bottom: 1px solid var(--line, #e4e7ec); margin-bottom: 4px; }
+.pos-report-head small { font-weight: 500; color: var(--brand, #1d4ed8); }
+.pos-report-head:hover small { text-decoration: underline; }

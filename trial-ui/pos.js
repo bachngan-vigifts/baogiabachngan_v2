@@ -4,7 +4,7 @@ import { openPosFlowCheckout, openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
 import { printPos } from './pos-print.js';
-import { shiftSummaryRows, shiftCodRows } from './pos-report.js';
+import { shiftReportSections } from './pos-report.js';
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -231,7 +231,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const more = el('details', 'pos-more-menu'), moreSummary = el('summary', '', '⋯'), morePanel = el('div', 'pos-more-panel');
     moreSummary.setAttribute('aria-label', 'Thao tác khác');
     const menuAction = (label, fn) => { const b = button(label, 'btn ghost', () => { more.open = false; fn(); }); morePanel.append(b); };
-    menuAction('Trả / Đổi / Hoàn', () => openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()}));
+    menuAction('Trả / Đổi / Hoàn', openReturns);
     menuAction('Báo cáo ca', () => run(history));
     menuAction('Ship COD', () => run(codList));
     if(st.options.orderFlowVersion>=1)menuAction('Đơn cọc / Ship trả trước',()=>run(flowOrders));
@@ -1130,21 +1130,22 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       b.disabled = false;
     }));
   }
-  function reportRows(container, d) {
-    for (const [k, v] of shiftSummaryRows(d)) {
-      const row = el('div', 'pos-total-row');
-      row.append(el('span', '', k), el('b', '', v));
-      container.append(row);
+  /** Báo cáo ca gom theo mục (pos-report.js › shiftReportSections); bấm mục → mở trang liên quan. */
+  function reportRows(container, d, onOpen) {
+    const LINK = { orders: 'Xem đơn hàng', cash: 'Mở Sổ quỹ', returns: 'Mở Trả / Đổi', flows: 'Mở đơn cọc', cod: 'Mở Ship COD' };
+    for (const sec of shiftReportSections(d)) {
+      const box = el('section', 'pos-report-section'), head = button('', 'pos-report-head', () => onOpen?.(sec.open));
+      head.append(el('span', '', sec.title), el('small', '', (LINK[sec.open] || 'Mở') + ' ›'));
+      box.append(head);
+      for (const [k, v] of sec.rows) { const row = el('div', 'pos-total-row'); row.append(el('span', '', k), el('b', '', v)); box.append(row); }
+      if (sec.note) box.append(el('p', 'pos-note', sec.note));
+      container.append(box);
     }
     for (const x of d.bookAdjustments || []) container.append(el('p', 'pos-note', 'Điều chỉnh két: ' + money(x.direction === 'in' ? x.amount : -x.amount) + ' (điều chỉnh sổ, không thu/chi tiền thực trong ca)'));
-    if (d.openingCount?.count) container.append(el('p', 'pos-note', `Kiểm đếm đầu ca: đếm nhanh một phần (${d.openingCount.count} mã), không phải kiểm kê toàn kho.`));
-    container.append(el('h3', '', 'Ship COD'));
-    for (const [name, value] of shiftCodRows(d)) {
-      const r = el('div', 'pos-total-row');
-      r.append(el('span', '', name), el('b', '', value));
-      container.append(r);
-    }
-    container.append(el('p', 'pos-note', 'COD chưa thu không tính vào tiền két; tiếp tục theo dõi sang ca sau.'));
+    if (d.differenceReason) container.append(el('p', 'pos-note', 'Lý do lệch: ' + d.differenceReason));
+  }
+  function openReturns() {
+    openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()});
   }
   async function closeShift() {
     if (dirty()) return toast('Xử lý giỏ hàng hoặc giao dịch chưa rõ kết quả trước khi kết ca.', 'err');
@@ -1153,39 +1154,52 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       await load();
     } else go('#/cash');
   }
+  /** Báo cáo ca: lọc theo nhân viên, ngày, trạng thái; ca đang mở màu xanh, đã kết màu xám. */
   async function history() {
-    const m = modal('Báo cáo ca'),
-      list = el('div', 'pos-customer-list');
-    for (const s of st.options.shifts) {
-      const label = `${when(s.openedAt)} · ${s.closedAt ? 'Đã kết' : 'Đang mở'} · ${s.memberName || 'Nhân viên không còn trong danh mục'}`;
-      const view = button(label, 'btn secondary', async () => {
-        view.disabled = true;
-        view.textContent = 'Đang tải báo cáo…';
-        try {
-            const d = await api('/pos/shifts/' + s.id);
-            const detail = modal('Báo cáo ca ' + when(s.openedAt));
-            reportRows(detail.body, d);
-            if (s.closedAt) {
-              detail.body.append(
-                el('p', '', `Thực đếm ${money(d.countedCash)} · Lệch ${money(d.cashDifference)}`),
-                el('p', '', d.differenceReason || ''),
-              );
-            }
-            detail.body.append(
-              button('In K80', 'btn primary', () => printPos(d, 'shift')),
-              button('Đóng', 'btn secondary', detail.close),
-            );
-            m.close();
-            detail.show();
-        } catch (e) {
-          toast(e.message, 'err');
-          view.disabled = false;
-          view.textContent = label;
-        }
-      });
-      list.append(view);
-    }
-    m.body.append(list, button('Đóng', 'btn secondary', m.close));
+    const m = modal('Báo cáo ca'), shifts = st.options.shifts || [];
+    const day = iso => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const staff = el('select'); staff.setAttribute('aria-label', 'Nhân viên');
+    for (const [v, t] of [['', 'Tất cả nhân viên'], ...[...new Set(shifts.map(s => s.memberName || ''))].filter(Boolean).sort().map(n => [n, n])]) { const o = el('option', '', t); o.value = v; staff.append(o); }
+    const from = el('input'), to = el('input'); from.type = to.type = 'date'; from.setAttribute('aria-label', 'Từ ngày'); to.setAttribute('aria-label', 'Đến ngày');
+    const status = el('select'); status.setAttribute('aria-label', 'Trạng thái');
+    for (const [v, t] of [['', 'Tất cả ca'], ['open', 'Đang mở'], ['closed', 'Đã kết']]) { const o = el('option', '', t); o.value = v; status.append(o); }
+    const filters = el('div', 'pos-shift-filters'), count = el('p', 'pos-note');
+    const lbl = (t, c) => { const l = el('label'); l.append(el('span', '', t), c); return l; };
+    filters.append(lbl('Nhân viên', staff), lbl('Từ ngày', from), lbl('Đến ngày', to), lbl('Trạng thái', status));
+    const list = el('div', 'pos-customer-list pos-shift-list');
+    const open = async (s, view, label) => {
+      view.disabled = true; view.textContent = 'Đang tải báo cáo…';
+      try {
+        const d = await api('/pos/shifts/' + s.id);
+        const detail = modal('Báo cáo ca ' + when(s.openedAt) + ' · ' + (s.memberName || ''));
+        detail.body.append(el('p', 'pos-note', s.closedAt ? `Đã kết ${when(s.closedAt)}` : 'Ca đang mở – số liệu tính đến hiện tại'));
+        reportRows(detail.body, d, target => {
+          detail.close();
+          if (target === 'cash') go('#/cash');
+          else if (target === 'orders') go('#/orders');
+          else if (target === 'returns') openReturns();
+          else if (target === 'flows') run(flowOrders);
+          else if (target === 'cod') run(codList);
+        });
+        const acts = el('div', 'pos-actions');
+        acts.append(button('In K80', 'btn primary', () => printPos(d, 'shift')), button('Đóng', 'btn secondary', detail.close));
+        detail.body.append(acts);
+        m.close(); detail.show();
+      } catch (e) { toast(e.message, 'err'); view.disabled = false; view.textContent = label; }
+    };
+    const draw = () => {
+      const rows = shifts.filter(s => (!staff.value || s.memberName === staff.value) && (!from.value || day(s.openedAt) >= from.value) && (!to.value || day(s.openedAt) <= to.value)
+        && (!status.value || (status.value === 'open') === !s.closedAt));
+      count.textContent = `${rows.length} ca` + (shifts.length >= 50 ? ' (50 ca gần nhất)' : '');
+      list.replaceChildren(...(rows.length ? rows.map(s => {
+        const label = `${when(s.openedAt)} · ${s.closedAt ? 'Đã kết' : 'Đang mở'} · ${s.memberName || 'Nhân viên không còn trong danh mục'}`;
+        const view = button(label, 'btn ' + (s.closedAt ? 'pos-shift-closed' : 'pos-shift-open'), () => open(s, view, label));
+        return view;
+      }) : [el('p', 'pos-note', 'Không có ca phù hợp bộ lọc.')]));
+    };
+    for (const x of [staff, from, to, status]) x.addEventListener('change', draw);
+    draw();
+    m.body.append(filters, count, list, button('Đóng', 'btn secondary', m.close));
     m.show();
   }
   async function qr() {
