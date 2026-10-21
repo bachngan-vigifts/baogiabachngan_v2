@@ -10,7 +10,7 @@ Thêm đúng 1 cột vào bảng hiện có:
 
 - `web_store_orders.financial_snapshot`: `text NOT NULL DEFAULT '{}'`, lưu JSON có phiên bản: tiền hàng trước/sau giảm, coupon (mã và tiền giảm), phí phát sinh có dấu (kể cả phí âm đổi điểm), phí ship thu khách/tên phương thức, thuế, điểm đổi nếu nguồn cung cấp, tổng tiền gốc từ website.
 - Không thêm bảng, index, quyền, cron; RLS và quyền bảng giữ nguyên. Không đổi cột total/ghnFee hoặc sổ thu chi/công nợ.
-- Người dùng đã duyệt phương án và tạo migration. File: `migrations/postgres/20261021035601_web_order_financial_snapshot.sql` (tạo tên bằng Supabase CLI 2.81.0). Chưa áp dụng lên DB thật; bước DB live cần được duyệt riêng theo giới hạn trước đây.
+- Người dùng đã duyệt phương án và tạo migration. File: `migrations/postgres/20261021035601_web_order_financial_snapshot.sql` (tạo tên bằng Supabase CLI 2.81.0). Người dùng đã duyệt riêng bước DB live. Đã áp dụng SQL lên CRM `taceqfnsorewelsbdckg` ngày 21/10/2026 qua Supabase MCP; lịch sử DB ghi name `web_order_financial_snapshot`, version `20261021041220`. Đã xác minh kiểu text, NOT NULL, mặc định `{}`, không có snapshot NULL; RLS giữ bật và không thêm policy/quyền.
 - Dòng cũ mặc định `{}` = chưa có chi tiết, không tự coi coupon/đổi điểm/ship là 0. Dữ liệu chi tiết chỉ được bổ sung khi website gửi lại đơn, không suy ngược từ tổng.
 
 ## Tiếp nhận và hiển thị
@@ -31,4 +31,4 @@ Repo hiện không chứa mã WordPress/n8n đẩy đơn. Cần xác minh payloa
 
 Mẫu 38.545.020 − coupon 150.000 − đổi điểm 5.000 + ship 0 = 38.390.020, giữ total nguồn. Có ship >0 và miễn phí; thuế coupon/phí/ship; coupon đổi điểm không trừ hai lần; nguồn thiếu dữ liệu/đơn cũ; webhook lặp/đổi coupon/đổi điểm về 0; chỉ cập nhật trạng thái; phân quyền Lock/ML/kế toán; UI thoát HTML; typecheck/build và các test liên quan. Chưa test live/máy in.
 
-Kết quả: 67 trường hợp liên quan đã xác minh đạt (bộ hồi quy 56, miền tính tiền 4, UI mới 3, nâng cấp dữ liệu cũ 1, schema migration 3); fixture VM của 3 test Kế toán đã cập nhật để nạp dependency UI thật và chạy lại đạt. Typecheck/build đạt. Chromium mô phỏng 1200px/390px đạt. Không chạy toàn bộ suite, chưa test luồng thật từ WordPress/máy in, chưa chạy migration live. Truy vấn information_schema chỉ đọc xác nhận DB CRM chưa có financial_snapshot.
+Kết quả: 67 trường hợp liên quan đã xác minh đạt (bộ hồi quy 56, miền tính tiền 4, UI mới 3, nâng cấp dữ liệu cũ 1, schema migration 3); fixture VM của 3 test Kế toán đã cập nhật để nạp dependency UI thật và chạy lại đạt. Typecheck/build đạt. Chromium mô phỏng 1200px/390px đạt. Không chạy toàn bộ suite, chưa test luồng thật từ WordPress/máy in, migration live đã được áp dụng theo phê duyệt riêng. Truy vấn metadata sau migration xác nhận cột đúng kiểu/default, RLS vẫn bật; anon/authenticated không có policy cho phép đọc dòng và không có quyền bypass RLS.
