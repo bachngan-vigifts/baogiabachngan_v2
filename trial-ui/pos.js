@@ -72,6 +72,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     request: 0,
     showMenu: false,
   };
+  let paymentModal = null;
   let searchTimer,
     previewTimer,
     previewSeq = 0,
@@ -528,6 +529,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function openPayment() {
     if (!active() || !st.preview || !st.cart.length || st.pending || st.busy) return;
     const m = modal('Thanh toán'); m.dlg.classList.add('pos-payment-modal');
+    paymentModal = m; m.dlg.addEventListener('close', () => { if (paymentModal === m) paymentModal = null; });
     const headerMeta = el('span', 'pos-payment-meta', `Đơn hiện tại · ${st.customer?.name || 'Khách lẻ'}`),
       due = el('section', 'pos-payment-due');
     m.body.querySelectorAll?.('h2')?.[0]?.append?.(headerMeta);
@@ -552,7 +554,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.qr = button('Tạo mã QR', 'btn secondary pos-create-qr', () => run(qr)); transfer.append(nodes.qr, confirm); nodes.transfer = transfer;
     const cod = el('section', 'pos-payment-cod', 'Bước tiếp theo mở màn Giao Hàng Nhanh để nhập địa chỉ và thông tin người nhận.'); nodes.cod = cod;
     const footer = el('div', 'pos-payment-footer'); nodes.temp = button('In bill tạm', 'btn secondary', () => run(printTemporary));
-    nodes.modalPay = button('Thu tiền & in bill', 'btn primary', async () => { if (st.method === 'cod') await pay(true); else await pay(false); if (!st.pending && !st.cart.length) m.close(); });
+    nodes.modalPay = button('Thu tiền & in bill', 'btn primary', async () => {
+      if (st.method === 'cod') { m.close(); await pay(true); }
+      else { await pay(false); if (!st.pending && !st.cart.length) m.close(); }
+    });
     footer.append(nodes.temp, nodes.modalPay);
     const future=el('div','pos-flow-actions');if(st.options.orderFlowVersion>=1)future.append(button('Đặt cọc · Nhận sau','btn secondary',()=>createFlow('deposit',m.close)),button('Ship trả trước 100%','btn secondary',()=>createFlow('prepaid',m.close)));
     m.body.append(due, methods, tender, transfer, cod, future, footer); m.show(); drawMethods(); refreshPay();
@@ -1367,6 +1372,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     refreshPay();
     try {
       const d = await api(body.saleFlow?'/pos/order-flows/checkout':'/pos/checkout', 'POST', body);
+      paymentModal?.close();
       persistPending(null);
       st.cart = [];
       st.customer = null;
@@ -1381,15 +1387,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         toast('Đơn đã lưu. Bấm In lại bill nếu máy in chưa sẵn sàng.', 'err');
       }
       toast('Đã lưu ' + d.orderNo + '. Nếu chưa in được, dùng In lại bill.');
-      const saved = modal('Đã lưu ' + d.orderNo);
-      saved.body.append(
-        el('p', '', money(d.total)),
-        button('In lại bill', 'btn secondary', () => printPos(d)),
-        ...(body.fulfillmentMode === 'cod' ? [ghnPortalLink(d.ghnOrderCode || '')] : []),
-        ...(body.saleFlow?[button('Xem đơn nhận sau','btn secondary',()=>{saved.close();run(()=>flowOrders(d.id));})]:[]),
-        button('Bán đơn tiếp', 'btn primary', saved.close),
-      );
+      const saved = modal('Đã lưu đơn hàng');
+      saved.dlg.className += ' pos-saved-modal';
+      const summary = el('div', 'pos-saved-summary'), check = el('span', 'pos-saved-check', '✓');
+      check.setAttribute('aria-hidden', 'true');
+      const identity = el('div'); identity.append(el('span', 'pos-saved-label', 'Mã đơn hàng'), el('strong', 'pos-saved-order', d.orderNo));
+      summary.append(check, identity);
+      const total = el('div', 'pos-saved-total'); total.append(el('span', '', 'Tổng đơn hàng'), el('strong', '', money(d.total)));
+      const actions = el('div', 'pos-saved-actions');
+      actions.append(button('In lại bill', 'btn secondary', () => printPos(d)));
+      if (body.fulfillmentMode === 'cod') actions.append(ghnPortalLink(d.ghnOrderCode || ''));
+      if (body.saleFlow) actions.append(button('Xem đơn nhận sau', 'btn secondary', () => { saved.close(); run(() => flowOrders(d.id)); }));
+      const next = button('Bán đơn tiếp', 'btn primary pos-saved-next', () => { saved.close(); nodes.search?.focus(); }); actions.append(next);
+      saved.body.append(summary, total, el('p', 'pos-saved-hint', 'Đơn đã được lưu. Có thể in lại bill hoặc tiếp tục bán hàng.'), actions);
       saved.show();
+      next.focus();
       await load();
     } catch (e) {
       if (e.status >= 400 && e.status < 500) {
