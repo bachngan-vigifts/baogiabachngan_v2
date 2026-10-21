@@ -34,6 +34,7 @@ jobs:
           tests/app/pos.test.ts
           tests/app/invoice-tasks.test.ts
           tests/app/pos-cod-deposit.test.ts
+          tests/app/pos-notifications.test.ts
           tests/db/pos-order-flow-access.test.ts
           tests/app/pos-order-flow.test.ts
           tests/app/pos-order-flow-ui.test.ts
