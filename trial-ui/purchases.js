@@ -231,7 +231,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     catch (e) { toast(e.message || 'Không mở được đơn mua.', 'err'); close(); }
   }
   function renderDetail() {
-    const v = current, d = frame(v.stateLabel + (v.confirmedOnBehalf ? ' · Manager ghi nhận thay NCC' : ''), `${v.ticketNumber} · ${v.supplier?.name || ''}`);
+    const v = current, d = frame(v.stateLabel + (v.confirmedOnBehalf ? ' · Ghi nhận thay NCC' : ''), `${v.ticketNumber} · ${v.supplier?.name || ''}`);
     const has = a => v.actions.includes(a);
     const acts = el('div', 'pur-actions');
     for (const a of ['edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'pdf', 'cancel']) {
@@ -851,7 +851,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
 
   function confirmForm() {
     const v = current, d = frame('Ghi nhận thay NCC', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
-    f.append(el('p', 'muted', 'Dùng khi NCC xác nhận qua điện thoại / email (chưa có cổng NCC). Lịch sử ghi rõ Manager ghi nhận thay.'));
+    f.append(el('p', 'muted', 'Dùng khi NCC xác nhận qua điện thoại / email (chưa có cổng NCC). Lịch sử ghi rõ nhân viên ghi nhận thay.'));
     const arrival = input('date', v.arrivalDate || ''), internal = input('text', v.internalNo || '', { maxLength: 100 }), note = input('text', '', { maxLength: 300, placeholder: 'VD: chị Hoa xác nhận qua Zalo' });
     const g = el('div', 'form-grid two'); g.append(field('Ngày hẹn giao', arrival), field('Số đơn phía NCC', internal), field('Ghi chú', note, 'span-2'));
     const t = el('table', 'data-table pur-lines'), tb = el('tbody'), th = el('tr'); for (const h of ['Mã / tên', 'SL', 'Hẹn riêng', 'Ghi chú NCC']) th.append(el('th', '', h));

@@ -640,6 +640,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     const continueCod = payment.querySelectorAll('button').find(b => b.textContent === 'TIẾP TỤC TẠO ĐƠN COD')!;
     assert.ok(continueCod);
     await continueCod.fire('click');
+    assert.equal(payment.open, false, 'Đóng bảng Thanh toán trước khi mở form COD');
     const modal = doc.body.children.at(-1)!;
     assert.match(modal.textContent, /Giao Hàng Nhanh · nhập địa chỉ/);
     assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
@@ -756,4 +757,77 @@ test('Manager đổi quầy đang mở; giỏ có hàng không được đổi c
     choose.value='lock'; await choose.fire('change');
     assert.equal(choose.value,'ml'); assert.ok(notices.some(s=>s.includes('Hoàn tất hoặc huỷ')));
   } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});
+
+test('lưu POS: lỗi giữ bảng thanh toán và giỏ; thành công đóng bảng cũ, popup mã/tổng và nút bán tiếp không tạo lại đơn', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root=new Element('section');let fail=true,checkouts=0;
+    const api=async(path:string)=>{
+      if(path.startsWith('/pos/options'))return {registers:[{id:'r',name:'Lock',pricePolicyId:'vat'}],current:{id:'s',registerId:'r',memberId:'emp'},shifts:[],templates:[],policies:[]};
+      if(path.startsWith('/pos/catalog'))return {products:[{sku:'001',name:'Ly',price:194400,available:10}],nextOffset:null};
+      if(path==='/pos/preview')return {...sample,lines:[{...sample.lines[0],sku:'001'}]};
+      if(path==='/pos/checkout'){checkouts++;if(fail)throw Object.assign(Error('Thử lại'),{status:400});return {...sample,orderNo:'POS_<img onerror=x>',id:'new'};}
+      throw Error(path);
+    };
+    const ui=initPos({root,api,toast(){},user:()=>({id:'emp',name:'NV'}),confirmBox:async()=>true,go(){}});
+    await ui.load();await root.querySelectorAll('button').find(b=>b.className==='pos-product')!.fire('click');
+    await new Promise(r=>setTimeout(r,230));await root.querySelectorAll('button').find(b=>b.textContent==='THANH TOÁN')!.fire('click');
+    const payment=doc.body.children.at(-1)!;const tender=payment.querySelectorAll('input').find(i=>i.type==='number')!;
+    tender.value='200000';await tender.fire('input');
+    const pay=payment.querySelectorAll('button').find(b=>b.textContent==='Thu tiền & in bill')!;
+    await pay.fire('click');assert.equal(payment.open,true);assert.ok(root.textContent.includes('Ly'));
+    fail=false;await pay.fire('click');assert.equal(payment.open,false);
+    const saved=doc.body.children.filter(e=>e.open&&e.className.includes('pos-saved-modal')).at(-1)!;
+    assert.ok(saved);assert.match(saved.textContent,/POS_<img onerror=x>/);assert.equal(saved.querySelectorAll('img').length,0);
+    assert.ok(saved.textContent.includes('194.400 đ'));
+    const actions=saved.querySelectorAll('div').find(e=>e.className==='pos-saved-actions')!;
+    assert.deepEqual(actions.children.map(b=>b.textContent),['In lại bill','Bán đơn tiếp']);
+    await actions.children[1]!.fire('click');assert.equal(saved.open,false);assert.equal(checkouts,2);
+  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});
+
+test('POS stock: selected product says bỏ chọn; stock actions never add to cart; request selects warehouse and sends once',async()=>{
+ const prevDoc=globalThis.document,prevWin=globalThis.window;
+ Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+ try {
+  const root=new Element('section'),writes:any[]=[],purchases:any[]=[],links:string[]=[];
+  const source={vigifts:{qty:40,warehouses:[{id:'vig',name:'KHO VIGIFTS',qty:40}]},supplier:{qty:70,warehouses:[{id:'ncc',name:'NCC',qty:70}]},incoming:{qty:5,orders:[{orderId:'po',orderNo:'DMH_A',supplierName:'NCC A',qty:5,arrivalDate:'2026-10-25'}]},requestWarehouses:[{id:'vig',name:'KHO VIGIFTS',qty:40},{id:'other',name:'Kho khác',qty:10}],destination:{id:'wh',name:'Kho cửa hàng'}};
+  const product={sku:'LY1',name:'Ly sứ',unit:'cái',price:100000,available:10,onHand:12,reserved:2,stockSources:source};
+  const api=async(path:string,method?:string,body?:any)=>{
+   if(path.startsWith('/pos/options'))return {registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:{id:'s',memberId:'emp',registerId:'r'},shifts:[],templates:[],policies:[]};
+   if(path.startsWith('/pos/catalog'))return {products:[product],nextOffset:null};
+   if(path.startsWith('/pos/orders'))return {orders:[],counts:{}};
+   if(path==='/pos/preview')return {lines:[],total:100000,subtotal:100000,tax:0};
+   if(path==='/purchase-options')return {suppliers:[{id:'supplier',name:'NCC A'}]};
+   if(path==='/purchase-orders'){purchases.push(body);return {ids:['new-po']};}
+   if(path==='/stock-transfers'){writes.push(body);await new Promise(r=>setTimeout(r,10));return {transferNo:'PCK_TEST'};}
+   throw Error(path);
+  };
+  const ui=initPos({root,api,toast(){},user:()=>({id:'emp'}),confirmBox:async()=>true,go:(url:string)=>links.push(url)});await ui.load();
+  const card=root.querySelectorAll('button').find(x=>x.className==='pos-product')!;
+  await card.fire('click');assert.match(card.textContent,/Bỏ chọn/);assert.equal(card.attributes['aria-pressed'],'true');
+  await card.fire('click');assert.equal(card.attributes['aria-pressed'],'false');assert.ok(!card.textContent.includes('Bỏ chọn'));
+  const stock=root.querySelectorAll('button').find(x=>x.textContent==='VIGIFTS: 40')!;
+  assert.ok((stock as any).title.includes('KHO VIGIFTS'));
+  await stock.fire('click');assert.equal(card.attributes['aria-pressed'],'false');
+  let dialog=doc.body.children.at(-1)!;assert.match(dialog.textContent,/DMH_A/);
+  await dialog.querySelectorAll('button').find(x=>x.textContent==='Xin hàng')!.fire('click');
+  dialog=doc.body.children.at(-1)!;
+  const from=dialog.querySelectorAll('select').find(x=>x.attributes['aria-label']==='Kho xin hàng')!;assert.ok(from.options.some(x=>x.value==='other'));from.value='other';await from.fire('change');
+  const form=dialog.querySelectorAll('form')[0]!;
+  await Promise.all([form.fire('submit'),form.fire('submit')]);
+  assert.equal(writes.length,1);assert.equal(writes[0].fromWarehouseId,'other');assert.equal(writes[0].toWarehouseId,'wh');assert.deepEqual(writes[0].lines,[{sku:'LY1',qty:1}]);
+  await root.querySelectorAll('button').find(x=>x.textContent==='NCC: 70')!.fire('click');
+  dialog=doc.body.children.at(-1)!;await dialog.querySelectorAll('button').find(x=>x.textContent==='Xin hàng')!.fire('click');
+  await new Promise(r=>setTimeout(r,0));dialog=doc.body.children.at(-1)!;
+  const nccForm=dialog.querySelectorAll('form')[0]!;
+  await nccForm.fire('submit');assert.equal(purchases.length,0,'missing supplier/address cannot save');
+  dialog.querySelectorAll('select').find(x=>x.attributes['aria-label']==='Nhà cung cấp')!.value='supplier';
+  dialog.querySelectorAll('label').find(x=>x.textContent==='Địa chỉ nhận hàng')!.querySelectorAll('input')[0]!.value='Kho cửa hàng';
+  await nccForm.fire('submit');assert.equal(purchases.length,1);assert.equal(purchases[0].orders[0].supplierId,'supplier');assert.equal(purchases[0].orders[0].lines[0].sku,'LY1');
+  assert.deepEqual(links,['#/purchases/new-po']);
+  await new Promise(r=>setTimeout(r,240));
+ } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });

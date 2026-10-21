@@ -1,3 +1,4 @@
+import { posStockSources } from './pos-stock-sources.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
@@ -568,10 +569,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             r.warehouseId,
           )
         : new Map<string, number>();
+      const sources = await posStockSources(c.env.db, member(c), r.warehouseId, rows.map(p => p.sku));
       return json({
         products: rows.map((p) => ({
           ...p,
           onHand: p.onHand ?? 0,
+          stockSources: sources.get(p.sku),
           reserved: reserved.get(p.sku) ?? 0,
           available: Math.max(0, (p.onHand ?? 0) - (reserved.get(p.sku) ?? 0)),
         })),

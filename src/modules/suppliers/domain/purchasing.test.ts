@@ -18,7 +18,7 @@ test('quyền đơn mua: nháp người tạo / Manager sửa; duyệt chỉ Man
   assert.deepEqual(purchaseActions(mgr, draft, none), ['edit', 'approve', 'cancel', 'pdf']);
   assert.deepEqual(purchaseActions(mgr, approved, none), ['confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf']);
   assert.deepEqual(purchaseActions(kho, approved, none), ['receive']);
-  assert.deepEqual(purchaseActions(kt, approved, none), ['pay', 'schedule', 'pdf']);
+  assert.deepEqual(purchaseActions(kt, approved, none), ['confirm', 'receive', 'pay', 'schedule', 'pdf']);
   assert.deepEqual(purchaseActions(emp, approved, none), [], 'đơn đã duyệt: nhân viên chỉ xem');
   assert.deepEqual(purchaseActions(ncc, approved, none), [], 'tài khoản NCC không dùng trang nội bộ');
   assert.equal(checkPurchase('receive', kho, draft, none).ok, false, 'chưa duyệt chưa nhận');
@@ -56,4 +56,18 @@ test('công nợ NCC: không cọc / cọc / nhiều đợt; trả áp kỳ sớ
 test('chống mua trùng: còn cần đặt = cần − đã đặt; gộp mã lặp, không phân biệt hoa thường', () => {
   const r = remainingToOrder([{ sku: 'ly1', name: 'Ly', unit: 'cái', quantity: 6 }, { sku: 'LY1', name: 'Ly', unit: 'cái', quantity: 4 }, { sku: 'B', name: 'B', unit: '', quantity: 3 }], new Map([['ly1', 7]]));
   assert.deepEqual(r.map(x => [x.sku, x.quantity, x.ordered, x.remaining]), [['ly1', 10, 7, 3], ['B', 3, 0, 3]]);
+});
+
+
+test('Sale Admin và Kế toán có xác nhận, nhận hàng, trả NCC, lịch trả, PDF; không có quyền duyệt/huỷ thay Manager',()=>{
+  for(const positionId of ['sale-admin','accounting']) {
+    const actor: Actor={id:'office',role:'employee',active:true,positionId};
+    for(const action of ['confirm','receive','pay','schedule','pdf'] as const) assert.equal(checkPurchase(action,actor,approved,none).ok,true);
+    for(const action of ['approve','cancel'] as const) assert.equal(checkPurchase(action,actor,approved,none).ok,false);
+    assert.equal(checkPurchase('confirm',{...actor,active:false},approved,none).ok,false);
+    assert.equal(checkPurchase('receive',{...actor,role:'supplier'},approved,none).ok,false);
+    assert.equal(checkPurchase('receive',actor,draft,none).ok,false);
+    assert.equal(checkPurchase('confirm',actor,{...approved,cancelledAt:'2026-10-21'},none).ok,false);
+    assert.equal(checkPurchase('receive',actor,approved,{...none,fullyReceived:true}).ok,false);
+  }
 });

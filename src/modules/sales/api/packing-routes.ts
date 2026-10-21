@@ -15,7 +15,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
 import { stockMoves, stockBalances } from '../../inventory/schema.ts';
-import { postMoves } from '../../inventory/api/ledger.ts';
+import { postMoves, saleMovesPosted } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, salesContracts, shippingCarriers } from '../schema.ts';
@@ -320,8 +320,11 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       const [w] = typeof body.warehouseId === 'string' ? await c.env.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, body.warehouseId), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).limit(1) : [];
       if (!w) throw new AppError(400, 'Chọn kho xuất hàng.');
       if (order.channel === 'pos' && order.shiftId) { const [r] = await c.env.db.select({warehouseId:posRegisters.warehouseId}).from(posShifts).innerJoin(posRegisters,eq(posRegisters.id,posShifts.registerId)).where(eq(posShifts.id,order.shiftId));if(r && r.warehouseId !== w.id) throw new AppError(400,'Đơn POS cần xuất đúng kho của quầy.'); }
+      // Đơn CRM có kho bán: hàng đã trừ khỏi kho bán lúc duyệt – kho xuất phải đúng kho bán, không trừ lần hai.
+      if (order.channel === 'crm' && order.warehouseId && order.warehouseId !== w.id) throw new AppError(400, 'Xuất đúng kho bán của đơn (hàng đã trừ ở kho này khi duyệt). Cần kho khác: xin điều chuyển hàng về kho bán.');
       stockWarehouseId = w.id;
     }
+    const soldAtApproval = order.channel === 'crm' && !!order.warehouseId && await saleMovesPosted(c.env.db, order.id);
     const now = nowIso();
     await c.env.db.transaction(async tx => {
       if (saleFlowOf(order.posSnapshot)) { await cashLock(tx); await assertPosFlowFulfillable(tx,order.id); }
@@ -335,7 +338,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'sent'))).returning({ id: packingSlips.id });
       if (!done.length) throw new AppError(409, 'Phiếu vừa được người khác xác nhận.');
       await tx.insert(packingSlipPhotos).values((photos as string[]).map(dataUrl => ({ id: crypto.randomUUID(), slipId: slip.id, dataUrl, bytes: Math.floor(dataUrl.length * 3 / 4), createdBy: m.id, createdAt: now })));
-      if (stockWarehouseId) {
+      if (stockWarehouseId && !soldAtApproval) {
         const lines = await tx.select({ sku: packingSlipLines.sku, qty: packingSlipLines.qty }).from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id));
         if(saleFlowOf(order.posSnapshot)){const balances=await tx.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,stockWarehouseId),inArray(stockBalances.sku,lines.map(l=>l.sku)))).orderBy(asc(stockBalances.sku)).for('update');for(const sku of new Set(lines.map(l=>l.sku))){if((balances.find(b=>b.sku===sku)?.qty||0)<lines.filter(l=>l.sku===sku).reduce((n,l)=>n+l.qty,0))throw new AppError(409,'Tồn thực tế không đủ để xuất: '+sku);}}
         await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: stockWarehouseId!, qty: -l.qty, kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` })), now);

@@ -36,7 +36,10 @@ import { recordMovements, removeMovements } from '../../catalog/api/product-hist
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
 import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
-import { reverseRef } from '../../inventory/api/ledger.ts';
+import { reverseRef, syncSaleMoves } from '../../inventory/api/ledger.ts';
+import { hiddenWarehouseIds, sellableWarehouses, sellersConfigured } from '../../inventory/api/warehouse-access.ts';
+import { readCatalogStock } from '../../catalog/api/stock-source.ts';
+import { warehouses } from '../../catalog/schema.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
 import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, sapoPushViaClaw, sendOrderToClaw, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
@@ -179,6 +182,35 @@ async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string |
 }
 
 /** Số HĐKT của các bản ghi (bản ghi có HĐKT là HĐKT, không phải đơn hàng – xem domain/doc-ref.ts). */
+/**
+ * Kho bán của đơn (docs/SO-KHO.md "Kho bán theo chức vụ"): phải là kho chức vụ của người phụ trách đơn được bán; Manager chọn mọi kho.
+ * Không gửi kho: người phụ trách chỉ bán một kho → tự chọn kho đó. Chưa gán kho bán cho chức vụ nào (chưa bật) → kho nào cũng được, không bắt chọn.
+ */
+export async function pickSaleWarehouse(db: StaffEnv['db'] | Tx, ownerId: string, actor: { role: string }, requested: unknown): Promise<string | null> {
+  const wanted = typeof requested === 'string' ? requested.trim().slice(0, 80) : '';
+  const configured = await sellersConfigured(db);
+  const [owner] = await db.select({ role: employees.role, positionId: employees.positionId }).from(employees).where(eq(employees.id, ownerId)).limit(1);
+  const ownerList = owner ? await sellableWarehouses(db, owner) : [];
+  const allowed = !configured || actor.role === 'manager' ? await sellableWarehouses(db, { role: 'manager' }) : ownerList;
+  if (wanted) {
+    if (!allowed.some(w => w.id === wanted)) throw new AppError(403, 'Kho này không thuộc kho bán của nhân viên phụ trách đơn. Xin điều chuyển hàng về kho của mình.', 'WAREHOUSE_NOT_ALLOWED');
+    return wanted;
+  }
+  return configured && ownerList.length === 1 ? ownerList[0]!.id : null;
+}
+const ACTIVE_ORDER: readonly string[] = ['confirmed', 'delivering', 'delivered'];
+/**
+ * Sổ kho theo đơn kênh CRM: đơn / HĐKT đã duyệt trừ kho bán; huỷ / đổi kho / Manager sửa số lượng → ghi phần chênh lệch (inventory/api/ledger.ts).
+ * Đơn POS / web có luồng xuất kho riêng (pos_order, pos_delivery) – không đụng.
+ */
+export async function syncOrderStock(tx: Tx, by: string, orderId: string, note: string) {
+  const [o] = await tx.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, status: salesOrders.status, warehouseId: salesOrders.warehouseId, channel: salesOrders.channel })
+    .from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
+  if (!o || o.channel !== 'crm') return 0;
+  const lines = await tx.select({ sku: salesOrderLines.sku, qty: salesOrderLines.qty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
+  const no = docRef(o.id, o.orderNo, (await contractNosOf(tx, [o.id])).get(o.id)).no;
+  return syncSaleMoves(tx, by, { id: o.id, no, warehouseId: o.warehouseId, active: ACTIVE_ORDER.includes(o.status) }, lines, note);
+}
 export async function contractNosOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   const ids = [...new Set(orderIds)];
   const rows = ids.length ? await db.select({ orderId: salesContracts.orderId, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, ids)) : [];
@@ -196,6 +228,7 @@ async function contractCustomerCode(db: StaffEnv['db'] | Tx, quote: QuoteRow) {
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
  */
 export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; debtWarningAccepted?: boolean; submitted?: boolean; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string; receiverName?: string; receiverPhone?: string;
+  /** Kho bán (đã kiểm quyền bằng pickSaleWarehouse). */ warehouseId?: string | null;
   /** Chạy cuối giao dịch tạo đơn (vd. đẩy đơn sang Sapo); lỗi → huỷ, không có đơn. */
   inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
@@ -221,7 +254,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
       receiverName: o.receiverName ?? '', receiverPhone: o.receiverPhone ?? '',
       customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
       taxCode: text(data.customerTaxCode, 100), address: o.deliveryAddress === undefined ? text(orderDeliveryAddress(data), 2000) : text(o.deliveryAddress, 2000),
-      ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, orderDate: o.orderDate ?? today,
+      ownerId: quote.assigneeId ?? quote.creatorId, createdBy: o.createdBy, warehouseId: o.warehouseId ?? null, orderDate: o.orderDate ?? today,
       expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, submittedAt: o.submitted === false ? null : now, ...t, note: text(o.note ?? orderNotesFromQuote(data), 20000), createdAt: now, updatedAt: now,
     });
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
@@ -244,7 +277,7 @@ async function linkedOrder(tx: Tx, quoteId: string) {
   const [order] = await tx.select().from(salesOrders).where(and(eq(salesOrders.quoteId, quoteId), ne(salesOrders.status, 'cancelled'))).limit(1).for('update');
   return order ?? null;
 }
-export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: { role: string }) {
+export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: { id: string; role: string }) {
   const order = await linkedOrder(tx, quote.id);
   if (!order || (order.status !== 'draft' && member.role !== 'manager')) return;
   const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
@@ -292,6 +325,8 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
   await syncPaymentSchedules(tx, { ...order, ...t, status: orderStatusFromLines(order.status, plan.updates) }, k);
   if (order.status !== 'draft') {
     await refreshOrderStatus(tx, order.id, null);
+    // Manager sửa số lượng đơn / HĐKT đã duyệt: sổ kho trừ thêm / cộng lại phần chênh lệch ở kho bán.
+    await syncOrderStock(tx, member.id, order.id, `Manager sửa ${order.orderNo} theo báo giá ${quote.quoteNo}`);
     await removeMovements(tx, `sale:${order.id}:`);
     await recordSaleMovements(tx, order.id);
   }
@@ -433,7 +468,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({
       returnAdjustment: adjustment || null,
       effectiveSchedules: net.schedules,
-      order: { ...order, posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
+      order: { ...order, warehouseName: order.warehouseId ? (await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, order.warehouseId)).limit(1))[0]?.name ?? '' : '', posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
         canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && await canCreateSapoInDepartment(c, order), canEdit: await canCreateSapoInDepartment(c, order),
@@ -481,7 +516,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     let sapo: SapoPushOutcome = null;
     // Nhân viên sinh đơn: NHÁP, chỉ gửi Manager khi bấm "Gửi duyệt" (POST /orders/:id/submit). Manager sinh đơn: coi như đã gửi.
     const submitted = me.role === 'manager';
-    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, ...input, debtWarningAccepted: body.debtWarningAccepted === true,
+    const warehouseId = await pickSaleWarehouse(c.env.db, quote.assigneeId ?? quote.creatorId, me, body.warehouseId);
+    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, warehouseId, ...input, debtWarningAccepted: body.debtWarningAccepted === true,
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
     if (viaClaw) sapo = await sendOrderToClaw(c, id, 'order');
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
@@ -506,6 +542,49 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         : { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${order.orderNo} – ${order.customerName} · ${new Intl.NumberFormat('vi-VN').format(order.total)} đ`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id } });
     }
     return json({ ok: true, submittedAt: now });
+  }, 'business');
+
+  /**
+   * Đổi kho bán của đơn / HĐKT. Nháp: người phụ trách / người tạo (kho người phụ trách được bán). Đã duyệt: chỉ Manager – sổ kho
+   * chuyển phần đã trừ sang kho mới. Đơn cũ đã xuất kho qua phiếu đóng gói (trước khi có kho bán) thì không đổi được (tránh trừ hai lần).
+   */
+  router.put('/orders/:id/warehouse', async c => {
+    const body = await readJson(c.req, 1_024), me = viewer(c), order = await loadOrder(c, c.params.id!);
+    if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ.');
+    if (order.channel !== 'crm') throw new AppError(409, 'Đơn POS / web xuất kho theo quầy, không đổi kho bán.');
+    if (order.status !== 'draft' && me.role !== 'manager') throw new AppError(403, 'Đơn đã duyệt. Chỉ Manager đổi được kho bán.', 'ORDER_APPROVED');
+    if (order.status === 'draft') await assertCanEditOrder(c, order);
+    const warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, me, body.warehouseId);
+    if (!warehouseId) throw new AppError(400, 'Chọn kho bán.');
+    await c.env.db.transaction(async tx => {
+      const [locked] = await tx.select({ status: salesOrders.status, warehouseId: salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
+      if (locked.warehouseId === warehouseId) return;
+      if (order.status !== 'draft' && !locked.warehouseId) {
+        const issued = await tx.select({ id: packingSlips.id }).from(packingSlips).where(and(eq(packingSlips.orderId, order.id), eq(packingSlips.status, 'packed'), isNotNull(packingSlips.stockWarehouseId))).limit(1);
+        if (issued.length) throw new AppError(409, 'Đơn đã xuất kho qua phiếu đóng gói trước khi có kho bán – không gán kho bán được (tránh trừ hai lần).', 'ORDER_ALREADY_ISSUED');
+      }
+      await tx.update(salesOrders).set({ warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+      await syncOrderStock(tx, me.id, order.id, `Đổi kho bán ${order.orderNo}`);
+    });
+    return json({ ok: true, warehouseId });
+  }, 'business');
+
+  /**
+   * Kho bán chọn được cho đơn (người phụ trách được bán; Manager mọi kho) + tồn từng dòng tại từng kho đó – popup chọn kho / duyệt đơn.
+   * Không trả kho riêng người xem không được thấy tồn.
+   */
+  router.get('/orders/:id/warehouses', async c => {
+    const me = viewer(c), order = await loadOrder(c, c.params.id!), db = c.env.db;
+    const configured = await sellersConfigured(db);
+    const [owner] = await db.select({ role: employees.role, positionId: employees.positionId }).from(employees).where(eq(employees.id, order.ownerId)).limit(1);
+    const list = !configured || me.role === 'manager' ? await sellableWarehouses(db, { role: 'manager' }) : owner ? await sellableWarehouses(db, owner) : [];
+    const lines = await db.select({ sku: salesOrderLines.sku, name: salesOrderLines.name, qty: salesOrderLines.qty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
+    const skus = [...new Set(lines.map(l => l.sku).filter(Boolean))];
+    const stock = await readCatalogStock(db, skus);
+    const hidden = await hiddenWarehouseIds(db, me);
+    return json({ configured, warehouseId: order.warehouseId, warehouses: list.filter(w => !hidden.has(w.id) || w.id === order.warehouseId).map(w => ({ id: w.id, name: w.name,
+      lines: hidden.has(w.id) ? [] : lines.filter(l => l.sku).map(l => ({ sku: l.sku, name: l.name, need: l.qty, stock: stock.find(s => s.sku === l.sku && s.warehouseId === w.id)?.quantity ?? 0 })) })) });
   }, 'business');
 
   /** Push an existing document; never create another CRM order/contract. Row lock serializes double clicks. */
@@ -562,6 +641,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (status === 'confirmed' && order.status !== 'draft') throw new AppError(409, 'Chỉ duyệt được đơn đang chờ duyệt.');
     // Bước xác thực: nhân viên phải đánh dấu đã kiểm tra các thông tin quan trọng trước khi duyệt đơn.
     if (status === 'confirmed' && body.verified !== true) throw new AppError(400, 'Kiểm tra và đánh dấu đủ các thông tin quan trọng trước khi xác nhận đơn.', 'VERIFY_REQUIRED');
+    // Duyệt = trừ kho bán (đơn CRM): người duyệt chọn / đổi kho được (trong kho người phụ trách được bán); đã bật phân kho bán thì bắt buộc có kho.
+    let warehouseId = order.warehouseId;
+    if (status === 'confirmed' && order.channel === 'crm') {
+      if (body.warehouseId !== undefined && body.warehouseId !== order.warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), body.warehouseId);
+      if (!warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), undefined);
+      if (!warehouseId && await sellersConfigured(c.env.db)) throw new AppError(409, 'Chọn kho bán (kho hàng sẽ trừ) trước khi duyệt.', 'WAREHOUSE_REQUIRED');
+    }
     await c.env.db.transaction(async tx => {
       // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
       const [locked] = await tx.select({ status: salesOrders.status }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
@@ -583,7 +669,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
             throw new AppError(409, 'Vui lòng kiểm tra CK khách và phí vận chuyển trước khi duyệt.', 'COST_REVIEW_REQUIRED');
         }
       }
-      await tx.update(salesOrders).set({ status, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+      await tx.update(salesOrders).set({ status, warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+      // Sổ kho: duyệt → trừ kho bán; huỷ đơn đã duyệt → cộng lại (đơn nháp chưa trừ thì không ghi gì).
+      await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);
       // Huỷ: dọn việc còn treo của đơn – phiếu đóng gói chưa đóng / chuyến giao chưa giao huỷ theo (việc kho / giao tự đóng);
       // phiếu kho đã đóng (đã ghi xuất sổ kho) thì ghi dòng đảo – hàng về lại kho – rồi huỷ phiếu.
       if (status === 'cancelled') {
@@ -772,12 +860,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const customNo = text(body.contractNo, 120).replace(/\s+/g, ' ');
     if (customNo && /[\u0000-\u001f<>]/.test(customNo)) throw new AppError(400, 'Số HĐKT không hợp lệ.');
     const now = nowIso(), id = crypto.randomUUID(), { year, month } = vietnamDate();
+    const warehouseId = await pickSaleWarehouse(c.env.db, quote.assigneeId ?? quote.creatorId, me, body.warehouseId);
     const viaClaw = wantsSapoPush(c, body) && sapoPushViaClaw(c);
     const push = wantsSapoPush(c, body) && !viaClaw ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
-      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', inTx: async (tx, oid) => {
+      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', warehouseId, inTx: async (tx, oid) => {
         const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, oid)).limit(1);
         const counterId = `HDKT:${year}:${month}:${entity}`;
         const [row] = await tx.insert(contractCounters).values({ id: counterId, type: 'HDKT', year: Number(year), month: Number(month), legalEntity: entity, lastSequence: 1, updatedAt: now })

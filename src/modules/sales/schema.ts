@@ -5,7 +5,7 @@ import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
 import { quotations } from '../quotes/schema.ts';
-import { products } from '../catalog/schema.ts';
+import { products, warehouses } from '../catalog/schema.ts';
 import { HOLD_STATUSES, CONTRACT_STATUSES, DELIVERY_STATUSES, INVOICE_MODES, INVOICE_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PACKING_SOURCES, PACKING_STATUSES, PAYMENT_METHODS, PROGRESS_STAGES, SCHEDULE_KINDS, SHIP_TO } from './domain/statuses.ts';
 
 /*
@@ -50,6 +50,8 @@ export const salesOrders = pgTable('sales_orders', {
   /** Người phụ trách đơn (mặc định người phụ trách báo giá). */
   ownerId: text('owner_id').notNull().references(() => employees.id),
   createdBy: text('created_by').notNull().references(() => employees.id),
+  /** Kho bán (đơn / HĐKT kênh CRM): hàng trừ khỏi kho này khi được duyệt, huỷ thì cộng lại – docs/SO-KHO.md. Đơn cũ / POS = null. */
+  warehouseId: text('warehouse_id').references(() => warehouses.id),
   orderDate: text('order_date').notNull(),
   expectedDeliveryDate: text('expected_delivery_date'),
   status: text('status', { enum: ORDER_STATUSES }).notNull().default('confirmed'),

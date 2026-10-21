@@ -1025,3 +1025,53 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 @media (max-width: 600px) {
   .pos-customer-create .customer-form-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Saved checkout: clear document identity, amount and separated next actions. */
+.pos-modal.pos-saved-modal { width: min(500px, calc(100vw - 24px)); box-shadow: 0 20px 65px #122c2633; }
+.pos-saved-modal .pos-modal-content { padding: 28px; }
+.pos-saved-modal h2 { font-size: 22px; line-height: 1.35; padding-right: 38px; margin: 0 0 24px; color: #164e37; }
+.pos-saved-summary { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; }
+.pos-saved-check { display: grid; place-items: center; flex: 0 0 48px; height: 48px; border-radius: 50%; background: #e6f6ec; color: #11844d; font-size: 28px; font-weight: 700; }
+.pos-saved-label { display: block; color: #64748b; font-size: 13px; margin-bottom: 4px; }
+.pos-saved-order { display: block; font-size: 17px; color: #172b42; overflow-wrap: anywhere; }
+.pos-saved-total { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 20px; border: 1px solid #cfe9d9; border-radius: 12px; background: #f1faf5; color: #32624a; font-size: 14px; }
+.pos-saved-total strong { color: #087b48; font-size: 28px; white-space: nowrap; }
+.pos-saved-hint { color: #64748b; font-size: 13px; line-height: 1.6; margin: 16px 0 22px; }
+.pos-saved-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pos-saved-actions .btn { width: 100%; box-sizing: border-box; min-height: 46px; padding: 10px 12px; font-size: 14px; text-align: center; display: flex; align-items: center; justify-content: center; white-space: normal; }
+.pos-saved-actions .pos-saved-next { grid-column: 1 / -1; background: #10854e; border-color: #10854e; }
+@media (max-width: 420px) {
+  .pos-saved-modal .pos-modal-content { padding: 22px 18px; }
+  .pos-saved-modal h2 { font-size: 20px; }
+  .pos-saved-total { flex-direction: column; align-items: flex-start; padding: 16px; gap: 6px; }
+  .pos-saved-actions { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Báo cáo ca: lọc + ca đang mở (xanh) / đã kết (xám) + nội dung gom theo mục. */
+.pos-shift-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 4px 0 6px; }
+.pos-shift-filters label { display: grid; gap: 2px; font-size: 12px; color: var(--muted, #667085); }
+.pos-shift-list .pos-shift-open { background: #e7f6ec; border-color: #2e9e5b; color: #17663a; font-weight: 600; }
+.pos-shift-list .pos-shift-open:hover { background: #d3efdd; }
+.pos-shift-list .pos-shift-closed { background: #f2f4f7; border-color: #d0d5dd; color: #475467; }
+.pos-report-section { border: 1px solid var(--line, #e4e7ec); border-radius: 10px; padding: 6px 10px 8px; margin: 8px 0; }
+.pos-report-head { display: flex; width: 100%; justify-content: space-between; align-items: baseline; background: none; border: 0; padding: 4px 0 6px; cursor: pointer;
+  font-weight: 700; font-size: 15px; color: var(--ink, #101828); border-bottom: 1px solid var(--line, #e4e7ec); margin-bottom: 4px; }
+.pos-report-head small { font-weight: 500; color: var(--brand, #1d4ed8); }
+.pos-report-head:hover small { text-decoration: underline; }
+
+/* Product action and stock actions are sibling buttons: stock remains usable when the item cannot be sold. */
+.pos-grid { grid-auto-rows: minmax(276px, auto); }
+.pos-product-tile { display:flex; flex-direction:column; min-width:0; overflow:hidden; border:1px solid #dce4df; border-radius:14px; background:white; }
+.pos-product-tile > .pos-product { flex:1; width:100%; border:0; border-radius:0; box-shadow:none; }
+.pos-product-in-cart { background:#eaf8ee; }
+.pos-product-selection { color:#086b43; font-weight:800; font-size:12px; }
+.pos-product-stocks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; padding:8px; border-top:1px solid #e1ebe5; }
+.pos-source-stock { padding:5px 3px; border:1px solid #dce7e0; border-radius:6px; background:#f6faf7; color:#1e5e44; font-size:11px; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.pos-source-stock:hover, .pos-source-stock:focus-visible { border-color:#087847; background:#e6f5ec; }
+.pos-stock-dialog { width:min(560px,calc(100vw - 24px)); max-height:90vh; overflow:auto; }
+.pos-stock-dialog .pos-field { margin-top:12px; }
+.pos-stock-detail { border-bottom:1px solid #e2e9e5; padding:12px 0; }
+.pos-stock-detail p { white-space:pre-wrap; margin:6px 0 0; }
+.pos-stock-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:18px; }
+.pos-stock-error { color:#b3261e; }
+@media(max-width:1366px) { .pos-grid { grid-auto-rows:minmax(244px,auto); max-height:calc(244px * 10 + 8px * 9); } .pos-product-stocks { padding:6px; } .pos-source-stock { font-size:10px; } }

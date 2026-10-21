@@ -1,4 +1,4 @@
-import { isSupplier, type Role } from '../../staff/domain/roles.ts';
+import { isSupplier, SALE_ADMIN_POSITION_ID, type Role } from '../../staff/domain/roles.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { isIsoDate } from './quantity.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -11,7 +11,7 @@ import { AppError } from '../../../core/errors.ts';
  *  - Sapo là NGUỒN TỒN CHÍNH. Nhận hàng trên CRM KHÔNG cộng tồn; phiếu nhận có trạng thái nhập Sapo riêng
  *    (chờ / đã nhập kèm mã phiếu Sapo / lỗi / không cần). Một phiếu chỉ "đã nhập Sapo" một lần → không cộng hai lần.
  *  - Ghi thanh toán NCC: Manager + Kế toán; chỉ Manager huỷ khoản đã ghi.
- *  - Nhận hàng: Kho + Manager; chỉ Manager huỷ phiếu nhận (khi chưa nhập Sapo).
+ *  - Nhận hàng: Kho + Manager + Sale Admin + Kế toán; chỉ Manager huỷ phiếu nhận (khi chưa nhập Sapo).
  *  - Bảng `supplier_stock_requests` giữ nghĩa cũ (nhân viên xin giữ hàng từ đơn sắp về) – chưa dùng ở đợt này.
  */
 export interface Actor { id: string; role: Role; active: boolean; positionId?: string | null; perms?: readonly string[] | null; dataScope?: string | null; approver?: boolean | null }
@@ -24,7 +24,9 @@ export const isAccountantStaff = (a: Actor | null | undefined) => isEmployee(a) 
 // Người được duyệt đơn mua phải thấy / nhập giá mua khi duyệt.
 export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && (can(a, 'purchases.prices') || canApprove(a));
 export const canUsePurchasing = (a: Actor | null | undefined) => isManager(a) || isEmployee(a);
-export const canReceive = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.receive');
+export const canReceive = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a) || isEmployee(a) && can(a, 'purchases.receive');
+/** Staff record an actual supplier confirmation; this does not approve purchase prices or early requests. */
+export const canRecordSupplierConfirmation = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a) || isEmployee(a) && a!.positionId === SALE_ADMIN_POSITION_ID;
 export const canPay = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.pay');
 /** Duyệt giá đơn mua: Manager hoặc nhân viên được Manager bật cờ "Được duyệt" (docs/PHAN-QUYEN.md). */
 export const canApprovePurchase = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && canApprove(a);
@@ -69,11 +71,11 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       if (!canApprovePurchase(a)) return no(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt đơn mua (giá / chiết khấu).');
       return state === 'draft' ? OK : no(409, 'Đơn này đã được duyệt.');
     case 'confirm':
-      if (!manager) return no(403, 'Chỉ Manager được ghi nhận xác nhận thay NCC.');
+      if (!canRecordSupplierConfirmation(a)) return no(403, 'Chỉ Manager, Sale Admin hoặc Kế toán được ghi nhận xác nhận thay NCC.');
       if (state === 'draft') return no(409, 'Đơn chưa được duyệt.');
       return state === 'received' ? no(409, 'Đơn đã nhận đủ hàng.') : OK;
     case 'receive':
-      if (!canReceive(a)) return no(403, 'Chỉ kho hoặc Manager được ghi nhận hàng về.');
+      if (!canReceive(a)) return no(403, 'Chỉ kho, Manager, Sale Admin hoặc Kế toán được ghi nhận hàng về.');
       if (state === 'draft') return no(409, 'Đơn chưa được duyệt, chưa nhận hàng được.');
       return state === 'received' ? no(409, 'Đơn đã nhận đủ hàng.') : OK;
     case 'pay': case 'schedule':

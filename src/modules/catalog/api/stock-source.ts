@@ -12,7 +12,11 @@ export interface CatalogStockRow {
 export const catalogStockHooks: {
   overlay?: (db: StockReadDb, rows: CatalogStockRow[], skus?: readonly string[]) => Promise<CatalogStockRow[]>;
   stamp?: (db: StockReadDb) => Promise<string>;
+  /** Kho riêng người xem không được thấy tồn (VD kho Hoá đơn với nhân viên không bán kho đó) – docs/SO-KHO.md. */
+  hidden?: (db: StockReadDb, m: { role: string; positionId?: string | null }) => Promise<Set<string>>;
 } = {};
+export const hiddenStockWarehouses = (db: StockReadDb, m: { role: string; positionId?: string | null }) =>
+  catalogStockHooks.hidden ? catalogStockHooks.hidden(db, m) : Promise.resolve(new Set<string>());
 export async function effectiveCatalogStock(db: StockReadDb, rows: CatalogStockRow[], skus?: readonly string[]) {
   return catalogStockHooks.overlay ? catalogStockHooks.overlay(db, rows, skus) : rows;
 }

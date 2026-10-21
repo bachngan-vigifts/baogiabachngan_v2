@@ -1,5 +1,5 @@
 import { registerBarcodeImportRoutes } from './barcode-import.ts';
-import { catalogStockHooks, effectiveCatalogStock } from './stock-source.ts';
+import { catalogStockHooks, effectiveCatalogStock, hiddenStockWarehouses } from './stock-source.ts';
 import { and, asc, count, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Router } from '../../../core/http/router.ts';
@@ -116,16 +116,18 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
   router.get('/catalog-snapshot', async c => {
     const db = c.env.db, priced = seesSalePrices(viewerOf(c)), snap = await snapshotVersion(db);
     // Bản không giá có phiên bản riêng: trình duyệt không dùng lại bản có giá đã lưu của người khác chức vụ.
-    const version = priced ? snap.version : snap.version + ':np', observedAt = snap.observedAt;
+    const hidden = await hiddenStockWarehouses(db, viewerOf(c));
+    // Thiếu kho riêng (kho Hoá đơn) cũng là bản riêng: không dùng lại bản đã lưu của chức vụ khác.
+    const version = snap.version + (priced ? '' : ':np') + (hidden.size ? ':h' + [...hidden].sort().join('.') : ''), observedAt = snap.observedAt;
     if (c.url.searchParams.get('v') === version) return json({ version, unchanged: true });
     const [rows, policies, stores, prices, rawStock] = await Promise.all([
       db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.sku)),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
-      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
+      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)).then(ws => ws.filter(x => !hidden.has(x.id))),
       db.select({ sku: productPrices.sku, policyId: productPrices.policyId, price: productPrices.price }).from(productPrices),
       db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock),
     ]);
-    const stock = await effectiveCatalogStock(db, rawStock);
+    const stock = (await effectiveCatalogStock(db, rawStock)).filter(r => !hidden.has(r.warehouseId));
     const index = new Map(rows.map((r, i) => [r.sku, i]));
     const policyAt = new Map(policies.map((p, i) => [p.id, i])), storeAt = new Map(stores.map((w, i) => [w.id, i]));
     const priceRows = rows.map(() => policies.map(() => null as number | null));
@@ -145,7 +147,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.get('/products', async c => {
-    const db = c.env.db, paged = paging(c.url, 50, 200), priced = seesSalePrices(viewerOf(c));
+    const db = c.env.db, paged = paging(c.url, 50, 200), priced = seesSalePrices(viewerOf(c)), hidden = await hiddenStockWarehouses(db, viewerOf(c));
     const brand = c.url.searchParams.get('brand') || '';
     // `skus=a,b,c`: lấy đúng các mã (kể cả đã ẩn) – dùng để bổ sung ảnh/thông tin cho dòng báo giá cũ.
     const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 300);
@@ -155,7 +157,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select({ total: count() }).from(products).where(where),
       db.select().from(products).where(where).orderBy(...exactSkuFirst(c.url.searchParams.get('q')), asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(limit).offset(offset),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
-      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
+      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)).then(ws => ws.filter(x => !hidden.has(x.id))),
       db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),
     ]);
     const skus = rows.map(r => r.sku);
@@ -163,7 +165,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select().from(productPrices).where(inArray(productPrices.sku, skus)),
       db.select().from(productStock).where(inArray(productStock.sku, skus)),
     ]) : [[], []];
-    const stock = await effectiveCatalogStock(db, rawStock, skus);
+    const stock = (await effectiveCatalogStock(db, rawStock, skus)).filter(r => !hidden.has(r.warehouseId));
     const priceMap = new Map<string, Record<string, number | null>>(), stockMap = new Map<string, Record<string, number>>();
     for (const p of prices) (priceMap.get(p.sku) ?? priceMap.set(p.sku, {}).get(p.sku)!)[p.policyId] = p.price;
     const stockAt = new Map<string, string>();
@@ -188,14 +190,14 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.get('/products-export', async c => {
-    const db = c.env.db, priced = seesSalePrices(viewerOf(c));
+    const db = c.env.db, priced = seesSalePrices(viewerOf(c)), hidden = await hiddenStockWarehouses(db, viewerOf(c));
     const brand = c.url.searchParams.get('brand') || '';
     const selected = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50000);
     const where = selected.length ? and(eq(products.active, true), inArray(products.sku, selected)) : searchFilter(c.url.searchParams, brand);
     const [rows, policies, stores] = await Promise.all([
       db.select().from(products).where(where).orderBy(asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(50000),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
-      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
+      db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)).then(ws => ws.filter(x => !hidden.has(x.id))),
     ]);
     const skus = rows.map(r => r.sku);
     const [prices, rawStock, barcodes] = skus.length ? await Promise.all([
@@ -203,7 +205,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select().from(productStock).where(inArray(productStock.sku, skus)),
       db.select().from(productBarcodes).where(inArray(productBarcodes.sku, skus)),
     ]) : [[], [], []];
-    const stock = await effectiveCatalogStock(db, rawStock, skus);
+    const stock = (await effectiveCatalogStock(db, rawStock, skus)).filter(r => !hidden.has(r.warehouseId));
     const bySku = <T extends { sku: string }>(xs: T[]) => {
       const m = new Map<string, T[]>(); for (const x of xs) (m.get(x.sku) ?? m.set(x.sku, []).get(x.sku)!).push(x); return m;
     };
@@ -245,7 +247,8 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select().from(productPrices).where(eq(productPrices.sku, sku)),
       db.select().from(productStock).where(eq(productStock.sku, sku)),
     ]);
-    const stock = await effectiveCatalogStock(db, rawStock, [sku]);
+    const hidden = await hiddenStockWarehouses(db, viewerOf(c));
+    const stock = (await effectiveCatalogStock(db, rawStock, [sku])).filter(r => !hidden.has(r.warehouseId));
     return json({ product: { ...row, prices: seesSalePrices(viewerOf(c)) ? prices.map(p => ({ policyId: p.policyId, price: p.price })) : [], stock: Object.fromEntries(stock.map(s => [s.warehouseId, s.quantity])) } });
   }, 'business');
 
