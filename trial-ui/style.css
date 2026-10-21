@@ -993,6 +993,8 @@ a.flow-step:hover { border-color: var(--blue); }
 .ddh.slip { font-size: 14px; width: 1000px; min-width: 1000px; }
 /* Delivery text remains >=11px after the existing 0.73 portrait print zoom: 16 × .73 = 11.68px. */
 .ddh.slip.delivery-slip { font-size: 16px; line-height: 1.35; }
+.ddh.slip.delivery-slip .ddh-table { table-layout: fixed; }
+.ddh.slip.delivery-slip .ddh-table th, .ddh.slip.delivery-slip .ddh-table td { overflow-wrap: anywhere; }
 .ddh.slip.delivery-slip .ddh-co b { font-size: 16px; }
 .ddh.slip.delivery-slip .ddh-table, .ddh.slip.delivery-slip .ddh-table th, .ddh.slip.delivery-slip .ddh-table td { font-size: inherit; }
 @page slip-portrait { size: A4 portrait; margin: 20mm 8mm 10mm 8mm; }

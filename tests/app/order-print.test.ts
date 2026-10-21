@@ -161,3 +161,11 @@ test('phiếu giao ưu tiên người nhận chuyến, rồi người nhận đ�
   assert.deepEqual(p.info.find(([label]:string[])=>label==='SĐT người giao'),['SĐT người giao','0903000003']);
   assert.equal(p.info.some(([label]:string[])=>label==='MST'||label==='Thời gian'),false);
 });
+
+
+test('phiếu giao: tên sản phẩm và ghi chú có bề rộng cố định 24%/18%, mẫu đóng gói không đổi',()=>{
+ const p=print.deliveryPrintData({seller:'BN',order,lines:[]});const html=print.slipSheetHtml(p);
+ assert.match(html,/<th>Tên sản phẩm<\/th>/);assert.doesNotMatch(html,/<th>Chủng loại<\/th>/);
+ assert.match(html,/<colgroup>.*width:24%.*width:18%.*<\/colgroup>/);
+ const packed=print.slipSheetHtml(print.packingPrintData({seller:'BN',order,slip:{},lines:[]}));assert.doesNotMatch(packed,/<colgroup>/);
+});

@@ -54,7 +54,9 @@ Duyệt phương án hai cột và tạo migration để triển khai code/test.
 
 ## Kết quả triển khai
 
-- 49 test liên quan đạt, 0 fail, 0 skip; typecheck và UI build đạt.
+- 50 test liên quan đạt, 0 fail, 0 skip; typecheck và UI build đạt.
 - Chromium 1440px và 390px: điền gợi ý từ người mua, sửa người nhận riêng, gửi đúng dữ liệu, phiếu in dùng người nhận riêng. Hai ô Người giao / SĐT người giao sửa trực tiếp được.
 - Thay nhãn MST và Thời gian trên phiếu giao theo yêu cầu bổ sung, giữ nguyên mẫu đơn đặt hàng và phiếu đóng gói.
 - Chưa kiểm DB live và máy in thật. Cần áp dụng migration trước khi merge vì triển khai main tự động dùng schema mới.
+
+- Bổ sung theo góp ý: phiếu giao đổi “Chủng loại” thành “Tên sản phẩm”; cố định cột tên 24%, ghi chú 18% (xấp xỉ nửa cột tên và gấp đôi cột ghi chú trước đây). Kiểm Chromium và PDF A4 dọc/ngang: chữ nhỏ nhất 11,68px/16,96px.
