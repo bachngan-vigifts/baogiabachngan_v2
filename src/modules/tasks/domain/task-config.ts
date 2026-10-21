@@ -5,7 +5,7 @@
  */
 export const TASK_STATUSES = ['todo', 'in_progress', 'done', 'cancelled'] as const;
 export const TASK_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;
-export const TASK_SOURCES = ['manual', 'quote', 'stock_request', 'order', 'delivery', 'packing', 'contract', 'receivable', 'purchase', 'invoice', 'care'] as const;
+export const TASK_SOURCES = ['manual', 'quote', 'stock_request', 'order', 'delivery', 'packing', 'contract', 'receivable', 'purchase', 'invoice', 'care', 'transfer'] as const;
 
 export type TaskStatus = typeof TASK_STATUSES[number];
 export type TaskPriority = typeof TASK_PRIORITIES[number];
@@ -14,7 +14,7 @@ export type TaskSource = typeof TASK_SOURCES[number];
 export const STATUS_LABEL: Record<TaskStatus, string> = { todo: 'Cần làm', in_progress: 'Đang làm', done: 'Hoàn thành', cancelled: 'Đã huỷ' };
 export const PRIORITY_LABEL: Record<TaskPriority, string> = { low: 'Thấp', normal: 'Bình thường', high: 'Cao', urgent: 'Khẩn' };
 export const SOURCE_LABEL: Record<TaskSource, string> = {
-  manual: 'Giao việc', quote: 'Báo giá', stock_request: 'Check tồn', order: 'Đơn hàng', delivery: 'Giao hàng', packing: 'Xuất kho / đóng hàng', contract: 'HĐKT', receivable: 'Công nợ', purchase: 'Nhập hàng', invoice: 'Xuất hoá đơn', care: 'Chăm sóc khách',
+  manual: 'Giao việc', quote: 'Báo giá', stock_request: 'Check tồn', order: 'Đơn hàng', delivery: 'Giao hàng', packing: 'Xuất kho / đóng hàng', contract: 'HĐKT', receivable: 'Công nợ', purchase: 'Nhập hàng', invoice: 'Xuất hoá đơn', care: 'Chăm sóc khách', transfer: 'Điều chuyển kho',
 };
 
 /**

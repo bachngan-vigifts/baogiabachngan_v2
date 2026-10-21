@@ -166,3 +166,11 @@ Không schema/migration/quyền mới; không tự chuyển cửa hàng hoặc t
 ### Tiền đơn website
 
 Webhook WooCommerce lưu các mã giảm giá, phí âm đổi điểm, phí ship thu khách/phương thức, thuế và tổng nguồn trong web_store_orders.financial_snapshot. POS, việc xuất hoá đơn và chi tiết Kế toán hiển thị từ snapshot; không tính lại total, không trừ điểm thêm lần nữa. ghnFee là phí hãng GHN riêng. Bản ghi cũ `{}` hiện chưa đồng bộ chi tiết; cần website gửi lại đơn để có dữ liệu, không suy ngược từ total. Cập nhật chỉ trạng thái giữ chi tiết đã có. Hợp đồng nguồn và migration: WEB-ORDER-ADJUSTMENTS-PREFLIGHT.md.
+
+## Báo cáo ca dạng khối (21/10/2026)
+Popup Báo cáo ca (Bán hàng nhanh), Sổ quỹ › Xem ca và hộp **Kết ca** dùng chung `trial-ui/shift-report-view.js`; cùng số liệu với bản in K80.
+- Ô tổng: Số bill (kèm giá trị đơn đã lập), **Tiền thực thu** = tiền mặt + chuyển khoản (đã gồm COD, cọc đã thu – không cộng COD lần nữa), Tiền mặt vào két, Chiết khấu.
+- **Dòng tiền két**: đầu ca + tiền mặt bán hàng + COD tiền mặt + thu tay − chi tay = két hệ thống (số két lấy của máy chủ; phần khác nếu có hiện dòng "Khác").
+- Tiền thu theo cách thu (thanh tỷ lệ), phiếu thu/chi tay từng dòng (giờ, loại, nội dung, trạng thái), Ship COD + đơn cọc, trả hàng (khi có), tra soát đầu ca (tách riêng), quy tắc đang áp dụng. Bấm khối → trang liên quan.
+- **Kết ca**: cột phải (điện thoại: lên đầu) – ô tổng tiền đếm, nút cộng nhanh +500k…+10k / Xoá; chênh lệch 3 trạng thái: chưa đếm (xám, nút khoá) · khớp (xanh) · lệch (cam, bắt buộc lý do, "Khác" bắt buộc ghi chú). Còn phiếu chờ duyệt: banner chặn + "Xem phiếu". "Xem trước bản in" in K80 với số đang đếm (chưa kết).
+- Không đổi công thức két, COD, tra soát, quyền xem báo cáo, chống ghi lặp. Báo cáo máy chủ thêm `entries` (phiếu thu/chi của ca); báo cáo ca cũ đã chốt không có thì gộp theo loại.
