@@ -20,7 +20,7 @@ import {
   posPermission,
   posKey,
   posText,
-  shiftOf,
+  saleShiftOf,
 } from './pos-store.ts';
 import { cashAudit, cashLock } from './cash-store.ts';
 import { allowedRegister, allowedDrawer } from './pos-access.ts';
@@ -67,7 +67,7 @@ export function registerPosOrderFlowRoutes(router: Router<StaffEnv>) {
     '/pos/order-flows',
     async (c) => {
       posPermission(actor(c));
-      const s = await shiftOf(
+      const s = await saleShiftOf(
         c.env.db,
         actor(c),
         posText(c.url.searchParams.get('shiftId')),

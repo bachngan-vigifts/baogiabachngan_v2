@@ -140,3 +140,10 @@ export function posWebOrderStoreScope(m: Parameters<typeof registerStoreMatch>[0
   const matching = registerStoreMatch(m); if (!matching) return;
   return sql`exists(select 1 from ${posRegisters} inner join ${warehouses} on ${warehouses.id}=${posRegisters.warehouseId} where ${posRegisters.id}=${webStoreOrders.registerId} and ${matching})`;
 }
+
+/** Only store-assigned employees share sales shifts; an unscoped role must not mean every store. */
+export function posSharedShiftStoreScope(m: Parameters<typeof registerStoreMatch>[0]): SQL | undefined {
+  if (m.role !== 'employee') return;
+  const matching = registerStoreMatch(m); if (!matching) return;
+  return sql`exists(select 1 from ${posRegisters} inner join ${warehouses} on ${warehouses.id}=${posRegisters.warehouseId} where ${posRegisters.id}=${posShifts.registerId} and ${matching})`;
+}

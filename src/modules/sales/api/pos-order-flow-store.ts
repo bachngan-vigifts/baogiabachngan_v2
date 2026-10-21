@@ -23,7 +23,7 @@ import {
   posText,
   registerOf,
   reservedBySku,
-  shiftOf,
+  saleShiftOf,
   type PosDb,
   type PosMember,
 } from './pos-store.ts';
@@ -182,7 +182,7 @@ export async function flowCurrent(
     .from(posShifts)
     .where(eq(posShifts.id, order.shiftId));
   if (!original) throw new AppError(404, 'Thiếu ca gốc.');
-  const current = await shiftOf(db, actor, shiftId, true);
+  const current = await saleShiftOf(db, actor, shiftId, true);
   assertOpen(current, actor);
   if (
     current.registerId !== original.registerId ||

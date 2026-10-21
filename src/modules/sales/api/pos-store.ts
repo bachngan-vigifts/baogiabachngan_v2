@@ -9,7 +9,8 @@ import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
-import { employees } from '../../staff/schema.ts';
+import { employees, positions } from '../../staff/schema.ts';
+import { posSharedShiftStoreScope } from './pos-access.ts';
 import { products, productPrices, productBarcodes, warehouses, pricePolicies } from '../../catalog/schema.ts';
 import { stockBalances, stockMoves } from '../../inventory/schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
@@ -63,8 +64,23 @@ export async function shiftOf(db: PosDb, m: PosMember, id: string, lock = false)
   if (!s) throw new AppError(404, 'Không tìm thấy ca của bạn.');
   return s;
 }
+export async function sharedSaleShiftScope(db: PosDb, m: PosMember) {
+  if (!can(m, 'pos.sell')) return;
+  const [p] = m.positionId ? await db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)) : [];
+  return posSharedShiftStoreScope({ ...m, positionName: p?.name });
+}
+/** Authorizes sales/receipts only. Report access and cash closing keep their existing owner checks. */
+export async function saleShiftOf(db: PosDb, m: PosMember, id: string, lock = false) {
+  posPermission(m);
+  const shared = await sharedSaleShiftScope(db, m);
+  const q = db.select().from(posShifts).where(and(eq(posShifts.id, id), or(eq(posShifts.memberId, m.id), shared)));
+  const [s] = lock ? await q.for('update') : await q;
+  if (!s) throw new AppError(404, 'Không tìm thấy ca được phép bán hàng.');
+  return s;
+}
+/** Call after saleShiftOf has checked the seller's store/ownership. */
 export function assertOpen(s: typeof posShifts.$inferSelect, m: PosMember) {
-  if (s.memberId !== m.id) throw new AppError(403, 'Chỉ người mở ca thao tác bán/thu tiền trong ca.');
+  posPermission(m);
   if (s.closedAt) throw new AppError(409, 'Ca đã kết, hãy mở ca mới.');
 }
 export async function assertOpening(db: PosDb, warehouseId: string) {
@@ -347,7 +363,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     throw new AppError(400, 'Nhân viên cần xác nhận đã thực nhận chuyển khoản.');
   return env.db.transaction(async (tx) => {
     await cashLock(tx);
-    const s = await shiftOf(tx, m, shiftId, true);
+    const s = await saleShiftOf(tx, m, shiftId, true);
     const [prior] = await tx.select().from(salesOrders).where(eq(salesOrders.checkoutKey, key));
     if (prior) {
       if (prior.shiftId !== s.id) throw new AppError(409, 'Mã giao dịch đã dùng ở ca khác.');
