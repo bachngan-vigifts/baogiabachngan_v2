@@ -14,6 +14,8 @@ import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
 import { openPurchases } from '../../suppliers/api/purchase-store.ts';
+import { stockTransfers } from '../../inventory/schema.ts';
+import { warehouses } from '../../catalog/schema.ts';
 import { dueFollowUps } from '../../care/api/routes.ts';
 import { CARE_TYPE_LABEL } from '../../care/domain/care.ts';
 import { addDaysIso, isOpen, type TaskPriority, type TaskSource } from '../domain/task-config.ts';
@@ -153,6 +155,19 @@ export const RULES: Record<string, Rule> = {
    * Đơn mua NCC (trang #/purchases): chờ Manager duyệt → chờ NCC xác nhận (Manager ghi nhận thay) → kho nhận khi tới hẹn → kho nhập Sapo
    * → Kế toán trả NCC khi tới kỳ (≤ 3 ngày). Quá hẹn giao mà chưa nhận đủ → người lập đơn theo dõi NCC. Mỗi bước xong thì việc tự hoàn thành.
    */
+  /** Phiếu điều chuyển kho: chờ duyệt → nhóm người duyệt (chưa giao người); đã duyệt → nhóm Kho chuyển hàng. Xong / huỷ thì việc tự đóng. */
+  async stockTransfers(db, today) {
+    const rows = await db.select({ t: stockTransfers, from: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.fromWarehouseId})`,
+      to: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.toWarehouseId})` })
+      .from(stockTransfers).where(inArray(stockTransfers.status, ['pending', 'approved'])).limit(2000);
+    return rows.map(({ t, from, to }) => {
+      const base = { source: 'transfer' as const, sourceId: t.id, link: `#/transfers/${t.id}` }, what = `${t.transferNo} · ${from} → ${to}`;
+      return t.status === 'pending'
+        ? { ...base, autoKey: `transfer-approve:${t.id}`, title: `Duyệt điều chuyển ${what}`, description: t.reason, assigneeId: null, priority: 'normal' as const, dueDate: addDaysIso(day(t.createdAt)!, 1) }
+        : { ...base, autoKey: `transfer-move:${t.id}`, title: `Chuyển hàng ${what}`, description: `Lấy hàng ở ${from}, chuyển sang ${to}, rồi bấm "Đã chuyển" trên phiếu. Lý do: ${t.reason}`,
+          assigneeId: null, assigneePosition: 'warehouse', priority: 'high' as const, dueDate: t.approvedAt ? addDaysIso(day(t.approvedAt)!, 1) : today };
+    });
+  },
   async supplierPurchases(db, today) {
     const out: AutoTask[] = [];
     for (const p of await openPurchases(db, today)) {

@@ -49,3 +49,6 @@ INSERT INTO "warehouse_sellers" ("warehouse_id", "position_id")
 INSERT INTO "staff_position_permissions" ("position_id", "permission")
   SELECT v.position_id, v.permission FROM (VALUES ('warehouse', 'stock.transfer'), ('sale-admin', 'stock.transfer')) AS v(position_id, permission)
   JOIN "staff_positions" s ON s."id" = v.position_id ON CONFLICT DO NOTHING;
+-- Việc tự sinh của phiếu điều chuyển (duyệt / kho chuyển): nguồn việc mới "transfer".
+ALTER TABLE "tasks" DROP CONSTRAINT "chk_tasks_source";
+ALTER TABLE "tasks" ADD CONSTRAINT "chk_tasks_source" CHECK ("tasks"."source" IN ('manual', 'quote', 'stock_request', 'order', 'delivery', 'packing', 'contract', 'receivable', 'purchase', 'invoice', 'care', 'transfer'));
