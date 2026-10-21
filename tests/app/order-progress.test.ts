@@ -26,7 +26,11 @@ async function setup() {
   const emp = await login('emp@x.vn'), mgr = await login('mgr@x.vn'), kho = await login('kho@x.vn');
   const order = async (quoteNo: string, printFee: number) => {
     const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo, customer: 'Khách in logo', vat: 8, rows: [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 10, price: 100000, printFee }] });
-    await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
+    if (printFee > 0) {
+      const source = (await call(`/quotes/${q.data.id}`, mgr)).data;
+      await call(`/quotes/${q.data.id}`, mgr, 'PUT', {revision:source.revision,data:{...source.data,printing:{totalCost:10000}}});
+    }
+    await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: printFee > 0 ? 2 : 1 });
     return (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
   };
   const progress = async (id: string) => (await call(`/orders/${id}`, emp)).data.progress;
@@ -51,7 +55,7 @@ test('tiến trình: duyệt → kho xác nhận đóng gói → việc In mẫu
   let p = await progress(id);
   assert.deepEqual([p.current, p.label, p.printing], ['approve', 'Đợi duyệt', true]);
 
-  await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal((await progress(id)).current, 'export');
   // Kho xác nhận đóng gói xong → bước Xuất kho tự xong → việc "In mẫu" cho người phụ trách.
   const line = (await call(`/orders/${id}`, emp)).data.lines[0];

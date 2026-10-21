@@ -74,7 +74,7 @@ test('Manager duyệt được mọi loại; nhân viên thường và Sale Admi
     assert.equal((await s.call(`/customers/${await s.pendingCustomer('Khách ' + who.slice(-6))}/approve`, who, 'POST', {})).status, 403, 'khách hàng mới');
     assert.equal((await s.call(`/products/${await s.pendingProduct('SP' + who.slice(-6))}/approve`, who, 'POST', {})).status, 403, 'sản phẩm mới');
     const oid = await s.pendingOrder();
-    assert.equal((await s.call(`/orders/${oid}/status`, who, 'PUT', { status: 'confirmed', verified: true })).status, 403, 'đơn hàng / HĐKT');
+    assert.equal((await s.call(`/orders/${oid}/status`, who, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 403, 'đơn hàng / HĐKT');
     const p = await s.pendingPurchase();
     // Sale thường không thấy đơn mua nháp của Manager (404); Sale Admin thấy (quyền Kế toán) nhưng không duyệt được (403).
     assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, who, 'POST', p.body)).status, who === s.sadmin ? 403 : 404, 'đơn mua NCC');
@@ -85,7 +85,7 @@ test('Manager duyệt được mọi loại; nhân viên thường và Sale Admi
   assert.equal((await s.call(`/quotes/${await s.pendingQuote()}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
   assert.equal((await s.call(`/customers/${await s.pendingCustomer('Khách M')}/approve`, s.mgr, 'POST', {})).status, 200);
   assert.equal((await s.call(`/products/${await s.pendingProduct('SPM')}/approve`, s.mgr, 'POST', {})).status, 200);
-  assert.equal((await s.call(`/orders/${await s.pendingOrder()}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true })).status, 200);
+  assert.equal((await s.call(`/orders/${await s.pendingOrder()}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   const p = await s.pendingPurchase();
   assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, s.mgr, 'POST', p.body)).status, 200);
   assert.equal((await s.call('/approvals', s.mgr)).status, 200);
@@ -110,7 +110,7 @@ test('cờ "Được duyệt": chỉ Manager bật / tắt; người được ch
   assert.equal((await s.call(`/products/${await s.pendingProduct('SPD')}/approve`, s.duyet, 'POST', {})).status, 200);
   const oid = await s.pendingOrder();
   assert.equal((await s.call(`/orders/${oid}`, s.duyet)).status, 200, 'mở được đơn chờ duyệt để kiểm tra');
-  assert.equal((await s.call(`/orders/${oid}/status`, s.duyet, 'PUT', { status: 'confirmed', verified: true })).status, 200);
+  assert.equal((await s.call(`/orders/${oid}/status`, s.duyet, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   const p = await s.pendingPurchase();
   assert.equal((await s.call(`/purchase-orders/${p.id}`, s.duyet)).data.priceHidden, false, 'người duyệt đơn mua thấy giá');
   assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, s.duyet, 'POST', p.body)).status, 200);

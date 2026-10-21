@@ -31,7 +31,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_P1', customer: 'Khách P', vat: 8, rows: [{ name: 'Dĩa 31 cm', sku: 'DIA31', unit: 'cái', qty: 100, price: 100000 }, { name: 'Hộp quà', unit: 'hộp', qty: 10, price: 5000 }] });
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
-  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   let p = (await call(`/orders/${orderId}/packing`, emp)).data;
   const [dia, hop] = p.lines;
   // Chưa lên lịch giao → chưa yêu cầu đóng gói được.
@@ -112,9 +112,11 @@ test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xư�
   const { call, emp, mgr } = await setup();
   const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_P2', customer: 'Khách In', customerAddress: '12 Lê Lợi, Cần Thơ', vat: 8,
     rows: [{ name: 'Ly sứ in logo', sku: 'LY1', unit: 'cái', qty: 50, price: 50000, printFee: 5000 }] });
-  await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+  const source = (await call('/quotes/' + q.data.id, mgr)).data;
+  await call('/quotes/' + q.data.id, mgr, 'PUT', {revision:source.revision,data:{...source.data,printing:{totalCost:10000}}});
+  await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 2 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
-  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal((await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2030-01-15' })).status, 201);
   const p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.equal(p.delivery.hasPrintFee, true, 'có phí in logo');
@@ -140,7 +142,7 @@ test('đơn đã giao xong → phiếu đóng gói còn treo tự hoàn tất (�
     const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo, customer: 'Khách G', contact: 'Chị Lan', phone: '0901234567', customerTaxCode: '0312345678', customerAddress: '1 Lê Lợi, Q1', vat: 8, rows: [{ name: 'Ly', unit: 'cái', qty: 10, price: 1000 }, { name: 'Đĩa', unit: 'cái', qty: 5, price: 1000 }] });
     await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
     const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
-    await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+    await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
     const lines = (await call(`/orders/${orderId}/packing`, emp)).data.lines;
     const dv = await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2030-01-15', lines: [{ orderLineId: lines[0].id, qty: 10 }, { orderLineId: lines[1].id, qty: 5 }] });
     assert.equal(dv.status, 201, JSON.stringify(dv.data));
@@ -188,7 +190,7 @@ async function combinedFixture() {
   const id = made.data.id;
   const packing = (await s.call(`/orders/${id}/packing`, s.emp)).data;
   const lineId = packing.lines[0].id as string;
-  return { ...s, id, lineId, approve: () => s.call(`/orders/${id}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true }) };
+  return { ...s, id, lineId, approve: () => s.call(`/orders/${id}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }) };
 }
 
 test('gộp lịch giao + phiếu: một lần lưu, một nguồn gửi kho ngay, đúng quyền và không tạo lại khi bấm lặp', async () => {

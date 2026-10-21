@@ -34,9 +34,9 @@ test('Cập nhật CK mua vào giữ giá trực tiếp và cập nhật các d�
     purchasePrice: (price: number, discount: number) => Math.round(price * (100 - discount) / 100),
     $: () => ({ addEventListener: (_: string, fn: any) => { handler = fn; } }), isManager: () => true,
     api: async () => ({ products: [] }), markDirty() {}, renderLines() {}, refreshCostToggle() {}, saveQuote: async () => {}, toast() {} };
-  const start = source.indexOf("$('#refresh-profit-costs').addEventListener");
+  const start = source.indexOf('async function refreshPurchaseCosts()');
   runInNewContext(source.slice(start, source.indexOf('// ----- hộp "Tạo báo giá mới"', start)), context);
-  await handler({ currentTarget: { disabled: false, textContent: '' } });
+  assert.equal(await handler(), true, 'chỉ tiếp tục duyệt khi cập nhật và lưu được giá mua');
   assert.equal(rows[0].costPrice, 160000); assert.equal(rows[0].purchaseDiscount, undefined);
   assert.equal(rows[1].costPrice, 168000); assert.equal(rows[1].costMode, 'discount');
   rows[0].price = 500000; syncPurchaseCost(rows[0]); assert.equal(rows[0].costPrice, 160000);

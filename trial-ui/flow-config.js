@@ -99,7 +99,7 @@ export const EDGES = [
 
 /** Thao tác trên từng việc. `request(item)` → [method, path, body]; `go(item)` → chuyển trang. */
 export const ITEM_ACTIONS = {
-  'approve-quote': { label: 'Duyệt', confirm: it => `Duyệt báo giá ${it.title}?`, request: it => ['POST', `/quotes/${encodeURIComponent(it.id)}/approve`, { revision: it.revision }], done: 'Đã duyệt báo giá.' },
+  'approve-quote': { label: 'Kiểm tra & duyệt', go: it => `#/quotes/${encodeURIComponent(it.id)}` },
   'make-order': { label: 'Sinh đơn / HĐKT', go: it => it.hash },
   'approve-customer': { label: 'Duyệt', confirm: it => `Duyệt khách ${it.title}?`, request: it => ['POST', `/customers/${encodeURIComponent(it.id)}/approve`, {}], done: 'Đã duyệt khách hàng.' },
   'care-done': { label: 'Đã chăm sóc', request: it => ['POST', `/care/${encodeURIComponent(it.id)}/done`, {}], done: 'Đã đánh dấu chăm sóc xong.' },

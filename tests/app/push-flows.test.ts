@@ -62,7 +62,7 @@ test('đẩy thông báo: báo giá mới → Manager; duyệt → người lậ
   const k2 = await call('/contracts', emp, 'POST', { quoteId: q2.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 }); assert.equal(k2.status, 201);
   await call(`/orders/${k2.data.orderId}/submit`, emp, 'POST', {});
   assert.ok(await has(mgr, 'contract_pending'));
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true });
+  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.ok(await has(emp, 'order_approved'));
 
   // Việc giao cho nhóm Kho → kho nhận "việc mới"; kho nhận việc → người giao nhận "đã có người nhận"; hoàn thành → người giao nhận.

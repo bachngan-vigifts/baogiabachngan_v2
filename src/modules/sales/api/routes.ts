@@ -1,3 +1,4 @@
+import { approvalDebt, assertApprovalDebt, approvalCosts } from './approval-preflight.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
@@ -210,6 +211,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   // Khách mới do nhân viên tạo phải được Manager duyệt mới đặt hàng được.
   if (cust?.approvalStatus === 'pending') throw new AppError(409, `Khách hàng "${cust.name}" đang chờ Manager duyệt, chưa tạo đơn được.`, 'CUSTOMER_PENDING');
   const customerId = cust ? cust.id : null;
+  assertApprovalDebt(await approvalDebt(db, customerId, String(data.customerTaxCode || '')));
   await db.transaction(async tx => {
     const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
     // Báo giá đang giữ hàng: lập đơn / HĐKT thì tự bỏ treo (hàng đi theo đơn).
@@ -524,6 +526,25 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     return json({ sapo });
   }, 'business');
 
+  router.get('/quotes/:id/approval-preflight', async c => {
+    const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, c.params.id!), quotationPredicate(viewer(c))));
+    if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
+    const data = JSON.parse(quote.data);
+    return json({ customerName: quote.customer, asOf: vietnamDate().iso,
+      ...(canApprove(viewer(c)) ? { purchaseCostsReady: data.rows.filter((r: { qty?: number }) => Number(r.qty) > 0).every((r: { costPrice?: number }) => Number.isFinite(r.costPrice)) } : {}),
+      debt: await approvalDebt(c.env.db, data.customerId || null, String(data.customerTaxCode || '')) });
+  }, 'business');
+
+  router.get('/orders/:id/approval-preflight', async c => {
+    if (!canApprove(viewer(c))) throw new AppError(403, 'Chỉ người được duyệt xem kiểm tra phê duyệt.', 'APPROVER_ONLY');
+    const order = await loadOrder(c, c.params.id!);
+    const [quote] = order.quoteId ? await c.env.db.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
+    return json({ customerName: order.customerName, asOf: vietnamDate().iso,
+      debt: await approvalDebt(c.env.db, order.customerId, order.taxCode, order.id),
+      costs: quote ? approvalCosts(JSON.parse(quote.data)) : null,
+      quoteId: can(viewer(c), 'page.quotes') ? order.quoteId : null });
+  }, 'business');
+
   router.put('/orders/:id/status', async c => {
     const body = await readJson(c.req, 1_024), status = body.status;
     if (status !== 'cancelled' && status !== 'confirmed') throw new AppError(400, 'Chỉ đổi được sang "Đã xác nhận" hoặc "Huỷ".');
@@ -550,6 +571,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
           tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(and(eq(salesOrderLines.orderId, order.id), sql`${salesOrderLines.deliveredQty} > 0`)).limit(1),
         ]);
         if (Number(paidNow?.n) > 0 || shippedNow.length) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
+      }
+      if (status === 'confirmed') {
+        assertApprovalDebt(await approvalDebt(tx, order.customerId, order.taxCode, order.id));
+        const [quote] = order.quoteId ? await tx.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
+        if (quote) {
+          const costs = approvalCosts(JSON.parse(quote.data));
+          if (costs.missingPrinting) throw new AppError(409, 'Vui lòng nhập chi phí in/khắc trước khi duyệt.', 'PRINTING_COST_REQUIRED');
+          if ((costs.missingCommission || costs.missingShipping) && body.costWarningsReviewed !== true)
+            throw new AppError(409, 'Vui lòng kiểm tra CK khách và phí vận chuyển trước khi duyệt.', 'COST_REVIEW_REQUIRED');
+        }
       }
       await tx.update(salesOrders).set({ status, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Huỷ: dọn việc còn treo của đơn – phiếu đóng gói chưa đóng / chuyến giao chưa giao huỷ theo (việc kho / giao tự đóng);
