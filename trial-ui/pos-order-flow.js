@@ -398,6 +398,7 @@ export async function openPosOrderFlows({
         ),
         reason.box,
         m.button('Huỷ khoản chờ', async () => {
+          if (!reason.input.value.trim()) throw new Error('Nhập lý do trước khi huỷ khoản chờ.');
           await api('/pos/order-flow-intents/' + i.id + '/cancel', 'POST', {
             shiftId: shift.id,
             reason: reason.input.value,
@@ -506,6 +507,7 @@ export async function openPosOrderFlows({
         m.button(
           'Huỷ đơn và lập đề nghị',
           async () => {
+            if (!reason.input.value.trim()) throw new Error('Nhập lý do trước khi huỷ đơn.');
             const d = await api('/pos/order-flows/' + id + '/cancel', 'POST', {
               key: cancelKey,
               shiftId: shift.id,

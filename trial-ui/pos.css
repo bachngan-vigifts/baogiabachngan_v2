@@ -46,19 +46,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   background: #f5fff8;
   border-color: #9bceac;
 }
-.pos-head .btn.pos-returns-button {
-  color: #fff;
-  background: #b91c1c;
-  border-color: #b91c1c;
-}
-.pos-head .btn.pos-returns-button:hover {
-  background: #991b1b;
-  border-color: #991b1b;
-}
-.pos-head .btn.pos-returns-button:focus-visible {
-  outline: 2px solid #b91c1c;
-  outline-offset: 3px;
-}
 .pos-head .btn.primary {
   background: #168148;
   border-color: #168148;
@@ -269,19 +256,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   margin-top: 4px;
   padding-top: 12px;
 }
-.pos-pay-method {
-  display: flex;
-  gap: 8px;
-  margin: 8px 0;
-}
-.pos-pay-method button {
-  flex: 1;
-}
-.pos-pay-method [aria-pressed='true'] {
-  border-color: #15864d;
-  background: #eaf8ef;
-  color: #11643b;
-}
 .pos-tender {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -320,18 +294,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 }
 .pos-actions .btn.primary {
   background: #168148;
-}
-.pos-cod-create {
-  align-self: start;
-  margin: 8px 0;
-  padding: 6px 10px;
-}
-.pos-help {
-  font-size: 12px;
-  color: #66768d;
-}
-.pos-help summary {
-  cursor: pointer;
 }
 .pos-catalog > .btn {
   margin-top: 12px;
@@ -510,16 +472,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   margin-top: 8px;
   font-size: 12px;
 }
-.pos-shift-stock h3 {
-  margin: 0 0 4px;
-  font-size: 15px;
-}
-.pos-opening-counts {
-  margin-top: 12px;
-  border: 1px solid #e3e8ef;
-  border-radius: 10px;
-  overflow: hidden;
-}
 .pos-open-shift .pos-count-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 88px 64px;
@@ -531,32 +483,10 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-open-shift .pos-count-row:last-child {
   border-bottom: 0;
 }
-.pos-count-name {
-  display: grid;
-  gap: 3px;
-  overflow-wrap: anywhere;
-}
-.pos-count-name .pos-note {
-  font-size: 11px;
-  font-weight: 400;
-}
 .pos-open-shift .pos-count-row input {
   width: 100%;
   text-align: center;
   font-weight: 650;
-}
-.pos-count-status {
-  color: #147548;
-  text-align: right;
-}
-.pos-count-status.pos-danger {
-  color: #b61d32;
-}
-.pos-count-empty {
-  padding: 14px;
-  color: #66768d;
-  font-size: 13px;
-  background: #f8fafc;
 }
 .pos-shift-footer {
   display: grid;
@@ -1007,7 +937,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-flow-head{justify-content:space-between;margin-bottom:16px}
 .pos-flow-head h2{margin:0;font-size:20px}.pos-flow-form,.pos-flow-list{display:grid;gap:12px}
 .pos-flow-card{padding:16px;margin:14px 0;border:1px solid #d9e3ed;border-radius:12px;display:grid;gap:10px}
-.pos-flow-card h3{margin:0}.pos-flow-total,.pos-flow-state{font-weight:700;color:#137d49}
+.pos-flow-card h3{margin:0}.pos-flow-state {font-weight:700;color:#137d49}
 .pos-flow-summary{display:grid;grid-template-columns:1fr auto;gap:10px;padding:14px;background:#f0faf5;border-radius:12px}
 .pos-flow-summary dd{margin:0;font-weight:700;text-align:right}.pos-flow-order{display:grid;gap:6px;text-align:left;padding:14px;background:white;border:1px solid #d9e3ed;border-radius:10px;color:inherit;cursor:pointer}
 .pos-flow-order:hover{background:#effaf3}.pos-flow-card input[type=checkbox],.pos-flow-form input[type=checkbox]{width:20px;height:20px}
@@ -1062,11 +992,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-shift-list .pos-shift-open { background: #e7f6ec; border-color: #2e9e5b; color: #17663a; font-weight: 600; }
 .pos-shift-list .pos-shift-open:hover { background: #d3efdd; }
 .pos-shift-list .pos-shift-closed { background: #f2f4f7; border-color: #d0d5dd; color: #475467; }
-.pos-report-section { border: 1px solid var(--line, #e4e7ec); border-radius: 10px; padding: 6px 10px 8px; margin: 8px 0; }
-.pos-report-head { display: flex; width: 100%; justify-content: space-between; align-items: baseline; background: none; border: 0; padding: 4px 0 6px; cursor: pointer;
-  font-weight: 700; font-size: 15px; color: var(--ink, #101828); border-bottom: 1px solid var(--line, #e4e7ec); margin-bottom: 4px; }
-.pos-report-head small { font-weight: 500; color: var(--brand, #1d4ed8); }
-.pos-report-head:hover small { text-decoration: underline; }
 
 /* Product action and stock actions are sibling buttons: stock remains usable when the item cannot be sold. */
 .pos-grid { grid-auto-rows: minmax(276px, auto); }
@@ -1163,3 +1088,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-step-modal .pos-step-error { margin: 10px 24px 0; padding: 10px 12px; border-radius: 10px; background: #fdecea; color: #a12a1b; font-weight: 700; }
 .pos-step-modal .pos-step-error:empty { display: none; }
 @media (max-width: 600px) { .pos-step-modal .pos-step-error { margin: 8px 12px 0; } }
+/* Điện thoại: nút thao tác tối thiểu 44px để bấm chính xác bằng ngón tay. */
+@media (max-width: 850px) {
+  .pos-more-panel .btn { min-height: 44px; font-size: 12px; }
+  .pos-payment-modal .pos-cash-quick .btn, .pos-payment-modal .pos-create-qr { min-height: 44px; font-size: 12px; }
+}

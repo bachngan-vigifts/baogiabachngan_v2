@@ -685,7 +685,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     province.value = 'p1'; await province.fire('change'); await new Promise(r => setTimeout(r, 0));
     district.value = 'd1'; await district.fire('change'); await new Promise(r => setTimeout(r, 0)); ward.value = 'w1';
     const confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
-    const form = modal.querySelectorAll('form')[0]!, save = modal.querySelectorAll('button').find(b => b.textContent === 'Tiếp tục trên GHN')!;
+    const form = modal.querySelectorAll('form')[0]!, save = modal.querySelectorAll('button').find(b => b.textContent === 'Kiểm tra lại')!;
     deposit.value = '50000'; await deposit.fire('input'); method.value = 'transfer'; await method.fire('change');
     assert.match(modal.textContent, /Còn thu khi giao58\.000 đ/); assert.equal(save.disabled, true);
     await form.fire('submit'); assert.equal(calls.some(c => c.path === '/pos/checkout'), false);
@@ -694,7 +694,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     deposit.value = '50000'; await deposit.fire('input'); confirmed.checked = true; await confirmed.fire('change');
     const addressInput = modal.querySelectorAll('label').find(l => l.textContent === 'Số nhà, tên đường')!.querySelectorAll('input')[0]!;
     const phoneInput = modal.querySelectorAll('label').find(l => l.textContent === 'Điện thoại người nhận')!.querySelectorAll('input')[0]!;
-    await form.fire('submit'); assert.equal(save.textContent, 'Tiếp tục trên GHN', 'thiếu địa chỉ thì chưa sang bước kiểm tra');
+    await form.fire('submit'); assert.equal(save.textContent, 'Kiểm tra lại', 'thiếu địa chỉ thì chưa sang bước kiểm tra');
     assert.match(modal.textContent, /Nhập đủ người nhận, điện thoại và số nhà/);
     addressInput.value = '12 Lê Lợi'; phoneInput.value = '0900000000';
     await form.fire('submit'); assert.equal(save.textContent, 'Xác nhận & tạo đơn COD');
@@ -705,7 +705,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     await form.fire('submit'); await sending; await new Promise(r => setTimeout(r, 0));
     assert.equal(calls.filter(c => c.path === '/pos/checkout').length, 1, 'bấm trùng không gửi hai lần');
     assert.equal(modal.open, true, 'máy chủ từ chối: giữ form để sửa');
-    assert.equal(save.textContent, 'Tiếp tục trên GHN'); assert.equal(modal.dataset.busy, undefined);
+    assert.equal(save.textContent, 'Kiểm tra lại'); assert.equal(modal.dataset.busy, undefined);
     assert.match(modal.textContent, /Máy chủ chưa tạo đơn/);
     const sent = calls.find(c => c.path === '/pos/checkout')!;
     assert.equal(sent.body.depositAmount, 50000); assert.equal(sent.body.method, 'transfer'); assert.equal(sent.body.confirmed, true);

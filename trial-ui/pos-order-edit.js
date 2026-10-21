@@ -65,10 +65,12 @@ export function posOrderEditor({ api, detail, onSaved }) {
     field(body, 'reason', 'Lý do sửa đơn *', '').required = true;
     body.append(error);
     const foot = el('div', '', 'modal-foot'), cancel = el('button', 'Huỷ', 'btn secondary'), save = el('button', 'Lưu thay đổi', 'btn primary');
-    cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => dialog.close()); foot.append(cancel, save);
+    cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => { if (!busy) dialog.close(); }); foot.append(cancel, save);
     form.append(head, body, foot); dialog.append(form); document.body.append(dialog);
-    dialog.addEventListener('close', () => dialog.remove(), { once: true }); dialog.showModal();
     let busy = false;
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
+    dialog.showModal();
     form.addEventListener('submit', async e => {
       e.preventDefault(); if (busy || !form.reportValidity()) return;
       busy = true; save.disabled = true; error.textContent = '';
@@ -99,9 +101,10 @@ export function posCodReceipt({ api, delivery, onSaved }) {
     const label = el('label', 'Cửa hàng đã thực nhận tiền '), confirmed = el('input'); confirmed.type = 'checkbox'; confirmed.required = true; label.append(confirmed);
     const error = el('p', '', 'danger-text'); error.setAttribute('role', 'alert');
     body.append(method, label, error);
-    const cancel = el('button', 'Huỷ', 'btn secondary'), save = el('button', 'Xác nhận đã thu', 'btn primary'); cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => dialog.close()); foot.append(cancel, save);
-    form.append(body, foot); dialog.append(form); document.body.append(dialog); dialog.addEventListener('close', () => dialog.remove(), { once: true }); dialog.showModal();
+    const cancel = el('button', 'Huỷ', 'btn secondary'), save = el('button', 'Xác nhận đã thu', 'btn primary'); cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => { if (!busy) dialog.close(); }); foot.append(cancel, save);
     const key = crypto.randomUUID(); let busy = false;
+    form.append(body, foot); dialog.append(form); document.body.append(dialog); dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); }); dialog.showModal();
     form.addEventListener('submit', async e => {
       e.preventDefault(); if (busy || !form.reportValidity()) return; busy = true; save.disabled = true; error.textContent = '';
       try {

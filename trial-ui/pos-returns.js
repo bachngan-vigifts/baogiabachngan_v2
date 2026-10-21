@@ -59,6 +59,7 @@ export async function openPosReturns({
   dlg.append(body);
   document.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove(), { once: true });
+  dlg.addEventListener('cancel', (e) => { if (dlg.dataset.busy) e.preventDefault(); });
   dlg.showModal();
   const safe = (fn) => async () => {
     if (dlg.dataset.busy) return;
@@ -229,6 +230,7 @@ export async function openPosReturns({
           button(
             d.canApprove ? 'Từ chối / Huỷ yêu cầu' : 'Huỷ yêu cầu',
             async () => {
+              if (!reason.input.value.trim()) throw new Error('Nhập lý do trước khi huỷ / từ chối yêu cầu.');
               await api('/pos/returns/' + r.id + '/cancel', 'POST', {
                 reason: reason.input.value,
                 reject: d.canApprove,
