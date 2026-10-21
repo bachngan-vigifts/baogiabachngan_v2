@@ -19,6 +19,7 @@ export function shiftSummaryRows(d) {
       ['Chênh lệch khi mở ca (tra soát riêng)', money(d.openingComparison.difference)],
     ] : []),
     ...(d.manual || []).map(x => [(x.direction === 'in' ? '+ ' : '− ') + cashKindLabel(x.kind), money(x.direction === 'in' ? x.amount : -x.amount)]),
+    ...(d.currentAdjustmentNet ? [['Điều chỉnh két ca này', money(d.currentAdjustmentNet)]] : []),
     ['Tiền két hệ thống', money(d.expectedCash)],
   ];
 }
@@ -62,6 +63,7 @@ export function shiftReportSections(d) {
       ['Tiền đầu ca thực đếm', money(d.shift.openingCash)],
       ...(d.openingComparison ? [['Tiền bàn giao tham chiếu', money(d.openingComparison.expectedCash)], ['Chênh lệch khi mở ca', money(d.openingComparison.difference), z(d.openingComparison.difference)]] : []),
       ...(d.manual || []).map(x => [(x.direction === 'in' ? '+ ' : '− ') + cashKindLabel(x.kind), money(x.direction === 'in' ? x.amount : -x.amount)]),
+      ...(d.currentAdjustmentNet ? [['Điều chỉnh két ca này', money(d.currentAdjustmentNet)]] : []),
       ['Tiền két hệ thống', money(d.expectedCash)],
       ...(d.shift.closedAt ? [['Thực đếm cuối ca', money(d.countedCash)], ['Lệch', money(d.cashDifference)]] : []),
     ] },

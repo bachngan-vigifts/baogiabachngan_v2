@@ -22,9 +22,10 @@ export function shiftFigures(d) {
   const manualOut = manual.filter(x => x.direction === 'out').reduce((t, x) => t + x.amount, 0);
   const cashSales = d.cashSales ?? d.cash ?? 0, cashCod = d.cashCod ?? 0;
   const opening = d.shift?.openingCash ?? 0, expected = d.expectedCash ?? 0;
-  const other = Math.round(expected - (opening + cashSales + cashCod + manualIn - manualOut));
+  const adjustment = d.currentAdjustmentNet ?? 0;
+  const other = Math.round(expected - (opening + cashSales + cashCod + manualIn - manualOut + adjustment));
   const cash = d.cash ?? cashSales + cashCod, transfer = d.transfer ?? 0;
-  return { manualIn, manualOut, cashSales, cashCod, opening, expected, other, cash, transfer, received: cash + transfer, pending: (d.pendingEntries || []).length };
+  return { manualIn, manualOut, cashSales, cashCod, opening, expected, adjustment, other, cash, transfer, received: cash + transfer, pending: (d.pendingEntries || []).length };
 }
 
 /** Trạng thái chênh lệch khi kết ca: chưa đếm (xám) · khớp (xanh) · lệch (cam). */
@@ -77,6 +78,7 @@ export function renderShiftReport(container, d, { onOpen } = {}) {
   if (f.cashCod) step('COD tiền mặt', f.cashCod, '+');
   step('Thu thủ công', f.manualIn, '+');
   step('Chi thủ công', f.manualOut, '−');
+  if (f.adjustment) step('Điều chỉnh ca này', Math.abs(f.adjustment), f.adjustment > 0 ? '+' : '−');
   if (f.other) step('Khác', f.other, f.other > 0 ? '+' : '−');
   step('Két hệ thống', f.expected, '=', 'sr-total');
   flow.append(steps);
@@ -85,7 +87,7 @@ export function renderShiftReport(container, d, { onOpen } = {}) {
     pairs(flow, [['Thực đếm cuối ca', money(d.countedCash)], ['Chênh lệch', st.state === 'match' ? 'Khớp' : money(st.diff), 'sr-' + st.state]]);
     if (d.differenceReason) flow.append(el('p', 'sr-note', 'Lý do lệch: ' + d.differenceReason));
   }
-  for (const x of d.bookAdjustments || []) flow.append(el('p', 'sr-note', 'Điều chỉnh sổ két ' + money(x.direction === 'in' ? x.amount : -x.amount) + ' – không có thu/chi tiền thực trong ca.'));
+  for (const x of d.bookAdjustments || []) flow.append(el('p', 'sr-note', 'Điều chỉnh sổ két ' + money(x.direction === 'in' ? x.amount : -x.amount) + (x.affectsShiftCash === true ? ' – đã tính vào két hệ thống của ca này; không phải thu/chi tiền thực.' : x.affectsShiftCash === false ? ' – sửa sổ ca trước, không tính lại vào tiền bàn giao ca này.' : ' – không có thu/chi tiền thực trong ca.')));
   wrap.append(flow);
 
   // Tiền thu theo cách thu (chỉ khoản thực thu).
