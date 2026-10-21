@@ -14,7 +14,7 @@ Thiếu CK khách hoặc thiếu vận chuyển: cảnh báo và xác nhận kh�
 
 ## Công nợ quá hạn
 
-API tạo đơn/HĐKT và duyệt đơn/HĐKT chặn khi khách có khoản quá hạn: mã `CUSTOMER_DEBT_OVERDUE`. Không có cơ chế bỏ qua. Đối chiếu bằng customerId hoặc MST không rỗng; không ghép khách bằng tên hay điện thoại. Tái sử dụng `debtCounts`, `receivable`, `netReturnInputs` và `returnAdjustments`; bỏ phiếu thu huỷ, chỉ tính chứng từ đủ điều kiện. Duyệt kiểm lại trong transaction. Tạo đơn kiểm tra trước khi khởi tạo chứng từ.
+API tạo đơn/HĐKT và duyệt đơn/HĐKT yêu cầu xác nhận cảnh báo khi khách có khoản quá hạn: mã `CUSTOMER_DEBT_OVERDUE` nếu chưa xác nhận. Popup giữ nguyên thẻ công nợ để chụp gửi khách, có nút Vẫn tạo đơn / Vẫn tạo HĐKT / Vẫn duyệt theo thao tác. Chỉ bấm nút tiếp tục mới gửi `debtWarningAccepted: true`; Đóng hoặc Esc dừng thao tác. Cờ này chỉ xác nhận đã xem cảnh báo, không cấp thêm quyền tạo/duyệt, không thay đổi nợ. Đối chiếu bằng customerId hoặc MST không rỗng; không ghép khách bằng tên hay điện thoại. Tái sử dụng `debtCounts`, `receivable`, `netReturnInputs` và `returnAdjustments`; bỏ phiếu thu huỷ, chỉ tính chứng từ đủ điều kiện. Duyệt kiểm lại trong transaction. Tạo đơn kiểm tra trước khi khởi tạo chứng từ.
 
 `GET /quotes/:id/approval-preflight` kiểm quyền trang và phạm vi báo giá, trả đối chiếu nợ trước khi mở form tạo đơn/HĐKT. Không trả số liệu giá vốn cho nhân viên.
 
@@ -22,4 +22,4 @@ Thông báo công nợ là thẻ riêng có tên khách, ngày Việt Nam, tổn
 
 ## Kiểm tra
 
-Test API có kiểm quyền, phí in bắt buộc, chi phí 0 hợp lệ, xác nhận cảnh báo, chặn tạo đơn/HĐKT và duyệt khi còn nợ, phiếu thu huỷ và khi trả đủ. Browser giả lập desktop/mobile kiểm tra thẻ không tràn, dữ liệu tên khách không thành HTML và nhập phí 0 lưu đúng revision. Chưa test live, chưa test máy in.
+Test API có kiểm quyền, phí in bắt buộc, chi phí 0 hợp lệ, xác nhận cảnh báo, cảnh báo nợ khi chưa xác nhận, xác nhận vẫn tạo đơn/HĐKT và duyệt theo quyền cũ, phiếu thu huỷ và khi trả đủ. Browser giả lập desktop/mobile kiểm tra thẻ không tràn, dữ liệu tên khách không thành HTML và nhập phí 0 lưu đúng revision. Chưa test live, chưa test máy in.

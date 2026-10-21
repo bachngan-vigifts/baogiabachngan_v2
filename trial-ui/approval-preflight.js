@@ -2,7 +2,7 @@ const money = n => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 
 /** Customer-facing card deliberately contains only receivable information, never internal costs. */
-export function showApprovalDebt(review) {
+export function showApprovalDebt(review, { continueLabel } = {}) {
   const dlg = el('dialog', 'modal approval-debt-dialog');
   const card = el('section', 'approval-debt-card');
   card.append(el('span', 'eyebrow', 'THÔNG BÁO CÔNG NỢ'), el('h2', '', 'Quý khách có khoản thanh toán quá hạn'), el('p', 'approval-debt-customer', review.customerName));
@@ -13,10 +13,16 @@ export function showApprovalDebt(review) {
   const head = el('tr'); head.append(el('th', '', 'Chứng từ'), el('th', 'num-cell', 'Số tiền quá hạn')); table.append(head);
   for (const order of review.debt.orders) { const row=el('tr'); row.append(el('td','',order.no),el('td','num-cell',money(order.overdue))); table.append(row); }
   card.append(table, el('p', 'approval-debt-message', 'Kính mong Quý khách thanh toán khoản công nợ quá hạn để chúng tôi tiếp tục xử lý đơn hàng mới. Xin cảm ơn Quý khách!'));
-  const footer=el('div','modal-foot'),close=el('button','btn primary','Đóng');close.type='button';
-  close.addEventListener('click',()=>dlg.close());footer.append(close);dlg.append(card,footer);
-  dlg.addEventListener('close',()=>dlg.remove());document.body.append(dlg);dlg.showModal();return dlg;
+  const footer=el('div','modal-foot'),close=el('button',continueLabel?'btn secondary':'btn primary','Đóng');close.type='button';
+  let settle;dlg.result=new Promise(resolve=>{settle=resolve;});
+  const done=accepted=>{settle(accepted);dlg.close();};
+  close.addEventListener('click',()=>done(false));footer.append(close);
+  if(continueLabel){const proceed=el('button','btn primary',continueLabel);proceed.type='button';proceed.addEventListener('click',()=>done(true));footer.append(proceed);}
+  dlg.append(card,footer);dlg.addEventListener('close',()=>{settle(false);dlg.remove();});
+  document.body.append(dlg);dlg.showModal();return dlg;
 }
+
+export function confirmApprovalDebt(review, continueLabel) { return showApprovalDebt(review, {continueLabel}).result; }
 
 export async function reviewOrderCosts({ review, api, isManager, verifyBox, esc, toast }) {
   const costs=review.costs;if(!costs)return true;

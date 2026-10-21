@@ -38,7 +38,7 @@ test('Kiểm tra duyệt có kiểm quyền, thiếu phí in bị chặn ở ser
   ok(await f.call(status,f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
 });
 
-test('Nợ quá hạn chặn duyệt và tạo đơn/HĐKT mới; phiếu thu đã huỷ không giảm nợ; trả đủ thì duyệt được',async()=>{
+test('Nợ quá hạn cần xác nhận để tạo/duyệt; không mở quyền duyệt; trả đủ thì không cần xác nhận',async()=>{
   const f=await setup(),now=new Date().toISOString();
   const base={quoteType:'HRC' as const,customerName:'Khách cùng MST',taxCode:'0312345678',ownerId:'emp',createdBy:'emp',orderDate:'2026-01-01',createdAt:now,updatedAt:now};
   await f.db.insert(salesOrders).values([{...base,id:'old-debt',orderNo:'OLD',status:'confirmed',total:1000},{...base,id:'new-draft',orderNo:'NEW',status:'draft',submittedAt:now}]);
@@ -51,6 +51,15 @@ test('Nợ quá hạn chặn duyệt và tạo đơn/HĐKT mới; phiếu thu đ
   assert.equal((await f.call('/orders',f.mgr,'POST',{quoteId:quote.id})).data.code,'CUSTOMER_DEBT_OVERDUE');
   assert.equal((await f.call('/contracts',f.mgr,'POST',{quoteId:quote.id,legalEntity:'BN'})).data.code,'CUSTOMER_DEBT_OVERDUE');
   assert.equal(ok(await f.call('/quotes/'+quote.id+'/approval-preflight',f.mgr)).debt.total,1000);
+  assert.equal((await f.call('/orders',f.mgr,'POST',{quoteId:quote.id,debtWarningAccepted:'true'})).data.code,'CUSTOMER_DEBT_OVERDUE','chỉ chấp nhận boolean true');
+  const continued=ok(await f.call('/orders',f.mgr,'POST',{quoteId:quote.id,debtWarningAccepted:true}),201);
+  assert.ok([403,404].includes((await f.call('/orders/'+continued.id+'/status',f.emp,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true,debtWarningAccepted:true})).status),'xác nhận cảnh báo không mở quyền duyệt');
+  ok(await f.call('/orders/'+continued.id+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true,debtWarningAccepted:true}));
+  const contractQuote=ok(await f.call('/quotes',f.mgr,'POST',{type:'HRC',quoteNo:'DEBT_002',customer:'Khách cùng MST',customerTaxCode:base.taxCode,customerCode:'C001',date:'2026-10-21',vat:8,rows:[{name:'Ly',qty:1,price:1000}]}),201);
+  const contract=ok(await f.call('/contracts',f.mgr,'POST',{quoteId:contractQuote.id,legalEntity:'BN',debtWarningAccepted:true}),201);
+  ok(await f.call('/orders/'+contract.orderId+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true,debtWarningAccepted:true}));
+  assert.equal((await f.call('/orders',f.ncc,'POST',{quoteId:contractQuote.id,debtWarningAccepted:true})).status,403);
+
   assert.equal((await approvalDebt(f.db,null,'')).total,0,'không gộp khách lẻ tên giống nhau');
   await f.db.update(customerPayments).set({voidedAt:null,voidedBy:null}).where(eq(customerPayments.id,'void-payment'));
   assert.equal(ok(await f.call('/orders/new-draft/approval-preflight',f.mgr)).debt.total,0);
