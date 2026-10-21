@@ -66,6 +66,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     orderBoard: null,
     orderStatus: 'all',
     orderQuery: '',
+    orderFilters: { source: 'all', ownerId: '', from: '', to: '', payment: 'all' },
+    orderBoardRequest: 0,
     orderRegisterId: '',
     productFilter: 'all',
     catalogLoading: false,
@@ -104,6 +106,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.orderBoard = null;
     st.orderStatus = 'all';
     st.orderQuery = '';
+    st.orderFilters = { source: 'all', ownerId: '', from: '', to: '', payment: 'all' };
+    st.orderBoardRequest++;
     st.orderRegisterId = '';
     try {
       st.pending = JSON.parse(sessionStorage.getItem(pendingKey()) || 'null');
@@ -364,7 +368,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const registerId = st.orderRegisterId || st.register.id;
     const p = new URLSearchParams({ registerId, status: st.orderStatus });
     if (st.orderQuery) p.set('q', st.orderQuery);
+    for (const [key, value] of Object.entries(st.orderFilters)) if (value) p.set(key, value);
+    const request = ++st.orderBoardRequest;
     const d = await api('/pos/orders?' + p);
+    if (request !== st.orderBoardRequest) return;
     st.orderBoard = d;
     st.orderRegisterId = d.registerId;
     renderOrderBoard();
@@ -380,11 +387,42 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (d?.registers?.length > 1) {
       const reg = select(d.registers.map(r => [r.id, r.name]), st.orderRegisterId || d.registerId);
       reg.setAttribute('aria-label', 'Lọc đơn theo cửa hàng');
-      reg.addEventListener('change', () => { st.orderRegisterId = reg.value; run(loadOrderBoard); });
+      reg.addEventListener('change', () => { st.orderRegisterId = reg.value; st.orderFilters.ownerId = ''; run(loadOrderBoard); });
       head.append(reg);
     }
     box.append(head);
     if (!d) { box.append(el('p', 'pos-note', 'Đang tải đơn hàng…')); return; }
+    const filters = el('div', 'pos-order-filters');
+    const addFilter = (labelText, key, choices, type = '') => {
+      const label = el('label'), caption = el('span', 'pos-note', labelText);
+      const input = choices ? select(choices, st.orderFilters[key]) : el('input');
+      if (type) { input.type = type; input.value = st.orderFilters[key]; }
+      input.setAttribute('aria-label', labelText);
+      input.addEventListener('change', () => { st.orderFilters[key] = input.value; run(loadOrderBoard); });
+      label.append(caption, input); filters.append(label);
+    };
+    addFilter('Nguồn đơn', 'source', [['all', 'Tất cả nguồn'], ['pos', 'POS tại quầy'], ['web', 'Đơn website'], ['cod', 'POS giao COD']]);
+    addFilter('Nhân viên bán', 'ownerId', [['', 'Tất cả nhân viên'], ...(d.owners || []).map(o => [o.id, o.name])]);
+    addFilter('Từ ngày', 'from', null, 'date');
+    addFilter('Đến ngày', 'to', null, 'date');
+    addFilter('Thanh toán', 'payment', [['all', 'Tất cả thanh toán'], ['paid', 'Đã thanh toán đủ'], ['debt', 'Còn nợ'], ['unknown', 'Chưa rõ thanh toán']]);
+    filters.append(button('Xóa bộ lọc', 'btn secondary', () => {
+      st.orderFilters = { source: 'all', ownerId: '', from: '', to: '', payment: 'all' };
+      st.orderQuery = ''; st.orderStatus = 'all'; run(loadOrderBoard);
+    }));
+    box.append(filters);
+    const summary = el('div', 'pos-order-summary');
+    summary.append(el('span', '', 'Doanh thu đơn theo bộ lọc (gồm VAT)'));
+    if (!d.totals?.length) summary.append(el('strong', '', money(0)));
+    for (const t of d.totals || []) {
+      const amount = n => t.currency === 'VND' ? money(n) : new Intl.NumberFormat('vi-VN', { style: 'currency', currency: /^[A-Z]{3}$/.test(t.currency) ? t.currency : 'VND' }).format(n);
+      const group = el('div');
+      group.append(el('strong', '', amount(t.revenue)), el('p', 'pos-note', `${t.orders} đơn · Đã thu ${amount(t.paid)} · Còn nợ ${amount(t.outstanding)}`));
+      if (t.unknownPayment) group.append(el('p', 'pos-note', `${t.unknownPayment} đơn web chưa có dữ liệu thu tiền; chưa cộng vào đã thu/còn nợ.`));
+      summary.append(group);
+    }
+    summary.append(el('p', 'pos-note', 'Không tính đơn đã hủy. Tổng giá trị đơn, chưa trừ trả hàng/hoàn tiền. Đơn web chưa gắn nhân viên bán.'));
+    box.append(summary);
     const cards = el('div', 'pos-order-counts');
     for (const id of ['all', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled']) {
       const b = button('', 'pos-order-count' + (st.orderStatus === id ? ' active' : ''), () => {
@@ -407,7 +445,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         el('b', '', o.orderNo),
         el('span', '', o.customerName + ' · ' + money(o.total)),
         el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.external ? 'Đơn website' : o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy')),
-        el('span', 'pos-order-state', orderLabels[o.bucket]),
+        el('span', 'pos-order-state', orderLabels[o.bucket] + (o.bucket === 'cancelled' ? '' : ' · ' + ({ paid: 'Đã thanh toán', debt: 'Còn nợ', unknown: 'Chưa rõ thanh toán' }[o.paymentStatus] || ''))),
       );
       row.addEventListener('click', () => o.external ? showWebOrder(o) : go('#/orders/' + encodeURIComponent(o.id)));
       list.append(row);

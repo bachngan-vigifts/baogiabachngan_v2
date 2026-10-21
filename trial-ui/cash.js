@@ -16,6 +16,7 @@ const kinds = {
   cod: 'COD',
   customer_refund: 'Hoàn tiền khách',
 };
+const entryName = r => /^Tên phiếu: ([^\r\n]{1,120})\n\n/.exec(r.reason || '')?.[1] || kinds[r.kind] || r.kind;
 const states = { posted: 'Ghi', pending: 'Chờ duyệt', voided: 'Đã huỷ', explained: 'Đã giải trình', closed: 'Đã đóng' };
 function el(tag, cls = '', text) {
   const n = document.createElement(tag);
@@ -92,7 +93,8 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     busy = false,
     drawerId = '',
     loadVersion = 0,
-    listVersion = 0;
+    listVersion = 0,
+    openedEntryLink = '';
   const api = (path, method, body) => request(
     drawerId && path.startsWith('/cash') ? path + (path.includes('?') ? '&' : '?') + 'drawerId=' + encodeURIComponent(drawerId) : path,
     method, body,
@@ -116,7 +118,12 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       offset = 0;
       drawerId = '';
       ledgerKind = '';
+      openedEntryLink = '';
     }
+    const hash = globalThis.location?.hash || '';
+    const link = new URLSearchParams(hash.split('?')[1] || '');
+    const linkedEntry = link.get('entryId');
+    if (linkedEntry && hash !== openedEntryLink && link.get('drawerId')) drawerId = link.get('drawerId');
     const result = await api('/cash');
     if (version !== loadVersion) return;
     summary = result;
@@ -125,6 +132,11 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     if (tab === 'ledger') await entries();
     else if (tab === 'reconcile') await reconciliations();
     else await shifts();
+    if (linkedEntry && hash !== openedEntryLink) {
+      const detail = await api('/cash/entries/' + encodeURIComponent(linkedEntry));
+      if (version !== loadVersion) return;
+      openedEntryLink = hash; showEntry(detail.entry);
+    }
   }
   function render() {
     root.replaceChildren();
@@ -259,7 +271,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
               rows: visibleRows().map((r) => [
                 time(r.at),
                 r.entryNo,
-                kinds[r.kind] || r.kind,
+                entryName(r),
                 r.reason,
                 r.by,
                 r.direction === 'in' ? r.amount : -r.amount,
@@ -278,7 +290,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         actions = el('td', 'cash-row-actions');
       for (const [text, cls] of [
         [r.entryNo + ' · ' + time(r.at), ''],
-        [r.direction === 'in' ? 'Phiếu thu · ' + (kinds[r.kind] || r.kind) : 'Phiếu chi · ' + (kinds[r.kind] || r.kind), ''],
+        [r.direction === 'in' ? 'Phiếu thu · ' + (entryName(r)) : 'Phiếu chi · ' + (entryName(r)), ''],
         [r.reason || 'Thu tiền ' + r.entryNo, ''],
         [r.by, ''],
         [r.direction === 'in' ? money(r.amount) : '—', r.direction === 'in' ? 'cash-in right' : 'right'],
@@ -324,10 +336,14 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
   function showEntry(r) {
     const m = dialog((r.direction === 'in' ? 'Phiếu thu ' : 'Phiếu chi ') + r.entryNo);
     for (const [label, value] of [
-      ['Thời gian', time(r.at)], ['Loại phiếu', kinds[r.kind] || r.kind], ['Nội dung', r.reason || '—'],
+      ['Thời gian', time(r.at)], ['Loại phiếu', entryName(r)], ['Nội dung', r.reason || '—'],
       ['Người tạo', r.by || '—'], ['Số tiền', money(r.amount)], ['Trạng thái', states[r.status] || r.status],
     ]) { const line = el('div', 'cash-pair'); line.append(el('span', '', label), el('b', '', value)); m.body.append(line); }
     if (r.voidReason) m.body.append(el('p', 'cash-warning', 'Lý do huỷ: ' + r.voidReason));
+    if (r.status === 'pending' && summary.canApprove && (r.createdBy !== user().id || summary.canSelfApprove))
+      m.body.append(button('Duyệt phiếu', () => run(async () => {
+        await api('/cash/entries/' + encodeURIComponent(r.id) + '/approve', 'POST', {}); m.close(); await load();
+      }), 'btn primary'));
     m.body.append(button('Đóng', m.close)); m.show();
   }
   function submitForm(m, saveText, fn) {
@@ -358,7 +374,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         : direction === 'in'
           ? ['other_income', 'cash_in']
           : ['petty_expense', 'advance', 'cash_out'],
-      kind = select(allowed.map((k) => [k, kinds[k]])),
+      kind = adjustment ? select(allowed.map((k) => [k, kinds[k]])) : el('input'),
       dir = select(
         [
           ['in', 'Tăng tiền két'],
@@ -374,7 +390,14 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     amount.input.step = '1';
     amount.input.required = reason.input.required = true;
     photo.input.accept = 'image/jpeg,image/png,image/webp';
-    m.body.append(labeled('Loại phiếu', kind));
+    if (!adjustment) {
+      kind.type = 'text'; kind.value = kinds[allowed[0]]; kind.required = true; kind.maxLength = 120;
+      kind.placeholder = 'Nhập tên phiếu, ví dụ: Chi sửa xe';
+      const suggestions = el('datalist'); suggestions.id = 'cash-entry-names-' + key;
+      for (const code of allowed) { const o = el('option'); o.value = kinds[code]; suggestions.append(o); }
+      kind.setAttribute('list', suggestions.id); m.body.append(suggestions);
+    }
+    m.body.append(labeled(adjustment ? 'Loại phiếu' : 'Tên phiếu', kind));
     if (adjustment) m.body.append(labeled('Chiều điều chỉnh', dir));
     m.body.append(
       amount.box,
@@ -385,7 +408,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         'cash-warning',
         'Từ ' +
           money(summary.drawer.approvalThreshold) +
-          ' cần Manager khác người tạo duyệt; chưa tính vào két khi chờ.',
+          ' cần người có quyền duyệt; chưa tính vào két khi chờ. Manager được tự duyệt phiếu của mình.',
       ),
     );
     if (adjustment)
@@ -402,7 +425,8 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       if (photo.input.files?.[0]) img = await compress(photo.input.files[0]);
       await api('/cash/entries', 'POST', {
         key,
-        kind: kind.value,
+        kind: adjustment ? 'adjustment' : allowed.find(k => kinds[k] === kind.value.trim()) || allowed[0],
+        ...(!adjustment && !allowed.some(k => kinds[k] === kind.value.trim()) ? { entryName: kind.value.trim() } : {}),
         direction: dir.value,
         amount: Number(amount.input.value),
         reason: reason.input.value,

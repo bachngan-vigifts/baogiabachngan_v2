@@ -19,32 +19,10 @@ export async function authorizePosStore(c: Ctx) {
   const path = c.url.pathname.replace(/^\/api\/staff/, '');
   if (!/^\/(pos|cash)(\/|$)/.test(path)) return;
   const m = (c.state.session as SessionState).member;
-  if (m.role === 'manager') return;
-  const [position] = await c.env.db.select().from(positions).where(eq(positions.id, m.positionId ?? '')).limit(1);
-  const name = fold(position?.name);
-  const lock = m.positionId === 'sales-lock' || /^(nvbh|cht|cua hang truong) lock$/.test(name);
-  const ml = m.positionId === 'sales-ml' || /^(nvbh|cht|cua hang truong) (ml|minh long)$/.test(name);
-  if (!lock && !ml) return;
-  const rows = await c.env.db.select({ r: posRegisters, warehouse: warehouses.name }).from(posRegisters)
-    .innerJoin(warehouses, eq(warehouses.id, posRegisters.warehouseId));
-  // Warehouse identifies the store even when the display name of its counter changes.
-  const belongs = (value: string) => {
-    const s = fold(value);
-    return lock ? /lock/.test(s) : /minh long/.test(s) && !/lock/.test(s);
-  };
-  const visible = rows.filter(x => {
-    const warehouse = fold(x.warehouse), register = fold(x.r.name);
-    const ambiguousWarehouse = /lock/.test(warehouse) && /minh long/.test(warehouse);
-    return ambiguousWarehouse
-      ? belongs(register)
-      : belongs(warehouse) || (!/lock|minh long/.test(warehouse) && belongs(register));
-  });
-  const foreignDrawers = new Set(rows.filter(x => !visible.includes(x)).map(x => x.r.cashDrawerId));
-  c.state.posScope = {
-    registers: visible.map(x => x.r.id),
-    // A mistakenly shared drawer must not expose the other store's balances. Manager must split it first.
-    drawers: visible.map(x => x.r.cashDrawerId).filter(id => !foreignDrawers.has(id)),
-  } satisfies Scope;
+  const access = await posStoreScopeFor(c.env.db, m);
+  if (!access) return;
+  const { rows, scope } = access;
+  c.state.posScope = scope;
   const denied = () => { throw new AppError(403, 'Bạn chỉ được truy cập quầy và két thuộc cửa hàng của mình.'); };
   const register = (id: unknown) => { if (typeof id === 'string' && id && !allowedRegister(c, id)) denied(); };
   const drawer = (id: unknown) => { if (typeof id === 'string' && id && !allowedDrawer(c, id)) denied(); };
@@ -89,6 +67,36 @@ export async function authorizePosStore(c: Ctx) {
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, id));
     if (r) await shift(r.shiftId);
   }
+}
+
+export async function posStoreScopeFor(db: StaffEnv['db'], m: { role: string; positionId?: string | null }) {
+  if (m.role === 'manager') return;
+  const [position] = await db.select().from(positions).where(eq(positions.id, m.positionId ?? '')).limit(1);
+  const name = fold(position?.name);
+  const lock = m.positionId === 'sales-lock' || /^(nvbh|cht|cua hang truong) lock$/.test(name);
+  const ml = m.positionId === 'sales-ml' || /^(nvbh|cht|cua hang truong) (ml|minh long)$/.test(name);
+  if (!lock && !ml) return;
+  const rows = await db.select({ r: posRegisters, warehouse: warehouses.name }).from(posRegisters)
+    .innerJoin(warehouses, eq(warehouses.id, posRegisters.warehouseId));
+  // Warehouse identifies the store even when the display name of its counter changes.
+  const belongs = (value: string) => {
+    const s = fold(value);
+    return lock ? /lock/.test(s) : /minh long/.test(s) && !/lock/.test(s);
+  };
+  const visible = rows.filter(x => {
+    const warehouse = fold(x.warehouse), register = fold(x.r.name);
+    const ambiguousWarehouse = /lock/.test(warehouse) && /minh long/.test(warehouse);
+    return ambiguousWarehouse
+      ? belongs(register)
+      : belongs(warehouse) || (!/lock|minh long/.test(warehouse) && belongs(register));
+  });
+  const foreignDrawers = new Set(rows.filter(x => !visible.includes(x)).map(x => x.r.cashDrawerId));
+  const scope = {
+    registers: visible.map(x => x.r.id),
+    // A mistakenly shared drawer must not expose the other store's balances. Manager must split it first.
+    drawers: visible.map(x => x.r.cashDrawerId).filter(id => !foreignDrawers.has(id)),
+  } satisfies Scope;
+  return { rows, scope };
 }
 
 /** Store assignment is a hard boundary even if customer sharing/department ownership grants document access. */
