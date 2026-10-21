@@ -10,7 +10,7 @@ import { allowedRegister, posScope } from './pos-access.ts';
 import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -215,7 +215,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (requested && !scope.ids.has(requested)) throw new AppError(403, 'Bạn không được xem đơn của cửa hàng này.');
       const registerId = requested || scope.regs[0]?.id || '';
       if (!registerId) return json({ registers: scope.regs, registerId: '', counts: { all: 0, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 }, orders: [] });
-      const rows = await c.env.db.select({
+      // Lọc ngay trong SQL (nguồn, nhân viên, ngày, từ khoá) để không tải toàn bộ lịch sử quầy mỗi lần mở bảng.
+      // Chưa chọn ngày: đơn đã xong / đã huỷ chỉ lấy 30 ngày gần nhất; đơn còn dang dở luôn hiện dù cũ.
+      const p = c.url.searchParams, source = p.get('source') || 'all', ownerId = posText(p.get('ownerId'), 80);
+      const isDay = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const from = isDay(p.get('from')) ? p.get('from')! : '', to = isDay(p.get('to')) ? p.get('to')! : '';
+      const windowFrom = from || to ? '' : new Date(Date.parse(vietnamDate().iso) - 30 * 86_400_000).toISOString().slice(0, 10);
+      const like = '%' + posText(p.get('q'), 200).replace(/[\\%_]/g, '') + '%', hasQ = like !== '%%';
+      const crmWanted = source === 'all' || source === 'pos' || source === 'cod', webWanted = (source === 'all' || source === 'web') && !ownerId;
+      const rows = !crmWanted ? [] : await c.env.db.select({
         id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, phone: salesOrders.phone,
         ownerId: salesOrders.ownerId, ownerName: employees.name, paid: sql<number>`(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.voidedAt} is null)`.mapWith(Number), total: salesOrders.total, status: salesOrders.status, fulfillmentMode: salesOrders.fulfillmentMode,
         orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
@@ -224,9 +232,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       }).from(salesOrders)
         .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
         .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
-        .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId)))
+        .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId),
+          source === 'cod' ? eq(salesOrders.fulfillmentMode, 'cod') : source === 'pos' ? ne(salesOrders.fulfillmentMode, 'cod') : undefined,
+          ownerId ? eq(salesOrders.ownerId, ownerId) : undefined,
+          from ? gte(salesOrders.orderDate, from) : undefined, to ? lte(salesOrders.orderDate, to) : undefined,
+          windowFrom ? or(notInArray(salesOrders.status, ['delivered', 'cancelled']), gte(salesOrders.orderDate, windowFrom)) : undefined,
+          hasQ ? sql`${foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.sapoOrderCode, employees.name)} like ${foldSql(sql`${like}`)}` : undefined))
         .orderBy(desc(salesOrders.createdAt));
-      const webRows = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.registerId, registerId)).orderBy(desc(webStoreOrders.updatedAt));
+      const webRows = !webWanted ? [] : await c.env.db.select().from(webStoreOrders).where(and(eq(webStoreOrders.registerId, registerId),
+        from ? gte(webStoreOrders.orderedAt, from) : undefined, to ? lte(webStoreOrders.orderedAt, to + 'T23:59:59.999Z') : undefined,
+        windowFrom ? or(notInArray(webStoreOrders.status, ['completed', 'cancelled', 'refunded', 'failed', 'trash']), gte(webStoreOrders.orderedAt, windowFrom)) : undefined))
+        .orderBy(desc(webStoreOrders.updatedAt));
       const decorated = [
         ...rows.map(o => ({ ...o, bucket: posOrderBucket(o), source: 'crm', external: false, currency: 'VND', orderSource: o.fulfillmentMode === 'cod' ? 'cod' : 'pos', paymentStatus: o.paid >= o.total ? 'paid' : 'debt', outstanding: Math.max(0, o.total-o.paid) })),
         ...webRows.map(o => {
@@ -239,7 +255,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const board = filterPosOrderBoard(decorated, c.url.searchParams);
-      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, ...board });
+      // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.
+      board.owners = (await c.env.db.selectDistinct({ id: salesOrders.ownerId, name: employees.name }).from(salesOrders)
+        .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).leftJoin(employees, eq(employees.id, salesOrders.ownerId))
+        .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId))))
+        .filter((o): o is { id: string; name: string | null } => !!o.id).map(o => ({ id: o.id, name: o.name || 'Chưa có tên' }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+      // Số đếm và tổng tiền tính trên toàn bộ kết quả lọc; danh sách trả theo trang 100 đơn.
+      const offset = Math.max(0, Math.min(1_000_000, Number(p.get('offset')) || 0)), pageSize = 100;
+      const orders = board.orders.slice(offset, offset + pageSize);
+      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, ...board, orders,
+        totalOrders: board.orders.length, nextOffset: offset + pageSize < board.orders.length ? offset + pageSize : null, windowFrom: windowFrom || null });
     },
     'business',
   );

@@ -509,6 +509,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       list.append(row);
     }
     box.append(list);
+    if (d.nextOffset != null) {
+      box.append(busyButton(`Xem thêm (${d.orders.length}/${d.totalOrders} đơn)`, 'btn secondary pos-order-more', 'Đang tải…', async () => {
+        const p = new URLSearchParams({ registerId: st.orderRegisterId || st.register.id, status: st.orderStatus, offset: String(d.nextOffset) });
+        if (st.orderQuery) p.set('q', st.orderQuery);
+        for (const [key, value] of Object.entries(st.orderFilters)) if (value) p.set(key, value);
+        const request = st.orderBoardRequest, more = await api('/pos/orders?' + p);
+        if (request !== st.orderBoardRequest || st.orderBoard !== d) return;
+        st.orderBoard = { ...d, orders: [...d.orders, ...more.orders], nextOffset: more.nextOffset };
+        renderOrderBoard();
+      }));
+    }
+    if (d.windowFrom) box.append(el('p', 'pos-note', `Đơn đã hoàn tất / đã huỷ: hiển thị từ ${d.windowFrom.split('-').reverse().join('/')}. Chọn "Từ ngày" để xem cũ hơn; đơn còn dang dở luôn hiện.`));
   }
   function showWebOrder(o) {
     const m = modal(o.orderNo + ' · ' + (o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long'));

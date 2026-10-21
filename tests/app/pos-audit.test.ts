@@ -73,3 +73,17 @@ test('webhook SePay / WooCommerce: thiếu mã cấu hình thì từ chối, kh�
   const r = await f.router.handle(new Request('http://localhost/api/staff/integrations/sepay/pos-payment', { method: 'POST', headers: { authorization: 'Apikey test-sepay-key', 'content-type': 'application/json' }, body: '{}' }), f.env);
   assert.equal(r.status, 401);
 });
+
+test('bảng đơn cửa hàng: mặc định chỉ đơn đã xong trong 30 ngày, đơn dang dở cũ vẫn hiện; chọn ngày thì xem lại được', async () => {
+  const f = await setup(), s = await f.open();
+  const done = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id)); ok(done, 201);
+  const cod = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id, { fulfillmentMode: 'cod', delivery })); ok(cod, 201);
+  const old = daysAgo(60).slice(0, 10);
+  await f.db.update(salesOrders).set({ orderDate: old });
+  const board = await f.call(`/pos/orders?registerId=${f.registerId}`, f.emp); ok(board);
+  assert.deepEqual(board.data.orders.map((o: { id: string }) => o.id), [cod.data.id], 'đơn COD chưa giao vẫn hiện; đơn đã xong 60 ngày trước ẩn');
+  assert.ok(board.data.windowFrom);
+  const ranged = await f.call(`/pos/orders?registerId=${f.registerId}&from=${old}&to=${old}`, f.emp); ok(ranged);
+  assert.equal(ranged.data.orders.length, 2); assert.equal(ranged.data.windowFrom, null);
+  assert.equal(ranged.data.owners.length, 1, 'danh sách nhân viên không bị thu hẹp');
+});

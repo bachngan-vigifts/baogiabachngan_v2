@@ -31,7 +31,7 @@ test('board API: more than 500 orders, receipts/voids, staff, dates, sources and
     await f.db.insert(salesOrders).values(Array.from({length:501},(_,i)=>({...base,id:`board-${i}`,orderNo:`BOARD_${i}`,checkoutKey:null,posPaymentRequestId:null,orderDate:'2026-10-20',total:100,fulfillmentMode:'cod',status:'confirmed' as const})));
     let board=await f.call(`/pos/orders?registerId=${f.registerId}&source=cod&from=2026-10-20&to=2026-10-20&payment=debt&ownerId=emp`,f.emp);
     assert.equal(board.status,200,JSON.stringify(board.data));
-    assert.equal(board.data.orders.length,501); assert.equal(board.data.totals[0].revenue,50100);
+    assert.equal(board.data.totalOrders,501); assert.equal(board.data.orders.length,100,'danh sách trả theo trang 100 đơn'); assert.equal(board.data.nextOffset,100); assert.equal(board.data.totals[0].revenue,50100,'tổng tiền vẫn tính trên toàn bộ kết quả lọc');
     assert.equal(board.data.totals[0].outstanding,50100);
     board=await f.call(`/pos/orders?registerId=${f.registerId}&source=pos&payment=paid`,f.emp);
     assert.equal(board.data.orders.length,1);
