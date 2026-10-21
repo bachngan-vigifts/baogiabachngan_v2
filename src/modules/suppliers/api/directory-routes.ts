@@ -7,6 +7,12 @@ import { employees } from '../../staff/schema.ts';
 import { incomingShipments, supplierAccounts, supplierContacts, suppliers } from '../schema.ts';
 import { canEditSuppliers, canManageSuppliers, cleanContacts, cleanSupplierInput, planAccountLink } from '../domain/directory.ts';
 
+/** Minimal packing choices, composed by the app after the order route checks access. */
+export async function packingSupplierChoices(db: StaffEnv['db']) {
+  return db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers)
+    .where(eq(suppliers.active, true)).orderBy(asc(suppliers.name));
+}
+
 /**
  * DANH BẠ NHÀ CUNG CẤP (đợt 1 – Manager, khu vực `ncc-admin`). Xem docs/NCC-PAGE.md, mục "Quản lý NCC".
  *  GET  /suppliers                    danh sách (?q=, ?active=0|1) kèm số liên hệ / tài khoản / đơn

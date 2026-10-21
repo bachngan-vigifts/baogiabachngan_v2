@@ -101,8 +101,16 @@ Fixture đối chiếu trên dùng tiền tố AUDIT- để tách dữ liệu th
 | Full suite | 731 test: **699 pass, 2 fail, 30 skip**. Hai fail là architecture `sales/api/packing-routes.ts` import suppliers không được phép và `tests/db/reset-test-data.test.ts:48` (409 thay vì 201). Đã chạy lại hai file trên main nguyên bản 82f2032 và tái hiện cùng lỗi. Không sửa ngoài phạm vi; cổng full suite chưa đạt |
 | Live / NCC thật / Sapo / máy in | Chỉ đối chiếu SQL production; chưa test luồng ghi/cổng thật, không gọi Sapo/máy in |
 
-Do chưa duyệt schema và full suite còn lỗi có sẵn, không báo hoàn thành. Không migration, không thao tác nghiệp vụ production, không sửa cron.
+Do chưa duyệt schema, không báo hoàn thành toàn bộ luồng. Không migration, không thao tác nghiệp vụ production, không sửa cron.
+
+### Sửa chặn merge theo yêu cầu tiếp theo
+
+PR #205 không có xung đột; ban đầu là draft. Theo yêu cầu “chưa merge được”, sửa hai lỗi kiểm tra có sẵn mà không đổi nghiệp vụ: lấy danh sách NCC tối thiểu qua dependency do app gắn vào route đóng gói (bỏ import sales → suppliers gây vòng), và cập nhật fixture reset-test-data để Manager xác nhận `costWarningsReviewed` theo luồng duyệt hiện có, kiểm status thành công thay vì bỏ qua lỗi. Không nới kiểm tra kiến trúc hay bỏ test.
+
+Typecheck đạt. Chạy lại 4 file architecture/reset-test-data/purchase-discount-review/purchase-incoming: 10 pass, 0 fail, 0 skip. Kết quả full suite 699/2/30 ở trên là trước lần sửa chặn merge này; CI sẽ chạy lại toàn bộ trên commit mới. Phần merge được giới hạn API/UI đọc; gửi NCC vẫn khóa và chờ duyệt schema, không đánh đồng ready-for-review với hoàn thành toàn bộ prompt.
 
 ### File thay đổi
 
 `src/modules/suppliers/api/incoming-stock.ts`, `incoming-by-sku.ts`, `purchase-routes.ts`; `trial-ui/purchases.js`, `purchase-incoming.js`, `style.css`; `tests/app/purchase-incoming.test.ts`; `docs/PURCHASE-INCOMING-BY-SKU-PREFLIGHT.md`, `PURCHASE-EARLY-REQUESTS-SCHEMA.md`.
+
+Sửa chặn merge bổ sung: `src/app/router.ts`, `src/modules/sales/api/packing-routes.ts`, `src/modules/suppliers/api/directory-routes.ts`, `tests/db/reset-test-data.test.ts`.

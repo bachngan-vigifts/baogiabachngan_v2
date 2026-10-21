@@ -1,4 +1,3 @@
-import { suppliers } from '../../suppliers/schema.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { assertPosFlowFulfillable } from './pos-order-flow-guards.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
@@ -131,7 +130,9 @@ export async function hasDeliverySchedule(db: StaffEnv['db'] | Tx, orderId: stri
 }
 export const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
 
-export function registerPackingRoutes(router: Router<StaffEnv>) {
+export function registerPackingRoutes(router: Router<StaffEnv>, options: {
+  supplierChoices: (db: StaffEnv['db']) => Promise<{ id: string; name: string }[]>;
+}) {
   /** Danh sách nhà xe (chọn nhanh khi lập phiếu giao). */
   router.get('/shipping-carriers', async c => json({ carriers: await c.env.db.select({ name: shippingCarriers.name, phone: shippingCarriers.phone }).from(shippingCarriers).orderBy(asc(shippingCarriers.name)) }), 'business');
 
@@ -144,7 +145,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       allocatedByLine(db, order.id),
       db.select({ id: deliveries.id, deliveryNo: deliveries.deliveryNo, plannedDate: deliveries.plannedDate, timeSlot: deliveries.timeSlot, receiverName: deliveries.receiverName })
         .from(deliveries).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit']))).orderBy(asc(deliveries.plannedDate)),
-      db.select({id:suppliers.id,name:suppliers.name}).from(suppliers).where(eq(suppliers.active,true)).orderBy(asc(suppliers.name)),
+      options.supplierChoices(db),
     ]);
     const ids = slips.map(s => s.id);
     const [slipLines, photos, cartons] = await Promise.all([

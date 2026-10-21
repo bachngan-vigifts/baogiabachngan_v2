@@ -18,7 +18,7 @@ import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
 import { registerHoldRoutes } from '../modules/sales/api/hold-routes.ts';
 import { registerProgressRoutes } from '../modules/sales/api/progress-routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
-import { registerSupplierDirectoryRoutes } from '../modules/suppliers/api/directory-routes.ts';
+import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modules/suppliers/api/directory-routes.ts';
 import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
@@ -59,7 +59,7 @@ export function createAppRouter() {
   registerPosReturnRoutes(router);
   registerPosOrderFlowRoutes(router);
   registerCashRoutes(router);
-  registerPackingRoutes(router);
+  registerPackingRoutes(router, { supplierChoices: packingSupplierChoices });
   registerHoldRoutes(router);
   registerProgressRoutes(router);
   registerPrintingRoutes(router);
