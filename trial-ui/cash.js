@@ -83,6 +83,9 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     rows = [],
     periodTotals = { in: 0, out: 0, net: 0 },
     ledgerKind = '',
+    ledgerEmployee = '',
+    ledgerMethod = 'cash',
+    ledgerEmployees = [],
     tab = 'ledger',
     from = today(),
     to = today(),
@@ -117,7 +120,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       cursor = null;
       offset = 0;
       drawerId = '';
-      ledgerKind = '';
+      ledgerKind = ''; ledgerEmployee = ''; ledgerMethod = 'cash'; ledgerEmployees = [];
       openedEntryLink = '';
     }
     const hash = globalThis.location?.hash || '';
@@ -225,10 +228,11 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
   const content = () => root.querySelector('.cash-content');
   async function entries(append = false) {
     const version = ++listVersion;
-    const d = await api(`/cash/entries?from=${from}&to=${to}${cursor ? '&before=' + encodeURIComponent(cursor) : ''}`);
+    const d = await api(`/cash/entries?from=${from}&to=${to}&createdBy=${encodeURIComponent(ledgerEmployee)}&method=${ledgerMethod}&direction=${ledgerKind}${cursor ? '&before=' + encodeURIComponent(cursor) : ''}`);
     if (version !== listVersion) return;
     rows = append ? [...rows, ...d.entries] : d.entries;
     periodTotals = d.totals || periodTotals;
+    ledgerEmployees = d.employees || ledgerEmployees;
     nextCursor = d.nextBefore;
     renderEntries();
   }
@@ -246,7 +250,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       card.append(el('span', '', label), el('strong', cls, money(value)), el('small', '', from + ' → ' + to));
       stats.append(card);
     }
-    const controls = el('div', 'cash-tools'),
+    const controls = el('div', 'cash-tools cash-ledger-tools'),
       f = field('Từ ngày', 'date', from),
       t = field('Đến ngày', 'date', to);
     for (const v of [f, t])
@@ -258,22 +262,29 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       });
     const kindsBar = el('div', 'cash-kind-tabs');
     for (const [value, label] of [['', 'Tất cả'], ['in', 'Phiếu thu'], ['out', 'Phiếu chi']]) {
-      kindsBar.append(button(label, () => { ledgerKind = value; renderEntries(); }, 'chip' + (ledgerKind === value ? ' active' : '')));
+      kindsBar.append(button(label, () => { ledgerKind = value; cursor = null; run(() => entries()); }, 'chip' + (ledgerKind === value ? ' active' : '')));
     }
+    const people = ledgerEmployees.map(p => [p.id, p.name]);
+    if (ledgerEmployee && !people.some(p => p[0] === ledgerEmployee)) people.push([ledgerEmployee, 'Nhân viên đã chọn (không có phiếu trong kỳ)']);
+    const employee = select([['', 'Tất cả nhân viên'], ...people], ledgerEmployee);
+    const method = select([['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản'], ['other', 'Khác'], ['all', 'Tất cả hình thức']], ledgerMethod);
+    employee.addEventListener('change', () => { ledgerEmployee = employee.value; cursor = null; run(() => entries()); });
+    method.addEventListener('change', () => { ledgerMethod = method.value; cursor = null; run(() => entries()); });
     controls.append(
-      kindsBar, f.box, t.box,
+      kindsBar, labeled('Nhân viên', employee), labeled('Hình thức thanh toán', method), f.box, t.box,
       button('Xuất Excel bảng đang xem', () =>
         run(() =>
           downloadExcel('so-quy', [
             {
               name: 'Sổ quỹ',
-              header: ['Giờ', 'Số phiếu', 'Loại', 'Nội dung', 'Người làm', 'Số tiền', 'Trạng thái', 'Lý do huỷ'],
+              header: ['Giờ', 'Số phiếu', 'Loại', 'Nội dung', 'Người làm', 'Hình thức thanh toán', 'Số tiền', 'Trạng thái', 'Lý do huỷ'],
               rows: visibleRows().map((r) => [
                 time(r.at),
                 r.entryNo,
                 entryName(r),
                 r.reason,
                 r.by,
+                r.method === 'transfer' ? 'Chuyển khoản' : r.method === 'other' ? 'Khác' : 'Tiền mặt',
                 r.direction === 'in' ? r.amount : -r.amount,
                 states[r.status],
                 r.voidReason || '',
@@ -284,7 +295,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       ),
     );
     box.append(stats, controls);
-    const { t: tbl, body } = table(['Mã phiếu / thời gian', 'Loại phiếu', 'Nội dung', 'Người tạo', 'Thu', 'Chi', 'Trạng thái', '']);
+    const { t: tbl, body } = table(['Mã phiếu / thời gian', 'Loại phiếu', 'Nội dung', 'Người tạo', 'Hình thức', 'Thu', 'Chi', 'Trạng thái', '']);
     for (const r of visibleRows()) {
       const tr = el('tr', r.status === 'voided' ? 'cash-voided' : ''),
         actions = el('td', 'cash-row-actions');
@@ -293,6 +304,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         [r.direction === 'in' ? 'Phiếu thu · ' + (entryName(r)) : 'Phiếu chi · ' + (entryName(r)), ''],
         [r.reason || 'Thu tiền ' + r.entryNo, ''],
         [r.by, ''],
+        [r.method === 'transfer' ? 'Chuyển khoản' : r.method === 'other' ? 'Khác' : 'Tiền mặt', ''],
         [r.direction === 'in' ? money(r.amount) : '—', r.direction === 'in' ? 'cash-in right' : 'right'],
         [r.direction === 'out' ? money(r.amount) : '—', r.direction === 'out' ? 'cash-out right' : 'right'],
         [states[r.status] || r.status, ''],
@@ -337,7 +349,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     const m = dialog((r.direction === 'in' ? 'Phiếu thu ' : 'Phiếu chi ') + r.entryNo);
     for (const [label, value] of [
       ['Thời gian', time(r.at)], ['Loại phiếu', entryName(r)], ['Nội dung', r.reason || '—'],
-      ['Người tạo', r.by || '—'], ['Số tiền', money(r.amount)], ['Trạng thái', states[r.status] || r.status],
+      ['Người tạo', r.by || '—'], ['Hình thức thanh toán', r.method === 'transfer' ? 'Chuyển khoản' : r.method === 'other' ? 'Khác' : 'Tiền mặt'], ['Số tiền', money(r.amount)], ['Trạng thái', states[r.status] || r.status],
     ]) { const line = el('div', 'cash-pair'); line.append(el('span', '', label), el('b', '', value)); m.body.append(line); }
     if (r.voidReason) m.body.append(el('p', 'cash-warning', 'Lý do huỷ: ' + r.voidReason));
     if (r.status === 'pending' && summary.canApprove && (r.createdBy !== user().id || summary.canSelfApprove))
