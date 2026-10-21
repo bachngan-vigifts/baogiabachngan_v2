@@ -72,16 +72,21 @@ export async function nextCashOpening(db: CashDb, drawerId = CASH_DRAWER) {
   };
 }
 export async function cashShiftTotals(db: CashDb, shiftId: string) {
+  // A previous-shift correction is already reflected in actual cash inherited at opening.
+  // A correction of this shift must affect its expected balance.
+  const affectsShiftCash = sql<boolean>`${cashEntries.kind}<>'adjustment' or ${cashReconciliations.shiftId} is null or ${cashReconciliations.shiftId}=${cashEntries.shiftId}`;
   const [manual, payments, pending] = await Promise.all([
     db
       .select({
         direction: cashEntries.direction,
         kind: cashEntries.kind,
+        affectsShiftCash: affectsShiftCash.mapWith(Boolean),
         amount: sql<number>`coalesce(sum(${cashEntries.amount}),0)`.mapWith(Number),
       })
       .from(cashEntries)
+      .leftJoin(cashReconciliations, eq(cashReconciliations.id, cashEntries.reconciliationId))
       .where(and(eq(cashEntries.shiftId, shiftId), eq(cashEntries.status, 'posted')))
-      .groupBy(cashEntries.direction, cashEntries.kind),
+      .groupBy(cashEntries.direction, cashEntries.kind, affectsShiftCash),
     db
       .select({
         source: customerPayments.paymentSource,
@@ -107,9 +112,11 @@ export async function cashShiftTotals(db: CashDb, shiftId: string) {
       .where(and(eq(cashEntries.shiftId, shiftId), eq(cashEntries.status, 'pending'))),
   ]);
   return {
-    // A book correction has no physical cash flow; actual opening already inherited the prior count.
+    // Corrections stay separate from physical receipts/expenses in reports.
     manual: manual.filter((p) => p.kind !== 'adjustment'),
     bookAdjustments: manual.filter((p) => p.kind === 'adjustment'),
+    currentAdjustmentNet: manual.filter(p => p.kind === 'adjustment' && p.affectsShiftCash)
+      .reduce((n, p) => n + (p.direction === 'in' ? p.amount : -p.amount), 0),
     pending,
     cashSales: payments.filter((p) => p.source !== 'cod').reduce((n, p) => n + p.amount, 0),
     cashCod: payments.filter((p) => p.source === 'cod').reduce((n, p) => n + p.amount, 0),
@@ -163,7 +170,7 @@ export async function reconciliationFor(
   comparison?: { expectedCash: number; countedCash: number },
 ) {
   const totals = comparison ? null : await cashShiftTotals(db, s.id),
-    expectedCash = comparison?.expectedCash ?? (s.openingCash + totals!.cashSales + totals!.cashCod + totals!.manualNet),
+    expectedCash = comparison?.expectedCash ?? (s.openingCash + totals!.cashSales + totals!.cashCod + totals!.manualNet + totals!.currentAdjustmentNet),
     countedCash = comparison?.countedCash ?? s.countedCash ?? 0,
     difference = countedCash - expectedCash;
   const [existing] = await db.select().from(cashReconciliations).where(eq(cashReconciliations.shiftId, s.id));

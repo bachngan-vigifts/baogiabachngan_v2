@@ -339,7 +339,8 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
       .where(and(eq(cashEntries.shiftId, s.id), sql`${cashEntries.createdAt} <= ${cutoff}`)).orderBy(asc(cashEntries.createdAt)).limit(200),
     cashSales: drawer.cashSales,
     cashCod: drawer.cashCod,
-    expectedCash: s.openingCash + cash + drawer.manualNet,
+    currentAdjustmentNet: drawer.currentAdjustmentNet,
+    expectedCash: s.openingCash + cash + drawer.manualNet + drawer.currentAdjustmentNet,
     cod: {
       pending: {count:pendingCount,amount:pendingAmount},
       receivedInShift: received
