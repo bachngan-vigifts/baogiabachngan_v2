@@ -7,6 +7,7 @@ import { postMoves, reverseRef, stockWarehouseByName } from '../../inventory/api
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { outstandingLines, syncIncomingStock } from './incoming-stock.ts';
 import { incomingBySku } from './incoming-by-sku.ts';
+import { can } from '../../staff/domain/permissions.ts';
 import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
@@ -159,7 +160,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   router.get('/purchase-incoming', async c => {
     guard(c);
     return json({ ...await incomingBySku(c.env.db, c.url.searchParams, today()),
-      canRequest: me(c).role === 'manager' || me(c).positionId === 'sale-admin', canSend: false });
+      canRequest: me(c).role === 'manager' || me(c).positionId === 'sale-admin', canSend: me(c).role === 'manager' || me(c).positionId === 'sale-admin',
+      canViewSuppliers:canEditSuppliers(me(c)),canViewStock:can(me(c),'page.stock-lookup') });
   }, 'business');
 
   router.get('/purchase-orders', async c => {

@@ -1,6 +1,6 @@
 # Xin lấy trước nhiều mã — phương án schema chờ duyệt
 
-Chưa tạo migration hoặc đổi schema. Phương án dùng 3 bảng mới; giữ nguyên 2 bảng xin hàng cũ để không đổi nghĩa dữ liệu cũ. Không gắn đơn khách, không ghi nhận đã nhận hàng, không thay công thức tồn/công nợ, không tạo cron/Sapo sync/quyền mới.
+Người dùng đã duyệt tạo migration 3 bảng ngày 21/10/2026; hai file 20261021063222_purchase_early_requests.sql và 20261021063421_supabase_access_purchase_early_requests.sql đã tạo bằng Supabase CLI, chưa áp dụng DB thật. Giữ nguyên 2 bảng xin hàng cũ để không đổi nghĩa dữ liệu cũ. Không gắn đơn khách, không ghi nhận đã nhận hàng, không thay công thức tồn/công nợ, không tạo cron/Sapo sync/quyền mới.
 
 ## 1. purchase_early_requests — một lần Lưu và gửi NCC
 
@@ -45,3 +45,17 @@ RLS bật cả 3 bảng. Giữ mô hình API server đang xác thực session; k
 ## API dự kiến sau khi duyệt
 
 `POST /purchase-early-requests` nhận clientKey + danh sách sku/quantity; `GET /purchase-early-requests` cho nội bộ được phép; `GET /supplier-portal/early-requests` chỉ NCC mình; `POST /supplier-portal/early-requests/:allocationId/respond` nhận accepted/rejected + ghi chú. Mọi API có kiểm quyền server, audit và transaction; GET không sinh task, POST xin trước không gọi automation nhận hàng/trả tiền. Đây là các endpoint mới, chưa phải link/cổng hiện đang chạy.
+
+## Bổ sung phiếu nháp theo yêu cầu mới — ĐÃ DUYỆT TẠO MIGRATION
+
+Người dùng yêu cầu sau lưu có phiếu nháp để chỉnh ngày lấy và đã duyệt bổ sung 5 cột ngày 21/10/2026. Migration 20261021064101_purchase_early_request_drafts.sql đã tạo bằng Supabase CLI; chưa áp dụng DB thật. Đây là phiếu xin lấy trước, không tạo thêm đơn mua NCC để tránh cộng trùng hàng đang về. Thêm đúng 5 cột vào header `purchase_early_requests` (không thêm bảng):
+
+- `status text NOT NULL DEFAULT 'submitted' CHECK IN ('draft','submitted')`: dữ liệu gửi cũ vẫn là submitted; draft chưa hiện cho NCC, chỉ hiện nội bộ.
+- `pickup_date text NOT NULL DEFAULT ''`: ngày lấy theo Việt Nam, bắt buộc ngày hợp lệ khi gửi; không sửa ngày hẹn gốc của đơn mua.
+- `scope text NOT NULL DEFAULT '{}'`: JSON bộ lọc NCC/ngày khi lập phiếu để sửa/gửi không tự chuyển sang NCC khác.
+- `updated_at text NOT NULL DEFAULT ''`: thời điểm chỉnh gần nhất; dữ liệu cũ fallback created_at.
+- `revision bigint NOT NULL DEFAULT 1`: chống hai người ghi đè phiếu nháp.
+
+Luồng: chọn nhiều SKU → mở phiếu nháp nhập ngày lấy và kiểm từng mã → Lưu nháp (chưa gửi) → sửa SL/ngày lấy → Gửi NCC (đọc lại số còn về, giữ chống bấm đúp). Chỉ Manager/Sale Admin sửa/gửi; submitted không sửa theo luồng này, NCC vẫn chỉ chấp nhận/từ chối phần của mình. Audit mỗi lần lưu/sửa/gửi. Không đổi tồn hay sinh đơn mua/nhận hàng/task. Lần duyệt tạo migration không bao gồm chạy DB thật.
+
+Điểm phản hồi trên API thực tế là `POST /supplier-portal/early-requests/:id/respond`, trong đó id là request-line ID. Một phản hồi cập nhật nguyên tử tất cả phân bổ của cùng SKU thuộc NCC đang đăng nhập; không cập nhật phần của NCC khác. Nhờ vậy NCC phản hồi đúng một lần cho một mã, dù mã đó trải nhiều đơn mua.

@@ -102,7 +102,7 @@ export function routePermission(method: string, path: string, query: URLSearchPa
   if (is(/^\/care(\/|$)/)) return ['page.care'];
   if (is(/^\/stock-requests(\/|$)/)) return ['page.stock-requests'];
   if (is(/^\/dashboard(\/|$)/)) return ['page.dashboard'];
-  if (is(/^\/(purchase-orders|supplier-receipts|supplier-payments|supplier-payables|purchase-sources|purchase-options)(\/|$)/)) return ['page.purchases'];
+  if (is(/^\/(purchase-orders|purchase-incoming|purchase-early-requests|supplier-receipts|supplier-payments|supplier-payables|purchase-sources|purchase-options)(\/|$)/)) return ['page.purchases'];
   if (is(/^\/inventory\/lookup(\/|$)/)) return null; // tra tồn (không giá): mọi nhân viên như trước – quyền chỉ quyết định hiện menu
   if (is(/^\/inventory(\/|$)/)) return ['inventory.view'];
   if (is(/^\/(customer-duplicates|customer-accounts)(\/|$)/)) return ['page.customers'];

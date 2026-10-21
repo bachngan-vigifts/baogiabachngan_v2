@@ -6,6 +6,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { incomingShipments, supplierAccounts, supplierContacts, suppliers } from '../schema.ts';
 import { canEditSuppliers, canManageSuppliers, cleanContacts, cleanSupplierInput, planAccountLink } from '../domain/directory.ts';
+import { can } from '../../staff/domain/permissions.ts';
 
 /** Minimal packing choices, composed by the app after the order route checks access. */
 export async function packingSupplierChoices(db: StaffEnv['db']) {
@@ -86,7 +87,7 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
     return json(await supplierDetail(db, id), 201);
   }, 'business');
 
-  router.get('/suppliers/:id', async c => { requireEditor(c); return json(await supplierDetail(c.env.db, c.params.id!)); }, 'business');
+  router.get('/suppliers/:id', async c => { requireEditor(c); return json({...await supplierDetail(c.env.db, c.params.id!),canViewEarlyRequests:can((c.state.session as SessionState).member,'page.purchases')}); }, 'business');
 
   router.put('/suppliers/:id', async c => {
     requireEditor(c);

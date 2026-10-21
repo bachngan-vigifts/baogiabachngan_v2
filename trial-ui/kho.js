@@ -149,5 +149,5 @@ export function initStockLookup({ api, root }) {
     } catch { close(); note.textContent = 'Không mở được camera. Gõ mã vào ô tìm.'; }
   });
 
-  return { load: () => { setTimeout(() => q.focus(), 0); if (q.value.trim().length >= 2) search(); } };
+  return { load: (sku='') => { if(sku)q.value=sku;setTimeout(() => q.focus(), 0); if (q.value.trim().length >= 2) search(); } };
 }
