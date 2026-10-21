@@ -974,6 +974,7 @@ a.flow-step:hover { border-color: var(--blue); }
 .ddh-table th { font-weight: 700; text-align: center; background: #f2f2f2; } .ddh-table .c { text-align: center; } .ddh-table .n { text-align: right; white-space: nowrap; }
 .ddh-note { margin-top: 12px; } .ddh-note > span { white-space: pre-wrap; overflow-wrap: anywhere; } .ddh-date { text-align: right; margin: 14px 40px 4px 0; font-style: italic; }
 .ddh-sign { display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; } .ddh-sign .space { height: 64px; }
+.ddh-sign.ddh-delivery-sign { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ddh-order-sign { grid-template-columns: repeat(3, 1fr); }
 .order-print-note { display: grid; gap: 6px; margin: 12px 0; font-size: 13px; }
 .order-print-note textarea { width: 100%; }

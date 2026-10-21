@@ -78,14 +78,19 @@ test('Excel đơn đặt hàng giữ ghi chú và cùng ngày hẹn giao/ba ch�
   } finally { g.document = saved.document; g.ExcelJS = saved.ExcelJS; }
 });
 
-test('phiếu giao hàng: người lập phiếu ở cột ba và người phê duyệt Lê Minh Thái ở cột cuối', () => {
+test('phiếu giao hàng chỉ có Bên giao / Bên nhận, để trống tên cho ký và ghi tay', () => {
   const p = print.deliveryPrintData({ seller: 'BN', order: { ...order, contact: 'Anh Hải' }, lines: [] }, 'Nhân viên lập phiếu');
-  assert.deepEqual(print.SLIP_KINDS.delivery.signers, ['Người nhận hàng', 'Người giao hàng', 'Người lập phiếu', 'Người phê duyệt']);
-  assert.deepEqual(p.names, ['', '', 'Nhân viên lập phiếu', 'Lê Minh Thái']);
-  const html = print.slipSheetHtml(p, { edit: true });
-  assert.doesNotMatch(html, /Thủ kho/);
-  assert.match(html, /<b>Người lập phiếu<\/b>[\s\S]*?data-f="names\.2">Nhân viên lập phiếu/);
-  assert.match(html, /<b>Người phê duyệt<\/b>[\s\S]*?data-f="names\.3">Lê Minh Thái/);
+  assert.deepEqual(print.SLIP_KINDS.delivery.signers, ['Bên giao', 'Bên nhận']);
+  assert.deepEqual(p.names, ['', '']);
+  for (const edit of [false, true]) {
+    const html = print.slipSheetHtml(p, { edit });
+    const signatures = html.slice(html.indexOf('<div class="ddh-sign'));
+    assert.match(signatures, /ddh-delivery-sign/);
+    assert.match(signatures, /<b>Bên giao<\/b>[\s\S]*?<b>Bên nhận<\/b>/);
+    assert.doesNotMatch(signatures, /Người lập phiếu|Người phê duyệt|Nhân viên lập phiếu|Lê Minh Thái/);
+    assert.equal((signatures.match(/class="space"/g) || []).length, 2);
+    if (edit) for (const i of [0, 1]) assert.ok(signatures.includes(`data-f="names.${i}"></span>`));
+  }
   assert.deepEqual(print.SLIP_KINDS.packing.signers, ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra']);
 });
 
