@@ -11,10 +11,10 @@ const modulesDir = join(import.meta.dirname, '..', 'src', 'modules');
 const ALLOWED: Record<string, string[]> = {
   staff: [], customers: ['staff'], catalog: ['staff'], contracts: [], printing: ['staff', 'quotes'], integrations: ['staff', 'customers', 'catalog'], crm: [],
   sales: ['staff', 'customers', 'catalog', 'quotes', 'contracts', 'notifications', 'printing', 'integrations', 'inventory'], // integrations: đẩy đơn sang Sapo · inventory: phiếu xuất khi đóng hàng
-  inventory: ['staff', 'catalog'], // sổ kho: chỉ phụ thuộc danh mục / kho – nghiệp vụ khác gọi vào ledger
+  inventory: ['staff', 'catalog', 'notifications'], // sổ kho: chỉ phụ thuộc danh mục / kho – nghiệp vụ khác gọi vào ledger · notifications: báo phiếu điều chuyển
   portal: ['staff', 'customers', 'catalog', 'quotes', 'sales', 'notifications'],
   quotes: ['staff', 'notifications', 'integrations'], work: ['staff'],
-  tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care', 'suppliers'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff', 'catalog', 'customers', 'quotes', 'sales', 'portal', 'inventory', 'notifications'], // đơn mua lấy nguồn từ báo giá / đơn-HĐKT / khách hỏi tồn · inventory: phiếu nhận ghi sổ kho · notifications: báo gửi duyệt / duyệt / huỷ đơn mua
+  tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care', 'suppliers', 'inventory', 'catalog'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff', 'catalog', 'customers', 'quotes', 'sales', 'portal', 'inventory', 'notifications'], // đơn mua lấy nguồn từ báo giá / đơn-HĐKT / khách hỏi tồn · inventory: phiếu nhận ghi sổ kho · notifications: báo gửi duyệt / duyệt / huỷ đơn mua
   'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal', 'care'],
   care: ['staff', 'customers'],
   dashboard: ['staff', 'customers', 'sales', 'quotes', 'care', 'integrations'], // báo cáo chỉ đọc, không phụ thuộc HR/lương

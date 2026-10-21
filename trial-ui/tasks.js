@@ -82,7 +82,7 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
 
   // ----- Thẻ "Cần duyệt" (Manager): báo giá, đơn / HĐKT, khách hàng, sản phẩm đang chờ duyệt – GET /approvals (chỉ đọc).
   // Duyệt vẫn làm ở màn hình của từng loại (bấm "Mở"), giữ nguyên hộp kiểm tra như hiện nay.
-  const KIND = { quote: ['Báo giá', 'quote'], order: ['Đơn hàng', 'order'], contract: ['HĐKT', 'contract'], purchase: ['Đơn mua NCC', 'purchase'], customer: ['Khách hàng', 'manual'], product: ['Sản phẩm', 'purchase'] };
+  const KIND = { quote: ['Báo giá', 'quote'], order: ['Đơn hàng', 'order'], contract: ['HĐKT', 'contract'], purchase: ['Đơn mua NCC', 'purchase'], transfer: ['Điều chuyển kho', 'purchase'], customer: ['Khách hàng', 'manual'], product: ['Sản phẩm', 'purchase'] };
   const money = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
   async function loadApprovals() {
     if (!canApprove()) { st.approvals = null; return null; }
