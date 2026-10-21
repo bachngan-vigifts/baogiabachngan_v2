@@ -55,7 +55,7 @@ test('Sửa COD kiểm quyền, số lượng/giá và tồn; lỗi rollback to�
   const d = (await f.call('/orders/' + f.sale.data.id, f.mgr)).data;
   assert.equal(d.order.revision, f.detail.order.revision);
   assert.equal(d.lines[0].qty, 2);
-  assert.equal(d.order.customerName, 'Khách lẻ');
+  assert.equal(d.order.customerName, 'Nguyễn Khách kiểm thử');
   await f.db.update(deliveries).set({ status: 'in_transit' }).where(eq(deliveries.id, d.deliveries[0].id));
   assert.equal((await f.call(f.path, f.mgr, 'PUT', base)).status, 409);
   assert.equal((await f.call(f.path, f.mgr, 'PUT', { revision: d.order.revision, reason: 'Đổi số người nhận', delivery: { address: 'Địa chỉ mới', receiverName: 'Anh A', receiverPhone: '0903333333' } })).status, 200);

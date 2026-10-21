@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 // @ts-ignore browser module uses injected DOM only while rendering
 import { buildPosPrint } from '../../trial-ui/pos-print.js';
 // @ts-ignore
-import { initPos } from '../../trial-ui/pos.js';
+import { initPos as initPosDirect } from '../../trial-ui/pos.js';
 // @ts-ignore shared browser presentation helpers
 import { cashKindLabel, shiftSummaryRows, shiftCodRows } from '../../trial-ui/pos-report.js';
 class Element {
@@ -78,6 +78,24 @@ const doc = {
   },
   body: new Element('body'),
 };
+
+// Choose a named customer through the real picker for payment scenarios.
+let selectingFixtureCustomer = false;
+const initPos = (options: any) => initPosDirect({ ...options, api: (path: string, ...args: any[]) => {
+  if (selectingFixtureCustomer && path.startsWith('/pos/customers')) return Promise.resolve({canListRetail:true,customers:[{id:'fixture-customer',name:'Nguyễn Khách',phone:'0901234567'}]});
+  return options.api(path,...args);
+} });
+async function selectTestCustomer(root: Element) {
+  selectingFixtureCustomer = true;
+  try {
+    await root.querySelectorAll('button').find(b=>b.className.includes('pos-customer-trigger'))!.fire('click');
+    await new Promise(r=>setTimeout(r,0));
+    const picker=doc.body.children.at(-1)!, input=picker.querySelectorAll('input')[0]!;
+    input.value='fixture-customer'; await input.fire('input'); await new Promise(r=>setTimeout(r,230));
+    await picker.querySelectorAll('button').find(b=>b.className==='pos-customer-option')!.fire('click');
+    await new Promise(r=>setTimeout(r,230));
+  } finally { selectingFixtureCustomer = false; }
+}
 
 test('Bán hàng nhanh PC giữ chi tiết dòng trong cột đơn, không áp dụng luật này cho mobile', () => {
   const css = readFileSync('trial-ui/pos.css', 'utf8');
@@ -366,6 +384,7 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
     assert.deepEqual(preview.body.rows, [{ sku: '001', qty: 1, discountType: 'percent', discountValue: 0 }]);
     assert.equal(preview.body.total, undefined);
     assert.equal(ui.dirty(), true);
+    await selectTestCustomer(root);
     await root.querySelectorAll('button').find((x) => x.textContent === 'THANH TOÁN')!.fire('click');
     const payment = doc.body.children.at(-1)!;
     const cash = payment.querySelectorAll('button').find((x) => x.textContent === 'Đủ tiền')!;
@@ -396,7 +415,7 @@ test('Bán hàng nhanh có bảng đơn theo cửa hàng và đủ bộ lọc tr
   assert.match(source, /khachhang\.ghn\.vn\/order\/create/);
 });
 
-test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn phím và khách vãng lai', async () => {
+test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn phím, bắt buộc hồ sơ khách cụ thể', async () => {
   const prevDoc = globalThis.document, prevWin = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
@@ -412,7 +431,7 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
     await ui.load();
     const open = async () => {
-      await root.querySelectorAll('button').find(b => /Khách lẻ.*Đổi|<b>Cô Hồng<\/b>/.test(b.textContent))!.fire('click');
+      await root.querySelectorAll('button').find(b => /Chọn khách hàng.*Đổi|<b>Cô Hồng<\/b>/.test(b.textContent))!.fire('click');
       await new Promise(r => setTimeout(r, 0));
       return doc.body.children.at(-1)!;
     };
@@ -444,8 +463,9 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     allowRetail = false;
     dialog = await open();
     assert.equal(dialog.querySelectorAll('button').find(b => b.textContent === 'Khách lẻ')!.hidden, true);
-    await dialog.querySelectorAll('button').find(b => b.textContent === 'Khách vãng lai · Không lưu hồ sơ')!.fire('click');
-    assert.ok(root.textContent.includes('Khách lẻ · Đổi'));
+    assert.equal(dialog.querySelectorAll('button').some(b => b.textContent.includes('Khách vãng lai')), false);
+    await dialog.querySelectorAll('button').find(b => b.textContent === 'Đóng')!.fire('click');
+    assert.ok(root.textContent.includes('<b>Cô Hồng</b>'));
     dialog = await open();
     await dialog.querySelectorAll('button').find(b => b.textContent === '+ Khách mới')!.fire('click');
     assert.ok(doc.body.children.at(-1)!.textContent.includes('Khách mới – dùng ngay'));
@@ -537,12 +557,13 @@ test('SePay chỉ tự tích sau server xác nhận đúng QR, tiếp tục khi 
     };
     const ui = initPos({ root, api, toast: (s: string) => notices.push(s), user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
     await ui.load();
-    const customerButton = root.querySelectorAll('button').find(b => /Khách lẻ.*Đổi/.test(b.textContent))!;
+    const customerButton = root.querySelectorAll('button').find(b => /Chọn khách hàng.*Đổi/.test(b.textContent))!;
     assert.ok(customerButton.className.includes('pos-customer-trigger'));
     assert.ok(customerButton.className.includes('primary'));
     const product = root.querySelectorAll('button').find(b => b.className === 'pos-product')!;
     await product.fire('click');
     await new Promise(r => setTimeout(r, 230));
+    await selectTestCustomer(root);
     await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
     const payment = doc.body.children.at(-1)!;
     await payment.querySelectorAll('button').find(b => b.textContent.includes('Chuyển khoản'))!.fire('click');
@@ -593,6 +614,7 @@ test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản
     await ui.load();
     await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
+    await selectTestCustomer(root);
     await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
     const payment = doc.body.children.at(-1)!;
     await payment.querySelectorAll('button').find(b => b.textContent.includes('Chuyển khoản'))!.fire('click');
@@ -633,6 +655,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
     await ui.load(); await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
+    await selectTestCustomer(root);
     await root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!.fire('click');
     const payment = doc.body.children.at(-1)!;
     assert.ok(payment.querySelectorAll('button').find(b => b.className.includes('pos-modal-close')));
@@ -699,6 +722,7 @@ test('POS mới: THANH TOÁN theo ca/giỏ, menu thường ẩn cấu hình và 
     assert.match(mobileDock.textContent, /Đơn hiện tại · 1 món/);
     assert.match(mobileDock.textContent, /194\.400 đ/);
     assert.equal(mobileDock.querySelectorAll('button').find(b => b.textContent === 'Xem đơn ›')!.disabled, false);
+    await selectTestCustomer(root);
     await checkout.fire('click');
     const payment = doc.body.children.at(-1)!;
     const tender = payment.querySelectorAll('input').find(i => i.type === 'number')!;
@@ -773,7 +797,7 @@ test('lưu POS: lỗi giữ bảng thanh toán và giỏ; thành công đóng b�
     };
     const ui=initPos({root,api,toast(){},user:()=>({id:'emp',name:'NV'}),confirmBox:async()=>true,go(){}});
     await ui.load();await root.querySelectorAll('button').find(b=>b.className==='pos-product')!.fire('click');
-    await new Promise(r=>setTimeout(r,230));await root.querySelectorAll('button').find(b=>b.textContent==='THANH TOÁN')!.fire('click');
+    await new Promise(r=>setTimeout(r,230));await selectTestCustomer(root);await root.querySelectorAll('button').find(b=>b.textContent==='THANH TOÁN')!.fire('click');
     const payment=doc.body.children.at(-1)!;const tender=payment.querySelectorAll('input').find(i=>i.type==='number')!;
     tender.value='200000';await tender.fire('input');
     const pay=payment.querySelectorAll('button').find(b=>b.textContent==='Thu tiền & in bill')!;
