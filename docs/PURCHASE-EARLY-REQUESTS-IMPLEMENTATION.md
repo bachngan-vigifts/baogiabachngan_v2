@@ -1,6 +1,6 @@
 # Xin lấy trước nhiều mã — triển khai và kiểm chứng
 
-Ngày: 21/10/2026 (Việt Nam). Tiếp nối phần đọc đã merge trong PR #205. Đã duyệt tạo 3 bảng và duyệt riêng thêm 5 cột cho phiếu nháp. **Chưa chạy migration lên DB CRM, chưa deploy, chưa kiểm cổng NCC production.**
+Ngày: 21/10/2026 (Việt Nam). Tiếp nối phần đọc đã merge trong PR #205. Đã duyệt tạo 3 bảng, duyệt riêng thêm 5 cột nháp, và duyệt riêng chạy 3 migration lên CRM `taceqfnsorewelsbdckg`. **Đã áp dụng và xác minh DB; API/UI cần merge PR #207 để triển khai, chưa kiểm cổng NCC production.**
 
 ## Luồng cuối cùng
 
@@ -10,13 +10,17 @@ Nháp là phiếu xin lấy trước, không phải đơn mua mới. Không cộ
 
 Nhập vượt lượng có viền đỏ, aria-invalid, lỗi ngay cạnh ô và thông báo ở thanh cuối; nút bị khóa khi có dòng sai. Máy chủ cũng chặn vượt và rollback cả phiếu nếu một dòng sai, kể cả khi số còn về thay đổi sau lúc xem.
 
-## Migration đã được duyệt tạo (chưa chạy live)
+## Migration đã được duyệt và áp dụng lên DB CRM
 
 1. `20261021063222_purchase_early_requests.sql`: 3 bảng header/lines/allocations, PK/FK, unique idempotency, kiểm quantity/status, index, RLS.
 2. `20261021063421_supabase_access_purchase_early_requests.sql`: REVOKE cả PUBLIC/anon/authenticated; không mở policy đọc trực tiếp.
 3. `20261021064101_purchase_early_request_drafts.sql`: header status draft/submitted, pickup_date, scope, updated_at, revision. Giá trị mặc định submitted giữ nghĩa dữ liệu gửi trước khi có nháp. Không thay RLS/quyền cũ.
 
 Ngày lấy không sửa ngày hẹn gốc trên đơn mua. SKU không FK catalog để mã Excel không bị loại. Các bảng xin hàng cũ giữ nguyên. Chi tiết schema/phê duyệt: `PURCHASE-EARLY-REQUESTS-SCHEMA.md`.
+
+Đã áp dụng qua Supabase MCP theo thứ tự trên, ngày 21/10/2026. Lịch sử DB dùng version thời điểm chạy (khác tên file local): `purchase_early_requests` = `20261021073702`; `supabase_access_purchase_early_requests` = `20261021073746`; `purchase_early_request_drafts` = `20261021073833`. Không chạy lại để đổi timestamp.
+
+Lần đầu chạy migration nháp gặp lỗi hết connection slot trước khi khởi tạo history; truy vấn metadata xác nhận chưa có 5 cột và chỉ có 2 migration trước đó. Thử lại thành công; kiểm tra cuối có đủ 3 history entry. Cả 3 bảng có PK/FK đúng, RLS bật, 0 policy; anon/authenticated không có quyền SELECT/INSERT/UPDATE/DELETE. Năm cột nháp đúng kiểu, NOT NULL và default. Cả 3 bảng đều 0 dòng; không tạo phiếu hay gửi yêu cầu thật.
 
 ## Route, link, action và automation
 
@@ -66,7 +70,7 @@ Bảng gốc từ SQL chỉ đọc trong preflight; lượng được tái dựn
 - Full suite: **737 test, 707 pass, 0 fail, 30 skip**. Skip do không có repo legacy cho đối chiếu cũ. Sau đó bổ sung hiển thị phiếu ở danh bạ NCC và link cổng, kiểm hồi quy riêng: **8 pass, 0 fail, 0 skip**; typecheck cuối đạt.
 - Các test mới: gửi nhiều mã/phân bổ/không tác động task-tồn-chi; validate/quyền/rollback; NCC scope/phản hồi/audit; nháp/ngày lấy/revision/đọc lại lượng khi gửi; bấm đúp đồng thời cùng key; RLS/revoke; schema migration.
 - Chromium với router và DB PGlite thật, không dùng response lưu giả: **1440,1280,390px đạt** đọc, cảnh báo đỏ khi vượt, chọn 2 SKU, mở 3 đơn, đúng link NCC/Tra tồn, lưu nháp, sửa ngày lấy, lưu revision mới, gửi riêng và không tràn viewport. Cổng NCC lưu được phản hồi thật trên DB thử nghiệm, chỉ thấy SKU của NCC mình.
-- Kiểm thử live mới chỉ SQL đọc preflight. Chưa áp dụng migration/đăng nhập NCC production/gửi yêu cầu production. Không gọi Sapo, không kiểm máy in.
+- Live: đã áp dụng 3 migration được duyệt và kiểm metadata/quyền/số dòng; chưa đăng nhập NCC production/gửi yêu cầu production. Không gọi Sapo, không kiểm máy in.
 
 ## File thay đổi
 
@@ -75,4 +79,4 @@ Bảng gốc từ SQL chỉ đọc trong preflight; lượng được tái dựn
 - Test: `tests/helpers/purchase-early-fixture.ts`, `tests/app/purchase-early-requests.test.ts`, `purchase-incoming.test.ts`, `tests/db/purchase-early-access.test.ts`, `migration.test.ts`.
 - Ba migration nêu trên; `docs/PURCHASE-EARLY-REQUESTS-SCHEMA.md` và tài liệu này.
 
-Các mục [CHƯA CHỐT] giữ đúng mặc định prompt: không cho vượt số còn về; Sale Admin không duyệt thay NCC; vai trò xem giữ quyền hiện tại, chưa mở thêm vai trò. Chưa có quyết định khác để tự đổi các mặc định này. Vẫn cần phê duyệt riêng bước chạy 3 migration lên DB CRM trước triển khai.
+Các mục [CHƯA CHỐT] giữ đúng mặc định prompt: không cho vượt số còn về; Sale Admin không duyệt thay NCC; vai trò xem giữ quyền hiện tại, chưa mở thêm vai trò. Chưa có quyết định khác để tự đổi các mặc định này. Bước DB đã được duyệt và hoàn tất; không tự merge PR hoặc triển khai.
