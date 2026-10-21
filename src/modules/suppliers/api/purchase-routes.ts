@@ -438,7 +438,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const first = p.raw.order.supplierStatus !== 'confirmed';
       await bump(tx, id, m.id, { supplierStatus: 'confirmed', supplierConfirmedAt: first ? nowIso() : p.raw.order.supplierConfirmedAt, supplierConfirmedBy: first ? m.id : p.raw.order.supplierConfirmedBy,
         confirmedOnBehalf: true, arrivalDate: arrival, supplierInternalOrderNumber: body.internalNo !== undefined ? str(body.internalNo, 100) : p.raw.order.supplierInternalOrderNumber });
-      await event(tx, id, m.id, 'confirm', (first ? 'Manager ghi nhận NCC đã xác nhận đơn' : 'Manager cập nhật ngày hẹn') + (arrival ? ` – hẹn giao ${arrival.split('-').reverse().join('/')}` : '') + (changes.length ? ' · ' + changes.slice(0, 6).join('; ') : '') + (str(body.note, 300) ? ` · ${str(body.note, 300)}` : ''), { changes });
+      await event(tx, id, m.id, 'confirm', (first ? 'Ghi nhận NCC đã xác nhận đơn' : 'Cập nhật ngày hẹn') + (arrival ? ` – hẹn giao ${arrival.split('-').reverse().join('/')}` : '') + (changes.length ? ' · ' + changes.slice(0, 6).join('; ') : '') + (str(body.note, 300) ? ` · ${str(body.note, 300)}` : ''), { changes });
     });
     return json(await viewOf(c, id));
   }, 'business');
@@ -494,7 +494,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   router.put('/supplier-receipts/:id/sapo', async c => {
     guard(c);
     const db = c.env.db, m = me(c), a = asActor(m), body = await readJson(c.req, 8_000);
-    if (!canReceive(a)) fail(403, 'Chỉ kho hoặc Manager cập nhật nhập kho Sapo.');
+    if (!canReceive(a)) fail(403, 'Chỉ người được nhận hàng cập nhật trạng thái nhập kho Sapo.');
     const status = String(body.status), code = str(body.code, 100), note = str(body.note, 500);
     if (!['pending', 'done', 'failed', 'not_needed'].includes(status)) fail(400, 'Trạng thái nhập Sapo không hợp lệ.');
     if (status === 'done' && !code) fail(400, 'Nhập mã phiếu nhập kho trên Sapo.');

@@ -15,7 +15,7 @@ import { products, productStock, warehouses } from '../../src/modules/catalog/sc
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
 async function setup(extraEnv: Record<string, unknown> = {}) {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
-  for (const [id, pos] of [['kho', 'warehouse'], ['kt', 'accounting']] as const) {
+  for (const [id, pos] of [['kho', 'warehouse'], ['kt', 'accounting'], ['sa', 'sale-admin']] as const) {
     await d1.sqlite.prepare(`INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'','employee',?,1,'2026-01-01T00:00:00.000Z')`).run(id, id + '@x.vn', 'Tên ' + id, pos);
     await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run(id, await hashPassword(PASSWORD, 1000));
   }
@@ -28,7 +28,7 @@ async function setup(extraEnv: Record<string, unknown> = {}) {
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  const s = { db, call, files, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn'), kt: await login('kt@x.vn'), ncc: await login('ncc@x.vn') };
+  const s = { db, call, files, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn'), kt: await login('kt@x.vn'), sa: await login('sa@x.vn'), ncc: await login('ncc@x.vn') };
   // Chứng từ nguồn: báo giá của emp (ly 10, đĩa 5) và HĐKT của emp (ly 4).
   await db.insert(quotations).values({ id: 'q1', creatorId: 'emp', quoteNo: 'B2B_1', quoteType: 'B2B', customer: 'Kim Trần Gia', quoteDate: '2026-09-10', data: '{"rows":[]}', createdAt: now, updatedAt: now });
   await db.insert(quoteLines).values([{ id: 'ql1', quoteId: 'q1', lineNo: 1, sku: 'LY1', name: 'Ly sứ', unit: 'cái', qty: 10 }, { id: 'ql2', quoteId: 'q1', lineNo: 2, sku: 'DIA1', name: 'Đĩa', unit: 'cái', qty: 5 }]);
@@ -115,10 +115,10 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal((await call(`/purchase-orders/${id}`, emp, 'PUT', { supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 1 }] })).status, 409, 'đã duyệt không sửa nháp');
 
   // Manager ghi nhận NCC xác nhận + ngày hẹn.
-  assert.equal((await call(`/purchase-orders/${id}/confirm`, kt, 'POST', {})).status, 403);
+  assert.equal((await call(`/purchase-orders/${id}/confirm`, emp, 'POST', {})).status, 403);
   v = (await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', { arrivalDate: '2026-10-20', internalNo: 'ML-77', lines: [{ lineId: v.lines[0].id, promisedDate: '2026-10-20' }] })).data;
   assert.equal(v.state, 'confirmed'); assert.equal(v.confirmedOnBehalf, true); assert.equal(v.internalNo, 'ML-77');
-  assert.match(v.events[0].summary, /thay|ghi nhận NCC/);
+  assert.match(v.events[0].summary, /thay|ghi nhận NCC/i);
 
   // Nhận đợt 1 (kho): ly đạt 6 hỏng 1; bấm lặp cùng clientKey không tạo phiếu thứ hai.
   // Có hàng hỏng: bắt buộc 1–3 ảnh (lưu kho file, Manager xem trên phiếu nhận).
@@ -431,4 +431,38 @@ test('nhập đơn mua từ file NCC: mỗi số đơn một đơn "đã duyệt
   assert.equal((await call('/purchase-orders?q=' + encodeURIComponent('ddlt0002/1026'), mgr)).data.counts.all, 1, 'số đếm dùng cùng tìm kiếm theo số đơn NCC');
   const again = await call('/purchase-orders/import', mgr, 'POST', body);
   assert.deepEqual([again.data.created.length, again.data.skipped.map((x: any) => x.internalNo)], [0, ['DDLT0001/1026', 'DDLT0002/1026']], 'nhập lại file không tạo trùng');
+});
+
+
+test('Sale Admin/Kế toán: đủ sáu thao tác đơn mua trên API, giữ chặn Sale/Kho/NCC và audit người bấm', async()=>{
+  const sent:any[]=[];
+  const s=await setup({mailer:{apiKey:'re_test_key_123456',from:'CRM <crm@example.test>',fetch:async(_url:string,init:RequestInit)=>{sent.push(JSON.parse(String(init.body)));return new Response(JSON.stringify({id:'mail-test'}),{status:200});}}});
+  for(const cookie of [s.sa,s.kt]) {
+    const made=await s.call('/purchase-orders',s.emp,'POST',{orders:[{supplierId:s.a,warehouse:'Kho nhận',lines:[{sku:'LY1',quantity:10}]}]});
+    assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.ids[0];
+    const draft=(await s.call('/purchase-orders/'+id,s.mgr)).data;
+    assert.equal((await s.call(`/purchase-orders/${id}/approve`,cookie,'POST',{})).status,403);
+    const ap=await s.call(`/purchase-orders/${id}/approve`,s.mgr,'POST',{lines:draft.lines.map((l:any)=>({lineId:l.id,price:100}))});
+    assert.equal(ap.status,200,JSON.stringify(ap.data));
+    const view=(await s.call('/purchase-orders/'+id,cookie)).data;
+    for(const action of ['confirm','receive','pay','schedule','pdf']) assert.ok(view.actions.includes(action),action);
+    assert.ok(view.totals);assert.equal(view.priceHidden,false);
+    assert.equal((await s.call(`/purchase-orders/${id}/confirm`,s.emp,'POST',{})).status,403);
+    assert.equal((await s.call(`/purchase-orders/${id}/confirm`,s.kho,'POST',{})).status,403);
+    assert.equal((await s.call(`/purchase-orders/${id}/confirm`,s.ncc,'POST',{})).status,403);
+    const confirmed=await s.call(`/purchase-orders/${id}/confirm`,cookie,'POST',{internalNo:'NCC-TEST'});
+    assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));
+    assert.equal(confirmed.data.confirmedOnBehalf,true);
+    assert.ok(confirmed.data.events.some((e:any)=>e.action==='confirm' && e.by===(cookie===s.sa?'Tên sa':'Tên kt')),'audit shows actual employee');
+    const received=await s.call(`/purchase-orders/${id}/receipts`,cookie,'POST',{clientKey:crypto.randomUUID(),lines:[{lineId:view.lines[0].id,goodQty:1}]});
+    assert.equal(received.status,201,JSON.stringify(received.data));
+    const sched=await s.call(`/purchase-orders/${id}/schedules`,cookie,'PUT',{payment:{installments:[{amount:200,dueDate:'2030-01-01'}]}});
+    assert.equal(sched.status,200,JSON.stringify(sched.data));
+    const paid=await s.call(`/purchase-orders/${id}/payments`,cookie,'POST',{clientKey:crypto.randomUUID(),amount:100,paidDate:'2026-10-01',method:'transfer'});
+    assert.equal(paid.status,201,JSON.stringify(paid.data));
+    const mailed=await s.call(`/purchase-orders/${id}/send-email`,cookie,'POST',{pdf:Buffer.from('%PDF-1.4 test').toString('base64')});
+    assert.equal(mailed.status,200,JSON.stringify(mailed.data));
+    assert.equal((await s.call(`/purchase-orders/${id}/cancel`,cookie,'POST',{reason:'không có quyền'})).status,409);
+  }
+  assert.equal(sent.length,2,'mail test double only; no real supplier email');
 });
