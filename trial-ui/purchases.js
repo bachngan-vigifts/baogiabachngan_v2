@@ -1,5 +1,6 @@
 import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } from './purchase-export-data.js';
 import { downloadExcel } from './sheet-export.js';
+import { initPurchaseIncoming } from './purchase-incoming.js';
 /**
  * ĐƠN MUA HÀNG NCC (#/purchases) – xem docs/NCC-PAGE.md mục "Đơn mua hàng".
  *  #/purchases                 danh sách + lọc trạng thái
@@ -115,7 +116,20 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   // Kho: thẻ to "Hàng NCC chờ nhận" thay cho bảng (bấm thẻ mở thẳng form nhận hàng); nút nhỏ để xem mọi đơn.
   const khoBox = el('div', 'kho-recv'); khoBox.hidden = true;
   let khoAll = false;
-  page.append(head, khoBox, panel);
+  let incomingMode = false;
+  const modes = el('div', 'row-gap pur-view-modes'), incomingHost = el('section', 'purchase-incoming'); incomingHost.hidden = true;
+  const incoming = initPurchaseIncoming({ api, host: incomingHost, go });
+  const listMode = btn('Danh sách đơn', 'btn secondary', () => setMode(false));
+  const skuMode = btn('Hàng đang về theo mã', 'btn secondary', () => setMode(true)); modes.append(listMode, skuMode);
+  page.append(head, modes, khoBox, panel, incomingHost);
+  function setMode(value) {
+    ++req;
+    incomingMode = value;
+    listMode.setAttribute('aria-pressed', String(!value)); skuMode.setAttribute('aria-pressed', String(value));
+    panel.hidden = value || kho() && !khoAll; khoBox.hidden = value || !kho();
+    if (value) incoming.show(); else { incoming.hide(); load(); }
+    if (!/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', value ? '#/purchases?mode=incoming' : '#/purchases');
+  }
   const shade = el('div', 'sup-shade'); shade.hidden = true; shade.addEventListener('click', () => close());
   const drawer = el('aside', 'sup-drawer pur-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
   root.append(page, shade, drawer);
@@ -141,6 +155,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     }
   }
   function renderList(prices) {
+    if (incomingMode) return;
     const isKho = kho();
     khoBox.hidden = !isKho; panel.hidden = isKho && !khoAll; add.hidden = isKho; if (isKho) importBtn.hidden = true;
     if (isKho) renderKho();
@@ -165,6 +180,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     }
   }
   async function load() {
+    if (incomingMode) return;
     const id = ++req;
     try {
       const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim(), state: filter }));
@@ -179,7 +195,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
 
   /** Router gọi: id = '' (danh sách) | 'new' (lập đơn, ?type=&id=) | id đơn. */
   async function show(id, query = '') {
-    load();
+    const params = new URLSearchParams(query);
+    if (params.get('mode') === 'incoming') setMode(true);
+    else if (!id) setMode(incomingMode);
+    else load();
     if (id === 'new') { const p = new URLSearchParams(query); openCreate(p.get('type') && p.get('id') ? { type: p.get('type'), id: p.get('id') } : null); }
     else if (id) openDetail(id, new URLSearchParams(query).get('receive') === '1');
     else hide();
@@ -187,7 +206,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
 
   // ---------------------------------------------------------------- ngăn kéo
   const hide = () => { disposeLookup(); drawer.hidden = true; shade.hidden = true; current = null; };
-  const close = () => { hide(); if (/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', '#/purchases'); };
+  const close = () => { hide(); if (/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', incomingMode ? '#/purchases?mode=incoming' : '#/purchases'); };
   function frame(eyebrow, title, onBack) {
     disposeLookup(); disposeLookup = () => {};
     const top = el('div', 'sup-drawer-head'), t = el('div'); t.append(el('span', 'eyebrow', eyebrow), el('h2', '', title));
