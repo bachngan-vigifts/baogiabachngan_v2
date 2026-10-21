@@ -3947,6 +3947,7 @@ async function printPackingForOrder(orderId) {
 /** Phiếu giao hàng của đơn: chọn chuyến giao đã lên lịch, hoặc toàn bộ hàng còn lại. */
 async function printDeliveryForOrder(orderId) {
   const d = await api('/orders/' + encodeURIComponent(orderId)), byId = new Map(d.lines.map(l => [l.id, l]));
+  await deliveryProductImages(d.lines);
   const trips = (d.deliveries || []).filter(x => x.status !== 'cancelled');
   if (!trips.length) throw new Error(NO_SCHEDULE);
   const choices = [...trips.map(x => ({ value: x.id, label: `${x.deliveryNo} · ${fmtDate(x.plannedDate)}${x.timeSlot ? ' ' + x.timeSlot : ''} · ${DELIVERY_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Toàn bộ hàng chưa giao' }];
@@ -3960,8 +3961,9 @@ async function printDeliveryForOrder(orderId) {
   } });
 }
 /** Trang phiếu đóng gói (nhóm Kho không xem được đơn): in phiếu đóng gói / phiếu giao hàng từ chính phiếu. */
-function printFromSlip(kind) {
+async function printFromSlip(kind) {
   const d = packingView; if (!d) return;
+  if (kind === 'delivery') await deliveryProductImages(d.lines);
   const seller = (SELLERS[d.order.legalEntity] || (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN)).short, me = state.user?.name || '';
   openSlipPrint({ kind, choices: [], initial: '', build: () => kind === 'packing'
     ? packingPrintData({ seller, order: d.order, slip: d.slip, lines: d.lines }, me)
@@ -3969,13 +3971,23 @@ function printFromSlip(kind) {
         receiverName: d.slip.shipTo === 'workshop' ? d.slip.shipName : '', receiverPhone: d.slip.shipPhone, carrier: d.slip.carrierName, carrierPhone: d.slip.carrierPhone },
         lines: d.lines.map(l => ({ ...l, ordered: '' })) }, me) });
 }
+async function deliveryProductImages(lines) {
+  const images = new Map((state.products || []).map(p => [p.sku,p.imageUrl]));
+  const skus = [...new Set(lines.filter(l => !l.imageUrl).map(l => l.sku).filter(Boolean))];
+  for (let i=0;i<skus.length;i+=100) {
+    try { const d=await api('/products?'+new URLSearchParams({skus:skus.slice(i,i+100).join(',')}));
+      for(const p of d.products) if(p.imageUrl)images.set(p.sku,p.imageUrl);
+    } catch { /* Keep the sheet usable with blank image cells if the catalog is temporarily unavailable. */ }
+  }
+  for(const l of lines) if(!l.imageUrl)l.imageUrl=images.get(l.sku)||'';
+}
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-pack-print-for], [data-ship-print-for], [data-slip-print]'); if (!b) return;
   e.stopPropagation();
   try {
     if (b.dataset.packPrintFor) await printPackingForOrder(b.dataset.packPrintFor);
     else if (b.dataset.shipPrintFor) await printDeliveryForOrder(b.dataset.shipPrintFor);
-    else printFromSlip(b.dataset.slipPrint);
+    else await printFromSlip(b.dataset.slipPrint);
   } catch (ex) { toast(ex.message, 'err'); }
 });
 document.addEventListener('click', async e => {

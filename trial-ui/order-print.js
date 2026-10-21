@@ -109,10 +109,10 @@ export function deliveryPrintData({ seller, order, contract = null, delivery = n
     info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['MST', order.taxCode || ''],
       ['Địa chỉ giao', delivery?.address || order.address || ''], ['Thời gian', delivery?.timeSlot || ''], ['Người nhận', receiver], ['', ''],
       ...(delivery?.carrier ? [['Nhà xe', delivery.carrier], ['SĐT bác tài', delivery.carrierPhone || '']] : [])],
-    cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
+    cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Hình ảnh', k: 'imageUrl', image: true }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
-    lines: lines.map(l => ({ sku: l.sku || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
-    note: order.note || '', signDate: 'Ngày …… Tháng …… Năm ……', names: ['', ''],
+    lines: lines.map(l => ({ sku: l.sku || '', imageUrl: l.imageUrl || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
+    note: '- Phiếu bàn giao sản phẩm này cũng chính là biên bản nghiệm thu sản phẩm và được kết thúc ngay sau khi hai bên ký giao – nhận đầy đủ sản phẩm.', signDate: 'Ngày …… Tháng …… Năm ……', names: ['', ''],
   };
 }
 
@@ -124,7 +124,9 @@ export function slipSheetHtml(p, { edit = false } = {}) {
     <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
     <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
     <table class="ddh-table"><thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
-      ${p.lines.map((l, i) => `<tr><td class="c">${i + 1}</td>${p.cols.map(c => `<td${c.num ? ' class="n"' : c.c ? ' class="c"' : ''}${ce(`lines.${i}.${c.k}`)}>${esc(c.num ? showNum(l[c.k]) : l[c.k])}</td>`).join('')}</tr>`).join('')}
+      ${p.lines.map((l, i) => `<tr><td class="c">${i + 1}</td>${p.cols.map(c => c.image
+        ? `<td class="c ddh-product-image">${/^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp);base64,)/i.test(l[c.k] || '') ? `<img src="${esc(l[c.k])}" alt="${esc(l.name || '')}">` : ''}</td>`
+        : `<td${c.num ? ' class="n"' : c.c ? ' class="c"' : ''}${ce(`lines.${i}.${c.k}`)}>${esc(c.num ? showNum(l[c.k]) : l[c.k])}</td>`).join('')}</tr>`).join('')}
       <tr class="ddh-sum"><td colspan="${first + 1}" class="c"><b>Tổng cộng</b></td>${p.cols.slice(first).map(c => c.sum
         ? `<td class="n"><b>${showNum(Math.round(p.lines.reduce((s, l) => s + toNum(l[c.k]), 0) * 10) / 10)}</b></td>` : '<td></td>').join('')}</tr>
     </tbody></table>
