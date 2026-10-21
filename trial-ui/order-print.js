@@ -73,9 +73,10 @@ export function orderSheetHtml(p, { prices = false, edit = false } = {}) {
 const toNum = v => typeof v === 'number' ? v : Number(String(v ?? '').replace(/\./g, '').replace(',', '.')) || 0;
 const showNum = v => typeof v === 'number' ? (v ? num(v) : '') : String(v ?? '');
 const signDateText = () => { const t = new Date(); return `Ngày ${String(t.getDate()).padStart(2, '0')} Tháng ${String(t.getMonth() + 1).padStart(2, '0')} Năm ${t.getFullYear()}`; };
+export const deliverySignDate = (now = new Date()) => `Ngày …… Tháng …… Năm ${new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' }).format(now)}`;
 export const SLIP_KINDS = {
   packing: { title: 'PHIẾU ĐÓNG GÓI', file: 'Phieu-dong-goi', signers: ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra'] },
-  delivery: { title: 'PHIẾU GIAO HÀNG', file: 'Phieu-giao-hang', signers: ['Bên giao', 'Bên nhận'] },
+  delivery: { title: 'PHIẾU GIAO HÀNG', file: 'Phieu-giao-hang', signers: ['ĐẠI DIỆN BÊN NHẬN', 'ĐẠI DIỆN BÊN GIAO'] },
 };
 const contactOf = o => [o.contact, o.phone].filter(Boolean).join(' · ');
 
@@ -112,7 +113,7 @@ export function deliveryPrintData({ seller, order, contract = null, delivery = n
     cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Hình ảnh', k: 'imageUrl', image: true }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
     lines: lines.map(l => ({ sku: l.sku || '', imageUrl: l.imageUrl || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
-    note: '- Phiếu bàn giao sản phẩm này cũng chính là biên bản nghiệm thu sản phẩm và được kết thúc ngay sau khi hai bên ký giao – nhận đầy đủ sản phẩm.', signDate: 'Ngày …… Tháng …… Năm ……', names: ['', ''],
+    note: '- Phiếu bàn giao sản phẩm này cũng chính là biên bản nghiệm thu sản phẩm và được kết thúc ngay sau khi hai bên ký giao – nhận đầy đủ sản phẩm.', signDate: deliverySignDate(), names: ['', ''],
   };
 }
 
@@ -120,7 +121,7 @@ export function deliveryPrintData({ seller, order, contract = null, delivery = n
 export function slipSheetHtml(p, { edit = false } = {}) {
   const ce = f => edit ? ` contenteditable="true" data-f="${f}"` : '', kind = SLIP_KINDS[p.kind];
   const first = p.cols.findIndex(c => c.sum);
-  return `<div class="ddh slip">
+  return `<div class="ddh slip${p.kind === 'delivery' ? ' delivery-slip' : ''}">
     <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
     <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
     <table class="ddh-table"><thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
