@@ -27,6 +27,14 @@ Website/cầu nối gửi WooCommerce order chuẩn: line_items (subtotal/subtot
 
 Repo hiện không chứa mã WordPress/n8n đẩy đơn. Cần xác minh payload thực tế trước khi khẳng định web đã gửi đủ; CRM không thể khôi phục trường nguồn chưa gửi. Không tạo đơn/thu tiền thật để test.
 
+## Đối chiếu triển khai ngày 21/10/2026
+
+Kiểm tra chỉ đọc trên DB CRM sau khi áp dụng migration: Lock có 22 đơn, Minh Long có 7 đơn; cả 29 đơn đều có `financial_snapshot = '{}'`. Vì vậy chưa có bằng chứng dữ liệu mã giảm giá/đổi điểm/phí ship đã được lưu trên môi trường thật. Số lượng này là kết quả đối chiếu tại thời điểm kiểm tra, không phải số cố định dùng trong ứng dụng.
+
+PR #203 vẫn mở, chưa merge. Migration đã chạy không đồng nghĩa API/UI mới đã được triển khai. Sau khi merge và triển khai, cần đối chiếu một sự kiện đơn đầy đủ từ website: mã và tiền coupon, khoản đổi điểm (coupon/fee âm), số điểm nếu có, phí ship thu khách và tổng thanh toán nguồn. Đơn cũ cần website gửi lại dữ liệu đầy đủ; không điền 0 hoặc suy ngược các khoản từ tổng tiền/GHN.
+
+Môi trường hiện tại không có mã hay kết nối quản trị WordPress/n8n. Do đó chưa kiểm được payload phía gửi, chưa sửa/triển khai sender, chưa xác nhận luồng web → CRM thật hoàn tất. Cần xác định repo hoặc workflow đang gửi đơn trước khi thay đổi phía này; tránh thêm sender thứ hai làm phát sinh hai luồng đồng bộ.
+
 ## Kiểm thử đã thực hiện
 
 Mẫu 38.545.020 − coupon 150.000 − đổi điểm 5.000 + ship 0 = 38.390.020, giữ total nguồn. Có ship >0 và miễn phí; thuế coupon/phí/ship; coupon đổi điểm không trừ hai lần; nguồn thiếu dữ liệu/đơn cũ; webhook lặp/đổi coupon/đổi điểm về 0; chỉ cập nhật trạng thái; phân quyền Lock/ML/kế toán; UI thoát HTML; typecheck/build và các test liên quan. Chưa test live/máy in.
