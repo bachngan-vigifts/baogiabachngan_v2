@@ -1012,3 +1012,16 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-flow-summary dd{margin:0;font-weight:700;text-align:right}.pos-flow-order{display:grid;gap:6px;text-align:left;padding:14px;background:white;border:1px solid #d9e3ed;border-radius:10px;color:inherit;cursor:pointer}
 .pos-flow-order:hover{background:#effaf3}.pos-flow-card input[type=checkbox],.pos-flow-form input[type=checkbox]{width:20px;height:20px}
 @media(max-width:560px){.pos-flow-actions>.btn{flex:1}.pos-flow-modal .pos-modal-content{padding:16px}.pos-flow-summary{font-size:13px}}
+
+/* Customer creation shares directory fields; keep actions separate from the grid. */
+.pos-modal.pos-customer-create { width: min(760px, calc(100vw - 24px)); overflow-y: auto; }
+.pos-customer-create form { padding: 12px 0 0; }
+.pos-customer-create .customer-form-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 18px; }
+.pos-customer-create .customer-form-fields label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pos-customer-create .customer-form-fields .span-2 { grid-column: 1 / -1; }
+.pos-customer-create .customer-form-fields input,
+.pos-customer-create .customer-form-fields textarea { width: 100%; box-sizing: border-box; min-height: 40px; }
+.pos-customer-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
+@media (max-width: 600px) {
+  .pos-customer-create .customer-form-fields { grid-template-columns: minmax(0, 1fr); }
+}

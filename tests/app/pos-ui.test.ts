@@ -449,6 +449,14 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     dialog = await open();
     await dialog.querySelectorAll('button').find(b => b.textContent === '+ Khách mới')!.fire('click');
     assert.ok(doc.body.children.at(-1)!.textContent.includes('Khách mới – dùng ngay'));
+    const create = doc.body.children.at(-1)!;
+    const controls = create.querySelectorAll('input,textarea') as (Element & { name: string })[];
+    assert.deepEqual(controls.map(c => c.name), ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit']);
+    const actionRow = create.querySelectorAll('div').find(e => e.className === 'pos-customer-form-actions')!;
+    assert.deepEqual(actionRow.children.map(b => b.textContent), ['Lưu & chọn khách', 'Huỷ']);
+    await actionRow.children[1]!.fire('click');
+    assert.equal(create.open, false);
+
     await new Promise(r => setTimeout(r, 230));
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });

@@ -1,3 +1,4 @@
+import { customerFormFields } from './customer-form-fields.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
 import { reviewPurchaseCosts } from './purchase-cost-review.js';
 import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
@@ -2650,6 +2651,7 @@ function openCustomer(id, known) {
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
 }
+$('#customer-fields').append(customerFormFields().root);
 $('#new-customer').addEventListener('click', () => openCustomer());
 $('#customer-form').addEventListener('submit', async e => {
   e.preventDefault();

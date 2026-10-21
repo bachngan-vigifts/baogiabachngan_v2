@@ -672,18 +672,8 @@
 <dialog id="customer-dialog" class="modal">
   <form id="customer-form" novalidate>
     <div class="modal-head"><h2 id="customer-dialog-title">Thêm khách hàng</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
-    <div class="modal-body form-grid cols-2">
-      <label class="span-2">Tên khách hàng / công ty<input name="name" required maxlength="500"></label>
-      <label>Người liên hệ<input name="contact" maxlength="500"></label>
-      <label>Điện thoại<input name="phone" maxlength="40" inputmode="tel"></label>
-      <label>Email<input name="email" type="email" maxlength="500"></label>
-      <label>Mã số thuế<input name="taxCode" maxlength="500"></label>
-      <label>Mã khách hàng<input name="customerCode" maxlength="500"></label>
-      <label class="span-2">Địa chỉ<textarea name="address" rows="2" maxlength="2000"></textarea></label>
-      <label>Tỷ lệ đặt cọc (%)<input name="depositRate" inputmode="decimal" placeholder="Để trống = 30"></label>
-      <label>Hạn thanh toán<input name="paymentTerm" list="nq-payment-options" maxlength="500" placeholder="Số ngày, để trống = 5"></label>
-      <label class="span-2">Giới hạn công nợ (đ)<input name="creditLimit" inputmode="numeric" placeholder="Để trống = không giới hạn"></label>
-      <p class="muted small span-2">Điều khoản riêng của khách: tự điền khi tạo báo giá cho khách này (vẫn sửa được trên từng báo giá).</p>
+    <div class="modal-body">
+      <div id="customer-fields"></div>
       <p class="error span-2" id="customer-error" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-customer">Lưu khách hàng</button></div>
