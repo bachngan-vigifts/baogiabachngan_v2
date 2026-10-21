@@ -9,6 +9,8 @@ class E {
   text = '';
   value: any = '';
   type = '';
+  attributes: Record<string,string> = {};
+  setAttribute(k:string,v:string) { this.attributes[k]=v; }
   disabled = false;
   listeners = new Map<string, Function[]>();
   constructor(public tag: string) {}
@@ -159,4 +161,36 @@ test('Cash UI: Manager có nút Duyệt cho phiếu mình tạo theo cờ server
     await approve.listeners.get('click')![0]!();
     assert.ok(calls.includes('/cash/entries/own/approve'));
   } finally { Object.assign(globalThis, { document: previous }); }
+});
+
+
+test('Cash UI accepts a custom name and opens a notified entry in its exact drawer',async()=>{
+ const previous=globalThis.document, prevLocation=globalThis.location;
+ const doc={createElement:(tag:string)=>new E(tag),body:new E('body')};
+ Object.assign(globalThis,{document:doc,location:{hash:'#/cash'}});
+ try {
+  const root=new E('section'), writes:any[]=[],calls:string[]=[];
+  const receipt={id:'entry-a',entryNo:'PC-1',direction:'out',kind:'petty_expense',amount:1500000,reason:'Tên phiếu: Chi sửa xe\n\nBảo trì xe',createdBy:'creator',at:'2026-10-20T01:00:00Z',status:'pending'};
+  const api=async(path:string,method?:string,body?:any)=>{
+   calls.push(path);
+   if(method==='POST'){writes.push({path,body});return receipt;}
+   if(path.startsWith('/cash/entries/entry-a'))return {entry:receipt};
+   if(path.startsWith('/cash/entries'))return {entries:[],nextBefore:null};
+   return {drawer:{id:'drawer-a',openingSetAt:'2026-10-18',approvalThreshold:1000000},balance:500000,activeShift:{id:'s',mine:true},ownShift:{id:'s'},canSell:true,canApprove:true,canManage:false,canSelfApprove:false};
+  };
+  const ui=initCash({root,api,user:()=>({id:'emp'}),toast(){},go(){}});await ui.load();
+  root.all().find(e=>e.tag==='button'&&e.textContent==='+ Chi tiền')!.listeners.get('click')![0]!();
+  let modal=doc.body.children.at(-1)!;
+  const name=modal.all().find(e=>e.tag==='label'&&e.textContent==='Tên phiếu')!.querySelector('input')!;
+  assert.equal(name.type,'text');name.value='Chi sửa xe';
+  modal.all().find(e=>e.tag==='input'&&e.type==='number')!.value='1500000';modal.querySelector('textarea')!.value='Bảo trì xe';
+  modal.querySelector('form')!.listeners.get('submit')![0]!({preventDefault(){}});await new Promise(r=>setTimeout(r,0));
+  assert.equal(writes[0].body.entryName,'Chi sửa xe');assert.equal(writes[0].body.kind,'petty_expense');
+  Object.assign(globalThis,{location:{hash:'#/cash?drawerId=drawer-a&entryId=entry-a'}});await ui.load();
+  assert.ok(calls.includes('/cash/entries/entry-a?drawerId=drawer-a'));
+  modal=doc.body.children.at(-1)!;assert.match(modal.textContent,/Chi sửa xe/);
+  const approve=modal.all().find(e=>e.tag==='button'&&e.textContent==='Duyệt phiếu')!;assert.ok(approve);
+  await approve.listeners.get('click')![0]!();await new Promise(r=>setTimeout(r,0));
+  assert.ok(writes.some(x=>x.path==='/cash/entries/entry-a/approve?drawerId=drawer-a'));
+ } finally {Object.assign(globalThis,{document:previous,location:prevLocation});}
 });

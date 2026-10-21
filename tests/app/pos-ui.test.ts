@@ -788,6 +788,35 @@ test('lưu POS: lỗi giữ bảng thanh toán và giỏ; thành công đóng b�
   } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
 
+test('POS order board sends source/staff/date/payment filters, renders server totals and resets filters', async () => {
+  const prevDoc=globalThis.document, prevWin=globalThis.window;
+  Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+  try {
+    const root=new Element('section'), calls:string[]=[];
+    const api=async(path:string)=>{
+      if(path.startsWith('/pos/options')) return {registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:null,shifts:[],templates:[],policies:[]};
+      if(path.startsWith('/pos/catalog')) return {products:[],nextOffset:null};
+      if(path.startsWith('/pos/orders')) {calls.push(path);return {registerId:'r',registers:[],counts:{all:3},orders:[],owners:[{id:'emp',name:'Nhân viên A'}],totals:[{currency:'VND',revenue:123456,paid:100000,outstanding:23456,orders:3,unknownPayment:0}]};}
+      throw Error(path);
+    };
+    const ui=initPos({root,api,toast(){},user:()=>({id:'emp',name:'NV'}),confirmBox:async()=>true,go(){}});
+    await ui.load();
+    assert.match(root.textContent,/Doanh thu đơn theo bộ lọc/);
+    assert.match(root.textContent,/123.456/);
+    const filters:[string,string][]=[['Nguồn đơn','cod'],['Nhân viên bán','emp'],['Từ ngày','2026-10-01'],['Đến ngày','2026-10-21'],['Thanh toán','debt']];
+    for(const [label,value] of filters){
+      const input=root.querySelectorAll('input,select').find(e=>e.attributes['aria-label']===label)!;
+      assert.ok(input,label); input.value=value; await input.fire('change'); await new Promise(r=>setTimeout(r,0));
+    }
+    const q=new URLSearchParams(calls.at(-1)!.split('?')[1]);
+    assert.equal(q.get('source'),'cod');assert.equal(q.get('ownerId'),'emp');assert.equal(q.get('from'),'2026-10-01');assert.equal(q.get('to'),'2026-10-21');assert.equal(q.get('payment'),'debt');
+    await root.querySelectorAll('button').find(e=>e.textContent==='Xóa bộ lọc')!.fire('click');
+    await new Promise(r=>setTimeout(r,0));
+    const reset=new URLSearchParams(calls.at(-1)!.split('?')[1]);
+    assert.equal(reset.get('source'),'all');assert.equal(reset.get('ownerId'),null);assert.equal(reset.get('from'),null);assert.equal(reset.get('payment'),'all');
+  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});
+
 test('POS stock: selected product says bỏ chọn; stock actions never add to cart; request selects warehouse and sends once',async()=>{
  const prevDoc=globalThis.document,prevWin=globalThis.window;
  Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});

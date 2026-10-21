@@ -1047,6 +1047,15 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-saved-actions { grid-template-columns: minmax(0, 1fr); }
 }
 
+.pos-order-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:16px 0; align-items:end; }
+.pos-order-filters label { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.pos-order-filters input, .pos-order-filters select { width:100%; min-width:0; box-sizing:border-box; }
+.pos-order-summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-radius:12px; background:#edf8f2; border:1px solid #cce5d6; }
+.pos-order-summary strong { font-size:22px; color:#086b43; }
+.pos-order-summary p { margin:4px 0 0; }
+.pos-order-summary > p { flex-basis:100%; }
+@media(max-width:600px) { .pos-order-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
 /* Báo cáo ca: lọc + ca đang mở (xanh) / đã kết (xám) + nội dung gom theo mục. */
 .pos-shift-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 4px 0 6px; }
 .pos-shift-filters label { display: grid; gap: 2px; font-size: 12px; color: var(--muted, #667085); }
