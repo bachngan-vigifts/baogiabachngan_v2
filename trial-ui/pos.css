@@ -9,7 +9,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   display: flex;
 }
 .pos-page {
-  max-width: 1700px;
+  max-width: var(--app-content-max, 1800px);
   margin: auto;
 }
 .pos-head {
@@ -745,7 +745,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 
 /* POS touch-first layout (2026-10 mockup). */
 #view-pos { padding: 0 0 90px; background: #f7f9f8; }
-.pos-page { max-width: none; margin: 0; color: #162238; }
+.pos-page { max-width: var(--app-content-max, 1800px); margin: 0 auto; color: #162238; }
 .pos-head { position: sticky; top: 0; z-index: 10; min-height: 68px; margin: 0; padding: 0 20px; border: 0; border-bottom: 1px solid #bfd8c8; border-radius: 0; background: #e7f6ec; }
 .pos-head > div:first-child { display: flex; grid-template-columns: none; gap: 16px; }
 .pos-head h1 { font-size: 24px; font-weight: 800; }
