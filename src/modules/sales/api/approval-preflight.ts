@@ -32,8 +32,8 @@ export async function approvalDebt(db: Db, customerId: string | null, taxCode = 
   });
   return { total: orders.reduce((sum, o) => sum + o.overdue, 0), orders };
 }
-export function assertApprovalDebt(debt: Awaited<ReturnType<typeof approvalDebt>>) {
-  if (debt.total > 0) throw new AppError(409, 'Khách hàng có công nợ quá hạn. Vui lòng thanh toán để tạo hoặc duyệt đơn hàng mới.', 'CUSTOMER_DEBT_OVERDUE');
+export function assertApprovalDebt(debt: Awaited<ReturnType<typeof approvalDebt>>, accepted = false) {
+  if (debt.total > 0 && accepted !== true) throw new AppError(409, 'Khách hàng có công nợ quá hạn. Vui lòng xem cảnh báo và xác nhận vẫn tiếp tục tạo hoặc duyệt chứng từ.', 'CUSTOMER_DEBT_OVERDUE');
 }
 
 /** Zero is a valid explicitly entered cost; missing costs must not be inferred from sales print fees. */

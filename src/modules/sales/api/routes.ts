@@ -195,7 +195,7 @@ async function contractCustomerCode(db: StaffEnv['db'] | Tx, quote: QuoteRow) {
  * Tạo đơn đặt hàng từ một báo giá (dùng chung cho nhân viên và trang khách hàng). Mỗi báo giá chỉ một đơn đang hiệu lực
  * (409 ORDER_EXISTS). `status`: nhân viên tạo = 'confirmed'; khách đặt hàng = 'draft' (chờ nhân viên phụ trách xác nhận).
  */
-export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; submitted?: boolean; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string;
+export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, o: { createdBy: string; status: 'confirmed' | 'draft'; debtWarningAccepted?: boolean; submitted?: boolean; note?: string; deliveryDate?: string | null; orderDate?: string; deliveryAddress?: string;
   /** Chạy cuối giao dịch tạo đơn (vd. đẩy đơn sang Sapo); lỗi → huỷ, không có đơn. */
   inTx?: (tx: Tx, orderId: string) => Promise<void> }) {
   const [existing] = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders)
@@ -211,7 +211,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   // Khách mới do nhân viên tạo phải được Manager duyệt mới đặt hàng được.
   if (cust?.approvalStatus === 'pending') throw new AppError(409, `Khách hàng "${cust.name}" đang chờ Manager duyệt, chưa tạo đơn được.`, 'CUSTOMER_PENDING');
   const customerId = cust ? cust.id : null;
-  assertApprovalDebt(await approvalDebt(db, customerId, String(data.customerTaxCode || '')));
+  assertApprovalDebt(await approvalDebt(db, customerId, String(data.customerTaxCode || '')), o.debtWarningAccepted);
   await db.transaction(async tx => {
     const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
     // Báo giá đang giữ hàng: lập đơn / HĐKT thì tự bỏ treo (hàng đi theo đơn).
@@ -480,7 +480,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     let sapo: SapoPushOutcome = null;
     // Nhân viên sinh đơn: NHÁP, chỉ gửi Manager khi bấm "Gửi duyệt" (POST /orders/:id/submit). Manager sinh đơn: coi như đã gửi.
     const submitted = me.role === 'manager';
-    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, ...input,
+    const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, ...input, debtWarningAccepted: body.debtWarningAccepted === true,
       inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
     if (viaClaw) sapo = await sendOrderToClaw(c, id, 'order');
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
@@ -573,7 +573,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         if (Number(paidNow?.n) > 0 || shippedNow.length) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
       }
       if (status === 'confirmed') {
-        assertApprovalDebt(await approvalDebt(tx, order.customerId, order.taxCode, order.id));
+        assertApprovalDebt(await approvalDebt(tx, order.customerId, order.taxCode, order.id), body.debtWarningAccepted === true);
         const [quote] = order.quoteId ? await tx.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
         if (quote) {
           const costs = approvalCosts(JSON.parse(quote.data));
@@ -776,7 +776,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
-      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted: me.role === 'manager', inTx: async (tx, oid) => {
+      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', inTx: async (tx, oid) => {
         const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, oid)).limit(1);
         const counterId = `HDKT:${year}:${month}:${entity}`;
         const [row] = await tx.insert(contractCounters).values({ id: counterId, type: 'HDKT', year: Number(year), month: Number(month), legalEntity: entity, lastSequence: 1, updatedAt: now })

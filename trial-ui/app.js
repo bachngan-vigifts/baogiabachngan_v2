@@ -1,4 +1,4 @@
-import { showApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
+import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { openBarcodeImport } from './barcode-import.js';
@@ -3840,9 +3840,13 @@ document.addEventListener('click', async e => {
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
 async function verifyAndConfirmOrder() {
   const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
+  let debtWarningAccepted=false;
   try {
     const review = await api(`/orders/${encodeURIComponent(o.id)}/approval-preflight`);
-    if (review.debt.total > 0) { showApprovalDebt(review); return; }
+    if (review.debt.total > 0) {
+      debtWarningAccepted=await confirmApprovalDebt(review,isContractDoc(d)?'Vẫn duyệt HĐKT':'Vẫn duyệt đơn');
+      if(!debtWarningAccepted)return;
+    }
     if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast})) return;
   } catch (ex) { toast(ex.message, 'err'); return; }
   const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
@@ -3860,11 +3864,11 @@ async function verifyAndConfirmOrder() {
   if (!v) return;
   try {
     if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
-    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted });
     toast(isContractDoc(d) ? 'Đã duyệt HĐKT. Báo giá của HĐKT đã được khoá.' : 'Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
   } catch (ex) {
     if (ex.code === 'CUSTOMER_DEBT_OVERDUE') {
-      try { showApprovalDebt(await api(`/orders/${encodeURIComponent(o.id)}/approval-preflight`)); } catch { toast(ex.message, 'err'); }
+      await verifyAndConfirmOrder();
     } else toast(ex.message, 'err');
   }
 }
@@ -4042,7 +4046,7 @@ $('#contract-form').legalEntity.addEventListener('change', previewContractNo);
 $('#contract-form').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, err = $('#contract-error'); err.textContent = '';
   const target = contractTarget; if (!target) return;
-  const body = { quoteId: target.quoteId, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
+  const body = { quoteId: target.quoteId, debtWarningAccepted: target.debtWarningAccepted === true, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
     signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
   // Giữ số tự sinh → máy chủ cấp số kế tiếp lúc lập (tránh trùng nếu người khác vừa lấy số); đã sửa → gửi số đã sửa.
   const no = f.contractNo.value.trim();
@@ -4166,10 +4170,10 @@ $('#download-menu').addEventListener('click', () => closeDownloadMenu());
  */
 var orderCreateUi = null;
 const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
-async function createOrderForQuote(quoteId, quoteNo) {
+async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false) {
   let existed = null;
   const post = async (fields, loc, push) => {
-    try { return await api('/orders', 'POST', { quoteId, ...fields, ...(loc ? { sapoLocationId: loc } : {}), pushSapo: push === true }); }
+    try { return await api('/orders', 'POST', { quoteId, ...fields, debtWarningAccepted, ...(loc ? { sapoLocationId: loc } : {}), pushSapo: push === true }); }
     catch (ex) {
       if (ex.code !== 'ORDER_EXISTS') throw ex;
       const found = (await api('/orders?q=' + encodeURIComponent(quoteNo))).orders.find(o => o.quoteId === quoteId && o.status !== 'cancelled');
@@ -4236,9 +4240,10 @@ function chooseFlow(label) {
  */
 async function makeFromQuote(flow, q, done) {
   const review = await api('/quotes/' + encodeURIComponent(q.quoteId) + '/approval-preflight');
-  if (review.debt.total > 0) { showApprovalDebt(review); return false; }
-  if (flow === 'contract') { openContractForm({ ...q, done }); return true; }
-  const id = await createOrderForQuote(q.quoteId, q.quoteNo);
+  const debtWarningAccepted=review.debt.total > 0 ? await confirmApprovalDebt(review,flow==='contract'?'Vẫn tạo HĐKT':'Vẫn tạo đơn') : false;
+  if(review.debt.total > 0 && !debtWarningAccepted)return false;
+  if (flow === 'contract') { openContractForm({ ...q, done, debtWarningAccepted }); return true; }
+  const id = await createOrderForQuote(q.quoteId, q.quoteNo, debtWarningAccepted);
   if (!id) return false;
   done?.(); go('#/orders/' + id);
   return true;

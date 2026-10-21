@@ -39,3 +39,23 @@ test('Thẻ công nợ dùng textContent, chỉ chứa thông tin cần gửi kh
     assert.equal(body.children.length,1);
   } finally {Object.assign(globalThis,{document:before});}
 });
+
+
+test('Cảnh báo có nút tiếp tục: Đóng trả false, chỉ bấm Vẫn duyệt mới trả true',async()=>{
+  class Element {
+    className='';textContent='';children:Element[]=[];events:Record<string,()=>void>={};
+    append(...nodes:Element[]){this.children.push(...nodes);}addEventListener(k:string,f:()=>void){this.events[k]=f;}
+    showModal(){}close(){this.events.close?.();}remove(){}
+  }
+  const before=globalThis.document;Object.assign(globalThis,{document:{body:new Element(),createElement:()=>new Element()}});
+  const review={customerName:'Khách',asOf:'2026-10-21',debt:{total:100,orders:[]}};
+  try {
+    const dlg=showApprovalDebt(review,{continueLabel:'Vẫn duyệt đơn'});
+    const footer=dlg.children[1];footer.children.find((e:Element)=>e.textContent==='Vẫn duyệt đơn').events.click();
+    assert.equal(await dlg.result,true);
+    const cancelled=showApprovalDebt(review,{continueLabel:'Vẫn tạo HĐKT'});
+    cancelled.children[1].children.find((e:Element)=>e.textContent==='Đóng').events.click();
+    assert.equal(await cancelled.result,false);
+    const escaped=showApprovalDebt(review,{continueLabel:'Vẫn tạo đơn'});escaped.close();assert.equal(await escaped.result,false);
+  } finally {Object.assign(globalThis,{document:before});}
+});
