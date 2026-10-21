@@ -1,3 +1,4 @@
+import { readWebOrderFinancials, webFinancialDescription } from '../../sales/domain/web-order-financials.ts';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
@@ -46,9 +47,10 @@ export async function invoiceTasks(db: StaffEnv['db'], ref?: InvoiceTaskRef): Pr
       let items = '';
       try { const lines: unknown = JSON.parse(o.lines); if (Array.isArray(lines)) items = lines.map(l => `${String(l.sku || '')} ${String(l.name || '')} × ${Number(l.quantity) || 0}`).join('; '); } catch { /* Older snapshots may lack line details. */ }
       if (items.length > 3000) items = items.slice(0, 3000) + '… (xem đủ hàng trên đơn website)';
+      const financialText = webFinancialDescription(readWebOrderFinancials(o.financialSnapshot),o.currency);
       out.push({ autoKey: `invoice-web:${o.id}`, source: 'invoice', sourceId: o.id,
         title: `Đã giao hàng · Chờ hoá đơn – ${website} ${o.orderNo} – ${o.customerName}`,
-        description: `GHN xác nhận giao thành công · Mã vận đơn: ${o.ghnOrderCode || '—'}\nKhách: ${o.customerName} · ${o.phone} · ${o.email}\nĐịa chỉ: ${o.address}\nGiá trị đơn: ${new Intl.NumberFormat('vi-VN').format(o.total)} ${o.currency}\nHàng: ${items || 'Chưa có chi tiết đồng bộ'}\nXuất hoá đơn, ghi số hoá đơn vào Trao đổi và hoàn thành nhiệm vụ.`,
+        description: `GHN xác nhận giao thành công · Mã vận đơn: ${o.ghnOrderCode || '—'}\nKhách: ${o.customerName} · ${o.phone} · ${o.email}\nĐịa chỉ: ${o.address}\nGiá trị đơn: ${new Intl.NumberFormat('vi-VN').format(o.total)} ${o.currency}\nHàng: ${items || 'Chưa có chi tiết đồng bộ'}${financialText?'\n'+financialText:''}\nXuất hoá đơn, ghi số hoá đơn vào Trao đổi và hoàn thành nhiệm vụ.`,
         link: '', assigneeId: null, assigneePosition: 'accounting', priority: 'normal', dueDate: dueDate(o.updatedAt) });
     }
   }
