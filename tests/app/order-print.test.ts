@@ -84,15 +84,15 @@ test('Excel đơn đặt hàng giữ ghi chú và cùng ngày hẹn giao/ba ch�
   } finally { g.document = saved.document; g.ExcelJS = saved.ExcelJS; }
 });
 
-test('phiếu giao hàng chỉ có Bên giao / Bên nhận, để trống tên cho ký và ghi tay', () => {
+test('phiếu giao hàng: đại diện bên nhận trái, bên giao phải, để trống tên ký tay', () => {
   const p = print.deliveryPrintData({ seller: 'BN', order: { ...order, contact: 'Anh Hải' }, lines: [] }, 'Nhân viên lập phiếu');
-  assert.deepEqual(print.SLIP_KINDS.delivery.signers, ['Bên giao', 'Bên nhận']);
+  assert.deepEqual(print.SLIP_KINDS.delivery.signers, ['ĐẠI DIỆN BÊN NHẬN', 'ĐẠI DIỆN BÊN GIAO']);
   assert.deepEqual(p.names, ['', '']);
   for (const edit of [false, true]) {
     const html = print.slipSheetHtml(p, { edit });
     const signatures = html.slice(html.indexOf('<div class="ddh-sign'));
     assert.match(signatures, /ddh-delivery-sign/);
-    assert.match(signatures, /<b>Bên giao<\/b>[\s\S]*?<b>Bên nhận<\/b>/);
+    assert.match(signatures, /<b>ĐẠI DIỆN BÊN NHẬN<\/b>[\s\S]*?<b>ĐẠI DIỆN BÊN GIAO<\/b>/);
     assert.doesNotMatch(signatures, /Người lập phiếu|Người phê duyệt|Nhân viên lập phiếu|Lê Minh Thái/);
     assert.equal((signatures.match(/class="space"/g) || []).length, 2);
     if (edit) for (const i of [0, 1]) assert.ok(signatures.includes(`data-f="names.${i}"></span>`));
@@ -104,18 +104,23 @@ test('phiếu giao hàng chỉ có Bên giao / Bên nhận, để trống tên c
 test('phiếu giao hàng: ngày ký và tên người nhận để ghi tay, bỏ ngày giao ở đầu phiếu kể cả có HĐKT', () => {
   for (const k of [null, contract]) {
     const p = print.deliveryPrintData({ seller: 'BN', order: { ...order, contact: 'Mạnh', phone: '0900', taxCode: '123' }, contract: k, delivery: { deliveryNo: 'GH_001', plannedDate: '2026-10-12', receiverName: 'Tên người nhận chuyến', timeSlot: '9h–11h' }, lines: [] }, 'Người lập');
-    assert.equal(p.signDate, 'Ngày …… Tháng …… Năm ……');
+    assert.equal(p.signDate, print.deliverySignDate());
     assert.equal(p.names[0], '');
     assert.ok(!p.info.some(([label]: string[]) => label === 'Ngày giao'));
     assert.ok(p.info.some(([label, value]: string[]) => label === 'Thời gian' && value === '9h–11h'));
     const html = print.slipSheetHtml(p, { edit: true });
     assert.doesNotMatch(html, /Ngày giao|12\/10\/2026/);
     assert.match(html, /data-f="names\.0"><\/span>/);
-    assert.match(html, /Ngày …… Tháng …… Năm ……/);
+    assert.ok(html.includes(print.deliverySignDate()));
   }
   const packing = print.packingPrintData({ seller: 'BN', order, lines: [] });
   assert.ok(packing.info.some(([label]: string[]) => label === 'Ngày giao'));
   assert.notEqual(packing.signDate, 'Ngày …… Tháng …… Năm ……');
+});
+
+test('năm mặc định trên phiếu giao tính theo Việt Nam tại giao thừa, ngày/tháng để ghi tay',()=>{
+  assert.equal(print.deliverySignDate(new Date('2026-12-31T16:59:59Z')),'Ngày …… Tháng …… Năm 2026');
+  assert.equal(print.deliverySignDate(new Date('2026-12-31T17:00:00Z')),'Ngày …… Tháng …… Năm 2027');
 });
 
 test('Bản in đơn POS tách phí dịch vụ/ship, không cộng số lượng kho, tên phí được escape', () => {
