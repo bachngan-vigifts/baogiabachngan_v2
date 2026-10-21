@@ -66,16 +66,22 @@ function dialog(title, toast) {
   dlg.append(body);
   document.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove(), { once: true });
+  dlg.addEventListener('cancel', (e) => { if (dlg.dataset.busy) e.preventDefault(); });
   dlg.showModal();
   return { dlg, content, button, close: () => dlg.close() };
 }
-/** The server recomputes every price and records transfers only when actually confirmed. */
+/**
+ * The server recomputes every price and records transfers only when actually confirmed.
+ * `onSubmit(body, close)` trả 'saved' | 'rejected' | 'unknown' | 'busy'; form giữ nguyên (khoá) tới khi có kết quả,
+ * máy chủ từ chối thì mở lại để sửa. `onBack` quay về bảng Thanh toán.
+ */
 export function openPosFlowCheckout({
   flow,
   total,
   customer,
   toast,
   onSubmit,
+  onBack,
 }) {
   const prepaid = flow === 'prepaid',
     m = dialog(
@@ -83,35 +89,39 @@ export function openPosFlowCheckout({
       toast,
     ),
     form = el('form', 'pos-flow-form');
-  m.content.append(
-    form,
-    el(
-      'p',
-      'pos-note',
-      'Giá, số lượng và chiết khấu được giữ theo đơn đã lập.',
-    ),
-  );
-  form.append(el('p', 'pos-flow-total', 'Tổng đơn: ' + money(total)));
+  m.dlg.className += ' pos-step-modal';
+  const due = el('section', 'pos-step-due');
+  due.append(el('span', '', customer?.name ? 'Tổng đơn · ' + customer.name : 'Tổng đơn'), el('strong', '', money(total)));
+  m.content.append(due, form);
+  const section = (title, ...children) => {
+    const box = el('section', 'pos-step-section');
+    box.append(el('h3', '', title), ...children);
+    return box;
+  };
+  const grid = (...children) => {
+    const g = el('div', 'pos-step-grid');
+    g.append(...children);
+    return g;
+  };
   const amount = field(
     prepaid ? 'Số tiền trả trước' : 'Tiền cọc (VNĐ)',
     'number',
     prepaid ? total : Math.max(1, Math.round(total * 0.3)),
   );
+  amount.box.className += ' pos-flow-amount';
   amount.input.required = true;
   amount.input.min = '1';
   amount.input.max = String(total);
   amount.input.readOnly = prepaid;
-  if (!prepaid) {
-    const presets = el('div', 'pos-flow-actions');
-    for (const pct of [30, 50])
+  const presets = el('div', 'pos-flow-presets');
+  if (!prepaid)
+    for (const pct of [30, 50, 100])
       presets.append(
-        m.button(pct + '%', () => {
+        m.button(pct === 100 ? 'Thu đủ' : pct + '%', () => {
           amount.input.value = Math.max(1, Math.round((total * pct) / 100));
           update();
         }),
       );
-    form.append(presets);
-  }
   const method = select('Hình thức thanh toán', [
       ['cash', 'Tiền mặt đã thực nhận'],
       ['transfer', 'Chuyển khoản'],
@@ -120,9 +130,24 @@ export function openPosFlowCheckout({
       'Cửa hàng đã thực nhận khoản chuyển khoản này',
       'checkbox',
     ),
-    remaining = el('p', 'pos-note'),
     hint = el('p', 'pos-warning');
-  form.append(amount.box, method.box, confirmed.box, remaining, hint);
+  confirmed.box.className += ' pos-cod-confirm';
+  const paidNow = el('b'),
+    remaining = el('strong'),
+    summary = el('div', 'pos-step-summary');
+  const row = (label, value, cls = '') => {
+    const r = el('div', cls);
+    r.append(el('span', '', label), value);
+    return r;
+  };
+  summary.append(
+    row('Tổng đơn', el('b', '', money(total))),
+    row(prepaid ? 'Trả trước' : 'Thu lần này', paidNow),
+    row('Còn lại sau khi thực nhận', remaining, 'is-main'),
+  );
+  form.append(
+    section(prepaid ? 'Khách trả trước' : 'Tiền cọc', presets, grid(amount.box, method.box), confirmed.box, summary, hint),
+  );
   let receiver, phone, address, planned;
   if (prepaid) {
     receiver = field(
@@ -139,22 +164,33 @@ export function openPosFlowCheckout({
         new Date(),
       ),
     );
-    for (const f of [receiver, phone, address, planned]) {
-      f.input.required = true;
-      form.append(f.box);
-    }
+    for (const f of [receiver, phone, address, planned]) f.input.required = true;
+    form.append(section('Giao hàng', grid(receiver.box, phone.box), address.box, planned.box));
   }
+  form.append(el('p', 'pos-note', 'Giá, số lượng và chiết khấu được giữ theo đơn đã lập.'));
   const error = el('p', 'error');
   error.setAttribute('role', 'alert');
   const save = el('button', 'btn primary');
   save.type = 'submit';
-  form.append(error, save);
+  const footer = el('div', 'pos-step-footer');
+  if (onBack) {
+    const back = el('button', 'btn secondary', '← Quay lại thanh toán');
+    back.type = 'button';
+    back.onclick = () => {
+      if (m.dlg.dataset.busy) return;
+      m.close();
+      onBack();
+    };
+    footer.append(back);
+  }
+  footer.append(save);
+  form.append(error, footer);
   function update() {
     const n = Number(amount.input.value),
       pending = method.input.value === 'transfer' && !confirmed.input.checked;
     confirmed.box.hidden = method.input.value !== 'transfer';
-    remaining.textContent =
-      'Còn lại sau khi thực nhận: ' + money(Math.max(0, total - n));
+    paidNow.textContent = money(n > 0 ? Math.min(n, total) : 0);
+    remaining.textContent = money(Math.max(0, total - n));
     hint.textContent = pending
       ? 'Chờ xác nhận: chưa ghi thu, chưa vào két. Giữ hàng 5 ngày.'
       : prepaid
@@ -173,14 +209,25 @@ export function openPosFlowCheckout({
   };
   confirmed.input.onchange = update;
   update();
+  const lock = (on) => {
+    on ? (m.dlg.dataset.busy = '1') : delete m.dlg.dataset.busy;
+    for (const x of m.dlg.querySelectorAll('button,input,select')) x.disabled = on;
+    if (!on) amount.input.readOnly = prepaid;
+    save.textContent = on ? 'Đang ghi nhận…' : save.textContent;
+    save.className = on ? 'btn primary is-busy' : 'btn primary';
+    save.setAttribute('aria-busy', String(on));
+    if (!on) update();
+  };
   form.onsubmit = async (e) => {
     e.preventDefault();
-    if (save.disabled) return;
+    if (save.disabled || m.dlg.dataset.busy) return;
     const n = Number(amount.input.value);
     if (!Number.isSafeInteger(n) || n <= 0 || n > total)
       return (error.textContent =
         'Nhập số tiền nguyên, lớn hơn 0 và không vượt tổng đơn.');
-    save.disabled = true;
+    if (prepaid && [receiver, phone, address].some((f) => !f.input.value.trim()))
+      return (error.textContent = 'Nhập đủ người nhận, điện thoại và địa chỉ giao.');
+    error.textContent = '';
     const body = {
       saleFlow: flow,
       initialAmount: n,
@@ -197,8 +244,16 @@ export function openPosFlowCheckout({
           }
         : {}),
     };
-    m.close();
-    await onSubmit(body);
+    lock(true);
+    let result;
+    try {
+      result = await onSubmit(body, () => m.close());
+    } finally {
+      if (result === 'rejected' || result === 'busy') {
+        lock(false);
+        error.textContent = 'Chưa ghi nhận được. Kiểm tra lại rồi gửi lại.';
+      } else if (m.dlg.open !== false) m.close();
+    }
   };
   return m;
 }

@@ -100,6 +100,32 @@ test('form cọc: 30%/50%/tự nhập; bank chưa tick gửi pending, không t�
     assert.equal(sent[0].confirmed, false);
     assert.equal(sent[0].method, 'transfer');
   }));
+test('form cọc khoá khi đang ghi nhận, bấm trùng chỉ gửi một lần; máy chủ từ chối thì giữ form để sửa', () =>
+  dom(async () => {
+    const sent: any[] = []; let finish: (v: string) => void = () => {}; let back = 0;
+    openPosFlowCheckout({
+      flow: 'deposit',
+      total: 100000,
+      toast: () => {},
+      onBack: () => back++,
+      onSubmit: (b: any) => { sent.push(b); return new Promise<string>((r) => (finish = r)); },
+    });
+    const dlg = doc.body.children[0]!, form = dlg.querySelectorAll('form')[0]!, save = button(dlg, 'Ghi nhận cọc');
+    const first = form.onsubmit({ preventDefault() {} });
+    assert.equal(save.textContent, 'Đang ghi nhận…');
+    assert.equal(save.disabled, true);
+    assert.equal(dlg.dataset.busy, '1');
+    assert.equal(button(dlg, '← Quay lại thanh toán').disabled, true);
+    await form.onsubmit({ preventDefault() {} });
+    assert.equal(sent.length, 1, 'bấm trùng không gửi lần hai');
+    finish('rejected'); await first;
+    assert.equal(dlg.open, true, 'từ chối thì giữ form');
+    assert.equal(save.disabled, false);
+    assert.equal(save.textContent, 'Ghi nhận cọc');
+    assert.match(dlg.textContent, /Chưa ghi nhận được/);
+    button(dlg, '← Quay lại thanh toán').onclick();
+    assert.equal(back, 1); assert.equal(dlg.open, false);
+  }));
 test('form ship trả trước giữ 100%, có người nhận/địa chỉ, không ghép COD', () =>
   dom(async () => {
     const sent: any[] = [];

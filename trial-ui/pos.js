@@ -150,15 +150,28 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       dlg.close();
       dlg.remove();
     };
-    const closeButton = button('×', 'icon-btn pos-modal-close', close);
+    const closeButton = button('×', 'icon-btn pos-modal-close', () => { if (!dlg.dataset.busy) close(); });
     closeButton.setAttribute('aria-label', 'Đóng');
     closeButton.title = 'Đóng';
     body.append(el('h2', '', title), closeButton);
     dlg.append(body);
     document.body.append(dlg);
     dlg.addEventListener('close', () => dlg.remove());
-    dlg.addEventListener('cancel', close);
-    return { dlg, body, close, show: () => dlg.showModal() };
+    dlg.addEventListener('cancel', (e) => { e.preventDefault?.(); if (!dlg.dataset.busy) close(); });
+    /** Đang gửi máy chủ: khoá cả form (nút, ô nhập, nút ×, phím Esc) để không bấm trùng hay đóng giữa chừng. */
+    const lock = (on, primary, label) => {
+      on ? (dlg.dataset.busy = '1') : delete dlg.dataset.busy;
+      dlg.classList.toggle('pos-modal-busy', on);
+      for (const x of dlg.querySelectorAll('button,input,select,textarea')) {
+        if (on) { x.dataset.wasDisabled = x.disabled ? '1' : ''; x.disabled = true; }
+        else if ('wasDisabled' in x.dataset) { x.disabled = x.dataset.wasDisabled === '1'; delete x.dataset.wasDisabled; }
+      }
+      if (primary) {
+        if (on) { primary.dataset.label = primary.textContent; primary.textContent = label; primary.classList.add('is-busy'); primary.setAttribute('aria-busy', 'true'); }
+        else { if (primary.dataset.label != null) primary.textContent = primary.dataset.label; delete primary.dataset.label; primary.classList.remove('is-busy'); primary.setAttribute('aria-busy', 'false'); }
+      }
+    };
+    return { dlg, body, close, lock, show: () => dlg.showModal() };
   }
   function formModal(title) {
     const m = modal(title),
@@ -564,7 +577,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if(st.qr)return toast('Giỏ đang có giao dịch QR. Hoàn tất giao dịch QR trước khi chuyển sang cọc/trả trước.','err');
     if(st.exchangeAllocationId)return toast('Thanh toán tín dụng đổi hàng tại quầy trước; không ghép vào đơn cọc.','err');
     if(st.preview.total<=0)return toast('Đơn cọc/trả trước phải có giá trị lớn hơn 0.','err');
-    close();openPosFlowCheckout({flow,total:st.preview.total,customer:st.customer,toast,onSubmit:extra=>submit({...payload(),key:key(),...extra})});
+    close();openPosFlowCheckout({flow,total:st.preview.total,customer:st.customer,toast,onBack:openPayment,onSubmit:(extra,done)=>submit({...payload(),key:key(),...extra},done)});
   }
   function requireCustomer() {
     const issue = posCustomerIssue(st.customer);
@@ -606,6 +619,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     });
     footer.append(nodes.temp, nodes.modalPay);
     const future=el('div','pos-flow-actions');if(st.options.orderFlowVersion>=1)future.append(button('Đặt cọc · Nhận sau','btn secondary',()=>createFlow('deposit',m.close)),button('Ship trả trước 100%','btn secondary',()=>createFlow('prepaid',m.close)));
+    nodes.flowButtons = future;
     m.body.append(due, methods, tender, transfer, cod, future, footer); m.show(); drawMethods(); refreshPay();
   }
   function drawMethods() {
@@ -615,8 +629,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.tenderBox.hidden = st.method !== 'cash';
     nodes.transfer.hidden = st.method !== 'transfer';
     if (nodes.cod) nodes.cod.hidden = st.method !== 'cod';
-    if (nodes.modalPay) nodes.modalPay.textContent = st.method === 'cod' ? 'TIẾP TỤC TẠO ĐƠN COD' : 'Thu tiền & in bill';
+    if (nodes.modalPay) nodes.modalPay.textContent = payLabel();
   }
+  const payLabel = () => st.busy ? 'Đang lưu đơn & in bill…' : st.method === 'cod' ? 'TIẾP TỤC TẠO ĐƠN COD' : 'Thu tiền & in bill';
   function markProductsInCart() {
     const skus = new Set(st.cart.map(x => x.sku));
     for (const b of nodes.grid?.querySelectorAll('button') || []) {
@@ -821,6 +836,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       invalid ||
       (st.method === 'transfer' && !nodes.confirm.checked) ||
       (st.method === 'cash' && Number(nodes.tender?.value || 0) < (st.preview?.payable ?? st.preview?.total ?? 0));
+    if (nodes.modalPay) {
+      nodes.modalPay.textContent = payLabel();
+      nodes.modalPay.classList.toggle('is-busy', st.busy);
+      nodes.modalPay.setAttribute('aria-busy', String(st.busy));
+    }
+    for (const b of [...(nodes.methods?.querySelectorAll('button') || []), ...(nodes.flowButtons?.querySelectorAll('button') || [])]) b.disabled = st.busy;
     if (nodes.change) nodes.change.textContent = money(Math.max(0, Number(nodes.tender?.value || 0) - (st.preview?.payable ?? st.preview?.total ?? 0)));
     nodes.lines?.classList.toggle('pos-busy', !!st.pending || st.busy);
     for (const i of nodes.lines?.querySelectorAll('input,select,button') || []) i.disabled = !!st.pending || st.busy;
@@ -1335,31 +1356,45 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.body.append(filters, count, list, button('Đóng', 'btn secondary', m.close));
     m.show();
   }
+  let qrBusy = false;
   async function qr() {
-    if (!requireCustomer()) return;
-    const d = await api('/pos/qr', 'POST', { ...payload(), key: key() }),
-      m = modal('VietQR – chờ xác nhận thu');
+    if (!requireCustomer() || qrBusy || st.busy) return;
+    qrBusy = true;
+    const qrButton = nodes.qr, qrLabel = qrButton?.textContent;
+    if (qrButton) { qrButton.disabled = true; qrButton.textContent = 'Đang tạo mã QR…'; qrButton.classList.add('is-busy'); }
+    let d;
+    try { d = await api('/pos/qr', 'POST', { ...payload(), key: key() }); }
+    finally {
+      qrBusy = false;
+      if (qrButton) { qrButton.textContent = qrLabel; qrButton.classList.remove('is-busy'); }
+      refreshPay();
+    }
+    const m = modal('VietQR – chờ xác nhận thu');
+    m.dlg.classList.add('pos-step-modal', 'pos-qr-modal');
     st.qr = d;
     const image = el('img', 'pos-qr');
-    const status = el('p', 'pos-note', 'Đang chờ SePay xác nhận tiền vào…');
+    const status = el('p', 'pos-qr-status is-waiting', 'Đang chờ SePay xác nhận tiền vào…');
+    status.setAttribute('role', 'status');
     let completing = false;
     image.src = d.url;
     image.alt = 'VietQR thanh toán';
-    m.body.append(
-      el('p', '', money(d.amount)),
-      image,
-      el('p', '', 'Nội dung: ' + d.content),
-      status,
-      button('Đã nhận tiền – thu & in', 'btn primary', async () => {
-        if (!(await confirmBox('Cửa hàng đã thực nhận đủ ' + money(d.amount) + ' qua chuyển khoản?'))) return;
-        st.method = 'transfer';
-        nodes.confirm.checked = true;
-        drawMethods();
-        await pay(false, d.id);
-        if (!st.pending) m.close();
-      }),
-      button('Đóng', 'btn secondary', m.close),
-    );
+    const amount = el('section', 'pos-step-due');
+    amount.append(el('span', '', 'Số tiền chuyển khoản'), el('strong', '', money(d.amount)));
+    const info = el('div', 'pos-qr-info');
+    info.append(image, el('p', 'pos-qr-content', 'Nội dung: ' + d.content), status);
+    const received = button('Đã nhận tiền – thu & in', 'btn primary', async () => {
+      if (!(await confirmBox('Cửa hàng đã thực nhận đủ ' + money(d.amount) + ' qua chuyển khoản?'))) return;
+      st.method = 'transfer';
+      nodes.confirm.checked = true;
+      drawMethods();
+      m.lock(true, received, 'Đang lưu đơn & in bill…');
+      const result = await pay(false, d.id);
+      if (m.dlg.open !== false) m.lock(false, received);
+      if (!st.pending && result !== 'rejected' && result !== 'busy') m.close();
+    });
+    const footer = el('div', 'pos-step-footer');
+    footer.append(button('Đóng', 'btn secondary', () => { if (!m.dlg.dataset.busy) m.close(); }), received);
+    m.body.append(amount, info, footer);
     m.show();
     const ownerId = user().id;
     const timer = setInterval(async () => {
@@ -1379,7 +1414,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           return;
         }
         d.paid = true;
-        status.textContent = 'SePay đã xác nhận nhận đủ tiền.';
+        status.textContent = 'SePay đã xác nhận nhận đủ tiền.'; status.className = 'pos-qr-status is-paid';
         st.method = 'transfer';
         nodes.confirm.checked = true;
         drawMethods();
@@ -1392,120 +1427,161 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }, 2000);
     // Continue watching this QR after closing the popup; cart changes invalidate it.
   }
+  /** Ship COD: nhập người nhận + địa chỉ chuẩn GHN → kiểm tra lại → tạo đơn. Form giữ nguyên tới khi máy chủ trả lời. */
+  function codForm() {
+    const total = st.preview.total;
+    const m = formModal('Giao Hàng Nhanh · nhập địa chỉ');
+    m.dlg.classList.add('pos-step-modal', 'pos-cod-modal');
+    m.body.querySelectorAll?.('h2')?.[0]?.append?.(el('span', 'pos-payment-meta', st.customer?.name || ''));
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+    const address = field('Số nhà, tên đường'),
+      phone = field('Điện thoại người nhận', 'tel', st.customer?.phone || ''),
+      receiver = field('Người nhận', 'text', st.customer?.name || ''),
+      date = field('Ngày giao', 'date', today);
+    const steps = el('ol', 'pos-steps');
+    const stepItems = ['Thông tin giao', 'Kiểm tra lại', 'Tạo đơn COD'].map((t, i) => { const li = el('li', i ? '' : 'is-current'); li.append(el('b', '', String(i + 1)), el('span', '', t)); steps.append(li); return li; });
+    const setStep = (n) => stepItems.forEach((li, i) => { li.className = i < n ? 'is-done' : i === n ? 'is-current' : ''; });
+    const ghnIntro = el('p', 'pos-note pos-step-intro', 'Thông tin đơn hàng và người nhận đã được lấy sẵn. Chọn địa chỉ chuẩn Giao Hàng Nhanh trước khi xác nhận đơn COD.');
+    address.input.required = phone.input.required = receiver.input.required = true;
+    address.input.placeholder = 'Ví dụ: 123 Nguyễn Trãi';
+    phone.input.inputMode = 'tel';
+    const locationField = (label) => { const box = el('label', 'pos-field'), s = select([['', 'Đang tải…']], ''); box.append(el('span', '', label), s); return { box, select: s }; };
+    const province = locationField('Tỉnh / Thành phố'), district = locationField('Quận / Huyện'), ward = locationField('Phường / Xã');
+    const setOptions = (s, rows, placeholder) => { s.replaceChildren(); const first = el('option', '', placeholder); first.value = ''; s.append(first); for (const x of rows || []) { const op = el('option', '', x.name); op.value = x.id; s.append(op); } s.disabled = false; };
+    setOptions(district.select, [], 'Chọn Tỉnh / Thành trước'); setOptions(ward.select, [], 'Chọn Quận / Huyện trước');
+    district.select.disabled = true; ward.select.disabled = true;
+    const loadLocations = async (extra = {}) => (await api('/pos/ghn/locations', 'POST', { registerId: st.register.id, ...extra })).locations;
+    const retryLocations = button('Tải lại địa chỉ GHN', 'btn secondary small'); retryLocations.hidden = true;
+    const loadProvinces = async () => {
+      retryLocations.disabled = true; setOptions(province.select, [], 'Đang tải Tỉnh / Thành phố…'); province.select.disabled = true;
+      try { setOptions(province.select, await loadLocations(), 'Chọn Tỉnh / Thành phố'); retryLocations.hidden = true; }
+      catch (e) { setOptions(province.select, [], 'Không tải được địa chỉ GHN'); province.select.disabled = true; retryLocations.hidden = false; toast(e.message, 'err'); }
+      finally { retryLocations.disabled = false; }
+    };
+    retryLocations.addEventListener('click', () => run(loadProvinces));
+    province.select.addEventListener('change', () => run(async () => {
+      setOptions(ward.select, [], 'Chọn Quận / Huyện trước'); ward.select.disabled = true;
+      setOptions(district.select, [], 'Đang tải Quận / Huyện…'); district.select.disabled = true;
+      setOptions(district.select, await loadLocations({ provinceId: province.select.value }), 'Chọn Quận / Huyện');
+    }));
+    district.select.addEventListener('change', () => run(async () => {
+      setOptions(ward.select, [], 'Đang tải Phường / Xã…'); ward.select.disabled = true;
+      setOptions(ward.select, await loadLocations({ districtId: district.select.value }), 'Chọn Phường / Xã');
+    }));
+    const deposit = field('Đã thu trước / tạm ứng (VNĐ)', 'number', '0');
+    deposit.input.min = '0'; deposit.input.max = String(total); deposit.input.step = '1'; deposit.input.inputMode = 'numeric'; deposit.input.required = true;
+    const method = el('select'), methodBox = el('label', 'pos-field');
+    method.setAttribute('aria-label', 'Hình thức thu trước');
+    for (const [value, name] of [['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản']]) {
+      const option = el('option', '', name); option.value = value; method.append(option);
+    }
+    methodBox.append(el('span', '', 'Hình thức thu trước'), method);
+    const confirmed = el('input'), confirmation = el('label', 'pos-note pos-cod-confirm'); confirmed.type = 'checkbox';
+    confirmation.append(confirmed, document.createTextNode(' Tôi xác nhận cửa hàng đã thực nhận chuyển khoản thu trước'));
+    const remaining = el('strong', 'pos-cod-remaining'), paidBefore = el('b', '', money(0)), validation = el('p', 'error'), serverError = el('p', 'error pos-step-error'); validation.setAttribute('role', 'alert'); serverError.setAttribute('role', 'alert');
+    const summary = el('div', 'pos-step-summary');
+    const row = (label, value, cls = '') => { const r = el('div', cls); r.append(el('span', '', label), value); return r; };
+    summary.append(row('Tổng đơn', el('b', '', money(total))), row('Đã thu trước', paidBefore), row('Còn thu khi giao', remaining, 'is-main'));
+    const section = (title, ...children) => { const box = el('section', 'pos-step-section'); box.append(el('h3', '', title), ...children); return box; };
+    const grid = (...children) => { const g = el('div', 'pos-step-grid'); g.append(...children); return g; };
+    const editView = el('div', 'pos-step-body');
+    editView.append(
+      ghnIntro,
+      section('Người nhận', grid(receiver.box, phone.box)),
+      section('Địa chỉ giao (chuẩn GHN)', address.box, grid(province.box, district.box, ward.box), retryLocations, date.box),
+      section('Thu trước', grid(deposit.box, methodBox), confirmation, summary),
+      el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
+      validation,
+    );
+    const review = el('div', 'pos-step-body pos-step-review'); review.hidden = true;
+    const save = el('button', 'btn primary', 'Tiếp tục trên GHN');
+    save.type = 'submit';
+    const back = button('← Quay lại thanh toán', 'btn secondary', () => {
+      if (m.dlg.dataset.busy) return;
+      if (reviewing) return edit();
+      m.close(); openPayment();
+    });
+    const footer = el('div', 'pos-step-footer'); footer.append(back, save);
+    const chosen = s => s.options[s.selectedIndex]?.textContent || '';
+    const fullAddress = () => [address.input.value.trim(), chosen(ward.select), chosen(district.select), chosen(province.select)].filter(Boolean).join(', ');
+    const updateDeposit = () => {
+      const n = Number(deposit.input.value), valid = deposit.input.value !== '' && Number.isSafeInteger(n) && n >= 0 && n <= total;
+      remaining.textContent = money(valid ? total - n : total);
+      paidBefore.textContent = money(valid ? n : 0);
+      summary.setAttribute('aria-label', 'Còn lại thu COD: ' + remaining.textContent);
+      validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
+      methodBox.hidden = !valid || n === 0;
+      confirmation.hidden = !valid || n === 0 || method.value !== 'transfer';
+      save.disabled = !valid || (n > 0 && method.value === 'transfer' && !confirmed.checked);
+    };
+    deposit.input.addEventListener('input', () => { confirmed.checked = false; updateDeposit(); });
+    method.addEventListener('change', () => { confirmed.checked = false; updateDeposit(); });
+    confirmed.addEventListener('change', updateDeposit);
+    let reviewing = false;
+    const edit = () => {
+      reviewing = false; setStep(0); editView.hidden = false; review.hidden = true;
+      back.textContent = '← Quay lại thanh toán'; save.textContent = 'Tiếp tục trên GHN'; updateDeposit();
+    };
+    const showReview = () => {
+      reviewing = true; setStep(1);
+      const n = Number(deposit.input.value);
+      const lines = [
+        ['Người nhận', `${receiver.input.value.trim()} · ${phone.input.value.trim()}`],
+        ['Địa chỉ', fullAddress()],
+        ['Ngày giao', date.input.value.split('-').reverse().join('/')],
+        ['Tổng đơn', money(total)],
+        ...(n > 0 ? [['Đã thu trước', money(n) + (method.value === 'transfer' ? ' · chuyển khoản' : ' · tiền mặt')]] : []),
+      ];
+      const list = el('dl', 'pos-review-list');
+      for (const [k, v] of lines) list.append(el('dt', '', k), el('dd', '', v));
+      const due = el('section', 'pos-step-due'); due.append(el('span', '', 'Còn lại thu khi giao (COD)'), el('strong', '', money(total - n)));
+      review.replaceChildren(el('p', 'pos-note pos-step-intro', 'Kiểm tra lần cuối thông tin người nhận, địa chỉ và tiền thu COD. Bấm xác nhận để tạo đơn.'), due, list);
+      editView.hidden = true; review.hidden = false;
+      back.textContent = '← Sửa thông tin'; save.textContent = 'Xác nhận & tạo đơn COD'; save.disabled = false;
+    };
+    m.form.append(steps, serverError, editView, review, footer);
+    updateDeposit();
+    m.form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (m.dlg.dataset.busy) return;
+      if (!reviewing) {
+        updateDeposit(); if (save.disabled) return;
+        if (!receiver.input.value.trim() || !phone.input.value.trim() || !address.input.value.trim()) { validation.textContent = 'Nhập đủ người nhận, điện thoại và số nhà, tên đường.'; return; }
+        if (!province.select.value || !district.select.value || !ward.select.value) { validation.textContent = 'Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã theo GHN.'; return toast(validation.textContent, 'err'); }
+        return showReview();
+      }
+      const n = Number(deposit.input.value);
+      const body = {
+        ...payload(),
+        key: key(),
+        fulfillmentMode: 'cod',
+        ...(n > 0 ? { depositAmount: n, method: method.value, confirmed: method.value === 'transfer' && confirmed.checked } : {}),
+        delivery: {
+          address: fullAddress(),
+          receiverName: receiver.input.value,
+          receiverPhone: phone.input.value,
+          plannedDate: date.input.value,
+          ghnProvinceId: province.select.value, ghnDistrictId: district.select.value, ghnWardCode: ward.select.value,
+        },
+      };
+      setStep(2); serverError.textContent = '';
+      m.lock(true, save, 'Đang tạo đơn COD…');
+      const result = await submit(body, m.close);
+      if (result === 'saved' || result === 'unknown') { if (m.dlg.open !== false) m.close(); return; }
+      m.lock(false, save);
+      setStep(1);
+      if (result === 'rejected') { edit(); serverError.textContent = 'Máy chủ chưa tạo đơn. Kiểm tra lại thông tin rồi gửi lại.'; }
+    });
+    m.show();
+    run(loadProvinces);
+  }
   async function pay(cod = false, qrId) {
     if (!requireCustomer()) return;
     if (st.busy || st.pending) return;
     if (!active() || !st.preview || !st.cart.length) return toast('Mở ca và chọn hàng trước.', 'err');
-    if (cod) {
-      const m = formModal('Giao Hàng Nhanh · nhập địa chỉ'),
-        address = field('Số nhà, tên đường'),
-        phone = field('Điện thoại người nhận', 'tel', st.customer?.phone || ''),
-        receiver = field('Người nhận', 'text', st.customer?.name || ''),
-        date = field(
-          'Ngày giao',
-          'date',
-          new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Asia/Ho_Chi_Minh',
-          }).format(new Date()),
-        );
-      m.dlg.classList.add('pos-cod-modal');
-      const ghnIntro = el('p', 'pos-note', 'Thông tin đơn hàng và người nhận đã được lấy sẵn. Chọn địa chỉ chuẩn Giao Hàng Nhanh trước khi xác nhận đơn COD.');
-      address.input.required = phone.input.required = receiver.input.required = true;
-      address.input.placeholder = 'Ví dụ: 123 Nguyễn Trãi';
-      const locationField = (label) => { const box = el('label', 'pos-field'), s = select([['', 'Đang tải…']], ''); box.append(el('span', '', label), s); return { box, select: s }; };
-      const province = locationField('Tỉnh / Thành phố'), district = locationField('Quận / Huyện'), ward = locationField('Phường / Xã');
-      district.select.disabled = true; ward.select.disabled = true;
-      const setOptions = (s, rows, placeholder) => { s.replaceChildren(); const first = el('option', '', placeholder); first.value = ''; s.append(first); for (const x of rows || []) { const op = el('option', '', x.name); op.value = x.id; s.append(op); } s.disabled = false; };
-      const loadLocations = async (extra = {}) => (await api('/pos/ghn/locations', 'POST', { registerId: st.register.id, ...extra })).locations;
-      const retryLocations = button('Tải lại địa chỉ GHN', 'btn secondary small'); retryLocations.type = 'button'; retryLocations.hidden = true;
-      const loadProvinces = async () => {
-        retryLocations.disabled = true; setOptions(province.select, [], 'Đang tải Tỉnh / Thành phố…'); province.select.disabled = true;
-        try { setOptions(province.select, await loadLocations(), 'Chọn Tỉnh / Thành phố'); retryLocations.hidden = true; }
-        catch (e) { setOptions(province.select, [], 'Không tải được địa chỉ GHN'); province.select.disabled = true; retryLocations.hidden = false; toast(e.message, 'err'); }
-        finally { retryLocations.disabled = false; }
-      };
-      retryLocations.addEventListener('click', () => run(loadProvinces));
-      province.select.addEventListener('change', () => run(async () => {
-        district.select.disabled = true; ward.select.disabled = true; setOptions(ward.select, [], 'Chọn Phường / Xã'); ward.select.disabled = true;
-        setOptions(district.select, await loadLocations({ provinceId: province.select.value }), 'Chọn Quận / Huyện');
-      }));
-      district.select.addEventListener('change', () => run(async () => {
-        ward.select.disabled = true; setOptions(ward.select, await loadLocations({ districtId: district.select.value }), 'Chọn Phường / Xã');
-      }));
-      const deposit = field('Đã thu trước / tạm ứng (VNĐ)', 'number', '0');
-      deposit.input.min = '0'; deposit.input.max = String(st.preview.total); deposit.input.step = '1'; deposit.input.inputMode = 'numeric'; deposit.input.required = true;
-      const method = el('select'), methodBox = el('label', 'pos-field');
-      method.setAttribute('aria-label', 'Hình thức thu trước');
-      for (const [value, name] of [['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản']]) {
-        const option = el('option', '', name); option.value = value; method.append(option);
-      }
-      methodBox.append(el('span', '', 'Hình thức thu trước'), method);
-      const confirmed = el('input'), confirmation = el('label', 'pos-note pos-cod-confirm'); confirmed.type = 'checkbox';
-      confirmation.append(confirmed, document.createTextNode(' Tôi xác nhận cửa hàng đã thực nhận chuyển khoản thu trước'));
-      const remaining = el('p', 'pos-cod-remaining'), validation = el('p', 'error'); validation.setAttribute('role', 'alert');
-      const updateDeposit = () => {
-        const n = Number(deposit.input.value), valid = deposit.input.value !== '' && Number.isSafeInteger(n) && n >= 0 && n <= st.preview.total;
-        remaining.textContent = 'Còn lại thu COD: ' + money(valid ? st.preview.total - n : st.preview.total);
-        validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
-        methodBox.hidden = !valid || n === 0;
-        confirmation.hidden = !valid || n === 0 || method.value !== 'transfer';
-        save.disabled = !valid || (n > 0 && method.value === 'transfer' && !confirmed.checked);
-      };
-      deposit.input.addEventListener('input', () => { confirmed.checked = false; updateDeposit(); });
-      method.addEventListener('change', () => { confirmed.checked = false; updateDeposit(); });
-      confirmed.addEventListener('change', updateDeposit);
-
-      m.form.append(
-        ghnIntro,
-        receiver.box,
-        phone.box,
-        address.box,
-        province.box, district.box, ward.box, retryLocations,
-        date.box,
-        el('p', '', 'Tổng đơn: ' + money(st.preview.total)),
-        deposit.box, methodBox, confirmation, remaining, validation,
-        el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
-      );
-      const save = el('button', 'btn primary', 'Tiếp tục trên GHN');
-      save.type = 'submit';
-      m.form.append(save, button('Huỷ', 'btn secondary', m.close));
-      updateDeposit();
-      let reviewing = false;
-      m.form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        updateDeposit(); if (save.disabled) return;
-        if (!province.select.value || !district.select.value || !ward.select.value) return toast('Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã theo GHN.', 'err');
-        const chosen = s => s.options[s.selectedIndex]?.textContent || '';
-        if (!reviewing) {
-          reviewing = true;
-          ghnIntro.textContent = 'Kiểm tra lần cuối thông tin người nhận, địa chỉ và tiền thu COD. Bấm xác nhận để tạo đơn.';
-          for (const input of m.form.querySelectorAll('input, select')) input.disabled = true;
-          save.disabled = false; save.textContent = 'Xác nhận & tạo đơn COD';
-          return;
-        }
-        save.disabled = true;
-        const body = {
-          ...payload(),
-          key: key(),
-          fulfillmentMode: 'cod',
-          ...(Number(deposit.input.value) > 0 ? { depositAmount: Number(deposit.input.value), method: method.value, confirmed: method.value === 'transfer' && confirmed.checked } : {}),
-          delivery: {
-            address: [address.input.value, chosen(ward.select), chosen(district.select), chosen(province.select)].filter(Boolean).join(', '),
-            receiverName: receiver.input.value,
-            receiverPhone: phone.input.value,
-            plannedDate: date.input.value,
-            ghnProvinceId: province.select.value, ghnDistrictId: district.select.value, ghnWardCode: ward.select.value,
-          },
-        };
-        m.close();
-        submit(body);
-      });
-      m.show();
-      run(loadProvinces);
-      return;
-    }
+    if (cod) return codForm();
     if (st.method === 'transfer' && !nodes.confirm.checked) return toast('Xác nhận đã thực nhận chuyển khoản.', 'err');
-    await submit({
+    return submit({
       ...payload(),
       key: key(),
       method: st.method,
@@ -1514,13 +1590,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       ...(st.method === 'transfer' && (qrId || st.qr?.paid) ? { paymentRequestId: qrId || st.qr.id } : {}),
     });
   }
-  async function submit(body) {
-    if (st.busy) return;
+  /**
+   * Gửi đơn lên máy chủ. Trả về 'saved' (đã lưu), 'rejected' (máy chủ từ chối – form giữ nguyên để sửa),
+   * 'unknown' (mất kết nối – giữ giao dịch chờ kiểm tra lại) hoặc 'busy' (đang gửi lượt khác).
+   * `onSaved` chạy ngay khi máy chủ xác nhận, trước khi hiện hộp "Đã lưu đơn hàng" (đóng form đang mở).
+   */
+  async function submit(body, onSaved) {
+    if (st.busy) return 'busy';
     persistPending(body);
     st.busy = true;
+    const payModal = paymentModal;
+    if (payModal) payModal.dlg.dataset.busy = '1';
     refreshPay();
     try {
       const d = await api(body.saleFlow?'/pos/order-flows/checkout':'/pos/checkout', 'POST', body);
+      onSaved?.();
       paymentModal?.close();
       persistPending(null);
       st.cart = [];
@@ -1552,16 +1636,20 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       saved.show();
       next.focus();
       await load();
+      return 'saved';
     } catch (e) {
       if (e.status >= 400 && e.status < 500) {
         persistPending(null);
         toast(body.saleFlow && [404,405].includes(e.status)?'Chức năng đặt cọc/trả trước đang cập nhật. Giỏ hàng được giữ nguyên; tải lại POS rồi thử lại.':e.message, 'err');
-      } else {
-        toast('Chưa rõ kết quả. Bấm Kiểm tra lại giao dịch để lấy đúng đơn, không thu lần nữa.', 'err');
-        draw();
+        return 'rejected';
       }
+      toast('Chưa rõ kết quả. Bấm Kiểm tra lại giao dịch để lấy đúng đơn, không thu lần nữa.', 'err');
+      paymentModal?.close();
+      draw();
+      return 'unknown';
     } finally {
       st.busy = false;
+      if (payModal) delete payModal.dlg.dataset.busy;
       refreshPay();
     }
   }

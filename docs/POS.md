@@ -179,3 +179,20 @@ Popup Báo cáo ca (Bán hàng nhanh), Sổ quỹ › Xem ca và hộp **Kết c
 - Tiền thu theo cách thu (thanh tỷ lệ), phiếu thu/chi tay từng dòng (giờ, loại, nội dung, trạng thái), Ship COD + đơn cọc, trả hàng (khi có), tra soát đầu ca (tách riêng), quy tắc đang áp dụng. Bấm khối → trang liên quan.
 - **Kết ca**: cột phải (điện thoại: lên đầu) – ô tổng tiền đếm, nút cộng nhanh +500k…+10k / Xoá; chênh lệch 3 trạng thái: chưa đếm (xám, nút khoá) · khớp (xanh) · lệch (cam, bắt buộc lý do, "Khác" bắt buộc ghi chú). Còn phiếu chờ duyệt: banner chặn + "Xem phiếu". "Xem trước bản in" in K80 với số đang đếm (chưa kết).
 - Không đổi công thức két, COD, tra soát, quyền xem báo cáo, chống ghi lặp. Báo cáo máy chủ thêm `entries` (phiếu thu/chi của ca); báo cáo ca cũ đã chốt không có thì gộp theo loại.
+
+## Form sau bảng Thanh toán: chống bấm trùng và giao diện mới (21/10/2026)
+- **Đang xử lý:** khi đang gửi đơn, nút chính đổi sang "Đang lưu đơn & in bill…", "Đang tạo đơn COD…", "Đang ghi nhận…" hoặc "Đang tạo mã QR…", có vòng quay. Trong lúc đó cả form bị khoá (nút, ô nhập, nút ×, phím Esc) nên không bấm lần hai và không đóng giữa chừng được.
+- **Ship COD:** form chia ba bước: Thông tin giao → Kiểm tra lại → Tạo đơn COD.
+  - Các khối Người nhận, Địa chỉ GHN, Thu trước có bảng tổng hợp: Tổng đơn, Đã thu trước, Còn thu khi giao.
+  - Bước kiểm tra hiện bản tóm tắt chỉ đọc, kèm nút "Sửa thông tin".
+  - Phải nhập đủ người nhận, điện thoại, số nhà và chọn đủ Tỉnh/Quận/Phường mới sang được bước kiểm tra.
+- **Đặt cọc / Ship trả trước:** cùng khung với bảng Thanh toán.
+  - Có nút nhanh 30%, 50%, Thu đủ và bảng tổng hợp: Tổng đơn, Thu lần này, Còn lại.
+  - Riêng ship trả trước bắt buộc nhập người nhận, điện thoại và địa chỉ.
+- **VietQR:** khung mới có số tiền lớn, mã QR, nội dung chuyển khoản và chấm trạng thái "Đang chờ SePay…" / "Đã xác nhận".
+- **Kết quả gửi đơn:**
+  - Lưu được: đóng form, hiện "Đã lưu đơn hàng".
+  - Máy chủ từ chối (lỗi 4xx): **giữ nguyên form và dữ liệu đã nhập**, báo lỗi ở đầu form để sửa rồi gửi lại. Trước đây form đóng ngay khi bấm nên mất dữ liệu.
+  - Mất kết nối, chưa rõ kết quả: đóng form, giữ giao dịch chờ "Kiểm tra lại giao dịch".
+- **Quay lại thanh toán:** form COD, cọc và trả trước có nút này để mở lại bảng Thanh toán mà không mất giỏ.
+- Không đổi API, công thức tiền hay quyền. Không cần migration.
