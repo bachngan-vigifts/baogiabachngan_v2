@@ -44,12 +44,13 @@ export function webFinancialDescription(d:WebOrderFinancials|null,currency='VND'
   if(!d)return '';
   const money=(n:number|null)=>n===null?'Chưa có dữ liệu':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2}).format(n)+' '+currency;
   const full=(a:number|null,tax:number|null)=>a===null?null:a+(tax??0);
+  const sourceMoney=(a:number|null,tax:number|null)=>money(full(a,tax))+(a!==null&&tax===null?' (chưa có thuế chi tiết)':'');
   const out:string[]=[];
-  for(const c of d.coupons)out.push(`${c.points?'Đổi điểm / mã':'Mã giảm giá'} ${c.code}: -${money(full(c.discount,c.tax))}`);
-  if(!d.coupons.length&&d.discountTotal!==null)out.push(`Giảm giá: -${money(full(d.discountTotal,d.discountTax))}`);
-  for(const f of d.fees)out.push(`${f.name||'Phí khác'}: ${money(full(f.total,f.tax))}`);
-  if(d.shippingTotal!==null)out.push(`Phí vận chuyển thu khách${d.shipping.length?' ('+d.shipping.map(s=>s.title).filter(Boolean).join(', ')+')':''}: ${money(full(d.shippingTotal,d.shippingTax))}`);
-  else for(const s of d.shipping)out.push(`Vận chuyển ${s.title}: ${money(full(s.total,s.tax))}`);
+  for(const c of d.coupons)out.push(`${c.points?'Đổi điểm / mã':'Mã giảm giá'} ${c.code}: -${sourceMoney(c.discount,c.tax)}`);
+  if(!d.coupons.length&&d.discountTotal!==null)out.push(`Giảm giá: -${sourceMoney(d.discountTotal,d.discountTax)}`);
+  for(const f of d.fees)out.push(`${f.name||'Phí khác'}: ${sourceMoney(f.total,f.tax)}`);
+  if(d.shippingTotal!==null)out.push(`Phí vận chuyển thu khách${d.shipping.length?' ('+d.shipping.map(s=>s.title).filter(Boolean).join(', ')+')':''}: ${sourceMoney(d.shippingTotal,d.shippingTax)}`);
+  else for(const s of d.shipping)out.push(`Vận chuyển ${s.title}: ${sourceMoney(s.total,s.tax)}`);
   if(d.points)out.push(`Điểm đã đổi: ${d.points.redeemed??'Chưa có dữ liệu'}${d.points.amount!==null?' · Giá trị quy đổi tham chiếu: '+money(d.points.amount):''} (đã nằm trong tổng nguồn, không trừ thêm)`);
   return out.join('\n');
 }
