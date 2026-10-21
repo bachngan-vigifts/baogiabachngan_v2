@@ -42,6 +42,7 @@ import { registerNavigationCounts } from './navigation-counts.ts';
 import { registerPulseRoutes } from './pulse-routes.ts';
 import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerTransferRoutes } from '../modules/inventory/api/transfer-routes.ts';
+import { registerStockHistoryRoutes } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
@@ -89,6 +90,7 @@ export function createAppRouter() {
   registerNavigationCounts(router);
   registerInventoryRoutes(router);
   registerTransferRoutes(router);
+  registerStockHistoryRoutes(router);
   registerFlowRoutes(router);
   registerCashbookRoutes(router);
   return router;
