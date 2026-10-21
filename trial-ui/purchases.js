@@ -128,7 +128,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     listMode.setAttribute('aria-pressed', String(!value)); skuMode.setAttribute('aria-pressed', String(value));
     panel.hidden = value || kho() && !khoAll; khoBox.hidden = value || !kho();
     if (value) incoming.show(requestId); else { incoming.hide(); load(); }
-    if (!/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', value ? '#/purchases?mode=incoming' : '#/purchases');
+    if (!/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', value ? '#/purchases?mode=incoming'+(requestId?'&request='+encodeURIComponent(requestId):'') : '#/purchases');
   }
   const shade = el('div', 'sup-shade'); shade.hidden = true; shade.addEventListener('click', () => close());
   const drawer = el('aside', 'sup-drawer pur-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
