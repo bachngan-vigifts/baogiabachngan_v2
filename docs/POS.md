@@ -35,7 +35,7 @@ Danh mục, chi tiết sản phẩm và luồng giữ hàng báo giá đọc s�
 
 Phải mở ca trước khi bán. Manager thiết lập số dư đầu kỳ tại Sổ quỹ một lần. Mỗi két chỉ có một ca đang mở; tiền bàn giao tham chiếu lấy từ số thực đếm ca trước (ca đầu lấy đầu kỳ Manager chốt). Nhân viên bắt buộc tự nhập tổng tiền mặt thực đếm, ô ban đầu để trống; tiền nguyên VNĐ từ 0 trở lên. Nếu lệch, giao dịch mở ca tạo tra soát ngay nhưng vẫn cho bán. Tiền trong ca được tính từ số thực đếm mới, không cộng/trừ chênh lệch bàn giao thêm lần nữa. Theo yêu cầu cập nhật ngày 18/10/2026, mở ca không còn bước kiểm đếm nhanh và API mở ca không yêu cầu hoặc ghi số đếm. Form chỉ gồm quầy, ca làm việc, tiền thực đếm đầu ca và ghi chú. Chốt tồn đầu kỳ/kiểm kê thực hiện riêng tại Sổ kho. Dữ liệu kiểm đếm lịch sử vẫn được giữ và chỉ hiển thị trên báo cáo ca cũ nếu có.
 
-Tiền mặt có tiền khách đưa/tiền thối và nút **Đủ tiền**. Chuyển khoản và VietQR đều yêu cầu nhân viên xác nhận cửa hàng đã thực nhận tiền. QR chỉ tạo yêu cầu, hết hạn sau 15 phút; giỏ/giá thay đổi phải tạo QR mới. Không có xác nhận ngân hàng tự động.
+Tiền mặt có tiền khách đưa/tiền thối và nút **Đủ tiền**. Chuyển khoản và VietQR đều yêu cầu nhân viên xác nhận cửa hàng đã thực nhận tiền. QR hết hạn sau 15 phút; giỏ/giá thay đổi phải tạo QR mới. SePay tự xác nhận khi tiền vào (xem mục "Xác nhận chuyển khoản SePay"). Giỏ đã được SePay xác nhận thì không thu lại bằng tiền mặt/COD/cọc; chọn Chuyển khoản sẽ tự gắn đúng khoản QR đó (kể cả khi tải lại trang mất mã QR).
 
 **Thu tiền & in** lưu chứng từ trước khi mở in. Mất mạng hoặc mất phản hồi: dùng **Kiểm tra lại giao dịch** để lấy lại đúng đơn bằng mã chống lặp đã lưu trong sessionStorage, không thu lần nữa. Dữ liệu này không chứa token. **In lại bill** chỉ in snapshot đã lưu.
 
@@ -47,7 +47,7 @@ Ca kết có snapshot cố định: số bill, giá trị bill, chiết khấu, 
 
 COD chưa thu không vào két. Cho kết ca khi còn COD chưa thu; danh sách tiếp tục theo cùng két của quầy sang ca sau, kể cả đổi nhân viên. Chỉ xác nhận thu sau khi chuyến đã giao và cửa hàng thực nhận tiền. Khoản thu gắn **ca đang mở lúc xác nhận**, không sửa báo cáo ca cũ. Thu COD bằng chuyển khoản không cộng tiền mặt. Báo cáo tách thu của chuyến giao trong ca, thu chuyến ca trước, và đã giao chưa thu.
 
-POS không đẩy đơn sang Sapo, không sửa module lương/cron/phiên Sapo. Chưa có nghiệp vụ hoàn tiền/đổi trả POS; Manager/Kế toán được huỷ phiếu thu có lý do. Ca đã kết giữ báo cáo và mở lại tra soát; nhân viên có ca mới được ghi lại khoản thực nhận tại chi tiết đơn tại quầy mà không xuất hàng lần nữa. COD vẫn thu qua đúng chuyến giao.
+POS không đẩy đơn sang Sapo, không sửa module lương/cron/phiên Sapo. Đổi / trả / hoàn tiền POS xem mục "Trả hàng · Đổi hàng · Hoàn tiền"; Manager/Kế toán được huỷ phiếu thu có lý do. Ca đã kết giữ báo cáo và mở lại tra soát; nhân viên có ca mới được ghi lại khoản thực nhận tại chi tiết đơn tại quầy mà không xuất hàng lần nữa. COD vẫn thu qua đúng chuyến giao.
 
 
 ## Rà soát prompt sửa lỗi POS (18/10/2026)
@@ -101,7 +101,7 @@ API mới nhận `serviceFees: [{ name, quantity, unitPrice }]` cùng `shippingF
 
 Payload POS → n8n/Claw bổ sung `additional_fees` (dịch vụ gồm amount/subtotal/tax_amount/tax_percent; ship amount/tax_percent=0), giữ tổng đã gồm phí và diễn giải từng dòng trong notes. `additional_fees.service` giữ tổng tương thích, thêm `service.lines` để lưu tên, SL, đơn giá và tiền/thuế từng khoản; không cộng tổng và lines hai lần. Đã kiểm payload bằng adapter giả; cần kiểm dry-run downstream n8n/Claw trước khi kết luận khoản phí đã được ghi đúng ở Sapo. Không kiểm thử bằng đơn thật.
 
-Cụm **Đơn hàng cửa hàng** nằm cuối trang, sau danh mục sản phẩm và thanh toán; giữ bộ lọc, liên kết và nguồn đồng bộ hiện có. Đơn website (`web_store_orders`) hiện chỉ xem thông tin/theo dõi trạng thái: các bước xử lý đơn, tạo vận đơn và đối soát thực hiện trên hệ thống nguồn; không tự tạo bản sao đơn bán CRM khi bấm xem.
+Cụm **Đơn hàng cửa hàng** nằm cuối trang, sau danh mục sản phẩm và thanh toán; giữ bộ lọc, liên kết và nguồn đồng bộ hiện có. Đơn website (`web_store_orders`): xem thông tin, **chọn địa chỉ chuẩn GHN → kiểm tra → tạo vận đơn**, cập nhật trạng thái hoặc huỷ (gọi về website nguồn); không tự tạo bản sao đơn bán CRM khi bấm xem.
 ## Xác nhận chuyển khoản SePay trên giỏ hàng
 
 Nút đổi khách ở giỏ hàng dùng màu xanh lá cùng nút Mở ca, rộng tối thiểu 170px trên máy tính và 150px trên điện thoại, cao 44px. Khi dùng **Hiện QR**, POS theo dõi yêu cầu thanh toán hiện tại kể cả sau khi đóng popup. Server báo đã nhận đủ tiền đúng QR thì ô chuyển khoản tự tích, hiện xác nhận SePay và bật **Thu tiền & in** để nhân viên hoàn tất. Nút này gửi đúng paymentRequestId để giữ liên kết với khoản chuyển tiền. Kết nối SePay hoặc tạo QR chưa được tính là đã nhận tiền; webhook vẫn đối chiếu mã/tài khoản/số tiền tại server. Thay đổi giỏ/bảng giá/khách hoặc tài khoản đăng nhập làm mất hiệu lực xác nhận cũ. Giữ lựa chọn xác nhận thủ công khi cửa hàng đã kiểm tra thực nhận.
@@ -148,7 +148,7 @@ Báo cáo tách cọc thực nhận, thu nốt, trả trước, chuyển khoản
 
 Giao diện chỉ mở lựa chọn mới khi `/pos/options.orderFlowVersion >= 1` và gửi tạo đơn qua `/pos/order-flows/checkout` riêng; API cũ/rollback trả lỗi thay vì coi cọc là bán đã thanh toán đủ. Bán tại quầy/COD vẫn dùng `/pos/checkout`.
 
-Dữ liệu được duyệt ngày 20/10/2026: `20261020010950_pos_deposit_prepaid.sql` và `20261020011018_supabase_access_pos_deposit_prepaid.sql` — hai bảng và `pos_returns.request_context`, RLS server-only. **Chưa áp dụng production; phải được duyệt riêng trước khi chạy DB live, rồi mới triển khai API/UI.** Không tạo giao dịch ngân hàng hay tự đồng bộ hai luồng mới sang Sapo/Claw trong thay đổi này. Không thay chính sách giảm giá/khách POS, lương hay cron.
+Dữ liệu được duyệt ngày 20/10/2026: `20261020010950_pos_deposit_prepaid.sql` và `20261020011018_supabase_access_pos_deposit_prepaid.sql` — hai bảng và `pos_returns.request_context`, RLS server-only. (Đã triển khai cùng API/UI; kiểm tra lại trên DB nếu nghi ngờ thiếu bảng.) Không tạo giao dịch ngân hàng hay tự đồng bộ hai luồng mới sang Sapo/Claw trong thay đổi này. Không thay chính sách giảm giá/khách POS, lương hay cron.
 
 
 ## Ca bán hàng dùng chung trong cửa hàng
@@ -196,3 +196,20 @@ Popup Báo cáo ca (Bán hàng nhanh), Sổ quỹ › Xem ca và hộp **Kết c
   - Mất kết nối, chưa rõ kết quả: đóng form, giữ giao dịch chờ "Kiểm tra lại giao dịch".
 - **Quay lại thanh toán:** form COD (và form cọc/trả trước khi được mở từ bảng Thanh toán) có nút này để mở lại bảng Thanh toán mà không mất giỏ.
 - Không đổi API, công thức tiền hay quyền. Không cần migration.
+
+## Soát trang Bán hàng nhanh (21/10/2026)
+**Việc tự sinh mới (trang Công việc, tự hoàn thành theo chứng từ):**
+- `pos-intent:` chuyển khoản cọc / trả trước đang chờ xác nhận → người phụ trách đơn, hạn trong ngày.
+- `pos-hold:` đơn cọc còn ≤ 1 ngày hoặc vừa hết (≤ 7 ngày) hạn giữ hàng → người phụ trách liên hệ khách.
+- `pos-cod:` Ship COD đã giao ≥ 2 ngày chưa ghi thu đủ (bỏ qua đơn đang có yêu cầu trả hàng) → người phụ trách đơn.
+
+Việc tự sinh chỉ được tính lại khi có người mở trang Công việc (không có cron).
+
+**Thông báo:**
+- Yêu cầu đổi / trả hàng mới báo người duyệt két của đúng cửa hàng; bấm thông báo mở thẳng yêu cầu của bill (`#/cash?returnOrderId=`).
+- Lệch tiền **đầu ca** (trước đây chỉ lặng lẽ tạo tra soát) và **cuối ca** báo người duyệt két của đúng cửa hàng, gồm cả CHT được chỉ định; trước đây chỉ báo Manager. Bấm thông báo mở Sổ quỹ của két.
+
+**Dữ liệu:**
+- Đơn cọc / trả trước tạo xong đồng bộ ngay việc xuất hoá đơn.
+- Cập nhật đơn web không còn xoá trạng thái GHN khi website không gửi trạng thái.
+- Huỷ đơn cọc chưa xuất hàng đóng cả chuyến giao thất bại.

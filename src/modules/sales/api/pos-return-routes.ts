@@ -40,7 +40,8 @@ import {
   deliveries,
   packingSlips,
 } from '../schema.ts';
-import { posShifts } from '../pos-schema.ts';
+import { posRegisters, posShifts } from '../pos-schema.ts';
+import { notifyPosReturnApproval } from './cash-approval-notification.ts';
 import { cashDrawers, cashEntries } from '../cash-schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { recordMovements } from '../../catalog/api/product-history.ts';
@@ -175,6 +176,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
         orderId = posText(b.orderId),
         reason = posText(b.reason, 2000);
       if (!reason) throw new AppError(400, 'Nhập lý do đổi/trả hàng.');
+      let created = false;
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         const { o, s } = await source(c, tx, orderId);
@@ -375,8 +377,14 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           service,
           shipping,
         });
+        created = true;
         return r;
       });
+      if (created && result) {
+        const [reg] = await c.env.db.select({ drawerId: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.id, result.registerId));
+        if (reg) await notifyPosReturnApproval(c.env, { id: result.id, returnNo: result.returnNo, orderId: result.orderId, drawerId: reg.drawerId, total: result.total, reason, createdBy: who(c).id })
+          .catch(error => console.warn('pos return notification failed', error instanceof Error ? error.message : 'unknown error'));
+      }
       return json(result, 201);
     },
     'business',

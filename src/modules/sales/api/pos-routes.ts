@@ -3,6 +3,7 @@ import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
 import { posStockSources } from './pos-stock-sources.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
+import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
 import { returnAccount } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
@@ -27,7 +28,6 @@ import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlip
 import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
-import { notifyMany } from '../../notifications/api/routes.ts';
 import { writeAudit } from '../../../core/audit.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
 import { sendPosShiftReport } from './pos-shift-report-webhook.ts';
@@ -293,7 +293,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       return json({ ok: true, locations: rememberGhnLocations(key, Array.isArray(result.locations) ? result.locations : []) });
     }
     const fields = { status: posText(result.status, 50) || order.status, ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
-      ghnStatus: posText(result.ghnStatus, 100), ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
+      ghnStatus: posText(result.ghnStatus, 100) || order.ghnStatus, ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };
     await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
@@ -778,6 +778,16 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         });
         return { ...s!, openingReconciliationId };
       });
+      // Lệch tiền đầu ca so với bàn giao: báo người duyệt két ngay (trước đây chỉ lặng lẽ tạo tra soát).
+      const openingReconciliationId = 'openingReconciliationId' in result ? result.openingReconciliationId : null;
+      if (openingReconciliationId)
+        await notifyCashApprovers(c.env, result.cashDrawerId, m.id, {
+          eventType: 'pos_opening_difference',
+          title: 'Mở ca lệch tiền bàn giao',
+          body: `${m.name}: đếm ${result.openingCash.toLocaleString('vi-VN')} đ, khác tiền bàn giao. Đã tạo tra soát.`,
+          url: '/index.html#/cash?drawerId=' + encodeURIComponent(result.cashDrawerId),
+          data: { shiftId: result.id, reconciliationId: openingReconciliationId },
+        }).catch(error => console.warn('opening difference notification failed', error instanceof Error ? error.message : 'unknown error'));
       return json(result, 201);
     },
     'business',
@@ -799,13 +809,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const b = await readJson(c.req, 5000);
       const result = await c.env.db.transaction((tx) => closeCashShift(tx, m, c.params.id!, b, shiftReport));
       if (!result.replayed && result.cashDifference)
-        await notifyMany(c.env, 'managers', {
+        await notifyCashApprovers(c.env, result.shift.cashDrawerId, m.id, {
           eventType: 'pos_shift_difference',
           title: 'Kết ca lệch tiền mặt',
           body: `${m.name}: ${result.cashDifference.toLocaleString('vi-VN')} đ. ${result.differenceReason}`,
-          url: '/index.html#/pos',
-          actorId: m.id,
-        });
+          url: '/index.html#/cash?drawerId=' + encodeURIComponent(result.shift.cashDrawerId),
+          data: { shiftId: result.shift.id },
+        }).catch(error => console.warn('shift difference notification failed', error instanceof Error ? error.message : 'unknown error'));
       if (!result.replayed && c.env.posShiftReportWebhook) {
         const task = sendPosShiftReport(c.env, result).catch((error) =>
           console.error('POS_SHIFT_REPORT_WEBHOOK_FAILED', result.shift?.id, error instanceof Error ? error.message : error),

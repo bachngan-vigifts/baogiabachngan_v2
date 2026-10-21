@@ -13,6 +13,8 @@ import { progressOf } from '../../sales/api/progress.ts';
 import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
+import { posOrderReservations, posPaymentIntents } from '../../sales/pos-order-flow-schema.ts';
+import { posReturns } from '../../sales/return-schema.ts';
 import { openPurchases } from '../../suppliers/api/purchase-store.ts';
 import { stockTransfers } from '../../inventory/schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
@@ -253,6 +255,62 @@ export const RULES: Record<string, Rule> = {
       .where(and(eq(tasks.source, 'packing'), inArray(tasks.status, ['todo', 'in_progress']))).limit(500);
     return open.filter(r => r.status === 'planned').map(({ t }) => ({ autoKey: t.autoKey!, source: 'packing' as const, sourceId: t.sourceId ?? '', title: t.title, description: t.description,
       link: t.link, assigneeId: t.assigneeId, assigneePosition: t.assigneePosition, priority: t.priority, dueDate: t.dueDate }));
+  },
+  /**
+   * BÁN HÀNG NHANH. Chuyển khoản cọc / trả trước đang "chờ xác nhận" → việc cho người phụ trách đơn xác nhận ngay
+   * (chưa xác nhận thì chưa ghi thu, giữ hàng 5 ngày vẫn chạy). Tự hoàn thành khi khoản chờ được xác nhận hoặc huỷ.
+   */
+  async posTransferPending(db) {
+    const rows = await db.select({ i: posPaymentIntents, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId })
+      .from(posPaymentIntents).innerJoin(salesOrders, eq(salesOrders.id, posPaymentIntents.orderId))
+      .where(and(eq(posPaymentIntents.status, 'pending'), ne(salesOrders.status, 'cancelled'))).limit(500);
+    return rows.map(({ i, orderNo, customerName, ownerId }) => ({
+      autoKey: `pos-intent:${i.id}`, source: 'receivable' as const, sourceId: i.orderId,
+      title: `Xác nhận chuyển khoản ${i.kind === 'deposit' ? 'cọc' : 'trả trước'} ${orderNo} – ${customerName}`,
+      description: `${vnd(i.amount)} đang chờ xác nhận. Kiểm tra tài khoản ngân hàng rồi bấm "Cọc / Thu nốt / Trả trước" trên đơn để xác nhận hoặc huỷ khoản chờ.`,
+      link: `#/orders/${i.orderId}`, assigneeId: ownerId ?? i.createdBy, priority: 'high' as const, dueDate: day(i.createdAt),
+    }));
+  },
+
+  /**
+   * Đơn cọc sắp hết (≤ 1 ngày) hoặc vừa hết (≤ 7 ngày) hạn giữ hàng → việc cho người phụ trách liên hệ khách
+   * (thu nốt / nhận hàng hoặc huỷ). Khoá theo ngày hết hạn; đơn đã nhận hàng / huỷ thì giữ hàng không còn "active" → tự hoàn thành.
+   */
+  async posHoldExpiring(db) {
+    const now = Date.now(), soon = new Date(now + 86_400_000).toISOString(), since = new Date(now - 7 * 86_400_000).toISOString();
+    const rows = await db.select({ orderId: posOrderReservations.orderId, expiresAt: sql<string>`min(${posOrderReservations.expiresAt})`, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId, createdBy: salesOrders.createdBy })
+      .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId))
+      .where(and(eq(posOrderReservations.status, 'active'), lte(posOrderReservations.expiresAt, soon), gte(posOrderReservations.expiresAt, since), notInArray(salesOrders.status, ['cancelled', 'delivered'])))
+      .groupBy(posOrderReservations.orderId, salesOrders.orderNo, salesOrders.customerName, salesOrders.ownerId, salesOrders.createdBy).limit(500);
+    return rows.map(r => {
+      const expired = Date.parse(r.expiresAt) <= now;
+      return {
+        autoKey: `pos-hold:${r.orderId}:${day(r.expiresAt)}`, source: 'order' as const, sourceId: r.orderId,
+        title: `Đơn cọc ${r.orderNo} ${expired ? 'đã hết' : 'sắp hết'} hạn giữ hàng – ${r.customerName}`,
+        description: `Hạn giữ hàng: ${new Date(r.expiresAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}. ${expired ? 'Hàng không còn được giữ, có thể đã bán cho khách khác.' : 'Liên hệ khách thu nốt / nhận hàng hoặc huỷ đơn.'}`,
+        link: `#/orders/${r.orderId}`, assigneeId: r.ownerId ?? r.createdBy, priority: (expired ? 'high' : 'normal') as TaskPriority, dueDate: day(r.expiresAt),
+      };
+    });
+  },
+
+  /**
+   * Ship COD tại quầy đã giao ≥ 2 ngày mà chưa ghi thu đủ → việc cho người phụ trách đơn đối soát với GHN / khách.
+   * Bỏ qua đơn đang có yêu cầu trả hàng (số còn thu đổi theo phần trả). Tự hoàn thành khi đã ghi thu đủ.
+   */
+  async posCodUncollected(db) {
+    const before = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const paid = sql<number>`(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.deliveryId}=${deliveries.id} and ${customerPayments.voidedAt} is null)`.mapWith(Number);
+    const rows = await db.select({ d: deliveries, paid, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, ownerId: salesOrders.ownerId, createdBy: salesOrders.createdBy })
+      .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+      .where(and(eq(salesOrders.channel, 'pos'), eq(deliveries.status, 'delivered'), sql`${deliveries.codAmount} > 0`, lte(deliveries.deliveredAt, before),
+        sql`${deliveries.codAmount} > ${paid}`, sql`not exists (select 1 from ${posReturns} where ${posReturns.orderId} = ${salesOrders.id} and ${posReturns.status} not in ('rejected','cancelled'))`))
+      .limit(500);
+    return rows.map(({ d, paid, orderNo, customerName, ownerId, createdBy }) => ({
+      autoKey: `pos-cod:${d.id}`, source: 'receivable' as const, sourceId: d.orderId,
+      title: `Thu COD ${d.deliveryNo} – ${customerName}`,
+      description: `${orderNo}: đã giao ${fmt(day(d.deliveredAt))}, còn ${vnd(d.codAmount - paid)} chưa ghi thu. Đối soát với GHN rồi "Xác nhận đã thu" ở Ship COD của quầy.`,
+      link: `#/orders/${d.orderId}`, assigneeId: ownerId ?? createdBy, priority: 'high' as const, dueDate: day(d.deliveredAt),
+    }));
   },
 };
 

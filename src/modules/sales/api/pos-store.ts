@@ -388,9 +388,18 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     const initialAmount = flow ? flowInitialAmount(flow, c.total, b.initialAmount) : 0;
     const receivedInitial = flow && (method === 'cash' || b.confirmed === true) ? initialAmount : 0;
     if (flow && (c.exchange.amount || b.paymentRequestId)) throw new AppError(400, 'Đơn cọc/trả trước không dùng QR hoặc tín dụng giỏ đang thanh toán.');
-    if(flow){
-      const [paidQr]=await tx.select({id:posPaymentRequests.id}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
-      if(paidQr)throw new AppError(409,'Giỏ đã nhận chuyển khoản qua QR. Hoàn tất giao dịch QR trước, không chuyển thành đơn cọc/trả trước.');
+    // Giỏ này đã được ngân hàng xác nhận chuyển khoản qua QR nhưng chưa gắn vào đơn nào:
+    // không cho thu lại bằng tiền mặt / COD / cọc (khách bị thu hai lần, két lệch).
+    // Thanh toán "Chuyển khoản" không kèm mã QR (vd. tải lại trang mất mã) thì tự gắn khoản QR đó.
+    let paymentRequestId = posText(b.paymentRequestId);
+    if (!paymentRequestId) {
+      const [paidQr]=await tx.select({id:posPaymentRequests.id,amount:posPaymentRequests.amount}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
+      if (paidQr) {
+        if (flow) throw new AppError(409,'Giỏ đã nhận chuyển khoản qua QR. Hoàn tất giao dịch QR trước, không chuyển thành đơn cọc/trả trước.', 'POS_QR_ALREADY_PAID');
+        if (method !== 'transfer' || mode === 'cod' || paidQr.amount !== c.payable)
+          throw new AppError(409,'Giỏ này đã nhận chuyển khoản qua QR. Chọn "Chuyển khoản" để hoàn tất đúng khoản đã nhận, không thu lại.', 'POS_QR_ALREADY_PAID');
+        paymentRequestId = paidQr.id;
+      }
     }
 
     if (c.exchange.amount && mode === 'cod') throw new AppError(400, 'Đổi hàng thanh toán tại quầy, không chuyển COD.');
@@ -398,11 +407,11 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     if (c.total === 0 && mode === 'cod') throw new AppError(400, 'Đơn COD phải có số tiền cần thu.');
     await assertOpening(tx, c.register.warehouseId);
     let qr: typeof posPaymentRequests.$inferSelect | undefined;
-    if (b.paymentRequestId) {
+    if (paymentRequestId) {
       [qr] = await tx
         .select()
         .from(posPaymentRequests)
-        .where(and(eq(posPaymentRequests.id, posText(b.paymentRequestId)), eq(posPaymentRequests.shiftId, s.id)))
+        .where(and(eq(posPaymentRequests.id, paymentRequestId), eq(posPaymentRequests.shiftId, s.id)))
         .for('update');
       if (
         !qr ||
