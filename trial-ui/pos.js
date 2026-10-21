@@ -1138,6 +1138,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       head.append(el('span', '', sec.title), el('small', '', (LINK[sec.open] || 'Mở') + ' ›'));
       box.append(head);
       for (const [k, v] of sec.rows) { const row = el('div', 'pos-total-row'); row.append(el('span', '', k), el('b', '', v)); box.append(row); }
+      if (!sec.rows.length) box.append(el('p', 'pos-note', 'Không phát sinh trong ca.'));
       if (sec.note) box.append(el('p', 'pos-note', sec.note));
       container.append(box);
     }
