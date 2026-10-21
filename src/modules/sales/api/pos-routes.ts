@@ -3,12 +3,14 @@ import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
 import { posStockSources } from './pos-stock-sources.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
+import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
-import { returnAccount } from './pos-return-credit.ts';
+import { returnAccount, returnBalances } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
+import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -27,7 +29,6 @@ import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlip
 import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
-import { notifyMany } from '../../notifications/api/routes.ts';
 import { writeAudit } from '../../../core/audit.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
 import { sendPosShiftReport } from './pos-shift-report-webhook.ts';
@@ -83,18 +84,6 @@ async function lockGhnLocations(provinceId: number, districtId: number) {
 function config(c: RouteContext<StaffEnv>) {
   if (!can(member(c), 'pos.configure')) throw new AppError(403, 'Chỉ người được cấp cấu hình POS thao tác.');
 }
-async function allowedPosRegisters(c: RouteContext<StaffEnv>) {
-  const m = member(c), db = c.env.db;
-  const regs = (await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
-  if (posScope(c)) return { regs, ids: new Set(regs.map(r => r.id)), all: false };
-  if (m.role === 'manager' || can(m, 'pos.configure')) return { regs, ids: new Set(regs.map(r => r.id)), all: true };
-  const [[current], [position]] = await Promise.all([
-    db.select({ registerId: posShifts.registerId }).from(posShifts).where(and(eq(posShifts.memberId, m.id), isNull(posShifts.closedAt))).limit(1),
-    m.positionId ? db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1) : Promise.resolve([]),
-  ]);
-  const id = (current && regs.some(r => r.id === current.registerId) ? current.registerId : '') || defaultPosRegister(m.positionId, position?.name, regs);
-  return { regs: regs.filter(r => r.id === id), ids: new Set(id ? [id] : []), all: false };
-}
 function posOrderBucket(o: { status: string; fulfillmentMode: string; packingStatus: string; deliveryStatus: string }) {
   if (o.status === 'cancelled') return 'cancelled';
   if (o.status === 'delivered') return 'completed';
@@ -120,8 +109,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const source = c.params.source === 'lock' ? 'lock' : c.params.source === 'minhlong' ? 'minhlong' : '';
     if (!source) throw new AppError(404, 'Nguồn website không hợp lệ.');
     const tokenHash = sha256Hex(c.url.searchParams.get('token') || '');
-    const expected = source === 'lock' ? (c.env.wooLockTokenHash || '332555a87646e97c22b3496d8eaca19cbfb649b3c0fd3381ac2bd62b23311d6d') : (c.env.wooMinhLongTokenHash || 'aa30c8ef850ad067688d7e91744cab2608546aaca978018e28b9aa5e97cc1415');
-    if (tokenHash !== expected) throw new AppError(401, 'Webhook không đúng website.');
+    // Không có mã dự phòng trong code: thiếu biến môi trường thì từ chối mọi webhook (fail closed).
+    const expected = (source === 'lock' ? c.env.wooLockTokenHash : c.env.wooMinhLongTokenHash) || '';
+    if (!expected || tokenHash !== expected) throw new AppError(401, 'Webhook không đúng website.');
     const b = await readJson(c.req, 256_000), externalId = posText(String(b.id ?? ''), 80), number = posText(String(b.number ?? b.id ?? ''), 100);
     if (!externalId || !number) throw new AppError(400, 'Đơn WooCommerce thiếu ID hoặc số đơn.');
     const wantedName = source === 'lock' ? 'CỬA HÀNG LOCKNLOCK CẦN THƠ' : 'Showroom Gốm Sứ Minh Long Cần Thơ';
@@ -225,7 +215,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (requested && !scope.ids.has(requested)) throw new AppError(403, 'Bạn không được xem đơn của cửa hàng này.');
       const registerId = requested || scope.regs[0]?.id || '';
       if (!registerId) return json({ registers: scope.regs, registerId: '', counts: { all: 0, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 }, orders: [] });
-      const rows = await c.env.db.select({
+      // Lọc ngay trong SQL (nguồn, nhân viên, ngày, từ khoá) để không tải toàn bộ lịch sử quầy mỗi lần mở bảng.
+      // Chưa chọn ngày: đơn đã xong / đã huỷ chỉ lấy 30 ngày gần nhất; đơn còn dang dở luôn hiện dù cũ.
+      const p = c.url.searchParams, source = p.get('source') || 'all', ownerId = posText(p.get('ownerId'), 80);
+      const isDay = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const from = isDay(p.get('from')) ? p.get('from')! : '', to = isDay(p.get('to')) ? p.get('to')! : '';
+      const windowFrom = from || to ? '' : new Date(Date.parse(vietnamDate().iso) - 30 * 86_400_000).toISOString().slice(0, 10);
+      const like = '%' + posText(p.get('q'), 200).replace(/[\\%_]/g, '') + '%', hasQ = like !== '%%';
+      const crmWanted = source === 'all' || source === 'pos' || source === 'cod', webWanted = (source === 'all' || source === 'web') && !ownerId;
+      const rows = !crmWanted ? [] : await c.env.db.select({
         id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, phone: salesOrders.phone,
         ownerId: salesOrders.ownerId, ownerName: employees.name, paid: sql<number>`(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.voidedAt} is null)`.mapWith(Number), total: salesOrders.total, status: salesOrders.status, fulfillmentMode: salesOrders.fulfillmentMode,
         orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
@@ -234,9 +232,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       }).from(salesOrders)
         .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
         .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
-        .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId)))
+        .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId),
+          source === 'cod' ? eq(salesOrders.fulfillmentMode, 'cod') : source === 'pos' ? ne(salesOrders.fulfillmentMode, 'cod') : undefined,
+          ownerId ? eq(salesOrders.ownerId, ownerId) : undefined,
+          from ? gte(salesOrders.orderDate, from) : undefined, to ? lte(salesOrders.orderDate, to) : undefined,
+          windowFrom ? or(notInArray(salesOrders.status, ['delivered', 'cancelled']), gte(salesOrders.orderDate, windowFrom)) : undefined,
+          hasQ ? sql`${foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.sapoOrderCode, employees.name)} like ${foldSql(sql`${like}`)}` : undefined))
         .orderBy(desc(salesOrders.createdAt));
-      const webRows = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.registerId, registerId)).orderBy(desc(webStoreOrders.updatedAt));
+      const webRows = !webWanted ? [] : await c.env.db.select().from(webStoreOrders).where(and(eq(webStoreOrders.registerId, registerId),
+        from ? gte(webStoreOrders.orderedAt, from) : undefined, to ? lte(webStoreOrders.orderedAt, to + 'T23:59:59.999Z') : undefined,
+        windowFrom ? or(notInArray(webStoreOrders.status, ['completed', 'cancelled', 'refunded', 'failed', 'trash']), gte(webStoreOrders.orderedAt, windowFrom)) : undefined))
+        .orderBy(desc(webStoreOrders.updatedAt));
       const decorated = [
         ...rows.map(o => ({ ...o, bucket: posOrderBucket(o), source: 'crm', external: false, currency: 'VND', orderSource: o.fulfillmentMode === 'cod' ? 'cod' : 'pos', paymentStatus: o.paid >= o.total ? 'paid' : 'debt', outstanding: Math.max(0, o.total-o.paid) })),
         ...webRows.map(o => {
@@ -249,7 +255,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const board = filterPosOrderBoard(decorated, c.url.searchParams);
-      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, ...board });
+      // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.
+      board.owners = (await c.env.db.selectDistinct({ id: salesOrders.ownerId, name: employees.name }).from(salesOrders)
+        .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).leftJoin(employees, eq(employees.id, salesOrders.ownerId))
+        .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId))))
+        .filter((o): o is { id: string; name: string | null } => !!o.id).map(o => ({ id: o.id, name: o.name || 'Chưa có tên' }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+      // Số đếm và tổng tiền tính trên toàn bộ kết quả lọc; danh sách trả theo trang 100 đơn.
+      const offset = Math.max(0, Math.min(1_000_000, Number(p.get('offset')) || 0)), pageSize = 100;
+      const orders = board.orders.slice(offset, offset + pageSize);
+      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, ...board, orders,
+        totalOrders: board.orders.length, nextOffset: offset + pageSize < board.orders.length ? offset + pageSize : null, windowFrom: windowFrom || null });
     },
     'business',
   );
@@ -293,7 +309,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       return json({ ok: true, locations: rememberGhnLocations(key, Array.isArray(result.locations) ? result.locations : []) });
     }
     const fields = { status: posText(result.status, 50) || order.status, ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
-      ghnStatus: posText(result.ghnStatus, 100), ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
+      ghnStatus: posText(result.ghnStatus, 100) || order.ghnStatus, ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };
     await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
@@ -356,7 +372,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .orderBy(desc(posShifts.openedAt))
           .limit(50),
       ]);
-      const regs = allRegs.filter(r => allowedRegister(c, r.id));
+      const sellScope = await allowedPosRegisters(c);
+      const regs = allRegs.filter(r => allowedRegister(c, r.id) && (sellScope.all || sellScope.ids.has(r.id)));
       const shifts = shiftRows.filter(x => allowedRegister(c, x.shift.registerId)).map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
       const policies = await c.env.db
         .select()
@@ -529,6 +546,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/catalog',
     async (c) => {
       posPermission(member(c));
+      await assertSellRegister(c, posText(c.url.searchParams.get('registerId')));
       const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId'))),
         policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId,
         q = posText(c.url.searchParams.get('q'), 100);
@@ -679,6 +697,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/opening-counts',
     async (c) => {
       posPermission(member(c));
+      await assertSellRegister(c, posText(c.url.searchParams.get('registerId')));
       const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId')));
       await assertOpening(c.env.db, r.warehouseId);
       const rows = await c.env.db
@@ -708,6 +727,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if ((typeof requestedOpening !== 'number' && typeof requestedOpening !== 'string') || String(requestedOpening).trim() === '')
         throw new AppError(400, 'Nhập tiền thực đếm đầu ca.');
       const countedOpening = posMoney(requestedOpening, 'Tiền thực đếm đầu ca');
+      await assertSellRegister(c, registerId);
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-register:' + registerId}))`);
@@ -778,6 +798,16 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         });
         return { ...s!, openingReconciliationId };
       });
+      // Lệch tiền đầu ca so với bàn giao: báo người duyệt két ngay (trước đây chỉ lặng lẽ tạo tra soát).
+      const openingReconciliationId = 'openingReconciliationId' in result ? result.openingReconciliationId : null;
+      if (openingReconciliationId)
+        await notifyCashApprovers(c.env, result.cashDrawerId, m.id, {
+          eventType: 'pos_opening_difference',
+          title: 'Mở ca lệch tiền bàn giao',
+          body: `${m.name}: đếm ${result.openingCash.toLocaleString('vi-VN')} đ, khác tiền bàn giao. Đã tạo tra soát.`,
+          url: '/index.html#/cash?drawerId=' + encodeURIComponent(result.cashDrawerId),
+          data: { shiftId: result.id, reconciliationId: openingReconciliationId },
+        }).catch(error => console.warn('opening difference notification failed', error instanceof Error ? error.message : 'unknown error'));
       return json(result, 201);
     },
     'business',
@@ -799,13 +829,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const b = await readJson(c.req, 5000);
       const result = await c.env.db.transaction((tx) => closeCashShift(tx, m, c.params.id!, b, shiftReport));
       if (!result.replayed && result.cashDifference)
-        await notifyMany(c.env, 'managers', {
+        await notifyCashApprovers(c.env, result.shift.cashDrawerId, m.id, {
           eventType: 'pos_shift_difference',
           title: 'Kết ca lệch tiền mặt',
           body: `${m.name}: ${result.cashDifference.toLocaleString('vi-VN')} đ. ${result.differenceReason}`,
-          url: '/index.html#/pos',
-          actorId: m.id,
-        });
+          url: '/index.html#/cash?drawerId=' + encodeURIComponent(result.shift.cashDrawerId),
+          data: { shiftId: result.shift.id },
+        }).catch(error => console.warn('shift difference notification failed', error instanceof Error ? error.message : 'unknown error'));
       if (!result.replayed && c.env.posShiftReportWebhook) {
         const task = sendPosShiftReport(c.env, result).catch((error) =>
           console.error('POS_SHIFT_REPORT_WEBHOOK_FAILED', result.shift?.id, error instanceof Error ? error.message : error),
@@ -952,7 +982,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         )
         .orderBy(desc(deliveries.plannedDate))
         .limit(200);
-      return json({ deliveries: (await Promise.all(rows.map(async x=>({...x,codAmount: Math.min(x.codAmount, x.paid+Math.max(0,(await returnAccount(c.env.db,x.orderId)).balance))})))).filter(x=>x.codAmount>x.paid) });
+      const balances = await returnBalances(c.env.db, rows.map(x => x.orderId));
+      return json({ deliveries: rows.map(x => ({ ...x, codAmount: Math.min(x.codAmount, x.paid + Math.max(0, balances.get(x.orderId) ?? 0)) })).filter(x => x.codAmount > x.paid) });
     },
     'business',
   );

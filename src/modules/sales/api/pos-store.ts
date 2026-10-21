@@ -1,7 +1,7 @@
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
 import { flowInitialAmount, flowHoldUntil, saleFlowOf } from '../domain/pos-order-flow.ts';
-import { exchangeForCart, returnAccount } from './pos-return-credit.ts';
+import { exchangeForCart, returnBalances } from './pos-return-credit.ts';
 import { posExchangeAllocations, posReturns, posRefunds } from '../return-schema.ts';
 import { posOrderNote } from '../domain/pos-order-note.ts';
 import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
@@ -302,7 +302,8 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
   const pendingByOrder=new Map<string,number>();
   for(const p of pending)pendingByOrder.set(p.orderId,(pendingByOrder.get(p.orderId)||0)+p.amount);
   let pendingCount=0,pendingAmount=0;
-  for(const [id,amount] of pendingByOrder){const a=await returnAccount(db,id,cutoff);const remaining=Math.min(amount,Math.max(0,a.balance));if(remaining>0){pendingCount++;pendingAmount+=remaining;}}
+  const pendingBalances=await returnBalances(db,[...pendingByOrder.keys()],cutoff);
+  for(const [id,amount] of pendingByOrder){const remaining=Math.min(amount,Math.max(0,pendingBalances.get(id)??0));if(remaining>0){pendingCount++;pendingAmount+=remaining;}}
   const flowOrders = await db.select({amount:sql<number>`greatest(0,${salesOrders.total}-(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.createdAt}<=${cutoff} and (${customerPayments.voidedAt} is null or ${customerPayments.voidedAt}>${cutoff})))`.mapWith(Number)}).from(salesOrders).innerJoin(posShifts,eq(posShifts.id,salesOrders.shiftId)).where(and(eq(posShifts.cashDrawerId,s.cashDrawerId),sql`${salesOrders.posSnapshot}::jsonb->>'saleFlow' in ('deposit','prepaid')`,inArray(salesOrders.status,['draft','confirmed','delivering']),sql`${salesOrders.createdAt}<=${cutoff}`));
   const flowPending = await db.select({n:count(),amount:sql<number>`coalesce(sum(${posPaymentIntents.amount}),0)`.mapWith(Number)}).from(posPaymentIntents).where(and(eq(posPaymentIntents.requestedShiftId,s.id),sql`${posPaymentIntents.createdAt}<=${cutoff}`,sql`(${posPaymentIntents.confirmedAt} is null or ${posPaymentIntents.confirmedAt}>${cutoff}) and (${posPaymentIntents.cancelledAt} is null or ${posPaymentIntents.cancelledAt}>${cutoff})`));
   let flowOutstandingCount=0,flowOutstandingAmount=0;
@@ -356,6 +357,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
   posPermission(m);
   const flow = saleFlowOf(b);
   if (b.saleFlow !== undefined && !flow) throw new AppError(400, 'Chọn loại đơn cọc/trả trước hợp lệ.');
+  // Đã bỏ tạo mới đơn cọc / ship trả trước (21/10/2026). Đơn cũ vẫn thu nốt / nhận hàng / huỷ / trả hàng bình thường.
+  if (flow && !env.posOrderFlowCreate) throw new AppError(410, 'Đã ngừng tạo đơn cọc / ship trả trước. Bán tại quầy hoặc Ship COD.', 'POS_ORDER_FLOW_DISABLED');
   const key = posKey(b.key),
     shiftId = posText(b.shiftId),
     mode = flow ? (flow === 'prepaid' ? 'delivery' : 'counter') : b.fulfillmentMode === 'cod' ? 'cod' : 'counter',
@@ -388,9 +391,18 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     const initialAmount = flow ? flowInitialAmount(flow, c.total, b.initialAmount) : 0;
     const receivedInitial = flow && (method === 'cash' || b.confirmed === true) ? initialAmount : 0;
     if (flow && (c.exchange.amount || b.paymentRequestId)) throw new AppError(400, 'Đơn cọc/trả trước không dùng QR hoặc tín dụng giỏ đang thanh toán.');
-    if(flow){
-      const [paidQr]=await tx.select({id:posPaymentRequests.id}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
-      if(paidQr)throw new AppError(409,'Giỏ đã nhận chuyển khoản qua QR. Hoàn tất giao dịch QR trước, không chuyển thành đơn cọc/trả trước.');
+    // Giỏ này đã được ngân hàng xác nhận chuyển khoản qua QR nhưng chưa gắn vào đơn nào:
+    // không cho thu lại bằng tiền mặt / COD / cọc (khách bị thu hai lần, két lệch).
+    // Thanh toán "Chuyển khoản" không kèm mã QR (vd. tải lại trang mất mã) thì tự gắn khoản QR đó.
+    let paymentRequestId = posText(b.paymentRequestId);
+    if (!paymentRequestId) {
+      const [paidQr]=await tx.select({id:posPaymentRequests.id,amount:posPaymentRequests.amount}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
+      if (paidQr) {
+        if (flow) throw new AppError(409,'Giỏ đã nhận chuyển khoản qua QR. Hoàn tất giao dịch QR trước, không chuyển thành đơn cọc/trả trước.', 'POS_QR_ALREADY_PAID');
+        if (method !== 'transfer' || mode === 'cod' || paidQr.amount !== c.payable)
+          throw new AppError(409,'Giỏ này đã nhận chuyển khoản qua QR. Chọn "Chuyển khoản" để hoàn tất đúng khoản đã nhận, không thu lại.', 'POS_QR_ALREADY_PAID');
+        paymentRequestId = paidQr.id;
+      }
     }
 
     if (c.exchange.amount && mode === 'cod') throw new AppError(400, 'Đổi hàng thanh toán tại quầy, không chuyển COD.');
@@ -398,11 +410,11 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     if (c.total === 0 && mode === 'cod') throw new AppError(400, 'Đơn COD phải có số tiền cần thu.');
     await assertOpening(tx, c.register.warehouseId);
     let qr: typeof posPaymentRequests.$inferSelect | undefined;
-    if (b.paymentRequestId) {
+    if (paymentRequestId) {
       [qr] = await tx
         .select()
         .from(posPaymentRequests)
-        .where(and(eq(posPaymentRequests.id, posText(b.paymentRequestId)), eq(posPaymentRequests.shiftId, s.id)))
+        .where(and(eq(posPaymentRequests.id, paymentRequestId), eq(posPaymentRequests.shiftId, s.id)))
         .for('update');
       if (
         !qr ||

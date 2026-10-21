@@ -61,6 +61,7 @@ export function registerPosOrderFlowRoutes(router: Router<StaffEnv>) {
         throw new AppError(400, 'Chọn Đặt cọc hoặc Ship trả trước.');
       const member = actor(c);
       const result = await checkout(c.env, member, body);
+      await invoiceTasksChanged(c.env, { orderId: result.id }, member.id);
       await notifyPosOrderCreated(c.env, member, result);
       return json(result, 201);
     },

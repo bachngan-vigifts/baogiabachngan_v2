@@ -12,6 +12,7 @@ import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { employees } from '../../staff/schema.ts';
 import { allowedRegister, allowedDrawer } from './pos-access.ts';
+import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { cashAudit, cashLock, type CashDb } from './cash-store.ts';
 import {
   assertOpen,
@@ -40,7 +41,8 @@ import {
   deliveries,
   packingSlips,
 } from '../schema.ts';
-import { posShifts } from '../pos-schema.ts';
+import { posRegisters, posShifts } from '../pos-schema.ts';
+import { notifyPosReturnApproval } from './cash-approval-notification.ts';
 import { cashDrawers, cashEntries } from '../cash-schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { recordMovements } from '../../catalog/api/product-history.ts';
@@ -65,6 +67,8 @@ async function source(c: Ctx, db: CashDb, id: string) {
     !allowedDrawer(c, s.cashDrawerId)
   )
     throw new AppError(403, 'Bill thuộc cửa hàng khác.');
+  // Người bán chỉ xử lý bill của quầy được giao; người duyệt (Manager / được chỉ định) xem mọi quầy để duyệt.
+  if (!canApprove(who(c))) await assertSellRegister(c, s.registerId, db);
   return { o, s };
 }
 async function getReturn(c: Ctx, db: CashDb, id: string) {
@@ -140,6 +144,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
       access(c);
       const orderId = c.url.searchParams.get('orderId');
       if (orderId) return json(await detail(c, c.env.db, orderId));
+      // Lọc quầy trong SQL rồi mới giới hạn 300 dòng (trước đây lọc sau limit nên cửa hàng có thể thấy thiếu).
+      const sell = canApprove(who(c)) ? null : await allowedPosRegisters(c);
+      const registerIds = (await c.env.db.select({ id: posRegisters.id }).from(posRegisters)).map(r => r.id)
+        .filter(id => allowedRegister(c, id) && (!sell || sell.all || sell.ids.has(id)));
+      if (!registerIds.length) return json({ returns: [] });
       const rows = await c.env.db
         .select({
           r: posReturns,
@@ -150,11 +159,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
         .from(posReturns)
         .innerJoin(salesOrders, eq(salesOrders.id, posReturns.orderId))
         .innerJoin(employees, eq(employees.id, posReturns.createdBy))
+        .where(inArray(posReturns.registerId, registerIds))
         .orderBy(desc(posReturns.createdAt))
         .limit(300);
       return json({
         returns: rows
-          .filter((x) => allowedRegister(c, x.r.registerId))
           .map((x) => ({
             ...x.r,
             orderNo: x.orderNo,
@@ -175,6 +184,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
         orderId = posText(b.orderId),
         reason = posText(b.reason, 2000);
       if (!reason) throw new AppError(400, 'Nhập lý do đổi/trả hàng.');
+      let created = false;
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         const { o, s } = await source(c, tx, orderId);
@@ -375,8 +385,14 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           service,
           shipping,
         });
+        created = true;
         return r;
       });
+      if (created && result) {
+        const [reg] = await c.env.db.select({ drawerId: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.id, result.registerId));
+        if (reg) await notifyPosReturnApproval(c.env, { id: result.id, returnNo: result.returnNo, orderId: result.orderId, drawerId: reg.drawerId, total: result.total, reason, createdBy: who(c).id })
+          .catch(error => console.warn('pos return notification failed', error instanceof Error ? error.message : 'unknown error'));
+      }
       return json(result, 201);
     },
     'business',

@@ -546,7 +546,8 @@ export async function cancelFlowOrder(
     .update(deliveries)
     .set({ status: 'cancelled', updatedAt: at })
     .where(
-      and(eq(deliveries.orderId, order.id), eq(deliveries.status, 'planned')),
+      // Chuyến chưa xuất hàng (planned) hoặc giao thất bại đã quay về đều đóng theo đơn huỷ.
+      and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'failed'])),
     );
   await db
     .update(packingSlips)

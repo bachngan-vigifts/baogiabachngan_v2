@@ -66,141 +66,9 @@ function dialog(title, toast) {
   dlg.append(body);
   document.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove(), { once: true });
+  dlg.addEventListener('cancel', (e) => { if (dlg.dataset.busy) e.preventDefault(); });
   dlg.showModal();
   return { dlg, content, button, close: () => dlg.close() };
-}
-/** The server recomputes every price and records transfers only when actually confirmed. */
-export function openPosFlowCheckout({
-  flow,
-  total,
-  customer,
-  toast,
-  onSubmit,
-}) {
-  const prepaid = flow === 'prepaid',
-    m = dialog(
-      prepaid ? 'Ship trả trước 100%' : 'Đặt cọc · Nhận hàng sau',
-      toast,
-    ),
-    form = el('form', 'pos-flow-form');
-  m.content.append(
-    form,
-    el(
-      'p',
-      'pos-note',
-      'Giá, số lượng và chiết khấu được giữ theo đơn đã lập.',
-    ),
-  );
-  form.append(el('p', 'pos-flow-total', 'Tổng đơn: ' + money(total)));
-  const amount = field(
-    prepaid ? 'Số tiền trả trước' : 'Tiền cọc (VNĐ)',
-    'number',
-    prepaid ? total : Math.max(1, Math.round(total * 0.3)),
-  );
-  amount.input.required = true;
-  amount.input.min = '1';
-  amount.input.max = String(total);
-  amount.input.readOnly = prepaid;
-  if (!prepaid) {
-    const presets = el('div', 'pos-flow-actions');
-    for (const pct of [30, 50])
-      presets.append(
-        m.button(pct + '%', () => {
-          amount.input.value = Math.max(1, Math.round((total * pct) / 100));
-          update();
-        }),
-      );
-    form.append(presets);
-  }
-  const method = select('Hình thức thanh toán', [
-      ['cash', 'Tiền mặt đã thực nhận'],
-      ['transfer', 'Chuyển khoản'],
-    ]),
-    confirmed = field(
-      'Cửa hàng đã thực nhận khoản chuyển khoản này',
-      'checkbox',
-    ),
-    remaining = el('p', 'pos-note'),
-    hint = el('p', 'pos-warning');
-  form.append(amount.box, method.box, confirmed.box, remaining, hint);
-  let receiver, phone, address, planned;
-  if (prepaid) {
-    receiver = field(
-      'Người nhận',
-      'text',
-      customer?.contact || customer?.name || '',
-    );
-    phone = field('Điện thoại người nhận', 'tel', customer?.phone || '');
-    address = field('Địa chỉ giao', 'text', customer?.address || '');
-    planned = field(
-      'Ngày giao dự kiến',
-      'date',
-      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
-        new Date(),
-      ),
-    );
-    for (const f of [receiver, phone, address, planned]) {
-      f.input.required = true;
-      form.append(f.box);
-    }
-  }
-  const error = el('p', 'error');
-  error.setAttribute('role', 'alert');
-  const save = el('button', 'btn primary');
-  save.type = 'submit';
-  form.append(error, save);
-  function update() {
-    const n = Number(amount.input.value),
-      pending = method.input.value === 'transfer' && !confirmed.input.checked;
-    confirmed.box.hidden = method.input.value !== 'transfer';
-    remaining.textContent =
-      'Còn lại sau khi thực nhận: ' + money(Math.max(0, total - n));
-    hint.textContent = pending
-      ? 'Chờ xác nhận: chưa ghi thu, chưa vào két. Giữ hàng 5 ngày.'
-      : prepaid
-        ? 'Chỉ đóng gói/giao hàng sau khi đã thực nhận đủ. COD bằng 0.'
-        : 'Giữ hàng 5 ngày. Chỉ xuất hàng tại quầy sau khi đã thu đủ.';
-    save.textContent = pending
-      ? 'Lưu đơn · Chờ chuyển khoản'
-      : prepaid
-        ? 'Ghi nhận trả trước 100%'
-        : 'Ghi nhận cọc';
-  }
-  amount.input.oninput = update;
-  method.input.onchange = () => {
-    confirmed.input.checked = false;
-    update();
-  };
-  confirmed.input.onchange = update;
-  update();
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    if (save.disabled) return;
-    const n = Number(amount.input.value);
-    if (!Number.isSafeInteger(n) || n <= 0 || n > total)
-      return (error.textContent =
-        'Nhập số tiền nguyên, lớn hơn 0 và không vượt tổng đơn.');
-    save.disabled = true;
-    const body = {
-      saleFlow: flow,
-      initialAmount: n,
-      method: method.input.value,
-      confirmed: method.input.value === 'transfer' && confirmed.input.checked,
-      ...(prepaid
-        ? {
-            delivery: {
-              receiverName: receiver.input.value.trim(),
-              receiverPhone: phone.input.value.trim(),
-              address: address.input.value.trim(),
-              plannedDate: planned.input.value,
-            },
-          }
-        : {}),
-    };
-    m.close();
-    await onSubmit(body);
-  };
-  return m;
 }
 export async function openPosOrderFlows({
   api,
@@ -343,6 +211,7 @@ export async function openPosOrderFlows({
         ),
         reason.box,
         m.button('Huỷ khoản chờ', async () => {
+          if (!reason.input.value.trim()) throw new Error('Nhập lý do trước khi huỷ khoản chờ.');
           await api('/pos/order-flow-intents/' + i.id + '/cancel', 'POST', {
             shiftId: shift.id,
             reason: reason.input.value,
@@ -451,6 +320,7 @@ export async function openPosOrderFlows({
         m.button(
           'Huỷ đơn và lập đề nghị',
           async () => {
+            if (!reason.input.value.trim()) throw new Error('Nhập lý do trước khi huỷ đơn.');
             const d = await api('/pos/order-flows/' + id + '/cancel', 'POST', {
               key: cancelKey,
               shiftId: shift.id,
