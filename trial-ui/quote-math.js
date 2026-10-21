@@ -45,6 +45,7 @@ function defaultCostDiscount(product) {
   if (text.includes("healthy cook")) return 15;
   if (/\blys\b/.test(text) || text.includes("minh long - lys")) return 19;
   if (/\blocknlock\b/.test(text) || /\block n lock\b/.test(text) || text.includes("lock&lock") || text.includes("lock & lock") || /\block\b/.test(text)) return 58;
+  if (/(?:^|[^a-z0-9đ])(?:hoang cung|[dđ]ai cac)(?=$|[^a-z0-9đ])/.test(text)) return 27;
   if (text.includes("minh long")) return 25;
   return null;
 }

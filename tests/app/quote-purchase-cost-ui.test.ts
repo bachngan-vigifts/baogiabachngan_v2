@@ -26,18 +26,19 @@ test('ô nhập giá vốn: 160k đổi sang thủ công, 58% đổi sang CK; sa
   assert.equal(dirty, 4); assert.equal(calculations, 4);
 });
 
-test('Cập nhật CK mua vào giữ giá trực tiếp và cập nhật các dòng theo CK', async () => {
+test('Cập nhật CK mua vào giữ giá trực tiếp và CK đã nhập', async () => {
   const rows: any[] = [{ name: 'Bình Lock', brand: 'Lock', costMode: 'manual', price: 400000, costPrice: 160000 },
     { name: 'Bình Lock', brand: 'Lock', price: 400000, purchaseDiscount: 10, costPrice: 360000 }];
   let handler: any;
   const context: any = { editor: { rows, dirty: false }, costModeOf, normalize: (s: string) => String(s ?? '').toLowerCase(), defaultCostDiscount: () => 58,
-    purchasePrice: (price: number, discount: number) => Math.round(price * (100 - discount) / 100),
+    purchasePrice: (price: number, discount: number) => Math.round(price * (100 - discount) / 100), applyPurchaseCost,
+    reviewPurchaseCosts: async () => rows.map((r,index)=>({index,mode:costModeOf(r),value:costModeOf(r)==='manual'?r.costPrice:r.purchaseDiscount})),
     $: () => ({ addEventListener: (_: string, fn: any) => { handler = fn; } }), isManager: () => true,
     api: async () => ({ products: [] }), markDirty() {}, renderLines() {}, refreshCostToggle() {}, saveQuote: async () => {}, toast() {} };
   const start = source.indexOf('async function refreshPurchaseCosts()');
   runInNewContext(source.slice(start, source.indexOf('// ----- hộp "Tạo báo giá mới"', start)), context);
   assert.equal(await handler(), true, 'chỉ tiếp tục duyệt khi cập nhật và lưu được giá mua');
   assert.equal(rows[0].costPrice, 160000); assert.equal(rows[0].purchaseDiscount, undefined);
-  assert.equal(rows[1].costPrice, 168000); assert.equal(rows[1].costMode, 'discount');
+  assert.equal(rows[1].costPrice, 360000); assert.equal(rows[1].purchaseDiscount, 10); assert.equal(rows[1].costMode, 'discount');
   rows[0].price = 500000; syncPurchaseCost(rows[0]); assert.equal(rows[0].costPrice, 160000);
 });
