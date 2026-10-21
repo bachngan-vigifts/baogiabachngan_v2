@@ -1912,3 +1912,5 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   .incoming-selection { flex-wrap: wrap; }
   .incoming-selection>div { flex-basis: 100%; }
 }
+.ddh-product-image { width: 18mm; }
+.ddh-product-image img { width: 16mm; height: 16mm; object-fit: contain; display: block; margin: auto; }

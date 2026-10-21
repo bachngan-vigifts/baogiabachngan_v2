@@ -4,6 +4,12 @@ import { pathToFileURL } from 'node:url';
 const print = await import(pathToFileURL(new URL('../../trial-ui/order-print.js', import.meta.url).pathname).href);
 const order = { orderNo: 'DH_20261008_002', customerName: 'Khách', expectedDeliveryDate: '2026-10-10' };
 const contract = { contractNo: '10-02/08102026/HĐKT/BN-QTSM' };
+test('phiếu giao: ghi chú nghiệm thu thay toàn bộ ghi chú cũ, hình ảnh an toàn và tổng đúng cột',()=>{
+  const p=print.deliveryPrintData({seller:'BN',order:{...order,note:'Ghi chú cũ không in'},lines:[{sku:'001',name:'Ly <x>',unit:'Cái',ordered:4,qty:2,imageUrl:'https://images.test/ly.png'},{sku:'002',name:'Đĩa',ordered:3,qty:1,imageUrl:'javascript:alert(1)'}]});
+  assert.equal(p.note,'- Phiếu bàn giao sản phẩm này cũng chính là biên bản nghiệm thu sản phẩm và được kết thúc ngay sau khi hai bên ký giao – nhận đầy đủ sản phẩm.');
+  for(const edit of [false,true]){const html=print.slipSheetHtml(p,{edit});assert.match(html,/<th>Hình ảnh<\/th>/);assert.match(html,/<img src="https:\/\/images.test\/ly.png" alt="Ly &lt;x&gt;">/);assert.doesNotMatch(html,/Ghi chú cũ|javascript:|data-f="lines\.0\.imageUrl"/);assert.match(html,/colspan="5"/);}
+  assert.equal(print.packingPrintData({seller:'BN',order,slip:{note:'Ghi chú đóng gói'},lines:[]}).note,'Ghi chú đóng gói');
+});
 test('phiếu có HĐKT dùng số hợp đồng và giữ số riêng của phiếu / chuyến', () => {
   const packing = print.packingPrintData({ seller: 'BN', order, contract, slip: { slipNo: 'PK_001' }, lines: [] });
   const delivery = print.deliveryPrintData({ seller: 'BN', order, contract, delivery: { deliveryNo: 'GH_001' }, lines: [] });
