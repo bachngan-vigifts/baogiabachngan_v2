@@ -57,3 +57,11 @@ export function syncOrderDeliveryNotes(notes: string, changes: { deliveryDate?: 
   if (changes.deliveryAddress !== undefined) setLine('address', 'Địa chỉ giao hàng', changes.deliveryAddress.replace(/\s+/g, ' ').trim());
   return lines.join('\n').replace(/\s+$/, '');
 }
+
+/** Resolve a complete recipient pair, never mix one person's name with another's phone. */
+export function orderRecipient(order: { receiverName?: unknown; receiverPhone?: unknown; contact?: unknown; phone?: unknown }, delivery?: { receiverName?: unknown; receiverPhone?: unknown } | null) {
+  const source = delivery && (text(delivery.receiverName) || text(delivery.receiverPhone)) ? delivery
+    : text(order.receiverName) || text(order.receiverPhone) ? order
+    : { receiverName: order.contact, receiverPhone: order.phone };
+  return { receiverName: text(source.receiverName), receiverPhone: text(source.receiverPhone) };
+}

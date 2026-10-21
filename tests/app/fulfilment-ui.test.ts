@@ -1,3 +1,4 @@
+import { orderRecipient } from '../../src/modules/sales/domain/order-notes.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,7 +10,7 @@ function fixture(multi = false, existing = false) {
   const inputs = [form.plannedDate, form.timeSlot, form.receiverName];
   const nodes: any = { '#pack-form': form, '#pack-save': {}, '#pack-error': {}, '#pack-existing-schedule': {}, '#pack-schedule-fields': { querySelectorAll: () => inputs }, '#pack-dialog': { close() {} } };
   const calls: any[] = [], opened: string[] = [];
-  const context: any = { $: (id: string) => nodes[id], packing: {}, todayIso: () => '2026-10-16', fmtDate: (x: string) => x,
+  const context: any = { orderRecipient, $: (id: string) => nodes[id], packing: {}, todayIso: () => '2026-10-16', fmtDate: (x: string) => x,
     sales: { order: { id: 'order-1', contact: 'Chị Lan', phone: '0901', address: '12 Lê Lợi' } },
     readPackForm: () => multi ? [{ orderLineId: 'l1', qty: 5, source: 'warehouse' }, { orderLineId: 'l1', qty: 5, source: 'agent', sourceNote: 'Đại lý' }] : [{ orderLineId: 'l1', qty: 10, source: 'warehouse' }],
     readPackShip: () => ({ to: 'customer', address: 'Địa chỉ giao riêng', phone: '0902', carrierName: 'Nhà xe' }),
@@ -45,4 +46,15 @@ test('luồng gộp: dùng lịch đã có không tạo chuyến mới; nhiều 
   await f.submit();
   assert.equal(f.calls[0].body.schedule, undefined); assert.equal(f.calls[0].body.sendToWarehouse, false);
   f.form.createSchedule.checked = true; f.context.showPackSchedule(); assert.ok(f.inputs.every((i: any) => !i.disabled));
+});
+
+
+test('lịch kèm đóng gói điền người nhận riêng của đơn, không thay người mua', async () => {
+  const f = fixture();
+  Object.assign(f.context.sales.order, {receiverName:'Người nhận riêng',receiverPhone:'0902000002'});
+  f.context.fillPackSchedule([],f.context.sales.order);
+  assert.equal(f.form.receiverName.value,'Người nhận riêng');
+  await f.submit();
+  assert.equal(f.calls[0].body.schedule.receiverName,'Người nhận riêng');
+  assert.equal(f.context.sales.order.contact,'Chị Lan');
 });

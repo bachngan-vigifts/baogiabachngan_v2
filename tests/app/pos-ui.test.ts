@@ -722,16 +722,18 @@ test('POS mới: THANH TOÁN theo ca/giỏ, menu thường ẩn cấu hình và 
   const prevDoc = globalThis.document, prevWin = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
-    const root = new Element('section'); let opened = false;
+    const root = new Element('section'); let opened = false; const routes: string[] = [];
     const api = async (path: string) => {
-      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy Lock', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }], current: opened ? { id: 's', registerId: 'r', memberId: 'emp' } : null, shifts: [], templates: [], policies: [], canConfigure: false };
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy Lock', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }], current: opened ? { id: 's', registerId: 'r', memberId: 'emp' } : null, shifts: [], templates: [], policies: [], canConfigure: false, orderFlowVersion: 1 };
       if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 194400, available: 3 }], nextOffset: null };
       if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
       if (path.startsWith('/pos/orders')) return { registers: [], counts: {}, orders: [], registerId: 'r' };
       throw Error(path);
     };
-    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV', role: 'employee' }), confirmBox: async () => true, go() {} });
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV', role: 'employee' }), confirmBox: async () => true, go(path: string) { routes.push(path); } });
     await ui.load();
+    await root.querySelectorAll('button').find(b => b.textContent === '← Về CRM')!.fire('click');
+    assert.deepEqual(routes, ['#/tasks']);
     let checkout = root.querySelectorAll('button').find(b => b.textContent === 'THANH TOÁN')!;
     assert.equal(checkout.disabled, true, 'chưa mở ca thì khóa thanh toán');
     assert.ok(!root.textContent.includes('Cấu hình'));
@@ -750,6 +752,8 @@ test('POS mới: THANH TOÁN theo ca/giỏ, menu thường ẩn cấu hình và 
     await selectTestCustomer(root);
     await checkout.fire('click');
     const payment = doc.body.children.at(-1)!;
+    assert.equal(payment.textContent.includes('Đặt cọc · Nhận sau'), false);
+    assert.equal(payment.textContent.includes('Ship trả trước 100%'), false);
     const tender = payment.querySelectorAll('input').find(i => i.type === 'number')!;
     tender.value = '200000'; await tender.fire('input');
     assert.match(payment.textContent, /5\.600 đ/);

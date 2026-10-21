@@ -1,3 +1,4 @@
+import { orderRecipient } from '../domain/order-notes.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { assertPosFlowFulfillable } from './pos-order-flow-guards.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
@@ -164,7 +165,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       supplierChoices, schedules, scheduled: await hasDeliverySchedule(db, order.id),
       canRequest: !['cancelled', 'draft', 'delivered'].includes(order.status),
       // Hộp "Yêu cầu đóng gói - Giao hàng": có phí in → mặc định giao về xưởng in; không thì giao thẳng cho khách.
-      delivery: { hasPrintFee: await hasPrintFee(db, order.quoteId), customer: { name: order.customerName, address: order.address, phone: [order.contact, order.phone].filter(Boolean).join(' · ') },
+      delivery: { hasPrintFee: await hasPrintFee(db, order.quoteId), customer: { name: order.customerName, address: order.address, ...orderRecipient(order), phone: orderRecipient(order).receiverPhone },
         workshops: await workshopList(db), carriers: await db.select({ name: shippingCarriers.name, phone: shippingCarriers.phone }).from(shippingCarriers).orderBy(asc(shippingCarriers.name)) },
     });
   }, 'business');
@@ -258,7 +259,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       slip: { ...slip, sourceLabel: PACKING_SOURCE_LABEL[slip.source], createdByName: name(slip.createdBy), sentByName: name(slip.sentBy), packedByName: name(slip.packedBy) },
       lines: lines.map(l => ({ ...l, suggestion: packingSuggestion(l.qty, l.unit, { perCarton: l.perCarton, cartonWeight: l.cartonWeight }).text })), photos,
       // Kho không xem được đơn: chỉ đưa thông tin cần để đóng & giao.
-      order: { id: order.id, orderNo: order.orderNo, contractNo: contracts[0]?.contractNo ?? '', legalEntity: contracts[0]?.legalEntity ?? null, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, email: order.email, address: order.address,
+      order: { id: order.id, orderNo: order.orderNo, contractNo: contracts[0]?.contractNo ?? '', legalEntity: contracts[0]?.legalEntity ?? null, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, receiverName: order.receiverName, receiverPhone: order.receiverPhone, email: order.email, address: order.address,
         taxCode: order.taxCode, customerCode: cust?.code ?? '', note: order.note, expectedDeliveryDate: order.expectedDeliveryDate },
       canOpenOrder: manage, canSend: manage && slip.status === 'draft', canCancel: manage && (slip.status === 'draft' || slip.status === 'sent'), canConfirm: canConfirm(m, slip.status),
     });

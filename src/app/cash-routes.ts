@@ -208,13 +208,17 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         scope = ownShift(c),
         cursor = c.url.searchParams.get('before'),
         before = cursor ? posText(cursor, 80) : null;
+      const creator = c.url.searchParams.get('createdBy') ?? '', method = c.url.searchParams.get('method') ?? 'cash', direction = c.url.searchParams.get('direction') ?? '';
+      if (!['cash', 'transfer', 'other', 'all'].includes(method) || !['', 'in', 'out'].includes(direction) || creator.length > 120) throw new AppError(400, 'Bộ lọc Sổ quỹ không hợp lệ.');
+      const manualBase = and(entryScope(c), eq(cashEntries.drawerId, drawerId), gte(cashEntries.createdAt, start), lt(cashEntries.createdAt, end));
+      const receiptBase = and(scope, eq(posShifts.cashDrawerId, drawerId), gte(customerPayments.createdAt, start), lt(customerPayments.createdAt, end));
       const manualWhere = and(
-          entryScope(c), eq(cashEntries.drawerId, drawerId), gte(cashEntries.createdAt, start), lt(cashEntries.createdAt, end),
+          manualBase, creator ? eq(cashEntries.createdBy, creator) : undefined, direction ? eq(cashEntries.direction, direction) : undefined, !['cash', 'all'].includes(method) ? sql`false` : undefined,
         ),
         receiptWhere = and(
-          scope, eq(posShifts.cashDrawerId, drawerId), eq(customerPayments.method, 'cash'), gte(customerPayments.createdAt, start), lt(customerPayments.createdAt, end),
+          receiptBase, creator ? eq(customerPayments.createdBy, creator) : undefined, method === 'all' ? undefined : eq(customerPayments.method, method as 'cash' | 'transfer' | 'other'), direction === 'out' ? sql`false` : undefined,
         );
-      const [manual, receipts, manualPeriod, receiptPeriod] = await Promise.all([
+      const [manual, receipts, manualPeriod, receiptPeriod, manualPeople, paymentPeople] = await Promise.all([
         db
           .select({
             id: cashEntries.id,
@@ -251,6 +255,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
             shiftId: customerPayments.shiftId,
             at: customerPayments.createdAt,
             source: customerPayments.paymentSource,
+            method: customerPayments.method,
             amount: customerPayments.amount,
             reason: customerPayments.note,
             createdBy: customerPayments.createdBy,
@@ -274,9 +279,13 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .from(cashEntries).innerJoin(posShifts, eq(posShifts.id, cashEntries.shiftId)).where(manualWhere),
         db.select({ amount: customerPayments.amount, voidedAt: customerPayments.voidedAt })
           .from(customerPayments).innerJoin(posShifts, eq(posShifts.id, customerPayments.shiftId)).where(receiptWhere),
+        db.selectDistinct({ id: employees.id, name: employees.name }).from(cashEntries)
+          .innerJoin(posShifts, eq(posShifts.id, cashEntries.shiftId)).innerJoin(employees, eq(employees.id, cashEntries.createdBy)).where(manualBase),
+        db.selectDistinct({ id: employees.id, name: employees.name }).from(customerPayments)
+          .innerJoin(posShifts, eq(posShifts.id, customerPayments.shiftId)).innerJoin(employees, eq(employees.id, customerPayments.createdBy)).where(receiptBase),
       ]);
       const entries = [
-        ...manual.map((r) => ({ ...r, source: 'manual', hasPhoto: !!r.photo, photo: undefined })),
+        ...manual.map((r) => ({ ...r, source: 'manual', method: 'cash', hasPhoto: !!r.photo, photo: undefined })),
         ...receipts.map((r) => ({
           ...r,
           source: 'payment',
@@ -293,6 +302,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         + receiptPeriod.filter(x => !x.voidedAt).reduce((n, x) => n + x.amount, 0);
       const totalOut = postedManual.filter(x => x.direction === 'out').reduce((n, x) => n + x.amount, 0);
       return json({ entries: page, nextBefore: entries.length > 100 && last ? last.at + '|' + last.id : null,
+        employees: [...new Map([...manualPeople, ...paymentPeople].map(p => [p.id, p])).values()].sort((a, b) => a.name.localeCompare(b.name)),
         totals: { in: totalIn, out: totalOut, net: totalIn - totalOut } });
     },
     'business',

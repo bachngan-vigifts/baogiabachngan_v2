@@ -1,3 +1,4 @@
+import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
 import { reviewPurchaseCosts } from './purchase-cost-review.js';
@@ -3594,7 +3595,7 @@ $('#order-pack').addEventListener('click', async () => {
 function fillPackSchedule(schedules, order) {
   const f = $('#pack-form'); packing.hasSchedule = schedules.length > 0;
   f.createSchedule.checked = !packing.hasSchedule; f.createSchedule.disabled = !packing.hasSchedule;
-  f.plannedDate.value = order.expectedDeliveryDate || todayIso(); f.timeSlot.value = ''; f.receiverName.value = order.contact || '';
+  f.plannedDate.value = order.expectedDeliveryDate || todayIso(); f.timeSlot.value = ''; f.receiverName.value = orderRecipient(order).receiverName;
   $('#pack-existing-schedule').textContent = packing.hasSchedule
     ? 'Dùng lịch đã có: ' + schedules.map(x => `${x.deliveryNo} · ${fmtDate(x.plannedDate)}`).join('; ') + '. Chọn tạo lịch mới chỉ khi đây là chuyến giao khác.'
     : 'Chưa có lịch giao. Ngày giao và số lượng sẽ được lưu cùng phiếu đóng gói.';
@@ -3675,7 +3676,7 @@ $('#pack-form').addEventListener('submit', async e => {
     const f = $('#pack-form'), order = sales.order;
     const groups = new Set(allocations.map(x => `${x.source}\u0000${(x.sourceNote || '').trim().toLowerCase()}`));
     const schedule = f.createSchedule.checked ? { plannedDate: f.plannedDate.value, timeSlot: f.timeSlot.value,
-      receiverName: f.receiverName.value, receiverPhone: delivery.to === 'customer' ? delivery.phone : order.phone,
+      receiverName: f.receiverName.value, receiverPhone: delivery.to === 'customer' ? delivery.phone : orderRecipient(order).receiverPhone,
       address: delivery.to === 'customer' ? delivery.address : order.address,
       carrier: delivery.to === 'customer' ? delivery.carrierName : '', note: f.note.value } : undefined;
     const r = await api(`/orders/${encodeURIComponent(order.id)}/packing`, 'POST', { allocations, delivery, schedule, sendToWarehouse: groups.size === 1, note: f.note.value });
@@ -3985,7 +3986,7 @@ async function printFromSlip(kind) {
   openSlipPrint({ kind, choices: [], initial: '', build: () => kind === 'packing'
     ? packingPrintData({ seller, order: d.order, slip: d.slip, lines: d.lines }, me)
     : deliveryPrintData({ seller, order: d.order, delivery: { deliveryNo: d.slip.slipNo, address: d.slip.shipAddress || d.order.address,
-        receiverName: d.slip.shipTo === 'workshop' ? d.slip.shipName : '', receiverPhone: d.slip.shipPhone, carrier: d.slip.carrierName, carrierPhone: d.slip.carrierPhone },
+        receiverName: d.slip.shipTo === 'workshop' ? d.slip.shipName : orderRecipient(d.order).receiverName, receiverPhone: d.slip.shipPhone, carrier: d.slip.carrierName, carrierPhone: d.slip.carrierPhone },
         lines: d.lines.map(l => ({ ...l, ordered: '' })) }, me) });
 }
 async function deliveryProductImages(lines) {
@@ -4090,7 +4091,7 @@ $('#contract-form').addEventListener('submit', async e => {
 $('#order-new-delivery').addEventListener('click', () => {
   const f = $('#delivery-form'), d = sales.detail, o = d.order; f.reset(); $('#delivery-error').textContent = '';
   $('#delivery-order-no').textContent = o.orderNo; f.plannedDate.value = o.expectedDeliveryDate && o.expectedDeliveryDate >= todayIso() ? o.expectedDeliveryDate : todayIso();
-  f.receiverName.value = o.contact || ''; f.receiverPhone.value = o.phone || ''; f.address.value = o.address || '';
+  const recipient = orderRecipient(o); f.receiverName.value = recipient.receiverName; f.receiverPhone.value = recipient.receiverPhone; f.address.value = o.address || '';
   const pending = id => d.deliveries.filter(x => ['planned', 'in_transit'].includes(x.status)).flatMap(x => x.lines).filter(l => l.orderLineId === id).reduce((s, l) => s + l.qty, 0);
   $('#delivery-lines').innerHTML = d.lines.map(l => { const left = Math.max(0, l.qty - l.deliveredQty - pending(l.id)); return `<tr><td>${esc(l.name)}<small>${esc(l.unit)}</small></td><td class="right">${fmtNum(left)}</td>
     <td class="right"><input class="num-input" inputmode="decimal" data-line="${esc(l.id)}" value="${left ? fmtNum(left) : ''}" ${left ? '' : 'disabled'} aria-label="Số lượng giao ${esc(l.name)}"></td></tr>`; }).join('');

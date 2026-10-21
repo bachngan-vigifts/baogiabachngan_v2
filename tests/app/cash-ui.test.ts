@@ -194,3 +194,30 @@ test('Cash UI accepts a custom name and opens a notified entry in its exact draw
   assert.ok(writes.some(x=>x.path==='/cash/entries/entry-a/approve?drawerId=drawer-a'));
  } finally {Object.assign(globalThis,{document:previous,location:prevLocation});}
 });
+
+test('Cash ledger employee/payment filters reset cursor, keep scoped options and display server totals', async () => {
+  const previous = globalThis.document, doc = { createElement: (tag: string) => new E(tag), body: new E('body') };
+  Object.assign(globalThis, { document: doc });
+  try {
+    const root = new E('main'), calls: string[] = [];
+    const ui = initCash({ root, user: () => ({ id: 'emp' }), toast(message: string) { throw Error(message); }, go() {}, api: async (path: string) => {
+      calls.push(path);
+      if (path === '/cash') return { drawer: { id: 'store', openingSetAt: '2026-01-01' }, balance: 100, openReconciliations: 0 };
+      const query = new URL('https://test' + path).searchParams;
+      return { employees: [{ id: 'emp', name: 'Nguyễn A' }, { id: 'other', name: '<img src=x>' }],
+        entries: [{ id: 'e1', entryNo: 'PT-1', at: '2026-10-21T01:00:00Z', kind: 'sale', direction: 'in', amount: 20, createdBy: 'emp', by: 'Nguyễn A', status: 'posted', method: query.get('method') === 'transfer' ? 'transfer' : 'cash' }],
+        nextBefore: query.has('before') ? null : '2026-10-21T00:00:00Z|e1', totals: { in: query.get('method') === 'transfer' ? 700 : 1000, out: 0, net: 1000 } };
+    } });
+    const settle = () => new Promise(r => setImmediate(r));
+    const change = async (label: string, value: string) => { const control = root.all().find(e => e.tag === 'label' && e.children[0]?.textContent === label)!.children[1]!; control.value = value; control.listeners.get('change')![0]!(); await settle(); };
+    await ui.load(); assert.match(calls.at(-1)!, /method=cash/);
+    root.all().find(e => e.tag === 'button' && e.textContent === 'Xem thêm')!.listeners.get('click')![0]!(); await settle(); assert.match(calls.at(-1)!, /before=/);
+    await change('Nhân viên', 'other'); assert.match(calls.at(-1)!, /createdBy=other/); assert.doesNotMatch(calls.at(-1)!, /before=/);
+    await change('Hình thức thanh toán', 'transfer'); assert.match(calls.at(-1)!, /method=transfer/); assert.match(root.textContent, /700 đ/);
+    root.all().find(e => e.tag === 'button' && e.textContent === 'Phiếu chi')!.listeners.get('click')![0]!(); await settle(); assert.match(calls.at(-1)!, /direction=out/);
+    const tools = root.all().find(e => e.className === 'cash-tools cash-ledger-tools')!;
+    assert.ok(tools.children.some(e => e.tag === 'button' && e.textContent === 'Xuất Excel bảng đang xem'));
+    assert.ok(root.all().some(e => e.tag === 'option' && e.textContent === '<img src=x>'));
+    assert.ok(!root.all().some(e => e.tag === 'img'));
+  } finally { Object.assign(globalThis, { document: previous }); }
+});

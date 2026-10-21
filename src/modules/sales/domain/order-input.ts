@@ -13,5 +13,5 @@ export function cleanOrderInput(raw: Record<string, unknown>) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(Date.parse(s + 'T00:00:00Z')) || new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) !== s) throw new AppError(400, 'Ngày đặt / ngày hẹn giao không hợp lệ.');
     return s;
   };
-  return { note: str('note', 20000), deliveryAddress: str('deliveryAddress', 2000), orderDate: date('orderDate') ?? undefined, deliveryDate: date('deliveryDate') };
+  return { receiverName: str('receiverName', 500), receiverPhone: str('receiverPhone', 100), note: str('note', 20000), deliveryAddress: str('deliveryAddress', 2000), orderDate: date('orderDate') ?? undefined, deliveryDate: date('deliveryDate') };
 }

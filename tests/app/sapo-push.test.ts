@@ -231,7 +231,7 @@ test('đẩy Sapo: hàm thuần – kiểm dữ liệu, khớp đơn đúng mã,
 
 test('sinh đơn: lọc ghi chú đúng ba phần, giữ điều khoản dài, sửa riêng và xoá ghi chú; không qua Sapo không cần phiên', async () => {
   const s = await setup({ connect: false });
-  assert.deepEqual((await s.call('/orders/create-config', s.emp)).data, { version: 2, noteMaxLength: 20000 });
+  assert.deepEqual((await s.call('/orders/create-config', s.emp)).data, { version: 2, noteMaxLength: 20000, recipientFields: true });
   assert.equal((await s.call('/orders/create-config')).status, 401);
   const quoteId = await s.makeQuote('B2B_BG20261009_101');
   const preview = await s.call(`/orders/next-no?quoteId=${quoteId}&orderDate=2026-10-10`, s.emp);
@@ -247,10 +247,13 @@ test('sinh đơn: lọc ghi chú đúng ba phần, giữ điều khoản dài, s
   assert.ok(inheritedNote.includes(longNote), 'payment terms are not truncated at old 2000-char limit');
   assert.equal(inheritedNote.split('\n').length, 3);
   const q2 = await s.makeQuote('B2B_BG20261009_102');
-  const made = await s.call('/orders', s.emp, 'POST', { quoteId: q2, pushSapo: false, orderNo: 'PO-KHACH-001', note: 'Giao từng đợt\nGọi trước 30 phút', deliveryAddress: 'Kho khách hàng', orderDate: '2026-10-10', deliveryDate: '2026-10-31' });
+  const made = await s.call('/orders', s.emp, 'POST', { quoteId: q2, pushSapo: false, orderNo: 'PO-KHACH-001', note: 'Giao từng đợt\nGọi trước 30 phút', deliveryAddress: 'Kho khách hàng', receiverName: 'Người nhận riêng', receiverPhone: '0902000002', orderDate: '2026-10-10', deliveryDate: '2026-10-31' });
   assert.equal(made.status, 201, JSON.stringify(made.data));
   const o = await read(made.data.id);
   assert.deepEqual([o.orderNo, o.note, o.address, o.orderDate, o.expectedDeliveryDate], ['PO-KHACH-001', 'Giao từng đợt\nGọi trước 30 phút', 'Kho khách hàng', '2026-10-10', '2026-10-31']);
+  assert.equal(o.receiverName, 'Người nhận riêng'); assert.equal(o.receiverPhone, '0902000002');
+  const q2data = (await s.call('/quotes/' + q2, s.emp)).data.data;
+  assert.equal(o.contact, q2data.contact || ''); assert.equal(o.phone, q2data.phone || '');
   assert.equal(made.data.orderNo, 'PO-KHACH-001');
   const duplicateQuote = await s.makeQuote('B2B_BG20261009_102_DUP');
   const duplicate = await s.call('/orders', s.emp, 'POST', { quoteId: duplicateQuote, pushSapo: false, orderNo: 'PO-KHACH-001' });
@@ -269,7 +272,9 @@ test('thông tin đơn hàng: kiểm ngày thật và giới hạn ghi chú ở 
   assert.throws(() => cleanOrderInput({ deliveryDate: '31/10/2026' }), /không hợp lệ/);
   assert.throws(() => cleanOrderInput({ note: 'x'.repeat(20001) }), /không hợp lệ/);
   assert.throws(() => cleanOrderInput({ note: 123 }), /không hợp lệ/);
-  assert.deepEqual(cleanOrderInput({ deliveryDate: '', note: '' }), { orderDate: undefined, deliveryDate: null, deliveryAddress: undefined, note: '' });
+  for (const input of [{receiverName: 1}, {receiverName: 'x'.repeat(501)}, {receiverPhone: []}, {receiverPhone: '1'.repeat(101)}]) assert.throws(() => cleanOrderInput(input), /không hợp lệ/);
+  assert.equal(cleanOrderInput({receiverPhone:' 0902000002 '}).receiverPhone,'0902000002');
+  assert.deepEqual(cleanOrderInput({ deliveryDate: '', note: '' }), { receiverName: undefined, receiverPhone: undefined, orderDate: undefined, deliveryDate: null, deliveryAddress: undefined, note: '' });
 });
 
 

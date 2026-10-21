@@ -105,3 +105,20 @@
 .inv-check { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; white-space: nowrap; }
 .inv-adjust-lines { display: grid; gap: 6px; }
 @media (max-width: 900px) { .page-head .pur-import { display: none; } }
+
+/* Purchase creation modes and paged restock catalog. */
+.pur-mode-dialog { width: min(640px, calc(100vw - 32px)); border: 1px solid var(--border, #dce3ed); border-radius: 16px; padding: 0; }
+.pur-mode-dialog::backdrop { background: #10213c77; }
+.pur-mode-body { padding: 24px; }
+.pur-mode-body h2 { margin-top: 0; }
+.pur-mode-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
+.pur-mode-choice { display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 20px; border: 1px solid #c8d8e5; border-radius: 12px; background: #f6fafc; color: inherit; font: inherit; cursor: pointer; }
+.pur-mode-choice:hover, .pur-mode-choice:focus-visible { border-color: #16825a; background: #edf9f3; }
+.pur-restock-picker > input { width: 100%; }
+.pur-catalog-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 360px; overflow: auto; margin: 12px 0; }
+.pur-catalog-product { display: flex; align-items: start; gap: 10px; padding: 12px; border: 1px solid #dce3ed; border-radius: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.pur-catalog-product:has(input:checked) { background: #edf9f3; border-color: #16825a; }
+.pur-catalog-product > input { flex: 0 0 auto; width: auto; margin-top: 3px; }
+.pur-catalog-product > span { display: flex; flex-direction: column; gap: 3px; }
+.pur-catalog-pager { display: flex; justify-content: flex-end; gap: 10px; }
+@media(max-width: 600px) { .pur-mode-choices, .pur-catalog-list { grid-template-columns: 1fr; } .pur-mode-body { padding: 18px; } }

@@ -56,8 +56,13 @@ function syncOrderDeliveryNotes(notes, changes, source) {
   if (changes.deliveryAddress !== void 0) setLine("address", "\u0110\u1ECBa ch\u1EC9 giao h\xE0ng", changes.deliveryAddress.replace(/\s+/g, " ").trim());
   return lines.join("\n").replace(/\s+$/, "");
 }
+function orderRecipient(order, delivery) {
+  const source = delivery && (text(delivery.receiverName) || text(delivery.receiverPhone)) ? delivery : text(order.receiverName) || text(order.receiverPhone) ? order : { receiverName: order.contact, receiverPhone: order.phone };
+  return { receiverName: text(source.receiverName), receiverPhone: text(source.receiverPhone) };
+}
 export {
   orderDeliveryAddress,
   orderNotesFromQuote,
+  orderRecipient,
   syncOrderDeliveryNotes
 };
