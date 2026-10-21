@@ -4,7 +4,7 @@ Không đổi schema, công thức giá hoặc công nợ. Không cron, không g
 
 ## Báo giá
 
-Nút Duyệt hiện yêu cầu cập nhật giá mua. Manager dùng lại cơ chế Cập nhật CK mua vào theo nhóm hàng; giữ nguyên giá nhập tay. Dòng chưa xác định được CK phải nhập tay rồi duyệt lại. Người được chỉ định duyệt không được mở rộng quyền xem/sửa giá vốn; giao diện chỉ cho tiếp tục nếu giá mua đã có đủ và yêu cầu xác nhận đã kiểm tra. API duyệt báo giá hiện có giữ nguyên hợp đồng; popup là bước kiểm tra trên giao diện. Duyệt từ Sơ đồ quy trình mở báo giá để đi qua bước kiểm tra này.
+Nút Duyệt hiện yêu cầu cập nhật giá mua. Manager xem popup CK mua vào theo từng mã; giữ nguyên CK % và giá nhập tay đã có. Hoàng Cung / Đài Các mặc định gợi ý 27%; chỉ điền mặc định cho dòng còn trống. Muốn đổi dòng đã có thì nhập trực tiếp hoặc chọn Dùng gợi ý, sau đó Áp dụng & lưu báo giá. Dòng chưa xác định được CK phải nhập tay ngay trong popup. Huỷ popup không ghi dữ liệu. Người được chỉ định duyệt không được mở rộng quyền xem/sửa giá vốn; giao diện chỉ cho tiếp tục nếu giá mua đã có đủ và yêu cầu xác nhận đã kiểm tra. API duyệt báo giá hiện có giữ nguyên hợp đồng; popup là bước kiểm tra trên giao diện. Duyệt từ Sơ đồ quy trình mở báo giá để đi qua bước kiểm tra này.
 
 ## Đơn hàng / HĐKT
 

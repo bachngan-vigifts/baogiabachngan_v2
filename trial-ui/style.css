@@ -1858,3 +1858,15 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .approval-debt-card .num-cell{text-align:right;white-space:nowrap}
 .approval-debt-message{line-height:1.7;margin-top:24px;color:#4a6172}
 @media(max-width:600px){.approval-debt-card{padding:20px}.approval-debt-total{align-items:flex-start;flex-direction:column}.approval-debt-total strong{font-size:23px}}
+
+.purchase-cost-dialog{width:min(1100px,calc(100vw - 32px))}
+.purchase-cost-table-wrap{overflow:auto;max-height:60vh;border:1px solid var(--line,#dce4ee);border-radius:10px}
+.purchase-cost-table{width:100%;min-width:760px;border-collapse:collapse}
+.purchase-cost-table th,.purchase-cost-table td{padding:12px;border-bottom:1px solid var(--line,#dce4ee);vertical-align:top}
+.purchase-cost-table th{position:sticky;top:0;background:#f4f7fb;z-index:1;text-align:left}
+.purchase-cost-table td:first-child{width:36%;min-width:220px;overflow-wrap:anywhere}
+.purchase-cost-product-name{display:block;margin:5px 0;line-height:1.4}
+.purchase-cost-table input{width:130px;max-width:100%}
+.purchase-cost-table select{min-width:140px}
+.purchase-cost-table td:last-child strong{display:block;margin-bottom:6px;color:#12854f}
+.purchase-cost-table .num-cell{white-space:nowrap;text-align:right}

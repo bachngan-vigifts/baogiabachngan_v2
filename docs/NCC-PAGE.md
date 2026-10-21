@@ -155,3 +155,7 @@ Khác có chủ đích:
 - `GET /navigation-counts` (business, cùng phạm vi quyền của trang đích): `packing` = phiếu đã gửi kho chưa đóng, trừ đơn đã giao/đánh dấu giao xong; `deliveries` = chuyến dự kiến/đang đi/giao lỗi cần xử lý, bỏ chuyến đã giao hoặc huỷ; `purchases` = đơn chưa nhận đủ, chưa huỷ. API chỉ đọc, không tự đóng phiếu cũ.
 - Số đỏ ở menu Lịch giao hàng / Phiếu đóng gói / Đơn mua NCC ẩn khi bằng 0. Cập nhật khi đăng nhập, khi nhịp dữ liệu báo thay đổi và sau thao tác lưu liên quan. Phản hồi của tài khoản cũ không ghi đè số của tài khoản mới.
 - Không migration, không thay đổi đồng bộ Sapo hay dữ liệu nghiệp vụ.
+
+### Chọn nguồn NCC / đại lý khi yêu cầu đóng gói
+
+Hộp Yêu cầu đóng gói của đơn/HĐKT lấy danh sách NCC đang hoạt động từ trang Nhà cung cấp mỗi lần mở. Nguồn Nhập từ NCC và Lấy từ đại lý dùng chung danh sách này để tìm/chọn tên. API `GET /orders/:id/packing` kiểm quyền/phạm vi đơn trước, chỉ trả `supplierChoices: [{id, name}]`; không mở quyền quản trị NCC hay trả email, tài khoản, ghi chú riêng. Tên nguồn tiếp tục lưu ở sourceNote của phiếu như trước, không đổi schema và không tự tạo NCC khi gõ tên.
