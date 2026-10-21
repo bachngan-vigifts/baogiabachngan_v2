@@ -1,3 +1,4 @@
+import { posCustomerIssue } from './pos-customer.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { webOrderFinancialSummary } from './web-order-financials.js';
 import { openPosFlowCheckout, openPosOrderFlows } from './pos-order-flow.js';
@@ -196,7 +197,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       head = el('div', 'pos-head'),
       title = el('div'),
       tools = el('div', 'pos-head-tools');
-    title.append(el('h1', '', 'Bán hàng nhanh'), el('span', 'pos-register-name', st.register?.name || 'Chưa cấu hình quầy'));
+    title.append(el('h1', '', 'Bán hàng nhanh'), button('← Về CRM', 'btn secondary small', () => go('#/tasks')), el('span', 'pos-register-name', st.register?.name || 'Chưa cấu hình quầy'));
     head.append(title, tools);
     const menu = button('☰ Menu CRM', 'btn secondary pos-menu-toggle', () => {
       st.showMenu = !st.showMenu;
@@ -331,7 +332,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.cartCount = el('span', 'pos-cart-count', `${st.cart.length} món`);
     basketTitle.append(el('h2', '', 'Đơn hiện tại'), nodes.cartCount);
     bh.append(basketTitle);
-    bh.append(button((st.customer?.name || 'Khách lẻ') + '   Đổi ▾', 'btn primary pos-customer-trigger', chooseCustomer));
+    bh.append(button((st.customer?.name || 'Chọn khách hàng *') + '   Đổi ▾', 'btn primary pos-customer-trigger', chooseCustomer));
     right.append(bh);
     nodes.customer = bh.lastChild;
     nodes.lines = el('div', 'pos-lines');
@@ -348,7 +349,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     layout.append(left, right);
     const mobileDock = el('div', 'pos-mobile-cart-dock'), mobileInfo = el('div', 'pos-mobile-cart-info');
     nodes.mobileCartCount = el('strong', '', 'Đơn hiện tại · 0 món');
-    nodes.mobileCartCustomer = el('small', '', 'Khách lẻ');
+    nodes.mobileCartCustomer = el('small', '', 'Chưa chọn khách hàng');
     nodes.mobileCartTotal = el('b', '', '0 đ');
     nodes.mobileCartOpen = button('Xem đơn ›', 'btn primary pos-mobile-cart-open', () => right.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     mobileInfo.append(nodes.mobileCartCount, nodes.mobileCartCustomer);
@@ -557,6 +558,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     return openPosOrderFlows({api,toast,shift:st.shift,register:st.register,orderId,onChanged:()=>Promise.all([search(),loadOrderBoard()]),onReturns:id=>openPosReturns({api,toast,shift:st.shift,register:st.register,orderId:id,onChanged:()=>search()})});
   }
   function createFlow(flow,close){
+    if (!requireCustomer()) return;
     if(!(st.options.orderFlowVersion>=1))return toast('Chức năng đang cập nhật. Tải lại POS rồi thử lại.','err');
     if(!active()||!st.preview||!st.cart.length||st.pending||st.busy)return;
     if(st.qr)return toast('Giỏ đang có giao dịch QR. Hoàn tất giao dịch QR trước khi chuyển sang cọc/trả trước.','err');
@@ -564,11 +566,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if(st.preview.total<=0)return toast('Đơn cọc/trả trước phải có giá trị lớn hơn 0.','err');
     close();openPosFlowCheckout({flow,total:st.preview.total,customer:st.customer,toast,onSubmit:extra=>submit({...payload(),key:key(),...extra})});
   }
+  function requireCustomer() {
+    const issue = posCustomerIssue(st.customer);
+    if (!issue) return true;
+    toast(issue, 'err'); chooseCustomer(); return false;
+  }
   function openPayment() {
     if (!active() || !st.preview || !st.cart.length || st.pending || st.busy) return;
+    if (!requireCustomer()) return;
     const m = modal('Thanh toán'); m.dlg.classList.add('pos-payment-modal');
     paymentModal = m; m.dlg.addEventListener('close', () => { if (paymentModal === m) paymentModal = null; });
-    const headerMeta = el('span', 'pos-payment-meta', `Đơn hiện tại · ${st.customer?.name || 'Khách lẻ'}`),
+    const headerMeta = el('span', 'pos-payment-meta', `Đơn hiện tại · ${st.customer?.name || 'Chưa chọn khách hàng'}`),
       due = el('section', 'pos-payment-due');
     m.body.querySelectorAll?.('h2')?.[0]?.append?.(headerMeta);
     due.append(el('span', '', 'Cần thu'), el('strong', '', money(st.preview.payable ?? st.preview.total)));
@@ -597,8 +605,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       else { await pay(false); if (!st.pending && !st.cart.length) m.close(); }
     });
     footer.append(nodes.temp, nodes.modalPay);
-    const future=el('div','pos-flow-actions');if(st.options.orderFlowVersion>=1)future.append(button('Đặt cọc · Nhận sau','btn secondary',()=>createFlow('deposit',m.close)),button('Ship trả trước 100%','btn secondary',()=>createFlow('prepaid',m.close)));
-    m.body.append(due, methods, tender, transfer, cod, future, footer); m.show(); drawMethods(); refreshPay();
+    m.body.append(due, methods, tender, transfer, cod, footer); m.show(); drawMethods(); refreshPay();
   }
   function drawMethods() {
     if (!nodes.methods) return;
@@ -799,7 +806,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (!nodes.mobileCartCount) return;
     const count = st.cart.reduce((n, x) => n + Number(x.qty || 0), 0), d = st.preview;
     nodes.mobileCartCount.textContent = `Đơn hiện tại · ${count} món`;
-    nodes.mobileCartCustomer.textContent = st.customer?.name || 'Khách lẻ';
+    nodes.mobileCartCustomer.textContent = st.customer?.name || 'Chưa chọn khách hàng';
     nodes.mobileCartTotal.textContent = d ? money(d.payable ?? d.total) : count ? 'Đang tính…' : '0 đ';
     nodes.mobileCartOpen.disabled = !count;
   }
@@ -1049,8 +1056,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       }
       function close() { clearTimeout(timer); ++seq; m.close(); }
       function pick(c) {
+        const issue = posCustomerIssue(c); if (issue) return toast(issue, 'err');
         st.customer = c;
-        nodes.customer.textContent = c ? c.name : 'Khách lẻ · Đổi';
+        nodes.customer.textContent = c ? c.name : 'Chọn khách hàng *';
         invalidate();
         close();
       }
@@ -1072,7 +1080,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         create = button('+ Khách mới', 'btn primary', () => { close(); newCustomer(); });
       retail.hidden = true;
       actions.append(retail, business, create);
-      footer.append(button('Khách vãng lai · Không lưu hồ sơ', 'btn ghost', () => pick(null)), button('Đóng', 'btn secondary', close));
+      footer.append(el('span', 'pos-customer-hint', 'Bắt buộc chọn khách hàng cụ thể để lưu đơn.'), button('Đóng', 'btn secondary', close));
       search.append(input, suggestions);
       m.body.append(el('p', 'pos-customer-subtitle', 'Tìm và chọn khách ngay trong ô bên dưới.'), actions, search, status, footer);
       async function find() {
@@ -1327,6 +1335,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.show();
   }
   async function qr() {
+    if (!requireCustomer()) return;
     const d = await api('/pos/qr', 'POST', { ...payload(), key: key() }),
       m = modal('VietQR – chờ xác nhận thu');
     st.qr = d;
@@ -1383,6 +1392,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     // Continue watching this QR after closing the popup; cart changes invalidate it.
   }
   async function pay(cod = false, qrId) {
+    if (!requireCustomer()) return;
     if (st.busy || st.pending) return;
     if (!active() || !st.preview || !st.cart.length) return toast('Mở ca và chọn hàng trước.', 'err');
     if (cod) {

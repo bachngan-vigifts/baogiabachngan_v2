@@ -1,6 +1,7 @@
 import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } from './purchase-export-data.js';
 import { downloadExcel } from './sheet-export.js';
 import { initPurchaseIncoming } from './purchase-incoming.js';
+import { choosePurchaseMode, createRestockPicker } from './purchase-create-mode.js';
 /**
  * ĐƠN MUA HÀNG NCC (#/purchases) – xem docs/NCC-PAGE.md mục "Đơn mua hàng".
  *  #/purchases                 danh sách + lọc trạng thái
@@ -965,31 +966,45 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
 
   // ---------------------------------------------------------------- lập đơn (từ chứng từ, chia nhiều NCC)
-  async function openCreate(src) {
+  async function openCreate(src, mode) {
+    if (!src && !mode) { choosePurchaseMode(choice => openCreate(null, choice)); return; }
+    mode = src ? 'source' : mode;
     let o;
     try { o = await options(); } catch (e) { toast(e.message, 'err'); return; }
-    const d = frame('Lập đơn mua', 'Đơn mua mới'), f = el('form', 'sup-form pur-create'), err = errorBox();
+    const d = frame('Lập đơn mua', mode === 'restock' ? 'Mua bổ sung' : 'Mua theo đơn / báo giá'), f = el('form', 'sup-form pur-create'), err = errorBox();
     /** rows: một dòng / (chứng từ, mã) hoặc mã nhập tay; qty theo từng NCC đã chọn. */
     const rows = [], sups = [], loaded = new Set();
+    const catalog = mode === 'restock' ? createRestockPicker({ api, active: () => f.isConnected && !drawer.hidden,
+      selected: sku => rows.some(r => r.sku === sku),
+      toggle: (p, checked) => {
+        const index = rows.findIndex(r => r.sku === p.sku);
+        if (checked && index < 0) rows.push({ sku: p.sku, name: p.name, unit: p.unit || '', need: null, remaining: 0, stock: null, source: null, want: 1, split: {} });
+        if (!checked && index >= 0) rows.splice(index, 1);
+        renderGrid();
+      } }) : null;
     const srcBox = el('section', 'sup-section');
     const q = input('search', '', { placeholder: 'Tìm số báo giá, đơn / HĐKT, tên khách…' }), results = el('div', 'pur-results');
     srcBox.append(el('h3', '', '1. Chọn chứng từ nguồn'), el('p', 'muted small', 'Số lượng cần mua được gợi ý từ số chứng từ cần, số đã đặt ở đơn mua chưa huỷ và tồn kho.'), field('Tìm chứng từ', q), results);
-    let t2 = 0, rq = 0;
-    const search = async () => {
+    let t2 = 0, rq = 0, sourceOffset = 0;
+    const moreSources = btn('Xem thêm chứng từ', 'btn secondary small', () => search(true)); moreSources.hidden = true; srcBox.append(moreSources);
+    const search = async (append = false) => {
+      if (!append) sourceOffset = 0;
+      moreSources.disabled = true;
       const id = ++rq;
       try {
-        const r = await api('/purchase-sources?q=' + encodeURIComponent(q.value.trim())); if (id !== rq) return;
-        results.replaceChildren();
-        if (!r.sources.length) results.append(el('p', 'muted small', 'Không thấy chứng từ phù hợp.'));
+        const r = await api('/purchase-sources?q=' + encodeURIComponent(q.value.trim()) + '&offset=' + sourceOffset); if (id !== rq) return;
+        if (!append) results.replaceChildren();
+        sourceOffset = r.nextOffset ?? 0; moreSources.hidden = r.nextOffset == null; moreSources.disabled = false;
+        if (!append && !r.sources.length) results.append(el('p', 'muted small', 'Không thấy chứng từ phù hợp.'));
         for (const s of r.sources) {
           const b = btn('', 'pur-result', () => addSource(s.type, s.id));
           b.append(el('span', 'sup-pill info', SOURCE_LABEL[s.type]), el('b', '', s.no), el('small', 'muted', s.customerName || ''));
           if (loaded.has(s.type + ':' + s.id)) { b.disabled = true; b.classList.add('is-added'); b.append(el('span', 'pur-added', '✓ Đã thêm')); }
           results.append(b);
         }
-      } catch (e) { results.replaceChildren(el('p', 'error', e.message)); }
+      } catch (e) { if (id !== rq) return; moreSources.disabled = false; results.append(el('p', 'error', e.message)); }
     };
-    q.addEventListener('input', () => { clearTimeout(t2); t2 = setTimeout(search, 250); });
+    q.addEventListener('input', () => { ++rq; results.replaceChildren(); moreSources.hidden = true; clearTimeout(t2); t2 = setTimeout(search, 250); });
     const supBox = el('section', 'sup-section');
     let pick = supplierSelect(o.suppliers, '');
     supBox.append(el('h3', '', '2. Chọn nhà cung cấp (có thể chia nhiều NCC)'), el('div', 'pur-inline'));
@@ -1037,13 +1052,14 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     });
     manual.append(mSku, mName, mUnit, mQty, addManual);
     const lookup = bindManualProductLookup({ api, sku: mSku, name: mName, unit: mUnit, host: manual, add: addManual, active: () => f.isConnected && !drawer.hidden });
-    disposeLookup = () => lookup.dispose();
+    disposeLookup = () => { lookup.dispose(); catalog?.dispose(); clearTimeout(t2); ++rq; };
     const table = el('div', 'table-wrap');
-    gridBox.append(el('h3', '', '3. Chia số lượng cho từng NCC'), table, el('h4', '', 'Mã ngoài chứng từ (hàng dự trữ…)'), manual);
+    gridBox.append(el('h3', '', '3. Chia số lượng cho từng NCC'), table);
+    if (!catalog) gridBox.append(el('h4', '', 'Mã ngoài chứng từ (hàng dự trữ…)'), manual);
     const arrival = input('date', ''), wh = input('text', '', { maxLength: 120, required: true, placeholder: 'Nhập địa chỉ giao hàng' }), note = el('textarea'); note.rows = 2; note.maxLength = 2000;
     const g = el('div', 'form-grid two'); g.append(field('Hẹn giao dự kiến', arrival), field('Địa chỉ giao hàng *', wh), field('Ghi chú cho các đơn', note, 'span-2'));
     const ok = el('button', 'btn primary', 'Tạo đơn nháp'); ok.type = 'submit';
-    f.append(srcBox, supBox, gridBox, g, el('p', 'muted small', o.canSeePrices ? 'Giá mua nhập ở bước duyệt.' : 'Giá mua do Manager nhập khi duyệt.'), err, foot(ok));
+    f.append(catalog?.root || srcBox, supBox, gridBox, g, el('p', 'muted small', o.canSeePrices ? 'Giá mua nhập ở bước duyệt.' : 'Giá mua do Manager nhập khi duyệt.'), err, foot(ok));
     d.append(f);
 
     async function addSource(type, id) {
@@ -1067,7 +1083,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     };
     function renderGrid() {
       table.replaceChildren();
-      if (!rows.length) { table.append(el('p', 'muted small', 'Chưa có mã nào – chọn chứng từ ở bước 1 hoặc thêm mã bên dưới.')); return; }
+      if (!rows.length) { table.append(el('p', 'muted small', catalog ? 'Chưa có mã nào – chọn sản phẩm ở bước 1.' : 'Chưa có mã nào – chọn chứng từ ở bước 1 hoặc thêm mã bên dưới.')); return; }
       const t = el('table', 'data-table pur-lines pur-grid'), th = el('tr'), tb = el('tbody');
       const heads = ['Mã / tên', 'Chứng từ', 'SL trong đơn', 'Tồn kho', sups.length === 1 ? `SL cần đặt · ${sups[0].name}` : 'SL cần đặt'];
       if (sups.length > 1) heads.push(...sups.map(x => x.name));
@@ -1098,7 +1114,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
           firstCell.textContent = num(parts[0]);
         };
         want.addEventListener('input', () => { r.want = Number(want.value) || 0; update(); });
-        const x = el('td'); x.append(btn('×', 'icon-btn', () => { rows.splice(idx, 1); renderGrid(); })); tr.append(x);
+        const x = el('td'); x.append(btn('×', 'icon-btn', () => { rows.splice(idx, 1); renderGrid(); catalog?.refresh(); })); tr.append(x);
         update(); tb.append(tr);
       });
       table.append(t);
@@ -1108,6 +1124,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     f.addEventListener('submit', e => {
       e.preventDefault(); err.textContent = '';
       if (!wh.value.trim()) { err.textContent = 'Vui lòng nhập địa chỉ giao hàng.'; wh.focus(); return; }
+      if (catalog && rows.some(r => !Number.isSafeInteger(r.want) || r.want <= 0)) { err.textContent = 'SL cần đặt của mỗi mã phải là số nguyên lớn hơn 0.'; return; }
       if (!sups.length && pick.value) addPicked();
       if (!sups.length) { err.textContent = 'Chọn ít nhất một nhà cung cấp.'; return; }
       for (const r of rows) if (perSupplier(r).slice(1).reduce((a, v) => a + v, 0) > Math.max(0, Math.floor(Number(r.want) || 0))) { err.textContent = `${r.sku}: số chia cho các NCC khác vượt "SL cần đặt".`; return; }
@@ -1132,7 +1149,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       });
     });
     renderGrid();
-    if (src) addSource(src.type, src.id); else search();
+    if (catalog) catalog.load(); else if (src) addSource(src.type, src.id); else search();
   }
 
   return { load, show, openCreate };

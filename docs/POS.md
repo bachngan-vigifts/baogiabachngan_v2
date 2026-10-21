@@ -87,7 +87,7 @@ Chi tiết đơn COD có nút **Thu COD** cho chuyến đã giao còn tiền ch�
 
 ## Chọn khách tại POS
 
-Popup chọn khách dùng ô tìm kiếm có gợi ý theo tên/số điện thoại, không hiện sẵn danh bạ. Ba nút **Khách lẻ – Khách B2B – Khách mới** tách rõ: hai nút đầu lọc kết quả tìm theo phân loại khách đã có (`kind=retail`/`business`), nút cuối mở form tạo nhanh hiện tại. Khách B2B là nhóm không đánh dấu `is_retail`; không tự phân loại lại khách cũ. Nút Khách lẻ chỉ hiện theo quyền danh sách khách lẻ do server trả về. **Khách vãng lai · Không lưu hồ sơ** giữ luồng bán không gắn khách. Có thể dùng phím ↑/↓ và Enter để chọn gợi ý. Không đổi dữ liệu, schema hoặc quyền.
+Popup chọn khách dùng ô tìm kiếm có gợi ý theo tên/số điện thoại, không hiện sẵn danh bạ. Ba nút **Khách lẻ – Khách B2B – Khách mới** tách rõ: hai nút đầu lọc kết quả tìm theo phân loại khách đã có (`kind=retail`/`business`), nút cuối mở form tạo nhanh hiện tại. Khách B2B là nhóm không đánh dấu `is_retail`; không tự phân loại lại khách cũ. Nút Khách lẻ chỉ hiện theo quyền danh sách khách lẻ do server trả về. Bắt buộc chọn hồ sơ khách cụ thể trước khi thanh toán; đã bỏ lựa chọn **Khách vãng lai · Không lưu hồ sơ**. Hai bộ lọc Khách lẻ/B2B vẫn tìm hồ sơ có thật, không phải lựa chọn khách chung. Có thể dùng phím ↑/↓ và Enter để chọn gợi ý. Không đổi dữ liệu, schema hoặc quyền.
 
 ## Phí dịch vụ và phí ship
 
@@ -166,6 +166,11 @@ Không schema/migration/quyền mới; không tự chuyển cửa hàng hoặc t
 ### Tiền đơn website
 
 Webhook WooCommerce lưu các mã giảm giá, phí âm đổi điểm, phí ship thu khách/phương thức, thuế và tổng nguồn trong web_store_orders.financial_snapshot. POS, việc xuất hoá đơn và chi tiết Kế toán hiển thị từ snapshot; không tính lại total, không trừ điểm thêm lần nữa. ghnFee là phí hãng GHN riêng. Bản ghi cũ `{}` hiện chưa đồng bộ chi tiết; cần website gửi lại đơn để có dữ liệu, không suy ngược từ total. Cập nhật chỉ trạng thái giữ chi tiết đã có. Hợp đồng nguồn và migration: WEB-ORDER-ADJUSTMENTS-PREFLIGHT.md.
+
+
+### Khách hàng bắt buộc khi thanh toán (21/10/2026)
+
+Giỏ được thêm/xem giá trước khi chọn khách. Tiền mặt, chuyển khoản/QR, COD và cọc/trả trước phải chọn hoặc tạo khách đã duyệt. API checkout và tạo QR kiểm lại điều kiện, trả 400 `POS_CUSTOMER_REQUIRED` nếu chưa có khách hoặc hồ sơ tên chung Khách lẻ/Khách vãng lai. Tạo khách mới ngay trong POS cũng từ chối các tên chung này. Không bắt buộc sửa đơn cũ; replay giao dịch đã lưu vẫn trả lại đúng đơn cũ và không tạo thêm. Không đổi schema, tổng tiền hoặc quyền.
 
 ## Báo cáo ca dạng khối (21/10/2026)
 Popup Báo cáo ca (Bán hàng nhanh), Sổ quỹ › Xem ca và hộp **Kết ca** dùng chung `trial-ui/shift-report-view.js`; cùng số liệu với bản in K80.

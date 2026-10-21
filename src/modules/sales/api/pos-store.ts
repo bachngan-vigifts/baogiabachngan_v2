@@ -1,3 +1,4 @@
+import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
 import { flowInitialAmount, flowHoldUntil, saleFlowOf } from '../domain/pos-order-flow.ts';
 import { exchangeForCart, returnAccount } from './pos-return-credit.ts';
@@ -338,7 +339,8 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
       .where(and(eq(cashEntries.shiftId, s.id), sql`${cashEntries.createdAt} <= ${cutoff}`)).orderBy(asc(cashEntries.createdAt)).limit(200),
     cashSales: drawer.cashSales,
     cashCod: drawer.cashCod,
-    expectedCash: s.openingCash + cash + drawer.manualNet,
+    currentAdjustmentNet: drawer.currentAdjustmentNet,
+    expectedCash: s.openingCash + cash + drawer.manualNet + drawer.currentAdjustmentNet,
     cod: {
       pending: {count:pendingCount,amount:pendingAmount},
       receivedInShift: received
@@ -381,6 +383,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     assertOpen(s, m);
     if (posText(b.registerId) !== s.registerId) throw new AppError(400, 'Quầy không khớp ca.');
     const c = await calculateCart(tx, b);
+    const customerIssue = posCustomerIssue(c.customer);
+    if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
     const initialAmount = flow ? flowInitialAmount(flow, c.total, b.initialAmount) : 0;
     const receivedInitial = flow && (method === 'cash' || b.confirmed === true) ? initialAmount : 0;
     if (flow && (c.exchange.amount || b.paymentRequestId)) throw new AppError(400, 'Đơn cọc/trả trước không dùng QR hoặc tín dụng giỏ đang thanh toán.');

@@ -294,20 +294,20 @@ export async function stockOf(db: Db, skus: string[]) {
 }
 
 /** Tìm nhanh chứng từ nguồn để lập đơn mua (đúng phạm vi xem). */
-export async function sourceCandidates(db: Db, m: Member, q: string) {
+export async function sourceCandidates(db: Db, m: Member, q: string, offset = 0) {
   const term = q.trim().slice(0, 60), likeQ = '%' + term.replace(/[\\%_]/g, x => '\\' + x) + '%';
   const [qs, os, rs] = await Promise.all([
     db.select({ id: quotations.id, no: quotations.quoteNo, customer: quotations.customer, at: quotations.updatedAt }).from(quotations)
-      .where(and(quotationPredicate(m), term ? or(ilike(quotations.quoteNo, likeQ), ilike(quotations.customer, likeQ)) : undefined)).orderBy(desc(quotations.updatedAt)).limit(8),
+      .where(and(quotationPredicate(m), term ? or(ilike(quotations.quoteNo, likeQ), ilike(quotations.customer, likeQ)) : undefined)).orderBy(desc(quotations.updatedAt), quotations.id).limit(8).offset(offset),
     db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, at: salesOrders.createdAt,
       contractNo: contractNoOf }).from(salesOrders)
       .where(and(orderScopeFor(m), sql`${salesOrders.status} <> 'cancelled'`, term ? or(ilike(salesOrders.orderNo, likeQ), ilike(salesOrders.customerName, likeQ),
         sql`exists (select 1 from ${salesContracts} where ${salesContracts.orderId} = ${salesOrders.id} and ${salesContracts.contractNo} ilike ${likeQ})`) : undefined))
-      .orderBy(desc(salesOrders.createdAt)).limit(8),
+      .orderBy(desc(salesOrders.createdAt), salesOrders.id).limit(8).offset(offset),
     db.select({ id: customerStockRequests.id, customer: customers.name, at: customerStockRequests.createdAt }).from(customerStockRequests)
       .innerJoin(customers, eq(customers.id, customerStockRequests.customerId))
       .where(and(m.role === 'manager' ? undefined : eq(customerStockRequests.ownerId, m.id), term ? ilike(customers.name, likeQ) : undefined))
-      .orderBy(desc(customerStockRequests.createdAt)).limit(8),
+      .orderBy(desc(customerStockRequests.createdAt), customerStockRequests.id).limit(8).offset(offset),
   ]);
   return [
     ...qs.map(x => ({ type: 'quote', id: x.id, no: x.no, customerName: x.customer, at: x.at })),
