@@ -6,6 +6,7 @@ import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { openBarcodeImport } from './barcode-import.js';
 import { posOrderEditor, posCodReceipt, posPaymentText } from './pos-order-edit.js';
+import { renderOrderLineDetails } from './order-line-details.js';
 import { initCash } from './cash.js';
 import { initPos } from './pos.js';
 import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
@@ -3407,26 +3408,7 @@ async function openOrder(id) {
   $('#order-debt').innerHTML = `<dl class="totals"><div><dt>Giá trị ${what} (gồm VAT)</dt><dd>${money(o.total)}</dd></div><div><dt>Đã thu</dt><dd class="${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</dd></div>
     <div class="grand"><dt>Còn phải thu</dt><dd>${money(r.balance)}</dd></div>${r.overdue ? `<div><dt class="danger-text">Quá hạn</dt><dd class="danger-text">${money(r.overdue)}</dd></div>` : ''}</dl>
     <ul class="plain-list">${allocatePayments(d.effectiveSchedules || d.schedules, r.paid).map(s => `<li class="${s.left <= 0 ? 'installment-paid' : ''}"><span>${esc(s.note || s.kind)}<small>${installmentStatus(s)}</small></span><b>${money(s.amount)}</b><small>${s.left <= 0 ? 'Đã hoàn tất' : s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
-  $('#order-lines').innerHTML = d.lines.map(l => `<tr><td>${esc(l.name)}<small>${esc([l.sku, l.unit].filter(Boolean).join(' · '))}</small></td><td class="right">${fmtNum(l.qty)}</td>
-    <td class="right">${fmtNum(l.deliveredQty)}</td><td class="right num">${fmtNum(l.unitPrice, 2)} đ</td><td class="right">${fmtNum(l.taxRate)}%</td><td class="right num">${money(l.amount)}</td></tr>`).join('');
-  const noteId = 'pos-order-saved-note';
-  document.getElementById(noteId)?.remove();
-  if (o.channel === 'pos' && o.note) {
-    const p = document.createElement('p'); p.id = noteId; p.style.whiteSpace = 'pre-wrap'; p.textContent = 'Ghi chú đơn hàng: ' + o.note;
-    $('#order-lines-title').parentElement.after(p);
-  }
-  const fees = o.posFees;
-  for (const charge of [
-    ...((fees?.services ?? (fees?.service ? [fees.service] : [])).filter(f => f.amount).map(f => ({ name: f.name, amount: f.subtotal, taxRate: f.taxRate }))),
-    ...(fees?.shippingFee ? [{ name: 'Phí ship (không VAT)', amount: fees.shippingFee, taxRate: 0 }] : []),
-  ]) {
-    const tr = document.createElement('tr'), title = document.createElement('td');
-    title.colSpan = 3; title.textContent = charge.name; tr.append(title);
-    for (const value of [money(charge.amount), charge.taxRate + '%', money(charge.amount)]) {
-      const td = document.createElement('td'); td.className = 'right'; td.textContent = value; tr.append(td);
-    }
-    $('#order-lines').append(tr);
-  }
+  renderOrderLineDetails({ head: $('#order-lines-head'), body: $('#order-lines'), details: $('#order-line-details'), order: o, lines: d.lines });
   const k = d.contract;
   // Đơn hàng và HĐKT là 2 luồng: đơn không có HĐKT (khách có HĐ nguyên tắc) hiện ô "Đơn hàng" thay cho ô HĐKT.
   $('#order-contract-title').textContent = k ? 'HĐKT' : 'Đơn hàng';

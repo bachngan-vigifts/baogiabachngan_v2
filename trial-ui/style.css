@@ -1932,3 +1932,10 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 }
 .ddh-product-image { width: 18mm; }
 .ddh-product-image img { width: 16mm; height: 16mm; object-fit: contain; display: block; margin: auto; }
+
+/* POS detail keeps original checkout prices, item discounts and all fee lines visible. */
+#order-lines-head th { white-space: nowrap; }
+#order-lines td small { display: block; font-size: 11px; color: var(--muted, #64748b); white-space: normal; }
+.pos-order-totals { max-width: 560px; margin: 18px 0 0 auto; border-top: 1px solid #e2e8f0; padding-top: 14px; }
+.pos-order-totals dd { text-align: right; }
+.pos-order-note { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 16px; }
