@@ -35,6 +35,8 @@ export const warehouses = pgTable('warehouses', {
   kind: text('kind', { enum: ['stock', 'supplier', 'incoming'] }).notNull().default('stock'),
   sortOrder: bigint('sort_order', { mode: 'number' }).notNull().default(0),
   active: boolean('active').notNull().default(true),
+  /** Kho riêng (VD kho Hoá đơn): chỉ chức vụ bán được kho này + Manager thấy tồn – docs/SO-KHO.md "Kho bán theo chức vụ". */
+  stockPrivate: boolean('stock_private').notNull().default(false),
 }, t => [uniqueIndex('idx_warehouses_name').on(t.name), enumCheck('chk_warehouses_kind', t.kind, ['stock', 'supplier', 'incoming'])]).enableRLS();
 
 /** Chính sách giá (cột giá trong Sapo: giá bán lẻ, giá sỉ, ...). */
