@@ -53,3 +53,23 @@ test('việc tự sinh: chuyển khoản cọc chờ xác nhận và đơn cọc
   await f.db.update(posOrderReservations).set({ expiresAt: daysAgo(1) }).where(eq(posOrderReservations.orderId, made.data.id));
   assert.match((await RULES.posHoldExpiring!(f.db, ''))[0]!.title, /đã hết hạn giữ hàng/);
 });
+
+test('đã ngừng tạo đơn cọc / ship trả trước: cả hai đường tạo đơn trả 410, không ghi đơn hay phiếu thu', async () => {
+  const f = await setup(), s = await f.open();
+  f.env.posOrderFlowCreate = false;
+  for (const path of ['/pos/order-flows/checkout', '/pos/checkout']) {
+    const r = await f.call(path, f.emp, 'POST', f.cart(s.id, { saleFlow: 'deposit' }));
+    ok(r, 410); assert.equal(r.data.code, 'POS_ORDER_FLOW_DISABLED');
+  }
+  assert.equal((await f.db.select().from(salesOrders)).length, 0);
+  assert.equal((await f.db.select().from(customerPayments)).length, 0);
+  ok(await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id)), 201);
+});
+
+test('webhook SePay / WooCommerce: thiếu mã cấu hình thì từ chối, không còn mã dự phòng', async () => {
+  const f = await setup();
+  f.env.sepayPosApiKeyHash = undefined; f.env.wooLockTokenHash = undefined;
+  ok(await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', { id: 1, number: '1' }), 401);
+  const r = await f.router.handle(new Request('http://localhost/api/staff/integrations/sepay/pos-payment', { method: 'POST', headers: { authorization: 'Apikey test-sepay-key', 'content-type': 'application/json' }, body: '{}' }), f.env);
+  assert.equal(r.status, 401);
+});

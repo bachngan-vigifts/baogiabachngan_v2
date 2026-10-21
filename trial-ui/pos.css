@@ -935,12 +935,12 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-flow-modal{width:min(660px,calc(100vw - 24px));max-height:90dvh}
 .pos-flow-head,.pos-flow-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .pos-flow-head{justify-content:space-between;margin-bottom:16px}
-.pos-flow-head h2{margin:0;font-size:20px}.pos-flow-form,.pos-flow-list{display:grid;gap:12px}
+.pos-flow-head h2{margin:0;font-size:20px}.pos-flow-list{display:grid;gap:12px}
 .pos-flow-card{padding:16px;margin:14px 0;border:1px solid #d9e3ed;border-radius:12px;display:grid;gap:10px}
 .pos-flow-card h3{margin:0}.pos-flow-state {font-weight:700;color:#137d49}
 .pos-flow-summary{display:grid;grid-template-columns:1fr auto;gap:10px;padding:14px;background:#f0faf5;border-radius:12px}
 .pos-flow-summary dd{margin:0;font-weight:700;text-align:right}.pos-flow-order{display:grid;gap:6px;text-align:left;padding:14px;background:white;border:1px solid #d9e3ed;border-radius:10px;color:inherit;cursor:pointer}
-.pos-flow-order:hover{background:#effaf3}.pos-flow-card input[type=checkbox],.pos-flow-form input[type=checkbox]{width:20px;height:20px}
+.pos-flow-order:hover{background:#effaf3}.pos-flow-card input[type=checkbox]{width:20px;height:20px}
 @media(max-width:560px){.pos-flow-actions>.btn{flex:1}.pos-flow-modal .pos-modal-content{padding:16px}.pos-flow-summary{font-size:13px}}
 
 /* Customer creation shares directory fields; keep actions separate from the grid. */
@@ -1016,7 +1016,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-step-modal .pos-modal-content > h2, .pos-step-modal .pos-flow-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 20px 72px 20px 24px; background: #e7f6ec; color: #145c35; font-size: 21px; }
 .pos-step-modal .pos-flow-head { padding-right: 16px; }
 .pos-step-modal .pos-flow-head h2 { margin: 0; font-size: 21px; color: #145c35; }
-.pos-step-modal form, .pos-step-modal .pos-flow-form { display: grid; gap: 0; padding: 0; }
+.pos-step-modal form { display: grid; gap: 0; padding: 0; }
 .pos-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; list-style: none; margin: 0; padding: 14px 24px 4px; }
 .pos-steps li { display: flex; align-items: center; gap: 8px; color: #8a948f; font-size: 13px; font-weight: 600; }
 .pos-steps li b { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid #d5ddd8; background: #fff; font-size: 13px; }
@@ -1047,11 +1047,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-step-footer .primary { background: #16884d; border-color: #16884d; }
 .pos-step-modal .error:empty, .pos-step-modal .pos-warning:empty { display: none; }
 .pos-step-modal .error { margin: 0 24px; }
-.pos-flow-form > .pos-step-section { margin: 14px 24px 0; }
-.pos-flow-form > .pos-note { margin: 10px 24px 0; }
-.pos-flow-presets { display: flex; flex-wrap: wrap; gap: 8px; }
-.pos-flow-presets .btn { min-height: 40px; padding: 0 16px; border-radius: 999px; }
-.pos-flow-amount input { font-size: 22px; font-weight: 800; }
 .pos-qr-info { display: grid; justify-items: center; gap: 8px; padding: 6px 24px 4px; text-align: center; }
 .pos-qr-modal .pos-qr { width: min(280px, 70vw); height: auto; border: 1px solid #dce3df; border-radius: 14px; padding: 8px; background: #fff; }
 .pos-qr-content { margin: 0; font-weight: 700; }
@@ -1061,7 +1056,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 /* Trạng thái đang xử lý: nút chính hiện vòng quay + chữ "Đang…", cả form mờ và không bấm được. */
 .btn.is-busy { position: relative; cursor: progress; opacity: 1 !important; }
 .btn.is-busy::before { content: ''; display: inline-block; width: 16px; height: 16px; margin-right: 10px; vertical-align: -3px; border: 2.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: pos-spin .7s linear infinite; }
-.pos-modal-busy .pos-step-body, .pos-modal-busy .pos-payment-methods, .pos-modal-busy .pos-flow-form > .pos-step-section { opacity: .6; pointer-events: none; }
+.pos-modal-busy .pos-step-body, .pos-modal-busy .pos-payment-methods { opacity: .6; pointer-events: none; }
 .pos-modal-busy { cursor: progress; }
 @keyframes pos-spin { to { transform: rotate(360deg); } }
 @media (max-width: 600px) {
@@ -1073,8 +1068,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-steps li b { width: 22px; height: 22px; font-size: 11px; }
   .pos-step-body { padding: 10px 12px 4px; gap: 10px; }
   .pos-step-section { padding: 12px; }
-  .pos-flow-form > .pos-step-section { margin: 10px 12px 0; }
-  .pos-flow-form > .pos-note { margin: 8px 12px 0; }
   .pos-step-due strong { font-size: 28px; }
   .pos-review-list { grid-template-columns: 1fr; gap: 2px; }
   .pos-review-list dd { margin-bottom: 8px; }
@@ -1083,7 +1076,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 }
 .pos-step-summary .pos-cod-remaining { padding: 0; border: 0; background: none; }
 .pos-step-modal .pos-cod-confirm { margin: 0; }
-.pos-flow-form .pos-cod-confirm { flex-direction: row-reverse; justify-content: flex-end; }
 .pos-step-modal .pos-cod-confirm input[type=checkbox] { width: 18px; min-height: 18px; }
 .pos-step-modal .pos-step-error { margin: 10px 24px 0; padding: 10px 12px; border-radius: 10px; background: #fdecea; color: #a12a1b; font-weight: 700; }
 .pos-step-modal .pos-step-error:empty { display: none; }

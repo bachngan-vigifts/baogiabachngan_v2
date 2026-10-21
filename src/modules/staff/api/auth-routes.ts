@@ -39,6 +39,8 @@ export interface StaffEnv {
   sapoWebhookFetch?: typeof fetch;
   /** Báo cáo kết ca POS được đẩy bất đồng bộ sang hàng đợi Claw/Zalo. */
   posShiftReportWebhook?: { url: string; token: string; fetch?: typeof fetch };
+  /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
+  posOrderFlowCreate?: boolean;
   sepayPosApiKeyHash?: string;
   wooLockTokenHash?: string;
   wooMinhLongTokenHash?: string;
@@ -98,7 +100,9 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
   if (area === 'sepay-sync') {
     const auth = c.req.headers.get('authorization') || '';
     const key = /^Apikey\s+(.+)$/i.exec(auth)?.[1] || '';
-    const got = sha256Hex(key), want = c.env.sepayPosApiKeyHash || '5e2dac2cebd194b4aeaa945c9dd01ee50c3f474b99c8851cd32d2bea95c7d5d0';
+    // Thiếu SEPAY_POS_API_KEY_HASH thì từ chối (không còn mã dự phòng ghi trong code).
+    const got = sha256Hex(key), want = c.env.sepayPosApiKeyHash || '';
+    if (!want) throw new AppError(401, 'Webhook SePay không hợp lệ.');
     let diff = got.length ^ want.length;
     for (let i = 0; i < want.length; i++) diff |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
     if (diff) throw new AppError(401, 'Webhook SePay không hợp lệ.');
@@ -106,10 +110,7 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
   }
   if (area === 'web-order-sync') {
     const token = c.url.searchParams.get('token') || '';
-    const got = sha256Hex(token), wants = [
-      c.env.wooLockTokenHash || '332555a87646e97c22b3496d8eaca19cbfb649b3c0fd3381ac2bd62b23311d6d',
-      c.env.wooMinhLongTokenHash || 'aa30c8ef850ad067688d7e91744cab2608546aaca978018e28b9aa5e97cc1415',
-    ];
+    const got = sha256Hex(token), wants = [c.env.wooLockTokenHash || '', c.env.wooMinhLongTokenHash || ''].filter(Boolean);
     if (!wants.some(want => { let d = got.length ^ want.length; for (let i = 0; i < want.length; i++) d |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i); return d === 0; }))
       throw new AppError(401, 'Webhook đơn web không hợp lệ.');
     return;

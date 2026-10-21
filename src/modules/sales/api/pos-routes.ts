@@ -120,8 +120,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const source = c.params.source === 'lock' ? 'lock' : c.params.source === 'minhlong' ? 'minhlong' : '';
     if (!source) throw new AppError(404, 'Nguồn website không hợp lệ.');
     const tokenHash = sha256Hex(c.url.searchParams.get('token') || '');
-    const expected = source === 'lock' ? (c.env.wooLockTokenHash || '332555a87646e97c22b3496d8eaca19cbfb649b3c0fd3381ac2bd62b23311d6d') : (c.env.wooMinhLongTokenHash || 'aa30c8ef850ad067688d7e91744cab2608546aaca978018e28b9aa5e97cc1415');
-    if (tokenHash !== expected) throw new AppError(401, 'Webhook không đúng website.');
+    // Không có mã dự phòng trong code: thiếu biến môi trường thì từ chối mọi webhook (fail closed).
+    const expected = (source === 'lock' ? c.env.wooLockTokenHash : c.env.wooMinhLongTokenHash) || '';
+    if (!expected || tokenHash !== expected) throw new AppError(401, 'Webhook không đúng website.');
     const b = await readJson(c.req, 256_000), externalId = posText(String(b.id ?? ''), 80), number = posText(String(b.number ?? b.id ?? ''), 100);
     if (!externalId || !number) throw new AppError(400, 'Đơn WooCommerce thiếu ID hoặc số đơn.');
     const wantedName = source === 'lock' ? 'CỬA HÀNG LOCKNLOCK CẦN THƠ' : 'Showroom Gốm Sứ Minh Long Cần Thơ';

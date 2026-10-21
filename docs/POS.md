@@ -132,7 +132,9 @@ Huỷ phiếu thu trước ghi nhầm vẫn cần quyền/lý do, không phải 
 
 ## Đặt cọc nhận sau và ship trả trước 100%
 
-Ở màn **Thanh toán**, chọn **Đặt cọc · Nhận sau** hoặc **Ship trả trước 100%**. Trong menu **⋯ → Đơn cọc / Ship trả trước** xem lại đơn; chi tiết đơn cũng có nút **Cọc / Thu nốt / Trả trước**. Nhân viên có quyền POS cùng cửa hàng xem và tiếp nhận đơn qua ca khác; quyền sở hữu/chia sẻ khách hàng không mở được đơn cửa hàng đối diện, kể cả ở màn đơn/giao/đóng gói chung. Giá, số lượng và CK của đơn giữ nguyên. Hai luồng độc lập với bán tại quầy và COD hiện có.
+> **Đã ngừng tạo mới (21/10/2026).** Màn Thanh toán không còn hai lựa chọn này; API tạo mới trả 410 `POS_ORDER_FLOW_DISABLED`. Đơn cọc / trả trước đã có vẫn xử lý đủ bên dưới (thu nốt, nhận hàng, huỷ, trả hàng).
+
+Trong menu **⋯ → Đơn cọc đang xử lý** xem lại đơn; chi tiết đơn cũng có nút **Cọc / Thu nốt / Trả trước**. Nhân viên có quyền POS cùng cửa hàng xem và tiếp nhận đơn qua ca khác; quyền sở hữu/chia sẻ khách hàng không mở được đơn cửa hàng đối diện, kể cả ở màn đơn/giao/đóng gói chung. Giá, số lượng và CK của đơn giữ nguyên. Hai luồng độc lập với bán tại quầy và COD hiện có.
 
 Cọc mặc định 30%, có nút 50% và ô số khác >0 đến tổng đơn. Hàng giữ 5 ngày; hết hạn chỉ nhả giữ, không tự huỷ đơn/hoàn tiền. **Kiểm tra tồn và giữ lại hàng** trước khi thu nốt sau hết hạn. Thu nốt và giao tại quầy thực hiện cùng transaction; thiếu hàng/tiền thì không xuất. Được thu nốt trước rồi nhận hàng sau; nút nhận hàng khi đã đủ tiền không tạo phiếu thu 0đ.
 

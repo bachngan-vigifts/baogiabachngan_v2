@@ -356,6 +356,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
   posPermission(m);
   const flow = saleFlowOf(b);
   if (b.saleFlow !== undefined && !flow) throw new AppError(400, 'Chọn loại đơn cọc/trả trước hợp lệ.');
+  // Đã bỏ tạo mới đơn cọc / ship trả trước (21/10/2026). Đơn cũ vẫn thu nốt / nhận hàng / huỷ / trả hàng bình thường.
+  if (flow && !env.posOrderFlowCreate) throw new AppError(410, 'Đã ngừng tạo đơn cọc / ship trả trước. Bán tại quầy hoặc Ship COD.', 'POS_ORDER_FLOW_DISABLED');
   const key = posKey(b.key),
     shiftId = posText(b.shiftId),
     mode = flow ? (flow === 'prepaid' ? 'delivery' : 'counter') : b.fulfillmentMode === 'cod' ? 'cod' : 'counter',

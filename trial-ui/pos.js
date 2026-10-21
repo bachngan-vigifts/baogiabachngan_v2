@@ -1,7 +1,7 @@
 import { posCustomerIssue } from './pos-customer.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { webOrderFinancialSummary } from './web-order-financials.js';
-import { openPosFlowCheckout, openPosOrderFlows } from './pos-order-flow.js';
+import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
 import { printPos } from './pos-print.js';
@@ -296,7 +296,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     menuAction('Trả / Đổi / Hoàn', openReturns);
     menuAction('Báo cáo ca', () => run(history));
     menuAction('Ship COD', () => run(codList));
-    if(st.options.orderFlowVersion>=1)menuAction('Đơn cọc / Ship trả trước',()=>run(flowOrders));
+    if(st.options.orderFlowVersion>=1)menuAction('Đơn cọc đang xử lý',()=>run(flowOrders));
     menuAction('In bill tạm', () => run(printTemporary));
     menuAction('Chọn bảng giá', choosePricePolicy);
     if (st.options.canConfigure) { menuAction('Cấu hình', () => configure()); menuAction('+ Quầy', () => configure(true)); }
@@ -634,15 +634,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   async function flowOrders(orderId=''){
     return openPosOrderFlows({api,toast,shift:st.shift,register:st.register,orderId,onChanged:()=>Promise.all([search(),loadOrderBoard()]),onReturns:id=>openPosReturns({api,toast,shift:st.shift,register:st.register,orderId:id,onChanged:()=>search()})});
   }
-  function createFlow(flow,close){
-    if (!requireCustomer()) return;
-    if(!(st.options.orderFlowVersion>=1))return toast('Chức năng đang cập nhật. Tải lại POS rồi thử lại.','err');
-    if(!active()||!st.preview||!st.cart.length||st.pending||st.busy)return;
-    if(st.qr)return toast('Giỏ đang có giao dịch QR. Hoàn tất giao dịch QR trước khi chuyển sang cọc/trả trước.','err');
-    if(st.exchangeAllocationId)return toast('Thanh toán tín dụng đổi hàng tại quầy trước; không ghép vào đơn cọc.','err');
-    if(st.preview.total<=0)return toast('Đơn cọc/trả trước phải có giá trị lớn hơn 0.','err');
-    close();openPosFlowCheckout({flow,total:st.preview.total,customer:st.customer,toast,onBack:openPayment,onSubmit:(extra,done)=>submit({...payload(),key:key(),...extra},done)});
-  }
   function requireCustomer() {
     const issue = posCustomerIssue(st.customer);
     if (!issue) return true;
@@ -910,7 +901,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       nodes.modalPay.classList.toggle('is-busy', st.busy);
       nodes.modalPay.setAttribute('aria-busy', String(st.busy));
     }
-    for (const b of [...(nodes.methods?.querySelectorAll('button') || []), ...(nodes.flowButtons?.querySelectorAll('button') || [])]) b.disabled = st.busy;
+    for (const b of nodes.methods?.querySelectorAll('button') || []) b.disabled = st.busy;
     if (nodes.change) nodes.change.textContent = money(Math.max(0, Number(nodes.tender?.value || 0) - (st.preview?.payable ?? st.preview?.total ?? 0)));
     nodes.lines?.classList.toggle('pos-busy', !!st.pending || st.busy);
     for (const i of nodes.lines?.querySelectorAll('input,select,button') || []) i.disabled = !!st.pending || st.busy;
@@ -1653,7 +1644,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (payModal) payModal.dlg.dataset.busy = '1';
     refreshPay();
     try {
-      const d = await api(body.saleFlow?'/pos/order-flows/checkout':'/pos/checkout', 'POST', body);
+      const d = await api('/pos/checkout', 'POST', body);
       onSaved?.();
       paymentModal?.close();
       persistPending(null);
@@ -1680,7 +1671,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       const actions = el('div', 'pos-saved-actions');
       actions.append(button('In lại bill', 'btn secondary', () => printPos(d)));
       if (body.fulfillmentMode === 'cod') actions.append(ghnPortalLink(d.ghnOrderCode || ''));
-      if (body.saleFlow) actions.append(button('Xem đơn nhận sau', 'btn secondary', () => { saved.close(); run(() => flowOrders(d.id)); }));
       const next = button('Bán đơn tiếp', 'btn primary pos-saved-next', () => { saved.close(); nodes.search?.focus(); }); actions.append(next);
       saved.body.append(summary, total, el('p', 'pos-saved-hint', 'Đơn đã được lưu. Có thể in lại bill hoặc tiếp tục bán hàng.'), actions);
       saved.show();
@@ -1690,7 +1680,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     } catch (e) {
       if (e.status >= 400 && e.status < 500) {
         persistPending(null);
-        toast(body.saleFlow && [404,405].includes(e.status)?'Chức năng đặt cọc/trả trước đang cập nhật. Giỏ hàng được giữ nguyên; tải lại POS rồi thử lại.':e.message, 'err');
+        toast(e.message, 'err');
         return 'rejected';
       }
       toast('Chưa rõ kết quả. Bấm Kiểm tra lại giao dịch để lấy đúng đơn, không thu lần nữa.', 'err');

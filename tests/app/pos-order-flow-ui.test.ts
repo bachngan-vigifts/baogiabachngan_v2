@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-ignore browser module
-import { openPosFlowCheckout, openPosOrderFlows } from '../../trial-ui/pos-order-flow.js';
+import { openPosOrderFlows } from '../../trial-ui/pos-order-flow.js';
 // @ts-ignore browser module
 import { buildPosPrint } from '../../trial-ui/pos-print.js';
 // @ts-ignore browser module
@@ -72,78 +72,6 @@ async function dom(fn: () => Promise<void>) {
     (globalThis as any).document = old;
   }
 }
-test('form cọc: 30%/50%/tự nhập; bank chưa tick gửi pending, không tự nhận đã thu', () =>
-  dom(async () => {
-    const sent: any[] = [];
-    openPosFlowCheckout({
-      flow: 'deposit',
-      total: 194400,
-      toast: () => {},
-      onSubmit: (b: any) => sent.push(b),
-    });
-    const dlg = doc.body.children[0]!,
-      amount = input(dlg, 'Tiền cọc (VNĐ)');
-    assert.equal(amount.value, 58320);
-    await button(dlg, '50%').onclick();
-    assert.equal(amount.value, 97200);
-    amount.value = '12345';
-    const method = input(dlg, 'Hình thức thanh toán');
-    method.value = 'transfer';
-    method.onchange();
-    assert.equal(
-      input(dlg, 'Cửa hàng đã thực nhận khoản chuyển khoản này').checked,
-      false,
-    );
-    await dlg.querySelectorAll('form')[0]!.onsubmit({ preventDefault() {} });
-    assert.equal(sent.length, 1);
-    assert.equal(sent[0].initialAmount, 12345);
-    assert.equal(sent[0].confirmed, false);
-    assert.equal(sent[0].method, 'transfer');
-  }));
-test('form cọc khoá khi đang ghi nhận, bấm trùng chỉ gửi một lần; máy chủ từ chối thì giữ form để sửa', () =>
-  dom(async () => {
-    const sent: any[] = []; let finish: (v: string) => void = () => {}; let back = 0;
-    openPosFlowCheckout({
-      flow: 'deposit',
-      total: 100000,
-      toast: () => {},
-      onBack: () => back++,
-      onSubmit: (b: any) => { sent.push(b); return new Promise<string>((r) => (finish = r)); },
-    });
-    const dlg = doc.body.children[0]!, form = dlg.querySelectorAll('form')[0]!, save = button(dlg, 'Ghi nhận cọc');
-    const first = form.onsubmit({ preventDefault() {} });
-    assert.equal(save.textContent, 'Đang ghi nhận…');
-    assert.equal(save.disabled, true);
-    assert.equal(dlg.dataset.busy, '1');
-    assert.equal(button(dlg, '← Quay lại thanh toán').disabled, true);
-    await form.onsubmit({ preventDefault() {} });
-    assert.equal(sent.length, 1, 'bấm trùng không gửi lần hai');
-    finish('rejected'); await first;
-    assert.equal(dlg.open, true, 'từ chối thì giữ form');
-    assert.equal(save.disabled, false);
-    assert.equal(save.textContent, 'Ghi nhận cọc');
-    assert.match(dlg.textContent, /Chưa ghi nhận được/);
-    button(dlg, '← Quay lại thanh toán').onclick();
-    assert.equal(back, 1); assert.equal(dlg.open, false);
-  }));
-test('form ship trả trước giữ 100%, có người nhận/địa chỉ, không ghép COD', () =>
-  dom(async () => {
-    const sent: any[] = [];
-    openPosFlowCheckout({
-      flow: 'prepaid',
-      total: 108000,
-      customer: { name: '<img onerror=1>', phone: '0900', address: 'Cần Thơ' },
-      toast: () => {},
-      onSubmit: (b: any) => sent.push(b),
-    });
-    const dlg = doc.body.children[0]!;
-    assert.equal(input(dlg, 'Số tiền trả trước').value, 108000);
-    assert.equal(dlg.querySelectorAll('img').length, 0);
-    await dlg.querySelectorAll('form')[0]!.onsubmit({ preventDefault() {} });
-    assert.equal(sent[0].saleFlow, 'prepaid');
-    assert.equal(sent[0].delivery.address, 'Cần Thơ');
-    assert.equal(sent[0].fulfillmentMode, undefined);
-  }));
 test('xác nhận khoản chờ yêu cầu thực nhận và tham chiếu; tên khách chỉ là văn bản', () =>
   dom(async () => {
     const calls: any[] = [],
