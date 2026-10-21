@@ -4,7 +4,7 @@ import { openPosFlowCheckout, openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
 import { printPos } from './pos-print.js';
-import { shiftReportSections } from './pos-report.js';
+import { renderShiftReport } from './shift-report-view.js';
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -1130,21 +1130,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       b.disabled = false;
     }));
   }
-  /** Báo cáo ca gom theo mục (pos-report.js › shiftReportSections); bấm mục → mở trang liên quan. */
-  function reportRows(container, d, onOpen) {
-    const LINK = { orders: 'Xem đơn hàng', cash: 'Mở Sổ quỹ', returns: 'Mở Trả / Đổi', flows: 'Mở đơn cọc', cod: 'Mở Ship COD' };
-    for (const sec of shiftReportSections(d)) {
-      const box = el('section', 'pos-report-section'), head = button('', 'pos-report-head', () => onOpen?.(sec.open));
-      head.append(el('span', '', sec.title), el('small', '', (LINK[sec.open] || 'Mở') + ' ›'));
-      box.append(head);
-      for (const [k, v] of sec.rows) { const row = el('div', 'pos-total-row'); row.append(el('span', '', k), el('b', '', v)); box.append(row); }
-      if (!sec.rows.length) box.append(el('p', 'pos-note', 'Không phát sinh trong ca.'));
-      if (sec.note) box.append(el('p', 'pos-note', sec.note));
-      container.append(box);
-    }
-    for (const x of d.bookAdjustments || []) container.append(el('p', 'pos-note', 'Điều chỉnh két: ' + money(x.direction === 'in' ? x.amount : -x.amount) + ' (điều chỉnh sổ, không thu/chi tiền thực trong ca)'));
-    if (d.differenceReason) container.append(el('p', 'pos-note', 'Lý do lệch: ' + d.differenceReason));
-  }
   function openReturns() {
     openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()});
   }
@@ -1174,14 +1159,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         const d = await api('/pos/shifts/' + s.id);
         const detail = modal('Báo cáo ca ' + when(s.openedAt) + ' · ' + (s.memberName || ''));
         detail.body.append(el('p', 'pos-note', s.closedAt ? `Đã kết ${when(s.closedAt)}` : 'Ca đang mở – số liệu tính đến hiện tại'));
-        reportRows(detail.body, d, target => {
+        detail.body.parentElement?.classList.add('pos-modal-wide');
+        renderShiftReport(detail.body, d, { onOpen: target => {
           detail.close();
           if (target === 'cash') go('#/cash');
           else if (target === 'orders') go('#/orders');
           else if (target === 'returns') openReturns();
           else if (target === 'flows') run(flowOrders);
           else if (target === 'cod') run(codList);
-        });
+        } });
         const acts = el('div', 'pos-actions');
         acts.append(button('In K80', 'btn primary', () => printPos(d, 'shift')), button('Đóng', 'btn secondary', detail.close));
         detail.body.append(acts);

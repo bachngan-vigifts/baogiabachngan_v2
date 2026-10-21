@@ -15,3 +15,14 @@ test('báo cáo ca gom theo mục, ẩn dòng phụ bằng 0, mục nào cũng m
   assert.deepEqual(s[2]!.rows.map(r => r[0]), ['Tiền cọc thực nhận', 'Đơn nhận sau còn phải thu']);
   assert.deepEqual(s[3]!.rows.slice(-2), [['Thực đếm cuối ca', '690.000 đ'], ['Lệch', '-10.000 đ']]);
 });
+
+// @ts-ignore shared browser presentation helpers
+import { shiftFigures, differenceState } from '../../trial-ui/shift-report-view.js';
+test('kết ca: két hệ thống lấy theo máy chủ, tách tiền mặt bán / COD / thu chi tay; chênh lệch 3 trạng thái', () => {
+  const f = shiftFigures({ shift: { openingCash: 2_000_000 }, cash: 9_120_000, cashSales: 8_000_000, cashCod: 1_120_000, transfer: 13_180_000,
+    manual: [{ direction: 'in', kind: 'other_income', amount: 300_000 }, { direction: 'out', kind: 'petty_expense', amount: 150_000 }], expectedCash: 11_270_000, pendingEntries: [{}] });
+  assert.deepEqual([f.manualIn, f.manualOut, f.other, f.received, f.pending], [300_000, 150_000, 0, 22_300_000, 1], 'COD đã thu nằm trong tiền mặt / chuyển khoản – không cộng thêm lần nữa');
+  assert.equal(shiftFigures({ shift: { openingCash: 0 }, cash: 100, cashSales: 100, cashCod: 0, manual: [], expectedCash: 90 }).other, -10, 'phần máy chủ tính khác hiện thành dòng "Khác"');
+  assert.equal(differenceState('', 100).state, 'empty');
+  assert.deepEqual([differenceState('100', 100).state, differenceState('80', 100).diff], ['match', -20]);
+});

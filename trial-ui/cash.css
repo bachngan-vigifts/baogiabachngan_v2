@@ -157,3 +157,59 @@
   .cash-kind-tabs { width: 100%; }
   .cash-kind-tabs .btn { min-height: 34px; padding: 6px 10px; }
 }
+
+/* ===== Báo cáo ca dạng khối (shift-report-view.js) – dùng chung Bán hàng nhanh / Sổ quỹ / Kết ca ===== */
+.cash-dialog.cash-close-dialog, .pos-modal.pos-modal-wide { width: min(1180px, calc(100vw - 24px)); }
+.sr { display: grid; gap: 12px; }
+.sr-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.sr-chip { background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 13px; color: var(--muted); }
+.sr-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.sr-kpi { display: grid; gap: 2px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; font: inherit; color: inherit; }
+button.sr-kpi { cursor: pointer; } button.sr-kpi:hover { border-color: var(--line-strong); box-shadow: var(--shadow); }
+.sr-kpi span { font-size: 13px; color: var(--muted); } .sr-kpi b { font-size: 20px; } .sr-kpi small { font-size: 12px; color: var(--muted); }
+.sr-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px 12px; }
+.sr-card-head { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 8px; background: none; border: 0; padding: 0 0 8px; font: inherit; color: inherit; text-align: left; }
+button.sr-card-head { cursor: pointer; } button.sr-card-head .sr-aside { color: var(--blue); } button.sr-card-head:hover .sr-aside { text-decoration: underline; }
+.sr-card-head h3 { margin: 0; font-size: 15px; } .sr-aside { font-size: 13px; color: var(--muted); }
+.sr-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sr-step { flex: 1 1 120px; display: grid; gap: 2px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--surface-2); }
+.sr-step span { font-size: 12px; color: var(--muted); } .sr-step b { font-size: 16px; }
+.sr-step.sr-total { background: var(--green-50); border-color: #9fd6bf; } .sr-step.sr-total b { color: var(--green); }
+.sr-op { font-weight: 700; color: var(--muted); }
+.sr-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--line); }
+.sr-seg.sr-cash, .sr-dot.sr-cash { background: var(--green); } .sr-seg.sr-transfer, .sr-dot.sr-transfer { background: #5b9bd5; }
+.sr-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; font-size: 13px; }
+.sr-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+.sr-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; }
+.sr-row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.sr-row:last-of-type { border-bottom: 0; } .sr-row b { white-space: nowrap; }
+.sr-row.sr-warn b, .sr-row.sr-diff b { color: var(--amber); } .sr-row.sr-match b { color: var(--green); }
+.sr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sr-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 6px; background: var(--surface-2); }
+.sr-table td { padding: 6px; border-bottom: 1px solid var(--line); } .sr-num { text-align: right; white-space: nowrap; }
+.sr-reason { max-width: 220px; overflow-wrap: anywhere; }
+.sr-pill { border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 600; background: var(--surface-2); }
+.sr-pill.ok { background: var(--green-50); color: var(--green); } .sr-pill.warn { background: var(--amber-50); color: var(--amber); } .sr-pill.muted { color: var(--muted); text-decoration: line-through; }
+.sr-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.sr-link { background: none; border: 0; padding: 6px 0 0; color: var(--blue); font: inherit; font-size: 13px; cursor: pointer; }
+/* Kết ca: cột đếm tiền bên phải, dính khi cuộn; điện thoại: một cột, đếm tiền lên đầu. */
+.close-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+.close-side { order: 2; position: sticky; top: 0; display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.close-report { order: 1; min-width: 0; }
+.close-count { font-size: 26px !important; font-weight: 700; text-align: right; }
+.close-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.close-diff { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-radius: var(--radius-sm); padding: 10px 12px; border: 1px solid var(--line); }
+.close-diff b { font-size: 18px; }
+.close-diff.is-empty { background: var(--surface-2); color: var(--muted); } .close-diff.is-empty b { font-size: 13px; font-weight: 500; }
+.close-diff.is-match { background: var(--green-50); border-color: #9fd6bf; color: var(--green); }
+.close-diff.is-diff { background: var(--amber-50); border-color: #f2c77b; color: var(--amber); }
+.close-block { display: grid; gap: 4px; background: var(--amber-50); border: 1px solid #f2c77b; color: var(--amber); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; }
+.close-submit { min-height: 46px; font-size: 16px; }
+.close-legend { list-style: none; margin: 4px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.close-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+.close-legend .is-empty i { background: #c4cbd6; } .close-legend .is-match i { background: var(--green); } .close-legend .is-diff i { background: #e59a2f; }
+@media (max-width: 900px) {
+  .sr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sr-grid, .close-layout { grid-template-columns: 1fr; }
+  .close-side { order: 0; position: static; }
+}
