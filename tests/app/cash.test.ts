@@ -70,7 +70,7 @@ test('Hai két riêng: đầu kỳ không sao chép, ca mở độc lập, số 
   assert.equal(s2.data.cashDrawerId, mlKey);
   const e = await f.call('/cash/entries' + lock, f.emp, 'POST', entry('other_income', 100000));
   assert.equal(e.status, 201, JSON.stringify(e.data));
-  assert.equal((await f.call('/cash/entries' + other, f.emp, 'POST', entry())).status, 409);
+  assert.equal((await f.call('/cash/entries' + other, f.emp, 'POST', entry())).status, 403, 'NVBH Lock không ghi phiếu vào két Minh Long');
   assert.equal((await f.call('/cash' + lock, f.mgr)).data.balance, 300000);
   assert.equal((await f.call('/cash' + other, f.mgr)).data.balance, 700000);
   assert.equal((await f.call('/cash/entries' + range + '&drawerId=' + mlKey, f.mgr)).data.entries.length, 0);

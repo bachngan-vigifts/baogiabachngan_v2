@@ -12,6 +12,7 @@ import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { employees } from '../../staff/schema.ts';
 import { allowedRegister, allowedDrawer } from './pos-access.ts';
+import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { cashAudit, cashLock, type CashDb } from './cash-store.ts';
 import {
   assertOpen,
@@ -66,6 +67,8 @@ async function source(c: Ctx, db: CashDb, id: string) {
     !allowedDrawer(c, s.cashDrawerId)
   )
     throw new AppError(403, 'Bill thuộc cửa hàng khác.');
+  // Người bán chỉ xử lý bill của quầy được giao; người duyệt (Manager / được chỉ định) xem mọi quầy để duyệt.
+  if (!canApprove(who(c))) await assertSellRegister(c, s.registerId, db);
   return { o, s };
 }
 async function getReturn(c: Ctx, db: CashDb, id: string) {
@@ -141,6 +144,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
       access(c);
       const orderId = c.url.searchParams.get('orderId');
       if (orderId) return json(await detail(c, c.env.db, orderId));
+      // Lọc quầy trong SQL rồi mới giới hạn 300 dòng (trước đây lọc sau limit nên cửa hàng có thể thấy thiếu).
+      const sell = canApprove(who(c)) ? null : await allowedPosRegisters(c);
+      const registerIds = (await c.env.db.select({ id: posRegisters.id }).from(posRegisters)).map(r => r.id)
+        .filter(id => allowedRegister(c, id) && (!sell || sell.all || sell.ids.has(id)));
+      if (!registerIds.length) return json({ returns: [] });
       const rows = await c.env.db
         .select({
           r: posReturns,
@@ -151,11 +159,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
         .from(posReturns)
         .innerJoin(salesOrders, eq(salesOrders.id, posReturns.orderId))
         .innerJoin(employees, eq(employees.id, posReturns.createdBy))
+        .where(inArray(posReturns.registerId, registerIds))
         .orderBy(desc(posReturns.createdAt))
         .limit(300);
       return json({
         returns: rows
-          .filter((x) => allowedRegister(c, x.r.registerId))
           .map((x) => ({
             ...x.r,
             orderNo: x.orderNo,

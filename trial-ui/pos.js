@@ -254,7 +254,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       head = el('div', 'pos-head'),
       title = el('div'),
       tools = el('div', 'pos-head-tools');
-    title.append(el('h1', '', 'Bán hàng nhanh'), button('← Về CRM', 'btn secondary small', () => go('#/tasks')), el('span', 'pos-register-name', st.register?.name || 'Chưa cấu hình quầy'));
+    title.append(el('h1', '', 'Bán hàng nhanh'), button('← Về CRM', 'btn secondary small', () => go('#/tasks')), el('span', 'pos-register-name', st.register?.name || (st.options?.canConfigure ? 'Chưa cấu hình quầy' : 'Chưa được giao quầy – nhờ Manager phân quầy theo chức vụ')));
     head.append(title, tools);
     const menu = button('☰ Menu CRM', 'btn secondary pos-menu-toggle', () => {
       st.showMenu = !st.showMenu;
@@ -1253,7 +1253,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   async function openShift() {
     const latest = await api('/pos/options' + (st.register?.id ? '?registerId=' + encodeURIComponent(st.register.id) : ''));
     if (latest.current && !latest.current.closedAt) { await load(); toast('Đã sử dụng ca đang mở của cửa hàng.'); return; }
-    if (!st.register) return toast('Cấu hình quầy trước.', 'err');
+    if (!st.register) return toast(st.options?.canConfigure ? 'Cấu hình quầy trước.' : 'Bạn chưa được giao quầy bán hàng. Nhờ Manager phân quầy theo chức vụ.', 'err');
     // Lấy tiền bàn giao trước khi dựng form: lỗi mạng thì không để lại hộp thoại mồ côi.
     const drawer = await api('/cash?registerId=' + encodeURIComponent(st.register.id));
     const m = formModal('Mở ca bán hàng'),

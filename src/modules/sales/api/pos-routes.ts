@@ -7,6 +7,7 @@ import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
 import { returnAccount } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
+import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -82,18 +83,6 @@ async function lockGhnLocations(provinceId: number, districtId: number) {
 }
 function config(c: RouteContext<StaffEnv>) {
   if (!can(member(c), 'pos.configure')) throw new AppError(403, 'Chỉ người được cấp cấu hình POS thao tác.');
-}
-async function allowedPosRegisters(c: RouteContext<StaffEnv>) {
-  const m = member(c), db = c.env.db;
-  const regs = (await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
-  if (posScope(c)) return { regs, ids: new Set(regs.map(r => r.id)), all: false };
-  if (m.role === 'manager' || can(m, 'pos.configure')) return { regs, ids: new Set(regs.map(r => r.id)), all: true };
-  const [[current], [position]] = await Promise.all([
-    db.select({ registerId: posShifts.registerId }).from(posShifts).where(and(eq(posShifts.memberId, m.id), isNull(posShifts.closedAt))).limit(1),
-    m.positionId ? db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1) : Promise.resolve([]),
-  ]);
-  const id = (current && regs.some(r => r.id === current.registerId) ? current.registerId : '') || defaultPosRegister(m.positionId, position?.name, regs);
-  return { regs: regs.filter(r => r.id === id), ids: new Set(id ? [id] : []), all: false };
 }
 function posOrderBucket(o: { status: string; fulfillmentMode: string; packingStatus: string; deliveryStatus: string }) {
   if (o.status === 'cancelled') return 'cancelled';
@@ -357,7 +346,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .orderBy(desc(posShifts.openedAt))
           .limit(50),
       ]);
-      const regs = allRegs.filter(r => allowedRegister(c, r.id));
+      const sellScope = await allowedPosRegisters(c);
+      const regs = allRegs.filter(r => allowedRegister(c, r.id) && (sellScope.all || sellScope.ids.has(r.id)));
       const shifts = shiftRows.filter(x => allowedRegister(c, x.shift.registerId)).map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
       const policies = await c.env.db
         .select()
@@ -530,6 +520,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/catalog',
     async (c) => {
       posPermission(member(c));
+      await assertSellRegister(c, posText(c.url.searchParams.get('registerId')));
       const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId'))),
         policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId,
         q = posText(c.url.searchParams.get('q'), 100);
@@ -680,6 +671,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/opening-counts',
     async (c) => {
       posPermission(member(c));
+      await assertSellRegister(c, posText(c.url.searchParams.get('registerId')));
       const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId')));
       await assertOpening(c.env.db, r.warehouseId);
       const rows = await c.env.db
@@ -709,6 +701,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if ((typeof requestedOpening !== 'number' && typeof requestedOpening !== 'string') || String(requestedOpening).trim() === '')
         throw new AppError(400, 'Nhập tiền thực đếm đầu ca.');
       const countedOpening = posMoney(requestedOpening, 'Tiền thực đếm đầu ca');
+      await assertSellRegister(c, registerId);
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-register:' + registerId}))`);

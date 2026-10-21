@@ -26,6 +26,8 @@ const origin = 'https://trial.test';
 export async function setup(opts: { viaClaw?: boolean } = {}) {
   const { db, d1, client } = await createTestDb();
   await seedStaff(d1);
+  // Quầy chỉ giao cho NVBH / CHT cửa hàng (21/10/2026): nhân viên bán POS mẫu là NVBH Lock.
+  await db.update(employees).set({ positionId: 'sales-lock' }).where(eq(employees.id, 'emp'));
   await db.insert(employees).values({
     id: 'cashier2',
     name: 'Cashier 2',

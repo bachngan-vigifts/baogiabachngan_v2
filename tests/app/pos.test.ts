@@ -195,6 +195,8 @@ test('POS dashboard: đếm đúng trạng thái theo quầy và nhân viên kh�
     name: 'Quầy Minh Long', warehouseId: 'pos-wh', pricePolicyId: 'retail-vat', secondPricePolicyId: 'retail', taxRate: 8,
   });
   assert.equal(second.status, 200, JSON.stringify(second.data));
+  // Mỗi cửa hàng một két riêng: két dùng chung thì nhân viên cửa hàng bị chặn để không lộ số dư cửa hàng kia.
+  assert.equal((await f.call('/cash/drawers', f.mgr, 'POST', { key: crypto.randomUUID(), name: 'Két Minh Long', registerId: second.data.id })).status, 201);
   const s = await f.open();
   const counter = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id));
   const cod = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id, {
