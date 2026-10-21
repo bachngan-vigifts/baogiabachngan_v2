@@ -1,3 +1,4 @@
+import { orderRecipient } from './order-notes.js';
 // Bản in / tải ĐƠN ĐẶT HÀNG theo mẫu đơn của Minh Long (BM đơn đặt hàng): đầu trang công ty + "ĐƠN ĐẶT HÀNG",
 // thông tin đơn, bảng hàng (STT, Mã hàng, Chủng loại, ĐVT, SL đặt, SL giao, Ngày giao, Ghi chú), tổng cộng, ghi chú và 3 chữ ký.
 // Dùng chung cho xem trước (HTML), in / lưu PDF (trình duyệt) và tải Excel (exceljs).
@@ -104,13 +105,14 @@ export function packingPrintData({ seller, order, contract = null, slip = null, 
  * `lines` = [{ sku, name, unit, ordered, qty }] (ordered = SL đặt, qty = SL giao chuyến này).
  */
 export function deliveryPrintData({ seller, order, contract = null, delivery = null, lines }, me = '') {
-  const receiver = delivery && (delivery.receiverName || delivery.receiverPhone) ? [delivery.receiverName, delivery.receiverPhone].filter(Boolean).join(' · ') : contactOf(order);
+  const recipient = orderRecipient(order, delivery);
+  const receiver = [recipient.receiverName, recipient.receiverPhone].filter(Boolean).join(' · ');
   return {
     kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || orderReference(order, contract).number,
-    info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['MST', order.taxCode || ''],
-      ['Địa chỉ giao', delivery?.address || order.address || ''], ['Thời gian', delivery?.timeSlot || ''], ['Người nhận', receiver], ['', ''],
+    info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['Người giao', delivery?.senderName || ''],
+      ['Địa chỉ giao', delivery?.address || order.address || ''], ['SĐT người giao', delivery?.senderPhone || ''], ['Người nhận', receiver], ['', ''],
       ...(delivery?.carrier ? [['Nhà xe', delivery.carrier], ['SĐT bác tài', delivery.carrierPhone || '']] : [])],
-    cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Hình ảnh', k: 'imageUrl', image: true }, { h: 'Chủng loại', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
+    cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Hình ảnh', k: 'imageUrl', image: true }, { h: 'Tên sản phẩm', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL đặt', k: 'ordered', num: true, sum: true },
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
     lines: lines.map(l => ({ sku: l.sku || '', imageUrl: l.imageUrl || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
     note: '- Phiếu bàn giao sản phẩm này cũng chính là biên bản nghiệm thu sản phẩm và được kết thúc ngay sau khi hai bên ký giao – nhận đầy đủ sản phẩm.', signDate: deliverySignDate(), names: ['', ''],
@@ -124,7 +126,7 @@ export function slipSheetHtml(p, { edit = false } = {}) {
   return `<div class="ddh slip${p.kind === 'delivery' ? ' delivery-slip' : ''}">
     <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
     <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
-    <table class="ddh-table"><thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
+    <table class="ddh-table">${p.kind === 'delivery' ? '<colgroup>' + [5, 12, 8, 24, 9, 12, 12, 18].map(w => `<col style="width:${w}%">`).join('') + '</colgroup>' : ''}<thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
       ${p.lines.map((l, i) => `<tr><td class="c">${i + 1}</td>${p.cols.map(c => c.image
         ? `<td class="c ddh-product-image">${/^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp);base64,)/i.test(l[c.k] || '') ? `<img src="${esc(l[c.k])}" alt="${esc(l.name || '')}">` : ''}</td>`
         : `<td${c.num ? ' class="n"' : c.c ? ' class="c"' : ''}${ce(`lines.${i}.${c.k}`)}>${esc(c.num ? showNum(l[c.k]) : l[c.k])}</td>`).join('')}</tr>`).join('')}

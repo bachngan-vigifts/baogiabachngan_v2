@@ -132,7 +132,7 @@ test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xư�
   const p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.equal(p.delivery.hasPrintFee, true, 'có phí in logo');
   assert.ok(p.delivery.workshops.some((w: any) => w.name === 'Trọng Tín'), 'xưởng in mặc định');
-  assert.deepEqual(p.delivery.customer, { name: 'Khách In', address: '12 Lê Lợi, Cần Thơ', phone: '' });
+  assert.deepEqual(p.delivery.customer, { name: 'Khách In', address: '12 Lê Lợi, Cần Thơ', receiverName: '', receiverPhone: '', phone: '' });
   const line = p.lines[0];
   assert.equal((await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [{ orderLineId: line.id, qty: 50, source: 'warehouse' }], delivery: { to: 'workshop' } })).status, 400, 'giao xưởng phải chọn xưởng');
   const made = await call(`/orders/${orderId}/packing`, emp, 'POST', { allocations: [{ orderLineId: line.id, qty: 50, source: 'warehouse' }],
@@ -251,4 +251,29 @@ test('lịch giao dùng chung: cộng mã lặp để chặn vượt số lượ
   const made = await call(`/orders/${id}/packing`, emp, 'POST', { allocations: [{ orderLineId: lineId, qty: 10, source: 'warehouse' }], sendToWarehouse: true });
   assert.equal(made.status, 201, JSON.stringify(made.data)); assert.equal(made.data.deliveryId, null);
   assert.equal(made.data.sentToWarehouse, true); assert.equal((await call(`/orders/${id}`, emp)).data.deliveries.length, 1);
+});
+
+test('người nhận đơn khác người mua: API lịch giao và đóng gói dùng đúng cặp, không ghép SĐT người mua', async () => {
+  const { call, emp, mgr, kho } = await setup();
+  const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_RECIPIENT', customer: 'Công ty mua', contact: 'Người mua', phone: '0901000001',
+    vat: 8, rows: [{ name: 'Hàng kiểm thử', qty: 5, price: 100000 }] });
+  assert.equal(q.status, 201);
+  await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
+  const made = await call('/orders', emp, 'POST', { quoteId: q.data.id, pushSapo: false, receiverName: 'Chị Nhận', receiverPhone: '0902000002' });
+  assert.equal(made.status, 201, JSON.stringify(made.data)); const id = made.data.id;
+  await call('/orders/' + id + '/status', mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  const detail = (await call('/orders/' + id, emp)).data;
+  assert.equal(detail.order.contact, 'Người mua'); assert.equal(detail.order.phone, '0901000001');
+  assert.equal(detail.order.receiverName, 'Chị Nhận'); assert.equal(detail.order.receiverPhone, '0902000002');
+  const pack = (await call('/orders/' + id + '/packing', emp)).data;
+  assert.equal(pack.delivery.customer.receiverName, 'Chị Nhận'); assert.equal(pack.delivery.customer.phone, '0902000002');
+  const line = detail.lines[0].id;
+  const a = await call('/deliveries', emp, 'POST', { orderId: id, plannedDate: '2030-01-15', lines: [{ orderLineId: line, qty: 1 }] });
+  assert.equal(a.status, 201, JSON.stringify(a.data));
+  const b = await call('/deliveries', emp, 'POST', { orderId: id, plannedDate: '2030-01-16', receiverName: 'Anh nhận chuyến', receiverPhone: '', lines: [{ orderLineId: line, qty: 1 }] });
+  assert.equal(b.status, 201, JSON.stringify(b.data));
+  const trips = (await call('/orders/' + id, emp)).data.deliveries;
+  assert.deepEqual(trips.map((d:any)=>[d.receiverName,d.receiverPhone]), [['Chị Nhận','0902000002'],['Anh nhận chuyến','']]);
+  assert.equal((await call('/orders/' + id)).status, 401);
+  assert.equal((await call('/orders/' + id, kho)).status, 403);
 });

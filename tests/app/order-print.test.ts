@@ -107,7 +107,7 @@ test('phiếu giao hàng: ngày ký và tên người nhận để ghi tay, bỏ
     assert.equal(p.signDate, print.deliverySignDate());
     assert.equal(p.names[0], '');
     assert.ok(!p.info.some(([label]: string[]) => label === 'Ngày giao'));
-    assert.ok(p.info.some(([label, value]: string[]) => label === 'Thời gian' && value === '9h–11h'));
+    assert.ok(p.info.some(([label, value]: string[]) => label === 'SĐT người giao' && value === ''));
     const html = print.slipSheetHtml(p, { edit: true });
     assert.doesNotMatch(html, /Ngày giao|12\/10\/2026/);
     assert.match(html, /data-f="names\.0"><\/span>/);
@@ -146,4 +146,26 @@ test('đơn POS nhiều phí: bản in tách đủ khoản, ship không VAT và 
   assert.deepEqual(p.charges, [{ name: 'Phí in', amount: 20000, taxRate: 8 }, { name: '<img src=x onerror=1>', amount: 5000, taxRate: 8 }, { name: 'Phí ship (không VAT)', amount: 20000, taxRate: 0 }]);
   const html = print.orderSheetHtml(p, { prices: true });
   assert.ok(html.includes('Phí in')); assert.ok(html.includes('&lt;img src=x onerror=1&gt;')); assert.ok(!html.includes('<img src=x onerror=1>'));
+});
+
+
+test('phiếu giao ưu tiên người nhận chuyến, rồi người nhận đơn, không ghép nhầm SĐT người mua; đổi ô người giao', () => {
+  const base = { ...order, contact: 'Người mua', phone: '0901000001', receiverName: 'Người nhận', receiverPhone: '0902000002' };
+  const make = (o: any, delivery: any = null) => print.deliveryPrintData({ seller: 'BN', order: o, delivery, lines: [] });
+  const receiver = (p:any) => p.info.find(([label]:string[]) => label==='Người nhận')[1];
+  assert.equal(receiver(make(base)), 'Người nhận · 0902000002');
+  assert.equal(receiver(make(base,{receiverName:'Người nhận chuyến'})), 'Người nhận chuyến');
+  assert.equal(receiver(make({...base,receiverName:'',receiverPhone:''})), 'Người mua · 0901000001');
+  const p = make(base,{senderName:'Anh Giao',senderPhone:'0903000003'});
+  assert.deepEqual(p.info.find(([label]:string[])=>label==='Người giao'),['Người giao','Anh Giao']);
+  assert.deepEqual(p.info.find(([label]:string[])=>label==='SĐT người giao'),['SĐT người giao','0903000003']);
+  assert.equal(p.info.some(([label]:string[])=>label==='MST'||label==='Thời gian'),false);
+});
+
+
+test('phiếu giao: tên sản phẩm và ghi chú có bề rộng cố định 24%/18%, mẫu đóng gói không đổi',()=>{
+ const p=print.deliveryPrintData({seller:'BN',order,lines:[]});const html=print.slipSheetHtml(p);
+ assert.match(html,/<th>Tên sản phẩm<\/th>/);assert.doesNotMatch(html,/<th>Chủng loại<\/th>/);
+ assert.match(html,/<colgroup>.*width:24%.*width:18%.*<\/colgroup>/);
+ const packed=print.slipSheetHtml(print.packingPrintData({seller:'BN',order,slip:{},lines:[]}));assert.doesNotMatch(packed,/<colgroup>/);
 });

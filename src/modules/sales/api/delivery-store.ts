@@ -1,3 +1,4 @@
+import { orderRecipient } from '../domain/order-notes.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
@@ -48,7 +49,7 @@ export async function createScheduledDelivery(tx: Tx, orderId: string, body: Rec
   const id = crypto.randomUUID(), now = new Date().toISOString();
   await tx.insert(deliveries).values({ id, deliveryNo: nextDocNo('GH', date, used.map(r => r.no)), orderId, plannedDate: date,
     timeSlot: text(body.timeSlot, 100), address: text(body.address, 2000) || order.address,
-    receiverName: text(body.receiverName, 500) || order.contact, receiverPhone: text(body.receiverPhone, 100) || order.phone,
+    ...orderRecipient(order, { receiverName: text(body.receiverName, 500), receiverPhone: text(body.receiverPhone, 100) }),
     carrier: text(body.carrier, 200), shippingFee: Math.round(shippingFee), status: 'planned',
     assigneeId: body.assigneeId ? text(body.assigneeId, 80) : null, note: text(body.note, 2000), createdBy: actorId, createdAt: now, updatedAt: now });
   await tx.insert(deliveryLines).values([...quantities].map(([orderLineId, qty]) => ({ deliveryId: id, orderLineId, qty })));

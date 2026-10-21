@@ -1,4 +1,4 @@
-import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes } from './order-notes.js';
+import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes, orderRecipient } from './order-notes.js';
 /** Open the business form first. Sapo is contacted only after submitting with explicit opt-in. */
 export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox }) {
   const dialog = $('#order-create-dialog'), form = $('#order-create-form'), submit = $('#order-create-submit');
@@ -18,9 +18,12 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox }) {
         api('/orders/create-config').catch(e => { throw new Error(e.status === 404 ? 'API sinh đơn đang cập nhật. Vui lòng mở lại form sau.' : e.message); }),
       ]);
       if (current !== me) return result;
-      if (config.version !== 2 || config.noteMaxLength !== 20000) throw new Error('API chưa hỗ trợ form sinh đơn mới. Vui lòng tải lại sau.');
+      if (config.version !== 2 || config.noteMaxLength !== 20000 || config.recipientFields !== true) throw new Error('API chưa hỗ trợ form sinh đơn mới. Vui lòng tải lại sau.');
       $('#order-create-quote').textContent = [q.data.quoteNo || ref.quoteNo, q.data.customer].filter(Boolean).join(' · ');
       form.elements.customerName.value = q.data.customer || ref.customer || '';
+      const recipient = orderRecipient(q.data);
+      form.elements.receiverName.value = recipient.receiverName;
+      form.elements.receiverPhone.value = recipient.receiverPhone;
       form.elements.deliveryDate.value = q.data.deliveryDate || '';
       form.elements.deliveryAddress.value = orderDeliveryAddress(q.data);
       form.elements.note.value = orderNotesFromQuote(q.data);
@@ -53,7 +56,7 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox }) {
     const orderNo = form.elements.orderNo.value.trim(), customerName = form.elements.customerName.value.trim();
     if (!await confirmBox(`Xác nhận sinh đơn hàng?\n\nSố đơn: ${orderNo}\nKhách hàng: ${customerName}`, { title: 'Xác nhận sinh đơn hàng', ok: 'Xác nhận sinh đơn' })) return;
     me.busy = true; submit.disabled = true; error.textContent = '';
-    const fields = { orderNo, orderDate: form.elements.orderDate.value, deliveryDate: form.elements.deliveryDate.value, deliveryAddress: form.elements.deliveryAddress.value, note: form.elements.note.value };
+    const fields = { orderNo, receiverName: form.elements.receiverName.value, receiverPhone: form.elements.receiverPhone.value, orderDate: form.elements.orderDate.value, deliveryDate: form.elements.deliveryDate.value, deliveryAddress: form.elements.deliveryAddress.value, note: form.elements.note.value };
     try {
       const push = form.elements.pushSapo.value === 'yes'; submit.textContent = push ? 'Tiếp tục chọn kho Sapo…' : 'Đang sinh đơn hàng…';
       const r = push ? await chooseSapo({ quoteId: me.ref.quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: (loc, enabled) => me.run(fields, loc, enabled) })
