@@ -337,11 +337,14 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       e.preventDefault();
       if (save.disabled) return;
       save.disabled = true;
+      const originalText = save.textContent;
+      save.textContent = saveText.startsWith('Kết ca') ? 'Đang kết ca…' : 'Đang lưu…';
       run(async () => {
         try {
           await fn();
         } finally {
           save.disabled = false;
+          save.textContent = originalText;
         }
       });
     });
@@ -574,13 +577,17 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         reasonNote: note.input.value,
       });
       m.close();
+      toast('Đã kết ca thành công.');
+      // Cho trình duyệt vẽ xong trạng thái đóng dialog trước khi mở hộp in.
+      // Nếu gọi print ngay cùng một nhịp, dialog kết ca trông như vẫn bị treo
+      // trong suốt thời gian trình duyệt chuẩn bị bản in.
+      await new Promise(resolve => typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => resolve()) : resolve());
       try {
         printPos(r, 'shift');
       } catch {
         toast('Đã kết ca. Có thể xem và in lại ở tab Ca.', 'err');
       }
-      await load();
-      await onShiftClosed();
+      await Promise.all([load(), onShiftClosed()]);
     });
   }
   async function shifts() {
