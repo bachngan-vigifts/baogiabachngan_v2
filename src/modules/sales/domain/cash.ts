@@ -19,10 +19,16 @@ export function cashEntryInput(b: Record<string, unknown>) {
   if (!Object.hasOwn(CASH_KINDS, kind)) throw new AppError(400, 'Chọn loại phiếu hợp lệ.');
   const amount = posMoney(b.amount);
   if (!amount) throw new AppError(400, 'Số tiền phải lớn hơn 0.');
-  const reason = String(b.reason ?? '')
+  let reason = String(b.reason ?? '')
     .trim()
     .slice(0, 2000);
   if (!reason) throw new AppError(400, 'Nội dung hoặc lý do là bắt buộc.');
+  if (b.entryName !== undefined) {
+    if (typeof b.entryName !== 'string' || !b.entryName.trim() || b.entryName.trim().length > 120 || /[\r\n\u0000-\u001f]/.test(b.entryName))
+      throw new AppError(400, 'Tên phiếu cần từ 1 đến 120 ký tự trên một dòng.');
+    if (kind === 'adjustment') throw new AppError(400, 'Phiếu điều chỉnh giữ nguyên loại điều chỉnh két.');
+    reason = `Tên phiếu: ${b.entryName.trim()}\n\n${reason}`;
+  }
   const direction = kind === 'adjustment' ? b.direction : ['other_income', 'cash_in'].includes(kind) ? 'in' : 'out';
   if (direction !== 'in' && direction !== 'out') throw new AppError(400, 'Chọn chiều điều chỉnh.');
   return { kind, amount, reason, direction };
@@ -39,4 +45,10 @@ export function cashCloseReason(difference: number, code: unknown, note: unknown
     reasonNote,
     differenceReason: CASH_REASONS[code as keyof typeof CASH_REASONS] + (reasonNote ? ': ' + reasonNote : ''),
   };
+}
+
+/** A human-readable title line in the existing description, preserving the constrained accounting kind. */
+export function cashEntryName(e: { reason: string; kind: string }) {
+  const match = /^Tên phiếu: ([^\r\n]{1,120})\n\n/.exec(e.reason);
+  return match?.[1] || CASH_KINDS[e.kind as keyof typeof CASH_KINDS] || e.kind;
 }

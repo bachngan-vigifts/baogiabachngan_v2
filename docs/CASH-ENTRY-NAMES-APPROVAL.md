@@ -1,0 +1,13 @@
+# Cash receipt names and approval notifications
+
+Staff can type a receipt name and select suggestions. Recognized suggestions keep their existing kind (advance, cash_out, cash_in, etc.); arbitrary names use the existing generic expense/income kind. Adjustment entries remain adjustments, with their existing Manager restriction.
+
+No schema or migration changes. For a custom name the existing human-readable description stores `Tên phiếu: <name>`, a blank line, then the required reason. The server validates a single-line name of 1–120 characters. Cash table, detail popup and Excel show that name as the display type; the original classification/direction is retained for all balance and shift formulas. Legacy descriptions without the title line still show their old kind label. Direct API clients continue to receive a readable description including the title. Idempotency compares the full saved description, so changing the name on a reused request key returns 409.
+
+Root cause: POST /cash/entries inserted pending entries but never invoked notification delivery. New pending entries now notify active Managers and explicitly delegated approvers who have current Cash/POS access and can see the drawer. Position grants are loaded from the existing permission table; store scope is shared with the existing POS authorization code. Inactive/deleted accounts, another store, the creator, and non-approvers do not receive these requests. Below-threshold entries and replayed checkout keys do not notify.
+
+The existing notification service persists a bell notification and attempts Web Push when configured/subscribed. Delivery failures are logged without rolling back a saved financial entry. This does not backfill old notifications or change the approval threshold/self-approval rules.
+
+Notifications link to #/cash?drawerId=...&entryId=.... A scoped GET /cash/entries/:id returns only an accessible entry (no storage file key); the cash view selects the drawer and opens that receipt even outside the current date range. Authorized users have a Duyệt phiếu action. Existing server approval checks still enforce identity, scope, state and shift status. Opening a link never approves automatically.
+
+Validation: typecheck, UI build; 2 domain/API tests; 4 Cash UI tests including custom name and exact notification link; 5 regression files (Cash, POS access, notifications, architecture, bundle freshness), all pass. Web Push was not exercised on a real device and no production cash entries or notifications were created for testing. Chromium visual checks remain unavailable because the sandbox blocks browser launch. No full suite run.

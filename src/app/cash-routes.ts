@@ -1,3 +1,4 @@
+import { notifyCashApproval } from '../modules/sales/api/cash-approval-notification.ts';
 import { allowedRegister, allowedDrawer, posScope } from '../modules/sales/api/pos-access.ts';
 import { auditLogs } from '../core/db/schema.ts';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
@@ -296,6 +297,15 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
     },
     'business',
   );
+  router.get('/cash/entries/:id', async c => {
+    cashAccess(who(c));
+    const drawerId = await selectedDrawer(c);
+    const [row] = await c.env.db.select({ entry: cashEntries, by: employees.name }).from(cashEntries)
+      .innerJoin(posShifts, eq(posShifts.id, cashEntries.shiftId)).innerJoin(employees, eq(employees.id, cashEntries.createdBy))
+      .where(and(eq(cashEntries.id, c.params.id!), eq(cashEntries.drawerId, drawerId), entryScope(c))).limit(1);
+    if (!row) throw new AppError(404, 'Không có phiếu hoặc bạn không có quyền xem.');
+    return json({ entry: { ...row.entry, by: row.by, at: row.entry.createdAt, photo: row.entry.photoFileKey ? true : null, photoFileKey: undefined } });
+  }, 'business');
   router.get(
     '/cash/entries/:id/photo',
     async (c) => {
@@ -393,6 +403,8 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           });
           return { ...e!, replayed: false };
         });
+        if (!result.replayed && result.status === 'pending')
+          await notifyCashApproval(c.env, result).catch(error => console.warn('cash approval notification failed', error instanceof Error ? error.message : 'unknown error'));
         return json({ ...result, photoFileKey: undefined }, 201);
       } catch (e) {
         if (uploaded && c.env.files) await c.env.files.remove([uploaded]).catch(() => {});
