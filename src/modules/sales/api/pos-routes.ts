@@ -1,3 +1,4 @@
+import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
 import { returnAccount } from './pos-return-credit.ts';
@@ -133,16 +134,30 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (Array.isArray(b.meta_data)) for (const row of b.meta_data) {
       if (row && typeof row === 'object') metadata.set(posText((row as Record<string, unknown>).key, 200), (row as Record<string, unknown>).value);
     }
+    const financials = webOrderFinancials(b);
     const now = posNow(), fields = {
       orderNo: number, registerId: register.id, status: posText(b.status, 50) || 'pending',
       customerName: fullName, phone: posText(billing.phone, 60), email: posText(billing.email, 200), address,
       total: Math.max(0, Number(b.total) || 0), currency: posText(b.currency, 20) || 'VND', paymentMethod: posText(b.payment_method_title ?? b.payment_method, 200),
+      ...(financials ? {financialSnapshot: JSON.stringify(financials)} : {}),
       lines: JSON.stringify(lines), orderedAt: posText(b.date_created_gmt ?? b.date_created, 60) || now, updatedAt: posText(b.date_modified_gmt ?? b.date_modified, 60) || now,
       ghnOrderCode: posText(metadata.get('_lnl_ghn_order_code'), 100), ghnStatus: posText(metadata.get('_lnl_ghn_last_status'), 100),
       ghnSortCode: posText(metadata.get('_lnl_ghn_sort_code'), 100), ghnFee: Math.max(0, Number(metadata.get('_lnl_ghn_total_fee')) || 0),
     };
+    // Some bridges send a status-only event. Do not erase the last source financial/customer details.
+    const updateFields: Partial<typeof fields> = {...fields};
+    if(b.number === undefined) delete updateFields.orderNo;
+    if(b.status === undefined) delete updateFields.status;
+    if(b.total === undefined) delete updateFields.total;
+    if(b.currency === undefined) delete updateFields.currency;
+    if(b.payment_method_title === undefined && b.payment_method === undefined) delete updateFields.paymentMethod;
+    if(!Array.isArray(b.line_items)) delete updateFields.lines;
+    if(b.date_created_gmt === undefined && b.date_created === undefined) delete updateFields.orderedAt;
+    if(b.billing === undefined){delete updateFields.customerName;delete updateFields.phone;delete updateFields.email;}
+    if(b.shipping === undefined && b.billing === undefined) delete updateFields.address;
+    if(!Array.isArray(b.meta_data)){delete updateFields.ghnOrderCode;delete updateFields.ghnStatus;delete updateFields.ghnSortCode;delete updateFields.ghnFee;}
     const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
-      .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: fields }).returning({ id: webStoreOrders.id });
+      .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
     return json({ ok: true, source, externalId, registerId: register.id });
   }, 'web-order-sync');
@@ -209,7 +224,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         ...webRows.map(o => ({ id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
-          paymentMethod: o.paymentMethod, ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
+          paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl })),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const counts = { all: decorated.length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };

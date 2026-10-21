@@ -14,7 +14,9 @@ class Element {
 }
 function fixture() {
   const ctx: any = { document: { createElement: (tag: string) => new Element(tag) }, Intl, Date, URLSearchParams };
-  vm.createContext(ctx); vm.runInContext(readFileSync(new URL('../../trial-ui/accounting-tasks.js', import.meta.url), 'utf8').replace(/export /g, ''), ctx);
+  vm.createContext(ctx);
+  vm.runInContext(readFileSync(new URL('../../trial-ui/web-order-financials.js', import.meta.url), 'utf8').replace(/export /g, ''), ctx);
+  vm.runInContext(readFileSync(new URL('../../trial-ui/accounting-tasks.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, ''), ctx);
   return ctx;
 }
 const nodes = (e: Element): Element[] => [e, ...e.children.flatMap(nodes)];

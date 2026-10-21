@@ -1,3 +1,4 @@
+import { webOrderFinancialSummary } from './web-order-financials.js';
 import { openPosFlowCheckout, openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
@@ -415,6 +416,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.body.append(el('p', '', o.customerName + (o.phone ? ' · ' + o.phone : '')), el('p', '', o.address || 'Chưa có địa chỉ'), el('b', '', money(o.total)));
     let lines = []; try { lines = JSON.parse(o.lines || '[]'); } catch {}
     for (const x of lines) m.body.append(el('p', 'pos-note', `${x.sku || ''} · ${x.name || ''} × ${x.quantity || 0}`));
+    m.body.append(webOrderFinancialSummary(o.financials, o.currency || 'VND'));
     m.body.append(el('p', 'pos-note', 'Thanh toán: ' + (o.paymentMethod || 'Chưa cập nhật')));
     if (o.ghnOrderCode) m.body.append(
       el('p', '', 'Mã vận đơn GHN: ' + o.ghnOrderCode),

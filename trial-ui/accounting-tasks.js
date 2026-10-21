@@ -1,3 +1,4 @@
+import { webOrderFinancialSummary } from './web-order-financials.js';
 // Accounting work queue. Server data is rendered only with DOM APIs / textContent.
 const TYPE = { invoice: 'Xuất HĐ', purchase: 'Trả NCC', debt: 'Thu nợ', web: 'Đơn web GHN' };
 const PRIORITY = { urgent: 'Khẩn', high: 'Cao', normal: 'Bình thường', low: 'Thấp' };
@@ -144,6 +145,7 @@ export function initAccountingTasks({ root, api, toast, userId, back }) {
       else { amountRow(amounts, 'Giá trị đơn', money(s.total, s.currency)); amountRow(amounts, 'Mã số thuế', s.taxCode || 'Chưa có MST'); amountRow(amounts, 'Cách xuất', s.kind === 'web' ? 'Chưa có trạng thái xuất HĐ trên đơn web' : s.invoiceMode === 'draft' ? 'Bản nháp' : 'Chính thức'); }
       body.append(amounts, node('h3', '', 'Cần làm'), node('p', 'pre', t.description || ''), node('p', 'muted', t.completionHelp));
       const actions = node('div', 'acct-detail-actions'); if (t.canClaim && ['todo', 'in_progress'].includes(t.status)) actions.append(button('Nhận việc', 'btn primary', () => claim(t)));
+      if(s?.kind==='web'&&s.available)body.append(webOrderFinancialSummary(s.webFinancials,s.currency));
       const sourceLink = link(s); if (sourceLink) actions.append(sourceLink); else { actions.append(node('span', 'pill warn', 'Không có link đơn')); if (s?.ghnCode) actions.append(node('span', 'muted', s.ghnCode)); }
       const complete = button(t.completionFromSource ? 'Hoàn thành (tự động)' : 'Hoàn thành bằng tay', 'btn secondary', async () => { try { await api('/tasks/' + encodeURIComponent(t.id), 'PUT', { revision: t.revision, status: 'done' }); toast('Đã hoàn thành việc đơn web.'); closeDetail(); await load(); } catch (e) { toast(e.message, 'err'); } });
       complete.disabled = !!t.completionFromSource || t.viewOnly || !['todo', 'in_progress'].includes(t.status); actions.append(complete); body.append(actions);

@@ -1,3 +1,4 @@
+import { readWebOrderFinancials, type WebOrderFinancials } from '../../sales/domain/web-order-financials.ts';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
@@ -20,7 +21,7 @@ type Member = SessionState['member'];
 export interface AccountingSource {
   kind: 'invoice' | 'web' | 'purchase' | 'debt'; amount: number | null; currency: string; docNo: string; link: string; linkLabel: string;
   total?: number; paid?: number; paymentCount?: number; periodCount?: number; periodAmount?: number; dueDate?: string | null; balance?: number; overdue?: number;
-  taxCode?: string; invoiceMode?: string; ghnCode?: string; outstanding: boolean | null; available: boolean;
+  webFinancials?: WebOrderFinancials | null; taxCode?: string; invoiceMode?: string; ghnCode?: string; outstanding: boolean | null; available: boolean;
 }
 async function purchaseData(db: Db, ids?: string[]) {
   const orders = await db.select().from(incomingShipments).where(and(eq(incomingShipments.source, 'supplier-order'), ids ? inArray(incomingShipments.id, ids) : and(eq(incomingShipments.approvalStatus, 'approved'), isNull(incomingShipments.cancelledAt))));
@@ -89,7 +90,7 @@ export async function accountingSources(db: Db, member: Member, rows: Task[], to
         link: can(member, 'page.purchases') ? `#/purchases/${buy.order.id}` : '', linkLabel: 'Mở đơn mua NCC',
         outstanding: buy.order.approvalStatus === 'approved' && !buy.order.cancelledAt && amount > 0 && date <= addDaysIso(today, 3) });
     } else if (kind === 'web' && web && canReadPrivate(t)) {
-      Object.assign(source, { available: true, amount: web.total, total: web.total, currency: web.currency, docNo: web.orderNo, ghnCode: web.ghnOrderCode, invoiceMode: 'unknown', outstanding: null });
+      Object.assign(source, { available: true, amount: web.total, total: web.total, currency: web.currency, webFinancials: readWebOrderFinancials(web.financialSnapshot), docNo: web.orderNo, ghnCode: web.ghnOrderCode, invoiceMode: 'unknown', outstanding: null });
     }
     out.set(t.id, source);
   }

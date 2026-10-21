@@ -162,3 +162,7 @@ Khi một ca quầy đang mở, mọi nhân viên có `pos.sell` và chức vụ
 - Người dùng ca chung không có nút **Kết ca**; API kết ca POS và Sổ quỹ vẫn kiểm người mở ca. Không mở rộng quyền sửa két, duyệt, xem lịch sử/báo cáo của người khác.
 
 Không schema/migration/quyền mới; không tự chuyển cửa hàng hoặc tạo phiếu thu/đơn thật trong kiểm thử.
+
+### Tiền đơn website
+
+Webhook WooCommerce lưu các mã giảm giá, phí âm đổi điểm, phí ship thu khách/phương thức, thuế và tổng nguồn trong web_store_orders.financial_snapshot. POS, việc xuất hoá đơn và chi tiết Kế toán hiển thị từ snapshot; không tính lại total, không trừ điểm thêm lần nữa. ghnFee là phí hãng GHN riêng. Bản ghi cũ `{}` hiện chưa đồng bộ chi tiết; cần website gửi lại đơn để có dữ liệu, không suy ngược từ total. Cập nhật chỉ trạng thái giữ chi tiết đã có. Hợp đồng nguồn và migration: WEB-ORDER-ADJUSTMENTS-PREFLIGHT.md.
