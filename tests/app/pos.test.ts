@@ -280,7 +280,7 @@ test('Đơn website: chuyển đúng địa chỉ người dùng chọn sang c�
   assert.equal(result.status, 200, JSON.stringify(result.data));
   assert.equal(sent.addressLine, '123 Nguyễn Trãi'); assert.equal(sent.wardCode, '550307'); assert.equal(sent.orderId, '901');
 });
-test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS dùng ngay; mã vạch không mất số 0', async () => {
+test('POS: giữ riêng báo cáo ca, NVBH cùng cửa hàng xem bill; khách POS dùng ngay; mã vạch không mất số 0', async () => {
   const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();
   assert.equal((await call('/pos/options', ncc)).status, 403);
   assert.equal((await call('/pos/registers', emp, 'POST', {})).status, 403);
@@ -321,7 +321,7 @@ test('POS: kiểm quyền và ca, không xem ca/bill người khác; khách POS 
   assert.equal(found.data.products[0].sku, '00123');
   assert.equal(found.data.products[0].available, 10);
   const bill = await call('/pos/checkout', emp, 'POST', cart(s.id, { customerId: customer.data.id }));
-  assert.equal((await call('/pos/bills/' + bill.data.id, other)).status, 404);
+  assert.equal((await call('/pos/bills/' + bill.data.id, other)).status, 200);
 });
 test('POS: thiếu tồn và CK vượt mức bị từ chối; không ghi một phần khi thất bại', async () => {
   const { db, call, emp, open, cart } = await setup(),

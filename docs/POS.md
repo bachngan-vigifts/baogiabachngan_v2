@@ -43,7 +43,7 @@ Tiền mặt có tiền khách đưa/tiền thối và nút **Đủ tiền**. Ch
 
 ## Kết ca và COD
 
-Ca kết có snapshot cố định: số bill, giá trị bill, chiết khấu, tiền mặt, chuyển khoản và COD. Tiền két hệ thống = tiền đầu ca + tiền mặt thực thu + thu thủ công đã ghi − chi thủ công đã ghi. Phiếu chờ duyệt chặn kết ca. Mọi chênh lệch khác 0 cần chọn lý do (Khác cần ghi chú) và tự mở tra soát; kết ca gọi lặp chỉ có một kết quả. Nhân viên xem ca/bill của mình; Manager xem tất cả. Lịch sử giao diện hiển thị 50 ca gần nhất.
+Ca kết có snapshot cố định: số bill, giá trị bill, chiết khấu, tiền mặt, chuyển khoản và COD. Tiền két hệ thống = tiền đầu ca + tiền mặt thực thu + thu thủ công đã ghi − chi thủ công đã ghi. Phiếu chờ duyệt chặn kết ca. Mọi chênh lệch khác 0 cần chọn lý do (Khác cần ghi chú) và tự mở tra soát; kết ca gọi lặp chỉ có một kết quả. Báo cáo ca vẫn chỉ người mở ca và Manager được xem; NVBH cùng cửa hàng có thể xem/in lại bill trong ca được phép bán. Manager xem tất cả. Lịch sử giao diện hiển thị 50 ca gần nhất.
 
 COD chưa thu không vào két. Cho kết ca khi còn COD chưa thu; danh sách tiếp tục theo cùng két của quầy sang ca sau, kể cả đổi nhân viên. Chỉ xác nhận thu sau khi chuyến đã giao và cửa hàng thực nhận tiền. Khoản thu gắn **ca đang mở lúc xác nhận**, không sửa báo cáo ca cũ. Thu COD bằng chuyển khoản không cộng tiền mặt. Báo cáo tách thu của chuyến giao trong ca, thu chuyến ca trước, và đã giao chưa thu.
 
@@ -149,3 +149,16 @@ Báo cáo tách cọc thực nhận, thu nốt, trả trước, chuyển khoản
 Giao diện chỉ mở lựa chọn mới khi `/pos/options.orderFlowVersion >= 1` và gửi tạo đơn qua `/pos/order-flows/checkout` riêng; API cũ/rollback trả lỗi thay vì coi cọc là bán đã thanh toán đủ. Bán tại quầy/COD vẫn dùng `/pos/checkout`.
 
 Dữ liệu được duyệt ngày 20/10/2026: `20261020010950_pos_deposit_prepaid.sql` và `20261020011018_supabase_access_pos_deposit_prepaid.sql` — hai bảng và `pos_returns.request_context`, RLS server-only. **Chưa áp dụng production; phải được duyệt riêng trước khi chạy DB live, rồi mới triển khai API/UI.** Không tạo giao dịch ngân hàng hay tự đồng bộ hai luồng mới sang Sapo/Claw trong thay đổi này. Không thay chính sách giảm giá/khách POS, lương hay cron.
+
+
+## Ca bán hàng dùng chung trong cửa hàng
+
+Khi một ca quầy đang mở, mọi nhân viên có `pos.sell` và chức vụ NVBH/CHT thuộc cùng cửa hàng được bán/thu tiền trên ca đó: Lock chỉ dùng ca thuộc Lock; Minh Long chỉ dùng ca Minh Long. Nhận diện theo id/tên chức vụ và quầy/kho như ranh giới cửa hàng hiện có, không dựa tên nhân viên. Vai trò không gán cửa hàng không tự có quyền dùng ca người khác; Manager giữ quyền xem/đóng ca hiện có, không tự nhận quyền bán trong ca người khác.
+
+- `GET /pos/options` ưu tiên ca đang mở do chính người dùng mở, sau đó ca đang mở cùng cửa hàng (ưu tiên quầy mặc định). Không bị giới hạn bởi danh sách 50 ca lịch sử. Ca dùng chung chỉ trả định danh/người mở/mốc ca cần bán, không trả tiền đầu ca hoặc báo cáo ca; `canCloseCurrent` chỉ bật cho người mở.
+- Nếu đồng nghiệp mở ca sau khi màn hình đã tải, bấm **Mở ca** kiểm tra lại options và dùng ca hiện có, không tạo ca mới hay ghi số thực đếm giả.
+- API bán/preview/QR/theo dõi QR/COD/thu cọc/trả trước và thao tác đổi/trả dùng `saleShiftOf` kiểm cửa hàng tại server. Ca đã kết không được ghi thêm giao dịch; idempotent replay giữ chứng từ cũ. Khoá ca/két và kho giữ cơ chế giao dịch hiện có để bán đồng thời không ghi trùng/trừ âm.
+- Đơn, bill snapshot, phiếu thu và nhật ký ghi **người thực sự bán/thu** (`owner_id`/`created_by`), đồng thời `shift_id` là ca chung. Người mở ca không bị đổi; báo cáo tổng ca/két cộng các giao dịch chung, doanh số cá nhân vẫn theo người bán.
+- Người dùng ca chung không có nút **Kết ca**; API kết ca POS và Sổ quỹ vẫn kiểm người mở ca. Không mở rộng quyền sửa két, duyệt, xem lịch sử/báo cáo của người khác.
+
+Không schema/migration/quyền mới; không tự chuyển cửa hàng hoặc tạo phiếu thu/đơn thật trong kiểm thử.

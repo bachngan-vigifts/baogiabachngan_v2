@@ -698,3 +698,28 @@ test('POS mới: THANH TOÁN theo ca/giỏ, menu thường ẩn cấu hình và 
     assert.equal(payment.querySelectorAll('button').find(b => b.textContent === 'Thu tiền & in bill')!.disabled, false);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
+
+test('Ca chung: mở POS hoặc bấm Mở ca sau khi đồng nghiệp mở thì dùng ca cửa hàng, không cho kết ca hộ', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: any[] = []; let shared = false;
+    const api = async (path: string, method = 'GET', body?: any) => {
+      calls.push({path,method,body});
+      if(path==='/pos/options') return { registers:[{id:'r',name:'Quầy Lock',pricePolicyId:'vat'}],current:shared?{id:'shared-shift',memberId:'opener',memberName:'NV mở ca',registerId:'r'}:null,canCloseCurrent:false,shifts:[],templates:[],policies:[] };
+      if(path.startsWith('/pos/catalog'))return {products:[{sku:'001',name:'Ly',price:194400,available:3}],nextOffset:null};
+      if(path==='/pos/preview')return {...sample,lines:[{...sample.lines[0],sku:'001'}]};
+      throw Error(path);
+    };
+    const ui=initPos({root,api,toast(){},user:()=>({id:'peer',name:'NV cùng cửa hàng'}),confirmBox:async()=>true,go(){}});
+    await ui.load(); assert.ok(root.textContent.includes('Mở ca'));
+    shared=true; await root.querySelectorAll('button').find(b=>b.textContent==='Mở ca')!.fire('click');
+    assert.ok(root.textContent.includes('Ca dùng chung')); assert.ok(root.querySelectorAll('span').some(s=>s.attributes.title==='Người mở ca: NV mở ca'));
+    assert.equal(root.querySelectorAll('button').some(b=>b.textContent==='Kết ca'||b.textContent==='Mở ca'),false);
+    await root.querySelectorAll('button').find(b=>b.className==='pos-product')!.fire('click');
+    await new Promise(r=>setTimeout(r,230));
+    assert.equal(calls.find(c=>c.path==='/pos/preview')!.body.shiftId,'shared-shift');
+    assert.equal(root.querySelectorAll('button').find(b=>b.textContent==='THANH TOÁN')!.disabled,false);
+    assert.equal(calls.some(c=>c.path==='/pos/shifts/open'),false,'không tạo ca/thực đếm giả khi chỉ tham gia ca có sẵn');
+  } finally { Object.assign(globalThis,{document:prevDoc,window:prevWin}); }
+});

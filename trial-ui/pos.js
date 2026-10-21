@@ -220,7 +220,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       });
       tools.append(regSelect);
     }
-    tools.append(button(active() ? 'Kết ca' : 'Mở ca', active() ? 'btn pos-close-shift' : 'btn primary', () => run(active() ? closeShift : openShift)));
+    if (!active() || st.options.canCloseCurrent !== false) tools.append(button(active() ? 'Kết ca' : 'Mở ca', active() ? 'btn pos-close-shift' : 'btn primary', () => run(active() ? closeShift : openShift)));
+    else { const shared = el('span', 'pos-note pos-shared-shift-note', 'Ca dùng chung'); shared.setAttribute('title', 'Người mở ca: ' + (st.shift.memberName || 'cửa hàng')); tools.append(shared); }
     const more = el('details', 'pos-more-menu'), moreSummary = el('summary', '', '⋯'), morePanel = el('div', 'pos-more-panel');
     moreSummary.setAttribute('aria-label', 'Thao tác khác');
     const menuAction = (label, fn) => { const b = button(label, 'btn ghost', () => { more.open = false; fn(); }); morePanel.append(b); };
@@ -1017,6 +1018,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.show();
   }
   async function openShift() {
+    const latest = await api('/pos/options');
+    if (latest.current && !latest.current.closedAt) { await load(); toast('Đã sử dụng ca đang mở của cửa hàng.'); return; }
     if (!st.register) return toast('Cấu hình quầy trước.', 'err');
     const m = formModal('Mở ca bán hàng'),
       reg = select(

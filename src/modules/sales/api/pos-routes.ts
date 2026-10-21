@@ -33,6 +33,8 @@ import {
   posKey,
   posPermission,
   shiftOf,
+  saleShiftOf,
+  sharedSaleShiftScope,
   assertOpen,
   registerOf,
   assertOpening,
@@ -340,12 +342,25 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const [position] = m.positionId
         ? await c.env.db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1)
         : [];
+      const sharedScope = await sharedSaleShiftScope(c.env.db, m);
+      const sharedRows = sharedScope ? await c.env.db.select({ shift: posShifts, memberName: employees.name }).from(posShifts)
+        .leftJoin(employees, eq(employees.id, posShifts.memberId)).where(and(sharedScope, inArray(posShifts.registerId, regs.map(r => r.id)), isNull(posShifts.closedAt))) : [];
+      const defaultRegisterId = defaultPosRegister(m.positionId, position?.name, regs);
+      const sharedCurrent = sharedRows.find(x => x.shift.registerId === defaultRegisterId && allowedRegister(c, x.shift.registerId))
+        ?? sharedRows.find(x => allowedRegister(c, x.shift.registerId)) ?? null;
+      const ownCurrent = shifts.find(s => s.memberId === m.id && !s.closedAt) ?? null;
+      const current = ownCurrent ?? (sharedCurrent ? {
+        id: sharedCurrent.shift.id, registerId: sharedCurrent.shift.registerId, memberId: sharedCurrent.shift.memberId,
+        templateId: sharedCurrent.shift.templateId, businessDate: sharedCurrent.shift.businessDate,
+        openedAt: sharedCurrent.shift.openedAt, closedAt: sharedCurrent.shift.closedAt, memberName: sharedCurrent.memberName,
+      } : null);
       return json({
         registers: regs,
-        defaultRegisterId: defaultPosRegister(m.positionId, position?.name, regs),
+        defaultRegisterId,
         templates,
         shifts,
-        current: shifts.find((s) => s.memberId === m.id && !s.closedAt) ?? null,
+        current,
+        canCloseCurrent: !!current && current.memberId === m.id,
         orderFlowVersion:1,
         canConfigure,
         policies,
@@ -426,7 +441,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       posPermission(m);
       const [r] = await c.env.db.select().from(posPaymentRequests).where(eq(posPaymentRequests.id, c.params.id!));
       if (!r) throw new AppError(404, 'Không tìm thấy yêu cầu QR.');
-      await shiftOf(c.env.db, m, r.shiftId);
+      await saleShiftOf(c.env.db, m, r.shiftId);
       const [order] = await c.env.db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders).where(eq(salesOrders.posPaymentRequestId, r.id));
       const allocationId=JSON.parse(r.cart).exchangeAllocationId;
       const [allocation]=allocationId?await c.env.db.select().from(posExchangeAllocations).where(eq(posExchangeAllocations.id,allocationId)):[];
@@ -774,7 +789,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       posPermission(member(c));
       const b = await readJson(c.req, 64000),
-        s = await shiftOf(c.env.db, member(c), posText(b.shiftId));
+        s = await saleShiftOf(c.env.db, member(c), posText(b.shiftId));
       assertOpen(s, member(c));
       if (s.registerId !== posText(b.registerId)) throw new AppError(400, 'Quầy không khớp ca.');
       const calc = await calculateCart(c.env.db, b);
@@ -808,7 +823,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .from(salesOrders)
         .where(and(eq(salesOrders.id, c.params.id!), eq(salesOrders.channel, 'pos')));
       if (!o?.shiftId) throw new AppError(404, 'Không có bill POS.');
-      await shiftOf(c.env.db, m, o.shiftId);
+      if (o.ownerId !== m.id && m.role !== 'manager') await saleShiftOf(c.env.db, m, o.shiftId);
       return json({
         id: o.id,
         orderNo: o.orderNo,
@@ -826,7 +841,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         key = posKey(b.key);
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
-        const s = await shiftOf(tx, m, posText(b.shiftId), true);
+        const s = await saleShiftOf(tx, m, posText(b.shiftId), true);
         assertOpen(s, m);
         if (s.registerId !== posText(b.registerId)) throw new AppError(400, 'Quầy không khớp ca.');
         const calc = await calculateCart(tx, b);
@@ -873,7 +888,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       const m = member(c);
       posPermission(m);
-      const s = await shiftOf(c.env.db, m, posText(c.url.searchParams.get('shiftId')));
+      const s = await saleShiftOf(c.env.db, m, posText(c.url.searchParams.get('shiftId')));
       assertOpen(s, m);
       const rows = await c.env.db
         .select({
@@ -917,7 +932,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         throw new AppError(400, 'Chọn hình thức và xác nhận cửa hàng đã thực nhận tiền COD.');
       const result = await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
-        const s = await shiftOf(tx, m, posText(b.shiftId), true);
+        const s = await saleShiftOf(tx, m, posText(b.shiftId), true);
         const [prior] = await tx.select().from(customerPayments).where(eq(customerPayments.requestKey, key));
         if (prior) {
           if (prior.shiftId !== s.id || prior.deliveryId !== c.params.id || prior.method !== method)

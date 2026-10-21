@@ -15,7 +15,7 @@ import { allowedRegister, allowedDrawer } from './pos-access.ts';
 import { cashAudit, cashLock, type CashDb } from './cash-store.ts';
 import {
   assertOpen,
-  shiftOf,
+  saleShiftOf,
   posKey,
   posText,
   posPermission,
@@ -80,7 +80,7 @@ async function current(
   registerId: string,
 ) {
   posPermission(who(c));
-  const s = await shiftOf(db, who(c), posText(shiftId), true);
+  const s = await saleShiftOf(db, who(c), posText(shiftId), true);
   assertOpen(s, who(c));
   if (s.registerId !== registerId || !allowedDrawer(c, s.cashDrawerId))
     throw new AppError(403, 'Cần ca đang mở đúng quầy/két của bill.');
