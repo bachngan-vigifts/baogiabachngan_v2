@@ -1,3 +1,5 @@
+import { initPackingSupplierChoices } from './packing-supplier-choices.js';
+import { reviewPurchaseCosts } from './purchase-cost-review.js';
 import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
@@ -1454,35 +1456,29 @@ $$('input[name="profitShippingPayer"]').forEach(i => i.addEventListener('change'
   editor.base.shipping = { divisor: 5000, rate: 0, extra: 0, ...shipOpts(), payer: i.value };
   markDirty(); renderProfit();
 }));
-/** "Cập nhật CK mua vào": tự điền CK nhập theo nhóm hàng (Healthy Cook 15, Lys 19, Lock&Lock 58, Minh Long 25), rồi lưu báo giá. */
+/** Review each SKU before saving; preserve existing percentages and manual unit costs. */
 async function refreshPurchaseCosts() {
   const btn = $('#refresh-profit-costs'); if (!isManager() || btn.disabled) return;
-  btn.disabled = true; btn.textContent = 'Đang lưu CK…';
+  const targetId=editor.id, targetRevision=editor.revision, sourceRows=editor.rows;
+  btn.disabled = true; btn.textContent = 'Đang tải CK…';
   try {
-    const skus = [...new Set(editor.rows.map(r => (r.sku || '').trim()).filter(Boolean))], found = [];
-    try { for (let i = 0; i < skus.length; i += 200) found.push(...(await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(',')))).products); } catch { /* dùng thông tin trên dòng */ }
-    const bySku = new Map(found.map(p => [normalize(p.sku), p])), missing = []; let updated = 0, manual = 0;
-    for (const r of editor.rows) {
-      if (!(r.name || r.sku)) continue;
-      if (costModeOf(r) === 'manual') { manual++; continue; }
-      const d = defaultCostDiscount(bySku.get(normalize(r.sku)) || r);
-      if (d === null) { missing.push(r); continue; }
-      r.costMode = 'discount'; r.purchaseDiscount = d; r.costPrice = purchasePrice(r.price, d); updated++;
-    }
-    if (missing.length) editor.showCostFields = true;
-    refreshCostToggle(); markDirty(); renderLines();
+    const skus=[...new Set(sourceRows.map(r=>(r.sku||'').trim()).filter(Boolean))],found=[];
+    try { for(let i=0;i<skus.length;i+=200)found.push(...(await api('/products?skus='+encodeURIComponent(skus.slice(i,i+200).join(',')))).products); }
+    catch { /* Review can use the product information already saved on each row. */ }
+    if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)return false;
+    btn.textContent='Đang kiểm tra CK…';
+    const edits=await reviewPurchaseCosts(sourceRows,found);
+    if(!edits)return false;
+    if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)throw new Error('Báo giá đang xem đã thay đổi. Vui lòng kiểm tra CK lại.');
+    for(const entry of edits)applyPurchaseCost(sourceRows[entry.index],entry);
+    editor.showCostFields=true;refreshCostToggle();markDirty();renderLines();
     await saveQuote();
-    if (editor.dirty) throw new Error('Chưa lưu được CK mua vào lên hệ thống.');
-    if (missing.length) {
-      const list = missing.slice(0, 12).map((r, i) => `${i + 1}. ${r.sku || 'Chưa có SKU'} - ${r.name || 'Chưa có tên'}`).join('\n'), more = missing.length > 12 ? `\n... và ${missing.length - 12} dòng khác` : '';
-      alert(`Có ${missing.length} sản phẩm chưa xác định được CK nhập rõ ràng. Vui lòng nhập giá trực tiếp hoặc CK ở cột Giá nhập / CK mua rồi bấm Lưu báo giá.\n\n${list}${more}`);
-      toast(`Đã lưu ${updated} dòng CK, còn ${missing.length} dòng cần nhập thủ công`);
-    } else toast(`Đã cập nhật và lưu CK mua vào cho ${updated} dòng${manual ? `; giữ nguyên ${manual} dòng giá thủ công` : ''}`);
-    return missing.length === 0;
-  } catch (err) { toast(err.message || 'Chưa lưu được CK mua vào.', 'err'); }
-  finally { btn.disabled = false; btn.textContent = 'Cập nhật CK mua vào'; }
+    if(editor.dirty)throw new Error('Chưa lưu được CK mua vào lên hệ thống.');
+    toast('Đã lưu CK / giá mua theo từng mã.');return true;
+  } catch(err){toast(err.message||'Chưa lưu được CK mua vào.','err');return false;}
+  finally{btn.disabled=false;btn.textContent='Cập nhật CK mua vào';}
 }
-$('#refresh-profit-costs').addEventListener('click', refreshPurchaseCosts);
+$('#refresh-profit-costs').addEventListener('click',refreshPurchaseCosts);
 
 // ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
 const nq = { type: 'HRC', customer: null, autoNo: '', brandDiscounts: null, onCustomerChange: () => { nqApplyTerms(); nqBrandDiscounts(); } };
@@ -3556,6 +3552,7 @@ const PACK_SOURCES = { warehouse: 'Kho', store: 'Điều chuyển từ cửa hà
 const PACK_STATUS = { draft: ['Nháp – chưa gửi kho', 'warn'], sent: ['Đã gửi kho', 'info'], packed: ['Kho đã đóng ✓', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
 const kg = v => v === null || v === undefined ? '' : `~${fmtNum(v)} kg`;
 const packing = { lines: [], orderId: '', hasSchedule: false };
+const packingSupplierChoices = initPackingSupplierChoices($('#pack-form'));
 async function loadOrderPacking(orderId) {
   const box = $('#order-packing'); box.innerHTML = '';
   let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
@@ -3598,6 +3595,7 @@ $('#order-pack').addEventListener('click', async () => {
         <div data-srcs>${short > 1e-9 ? packSourceRow(short) : ''}</div>
         <button type="button" class="btn ghost small" data-src-add>＋ Thêm nguồn hàng</button></div>`;
     }).join('');
+    packingSupplierChoices.setSuppliers(d.supplierChoices || []);
     fillPackShip(d.delivery); fillPackSchedule(d.schedules || [], o);
     $('#pack-dialog').showModal();
   } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
@@ -4355,7 +4353,7 @@ $('#approve-quote').addEventListener('click', async () => {
   try {
     const preflight = await api('/quotes/' + encodeURIComponent(editor.id) + '/approval-preflight');
     if (!isManager() && !preflight.purchaseCostsReady) { toast('Vui lòng nhờ Manager cập nhật giá mua trước khi duyệt báo giá.', 'err'); return; }
-    if (!await confirmBox('Vui lòng cập nhật giá mua trước khi duyệt. CK mua vào sẽ được cập nhật theo nhóm hàng; các giá nhập tay được giữ nguyên.', {title:'Kiểm tra giá mua',ok:isManager()?'Cập nhật giá mua & duyệt':'Đã kiểm tra giá mua'})) return;
+    if (!await confirmBox('Vui lòng kiểm tra bảng CK / giá mua từng mã trước khi duyệt. CK và giá anh đã nhập được giữ nguyên; anh có thể chọn CK gợi ý cho từng dòng.', {title:'Kiểm tra giá mua',ok:isManager()?'Cập nhật giá mua & duyệt':'Đã kiểm tra giá mua'})) return;
     if (isManager() && !await refreshPurchaseCosts()) return;
     if (editor.dirty) { await saveQuote(); if (editor.dirty) return; }
     const r = await api('/quotes/' + encodeURIComponent(editor.id) + '/approve', 'POST', { revision: editor.revision });

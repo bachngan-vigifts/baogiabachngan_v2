@@ -1,3 +1,4 @@
+import { suppliers } from '../../suppliers/schema.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { assertPosFlowFulfillable } from './pos-order-flow-guards.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
@@ -137,12 +138,13 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
   /** Phiếu đóng gói của đơn + số lượng còn lại chưa đưa vào phiếu của từng dòng (cho hộp "Yêu cầu đóng gói"). */
   router.get('/orders/:id/packing', async c => {
     const db = c.env.db, order = await loadOrder(c, c.params.id!);
-    const [slips, lines, allocated, schedules] = await Promise.all([
+    const [slips, lines, allocated, schedules, supplierChoices] = await Promise.all([
       db.select().from(packingSlips).where(eq(packingSlips.orderId, order.id)).orderBy(asc(packingSlips.createdAt)),
       db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id)).orderBy(asc(salesOrderLines.lineNo)),
       allocatedByLine(db, order.id),
       db.select({ id: deliveries.id, deliveryNo: deliveries.deliveryNo, plannedDate: deliveries.plannedDate, timeSlot: deliveries.timeSlot, receiverName: deliveries.receiverName })
         .from(deliveries).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit']))).orderBy(asc(deliveries.plannedDate)),
+      db.select({id:suppliers.id,name:suppliers.name}).from(suppliers).where(eq(suppliers.active,true)).orderBy(asc(suppliers.name)),
     ]);
     const ids = slips.map(s => s.id);
     const [slipLines, photos, cartons] = await Promise.all([
@@ -158,7 +160,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>) {
       lines: lines.map(l => { const packed = allocated.get(l.id) ?? 0, c = cartons.find(x => x.sku === l.sku), s = packingSuggestion(l.qty, l.unit, c);
         return { id: l.id, sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty, packed, left: Math.max(0, Math.round((l.qty - packed) * 1000) / 1000),
           perCarton: c?.perCarton ?? null, cartonWeight: c?.cartonWeight ?? null, suggestion: s.text, cartonSize: s.cartonSize, weight: s.weight }; }),
-      schedules, scheduled: await hasDeliverySchedule(db, order.id),
+      supplierChoices, schedules, scheduled: await hasDeliverySchedule(db, order.id),
       canRequest: !['cancelled', 'draft', 'delivered'].includes(order.status),
       // Hộp "Yêu cầu đóng gói - Giao hàng": có phí in → mặc định giao về xưởng in; không thì giao thẳng cho khách.
       delivery: { hasPrintFee: await hasPrintFee(db, order.quoteId), customer: { name: order.customerName, address: order.address, phone: [order.contact, order.phone].filter(Boolean).join(' · ') },

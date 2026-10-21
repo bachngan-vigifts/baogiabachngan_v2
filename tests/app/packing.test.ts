@@ -1,3 +1,4 @@
+import { suppliers } from '../../src/modules/suppliers/schema.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -32,7 +33,17 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
   await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await db.insert(suppliers).values([
+    {id:'choice-ncc',name:'NCC từ danh bạ',nameKey:'ncc tu danh ba',createdAt:'2026-10-21',updatedAt:'2026-10-21',createdBy:'mgr',email:'private@example.test',note:'Nội bộ'},
+    {id:'choice-agent',name:'Đại lý từ danh bạ',nameKey:'dai ly tu danh ba',createdAt:'2026-10-21',updatedAt:'2026-10-21',createdBy:'mgr'},
+    {id:'choice-off',name:'Đã ngừng',nameKey:'da ngung',active:false,createdAt:'2026-10-21',updatedAt:'2026-10-21',createdBy:'mgr'},
+  ]);
   let p = (await call(`/orders/${orderId}/packing`, emp)).data;
+  assert.deepEqual(p.supplierChoices.map((s:any)=>s.id).sort(),['choice-agent','choice-ncc']);
+  assert.deepEqual(Object.keys(p.supplierChoices[0]).sort(),['id','name'],'chỉ mở tên NCC để chọn nguồn, không mở danh bạ riêng');
+  assert.equal((await call('/suppliers',emp)).status,403,'chọn nguồn không mở quyền quản trị NCC');
+  assert.equal((await call('/orders/no-order/packing',emp)).status,404,'kiểm phạm vi đơn trước khi trả nguồn');
+
   const [dia, hop] = p.lines;
   // Chưa lên lịch giao → chưa yêu cầu đóng gói được.
   assert.equal(p.scheduled, false);
