@@ -1,3 +1,4 @@
+import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
@@ -136,11 +137,25 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (row && typeof row === 'object') metadata.set(posText((row as Record<string, unknown>).key, 200), (row as Record<string, unknown>).value);
     }
     const financials = webOrderFinancials(b);
+    // Woo's paid timestamp is explicit evidence. Neither order status nor payment method proves collection.
+    const hasPayment = Object.hasOwn(b, 'date_paid_gmt') || Object.hasOwn(b, 'date_paid');
+    let snapshot = financials;
+    if (hasPayment || financials) {
+      const [previous] = await c.env.db.select({ snapshot: webStoreOrders.financialSnapshot }).from(webStoreOrders)
+        .where(and(eq(webStoreOrders.source, source), eq(webStoreOrders.externalId, externalId))).limit(1);
+      const old = readWebOrderFinancials(previous?.snapshot);
+      snapshot = financials || old || webOrderFinancials({ shipping_total: null })!;
+      if (hasPayment) {
+        const raw = Object.hasOwn(b, 'date_paid_gmt') ? b.date_paid_gmt : b.date_paid;
+        if (raw !== null && (typeof raw !== 'string' || !Number.isFinite(Date.parse(raw)))) throw new AppError(400, 'Ngày thanh toán đơn web không hợp lệ.');
+        snapshot = { ...snapshot, payment: { paidAt: raw === null ? null : String(raw) } };
+      } else if (old?.payment) snapshot = { ...snapshot, payment: old.payment };
+    }
     const now = posNow(), fields = {
       orderNo: number, registerId: register.id, status: posText(b.status, 50) || 'pending',
       customerName: fullName, phone: posText(billing.phone, 60), email: posText(billing.email, 200), address,
       total: Math.max(0, Number(b.total) || 0), currency: posText(b.currency, 20) || 'VND', paymentMethod: posText(b.payment_method_title ?? b.payment_method, 200),
-      ...(financials ? {financialSnapshot: JSON.stringify(financials)} : {}),
+      ...(snapshot ? {financialSnapshot: JSON.stringify(snapshot)} : {}),
       lines: JSON.stringify(lines), orderedAt: posText(b.date_created_gmt ?? b.date_created, 60) || now, updatedAt: posText(b.date_modified_gmt ?? b.date_modified, 60) || now,
       ghnOrderCode: posText(metadata.get('_lnl_ghn_order_code'), 100), ghnStatus: posText(metadata.get('_lnl_ghn_last_status'), 100),
       ghnSortCode: posText(metadata.get('_lnl_ghn_sort_code'), 100), ghnFee: Math.max(0, Number(metadata.get('_lnl_ghn_total_fee')) || 0),
@@ -207,10 +222,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (requested && !scope.ids.has(requested)) throw new AppError(403, 'Bạn không được xem đơn của cửa hàng này.');
       const registerId = requested || scope.regs[0]?.id || '';
       if (!registerId) return json({ registers: scope.regs, registerId: '', counts: { all: 0, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 }, orders: [] });
-      const q = posText(c.url.searchParams.get('q'), 200).toLowerCase(), wanted = posText(c.url.searchParams.get('status'), 40) || 'all';
       const rows = await c.env.db.select({
         id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, phone: salesOrders.phone,
-        ownerName: employees.name, total: salesOrders.total, status: salesOrders.status, fulfillmentMode: salesOrders.fulfillmentMode,
+        ownerId: salesOrders.ownerId, ownerName: employees.name, paid: sql<number>`(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.voidedAt} is null)`.mapWith(Number), total: salesOrders.total, status: salesOrders.status, fulfillmentMode: salesOrders.fulfillmentMode,
         orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
         packingStatus: sql<string>`coalesce((select ${packingSlips.status} from ${packingSlips} where ${packingSlips.orderId}=${salesOrders.id} and ${packingSlips.status}<>'cancelled' order by ${packingSlips.updatedAt} desc limit 1),'')`,
         deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.plannedDate} desc limit 1),'')`,
@@ -218,20 +232,21 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
         .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
         .where(and(eq(salesOrders.channel, 'pos'), eq(posShifts.registerId, registerId)))
-        .orderBy(desc(salesOrders.createdAt)).limit(500);
-      const webRows = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.registerId, registerId)).orderBy(desc(webStoreOrders.updatedAt)).limit(500);
+        .orderBy(desc(salesOrders.createdAt));
+      const webRows = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.registerId, registerId)).orderBy(desc(webStoreOrders.updatedAt));
       const decorated = [
-        ...rows.map(o => ({ ...o, bucket: posOrderBucket(o), source: 'crm', external: false })),
-        ...webRows.map(o => ({ id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
+        ...rows.map(o => ({ ...o, bucket: posOrderBucket(o), source: 'crm', external: false, currency: 'VND', orderSource: o.fulfillmentMode === 'cod' ? 'cod' : 'pos', paymentStatus: o.paid >= o.total ? 'paid' : 'debt', outstanding: Math.max(0, o.total-o.paid) })),
+        ...webRows.map(o => {
+          const payment = readWebOrderFinancials(o.financialSnapshot)?.payment;
+          const paid = payment ? (payment.paidAt ? o.total : 0) : null;
+          return ({ ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
-          actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl })),
+          actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      const counts = { all: decorated.length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
-      for (const o of decorated) counts[o.bucket as keyof typeof counts]++;
-      const orders = decorated.filter(o => (wanted === 'all' || o.bucket === wanted) && (!q || [o.orderNo, o.customerName, o.phone, o.ownerName, o.sapoOrderCode].some(v => String(v || '').toLowerCase().includes(q))));
-      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, counts, orders });
+      const board = filterPosOrderBoard(decorated, c.url.searchParams);
+      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, ...board });
     },
     'business',
   );

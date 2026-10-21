@@ -2,6 +2,7 @@ import { AppError } from '../../../core/errors.ts';
 type Input = Record<string, unknown>;
 export interface WebOrderFinancials {
   version: 1;
+  payment?: { paidAt: string | null };
   itemsSubtotal: number | null; itemsSubtotalTax: number | null;
   itemsTotal: number | null; itemsTax: number | null;
   discountTotal: number | null; discountTax: number | null;
