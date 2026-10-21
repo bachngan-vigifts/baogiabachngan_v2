@@ -19,6 +19,7 @@ import { products, productPrices, productBarcodes, pricePolicies, warehouses } f
 import { stockBalances } from '../../inventory/schema.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { customerWithTaxCode } from '../../customers/api/routes.ts';
+import { customerInput } from '../../customers/domain/customer-input.ts';
 import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlips } from '../schema.ts';
 import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
 import { posMoney } from '../domain/pos-money.ts';
@@ -623,11 +624,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       const m = member(c);
       posPermission(m);
-      const b = await readJson(c.req, 4000),
-        name = posText(b.name, 200),
-        phone = posText(b.phone, 40),
-        taxCode = posText(b.taxCode, 50);
-      if (!name || !phone) throw new AppError(400, 'Nhập tên và số điện thoại khách.');
+      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b,true),{name,phone,taxCode}=fields;
       if (taxCode && (await customerWithTaxCode(c.env.db, taxCode)))
         throw new AppError(409, 'MST đã có khách hàng, hãy tìm khách có sẵn.');
       const id = crypto.randomUUID(),
@@ -635,14 +632,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       await c.env.db.transaction(async (tx) => {
         await tx.insert(customers).values({
           id,
-          name,
-          phone,
-          address: posText(b.address, 1000),
-          contact: name,
-          email: '',
-          taxCode,
-          customerCode: '',
-          search: [name, phone, taxCode].join(' '),
+          ...fields,...terms,
+          search: Object.values(fields).join(' '),
           sourceVersion: 0,
           syncedAt: now,
           createdAt: now,

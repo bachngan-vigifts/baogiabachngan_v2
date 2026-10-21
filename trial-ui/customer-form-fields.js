@@ -1,0 +1,36 @@
+/** Shared customer fields for the directory and POS. Build server values as text only. */
+export function customerFormFields({ requirePhone = false } = {}) {
+  const root = document.createElement('div');
+  root.className = 'form-grid cols-2 customer-form-fields';
+  const controls = {};
+  const fields = [
+    ['name', 'Tên khách hàng / công ty', 'text', 500, true],
+    ['contact', 'Người liên hệ', 'text', 500],
+    ['phone', 'Điện thoại', 'tel', 40],
+    ['email', 'Email', 'email', 500],
+    ['taxCode', 'Mã số thuế', 'text', 500],
+    ['customerCode', 'Mã khách hàng', 'text', 500],
+    ['address', 'Địa chỉ', 'textarea', 2000, true],
+    ['depositRate', 'Tỷ lệ đặt cọc (%)', 'text', 500, false, 'Để trống = 30'],
+    ['paymentTerm', 'Hạn thanh toán', 'text', 500, false, 'Số ngày, để trống = 5'],
+    ['creditLimit', 'Giới hạn công nợ (đ)', 'text', 500, true, 'Để trống = không giới hạn'],
+  ];
+  for (const [name, label, type, max, wide, placeholder] of fields) {
+    const box = document.createElement('label');
+    if (wide) box.className = 'span-2';
+    const title = document.createElement('span'); title.textContent = label;
+    const input = document.createElement(type === 'textarea' ? 'textarea' : 'input');
+    input.name = name; input.maxLength = max;
+    if (type === 'textarea') input.rows = 2; else input.type = type;
+    if (placeholder) input.placeholder = placeholder;
+    input.required = name === 'name' || (name === 'phone' && requirePhone);
+    if (name === 'depositRate') input.inputMode = 'decimal';
+    if (name === 'creditLimit') input.inputMode = 'numeric';
+    if (name === 'paymentTerm') input.setAttribute('list', 'nq-payment-options');
+    box.append(title, input); root.append(box); controls[name] = input;
+  }
+  const hint = document.createElement('p'); hint.className = 'muted small span-2';
+  hint.textContent = 'Điều khoản riêng của khách: tự điền khi tạo báo giá cho khách này (vẫn sửa được trên từng báo giá).';
+  root.append(hint);
+  return { root, controls, read: () => Object.fromEntries(Object.entries(controls).map(([name, input]) => [name, input.value.trim()])) };
+}

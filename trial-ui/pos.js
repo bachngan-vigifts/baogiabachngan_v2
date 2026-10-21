@@ -1,3 +1,4 @@
+import { customerFormFields } from './customer-form-fields.js';
 import { webOrderFinancialSummary } from './web-order-financials.js';
 import { openPosFlowCheckout, openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
@@ -992,35 +993,30 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     });
   }
   function newCustomer() {
-    const m = formModal('Khách mới – dùng ngay'),
-      name = field('Tên khách'),
-      phone = field('Điện thoại', 'tel'),
-      address = field('Địa chỉ');
-    name.input.required = phone.input.required = true;
-    m.form.append(name.box, phone.box, address.box);
-    const save = el('button', 'btn primary', 'Lưu & chọn khách');
-    save.type = 'submit';
-    m.form.append(save, button('Huỷ', 'btn secondary', m.close));
-    m.form.addEventListener('submit', (e) => {
+    const m = formModal('Khách mới – dùng ngay');
+    m.dlg.className += ' pos-customer-create';
+    const fields = customerFormFields({ requirePhone: true });
+    const error = el('p', 'error'); error.setAttribute('role', 'alert');
+    const actions = el('div', 'pos-customer-form-actions');
+    const save = el('button', 'btn primary', 'Lưu & chọn khách'); save.type = 'submit';
+    actions.append(save, button('Huỷ', 'btn secondary', m.close));
+    m.form.append(fields.root, error, actions);
+    m.form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      run(async () => {
-        save.disabled = true;
-        try {
-          const c = await api('/pos/customers', 'POST', {
-            name: name.input.value,
-            phone: phone.input.value,
-            address: address.input.value,
-          });
-          st.customer = c;
-          nodes.customer.textContent = c.name;
-          invalidate();
-          m.close();
-        } finally {
-          save.disabled = false;
-        }
-      });
+      if (save.disabled) return;
+      error.textContent = '';
+      save.disabled = true;
+      try {
+        const c = await api('/pos/customers', 'POST', fields.read());
+        st.customer = c;
+        nodes.customer.textContent = c.name;
+        invalidate();
+        m.close();
+      } catch (ex) { error.textContent = ex.message; }
+      finally { save.disabled = false; }
     });
     m.show();
+    fields.controls.name.focus();
   }
   async function openShift() {
     const latest = await api('/pos/options' + (st.register?.id ? '?registerId=' + encodeURIComponent(st.register.id) : ''));
