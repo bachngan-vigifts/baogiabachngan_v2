@@ -48,3 +48,37 @@ export async function stockWarehouseByName(db: LedgerDb, name: string): Promise<
   const [w] = await db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.kind, 'stock'), sql`lower(trim(${warehouses.name})) = ${n}`)).limit(1);
   return w?.id ?? null;
 }
+
+/** Các dòng đã ghi của đơn / HĐKT (lần đầu `refId` = id đơn, các lần chỉnh sau `id#…`). */
+const saleRef = (orderId: string) => sql`(${stockMoves.refId} = ${orderId} OR ${stockMoves.refId} LIKE ${orderId.replace(/[\\%_]/g, '\\$&') + '#%'})`;
+
+/**
+ * BÁN HÀNG → SỔ KHO: đưa số đã trừ của đơn / HĐKT về đúng trạng thái hiện tại.
+ *  - `active` (đã duyệt, đang giao, đã giao) + có kho bán: kho bán bị trừ đúng số lượng từng mã của đơn.
+ *  - Nháp / huỷ / không có kho: không trừ gì (huỷ sau khi duyệt = ghi dòng cộng lại).
+ * Chỉ ghi phần chênh lệch (đổi kho, Manager sửa số lượng đơn đã duyệt…) – gọi lặp không ghi thêm. Chạy trong giao dịch của chứng từ.
+ */
+export async function syncSaleMoves(db: LedgerDb, by: string, order: { id: string; no: string; warehouseId: string | null; active: boolean },
+  lines: readonly { sku: string; qty: number }[], note: string, now = new Date().toISOString()): Promise<number> {
+  const want = new Map<string, number>();
+  if (order.active && order.warehouseId) for (const l of lines) {
+    const sku = l.sku.trim(); if (!sku || !(l.qty > 0)) continue;
+    const k = sku + '\u0000' + order.warehouseId; want.set(k, (want.get(k) ?? 0) - l.qty);
+  }
+  const done = await db.select({ sku: stockMoves.sku, wh: stockMoves.warehouseId, qty: sql<number>`sum(${stockMoves.qty})`.mapWith(Number), n: sql<number>`count(*)`.mapWith(Number) })
+    .from(stockMoves).where(and(eq(stockMoves.refType, 'sales_order'), saleRef(order.id))).groupBy(stockMoves.sku, stockMoves.warehouseId);
+  const have = new Map(done.map(r => [r.sku + '\u0000' + r.wh, r.qty]));
+  const moves: MoveInput[] = [], refId = done.length ? `${order.id}#${crypto.randomUUID().slice(0, 8)}` : order.id;
+  for (const k of new Set([...want.keys(), ...have.keys()])) {
+    const delta = Math.round(((want.get(k) ?? 0) - (have.get(k) ?? 0)) * 1000) / 1000;
+    if (!delta) continue;
+    const [sku, warehouseId] = k.split('\u0000') as [string, string];
+    moves.push({ sku, warehouseId, qty: delta, kind: delta < 0 ? 'sale' : 'reverse', refType: 'sales_order', refId, refNo: order.no, note });
+  }
+  return moves.length ? postMoves(db, by, moves, now) : 0;
+}
+
+/** Đơn đã trừ sổ kho theo đơn chưa (để phiếu đóng gói không trừ lần hai, giữ hàng không tính lại). */
+export async function saleMovesPosted(db: LedgerDb, orderId: string) {
+  return (await db.select({ id: stockMoves.id }).from(stockMoves).where(and(eq(stockMoves.refType, 'sales_order'), saleRef(orderId))).limit(1)).length > 0;
+}

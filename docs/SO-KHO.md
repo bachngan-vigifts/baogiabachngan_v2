@@ -1,4 +1,4 @@
-# Sổ kho (giai đoạn 1 – chạy song song với Sapo)
+# Sổ kho
 
 **Mục tiêu:** dần thay Sapo trong quản lý tồn kho.
 
@@ -72,3 +72,38 @@ Tài khoản kho chỉ thấy các trang cần dùng, chữ to, nút to.
   - `tests/app/order-progress.test.ts`: phiếu xuất khi đóng gói.
   - `tests/app/purchasing.test.ts`: ảnh hàng hỏng.
   - `tests/app/packing.test.ts`: kho không huỷ chuyến, ảnh đã giao.
+
+## Kho bán theo chức vụ · trừ kho khi bán · điều chuyển (yêu cầu 18/10/2026)
+
+**Tồn chuẩn = sổ kho.** Kho thật đã chốt tồn đầu kỳ đọc số dư sổ kho ở mọi nơi (danh mục, chi tiết sản phẩm, Kiểm tồn, Tra tồn, giữ hàng, popup duyệt đơn). Kho chưa chốt vẫn đọc tồn đồng bộ Sapo. Trước đây chỉ kho quầy POS dùng sổ kho; nay áp cho mọi kho đã chốt.
+- **Trước khi bật:** Manager vào **Sổ kho → Chốt tồn đầu kỳ** cho từng kho (VIGIFTS, SR Minh Long - Lock, các kho Hoá đơn) để sổ kho bằng tồn Sapo tại thời điểm chuyển.
+- Kho đã có bán đơn / HĐKT hoặc điều chuyển trong app thì **không chốt lại đầu kỳ từ Sapo** được (Sapo không biết các phát sinh này); kiểm kê lệch dùng phiếu điều chỉnh.
+
+**Kho bán theo chức vụ** (trang **Phân quyền → Kho bán theo chức vụ**, bảng `warehouse_sellers`):
+| Kho | Chức vụ được bán |
+|---|---|
+| KHO VIGIFTS | Sale Admin, Sale |
+| SR Minh Long - Lock | NVBH ML, NVBH LOCK |
+| Kho Hoá đơn (mọi kho tên có "Hoá đơn") | Kế toán – **kho riêng** |
+| Mọi kho | Manager |
+- Migration gán sẵn theo tên kho; Manager kiểm lại / sửa ở trang Phân quyền.
+- Nhân viên chỉ lập / duyệt đơn, HĐKT từ kho chức vụ của **người phụ trách đơn** được bán (máy chủ trả 403 `WAREHOUSE_NOT_ALLOWED`). Người phụ trách chỉ bán một kho → tự chọn.
+- Ai cũng xem tồn các kho khác, **trừ kho riêng** (Hoá đơn): chỉ chức vụ bán kho đó + Manager thấy (danh mục, Tra tồn, lịch sử, điều chuyển).
+- Bảng gán còn trống = tính năng chưa bật (không bắt chọn kho, đơn không trừ kho theo đơn).
+
+**Trừ kho khi duyệt đơn / HĐKT (kênh CRM):**
+- Hộp duyệt có ô **Kho bán** và tồn từng mã tại kho đó (báo "thiếu" nếu không đủ). Đã bật phân kho mà chưa có kho → 409 `WAREHOUSE_REQUIRED`.
+- Duyệt → sổ kho ghi dòng **Bán hàng** (âm) ở kho bán. Huỷ đơn đã duyệt → cộng lại. Manager sửa số lượng đơn đã duyệt / đổi kho bán → ghi phần chênh lệch.
+- Phiếu đóng gói của đơn đã trừ lúc duyệt: kho xuất phải đúng kho bán và **không trừ lần hai**. Giữ hàng không tính lại đơn đã trừ.
+- Đơn POS / web giữ luồng xuất kho riêng (bán quầy, giao COD) như trước.
+- Trang chi tiết đơn có dòng **Kho bán** + nút **Đổi kho** (nháp: người sửa được đơn; đã duyệt: Manager).
+
+**Điều chuyển kho** (`#/transfers`, bảng `stock_transfers` + `stock_transfer_lines`):
+1. Nhân viên bấm **＋ Xin điều chuyển**: kho đi, kho đến, lý do, các mã + số lượng → **Chờ duyệt** (báo người duyệt, vào hộp **Cần duyệt**, việc "Duyệt điều chuyển").
+2. Manager / người được duyệt **Duyệt** hoặc **Từ chối** (bắt buộc lý do).
+3. Nhóm Kho (quyền mới **Điều chuyển kho – xác nhận đã chuyển**, mặc định Kho + Sale Admin) nhận việc "Chuyển hàng", bấm **Đã chuyển** → sổ kho trừ kho đi (**Chuyển kho đi**), cộng kho đến (**Chuyển kho đến**), một lần. Kho đi đã chốt đầu kỳ mà không đủ tồn → 409 `TRANSFER_SHORT`.
+4. Người xin / Manager huỷ được khi chưa chuyển.
+
+**Lịch sử xuất nhập** (`#/stock-moves`, mọi nhân viên): mọi phát sinh sổ kho mới nhất trước, lọc **Bán hàng** (duyệt đơn / HĐKT, bán quầy, giao COD) · Nhập · Xuất · Điều chuyển · Điều chỉnh / đầu kỳ, theo kho / ngày / mã; link về chứng từ; **⬇ Xuất Excel**.
+
+**Kỹ thuật:** migration `20261021120000_warehouse_sales.sql` (+ `20261021120001_supabase_access_warehouse_sales.sql`); `inventory/api/{warehouse-access,transfer-routes,history-routes}.ts`, `ledger.ts › syncSaleMoves`, `sales/api/routes.ts › pickSaleWarehouse / syncOrderStock`, `sales/api/pos-stock.ts` (nguồn tồn); giao diện `trial-ui/stock-ops.js`. Test: `tests/app/warehouse-sales.test.ts`.

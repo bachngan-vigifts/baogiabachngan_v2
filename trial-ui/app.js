@@ -37,6 +37,7 @@ import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
+import { initTransfers, initStockMoves, initSellerConfig } from './stock-ops.js';
 import { initPermissions } from './permissions.js';
 import { initKhoHome, initStockLookup } from './kho.js';
 import { initCustomerDetail } from './customer-detail.js';
@@ -625,7 +626,7 @@ var posUi = null;
 var cashUi = null;
 const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();}});
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
-const VIEWS = { cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { transfers: 'Điều chuyển kho', 'stock-moves': 'Lịch sử xuất nhập', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -682,7 +683,9 @@ function route() {
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); else if (id) suppliersView().open(decodeURIComponent(id)); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
-  if (view === 'permissions') permissionsView().load();
+  if (view === 'transfers') transfersView().load(id);
+  if (view === 'stock-moves') stockMovesView().load();
+  if (view === 'permissions') { permissionsView().load(); sellerConfigView().load(); }
   if (view === 'kho') khoHome().load();
   if (view === 'stock-lookup') stockLookup().load(new URLSearchParams(query).get('q')||'');
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
@@ -3163,6 +3166,10 @@ let khoHomeUi = null, stockLookupUi = null;
 function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'), today: todayIso }); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
+var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
+function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go }); }
+function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast }); }
+function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').after(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
 var permissionsUi = null;
 function permissionsView() { return permissionsUi ||= initPermissions({ api, root: $('#view-permissions'), toast, confirmBox }); }
 var purchasesUi = null;
@@ -3416,11 +3423,11 @@ async function openOrder(id) {
   $('#order-contract-action').innerHTML = '';
   $('#order-contract').innerHTML = k ? `<dl class="kv"><dt>Số HĐKT</dt><dd><b>${esc(k.contractNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(CONTRACT_STATUS, k.status)}</dd>
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
-    <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd></dl>
+    <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd>${saleWarehouseRow(o)}</dl>
     <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${isManager() && k.status === 'draft' && o.status !== 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div>`
     : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</dd>
     <dt>Ngày đặt</dt><dd>${fmtDate(o.orderDate)}</dd>${o.quoteNo ? `<dt>Từ báo giá</dt><dd>${o.quoteId ? `<a href="#/quotes/${encodeURIComponent(o.quoteId)}">${esc(o.quoteNo)}</a>` : esc(o.quoteNo)}</dd>` : ''}
-    <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd><dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
+    <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
   renderInvoice(o); renderProgress(d);
@@ -3818,6 +3825,26 @@ document.addEventListener('click', async e => {
   try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}) }); toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
   catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
 });
+/** Kho bán của đơn CRM (trừ kho khi duyệt): nháp – người sửa được đơn đổi; đã duyệt – chỉ Manager (docs/SO-KHO.md). */
+function saleWarehouseRow(o) {
+  if ((o.channel || 'crm') !== 'crm') return '';
+  const canChange = o.status !== 'cancelled' && (o.status === 'draft' ? o.canEdit !== false : isManager());
+  return `<dt>Kho bán</dt><dd>${o.warehouseName ? esc(o.warehouseName) : '<span class="muted">Chưa chọn</span>'}${canChange ? ` <button type="button" class="btn ghost small" data-order-warehouse>Đổi kho</button>` : ''}</dd>`;
+}
+document.addEventListener('click', async e => {
+  if (!e.target.closest?.('[data-order-warehouse]') || !sales.detail) return;
+  const o = sales.detail.order;
+  let wh; try { wh = await api(`/orders/${encodeURIComponent(o.id)}/warehouses`); } catch (ex) { toast(ex.message, 'err'); return; }
+  if (!wh.warehouses.length) { toast('Nhân viên phụ trách chưa được gán kho bán nào. Manager gán ở trang Phân quyền › Kho bán theo chức vụ.', 'err'); return; }
+  const v = await verifyBox({ title: 'Kho bán ' + docNo(sales.detail), eyebrow: 'Kho hàng sẽ trừ khi duyệt',
+    intro: o.status === 'draft' ? 'Đơn nháp: chưa trừ kho. Khi duyệt sẽ trừ ở kho chọn dưới đây.' : 'Đơn đã duyệt: phần đã trừ chuyển sang kho mới.',
+    rows: wh.warehouses.map(w => [esc(w.name), w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}`).join('<br>') || '—']),
+    fields: `<label class="verify-field"><span>Kho bán</span><select name="warehouseId">${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === wh.warehouseId ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>`,
+    ok: 'Lưu kho bán' });
+  if (!v) return;
+  try { await api(`/orders/${encodeURIComponent(o.id)}/warehouse`, 'PUT', { warehouseId: v.warehouseId }); toast('Đã đổi kho bán.'); openOrder(o.id); }
+  catch (ex) { toast(ex.message, 'err'); }
+});
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
 async function verifyAndConfirmOrder() {
   const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
@@ -3831,21 +3858,28 @@ async function verifyAndConfirmOrder() {
     if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast})) return;
   } catch (ex) { toast(ex.message, 'err'); return; }
   const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
+  // Kho bán (đơn CRM): duyệt = trừ kho này trong sổ kho. Chỉ kho người phụ trách được bán (Manager: mọi kho) – docs/SO-KHO.md.
+  let wh = null;
+  if ((o.channel || 'crm') === 'crm') { try { wh = await api(`/orders/${encodeURIComponent(o.id)}/warehouses`); } catch (ex) { toast(ex.message, 'err'); return; } }
+  const whPick = wh?.warehouseId || (wh?.warehouses.length === 1 ? wh.warehouses[0].id : '');
+  const whStock = w => w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}${l.stock < l.need ? ' <b class="danger-text">thiếu</b>' : ''}`).join('<br>');
+  const whField = wh && wh.warehouses.length ? `<label class="verify-field"><span>Kho bán (trừ kho khi duyệt)</span><select name="warehouseId">${wh.configured && !whPick ? '<option value="">Chọn kho</option>' : ''}${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === whPick ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>` : '';
+  const whRow = wh && wh.warehouses.length ? [['Tồn tại kho bán', wh.warehouses.map(w => `<b>${esc(w.name)}</b><br>${whStock(w) || '<span class="muted">—</span>'}`).join('<br>')]] : [];
   const v = await verifyBox({
     title: `Duyệt ${isContractDoc(d) ? 'HĐKT' : 'đơn'} ${docNo(d)}`, eyebrow: 'Kiểm tra trước khi duyệt',
     intro: `Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được ${isContractDoc(d) ? 'HĐKT' : 'đơn'}.`,
     rows: [['Khách hàng', dash(o.customerName)], ['MST', dash(o.taxCode)], ['Người nhận / SĐT', dash([o.contact, o.phone].filter(Boolean).join(' · '))], ['Địa chỉ giao', dash(o.address)],
-      ['Sản phẩm', items], [`Giá trị ${isContractDoc(d) ? 'HĐKT' : 'đơn'} (gồm VAT)`, `<b>${money(o.total)}</b>`], ['Ghi chú', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
-    fields: `<label class="verify-field"><span>Ngày giao dự kiến</span><input type="date" name="deliveryDate" value="${esc(o.expectedDeliveryDate || '')}" min="${todayIso()}"></label>`,
+      ['Sản phẩm', items], ...whRow, [`Giá trị ${isContractDoc(d) ? 'HĐKT' : 'đơn'} (gồm VAT)`, `<b>${money(o.total)}</b>`], ['Ghi chú', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
+    fields: `<label class="verify-field"><span>Ngày giao dự kiến</span><input type="date" name="deliveryDate" value="${esc(o.expectedDeliveryDate || '')}" min="${todayIso()}"></label>${whField}`,
     checks: ['Thông tin khách hàng (tên công ty, MST, người nhận, số điện thoại, địa chỉ giao) chính xác',
       'Sản phẩm, số lượng, đơn giá và VAT đúng với yêu cầu của khách', 'Đã kiểm tra tồn kho / khả năng đáp ứng đủ số lượng',
       'Ngày giao dự kiến khả thi và đã thống nhất với khách', 'Điều kiện thanh toán (đặt cọc / thanh toán khi giao) đã thống nhất với khách'],
-    validate: x => x.deliveryDate ? '' : 'Chọn ngày giao dự kiến.', ok: isContractDoc(d) ? 'Duyệt HĐKT' : 'Duyệt đơn',
+    validate: x => !x.deliveryDate ? 'Chọn ngày giao dự kiến.' : wh?.configured && whField && !x.warehouseId ? 'Chọn kho bán.' : '', ok: isContractDoc(d) ? 'Duyệt HĐKT' : 'Duyệt đơn',
   });
   if (!v) return;
   try {
     if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
-    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted });
+    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted, ...(v.warehouseId ? { warehouseId: v.warehouseId } : {}) });
     toast(isContractDoc(d) ? 'Đã duyệt HĐKT. Báo giá của HĐKT đã được khoá.' : 'Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
   } catch (ex) {
     if (ex.code === 'CUSTOMER_DEBT_OVERDUE') {

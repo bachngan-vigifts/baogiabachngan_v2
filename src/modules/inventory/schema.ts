@@ -1,9 +1,9 @@
 import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
-import { employees } from '../staff/schema.ts';
+import { employees, positions } from '../staff/schema.ts';
 import { warehouses } from '../catalog/schema.ts';
 import { enumCheck } from '../../core/db/enum-check.ts';
-import { STOCK_MOVE_KINDS, STOCK_REF_TYPES, WAREHOUSE_PHOTO_REFS } from './domain/kinds.ts';
+import { STOCK_MOVE_KINDS, STOCK_REF_TYPES, TRANSFER_STATUSES, WAREHOUSE_PHOTO_REFS } from './domain/kinds.ts';
 
 /*
  * SỔ KHO (giai đoạn 1 – chạy song song với Sapo, Sapo vẫn là nguồn tồn chính) – xem docs/SO-KHO.md.
@@ -55,3 +55,48 @@ export const warehousePhotos = pgTable('warehouse_photos', {
   index('idx_warehouse_photos_ref').on(t.refType, t.refId),
   enumCheck('chk_warehouse_photos_ref_type', t.refType, WAREHOUSE_PHOTO_REFS),
 ]).enableRLS();
+
+/**
+ * KHO BÁN THEO CHỨC VỤ: chức vụ nào được bán hàng (lập đơn / HĐKT, trừ kho khi duyệt) từ kho nào. Manager bán mọi kho.
+ * Bảng chưa có dòng nào = chưa bật phân kho bán (đơn không bắt chọn kho). Kho riêng (`warehouses.stock_private`): chỉ các chức vụ này + Manager thấy tồn.
+ */
+export const warehouseSellers = pgTable('warehouse_sellers', {
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'cascade' }),
+  positionId: text('position_id').notNull().references(() => positions.id, { onDelete: 'cascade' }),
+}, t => [primaryKey({ columns: [t.warehouseId, t.positionId] }), index('idx_warehouse_sellers_position').on(t.positionId)]).enableRLS();
+
+/** Phiếu điều chuyển kho (docs/SO-KHO.md "Điều chuyển kho"). Sổ kho chỉ ghi khi Kho bấm "Đã chuyển". */
+export const stockTransfers = pgTable('stock_transfers', {
+  id: text('id').primaryKey(),
+  transferNo: text('transfer_no').notNull(),
+  fromWarehouseId: text('from_warehouse_id').notNull().references(() => warehouses.id),
+  toWarehouseId: text('to_warehouse_id').notNull().references(() => warehouses.id),
+  status: text('status', { enum: TRANSFER_STATUSES }).notNull().default('pending'),
+  reason: text('reason').notNull().default(''),
+  requestedBy: text('requested_by').notNull().references(() => employees.id),
+  approvedBy: text('approved_by').references(() => employees.id),
+  approvedAt: text('approved_at'),
+  rejectReason: text('reject_reason').notNull().default(''),
+  doneBy: text('done_by').references(() => employees.id),
+  doneAt: text('done_at'),
+  doneNote: text('done_note').notNull().default(''),
+  cancelledBy: text('cancelled_by').references(() => employees.id),
+  cancelledAt: text('cancelled_at'),
+  revision: bigint('revision', { mode: 'number' }).notNull().default(1),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('uq_stock_transfers_no').on(t.transferNo),
+  index('idx_stock_transfers_status').on(t.status, t.createdAt),
+  enumCheck('chk_stock_transfers_status', t.status, TRANSFER_STATUSES),
+  check('chk_stock_transfers_wh', sql`${t.fromWarehouseId} <> ${t.toWarehouseId}`),
+]).enableRLS();
+
+export const stockTransferLines = pgTable('stock_transfer_lines', {
+  id: text('id').primaryKey(),
+  transferId: text('transfer_id').notNull().references(() => stockTransfers.id, { onDelete: 'cascade' }),
+  sku: text('sku').notNull(),
+  name: text('name').notNull().default(''),
+  unit: text('unit').notNull().default(''),
+  qty: doublePrecision('qty').notNull(),
+}, t => [uniqueIndex('uq_stock_transfer_lines_sku').on(t.transferId, t.sku), check('chk_stock_transfer_lines_qty', sql`${t.qty} > 0`)]).enableRLS();

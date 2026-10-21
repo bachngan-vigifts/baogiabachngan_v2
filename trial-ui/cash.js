@@ -1,6 +1,7 @@
 import { openPosReturns } from './pos-returns.js';
 import { downloadExcel } from './sheet-export.js';
 import { printPos } from './pos-print.js';
+import { renderShiftReport, differenceState } from './shift-report-view.js';
 const money = (n) => Number(n ?? 0).toLocaleString('vi-VN') + ' đ';
 const time = (s) => new Date(s).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
@@ -497,98 +498,72 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       drawerId = d.id; m.close(); await load();
     });
   }
-  function report(container, d) {
-    for (const [label, value] of [
-      ['Đầu ca (kế thừa)', d.shift.openingCash],
-      ['+ Bán hàng tiền mặt', d.cashSales ?? d.cash],
-      ['+ COD đã nhận', d.cashCod ?? 0],
-      ...(d.manual || []).map((x) => [
-        (x.direction === 'in' ? '+ ' : '− ') + (kinds[x.kind] || x.kind),
-        x.direction === 'in' ? x.amount : -x.amount,
-      ]),
-      ['Tiền trong két theo sổ ca', d.expectedCash],
-    ]) {
-      const r = el('div', 'cash-pair');
-      r.append(el('span', '', label), el('b', '', money(value)));
-      container.append(r);
-    }
-    for (const a of d.bookAdjustments || [])
-      container.append(
-        el(
-          'p',
-          'cash-note',
-          'Điều chỉnh sổ quỹ ' +
-            money(a.direction === 'in' ? a.amount : -a.amount) +
-            '; không có thu/chi tiền thực trong ca.',
-        ),
-      );
-    container.append(
-      el(
-        'p',
-        'cash-note',
-        'Chuyển khoản và COD chưa nhận không tính vào tiền két. Số toàn két có thể khác vì tra soát ca trước.',
-      ),
-    );
+  /** Báo cáo ca dạng khối (shift-report-view.js); bấm khối → trang liên quan. */
+  function report(container, d, close) {
+    renderShiftReport(container, d, { onOpen: target => { close?.(); go(target === 'orders' ? '#/orders' : target === 'cash' ? '#/cash' : '#/pos'); } });
   }
+  /**
+   * Kết ca: bên trái báo cáo, bên phải ô đếm tiền (cộng nhanh theo mệnh giá), chênh lệch 3 trạng thái (chưa đếm / khớp / lệch),
+   * lý do bắt buộc khi lệch ("Khác" bắt buộc ghi chú), phiếu chờ duyệt chặn kết ca. Công thức két, tra soát, chống ghi lặp: giữ nguyên ở máy chủ.
+   */
   async function closeShift() {
     const d = await api('/cash/shifts/' + summary.ownShift.id),
       m = dialog('Kết ca');
-    report(m.body, d);
-    if (d.pendingEntries?.length) {
-      m.body.append(el('p', 'cash-warning', 'Còn phiếu chờ duyệt. Xử lý các phiếu sau trước khi kết ca:'));
-      for (const p of d.pendingEntries)
-        m.body.append(el('p', '', p.entryNo + ' · ' + money(p.amount) + ' · ' + p.reason));
-      m.body.append(button('Đóng', m.close));
-      m.show();
-      return;
+    m.d.classList.add('cash-close-dialog');
+    const layout = el('div', 'close-layout'), left = el('div', 'close-report'), side = el('aside', 'close-side');
+    report(left, d, m.close);
+    layout.append(side, left);
+    m.body.append(layout);
+    const blocked = (d.pendingEntries || []).length > 0;
+    if (blocked) {
+      const warn = el('div', 'close-block');
+      warn.append(el('b', '', `${d.pendingEntries.length} phiếu đang chờ duyệt – chặn kết ca.`));
+      for (const p of d.pendingEntries) warn.append(el('span', '', `${p.entryNo} · ${money(p.amount)} · ${p.reason}`));
+      warn.append(button('Xem phiếu', () => { m.close(); go('#/cash'); }, 'btn ghost small'));
+      side.append(warn);
     }
-    const cash = field('Tổng tiền mặt đếm được', 'number'),
-      reason = select([
-        ['', 'Chọn lý do'],
-        ['counting', 'Đếm sai'],
-        ['wrong_change', 'Đưa nhầm tiền'],
-        ['small_change', 'Thiếu tiền lẻ'],
-        ['other', 'Khác'],
-      ]),
-      note = field('Ghi chú (bắt buộc khi chọn Khác)', 'textarea'),
-      diff = el('p', 'cash-warning');
-    cash.input.min = '0';
-    cash.input.step = '1';
-    cash.input.required = true;
-    const update = () => {
-      const n = Number(cash.input.value) - d.expectedCash;
-      diff.textContent = 'Chênh lệch ' + money(n);
-      reason.required = n !== 0;
-      note.input.required = n !== 0 && reason.value === 'other';
-    };
-    cash.input.addEventListener('input', update);
-    reason.addEventListener('change', update);
-    m.body.append(
-      cash.box,
-      diff,
-      labeled('Lý do chênh lệch', reason),
-      note.box,
-      el('p', 'cash-note', 'Lệch khác 0 tự mở một tra soát. Tiền thực đếm sẽ bàn giao cho ca sau.'),
-    );
-    submitForm(m, 'Kết ca & in báo cáo', async () => {
-      const r = await api('/cash/shifts/' + d.shift.id + '/close', 'POST', {
-        countedCash: Number(cash.input.value),
-        reasonCode: reason.value,
-        reasonNote: note.input.value,
-      });
-      m.close();
-      toast('Đã kết ca thành công.');
-      // Cho trình duyệt vẽ xong trạng thái đóng dialog trước khi mở hộp in.
-      // Nếu gọi print ngay cùng một nhịp, dialog kết ca trông như vẫn bị treo
-      // trong suốt thời gian trình duyệt chuẩn bị bản in.
-      await new Promise(resolve => typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => resolve()) : resolve());
+    const cash = field('Tổng tiền mặt đã đếm', 'number');
+    cash.input.min = '0'; cash.input.step = '1'; cash.input.inputMode = 'numeric'; cash.input.placeholder = '0'; cash.input.classList.add('close-count');
+    const quick = el('div', 'close-quick');
+    for (const v of [500000, 200000, 100000, 50000, 20000, 10000]) quick.append(button('+' + v / 1000 + 'k', () => { cash.input.value = String((Number(cash.input.value) || 0) + v); update(); }, 'btn secondary small'));
+    quick.append(button('Xoá', () => { cash.input.value = ''; update(); }, 'btn ghost small'));
+    const diff = el('div', 'close-diff'), reason = select([['', 'Chọn lý do'], ['counting', 'Đếm sai'], ['wrong_change', 'Đưa nhầm tiền'], ['small_change', 'Thiếu tiền lẻ'], ['other', 'Khác']]),
+      note = field('Ghi chú (bắt buộc nếu chọn "Khác")', 'textarea'), reasonBox = labeled('Lý do chênh lệch · bắt buộc', reason);
+    const submit = el('button', 'btn primary close-submit', 'Kết ca & in báo cáo K80'); submit.type = 'submit';
+    const preview = button('Xem trước bản in', () => printPos({ ...d, countedCash: Number(cash.input.value) || null }, 'shift'), 'btn secondary');
+    const legend = el('ul', 'close-legend');
+    for (const [cls, t] of [['empty', 'Chưa đếm: xám, chưa có số lệch'], ['match', 'Khớp: xanh, kết ca được ngay'], ['diff', 'Lệch: cam, bắt buộc lý do, tự mở tra soát']]) { const li = el('li', 'is-' + cls); li.append(el('i'), document.createTextNode(t)); legend.append(li); }
+    function update() {
+      const st = differenceState(cash.input.value, d.expectedCash);
+      diff.className = 'close-diff is-' + st.state;
+      diff.replaceChildren(el('span', '', st.state === 'empty' ? 'Chênh lệch so với két' : st.state === 'match' ? 'Khớp két' : 'Chênh lệch so với két'),
+        el('b', '', st.state === 'empty' ? st.text : st.state === 'match' ? money(0) : (st.diff > 0 ? '+' : '') + money(st.diff)));
+      const lech = st.state === 'diff';
+      reasonBox.hidden = note.box.hidden = !lech;
+      reason.required = lech;
+      note.input.required = lech && reason.value === 'other';
+      submit.disabled = blocked || st.state === 'empty' || (lech && (!reason.value || (reason.value === 'other' && !note.input.value.trim())));
+    }
+    cash.input.addEventListener('input', update); reason.addEventListener('change', update); note.input.addEventListener('input', update);
+    const hint = el('p', 'cash-note', `Két hệ thống ${money(d.expectedCash)}. Nhập tổng tiền mặt thực tế trong két, số nguyên VNĐ. Tiền thực đếm bàn giao cho ca sau.`);
+    side.append(cash.box, quick, hint, diff, reasonBox, note.box, submit, preview, legend);
+    update();
+    m.form.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (submit.disabled) return;
+      submit.disabled = true;
       try {
-        printPos(r, 'shift');
-      } catch {
-        toast('Đã kết ca. Có thể xem và in lại ở tab Ca.', 'err');
-      }
-      await Promise.all([load(), onShiftClosed()]);
+        const r = await api('/cash/shifts/' + d.shift.id + '/close', 'POST', { countedCash: Number(cash.input.value), reasonCode: reason.value, reasonNote: note.input.value });
+        m.close();
+        toast('Đã kết ca thành công.');
+        // Cho trình duyệt vẽ xong trạng thái đóng dialog trước khi mở hộp in.
+        await new Promise(resolve => typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => resolve()) : resolve());
+        try { printPos(r, 'shift'); } catch { toast('Đã kết ca. Có thể xem và in lại ở tab Ca.', 'err'); }
+        await Promise.all([load(), onShiftClosed()]);
+      } catch (ex) { toast(ex.message, 'err'); update(); }
     });
+    m.show();
+    cash.input.focus();
   }
   async function shifts() {
     const version = ++listVersion;
@@ -613,7 +588,8 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
           run(async () => {
             const d = await api('/cash/shifts/' + s.id),
               m = dialog('Báo cáo ca');
-            report(m.body, d);
+            m.d.classList.add('cash-close-dialog');
+            report(m.body, d, m.close);
             m.body.append(
               button('In K80', () => printPos(d, 'shift')),
               button('Đóng', m.close),
