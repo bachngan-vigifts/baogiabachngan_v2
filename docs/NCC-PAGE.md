@@ -159,3 +159,10 @@ Khác có chủ đích:
 ### Chọn nguồn NCC / đại lý khi yêu cầu đóng gói
 
 Hộp Yêu cầu đóng gói của đơn/HĐKT lấy danh sách NCC đang hoạt động từ trang Nhà cung cấp mỗi lần mở. Nguồn Nhập từ NCC và Lấy từ đại lý dùng chung danh sách này để tìm/chọn tên. API `GET /orders/:id/packing` kiểm quyền/phạm vi đơn trước, chỉ trả `supplierChoices: [{id, name}]`; không mở quyền quản trị NCC hay trả email, tài khoản, ghi chú riêng. Tên nguồn tiếp tục lưu ở sourceNote của phiếu như trước, không đổi schema và không tự tạo NCC khi gõ tên.
+
+
+## Thao tác nội bộ của Sale Admin và Kế toán (21/10/2026)
+
+Trên đơn mua đã duyệt, Sale Admin và Kế toán được ghi nhận NCC xác nhận, nhận hàng, ghi trả NCC, sửa lịch trả, tải PDF/Excel và gửi email NCC. Giao diện dùng `actions` do API cấp; kiểm quyền và trạng thái vẫn chạy ở server. Các quyền giá mua/thanh toán hiện có giữ nguyên; bổ sung xác nhận thay NCC cho đúng hai chức vụ và nhận hàng cho Kế toán. Lịch sử ghi người thực hiện, không gắn nhãn Manager cho thao tác của nhân viên.
+
+Không mở quyền duyệt giá hoặc huỷ đơn đã duyệt, huỷ phiếu nhận, huỷ khoản trả. Không thay quyền trên cổng NCC hay quyền duyệt yêu cầu xin lấy trước. Không thêm quyền/schema/migration; nhận hàng vẫn không cộng tồn Sapo. Email chỉ gửi khi người dùng thực hiện thao tác, đơn đã duyệt và dịch vụ mail được cấu hình.
