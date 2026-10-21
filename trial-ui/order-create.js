@@ -1,6 +1,6 @@
 import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes } from './order-notes.js';
 /** Open the business form first. Sapo is contacted only after submitting with explicit opt-in. */
-export function initOrderCreate({ api, $, todayIso, chooseSapo }) {
+export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox }) {
   const dialog = $('#order-create-dialog'), form = $('#order-create-form'), submit = $('#order-create-submit');
   const status = $('#order-create-status'), error = $('#order-create-error');
   let current = null;
@@ -9,7 +9,7 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo }) {
     current?.resolve(null);
     const me = current = { ref, run, busy: false, ready: false, resolve: () => {} };
     const result = new Promise(resolve => { me.resolve = resolve; });
-    form.reset(); form.elements.orderDate.value = todayIso(); error.textContent = '';
+    form.reset(); form.elements.orderDate.value = todayIso(); form.elements.orderNo.dataset.auto = ''; error.textContent = '';
     $('#order-create-quote').textContent = ref.quoteNo || 'báo giá'; status.textContent = 'Đang lấy thông tin báo giá…'; submit.disabled = true;
     if (!dialog.open) dialog.showModal();
     try {
@@ -18,15 +18,28 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo }) {
         api('/orders/create-config').catch(e => { throw new Error(e.status === 404 ? 'API sinh đơn đang cập nhật. Vui lòng mở lại form sau.' : e.message); }),
       ]);
       if (current !== me) return result;
-      if (config.version !== 1 || config.noteMaxLength !== 20000) throw new Error('API chưa hỗ trợ form sinh đơn mới. Vui lòng tải lại sau.');
+      if (config.version !== 2 || config.noteMaxLength !== 20000) throw new Error('API chưa hỗ trợ form sinh đơn mới. Vui lòng tải lại sau.');
       $('#order-create-quote').textContent = [q.data.quoteNo || ref.quoteNo, q.data.customer].filter(Boolean).join(' · ');
+      form.elements.customerName.value = q.data.customer || ref.customer || '';
       form.elements.deliveryDate.value = q.data.deliveryDate || '';
       form.elements.deliveryAddress.value = orderDeliveryAddress(q.data);
       form.elements.note.value = orderNotesFromQuote(q.data);
       me.source = q.data;
+      await previewOrderNo(me);
       me.ready = true; submit.disabled = false; status.textContent = '';
     } catch (e) { if (current === me) { error.textContent = e.message; status.textContent = ''; } }
     return result;
+  }
+  async function previewOrderNo(me = current) {
+    if (!me) return;
+    const input = form.elements.orderNo, untouched = !input.value.trim() || input.value === input.dataset.auto;
+    try {
+      const r = await api(`/orders/next-no?quoteId=${encodeURIComponent(me.ref.quoteId)}&orderDate=${encodeURIComponent(form.elements.orderDate.value)}`);
+      if (current !== me) return;
+      input.placeholder = r.error || 'Nhập số đơn hàng';
+      if (untouched || !input.value.trim()) input.value = r.orderNo || '';
+      input.dataset.auto = r.orderNo || '';
+    } catch { input.placeholder = 'Nhập số đơn hàng'; }
   }
   const syncDelivery = key => {
     if (!current?.ready || current.busy) return;
@@ -34,10 +47,13 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo }) {
   };
   form.elements.deliveryDate.addEventListener('change', () => syncDelivery('deliveryDate'));
   form.elements.deliveryAddress.addEventListener('change', () => syncDelivery('deliveryAddress'));
+  form.elements.orderDate.addEventListener('change', () => previewOrderNo());
   form.addEventListener('submit', async e => {
     e.preventDefault(); const me = current; if (!me?.ready || me.busy || !form.reportValidity()) return;
+    const orderNo = form.elements.orderNo.value.trim(), customerName = form.elements.customerName.value.trim();
+    if (!await confirmBox(`Xác nhận sinh đơn hàng?\n\nSố đơn: ${orderNo}\nKhách hàng: ${customerName}`, { title: 'Xác nhận sinh đơn hàng', ok: 'Xác nhận sinh đơn' })) return;
     me.busy = true; submit.disabled = true; error.textContent = '';
-    const fields = { orderDate: form.elements.orderDate.value, deliveryDate: form.elements.deliveryDate.value, deliveryAddress: form.elements.deliveryAddress.value, note: form.elements.note.value };
+    const fields = { orderNo, orderDate: form.elements.orderDate.value, deliveryDate: form.elements.deliveryDate.value, deliveryAddress: form.elements.deliveryAddress.value, note: form.elements.note.value };
     try {
       const push = form.elements.pushSapo.value === 'yes'; submit.textContent = push ? 'Tiếp tục chọn kho Sapo…' : 'Đang sinh đơn hàng…';
       const r = push ? await chooseSapo({ quoteId: me.ref.quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: (loc, enabled) => me.run(fields, loc, enabled) })
