@@ -70,7 +70,7 @@ test('hàng đang về: đối chiếu gốc, 20.000/3 đơn, Excel ngoài catal
     const login=await call('/login','','POST',{email:id+'@x.vn',password:PASSWORD});
     const response=await call('/purchase-incoming?limit=1',login.cookie);
     assert.equal(response.status,id==='ncc'?403:200,id);
-    if(id!=='ncc') {assert.equal(response.data.canRequest,['mgr','sa'].includes(id),id);assert.equal(response.data.canSend,false);assert.equal(response.data.rows.length,1);assert.ok(response.data.kpis.quantity>=20025);assert.doesNotMatch(JSON.stringify(response.data),/customerName|customer_name|sourceNo|price|totalMoney/);}
+    if(id!=='ncc') {assert.equal(response.data.canRequest,['mgr','sa'].includes(id),id);assert.equal(response.data.canSend,['mgr','sa'].includes(id));assert.equal(response.data.rows.length,1);assert.ok(response.data.kpis.quantity>=20025);assert.doesNotMatch(JSON.stringify(response.data),/customerName|customer_name|sourceNo|price|totalMoney/);}
   }
   assert.equal((await call('/purchase-incoming')).status,401);
   assert.equal((await client.query<{n:number}>("select count(*)::int as n from supplier_stock_requests")).rows[0]!.n,0,'GET không tạo yêu cầu');

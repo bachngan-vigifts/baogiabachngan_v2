@@ -25,7 +25,7 @@ export async function outstandingLines(db: Db, skus?: readonly string[], catalog
     .from(supplierReceiptLines).innerJoin(supplierReceipts, eq(supplierReceipts.id, supplierReceiptLines.receiptId))
     .where(and(isNull(supplierReceipts.cancelledAt), inArray(supplierReceiptLines.lineId, lineIds))).groupBy(supplierReceiptLines.lineId) : [];
   const received = new Map(got.map(g => [g.lineId, g.good]));
-  return ordered.map(({ qty, lineId, ...o }) => ({ ...o, left: Math.max(0, qty - (received.get(lineId) ?? 0)) })).filter(o => o.left > 0);
+  return ordered.map(({ qty, lineId, ...o }) => ({ ...o, lineId, left: Math.max(0, qty - (received.get(lineId) ?? 0)) })).filter(o => o.left > 0);
 }
 
 /**

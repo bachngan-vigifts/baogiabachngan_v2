@@ -122,13 +122,13 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   const listMode = btn('Danh sách đơn', 'btn secondary', () => setMode(false));
   const skuMode = btn('Hàng đang về theo mã', 'btn secondary', () => setMode(true)); modes.append(listMode, skuMode);
   page.append(head, modes, khoBox, panel, incomingHost);
-  function setMode(value) {
+  function setMode(value,requestId='') {
     ++req;
     incomingMode = value;
     listMode.setAttribute('aria-pressed', String(!value)); skuMode.setAttribute('aria-pressed', String(value));
     panel.hidden = value || kho() && !khoAll; khoBox.hidden = value || !kho();
-    if (value) incoming.show(); else { incoming.hide(); load(); }
-    if (!/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', value ? '#/purchases?mode=incoming' : '#/purchases');
+    if (value) incoming.show(requestId); else { incoming.hide(); load(); }
+    if (!/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', value ? '#/purchases?mode=incoming'+(requestId?'&request='+encodeURIComponent(requestId):'') : '#/purchases');
   }
   const shade = el('div', 'sup-shade'); shade.hidden = true; shade.addEventListener('click', () => close());
   const drawer = el('aside', 'sup-drawer pur-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
@@ -196,7 +196,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   /** Router gọi: id = '' (danh sách) | 'new' (lập đơn, ?type=&id=) | id đơn. */
   async function show(id, query = '') {
     const params = new URLSearchParams(query);
-    if (params.get('mode') === 'incoming') setMode(true);
+    if (params.get('mode') === 'incoming') setMode(true,params.get('request')||'');
     else if (!id) setMode(incomingMode);
     else load();
     if (id === 'new') { const p = new URLSearchParams(query); openCreate(p.get('type') && p.get('id') ? { type: p.get('type'), id: p.get('id') } : null); }

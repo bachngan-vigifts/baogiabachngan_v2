@@ -6,7 +6,7 @@ import type { Db } from './purchase-store.ts';
 
 const plusDays = (day: string, count: number) => new Date(Date.parse(day + 'T00:00:00Z') + count * 86400000).toISOString().slice(0, 10);
 /** Read only. Aggregate every eligible purchase line BEFORE pagination; never select customer/source names or prices. */
-export async function incomingBySku(db: Db, query: URLSearchParams, today: string) {
+export async function incomingBySku(db: Db, query: URLSearchParams, today: string, paginate = true) {
   const from = query.get('from') || '', to = query.get('to') || '', status = query.get('status') || 'all';
   if ((from && !isIsoDate(from)) || (to && !isIsoDate(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày hẹn không hợp lệ.');
   if (!['all', 'late', 'week'].includes(status)) throw new AppError(400, 'Bộ lọc hàng đang về không hợp lệ.');
@@ -33,7 +33,7 @@ export async function incomingBySku(db: Db, query: URLSearchParams, today: strin
   for (const line of lines) { const group = grouped.get(line.sku) || []; group.push(line); grouped.set(line.sku, group); }
   const rows = [...grouped].map(([sku, group]) => {
     const units = [...new Set(group.map(l => l.unit.trim()))];
-    const orders = group.map(l => ({ id: l.orderId, ticketNumber: l.ticketNumber, internalNo: l.internalNo, supplierId: l.supplierId,
+    const orders = group.map(l => ({ id: l.orderId, lineId: l.lineId, ticketNumber: l.ticketNumber, internalNo: l.internalNo, supplierId: l.supplierId,
       supplierName: l.supplierName, quantity: l.left, due: l.due, unit: l.unit, supplierStatus: l.supplierStatus,
       importedMissingSource: l.imported && l.missingSource }));
     orders.sort((a,b) => (a.due || '9999').localeCompare(b.due || '9999') || a.ticketNumber.localeCompare(b.ticketNumber));
@@ -43,7 +43,7 @@ export async function incomingBySku(db: Db, query: URLSearchParams, today: strin
       supplierNames: [...new Set(group.map(l => l.supplierName))], importedMissingSource: orders.some(o => o.importedMissingSource),
       confirmed: group.every(l => l.supplierStatus === 'confirmed'), orders };
   }).sort((a,b) => a.sku.localeCompare(b.sku, 'vi'));
-  return { today, rows: rows.slice(offset, offset + limit), total: rows.length, limit, offset, suppliers,
+  return { today, rows: paginate ? rows.slice(offset, offset + limit) : rows, total: rows.length, limit, offset, suppliers,
     kpis: { skus: rows.length, quantity: rows.reduce((sum,l) => sum + l.quantity, 0),
       suppliers: new Set(lines.map(l => l.supplierId).filter(Boolean)).size,
       overdueOrders: new Set(lines.filter(l => !!l.due && l.due < today).map(l => l.orderId)).size } };

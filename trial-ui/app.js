@@ -385,8 +385,7 @@ $('#login-form').addEventListener('submit', async e => {
 async function enter() {
   const { user } = await api('/me');
   if (user.role === 'supplier' || user.positionId === 'supplier') {
-    await api('/logout', 'POST', {}).catch(() => {});
-    showAuth('Tài khoản nhà cung cấp chưa dùng được bản thử này. Cổng NCC đang được hoàn thiện.');
+    location.replace('supplier.html');
     return;
   }
   if (user.role === 'customer' || user.positionId === 'customer') { location.replace('customer.html'); return; } // tài khoản khách: chỉ trang khách hàng
@@ -678,12 +677,12 @@ function route() {
   if (view === 'tasks') tasksView().load(id);
   if (view === 'dashboard') dashboardView().load();
   if (view === 'flow') flowView().load();
-  if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); }
+  if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); else if (id) suppliersView().open(decodeURIComponent(id)); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
   if (view === 'permissions') permissionsView().load();
   if (view === 'kho') khoHome().load();
-  if (view === 'stock-lookup') stockLookup().load();
+  if (view === 'stock-lookup') stockLookup().load(new URLSearchParams(query).get('q')||'');
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));

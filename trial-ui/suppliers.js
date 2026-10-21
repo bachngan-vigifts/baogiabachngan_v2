@@ -1,3 +1,4 @@
+import { initEarlyRequests } from './purchase-early-requests.js';
 /**
  * DANH BẠ NHÀ CUNG CẤP (trang #/suppliers, chỉ Manager) – xem docs/NCC-PAGE.md mục "Quản lý NCC".
  * Danh sách + bảng sửa bên phải: thông tin NCC, email nhận đơn / CC, tài khoản NCC đăng nhập, ngừng / mở lại.
@@ -119,6 +120,7 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
       foot.append(toggle);
     }
     form.append(grid, contacts, ...(canLinkAccounts() ? [accounts] : []), err, foot);
+    if(!isNew&&current.canViewEarlyRequests){const history=el('section','sup-section early-request-history');form.append(history);initEarlyRequests({api,host:history,supplierId:s.id}).load();}
     form.addEventListener('submit', e => { e.preventDefault(); submit(); });
     async function submit(active) {
       err.textContent = ''; save.disabled = true;
@@ -143,5 +145,5 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
     drawer.replaceChildren(top, form);
   }
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !drawer.hidden) closeEditor(); });
-  return { load, openNew: () => openEditor(null) };
+  return { load, openNew: () => openEditor(null), open: openEditor };
 }
