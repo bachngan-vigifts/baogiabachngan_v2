@@ -1,3 +1,4 @@
+import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
@@ -625,6 +626,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const m = member(c);
       posPermission(m);
       const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b,true),{name,phone,taxCode}=fields;
+      const customerIssue = posCustomerIssue({id: 'new', name});
+      if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
       if (taxCode && (await customerWithTaxCode(c.env.db, taxCode)))
         throw new AppError(409, 'MST đã có khách hàng, hãy tìm khách có sẵn.');
       const id = crypto.randomUUID(),
@@ -855,6 +858,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         assertOpen(s, m);
         if (s.registerId !== posText(b.registerId)) throw new AppError(400, 'Quầy không khớp ca.');
         const calc = await calculateCart(tx, b);
+        const customerIssue = posCustomerIssue(calc.customer);
+        if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
         if (!calc.register.bankCode || !calc.register.bankAccount)
           throw new AppError(409, 'Manager cần cấu hình ngân hàng cho quầy.');
         if (calc.payable <= 0) throw new AppError(400, 'Số tiền QR phải lớn hơn 0.');

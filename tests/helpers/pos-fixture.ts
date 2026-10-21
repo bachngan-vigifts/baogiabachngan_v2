@@ -108,8 +108,12 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     assert.equal(x.status, 201, JSON.stringify(x.data));
     return x.data;
   };
+  const customer = await call('/pos/customers', emp, 'POST', {name:'Nguyễn Khách kiểm thử',phone:'0901234567'});
+  assert.equal(customer.status,201);
+  const customerId = customer.data.id as string;
   const cart = (shiftId: string, extra: Record<string, unknown> = {}) => ({
     key: crypto.randomUUID(),
+    customerId,
     registerId,
     shiftId,
     pricePolicyId: 'retail-vat',
@@ -118,5 +122,5 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     tendered: 200000,
     ...extra,
   });
-  return { db, client, files, hooks, router, env, call, mgr, emp, other, ncc, registerId, open, cart };
+  return { db, client, files, hooks, router, env, call, mgr, emp, other, ncc, registerId, customerId, open, cart };
 }
