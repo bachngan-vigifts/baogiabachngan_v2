@@ -1025,3 +1025,24 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 @media (max-width: 600px) {
   .pos-customer-create .customer-form-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Saved checkout: clear document identity, amount and separated next actions. */
+.pos-modal.pos-saved-modal { width: min(500px, calc(100vw - 24px)); box-shadow: 0 20px 65px #122c2633; }
+.pos-saved-modal .pos-modal-content { padding: 28px; }
+.pos-saved-modal h2 { font-size: 22px; line-height: 1.35; padding-right: 38px; margin: 0 0 24px; color: #164e37; }
+.pos-saved-summary { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; }
+.pos-saved-check { display: grid; place-items: center; flex: 0 0 48px; height: 48px; border-radius: 50%; background: #e6f6ec; color: #11844d; font-size: 28px; font-weight: 700; }
+.pos-saved-label { display: block; color: #64748b; font-size: 13px; margin-bottom: 4px; }
+.pos-saved-order { display: block; font-size: 17px; color: #172b42; overflow-wrap: anywhere; }
+.pos-saved-total { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 20px; border: 1px solid #cfe9d9; border-radius: 12px; background: #f1faf5; color: #32624a; font-size: 14px; }
+.pos-saved-total strong { color: #087b48; font-size: 28px; white-space: nowrap; }
+.pos-saved-hint { color: #64748b; font-size: 13px; line-height: 1.6; margin: 16px 0 22px; }
+.pos-saved-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pos-saved-actions .btn { width: 100%; box-sizing: border-box; min-height: 46px; padding: 10px 12px; font-size: 14px; text-align: center; display: flex; align-items: center; justify-content: center; white-space: normal; }
+.pos-saved-actions .pos-saved-next { grid-column: 1 / -1; background: #10854e; border-color: #10854e; }
+@media (max-width: 420px) {
+  .pos-saved-modal .pos-modal-content { padding: 22px 18px; }
+  .pos-saved-modal h2 { font-size: 20px; }
+  .pos-saved-total { flex-direction: column; align-items: flex-start; padding: 16px; gap: 6px; }
+  .pos-saved-actions { grid-template-columns: minmax(0, 1fr); }
+}

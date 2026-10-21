@@ -640,6 +640,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     const continueCod = payment.querySelectorAll('button').find(b => b.textContent === 'TIẾP TỤC TẠO ĐƠN COD')!;
     assert.ok(continueCod);
     await continueCod.fire('click');
+    assert.equal(payment.open, false, 'Đóng bảng Thanh toán trước khi mở form COD');
     const modal = doc.body.children.at(-1)!;
     assert.match(modal.textContent, /Giao Hàng Nhanh · nhập địa chỉ/);
     assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
@@ -755,5 +756,34 @@ test('Manager đổi quầy đang mở; giỏ có hàng không được đổi c
     choose=root.querySelectorAll('select').find(e=>e.attributes['aria-label']==='Chọn quầy')!;
     choose.value='lock'; await choose.fire('change');
     assert.equal(choose.value,'ml'); assert.ok(notices.some(s=>s.includes('Hoàn tất hoặc huỷ')));
+  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});
+
+test('lưu POS: lỗi giữ bảng thanh toán và giỏ; thành công đóng bảng cũ, popup mã/tổng và nút bán tiếp không tạo lại đơn', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root=new Element('section');let fail=true,checkouts=0;
+    const api=async(path:string)=>{
+      if(path.startsWith('/pos/options'))return {registers:[{id:'r',name:'Lock',pricePolicyId:'vat'}],current:{id:'s',registerId:'r',memberId:'emp'},shifts:[],templates:[],policies:[]};
+      if(path.startsWith('/pos/catalog'))return {products:[{sku:'001',name:'Ly',price:194400,available:10}],nextOffset:null};
+      if(path==='/pos/preview')return {...sample,lines:[{...sample.lines[0],sku:'001'}]};
+      if(path==='/pos/checkout'){checkouts++;if(fail)throw Object.assign(Error('Thử lại'),{status:400});return {...sample,orderNo:'POS_<img onerror=x>',id:'new'};}
+      throw Error(path);
+    };
+    const ui=initPos({root,api,toast(){},user:()=>({id:'emp',name:'NV'}),confirmBox:async()=>true,go(){}});
+    await ui.load();await root.querySelectorAll('button').find(b=>b.className==='pos-product')!.fire('click');
+    await new Promise(r=>setTimeout(r,230));await root.querySelectorAll('button').find(b=>b.textContent==='THANH TOÁN')!.fire('click');
+    const payment=doc.body.children.at(-1)!;const tender=payment.querySelectorAll('input').find(i=>i.type==='number')!;
+    tender.value='200000';await tender.fire('input');
+    const pay=payment.querySelectorAll('button').find(b=>b.textContent==='Thu tiền & in bill')!;
+    await pay.fire('click');assert.equal(payment.open,true);assert.ok(root.textContent.includes('Ly'));
+    fail=false;await pay.fire('click');assert.equal(payment.open,false);
+    const saved=doc.body.children.filter(e=>e.open&&e.className.includes('pos-saved-modal')).at(-1)!;
+    assert.ok(saved);assert.match(saved.textContent,/POS_<img onerror=x>/);assert.equal(saved.querySelectorAll('img').length,0);
+    assert.ok(saved.textContent.includes('194.400 đ'));
+    const actions=saved.querySelectorAll('div').find(e=>e.className==='pos-saved-actions')!;
+    assert.deepEqual(actions.children.map(b=>b.textContent),['In lại bill','Bán đơn tiếp']);
+    await actions.children[1]!.fire('click');assert.equal(saved.open,false);assert.equal(checkouts,2);
   } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
