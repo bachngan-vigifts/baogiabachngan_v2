@@ -1,3 +1,5 @@
+import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
+import { warehouses } from '../../src/modules/catalog/schema.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -165,7 +167,9 @@ test('việc tự sinh của nhân viên đã khoá / đã xoá chuyển về "c
 });
 
 test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận việc và tự xong khi đã nhận đủ', async () => {
-  const { call, mgr, kho } = await setup();
+  const { db, call, mgr, kho } = await setup();
+  await db.insert(warehouses).values({id:'task-wh',name:'Kho việc nhận',kind:'stock'});
+  await postMoves(db,'mgr',[{sku:'RECEIVE-TEST',warehouseId:'task-wh',qty:1,kind:'opening',refType:'opening',refId:'task-fixture'}]);
   const { vietnamDate } = await import('../../src/modules/sales/domain/sales.ts');
   const supplier = await call('/suppliers', mgr, 'POST', { name: 'NCC kiểm tra tự hoàn thành' });
   const created = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: supplier.data.supplier.id,
@@ -188,7 +192,7 @@ test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận vi�
   assert.equal(current.status, 'todo'); assert.equal(current.assigneeId, null, 'bấm hoàn thành bị chặn không tự nhận việc');
   assert.equal((await call(`/tasks/${task.id}`, kho, 'PUT', { assigneeId: 'kho' })).status, 200);
   assert.equal((await call(`/tasks/${task.id}`, kho, 'PUT', { status: 'in_progress' })).status, 200);
-  const received = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'task-receive-complete', lines: [{ lineId: order.lines[0].id, goodQty: 10 }] });
+  const received = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'task-receive-complete', warehouse: 'Kho việc nhận', lines: [{ lineId: order.lines[0].id, goodQty: 10 }] });
   assert.equal(received.status, 201, JSON.stringify(received.data));
   const done = (await call('/tasks?refresh=1&status=done', kho)).data.tasks.find((t: any) => t.id === task.id);
   assert.equal(done.status, 'done'); assert.equal(done.completionFromSource, true);

@@ -137,22 +137,22 @@ test('điều chuyển kho: NVBH xin → Manager duyệt → Kho chuyển; tồn
 test('Sổ kho (như Sapo): tồn sau giao dịch tính trước khi lọc, dòng tổng theo bộ lọc, phân trang, lọc nhãn hiệu / trạng thái, link chứng từ', async () => {
   const s = await setup();
   await s.db.insert(products).values({ sku: 'BT1', name: 'Bình giữ nhiệt', unit: 'cái', brand: 'Lock&Lock', active: false, updatedAt: now });
-  // Tồn đầu 6 → duyệt đơn trừ 8 (âm 2) → nhập NCC 8 → còn 6 (đúng ví dụ DH_002 / PNH_004).
-  await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: 6, kind: 'opening', refType: 'opening', refId: 'op2', refNo: 'ĐK' }], '2026-10-18T01:00:00.000Z');
+  // Fixture hợp lệ: tồn đầu 10 → xuất 8 còn 2 → nhập 8 trở lại 10; không dùng tồn âm để kiểm thẻ kho.
+  await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: 10, kind: 'opening', refType: 'opening', refId: 'op2', refNo: 'ĐK' }], '2026-10-18T01:00:00.000Z');
   await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: -8, kind: 'sale', refType: 'sales_order', refId: 'o1#ab12', refNo: 'DH_002' }], '2026-10-22T08:15:00.000Z');
   await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: 8, kind: 'receipt', refType: 'supplier_receipt', refId: 'r-none', refNo: 'PNH_004' }], '2026-10-22T09:50:00.000Z');
   const get = async (q: string, who = s.mgr) => (await s.call('/stock-moves?' + q, who)).data;
   const all = await get('q=BT1');
-  assert.equal(all.total, 3); assert.deepEqual(all.totals, { inQty: 14, outQty: 8 });
-  assert.deepEqual(all.moves.map((m: any) => [m.refNo, m.inQty, m.outQty, m.balanceAfter, m.warehouse]), [['PNH_004', 8, 0, 6, 'KHO VIGIFTS'], ['DH_002', 0, 8, -2, 'KHO VIGIFTS'], ['ĐK', 6, 0, 6, 'KHO VIGIFTS']]);
+  assert.equal(all.total, 3); assert.deepEqual(all.totals, { inQty: 18, outQty: 8 });
+  assert.deepEqual(all.moves.map((m: any) => [m.refNo, m.inQty, m.outQty, m.balanceAfter, m.warehouse]), [['PNH_004', 8, 0, 10, 'KHO VIGIFTS'], ['DH_002', 0, 8, 2, 'KHO VIGIFTS'], ['ĐK', 10, 0, 10, 'KHO VIGIFTS']]);
   assert.deepEqual(all.moves.map((m: any) => m.description), ['Nhập hàng vào kho', 'Xuất kho bán hàng (duyệt đơn / HĐKT)', 'Chốt tồn đầu kỳ']);
   assert.equal(all.moves[1].link, '#/orders/o1', 'dòng sửa đơn (refId có hậu tố #) vẫn mở đơn gốc');
   assert.equal(all.moves[0].link, '', 'phiếu nhận không còn → không có link');
   assert.equal(all.moves[0].active, false); assert.equal(all.moves[0].brand, 'Lock&Lock');
   const today = await get('q=BT1&from=2026-10-22&to=2026-10-22');
-  assert.equal(today.total, 2); assert.deepEqual(today.moves.map((m: any) => m.balanceAfter), [6, -2], 'lọc ngày không làm sai tồn sau giao dịch');
+  assert.equal(today.total, 2); assert.deepEqual(today.moves.map((m: any) => m.balanceAfter), [10, 2], 'lọc ngày không làm sai tồn sau giao dịch');
   assert.deepEqual(today.totals, { inQty: 8, outQty: 8 });
-  assert.equal((await get('q=BT1&to=2026-10-21')).moves[0].balanceAfter, 6);
+  assert.equal((await get('q=BT1&to=2026-10-21')).moves[0].balanceAfter, 10);
   assert.deepEqual((await get('q=BT1&group=in')).moves.map((m: any) => m.refNo), ['PNH_004']);
   assert.deepEqual((await get('q=BT1&group=sale')).moves.map((m: any) => m.refNo), ['DH_002']);
   const p2 = await get('q=BT1&page=2&size=20'); assert.equal(p2.total, 3); assert.equal(p2.moves.length, 0);
@@ -218,4 +218,81 @@ test('lịch sử kiểu thẻ kho: tồn sau phát sinh tính toàn lịch sử
   assert.deepEqual(vietnamDay.data.moves.map((m: any) => [m.qty, m.balanceAfter]), [[2, 2]], 'lọc ngày theo giờ Việt Nam giống ngày trên bảng');
   assert.equal((await s.call('/stock-moves?from=2026-02-30', s.ml)).status, 400);
 
+});
+
+test('kho riêng ẩn trên compare, card, status và stock-warehouses; Manager thấy đủ',async()=>{
+  const s=await setup();
+  assert.equal((await s.call('/permissions/positions/sales-ml',s.mgr,'PUT',{perms:['inventory.view']})).status,200);
+  const visible=(await s.call('/inventory/status',s.ml)).data;
+  assert.ok(!visible.warehouses.some((w:any)=>w.id==='hd'));assert.equal(visible.moveCount,2);
+  assert.ok(!(await s.call('/stock-warehouses',s.ml)).data.warehouses.some((w:any)=>w.id==='hd'));
+  assert.ok(!(await s.call('/inventory/compare?diff=0',s.ml)).data.rows.some((w:any)=>w.warehouseId==='hd'));
+  assert.equal((await s.call('/inventory/compare?warehouseId=hd',s.ml)).status,403);
+  assert.equal((await s.call('/inventory/card?sku=LY1&warehouseId=hd',s.ml)).status,403);
+  assert.equal((await s.call('/inventory/card?sku=LY1&warehouseId=hd',s.mgr)).data.balance,7);
+  assert.equal((await s.call('/inventory/status',s.mgr)).data.warehouses.length,3);
+  assert.equal((await s.call('/stock-warehouses',s.mgr)).data.warehouses.length,3);
+  assert.equal((await s.call('/inventory/compare?diff=0',s.mgr)).data.rows.find((w:any)=>w.warehouseId==='hd').ledger,7);
+});
+
+test('kế hoạch báo giá: duyệt trước, xuất từng phần; thiếu nguồn bổ sung không làm âm kho', async () => {
+  const s=await setup(), q=await quote(s,'BG_PLAN',70);
+  const options=await s.call(`/quotes/${q}/stock-plan`,s.emp);
+  assert.equal(options.status,200,JSON.stringify(options.data));
+  assert.equal(options.data.lines[0].stock.vig,50);
+  assert.equal(options.data.warehouses.some((w:any)=>w.id==='hd'),false,'kho riêng bị ẩn');
+  const plan=[{sku:'LY1',qty:50,type:'stock',note:'KHO VIGIFTS'},{sku:'LY1',qty:20,type:'transfer',note:'SR Minh Long - Lock'}];
+  const created=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:plan});
+  assert.equal(created.status,201,JSON.stringify(created.data));const id=created.data.id;
+  let slips=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id));
+  assert.equal(slips.length,2);assert.equal(slips.reduce((n,x)=>n+x.totalQty,0),70);
+  assert.equal(await bal(s,'vig'),50);
+  assert.equal((await s.call(`/packing/${slips[0]!.id}/send`,s.emp,'POST',{})).status,409,'không gửi kho khi chưa duyệt');
+  const wrongWarehouse=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',warehouseId:'ml',verified:true,costWarningsReviewed:true});
+  assert.equal(wrongWarehouse.data.code,'STOCK_PLAN_IN_USE');
+  const approved=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  assert.equal(approved.status,200,JSON.stringify(approved.data));assert.equal(await bal(s,'vig'),50,'duyệt kế hoạch chưa ghi xuất');
+  const change=await s.call(`/orders/${id}/warehouse`,s.mgr,'PUT',{warehouseId:'ml'});
+  assert.equal(change.data.code,'STOCK_PLAN_IN_USE');
+  const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
+  const scheduled=await s.call('/deliveries',s.emp,'POST',{orderId:id,plannedDate:'2026-10-24',lines:[{orderLineId:line!.id,qty:50}]});
+  assert.equal(scheduled.status,201,JSON.stringify(scheduled.data));
+  const second=await s.call('/deliveries',s.emp,'POST',{orderId:id,plannedDate:'2026-10-25',lines:[{orderLineId:line!.id,qty:20}]});
+  assert.equal(second.status,201,JSON.stringify(second.data));
+  const premature=await s.call(`/deliveries/${scheduled.data.id}/status`,s.emp,'PUT',{status:'delivered'});
+  assert.equal(premature.status,409);assert.equal(premature.data.code,'STOCK_NOT_PACKED');
+  const photo='data:image/jpeg;base64,'+'A'.repeat(200);
+  const stockSlip=slips.find(x=>x.totalQty===50)!, waiting=slips.find(x=>x.totalQty===20)!;
+  for(const slip of [stockSlip,waiting])assert.equal((await s.call(`/packing/${slip.id}/send`,s.emp,'POST',{})).status,200);
+  const confirm=await s.call(`/packing/${stockSlip.id}/confirm`,s.kho,'POST',{warehouseId:'vig',photos:[photo]});
+  assert.equal(confirm.status,200,JSON.stringify(confirm.data));assert.equal(await bal(s,'vig'),0);
+  assert.equal((await s.call(`/deliveries/${scheduled.data.id}/status`,s.emp,'PUT',{status:'in_transit'})).status,200);
+  const tooSoon=await s.call(`/deliveries/${second.data.id}/status`,s.emp,'PUT',{status:'in_transit'});assert.equal(tooSoon.data.code,'STOCK_NOT_PACKED');
+  const short=await s.call(`/packing/${waiting.id}/confirm`,s.kho,'POST',{warehouseId:'vig',photos:[photo]});
+  assert.equal(short.status,409);assert.equal(short.data.code,'STOCK_SHORT');
+  assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.id,waiting.id)))[0]!.status,'sent');
+  await postMoves(s.db,'mgr',[{sku:'LY1',warehouseId:'vig',qty:20,kind:'adjust',refType:'adjustment',refId:'replenished'}]);
+  assert.equal((await s.call(`/packing/${waiting.id}/confirm`,s.kho,'POST',{warehouseId:'vig',photos:[photo]})).status,200);
+  assert.equal(await bal(s,'vig'),0);
+  assert.equal((await s.call(`/deliveries/${second.data.id}/status`,s.emp,'PUT',{status:'in_transit'})).status,200);
+  assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'cancelled'})).status,200);
+  assert.equal(await bal(s,'vig'),70,'huỷ hoàn đúng hai phần đã xuất');
+});
+
+test('kế hoạch báo giá: sai tổng rollback cả đơn; HĐKT lưu phiếu nháp và không trừ kho khi duyệt', async()=>{
+  const s=await setup(),q=await quote(s,'BG_PLAN_CONTRACT',70);
+  const bad=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:50,type:'stock'}]});
+  assert.equal(bad.status,400);assert.equal(bad.data.code,'STOCK_PLAN_INVALID');
+  assert.equal((await s.db.select().from(packingSlips)).length,0);
+  const contract=await s.call('/contracts',s.emp,'POST',{quoteId:q,contractNo:'TEST-PLAN',legalEntity:'BN',warehouseId:'vig',stockPlan:[{sku:'LY1',qty:50,type:'stock'},{sku:'LY1',qty:20,type:'incoming',note:'Phiếu xin lấy trước'}]});
+  // Contract numbering requires a customer code even for an explicitly supplied number.
+  assert.equal(contract.status,400);assert.match(contract.data.error,/mã khách hàng|MST/);
+  const {quotations}=await import('../../src/modules/quotes/schema.ts');
+  const [qr]=await s.db.select().from(quotations).where(eq(quotations.id,q));const data=JSON.parse(qr!.data);data.customerTaxCode='1800000000';
+  await s.db.update(quotations).set({data:JSON.stringify(data)}).where(eq(quotations.id,q));
+  const k=await s.call('/contracts',s.emp,'POST',{quoteId:q,contractNo:'TEST-PLAN',legalEntity:'BN',warehouseId:'vig',stockPlan:[{sku:'LY1',qty:50,type:'stock'},{sku:'LY1',qty:20,type:'incoming',note:'Phiếu xin lấy trước'}]});
+  assert.equal(k.status,201,JSON.stringify(k.data));
+  assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,k.data.orderId))).length,2);
+  const approved=await s.call(`/orders/${k.data.orderId}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  assert.equal(approved.status,200,JSON.stringify(approved.data));assert.equal(await bal(s,'vig'),50);
 });

@@ -1,6 +1,6 @@
 import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes, orderRecipient } from './order-notes.js';
 /** Open the business form first. Sapo is contacted only after submitting with explicit opt-in. */
-export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox }) {
+export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, createSourcing }) {
   const dialog = $('#order-create-dialog'), form = $('#order-create-form'), submit = $('#order-create-submit');
   const status = $('#order-create-status'), error = $('#order-create-error');
   let current = null;
@@ -28,6 +28,8 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox }) {
       form.elements.deliveryAddress.value = orderDeliveryAddress(q.data);
       form.elements.note.value = orderNotesFromQuote(q.data);
       me.source = q.data;
+      if (createSourcing) me.sourcing = await createSourcing({host:$('#order-create-sourcing'),quoteId:ref.quoteId,isCurrent:()=>current===me});
+      if(current!==me)return result;
       await previewOrderNo(me);
       me.ready = true; submit.disabled = false; status.textContent = '';
     } catch (e) { if (current === me) { error.textContent = e.message; status.textContent = ''; } }
@@ -54,9 +56,11 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox }) {
   form.addEventListener('submit', async e => {
     e.preventDefault(); const me = current; if (!me?.ready || me.busy || !form.reportValidity()) return;
     const orderNo = form.elements.orderNo.value.trim(), customerName = form.elements.customerName.value.trim();
+    let sourcing;try{sourcing=me.sourcing?.read()||{};}catch(ex){error.textContent=ex.message;return;}
     if (!await confirmBox(`Xác nhận sinh đơn hàng?\n\nSố đơn: ${orderNo}\nKhách hàng: ${customerName}`, { title: 'Xác nhận sinh đơn hàng', ok: 'Xác nhận sinh đơn' })) return;
     me.busy = true; submit.disabled = true; error.textContent = '';
     const fields = { orderNo, receiverName: form.elements.receiverName.value, receiverPhone: form.elements.receiverPhone.value, orderDate: form.elements.orderDate.value, deliveryDate: form.elements.deliveryDate.value, deliveryAddress: form.elements.deliveryAddress.value, note: form.elements.note.value };
+    Object.assign(fields,sourcing,{note:[fields.note,sourcing.note].filter(Boolean).join('\n\n')});
     try {
       const push = form.elements.pushSapo.value === 'yes'; submit.textContent = push ? 'Tiếp tục chọn kho Sapo…' : 'Đang sinh đơn hàng…';
       const r = push ? await chooseSapo({ quoteId: me.ref.quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: (loc, enabled) => me.run(fields, loc, enabled) })

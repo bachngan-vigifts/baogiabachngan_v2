@@ -1,3 +1,4 @@
+import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import { suppliers } from '../../src/modules/suppliers/schema.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -193,6 +194,7 @@ test('đơn đã giao xong → phiếu đóng gói còn treo tự hoàn tất (�
 async function combinedFixture() {
   const s = await setup();
   await s.db.insert(warehouses).values({ id: 'combined-warehouse', name: 'Kho thử đóng gói', kind: 'stock', active: true });
+  await postMoves(s.db,'mgr',[{sku:'COMBINED',warehouseId:'combined-warehouse',qty:10,kind:'opening',refType:'opening',refId:'packing-fixture'}]);
   const q = await s.call('/quotes', s.emp, 'POST', { type: 'HRC', quoteNo: 'HRC_COMBINED', customer: 'Khách gộp', contact: 'Chị Lan', phone: '0901234567', customerAddress: '12 Lê Lợi', vat: 8, rows: [{ sku: 'COMBINED', name: 'Ly', unit: 'cái', qty: 10, price: 1000 }] });
   assert.equal(q.status, 201, JSON.stringify(q.data));
   await s.call('/quotes/' + q.data.id + '/approve', s.mgr, 'POST', { revision: 1 });

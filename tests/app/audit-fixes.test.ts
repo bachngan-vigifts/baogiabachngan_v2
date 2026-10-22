@@ -26,6 +26,7 @@ async function setup() {
   await db.insert(warehouses).values([{ id: 'k1', name: 'Kho 1', kind: 'stock' }]);
   await db.insert(products).values([{ sku: 'LY1', name: 'Ly sứ', unit: 'cái', updatedAt: now }]);
   await db.insert(productStock).values([{ sku: 'LY1', warehouseId: 'k1', quantity: 100, updatedAt: now }]);
+  await postMoves(db, 'mgr', [{ sku:'LY1',warehouseId:'k1',qty:100,kind:'opening',refType:'opening',refId:'fixture-opening' }], now);
   return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kt: await login('ketoan@x.vn') };
 }
 async function orderFor(s: Awaited<ReturnType<typeof setup>>, no: string, qty = 10) {
@@ -62,7 +63,7 @@ test('huỷ đơn: phiếu đóng gói / chuyến giao còn mở huỷ theo, hà
   assert.deepEqual((await s.db.select({ status: deliveries.status }).from(deliveries).where(eq(deliveries.id, 'dl1'))).map(x => x.status), ['cancelled']);
   const reversed = await s.db.select({ qty: stockMoves.qty }).from(stockMoves).where(and(eq(stockMoves.refId, 'ps2'), eq(stockMoves.kind, 'reverse')));
   assert.deepEqual(reversed.map(x => x.qty), [4], 'hàng đã đóng về lại kho');
-  assert.deepEqual((await s.db.select({ qty: stockBalances.qty }).from(stockBalances).where(eq(stockBalances.sku, 'LY1'))).map(x => x.qty), [0]);
+  assert.deepEqual((await s.db.select({ qty: stockBalances.qty }).from(stockBalances).where(eq(stockBalances.sku, 'LY1'))).map(x => x.qty), [100], 'huỷ xuất trả về đúng tồn đầu kỳ');
   assert.equal((await s.call('/deliveries/dl1/status', s.mgr, 'PUT', { status: 'in_transit' })).status, 409);
   assert.equal((await s.call('/payments', s.mgr, 'POST', { orderId, amount: 1000 })).status, 409);
 });

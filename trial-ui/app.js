@@ -20,6 +20,7 @@ import { bindStockCheckFilter } from './stock-check-filter.js';
 import { downloadExcel } from './sheet-export.js';
 import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
+import { initQuoteSourcing } from './quote-sourcing.js';
 import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
 import { initFlowMap } from './flow-map.js';
@@ -4102,14 +4103,16 @@ document.addEventListener('click', async e => {
  * → chọn kho Sapo → máy chủ lập HĐKT + đơn nháp Sapo cùng lúc (POST /contracts { quoteId }).
  */
 let contractTarget = null;
-function openContractForm(t) {
+async function openContractForm(t) {
   contractTarget = t;
   const f = $('#contract-form'); f.reset(); $('#contract-error').textContent = '';
   $('#contract-order-no').textContent = `báo giá ${t.quoteNo}${t.customer ? ' · ' + t.customer : ''}`;
   f.signedDate.value = todayIso(); f.deliveryAddress.value = t.address || ''; f.legalEntity.value = t.quoteType === 'VIGIFTS' ? 'VG' : 'BN';
   f.contractNo.value = ''; f.contractNo.dataset.auto = '';
   $('#contract-dialog').showModal();
+  const submit=f.querySelector('.modal-foot .btn.primary');submit.disabled=true;t.sourcing=null;
   previewContractNo();
+  try{const sourcing=await initQuoteSourcing({api,confirmBox,host:$('#contract-sourcing'),quoteId:t.quoteId,isCurrent:()=>contractTarget===t});if(contractTarget!==t)return;t.sourcing=sourcing;submit.disabled=false;}catch(ex){if(contractTarget===t)$('#contract-error').textContent=ex.message;}
 }
 /** Điền số HĐKT tự sinh (theo pháp nhân); người dùng đã sửa số thì giữ số đã sửa. */
 async function previewContractNo() {
@@ -4126,21 +4129,23 @@ async function previewContractNo() {
 $('#contract-form').legalEntity.addEventListener('change', previewContractNo);
 $('#contract-form').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, err = $('#contract-error'); err.textContent = '';
-  const target = contractTarget; if (!target) return;
+  const target = contractTarget; if (!target?.sourcing || target.busy) return;
   const body = { quoteId: target.quoteId, debtWarningAccepted: target.debtWarningAccepted === true, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
     signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
   // Giữ số tự sinh → máy chủ cấp số kế tiếp lúc lập (tránh trùng nếu người khác vừa lấy số); đã sửa → gửi số đã sửa.
   const no = f.contractNo.value.trim();
   if (no && no !== f.contractNo.dataset.auto) body.contractNo = no;
   try {
+    Object.assign(body,target.sourcing.read());target.busy=true;f.querySelector('.modal-foot .btn.primary').disabled=true;
     // Lập HĐKT: chọn có tạo đơn trên Sapo (chọn kho; Sapo lỗi → không lập HĐKT) hay chỉ lập trên web.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
       run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }) });
     if (!r) return;
     $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); loadHolds(true); // HĐKT giữ hàng thay báo giá
     target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
-  } catch (ex) { err.textContent = ex.message; }
+  } catch (ex) { err.textContent = ex.message; }finally{target.busy=false;f.querySelector('.modal-foot .btn.primary').disabled=false;}
 });
+$('#contract-dialog').addEventListener('close',()=>{contractTarget=null;});
 $('#order-new-delivery').addEventListener('click', () => {
   const f = $('#delivery-form'), d = sales.detail, o = d.order; f.reset(); $('#delivery-error').textContent = '';
   $('#delivery-order-no').textContent = o.orderNo; f.plannedDate.value = o.expectedDeliveryDate && o.expectedDeliveryDate >= todayIso() ? o.expectedDeliveryDate : todayIso();
@@ -4250,7 +4255,7 @@ $('#download-menu').addEventListener('click', () => closeDownloadMenu());
  * HĐKT dùng form riêng. Báo giá đã có đơn → mở đơn đó. Trả id đơn, null khi huỷ.
  */
 var orderCreateUi = null;
-const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, confirmBox, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
+const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, confirmBox, createSourcing:opts=>initQuoteSourcing({api,confirmBox,...opts}), chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
 async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false) {
   let existed = null;
   const post = async (fields, loc, push) => {
