@@ -1,3 +1,4 @@
+import { nextDocumentNumber } from '../../../core/document-number.ts';
 /** Quy tắc thuần của trang khách hàng (không DB/HTTP). */
 import { AppError } from '../../../core/errors.ts';
 import type { CustomerDiscounts } from '../../quotes/domain/quote-math.ts';
@@ -39,11 +40,10 @@ export function publicQuote(data: Record<string, any>) {
   return out;
 }
 
-/** Số báo giá kế tiếp `<prefix><yyyymmdd>_<nnn>` trong các số đã dùng. */
+/** Portal and staff use the same quote numbering format and legacy compatibility. */
 export function nextQuoteNo(prefix: string, ymd: string, used: readonly string[]) {
-  const head = `${prefix}${ymd}_`;
-  const max = Math.max(0, ...used.filter(n => n.startsWith(head)).map(n => parseInt(n.slice(head.length), 10) || 0));
-  return head + String(max + 1).padStart(3, '0');
+  const date = `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
+  return nextDocumentNumber(prefix, date, used, `${prefix}${ymd}_`);
 }
 
 /**

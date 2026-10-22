@@ -61,7 +61,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
     { orderLineId: dia.id, qty: 50, source: 'warehouse' }, { orderLineId: hop.id, qty: 10, source: 'warehouse' },
     { orderLineId: dia.id, qty: 20, source: 'supplier', sourceNote: 'Minh Long I' }, { orderLineId: dia.id, qty: 30, source: 'agent', sourceNote: 'Đại lý Quận 5' }] });
   assert.equal(made.status, 201, JSON.stringify(made.data)); assert.equal(made.data.slips.length, 3);
-  assert.match(made.data.slips[0].slipNo, /^DG_\d{8}_001$/);
+  assert.match(made.data.slips[0].slipNo, /^DG_001_\d{8}$/);
   p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.deepEqual(p.lines.map((l: any) => l.left), [0, 0], 'đã đưa hết vào phiếu');
   const wh = p.slips.find((s: any) => s.source === 'warehouse');

@@ -98,7 +98,7 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.equal((await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'NOPRICE', qty: 1 }] })).status, 400, 'chưa có giá');
   assert.equal((await call('/portal/quotes', k.cookie, 'POST', { items: [] })).status, 400);
   const q = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'ML-01', qty: 2 }, { sku: 'LL-01', qty: 3 }], note: 'Giao trước Tết' });
-  assert.equal(q.status, 201, JSON.stringify(q.data)); assert.match(q.data.quoteNo, /^B2B_BG\d{8}_001$/); assert.equal(q.data.orderId, null);
+  assert.equal(q.status, 201, JSON.stringify(q.data)); assert.match(q.data.quoteNo, /^B2B_BG_001_\d{8}$/); assert.equal(q.data.orderId, null);
   let d = (await call('/portal/quotes/' + q.data.id, k.cookie)).data;
   assert.equal(d.approvalStatus, 'pending');
   assert.deepEqual(d.data.rows.map((r: any) => [r.sku, r.price, r.discount, r.taxRate]), [['ML-01', 1_000_000, 10, 8], ['LL-01', 200_000, 0, 10]]);
@@ -153,7 +153,7 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
 
   // Đặt hàng thẳng từ danh mục: báo giá chờ + đơn chờ xác nhận; nhân viên xác nhận đơn = duyệt luôn báo giá.
   const direct = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'LL-01', qty: 1 }], order: true, confirmed: true });
-  assert.equal(direct.status, 201); assert.ok(direct.data.orderId); assert.match(direct.data.quoteNo, /_002$/);
+  assert.equal(direct.status, 201); assert.ok(direct.data.orderId); assert.match(direct.data.quoteNo, /^B2B_BG_002_\d{8}$/);
   orders = (await call('/portal/orders', k.cookie)).data.orders;
   assert.equal(orders.find((x: any) => x.id === direct.data.orderId).status, 'draft');
   assert.equal((await call('/orders/' + direct.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
@@ -172,4 +172,17 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   // Nhân viên không phụ trách báo giá thường thì không duyệt được (chỉ Manager).
   const own = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_Y', customer: 'A', vat: 8, rows: [{ name: 'Ly', qty: 1, price: 1 }] });
   assert.equal((await call('/quotes/' + own.data.id + '/approve', emp, 'POST', { revision: 1 })).status, 403);
+});
+
+test('portal and staff share the mixed-format B2B counter, including simultaneous requests', async () => {
+  const s = await setup(), {call,emp,mgr} = s;
+  const k = await customerLogin(s,mgr,{customerId:'1001',name:'Lan',email:'lan@hl.vn',ownerId:'emp'});
+  const date = new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}), stamp=date.split('-').reverse().join('');
+  const doc = (quoteNo:string) => ({type:'B2B',quoteNo,date,customer:'Khách',vat:8,rows:[{name:'Ly',qty:1,price:100000}]});
+  assert.equal((await call('/quotes',emp,'POST',doc('B2B_BG'+date.replaceAll('-','')+'_007'))).status,201);
+  const nine='B2B_BG_009_'+stamp;
+  assert.equal((await call('/quotes',emp,'POST',doc(nine))).status,201);
+  const results=await Promise.all([call('/portal/quotes',k.cookie,'POST',{items:[{sku:'LL-01',qty:1}]}),call('/quotes',emp,'POST',doc(nine))]);
+  for(const r of results)assert.equal(r.status,201,JSON.stringify(r.data));
+  assert.deepEqual([results[0]!.data.quoteNo,results[1]!.data.data.quoteNo].sort(),['B2B_BG_010_'+stamp,'B2B_BG_011_'+stamp]);
 });

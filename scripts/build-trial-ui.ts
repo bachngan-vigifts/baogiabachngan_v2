@@ -8,6 +8,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
+export const DOCUMENT_NUMBER_OUT = join(root, 'trial-ui', 'document-number.js');
+export const bundleDocumentNumber = () => bundle('src/core/document-number.ts');
 export const QUOTE_MATH_OUT = join(root, 'trial-ui', 'quote-math.js');
 /** Bộ lọc "Tìm nhanh sản phẩm" chạy trên trình duyệt – cùng quy tắc với máy chủ. */
 export const ORDER_NOTES_OUT = join(root, 'trial-ui', 'order-notes.js');
@@ -27,7 +29,7 @@ export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-mat
 export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  for (const [out, code] of [[QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()]] as const) {
+  for (const [out, code] of [[DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()]] as const) {
     if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
     console.log('Đã ghi', out);
   }

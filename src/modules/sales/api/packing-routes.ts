@@ -1,3 +1,4 @@
+import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { orderRecipient } from '../domain/order-notes.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { assertPosFlowFulfillable } from './pos-order-flow-guards.ts';
@@ -224,7 +225,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       } else if (!await hasDeliverySchedule(tx, order.id)) throw new AppError(409, NO_SCHEDULE, 'NO_DELIVERY_SCHEDULE');
       const ship = await readDelivery(c, body.delivery, order, tx);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'packing-number:' + today}))`);
-      const used = (await tx.select({ n: packingSlips.slipNo }).from(packingSlips).where(sql`${packingSlips.slipNo} LIKE ${'DG_' + today.replaceAll('-', '') + '_%'}`)).map(r => r.n);
+      const used = (await tx.select({ n: packingSlips.slipNo }).from(packingSlips).where(or(...documentNumberPatterns('DG', today).map(pattern => sql`${packingSlips.slipNo} LIKE ${pattern}`)))).map(r => r.n);
       for (const group of groups.values()) {
         const id = crypto.randomUUID(), slipNo = nextDocNo('DG', today, [...used, ...created.map(x => x.slipNo)]);
         const rows = group.map(i => { const s = packingSuggestion(i.qty, i.line.unit, cartons.find(x => x.sku === i.line.sku));

@@ -1,3 +1,4 @@
+import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { approvalDebt, assertApprovalDebt, approvalCosts } from './approval-preflight.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posOrderStoreScope } from './pos-access.ts';
@@ -247,7 +248,8 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   const customerId = cust ? cust.id : null;
   assertApprovalDebt(await approvalDebt(db, customerId, String(data.customerTaxCode || '')), o.debtWarningAccepted);
   await db.transaction(async tx => {
-    const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${'DH_' + orderDate.replaceAll('-', '') + '_%'}`)).map(r => r.n);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'order-number:' + orderDate}))`);
+    const used = (await tx.select({ n: salesOrders.orderNo }).from(salesOrders).where(or(...documentNumberPatterns('DH', orderDate).map(pattern => sql`${salesOrders.orderNo} LIKE ${pattern}`)))).map(r => r.n);
     const orderNo = o.orderNo || nextDocNo('DH', orderDate, used);
     const [duplicateNo] = await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.orderNo, orderNo)).limit(1);
     if (duplicateNo) throw new AppError(409, `Số đơn hàng ${orderNo} đã tồn tại. Vui lòng chọn số khác.`, 'ORDER_NO_EXISTS');
@@ -443,8 +445,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (!isDate(orderDate)) throw new AppError(400, 'Ngày đặt không hợp lệ.');
     const [quote] = await c.env.db.select({ id: quotations.id }).from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
-    const prefix = `DH_${orderDate.replaceAll('-', '')}_`;
-    const used = (await c.env.db.select({ n: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} LIKE ${prefix + '%'}`)).map(r => r.n);
+    const used = (await c.env.db.select({ n: salesOrders.orderNo }).from(salesOrders).where(or(...documentNumberPatterns('DH', orderDate).map(pattern => sql`${salesOrders.orderNo} LIKE ${pattern}`)))).map(r => r.n);
     return json({ orderNo: nextDocNo('DH', orderDate, used) });
   }, 'business');
 

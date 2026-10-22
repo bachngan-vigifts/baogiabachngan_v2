@@ -149,7 +149,7 @@ test('sinh đơn hàng: chọn kho → đơn web + đơn nháp Sapo cùng lúc; 
 
   // Đơn Sapo cùng số đơn mới sinh đã có (vd. Sapo đã ghi trước khi web lỗi) → liên kết, không tạo thêm; tổng lệch thì cảnh báo.
   const q2 = await makeQuote('B2B_BG20261009_002');
-  const nextNo = detail.orderNo.replace(/_(\d+)$/, (_: string, n: string) => '_' + String(Number(n) + 1).padStart(n.length, '0'));
+  const nextNo = detail.orderNo.replace(/^DH_(\d+)_/, (_: string, n: string) => 'DH_' + String(Number(n) + 1).padStart(n.length, '0') + '_');
   sapo.db.orders.push({ id: 7777, code: nextNo, reference_number: nextNo, total: 1 });
   const again = await call('/orders', emp, 'POST', { quoteId: q2, sapoLocationId: 7 });
   assert.deepEqual([again.status, again.data.sapo.status, again.data.sapo.id], [201, 'existing', '7777']);
@@ -235,7 +235,7 @@ test('sinh đơn: lọc ghi chú đúng ba phần, giữ điều khoản dài, s
   assert.equal((await s.call('/orders/create-config')).status, 401);
   const quoteId = await s.makeQuote('B2B_BG20261009_101');
   const preview = await s.call(`/orders/next-no?quoteId=${quoteId}&orderDate=2026-10-10`, s.emp);
-  assert.equal(preview.status, 200); assert.match(preview.data.orderNo, /^DH_20261010_\d{3}$/);
+  assert.equal(preview.status, 200); assert.match(preview.data.orderNo, /^DH_\d{3}_10102026$/);
   const longNote = '- Thanh toán: ' + 'Thanh toán sau khi giao hàng. '.repeat(100).trim();
   const [quote] = await s.db.select().from(quotations).where(eq(quotations.id, quoteId));
   const data = JSON.parse(quote!.data); data.notes = longNote; data.deliveryDate = '2026-10-30';
@@ -347,7 +347,7 @@ test('hai yêu cầu đẩy cùng chứng từ chỉ tạo một đơn Sapo', as
 
 test('đẩy Sapo: số đơn trùng đơn nháp Sapo của KHÁCH KHÁC (sót từ lần tạo lỗi) → không liên kết nhầm; cùng khách thì liên kết', async () => {
   const { sapo, call, emp, makeQuote, orderCount } = await setup();
-  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).replaceAll('-', ''), code = `DH_${today}_001`;
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).split('-').reverse().join(''), code = `DH_001_${today}`;
   sapo.db.orders.push({ id: 7777, code, reference_number: code, customer_id: 9999, total: 0 });
   const r = await call('/orders', emp, 'POST', { quoteId: await makeQuote('B2B_TAKEN_1'), sapoLocationId: 8 });
   assert.equal(r.status, 409, JSON.stringify(r.data)); assert.equal(r.data.code, 'SAPO_CODE_TAKEN');

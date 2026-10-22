@@ -1,4 +1,5 @@
 import { initReceivingCalendar } from './receiving-calendar.js';
+import { documentSequence, nextDocumentNumber } from './document-number.js';
 import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
@@ -897,24 +898,30 @@ $('#edit-terms').addEventListener('click', async () => {
 const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
 
 /**
- * Số báo giá tự sinh: HRC_BG20261006_001, B2B_BG20261006_002, VG_BG20261006_001 (đếm theo loại + ngày trên TOÀN CÔNG TY).
+ * Số báo giá tự sinh: HRC_BG_001_06102026, B2B_BG_002_06102026, VG_BG_001_06102026 (đếm theo loại + ngày trên TOÀN CÔNG TY).
  * Số kế tiếp lấy từ máy chủ (GET /quotes/next-no, `refreshQuoteNo`) vì nhân viên chỉ thấy báo giá của mình; lúc lưu máy chủ
  * vẫn kiểm lại – số tự sinh bị người khác lấy trước thì tự đổi sang số kế tiếp còn trống.
  */
 const QUOTE_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG' };
-const quotePrefix = (type, date) => `${QUOTE_PREFIX[type] || 'B2B'}_BG${String(date || todayIso()).replaceAll('-', '')}_`;
-const serverQuoteNo = new Map(); // phần đầu → số thứ tự kế tiếp theo máy chủ
+const quoteKind = type => `${QUOTE_PREFIX[type] || 'B2B'}_BG`;
+const quoteSeriesKey = (type, date) => `${quoteKind(type)}|${date}`;
+const quoteLegacyHead = (type, date) => `${quoteKind(type)}${date.replaceAll('-', '')}_`;
+const serverQuoteNo = new Map();
 function nextQuoteNo(type = 'B2B', date = todayIso()) {
-  const prefix = quotePrefix(type, date);
-  const used = (state.quotes || []).map(q => q.quoteNo).filter(n => n?.startsWith(prefix)).map(n => parseInt(n.slice(prefix.length), 10) || 0);
-  return prefix + String(Math.max(Math.max(0, ...used) + 1, serverQuoteNo.get(prefix) || 0)).padStart(3, '0');
+  date = date || todayIso();
+  const prefix = quoteKind(type), legacy = quoteLegacyHead(type, date);
+  const local = nextDocumentNumber(prefix, date, (state.quotes || []).map(q => q.quoteNo || ''), legacy);
+  const remote = serverQuoteNo.get(quoteSeriesKey(type, date));
+  return (documentSequence(remote || '', prefix, date, legacy) || 0) > (documentSequence(local, prefix, date, legacy) || 0) ? remote : local;
 }
 async function refreshQuoteNo(type, date) {
-  const prefix = quotePrefix(type, date);
-  try { const r = await api(`/quotes/next-no?type=${encodeURIComponent(type)}&date=${encodeURIComponent(date || todayIso())}`); serverQuoteNo.set(prefix, parseInt(r.quoteNo.slice(prefix.length), 10) || 0); } catch { /* mất mạng: dùng số tạm, máy chủ sửa lúc lưu */ }
+  date = date || todayIso();
+  try { const r = await api(`/quotes/next-no?type=${encodeURIComponent(type)}&date=${encodeURIComponent(date)}`); serverQuoteNo.set(quoteSeriesKey(type, date), r.quoteNo); } catch { /* số tạm; máy chủ kiểm lại lúc lưu */ }
 }
-/** Số còn đúng mẫu tự sinh của loại + ngày này (chưa bị người dùng gõ số khác). */
-const isAutoQuoteNo = (no, type, date) => no.startsWith(quotePrefix(type, date)) && /^\d{3,}$/.test(no.slice(quotePrefix(type, date).length));
+const isAutoQuoteNo = (no, type, date) => {
+  date = date || todayIso();
+  return documentSequence(no, quoteKind(type), date, quoteLegacyHead(type, date)) != null;
+};
 /** Báo giá mới chưa lưu: cập nhật số tự sinh theo máy chủ (nếu người dùng chưa tự gõ số). */
 async function syncEditorQuoteNo() {
   if (editor.id) return;

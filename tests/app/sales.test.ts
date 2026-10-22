@@ -1,3 +1,6 @@
+import { salesOrders, deliveries, packingSlips } from '../../src/modules/sales/schema.ts';
+import { vietnamDate } from '../../src/modules/sales/domain/sales.ts';
+import { documentDate } from '../../src/core/document-number.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -24,8 +27,8 @@ async function setup() {
 }
 
 test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòng đơn từ báo giá, công nợ', () => {
-  assert.equal(nextDocNo('DH', '2026-10-06', []), 'DH_20261006_001');
-  assert.equal(nextDocNo('DH', '2026-10-06', ['DH_20261006_001', 'DH_20261006_007', 'DH_20261005_009']), 'DH_20261006_008');
+  assert.equal(nextDocNo('DH', '2026-10-06', []), 'DH_001_06102026');
+  assert.equal(nextDocNo('DH', '2026-10-06', ['DH_20261006_001', 'DH_20261006_007', 'DH_20261005_009']), 'DH_008_06102026');
   assert.equal(legalCode('Công ty Bách Ngân'), 'BN'); assert.equal(legalCode('vg'), 'VG'); assert.equal(legalCode('khác'), null);
   assert.equal(contractNumber('BN', 'kh-01', 3, new Date('2026-10-06T03:00:00Z')), '10-03/06102026/HĐKT/BN-KH01');
   // B2B: giá sau CK + phí in; HRC bỏ phí in; dòng trống/số lượng 0 bị bỏ.
@@ -64,7 +67,7 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   let d = (await call('/orders/' + o.data.id, emp)).data;
   // Bản in đơn đặt hàng: người phụ trách / người soạn kèm theo đơn.
   assert.ok(d.order.ownerName && d.order.createdByName !== undefined && d.order.createdByCustomer === false && typeof d.order.customerCode === 'string');
-  assert.match(d.order.orderNo, /^DH_\d{8}_001$/);
+  assert.match(d.order.orderNo, /^DH_001_\d{8}$/);
   assert.equal(d.order.customerId, '1001'); assert.equal(d.order.quoteNo, 'B2B_BG20261006_001');
   assert.equal(d.order.subtotal, 23_000_000); assert.equal(d.order.tax, 1_840_000); assert.equal(d.order.total, 24_840_000);
   assert.equal(d.lines.length, 2); assert.equal(d.lines[0].unitPrice, 180000);
@@ -87,7 +90,7 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.equal(g1.status, 201, JSON.stringify(g1.data));
   assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: '2026-10-11', lines: [{ orderLineId: ly.id, qty: 41 }] })).status, 400, 'chuyến đang chờ cũng tính');
   const cal = (await call('/deliveries?from=2026-10-01&to=2026-10-31', emp)).data.deliveries;
-  assert.equal(cal.length, 1); assert.match(cal[0].deliveryNo, /^GH_20261010_001$/); assert.equal(cal[0].receiverName, 'Chị Lan'); assert.equal(cal[0].address, '1 Lê Lợi');
+  assert.equal(cal.length, 1); assert.match(cal[0].deliveryNo, /^GH_001_10102026$/); assert.equal(cal[0].receiverName, 'Chị Lan'); assert.equal(cal[0].address, '1 Lê Lợi');
   assert.equal((await call('/deliveries/' + g1.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-10' })).status, 200);
   assert.equal((await call('/deliveries/' + g1.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 409);
   d = (await call('/orders/' + o.data.id, emp)).data;
@@ -326,4 +329,35 @@ test('đơn hàng và HĐKT giữ đơn giá thập phân từ báo giá, tổng
     assert.equal(detail.schedules.reduce((s: number, p: any) => s + p.amount, 0), detail.order.total);
     if (kind === 'contract') assert.equal(detail.contract.value, detail.order.total);
   }
+});
+
+
+test('document allocation queries both formats and keeps parallel DH/GH/DG creation unique', async () => {
+  const {db,call,emp,mgr}=await setup(), date='2026-10-22', now='2026-10-22T00:00:00Z';
+  await db.insert(salesOrders).values(['DH_20261022_007','DH_009_22102026'].map((orderNo,i)=>({id:'seed'+i,orderNo,quoteType:'HRC' as const,customerName:'Seed',ownerId:'emp',createdBy:'emp',orderDate:date,createdAt:now,updatedAt:now})));
+  const ids:string[]=[];
+  for(const n of [1,2]) {
+    const q=await call('/quotes',emp,'POST',{type:'HRC',quoteNo:'MANUAL-'+n,customer:'Khách',vat:8,rows:[{name:'Ly',unit:'cái',qty:20,price:100000}]});
+    assert.equal(q.status,201,JSON.stringify(q.data));
+    assert.equal((await call('/quotes/'+q.data.id+'/approve',mgr,'POST',{revision:1})).status,200); ids.push(q.data.id);
+  }
+  assert.equal((await call('/orders/next-no?quoteId='+ids[0]+'&orderDate='+date,emp)).data.orderNo,'DH_010_22102026');
+  const created=await Promise.all(ids.map(quoteId=>call('/orders',emp,'POST',{quoteId,orderDate:date})));
+  for(const r of created)assert.equal(r.status,201,JSON.stringify(r.data));
+  const views=[];
+  for(const r of created){
+    assert.equal((await call('/orders/'+r.data.id+'/status',mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+    views.push((await call('/orders/'+r.data.id,emp)).data);
+  }
+  assert.deepEqual(views.map(v=>v.order.orderNo).sort(),['DH_010_22102026','DH_011_22102026']);
+  await db.insert(deliveries).values(['GH_20261022_007','GH_009_22102026'].map((deliveryNo,i)=>({id:'dseed'+i,deliveryNo,orderId:'seed0',plannedDate:date,createdBy:'emp',createdAt:now,updatedAt:now})));
+  const ds=await Promise.all(views.map(v=>call('/deliveries',emp,'POST',{orderId:v.order.id,plannedDate:date,lines:[{orderLineId:v.lines[0].id,qty:5}]})));
+  for(const r of ds)assert.equal(r.status,201,JSON.stringify(r.data));
+  const calendar=(await call('/deliveries?from='+date+'&to='+date,emp)).data.deliveries;
+  assert.deepEqual(calendar.filter((r:any)=>!r.id.startsWith('dseed')).map((r:any)=>r.deliveryNo).sort(),['GH_010_22102026','GH_011_22102026']);
+  const today=vietnamDate().iso, stamp=documentDate(today);
+  await db.insert(packingSlips).values(['DG_'+today.replaceAll('-','')+'_007','DG_009_'+stamp].map((slipNo,i)=>({id:'pseed'+i,slipNo,orderId:'seed0',createdBy:'emp',createdAt:now,updatedAt:now})));
+  const ps=await Promise.all(views.map(v=>call('/orders/'+v.order.id+'/packing',emp,'POST',{allocations:[{orderLineId:v.lines[0].id,qty:5,source:'warehouse'}]})));
+  for(const r of ps)assert.equal(r.status,201,JSON.stringify(r.data));
+  assert.deepEqual(ps.map(r=>r.data.slips[0].slipNo).sort(),['DG_010_'+stamp,'DG_011_'+stamp]);
 });
