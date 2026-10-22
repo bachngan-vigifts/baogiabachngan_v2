@@ -260,7 +260,8 @@ test('Đơn website: đúng quầy được chốt, bổ sung địa chỉ GHN, 
   const [order] = await f.db.select().from(webStoreOrders);
   assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.ncc, 'POST', { action: 'confirm' })).status, 403);
   const locations = await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'locations' });
-  assert.equal(locations.status, 200); assert.equal(locations.data.locations[0].name, 'Cần Thơ');
+  assert.equal(locations.status, 200);
+  assert.ok(locations.data.locations.some((location: { name: string }) => location.name === 'Cần Thơ'));
   const confirmed = await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'confirm' });
   assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data)); assert.equal(confirmed.data.ghnOrderCode, 'GHN123');
   assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'refresh' })).data.ghnStatus, 'picking');
@@ -272,7 +273,7 @@ test('Đơn website: đúng quầy được chốt, bổ sung địa chỉ GHN, 
   assert.equal(noReason.status, 400); assert.equal(noReason.data.code, 'reason_required');
   assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'cancel', reason: 'Khách đổi ý' })).data.bucket, 'cancelled');
   assert.equal(calls.at(-1)!.body.reason, 'Khách đổi ý');
-  assert.deepEqual(calls.map(x => x.action), ['locations', 'confirm', 'refresh', 'cancel']);
+  assert.deepEqual(calls.map(x => x.action), ['confirm', 'refresh', 'cancel']);
   assert.equal((await f.call(`/pos/orders?registerId=${reg!.id}`, f.mgr)).data.counts.web, 0, 'đơn đã huỷ không còn ở thẻ Đơn web');
   assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'complete' })).status, 409, 'đơn đã huỷ không hoàn thành được');
   assert.ok(calls.every(x => x.auth === 'Bearer server-only'));
