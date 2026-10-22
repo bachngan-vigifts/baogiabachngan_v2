@@ -16,7 +16,7 @@ import { employees, positions } from '../../staff/schema.ts';
 import { posSharedShiftStoreScope } from './pos-access.ts';
 import { products, productPrices, productBarcodes, warehouses, pricePolicies } from '../../catalog/schema.ts';
 import { stockBalances, stockMoves } from '../../inventory/schema.ts';
-import { postMoves } from '../../inventory/api/ledger.ts';
+import { postMoves, lockLedger, assertWarehousesOpened } from '../../inventory/api/ledger.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { posRegisters, posShifts, posShiftTemplates, posStockCounts, posPaymentRequests } from '../pos-schema.ts';
 import {
@@ -88,17 +88,7 @@ export function assertOpen(s: typeof posShifts.$inferSelect, m: PosMember) {
   if (s.closedAt) throw new AppError(409, 'Ca đã kết, hãy mở ca mới.');
 }
 export async function assertOpening(db: PosDb, warehouseId: string) {
-  const [x] = await db
-    .select({ id: stockMoves.id })
-    .from(stockMoves)
-    .where(and(eq(stockMoves.warehouseId, warehouseId), eq(stockMoves.refType, 'opening')))
-    .limit(1);
-  if (!x)
-    throw new AppError(
-      409,
-      'Kho chưa chốt tồn đầu kỳ. Manager cần chốt sổ kho trước khi mở POS.',
-      'POS_OPENING_REQUIRED',
-    );
+  await assertWarehousesOpened(db, [warehouseId]);
 }
 export const emptyCart = (b: Record<string, unknown>) => {
   const note = posOrderNote(b.note), voucher = parsePosVoucher(b.voucher);
@@ -438,6 +428,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
         throw new AppError(409, 'Yêu cầu QR hết hạn hoặc giỏ/giá đã đổi. Tạo QR mới.');
     }
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
+    await lockLedger(tx);
+    await assertWarehousesOpened(tx, [c.register.warehouseId]);
     const skus = c.lines.map((l) => l.sku).sort();
     const balances = await tx
       .select()

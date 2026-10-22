@@ -10,7 +10,7 @@ import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { stockBalances, stockMoves, stockTransferLines, stockTransfers } from '../schema.ts';
 import { TRANSFER_STATUS_LABEL, type TransferStatus } from '../domain/kinds.ts';
-import { postMoves } from './ledger.ts';
+import { postMoves, lockLedger, assertWarehousesOpened } from './ledger.ts';
 import { hiddenWarehouseIds } from './warehouse-access.ts';
 
 /**
@@ -192,10 +192,12 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
       const t = await lock(tx, id, ['approved'], body.revision), now = nowIso();
       const lines = await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id));
+      await lockLedger(tx);
+      await assertWarehousesOpened(tx, [t.fromWarehouseId, t.toWarehouseId]);
       const [opened] = await tx.select({ id: stockMoves.id }).from(stockMoves).where(and(eq(stockMoves.warehouseId, t.fromWarehouseId), eq(stockMoves.refType, 'opening'))).limit(1);
       if (opened) {
         const bal = await tx.select({ sku: stockBalances.sku, qty: stockBalances.qty }).from(stockBalances)
-          .where(and(eq(stockBalances.warehouseId, t.fromWarehouseId), inArray(stockBalances.sku, lines.map(l => l.sku)))).for('update');
+          .where(and(eq(stockBalances.warehouseId, t.fromWarehouseId), inArray(stockBalances.sku, lines.map(l => l.sku)))).orderBy(asc(stockBalances.sku), asc(stockBalances.warehouseId)).for('update');
         const short = lines.filter(l => (bal.find(b => b.sku === l.sku)?.qty ?? 0) < l.qty);
         if (short.length) fail(409, 'Tồn kho đi không đủ: ' + short.slice(0, 5).map(l => `${l.sku} (còn ${num(bal.find(b => b.sku === l.sku)?.qty ?? 0)}, cần ${l.qty})`).join('; '), 'TRANSFER_SHORT');
       }

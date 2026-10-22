@@ -16,7 +16,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
 import { stockMoves, stockBalances } from '../../inventory/schema.ts';
-import { postMoves, saleMovesPosted } from '../../inventory/api/ledger.ts';
+import { postMoves, lockLedger, assertWarehousesOpened, saleMovesPosted } from '../../inventory/api/ledger.ts';
 import { customers } from '../../customers/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { deliveries, packingSlipLines, packingSlipPhotos, packingSlips, salesOrderLines, salesOrders, salesContracts, shippingCarriers } from '../schema.ts';
@@ -294,6 +294,9 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     const now = nowIso();
     await c.env.db.transaction(async tx=>{
       if(saleFlowOf(order.posSnapshot)){await cashLock(tx);await assertPosFlowFulfillable(tx,order.id);}
+      const [freshOrder] = await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
+      if (!freshOrder || ['draft','cancelled','delivered'].includes(freshOrder.status)) throw new AppError(409,'Duyệt đơn trước khi gửi phiếu đóng gói.');
+      if (!await hasDeliverySchedule(tx,order.id)) throw new AppError(409,NO_SCHEDULE,'NO_DELIVERY_SCHEDULE');
       await tx.update(packingSlips).set({ status: 'sent', sentAt: now, sentBy: viewer(c).id, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'draft')));
     });
@@ -312,7 +315,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
   /** Kho xác nhận đã đóng hàng: bắt buộc 1–3 ảnh. Người lập phiếu được báo; việc của kho tự hoàn thành. */
   router.post('/packing/:id/confirm', async c => {
     const m = viewer(c), body = await readJson(c.req, PHOTO_MAX * PHOTO_MAX_CHARS + 8_000), { slip, order } = await loadSlip(c, c.params.id!);
-    if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không xác nhận đóng hàng được.');
+    if (['draft','cancelled'].includes(order.status)) throw new AppError(409, 'Đơn hàng / HĐKT chưa duyệt hoặc đã huỷ, không xác nhận đóng hàng được.');
     if (!canConfirm(m, slip.status)) throw new AppError(slip.status === 'sent' ? 403 : 409, slip.status === 'sent' ? 'Chỉ nhóm Kho hoặc Manager xác nhận đóng hàng.' : 'Phiếu chưa gửi kho hoặc đã xác nhận.');
     const photos = Array.isArray(body.photos) ? body.photos : [];
     if (photos.length < PHOTO_MIN || photos.length > PHOTO_MAX) throw new AppError(400, `Chụp ${PHOTO_MIN}–${PHOTO_MAX} ảnh hàng đã đóng trước khi xác nhận.`);
@@ -324,10 +327,9 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       if (!w) throw new AppError(400, 'Chọn kho xuất hàng.');
       if (order.channel === 'pos' && order.shiftId) { const [r] = await c.env.db.select({warehouseId:posRegisters.warehouseId}).from(posShifts).innerJoin(posRegisters,eq(posRegisters.id,posShifts.registerId)).where(eq(posShifts.id,order.shiftId));if(r && r.warehouseId !== w.id) throw new AppError(400,'Đơn POS cần xuất đúng kho của quầy.'); }
       // Đơn CRM có kho bán: hàng đã trừ khỏi kho bán lúc duyệt – kho xuất phải đúng kho bán, không trừ lần hai.
-      if (order.channel === 'crm' && order.warehouseId && order.warehouseId !== w.id) throw new AppError(400, 'Xuất đúng kho bán của đơn (hàng đã trừ ở kho này khi duyệt). Cần kho khác: xin điều chuyển hàng về kho bán.');
+      if (order.channel === 'crm' && order.warehouseId && order.warehouseId !== w.id) throw new AppError(400, 'Xuất đúng kho bán đã chọn cho đơn. Cần kho khác: xin điều chuyển hàng về kho bán.');
       stockWarehouseId = w.id;
     }
-    const soldAtApproval = order.channel === 'crm' && !!order.warehouseId && await saleMovesPosted(c.env.db, order.id);
     const now = nowIso();
     await c.env.db.transaction(async tx => {
       if (saleFlowOf(order.posSnapshot)) { await cashLock(tx); await assertPosFlowFulfillable(tx,order.id); }
@@ -336,14 +338,18 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
         const [issued] = await tx.select({id:stockMoves.id}).from(stockMoves).innerJoin(deliveries,eq(deliveries.id,stockMoves.refId)).where(and(eq(stockMoves.refType,'pos_delivery'),eq(deliveries.orderId,order.id))).limit(1);
         if (issued) throw new AppError(409,'Đơn POS đã xuất kho khi giao hàng; không xác nhận thêm phiếu đóng gói.');
       }
+      const [fresh] = await tx.select({status:salesOrders.status,warehouseId:salesOrders.warehouseId}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
+      if (!fresh || ['draft','cancelled'].includes(fresh.status) || fresh.warehouseId !== order.warehouseId) throw new AppError(409,'Đơn hàng vừa thay đổi. Mở lại phiếu trước khi xác nhận.');
+      const soldAtApproval = order.channel === 'crm' && !!fresh.warehouseId && await saleMovesPosted(tx,order.id);
       await assertPosFlowFulfillable(tx,order.id);
+      if (stockWarehouseId) { await lockLedger(tx); await assertWarehousesOpened(tx, [stockWarehouseId]); }
       const done = await tx.update(packingSlips).set({ status: 'packed', packedAt: now, packedBy: m.id, packedNote: text(body.note, 1000), stockWarehouseId, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'sent'))).returning({ id: packingSlips.id });
       if (!done.length) throw new AppError(409, 'Phiếu vừa được người khác xác nhận.');
       await tx.insert(packingSlipPhotos).values((photos as string[]).map(dataUrl => ({ id: crypto.randomUUID(), slipId: slip.id, dataUrl, bytes: Math.floor(dataUrl.length * 3 / 4), createdBy: m.id, createdAt: now })));
       if (stockWarehouseId && !soldAtApproval) {
         const lines = await tx.select({ sku: packingSlipLines.sku, qty: packingSlipLines.qty }).from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id));
-        if(saleFlowOf(order.posSnapshot)){const balances=await tx.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,stockWarehouseId),inArray(stockBalances.sku,lines.map(l=>l.sku)))).orderBy(asc(stockBalances.sku)).for('update');for(const sku of new Set(lines.map(l=>l.sku))){if((balances.find(b=>b.sku===sku)?.qty||0)<lines.filter(l=>l.sku===sku).reduce((n,l)=>n+l.qty,0))throw new AppError(409,'Tồn thực tế không đủ để xuất: '+sku);}}
+
         await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: stockWarehouseId!, qty: -l.qty, kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` })), now);
       }
     });

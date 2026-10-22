@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes, orderRecipient } from '../../src/modules/sales/domain/order-notes.ts';
 
-function setup(pushResult: 'create' | 'cancel' = 'create', configReady = true, confirm = true) {
+function setup(pushResult: 'create' | 'cancel' = 'create', configReady = true, confirm = true, sourcing = false) {
   const listeners = new Map<string, Function>(), dialogEvents = new Map<string, Function>();
   const fields: Record<string, { value: string; dataset: Record<string, string>; addEventListener: (event: string, fn: Function) => void; change: () => void }> = Object.fromEntries(['orderNo', 'customerName', 'orderDate', 'deliveryDate', 'deliveryAddress', 'receiverName', 'receiverPhone', 'note', 'pushSapo'].map(k => [k, (() => { const events = new Map<string, Function>(); return { value: '', dataset: {}, addEventListener: (event: string, fn: Function) => events.set(event, fn), change: () => events.get('change')?.() }; })()]));
   const form = { elements: fields, reset: () => { for (const f of Object.values(fields)) f.value = ''; fields.pushSapo!.value = 'no'; }, reportValidity: () => true, addEventListener: (key: string, f: Function) => listeners.set(key, f) };
@@ -15,6 +15,7 @@ function setup(pushResult: 'create' | 'cancel' = 'create', configReady = true, c
   runInNewContext(readFileSync(new URL('../../trial-ui/order-create.js', import.meta.url), 'utf8').replace(/^import .*;\n/, '').replace('export function initOrderCreate', 'globalThis.initOrderCreate = function'), context);
   const ui = context.initOrderCreate({ $: (id: string) => elements[id], todayIso: () => '2026-10-12',
     api: async (path: string) => { calls.push(path); if (path === '/orders/create-config') { if (!configReady) throw Object.assign(new Error('Missing route'), { status: 404 }); return { version: 2, noteMaxLength: 20000, recipientFields: true }; } if (path.startsWith('/orders/next-no?')) return { orderNo: 'DH_20261012_001' }; return { data: { quoteNo: 'BG_001', customer: 'Khách', contact: 'Người mua', phone: '0901000001', notes: '- Tổng thanh toán đã gồm VAT.\n- Phương thức thanh toán: Chuyển khoản.\n- Thời gian giao hàng: Theo thỏa thuận.\n- Địa chỉ giao hàng: Kho nhận hàng.\n- Thanh toán: 100% sau 30 ngày.\nTrân trọng kính chào.', customerAddress: 'Địa chỉ báo giá', deliveryDate: '2026-10-30' } }; },
+    ...(sourcing ? {createSourcing:async()=>({read:()=>({warehouseId:'vig',stockPlan:[{sku:'X',qty:2,type:'stock'}],note:'KẾ HOẠCH NGUỒN HÀNG'})})} : {}),
     confirmBox: async (message: string, options: any) => { confirmations.push({ message, options }); return confirm; },
     chooseSapo: async (_ref: any, opts: any) => { calls.push('sapo'); return pushResult === 'cancel' ? null : opts.run(7, true); },
   });
@@ -87,4 +88,12 @@ test('form chỉ trên web → callback app → POST gửi boolean false, kể c
   await s.submit(); assert.equal(await pending, 'draft');
   assert.equal(requests.length, 1); assert.equal(requests[0].body.pushSapo, false);
   assert.equal(requests[0].path, '/orders'); assert.ok(!s.calls.includes('sapo'));
+});
+
+
+test('sinh đơn UI: gửi kế hoạch cấu trúc cùng đơn, giữ ghi chú riêng và kho đã chọn',async()=>{
+  const s=setup('create',true,true,true);s.ui.choose({quoteId:'q1'},s.run);await new Promise(resolve=>setImmediate(resolve));
+  s.fields.note!.value='Ghi chú riêng';await s.submit();
+  assert.equal(s.posts[0].body.warehouseId,'vig');assert.equal(s.posts[0].body.stockPlan[0].qty,2);
+  assert.equal(s.posts[0].body.note,'Ghi chú riêng\n\nKẾ HOẠCH NGUỒN HÀNG');
 });

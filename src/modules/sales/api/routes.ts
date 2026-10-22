@@ -1,3 +1,4 @@
+import { saveQuoteStockPlan } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { approvalDebt, assertApprovalDebt, approvalCosts } from './approval-preflight.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
@@ -37,7 +38,7 @@ import { recordMovements, removeMovements } from '../../catalog/api/product-hist
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
 import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
-import { reverseRef, syncSaleMoves } from '../../inventory/api/ledger.ts';
+import { reverseRef, syncSaleMoves, saleMovesPosted } from '../../inventory/api/ledger.ts';
 import { hiddenWarehouseIds, sellableWarehouses, sellersConfigured } from '../../inventory/api/warehouse-access.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { warehouses } from '../../catalog/schema.ts';
@@ -208,7 +209,11 @@ export async function syncOrderStock(tx: Tx, by: string, orderId: string, note: 
   const [o] = await tx.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, status: salesOrders.status, warehouseId: salesOrders.warehouseId, channel: salesOrders.channel })
     .from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
   if (!o || o.channel !== 'crm') return 0;
-  const lines = await tx.select({ sku: salesOrderLines.sku, qty: salesOrderLines.qty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
+  // A source plan approves the sale first; physical issues are posted by each packing confirmation.
+  // Keep this mode even if a draft is cancelled, so replanning never creates a full-order debit.
+  const planned = (await tx.select({id:packingSlips.id}).from(packingSlips).where(eq(packingSlips.orderId,orderId)).limit(1)).length > 0;
+  const deferred = planned && !await saleMovesPosted(tx,orderId);
+  const lines = deferred ? [] : await tx.select({ sku: salesOrderLines.sku, qty: salesOrderLines.qty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   const no = docRef(o.id, o.orderNo, (await contractNosOf(tx, [o.id])).get(o.id)).no;
   return syncSaleMoves(tx, by, { id: o.id, no, warehouseId: o.warehouseId, active: ACTIVE_ORDER.includes(o.status) }, lines, note);
 }
@@ -538,7 +543,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const warehouseId = await pickSaleWarehouse(c.env.db, quote.assigneeId ?? quote.creatorId, me, body.warehouseId);
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, warehouseId, ...input,
       debtWarningAccepted: body.debtWarningAccepted === true, orderNo: customOrderNo || undefined,
-      inTx: push ? async (tx, orderId) => { sapo = await push.push(tx, orderId); } : undefined }).finally(() => push?.done());
+      inTx: async (tx, orderId) => { await saveQuoteStockPlan(tx,orderId,me.id,body.stockPlan); if (push) sapo = await push.push(tx,orderId); } }).finally(() => push?.done());
     if (viaClaw) sapo = await sendOrderToClaw(c, id, 'order');
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
     if (submitted) await notifyMany(c.env, 'approvers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
@@ -580,6 +585,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const [locked] = await tx.select({ status: salesOrders.status, warehouseId: salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
       if (locked.warehouseId === warehouseId) return;
+      const planned = await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,order.id),ne(packingSlips.status,'cancelled'))).limit(1);
+      if (planned.length && !await saleMovesPosted(tx,order.id)) throw new AppError(409,'Huỷ các phiếu kế hoạch nguồn hàng rồi lập lại trước khi đổi kho bán.','STOCK_PLAN_IN_USE');
       if (order.status !== 'draft' && !locked.warehouseId) {
         const issued = await tx.select({ id: packingSlips.id }).from(packingSlips).where(and(eq(packingSlips.orderId, order.id), eq(packingSlips.status, 'packed'), isNotNull(packingSlips.stockWarehouseId))).limit(1);
         if (issued.length) throw new AppError(409, 'Đơn đã xuất kho qua phiếu đóng gói trước khi có kho bán – không gán kho bán được (tránh trừ hai lần).', 'ORDER_ALREADY_ISSUED');
@@ -886,7 +893,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
-      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', warehouseId, inTx: async (tx, oid) => {
+      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', warehouseId, note: typeof body.note === 'string' ? text(body.note,20000) : undefined, inTx: async (tx, oid) => {
+        await saveQuoteStockPlan(tx,oid,me.id,body.stockPlan);
         const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, oid)).limit(1);
         const counterId = `HDKT:${year}:${month}:${entity}`;
         const [row] = await tx.insert(contractCounters).values({ id: counterId, type: 'HDKT', year: Number(year), month: Number(month), legalEntity: entity, lastSequence: 1, updatedAt: now })

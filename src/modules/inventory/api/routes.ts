@@ -9,7 +9,8 @@ import { employees } from '../../staff/schema.ts';
 import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { stockBalances, stockMoves } from '../schema.ts';
 import { STOCK_KIND_LABEL } from '../domain/kinds.ts';
-import { postMoves, inventoryOpeningHooks } from './ledger.ts';
+import { postMoves, guardInventoryOpening } from './ledger.ts';
+import { hiddenWarehouseIds } from './warehouse-access.ts';
 import { hiddenStockWarehouses, readCatalogStock } from '../../catalog/api/stock-source.ts';
 
 /**
@@ -37,11 +38,11 @@ const stockWarehouses = (db: StaffEnv['db']) => db.select({ id: warehouses.id, n
 // Warehouse staff work only with the Vigifts ledger; other stock pickers retain their own scope.
 const restrictedLedger = (c: Ctx) => me(c).role === 'employee' && me(c).positionId === 'warehouse';
 async function ledgerWarehouses(c: Ctx) {
-  const all = await stockWarehouses(c.env.db);
+  const hidden = await hiddenWarehouseIds(c.env.db, me(c));
+  const all = (await stockWarehouses(c.env.db)).filter(w => !hidden.has(w.id));
   return restrictedLedger(c) ? all.filter(w => w.name.toLowerCase().includes('vigifts')) : all;
 }
 async function checkLedgerWarehouse(c: Ctx, id: string) {
-  if (!restrictedLedger(c)) return;
   if (!(await ledgerWarehouses(c)).some(w => w.id === id)) fail(403, 'Kho không thuộc phạm vi sổ kho của bạn.');
 }
 
@@ -54,7 +55,10 @@ export interface IncomingLine { sku: string; orderId: string; ticketNumber: stri
 export const incomingLookup: { read?: (db: StaffEnv['db'], skus: readonly string[]) => Promise<IncomingLine[]> } = {};
 
 export function registerInventoryRoutes(router: Router<StaffEnv>) {
-  router.get('/stock-warehouses', async c => json({ warehouses: await stockWarehouses(c.env.db) }), 'business');
+  router.get('/stock-warehouses', async c => {
+    const hidden = await hiddenWarehouseIds(c.env.db, me(c));
+    return json({ warehouses: (await stockWarehouses(c.env.db)).filter(w => !hidden.has(w.id)) });
+  }, 'business');
 
   // Tra tồn: số lượng theo từng kho thật. Đã chốt tồn đầu kỳ → lấy tồn sổ kho, chưa chốt → tồn Sapo (đồng bộ gần nhất).
   // Kèm "Hàng đang về" từ đơn mua NCC đã duyệt (số còn chờ, từng đơn: số đơn, NCC, ngày hẹn) – không có giá.
@@ -89,7 +93,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
   router.get('/inventory/status', async c => {
     guard(c);
     const db = c.env.db, whs = await ledgerWarehouses(c), ids = whs.map(w => w.id);
-    const scope = restrictedLedger(c) ? (ids.length ? inArray(stockMoves.warehouseId, ids) : sql`false`) : undefined;
+    const scope = ids.length ? inArray(stockMoves.warehouseId, ids) : sql`false`;
     const [[open], [cnt]] = await Promise.all([
       db.select({ at: stockMoves.createdAt, by: employees.name }).from(stockMoves).leftJoin(employees, eq(employees.id, stockMoves.createdBy))
         .where(and(eq(stockMoves.refType, 'opening'), scope)).orderBy(desc(stockMoves.createdAt)).limit(1),
@@ -128,16 +132,18 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, sku = (c.url.searchParams.get('sku') || '').trim(), wh = c.url.searchParams.get('warehouseId') || '';
     if (!sku || !wh) fail(400, 'Chọn mã hàng và kho.');
     await checkLedgerWarehouse(c, wh);
+    return db.transaction(async tx => {
     const [moves, [bal], [sapo], [prod]] = await Promise.all([
-      db.select({ m: stockMoves, by: employees.name }).from(stockMoves).leftJoin(employees, eq(employees.id, stockMoves.createdBy))
-        .where(and(eq(stockMoves.sku, sku), eq(stockMoves.warehouseId, wh))).orderBy(asc(stockMoves.createdAt), asc(stockMoves.id)).limit(1000),
-      db.select({ qty: stockBalances.qty }).from(stockBalances).where(and(eq(stockBalances.sku, sku), eq(stockBalances.warehouseId, wh))).limit(1),
-      db.select({ qty: productStock.quantity }).from(productStock).where(and(eq(productStock.sku, sku), eq(productStock.warehouseId, wh))).limit(1),
-      db.select({ name: products.name, unit: products.unit }).from(products).where(eq(products.sku, sku)).limit(1),
+      tx.select({ m: stockMoves, by: employees.name }).from(stockMoves).leftJoin(employees, eq(employees.id, stockMoves.createdBy))
+        .where(and(eq(stockMoves.sku, sku), eq(stockMoves.warehouseId, wh))).orderBy(asc(stockMoves.createdAt), asc(stockMoves.id)),
+      tx.select({ qty: stockBalances.qty }).from(stockBalances).where(and(eq(stockBalances.sku, sku), eq(stockBalances.warehouseId, wh))).limit(1),
+      tx.select({ qty: productStock.quantity }).from(productStock).where(and(eq(productStock.sku, sku), eq(productStock.warehouseId, wh))).limit(1),
+      tx.select({ name: products.name, unit: products.unit }).from(products).where(eq(products.sku, sku)).limit(1),
     ]);
     let run = 0;
     const lines = moves.map(({ m, by }) => { run = num(run + m.qty); return { at: m.createdAt, kind: m.kind, kindLabel: STOCK_KIND_LABEL[m.kind], qty: m.qty, balance: run, refType: m.refType, refId: m.refId, refNo: m.refNo, note: m.note, by: by ?? '' }; });
     return json({ sku, name: prod?.name ?? '', unit: prod?.unit ?? '', warehouseId: wh, balance: num(bal?.qty ?? 0), sapo: num(sapo?.qty ?? 0), lines: lines.reverse() });
+    }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
   }, 'business');
 
   router.post('/inventory/opening', async c => {
@@ -145,21 +151,26 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền chốt tồn đầu kỳ.');
     const body = await readJson(c.req, 2_000);
     if (body.confirm !== true) fail(400, 'Xác nhận chốt tồn đầu kỳ.');
-    const db = c.env.db, ids = (await ledgerWarehouses(c)).map(w => w.id);
+    const db = c.env.db, openingWarehouses = await ledgerWarehouses(c), ids = openingWarehouses.map(w => w.id);
     if (!ids.length) fail(409, 'Chưa có kho thật nào (đồng bộ danh sách kho từ Sapo trước).');
     const refId = crypto.randomUUID(), refNo = 'ĐK-' + new Date().toISOString().slice(0, 10).replaceAll('-', '');
     let written = 0;
     await db.transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_ledger_opening'))`);
-      await inventoryOpeningHooks.guard?.(tx, ids);
+      await guardInventoryOpening(tx, ids);
       const [bal, sapo] = await Promise.all([
         tx.select().from(stockBalances).where(inArray(stockBalances.warehouseId, ids)),
         tx.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, qty: productStock.quantity }).from(productStock).where(inArray(productStock.warehouseId, ids)),
       ]);
+      const negative = sapo.filter(s => s.qty < 0);
+      if (negative.length) throw new AppError(409, 'Tồn Sapo đang âm, chưa chốt được: ' + negative.slice(0, 10).map(s => `${s.sku} (${s.qty})`).join('; '), 'OPENING_NEGATIVE_STOCK');
       const target = new Map<string, { sku: string; warehouseId: string; want: number; have: number }>();
       for (const b of bal) target.set(b.sku + '\u0000' + b.warehouseId, { sku: b.sku, warehouseId: b.warehouseId, want: 0, have: b.qty });
       for (const s of sapo) { const k = s.sku + '\u0000' + s.warehouseId, t = target.get(k); if (t) t.want = s.qty; else target.set(k, { sku: s.sku, warehouseId: s.warehouseId, want: s.qty, have: 0 }); }
+      const opened = new Set((await tx.selectDistinct({ id: stockMoves.warehouseId }).from(stockMoves).where(and(inArray(stockMoves.warehouseId, ids), eq(stockMoves.refType, 'opening')))).map(w => w.id));
+      const empty = ids.filter(id => !opened.has(id) && ![...target.values()].some(t => t.warehouseId === id && Math.abs(t.want - t.have) > 0.0005));
+      if (empty.length) throw new AppError(409, 'Kho không có dòng tồn đầu kỳ khác 0: ' + openingWarehouses.filter(w => empty.includes(w.id)).map(w => w.name).join(', ') + '. Chưa chốt kho; cần marker mở kho (migration phải được duyệt) để hỗ trợ trường hợp này.', 'WAREHOUSE_OPENING_EMPTY');
       written = await postMoves(tx, m.id, [...target.values()].map(t => ({ sku: t.sku, warehouseId: t.warehouseId, qty: t.want - t.have, kind: 'opening' as const, refType: 'opening' as const, refId, refNo, note: 'Chốt tồn đầu kỳ theo tồn Sapo' })));
     });
     return json({ ok: true, refNo, lines: written });

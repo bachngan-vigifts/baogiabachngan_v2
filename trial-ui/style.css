@@ -2122,3 +2122,9 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
   .ledger-table .ledger-ref, .ledger-table .ledger-item { min-width: 0; flex-basis: 100%; }
   .ledger-table td.ledger-wh { flex-basis: 100%; font-size: .85rem; color: var(--muted); }
 }
+
+.quote-source-row {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}
+.quote-source-row select {flex:1 1 180px;min-width:0;}
+.quote-source-row input {width:90px;}
+.quote-source-row [role="status"] {flex-basis:100%;}
+#order-create-sourcing, #contract-sourcing {display:grid;gap:10px;min-width:0;}

@@ -60,6 +60,8 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
   const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,AAAA'] });
   assert.equal(rc.status, 201, JSON.stringify(rc.data));
+  const resetAfterReceipt = await call('/inventory/opening',mgr,'POST',{confirm:true});
+  assert.equal(resetAfterReceipt.status,409);assert.match(resetAfterReceipt.data.error,/supplier_receipt.*Dùng phiếu điều chỉnh để sửa lệch/);
   assert.deepEqual((await call('/inventory/compare', kho)).data.rows, [], 'Kho chỉ xem Vigifts, không lẫn nhận vào kho cửa hàng');
   cmp = (await call('/inventory/compare', mgr)).data;
   assert.deepEqual(cmp.rows.map((r: any) => [r.sku, r.warehouse, r.ledger, r.sapo, r.diff]), [['LY1', 'Kho Cần Thơ', 14, 10, 4]], 'chỉ cộng hàng đạt, chưa nhập Sapo nên lệch +4');
@@ -73,9 +75,9 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   card = (await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data;
   assert.equal(card.balance, 10); assert.equal(card.lines[0].kind, 'reverse');
   assert.equal((await call('/stock-moves?group=reverse&warehouseId=ct', mgr)).data.moves[0].description, 'Huỷ phiếu nhập hàng');
-  // Kho nhận không có trong danh sách kho → phiếu vẫn lưu, sổ kho không ghi, lịch sử đơn báo lại.
+  // Kho nhận không hợp lệ phải từ chối toàn phiếu; địa chỉ giao trên đơn không phải kho nhận.
   const rc2 = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-87654321', warehouse: 'Kho lạ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 1 }] });
-  assert.equal(rc2.status, 201); assert.ok(rc2.data.events.some((e: any) => e.summary.includes('chưa ghi sổ kho')));
+  assert.equal(rc2.status, 400); assert.match(rc2.data.error, /kho nhận hàng/);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 10);
 
   // Phiếu điều chỉnh: chỉ Manager, bắt buộc lý do, mã phải có trong danh mục (giữ số 0 đầu).
@@ -125,4 +127,39 @@ test('sổ kho: tài khoản Kho chỉ có Vigifts; không thể sửa query đ�
   const empty = (await call('/inventory/status', kho)).data;
   assert.deepEqual(empty.warehouses, []); assert.equal(empty.defaultWarehouseId, null);
   assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows, []);
+});
+
+test('chốt đầu kỳ: Sapo âm hoặc kho không có dòng chốt đều rollback toàn bộ, không tự tạo marker', async()=>{
+  const {db,call,mgr}=await setup();
+  const {eq}=await import('drizzle-orm'); const {stockMoves,stockBalances}=await import('../../src/modules/inventory/schema.ts');
+  await db.update(productStock).set({quantity:-2}).where(eq(productStock.warehouseId,'ct'));
+  const negative=await call('/inventory/opening',mgr,'POST',{confirm:true});
+  assert.equal(negative.status,409);assert.equal(negative.data.code,'OPENING_NEGATIVE_STOCK');assert.match(negative.data.error,/LY1/);
+  assert.equal((await db.select().from(stockMoves)).length,0);assert.equal((await db.select().from(stockBalances)).length,0);
+  await db.update(productStock).set({quantity:0}).where(eq(productStock.warehouseId,'ct'));
+  const empty=await call('/inventory/opening',mgr,'POST',{confirm:true});
+  assert.equal(empty.status,409);assert.equal(empty.data.code,'WAREHOUSE_OPENING_EMPTY');assert.match(empty.data.error,/marker/);
+  assert.equal((await db.select().from(stockMoves)).length,0);assert.equal((await db.select().from(stockBalances)).length,0);
+  assert.equal((await call('/inventory/status',mgr)).data.openedAt,null);
+});
+
+test('chốt lần đầu có phát sinh cũ và chốt lại sau điều chỉnh đều bị chặn, không ghi thêm',async()=>{
+  const {db,call,mgr}=await setup();const {stockMoves}=await import('../../src/modules/inventory/schema.ts');
+  // Historical invalid data is seeded directly; no new application write may create this state.
+  await db.insert(stockMoves).values({id:'legacy',sku:'LY1',warehouseId:'ct',qty:1,kind:'adjust',refType:'adjustment',refId:'legacy',createdBy:'mgr',createdAt:now});
+  let r=await call('/inventory/opening',mgr,'POST',{confirm:true});assert.equal(r.status,409);assert.match(r.data.error,/chưa chốt.*adjustment/);
+  assert.equal((await db.select().from(stockMoves)).length,1);
+  await db.delete(stockMoves);assert.equal((await call('/inventory/opening',mgr,'POST',{confirm:true})).status,200);
+  assert.equal((await call('/inventory/adjustments',mgr,'POST',{warehouseId:'ct',reason:'Kiểm kê',lines:[{sku:'LY1',qty:1}]})).status,201);
+  const before=await db.select().from(stockMoves);r=await call('/inventory/opening',mgr,'POST',{confirm:true});
+  assert.equal(r.status,409);assert.match(r.data.error,/Dùng phiếu điều chỉnh để sửa lệch/);assert.deepEqual(await db.select().from(stockMoves),before);
+});
+
+test('thẻ kho lấy đủ hơn 1005 dòng, mới nhất và luỹ kế khớp số dư hiện tại',async()=>{
+  const {db,call,mgr}=await setup();const {eq}=await import('drizzle-orm');const {stockMoves,stockBalances}=await import('../../src/modules/inventory/schema.ts');
+  assert.equal((await call('/inventory/opening',mgr,'POST',{confirm:true})).status,200);
+  await db.insert(stockMoves).values(Array.from({length:1005},(_,i)=>({id:'card-'+String(i).padStart(4,'0'),sku:'LY1',warehouseId:'ct',qty:1,kind:'adjust' as const,refType:'adjustment' as const,refId:'card-'+i,refNo:'DC-'+i,createdBy:'mgr',createdAt:'2090-10-01T00:00:00.000Z'})));
+  await db.update(stockBalances).set({qty:1015}).where(eq(stockBalances.warehouseId,'ct'));
+  const r=await call('/inventory/card?sku=LY1&warehouseId=ct',mgr);assert.equal(r.status,200);
+  assert.equal(r.data.lines.length,1006);assert.equal(r.data.lines[0].refNo,'DC-1004');assert.equal(r.data.balance,1015);assert.equal(r.data.lines[0].balance,r.data.balance);
 });

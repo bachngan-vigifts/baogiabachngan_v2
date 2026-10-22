@@ -1,8 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { CatalogStockRow, StockReadDb } from '../../catalog/api/stock-source.ts';
 import { stockBalances, stockMoves } from '../../inventory/schema.ts';
-import { AppError } from '../../../core/errors.ts';
-import { posRegisters } from '../pos-schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
 /**
  * Tồn chuẩn (docs/SO-KHO.md): kho thật đã chốt tồn đầu kỳ đọc số dư sổ kho (bán quầy, bán đơn / HĐKT, điều chuyển, nhận NCC…);
@@ -35,22 +33,4 @@ export async function posStockStamp(db: StockReadDb) {
     .from(stockBalances);
   const [w] = await db.select({ p: sql<string>`coalesce(string_agg(${warehouses.id}, ',' order by ${warehouses.id}),'')` }).from(warehouses).where(eq(warehouses.stockPrivate, true));
   return [r?.count, r?.stamp, r?.qty, w?.p].join(':');
-}
-/**
- * Chốt lại đầu kỳ từ tồn Sapo không được xoá phát sinh chỉ có trong app: kho quầy POS đã có phát sinh, hoặc kho đã có bán đơn / HĐKT,
- * điều chuyển (Sapo không biết các phát sinh này). Kiểm kê lệch thì dùng phiếu điều chỉnh có lý do.
- */
-export async function guardPosOpening(db: StockReadDb, warehouseIds: string[]) {
-  const [used] = await db
-    .select({ id: stockMoves.id })
-    .from(stockMoves)
-    .leftJoin(posRegisters, eq(posRegisters.warehouseId, stockMoves.warehouseId))
-    .where(and(inArray(stockMoves.warehouseId, warehouseIds), sql`${stockMoves.refType} <> 'opening'`,
-      sql`(${posRegisters.id} is not null or ${stockMoves.refType} in ('sales_order','stock_transfer'))`))
-    .limit(1);
-  if (used)
-    throw new AppError(
-      409,
-      'Kho đã có phát sinh bán / điều chuyển trong app. Dùng phiếu điều chỉnh kho để kiểm kê; không chốt lại đầu kỳ từ tồn Sapo.',
-    );
 }

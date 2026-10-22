@@ -15,7 +15,7 @@ import {
 import { posShifts } from '../pos-schema.ts';
 import { posReturns } from '../return-schema.ts';
 import { stockBalances, stockMoves } from '../../inventory/schema.ts';
-import { postMoves } from '../../inventory/api/ledger.ts';
+import { postMoves, lockLedger, assertWarehousesOpened } from '../../inventory/api/ledger.ts';
 import { cashAudit } from './cash-store.ts';
 import {
   assertOpen,
@@ -222,6 +222,8 @@ export async function holdFlowOrder(
     throw new AppError(409, 'Đơn đã xuất hoặc thiếu giữ hàng.');
   const warehouseId = reservations[0]!.warehouseId,
     now = new Date().toISOString();
+  await lockLedger(db);
+  await assertWarehousesOpened(db, [warehouseId]);
   const balances = await db
     .select()
     .from(stockBalances)

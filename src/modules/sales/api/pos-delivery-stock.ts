@@ -1,7 +1,6 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { AppError } from '../../../core/errors.ts';
-import { stockBalances, stockMoves } from '../../inventory/schema.ts';
-import { postMoves, type LedgerDb } from '../../inventory/api/ledger.ts';
+import { and, eq, sql } from 'drizzle-orm';
+import { stockMoves } from '../../inventory/schema.ts';
+import { postMoves, lockLedger, assertWarehousesOpened, type LedgerDb } from '../../inventory/api/ledger.ts';
 import {
   salesOrders,
   salesOrderLines,
@@ -18,30 +17,22 @@ export async function issuePosDelivery(
   actorId: string,
   dispatch = false,
 ) {
-  const [row] = await db
+  return db.transaction(async tx => {
+  await lockLedger(tx);
+  const [row] = await tx
     .select({ o: salesOrders, warehouseId: posRegisters.warehouseId })
     .from(salesOrders)
     .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
     .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
     .where(and(eq(salesOrders.id, orderId), eq(salesOrders.channel, 'pos')));
   if (!row) return;
-  const lines = await db
+  await assertWarehousesOpened(tx, [row.warehouseId]);
+  const lines = await tx
     .select()
     .from(salesOrderLines)
     .where(eq(salesOrderLines.orderId, orderId));
   const skus = [...new Set(lines.map((l) => l.sku))].sort();
-  const balances = await db
-    .select()
-    .from(stockBalances)
-    .where(
-      and(
-        eq(stockBalances.warehouseId, row.warehouseId),
-        inArray(stockBalances.sku, skus),
-      ),
-    )
-    .orderBy(asc(stockBalances.sku))
-    .for('update');
-  const issued = await db
+  const issued = await tx
     .select({
       sku: stockMoves.sku,
       qty: sql<number>`-sum(${stockMoves.qty})`.mapWith(Number),
@@ -55,7 +46,7 @@ export async function issuePosDelivery(
     )
     .groupBy(stockMoves.sku);
   const dispatched = dispatch
-    ? await db
+    ? await tx
         .select({
           sku: salesOrderLines.sku,
           qty: sql<number>`sum(${deliveryLines.qty})`.mapWith(Number),
@@ -83,8 +74,6 @@ export async function issuePosDelivery(
             .reduce((n, l) => n + l.deliveredQty, 0)) -
       (issued.find((x) => x.sku === sku)?.qty ?? 0);
     if (need <= 1e-9) return [];
-    if ((balances.find((x) => x.sku === sku)?.qty ?? 0) < need)
-      throw new AppError(409, 'Kho không đủ hàng để xác nhận giao COD: ' + sku);
     return [
       {
         sku,
@@ -97,5 +86,6 @@ export async function issuePosDelivery(
       },
     ];
   });
-  await postMoves(db, actorId, moves);
+  await postMoves(tx, actorId, moves);
+  });
 }

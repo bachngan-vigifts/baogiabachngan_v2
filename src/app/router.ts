@@ -2,10 +2,9 @@ import { registerPosOrderFlowRoutes } from '../modules/sales/api/pos-order-flow-
 import { registerPosReturnRoutes } from '../modules/sales/api/pos-return-routes.ts';
 import { authorizePosStore } from '../modules/sales/api/pos-access.ts';
 import { registerCashRoutes } from './cash-routes.ts';
-import { inventoryOpeningHooks } from '../modules/inventory/api/ledger.ts';
 import { catalogStockHooks } from '../modules/catalog/api/stock-source.ts';
 import { hiddenWarehouseIds } from '../modules/inventory/api/warehouse-access.ts';
-import { overlayPosStock, posStockStamp, guardPosOpening } from '../modules/sales/api/pos-stock.ts';
+import { overlayPosStock, posStockStamp } from '../modules/sales/api/pos-stock.ts';
 import { registerPosRoutes } from '../modules/sales/api/pos-routes.ts';
 import { registerPosGhnSyncRoutes } from '../modules/sales/api/pos-ghn-sync.ts';
 import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
@@ -15,6 +14,7 @@ import { registerCustomerRoutes } from '../modules/customers/api/routes.ts';
 import { registerCatalogRoutes } from '../modules/catalog/api/routes.ts';
 import { registerLegacyImageRoutes } from '../modules/integrations/api/legacy-images.ts';
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
+import { registerQuoteSourcingRoutes } from '../modules/sales/api/quote-sourcing-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
 import { registerHoldRoutes } from '../modules/sales/api/hold-routes.ts';
@@ -57,7 +57,6 @@ export function createAppRouter() {
   stockRefLinkHooks.pos_delivery = posDeliveryStockLinks;
   stockRefLinkHooks.pos_return = posReturnStockLinks;
   stockRefLinkHooks.supplier_receipt = supplierReceiptStockLinks;
-  inventoryOpeningHooks.guard = guardPosOpening;
   catalogStockHooks.overlay = overlayPosStock;
   catalogStockHooks.stamp = posStockStamp;
   catalogStockHooks.hidden = hiddenWarehouseIds;
@@ -69,6 +68,7 @@ export function createAppRouter() {
   registerSapoSyncRoutes(router);
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router);
+  registerQuoteSourcingRoutes(router);
   registerPosRoutes(router);
   registerPosGhnSyncRoutes(router);
   registerPosReturnRoutes(router);

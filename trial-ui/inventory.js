@@ -58,7 +58,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
     if (s.canManage) {
       tools.append(btn('Phiếu điều chỉnh', 'btn secondary', () => adjustForm()));
       tools.append(btn(s.openedAt ? 'Chốt lại tồn đầu kỳ' : 'Chốt tồn đầu kỳ', s.openedAt ? 'btn ghost' : 'btn primary', async () => {
-        const msg = s.openedAt ? 'Chốt lại sẽ đưa tồn sổ kho của mọi mã về đúng bằng tồn Sapo hiện tại (ghi thêm dòng chênh lệch, không xoá lịch sử). Chỉ làm khi đã kiểm tra các dòng lệch. Tiếp tục?'
+        const msg = s.openedAt ? 'Chỉ chốt lại được khi kho chưa có phát sinh ngoài tồn đầu kỳ. Kho đã nhập, xuất hoặc điều chỉnh phải dùng phiếu điều chỉnh để sửa lệch. Tiếp tục?'
           : 'Lấy tồn Sapo hiện tại của các kho làm tồn đầu kỳ cho sổ kho?';
         if (!await confirmBox(msg, { title: 'Chốt tồn đầu kỳ', ok: 'Chốt tồn' })) return;
         try { const r = await api('/inventory/opening', 'POST', { confirm: true }); toast(`Đã chốt tồn đầu kỳ (${num(r.lines)} dòng).`); load(); }

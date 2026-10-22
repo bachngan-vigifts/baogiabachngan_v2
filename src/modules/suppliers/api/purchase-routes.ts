@@ -4,7 +4,7 @@ import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { sendMail } from '../../../core/mail/send-mail.ts';
-import { postMoves, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
+import { postMoves, assertWarehousesOpened, lockLedger, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { outstandingLines, syncIncomingStock } from './incoming-stock.ts';
 import { incomingBySku } from './incoming-by-sku.ts';
@@ -487,18 +487,21 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (!photos.length && v.lines.some(l => l.damagedQty > 0)) fail(400, 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.');
       receiptId = crypto.randomUUID();
       const no = await nextNumber(tx as unknown as Db, 'PNH', today());
-      const whName = str(body.warehouse, 120) || p.raw.order.warehouse;
+      const whName = str(body.warehouse, 120);
+      const whId = await stockWarehouseByName(tx as unknown as Db, whName);
+      if (!whId) throw new AppError(400, 'Chọn kho nhận hàng là kho thật đang hoạt động trong danh sách kho.');
+      await lockLedger(tx);
+      await assertWarehousesOpened(tx, [whId]);
       await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: v.receivedDate, receivedBy: m.id, warehouse: whName,
         note: str(body.note, 1000), clientKey, createdAt: nowIso() });
       await tx.insert(supplierReceiptLines).values(v.lines.map(l => ({ receiptId, lineId: l.lineId, sku: l.sku, goodQty: l.goodQty, damagedQty: l.damagedQty, note: l.note })));
       await savePhotos(tx as unknown as Db, c.env.files, m.id, 'supplier_receipt', receiptId, photos);
       // Sổ kho: hàng đạt cộng vào kho nhận (Sapo vẫn là nguồn chính – sổ kho chạy song song để đối chiếu).
-      const whId = await stockWarehouseByName(tx as unknown as Db, whName);
-      if (whId) await postMoves(tx as unknown as Db, m.id, v.lines.map(l => ({ sku: l.sku, warehouseId: whId, qty: l.goodQty, kind: 'receipt' as const, refType: 'supplier_receipt' as const, refId: receiptId, refNo: no, note: `${p.raw.order.ticketNumber} · ${p.raw.order.supplierName ?? ''}` })));
-      else await event(tx, id, m.id, 'stock', `Phiếu ${no}: kho "${whName || '(trống)'}" không có trong danh sách kho – chưa ghi sổ kho`);
+      await postMoves(tx as unknown as Db, m.id, v.lines.map(l => ({ sku: l.sku, warehouseId: whId, qty: l.goodQty, kind: 'receipt' as const, refType: 'supplier_receipt' as const, refId: receiptId, refNo: no, note: `${p.raw.order.ticketNumber} · ${p.raw.order.supplierName ?? ''}` })));
+
       const after = p.raw.progress.missing - v.lines.reduce((s, l) => s + l.goodQty, 0);
       // Nhận đủ: đánh dấu đơn đã nhận (cột cũ dùng cho cổng NCC / luật đóng băng).
-      if (after <= 0) await tx.update(incomingShipments).set({ receivedAt: nowIso(), receivedBy: m.id, receivedWarehouse: str(body.warehouse, 120) || p.raw.order.warehouse }).where(eq(incomingShipments.id, id));
+      if (after <= 0) await tx.update(incomingShipments).set({ receivedAt: nowIso(), receivedBy: m.id, receivedWarehouse: whName }).where(eq(incomingShipments.id, id));
       await event(tx, id, m.id, 'receive', `Nhận hàng ${no}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId, lines: v.lines });
     });
     return json({ ...await viewOf(c, id), receiptId }, 201);
