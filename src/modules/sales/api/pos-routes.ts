@@ -24,7 +24,9 @@ import { sha256Hex } from '../../staff/domain/session.ts';
 import { employees, positions } from '../../staff/schema.ts';
 import { defaultPosRegister } from '../domain/pos-register.ts';
 import { products, productPrices, productBarcodes, pricePolicies, warehouses } from '../../catalog/schema.ts';
-import { stockBalances } from '../../inventory/schema.ts';
+import { stockBalances, stockMoves } from '../../inventory/schema.ts';
+import { reverseRef } from '../../inventory/api/ledger.ts';
+import type { StockRefType } from '../../inventory/domain/kinds.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from '../../customers/api/identity.ts';
 import { customerInput } from '../../customers/domain/customer-input.ts';
@@ -237,6 +239,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
         packingStatus: sql<string>`coalesce((select ${packingSlips.status} from ${packingSlips} where ${packingSlips.orderId}=${salesOrders.id} and ${packingSlips.status}<>'cancelled' order by ${packingSlips.updatedAt} desc limit 1),'')`,
         deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.plannedDate} desc limit 1),'')`,
+        cancelledReturnQty: sql<number>`greatest(0, -coalesce((select sum(m.qty) from ${stockMoves} m where
+          (m.ref_type='pos_order' and m.ref_id=${salesOrders.id}) or
+          (m.ref_type='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=m.ref_id and p.order_id=${salesOrders.id})) or
+          (m.ref_type='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=m.ref_id and d.order_id=${salesOrders.id}))), 0))`.mapWith(Number),
       }).from(salesOrders)
         .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
         .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
@@ -277,6 +283,42 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     },
     'business',
   );
+  router.post('/pos/orders/:id/receive-cancelled-stock', async c => {
+    const m = member(c); posPermission(m);
+    const scope = await allowedPosRegisters(c), orderId = c.params.id!;
+    const [found] = await c.env.db.select({ order: salesOrders, registerId: posShifts.registerId })
+      .from(salesOrders).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
+      .where(and(eq(salesOrders.id, orderId), eq(salesOrders.channel, 'pos'))).limit(1);
+    if (!found) throw new AppError(404, 'Không tìm thấy đơn POS.');
+    if (!scope.ids.has(found.registerId)) throw new AppError(403, 'Bạn không được nhận hàng của cửa hàng này.');
+    if (found.order.status !== 'cancelled') throw new AppError(409, 'Chỉ nhận hàng hoàn của đơn đã huỷ.');
+    const result = await c.env.db.transaction(async tx => {
+      const [locked] = await tx.select({ status: salesOrders.status, orderNo: salesOrders.orderNo }).from(salesOrders)
+        .where(eq(salesOrders.id, orderId)).for('update');
+      if (locked?.status !== 'cancelled') throw new AppError(409, 'Đơn không còn ở trạng thái đã huỷ. Tải lại danh sách.');
+      const before = await tx.select({ sku: stockMoves.sku, qty: sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number) })
+        .from(stockMoves).where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
+          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
+          (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
+        .groupBy(stockMoves.sku);
+      const pending = before.filter(x => x.qty > 0);
+      if (!pending.length) return { received: false, replayed: true, lines: [] as { sku: string; qty: number }[] };
+      const refs = await tx.selectDistinct({ refType: stockMoves.refType, refId: stockMoves.refId }).from(stockMoves)
+        .where(and(ne(stockMoves.kind, 'reverse'), sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
+          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
+          (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`));
+      const at = new Date().toISOString();
+      for (const ref of refs) await reverseRef(tx, m.id, ref.refType as StockRefType, ref.refId, `Nhận hàng hoàn đơn đã huỷ ${locked.orderNo}`, at);
+      const after = await tx.select({ sku: stockMoves.sku, qty: sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number) })
+        .from(stockMoves).where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
+          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
+          (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
+        .groupBy(stockMoves.sku);
+      if (after.some(x => x.qty > 1e-9)) throw new AppError(409, 'Chưa hoàn đủ bút toán kho. Tải lại và kiểm tra sổ kho.', 'CANCELLED_STOCK_RETURN_INCOMPLETE');
+      return { received: true, replayed: false, lines: pending };
+    });
+    return json({ ok: true, ...result });
+  }, 'business');
   router.post('/pos/web-orders/:id/action', async c => {
     const m = member(c); posPermission(m);
     const input = await readJson(c.req, 4000);

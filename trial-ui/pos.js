@@ -507,14 +507,28 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const list = el('div', 'pos-order-list');
     if (!d.orders.length) list.append(el('p', 'pos-note', 'Không có đơn trong trạng thái này.'));
     for (const o of d.orders) {
-      const row = el('button', 'pos-order-row'); row.type = 'button';
+      const row = el('div', 'pos-order-row');
+      row.tabIndex = 0; row.setAttribute('role', 'button');
       row.append(
         el('b', '', o.orderNo),
         el('span', '', o.customerName + ' · ' + money(o.total)),
         el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.external ? 'Đơn website' : o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy')),
         el('span', 'pos-order-state', orderLabels[o.bucket] + (o.bucket === 'cancelled' ? '' : ' · ' + ({ paid: 'Đã thanh toán', debt: 'Còn nợ', unknown: 'Chưa rõ thanh toán' }[o.paymentStatus] || ''))),
       );
-      row.addEventListener('click', () => o.external ? showWebOrder(o) : go('#/orders/' + encodeURIComponent(o.id)));
+      const open = () => o.external ? showWebOrder(o) : go('#/orders/' + encodeURIComponent(o.id));
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      if (!o.external && o.bucket === 'cancelled' && Number(o.cancelledReturnQty) > 0) {
+        const receive = busyButton('Nhận hàng hoàn', 'btn primary small pos-receive-cancelled', 'Đang nhận…', async () => {
+          if (!await confirmBox(`Xác nhận đã nhận hàng hoàn của đơn ${o.orderNo} về kho? Hệ thống sẽ cộng lại ${Number(o.cancelledReturnQty).toLocaleString('vi-VN')} sản phẩm vào sổ kho.`, { title: 'Nhận hàng hoàn', ok: 'Xác nhận đã nhận' })) return;
+          const result = await api('/pos/orders/' + encodeURIComponent(o.id) + '/receive-cancelled-stock', 'POST', {});
+          toast(result.replayed ? 'Hàng của đơn này đã được nhập hoàn trước đó.' : 'Đã nhận hàng hoàn và cộng lại sổ kho.', 'ok');
+          await loadOrderBoard();
+        });
+        receive.addEventListener('click', e => e.stopPropagation());
+        receive.addEventListener('keydown', e => e.stopPropagation());
+        row.append(receive);
+      }
       list.append(row);
     }
     box.append(list);

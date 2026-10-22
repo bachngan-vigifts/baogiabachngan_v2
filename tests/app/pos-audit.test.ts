@@ -5,6 +5,8 @@ import { setup } from '../helpers/pos-fixture.ts';
 import { customerPayments, deliveries, salesOrders } from '../../src/modules/sales/schema.ts';
 import { posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
 import { posOrderReservations } from '../../src/modules/sales/pos-order-flow-schema.ts';
+import { stockBalances, stockMoves } from '../../src/modules/inventory/schema.ts';
+import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import { RULES } from '../../src/modules/tasks/api/auto-tasks.ts';
 
 const ok = (r: { status: number; data: unknown }, status = 200) => assert.equal(r.status, status, JSON.stringify(r.data));
@@ -86,4 +88,22 @@ test('bảng đơn cửa hàng: mặc định chỉ đơn đã xong trong 30 ng�
   const ranged = await f.call(`/pos/orders?registerId=${f.registerId}&from=${old}&to=${old}`, f.emp); ok(ranged);
   assert.equal(ranged.data.orders.length, 2); assert.equal(ranged.data.windowFrom, null);
   assert.equal(ranged.data.owners.length, 1, 'danh sách nhân viên không bị thu hẹp');
+});
+
+test('đơn POS đã huỷ sau xuất kho hiện nút nhận hoàn; nhận cộng kho đúng một lần', async () => {
+  const f = await setup(), s = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(s.id, { fulfillmentMode: 'cod', delivery })); ok(made, 201);
+  const [ship] = await f.db.select().from(deliveries);
+  await postMoves(f.db, 'emp', [{ sku: '00123', warehouseId: 'pos-wh', qty: -2, kind: 'issue', refType: 'pos_delivery', refId: ship!.id, refNo: made.data.orderNo }]);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8, 'đã xuất 2 sản phẩm');
+  await f.db.update(salesOrders).set({ status: 'cancelled' }).where(eq(salesOrders.id, made.data.id));
+  await f.db.update(deliveries).set({ status: 'cancelled' }).where(eq(deliveries.id, ship!.id));
+  const board = await f.call(`/pos/orders?registerId=${f.registerId}&status=cancelled`, f.emp); ok(board);
+  assert.equal(board.data.orders[0].cancelledReturnQty, 2);
+  const first = await f.call('/pos/orders/' + made.data.id + '/receive-cancelled-stock', f.emp, 'POST', {}); ok(first);
+  assert.equal(first.data.received, true); assert.deepEqual(first.data.lines, [{ sku: '00123', qty: 2 }]);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
+  const again = await f.call('/pos/orders/' + made.data.id + '/receive-cancelled-stock', f.emp, 'POST', {}); ok(again);
+  assert.equal(again.data.replayed, true); assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10, 'không cộng hai lần');
+  assert.equal((await f.db.select().from(stockMoves)).filter(x => x.kind === 'reverse').length, 1);
 });

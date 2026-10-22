@@ -319,8 +319,9 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-order-count.active { border-color: #1c65d1; box-shadow: 0 0 0 1px #1c65d1; }
 .pos-order-search { width: 100%; margin-bottom: 10px; }
 .pos-order-list { display: grid; gap: 7px; max-height: 330px; overflow: auto; }
-.pos-order-row { display: grid; grid-template-columns: 150px minmax(210px, 1fr) minmax(190px, 1fr) 120px; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; color: inherit; text-align: left; cursor: pointer; }
+.pos-order-row { display: grid; grid-template-columns: 150px minmax(210px, 1fr) minmax(190px, 1fr) 120px auto; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; color: inherit; text-align: left; cursor: pointer; }
 .pos-order-row:hover { border-color: #1c65d1; }
+.pos-receive-cancelled { white-space: nowrap; }
 .pos-order-state { font-weight: 700; color: #1c65d1; text-align: right; }
 .pos-danger {
   color: #b61d32;
