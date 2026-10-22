@@ -10,7 +10,7 @@ import { cashKindLabel } from './pos-report.js';
 
 const money = n => Number(n ?? 0).toLocaleString('vi-VN') + ' đ';
 const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(Number(n || 0)).toLocaleString('vi-VN');
-const hm = iso => iso ? new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
+const hm = iso => iso ? new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) : '';
 const when = iso => iso ? new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 function el(tag, cls = '', text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; }
 const STATUS = { posted: ['Đã ghi', 'ok'], pending: ['Chờ duyệt', 'warn'], voided: ['Đã huỷ', 'muted'] };

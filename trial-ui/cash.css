@@ -221,3 +221,6 @@ button.sr-card-head { cursor: pointer; } button.sr-card-head .sr-aside { color: 
 .cash-ledger-tools > .btn { min-height: 42px; margin: 0; align-self: flex-end; }
 .cash-ledger-tools > .cash-kind-tabs { margin: 0; align-items: center; min-height: 42px; }
 @media (max-width: 700px) { .cash-ledger-tools > .cash-field { flex-basis: calc(50% - 10px); } .cash-ledger-tools > .btn { flex-basis: 100%; } }
+/* Nút chưa đủ điều kiện (chưa có ca của mình): vẫn bấm được để xem lý do, nhưng nhìn rõ là đang khoá. */
+.cash-tools .btn.cash-action-blocked { opacity: .55; border-style: dashed; }
+.cash-action-hint { margin: -4px 0 12px; color: #8a5a00; }

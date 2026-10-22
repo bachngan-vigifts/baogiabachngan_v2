@@ -91,12 +91,11 @@ test('Cash UI: dữ liệu phiếu chỉ là chữ, phiếu huỷ gạch ngang v
     assert.ok(!root.all().some((e) => e.tag === 'img' || e.tag === 'script'));
     assert.ok(root.all().some((e) => e.className === 'cash-voided'));
     assert.ok(root.all().some((e) => e.textContent === 'Xuất Excel bảng đang xem'));
-    assert.ok(
-      root
-        .all()
-        .filter((e) => ['+ Thu tiền', '+ Chi tiền', 'Kết ca'].includes(e.textContent))
-        .every((e) => e.disabled),
-    );
+    // Chưa có ca của mình: nút không khoá im lặng mà đánh dấu khoá + có dòng giải thích (bấm thì báo lý do).
+    const actions = root.all().filter((e) => ['+ Thu tiền', '+ Chi tiền', 'Kết ca'].includes(e.textContent));
+    assert.equal(actions.length, 3);
+    assert.ok(actions.every((e) => e.className.includes('cash-action-blocked')));
+    assert.match(root.textContent, /Mở ca tại Bán hàng nhanh|Chỉ người mở ca/);
     assert.match(calls[1]!, /from=.*&to=/);
   } finally {
     Object.assign(globalThis, { document: previous });

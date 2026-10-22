@@ -198,18 +198,23 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     if (!summary.drawer.openingSetAt)
       root.append(el('p', 'cash-warning', 'Manager cần nhập số dư đầu kỳ một lần trước khi mở ca.'));
     const tools2 = el('div', 'cash-tools');
-    const inc = button('+ Thu tiền', () => entry('in'), 'btn primary'),
-      out = button('+ Chi tiền', () => entry('out')),
-      close = button('Kết ca', () => run(closeShift));
-    inc.disabled = out.disabled = !summary.ownShift;
-    close.disabled = !summary.ownShift;
+    // Không khoá im lặng: bấm khi chưa đủ điều kiện thì báo rõ lý do và cách xử lý.
+    const needOwnShift = summary.activeShift
+      ? `Ca đang mở của ${summary.activeShift.memberName || 'người khác'}. Chỉ người mở ca (hoặc Manager) mới thu/chi và kết ca.`
+      : 'Chưa có ca đang mở trên két này. Mở ca tại Bán hàng nhanh trước khi thu/chi hoặc kết ca.';
+    const guarded = (fn) => () => summary.ownShift ? fn() : toast(needOwnShift, 'err');
+    const inc = button('+ Thu tiền', guarded(() => entry('in')), 'btn primary'),
+      out = button('+ Chi tiền', guarded(() => entry('out'))),
+      close = button('Kết ca', guarded(() => run(closeShift)));
+    if (!summary.ownShift) for (const b of [inc, out, close]) b.className += ' cash-action-blocked';
     tools2.append(inc, out, close);
     if (summary.canManage) {
-      const a = button('Điều chỉnh két', () => entry('in', true));
-      a.disabled = !summary.activeShift;
+      const a = button('Điều chỉnh két', () => summary.activeShift ? entry('in', true) : toast('Chưa có ca đang mở trên két này để điều chỉnh.', 'err'));
+      if (!summary.activeShift) a.className += ' cash-action-blocked';
       tools2.append(a);
     }
     root.append(tools2);
+    if (!summary.ownShift) root.append(el('p', 'cash-note cash-action-hint', needOwnShift));
     const tabs = el('div', 'chips');
     for (const [id, label] of [
       ['ledger', 'Sổ quỹ'],
