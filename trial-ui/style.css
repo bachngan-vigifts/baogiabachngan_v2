@@ -2061,3 +2061,6 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 #view-tasks .task-top .btn.primary { display: inline-flex; }
 #view-tasks .task-kv-due { grid-template-columns: minmax(0, 1fr) 92px; }
 @media (max-width: 700px) { #view-tasks .task-top-actions kbd { display: none; } }
+/* Nút đang gửi (dùng chung ngoài POS, vd. Duyệt điều chuyển kho): vòng xoay nhỏ + con trỏ chờ. */
+.btn.is-busy { cursor: progress; opacity: 1 !important; }
+.btn.is-busy::before { content: ''; display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }

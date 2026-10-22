@@ -88,11 +88,21 @@ export function initTransfers({ api, root, toast, go }) {
     const thd = el('thead'); thd.append(th); tbl.append(thd, tb);
     const tw = el('div', 'table-wrap'); tw.append(tbl);
     const acts = el('div', 'row-gap');
-    const run = async (path, body, msg) => { try { await api(`/stock-transfers/${t.id}/${path}`, 'POST', { revision: t.revision, ...body }); toast(msg); await load(t.id); } catch (e) { toast(e.message, 'err'); } };
-    if (t.actions.approve) acts.append(btn('Duyệt', 'btn ok', () => run('approve', {}, 'Đã duyệt – nhóm Kho nhận việc chuyển hàng.')));
-    if (t.actions.reject) acts.append(btn('Từ chối…', 'btn danger-outline', async () => { const r = await ask('Từ chối điều chuyển', 'Lý do từ chối'); if (r) run('reject', { reason: r }, 'Đã từ chối.'); }));
-    if (t.actions.done) acts.append(btn('Đã chuyển', 'btn primary', () => run('done', {}, 'Đã ghi sổ kho: trừ kho đi, cộng kho đến.')));
-    if (t.actions.cancel) acts.append(btn('Huỷ phiếu', 'btn ghost', () => run('cancel', {}, 'Đã huỷ phiếu.')));
+    // Đang gửi: khoá mọi nút của phiếu (chống bấm 2 lần → lỗi "phiếu đã thay đổi"), nút đang bấm hiện "Đang …".
+    const run = async (path, body, msg, b, busyText) => {
+      if (acts.dataset.busy) return;
+      acts.dataset.busy = '1';
+      const all = [...acts.querySelectorAll('button')], label = b.textContent;
+      all.forEach(x => { x.disabled = true; }); b.textContent = busyText; b.className += ' is-busy'; b.setAttribute('aria-busy', 'true');
+      try { await api(`/stock-transfers/${t.id}/${path}`, 'POST', { revision: t.revision, ...body }); toast(msg); await load(t.id); }
+      catch (e) { toast(e.message, 'err'); }
+      finally { delete acts.dataset.busy; all.forEach(x => { x.disabled = false; }); b.textContent = label; b.className = b.className.replace(' is-busy', ''); b.removeAttribute('aria-busy'); }
+    };
+    const act = (text, cls, busyText, fn) => { const b = btn(text, cls, () => fn(b, busyText)); acts.append(b); };
+    if (t.actions.approve) act('Duyệt', 'btn ok', 'Đang duyệt…', (b, bt) => run('approve', {}, 'Đã duyệt – nhóm Kho nhận việc chuyển hàng.', b, bt));
+    if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async (b, bt) => { if (acts.dataset.busy) return; const r = await ask('Từ chối điều chuyển', 'Lý do từ chối'); if (r) run('reject', { reason: r }, 'Đã từ chối.', b, bt); });
+    if (t.actions.done) act('Đã chuyển', 'btn primary', 'Đang ghi sổ kho…', (b, bt) => run('done', {}, 'Đã ghi sổ kho: trừ kho đi, cộng kho đến.', b, bt));
+    if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', (b, bt) => run('cancel', {}, 'Đã huỷ phiếu.', b, bt));
     drawer.append(h, meta, tw, acts);
     drawer.hidden = false; shade.hidden = false;
   }
