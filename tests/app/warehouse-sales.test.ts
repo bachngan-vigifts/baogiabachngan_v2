@@ -275,8 +275,9 @@ test('kế hoạch báo giá: duyệt trước, xuất từng phần; thiếu ng
   assert.equal((await s.call(`/packing/${waiting.id}/confirm`,s.kho,'POST',{warehouseId:'vig',photos:[photo]})).status,200);
   assert.equal(await bal(s,'vig'),0);
   assert.equal((await s.call(`/deliveries/${second.data.id}/status`,s.emp,'PUT',{status:'in_transit'})).status,200);
-  assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'cancelled'})).status,200);
-  assert.equal(await bal(s,'vig'),70,'huỷ hoàn đúng hai phần đã xuất');
+  const cancelling=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'cancelled'});
+  assert.equal(cancelling.status,409);assert.equal(cancelling.data.code,'RETURN_REQUIRED');
+  assert.equal(await bal(s,'vig'),0,'hàng đang vận chuyển không tự trở về kho');
 });
 
 test('kế hoạch báo giá: sai tổng rollback cả đơn; HĐKT lưu phiếu nháp và không trừ kho khi duyệt', async()=>{
@@ -295,4 +296,20 @@ test('kế hoạch báo giá: sai tổng rollback cả đơn; HĐKT lưu phiếu
   assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,k.data.orderId))).length,2);
   const approved=await s.call(`/orders/${k.data.orderId}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   assert.equal(approved.status,200,JSON.stringify(approved.data));assert.equal(await bal(s,'vig'),50);
+});
+
+
+test('kế hoạch đã đóng nhưng chưa bàn giao: huỷ hoàn đúng các phần đã xuất tại kho, không cộng hai lần',async()=>{
+ const s=await setup(),q=await quote(s,'BG_PLAN_CANCEL',10);
+ const o=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:5,type:'stock'},{sku:'LY1',qty:5,type:'purchase',note:'NCC đã bổ sung'}]});assert.equal(o.status,201);
+ const id=o.data.id;assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ const [l]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
+ assert.equal((await s.call('/deliveries',s.emp,'POST',{orderId:id,plannedDate:'2026-10-25',lines:[{orderLineId:l!.id,qty:10}]})).status,201);
+ for(const p of await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id))){
+  assert.equal((await s.call(`/packing/${p.id}/send`,s.emp,'POST',{})).status,200);
+  assert.equal((await s.call(`/packing/${p.id}/confirm`,s.kho,'POST',{warehouseId:'vig',photos:['data:image/jpeg;base64,'+'A'.repeat(200)]})).status,200);
+ }
+ assert.equal(await bal(s,'vig'),40);
+ assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'cancelled'})).status,200);assert.equal(await bal(s,'vig'),50);
+ const again=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'cancelled'});assert.equal(again.status,403);assert.equal(await bal(s,'vig'),50);
 });

@@ -22,23 +22,8 @@ export async function assertPosFlowFulfillable(
     .where(eq(salesOrders.id, orderId));
   if (!o) throw new AppError(404, 'Không tìm thấy đơn.');
   const flow = saleFlowOf(o.posSnapshot);
+  await assertNoStockRecovery(db,orderId);
   if (!flow) return;
-  const [recovery] = await db
-    .select({ id: posReturns.id })
-    .from(posReturns)
-    .where(
-      and(
-        eq(posReturns.orderId, orderId),
-        eq(posReturns.requestContext, 'after_issue'),
-        sql`${posReturns.status} not in ('cancelled','rejected')`,
-      ),
-    )
-    .limit(1);
-  if (recovery)
-    throw new AppError(
-      409,
-      'Đơn đang thu hồi hàng đã xuất; xử lý phiếu trả trước.',
-    );
   if (o.status === 'cancelled') throw new AppError(409, 'Đơn đã huỷ.');
   if (flow === 'deposit' && !pickup)
     throw new AppError(409, 'Đơn cọc phải dùng Thu nốt và xuất hàng tại quầy.');
@@ -90,4 +75,24 @@ export async function flowIssued(db: CashDb, orderId: string) {
       sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${orderId})) or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${orderId}))`,
     )
     .groupBy(stockMoves.sku);
+}
+
+/** Active recall freezes further dispatch for ordinary COD as well as deposit/prepaid orders. */
+export async function assertNoStockRecovery(db:CashDb,orderId:string) {
+  const [recovery] = await db
+    .select({ id: posReturns.id })
+    .from(posReturns)
+    .where(
+      and(
+        eq(posReturns.orderId, orderId),
+        eq(posReturns.requestContext, 'after_issue'),
+        sql`${posReturns.status} not in ('cancelled','rejected')`,
+      ),
+    )
+    .limit(1);
+  if (recovery)
+    throw new AppError(
+      409,
+      'Đơn đang thu hồi hàng đã xuất; xử lý phiếu trả trước.',
+    );
 }

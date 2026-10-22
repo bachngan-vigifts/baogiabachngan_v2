@@ -3444,6 +3444,27 @@ async function openOrder(id) {
     + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
+  if (o.channel === 'pos' && o.status === 'cancelled' && can('pos.sell')) {
+    const box = document.createElement('span'); $('#order-actions').append(box);
+    // Chỉ đọc số hàng còn xuất; không tự nhập kho khi mở đơn đã huỷ.
+    api('/pos/orders/' + encodeURIComponent(o.id) + '/cancelled-stock').then(summary => {
+      if (!box.isConnected) return;
+      if (summary.blockedReason) { box.textContent = summary.blockedReason; box.className = 'muted'; return; }
+      if (!summary.lines.length) return;
+      const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'Nhận hàng hoàn về kho';
+      const description = summary.lines.map(l => `${l.sku}: ${fmtNum(l.qty)} → ${l.warehouseName}`).join('\n');
+      b.title = description;
+      b.onclick = async () => {
+        if (!await confirmBox(`Chỉ xác nhận khi đã nhận đủ hàng thực tế về đúng kho:\n${description}\nThao tác này ghi hoàn kho, không hoàn tiền. Nếu mới nhận một phần, chưa xác nhận.`, { title: 'Nhận hàng hoàn đơn ' + o.orderNo, ok: 'Đã nhận đủ hàng' })) return;
+        b.disabled = true;
+        try {
+          const result = await api('/pos/orders/' + encodeURIComponent(o.id) + '/receive-cancelled-stock', 'POST', {});
+          toast(result.replayed ? 'Hàng đã được nhập hoàn trước đó.' : 'Đã nhận hàng hoàn và ghi sổ kho.'); await openOrder(o.id);
+        } catch (e) { toast(e.message, 'err'); b.disabled = false; }
+      };
+      box.append(b);
+    }).catch(e => { if (box.isConnected) { box.textContent = e.message; box.className = 'error'; } });
+  }
   if(o.channel==='pos' && can('pos.sell')){const b=document.createElement('button');b.className='btn secondary';b.textContent='Trả / Đổi / Hoàn tiền';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosReturns({api,toast,orderId:o.id,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
   if(o.channel==='pos'&&can('pos.sell')&&['deposit','prepaid'].includes(JSON.parse(o.posSnapshot||'{}').saleFlow)){const b=document.createElement('button');b.className='btn primary';b.textContent='Cọc / Thu nốt / Trả trước';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosOrderFlows({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:o.id,onChanged:()=>openOrder(o.id),onReturns:id=>openPosReturns({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:id,onChanged:()=>openOrder(o.id)})});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
   if (o.channel === 'pos' && o.canEdit && o.status !== 'cancelled' && !isK) $('#order-actions').append(posOrderEditor({ api, detail: d, onSaved: () => openOrder(o.id) }));

@@ -211,7 +211,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     const sentToWarehouse = body.sendToWarehouse === true && groups.size === 1;
     let deliveryId: string | null = null;
     await c.env.db.transaction(async tx => {
-      if(saleFlowOf(order.posSnapshot)){await cashLock(tx);await assertPosFlowFulfillable(tx,order.id);}
+      if(order.channel==='pos')await cashLock(tx);if(saleFlowOf(order.posSnapshot))await assertPosFlowFulfillable(tx,order.id);
       const [locked] = await tx.select().from(salesOrders).where(eq(salesOrders.id, order.id)).limit(1).for('update');
       if (!locked || ['draft', 'cancelled', 'delivered'].includes(locked.status)) throw new AppError(409, 'Đơn chưa xác nhận, đã huỷ hoặc đã giao xong.');
       const allocatedNow = await allocatedByLine(tx, order.id);
@@ -293,12 +293,13 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     if (slip.status !== 'draft') throw new AppError(409, 'Phiếu đã gửi kho hoặc đã huỷ.');
     const now = nowIso();
     await c.env.db.transaction(async tx=>{
-      if(saleFlowOf(order.posSnapshot)){await cashLock(tx);await assertPosFlowFulfillable(tx,order.id);}
+      if(order.channel==='pos')await cashLock(tx);if(saleFlowOf(order.posSnapshot))await assertPosFlowFulfillable(tx,order.id);
       const [freshOrder] = await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
       if (!freshOrder || ['draft','cancelled','delivered'].includes(freshOrder.status)) throw new AppError(409,'Duyệt đơn trước khi gửi phiếu đóng gói.');
       if (!await hasDeliverySchedule(tx,order.id)) throw new AppError(409,NO_SCHEDULE,'NO_DELIVERY_SCHEDULE');
-      await tx.update(packingSlips).set({ status: 'sent', sentAt: now, sentBy: viewer(c).id, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
-        .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'draft')));
+      const changed=await tx.update(packingSlips).set({ status: 'sent', sentAt: now, sentBy: viewer(c).id, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
+        .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'draft'))).returning({id:packingSlips.id});
+      if(!changed.length)throw new AppError(409,'Phiếu vừa thay đổi. Mở lại phiếu trước khi gửi.');
     });
     await notifyWarehouse(c, 'Kho: yêu cầu đóng gói', `${slip.slipNo} · ${order.customerName} (${PACKING_SOURCE_LABEL[slip.source]}${slip.sourceNote ? ': ' + slip.sourceNote : ''})`, `/index.html#/packing/${slip.id}`);
     return json({ ok: true });
@@ -308,7 +309,13 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     const { slip, order } = await loadSlip(c, c.params.id!);
     if (!(await canManageOrder(c, order.id))) throw new AppError(403, 'Chỉ nhân viên phụ trách đơn hoặc Manager huỷ được phiếu.');
     if (slip.status !== 'draft' && slip.status !== 'sent') throw new AppError(409, 'Phiếu đã đóng hàng hoặc đã huỷ, không huỷ được.');
-    await c.env.db.update(packingSlips).set({ status: 'cancelled', updatedAt: nowIso(), revision: sql`${packingSlips.revision} + 1` }).where(eq(packingSlips.id, slip.id));
+    await c.env.db.transaction(async tx=>{
+      if(order.channel==='pos')await cashLock(tx);
+      await tx.select({id:salesOrders.id}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
+      const changed=await tx.update(packingSlips).set({status:'cancelled',updatedAt:nowIso(),revision:sql`${packingSlips.revision}+1`})
+        .where(and(eq(packingSlips.id,slip.id),inArray(packingSlips.status,['draft','sent']))).returning({id:packingSlips.id});
+      if(!changed.length)throw new AppError(409,'Phiếu đã đóng hàng hoặc vừa thay đổi, không huỷ được.');
+    });
     return json({ ok: true });
   }, 'business');
 
@@ -332,7 +339,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     }
     const now = nowIso();
     await c.env.db.transaction(async tx => {
-      if (saleFlowOf(order.posSnapshot)) { await cashLock(tx); await assertPosFlowFulfillable(tx,order.id); }
+      if(order.channel==='pos')await cashLock(tx);if(saleFlowOf(order.posSnapshot))await assertPosFlowFulfillable(tx,order.id);
       if (order.channel === 'pos') {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
         const [issued] = await tx.select({id:stockMoves.id}).from(stockMoves).innerJoin(deliveries,eq(deliveries.id,stockMoves.refId)).where(and(eq(stockMoves.refType,'pos_delivery'),eq(deliveries.orderId,order.id))).limit(1);

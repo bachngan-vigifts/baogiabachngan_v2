@@ -5,6 +5,9 @@ import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesOrderLines, salesOrders } from '../schema.ts';
+import { cashLock } from './cash-store.ts';
+import { assertNoStockRecovery } from './pos-order-flow-guards.ts';
+import { recordDispatch } from './cancellation-guards.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
 import { refreshOrderStatus } from './routes.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
@@ -32,15 +35,18 @@ async function ghnDetail(env: StaffEnv, code: string) {
 
 async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: string, observedAt: string) {
   const result = await env.db.transaction(async tx => {
+    await cashLock(tx);
     const [row] = await tx.select({ delivery: deliveries, order: salesOrders }).from(deliveries)
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, deliveryId)).limit(1).for('update');
     if (!row || row.order.channel !== 'pos' || row.order.fulfillmentMode !== 'cod') return { changed: false, delivered: false, orderId: '' };
     const now = new Date().toISOString();
     await tx.update(deliveries).set({ trackingStatus: status, trackingUpdatedAt: observedAt, updatedAt: now }).where(eq(deliveries.id, deliveryId));
-    if (row.delivery.status === 'cancelled') return { changed: true, delivered: false, orderId: row.order.id };
+    if (row.delivery.status === 'cancelled' || row.order.status === 'cancelled') return { changed: true, delivered: false, orderId: row.order.id };
 
+    if ((IN_TRANSIT.has(status)||status==='delivered') && row.delivery.status!=='delivered') await assertNoStockRecovery(tx,row.order.id);
     if (IN_TRANSIT.has(status) && !['in_transit', 'delivered'].includes(row.delivery.status)) {
       await tx.update(deliveries).set({ status: 'in_transit' }).where(eq(deliveries.id, deliveryId));
+      await recordDispatch(tx,row.order.id,row.delivery.id,row.order.createdBy,status);
       await issuePosDelivery(tx, row.order.id, row.delivery.id, row.order.createdBy, true);
       await tx.update(salesOrders).set({ status: 'delivering', updatedAt: now }).where(and(eq(salesOrders.id, row.order.id), eq(salesOrders.status, 'confirmed')));
     }
@@ -52,6 +58,7 @@ async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: string,
 
     if (row.delivery.status !== 'in_transit') {
       await tx.update(deliveries).set({ status: 'in_transit' }).where(eq(deliveries.id, deliveryId));
+      await recordDispatch(tx,row.order.id,row.delivery.id,row.order.createdBy,status);
       await issuePosDelivery(tx, row.order.id, row.delivery.id, row.order.createdBy, true);
     }
     const deliveredOn = vietnamDate().iso;

@@ -1,3 +1,4 @@
+import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { cancelGhnShipments } from './pos-ghn-cancel.ts';
@@ -7,7 +8,7 @@ import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 import { saleFlowOf, flowHoldUntil } from '../domain/pos-order-flow.ts';
 import { posOrderReservations } from '../pos-order-flow-schema.ts';
-import { assertPosFlowFulfillable, flowIssued } from './pos-order-flow-guards.ts';
+import { assertPosFlowFulfillable, assertNoStockRecovery, flowIssued } from './pos-order-flow-guards.ts';
 import { assertNoReturnActivity, returnAdjustments, netReturnInputs } from './pos-return-credit.ts';
 import { posReturns, posRefunds, posExchangeAllocations } from '../return-schema.ts';
 import { snapshotPosFees } from '../domain/pos-fees.ts';
@@ -217,6 +218,26 @@ export async function syncOrderStock(tx: Tx, by: string, orderId: string, note: 
   const lines = deferred ? [] : await tx.select({ sku: salesOrderLines.sku, qty: salesOrderLines.qty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   const no = docRef(o.id, o.orderNo, (await contractNosOf(tx, [o.id])).get(o.id)).no;
   return syncSaleMoves(tx, by, { id: o.id, no, warehouseId: o.warehouseId, active: ACTIVE_ORDER.includes(o.status) }, lines, note);
+}
+async function assertCanCancelDocument(tx:Tx,orderId:string) {
+  const [o]=await tx.select().from(salesOrders).where(eq(salesOrders.id,orderId));
+  if(!o)throw new AppError(404,'Không tìm thấy đơn hàng / HĐKT.');
+  if(saleFlowOf(o.posSnapshot))throw new AppError(409,'Đơn cọc/trả trước: dùng Huỷ/hoàn tại POS để xử lý tiền và hàng.');
+  await assertNoReturnActivity(tx,orderId);
+  const [[paid],shipped]=await Promise.all([
+    tx.select({n:count()}).from(customerPayments).where(and(eq(customerPayments.orderId,orderId),isNull(customerPayments.voidedAt))),
+    tx.select({id:salesOrderLines.id}).from(salesOrderLines).where(and(eq(salesOrderLines.orderId,orderId),sql`${salesOrderLines.deliveredQty}>0`)).limit(1),
+  ]);
+  if(Number(paid?.n)>0||shipped.length)throw new AppError(409,'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
+  await assertNotDispatched(tx,orderId);
+}
+async function cancelDocumentChildren(tx:Tx,order:typeof salesOrders.$inferSelect,by:string) {
+  const now=nowIso();
+  await tx.update(salesContracts).set({status:'cancelled',updatedAt:now,revision:sql`${salesContracts.revision}+1`}).where(and(eq(salesContracts.orderId,order.id),ne(salesContracts.status,'cancelled')));
+  const slips=await tx.update(packingSlips).set({status:'cancelled',updatedAt:now,revision:sql`${packingSlips.revision}+1`})
+    .where(and(eq(packingSlips.orderId,order.id),inArray(packingSlips.status,['draft','sent','packed']))).returning({id:packingSlips.id,no:packingSlips.slipNo});
+  for(const slip of slips)await reverseRef(tx,by,'packing_slip',slip.id,`Huỷ ${order.orderNo}: hàng chưa giao của phiếu ${slip.no} về lại kho`,now);
+  await tx.update(deliveries).set({status:'cancelled',updatedAt:now}).where(and(eq(deliveries.orderId,order.id),inArray(deliveries.status,['planned','in_transit','failed'])));
 }
 export async function contractNosOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   const ids = [...new Set(orderIds)];
@@ -681,13 +702,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
       const [locked] = await tx.select({ status: salesOrders.status, warehouseId:salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
-      if (status === 'cancelled') {
-        const [[paidNow], shippedNow] = await Promise.all([
-          tx.select({ n: count() }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt))),
-          tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(and(eq(salesOrderLines.orderId, order.id), sql`${salesOrderLines.deliveredQty} > 0`)).limit(1),
-        ]);
-        if (Number(paidNow?.n) > 0 || shippedNow.length) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
-      }
+      if (status === 'cancelled') await assertCanCancelDocument(tx,order.id);
       if (status === 'confirmed') {
         if (warehouseId !== locked.warehouseId && (await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,order.id),ne(packingSlips.status,'cancelled'))).limit(1)).length) throw new AppError(409,'Huỷ các phiếu kế hoạch nguồn hàng rồi lập lại trước khi đổi kho bán.','STOCK_PLAN_IN_USE');
         assertApprovalDebt(await approvalDebt(tx, order.customerId, order.taxCode, order.id), body.debtWarningAccepted === true);
@@ -705,13 +720,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       // Huỷ: dọn việc còn treo của đơn – phiếu đóng gói chưa đóng / chuyến giao chưa giao huỷ theo (việc kho / giao tự đóng);
       // phiếu kho đã đóng (đã ghi xuất sổ kho) thì ghi dòng đảo – hàng về lại kho – rồi huỷ phiếu.
       if (status === 'cancelled') {
-        const now = nowIso(), me = viewer(c);
         ghnDeliveryIds = (await tx.select({ id: deliveries.id }).from(deliveries)
           .where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit']), sql`${deliveries.trackingCode}<>''`))).map(d => d.id);
-        const packed = await tx.update(packingSlips).set({ status: 'cancelled', updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
-          .where(and(eq(packingSlips.orderId, order.id), inArray(packingSlips.status, ['draft', 'sent', 'packed']))).returning({ id: packingSlips.id, no: packingSlips.slipNo });
-        for (const s of packed) await reverseRef(tx, me.id, 'packing_slip', s.id, `Huỷ ${order.orderNo}: hàng đã đóng của phiếu ${s.no} về lại kho`, now);
-        await tx.update(deliveries).set({ status: 'cancelled', updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
+        await cancelDocumentChildren(tx, order, viewer(c).id);
       }
       // Khách đặt hàng thẳng (báo giá chưa duyệt): nhân viên xác nhận đơn = duyệt luôn báo giá của đơn.
       if (status === 'confirmed' && order.quoteId)
@@ -745,6 +756,15 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const order = await loadOrder(c, c.params.id!);
     if (order.status !== 'cancelled') throw new AppError(409, 'Chỉ xoá được đơn hàng / HĐKT đã huỷ. Huỷ trước rồi xoá.', 'ORDER_NOT_CANCELLED');
     await c.env.db.transaction(async tx => {
+      await cashLock(tx);
+      const [locked] = await tx.select({ status: salesOrders.status }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      if (locked?.status !== 'cancelled') throw new AppError(409, 'Đơn không còn ở trạng thái đã huỷ.');
+      await assertNoReturnActivity(tx, order.id);
+      const [ledger] = await tx.select({ id: stockMoves.id }).from(stockMoves).where(sql`
+        (${stockMoves.refType} in ('pos_order','sales_order') and (${stockMoves.refId}=${order.id} or ${stockMoves.refId} like ${order.id + '#%'})) or
+        (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${order.id})) or
+        (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${order.id}))`).limit(1);
+      if (ledger) throw new AppError(409, 'Đơn đã có lịch sử kho. Giữ chứng từ để nhận hoàn và đối chiếu sổ kho, không xoá.', 'ORDER_HAS_HISTORY');
       const [[paid], lines, [shipped]] = await Promise.all([
         tx.select({ n: count() }).from(customerPayments).where(eq(customerPayments.orderId, order.id)),
         tx.select({ deliveredQty: salesOrderLines.deliveredQty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id)),
@@ -955,6 +975,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (contract.status !== 'draft' && me.role !== 'manager') throw new AppError(403, 'HĐKT đã ký / hoàn tất. Chỉ Manager được chỉnh sửa hoặc huỷ.', 'CONTRACT_APPROVED');
       if (body.revision !== undefined && (!Number.isSafeInteger(body.revision) || body.revision !== contract.revision))
         throw new AppError(409, 'HĐKT đã thay đổi. Vui lòng mở lại trước khi lưu.', 'CONTRACT_CHANGED');
+      if (contract.status === 'cancelled' && body.status !== undefined && body.status !== 'cancelled') throw new AppError(409,'HĐKT đã huỷ, không mở lại riêng trạng thái hợp đồng.');
       const financial = body.depositRate !== undefined || body.paymentDays !== undefined;
       if (financial && me.role !== 'manager') throw new AppError(403, 'Chỉ Manager được sửa tỷ lệ cọc và thời hạn thanh toán.');
       const set: Partial<typeof salesContracts.$inferInsert> = { updatedAt: nowIso() };
@@ -974,6 +995,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (body.paymentMethod !== undefined) set.paymentMethod = text(body.paymentMethod, 1000);
       if (body.deliveryAddress !== undefined) set.deliveryAddress = text(body.deliveryAddress, 2000);
       if (body.details !== undefined) set.data = JSON.stringify(body.details && typeof body.details === 'object' ? body.details : {});
+      if (body.status === 'cancelled') {
+        await assertCanCancelDocument(tx,found.order.id);
+        await tx.update(salesOrders).set({status:'cancelled',updatedAt:nowIso(),revision:sql`${salesOrders.revision}+1`}).where(eq(salesOrders.id,found.order.id));
+        await syncOrderStock(tx,me.id,found.order.id,`Huỷ HĐKT ${contract.contractNo}`);
+        await cancelDocumentChildren(tx,found.order,me.id);
+        await removeMovements(tx,`sale:${found.order.id}:`);
+      }
       const [saved] = await tx.update(salesContracts).set({ ...set, revision: contract.revision + 1 }).where(eq(salesContracts.id, contract.id)).returning();
       if (financial || body.signedDate !== undefined) await syncPaymentSchedules(tx, found.order, saved);
     });
@@ -1039,21 +1067,27 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (row.d.status === 'cancelled') throw new AppError(409, 'Chuyến đã huỷ. Lên lịch chuyến mới nếu cần giao lại.');
     if (row.status === 'cancelled' && status !== 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không giao được.');
     // Chỉ đi tới: Chờ giao ⇄ Đang giao → Đã giao / Thất bại; Thất bại → Chờ giao (giao lại); huỷ khi chưa giao. "Đã giao" chỉ từ Chờ / Đang giao.
-    const from: Record<string, readonly string[]> = { planned: ['in_transit', 'failed'], in_transit: ['planned', 'failed'], failed: ['planned'], delivered: ['planned', 'in_transit'], cancelled: ['planned', 'in_transit', 'failed'] };
+    const from: Record<string, readonly string[]> = { planned: ['in_transit', 'failed'], in_transit: ['planned', 'failed'], failed: ['planned', 'in_transit'], delivered: ['planned', 'in_transit'], cancelled: ['planned', 'in_transit', 'failed'] };
     if (!from[status]!.includes(row.d.status)) throw new AppError(409, 'Không đổi được trạng thái chuyến giao theo thứ tự này.', 'DELIVERY_STATUS_FLOW');
     const deliveredOn = status === 'delivered' ? (isDate(body.deliveredOn) ? String(body.deliveredOn) : vietnamDate().iso) : null;
     await c.env.db.transaction(async tx => {
       const [flowOrder] = await tx.select().from(salesOrders).where(eq(salesOrders.id,row.d.orderId));
-      if(saleFlowOf(flowOrder?.posSnapshot)){await cashLock(tx);if(['in_transit','delivered'].includes(status))await assertPosFlowFulfillable(tx,row.d.orderId);if(status==='cancelled'&&(await tx.select({id:stockMoves.id}).from(stockMoves).where(and(eq(stockMoves.refType,'pos_delivery'),eq(stockMoves.refId,row.d.id))).limit(1)).length)throw new AppError(409,'Chuyến đã xuất hàng: dùng yêu cầu trả/thu hồi, không huỷ lịch thẳng.');}
+      if(flowOrder?.channel==='pos')await cashLock(tx);
+      if(saleFlowOf(flowOrder?.posSnapshot)){if(['in_transit','delivered'].includes(status))await assertPosFlowFulfillable(tx,row.d.orderId);if(status==='cancelled'&&(await tx.select({id:stockMoves.id}).from(stockMoves).where(and(eq(stockMoves.refType,'pos_delivery'),eq(stockMoves.refId,row.d.id))).limit(1)).length)throw new AppError(409,'Chuyến đã xuất hàng: dùng yêu cầu trả/thu hồi, không huỷ lịch thẳng.');}
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
+      if (['in_transit','delivered'].includes(status) && flowOrder?.channel==='pos') await assertNoStockRecovery(tx,row.d.orderId);
       if (['in_transit','delivered'].includes(status) && flowOrder?.channel==='crm') {
         await tx.select({id:salesOrders.id}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
         await assertPlannedDispatch(tx,row.d.orderId,row.d.id);
       }
+      const [freshDeliveryOrder]=await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
+      if (!freshDeliveryOrder || (freshDeliveryOrder.status==='cancelled' && status!=='cancelled')) throw new AppError(409,'Đơn đã huỷ, không giao được.');
+      if(status==='cancelled') await assertNotDispatched(tx,row.d.orderId,row.d.id);
       // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
       const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })
         .where(and(eq(deliveries.id, row.d.id), inArray(deliveries.status, [...from[status]!] as typeof DELIVERY_STATUSES[number][]))).returning({ id: deliveries.id });
       if (!done.length) throw new AppError(409, 'Chuyến giao vừa được người khác cập nhật. Tải lại trang.', 'DELIVERY_CHANGED');
+      if(['in_transit','delivered'].includes(status))await recordDispatch(tx,row.d.orderId,row.d.id,me.id,status);
       if(status==='in_transit'&&saleFlowOf(flowOrder?.posSnapshot)==='prepaid')await issuePosDelivery(tx,row.d.orderId,row.d.id,me.id,true);
       if (status !== 'delivered') return;
       await savePhotos(tx, c.env.files, me.id, 'delivery', row.d.id, photos);
@@ -1157,7 +1191,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         if (paidAt !== vietnamDate().iso) throw new AppError(400, 'Tiền vào két ghi nhận ngày thực thu hôm nay.');
         cashShiftId = cashShift.id;
       }
-      await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      const [fresh]=await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
+      if(!fresh||['draft','cancelled'].includes(fresh.status))throw new AppError(409,'Đơn chưa duyệt hoặc đã huỷ, không ghi thu được.');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
       await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, requestKey, paymentSource:posReceipt?'pos':'manual', amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
