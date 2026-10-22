@@ -1,3 +1,4 @@
+import { receivingCalendar } from './receiving-calendar.ts';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -162,6 +163,11 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     return json({ ...await incomingBySku(c.env.db, c.url.searchParams, today()),
       canRequest: me(c).role === 'manager' || me(c).positionId === 'sale-admin', canSend: me(c).role === 'manager' || me(c).positionId === 'sale-admin',
       canViewSuppliers:canEditSuppliers(me(c)),canViewStock:can(me(c),'page.stock-lookup') });
+  }, 'business');
+
+  router.get('/purchase-receiving-calendar', async c => {
+    guard(c);
+    return json(await receivingCalendar(c.env.db, c.url.searchParams, today()));
   }, 'business');
 
   router.get('/purchase-orders', async c => {

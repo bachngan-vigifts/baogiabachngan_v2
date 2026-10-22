@@ -79,6 +79,7 @@
         <a class="nav" href="#/inventory" data-nav="inventory" hidden><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z M4 10h16 M4 15h16 M9 4v16"/></svg><span>Sổ kho</span></a>
         <a class="nav" href="#/stock-lookup" data-nav="stock-lookup" hidden><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4 M8 11h6 M11 8v6"/></svg><span>Tra tồn</span></a>
         <a class="nav" href="#/packing" data-nav="packing" hidden><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg><span>Phiếu đóng gói</span><b id="nav-packing-count" class="badge danger" hidden>0</b></a>
+        <a class="nav" href="#/receiving" data-nav="receiving"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z M8 2v4 M16 2v4 M4 9h16 M12 11v6 M9 14l3 3 3-3"/></svg><span>Lịch nhận hàng</span><b id="nav-receiving-count" class="badge danger" hidden>0</b></a>
         <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg><span>Lịch giao hàng</span><b id="nav-deliveries-count" class="badge danger" hidden>0</b></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-4">
@@ -479,6 +480,8 @@
     </section>
 
     <!-- ---------- Lịch giao hàng ---------- -->
+    <section class="view" id="view-receiving" hidden></section>
+
     <section class="view" id="view-deliveries" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Các chuyến giao theo ngày; bấm vào chuyến để mở đơn.</p></div>

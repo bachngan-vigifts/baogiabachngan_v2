@@ -34,6 +34,17 @@ const num = (v: unknown) => Math.round(Number(v) * 1000) / 1000;
 const stockWarehouses = (db: StaffEnv['db']) => db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses)
   .where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).orderBy(asc(warehouses.sortOrder), asc(warehouses.name));
 
+// Warehouse staff work only with the Vigifts ledger; other stock pickers retain their own scope.
+const restrictedLedger = (c: Ctx) => me(c).role === 'employee' && me(c).positionId === 'warehouse';
+async function ledgerWarehouses(c: Ctx) {
+  const all = await stockWarehouses(c.env.db);
+  return restrictedLedger(c) ? all.filter(w => w.name.toLowerCase().includes('vigifts')) : all;
+}
+async function checkLedgerWarehouse(c: Ctx, id: string) {
+  if (!restrictedLedger(c)) return;
+  if (!(await ledgerWarehouses(c)).some(w => w.id === id)) fail(403, 'Kho không thuộc phạm vi sổ kho của bạn.');
+}
+
 /** Một dòng đơn mua NCC còn chờ về (không có giá). */
 export interface IncomingLine { sku: string; orderId: string; ticketNumber: string; supplierName: string; internalNo: string; arrivalDate: string | null; left: number }
 /**
@@ -77,19 +88,21 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
 
   router.get('/inventory/status', async c => {
     guard(c);
-    const db = c.env.db;
+    const db = c.env.db, whs = await ledgerWarehouses(c), ids = whs.map(w => w.id);
+    const scope = restrictedLedger(c) ? (ids.length ? inArray(stockMoves.warehouseId, ids) : sql`false`) : undefined;
     const [[open], [cnt]] = await Promise.all([
       db.select({ at: stockMoves.createdAt, by: employees.name }).from(stockMoves).leftJoin(employees, eq(employees.id, stockMoves.createdBy))
-        .where(eq(stockMoves.refType, 'opening')).orderBy(desc(stockMoves.createdAt)).limit(1),
-      db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(stockMoves),
+        .where(and(eq(stockMoves.refType, 'opening'), scope)).orderBy(desc(stockMoves.createdAt)).limit(1),
+      db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(stockMoves).where(scope),
     ]);
-    return json({ openedAt: open?.at ?? null, openedBy: open?.by ?? '', moveCount: cnt?.n ?? 0, canManage: canManage(me(c)), warehouses: await stockWarehouses(db) });
+    return json({ openedAt: open?.at ?? null, openedBy: open?.by ?? '', moveCount: cnt?.n ?? 0, canManage: canManage(me(c)), warehouses: whs, warehouseRestricted: restrictedLedger(c), defaultWarehouseId: restrictedLedger(c) ? whs[0]?.id ?? null : null });
   }, 'business');
 
   router.get('/inventory/compare', async c => {
     guard(c);
     const db = c.env.db, p = c.url.searchParams, wh = p.get('warehouseId') || '', q = (p.get('q') || '').trim().slice(0, 80), onlyDiff = p.get('diff') !== '0';
-    const whs = await stockWarehouses(db), ids = wh ? whs.filter(w => w.id === wh).map(w => w.id) : whs.map(w => w.id);
+    if (wh) await checkLedgerWarehouse(c, wh);
+    const whs = await ledgerWarehouses(c), ids = wh ? whs.filter(w => w.id === wh).map(w => w.id) : whs.map(w => w.id);
     if (!ids.length) return json({ rows: [], total: 0, diffCount: 0 });
     // Ghép tồn sổ kho và tồn Sapo theo (mã, kho); thiếu bên nào coi như 0.
     const res = await db.execute(sql`
@@ -114,6 +127,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     guard(c);
     const db = c.env.db, sku = (c.url.searchParams.get('sku') || '').trim(), wh = c.url.searchParams.get('warehouseId') || '';
     if (!sku || !wh) fail(400, 'Chọn mã hàng và kho.');
+    await checkLedgerWarehouse(c, wh);
     const [moves, [bal], [sapo], [prod]] = await Promise.all([
       db.select({ m: stockMoves, by: employees.name }).from(stockMoves).leftJoin(employees, eq(employees.id, stockMoves.createdBy))
         .where(and(eq(stockMoves.sku, sku), eq(stockMoves.warehouseId, wh))).orderBy(asc(stockMoves.createdAt), asc(stockMoves.id)).limit(1000),
@@ -131,7 +145,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền chốt tồn đầu kỳ.');
     const body = await readJson(c.req, 2_000);
     if (body.confirm !== true) fail(400, 'Xác nhận chốt tồn đầu kỳ.');
-    const db = c.env.db, ids = (await stockWarehouses(db)).map(w => w.id);
+    const db = c.env.db, ids = (await ledgerWarehouses(c)).map(w => w.id);
     if (!ids.length) fail(409, 'Chưa có kho thật nào (đồng bộ danh sách kho từ Sapo trước).');
     const refId = crypto.randomUUID(), refNo = 'ĐK-' + new Date().toISOString().slice(0, 10).replaceAll('-', '');
     let written = 0;
@@ -157,6 +171,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, body = await readJson(c.req, 100_000), reason = String(body.reason ?? '').trim().slice(0, 500), wh = String(body.warehouseId ?? '');
     if (reason.length < 3) fail(400, 'Nhập lý do điều chỉnh.');
     if (!(await stockWarehouses(db)).some(w => w.id === wh)) fail(400, 'Chọn kho điều chỉnh.');
+    await checkLedgerWarehouse(c, wh);
     const lines = (Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).slice(0, 300)
       .map(l => ({ sku: String(l.sku ?? '').trim(), qty: num(l.qty) })).filter(l => l.sku && Number.isFinite(l.qty) && l.qty !== 0);
     if (!lines.length) fail(400, 'Nhập ít nhất một mã với số lượng tăng (+) hoặc giảm (−).');

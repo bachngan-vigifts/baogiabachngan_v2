@@ -971,7 +971,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
       contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
-      .where(and(deliveryScope(c), focusId ? eq(deliveries.id, focusId) : undefined, isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
+      .where(and(sql`${salesOrders.channel} <> 'pos'`, deliveryScope(c), focusId ? eq(deliveries.id, focusId) : undefined, isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
         status ? eq(deliveries.status, status as never) : undefined))
       .orderBy(desc(deliveries.plannedDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(500);
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
