@@ -972,7 +972,7 @@ test('Thẻ "Đơn web": số đỏ nhấp nháy khi có đơn cần xử lý, b
     assert.match(card.textContent, /Đơn web/);
     await card.fire('click'); await new Promise(r => setTimeout(r, 0));
     assert.equal(new URLSearchParams(calls.filter(c => c.path.startsWith('/pos/orders')).at(-1)!.path.split('?')[1]).get('status'), 'web');
-    await root.querySelectorAll('button').find(b => b.className === 'pos-order-row')!.fire('click');
+    await root.querySelectorAll('div').find(b => b.className === 'pos-order-row')!.fire('click');
     let dlg = doc.body.children.at(-1)!;
     assert.ok(dlg.querySelectorAll('button').some(b => b.textContent === 'Hoàn thành'));
     await dlg.querySelectorAll('button').find(b => b.textContent === 'Huỷ đơn')!.fire('click');

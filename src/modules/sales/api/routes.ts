@@ -711,7 +711,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         const packed = await tx.update(packingSlips).set({ status: 'cancelled', updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
           .where(and(eq(packingSlips.orderId, order.id), inArray(packingSlips.status, ['draft', 'sent', 'packed']))).returning({ id: packingSlips.id, no: packingSlips.slipNo });
         for (const s of packed) await reverseRef(tx, me.id, 'packing_slip', s.id, `Huỷ ${order.orderNo}: hàng đã đóng của phiếu ${s.no} về lại kho`, now);
-        await tx.update(deliveries).set({ status: 'cancelled', updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
+        // Gồm cả chuyến "Thất bại" (GHN hoàn hàng): không còn chuyến mở nào để đồng bộ GHN xuất kho lại trên đơn đã huỷ.
+        await tx.update(deliveries).set({ status: 'cancelled', updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit', 'failed'])));
       }
       // Khách đặt hàng thẳng (báo giá chưa duyệt): nhân viên xác nhận đơn = duyệt luôn báo giá của đơn.
       if (status === 'confirmed' && order.quoteId)

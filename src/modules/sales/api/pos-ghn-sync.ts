@@ -37,7 +37,8 @@ async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: string,
     if (!row || row.order.channel !== 'pos' || row.order.fulfillmentMode !== 'cod') return { changed: false, delivered: false, orderId: '' };
     const now = new Date().toISOString();
     await tx.update(deliveries).set({ trackingStatus: status, trackingUpdatedAt: observedAt, updatedAt: now }).where(eq(deliveries.id, deliveryId));
-    if (row.delivery.status === 'cancelled') return { changed: true, delivered: false, orderId: row.order.id };
+    // Chuyến / đơn đã huỷ: chỉ lưu trạng thái GHN, không xuất kho, không ghi thu COD (hàng hoàn nhận lại qua "Nhận hàng hoàn").
+    if (row.delivery.status === 'cancelled' || row.order.status === 'cancelled') return { changed: true, delivered: false, orderId: row.order.id };
 
     if (IN_TRANSIT.has(status) && !['in_transit', 'delivered'].includes(row.delivery.status)) {
       await tx.update(deliveries).set({ status: 'in_transit' }).where(eq(deliveries.id, deliveryId));
