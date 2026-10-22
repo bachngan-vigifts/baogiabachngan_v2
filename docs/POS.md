@@ -229,3 +229,9 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
   - Bảng đơn cửa hàng lọc trong SQL. Chưa chọn ngày thì đơn đã xong chỉ lấy 30 ngày gần nhất; đơn dang dở luôn hiện. Danh sách 100 đơn/trang, tổng tiền tính trên toàn bộ kết quả lọc.
   - Báo cáo ca và Ship COD tính số còn phải thu bằng truy vấn gộp.
 - **Webhook SePay / WooCommerce không còn mã dự phòng trong code.** Cần 3 secret GitHub: `SEPAY_POS_API_KEY_HASH`, `WOO_LOCK_TOKEN_HASH`, `WOO_MINHLONG_TOKEN_HASH` (SHA-256 hex). Thiếu secret thì bước deploy API dừng lại, không triển khai.
+
+## Đồng bộ trạng thái GHN (shop Lock) ngay trong CRM
+- Mở **Ship COD** ở Bán hàng nhanh là CRM tự đồng bộ; có nút **↻ Đồng bộ GHN** để chạy lại. API `POST /pos/ghn/sync` (cần quyền bán hàng nhanh, kiểm ở máy chủ); bấm liên tục trong 60 giây dùng lại kết quả cũ, không gọi GHN lại.
+- Đồng bộ các chuyến COD của quầy Lock có mã vận đơn và chưa xong: GHN đã lấy hàng → *đang giao* + xuất kho một lần; GHN giao xong → *đã giao* + ghi thu COD (nguồn `ghn_cod`, không cộng vào két); hoàn / huỷ → *thất bại*.
+- Máy ngoài (n8n / OpenClaw) vẫn gọi được `POST /integrations/ghn/pos-lock/pull` bằng mã đồng bộ.
+- Cần secret **`GHN_API_TOKEN`** (token API của tài khoản GHN shop Lock, ShopId 6096731) trên GitHub → workflow "Triển khai API" đặt vào Supabase. Chưa có token thì CRM báo "CRM chưa có token GHN".

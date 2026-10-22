@@ -296,7 +296,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const menuAction = (label, fn) => { const b = button(label, 'btn ghost', () => { more.open = false; fn(); }); morePanel.append(b); };
     menuAction('Trả / Đổi / Hoàn', openReturns);
     menuAction('Báo cáo ca', () => run(history));
-    menuAction('Ship COD', () => run(codList));
+    menuAction('Ship COD', () => run(() => codList()));
     if(st.options.orderFlowVersion>=1)menuAction('Đơn cọc đang xử lý',()=>run(flowOrders));
     menuAction('In bill tạm', () => run(printTemporary));
     menuAction('Chọn bảng giá', choosePricePolicy);
@@ -1420,7 +1420,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           else if (target === 'orders') go('#/orders');
           else if (target === 'returns') openReturns();
           else if (target === 'flows') run(flowOrders);
-          else if (target === 'cod') run(codList);
+          else if (target === 'cod') run(() => codList());
         } });
         const acts = el('div', 'pos-actions');
         acts.append(button('In K80', 'btn primary', () => printPos(d, 'shift')), button('Đóng', 'btn secondary', detail.close));
@@ -1720,10 +1720,32 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       refreshPay();
     }
   }
-  async function codList() {
+  // Đồng bộ trạng thái vận đơn GHN (shop Lock) ngay trong CRM: tự chạy khi mở Ship COD, hoặc bấm "↻ Đồng bộ GHN".
+  // Giao xong → máy chủ tự xuất kho và ghi thu COD (nguồn GHN); bấm liên tục trong 60 giây dùng lại kết quả cũ.
+  async function syncGhn(status, btn, reopen) {
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1'; btn.disabled = true; btn.className += ' is-busy'; status.textContent = 'Đang đồng bộ trạng thái GHN…';
+    try {
+      const r = await api('/pos/ghn/sync', 'POST', {});
+      status.textContent = 'GHN ' + new Date(r.syncedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) +
+        ': kiểm ' + r.checked + ' vận đơn, cập nhật ' + r.updated + (r.errors?.length ? ', ' + r.errors.length + ' lỗi (' + r.errors[0].code + ': ' + r.errors[0].message + ')' : '') + '.';
+      if (r.updated && !r.cached) reopen();
+    } catch (e) {
+      status.textContent = e.message || 'Không đồng bộ được GHN.';
+    } finally {
+      delete btn.dataset.busy; btn.disabled = false; btn.className = btn.className.replace(' is-busy', '');
+    }
+  }
+  async function codList(autoSync = true) {
     if (!active()) return toast('Mở ca để theo dõi và thu COD.', 'err');
     const d = await api('/pos/cod?shiftId=' + st.shift.id),
       m = modal('Ship COD của quầy');
+    const ghnBar = el('div', 'pos-ghn-bar'), ghnStatus = el('small', 'muted', ''),
+      ghnBtn = button('↻ Đồng bộ GHN', 'btn secondary', () => syncGhn(ghnStatus, ghnBtn, reopen)),
+      reopen = () => { m.close(); run(() => codList(false)); };
+    ghnBtn.setAttribute('aria-label', 'Đồng bộ trạng thái vận đơn GHN');
+    ghnBar.append(ghnBtn, ghnStatus);
+    m.body.append(ghnBar);
     if (!d.deliveries.length) m.body.append(el('p', '', 'Không có đơn COD chưa thu.'));
     for (const x of d.deliveries) {
       const row = el('div', 'pos-cod-row');
@@ -1784,6 +1806,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }
     m.body.append(button('Đóng', 'btn secondary', m.close));
     m.show();
+    if (autoSync) syncGhn(ghnStatus, ghnBtn, reopen);
   }
   function configure(forceNew = false) {
     const m = formModal('Cấu hình quầy POS'),

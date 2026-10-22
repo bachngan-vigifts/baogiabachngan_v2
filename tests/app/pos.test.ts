@@ -51,7 +51,7 @@ test('POS mở ca không cần kiểm đếm; không ghi số đếm giả, gi�
 });
 test('POS giữ chính sách khách mới dùng ngay nhưng khách chờ duyệt sẵn có vẫn không được dùng', async () => {
   const f = await setup(), s = await f.open();
-  const made = await f.call('/pos/customers', f.emp, 'POST', { name: 'Khách chờ duyệt', phone: '0901234567' });
+  const made = await f.call('/pos/customers', f.emp, 'POST', { name: 'Khách chờ duyệt', phone: '0907654321' });
   assert.equal(made.status, 201, JSON.stringify(made.data));
   await f.db.update(customers).set({ approvalStatus: 'pending' }).where(eq(customers.id, made.data.id));
   const preview = await f.call('/pos/preview', f.emp, 'POST', f.cart(s.id, { customerId: made.data.id }));
@@ -303,7 +303,7 @@ test('POS: giữ riêng báo cáo ca, NVBH cùng cửa hàng xem bill; khách PO
   );
   const customer = await call('/pos/customers', emp, 'POST', {
     name: 'Khách mới',
-    phone: '0901234567',
+    phone: '0907654322',
   });
   assert.equal(customer.status, 201, JSON.stringify(customer.data));
   assert.equal(

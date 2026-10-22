@@ -9,6 +9,8 @@ import { issuePosDelivery } from './pos-delivery-stock.ts';
 import { refreshOrderStatus } from './routes.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { vietnamDate } from '../domain/sales.ts';
+import { posPermission } from './pos-store.ts';
+import type { SessionState } from '../../staff/api/auth-routes.ts';
 
 const GHN_DETAIL = 'https://online-gateway.ghn.vn/shiip/public-api/v2/shipping-order/detail';
 const LOCK_GHN_SHOP_ID = '6096731';
@@ -93,6 +95,26 @@ export async function syncPosLockGhn(env: StaffEnv) {
   return { ok: errors.length === 0, checked: rows.length, updated, errors };
 }
 
+/** Lần đồng bộ gần nhất (theo tiến trình): bấm liên tục trong 60 giây trả kết quả cũ, không gọi GHN lại. */
+let lastSync: { at: number; result: Awaited<ReturnType<typeof syncPosLockGhn>> } | null = null;
+const SYNC_GAP_MS = 60_000;
+
 export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
+  // Máy gọi (n8n / OpenClaw) bằng mã đồng bộ.
   router.post('/integrations/ghn/pos-lock/pull', async c => json(await syncPosLockGhn(c.env)), 'sapo-sync');
+  /**
+   * Đồng bộ trạng thái vận đơn GHN (shop Lock) ngay trong CRM: nhân viên bán hàng nhanh bấm "Đồng bộ GHN" hoặc mở Ship COD.
+   * Giao xong → tự xuất kho, ghi thu COD (nguồn ghn_cod); hoàn / huỷ → chuyến giao "thất bại". Kiểm quyền ở máy chủ.
+   */
+  router.post('/pos/ghn/sync', async c => {
+    posPermission((c.state.session as SessionState).member);
+    if (!c.env.ghnToken) throw new AppError(503, 'CRM chưa có token GHN (secret GHN_API_TOKEN). Thêm secret rồi chạy lại "Triển khai API".', 'GHN_NOT_CONFIGURED');
+    const now = Date.now();
+    if (lastSync && now - lastSync.at < SYNC_GAP_MS) return json({ ...lastSync.result, cached: true, syncedAt: new Date(lastSync.at).toISOString() });
+    const result = await syncPosLockGhn(c.env);
+    lastSync = { at: now, result };
+    return json({ ...result, cached: false, syncedAt: new Date(now).toISOString() });
+  }, 'business');
 }
+/** Chỉ cho test: xoá bộ nhớ lần đồng bộ gần nhất. */
+export const resetGhnSyncThrottle = () => { lastSync = null; };
