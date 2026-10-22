@@ -163,3 +163,19 @@ test('thẻ kho lấy đủ hơn 1005 dòng, mới nhất và luỹ kế khớp 
   const r=await call('/inventory/card?sku=LY1&warehouseId=ct',mgr);assert.equal(r.status,200);
   assert.equal(r.data.lines.length,1006);assert.equal(r.data.lines[0].refNo,'DC-1004');assert.equal(r.data.balance,1015);assert.equal(r.data.lines[0].balance,r.data.balance);
 });
+
+
+test('chốt kho được chọn: mở kho mới không reset kho khác đã có phát sinh; phạm vi vẫn được kiểm tra',async()=>{
+  const {db,call,mgr,kho}=await setup();
+  assert.equal((await call('/inventory/opening',mgr,'POST',{confirm:true})).status,200);
+  assert.equal((await call('/inventory/adjustments',mgr,'POST',{warehouseId:'ct',reason:'Kiểm kê',lines:[{sku:'LY1',qty:1}]})).status,201);
+  await db.insert(warehouses).values({id:'new',name:'Kho mới',kind:'stock'});
+  await db.insert(productStock).values({sku:'LY1',warehouseId:'new',quantity:8,updatedAt:now});
+  const opening=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'new'});
+  assert.equal(opening.status,200,JSON.stringify(opening.data));assert.equal(opening.data.lines,1);
+  assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct',mgr)).data.balance,11);
+  assert.equal((await call('/inventory/card?sku=LY1&warehouseId=new',mgr)).data.balance,8);
+  const all=await call('/inventory/opening',mgr,'POST',{confirm:true});assert.equal(all.status,409);assert.equal(all.data.code,'WAREHOUSE_OPENING_USED');
+  await call('/permissions/positions/warehouse',mgr,'PUT',{perms:['inventory.view','inventory.manage']});
+  assert.equal((await call('/inventory/opening',kho,'POST',{confirm:true,warehouseId:'new'})).status,403);
+});

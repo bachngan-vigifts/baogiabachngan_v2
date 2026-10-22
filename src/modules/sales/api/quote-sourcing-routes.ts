@@ -1,4 +1,4 @@
-import { and, asc, eq, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, type Router } from '../../../core/http/router.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
@@ -11,8 +11,9 @@ import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { hiddenWarehouseIds, sellableWarehouses, sellersConfigured } from '../../inventory/api/warehouse-access.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { nextDocNo, vietnamDate } from '../domain/sales.ts';
-import { packingSlips, packingSlipLines, salesOrders, salesOrderLines } from '../schema.ts';
+import { packingSlips, packingSlipLines, salesOrders, salesOrderLines, deliveries, deliveryLines } from '../schema.ts';
 import { incomingLookup } from '../../inventory/api/routes.ts';
+import { saleMovesPosted } from '../../inventory/api/ledger.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 
 /** Planning only: expose quantities, never supplier costs or another department's quote. */
@@ -84,4 +85,22 @@ export async function saveQuoteStockPlan(tx: Tx, orderId: string, by: string, ra
       }
     }
   }
+}
+
+
+/** Planned CRM orders issue at packing, so dispatch must not auto-complete unissued drafts. Caller holds the order lock. */
+export async function assertPlannedDispatch(tx: Tx, orderId: string, deliveryId: string) {
+  const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id,orderId));
+  if (!order || order.channel !== 'crm' || !order.warehouseId || await saleMovesPosted(tx,orderId)) return;
+  const [plan] = await tx.select({id:packingSlips.id}).from(packingSlips).where(eq(packingSlips.orderId,orderId)).limit(1);
+  if (!plan) return;
+  if (order.status === 'draft' || order.status === 'cancelled') throw new AppError(409,'Duyệt đơn trước khi giao hàng.');
+  const issued = await tx.select({sku:stockMoves.sku,qty:sql<number>`-sum(${stockMoves.qty})`.mapWith(Number)}).from(stockMoves)
+    .innerJoin(packingSlips,eq(packingSlips.id,stockMoves.refId))
+    .where(and(eq(packingSlips.orderId,orderId),eq(stockMoves.refType,'packing_slip'))).groupBy(stockMoves.sku);
+  const needed = await tx.select({sku:salesOrderLines.sku,qty:sql<number>`sum(${deliveryLines.qty})`.mapWith(Number)}).from(deliveryLines)
+    .innerJoin(deliveries,eq(deliveries.id,deliveryLines.deliveryId)).innerJoin(salesOrderLines,eq(salesOrderLines.id,deliveryLines.orderLineId))
+    .where(and(eq(deliveries.orderId,orderId),or(eq(deliveries.id,deliveryId),inArray(deliveries.status,['in_transit','delivered'])))).groupBy(salesOrderLines.sku);
+  const missing=needed.filter(l=>l.sku&&(issued.find(i=>i.sku===l.sku)?.qty||0)+0.0005<l.qty);
+  if (missing.length) throw new AppError(409,'Kho chưa xác nhận xuất đủ cho chuyến giao: '+missing.map(l=>l.sku).join(', ')+'. Xác nhận đóng gói từng phần trước khi giao.','STOCK_NOT_PACKED');
 }

@@ -151,7 +151,10 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền chốt tồn đầu kỳ.');
     const body = await readJson(c.req, 2_000);
     if (body.confirm !== true) fail(400, 'Xác nhận chốt tồn đầu kỳ.');
-    const db = c.env.db, openingWarehouses = await ledgerWarehouses(c), ids = openingWarehouses.map(w => w.id);
+    if (body.warehouseId !== undefined && typeof body.warehouseId !== 'string') fail(400,'Chọn kho chốt tồn hợp lệ.');
+    const selected = String(body.warehouseId || '').trim();
+    if (selected) await checkLedgerWarehouse(c,selected);
+    const db = c.env.db, openingWarehouses = (await ledgerWarehouses(c)).filter(w=>!selected||w.id===selected), ids = openingWarehouses.map(w => w.id);
     if (!ids.length) fail(409, 'Chưa có kho thật nào (đồng bộ danh sách kho từ Sapo trước).');
     const refId = crypto.randomUUID(), refNo = 'ĐK-' + new Date().toISOString().slice(0, 10).replaceAll('-', '');
     let written = 0;

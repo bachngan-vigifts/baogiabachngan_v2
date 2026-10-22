@@ -1,4 +1,4 @@
-import { saveQuoteStockPlan } from './quote-sourcing-routes.ts';
+import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { approvalDebt, assertApprovalDebt, approvalCosts } from './approval-preflight.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
@@ -677,7 +677,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     }
     await c.env.db.transaction(async tx => {
       // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
-      const [locked] = await tx.select({ status: salesOrders.status }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      const [locked] = await tx.select({ status: salesOrders.status, warehouseId:salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
       if (status === 'cancelled') {
         const [[paidNow], shippedNow] = await Promise.all([
@@ -687,6 +687,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         if (Number(paidNow?.n) > 0 || shippedNow.length) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
       }
       if (status === 'confirmed') {
+        if (warehouseId !== locked.warehouseId && (await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,order.id),ne(packingSlips.status,'cancelled'))).limit(1)).length) throw new AppError(409,'Huỷ các phiếu kế hoạch nguồn hàng rồi lập lại trước khi đổi kho bán.','STOCK_PLAN_IN_USE');
         assertApprovalDebt(await approvalDebt(tx, order.customerId, order.taxCode, order.id), body.debtWarningAccepted === true);
         const [quote] = order.quoteId ? await tx.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
         if (quote) {
@@ -893,7 +894,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
-      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', warehouseId, note: typeof body.note === 'string' ? text(body.note,20000) : undefined, inTx: async (tx, oid) => {
+      orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', warehouseId, note: typeof body.note === 'string' ? text([orderNotesFromQuote(data),body.note].filter(Boolean).join('\n\n'),20000) : undefined, inTx: async (tx, oid) => {
         await saveQuoteStockPlan(tx,oid,me.id,body.stockPlan);
         const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, oid)).limit(1);
         const counterId = `HDKT:${year}:${month}:${entity}`;
@@ -1039,6 +1040,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       const [flowOrder] = await tx.select().from(salesOrders).where(eq(salesOrders.id,row.d.orderId));
       if(saleFlowOf(flowOrder?.posSnapshot)){await cashLock(tx);if(['in_transit','delivered'].includes(status))await assertPosFlowFulfillable(tx,row.d.orderId);if(status==='cancelled'&&(await tx.select({id:stockMoves.id}).from(stockMoves).where(and(eq(stockMoves.refType,'pos_delivery'),eq(stockMoves.refId,row.d.id))).limit(1)).length)throw new AppError(409,'Chuyến đã xuất hàng: dùng yêu cầu trả/thu hồi, không huỷ lịch thẳng.');}
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
+      if (['in_transit','delivered'].includes(status) && flowOrder?.channel==='crm') {
+        await tx.select({id:salesOrders.id}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
+        await assertPlannedDispatch(tx,row.d.orderId,row.d.id);
+      }
       // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
       const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })
         .where(and(eq(deliveries.id, row.d.id), inArray(deliveries.status, [...from[status]!] as typeof DELIVERY_STATUSES[number][]))).returning({ id: deliveries.id });

@@ -6,6 +6,7 @@
 - Duyệt đơn CRM thông thường vẫn ghi bán theo kho đã chọn. Khi sinh đơn/HĐKT kèm kế hoạch nguồn, kế hoạch được lưu bằng các phiếu đóng gói nháp hiện có: duyệt trước, xuất từng phần khi xác nhận đóng gói. Không dùng migration hay trường đánh dấu mới. Phiếu nháp không được gửi khi đơn chưa duyệt/chưa có lịch giao.
 - Kho xin hàng là kho nguồn điều chuyển về kho bán. Đơn mua/xin lấy trước phải nhận về kho bán trước khi xác nhận xuất phần tương ứng. Lập yêu cầu là hành động riêng có xác nhận; mở form không tạo phiếu. Đóng form sau khi đã bấm lưu yêu cầu không huỷ yêu cầu đó.
 - Kế hoạch kiểm tổng số lượng theo mã hàng, kể cả báo giá lặp cùng SKU. Mỗi nhóm nguồn có một phiếu nháp, nên phần có sẵn có thể đi trước phần chờ. Đổi kho khi đang có kế hoạch phải huỷ/lập lại phiếu; sửa số lượng tiếp tục chịu kiểm tra số lượng đã phân bổ hiện có.
+- Chốt có thể chọn riêng kho bằng bộ lọc kho hiện có (`warehouseId`); không chọn giữ hành vi chốt cả phạm vi. Kho mới sạch có thể mở riêng mà không reset kho khác đã phát sinh.
 - Chốt/reset không được thực hiện khi đã có phát sinh ngoài opening. Sapo âm bị chặn trước khi ghi; tối đa 10 mã trong lỗi. Kho không tạo được dòng opening khác 0 bị từ chối; không coi kho đó đã mở.
 - Compare/card/status/stock-warehouses lọc kho riêng; Manager thấy đầy đủ. Thẻ kho đọc đủ lịch sử trong cùng snapshot, không cắt 1000 dòng.
 - Nhận NCC bắt buộc chọn tên kho thật đang hoạt động, không dùng địa chỉ giao của đơn mua làm fallback.
@@ -17,13 +18,24 @@
 - `WAREHOUSE_OPENING_USED` (409): nêu kho và loại phát sinh đã có; “Dùng phiếu điều chỉnh để sửa lệch”. Nút Chốt lại vẫn hiện và hiển thị lỗi server.
 - `OPENING_NEGATIVE_STOCK` (409): liệt kê tối đa 10 mã Sapo đang âm.
 - `WAREHOUSE_OPENING_EMPTY` (409): kho không có dòng đầu kỳ khác 0, chưa được coi đã chốt; cần marker/migration được duyệt nếu muốn hỗ trợ mở kho rỗng.
+- `STOCK_NOT_PACKED` (409): kho chưa xác nhận xuất đủ cho chuyến giao; xác nhận đóng gói từng phần trước khi giao. Áp dụng cho đơn CRM có kế hoạch chưa ghi bán toàn bộ ở lúc duyệt, cộng dồn các chuyến đã/đang giao để không dùng một phần xuất cho hai chuyến.
 - `STOCK_PLAN_INVALID` (400): tổng nguồn hàng không bằng số lượng đơn. `STOCK_PLAN_IN_USE` (409): cần huỷ/lập lại phiếu kế hoạch trước khi đổi kho.
 - Nhận NCC vào kho không hợp lệ: 400, không lưu phiếu.
 - Giữ `POS_STOCK_SHORT` khi bán quầy thiếu tồn và `TRANSFER_SHORT` khi điều chuyển thiếu tồn. Guard trước chốt dùng cùng `WAREHOUSE_NOT_OPENED` cho mọi luồng.
 
 ## Kiểm thử
 
-Kết quả cuối sẽ cập nhật sau khi chạy trên phiên bản đã đồng bộ main. Không dùng kết quả trước lần đồng bộ để khẳng định phiên bản cuối đã qua.
+Kết quả đã chạy:
+
+| Lệnh / phạm vi | Pass | Fail | Skip |
+| --- | ---: | ---: | ---: |
+| `npm test` sau đồng bộ main | 807 | 0 | 31 |
+| Hồi quy sau vá dispatch: `sales.test.ts`, `warehouse-sales.test.ts` | 19 | 0 | 0 |
+| Hồi quy sau mở kho được chọn: `inventory.test.ts`, `stock-guards.test.ts` | 20 | 0 | 1 |
+
+Full suite có 838 test, chạy trước hai bổ sung cuối (guard dispatch và chọn riêng kho khi chốt). Sau các bổ sung đã chạy lại toàn bộ các file bị ảnh hưởng như bảng trên; không cộng số đếm các lượt vì có test trùng nhau. `npm run typecheck` và `npm run ui:build` đều exit 0. CI GitHub của commit đầu d3679e3 đã thành công; commit chốt cần lượt CI mới, trạng thái mới nhất trong Validation của PR #242.
+
+30 skip của full suite là các kiểm thử đối chiếu repo legacy không có trong môi trường; 1 skip mới là cạnh tranh hai connection PostgreSQL thật. Không coi các ca skip là đã kiểm chứng.
 
 ### Test mới
 
@@ -47,9 +59,9 @@ tests/app/quote-sourcing-ui.test.ts
 - nguồn hàng UI: đặt NCC nháp đúng nguồn báo giá; xin giao trước giữ clientKey
 - nguồn hàng UI: mất kết nối sau gửi không cho bấm lặp mù; đóng form không tạo yêu cầu
 
-Bổ sung trong inventory.test.ts: chốt với Sapo âm/kho rỗng rollback; kho chưa mở nhưng có lịch sử không được chốt; đã có điều chỉnh không được reset; thẻ kho 1006 dòng có dòng mới nhất và tồn đúng.
+Bổ sung trong inventory.test.ts: mở kho mới được chọn không reset kho khác đã có phát sinh, vẫn kiểm tra phạm vi; chốt với Sapo âm/kho rỗng rollback; kho chưa mở nhưng có lịch sử không được chốt; đã có điều chỉnh không được reset; thẻ kho 1006 dòng có dòng mới nhất và tồn đúng.
 
-Bổ sung trong warehouse-sales.test.ts: kho riêng ẩn cả bốn API, Manager thấy đủ; kế hoạch 50+20 duyệt trước/xuất từng phần/huỷ hoàn đúng; kế hoạch sai tổng rollback; HĐKT lưu kế hoạch và duyệt không trừ toàn bộ.
+Bổ sung trong warehouse-sales.test.ts: kho riêng ẩn cả bốn API, Manager thấy đủ; kế hoạch 50+20 duyệt trước/xuất từng phần/huỷ hoàn đúng, chặn giao trước khi xuất đủ và không dùng một phần xuất cho hai chuyến; kế hoạch sai tổng rollback; HĐKT lưu kế hoạch và duyệt không trừ toàn bộ.
 
 Bổ sung trong order-create-ui.test.ts: gửi stockPlan và warehouseId cùng đơn, giữ ghi chú riêng.
 
@@ -118,7 +130,7 @@ purchasing.test.ts
 - API nguồn hàng cần triển khai trước hoặc cùng UI; UI mới chặn tạo nếu không tải được nguồn hàng. Yêu cầu điều chuyển/đơn mua đã bấm lưu là chứng từ thật dù người dùng đóng form sinh đơn.
 - Đơn kế hoạch chưa giữ/trừ toàn bộ tồn khi duyệt; tồn có thể được đơn khác dùng trước. Xác nhận từng phiếu kiểm lại và có thể báo thiếu, không cho âm kho.
 - Thẻ kho lấy đủ lịch sử để đúng luỹ kế; mã có lịch sử rất lớn sẽ tăng thời gian tải. Chưa thêm phân trang/server cursor trong thay đổi này.
-- Chưa kiểm tra trực quan bằng trình duyệt trong môi trường này. Có kiểm component UI qua DOM giả lập, syntax/bundle và build giao diện.
+- Đã kiểm component trong Chromium với dữ liệu giả 300 = 182 có sẵn + 118 xin kho, lưu một lần và giữ link; desktop và màn hình 390px không tràn ngang. Không gọi CRM thật. Có kiểm DOM giả lập, syntax/bundle và build; chưa kiểm toàn bộ form qua phiên đăng nhập live.
 
 ## File thay đổi
 
