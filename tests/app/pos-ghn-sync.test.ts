@@ -48,3 +48,23 @@ test('GHN Lock: lấy hàng trừ kho một lần; giao xong hoàn tất và ghi
   assert.equal((await syncPosLockGhn(f.env)).checked, 0, 'đơn hoàn thành không bị poll lại');
   assert.equal((await f.db.select().from(customerPayments)).length, 1, 'không ghi thu trùng');
 });
+
+test('Đồng bộ GHN ngay trong CRM: cần quyền bán hàng nhanh, báo rõ khi chưa có token, bấm liên tục không gọi GHN lại', async () => {
+  const { resetGhnSyncThrottle } = await import('../../src/modules/sales/api/pos-ghn-sync.ts');
+  resetGhnSyncThrottle();
+  const f = await setup(), shift = await f.open();
+  assert.equal((await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery, note: 'GHN-XYZ9876', depositAmount: 0 }))).status, 201);
+  const noToken = await f.call('/pos/ghn/sync', f.emp, 'POST', {});
+  assert.equal(noToken.status, 503); assert.match(noToken.data.error, /GHN_API_TOKEN/);
+  assert.equal((await f.call('/pos/ghn/sync', f.ncc, 'POST', {})).status, 403, 'NCC không được đồng bộ');
+  let calls = 0;
+  f.env.ghnToken = 'test-ghn-token';
+  f.env.ghnFetch = (async () => { calls++; return Response.json({ data: { status: 'delivered', updated_date: '2026-10-22T03:00:00Z' } }); }) as typeof fetch;
+  const first = await f.call('/pos/ghn/sync', f.emp, 'POST', {});
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.data.checked, 1); assert.equal(first.data.updated, 1); assert.equal(first.data.cached, false);
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'delivered');
+  const again = await f.call('/pos/ghn/sync', f.emp, 'POST', {});
+  assert.equal(again.data.cached, true); assert.equal(calls, 1, 'trong 60 giây không gọi GHN lại');
+  resetGhnSyncThrottle();
+});

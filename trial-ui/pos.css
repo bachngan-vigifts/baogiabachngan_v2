@@ -1085,3 +1085,5 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-more-panel .btn { min-height: 44px; font-size: 12px; }
   .pos-payment-modal .pos-cash-quick .btn, .pos-payment-modal .pos-create-qr { min-height: 44px; font-size: 12px; }
 }
+.pos-ghn-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #e1e7f0; }
+.pos-ghn-bar small { flex: 1 1 200px; }
