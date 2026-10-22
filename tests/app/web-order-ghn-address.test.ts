@@ -47,3 +47,16 @@ test('Webhook trạng thái rút gọn không xoá địa chỉ GHN đã lưu', 
   await f.call(path, '', 'POST', { id: 1, status: 'processing' });
   assert.equal((await f.db.select().from(webStoreOrders))[0]!.ghnAddressSnapshot, before);
 });
+
+test('Backfill đơn Web Lock cũ chỉ lưu địa chỉ có đủ mã GHN', async () => {
+  const f = await setup();
+  await f.db.update(posRegisters).set({ name: 'CỬA HÀNG LOCKNLOCK CẦN THƠ' }).where(eq(posRegisters.id, f.registerId));
+  await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', { id: 2, number: 'OLD-2', status: 'processing', billing: { first_name: 'Cũ', phone: '0901' }, shipping: { address_1: 'Địa chỉ cũ' } });
+  f.env.sapoSyncToken = 'sapo-sync-token-at-least-thirty-two-characters';
+  f.env.webOrderAction = { token: 'private', lockUrl: 'https://lock.test/action', minhlongUrl: '', fetch: (async () => Response.json({ updatedAt: '2026-10-22T21:00:00Z', ghnAddress: { addressLine: '12 Hai Bà Trưng', provinceId: 220, provinceName: 'Cần Thơ', districtId: 1574, districtName: 'Quận Ninh Kiều', wardCode: '550307', wardName: 'Phường Tân An' } })) as typeof fetch };
+  const result = await f.call('/integrations/woocommerce/lock/backfill-addresses?token=' + encodeURIComponent(f.env.sapoSyncToken), '', 'POST', {});
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.deepEqual({ checked: result.data.checked, updated: result.data.updated, skipped: result.data.skipped }, { checked: 1, updated: 1, skipped: 0 });
+  const [stored] = await f.db.select().from(webStoreOrders);
+  assert.equal(JSON.parse(stored!.ghnAddressSnapshot).wardCode, '550307');
+});

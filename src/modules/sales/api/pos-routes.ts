@@ -61,6 +61,12 @@ const ghnLocationCache = new Map<string, { expires: number; locations: unknown[]
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
 const cachedGhnLocations = (key: string) => { const hit = ghnLocationCache.get(key); if (!hit || hit.expires < Date.now()) { ghnLocationCache.delete(key); return null; } return hit.locations; };
 const rememberGhnLocations = (key: string, locations: unknown[]) => { ghnLocationCache.set(key, { expires: Date.now() + 24 * 60 * 60 * 1000, locations }); return locations; };
+const completeGhnAddress = (raw: unknown) => {
+  const x = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const address = { addressLine: posText(x.addressLine, 300), provinceId: Math.max(0, Number(x.provinceId) || 0), provinceName: posText(x.provinceName, 100),
+    districtId: Math.max(0, Number(x.districtId) || 0), districtName: posText(x.districtName, 100), wardCode: posText(x.wardCode, 50), wardName: posText(x.wardName, 100) };
+  return address.addressLine && address.provinceId && address.provinceName && address.districtId && address.districtName && address.wardCode && address.wardName ? address : null;
+};
 type GhnPair = [number | string, string];
 const bundledGhnLocations = (provinceId: number, districtId: number) => {
   const data = ghnLocations as unknown as { p: GhnPair[]; d: Record<string, GhnPair[]>; w: Record<string, GhnPair[]> };
@@ -405,7 +411,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const confirmedAddress = action === 'confirm' && bridgeInput.addressLine ? {
       addressLine: bridgeInput.addressLine, provinceId: bridgeInput.provinceId, provinceName: bridgeInput.provinceName,
       districtId: bridgeInput.districtId, districtName: bridgeInput.districtName, wardCode: bridgeInput.wardCode, wardName: bridgeInput.wardName,
-    } : null;
+    } : completeGhnAddress(result.ghnAddress);
     const fields = { status: posText(result.status, 50) || (action === 'complete' ? 'completed' : action === 'cancel' ? 'cancelled' : order.status), ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
       ghnStatus: posText(result.ghnStatus, 100) || order.ghnStatus, ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow(),
@@ -416,6 +422,23 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}) } });
     return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
   }, 'business');
+  router.post('/integrations/woocommerce/lock/backfill-addresses', async c => {
+    if (!c.env.webOrderAction?.token || !c.env.webOrderAction.lockUrl) throw new AppError(503, 'Chưa cấu hình kết nối Web Lock.');
+    const rows = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.source, 'lock')).orderBy(desc(webStoreOrders.updatedAt));
+    let updated = 0, skipped = 0; const errors: { orderNo: string; error: string }[] = [];
+    for (const order of rows.slice(0, 1000)) {
+      try {
+        const response = await (c.env.webOrderAction.fetch ?? fetch)(c.env.webOrderAction.lockUrl, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ orderId: order.externalId, action: 'refresh' }) });
+        const result = await response.json() as Record<string, unknown>;
+        if (!response.ok) throw new Error(posText(result.message, 300) || `HTTP ${response.status}`);
+        const address = completeGhnAddress(result.ghnAddress);
+        if (!address) { skipped++; continue; }
+        await c.env.db.update(webStoreOrders).set({ address: [address.addressLine, address.wardName, address.districtName, address.provinceName].join(', '), ghnAddressSnapshot: JSON.stringify(address), updatedAt: posText(result.updatedAt, 60) || order.updatedAt }).where(eq(webStoreOrders.id, order.id));
+        updated++;
+      } catch (e) { errors.push({ orderNo: order.orderNo, error: e instanceof Error ? e.message.slice(0, 300) : 'Lỗi không xác định' }); }
+    }
+    return json({ ok: errors.length === 0, checked: Math.min(rows.length, 1000), updated, skipped, errors });
+  }, 'sapo-sync');
   router.post('/pos/ghn/locations', async c => {
     const m = member(c); posPermission(m);
     const input = await readJson(c.req, 2000), registerId = posText(input.registerId, 100);

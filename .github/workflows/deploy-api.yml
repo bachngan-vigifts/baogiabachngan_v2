@@ -113,3 +113,9 @@ jobs:
           if [ "$(echo "$response" | jq -r '.ok')" != 'true' ]; then
             echo "::warning::Đồng bộ GHN chạy xong nhưng có mã vận đơn cần kiểm tra."
           fi
+      - name: Bổ sung địa chỉ GHN cho đơn Web Lock cũ
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != '' && env.WEB_ORDER_ACTION_TOKEN != ''
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 600 \
+            -X POST "https://$PROJECT_REF.supabase.co/functions/v1/baogia-v2-api/api/staff/integrations/woocommerce/lock/backfill-addresses" \
+            -H "Authorization: Bearer $SAPO_SYNC_TOKEN" -H 'Content-Type: application/json' --data '{}'
