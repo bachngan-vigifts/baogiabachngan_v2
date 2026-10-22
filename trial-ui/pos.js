@@ -1512,7 +1512,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const address = field('Số nhà, tên đường'),
       phone = field('Điện thoại người nhận', 'tel', st.customer?.phone || ''),
       receiver = field('Người nhận', 'text', st.customer?.name || ''),
-      date = field('Ngày giao', 'date', today);
+      date = field('Ngày giao', 'date', today),
+      ghnOrderCode = field('Mã vận đơn GHN (nếu đã có)', 'text', '');
+    ghnOrderCode.input.placeholder = 'Ví dụ: GYMNNELK';
     const steps = el('ol', 'pos-steps');
     const stepItems = ['Thông tin giao', 'Kiểm tra lại', 'Tạo đơn COD'].map((t, i) => { const li = el('li', i ? '' : 'is-current'); li.append(el('b', '', String(i + 1)), el('span', '', t)); steps.append(li); return li; });
     const setStep = (n) => stepItems.forEach((li, i) => { li.className = i < n ? 'is-done' : i === n ? 'is-current' : ''; });
@@ -1542,7 +1544,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     editView.append(
       ghnIntro,
       section('Người nhận', grid(receiver.box, phone.box)),
-      section('Địa chỉ giao (chuẩn GHN)', address.box, grid(province.box, district.box, ward.box), ghn.retry, date.box),
+      section('Địa chỉ giao (chuẩn GHN)', address.box, grid(province.box, district.box, ward.box), ghn.retry, grid(date.box, ghnOrderCode.box)),
       section('Thu trước', grid(deposit.box, methodBox), confirmation, summary),
       el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
       validation,
@@ -1614,6 +1616,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           receiverName: receiver.input.value,
           receiverPhone: phone.input.value,
           plannedDate: date.input.value,
+          ...(ghnOrderCode.input.value.trim() ? { ghnOrderCode: ghnOrderCode.input.value.trim() } : {}),
           ghnProvinceId: province.select.value, ghnDistrictId: district.select.value, ghnWardCode: ward.select.value,
         },
       };

@@ -7,6 +7,7 @@ import { catalogStockHooks } from '../modules/catalog/api/stock-source.ts';
 import { hiddenWarehouseIds } from '../modules/inventory/api/warehouse-access.ts';
 import { overlayPosStock, posStockStamp, guardPosOpening } from '../modules/sales/api/pos-stock.ts';
 import { registerPosRoutes } from '../modules/sales/api/pos-routes.ts';
+import { registerPosGhnSyncRoutes } from '../modules/sales/api/pos-ghn-sync.ts';
 import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
 import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
 import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
@@ -63,6 +64,7 @@ export function createAppRouter() {
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router);
   registerPosRoutes(router);
+  registerPosGhnSyncRoutes(router);
   registerPosReturnRoutes(router);
   registerPosOrderFlowRoutes(router);
   registerCashRoutes(router);

@@ -48,6 +48,8 @@ export interface StaffEnv {
   webOrderAction?: { token: string; lockUrl: string; minhlongUrl: string; fetch?: typeof fetch };
   /** Token GHN phía máy chủ để tải danh mục tỉnh/huyện/xã; không bao giờ gửi ra trình duyệt. */
   ghnToken?: string;
+  /** Hàm gọi GHN thay thế khi kiểm thử; production dùng fetch mặc định. */
+  ghnFetch?: typeof fetch;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
   waitUntil?: (p: Promise<unknown>) => void;
   /** Hàm fetch gửi Web Push (test truyền dịch vụ push giả). */

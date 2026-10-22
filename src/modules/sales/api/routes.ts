@@ -165,7 +165,7 @@ export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.
     body: `${docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id)).Label}: giao dự kiến ${date.split('-').reverse().join('/')}`, url: '/customer.html#orders', data: { orderId: order.id, date } });
 }
 /** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán. */
-async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
+export async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
   const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   const status = orderStatusFromLines(order!.status as OrderStatus, lines);

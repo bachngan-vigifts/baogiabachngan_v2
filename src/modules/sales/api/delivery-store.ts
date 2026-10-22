@@ -13,6 +13,11 @@ const text = (value: unknown, max: number) => {
   return String(value ?? '').trim().slice(0, max);
 };
 
+export function ghnCodeOf(value: unknown) {
+  const raw = String(value ?? '').toUpperCase();
+  return raw.match(/(?:^|[^A-Z0-9])GHN[-:#\s]*([A-Z0-9]{6,24})(?:$|[^A-Z0-9])/)?.[1] ?? '';
+}
+
 /** Caller checks order access. Shared by standalone and combined scheduling; always inside the caller's transaction. */
 export async function createScheduledDelivery(tx: Tx, orderId: string, body: Record<string, unknown>, actorId: string) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1).for('update');
@@ -48,10 +53,11 @@ export async function createScheduledDelivery(tx: Tx, orderId: string, body: Rec
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'delivery-number:' + date}))`);
   const used = await tx.select({ no: deliveries.deliveryNo }).from(deliveries).where(or(...documentNumberPatterns('GH', date).map(pattern => sql`${deliveries.deliveryNo} LIKE ${pattern}`)));
   const id = crypto.randomUUID(), now = new Date().toISOString();
+  const trackingCode = text(body.ghnOrderCode, 100).toUpperCase().replace(/^GHN[-:#\s]*/i, '') || ghnCodeOf(body.note) || ghnCodeOf(order.note);
   await tx.insert(deliveries).values({ id, deliveryNo: nextDocNo('GH', date, used.map(r => r.no)), orderId, plannedDate: date,
     timeSlot: text(body.timeSlot, 100), address: text(body.address, 2000) || order.address,
     ...orderRecipient(order, { receiverName: text(body.receiverName, 500), receiverPhone: text(body.receiverPhone, 100) }),
-    carrier: text(body.carrier, 200), shippingFee: Math.round(shippingFee), status: 'planned',
+    carrier: trackingCode ? 'GHN' : text(body.carrier, 200), trackingCode, shippingFee: Math.round(shippingFee), status: 'planned',
     assigneeId: body.assigneeId ? text(body.assigneeId, 80) : null, note: text(body.note, 2000), createdBy: actorId, createdAt: now, updatedAt: now });
   await tx.insert(deliveryLines).values([...quantities].map(([orderLineId, qty]) => ({ deliveryId: id, orderLineId, qty })));
   return { id, plannedDate: date };
