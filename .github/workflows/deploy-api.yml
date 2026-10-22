@@ -6,7 +6,7 @@ name: Triển khai API
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'supabase/**', 'package-lock.json', '.github/workflows/deploy-api.yml']
+    paths: ['src/**', 'supabase/**', 'migrations/postgres/**', 'package-lock.json', '.github/workflows/deploy-api.yml']
   workflow_dispatch:
 concurrency: deploy-api
 jobs:
@@ -39,6 +39,7 @@ jobs:
           tests/app/invoice-tasks.test.ts
           tests/app/pos-cod-deposit.test.ts
           tests/app/pos-ghn-sync.test.ts
+          tests/app/web-order-ghn-address.test.ts
           tests/app/pos-notifications.test.ts
           tests/db/pos-order-flow-access.test.ts
           tests/app/pos-order-flow.test.ts
@@ -91,7 +92,7 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != ''
         shell: bash
         run: |
-          query="$(<migrations/postgres/20261022030000_pos_delivery_ghn_tracking.sql)"$'\n'"$(<supabase/ghn-pos-lock-cron.sql)"
+          query="$(<migrations/postgres/20261022030000_pos_delivery_ghn_tracking.sql)"$'\n'"$(<migrations/postgres/20261022204500_web_order_ghn_address.sql)"$'\n'"$(<supabase/ghn-pos-lock-cron.sql)"
           payload=$(jq -n --arg query "$query" '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
