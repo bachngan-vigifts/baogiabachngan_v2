@@ -79,6 +79,7 @@
         <a class="nav" href="#/inventory" data-nav="inventory" hidden><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z M4 10h16 M4 15h16 M9 4v16"/></svg><span>Sổ kho</span></a>
         <a class="nav" href="#/stock-lookup" data-nav="stock-lookup" hidden><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4 M8 11h6 M11 8v6"/></svg><span>Tra tồn</span></a>
         <a class="nav" href="#/packing" data-nav="packing" hidden><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10 M7.5 5l9 4"/></svg><span>Phiếu đóng gói</span><b id="nav-packing-count" class="badge danger" hidden>0</b></a>
+        <a class="nav" href="#/receiving" data-nav="receiving"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z M8 2v4 M16 2v4 M4 9h16 M12 11v6 M9 14l3 3 3-3"/></svg><span>Lịch nhận hàng</span><b id="nav-receiving-count" class="badge danger" hidden>0</b></a>
         <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/></svg><span>Lịch giao hàng</span><b id="nav-deliveries-count" class="badge danger" hidden>0</b></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-4">
@@ -479,6 +480,8 @@
     </section>
 
     <!-- ---------- Lịch giao hàng ---------- -->
+    <section class="view" id="view-receiving" hidden></section>
+
     <section class="view" id="view-deliveries" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Các chuyến giao theo ngày; bấm vào chuyến để mở đơn.</p></div>
@@ -507,39 +510,30 @@
     <section class="view" id="view-care" hidden></section>
     <!-- Công việc: việc tự sinh từ nghiệp vụ + giao việc thủ công (trial-ui/tasks.js) -->
     <section class="view" id="view-tasks" hidden>
-      <div class="task-layout">
-        <div class="task-pane">
-          <div class="page-head task-top">
-            <div class="task-top-title"><h1>Công việc</h1><span class="muted task-sync" id="tasks-sync"></span><button type="button" class="icon-btn task-refresh" id="tasks-refresh" title="Làm mới (đồng bộ việc tự sinh)" aria-label="Làm mới">↻</button></div>
-            <div class="task-top-actions"><button type="button" class="btn primary" id="tasks-new">+ Giao việc <kbd>N</kbd></button></div>
-          </div>
-          <div class="task-tabs-row" id="tasks-view" role="tablist" aria-label="Chế độ xem"></div>
-          <form class="task-quick" id="tasks-quick" autocomplete="off" hidden>
-            <input name="title" placeholder="Tên việc cần giao… (Enter để lưu)" maxlength="300" aria-label="Tên công việc">
-            <select name="assigneeId" id="tasks-quick-assignee" aria-label="Người nhận"></select>
-            <select name="priority" aria-label="Ưu tiên"><option value="normal">Bình thường</option><option value="high">Cao</option><option value="urgent">Khẩn</option><option value="low">Thấp</option></select>
-            <span class="task-due-quick"><input type="date" name="dueDate" aria-label="Hạn"><button type="button" class="chip" data-due="0">Hôm nay</button><button type="button" class="chip" data-due="1">Mai</button><button type="button" class="chip" data-due="7">+7 ngày</button></span>
-            <span class="task-quick-btns"><button type="submit" class="btn primary">Giao việc</button><button type="button" class="btn ghost" data-cancel>Đóng</button></span>
-          </form>
-          <div class="task-due-cards" id="tasks-stats"></div>
-          <div class="task-filterbar">
-            <div class="search-box"><span aria-hidden="true">⌕</span><input id="tasks-search" type="search" placeholder="Tìm việc, mã đơn, khách… (phím /)" aria-label="Tìm việc"></div>
-            <div class="task-seg" id="tasks-status" role="group" aria-label="Trạng thái"><button type="button" data-v="open" aria-pressed="true">Đang mở</button><button type="button" data-v="done" aria-pressed="false">Đã xong</button><button type="button" data-v="all" aria-pressed="false">Tất cả</button></div>
-            <select id="tasks-source" aria-label="Lọc nguồn"><option value="">Nguồn · Tất cả</option></select>
-            <select id="tasks-priority" aria-label="Lọc ưu tiên"><option value="">Ưu tiên · Tất cả</option><option value="urgent">Khẩn</option><option value="high">Cao</option><option value="normal">Bình thường</option><option value="low">Thấp</option></select>
-            <select id="tasks-assignee" aria-label="Lọc người nhận"></select>
-            <select id="tasks-due" aria-label="Lọc hạn"><option value="">Hạn · Tất cả</option><option value="overdue">Quá hạn</option><option value="today">Hôm nay</option><option value="week">7 ngày tới</option><option value="upcoming">Mọi ngày sắp tới</option><option value="none">Chưa đặt hạn</option></select>
-          </div>
-          <div class="task-active" id="tasks-active" hidden></div>
-          <div class="approvals-board" id="tasks-approvals" hidden></div>
-          <div class="task-board">
-            <div class="task-list" id="tasks-list" role="grid" aria-label="Danh sách công việc"></div>
-            <p class="muted task-empty" id="tasks-empty" hidden><span id="tasks-empty-text"></span></p>
-          </div>
-          <div class="task-foot"><span id="tasks-count"></span><span class="task-keys">Phím: <kbd>N</kbd> giao việc · <kbd>/</kbd> tìm · <kbd>↑</kbd><kbd>↓</kbd> chọn việc · <kbd>Enter</kbd> mở</span>
-            <span class="task-group-by" id="tasks-group" role="group" aria-label="Nhóm theo">Nhóm theo <button type="button" data-group="due" aria-pressed="true">Hạn</button><button type="button" data-group="category" aria-pressed="false">Nhóm việc</button></span></div>
+      <div class="page-head">
+        <div><span class="eyebrow">Điều hành</span><h1>Công việc</h1><p class="muted">Việc tự sinh từ báo giá, check tồn, đơn hàng, giao hàng, HĐKT, công nợ, nhập hàng – tự hoàn thành khi xử lý xong. Giao việc cho nhau ngay ở ô bên dưới. Phím tắt: <kbd>N</kbd> thêm việc, <kbd>/</kbd> tìm.</p></div>
+      </div>
+      <div class="stats task-stats" id="tasks-stats"></div>
+      <div class="care-tabs task-tabs" role="tablist" id="tasks-tabs" hidden><button type="button" role="tab" data-tab="tasks" aria-selected="true">Công việc</button><button type="button" role="tab" data-tab="approvals" aria-selected="false">Cần duyệt <b class="tab-count" id="tasks-approval-count" hidden></b></button></div>
+      <div class="card approvals-board" id="tasks-approvals" hidden></div>
+      <div class="card task-board">
+        <form class="task-quick" id="tasks-quick" autocomplete="off">
+          <input name="title" placeholder="＋ Thêm việc mới… (Enter để lưu)" maxlength="300" aria-label="Tên công việc">
+          <select name="assigneeId" id="tasks-quick-assignee" aria-label="Người nhận"></select>
+          <select name="priority" aria-label="Ưu tiên"><option value="normal">Bình thường</option><option value="high">Cao</option><option value="urgent">Khẩn</option><option value="low">Thấp</option></select>
+          <span class="task-due-quick"><input type="date" name="dueDate" aria-label="Hạn"><button type="button" class="chip" data-due="0">Hôm nay</button><button type="button" class="chip" data-due="1">Mai</button><button type="button" class="chip" data-due="7">+7 ngày</button></span>
+          <button type="submit" class="btn primary">Thêm</button>
+        </form>
+        <div class="task-filters">
+          <div class="chips" id="tasks-view" role="group" aria-label="Nhóm việc"><button type="button" class="chip" data-v="mine" aria-pressed="true">Tôi nhận</button><button type="button" class="chip" data-v="created" aria-pressed="false">Tôi giao</button><button type="button" class="chip" data-v="team" aria-pressed="false">Việc nhóm</button><button type="button" class="chip" data-v="colleagues" aria-pressed="false" hidden>Cùng chức vụ</button><button type="button" class="chip" data-v="unassigned" aria-pressed="false">Chưa giao</button><button type="button" class="chip" data-v="all" aria-pressed="false">Tất cả</button></div>
+          <div class="chips" id="tasks-status" role="group" aria-label="Trạng thái"><button type="button" class="chip" data-v="open" aria-pressed="true">Đang mở</button><button type="button" class="chip" data-v="done" aria-pressed="false">Đã xong</button><button type="button" class="chip" data-v="all" aria-pressed="false">Tất cả</button></div>
+          <select id="tasks-due" aria-label="Lọc hạn công việc"><option value="">Mọi hạn</option><option value="overdue">Quá hạn</option><option value="today">Đến hạn hôm nay</option><option value="upcoming">Sắp tới</option><option value="none">Chưa đặt hạn</option></select>
+          <select id="tasks-priority" aria-label="Lọc ưu tiên"><option value="">Mọi mức ưu tiên</option><option value="urgent">Khẩn</option><option value="high">Cao</option><option value="normal">Bình thường</option><option value="low">Thấp</option></select>
+          <select id="tasks-source" aria-label="Lọc nguồn"><option value="">Mọi nguồn</option><option value="manual">Giao việc</option><option value="quote">Báo giá</option><option value="stock_request">Check tồn</option><option value="order">Đơn hàng</option><option value="delivery">Giao hàng</option><option value="packing">Xuất kho / đóng hàng</option><option value="contract">HĐKT</option><option value="receivable">Công nợ</option><option value="purchase">Nhập hàng</option></select>
+          <div class="search-box"><span aria-hidden="true">⌕</span><input id="tasks-search" type="search" placeholder="Tìm việc…" aria-label="Tìm việc"></div>
         </div>
-        <aside class="task-panel" id="tasks-panel" hidden aria-label="Chi tiết việc"></aside>
+        <div class="table-wrap"><table class="data-table task-table"><thead><tr><th class="task-check"><span class="sr-only">Xong</span></th><th>Công việc</th><th>Ưu tiên</th><th>Giao → Nhận</th><th>Hạn</th><th>Trạng thái</th><th><span class="sr-only">Mở</span></th></tr></thead><tbody id="tasks-list"></tbody></table></div>
+        <p class="muted task-empty" id="tasks-empty" hidden><span id="tasks-empty-text"></span></p>
       </div>
     </section>
     <section class="view" id="view-stock-requests" hidden>

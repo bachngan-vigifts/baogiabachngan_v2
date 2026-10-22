@@ -1,3 +1,5 @@
+import { outstandingLines } from '../modules/suppliers/api/incoming-stock.ts';
+import { canUsePurchasing } from '../modules/suppliers/domain/purchasing.ts';
 import { cashReconciliations } from '../modules/sales/cash-schema.ts';
 import { posShifts } from '../modules/sales/pos-schema.ts';
 import { can } from '../modules/staff/domain/permissions.ts';
@@ -17,17 +19,18 @@ export function registerNavigationCounts(router: Router<StaffEnv>) {
     const db = c.env.db, m = (c.state.session as SessionState).member;
     const warehouse = isWarehouseStaff(asActor(m));
     const count = sql<number>`count(*)`.mapWith(Number);
-    const [[packing], [shipping], purchases, [cash]] = await Promise.all([
+    const [[packing], [shipping], purchases, [cash], incoming] = await Promise.all([
       db.select({ count }).from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId))
         .where(and(m.role === 'manager' || warehouse ? undefined : orderScopeFor(m), eq(packingSlips.status, 'sent'),
           sql`${salesOrders.status} <> 'delivered' and not exists (select 1 from ${orderProgressMarks}
             where ${orderProgressMarks.orderId} = ${salesOrders.id} and ${orderProgressMarks.stage} = 'delivered')`)),
       db.select({ count }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
-        .where(and(warehouse ? undefined : orderScopeFor(m), inArray(deliveries.status, ['planned', 'in_transit', 'failed']))),
+        .where(and(sql`${salesOrders.channel} <> 'pos'`, warehouse ? undefined : orderScopeFor(m), inArray(deliveries.status, ['planned', 'in_transit', 'failed']))),
       purchaseCounts(db, m, {}, vietnamDate().iso),
       db.select({count}).from(cashReconciliations).innerJoin(posShifts,eq(posShifts.id,cashReconciliations.shiftId)).where(and(can(m,'cash.view-all')?undefined:eq(posShifts.memberId,m.id),sql`${cashReconciliations.status}<>'closed'`)),
+      can(m, 'page.purchases') && canUsePurchasing(asActor(m)) ? outstandingLines(db) : [],
     ]);
-    return json({ cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
+    return json({ receiving: new Set(incoming.map(l => l.orderId)).size, cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
       purchases: purchases.all - purchases.received - purchases.cancelled });
   }, 'business');
 }

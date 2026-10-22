@@ -66,9 +66,13 @@ export function initInventory({ api, root, toast, confirmBox }) {
       }));
     }
     const keep = wh.value;
-    wh.replaceChildren(Object.assign(el('option', '', 'Tất cả kho'), { value: '' }));
+    wh.replaceChildren();
+    if (!s.warehouseRestricted) wh.append(Object.assign(el('option', '', 'Tất cả kho'), { value: '' }));
+    if (s.warehouseRestricted && !s.warehouses.length) wh.append(Object.assign(el('option', '', 'Chưa có kho VIGIFTS'), { value: '' }));
+    wh.disabled = s.warehouseRestricted && !s.warehouses.length;
     for (const w of s.warehouses) wh.append(Object.assign(el('option', '', w.name), { value: w.id }));
-    wh.value = s.warehouses.some(w => w.id === keep) ? keep : '';
+    wh.value = s.warehouses.some(w => w.id === keep) ? keep : s.defaultWarehouseId || '';
+    if (s.warehouseRestricted) info.append(el('p', 'muted small', 'Sổ kho của nhân viên Kho chỉ hiển thị KHO VIGIFTS.'));
   }
 
   function renderRows(diffCount) {
@@ -91,7 +95,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
     try {
       const d = await api('/inventory/compare?' + new URLSearchParams({ warehouseId: wh.value, q: search.value.trim(), diff: onlyDiff ? '1' : '0' }));
       if (id !== req) return; rows = d.rows; renderRows(d.diffCount);
-    } catch (e) { if (id === req) toast(e.message || 'Không tải được sổ kho.', 'err'); }
+    } catch (e) { if (id === req) { rows = []; renderRows(0); toast(e.message || 'Không tải được sổ kho.', 'err'); } }
   }
   async function load() {
     try { status = await api('/inventory/status'); renderStatus(); await loadRows(); }

@@ -1,3 +1,4 @@
+import { initReceivingCalendar } from './receiving-calendar.js';
 import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
@@ -321,7 +322,7 @@ const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
   cash: 'page.cash', pos: 'pos.sell',
-  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
+  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
@@ -406,6 +407,7 @@ async function enter() {
   // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.
   $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
   $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
+  $$('[data-nav=tasks]').forEach(el => { if (isWarehouse()) el.hidden = true; });
   document.body.classList.toggle('role-warehouse', isWarehouse());
   if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
@@ -482,7 +484,7 @@ async function loadNavigationBadges() {
   try {
     const counts = await api('/navigation-counts');
     if (request !== navigationBadgeRequest || user !== state.user) return;
-    for (const [name, id] of [['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count'], ['cash', 'nav-cash-count']]) {
+    for (const [name, id] of [['receiving', 'nav-receiving-count'], ['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count'], ['cash', 'nav-cash-count']]) {
       const badge = document.getElementById(id); if (!badge) continue;
       const count = Number(counts[name] || 0); badge.textContent = count.toLocaleString('vi-VN'); badge.hidden = count <= 0;
     }
@@ -627,7 +629,9 @@ var posUi = null;
 var cashUi = null;
 const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();}});
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
-const VIEWS = { transfers: 'Điều chuyển kho', 'stock-moves': 'Lịch sử xuất nhập', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+let receivingUi;
+const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving') });
+const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Lịch sử xuất nhập', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -674,6 +678,7 @@ function route() {
   if (view === 'products') { productAdmin().loadPending(); legacyImagesBox(); }
   if (view === 'orders') loadOrders();
   if (view === 'contracts') loadContracts();
+  if (view === 'receiving') receivingView().load();
   if (view === 'deliveries') loadDeliveries();
   if (view === 'receivables') loadReceivables();
   if (view === 'cashbook') loadCashbook();
@@ -3202,6 +3207,7 @@ async function refreshData() {
   else if (page === 'contracts') jobs.push(id ? openOrder(id) : loadContracts());
   else if (page === 'cash') jobs.push(cashView().load());
   else if (page === 'pos') { if (!posUi?.dirty()) jobs.push(posView().load()); }
+  else if (page === 'receiving') jobs.push(receivingView().load());
   else if (page === 'deliveries') jobs.push(loadDeliveries());
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : loadCustomers());

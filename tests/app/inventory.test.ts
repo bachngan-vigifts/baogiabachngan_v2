@@ -60,18 +60,19 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
   const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,AAAA'] });
   assert.equal(rc.status, 201, JSON.stringify(rc.data));
-  cmp = (await call('/inventory/compare', kho)).data;
+  assert.deepEqual((await call('/inventory/compare', kho)).data.rows, [], 'Kho chỉ xem Vigifts, không lẫn nhận vào kho cửa hàng');
+  cmp = (await call('/inventory/compare', mgr)).data;
   assert.deepEqual(cmp.rows.map((r: any) => [r.sku, r.warehouse, r.ledger, r.sapo, r.diff]), [['LY1', 'Kho Cần Thơ', 14, 10, 4]], 'chỉ cộng hàng đạt, chưa nhập Sapo nên lệch +4');
-  let card = (await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).data;
+  let card = (await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data;
   assert.deepEqual(card.lines.map((l: any) => [l.kind, l.qty, l.balance]), [['receipt', 4, 14], ['opening', 10, 10]], 'mới nhất trước, tồn luỹ kế');
   assert.match(card.lines[0].refNo, /^PNH/);
   assert.equal((await call(`/supplier-receipts/${rc.data.receiptId}/cancel`, mgr, 'POST', { reason: 'Nhập nhầm' })).status, 200);
-  card = (await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).data;
+  card = (await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data;
   assert.equal(card.balance, 10); assert.equal(card.lines[0].kind, 'reverse');
   // Kho nhận không có trong danh sách kho → phiếu vẫn lưu, sổ kho không ghi, lịch sử đơn báo lại.
   const rc2 = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-87654321', warehouse: 'Kho lạ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 1 }] });
   assert.equal(rc2.status, 201); assert.ok(rc2.data.events.some((e: any) => e.summary.includes('chưa ghi sổ kho')));
-  assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).data.balance, 10);
+  assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 10);
 
   // Phiếu điều chỉnh: chỉ Manager, bắt buộc lý do, mã phải có trong danh mục (giữ số 0 đầu).
   assert.equal((await call('/inventory/adjustments', kho, 'POST', { warehouseId: 'vg', reason: 'Kiểm kê', lines: [{ sku: '031106000', qty: -2 }] })).status, 403);
@@ -99,4 +100,25 @@ test('tra tồn: mọi nhân viên tra theo mã / tên, số lượng từng kho
   await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'ct', reason: 'Kiểm kê', lines: [{ sku: 'LY1', qty: -4 }] });
   r = (await call('/inventory/lookup?q=LY1', emp)).data;
   assert.equal(r.source, 'ledger'); assert.equal(r.products[0].total, 6);
+});
+
+
+test('sổ kho: tài khoản Kho chỉ có Vigifts; không thể sửa query để đọc kho khác; Manager vẫn thấy mọi kho', async () => {
+  const { db, call, kho, mgr } = await setup();
+  assert.equal((await call('/permissions/positions/warehouse', mgr, 'PUT', { perms: ['inventory.view', 'inventory.manage'] })).status, 200);
+  const st = (await call('/inventory/status', kho)).data;
+  assert.deepEqual(st.warehouses.map((w: any) => w.id), ['vg']);
+  assert.equal(st.defaultWarehouseId, 'vg'); assert.equal(st.warehouseRestricted, true);
+  assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows.map((r: any) => r.warehouseId), ['vg']);
+  assert.equal((await call('/inventory/compare?warehouseId=ct', kho)).status, 403);
+  assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).status, 403);
+  assert.equal((await call('/inventory/adjustments', kho, 'POST', { warehouseId: 'ct', reason: 'Kiểm kê', lines: [{sku:'LY1',qty:1}] })).status, 403);
+  assert.equal((await call('/inventory/opening', kho, 'POST', {confirm:true})).data.lines, 1, 'nếu được cấp chốt tồn, vẫn chỉ chốt Vigifts');
+  assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 0, 'không ghi vào kho ngoài phạm vi');
+  assert.deepEqual((await call('/inventory/status', mgr)).data.warehouses.map((w: any) => w.id), ['ct','vg']);
+  // Inactive Vigifts must not silently expand the scope back to all warehouses.
+  await db.update(warehouses).set({active:false}).where((await import('drizzle-orm')).eq(warehouses.id,'vg'));
+  const empty = (await call('/inventory/status', kho)).data;
+  assert.deepEqual(empty.warehouses, []); assert.equal(empty.defaultWarehouseId, null);
+  assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows, []);
 });
