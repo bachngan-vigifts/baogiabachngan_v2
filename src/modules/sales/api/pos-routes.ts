@@ -236,7 +236,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const scope = await allowedPosRegisters(c), requested = posText(c.url.searchParams.get('registerId'));
       if (requested && !scope.ids.has(requested)) throw new AppError(403, 'Bạn không được xem đơn của cửa hàng này.');
       const registerId = requested || scope.regs[0]?.id || '';
-      if (!registerId) return json({ registers: scope.regs, registerId: '', counts: { all: 0, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 }, orders: [] });
+      if (!registerId) return json({ registers: scope.regs, registerId: '', counts: { all: 0, web: 0, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 }, orders: [] });
       // Lọc ngay trong SQL (nguồn, nhân viên, ngày, từ khoá) để không tải toàn bộ lịch sử quầy mỗi lần mở bảng.
       // Chưa chọn ngày: đơn đã xong / đã huỷ chỉ lấy 30 ngày gần nhất; đơn còn dang dở luôn hiện dù cũ.
       const p = c.url.searchParams, source = p.get('source') || 'all', ownerId = posText(p.get('ownerId'), 80);
@@ -295,7 +295,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const m = member(c); posPermission(m);
     const input = await readJson(c.req, 4000);
     const action = posText(input.action, 20);
-    if (!['confirm', 'cancel', 'refresh', 'locations'].includes(action)) throw new AppError(400, 'Thao tác đơn web không hợp lệ.');
+    // complete: nhân viên xác nhận đơn web đã xong (website chuyển "Hoàn thành"); cancel: bắt buộc lý do (gửi website + nhật ký).
+    if (!['confirm', 'complete', 'cancel', 'refresh', 'locations'].includes(action)) throw new AppError(400, 'Thao tác đơn web không hợp lệ.');
+    const reason = posText(input.reason, 500);
+    if (action === 'cancel' && reason.length < 3) throw new AppError(400, 'Nhập lý do huỷ đơn (ít nhất 3 ký tự).', 'reason_required');
     const [order] = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.id, c.params.id!)).limit(1);
     if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
     const scope = await allowedPosRegisters(c);
@@ -311,9 +314,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const terminal = webBucket(order.status, order.ghnStatus);
     if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
     if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
+    if (action === 'complete' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã hoàn thành.' : 'Đơn đã huỷ, không hoàn thành được.');
     const url = order.source === 'lock' ? c.env.webOrderAction.lockUrl : c.env.webOrderAction.minhlongUrl;
     if (!url) throw new AppError(503, 'Website này chưa được kết nối thao tác đơn.');
-    const bridgeInput: Record<string, unknown> = { orderId: order.externalId, action };
+    const bridgeInput: Record<string, unknown> = { orderId: order.externalId, action, ...(action === 'cancel' ? { reason, actor: m.name } : action === 'complete' ? { actor: m.name } : {}) };
     if (action === 'locations') {
       bridgeInput.provinceId = Math.max(0, Number(input.provinceId) || 0);
       bridgeInput.districtId = Math.max(0, Number(input.districtId) || 0);
@@ -337,13 +341,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const key = ghnCacheKey(order.source, bridgeInput.provinceId as number, bridgeInput.districtId as number);
       return json({ ok: true, locations: rememberGhnLocations(key, Array.isArray(result.locations) ? result.locations : []) });
     }
-    const fields = { status: posText(result.status, 50) || order.status, ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
+    const fields = { status: posText(result.status, 50) || (action === 'complete' ? 'completed' : action === 'cancel' ? 'cancelled' : order.status), ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
       ghnStatus: posText(result.ghnStatus, 100) || order.ghnStatus, ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };
     await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
     await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
-      data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus } });
+      data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}) } });
     return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
   }, 'business');
   router.post('/pos/ghn/locations', async c => {

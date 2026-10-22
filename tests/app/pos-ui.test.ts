@@ -949,3 +949,39 @@ test('Voucher trên đơn: gõ mã + số tiền thì giỏ gửi kèm voucher, 
     assert.ok(bill.includes('Voucher (chia theo dòng)') && bill.includes('Voucher VC-1') && bill.includes('21.600'), bill);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
+
+test('Thẻ "Đơn web": số đỏ nhấp nháy khi có đơn cần xử lý, bấm lọc status=web; đơn web có Hoàn thành và Huỷ bắt buộc lý do', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: { path: string; body?: any }[] = [];
+    const webOrder = { id: 'w1', orderNo: 'WEB900', customerName: 'Khách web', total: 500000, external: true, source: 'lock', bucket: 'pending', paymentStatus: 'unknown', actionsAvailable: true, lines: '[]', currency: 'VND' };
+    const api = async (path: string, _m = 'GET', body?: any) => {
+      calls.push({ path, body });
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy', pricePolicyId: 'vat' }], current: null, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
+      if (path.startsWith('/pos/orders')) return { registerId: 'r', registers: [], counts: { all: 3, web: 2, pending: 2 }, orders: [webOrder], owners: [], totals: [] };
+      if (path.endsWith('/action')) return { ok: true, bucket: body.action === 'cancel' ? 'cancelled' : 'completed' };
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    const card = root.querySelectorAll('button').find(b => b.className.includes('pos-order-web'))!;
+    assert.ok(card.className.includes('has-alert'), 'có đơn web → thẻ báo đỏ');
+    assert.ok(card.querySelectorAll('strong').some(s => s.className === 'pos-web-badge' && s.textContent === '2'));
+    assert.match(card.textContent, /Đơn web/);
+    await card.fire('click'); await new Promise(r => setTimeout(r, 0));
+    assert.equal(new URLSearchParams(calls.filter(c => c.path.startsWith('/pos/orders')).at(-1)!.path.split('?')[1]).get('status'), 'web');
+    await root.querySelectorAll('button').find(b => b.className === 'pos-order-row')!.fire('click');
+    let dlg = doc.body.children.at(-1)!;
+    assert.ok(dlg.querySelectorAll('button').some(b => b.textContent === 'Hoàn thành'));
+    await dlg.querySelectorAll('button').find(b => b.textContent === 'Huỷ đơn')!.fire('click');
+    dlg = doc.body.children.at(-1)!;
+    const form = dlg.querySelectorAll('form')[0]!, reason = dlg.querySelectorAll('textarea')[0]!;
+    await form.fire('submit');
+    assert.equal(calls.some(c => c.path.endsWith('/action')), false, 'chưa nhập lý do thì không gửi');
+    assert.match(dlg.textContent, /Nhập lý do huỷ đơn/);
+    reason.value = 'Khách đổi ý'; await form.fire('submit'); await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(calls.find(c => c.path.endsWith('/action'))!.body, { action: 'cancel', reason: 'Khách đổi ý' });
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});

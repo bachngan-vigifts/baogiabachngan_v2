@@ -264,10 +264,36 @@ test('Đơn website: đúng quầy được chốt, bổ sung địa chỉ GHN, 
   const confirmed = await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'confirm' });
   assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data)); assert.equal(confirmed.data.ghnOrderCode, 'GHN123');
   assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'refresh' })).data.ghnStatus, 'picking');
-  assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'cancel' })).data.bucket, 'cancelled');
+  // Thẻ "Đơn web": đơn website chưa hoàn thành / chưa huỷ (số đỏ nhấp nháy ở giao diện) và lọc riêng được.
+  const board = (await f.call(`/pos/orders?registerId=${reg!.id}&status=web`, f.mgr)).data;
+  assert.equal(board.counts.web, 1); assert.deepEqual(board.orders.map((o: any) => o.orderNo), ['WEB900']);
+  // Huỷ bắt buộc lý do (≥ 3 ký tự), gửi lý do sang website + ghi nhật ký.
+  const noReason = await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'cancel' });
+  assert.equal(noReason.status, 400); assert.equal(noReason.data.code, 'reason_required');
+  assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'cancel', reason: 'Khách đổi ý' })).data.bucket, 'cancelled');
+  assert.equal(calls.at(-1)!.body.reason, 'Khách đổi ý');
   assert.deepEqual(calls.map(x => x.action), ['locations', 'confirm', 'refresh', 'cancel']);
+  assert.equal((await f.call(`/pos/orders?registerId=${reg!.id}`, f.mgr)).data.counts.web, 0, 'đơn đã huỷ không còn ở thẻ Đơn web');
+  assert.equal((await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'complete' })).status, 409, 'đơn đã huỷ không hoàn thành được');
   assert.ok(calls.every(x => x.auth === 'Bearer server-only'));
-  assert.ok((await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, order!.id))).some(x => x.action === 'web-order-cancel'));
+  const audit = (await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, order!.id))).find(x => x.action === 'web-order-cancel')!;
+  assert.match(JSON.stringify(audit), /Khách đổi ý/, 'nhật ký ghi lý do huỷ');
+});
+test('Đơn website: Hoàn thành gửi cầu nối, website không trả trạng thái thì vẫn chuyển Hoàn thành; rời thẻ Đơn web', async () => {
+  const f = await setup(); const sent: Record<string, unknown>[] = [];
+  f.env.webOrderAction = { token: 'server-only', lockUrl: 'https://lock.test/action', minhlongUrl: '', fetch: (async (_input, init) => {
+    sent.push(JSON.parse(String(init?.body))); return Response.json({ ok: true });
+  }) as typeof fetch };
+  await f.db.update(posRegisters).set({ name: 'CỬA HÀNG LOCKNLOCK CẦN THƠ' }).where(eq(posRegisters.id, f.registerId));
+  const payload = { id: 901, number: 'WEB901', status: 'processing', total: '300000', billing: { first_name: 'Khách', phone: '0901' }, line_items: [] };
+  assert.equal((await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', payload)).status, 200);
+  const [order] = await f.db.select().from(webStoreOrders);
+  assert.equal((await f.call(`/pos/orders?registerId=${f.registerId}`, f.mgr)).data.counts.web, 1);
+  const done = await f.call(`/pos/web-orders/${order!.id}/action`, f.emp, 'POST', { action: 'complete' });
+  assert.equal(done.status, 200, JSON.stringify(done.data)); assert.equal(done.data.bucket, 'completed');
+  assert.equal(sent[0]!.action, 'complete');
+  const board = (await f.call(`/pos/orders?registerId=${f.registerId}`, f.mgr)).data;
+  assert.deepEqual([board.counts.web, board.counts.completed], [0, 1]);
 });
 test('Đơn website: chuyển đúng địa chỉ người dùng chọn sang cầu nối GHN', async () => {
   const f = await setup(); let sent: Record<string, unknown> = {};

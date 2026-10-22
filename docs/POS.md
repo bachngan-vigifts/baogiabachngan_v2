@@ -270,3 +270,14 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
   - Đồng bộ trạng thái: lỗi kèm **số đơn**; mỗi lượt 100 chuyến, chuyến lâu chưa kiểm trước (không bỏ sót).
   - Lưu ở `posSnapshot.ghn` (quận / phường / khối lượng / cách xem hàng / mã / phí GHN) – không cần migration. Test: `tests/app/pos-ghn-create.test.ts`.
 - Cần secret **`GHN_API_TOKEN`** (token API của tài khoản GHN shop Lock, ShopId 6096731) trên GitHub → workflow "Triển khai API" đặt vào Supabase. Chưa có token thì CRM báo "CRM chưa có token GHN".
+
+## Thẻ "Đơn web" trên bảng đơn cửa hàng (22/10/2026)
+- Bảng **Đơn hàng cửa hàng** có thêm thẻ **Đơn web**, nằm cùng hàng với Tất cả đơn / Chờ xử lý / Đang đóng hàng / Đợi giao / Hoàn thành / Đã hủy.
+  - Số trên thẻ là số đơn website còn cần xử lý (chưa hoàn thành, chưa huỷ).
+  - Có đơn thì số **đỏ nhấp nháy**. Máy tắt hiệu ứng chuyển động thì chỉ đỏ, không nháy.
+  - Bấm thẻ để lọc riêng các đơn này: `GET /pos/orders?status=web`, `counts.web` (`pos-order-board.ts`).
+- Bấm vào đơn web: ngoài "Chọn địa chỉ & tạo vận đơn GHN" và "Cập nhật trạng thái", có thêm:
+  - **Hoàn thành**: hỏi xác nhận → `POST /pos/web-orders/:id/action { action: 'complete' }`. Website trả về không kèm trạng thái thì CRM ghi "Hoàn thành".
+  - **Huỷ đơn**: form **bắt buộc lý do** (≥ 3 ký tự; thiếu → 400 `reason_required`) → `{ action: 'cancel', reason }`. Lý do và tên người huỷ gửi sang website, ghi vào nhật ký `web-order-cancel`.
+- **Cần plugin trên website** (cầu nối `order-action-v7`, secret `WEB_ORDER_ACTION_TOKEN`) hiểu thao tác `complete` (chuyển đơn WooCommerce sang Hoàn thành) và trường `reason` khi huỷ. Plugin chưa hỗ trợ thì nút báo đúng lỗi website trả về; đơn trong CRM không đổi.
+- Test: `tests/app/pos.test.ts` (máy chủ), `tests/app/pos-ui.test.ts` (thẻ, form huỷ).

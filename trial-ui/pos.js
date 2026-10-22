@@ -426,7 +426,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     refreshPay();
   }
   const orderLabels = {
-    all: 'Tất cả đơn', pending: 'Chờ xử lý', packing: 'Đang đóng hàng',
+    all: 'Tất cả đơn', web: 'Đơn web', pending: 'Chờ xử lý', packing: 'Đang đóng hàng',
     waiting_delivery: 'Đợi giao', completed: 'Hoàn thành', cancelled: 'Đã hủy',
   };
   async function loadOrderBoard() {
@@ -490,11 +490,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     summary.append(el('p', 'pos-note', 'Không tính đơn đã hủy. Tổng giá trị đơn, chưa trừ trả hàng/hoàn tiền. Đơn web chưa gắn nhân viên bán.'));
     box.append(summary);
     const cards = el('div', 'pos-order-counts');
-    for (const id of ['all', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled']) {
-      const b = button('', 'pos-order-count' + (st.orderStatus === id ? ' active' : ''), () => {
+    // "Đơn web": đơn website còn cần xử lý (chưa hoàn thành / chưa huỷ) – có đơn thì số đỏ nhấp nháy để nhân viên thấy ngay.
+    for (const id of ['all', 'web', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled']) {
+      const n = d.counts[id] || 0, alert = id === 'web' && n > 0;
+      const b = button('', 'pos-order-count' + (st.orderStatus === id ? ' active' : '') + (id === 'web' ? ' pos-order-web' : '') + (alert ? ' has-alert' : ''), () => {
         st.orderStatus = id; run(loadOrderBoard);
       });
-      b.append(el('strong', '', d.counts[id] || 0), el('span', '', orderLabels[id]));
+      b.append(el('strong', alert ? 'pos-web-badge' : '', n), el('span', '', orderLabels[id]));
+      if (alert) b.setAttribute('aria-label', `Đơn web: ${n} đơn cần xử lý`);
       cards.append(b);
     }
     box.append(cards);
@@ -548,13 +551,40 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (o.actionsAvailable) actions.append(busyButton('Cập nhật trạng thái', 'btn secondary', 'Đang cập nhật…', async () => {
       await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'refresh' }); m.close(); toast('Đã cập nhật trạng thái đơn.', 'ok'); await loadOrderBoard();
     }));
-    if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) actions.append(busyButton('Huỷ đơn', 'btn danger', 'Đang huỷ…', async () => {
-      if (!await confirmBox(`Huỷ đơn ${o.orderNo}${o.ghnOrderCode ? ' và vận đơn GHN ' + o.ghnOrderCode : ''}?`, { title: 'Huỷ đơn website', ok: 'Huỷ đơn', danger: true })) return;
-      await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'cancel' }); m.close(); toast('Đã huỷ đơn' + (o.ghnOrderCode ? ' và vận đơn GHN.' : '.'), 'ok'); await loadOrderBoard();
-    }));
+    if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) {
+      actions.append(busyButton('Hoàn thành', 'btn primary', 'Đang hoàn thành…', async () => {
+        if (!await confirmBox(`Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;
+        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'complete' }); m.close(); toast('Đã hoàn thành đơn ' + o.orderNo + '.', 'ok'); await loadOrderBoard();
+      }));
+      actions.append(button('Huỷ đơn', 'btn danger', () => { m.close(); cancelWebOrder(o); }));
+    }
     actions.append(button('Đóng', 'btn secondary', m.close));
     m.body.append(actions);
     m.show();
+  }
+  /** Huỷ đơn website: bắt buộc lý do (≥ 3 ký tự) – gửi website + ghi nhật ký. Form khoá trong lúc gửi; lỗi thì giữ lý do để gửi lại. */
+  function cancelWebOrder(o) {
+    const m = formModal('Huỷ đơn web · ' + o.orderNo);
+    const reason = el('textarea'), box = el('label', 'pos-field'), error = el('p', 'error');
+    reason.rows = 3; reason.maxLength = 500; reason.required = true; reason.placeholder = 'Ví dụ: Khách đổi ý, hết hàng, trùng đơn…';
+    reason.setAttribute('aria-label', 'Lý do huỷ đơn'); error.setAttribute('role', 'alert');
+    box.append(el('span', '', 'Lý do huỷ (bắt buộc)'), reason);
+    const submit = el('button', 'btn danger', 'Huỷ đơn'); submit.type = 'submit';
+    const back = button('Quay lại', 'btn secondary', () => { if (!m.dlg.dataset.busy) { m.close(); showWebOrder(o); } });
+    const foot = el('div', 'pos-actions'); foot.append(back, submit);
+    m.form.append(el('p', '', o.customerName + ' · ' + money(o.total) + (o.ghnOrderCode ? ' · vận đơn GHN ' + o.ghnOrderCode : '')), box, error, foot);
+    m.form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (m.dlg.dataset.busy) return;
+      const text = reason.value.trim();
+      if (text.length < 3) { error.textContent = 'Nhập lý do huỷ đơn (ít nhất 3 ký tự).'; reason.focus?.(); return; }
+      error.textContent = ''; m.lock(true, submit, 'Đang huỷ…');
+      try {
+        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'cancel', reason: text });
+        m.lock(false, submit); m.close(); toast('Đã huỷ đơn ' + o.orderNo + (o.ghnOrderCode ? ' và vận đơn GHN.' : '.'), 'ok'); await run(loadOrderBoard);
+      } catch (ex) { m.lock(false, submit); error.textContent = ex.message || 'Chưa huỷ được đơn.'; }
+    });
+    m.show(); reason.focus?.();
   }
   /** Đơn website chờ xử lý: chọn địa chỉ chuẩn GHN → kiểm tra lại → tạo vận đơn. Form khoá trong lúc gửi; lỗi thì giữ dữ liệu để sửa. */
   function showGhnAddress(o) {
