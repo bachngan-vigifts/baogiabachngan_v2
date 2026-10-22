@@ -73,5 +73,5 @@ test('file SQL xoá dữ liệu chạy thử: xoá đúng bảng, giữ dữ li�
   const o2 = await call('/orders', emp, 'POST', { quoteId: q2.data.id });
   const approved2 = await call(`/orders/${o2.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal(approved2.status, 200, JSON.stringify(approved2.data));
-  assert.match((await call(`/orders/${o2.data.id}`, emp)).data.order.orderNo, /_001$/);
+  assert.match((await call(`/orders/${o2.data.id}`, emp)).data.order.orderNo, /^DH_001_\d{8}$/);
 });
