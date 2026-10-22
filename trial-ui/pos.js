@@ -572,9 +572,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     );
     const actions = el('div', 'pos-actions');
     if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary', () => { m.close(); showGhnAddress(o); }));
-    if (o.actionsAvailable) actions.append(busyButton('Cập nhật trạng thái', 'btn secondary', 'Đang cập nhật…', async () => {
-      await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'refresh' }); m.close(); toast('Đã cập nhật trạng thái đơn.', 'ok'); await loadOrderBoard();
-    }));
     if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) {
       actions.append(busyButton('Hoàn thành', 'btn primary', 'Đang hoàn thành…', async () => {
         if (!await confirmBox(`Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;
@@ -1842,32 +1839,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       refreshPay();
     }
   }
-  // Đồng bộ trạng thái vận đơn GHN (shop Lock) ngay trong CRM: tự chạy khi mở Ship COD, hoặc bấm "↻ Đồng bộ GHN".
-  // Giao xong → máy chủ tự xuất kho và ghi thu COD (nguồn GHN); bấm liên tục trong 60 giây dùng lại kết quả cũ.
-  async function syncGhn(status, btn, reopen) {
-    if (btn.dataset.busy) return;
-    btn.dataset.busy = '1'; btn.disabled = true; btn.className += ' is-busy'; status.textContent = 'Đang đồng bộ trạng thái GHN…';
-    try {
-      const r = await api('/pos/ghn/sync', 'POST', {});
-      status.textContent = 'GHN ' + new Date(r.syncedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) +
-        ': kiểm ' + r.checked + ' vận đơn, cập nhật ' + r.updated + (r.errors?.length ? ', ' + r.errors.length + ' lỗi (' + r.errors.map(e => (e.orderNo ? e.orderNo + ' · ' : '') + e.code + ': ' + e.message).join('; ') + ')' : '') + '.';
-      if (r.updated && !r.cached) reopen();
-    } catch (e) {
-      status.textContent = e.message || 'Không đồng bộ được GHN.';
-    } finally {
-      delete btn.dataset.busy; btn.disabled = false; btn.className = btn.className.replace(' is-busy', '');
-    }
-  }
-  async function codList(autoSync = true) {
+  async function codList() {
     if (!active()) return toast('Mở ca để theo dõi và thu COD.', 'err');
     const d = await api('/pos/cod?shiftId=' + st.shift.id),
       m = modal('Ship COD của quầy');
-    const ghnBar = el('div', 'pos-ghn-bar'), ghnStatus = el('small', 'muted', ''),
-      ghnBtn = button('↻ Đồng bộ GHN', 'btn secondary', () => syncGhn(ghnStatus, ghnBtn, reopen)),
-      reopen = () => { m.close(); run(() => codList(false)); };
-    ghnBtn.setAttribute('aria-label', 'Đồng bộ trạng thái vận đơn GHN');
-    ghnBar.append(ghnBtn, ghnStatus);
-    m.body.append(ghnBar);
+    m.body.append(el('p', 'pos-note', 'Trạng thái vận chuyển được GHN tự động cập nhật.'));
     if (!d.deliveries.length) m.body.append(el('p', '', 'Không có đơn COD chưa thu.'));
     for (const x of d.deliveries) {
       const row = el('div', 'pos-cod-row');
@@ -1887,7 +1863,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       else if (x.canCreateGhn) {
         const create = busyButton('Tạo vận đơn GHN', 'btn primary', 'Đang tạo vận đơn GHN…', async () => {
           const r = await api('/pos/cod/' + encodeURIComponent(x.id) + '/ghn', 'POST', {});
-          toast('Đã tạo vận đơn GHN ' + r.orderCode + '.'); reopen();
+          toast('Đã tạo vận đơn GHN ' + r.orderCode + '.'); m.close(); run(codList);
         });
         row.append(el('p', 'pos-note', 'Chưa có vận đơn GHN.'), create);
       }
@@ -1936,7 +1912,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }
     m.body.append(button('Đóng', 'btn secondary', m.close));
     m.show();
-    if (autoSync) syncGhn(ghnStatus, ghnBtn, reopen);
   }
   function configure(forceNew = false) {
     const m = formModal('Cấu hình quầy POS'),

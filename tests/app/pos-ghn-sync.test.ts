@@ -49,6 +49,28 @@ test('GHN Lock: lấy hàng trừ kho một lần; giao xong hoàn tất và ghi
   assert.equal((await f.db.select().from(customerPayments)).length, 1, 'không ghi thu trùng');
 });
 
+test('Webhook GHN cập nhật đúng vận đơn, xác thực token/shop và chống ghi kho/COD trùng', async () => {
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, {
+    fulfillmentMode: 'cod', delivery, note: 'GHN-WEBHOOK1', depositAmount: 0,
+  }));
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  f.env.ghnWebhookToken = 'w'.repeat(40);
+  const payload = { OrderCode: 'WEBHOOK1', Status: 'picked', ShopID: 6096731, Time: '2026-10-22T04:00:00Z', Type: 'Switch_status' };
+  assert.equal((await f.call('/integrations/ghn/pos-lock/webhook?token=bad', '', 'POST', payload)).status, 401);
+  assert.equal((await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', { ...payload, ShopID: 999 })).status, 403);
+  const picked = await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', payload);
+  assert.equal(picked.status, 200, JSON.stringify(picked.data));
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'in_transit');
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8);
+  await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', payload);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8, 'GHN gửi lặp không trừ kho lần hai');
+  const delivered = { ...payload, Status: 'delivered', Time: '2026-10-22T05:00:00Z' };
+  await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', delivered);
+  await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', delivered);
+  assert.equal((await f.db.select().from(customerPayments)).length, 1, 'GHN gửi delivered lặp không ghi COD lần hai');
+});
+
 test('Đồng bộ GHN ngay trong CRM: cần quyền bán hàng nhanh, báo rõ khi chưa có token, bấm liên tục không gọi GHN lại', async () => {
   const { resetGhnSyncThrottle } = await import('../../src/modules/sales/api/pos-ghn-sync.ts');
   resetGhnSyncThrottle();
