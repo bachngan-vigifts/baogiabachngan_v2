@@ -2,18 +2,16 @@
  * Quy tắc thuần của luồng bán hàng sau báo giá (không đụng DB/HTTP).
  * Báo giá → Đơn đặt hàng → HĐKT → Lịch giao → Công nợ.
  */
+import { nextDocumentNumber } from '../../../core/document-number.ts';
 import { after, rate, type QuoteDoc, type QuoteRow } from '../../quotes/domain/quote-math.ts';
 
 const round = (n: number) => Math.round(n);
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v)).trim();
 
 // ---------------- Số chứng từ ----------------
-const ymd = (date: string) => date.replaceAll('-', '').slice(0, 8);
-/** Số tiếp theo dạng `<PREFIX>_<yyyymmdd>_<nnn>` (DH = đơn hàng, GH = giao hàng), đếm trong các số đã dùng cùng ngày. */
+/** Sales documents use PREFIX_NNN_DDMMYYYY; count both legacy and new numbers for the same day. */
 export function nextDocNo(prefix: 'DH' | 'GH' | 'DG' | 'POS', date: string, used: readonly string[]): string {
-  const head = `${prefix}_${ymd(date)}_`;
-  const max = Math.max(0, ...used.filter(n => n.startsWith(head)).map(n => parseInt(n.slice(head.length), 10) || 0));
-  return head + String(max + 1).padStart(3, '0');
+  return nextDocumentNumber(prefix, date, used);
 }
 
 /** Pháp nhân bên bán → mã trên số HĐKT (port `normalizeLegalCode` bản cũ). */

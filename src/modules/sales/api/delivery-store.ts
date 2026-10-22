@@ -1,6 +1,7 @@
+import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { orderRecipient } from '../domain/order-notes.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { deliveries, deliveryLines, salesOrderLines, salesOrders } from '../schema.ts';
@@ -45,7 +46,7 @@ export async function createScheduledDelivery(tx: Tx, orderId: string, body: Rec
   }
   // Different orders created concurrently must not choose the same daily document number.
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'delivery-number:' + date}))`);
-  const used = await tx.select({ no: deliveries.deliveryNo }).from(deliveries).where(sql`${deliveries.deliveryNo} like ${'GH_' + date.replaceAll('-', '') + '_%'}`);
+  const used = await tx.select({ no: deliveries.deliveryNo }).from(deliveries).where(or(...documentNumberPatterns('GH', date).map(pattern => sql`${deliveries.deliveryNo} LIKE ${pattern}`)));
   const id = crypto.randomUUID(), now = new Date().toISOString();
   await tx.insert(deliveries).values({ id, deliveryNo: nextDocNo('GH', date, used.map(r => r.no)), orderId, plannedDate: date,
     timeSlot: text(body.timeSlot, 100), address: text(body.address, 2000) || order.address,

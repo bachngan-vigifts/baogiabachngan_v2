@@ -1,14 +1,16 @@
+import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { bundlePosCustomer, POS_CUSTOMER_OUT, bundleQuoteMath, bundleProductSearch, bundleOrderNotes, ORDER_NOTES_OUT, PRODUCT_SEARCH_OUT, QUOTE_MATH_OUT } from '../../scripts/build-trial-ui.ts';
+import { bundleDocumentNumber, DOCUMENT_NUMBER_OUT, bundlePosCustomer, POS_CUSTOMER_OUT, bundleQuoteMath, bundleProductSearch, bundleOrderNotes, ORDER_NOTES_OUT, PRODUCT_SEARCH_OUT, QUOTE_MATH_OUT } from '../../scripts/build-trial-ui.ts';
 import * as math from '../../src/modules/quotes/domain/quote-math.ts';
 
 const ui = join(import.meta.dirname, '../../trial-ui');
 
 test('trial-ui/quote-math.js được sinh từ quote-math.ts và chưa cũ (chạy `npm run ui:build` nếu lỗi)', () => {
+  assert.equal(readFileSync(DOCUMENT_NUMBER_OUT, 'utf8'), bundleDocumentNumber());
   assert.equal(readFileSync(QUOTE_MATH_OUT, 'utf8'), bundleQuoteMath());
   assert.equal(readFileSync(PRODUCT_SEARCH_OUT, 'utf8'), bundleProductSearch());
   assert.equal(readFileSync(ORDER_NOTES_OUT, 'utf8'), bundleOrderNotes());
@@ -56,4 +58,20 @@ test('index.html: thẻ mở / đóng khớp nhau và mọi trang (.view) nằm 
     if (m[2] === 'section' && /class="view\b/.test(m[3]!)) assert.ok(stack.includes('main main'), `${/id="([^"]+)"/.exec(m[3]!)?.[1]} nằm ngoài <main>`);
     stack.push(`${m[2]} ${/class="([\w-]+)/.exec(m[3]!)?.[1] ?? ''}`);
   }
+});
+
+
+test('quote editor numbering: mixed local history, global server counter and date/type isolation', async () => {
+  const app = readFileSync(join(ui, 'app.js'), 'utf8');
+  const code = app.slice(app.indexOf('const QUOTE_PREFIX ='), app.indexOf('/** Báo giá mới chưa lưu:'));
+  const shared = await import(pathToFileURL(DOCUMENT_NUMBER_OUT).href);
+  const state = {quotes:[{quoteNo:'HRC_BG20261022_007'},{quoteNo:'HRC_BG_009_22102026'}]};
+  const ctx = {...shared,state,todayIso:()=> '2026-10-22',api:async()=>({quoteNo:'HRC_BG_012_22102026'})};
+  const editor = runInNewContext(code+';({nextQuoteNo,refreshQuoteNo,isAutoQuoteNo})',ctx);
+  assert.equal(editor.nextQuoteNo('HRC'),'HRC_BG_010_22102026');
+  await editor.refreshQuoteNo('HRC','2026-10-22');
+  assert.equal(editor.nextQuoteNo('HRC'),'HRC_BG_012_22102026');
+  assert.equal(editor.nextQuoteNo('B2B'),'B2B_BG_001_22102026');
+  assert.equal(editor.nextQuoteNo('HRC','2026-10-23'),'HRC_BG_001_23102026');
+  assert.equal(editor.isAutoQuoteNo('CUSTOMER-01','HRC','2026-10-22'),false);
 });

@@ -29,8 +29,8 @@ test('số báo giá: hàm thuần nhận mẫu tự sinh và tính số kế ti
   assert.equal(quoteHeadFor('VIGIFTS', '2026-10-09'), 'VG_BG20261009_');
   assert.equal(autoQuoteHead('HRC_BG20261009_001'), 'HRC_BG20261009_');
   assert.equal(autoQuoteHead('BG-KHACH-01'), null);
-  assert.equal(nextQuoteNoAfter('HRC_BG20261009_', ['HRC_BG20261009_001', 'HRC_BG20261009_007', 'B2B_BG20261009_020']), 'HRC_BG20261009_008');
-  assert.equal(nextQuoteNoAfter('HRC_BG20261009_', []), 'HRC_BG20261009_001');
+  assert.equal(nextQuoteNoAfter('HRC_BG20261009_', ['HRC_BG20261009_001', 'HRC_BG20261009_007', 'B2B_BG20261009_020']), 'HRC_BG_008_09102026');
+  assert.equal(nextQuoteNoAfter('HRC_BG20261009_', []), 'HRC_BG_001_09102026');
 });
 
 test('số báo giá: hai nhân viên cùng tạo _001 → người sau tự nhận _002; số gõ tay trùng bị từ chối; gợi ý số kế tiếp theo toàn công ty', async () => {
@@ -39,11 +39,11 @@ test('số báo giá: hai nhân viên cùng tạo _001 → người sau tự nh�
   const b = await call('/quotes', emp2, 'POST', quote('HRC_BG20261009_001'));
   assert.equal(a.status, 201); assert.equal(b.status, 201);
   assert.equal(a.data.data.quoteNo, 'HRC_BG20261009_001');
-  assert.equal(b.data.data.quoteNo, 'HRC_BG20261009_002', 'người sau tự nhận số kế tiếp');
-  assert.equal((await call(`/quotes/${b.data.id}`, emp2)).data.data.quoteNo, 'HRC_BG20261009_002', 'số đã lưu đúng');
+  assert.equal(b.data.data.quoteNo, 'HRC_BG_002_09102026', 'người sau tự nhận số kế tiếp');
+  assert.equal((await call(`/quotes/${b.data.id}`, emp2)).data.data.quoteNo, 'HRC_BG_002_09102026', 'số đã lưu đúng');
   // Gợi ý số kế tiếp đếm cả báo giá người khác (emp2 không thấy báo giá của emp).
-  assert.equal((await call('/quotes/next-no?type=HRC&date=2026-10-09', emp2)).data.quoteNo, 'HRC_BG20261009_003');
-  assert.equal((await call('/quotes/next-no?type=VIGIFTS&date=2026-10-09', emp2)).data.quoteNo, 'VG_BG20261009_001', 'đếm riêng theo loại');
+  assert.equal((await call('/quotes/next-no?type=HRC&date=2026-10-09', emp2)).data.quoteNo, 'HRC_BG_003_09102026');
+  assert.equal((await call('/quotes/next-no?type=VIGIFTS&date=2026-10-09', emp2)).data.quoteNo, 'VG_BG_001_09102026', 'đếm riêng theo loại');
   assert.equal((await call('/quotes/next-no?type=HRC&date=bad', emp2)).status, 400);
 
   // Số gõ tay trùng → lỗi rõ ràng, không lưu.
@@ -54,8 +54,20 @@ test('số báo giá: hai nhân viên cùng tạo _001 → người sau tự nh�
   // Sửa báo giá giữ nguyên số: không bị đổi số; đổi sang số người khác đang dùng: số tự sinh → số kế tiếp, số gõ tay → lỗi.
   const keep = await call(`/quotes/${a.data.id}`, emp, 'PUT', { revision: 1, data: { ...quote('HRC_BG20261009_001'), customer: 'Khách A sửa' } });
   assert.equal(keep.data.data.quoteNo, 'HRC_BG20261009_001');
-  const moved = await call(`/quotes/${a.data.id}`, emp, 'PUT', { revision: keep.data.revision, data: quote('HRC_BG20261009_002') });
-  assert.equal(moved.data.data.quoteNo, 'HRC_BG20261009_003');
+  const moved = await call(`/quotes/${a.data.id}`, emp, 'PUT', { revision: keep.data.revision, data: quote(b.data.data.quoteNo) });
+  assert.equal(moved.data.data.quoteNo, 'HRC_BG_003_09102026');
   const clash = await call(`/quotes/${a.data.id}`, mgr, 'PUT', { revision: moved.data.revision, data: quote('BG-RIENG-01') });
   assert.deepEqual([clash.status, clash.data.code], [400, 'QUOTE_NO_EXISTS']);
+});
+
+
+test('mixed old/new quote series: maximum is global and concurrent collisions receive distinct new-format numbers', async () => {
+  const {call,emp,emp2}=await setup();
+  assert.equal((await call('/quotes',emp,'POST',quote('HRC_BG20261009_007'))).status,201);
+  assert.equal((await call('/quotes',emp2,'POST',quote('HRC_BG_009_09102026'))).status,201);
+  assert.equal((await call('/quotes/next-no?type=HRC&date=2026-10-09',emp)).data.quoteNo,'HRC_BG_010_09102026');
+  const results=await Promise.all([call('/quotes',emp,'POST',quote('HRC_BG_009_09102026')),call('/quotes',emp2,'POST',quote('HRC_BG_009_09102026'))]);
+  for(const r of results) assert.equal(r.status,201,JSON.stringify(r.data));
+  assert.deepEqual(results.map(r=>r.data.data.quoteNo).sort(),['HRC_BG_010_09102026','HRC_BG_011_09102026']);
+  assert.equal((await call('/quotes/next-no?type=HRC&date=2026-10-10',emp)).data.quoteNo,'HRC_BG_001_10102026');
 });

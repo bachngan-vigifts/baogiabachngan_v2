@@ -1,20 +1,30 @@
-/**
- * SỐ BÁO GIÁ TỰ SINH: `<loại>_BG<yyyymmdd>_<nnn>` – HRC_BG20261009_001, B2B_BG…, VG_BG… Đếm theo loại + ngày trên TOÀN BỘ
- * báo giá của công ty (máy chủ cấp lúc lưu). Trước đây giao diện tự đếm trên các báo giá người dùng nhìn thấy – nhân viên chỉ
- * thấy báo giá của mình nên ai cũng ra `_001`, trùng số.
- */
+import { documentDate, documentNumberPatterns, nextDocumentNumber } from '../../../core/document-number.ts';
+/** Quote prefixes stay HRC_BG / B2B_BG / VG_BG; displayed numbers use PREFIX_NNN_DDMMYYYY. */
 export const QUOTE_NO_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG' } as const;
-const AUTO_RE = /^((?:HRC|B2B|VG)_BG\d{8}_)(\d{3,})$/;
-
-/** Phần đầu `HRC_BG20261009_` nếu là số theo mẫu tự sinh, ngược lại null (số gõ tay). */
-export const autoQuoteHead = (quoteNo: string) => AUTO_RE.exec(quoteNo.trim())?.[1] ?? null;
-
-/** Số kế tiếp sau số lớn nhất đang dùng có cùng phần đầu. */
-export function nextQuoteNoAfter(head: string, used: readonly string[]) {
-  const max = Math.max(0, ...used.filter(n => n.startsWith(head)).map(n => parseInt(n.slice(head.length), 10) || 0));
-  return head + String(max + 1).padStart(3, '0');
+const OLD_RE = /^((?:HRC|B2B|VG)_BG)(\d{4})(\d{2})(\d{2})_(\d{3,})$/;
+const NEW_RE = /^((?:HRC|B2B|VG)_BG)_(\d{3,})_(\d{2})(\d{2})(\d{4})$/;
+/** Internal series key, retained for compatibility; it is not the displayed prefix. */
+export const quoteHeadFor = (type: string, date: string) => {
+  documentDate(date);
+  return `${QUOTE_NO_PREFIX[type as keyof typeof QUOTE_NO_PREFIX] ?? 'B2B'}_BG${date.replaceAll('-', '')}_`;
+};
+export function autoQuoteHead(no: string): string | null {
+  const old = OLD_RE.exec(no.trim()), next = NEW_RE.exec(no.trim());
+  if (!old && !next) return null;
+  const prefix = (old || next)![1]!, date = old ? `${old[2]}-${old[3]}-${old[4]}` : `${next![5]}-${next![4]}-${next![3]}`;
+  try { documentDate(date); } catch { return null; }
+  return prefix + date.replaceAll('-', '') + '_';
 }
-
-/** Phần đầu theo loại + ngày (yyyy-mm-dd). */
-export const quoteHeadFor = (type: string, date: string) =>
-  `${QUOTE_NO_PREFIX[type as keyof typeof QUOTE_NO_PREFIX] ?? 'B2B'}_BG${date.replaceAll('-', '')}_`;
+function series(head: string) {
+  const m = /^((?:HRC|B2B|VG)_BG)(\d{4})(\d{2})(\d{2})_$/.exec(head);
+  if (!m) throw new Error('Loại số báo giá không hợp lệ.');
+  return { prefix: m[1]!, date: `${m[2]}-${m[3]}-${m[4]}` };
+}
+export function nextQuoteNoAfter(head: string, used: readonly string[]) {
+  const { prefix, date } = series(head);
+  return nextDocumentNumber(prefix, date, used, head);
+}
+export function quoteNumberPatterns(head: string): [string, string] {
+  const { prefix, date } = series(head);
+  return documentNumberPatterns(prefix, date, head);
+}

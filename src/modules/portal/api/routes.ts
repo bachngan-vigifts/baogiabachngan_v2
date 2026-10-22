@@ -1,3 +1,4 @@
+import { quoteHeadFor, quoteNumberPatterns } from '../../quotes/domain/quote-number.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -140,7 +141,8 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const id = crypto.randomUUID(), now = nowIso();
     let quote!: typeof quotations.$inferSelect;
     await db.transaction(async tx => {
-      const used = (await tx.select({ n: quotations.quoteNo }).from(quotations).where(sql`${quotations.quoteNo} LIKE ${'B2B_BG' + ymd + '_%'}`)).map(r => r.n);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('staff_quotations.quote_no'))`);
+      const used = (await tx.select({ n: quotations.quoteNo }).from(quotations).where(or(...quoteNumberPatterns(quoteHeadFor('B2B', today)).map(pattern => sql`${quotations.quoteNo} LIKE ${pattern}`)))).map(r => r.n);
       const data = cleanQuotation({
         type: 'B2B', quoteNo: nextQuoteNo('B2B_BG', ymd, used), date: today, vat: 8, ...(deliveryDate ? { deliveryDate } : {}),
         customer: customer.name, customerId: customer.id, contact: customer.contact, phone: customer.phone, email: customer.email,

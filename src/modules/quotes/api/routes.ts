@@ -1,6 +1,6 @@
 import { quotationPredicate } from './department-access.ts';
 import { canApprove } from '../../staff/domain/permissions.ts';
-import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -8,7 +8,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { cleanQuotation } from '../domain/quotation-schema.ts';
 import { keepCosts, withoutCosts } from '../domain/cost-privacy.ts';
-import { autoQuoteHead, nextQuoteNoAfter, quoteHeadFor } from '../domain/quote-number.ts';
+import { autoQuoteHead, nextQuoteNoAfter, quoteHeadFor, quoteNumberPatterns } from '../domain/quote-number.ts';
 import { quoteHeaderIndex, quoteLineRows } from '../domain/quote-index.ts';
 import { totals } from '../domain/quote-math.ts';
 import { quotations, quoteLines, quoteNotifications, quoteRevisions } from '../schema.ts';
@@ -59,7 +59,7 @@ export async function assignQuoteNo(tx: Tx, quoteNo: string, exceptId?: string):
   if (!await taken(quoteNo)) return quoteNo;
   const head = autoQuoteHead(quoteNo);
   if (!head) throw new AppError(400, `Số báo giá ${quoteNo} đã được dùng cho báo giá khác. Vui lòng đổi số khác.`, 'QUOTE_NO_EXISTS');
-  const used = (await tx.select({ n: quotations.quoteNo }).from(quotations).where(sql`${quotations.quoteNo} LIKE ${head + '%'}`)).map(r => r.n);
+  const used = (await tx.select({ n: quotations.quoteNo }).from(quotations).where(or(...quoteNumberPatterns(head).map(pattern => sql`${quotations.quoteNo} LIKE ${pattern}`)))).map(r => r.n);
   return nextQuoteNoAfter(head, used);
 }
 
@@ -132,7 +132,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     const type = c.url.searchParams.get('type') || 'B2B', date = c.url.searchParams.get('date') || '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new AppError(400, 'Ngày không hợp lệ.');
     const head = quoteHeadFor(type, date);
-    const used = (await c.env.db.select({ n: quotations.quoteNo }).from(quotations).where(sql`${quotations.quoteNo} LIKE ${head + '%'}`)).map(r => r.n);
+    const used = (await c.env.db.select({ n: quotations.quoteNo }).from(quotations).where(or(...quoteNumberPatterns(head).map(pattern => sql`${quotations.quoteNo} LIKE ${pattern}`)))).map(r => r.n);
     return json({ quoteNo: nextQuoteNoAfter(head, used) });
   }, 'business');
   router.get('/quotes/pending-count', async c => {

@@ -1,4 +1,5 @@
-import { eq, sql } from 'drizzle-orm';
+import { documentNumberPatterns } from '../../../core/document-number.ts';
+import { eq, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { posPaymentRequests } from '../pos-schema.ts';
@@ -9,10 +10,10 @@ type Db = StaffEnv['db'] | Parameters<Parameters<StaffEnv['db']['transaction']>[
 /** Caller holds cashLock. The day lock is shared with all POS number allocation. Never recycle an abandoned QR reference. */
 export async function nextPosOrderNo(db: Db, date: string): Promise<string> {
   await db.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-number:' + date}))`);
-  const prefix = 'POS_' + date.replaceAll('-', '') + '_';
+  const patterns = documentNumberPatterns('POS', date);
   const [orders, reservations] = await Promise.all([
-    db.select({ no: salesOrders.orderNo }).from(salesOrders).where(sql`${salesOrders.orderNo} like ${prefix + '%'}`),
-    db.select({ cart: posPaymentRequests.cart }).from(posPaymentRequests).where(sql`${posPaymentRequests.cart} like ${'%' + prefix + '%'}`),
+    db.select({ no: salesOrders.orderNo }).from(salesOrders).where(or(...patterns.map(pattern => sql`${salesOrders.orderNo} LIKE ${pattern}`))),
+    db.select({ cart: posPaymentRequests.cart }).from(posPaymentRequests).where(or(...patterns.map(pattern => sql`${posPaymentRequests.cart} LIKE ${'%' + pattern + '%'}`))),
   ]);
   return nextDocNo('POS', date, [...orders.map(x => x.no), ...reservations.map(x => reservedPosOrderNo(x.cart)).filter((no): no is string => !!no)]);
 }
