@@ -1,14 +1,15 @@
 import { registerBarcodeImportRoutes } from './barcode-import.ts';
 import { catalogStockHooks, effectiveCatalogStock, hiddenStockWarehouses } from './stock-source.ts';
-import { and, asc, count, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
-import { foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
+import { foldSql, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { catalogVersions, pricePolicies, productBarcodes, productPrices, products, productStock, warehouses } from '../schema.ts';
 import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../domain/product-filters.ts';
+import { compactText, needsCompact, parseQuery } from '../domain/product-rank.ts';
 import { historyOf } from './product-history.ts';
 import { registerProductAdminRoutes } from './product-admin.ts';
 import { registerProductActionRoutes } from './product-actions.ts';
@@ -67,17 +68,53 @@ function searchFilter(params: URLSearchParams, brand: string) {
   return and(
     eq(products.active, true),
     brand ? eq(products.brand, brand) : undefined,
-    matchAllWords(foldSql(products.sku, products.name, products.brand, products.pattern), q),
+    matchProductWords(q),
     groupCond, priceCond,
     scopeCond && exactSku ? or(scopeCond, exactSku) : scopeCond,
   );
 }
 
-/** Gõ đúng một mã SKU thì mã đó đứng đầu kết quả. */
-const exactSkuFirst = (q: string | null) => {
-  const words = (q || '').trim().split(/\s+/).filter(Boolean);
-  return words.length === 1 ? [sql`(lower(${products.sku}) = lower(${words[0]})) DESC`] : [];
-};
+/*
+ * Tìm sản phẩm trên máy chủ – cùng quy tắc với trình duyệt (catalog/domain/product-rank.ts): khớp mọi từ (không dấu; từ có số / ký hiệu
+ * khớp cả khi bỏ khoảng trắng, dấu câu: "0.5l" ↔ "0.5 L") và xếp theo mức liên quan thay vì bảng chữ cái.
+ */
+const likeEsc = (v: string) => v.replace(/[\\%_]/g, m => '\\' + m);
+const productHay = () => foldSql(products.sku, products.name, products.brand, products.pattern);
+const compactSql = (folded: SQL) => sql`regexp_replace(${folded}, '[^a-z0-9]', '', 'g')`;
+/** Tên đã bỏ dấu, gộp khoảng trắng (như `fold()` ở JS). */
+const foldedName = () => sql`btrim(regexp_replace(${foldSql(products.name)}, '\\s+', ' ', 'g'))`;
+
+function matchProductWords(q: string | null) {
+  const { words } = parseQuery(q);
+  if (!words.length) return undefined;
+  const hay = productHay(), compact = compactSql(productHay());
+  return and(...words.map(w => {
+    const plain = sql`${hay} LIKE ${'%' + likeEsc(w) + '%'}`, c = compactText(w);
+    return needsCompact(w) && c ? or(plain, sql`${compact} LIKE ${'%' + likeEsc(c) + '%'}`) : plain;
+  }));
+}
+
+/** Thứ tự kết quả: hạng liên quan (0 mã đúng … 6 còn lại – xem product-rank.ts), cùng hạng tên ngắn trước, rồi theo tên. */
+function productOrder(q: string | null): SQL[] {
+  const { words, phrase, compact } = parseQuery(q);
+  const byName = [asc(foldSql(products.name)), asc(products.name), asc(products.sku)];
+  if (!words.length) return byName;
+  const name = foldedName(), sku = compactSql(foldSql(products.sku)), padded = sql`' ' || ${name}`;
+  const nameHasAll = and(...words.map(w => {
+    const plain = sql`${name} LIKE ${'%' + likeEsc(w) + '%'}`, c = compactText(w);
+    return needsCompact(w) && c ? or(plain, sql`${compactSql(name)} LIKE ${'%' + likeEsc(c) + '%'}`) : plain;
+  }))!;
+  const wordStarts = and(...words.map(w => sql`${padded} LIKE ${'% ' + likeEsc(w) + '%'}`))!;
+  const rank = sql`CASE
+    WHEN ${compact} <> '' AND ${sku} = ${compact} THEN 0
+    WHEN ${compact} <> '' AND ${sku} LIKE ${likeEsc(compact) + '%'} THEN 1
+    WHEN ${name} LIKE ${likeEsc(phrase) + '%'} THEN 2
+    WHEN ${name} LIKE ${'%' + likeEsc(phrase) + '%'} THEN 3
+    WHEN ${wordStarts} THEN 4
+    WHEN ${nameHasAll} THEN 5
+    ELSE 6 END`;
+  return [asc(rank), asc(sql`length(${products.name})`), ...byName];
+}
 
 /**
  * Danh mục sản phẩm. Dữ liệu được nạp từ bản cũ/Sapo vào các bảng catalog;
@@ -155,7 +192,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const where = skuList.length ? inArray(products.sku, skuList) : searchFilter(c.url.searchParams, brand);
     const [[{ total = 0 } = {}], rows, policies, stores, version] = await Promise.all([
       db.select({ total: count() }).from(products).where(where),
-      db.select().from(products).where(where).orderBy(...exactSkuFirst(c.url.searchParams.get('q')), asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(limit).offset(offset),
+      db.select().from(products).where(where).orderBy(...productOrder(c.url.searchParams.get('q'))).limit(limit).offset(offset),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
       db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)).then(ws => ws.filter(x => !hidden.has(x.id))),
       db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),
@@ -195,7 +232,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const selected = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50000);
     const where = selected.length ? and(eq(products.active, true), inArray(products.sku, selected)) : searchFilter(c.url.searchParams, brand);
     const [rows, policies, stores] = await Promise.all([
-      db.select().from(products).where(where).orderBy(asc(foldSql(products.name)), asc(products.name), asc(products.sku)).limit(50000),
+      db.select().from(products).where(where).orderBy(...(selected.length ? productOrder(null) : productOrder(c.url.searchParams.get('q')))).limit(50000),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
       db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)).then(ws => ws.filter(x => !hidden.has(x.id))),
     ]);

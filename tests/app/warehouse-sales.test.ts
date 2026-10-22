@@ -134,6 +134,43 @@ test('điều chuyển kho: NVBH xin → Manager duyệt → Kho chuyển; tồn
   assert.ok(!(await s.call('/stock-moves', s.ml)).data.moves.some((m: any) => m.warehouseId === 'hd'));
 });
 
+test('Sổ kho (như Sapo): tồn sau giao dịch tính trước khi lọc, dòng tổng theo bộ lọc, phân trang, lọc nhãn hiệu / trạng thái, link chứng từ', async () => {
+  const s = await setup();
+  await s.db.insert(products).values({ sku: 'BT1', name: 'Bình giữ nhiệt', unit: 'cái', brand: 'Lock&Lock', active: false, updatedAt: now });
+  // Tồn đầu 6 → duyệt đơn trừ 8 (âm 2) → nhập NCC 8 → còn 6 (đúng ví dụ DH_002 / PNH_004).
+  await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: 6, kind: 'opening', refType: 'opening', refId: 'op2', refNo: 'ĐK' }], '2026-10-18T01:00:00.000Z');
+  await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: -8, kind: 'sale', refType: 'sales_order', refId: 'o1#ab12', refNo: 'DH_002' }], '2026-10-22T08:15:00.000Z');
+  await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: 8, kind: 'receipt', refType: 'supplier_receipt', refId: 'r-none', refNo: 'PNH_004' }], '2026-10-22T09:50:00.000Z');
+  const get = async (q: string, who = s.mgr) => (await s.call('/stock-moves?' + q, who)).data;
+  const all = await get('q=BT1');
+  assert.equal(all.total, 3); assert.deepEqual(all.totals, { inQty: 14, outQty: 8 });
+  assert.deepEqual(all.moves.map((m: any) => [m.refNo, m.inQty, m.outQty, m.balanceAfter, m.warehouse]), [['PNH_004', 8, 0, 6, 'KHO VIGIFTS'], ['DH_002', 0, 8, -2, 'KHO VIGIFTS'], ['ĐK', 6, 0, 6, 'KHO VIGIFTS']]);
+  assert.deepEqual(all.moves.map((m: any) => m.description), ['Nhập hàng vào kho', 'Xuất kho bán hàng (duyệt đơn / HĐKT)', 'Chốt tồn đầu kỳ']);
+  assert.equal(all.moves[1].link, '#/orders/o1', 'dòng sửa đơn (refId có hậu tố #) vẫn mở đơn gốc');
+  assert.equal(all.moves[0].link, '', 'phiếu nhận không còn → không có link');
+  assert.equal(all.moves[0].active, false); assert.equal(all.moves[0].brand, 'Lock&Lock');
+  const today = await get('q=BT1&from=2026-10-22&to=2026-10-22');
+  assert.equal(today.total, 2); assert.deepEqual(today.moves.map((m: any) => m.balanceAfter), [6, -2], 'lọc ngày không làm sai tồn sau giao dịch');
+  assert.deepEqual(today.totals, { inQty: 8, outQty: 8 });
+  assert.equal((await get('q=BT1&to=2026-10-21')).moves[0].balanceAfter, 6);
+  assert.deepEqual((await get('q=BT1&group=in')).moves.map((m: any) => m.refNo), ['PNH_004']);
+  assert.deepEqual((await get('q=BT1&group=sale')).moves.map((m: any) => m.refNo), ['DH_002']);
+  const p2 = await get('q=BT1&page=2&size=20'); assert.equal(p2.total, 3); assert.equal(p2.moves.length, 0);
+  assert.equal((await get('q=BT1&size=7')).size, 20, 'cỡ trang lạ → 20');
+  assert.ok(all.brands.includes('Lock&Lock'));
+  assert.deepEqual([...new Set((await get('brand=' + encodeURIComponent('Lock&Lock'))).moves.map((m: any) => m.sku))], ['BT1']);
+  assert.deepEqual([...new Set((await get('status=inactive')).moves.map((m: any) => m.sku))], ['BT1']);
+  assert.equal((await get('q=BT1&status=active')).total, 0);
+  // Kho riêng (Hoá đơn) không lộ qua Sổ kho với người không bán kho đó; tổng cũng không tính kho đó.
+  const ml = await get('', s.ml);
+  assert.ok(!ml.warehouses.some((w: any) => w.id === 'hd')); assert.ok(!ml.moves.some((m: any) => m.warehouseId === 'hd'));
+  assert.equal((await get('warehouseId=hd', s.ml)).total, 0);
+  // Ngày theo giờ Việt Nam: 22/10 05:00 (VN) = 21/10 22:00 UTC vẫn thuộc ngày 22/10.
+  await postMoves(s.db as never, 'mgr', [{ sku: 'BT1', warehouseId: 'vig', qty: 1, kind: 'adjust', refType: 'adjustment', refId: 'adj-early', refNo: 'ĐC-SOM' }], '2026-10-21T22:00:00.000Z');
+  assert.ok((await get('q=BT1&from=2026-10-22&to=2026-10-22')).moves.some((m: any) => m.refNo === 'ĐC-SOM'));
+  assert.ok(!(await get('q=BT1&from=2026-10-21&to=2026-10-21')).moves.some((m: any) => m.refNo === 'ĐC-SOM'));
+});
+
 test('cấu hình kho bán: chỉ Manager / quyền phân quyền', async () => {
   const s = await setup();
   assert.equal((await s.call('/warehouse-sellers', s.emp)).status, 403);
@@ -169,10 +206,12 @@ test('lịch sử kiểu thẻ kho: tồn sau phát sinh tính toàn lịch sử
     id: 'history-limit-' + String(i).padStart(4, '0'), sku: 'LIMIT', warehouseId: 'vig', qty: 1,
     kind: 'adjust' as const, refType: 'adjustment' as const, refId: 'limit-' + i, createdBy: 'mgr', createdAt: '2026-10-04T00:00:00.000Z',
   })));
-  const capped = (await s.call('/stock-moves?warehouseId=vig&q=LIMIT', s.ml)).data.moves;
-  assert.equal(capped.length, 1000);
-  assert.equal(capped[0].balanceAfter, 1001, 'cộng cả dòng nằm ngoài giới hạn trả về');
-  assert.equal(capped.at(-1).balanceAfter, 2);
+  // Sổ kho phân trang: trang đầu vẫn cộng cả các dòng nằm ở trang sau; trang cuối là dòng cũ nhất.
+  const first = (await s.call('/stock-moves?warehouseId=vig&q=LIMIT&size=200', s.ml)).data;
+  assert.equal(first.moves.length, 200); assert.equal(first.total, 1001);
+  assert.equal(first.moves[0].balanceAfter, 1001, 'cộng cả dòng nằm ngoài trang trả về');
+  const last = (await s.call('/stock-moves?warehouseId=vig&q=LIMIT&size=200&page=6', s.ml)).data.moves;
+  assert.equal(last.length, 1); assert.equal(last[0].balanceAfter, 1);
   await postMoves(s.db as never, 'mgr', [{ sku: 'TZ', warehouseId: 'vig', qty: 2, kind: 'adjust', refType: 'adjustment', refId: 'tz-inside' }], '2026-10-02T18:00:00.000Z');
   await postMoves(s.db as never, 'mgr', [{ sku: 'TZ', warehouseId: 'vig', qty: 5, kind: 'adjust', refType: 'adjustment', refId: 'tz-outside' }], '2026-10-03T18:00:00.000Z');
   const vietnamDay = await s.call('/stock-moves?q=TZ&from=2026-10-03&to=2026-10-03', s.ml);

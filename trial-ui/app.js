@@ -638,7 +638,7 @@ const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving') });
-const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Lịch sử xuất nhập', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Sổ kho', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
@@ -702,7 +702,7 @@ function route() {
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
   if (view === 'transfers') transfersView().load(id);
-  if (view === 'stock-moves') stockMovesView().load();
+  if (view === 'stock-moves') stockMovesView().show(query);
   if (view === 'permissions') { permissionsView().load(); sellerConfigView().load(); }
   if (view === 'kho') khoHome().load();
   if (view === 'stock-lookup') stockLookup().load(new URLSearchParams(query).get('q')||'');
@@ -3212,7 +3212,7 @@ function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
 function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go }); }
-function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast }); }
+function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast, createPager, linkAllowed }); }
 function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').after(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
 var permissionsUi = null;
 function permissionsView() { return permissionsUi ||= initPermissions({ api, root: $('#view-permissions'), toast, confirmBox }); }

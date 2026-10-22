@@ -21,7 +21,8 @@
 
 **Kho nhận không khớp danh sách kho:** phiếu nhận vẫn được lưu, nhưng sổ kho không ghi. Lịch sử đơn mua có dòng báo "chưa ghi sổ kho". Muốn bù thì Manager lập phiếu điều chỉnh.
 
-## Trang "Sổ kho" (#/inventory) – chỉ Manager
+## Trang "Đối chiếu tồn Sapo" (#/inventory) – chỉ Manager / quyền "Sổ kho – xem"
+(Trước đây tên là "Sổ kho". Từ 22/10/2026 tên "Sổ kho" dùng cho trang giao dịch `#/stock-moves` bên dưới.)
 - **Đối chiếu:** tồn sổ kho, tồn Sapo và chênh lệch theo từng mã × kho. Mặc định chỉ hiện các dòng lệch.
 - **Thẻ kho:** bấm vào một dòng để xem các phát sinh của mã đó, có tồn luỹ kế và link về chứng từ.
 - **Chốt tồn đầu kỳ (Manager):** lấy tồn Sapo hiện tại làm điểm bắt đầu.
@@ -104,6 +105,53 @@ Tài khoản kho chỉ thấy các trang cần dùng, chữ to, nút to.
 3. Nhóm Kho (quyền mới **Điều chuyển kho – xác nhận đã chuyển**, mặc định Kho + Sale Admin) nhận việc "Chuyển hàng", bấm **Đã chuyển** → sổ kho trừ kho đi (**Chuyển kho đi**), cộng kho đến (**Chuyển kho đến**), một lần. Kho đi đã chốt đầu kỳ mà không đủ tồn → 409 `TRANSFER_SHORT`.
 4. Người xin / Manager huỷ được khi chưa chuyển.
 
-**Lịch sử xuất nhập** (`#/stock-moves`, mọi nhân viên): mọi phát sinh sổ kho mới nhất trước, lọc **Bán hàng** (duyệt đơn / HĐKT, bán quầy, giao COD) · Nhập · Xuất · Điều chuyển · Điều chỉnh / đầu kỳ, theo kho / ngày / mã; link về chứng từ; **⬇ Xuất Excel**.
+**Sổ kho** (`#/stock-moves`, mọi nhân viên; trước đây tên là "Lịch sử xuất nhập"): xem mục **Trang Sổ kho** bên dưới.
 
 **Kỹ thuật:** migration `20261021120000_warehouse_sales.sql` (+ `20261021120001_supabase_access_warehouse_sales.sql`); `inventory/api/{warehouse-access,transfer-routes,history-routes}.ts`, `ledger.ts › syncSaleMoves`, `sales/api/routes.ts › pickSaleWarehouse / syncOrderStock`, `sales/api/pos-stock.ts` (nguồn tồn); giao diện `trial-ui/stock-ops.js`. Test: `tests/app/warehouse-sales.test.ts`.
+
+## Trang Sổ kho (#/stock-moves) – như "Sổ kho" của Sapo (22/10/2026)
+
+Mỗi dòng là **một giao dịch** trong `stock_moves`, mới nhất trước. Mặc định xem 30 ngày gần nhất.
+
+| Cột | Lấy từ |
+|---|---|
+| # | Số thứ tự trong trang |
+| Ngày ghi nhận | `stock_moves.created_at` (lúc chứng từ ghi vào sổ kho) |
+| Giao dịch | Số chứng từ `ref_no` (bấm để mở chứng từ gốc) + diễn giải `stockMoveDescription(kind, ref_type)` |
+| Phiên bản sản phẩm | Mã SKU (bấm mở thẻ sản phẩm: tồn từng kho, lịch sử) + tên; nhãn **Ngừng giao dịch** khi `products.active = false` |
+| Nhập kho / Xuất kho | Số lượng dương / âm của dòng |
+| Tồn kho sau giao dịch | Cộng dồn **toàn bộ** sổ kho của (mã, kho) tới dòng đó (`sum(qty) over (partition by sku, warehouse_id order by created_at, id)`), tính **trước** khi lọc nên lọc ngày / loại không làm sai số. Âm = tô đỏ. |
+| Chi nhánh | Kho thật của dòng |
+
+- **Dòng "Tổng N giao dịch"**: số giao dịch và tổng Nhập / Xuất của **cả bộ lọc**, không chỉ trang đang xem.
+- **Bộ lọc**: Chi nhánh · Từ ngày / Đến ngày · Giao dịch (Bán hàng / Nhập kho / Xuất kho / Điều chuyển / Điều chỉnh – đầu kỳ / Huỷ chứng từ) · Nhãn hiệu · Trạng thái sản phẩm (Đang / Ngừng giao dịch) · ô tìm (mã, tên, số chứng từ, ghi chú). Bộ lọc đang bật hiện thành chip có ×.
+- **Link giữ bộ lọc**: `#/stock-moves?q=…&warehouseId=…&from=YYYY-MM-DD&to=…&group=…&brand=…&status=…`. Gửi link cho người khác là mở đúng bộ lọc.
+- **Phân trang** 20 / 50 / 100 / 200 dòng. **⬇ Xuất file**: Excel theo bộ lọc (tối đa 5000 dòng mới nhất, báo khi bị cắt).
+- **Kho riêng** (Hoá đơn) không hiện với người không bán kho đó: không có trong danh sách, dòng và tổng.
+- Link chứng từ chỉ hiện khi người xem mở được trang đó (theo phân quyền), không thì hiện chữ.
+- **Chưa có cột Giá trị** (như Sapo). Sổ kho chưa lưu giá vốn từng dòng. Muốn có giá trị cần thêm giá vốn bình quân: cần migration thêm cột giá vào `stock_moves`, và ghi giá ở mọi nơi gọi `postMoves`. Đây là việc riêng, xem Giai đoạn 2.
+
+### Chứng từ nào ghi gì vào sổ kho (tự động – không ai nhập tay)
+| Nghiệp vụ | Loại (`kind`) | Chứng từ (`ref_type`) | Diễn giải trên Sổ kho | Link mở |
+|---|---|---|---|---|
+| Chốt tồn đầu kỳ (Đối chiếu tồn Sapo) | opening | opening | Chốt tồn đầu kỳ | – |
+| Nhận hàng NCC (số đạt) | receipt | supplier_receipt | Nhập hàng vào kho | Đơn mua `#/purchases/<id>` |
+| Huỷ phiếu nhận NCC | reverse | supplier_receipt | Huỷ phiếu nhập hàng | Đơn mua |
+| Duyệt đơn / HĐKT kênh CRM (trừ kho bán) | sale | sales_order | Xuất kho bán hàng (duyệt đơn / HĐKT) | Đơn `#/orders/<id>` |
+| Huỷ / sửa SL / đổi kho đơn đã duyệt | reverse hoặc sale (phần chênh) | sales_order | Huỷ / sửa đơn – hoàn lại kho | Đơn |
+| Xác nhận đóng gói (đơn chưa trừ lúc duyệt) | issue | packing_slip | Xuất kho đóng gói giao hàng | Phiếu `#/packing/<id>` |
+| Bán tại quầy POS | sale | pos_order | Xuất kho bán tại quầy | Đơn |
+| Bàn giao vận chuyển / giao COD (POS) | issue | pos_delivery | Xuất kho giao hàng cho khách/shipper | Đơn gốc của phiếu giao |
+| Khách trả hàng (nhập lại kho) | customer_return | pos_return | Khách trả hàng – nhập lại kho | Đơn gốc |
+| Điều chuyển "Đã chuyển" | transfer_out / transfer_in | stock_transfer | Chuyển hàng sang kho khác / Nhận hàng chuyển kho | Phiếu `#/transfers/<id>` |
+| Phiếu điều chỉnh (Manager) | adjust | adjustment | Điều chỉnh tồn kho | – |
+
+### Thêm loại chứng từ mới (để không rối về sau)
+1. Thêm giá trị vào `STOCK_MOVE_KINDS` / `STOCK_REF_TYPES` (`src/modules/inventory/domain/kinds.ts`) + migration cập nhật check constraint.
+2. Ghi sổ **chỉ qua** `postMoves` / `reverseRef` / `syncSaleMoves` (`inventory/api/ledger.ts`), **trong cùng transaction** với chứng từ gốc. Huỷ không xoá dòng mà ghi dòng ngược lại.
+3. Thêm diễn giải vào `stockMoveDescription` (TypeScript báo lỗi nếu thiếu `kind`).
+4. Link mở chứng từ:
+   - chứng từ có trang theo id → thêm vào `directLink` (`inventory/api/history-routes.ts`);
+   - chứng từ của module khác (inventory không được import sales / suppliers) → viết hàm tra link trong module đó, rồi gắn vào `stockRefLinkHooks` ở `src/app/router.ts`. Ví dụ có sẵn: `sales/api/stock-ref-links.ts`, `suppliers/api/stock-ref-links.ts`.
+5. Thêm vào nhóm lọc `GROUPS` (history-routes.ts và `trial-ui/stock-ops.js`) nếu cần, và thêm một dòng vào bảng trên.
+6. Test: `tests/app/warehouse-sales.test.ts` (Sổ kho: tồn sau giao dịch, tổng, lọc, phân trang, kho riêng); link qua hook: `tests/app/inventory.test.ts` (phiếu nhận NCC), `tests/app/pos-order-flow.test.ts` (giao COD), `tests/app/pos-returns.test.ts` (khách trả).

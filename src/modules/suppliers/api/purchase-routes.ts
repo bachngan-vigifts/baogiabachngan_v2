@@ -132,13 +132,14 @@ async function checkSources(db: Db, m: Member, orders: LineIn[][], exceptShipmen
 }
 
 async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: Map<string, { no: string; customerName: string; lines: { sku: string; name: string; unit: string }[] }>) {
-  const names = new Map((lines.some(l => !l.name || !l.unit) ? await tx.select({ sku: products.sku, name: products.name, unit: products.unit }).from(products)
+  const names = new Map((lines.length ? await tx.select({ sku: products.sku, name: products.name, unit: products.unit }).from(products)
     .where(inArray(products.sku, lines.map(l => l.sku))) : []).map(p => [p.sku, p]));
   const now = nowIso();
   for (const [i, l] of lines.entries()) {
-    // Tên / ĐVT trống: lấy theo danh mục, không có thì theo dòng của chứng từ nguồn.
+    // Tên: luôn theo danh mục (dòng báo giá có thể gõ gọn, vd "Bộ trà 0.5"); mã ngoài danh mục giữ tên gửi lên / của chứng từ nguồn.
+    // ĐVT trống: lấy theo danh mục, không có thì theo chứng từ nguồn.
     const lineId = crypto.randomUUID(), p = names.get(l.sku), src = l.sources.map(s => needs.get(s.type + ':' + s.id)!.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase())).find(Boolean);
-    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: l.name || p?.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate });
+    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: p?.name || l.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate });
     for (const s of l.sources) {
       const n = needs.get(s.type + ':' + s.id)!;
       await tx.insert(supplierOrderSources).values({ id: crypto.randomUUID(), shipmentId, lineId, sourceType: s.type as 'quote', sourceId: s.id, sourceNo: n.no, customerName: n.customerName, sku: l.sku, quantity: s.quantity, createdAt: now });

@@ -31,6 +31,32 @@ function priceRange(min, max) {
   return { min: lo, max: hi };
 }
 
+// src/modules/catalog/domain/product-rank.ts
+var compactText = (folded) => folded.replace(/[^a-z0-9]/g, "");
+var needsCompact = (word) => /[0-9]/.test(word) || /[^a-z0-9]/.test(word);
+function parseQuery(q) {
+  const phrase = fold(q);
+  const words = phrase.split(" ").filter(Boolean).slice(0, 10);
+  return { words, phrase: words.join(" "), compact: compactText(phrase) };
+}
+function wordMatches(hay, compactHay, word) {
+  if (hay.includes(word)) return true;
+  const c = compactText(word);
+  return needsCompact(word) && c.length > 0 && compactHay.includes(c);
+}
+function productRank(p, q) {
+  if (!q.words.length) return 6;
+  const sku = compactText(fold(p.sku)), name = fold(p.name);
+  if (q.compact && sku === q.compact) return 0;
+  if (q.compact && sku.startsWith(q.compact)) return 1;
+  if (name.startsWith(q.phrase)) return 2;
+  if (name.includes(q.phrase)) return 3;
+  const padded = " " + name;
+  if (q.words.every((w) => padded.includes(" " + w))) return 4;
+  if (q.words.every((w) => wordMatches(name, compactText(name), w))) return 5;
+  return 6;
+}
+
 // src/modules/catalog/domain/product-search.ts
 var GROUP_RE = Object.fromEntries(Object.entries(PRODUCT_GROUPS).map(([k, g]) => [k, g.all.map((re) => new RegExp(re.replace(/\\[mM]/g, "\\b")))]));
 function hydrateSnapshot(snap) {
@@ -44,6 +70,7 @@ function hydrateSnapshot(snap) {
       if (stock[i] !== null && stock[i] !== void 0) p.stock[w.id] = stock[i];
     });
     p._hay = fold([p.sku, p.name, p.brand, p.pattern].map((v) => v ?? "").join(" "));
+    p._compact = compactText(p._hay);
     p._name = fold(p.name);
     const label = fold(`${p.brand ?? ""} ${p.name ?? ""}`);
     p._minhLong = MINH_LONG_WORDS.some((w) => label.includes(w));
@@ -54,12 +81,12 @@ function searchProducts(items, o) {
   const range = priceRange(o.min, o.max);
   if (!range) return null;
   const raw = (o.q || "").trim().split(/\s+/).filter(Boolean);
-  const words = fold(o.q).split(" ").filter(Boolean).slice(0, 10);
+  const query = parseQuery(o.q), words = query.words;
   const exact = raw.length === 1 ? raw[0].toLowerCase() : null;
   const groupRe = o.group && isProductGroup(o.group) ? GROUP_RE[o.group] : null;
   const priceOn = !!o.policy && (range.min !== null || range.max !== null);
   const out = items.filter((p) => {
-    if (words.length && !words.every((w) => p._hay.includes(w))) return false;
+    if (words.length && !words.every((w) => wordMatches(p._hay, p._compact, w))) return false;
     if (groupRe && !groupRe.every((re) => re.test(p._name))) return false;
     if (priceOn) {
       const v = p.prices[o.policy];
@@ -72,7 +99,8 @@ function searchProducts(items, o) {
     return true;
   });
   const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-  return out.sort((a, b) => (exact ? Number(b.sku.toLowerCase() === exact) - Number(a.sku.toLowerCase() === exact) : 0) || cmp(a._name, b._name) || cmp(a.name, b.name) || cmp(a.sku, b.sku));
+  const rank = new Map(out.map((p) => [p, productRank(p, query)]));
+  return out.sort((a, b) => rank.get(a) - rank.get(b) || (words.length ? a._name.length - b._name.length : 0) || cmp(a._name, b._name) || cmp(a.name, b.name) || cmp(a.sku, b.sku));
 }
 export {
   hydrateSnapshot,

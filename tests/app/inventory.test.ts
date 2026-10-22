@@ -66,9 +66,13 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   let card = (await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data;
   assert.deepEqual(card.lines.map((l: any) => [l.kind, l.qty, l.balance]), [['receipt', 4, 14], ['opening', 10, 10]], 'mới nhất trước, tồn luỹ kế');
   assert.match(card.lines[0].refNo, /^PNH/);
+  // Sổ kho: dòng nhập NCC mở đơn mua của phiếu (link tra qua hook suppliers → inventory); huỷ phiếu ghi "Huỷ phiếu nhập hàng".
+  const rcMove = (await call('/stock-moves?group=in&warehouseId=ct', mgr)).data.moves[0];
+  assert.equal(rcMove.link, `#/purchases/${encodeURIComponent(id)}`); assert.equal(rcMove.description, 'Nhập hàng vào kho'); assert.equal(rcMove.balanceAfter, 14);
   assert.equal((await call(`/supplier-receipts/${rc.data.receiptId}/cancel`, mgr, 'POST', { reason: 'Nhập nhầm' })).status, 200);
   card = (await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data;
   assert.equal(card.balance, 10); assert.equal(card.lines[0].kind, 'reverse');
+  assert.equal((await call('/stock-moves?group=reverse&warehouseId=ct', mgr)).data.moves[0].description, 'Huỷ phiếu nhập hàng');
   // Kho nhận không có trong danh sách kho → phiếu vẫn lưu, sổ kho không ghi, lịch sử đơn báo lại.
   const rc2 = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-87654321', warehouse: 'Kho lạ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 1 }] });
   assert.equal(rc2.status, 201); assert.ok(rc2.data.events.some((e: any) => e.summary.includes('chưa ghi sổ kho')));

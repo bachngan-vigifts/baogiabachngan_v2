@@ -167,6 +167,12 @@ test('Trả hàng: duyệt không nhập/chi; nhận bán được, hoàn thực
     ).length,
     1,
   );
+  // Sổ kho: dòng khách trả nhập lại kho mở đơn gốc (link tra qua hook sales → inventory).
+  const back = (await f.call('/stock-moves?group=in', f.mgr)).data.moves.find(
+    (m: any) => m.refType === 'pos_return',
+  );
+  assert.match(back.link, /^#\/orders\/[^/]+$/);
+  assert.equal(back.description, 'Khách trả hàng – nhập lại kho');
   const refund = {
     key: crypto.randomUUID(),
     shiftId: shift.id,

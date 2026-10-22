@@ -27,6 +27,8 @@ import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes, syncInvoiceTasks } from '../modules/tasks/api/routes.ts';
 import { cashTaskHooks, invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
+import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api/stock-ref-links.ts';
+import { supplierReceiptStockLinks } from '../modules/suppliers/api/stock-ref-links.ts';
 import { syncCashTasks } from '../modules/tasks/api/auto-tasks.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
 import { registerCustomerHubRoutes } from '../modules/customer-hub/api/routes.ts';
@@ -44,13 +46,17 @@ import { registerNavigationCounts } from './navigation-counts.ts';
 import { registerPulseRoutes } from './pulse-routes.ts';
 import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerTransferRoutes } from '../modules/inventory/api/transfer-routes.ts';
-import { registerStockHistoryRoutes } from '../modules/inventory/api/history-routes.ts';
+import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
   cashTaskHooks.afterCommit = syncCashTasks;
+  // Sổ kho: link chứng từ của module khác (inventory không import sales / suppliers).
+  stockRefLinkHooks.pos_delivery = posDeliveryStockLinks;
+  stockRefLinkHooks.pos_return = posReturnStockLinks;
+  stockRefLinkHooks.supplier_receipt = supplierReceiptStockLinks;
   inventoryOpeningHooks.guard = guardPosOpening;
   catalogStockHooks.overlay = overlayPosStock;
   catalogStockHooks.stamp = posStockStamp;

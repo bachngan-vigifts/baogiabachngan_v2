@@ -6,6 +6,7 @@
  */
 import { fold } from '../../../core/text/fold.ts';
 import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange, type ProductScope } from './product-filters.ts';
+import { compactText, parseQuery, productRank, wordMatches } from './product-rank.ts';
 
 export interface SnapshotPolicy { id: string; name: string }
 export interface SnapshotWarehouse { id: string; name: string; kind: string }
@@ -19,8 +20,8 @@ export interface CatalogProduct {
   perCarton: number | null; cartonWeight: number | null; cartonLength: number | null; cartonWidth: number | null; cartonHeight: number | null;
   stockUpdatedAt: string | null;
   prices: Record<string, number | null>; stock: Record<string, number>;
-  /** Chuỗi đã bỏ dấu để lọc nhanh. */
-  _hay: string; _name: string; _minhLong: boolean;
+  /** Chuỗi đã bỏ dấu để lọc nhanh (+ bản bỏ khoảng trắng / dấu câu cho từ có số, ký hiệu). */
+  _hay: string; _compact: string; _name: string; _minhLong: boolean;
 }
 export interface SearchOptions { q?: string; group?: string; scope?: ProductScope | ''; policy?: string; min?: unknown; max?: unknown }
 
@@ -37,6 +38,7 @@ export function hydrateSnapshot(snap: CatalogSnapshot): CatalogProduct[] {
     p.stock = {};
     snap.warehouses.forEach((w, i) => { if (stock[i] !== null && stock[i] !== undefined) p.stock[w.id] = stock[i]!; });
     p._hay = fold([p.sku, p.name, p.brand, p.pattern].map(v => v ?? '').join(' '));
+    p._compact = compactText(p._hay);
     p._name = fold(p.name);
     const label = fold(`${p.brand ?? ''} ${p.name ?? ''}`);
     p._minhLong = MINH_LONG_WORDS.some(w => label.includes(w));
@@ -44,17 +46,17 @@ export function hydrateSnapshot(snap: CatalogSnapshot): CatalogProduct[] {
   });
 }
 
-/** Lọc + sắp xếp như máy chủ: mã SKU gõ đúng đứng đầu, rồi theo tên không dấu, tên, mã. Trả null nếu khoảng giá sai. */
+/** Lọc + xếp hạng như máy chủ (product-rank.ts): mã đúng → mã bắt đầu → tên bắt đầu / chứa cụm gõ → …; cùng hạng tên ngắn trước. Trả null nếu khoảng giá sai. */
 export function searchProducts(items: readonly CatalogProduct[], o: SearchOptions): CatalogProduct[] | null {
   const range = priceRange(o.min, o.max);
   if (!range) return null;
   const raw = (o.q || '').trim().split(/\s+/).filter(Boolean);
-  const words = fold(o.q).split(' ').filter(Boolean).slice(0, 10);
+  const query = parseQuery(o.q), words = query.words;
   const exact = raw.length === 1 ? raw[0]!.toLowerCase() : null;
   const groupRe = o.group && isProductGroup(o.group) ? GROUP_RE[o.group]! : null;
   const priceOn = !!o.policy && (range.min !== null || range.max !== null);
   const out = items.filter(p => {
-    if (words.length && !words.every(w => p._hay.includes(w))) return false;
+    if (words.length && !words.every(w => wordMatches(p._hay, p._compact, w))) return false;
     if (groupRe && !groupRe.every(re => re.test(p._name))) return false;
     if (priceOn) {
       const v = p.prices[o.policy!];
@@ -67,7 +69,7 @@ export function searchProducts(items: readonly CatalogProduct[], o: SearchOption
     return true;
   });
   const cmp = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
-  return out.sort((a, b) =>
-    (exact ? Number(b.sku.toLowerCase() === exact) - Number(a.sku.toLowerCase() === exact) : 0)
+  const rank = new Map(out.map(p => [p, productRank(p, query)]));
+  return out.sort((a, b) => rank.get(a)! - rank.get(b)! || (words.length ? a._name.length - b._name.length : 0)
     || cmp(a._name, b._name) || cmp(a.name, b.name) || cmp(a.sku, b.sku));
 }
