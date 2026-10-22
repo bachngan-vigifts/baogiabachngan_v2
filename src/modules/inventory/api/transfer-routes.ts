@@ -82,6 +82,12 @@ async function moveTeam(db: StaffEnv['db']) {
     or(eq(employees.positionId, 'warehouse'), sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = 'stock.transfer')`)))).map(r => r.id);
 }
 
+/** Thông báo (chuông + Web Push) chạy nền sau khi trả lời: nút Duyệt / Từ chối / Đã chuyển không phải chờ gửi push. Lỗi gửi không ảnh hưởng phiếu. */
+function background(env: StaffEnv, job: Promise<unknown>) {
+  const safe = job.catch(e => console.error('transfer notification failed', e instanceof Error ? e.message : e));
+  if (env.waitUntil) env.waitUntil(safe); else return safe;
+}
+
 export function registerTransferRoutes(router: Router<StaffEnv>) {
   router.get('/stock-transfers', async c => {
     const db = c.env.db, m = me(c), status = c.url.searchParams.get('status') || '', q = str(c.url.searchParams.get('q'), 80);
@@ -130,8 +136,8 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await tx.insert(stockTransferLines).values(found.map(p => ({ id: crypto.randomUUID(), transferId: id, sku: p.sku, name: p.name, unit: p.unit, qty: want.get(p.sku)! })));
     });
     const wName = (x: string) => whs.find(w => w.id === x)?.name ?? '';
-    await notifyMany(c.env, 'approvers', { eventType: 'transfer_pending', title: 'Phiếu điều chuyển chờ duyệt', body: `${m.name}: ${transferNo} · ${wName(from)} → ${wName(to)} – ${reason}`,
-      url: `/index.html#/transfers/${id}`, actorId: m.id, data: { transferId: id } }).catch(() => 0);
+    await background(c.env, notifyMany(c.env, 'approvers', { eventType: 'transfer_pending', title: 'Phiếu điều chuyển chờ duyệt', body: `${m.name}: ${transferNo} · ${wName(from)} → ${wName(to)} – ${reason}`,
+      url: `/index.html#/transfers/${id}`, actorId: m.id, data: { transferId: id } }));
     return json(await viewOf(c, id), 201);
   }, 'business');
 
@@ -145,9 +151,9 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       return t;
     });
     const v = await viewOf(c, id);
-    await notify(c.env, { eventType: 'transfer_approved', title: 'Điều chuyển kho đã được duyệt', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }).catch(() => 0);
-    await notifyMany(c.env, await moveTeam(c.env.db), { eventType: 'transfer_move', title: 'Kho: chuyển hàng giữa các kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName} · ${v.lines.length} mã`,
-      url: `/index.html#/transfers/${id}`, actorId: m.id }, [t.requestedBy]).catch(() => 0);
+    await background(c.env, notify(c.env, { eventType: 'transfer_approved', title: 'Điều chuyển kho đã được duyệt', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
+    await background(c.env, moveTeam(c.env.db).then(team => notifyMany(c.env, team, { eventType: 'transfer_move', title: 'Kho: chuyển hàng giữa các kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName} · ${v.lines.length} mã`,
+      url: `/index.html#/transfers/${id}`, actorId: m.id }, [t.requestedBy])));
     return json(v);
   }, 'business');
 
@@ -161,7 +167,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await tx.update(stockTransfers).set({ status: 'rejected', approvedBy: m.id, approvedAt: now, rejectReason: reason, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
       return t;
     });
-    await notify(c.env, { eventType: 'transfer_rejected', title: 'Điều chuyển kho bị từ chối', body: `${t.transferNo}: ${reason}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }).catch(() => 0);
+    await background(c.env, notify(c.env, { eventType: 'transfer_rejected', title: 'Điều chuyển kho bị từ chối', body: `${t.transferNo}: ${reason}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
     return json(await viewOf(c, id));
   }, 'business');
 
@@ -202,7 +208,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       return t;
     });
     const v = await viewOf(c, id);
-    await notify(c.env, { eventType: 'transfer_done', title: 'Hàng đã chuyển kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }).catch(() => 0);
+    await background(c.env, notify(c.env, { eventType: 'transfer_done', title: 'Hàng đã chuyển kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
     return json(v);
   }, 'business');
 }
