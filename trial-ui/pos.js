@@ -49,6 +49,8 @@ const select = (items, value) => {
   return s;
 };
 const when = (d) => new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+/** Ô voucher trống của giỏ (mã / ghi chú, kiểu VNĐ | %, giá trị). */
+const emptyVoucher = () => ({ code: '', type: 'amount', value: '' });
 export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }) {
   const st = {
     options: null,
@@ -57,7 +59,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     policy: '',
     cart: [],
     customer: null,
-    serviceFees: [], shippingFee: '', note: '', exchangeAllocationId: '',
+    serviceFees: [], shippingFee: '', note: '', exchangeAllocationId: '', voucher: emptyVoucher(),
     preview: null,
     method: 'cash',
     qr: null,
@@ -111,7 +113,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     st.policy = '';
     st.cart = [];
     st.customer = null;
-    st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.exchangeAllocationId = '';
+    st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = '';
     st.preview = null;
     st.pending = null;
     st.method = 'cash';
@@ -133,6 +135,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       value ? sessionStorage.setItem(pendingKey(), JSON.stringify(value)) : sessionStorage.removeItem(pendingKey());
     } catch {}
   }
+  /** Voucher gửi máy chủ: chỉ khi đã gõ mã hoặc số tiền (máy chủ kiểm: bắt buộc mã, không vượt tiền hàng). */
+  const voucherInput = () => {
+    const code = st.voucher.code.trim(), value = Number(st.voucher.value) || 0;
+    return code || value ? { code, type: st.voucher.type, value } : null;
+  };
   const payload = () => ({
     registerId: st.register.id,
     shiftId: st.shift.id,
@@ -140,6 +147,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     customerId: st.customer?.id || '',
     ...(st.note.trim() ? { note: st.note } : {}),
     ...(st.exchangeAllocationId ? {exchangeAllocationId:st.exchangeAllocationId} : {}),
+    ...(voucherInput() ? { voucher: voucherInput() } : {}),
     ...(st.serviceFees.length || st.shippingFee ? { serviceFees: st.serviceFees.map(f => ({ name: f.name, quantity: f.quantity || 1, unitPrice: f.unitPrice || 0 })), shippingFee: st.shippingFee || 0 } : {}),
     rows: st.cart.map((x) => ({
       sku: x.sku,
@@ -641,7 +649,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       try { await api('/pos/exchanges/' + encodeURIComponent(st.exchangeAllocationId) + '/cancel', 'POST', {}); }
       catch (e) { return toast('Chưa nhả được tiền đổi hàng: ' + e.message, 'err'); }
     }
-    st.cart = []; st.customer = null; st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
+    st.cart = []; st.customer = null; st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
     draw(); if (st.register) await search(false);
   }
   async function flowOrders(orderId=''){
@@ -866,16 +874,35 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     note.addEventListener('input', () => { st.note = note.value; });
     noteBox.append(el('span', '', 'Ghi chú đơn hàng'), note);
     box.append(list, add, el('p', 'pos-note', 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.'), noteBox);
-    right.append(box);
+    right.append(drawVoucher(), box);
     nodes.feeControls = box;
     nodes.shippingField = shipping.box;
+  }
+  /** VOUCHER nhập tay cho cả đơn (pos-money.ts › parsePosVoucher): mã / ghi chú + số tiền VNĐ hoặc %; máy chủ chia vào các dòng, trừ thẳng vào giá đã gồm VAT rồi tách lại VAT. */
+  function drawVoucher() {
+    const box = el('section', 'pos-voucher'), row = el('div', 'pos-voucher-row');
+    const code = field('Mã / ghi chú voucher', 'text', st.voucher.code), value = field('Giảm', 'number', st.voucher.value);
+    code.input.maxLength = 60; code.input.placeholder = 'Ví dụ: VC-TET2026, voucher KH thân thiết…'; code.input.autocomplete = 'off';
+    value.input.min = '0'; value.input.step = '1'; value.input.inputMode = 'numeric'; value.input.placeholder = '0';
+    const mode = el('select'); mode.setAttribute('aria-label', 'Voucher giảm theo');
+    for (const [v, t] of [['amount', 'VNĐ'], ['percent', '%']]) { const o = el('option', '', t); o.value = v; mode.append(o); }
+    mode.value = st.voucher.type;
+    const modeBox = el('label', 'pos-field pos-voucher-mode'); modeBox.append(el('span', '', 'Theo'), mode);
+    code.input.addEventListener('input', () => { st.voucher.code = code.input.value; invalidate(); });
+    value.input.addEventListener('input', () => { st.voucher.value = value.input.value; invalidate(); });
+    mode.addEventListener('change', () => { st.voucher.type = mode.value; invalidate(); });
+    const clear = button('Bỏ voucher', 'btn ghost small', () => { st.voucher = emptyVoucher(); code.input.value = value.input.value = ''; mode.value = 'amount'; invalidate(); });
+    row.append(code.box, value.box, modeBox, clear);
+    box.append(el('h3', 'pos-voucher-title', 'Voucher'), row, el('p', 'pos-note', 'Giảm cho cả đơn, trừ thẳng vào giá đã gồm VAT (VAT tính lại theo số sau giảm; chia theo từng dòng hàng). Không áp vào phí dịch vụ, phí ship. Bắt buộc ghi mã / ghi chú để đối soát.'));
+    return box;
   }
   function updateTotals() {
     nodes.totals.replaceChildren();
     const d = st.preview;
     for (const [label, value] of [
       ['Tạm tính', d ? money(d.total + d.discount) : st.cart.length ? 'Đang tính…' : '0 đ'],
-      ['Giảm giá', d ? '−' + money(d.discount) : '—'],
+      ['Giảm giá', d ? '−' + money(d.discount - (d.voucher?.amount || 0)) : '—'],
+      ...(d?.voucher?.amount ? [['Voucher ' + d.voucher.code, '−' + money(d.voucher.amount)]] : []),
       ...((d?.fees?.services ?? (d?.fees?.service ? [d.fees.service] : [])).filter(f => f.amount).map(f => [f.name + ' (trước thuế)', money(f.subtotal)])),
       ['VAT', d ? money(d.tax) : '—'],
       ['Cần thu', d ? money(d.payable ?? d.total) : st.cart.length ? 'Đang tính…' : '0 đ'],
@@ -1677,7 +1704,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       persistPending(null);
       st.cart = [];
       st.customer = null;
-      st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.exchangeAllocationId = '';
+      st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = '';
       st.preview = null;
       st.qr = null;
       st.policy = st.register.pricePolicyId;

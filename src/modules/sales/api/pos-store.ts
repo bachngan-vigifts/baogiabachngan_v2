@@ -29,7 +29,7 @@ import {
   packingSlips,
 } from '../schema.ts';
 import { vietnamDate } from '../domain/sales.ts';
-import { posLine, posMoney } from '../domain/pos-money.ts';
+import { allocatePosVoucher, parsePosVoucher, posLine, posMoney } from '../domain/pos-money.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
 import { orderHolds } from './hold-routes.ts';
@@ -101,7 +101,7 @@ export async function assertOpening(db: PosDb, warehouseId: string) {
     );
 }
 export const emptyCart = (b: Record<string, unknown>) => {
-  const note = posOrderNote(b.note);
+  const note = posOrderNote(b.note), voucher = parsePosVoucher(b.voucher);
   return {
     registerId: posText(b.registerId),
     shiftId: posText(b.shiftId),
@@ -112,6 +112,7 @@ export const emptyCart = (b: Record<string, unknown>) => {
     ...posFeeInput(b),
     ...(note ? { note } : {}),
     ...(b.exchangeAllocationId ? { exchangeAllocationId: posKey(b.exchangeAllocationId) } : {}),
+    ...(voucher ? { voucher } : {}),
   };
 };
 export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
@@ -132,7 +133,7 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     .innerJoin(productPrices, and(eq(productPrices.sku, products.sku), eq(productPrices.policyId, policy)))
     .where(and(inArray(products.sku, skus), eq(products.active, true), eq(products.approvalStatus, 'approved')));
   const withVat = policy === r.pricePolicyId;
-  const lines = raw.map((x, i) => {
+  const lineOf = (voucherShares: readonly number[]) => raw.map((x, i) => {
     const f = found.find((f) => f.p.sku === skus[i]);
     if (!f || f.price == null) throw new AppError(400, 'Mã hàng chưa có giá hoặc chưa được duyệt: ' + skus[i]);
     return {
@@ -147,9 +148,14 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
         taxRate: withVat ? r.taxRate : 0,
         priceIncludesVat: withVat,
         vatEnabled: withVat,
+        voucherAmount: voucherShares[i] ?? 0,
       }),
     };
   });
+  // Voucher của đơn: chia vào các dòng theo tiền hàng sau chiết khấu dòng, trừ thẳng vào giá đã gồm VAT, VAT tách lại (pos-money.ts › allocatePosVoucher).
+  const base = lineOf([]), voucherSplit = allocatePosVoucher(base.map((l) => l.listAmount - l.discountAmount), input.voucher ?? null);
+  const lines = voucherSplit.amount ? lineOf(voucherSplit.shares) : base;
+  const voucher = input.voucher ? { ...input.voucher, amount: voucherSplit.amount } : null;
   const [customer] = input.customerId
     ? await db
         .select()
@@ -172,6 +178,7 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     vatEnabled: withVat,
     ...posFeeInput(b),
     ...(input.exchangeAllocationId ? { exchangeAllocationId: input.exchangeAllocationId } : {}),
+    ...(input.voucher ? { voucher: input.voucher } : {}),
     rows: lines.map((l) => ({ sku: l.sku, qty: l.qty, discountType: l.discountType, discountValue: l.discountValue })),
   };
   return {
@@ -184,6 +191,7 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     subtotal,
     tax,
     discount,
+    voucher,
     total,
     canonical,
     fingerprint: sha256Hex(JSON.stringify({ canonical, lines, total })),
@@ -251,8 +259,10 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
       .select({
         count: count(),
         revenue: sql<number>`coalesce(sum(${salesOrders.total}),0)`.mapWith(Number),
+        // Cột trong select bị render không kèm tên bảng → viết rõ bảng (trước đây `id` hiểu nhầm thành id dòng → chiết khấu luôn 0).
+        // Chiết khấu = CK từng dòng + voucher đã chia vào dòng.
         discount:
-          sql<number>`coalesce(sum((select coalesce(sum(${salesOrderLines.discountAmount}),0) from ${salesOrderLines} where ${salesOrderLines.orderId}=${salesOrders.id})),0)`.mapWith(
+          sql<number>`coalesce(sum((select coalesce(sum(sol.discount_amount),0) from ${salesOrderLines} sol where sol.order_id = ${salesOrders}.id)),0)`.mapWith(
             Number,
           ),
       })
@@ -456,6 +466,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       subtotal: c.subtotal,
       tax: c.tax,
       discount: c.discount,
+      ...(c.voucher ? { voucher: c.voucher } : {}),
       total: c.total,
       method: flow || (mode === 'cod' ? 'cod' : method),
       ...(flow ? { saleFlow: flow, initialAmount, receivedAmount: receivedInitial, remaining: c.total - receivedInitial, paymentMethod: method, pendingTransfer: method === 'transfer' && !receivedInitial, holdUntil: flowHoldUntil(now, flow === 'prepaid' && receivedInitial === c.total) } : {}),

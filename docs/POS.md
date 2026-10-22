@@ -102,6 +102,31 @@ API mới nhận `serviceFees: [{ name, quantity, unitPrice }]` cùng `shippingF
 Payload POS → n8n/Claw bổ sung `additional_fees` (dịch vụ gồm amount/subtotal/tax_amount/tax_percent; ship amount/tax_percent=0), giữ tổng đã gồm phí và diễn giải từng dòng trong notes. `additional_fees.service` giữ tổng tương thích, thêm `service.lines` để lưu tên, SL, đơn giá và tiền/thuế từng khoản; không cộng tổng và lines hai lần. Đã kiểm payload bằng adapter giả; cần kiểm dry-run downstream n8n/Claw trước khi kết luận khoản phí đã được ghi đúng ở Sapo. Không kiểm thử bằng đơn thật.
 
 Cụm **Đơn hàng cửa hàng** nằm cuối trang, sau danh mục sản phẩm và thanh toán; giữ bộ lọc, liên kết và nguồn đồng bộ hiện có. Đơn website (`web_store_orders`): xem thông tin, **chọn địa chỉ chuẩn GHN → kiểm tra → tạo vận đơn**, cập nhật trạng thái hoặc huỷ (gọi về website nguồn); không tự tạo bản sao đơn bán CRM khi bấm xem.
+## Voucher trên đơn (22/10/2026)
+
+Giỏ hàng có mục **Voucher**, nằm ngay trên phần phí. Thu ngân nhập tay, không có danh sách mã phát hành sẵn.
+- **Nhập:** mã / ghi chú voucher (bắt buộc, tối đa 60 ký tự, ví dụ `VC-TET2026` hoặc "voucher KH thân thiết") + số giảm theo **VNĐ** hoặc **%**. Nút **Bỏ voucher** xoá cả mục.
+- **Cách tính (máy chủ, `pos-money.ts` › `parsePosVoucher` / `allocatePosVoucher`):**
+  - giảm cho **cả đơn**, tính trên tiền hàng **sau** chiết khấu từng dòng;
+  - trừ **thẳng vào giá đã gồm VAT** (theo yêu cầu 22/10/2026), rồi tách lại VAT trên số sau giảm. Ví dụ hàng 185.000 đ (gồm VAT 8%), voucher 20.000 đ → khách trả 165.000 đ, VAT 12.222 đ. Bảng giá không VAT thì trừ thẳng vào giá;
+  - chia vào các dòng theo tỷ lệ tiền hàng, phần lẻ dồn cho dòng có phần dư lớn nhất;
+  - không áp vào phí dịch vụ, phí ship;
+  - không được vượt tiền hàng (400 "Voucher vượt tiền hàng của đơn"); % trong 0–100.
+- **Theo chính sách POS đã chốt** (mục Ngoại lệ phê duyệt): không có bước duyệt; bắt buộc ghi mã để đối soát.
+- **Lưu ở đâu:**
+  - `posSnapshot.voucher` = { code, type, value, amount };
+  - mỗi dòng: `discountAmount` = CK dòng + phần voucher (`voucherAmount` trong snapshot). `discountType` / `discountValue` vẫn là CK dòng;
+  - voucher nằm trong giỏ chuẩn hoá (`canonical`), nên đổi voucher thì QR cũ không dùng được.
+- **Hiện ở:**
+  - tổng giỏ: Giảm giá (CK dòng) + dòng "Voucher <mã>";
+  - bill K80: dòng "Voucher (chia theo dòng)" từng món + tổng voucher;
+  - chi tiết đơn: ô "Voucher";
+  - ghi chú gửi Sapo;
+  - báo cáo ca: ô Chiết khấu (gồm CK dòng + voucher).
+- **Sửa đơn COD chưa xuất:** voucher chia lại theo số lượng / giá mới. % giữ tỷ lệ, VNĐ giữ số tiền (không vượt tiền hàng mới).
+- **Sửa kèm:** báo cáo ca trước đây luôn ra Chiết khấu 0 (truy vấn con hiểu nhầm cột `id`); nay tính đúng.
+- **Test:** `tests/app/pos-voucher.test.ts`, `src/modules/sales/domain/pos-money.test.ts`, `tests/app/pos-ui.test.ts` (giao diện + bill).
+
 ## Xác nhận chuyển khoản SePay trên giỏ hàng
 
 Nút đổi khách ở giỏ hàng dùng màu xanh lá cùng nút Mở ca, rộng tối thiểu 170px trên máy tính và 150px trên điện thoại, cao 44px. Khi dùng **Hiện QR**, POS theo dõi yêu cầu thanh toán hiện tại kể cả sau khi đóng popup. Server báo đã nhận đủ tiền đúng QR thì ô chuyển khoản tự tích, hiện xác nhận SePay và bật **Thu tiền & in** để nhân viên hoàn tất. Nút này gửi đúng paymentRequestId để giữ liên kết với khoản chuyển tiền. Kết nối SePay hoặc tạo QR chưa được tính là đã nhận tiền; webhook vẫn đối chiếu mã/tài khoản/số tiền tại server. Thay đổi giỏ/bảng giá/khách hoặc tài khoản đăng nhập làm mất hiệu lực xác nhận cũ. Giữ lựa chọn xác nhận thủ công khi cửa hàng đã kiểm tra thực nhận.

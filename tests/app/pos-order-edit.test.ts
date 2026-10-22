@@ -75,3 +75,22 @@ test('Đơn đã thu/xuất: sửa thông tin nhưng không sửa giá trị, ph
   assert.deepEqual((await f.call('/cash/shifts/' + shift.id, f.emp)).data, report);
   assert.equal((await f.db.select().from(salesOrders))[0]!.total, 194400);
 });
+test('Sửa COD có voucher: voucher % chia lại theo số lượng / giá mới, snapshot + công nợ đúng; voucher VNĐ vượt tiền hàng mới thì chặn', async () => {
+  const f = await setup(), shift = await f.open();
+  const sale = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', voucher: { code: 'VC-COD', type: 'percent', value: 10 }, delivery: { address: 'Địa chỉ', receiverName: 'Người nhận', receiverPhone: '0900000000' } }));
+  assert.equal(sale.status, 201, JSON.stringify(sale.data));
+  assert.equal(sale.data.total, 174960, '194.400 − 10%');
+  const detail = (await f.call('/orders/' + sale.data.id, f.mgr)).data, path = '/orders/' + sale.data.id + '/pos';
+  const saved = await f.call(path, f.mgr, 'PUT', { revision: detail.order.revision, reason: 'Khách lấy thêm', lines: rows(detail) });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  const d = (await f.call('/orders/' + sale.data.id, f.mgr)).data, snap = JSON.parse(d.order.posSnapshot);
+  assert.deepEqual([snap.total, snap.voucher.amount, snap.voucher.code, d.schedules[0].amount], [540000, 60000, 'VC-COD', 540000], '3 × 200.000 − 10% voucher');
+  assert.equal(d.lines[0].discountAmount, 60000);
+
+  const g = await setup(), s2 = await g.open();
+  const fixed = await g.call('/pos/checkout', g.emp, 'POST', g.cart(s2.id, { fulfillmentMode: 'cod', voucher: { code: 'VC-100K', type: 'amount', value: 150000 }, delivery: { address: 'Địa chỉ', receiverName: 'Người nhận', receiverPhone: '0900000000' } }));
+  assert.equal(fixed.status, 201, JSON.stringify(fixed.data));
+  const fd = (await g.call('/orders/' + fixed.data.id, g.mgr)).data;
+  const shrink = await g.call('/orders/' + fixed.data.id + '/pos', g.mgr, 'PUT', { revision: fd.order.revision, reason: 'Giảm SL', lines: rows(fd, 1, 100000) });
+  assert.equal(shrink.status, 400); assert.match(JSON.stringify(shrink.data), /Voucher vượt/);
+});
