@@ -5,6 +5,7 @@ import { notifyMany } from '../../notifications/api/routes.ts';
 import { cashAccess } from './cash-store.ts';
 import { posStoreScopeFor } from './pos-access.ts';
 import { cashEntryName } from '../domain/cash.ts';
+import { cashTasksChanged } from './invoice-task-hooks.ts';
 
 /** Người duyệt thu/chi xem được két này (Manager + người được chỉ định duyệt, đúng cửa hàng), trừ người lập. */
 async function cashApprovers(env: StaffEnv, drawerId: string, createdBy: string) {
@@ -26,6 +27,7 @@ async function cashApprovers(env: StaffEnv, drawerId: string, createdBy: string)
 export async function notifyCashApproval(env: StaffEnv, entry: {
   id: string; entryNo: string; drawerId: string; kind: string; reason: string; amount: number; createdBy: string;
 }) {
+  await cashTasksChanged(env);
   return notifyMany(env, await cashApprovers(env, entry.drawerId, entry.createdBy), {
     eventType: 'cash_entry_pending', title: 'Phiếu thu/chi chờ duyệt',
     body: `${entry.entryNo} · ${cashEntryName(entry)} · ${entry.amount.toLocaleString('vi-VN')} đ`,
@@ -38,6 +40,7 @@ export async function notifyCashApproval(env: StaffEnv, entry: {
 export async function notifyPosReturnApproval(env: StaffEnv, ret: {
   id: string; returnNo: string; orderId: string; drawerId: string; total: number; reason: string; createdBy: string;
 }) {
+  await cashTasksChanged(env);
   return notifyMany(env, await cashApprovers(env, ret.drawerId, ret.createdBy), {
     eventType: 'pos_return_pending', title: 'Yêu cầu đổi / trả hàng chờ duyệt',
     body: `${ret.returnNo} · ${ret.total.toLocaleString('vi-VN')} đ · ${ret.reason.slice(0, 120)}`,
@@ -50,5 +53,6 @@ export async function notifyPosReturnApproval(env: StaffEnv, ret: {
 export async function notifyCashApprovers(env: StaffEnv, drawerId: string, createdBy: string, note: {
   eventType: string; title: string; body: string; url: string; data?: Record<string, unknown>;
 }) {
+  await cashTasksChanged(env);
   return notifyMany(env, await cashApprovers(env, drawerId, createdBy), { ...note, actorId: createdBy });
 }

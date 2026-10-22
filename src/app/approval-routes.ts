@@ -12,9 +12,14 @@ import { stockTransfers } from '../modules/inventory/schema.ts';
 import { incomingShipments } from '../modules/suppliers/schema.ts';
 import { docRef } from '../modules/sales/domain/doc-ref.ts';
 import { canApprove } from '../modules/staff/domain/permissions.ts';
+import { cashEntries } from '../modules/sales/cash-schema.ts';
+import { posReturns } from '../modules/sales/return-schema.ts';
+import { cashAccess } from '../modules/sales/api/cash-store.ts';
+import { posStoreScopeFor } from '../modules/sales/api/pos-access.ts';
+import { cashEntryName } from '../modules/sales/domain/cash.ts';
 
 /** Loại việc cần duyệt (thứ tự hiển thị). */
-export const APPROVAL_KINDS = ['quote', 'order', 'contract', 'purchase', 'transfer', 'customer', 'product'] as const;
+export const APPROVAL_KINDS = ['quote', 'order', 'contract', 'purchase', 'transfer', 'cash', 'return', 'customer', 'product'] as const;
 export type ApprovalKind = typeof APPROVAL_KINDS[number];
 export interface ApprovalItem { kind: ApprovalKind; id: string; title: string; sub: string; by: string; at: string; amount: number | null; link: string }
 
@@ -24,14 +29,22 @@ export interface ApprovalItem { kind: ApprovalKind; id: string; title: string; s
  *  - Đơn hàng nháp chưa có HĐKT · HĐKT của đơn nháp (duyệt đơn = duyệt HĐKT)
  *  - Đơn mua NCC đã gửi duyệt (chưa duyệt, chưa huỷ)
  *  - Khách hàng nhân viên tạo chờ duyệt · Sản phẩm nhân viên thêm chờ duyệt
+ *  - Phiếu thu/chi Sổ quỹ chờ duyệt (vd. nộp két ≥ ngưỡng) · Yêu cầu đổi / trả hàng POS chờ duyệt – chỉ khi có quyền Sổ quỹ,
+ *    đúng két / quầy của cửa hàng mình; người được chỉ định không thấy phiếu tự lập (không tự duyệt được).
  * CHỈ ĐỌC – duyệt vẫn làm ở đúng màn hình của từng loại (giữ hộp kiểm tra như hiện nay); mỗi dòng có link mở thẳng màn hình đó.
  * Cũ nhất lên trước (chờ lâu nhất xử lý trước).
  */
 export function registerApprovalRoutes(router: Router<StaffEnv>) {
   router.get('/approvals', async c => {
     if (!canApprove((c.state.session as SessionState).member)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định xem được hộp Cần duyệt.', 'APPROVER_ONLY');
-    const db = c.env.db, LIMIT = 200;
-    const [qs, os, cs, ps, pos, trs] = await Promise.all([
+    const db = c.env.db, LIMIT = 200, member = (c.state.session as SessionState).member;
+    // Sổ quỹ: cùng điều kiện như nút Duyệt (quyền Sổ quỹ / bán hàng, đúng cửa hàng, không tự duyệt trừ Manager).
+    let cashOk = true;
+    try { cashAccess(member); } catch { cashOk = false; }
+    const store = cashOk ? await posStoreScopeFor(db, member) : undefined;
+    const notMine = (col: typeof cashEntries.createdBy | typeof posReturns.createdBy) => member.role === 'manager' ? undefined : ne(col, member.id);
+    const inStore = (col: typeof cashEntries.drawerId | typeof posReturns.registerId, ids: string[] | undefined) => ids ? (ids.length ? inArray(col, ids) : sql`false`) : undefined;
+    const [qs, os, cs, ps, pos, trs, ces, rets] = await Promise.all([
       db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, createdAt: quotations.createdAt, updatedAt: quotations.updatedAt, by: employees.name, role: employees.role })
         .from(quotations).leftJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.approvalStatus, 'pending')).orderBy(asc(quotations.updatedAt)).limit(LIMIT),
       db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total, createdAt: salesOrders.createdAt, by: employees.name })
@@ -48,6 +61,11 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         from: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.fromWarehouseId})`,
         to: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.toWarehouseId})` })
         .from(stockTransfers).leftJoin(employees, eq(employees.id, stockTransfers.requestedBy)).where(eq(stockTransfers.status, 'pending')).orderBy(asc(stockTransfers.createdAt)).limit(LIMIT),
+      cashOk ? db.select({ e: cashEntries, by: employees.name }).from(cashEntries).leftJoin(employees, eq(employees.id, cashEntries.createdBy))
+        .where(and(eq(cashEntries.status, 'pending'), notMine(cashEntries.createdBy), inStore(cashEntries.drawerId, store?.scope.drawers))).orderBy(asc(cashEntries.createdAt)).limit(LIMIT) : [],
+      cashOk ? db.select({ r: posReturns, by: employees.name, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName }).from(posReturns)
+        .innerJoin(salesOrders, eq(salesOrders.id, posReturns.orderId)).leftJoin(employees, eq(employees.id, posReturns.createdBy))
+        .where(and(eq(posReturns.status, 'pending'), notMine(posReturns.createdBy), inStore(posReturns.registerId, store?.scope.registers))).orderBy(asc(posReturns.createdAt)).limit(LIMIT) : [],
     ]);
     const contracts = os.length ? await db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo }).from(salesContracts)
       .where(and(inArray(salesContracts.orderId, os.map(o => o.id)))) : [];
@@ -62,6 +80,12 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         link: `#/purchases/${encodeURIComponent(p.id)}` })),
       ...trs.map(t => ({ kind: 'transfer' as const, id: t.id, title: `Điều chuyển kho ${t.no}`, sub: `${t.from} → ${t.to} · ${t.reason}`, by: t.by ?? '', at: t.createdAt, amount: null,
         link: `#/transfers/${encodeURIComponent(t.id)}` })),
+      ...ces.map(({ e, by }) => ({ kind: 'cash' as const, id: e.id, title: `Phiếu ${e.direction === 'in' ? 'thu' : 'chi'} ${e.entryNo} · ${cashEntryName(e)}`,
+        sub: e.reason.replace(/^Tên phiếu: [^\n]*\n\n/, '').slice(0, 160), by: by ?? '', at: e.createdAt, amount: e.amount,
+        link: `#/cash?drawerId=${encodeURIComponent(e.drawerId)}&entryId=${encodeURIComponent(e.id)}` })),
+      ...rets.map(({ r, by, orderNo, customerName }) => ({ kind: 'return' as const, id: r.id, title: `Yêu cầu ${r.kind === 'exchange' ? 'đổi' : 'trả'} hàng ${r.returnNo}`,
+        sub: `${customerName} · bill ${orderNo} · ${r.reason.slice(0, 120)}`, by: by ?? '', at: r.createdAt, amount: r.total,
+        link: `#/cash?returnOrderId=${encodeURIComponent(r.orderId)}` })),
       ...cs.map(k => ({ kind: 'customer' as const, id: k.id, title: `Khách hàng ${k.name}`, sub: [k.phone, k.taxCode && 'MST ' + k.taxCode].filter(Boolean).join(' · '),
         by: k.by ?? '', at: k.createdAt, amount: null, link: `#/customers/${encodeURIComponent(k.id)}` })),
       ...ps.map(p => ({ kind: 'product' as const, id: p.sku, title: `Sản phẩm ${p.name}`, sub: `Mã ${p.sku}`, by: p.by ?? '', at: p.updatedAt, amount: null, link: '#/products' })),

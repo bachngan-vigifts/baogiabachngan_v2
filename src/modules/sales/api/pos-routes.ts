@@ -3,6 +3,7 @@ import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
 import { posStockSources } from './pos-stock-sources.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
+import { cashTasksChanged } from './invoice-task-hooks.ts';
 import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
 import { returnAccount, returnBalances } from './pos-return-credit.ts';
@@ -836,6 +837,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           url: '/index.html#/cash?drawerId=' + encodeURIComponent(result.shift.cashDrawerId),
           data: { shiftId: result.shift.id },
         }).catch(error => console.warn('shift difference notification failed', error instanceof Error ? error.message : 'unknown error'));
+      else if (!result.replayed) await cashTasksChanged(c.env);
       if (!result.replayed && c.env.posShiftReportWebhook) {
         const task = sendPosShiftReport(c.env, result).catch((error) =>
           console.error('POS_SHIFT_REPORT_WEBHOOK_FAILED', result.shift?.id, error instanceof Error ? error.message : error),

@@ -43,6 +43,7 @@ import {
 } from '../schema.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { notifyPosReturnApproval } from './cash-approval-notification.ts';
+import { cashTasksChanged } from './invoice-task-hooks.ts';
 import { cashDrawers, cashEntries } from '../cash-schema.ts';
 import { postMoves } from '../../inventory/api/ledger.ts';
 import { recordMovements } from '../../catalog/api/product-history.ts';
@@ -564,7 +565,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             { ...fields, selfApproved: r.createdBy === who(c).id },
           );
           return { ...r, ...fields };
-        }),
+        }).then(async res => { await cashTasksChanged(c.env); return res; }),
       );
     },
     'business',
@@ -601,7 +602,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             reason,
           });
           return { ok: true };
-        }),
+        }).then(async res => { await cashTasksChanged(c.env); return res; }),
       );
     },
     'business',

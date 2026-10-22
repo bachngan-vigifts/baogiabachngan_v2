@@ -18,6 +18,19 @@ const kinds = {
 };
 const entryName = r => /^Tên phiếu: ([^\r\n]{1,120})\n\n/.exec(r.reason || '')?.[1] || kinds[r.kind] || r.kind;
 const states = { posted: 'Ghi', pending: 'Chờ duyệt', voided: 'Đã huỷ', explained: 'Đã giải trình', closed: 'Đã đóng' };
+const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+const recLabel = { pending: 'Chờ giải trình', explained: 'Chờ Manager đóng', closed: 'Đã đóng' };
+const recTone = { pending: 'warn', explained: 'info', closed: 'ok' };
+const REASONS = { counting: 'Đếm sai', wrong_change: 'Đưa nhầm tiền', small_change: 'Thiếu tiền lẻ', other: 'Khác', opening_cash: 'Chênh lệch tiền đầu ca' };
+const recReason = r => [REASONS[r.reasonCode] || r.reasonCode, r.reasonNote].filter(Boolean).join(': ');
+function recDiff(n) {
+  const b = el('b', n > 0 ? 'cash-rec-plus' : 'cash-rec-minus', (n > 0 ? 'Thừa ' : 'Thiếu ') + money(Math.abs(n)));
+  return b;
+}
+const auditLabel = a => {
+  const rec = a.entityType === 'cash-reconciliations';
+  return ({ open: rec ? 'Ghi nhận lệch' : 'Mở ca', close: rec ? 'Đóng tra soát' : 'Kết ca', reopen: 'Mở lại tra soát', explain: 'Gửi giải trình' })[a.action] || a.action;
+};
 function el(tag, cls = '', text) {
   const n = document.createElement(tag);
   n.className = cls;
@@ -97,7 +110,8 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     drawerId = '',
     loadVersion = 0,
     listVersion = 0,
-    openedEntryLink = '';
+    openedEntryLink = '',
+    recStatus = 'open';
   const api = (path, method, body) => request(
     drawerId && path.startsWith('/cash') ? path + (path.includes('?') ? '&' : '?') + 'drawerId=' + encodeURIComponent(drawerId) : path,
     method, body,
@@ -125,8 +139,9 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     }
     const hash = globalThis.location?.hash || '';
     const link = new URLSearchParams(hash.split('?')[1] || '');
-    const linkedEntry = link.get('entryId');
-    if (linkedEntry && hash !== openedEntryLink && link.get('drawerId')) drawerId = link.get('drawerId');
+    const linkedEntry = link.get('entryId'), linkedRec = link.get('reconciliationId');
+    if ((linkedEntry || linkedRec) && hash !== openedEntryLink && link.get('drawerId')) drawerId = link.get('drawerId');
+    if (linkedRec && hash !== openedEntryLink) tab = 'reconcile';
     const result = await api('/cash');
     if (version !== loadVersion) return;
     summary = result;
@@ -139,6 +154,10 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       const detail = await api('/cash/entries/' + encodeURIComponent(linkedEntry));
       if (version !== loadVersion) return;
       openedEntryLink = hash; showEntry(detail.entry);
+    }
+    // Việc "Giải trình / đóng tra soát" mở thẳng phiếu tra soát.
+    if (linkedRec && hash !== openedEntryLink) {
+      openedEntryLink = hash; await reconciliation(encodeURIComponent(linkedRec));
     }
     // Thông báo "Yêu cầu đổi / trả hàng chờ duyệt" mở thẳng yêu cầu của bill đó.
     const linkedReturnOrder = link.get('returnOrderId');
@@ -198,18 +217,23 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     if (!summary.drawer.openingSetAt)
       root.append(el('p', 'cash-warning', 'Manager cần nhập số dư đầu kỳ một lần trước khi mở ca.'));
     const tools2 = el('div', 'cash-tools');
-    const inc = button('+ Thu tiền', () => entry('in'), 'btn primary'),
-      out = button('+ Chi tiền', () => entry('out')),
-      close = button('Kết ca', () => run(closeShift));
-    inc.disabled = out.disabled = !summary.ownShift;
-    close.disabled = !summary.ownShift;
+    // Không khoá im lặng: bấm khi chưa đủ điều kiện thì báo rõ lý do và cách xử lý.
+    const needOwnShift = summary.activeShift
+      ? `Ca đang mở của ${summary.activeShift.memberName || 'người khác'}. Chỉ người mở ca (hoặc Manager) mới thu/chi và kết ca.`
+      : 'Chưa có ca đang mở trên két này. Mở ca tại Bán hàng nhanh trước khi thu/chi hoặc kết ca.';
+    const guarded = (fn) => () => summary.ownShift ? fn() : toast(needOwnShift, 'err');
+    const inc = button('+ Thu tiền', guarded(() => entry('in')), 'btn primary'),
+      out = button('+ Chi tiền', guarded(() => entry('out'))),
+      close = button('Kết ca', guarded(() => run(closeShift)));
+    if (!summary.ownShift) for (const b of [inc, out, close]) b.className += ' cash-action-blocked';
     tools2.append(inc, out, close);
     if (summary.canManage) {
-      const a = button('Điều chỉnh két', () => entry('in', true));
-      a.disabled = !summary.activeShift;
+      const a = button('Điều chỉnh két', () => summary.activeShift ? entry('in', true) : toast('Chưa có ca đang mở trên két này để điều chỉnh.', 'err'));
+      if (!summary.activeShift) a.className += ' cash-action-blocked';
       tools2.append(a);
     }
     root.append(tools2);
+    if (!summary.ownShift) root.append(el('p', 'cash-note cash-action-hint', needOwnShift));
     const tabs = el('div', 'chips');
     for (const [id, label] of [
       ['ledger', 'Sổ quỹ'],
@@ -658,95 +682,98 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         }),
       );
   }
+  // ----- Tra soát: lọc Cần xử lý / Đã đóng / Tất cả; mỗi dòng nói rõ thừa / thiếu và bước tiếp theo của ai.
   async function reconciliations() {
     const version = ++listVersion;
-    const data = await api('/cash/reconciliations?offset=' + offset);
+    const data = await api('/cash/reconciliations?status=' + recStatus + '&offset=' + offset);
     if (version !== listVersion) return;
-    const box = content();
+    const box = content(), me = user().id, counts = data.counts || {};
     box.replaceChildren();
-    const { t, body } = table(['Mã', 'Nhân viên', 'Theo sổ', 'Thực đếm', 'Lệch', 'Trạng thái', '']);
+    const chips = el('div', 'chips cash-rec-filter');
+    for (const [k, label, n] of [['open', 'Cần xử lý', counts.open], ['closed', 'Đã đóng', counts.closed], ['all', 'Tất cả', (counts.open || 0) + (counts.closed || 0)]]) {
+      const c = button('', () => { recStatus = k; offset = 0; run(reconciliations); }, 'chip');
+      c.setAttribute('aria-pressed', String(recStatus === k));
+      c.append(label + ' ', el('b', '', n ?? 0));
+      chips.append(c);
+    }
+    box.append(chips);
+    const { t, body } = table(['Ca', 'Nhân viên', 'Chênh lệch', 'Trạng thái', '']);
+    t.className += ' cash-rec-table';
     for (const r of data.items) {
-      const tr = el('tr'),
-        td = el('td');
-      for (const v of [
-        r.reconciliationNo,
-        r.memberName,
-        money(r.expectedCash),
-        money(r.countedCash),
-        money(r.difference),
-        r.status === 'pending' ? 'Chờ giải trình' : states[r.status],
-      ])
-        tr.append(el('td', '', v));
-      td.append(button('Xem', () => run(() => reconciliation(r.id))));
-      tr.append(td);
+      const tr = el('tr', 'cash-rec-row'), step = recStep(r, me);
+      const shift = el('td'); shift.append(el('b', '', dmy(r.businessDate) || time(r.createdAt)), el('small', 'muted', r.reconciliationNo + (r.reasonCode === 'opening_cash' ? ' · đầu ca' : ' · kết ca')));
+      const diff = el('td', 'cash-rec-diff'); diff.append(recDiff(r.difference), el('small', 'muted', 'Sổ ' + money(r.expectedCash) + ' · đếm ' + money(r.countedCash)));
+      const st = el('td'); st.append(el('span', 'pill ' + recTone[r.status], recLabel[r.status]), el('small', 'muted', step.text));
+      const go = el('td', 'cash-rec-go'); go.append(button(step.mine ? step.action : 'Xem', () => run(() => reconciliation(r.id)), step.mine ? 'btn primary small' : 'btn secondary small'));
+      for (const [cell, label] of [[shift, 'Ca'], [el('td', '', r.memberName), 'Nhân viên'], [diff, 'Chênh lệch'], [st, 'Trạng thái']]) { cell.dataset.label = label; tr.append(cell); }
+      tr.append(go);
       body.append(tr);
     }
-    box.append(t);
-    if (!data.items.length) box.append(el('p', 'cash-empty', 'Chưa có tra soát.'));
-    if (offset)
-      box.append(
-        button('Trang trước', () => {
-          offset = Math.max(0, offset - 50);
-          run(reconciliations);
-        }),
-      );
-    if (data.nextOffset != null)
-      box.append(
-        button('Trang sau', () => {
-          offset = data.nextOffset;
-          run(reconciliations);
-        }),
-      );
+    if (data.items.length) box.append(t);
+    else box.append(el('p', 'cash-empty', recStatus === 'open' ? 'Không có tra soát nào cần xử lý. 🎉' : 'Chưa có tra soát.'));
+    if (offset) box.append(button('Trang trước', () => { offset = Math.max(0, offset - 50); run(reconciliations); }));
+    if (data.nextOffset != null) box.append(button('Trang sau', () => { offset = data.nextOffset; run(reconciliations); }));
+  }
+  /** Bước tiếp theo: chờ nhân viên của ca giải trình → chờ Manager đóng → xong. */
+  function recStep(r, me) {
+    if (r.status === 'pending') return r.memberId === me ? { mine: true, action: 'Giải trình', text: 'Bạn cần giải trình' } : { text: 'Chờ ' + (r.memberName || 'nhân viên') + ' giải trình' };
+    if (r.status === 'explained') return { mine: !!summary.canManage, action: 'Xem & đóng', text: 'Đã giải trình ' + dmy(String(r.explainedAt || '').slice(0, 10)) };
+    return { text: r.resolvedAt ? 'Đóng ' + dmy(r.resolvedAt.slice(0, 10)) : '' };
   }
   async function reconciliation(id) {
     const d = await api('/cash/reconciliations/' + id),
-      r = d.item,
-      m = dialog(r.reconciliationNo);
-    for (const text of [
-      'Nhân viên: ' + d.memberName,
-      ...(d.openingComparison ? ['Mở ca: bàn giao ' + money(d.openingComparison.expectedCash) + ' / thực đếm ' + money(d.openingComparison.countedCash) + ' / lệch ' + money(d.openingComparison.difference)] : []),
-      'Theo sổ ' + money(r.expectedCash) + ' / đếm ' + money(r.countedCash) + ' / lệch ' + money(r.difference),
-      'Lý do: ' + (r.reasonCode === 'opening_cash' ? 'Chênh lệch tiền đầu ca' : r.reasonCode) + ' ' + r.reasonNote,
-      'Giải trình: ' + (r.explanation || 'Chưa có'),
-      'Lý do đóng: ' + (r.closeReason || '—'),
-    ])
-      m.body.append(el('p', '', text));
-    m.body.append(el('h3', '', 'Phiếu liên quan'));
-    for (const e of d.entries)
-      m.body.append(el('p', '', (e.entryNo || e.id) + ' · ' + money(e.amount) + ' · ' + (e.reason || e.status)));
-    if (r.status !== 'closed' && r.closedBy === user().id) {
-      const explanation = field('Giải trình', 'textarea', r.explanation);
-      explanation.input.required = true;
+      r = d.item, me = user().id,
+      m = dialog('Tra soát ' + r.reconciliationNo);
+    m.d.className += ' cash-rec-dialog';
+    const head = el('div', 'cash-rec-head');
+    head.append(el('span', 'pill ' + recTone[r.status], recLabel[r.status]),
+      el('span', 'muted', d.memberName + ' · ca ' + (dmy(d.shift?.businessDate) || '') + (r.reasonCode === 'opening_cash' ? ' · lệch khi mở ca' : ' · lệch khi kết ca')));
+    const nums = el('div', 'cash-rec-nums');
+    for (const [label, v, cls] of [['Theo sổ', money(r.expectedCash), ''], ['Thực đếm', money(r.countedCash), ''], [r.difference > 0 ? 'Thừa' : 'Thiếu', money(Math.abs(r.difference)), r.difference > 0 ? 'ok' : 'danger']]) {
+      const c = el('div', 'cash-rec-num ' + cls); c.append(el('small', '', label), el('strong', '', v)); nums.append(c);
+    }
+    m.body.append(head, nums);
+    if (d.openingComparison?.difference) m.body.append(el('p', 'cash-note', 'Đầu ca: bàn giao ' + money(d.openingComparison.expectedCash) + ', đếm ' + money(d.openingComparison.countedCash) + ' (lệch ' + money(d.openingComparison.difference) + ').'));
+    // Ba bước: lý do lúc lệch → giải trình của nhân viên → Manager đóng.
+    const steps = el('ol', 'cash-rec-steps');
+    const step = (done, title, who, text) => { const li = el('li', done ? 'done' : ''); li.append(el('b', '', title), ...(who ? [el('small', 'muted', who)] : []), ...(text ? [el('p', '', text)] : [])); steps.append(li); };
+    step(true, 'Ghi nhận lệch', (d.names?.closedBy || '') + ' · ' + time(r.createdAt), recReason(r));
+    step(!!r.explainedAt, 'Giải trình', r.explainedAt ? (d.names?.explainedBy || '') + ' · ' + time(r.explainedAt) : 'Chờ ' + d.memberName, r.explanation);
+    step(r.status === 'closed', 'Manager đóng tra soát', r.resolvedAt ? (d.names?.resolvedBy || '') + ' · ' + time(r.resolvedAt) : r.status === 'explained' ? 'Chờ Manager' : '', r.closeReason);
+    m.body.append(steps);
+    // Chi tiết phụ thu gọn: phiếu trong ca, nhật ký.
+    const more = (title, rows) => {
+      const det = el('details', 'cash-rec-more'); det.append(el('summary', '', title + ' (' + rows.length + ')'));
+      const ul = el('ul', 'cash-rec-list'); for (const [a, b] of rows) { const li = el('li'); li.append(el('span', '', a), el('span', 'muted', b)); ul.append(li); }
+      det.append(ul); m.body.append(det);
+    };
+    more('Phiếu thu / chi trong ca', d.entries.map(e => [(e.entryNo || 'Bán hàng') + ' · ' + (e.kind === 'sale' ? 'Thu bán hàng tiền mặt' : entryName(e)) + (e.status !== 'posted' ? ' · ' + (states[e.status] || e.status) : ''),
+      (e.direction === 'out' ? '−' : '+') + money(e.amount)]));
+    more('Nhật ký', d.audit.filter(a => !/^[A-Z]+ \//.test(a.action)).map(a => [auditLabel(a), (a.by || 'Hệ thống') + ' · ' + time(a.at)]));
+    // Hành động: đúng người của bước hiện tại (máy chủ kiểm lại: giải trình = nhân viên của ca, đóng = Manager).
+    let action = false;
+    if (summary.canManage && r.status === 'explained') {
+      const note = field('Kết luận / lý do đóng', 'textarea');
+      note.input.required = true; note.input.rows = 2;
+      m.body.append(note.box);
+      submitForm(m, 'Đóng tra soát', async () => {
+        await api('/cash/reconciliations/' + id + '/close', 'POST', { reason: note.input.value });
+        m.close(); toast('Đã đóng tra soát.'); await load();
+      });
+      action = true;
+    } else if (r.status !== 'closed' && d.memberId === me) {
+      const explanation = field(r.explainedAt ? 'Sửa giải trình' : 'Giải trình của bạn', 'textarea', r.explanation);
+      explanation.input.required = true; explanation.input.rows = 3;
       m.body.append(explanation.box);
       submitForm(m, 'Gửi giải trình', async () => {
         await api('/cash/reconciliations/' + id + '/explain', 'POST', { explanation: explanation.input.value });
-        m.close();
-        await load();
+        m.close(); toast('Đã gửi giải trình.'); await load();
       });
-    } else {
-      if (summary.canManage && r.status === 'explained') {
-        const note = field('Lý do đóng tra soát', 'textarea');
-        note.input.required = true;
-        m.body.append(note.box);
-        submitForm(m, 'Đóng tra soát', async () => {
-          await api('/cash/reconciliations/' + id + '/close', 'POST', { reason: note.input.value });
-          m.close();
-          await load();
-        });
-      } else {
-        m.body.append(button('Đóng', m.close));
-        m.show();
-      }
+      action = true;
     }
-    if (summary.canManage && summary.activeShift)
-      m.body.append(
-        button('Lập điều chỉnh tham chiếu', () => {
-          m.close();
-          entry('in', true, id);
-        }),
-      );
-    m.body.append(el('h3', '', 'Nhật ký'));
-    for (const a of d.audit) m.body.append(el('p', 'cash-note', time(a.at) + ' · ' + a.by + ' · ' + a.action));
+    if (summary.canManage && summary.activeShift && r.status !== 'closed')
+      m.body.append(button('Lập phiếu điều chỉnh két', () => { m.close(); entry('in', true, id); }));
+    if (!action) { m.body.append(button('Đóng', m.close)); m.show(); }
   }
   return {
     load,

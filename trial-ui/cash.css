@@ -221,3 +221,28 @@ button.sr-card-head { cursor: pointer; } button.sr-card-head .sr-aside { color: 
 .cash-ledger-tools > .btn { min-height: 42px; margin: 0; align-self: flex-end; }
 .cash-ledger-tools > .cash-kind-tabs { margin: 0; align-items: center; min-height: 42px; }
 @media (max-width: 700px) { .cash-ledger-tools > .cash-field { flex-basis: calc(50% - 10px); } .cash-ledger-tools > .btn { flex-basis: 100%; } }
+/* Nút chưa đủ điều kiện (chưa có ca của mình): vẫn bấm được để xem lý do, nhưng nhìn rõ là đang khoá. */
+.cash-tools .btn.cash-action-blocked { opacity: .55; border-style: dashed; }
+.cash-action-hint { margin: -4px 0 12px; color: #8a5a00; }
+/* ----- Tra soát: lọc theo bước, thừa / thiếu rõ ràng, hộp chi tiết theo 3 bước. */
+.cash-rec-filter { margin-bottom: 12px; flex-wrap: wrap; } .cash-rec-filter .chip b { margin-left: 4px; }
+.cash-rec-table td { vertical-align: middle; } .cash-rec-table td small { display: block; margin-top: 2px; font-size: .78rem; }
+.cash-rec-table td .pill + small { margin-top: 4px; }
+.cash-rec-go { text-align: right; white-space: nowrap; }
+.cash-rec-plus { color: #168457; } .cash-rec-minus { color: #c32d39; }
+.cash-rec-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.cash-rec-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.cash-rec-num { border: 1px solid #e1e7f0; border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; background: #f8fafc; }
+.cash-rec-num small { color: #6b7b91; font-weight: 600; font-size: .78rem; } .cash-rec-num strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.cash-rec-num.danger { border-color: #f3c4c8; background: #fff6f6; } .cash-rec-num.danger strong { color: #c32d39; }
+.cash-rec-num.ok { border-color: #bfe3d3; background: #f2fbf6; } .cash-rec-num.ok strong { color: #168457; }
+.cash-rec-steps { list-style: none; margin: 4px 0 14px; padding: 0; display: grid; gap: 0; }
+.cash-rec-steps li { position: relative; padding: 0 0 12px 26px; border-left: 2px solid #e1e7f0; margin-left: 8px; }
+.cash-rec-steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.cash-rec-steps li::before { content: ''; position: absolute; left: -8px; top: 1px; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #c3ccd9; }
+.cash-rec-steps li.done::before { background: #168457; border-color: #168457; }
+.cash-rec-steps b { display: block; } .cash-rec-steps small { display: block; font-size: .78rem; } .cash-rec-steps p { margin: 4px 0 0; white-space: pre-wrap; }
+.cash-rec-more { border-top: 1px solid #e1e7f0; padding: 8px 0; } .cash-rec-more summary { cursor: pointer; font-weight: 600; color: #3c4a63; }
+.cash-rec-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: .86rem; }
+.cash-rec-list li { display: flex; justify-content: space-between; gap: 10px; } .cash-rec-list li span:last-child { white-space: nowrap; }
+@media (max-width: 600px) { .cash-rec-nums { grid-template-columns: 1fr 1fr; } .cash-rec-nums .cash-rec-num:last-child { grid-column: 1 / -1; } .cash-rec-go { text-align: left; } }

@@ -70,3 +70,9 @@ Huỷ phiếu thông thường bị chặn cho hoàn tiền đã xác nhận và
 Chỉ `customer_payments` thực nhận mới vào báo cáo: `pos_deposit`, `pos_balance`, `pos_prepaid`. Tiền mặt vào két ca thực thu; chuyển khoản không vào két. `pos_payment_intents` đang chờ không phải phiếu thu; xác nhận sau khi ca gốc kết thì ghi ca mới cùng quầy/két, không sửa snapshot ca gốc. Đơn còn cọc/chờ chuyển khoản không chặn kết ca, ngưỡng duyệt phiếu thủ công không áp cho tiền bán thực nhận.
 
 Huỷ đơn trước xuất dùng `pos_returns.request_context=before_fulfillment`: chỉ giảm công nợ khi được duyệt; không cần và không được nhập kho. Sau duyệt mới thực hoàn hoặc dùng tín dụng, không vượt tiền thực nhận còn lại. Hàng đã xuất chưa giao dùng `after_issue`: duyệt dừng giao, thực nhận lại mới ghi nhập/giảm công nợ và mở tiền hoàn. Tiền mặt hoàn thuộc ca đang mở khi thực trả, chuyển khoản cần tham chiếu. Manager được tự duyệt có audit; người được chỉ định không tự duyệt và không vượt scope cửa hàng. Xem [POS.md](POS.md) và [phương án dữ liệu đã duyệt](POS-DEPOSIT-PREPAID-PREFLIGHT.md).
+
+## Bảng tra soát (tab "Tra soát" ở Sổ quỹ)
+- Lọc **Cần xử lý** (mặc định: chờ giải trình + chờ Manager đóng) · **Đã đóng** · **Tất cả**, có số đếm (`GET /cash/reconciliations?status=open|closed|all` trả `counts`).
+- Mỗi dòng: ngày ca, mã, **Thừa / Thiếu** (màu), số theo sổ và thực đếm, trạng thái và bước tiếp theo. Nút chính đổi theo người xem: *Giải trình* (nhân viên của ca) hoặc *Xem & đóng* (Manager).
+- Hộp chi tiết: ba ô số (theo sổ, thực đếm, thừa/thiếu), dòng thời gian 3 bước (ghi nhận lệch + lý do → giải trình → Manager đóng), form đúng bước. Phiếu trong ca và nhật ký (nhãn dễ đọc) thu gọn bên dưới.
+- Form giải trình hiện cho **nhân viên của ca** (khớp máy chủ), không theo người bấm kết ca.

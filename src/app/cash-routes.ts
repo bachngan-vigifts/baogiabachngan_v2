@@ -1,4 +1,5 @@
-import { notifyCashApproval } from '../modules/sales/api/cash-approval-notification.ts';
+import { notifyCashApproval, notifyCashApprovers } from '../modules/sales/api/cash-approval-notification.ts';
+import { cashTasksChanged } from '../modules/sales/api/invoice-task-hooks.ts';
 import { allowedRegister, allowedDrawer, posScope } from '../modules/sales/api/pos-access.ts';
 import { auditLogs } from '../core/db/schema.ts';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
@@ -444,6 +445,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(eq(cashEntries.id, e.id));
         await cashAudit(tx, who(c).id, 'approve', 'cash-entries', e.id, { shiftId: e.shiftId, selfApproved: e.createdBy === who(c).id });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
@@ -470,6 +472,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         if (e.status === 'posted') await voidClosedCashEffect(tx, e.shiftId, who(c).id, `${e.entryNo}: ${reason}`);
         await cashAudit(tx, who(c).id, 'void', 'cash-entries', e.id, { reason, shiftId: e.shiftId });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
@@ -514,6 +517,16 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       cashAccess(member);
       const b = await readJson(c.req, 5000);
       const result = await c.env.db.transaction((tx) => closeCashShift(tx, member, c.params.id!, b, shiftReport));
+      // Kết ca ở Sổ quỹ cũng báo người duyệt khi lệch tiền (như kết ca ở Bán hàng nhanh) và cập nhật việc Sổ quỹ ngay.
+      if (!result.replayed && result.cashDifference)
+        await notifyCashApprovers(c.env, result.shift.cashDrawerId, member.id, {
+          eventType: 'pos_shift_difference',
+          title: 'Kết ca lệch tiền mặt',
+          body: `${member.name}: ${result.cashDifference.toLocaleString('vi-VN')} đ. ${result.differenceReason}`,
+          url: '/index.html#/cash?drawerId=' + encodeURIComponent(result.shift.cashDrawerId),
+          data: { shiftId: result.shift.id },
+        }).catch(error => console.warn('shift difference notification failed', error instanceof Error ? error.message : 'unknown error'));
+      else if (!result.replayed) await cashTasksChanged(c.env);
       if (!result.replayed && c.env.posShiftReportWebhook) {
         const task = sendPosShiftReport(c.env, result).catch((error) =>
           console.error('POS_SHIFT_REPORT_WEBHOOK_FAILED', result.shift?.id, error instanceof Error ? error.message : error),
@@ -529,18 +542,31 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
     async (c) => {
       cashAccess(who(c));
       const offset = Math.max(0, Math.floor(Number(c.url.searchParams.get('offset')) || 0));
-      const list = await c.env.db
-        .select({ r: cashReconciliations, memberName: employees.name })
-        .from(cashReconciliations)
-        .innerJoin(posShifts, eq(posShifts.id, cashReconciliations.shiftId))
-        .innerJoin(employees, eq(employees.id, posShifts.memberId))
-        .where(and(ownShift(c), eq(cashReconciliations.drawerId, await selectedDrawer(c))))
-        .orderBy(desc(cashReconciliations.updatedAt), desc(cashReconciliations.id))
-        .limit(51)
-        .offset(offset);
+      // status: open (chờ giải trình / chờ đóng – mặc định) · closed · all.
+      const status = c.url.searchParams.get('status'), scope = and(ownShift(c), eq(cashReconciliations.drawerId, await selectedDrawer(c)));
+      const byStatus = status === 'closed' ? eq(cashReconciliations.status, 'closed') : status === 'all' ? undefined : inArray(cashReconciliations.status, ['pending', 'explained']);
+      const [list, counts] = await Promise.all([
+        c.env.db
+          .select({ r: cashReconciliations, memberName: employees.name, memberId: posShifts.memberId, businessDate: posShifts.businessDate })
+          .from(cashReconciliations)
+          .innerJoin(posShifts, eq(posShifts.id, cashReconciliations.shiftId))
+          .innerJoin(employees, eq(employees.id, posShifts.memberId))
+          .where(and(scope, byStatus))
+          .orderBy(desc(cashReconciliations.createdAt), desc(cashReconciliations.id))
+          .limit(51)
+          .offset(offset),
+        c.env.db
+          .select({ status: cashReconciliations.status, n: count() })
+          .from(cashReconciliations)
+          .innerJoin(posShifts, eq(posShifts.id, cashReconciliations.shiftId))
+          .where(scope)
+          .groupBy(cashReconciliations.status),
+      ]);
+      const n = (k: string) => counts.find((x) => x.status === k)?.n ?? 0;
       return json({
-        items: list.slice(0, 50).map((x) => ({ ...x.r, memberName: x.memberName })),
+        items: list.slice(0, 50).map((x) => ({ ...x.r, memberName: x.memberName, memberId: x.memberId, businessDate: x.businessDate })),
         nextOffset: list.length > 50 ? offset + 50 : null,
+        counts: { pending: n('pending'), explained: n('explained'), closed: n('closed'), open: n('pending') + n('explained') },
       });
     },
     'business',
@@ -551,7 +577,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       cashAccess(who(c));
       const db = c.env.db,
         [found] = await db
-          .select({ r: cashReconciliations, memberName: employees.name })
+          .select({ r: cashReconciliations, memberName: employees.name, memberId: posShifts.memberId, businessDate: posShifts.businessDate, openedAt: posShifts.openedAt, closedAt: posShifts.closedAt })
           .from(cashReconciliations)
           .innerJoin(posShifts, eq(posShifts.id, cashReconciliations.shiftId))
           .innerJoin(employees, eq(employees.id, posShifts.memberId))
@@ -562,6 +588,8 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .select({
             id: cashEntries.id,
             entryNo: cashEntries.entryNo,
+            kind: cashEntries.kind,
+            direction: cashEntries.direction,
             amount: cashEntries.amount,
             reason: cashEntries.reason,
             status: cashEntries.status,
@@ -571,19 +599,26 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .orderBy(asc(cashEntries.createdAt))
           .limit(500),
         db
-          .select({ id: customerPayments.id, amount: customerPayments.amount, reason: customerPayments.note })
+          .select({ id: customerPayments.id, amount: customerPayments.amount, reason: customerPayments.note, kind: sql<string>`'sale'`, direction: sql<string>`'in'`, status: sql<string>`'posted'` })
           .from(customerPayments)
           .where(and(eq(customerPayments.shiftId, found.r.shiftId), eq(customerPayments.method, 'cash')))
           .limit(500),
         db
-          .select({ at: auditLogs.createdAt, action: auditLogs.action, by: employees.name })
+          .select({ at: auditLogs.createdAt, action: auditLogs.action, entityType: auditLogs.entityType, by: employees.name })
           .from(auditLogs)
           .leftJoin(employees, eq(employees.id, auditLogs.actorId))
           .where(sql`${auditLogs.entityId} in (${found.r.id},${found.r.shiftId})`)
           .orderBy(desc(auditLogs.createdAt))
           .limit(100),
       ]);
-      return json({ openingComparison: await openingCashComparison(db, found.r.shiftId), item: found.r, memberName: found.memberName, entries: [...entries, ...payments], audit });
+      const names = new Map((await db.select({ id: employees.id, name: employees.name }).from(employees)
+        .where(inArray(employees.id, [found.r.explainedBy, found.r.resolvedBy, found.r.closedBy].filter((x): x is string => !!x).concat('')))).map((e) => [e.id, e.name]));
+      return json({
+        openingComparison: await openingCashComparison(db, found.r.shiftId), item: found.r, memberName: found.memberName, memberId: found.memberId,
+        shift: { businessDate: found.businessDate, openedAt: found.openedAt, closedAt: found.closedAt },
+        names: { explainedBy: names.get(found.r.explainedBy ?? '') ?? '', resolvedBy: names.get(found.r.resolvedBy ?? '') ?? '', closedBy: names.get(found.r.closedBy) ?? '' },
+        entries: [...entries, ...payments], audit,
+      });
     },
     'business',
   );
@@ -610,6 +645,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(eq(cashReconciliations.id, r.r.id));
         await cashAudit(tx, who(c).id, 'explain', 'cash-reconciliations', r.r.id, { explanation });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
@@ -634,6 +670,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(eq(cashReconciliations.id, r.id));
         await cashAudit(tx, who(c).id, 'close', 'cash-reconciliations', r.id, { reason });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
