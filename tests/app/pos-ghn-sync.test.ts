@@ -122,3 +122,55 @@ test('GHN hoàn hàng: huỷ đơn đóng cả chuyến thất bại; nhận hà
   assert.equal((await f.db.select().from(customerPayments)).length, 0, 'không ghi thu COD trên đơn đã huỷ');
   assert.equal((await f.db.select().from(deliveries))[0]!.status, 'failed');
 });
+
+test('COD đã thu cọc, GHN hoàn hàng: không huỷ thẳng; thu hồi → duyệt huỷ đơn → nhận hàng về kho → hoàn đúng số cọc', async () => {
+  const { salesOrderLines } = await import('../../src/modules/sales/schema.ts');
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery, note: 'GHN-DEP1234', depositAmount: 50000 }));
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  let ghnStatus = 'picked';
+  f.env.ghnToken = 'test-ghn-token';
+  f.env.ghnFetch = (async () => Response.json({ data: { status: ghnStatus, updated_date: '2026-10-22T02:00:00Z' } })) as typeof fetch;
+  await syncPosLockGhn(f.env);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8, 'GHN lấy hàng: trừ kho');
+  ghnStatus = 'returned'; await syncPosLockGhn(f.env);
+
+  const cancel = await f.call('/orders/' + made.data.id + '/status', f.mgr, 'PUT', { status: 'cancelled' });
+  assert.equal(cancel.status, 409); assert.equal(cancel.data.code, 'COD_DEPOSIT_RECOVER', 'chỉ đường sang thu hồi');
+
+  const view = (await f.call('/pos/returns?orderId=' + made.data.id, f.emp)).data;
+  assert.equal(view.recoveringIssued, true, 'đơn COD đã xuất chưa giao được thu hồi');
+  const lines = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, made.data.id));
+  const req = await f.call('/pos/returns', f.emp, 'POST', { key: crypto.randomUUID(), orderId: made.data.id, shiftId: shift.id, reason: 'GHN hoàn hàng',
+    lines: lines.map(l => ({ orderLineId: l.id, qty: l.qty })) });
+  assert.equal(req.status, 201, JSON.stringify(req.data)); assert.equal(req.data.requestContext, 'after_issue');
+  assert.equal((await f.call('/pos/returns/' + req.data.id + '/approve', f.mgr, 'POST', {})).status, 200);
+  assert.equal((await f.db.select().from(salesOrders).where(eq(salesOrders.id, made.data.id)))[0]!.status, 'cancelled');
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'cancelled');
+  const got = await f.call('/pos/returns/' + req.data.id + '/receive', f.emp, 'POST', { shiftId: shift.id, confirmed: true });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10, 'nhận hàng hoàn: kho về đủ');
+  const refund = (amount: number) => f.call('/pos/returns/' + req.data.id + '/refund', f.emp, 'POST', { key: crypto.randomUUID(), shiftId: shift.id, confirmed: true, amount, method: 'cash' });
+  assert.equal((await refund(50001)).status, 409, 'không hoàn quá số cọc đã thu');
+  assert.equal((await refund(50000)).status, 201);
+  // Đơn đã huỷ: GHN báo lại không xuất kho / ghi thu.
+  ghnStatus = 'delivered'; await syncPosLockGhn(f.env);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
+});
+
+test('thu hồi COD chờ duyệt mà đơn kịp giao tới khách: không duyệt được (không huỷ đơn đã giao)', async () => {
+  const { salesOrderLines } = await import('../../src/modules/sales/schema.ts');
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery, note: 'GHN-LATE123', depositAmount: 0 }));
+  f.env.ghnToken = 'test-ghn-token';
+  f.env.ghnFetch = (async () => Response.json({ data: { status: 'picked', updated_date: '2026-10-22T02:00:00Z' } })) as typeof fetch;
+  await syncPosLockGhn(f.env);
+  const lines = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, made.data.id));
+  const req = await f.call('/pos/returns', f.emp, 'POST', { key: crypto.randomUUID(), orderId: made.data.id, shiftId: shift.id, reason: 'Tưởng GHN hoàn',
+    lines: lines.map(l => ({ orderLineId: l.id, qty: l.qty })) });
+  assert.equal(req.status, 201, JSON.stringify(req.data));
+  await f.db.update(salesOrderLines).set({ deliveredQty: lines[0]!.qty }).where(eq(salesOrderLines.id, lines[0]!.id));
+  const approve = await f.call('/pos/returns/' + req.data.id + '/approve', f.mgr, 'POST', {});
+  assert.equal(approve.status, 409); assert.equal(approve.data.code, 'ORDER_DELIVERED');
+  assert.notEqual((await f.db.select().from(salesOrders).where(eq(salesOrders.id, made.data.id)))[0]!.status, 'cancelled');
+});

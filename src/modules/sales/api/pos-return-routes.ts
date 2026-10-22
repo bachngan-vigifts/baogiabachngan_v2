@@ -110,9 +110,9 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
       allocations: account.allocations.filter((x) => x.returnId === r.id),
     })),
   );
-  const issued = saleFlowOf(o.posSnapshot) ? await flowIssued(db, o.id) : [];
+  const issued = recoverable(o) ? await flowIssued(db, o.id) : [];
   const recoveringIssued =
-    !!saleFlowOf(o.posSnapshot) &&
+    recoverable(o) &&
     lines.every((l) => l.deliveredQty === 0) &&
     issued.some((i) => i.qty > 0);
   const { returns: unused, ...summary } = account;
@@ -138,6 +138,12 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
     viewerId: who(c).id,
   };
 }
+/**
+ * Đơn đã xuất kho nhưng khách chưa nhận (chưa giao dòng nào) được "thu hồi": nhận lại toàn bộ hàng đã xuất + hoàn tiền đã thu.
+ * Đơn cọc / ship trả trước, và đơn Ship COD (GHN lấy hàng rồi hoàn về – kể cả đơn đã thu cọc, vốn không huỷ thẳng được).
+ */
+const recoverable = (o: { posSnapshot: string | null; channel: string; fulfillmentMode: string | null }) =>
+  !!saleFlowOf(o.posSnapshot) || (o.channel === 'pos' && o.fulfillmentMode === 'cod');
 export function registerPosReturnRoutes(router: Router<StaffEnv>) {
   router.get(
     '/pos/returns',
@@ -220,11 +226,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           .from(salesOrderLines)
           .where(eq(salesOrderLines.orderId, o.id))
           .for('update');
-        const issued = saleFlowOf(o.posSnapshot)
+        const issued = recoverable(o)
           ? await flowIssued(tx, o.id)
           : [];
         const recoveringIssued =
-          !!saleFlowOf(o.posSnapshot) &&
+          recoverable(o) &&
           old.every((l) => l.deliveredQty === 0) &&
           issued.some((i) => i.qty > 0);
         const rs = await tx
@@ -494,6 +500,10 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             .set(fields)
             .where(eq(posReturns.id, r.id));
           if (r.requestContext === 'after_issue') {
+            // Chờ duyệt mà GHN / kho kịp báo đã giao: không thu hồi (đơn đã giao xử lý bằng trả hàng thường).
+            const [given] = await tx.select({ id: salesOrderLines.id }).from(salesOrderLines)
+              .where(and(eq(salesOrderLines.orderId, r.orderId), sql`${salesOrderLines.deliveredQty} > 0`)).limit(1);
+            if (given) throw new AppError(409, 'Đơn đã có hàng giao tới khách – huỷ yêu cầu thu hồi này và lập yêu cầu trả hàng thường.', 'ORDER_DELIVERED');
             const at = now();
             await tx
               .update(salesOrders)
