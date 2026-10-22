@@ -1,4 +1,5 @@
 import { supplierPaymentTasks } from './accounting-sources.ts';
+import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
 import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -10,7 +11,7 @@ import { customerPayments, deliveries, deliveryLines, packingSlipLines, packingS
 import { PACKING_SOURCE_LABEL } from '../../sales/domain/packing.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { progressOf } from '../../sales/api/progress.ts';
-import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
 import { posOrderReservations, posPaymentIntents } from '../../sales/pos-order-flow-schema.ts';
@@ -135,9 +136,11 @@ export const RULES: Record<string, Rule> = {
       db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount }).from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))),
       db.select({ orderId: salesContracts.orderId, status: salesContracts.status, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]);
+    // SQL lọc ứng viên; số nợ thật tính lại đã trừ hàng khách trả (trả hàng hết nợ → việc tự đóng).
+    const net = await netReceivables(db, ids, today);
     return orders.flatMap(o => {
       if (!debtCounts(o.status, ks.find(k => k.orderId === o.id)?.status)) return [];
-      const r = receivable(allSch.filter(s => s.orderId === o.id), pays.filter(p => p.orderId === o.id), today);
+      const r = net.get(o.id)!;
       if (r.overdue <= 0) return [];
       const oldest = allSch.filter(s => s.orderId === o.id && s.dueDate && s.dueDate < today).map(s => s.dueDate!).sort()[0] ?? today;
       const ref = docRef(o.id, o.orderNo, ks.find(k => k.orderId === o.id)?.no);

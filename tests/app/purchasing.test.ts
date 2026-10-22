@@ -139,6 +139,11 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.deepEqual(v.lines.map((l: any) => [l.good, l.damaged, l.missing]), [[6, 1, 4], [0, 0, 5]]);
   assert.equal(v.receipts[0].sapoStatus, 'pending', 'đã nhận ≠ đã nhập Sapo');
   assert.equal((await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000002', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 5 }] })).status, 400, 'vượt số thiếu');
+  const overBad = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000012', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: [photo] });
+  assert.equal(overBad.status, 400, 'còn thiếu 4: đạt 4 + hỏng 1 → không ghi nhận đủ'); assert.equal(overBad.data.code, 'RECEIPT_OVER');
+  const hist = (await call('/products/' + encodeURIComponent(v.lines[0].sku) + '/history', mgr)).data.history;
+  assert.deepEqual(hist.map((h: any) => [h.kind, h.qty, h.status]), [['purchase', 6, 'Đạt 6 · hỏng 1 (NCC giao bù)']], 'phiếu nhận ghi vào lịch sử sản phẩm');
+  assert.match(hist[0].refCode, /^PNH_/); assert.equal(hist[0].link, `#/purchases/${id}`);
   assert.equal((await call(`/purchase-orders/${id}/receipts`, emp, 'POST', { clientKey: 'rcv-000003', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 1 }] })).status, 403, 'sale không nhận kho');
 
   // Sapo: lỗi giữ phiếu; nhập xong cần mã; không nhập lần hai; chỉ Manager mở lại.
@@ -162,6 +167,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal((await call(`/supplier-receipts/${r2}/cancel`, kho, 'POST', { reason: 'Nhầm' })).status, 403);
   v = (await call(`/supplier-receipts/${r2}/cancel`, mgr, 'POST', { reason: 'Đếm nhầm' })).data;
   assert.equal(v.state, 'partially_received');
+  assert.equal((await call('/products/' + encodeURIComponent(v.lines[1].sku) + '/history', mgr)).data.history.length, 0, 'huỷ phiếu nhận: bỏ khỏi lịch sử sản phẩm');
 
   // Thanh toán: Manager + kế toán; clientKey; không vượt công nợ; chứng từ; Manager huỷ khoản trả.
   assert.equal((await call(`/purchase-orders/${id}/payments`, kho, 'POST', { clientKey: 'pay-000001', warehouse: 'Kho nhận kiểm thử', amount: 100 })).status, 403);

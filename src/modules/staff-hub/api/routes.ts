@@ -1,4 +1,5 @@
 import { departmentOwner } from '../../staff/api/department.ts';
+import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json } from '../../../core/http/router.ts';
@@ -9,7 +10,7 @@ import { employees, positions } from '../../staff/schema.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { customerPayments, paymentSchedules, salesContracts, salesOrders } from '../../sales/schema.ts';
-import { debtCounts, quoteTotal, receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, quoteTotal, vietnamDate } from '../../sales/domain/sales.ts';
 import { tasks } from '../../tasks/schema.ts';
 import { payrollOf } from '../../hr/api/routes.ts';
 import { isMonth, monthRange, shiftMonth, targetPercent } from '../../hr/domain/payroll.ts';
@@ -90,11 +91,12 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>) {
         .where(and(eq(tasks.assigneeId, id), or(inArray(tasks.status, ['todo', 'in_progress']), and(eq(tasks.status, 'done'), gte(tasks.completedAt, r.from), lt(tasks.completedAt, r.next))))),
     ]);
 
-    // ----- Đơn + công nợ
+    // ----- Đơn + công nợ (đã trừ hàng khách trả, như trang Công nợ)
+    const net = await netReceivables(db, ids, today);
     const orderList = orders.map(o => ({
       id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, status: o.status, total: o.total, customerId: o.customerId, customerName: o.customerName, quoteNo: o.quoteNo, counted: o.counted,
       contract: o.contract ? { id: o.contract.id, contractNo: o.contract.contractNo, status: o.contract.status } : null,
-      receivable: o.counted ? receivable(schedules.filter(s => s.orderId === o.id), payments.filter(p => p.orderId === o.id), today) : null,
+      receivable: o.counted ? net.get(o.id)! : null,
     }));
     const debtors = orderList.filter(o => o.receivable && o.receivable.balance > 0);
     const orderNo = new Map(orders.map(o => [o.id, o.orderNo])), orderCustomer = new Map(orders.map(o => [o.id, o.customerName]));

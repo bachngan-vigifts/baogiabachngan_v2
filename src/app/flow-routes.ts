@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { netReceivables } from '../modules/sales/api/pos-return-credit.ts';
 import { canApprove } from '../modules/staff/domain/permissions.ts';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
@@ -210,9 +211,12 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
     const dueBefore = sql<number>`coalesce((select sum(${paymentSchedules.amount}) from ${paymentSchedules} where ${paymentSchedules.orderId} = ${salesOrders.id} and ${paymentSchedules.dueDate} < ${today}), 0)`;
     const scheduled = sql<number>`coalesce((select sum(${paymentSchedules.amount}) from ${paymentSchedules} where ${paymentSchedules.orderId} = ${salesOrders.id}), 0)`;
     const paid = sql<number>`coalesce((select sum(${customerPayments.amount}) from ${customerPayments} where ${customerPayments.orderId} = ${salesOrders.id} and ${customerPayments.voidedAt} is null), 0)`;
-    const rows = await db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, contract: sql<boolean>`${hasContract}`,
+    const candidates = await db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, contract: sql<boolean>`${hasContract}`,
       overdue: sql<number>`greatest(${dueBefore} - ${paid}, 0)`.mapWith(Number), balance: sql<number>`greatest(${scheduled} - ${paid}, 0)`.mapWith(Number) })
       .from(salesOrders).where(and(debtCounted, orderScopeFor(me), sql`${scheduled} > ${paid}`));
+    // SQL lọc ứng viên; số tiền tính lại đã trừ hàng khách trả (như trang Công nợ).
+    const net = await netReceivables(db, candidates.map(r => r.id), today);
+    const rows = candidates.map(r => ({ ...r, overdue: net.get(r.id)?.overdue ?? 0, balance: net.get(r.id)?.balance ?? 0 })).filter(r => r.balance > 0);
     const late = rows.filter(r => r.overdue > 0).sort((a, b) => b.overdue - a.overdue);
     return {
       metrics: [{ key: 'overdueCount', label: 'Đơn quá hạn thu', value: late.length, tone: late.length ? 'danger' : '' },

@@ -432,7 +432,9 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         const [e] = await tx.select().from(cashEntries).where(eq(cashEntries.id, c.params.id!));
-        if (!e) throw new AppError(404, 'Không có phiếu.');
+        // Chỉ duyệt / huỷ phiếu của két, quầy thuộc cửa hàng mình (như các route xem danh sách) – không thao tác chéo cửa hàng.
+        const [owner] = e ? await tx.select({ registerId: posShifts.registerId }).from(posShifts).where(eq(posShifts.id, e.shiftId)) : [];
+        if (!e || !allowedDrawer(c, e.drawerId) || (owner && !allowedRegister(c, owner.registerId))) throw new AppError(404, 'Không có phiếu.');
         if (e.createdBy === who(c).id && who(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager được tự duyệt phiếu của mình.');
         if (e.status === 'posted') return;
         if (e.status !== 'pending') throw new AppError(409, 'Phiếu đã huỷ.');
@@ -461,7 +463,9 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       await c.env.db.transaction(async (tx) => {
         await cashLock(tx);
         const [e] = await tx.select().from(cashEntries).where(eq(cashEntries.id, c.params.id!));
-        if (!e) throw new AppError(404, 'Không có phiếu.');
+        // Chỉ duyệt / huỷ phiếu của két, quầy thuộc cửa hàng mình (như các route xem danh sách) – không thao tác chéo cửa hàng.
+        const [owner] = e ? await tx.select({ registerId: posShifts.registerId }).from(posShifts).where(eq(posShifts.id, e.shiftId)) : [];
+        if (!e || !allowedDrawer(c, e.drawerId) || (owner && !allowedRegister(c, owner.registerId))) throw new AppError(404, 'Không có phiếu.');
         if (e.kind === 'customer_refund') throw new AppError(409, 'Phiếu hoàn tiền đã xác nhận thực trả, không huỷ như phiếu ghi nhầm.');
         if (e.status === 'voided') return;
         const now = cashNow();
@@ -599,7 +603,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .orderBy(asc(cashEntries.createdAt))
           .limit(500),
         db
-          .select({ id: customerPayments.id, amount: customerPayments.amount, reason: customerPayments.note, kind: sql<string>`'sale'`, direction: sql<string>`'in'`, status: sql<string>`'posted'` })
+          .select({ id: customerPayments.id, amount: customerPayments.amount, reason: customerPayments.note, kind: sql<string>`'sale'`, direction: sql<string>`'in'`, status: sql<string>`case when ${customerPayments.voidedAt} is null then 'posted' else 'voided' end` })
           .from(customerPayments)
           .where(and(eq(customerPayments.shiftId, found.r.shiftId), eq(customerPayments.method, 'cash')))
           .limit(500),

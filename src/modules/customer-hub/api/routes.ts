@@ -1,4 +1,5 @@
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
+import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { and, asc, desc, eq, inArray, isNull, or, ne, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -9,7 +10,7 @@ import { customerProfile } from '../../customers/api/routes.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { customerPayments, deliveries, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { orderScopeFor } from '../../sales/api/routes.ts';
-import { debtCounts, quoteTotal, receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, quoteTotal, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../../portal/schema.ts';
 import { HUB_LIMITS, purchaseHistory } from '../domain/overview.ts';
 import { parseDiscounts, shownEmail } from '../../portal/domain/portal.ts';
@@ -62,11 +63,12 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
     ]) : [[], [], [], [], []];
     // Bản ghi có HĐKT là HĐKT (luồng riêng): giao hàng / phiếu thu / báo giá kèm số HĐKT để hiện thay số đơn.
     const today = vietnamDate().iso, orderNo = new Map(orders.map(r => [r.o.id, r.o.orderNo])), contractNo = new Map(cts.map(k => [k.orderId, k.contractNo]));
+    const net = await netReceivables(db, ids, today); // công nợ đã trừ hàng khách trả (như trang Công nợ)
     const orderList = orders.map(({ o, ownerName }) => {
       const k = cts.find(x => x.orderId === o.id && x.status !== 'cancelled'), counted = debtCounts(o.status, k?.status);
       return { id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, status: o.status, total: o.total, ownerName, quoteNo: o.quoteNo, expectedDeliveryDate: o.expectedDeliveryDate,
         contract: k ? { id: k.id, contractNo: k.contractNo, status: k.status } : null, counted,
-        receivable: counted ? receivable(sch.filter(s => s.orderId === o.id), pays.filter(p => p.orderId === o.id), today) : null };
+        receivable: counted ? net.get(o.id)! : null };
     });
     const counted = orderList.filter(o => o.counted), sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => counted.reduce((s, o) => s + (o.receivable?.[k] ?? 0), 0);
     const confirmedIds = new Set(counted.map(o => o.id));
