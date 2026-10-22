@@ -12,7 +12,7 @@ export function posLine(input: {
   taxRate: number;
   priceIncludesVat: boolean;
   vatEnabled: boolean;
-  /** Phần voucher của đơn chia vào dòng này (VNĐ, trừ sau chiết khấu dòng, trước thuế) – xem allocatePosVoucher. */
+  /** Phần voucher của đơn chia vào dòng này (VNĐ, trừ sau chiết khấu dòng, thẳng vào giá đã gồm VAT nếu bảng giá gồm VAT) – xem allocatePosVoucher. */
   voucherAmount?: number;
 }) {
   const price = posMoney(input.price, 'Giá bán'),
@@ -59,7 +59,7 @@ export const posCashDifference = (opening: number, cashReceived: number, counted
 
 /**
  * VOUCHER nhập tay trên đơn Bán hàng nhanh: thu ngân ghi mã / ghi chú voucher + số tiền (VNĐ) hoặc % giảm cho cả đơn.
- * Không kiểm mã với danh sách phát hành; bắt buộc ghi mã để đối soát. Giảm vào giá TRƯỚC THUẾ: chia vào các dòng hàng theo
+ * Không kiểm mã với danh sách phát hành; bắt buộc ghi mã để đối soát. Trừ THẲNG VÀO GIÁ ĐÃ GỒM VAT rồi tách lại VAT (vd 185.000 − 20.000 = 165.000, VAT 8% = 12.222): chia vào các dòng hàng theo
  * tỷ lệ tiền hàng sau chiết khấu dòng (VAT tính trên giá sau giảm). Không áp vào phí dịch vụ / phí ship.
  */
 export interface PosVoucher { code: string; type: 'percent' | 'amount'; value: number }

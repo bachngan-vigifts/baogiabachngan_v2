@@ -878,7 +878,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.feeControls = box;
     nodes.shippingField = shipping.box;
   }
-  /** VOUCHER nhập tay cho cả đơn (pos-money.ts › parsePosVoucher): mã / ghi chú + số tiền VNĐ hoặc %; máy chủ chia vào các dòng, trừ trước VAT. */
+  /** VOUCHER nhập tay cho cả đơn (pos-money.ts › parsePosVoucher): mã / ghi chú + số tiền VNĐ hoặc %; máy chủ chia vào các dòng, trừ thẳng vào giá đã gồm VAT rồi tách lại VAT. */
   function drawVoucher() {
     const box = el('section', 'pos-voucher'), row = el('div', 'pos-voucher-row');
     const code = field('Mã / ghi chú voucher', 'text', st.voucher.code), value = field('Giảm', 'number', st.voucher.value);
@@ -893,7 +893,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     mode.addEventListener('change', () => { st.voucher.type = mode.value; invalidate(); });
     const clear = button('Bỏ voucher', 'btn ghost small', () => { st.voucher = emptyVoucher(); code.input.value = value.input.value = ''; mode.value = 'amount'; invalidate(); });
     row.append(code.box, value.box, modeBox, clear);
-    box.append(el('h3', 'pos-voucher-title', 'Voucher'), row, el('p', 'pos-note', 'Giảm cho cả đơn, trừ vào giá trước VAT (chia theo từng dòng hàng). Không áp vào phí dịch vụ, phí ship. Bắt buộc ghi mã / ghi chú để đối soát.'));
+    box.append(el('h3', 'pos-voucher-title', 'Voucher'), row, el('p', 'pos-note', 'Giảm cho cả đơn, trừ thẳng vào giá đã gồm VAT (VAT tính lại theo số sau giảm; chia theo từng dòng hàng). Không áp vào phí dịch vụ, phí ship. Bắt buộc ghi mã / ghi chú để đối soát.'));
     return box;
   }
   function updateTotals() {

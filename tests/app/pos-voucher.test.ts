@@ -6,9 +6,9 @@ import { salesOrderLines, salesOrders } from '../../src/modules/sales/schema.ts'
 
 /**
  * VOUCHER nhập tay trên đơn Bán hàng nhanh (pos-money.ts › parsePosVoucher / allocatePosVoucher):
- * mã / ghi chú bắt buộc, VNĐ hoặc %, giảm cả đơn – chia vào dòng hàng, trừ trước VAT; không vượt tiền hàng; lưu trên đơn + bill + báo cáo ca.
+ * mã / ghi chú bắt buộc, VNĐ hoặc %, giảm cả đơn – chia vào dòng hàng, trừ vào giá gồm VAT (VAT tính lại); không vượt tiền hàng; lưu trên đơn + bill + báo cáo ca.
  */
-test('voucher: xem trước, thanh toán, dòng hàng chia voucher trước VAT, lưu trên đơn, báo cáo ca tính vào chiết khấu', async () => {
+test('voucher: xem trước, thanh toán, dòng hàng chia voucher (trừ vào giá gồm VAT), lưu trên đơn, báo cáo ca tính vào chiết khấu', async () => {
   const f = await setup();
   const s = await f.open();
   // Giỏ mẫu: 2 × 108.000 (giá gồm VAT 8%), CK dòng 10% → 194.400; voucher 20.000 → 174.400.
@@ -28,7 +28,7 @@ test('voucher: xem trước, thanh toán, dòng hàng chia voucher trước VAT,
   assert.equal(order!.total, 174400);
   assert.deepEqual(JSON.parse(order!.posSnapshot!).voucher, { ...voucher, amount: 20000 });
   const [line] = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, paid.data.id));
-  assert.deepEqual([line!.discountType, line!.discountValue, line!.discountAmount, line!.amount], ['percent', 10, 41600, 161481], 'CK dòng giữ nguyên; tiền dòng đã trừ voucher, trước VAT');
+  assert.deepEqual([line!.discountType, line!.discountValue, line!.discountAmount, line!.amount], ['percent', 10, 41600, 161481], 'CK dòng giữ nguyên; tiền dòng (chưa VAT) đã trừ voucher');
   const detail = (await f.call(`/orders/${paid.data.id}`, f.emp)).data.order;
   assert.equal(JSON.parse(detail.posSnapshot).voucher.code, 'VC-TET2026');
   const report = (await f.call(`/pos/shifts/${s.id}`, f.emp)).data;

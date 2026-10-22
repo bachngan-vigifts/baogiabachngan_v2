@@ -152,7 +152,7 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
       }),
     };
   });
-  // Voucher của đơn: chia vào các dòng theo tiền hàng sau chiết khấu dòng, trừ trước thuế (pos-money.ts › allocatePosVoucher).
+  // Voucher của đơn: chia vào các dòng theo tiền hàng sau chiết khấu dòng, trừ thẳng vào giá đã gồm VAT, VAT tách lại (pos-money.ts › allocatePosVoucher).
   const base = lineOf([]), voucherSplit = allocatePosVoucher(base.map((l) => l.listAmount - l.discountAmount), input.voucher ?? null);
   const lines = voucherSplit.amount ? lineOf(voucherSplit.shares) : base;
   const voucher = input.voucher ? { ...input.voucher, amount: voucherSplit.amount } : null;

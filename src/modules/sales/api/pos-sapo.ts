@@ -45,7 +45,7 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
   const lines = await env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
   const o = row.order;
   const snapshot = JSON.parse(o.posSnapshot || '{}'), fees = snapshotPosFees(snapshot);
-  // Voucher nhập tay của đơn quầy: đã chia vào discount_amount từng dòng (trước thuế); ghi chú thêm mã để đối soát.
+  // Voucher nhập tay của đơn quầy: đã chia vào discount_amount từng dòng (trừ vào giá gồm VAT, VAT tính lại); ghi chú thêm mã để đối soát.
   const voucher = snapshot.voucher && snapshot.voucher.amount ? ` · Voucher ${String(snapshot.voucher.code)}: −${Number(snapshot.voucher.amount)}đ` : '';
   const payload = {
     event: 'crm_pos_create_sapo_order',

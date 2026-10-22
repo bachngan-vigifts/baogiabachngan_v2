@@ -108,7 +108,8 @@ Giỏ hàng có mục **Voucher**, nằm ngay trên phần phí. Thu ngân nhậ
 - **Nhập:** mã / ghi chú voucher (bắt buộc, tối đa 60 ký tự, ví dụ `VC-TET2026` hoặc "voucher KH thân thiết") + số giảm theo **VNĐ** hoặc **%**. Nút **Bỏ voucher** xoá cả mục.
 - **Cách tính (máy chủ, `pos-money.ts` › `parsePosVoucher` / `allocatePosVoucher`):**
   - giảm cho **cả đơn**, tính trên tiền hàng **sau** chiết khấu từng dòng;
-  - trừ vào giá **trước VAT**: chia vào các dòng theo tỷ lệ tiền hàng, phần lẻ dồn cho dòng có phần dư lớn nhất; VAT tính lại trên giá sau giảm;
+  - trừ **thẳng vào giá đã gồm VAT** (theo yêu cầu 22/10/2026), rồi tách lại VAT trên số sau giảm. Ví dụ hàng 185.000 đ (gồm VAT 8%), voucher 20.000 đ → khách trả 165.000 đ, VAT 12.222 đ. Bảng giá không VAT thì trừ thẳng vào giá;
+  - chia vào các dòng theo tỷ lệ tiền hàng, phần lẻ dồn cho dòng có phần dư lớn nhất;
   - không áp vào phí dịch vụ, phí ship;
   - không được vượt tiền hàng (400 "Voucher vượt tiền hàng của đơn"); % trong 0–100.
 - **Theo chính sách POS đã chốt** (mục Ngoại lệ phê duyệt): không có bước duyệt; bắt buộc ghi mã để đối soát.

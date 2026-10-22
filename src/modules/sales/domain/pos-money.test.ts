@@ -30,7 +30,7 @@ test('POS: cho tự do CK nhưng từ chối vượt tiền hàng, âm, NaN và 
   assert.throws(() => posMoney(Infinity));
   assert.equal(posCashDifference(100000, 200000, 299999), -1);
 });
-test('POS voucher: chia theo tiền hàng sau CK dòng, tổng đúng bằng voucher; trừ trước VAT; từ chối vượt tiền hàng / thiếu mã', () => {
+test('POS voucher: chia theo tiền hàng sau CK dòng, tổng đúng bằng voucher; trừ vào giá gồm VAT, VAT tính lại; từ chối vượt tiền hàng / thiếu mã', () => {
   assert.deepEqual(allocatePosVoucher([100000, 200000], { code: 'VC', type: 'amount', value: 30000 }), { amount: 30000, shares: [10000, 20000] });
   const odd = allocatePosVoucher([1, 1, 1], { code: 'VC', type: 'amount', value: 2 });
   assert.equal(odd.shares.reduce((n, x) => n + x, 0), 2); assert.ok(odd.shares.every(x => x <= 1));
