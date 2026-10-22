@@ -681,7 +681,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
     const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
     await new Promise(r => setTimeout(r, 0));
-    const selects = modal.querySelectorAll('select'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects[3]!;
+    const selects = modal.querySelectorAll('select'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects.find(x => x.attributes['aria-label'] === 'Hình thức thu trước')!;
     province.value = 'p1'; await province.fire('change'); await new Promise(r => setTimeout(r, 0));
     district.value = 'd1'; await district.fire('change'); await new Promise(r => setTimeout(r, 0)); ward.value = 'w1';
     const confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
@@ -697,7 +697,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     await form.fire('submit'); assert.equal(save.textContent, 'Kiểm tra lại', 'thiếu địa chỉ thì chưa sang bước kiểm tra');
     assert.match(modal.textContent, /Nhập đủ người nhận, điện thoại và số nhà/);
     addressInput.value = '12 Lê Lợi'; phoneInput.value = '0900000000';
-    await form.fire('submit'); assert.equal(save.textContent, 'Xác nhận & tạo đơn COD');
+    await form.fire('submit'); assert.equal(save.textContent, 'Xác nhận, tạo đơn COD & vận đơn GHN', 'quầy Lock: xác nhận là tạo luôn vận đơn GHN');
     assert.match(modal.textContent, /12 Lê Lợi, Phường GHN, Quận GHN, Tỉnh GHN/);
     const sending = form.fire('submit');
     assert.equal(save.textContent, 'Đang tạo đơn COD…', 'đang gửi thì hiện trạng thái xử lý');
@@ -709,6 +709,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     assert.match(modal.textContent, /Máy chủ chưa tạo đơn/);
     const sent = calls.find(c => c.path === '/pos/checkout')!;
     assert.equal(sent.body.depositAmount, 50000); assert.equal(sent.body.method, 'transfer'); assert.equal(sent.body.confirmed, true);
+    assert.deepEqual([sent.body.delivery.ghnWeight, sent.body.delivery.ghnRequiredNote, sent.body.delivery.ghnDistrictId, sent.body.delivery.ghnWardCode], [500, 'CHOXEMHANGKHONGTHU', 'd1', 'w1'], 'quầy Lock gửi khối lượng + cách xem hàng để tự tạo vận đơn GHN');
     for (const [amount, remaining] of [[50000, 58000], [108000, 0]]) {
       const bill = buildPosPrint(doc, { ...sample, method: 'cod', total: 108000, depositAmount: amount, codAmount: remaining, depositMethod: 'transfer' });
       assert.match(bill.textContent, /Đã thu trước \/ tạm ứng \(chuyển khoản\)/);

@@ -1,4 +1,5 @@
 import { documentNumberPatterns } from '../../../core/document-number.ts';
+import { cancelGhnShipments } from './pos-ghn-cancel.ts';
 import { approvalDebt, assertApprovalDebt, approvalCosts } from './approval-preflight.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posOrderStoreScope } from './pos-access.ts';
@@ -663,6 +664,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (status === 'confirmed' && body.verified !== true) throw new AppError(400, 'Kiểm tra và đánh dấu đủ các thông tin quan trọng trước khi xác nhận đơn.', 'VERIFY_REQUIRED');
     // Duyệt = trừ kho bán (đơn CRM): người duyệt chọn / đổi kho được (trong kho người phụ trách được bán); đã bật phân kho bán thì bắt buộc có kho.
     let warehouseId = order.warehouseId;
+    let ghnDeliveryIds: string[] = [];
     if (status === 'confirmed' && order.channel === 'crm') {
       if (body.warehouseId !== undefined && body.warehouseId !== order.warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), body.warehouseId);
       if (!warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), undefined);
@@ -696,6 +698,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       // phiếu kho đã đóng (đã ghi xuất sổ kho) thì ghi dòng đảo – hàng về lại kho – rồi huỷ phiếu.
       if (status === 'cancelled') {
         const now = nowIso(), me = viewer(c);
+        ghnDeliveryIds = (await tx.select({ id: deliveries.id }).from(deliveries)
+          .where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit']), sql`${deliveries.trackingCode}<>''`))).map(d => d.id);
         const packed = await tx.update(packingSlips).set({ status: 'cancelled', updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
           .where(and(eq(packingSlips.orderId, order.id), inArray(packingSlips.status, ['draft', 'sent', 'packed']))).returning({ id: packingSlips.id, no: packingSlips.slipNo });
         for (const s of packed) await reverseRef(tx, me.id, 'packing_slip', s.id, `Huỷ ${order.orderNo}: hàng đã đóng của phiếu ${s.no} về lại kho`, now);
@@ -706,6 +710,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         await tx.update(quotations).set({ approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: viewer(c).id })
           .where(and(eq(quotations.id, order.quoteId), inArray(quotations.approvalStatus, ['draft', 'pending'])));
     });
+    // Huỷ đơn Ship COD quầy Lock đã có vận đơn: huỷ luôn vận đơn trên GHN (lỗi thì trả lý do, đơn CRM vẫn đã huỷ).
+    const ghnCancel = status === 'cancelled' ? await cancelGhnShipments(c.env, ghnDeliveryIds) : null;
     // Lịch sử sản phẩm: thêm "Bán" khi xác nhận, bỏ khi huỷ.
     if (status === 'confirmed') await recordSaleMovements(c.env.db, order.id);
     else await removeMovements(c.env.db, `sale:${order.id}:`);
@@ -718,7 +724,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       url: `/index.html${ref.link}`, actorId: viewer(c).id, data: { orderId: order.id } });
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
       title: status === 'confirmed' ? `${what} đã được xác nhận` : `${what} đã bị huỷ`, body: `${ref.no} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
-    return json({ ok: true });
+    return json({ ok: true, ...(ghnCancel ? { ghnCancel } : {}) });
   }, 'business');
 
   /**
@@ -1060,7 +1066,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (o) await notifyMany(c.env, [o.ownerId], { eventType: status === 'delivered' ? 'delivery_done' : 'delivery_failed', title: status === 'delivered' ? 'Đã giao hàng' : 'Giao hàng không thành công',
         body: `${row.d.deliveryNo} · ${ref.no} – ${o.customerName}`, url: `/index.html${ref.link}`, actorId: me.id, data: { orderId: row.d.orderId, deliveryId: row.d.id } }).catch(() => 0);
     }
-    return json({ ok: true });
+    // Huỷ chuyến Ship COD quầy Lock đã có vận đơn: huỷ luôn trên GHN (lỗi thì trả lý do, chuyến CRM vẫn đã huỷ).
+    const ghnCancel = status === 'cancelled' && row.d.trackingCode ? await cancelGhnShipments(c.env, [row.d.id]) : null;
+    return json({ ok: true, ...(ghnCancel ? { ghnCancel } : {}) });
   }, 'business');
 
   // ================= CÔNG NỢ =================

@@ -53,6 +53,7 @@ import {
   reservedBySku,
   shiftReport,
 } from './pos-store.ts';
+import { autoCreateGhnForOrder } from './pos-ghn-create.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
@@ -65,6 +66,19 @@ const bundledGhnLocations = (provinceId: number, districtId: number) => {
   if (!rows) return null;
   return rows.map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 };
+/** Danh mục Tỉnh / Quận / Phường trực tiếp từ GHN (cần GHN_API_TOKEN) – dùng khi bản đóng gói sẵn thiếu (vd quận mới tách). */
+async function ghnMasterData(env: StaffEnv, provinceId: number, districtId: number) {
+  const path = districtId ? `/master-data/ward?district_id=${districtId}` : provinceId ? '/master-data/district' : '/master-data/province';
+  const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: env.ghnToken!, 'content-type': 'application/json' } };
+  if (provinceId && !districtId) init.body = JSON.stringify({ province_id: provinceId });
+  const response = await (env.ghnFetch ?? fetch)('https://online-gateway.ghn.vn/shiip/public-api' + path, init);
+  let result: Record<string, unknown> = {}; try { result = await response.json() as Record<string, unknown>; } catch { /* GHN trả text khi lỗi */ }
+  if (!response.ok || !Array.isArray(result.data)) throw new AppError(502, posText(result.message, 500) || 'GHN không trả danh mục địa chỉ.');
+  return (result.data as Record<string, unknown>[]).filter(x => Number(x.Status ?? 1) === 1).map(x => ({
+    id: districtId ? posText(x.WardCode, 50) : Number(x.DistrictID ?? x.ProvinceID),
+    name: posText(x.WardName ?? x.DistrictName ?? x.ProvinceName, 100),
+  })).filter(x => x.id && x.name).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
 let lockGhnNonceCache: { nonce: string; expires: number } | null = null;
 async function lockGhnCheckoutNonce() {
   if (lockGhnNonceCache && lockGhnNonceCache.expires > Date.now()) return lockGhnNonceCache.nonce;
@@ -286,7 +300,14 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
     const scope = await allowedPosRegisters(c);
     if (!scope.ids.has(order.registerId)) throw new AppError(403, 'Bạn không được thao tác đơn của cửa hàng này.');
-    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website.');
+    // Chọn địa chỉ khi chưa nối website: dùng danh mục đóng gói sẵn / GHN trực tiếp (có nối thì vẫn hỏi website như cũ, khớp plugin).
+    if (action === 'locations' && !c.env.webOrderAction?.token) {
+      const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0);
+      const key = ghnCacheKey(order.source, provinceId, districtId), known = cachedGhnLocations(key) ?? bundledGhnLocations(provinceId, districtId);
+      if (known) return json({ ok: true, locations: rememberGhnLocations(key, known) });
+      if (c.env.ghnToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
+    }
+    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website (secret WEB_ORDER_ACTION_TOKEN).');
     const terminal = webBucket(order.status, order.ghnStatus);
     if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
     if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
@@ -336,20 +357,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const cached = cachedGhnLocations(key); if (cached) return json({ ok: true, locations: cached, cached: true });
     const bundled = bundledGhnLocations(provinceId, districtId);
     if (bundled) return json({ ok: true, locations: rememberGhnLocations(key, bundled), bundled: true });
-    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối GHN.');
+    // Có token GHN: lấy thẳng danh mục địa chỉ của GHN (dùng chung mọi shop) – không phụ thuộc kết nối website.
+    if (c.env.ghnToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
+    if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối GHN (thiếu secret GHN_API_TOKEN).');
     if (!url) throw new AppError(503, 'Quầy này chưa được kết nối dữ liệu địa chỉ GHN.');
-    if (c.env.ghnToken) {
-      const path = districtId ? `/master-data/ward?district_id=${districtId}` : provinceId ? '/master-data/district' : '/master-data/province';
-      const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: c.env.ghnToken, 'content-type': 'application/json' } };
-      if (provinceId && !districtId) init.body = JSON.stringify({ province_id: provinceId });
-      const response = await fetch('https://online-gateway.ghn.vn/shiip/public-api' + path, init), result = await response.json() as Record<string, unknown>;
-      if (!response.ok || !Array.isArray(result.data)) throw new AppError(502, posText(result.message, 500) || 'GHN không trả danh mục địa chỉ.');
-      const locations = (result.data as Record<string, unknown>[]).filter(x => Number(x.Status ?? 1) === 1).map(x => ({
-        id: districtId ? posText(x.WardCode, 50) : Number(x.DistrictID ?? x.ProvinceID),
-        name: posText(x.WardName ?? x.DistrictName ?? x.ProvinceName, 100),
-      })).filter(x => x.id && x.name).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-      return json({ ok: true, locations: rememberGhnLocations(key, locations) });
-    }
     if (source === 'lock') return json({ ok: true, locations: rememberGhnLocations(key, await lockGhnLocations(provinceId, districtId)) });
     let [contextOrder] = await c.env.db.select({ externalId: webStoreOrders.externalId }).from(webStoreOrders)
       .where(and(eq(webStoreOrders.registerId, register.id), eq(webStoreOrders.source, source))).orderBy(desc(webStoreOrders.updatedAt)).limit(1);
@@ -885,7 +896,11 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/checkout',
     async (c) => {
       const actor = member(c);
-      const result = await checkout(c.env, actor, await readJson(c.req, 64000));
+      const checkoutResult = await checkout(c.env, actor, await readJson(c.req, 64000));
+      // Ship COD quầy Lock: tạo vận đơn GHN ngay (lỗi GHN không làm mất đơn – giao diện hiện nút "Tạo lại vận đơn GHN").
+      const ghn = checkoutResult.replayed || checkoutResult.method !== 'cod' ? null : await autoCreateGhnForOrder(c.env, checkoutResult.id);
+      // `ghnShipment` (không dùng `ghn`: tên đó là thông tin giao trong posSnapshot đã trải vào kết quả).
+      const result = ghn ? { ...checkoutResult, ghnShipment: ghn, ...(ghn.ok ? { ghnOrderCode: ghn.orderCode } : {}) } : checkoutResult;
       await invoiceTasksChanged(c.env, { orderId: result.id }, actor.id);
       await notifyPosOrderCreated(c.env, actor, result);
       if (result.replayed || result.saleFlow || c.env.sapoOrderMode !== 'n8n') return json(result, 201);
@@ -985,6 +1000,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           codAmount: deliveries.codAmount,
           orderNo: salesOrders.orderNo,
           customer: salesOrders.customerName,
+          trackingCode: deliveries.trackingCode,
+          trackingStatus: deliveries.trackingStatus,
+          snapshot: salesOrders.posSnapshot,
           paid: sql<number>`(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.deliveryId}=${deliveries.id} and ${customerPayments.voidedAt} is null)`.mapWith(
             Number,
           ),
@@ -1002,7 +1020,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .orderBy(desc(deliveries.plannedDate))
         .limit(200);
       const balances = await returnBalances(c.env.db, rows.map(x => x.orderId));
-      return json({ deliveries: rows.map(x => ({ ...x, codAmount: Math.min(x.codAmount, x.paid + Math.max(0, balances.get(x.orderId) ?? 0)) })).filter(x => x.codAmount > x.paid) });
+      // canCreateGhn: chuyến chờ giao của quầy Lock chưa có mã vận đơn → nút "Tạo vận đơn GHN" (POST /pos/cod/:id/ghn).
+      return json({ deliveries: rows.map(({ snapshot, ...x }) => {
+        const snap = JSON.parse(snapshot || '{}');
+        return { ...x, codAmount: Math.min(x.codAmount, x.paid + Math.max(0, balances.get(x.orderId) ?? 0)),
+          canCreateGhn: !x.trackingCode && x.status === 'planned' && /lock/i.test(String(snap.register?.name ?? '')) && !!snap.ghn?.districtId };
+      }).filter(x => x.codAmount > x.paid) });
     },
     'business',
   );
