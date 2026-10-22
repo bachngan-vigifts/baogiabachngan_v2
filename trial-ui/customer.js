@@ -1,6 +1,7 @@
 // Bách Ngân · Trang khách hàng: xem/tạo báo giá, đặt hàng, theo dõi đơn. Không có tồn kho, giá nhập.
 // Tính tiền dùng đúng hàm của máy chủ (quote-math.js sinh từ src/modules/quotes/domain/quote-math.ts).
 import { totals, after } from './quote-math.js';
+import { installBusyButtons, withBusy } from './busy-buttons.js';
 import { searchProducts as searchCatalog } from './product-search.js';
 import { setupNotifications } from './notify.js';
 import { watchCsp } from './csp-report.js';
@@ -33,7 +34,10 @@ let token = '';
 try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
 const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
 const toLogin = (note = '') => showAuth(note);
-async function api(path, method = 'GET', body) {
+installBusyButtons();
+/** Lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js). */
+function api(path, method = 'GET', body) { return withBusy(method, apiRequest(path, method, body), path); }
+async function apiRequest(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
   if (token) headers.authorization = 'Bearer ' + token;
   let res;

@@ -2064,3 +2064,6 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 /* Nút đang gửi (dùng chung ngoài POS, vd. Duyệt điều chuyển kho): vòng xoay nhỏ + con trỏ chờ. */
 .btn.is-busy { cursor: progress; opacity: 1 !important; }
 .btn.is-busy::before { content: ''; display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+/* busy-buttons.js: nút không có lớp .btn (icon, chip, nút trong bảng…) đang gửi – mờ nhẹ + con trỏ chờ. */
+[aria-busy="true"]:not(.btn) { cursor: progress; opacity: .6; pointer-events: none; }
+button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10px; height: 10px; margin-left: 6px; vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
