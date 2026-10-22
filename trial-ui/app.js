@@ -1,3 +1,4 @@
+import { installBusyButtons, withBusy } from './busy-buttons.js';
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
 import { initReceivingCalendar } from './receiving-calendar.js';
 import { documentSequence, nextDocumentNumber } from './document-number.js';
@@ -53,6 +54,7 @@ import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
 import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
+installBusyButtons(); // nút gửi API ghi tự khoá + vòng xoay đang xử lý (busy-buttons.js)
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
   || 'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -274,7 +276,9 @@ try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSIO
 const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
 
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
-async function api(path, method = 'GET', body) {
+/** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
+function api(path, method = 'GET', body) { return withBusy(method, apiRequest(path, method, body), path); }
+async function apiRequest(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
   const requestRoute = location.hash;
   const requestToken = token;

@@ -386,9 +386,9 @@ test('số đỏ menu: việc chưa hoàn tất, phạm vi đơn, cập nhật n
   await db.insert(deliveries).values((['planned', 'in_transit', 'delivered', 'cancelled', 'failed'] as const).map((status, i) => ({ id: `delivery-${i}`, deliveryNo: `DEL-${i}`, orderId: i === 1 ? 'other-order' : 'o1', plannedDate: '2026-10-01', status, createdBy: 'mgr', createdAt: now, updatedAt: now })));
   const created = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'TEST', quantity: 1 }] }] });
   assert.equal(created.status, 201);
-  assert.deepEqual((await call('/navigation-counts', mgr)).data, { cash: 0, packing: 2, deliveries: 3, purchases: 1 });
-  assert.deepEqual((await call('/navigation-counts', kho)).data, { cash: 0, packing: 2, deliveries: 3, purchases: 0 });
-  assert.deepEqual((await call('/navigation-counts', emp)).data, { cash: 0, packing: 1, deliveries: 2, purchases: 0 });
+  assert.deepEqual((await call('/navigation-counts', mgr)).data, { cash: 0, packing: 2, deliveries: 3, purchases: 1, receiving: 0 });
+  assert.deepEqual((await call('/navigation-counts', kho)).data, { cash: 0, packing: 2, deliveries: 3, purchases: 0, receiving: 0 });
+  assert.deepEqual((await call('/navigation-counts', emp)).data, { cash: 0, packing: 1, deliveries: 2, purchases: 0, receiving: 0 });
   const { eq } = await import('drizzle-orm');
   await db.update(salesOrders).set({ status: 'delivered' }).where(eq(salesOrders.id, 'o1'));
   assert.equal((await call('/navigation-counts', mgr)).data.packing, 1, 'phiếu còn treo của đơn đã giao không còn là việc chờ đóng');

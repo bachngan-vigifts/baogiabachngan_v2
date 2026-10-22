@@ -1,3 +1,4 @@
+import { withBusy } from './busy-buttons.js';
 /**
  * XUẤT EXCEL dùng chung (Công nợ, Công nợ NCC, Sổ thu / chi): tạo file .xlsx ngay trên trình duyệt từ bảng dữ liệu đang xem.
  * Thư viện xlsx.full.min.js chỉ tải khi bấm xuất lần đầu.
@@ -15,7 +16,9 @@ function excel() {
  * `sheets`: [{ name, header: string[], rows: (string|number|null)[][], widths?: number[] }]. Số giữ dạng số (cộng / lọc được trong Excel).
  * Tên file tự thêm ngày xuất, VD "cong-no_2026-10-17.xlsx".
  */
-export async function downloadExcel(filename, sheets) {
+/** Tạo file mất vài giây với bảng lớn: nút vừa bấm hiện đang xử lý và không bấm trùng được (busy-buttons.js). */
+export function downloadExcel(filename, sheets) { return withBusy('EXPORT', buildExcel(filename, sheets)); }
+async function buildExcel(filename, sheets) {
   const X = await excel(), wb = X.utils.book_new();
   for (const s of sheets) {
     const ws = X.utils.aoa_to_sheet([s.header, ...s.rows]);
