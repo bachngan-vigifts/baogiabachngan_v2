@@ -69,6 +69,7 @@ test('quote editor numbering: mixed local history, global server counter and dat
   const ctx = {...shared,state,todayIso:()=> '2026-10-22',api:async()=>({quoteNo:'HRC_BG_012_22102026'})};
   const editor = runInNewContext(code+';({nextQuoteNo,refreshQuoteNo,isAutoQuoteNo})',ctx);
   assert.equal(editor.nextQuoteNo('HRC'),'HRC_BG_010_22102026');
+  assert.equal(editor.nextQuoteNo('HRC',''),'HRC_BG_010_22102026','date input being cleared keeps the fallback safe');
   await editor.refreshQuoteNo('HRC','2026-10-22');
   assert.equal(editor.nextQuoteNo('HRC'),'HRC_BG_012_22102026');
   assert.equal(editor.nextQuoteNo('B2B'),'B2B_BG_001_22102026');

@@ -908,6 +908,7 @@ const quoteSeriesKey = (type, date) => `${quoteKind(type)}|${date}`;
 const quoteLegacyHead = (type, date) => `${quoteKind(type)}${date.replaceAll('-', '')}_`;
 const serverQuoteNo = new Map();
 function nextQuoteNo(type = 'B2B', date = todayIso()) {
+  date = date || todayIso();
   const prefix = quoteKind(type), legacy = quoteLegacyHead(type, date);
   const local = nextDocumentNumber(prefix, date, (state.quotes || []).map(q => q.quoteNo || ''), legacy);
   const remote = serverQuoteNo.get(quoteSeriesKey(type, date));
@@ -917,7 +918,10 @@ async function refreshQuoteNo(type, date) {
   date = date || todayIso();
   try { const r = await api(`/quotes/next-no?type=${encodeURIComponent(type)}&date=${encodeURIComponent(date)}`); serverQuoteNo.set(quoteSeriesKey(type, date), r.quoteNo); } catch { /* số tạm; máy chủ kiểm lại lúc lưu */ }
 }
-const isAutoQuoteNo = (no, type, date) => documentSequence(no, quoteKind(type), date, quoteLegacyHead(type, date)) != null;
+const isAutoQuoteNo = (no, type, date) => {
+  date = date || todayIso();
+  return documentSequence(no, quoteKind(type), date, quoteLegacyHead(type, date)) != null;
+};
 /** Báo giá mới chưa lưu: cập nhật số tự sinh theo máy chủ (nếu người dùng chưa tự gõ số). */
 async function syncEditorQuoteNo() {
   if (editor.id) return;
