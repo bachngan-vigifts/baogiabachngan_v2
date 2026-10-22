@@ -47,19 +47,16 @@ Mỗi lần mở bảng, hệ thống đồng bộ việc tự sinh, tối đa 1
 Việc **Sổ quỹ** (nguồn `cash`) được đồng bộ **ngay** khi lập / duyệt / huỷ phiếu, lập / duyệt / huỷ yêu cầu đổi trả, mở / kết ca và giải trình / đóng tra soát (`cashTasksChanged`), không đợi ai mở trang Công việc. Người duyệt đã có thông báo riêng nên không báo thêm "Việc mới". Người **được Manager chỉ định duyệt** thấy phiếu thu/chi và đổi/trả ở hộp **Cần duyệt** (đúng két / quầy cửa hàng mình, không thấy phiếu tự lập).
 
 ## Giao diện
-- Thẻ số nhanh (Việc của tôi · Quá hạn · Hôm nay · Chưa giao / Việc nhóm · Cần duyệt) – bấm để lọc.
-- Hàng lọc chính: người nhận + trạng thái + ô tìm; **Lọc thêm** mở hạn / ưu tiên / nguồn.
-- Ô **Giao việc mới** chỉ hiện người nhận / ưu tiên / hạn khi bắt đầu gõ.
-- Danh sách chia theo **nhóm việc** (`TASK_UI.categories`): *Bán hàng & khách* · *Kho & giao hàng* · *Tiền & sổ quỹ* · *Việc giao tay*; mỗi nhóm có số việc + số quá hạn, bấm tiêu đề để thu gọn. Trong nhóm: việc mở trước, quá hạn → hôm nay → sắp tới → chưa hạn, rồi mức ưu tiên.
-- Mỗi dòng: tên việc, nguồn, ưu tiên (chỉ hiện Cao / Khẩn), trạng thái (khi khác *Cần làm*), người nhận, hạn, nút **Mở** chứng từ. Đổi trạng thái chi tiết trong hộp việc.
-
-Quy định với việc tự sinh:
-- Không xoá được. Việc tự đóng khi chứng từ đã xử lý xong.
-- Việc duyệt (báo giá, báo giá khách, xác nhận đơn, đơn mua NCC) và việc nhận hàng NCC **không bấm xong tay được**: chỉ tự đóng khi duyệt / nhận xong ở màn hình gốc.
-- Một quy tắc lỗi khi đối chiếu thì lần đó **không đóng** việc nào (tránh đóng nhầm); việc tự đóng mà chứng từ lại cần xử lý (vd báo giá bị trả lại rồi gửi duyệt lại) được **mở lại**.
-- Báo giá khách gửi: việc "Xác nhận báo giá khách" chưa giao cho ai cụ thể – ai trong nhóm duyệt nhận trước thì làm.
-- Không sửa được tên và mô tả.
-- Đổi được người nhận, mức ưu tiên và hạn.
+- **Tiêu đề**: giờ đồng bộ việc tự sinh ("Đồng bộ lúc HH:MM") + nút ↻ làm mới (gửi `refresh=1`), nút **+ Giao việc** (phím `N`) mở ô giao việc.
+- **Tab chế độ xem** có số việc đang mở (`GET /tasks/summary` → `views`): Của tôi · Tôi giao · Việc nhóm *[tên nhóm của tôi]* · Đồng nghiệp (khi được xem) · Chưa giao (Manager) · Tất cả · **Cần duyệt** (người duyệt).
+- **4 thẻ hạn**: Quá hạn · Đến hạn hôm nay · Sắp tới (7 ngày) · Chưa đặt hạn. Số trên thẻ đếm theo tab + bộ lọc hiện tại, trước khi lọc hạn (`GET /tasks` → `dueCounts`). Bấm để lọc, bấm lại để bỏ.
+- **Một thanh lọc**: tìm · trạng thái (Đang mở / Đã xong / Tất cả) · Nguồn (gom theo Bán hàng, Kho & giao hàng, Kế toán & tiền, Chăm sóc khách, Thủ công – đủ mọi nguồn) · Ưu tiên · Người nhận (`assignee`: nhân viên, `team:<nhóm>`, `none`) · Hạn (`due`: overdue · today · week · upcoming · none).
+- **Chip bộ lọc đang bật** (× từng cái, *Xoá bộ lọc*); khi không có kết quả, dòng trống nói rõ lọc gì.
+- **Danh sách** nhóm theo hạn (mặc định) hoặc theo nhóm việc (nút *Nhóm theo* ở chân trang, nhớ trên máy). Mỗi việc một thẻ: ô tick | Việc (tiêu đề, nguồn, Tự động, mô tả) | Người nhận (người giao nhỏ bên dưới, *Nhận việc*) | Hạn (trễ / còn bao nhiêu ngày) | Ưu tiên | Trạng thái (bấm đổi Cần làm ↔ Đang làm). Viền trái đỏ = khẩn / quá hạn, cam = cao.
+- **Hoàn thành**: việc làm tay dùng ô tick. Việc tự hoàn thành theo chứng từ không có ô tick (⟳ + nhãn "Tự động · không đóng tay").
+- **Chi tiết**: màn hình ≥1280px mở khung bên phải (chọn việc khác bằng ↑↓, Esc đóng); màn hình nhỏ mở hộp thoại (điện thoại: toàn màn hình). Tab Chi tiết · Trao đổi · Lịch sử.
+- **Chân trang**: "Hiển thị X / Y việc" + phím tắt (`N` giao việc · `/` tìm · `↑↓` chọn việc · `Enter` mở).
+- Điện thoại: mỗi việc là một thẻ, chỉ hiện Việc, Hạn, Trạng thái.
 
 ## Việc theo nhóm (Kho, Kế toán, Sale Admin)
 - Chọn người nhận "Nhóm Kho / Nhóm Kế toán / Nhóm Sale Admin": mọi nhân viên có chức vụ đó thấy việc (mục *Việc nhóm* / *Tôi nhận*) và nhận thông báo.

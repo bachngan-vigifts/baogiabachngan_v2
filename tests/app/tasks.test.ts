@@ -227,3 +227,34 @@ test('thẻ thống kê: hạn lọc ở server trước LIMIT, đúng ngày Vi�
   assert.deepEqual(ids(await call('/tasks?view=team&due=today', kho)), ['warehouse-today'], 'việc nhóm đúng nhóm mình, không lấy việc mình giao cho nhóm khác');
   assert.deepEqual(ids(await call('/tasks?view=unassigned&due=today', mgr)), ['unassigned-today']);
 });
+
+test('trang Công việc: số đếm theo tab (summary.views), số theo mốc hạn (dueCounts), lọc 7 ngày tới và người nhận', async () => {
+  const { call, emp, mgr, kho } = await setup();
+  const today = (await call('/tasks', mgr)).data.today as string;
+  const add = async (cookie: string, title: string, assigneeId: string | undefined, dueDate?: string) => {
+    const r = await call('/tasks', cookie, 'POST', { title, assigneeId, dueDate }); assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data;
+  };
+  await add(mgr, 'Quá hạn của emp', 'emp', addDaysIso(today, -2));
+  await add(mgr, 'Hôm nay của emp', 'emp', today);
+  await add(mgr, 'Tuần này của emp', 'emp', addDaysIso(today, 3));
+  await add(mgr, 'Tháng sau của emp', 'emp', addDaysIso(today, 30));
+  await add(mgr, 'Không hạn của emp', 'emp');
+  await add(mgr, 'Việc nhóm kho', 'team:warehouse', today);
+  await add(emp, 'Emp giao cho chính mình', undefined);
+
+  const views = (await call('/tasks/summary', emp)).data.views;
+  assert.equal(views.mine, 6); assert.equal(views.created, 1); assert.equal(views.unassigned, 0, 'nhân viên không có tab Chưa giao');
+  assert.equal((await call('/tasks/summary', mgr)).data.views.created, 6);
+  assert.deepEqual((await call('/tasks/summary', kho)).data.teamNames, ['Kho']);
+  assert.equal((await call('/tasks/summary', kho)).data.views.team, 1);
+
+  const mine = (await call('/tasks?view=mine', emp)).data;
+  assert.deepEqual(mine.dueCounts, { overdue: 1, today: 1, week: 1, upcoming: 2, none: 2, total: 6 });
+  assert.ok(mine.syncedAt);
+  const week = (await call('/tasks?view=mine&due=week', emp)).data;
+  assert.deepEqual(week.tasks.map((t: any) => t.title), ['Tuần này của emp']);
+  assert.equal(week.dueCounts.total, 6, 'số trên thẻ hạn không đổi khi đang lọc hạn');
+  assert.equal((await call('/tasks?view=all&assignee=team:warehouse', mgr)).data.tasks.length, 1);
+  assert.equal((await call('/tasks?view=all&assignee=emp', mgr)).data.tasks.length, 6);
+  assert.equal((await call('/tasks?due=nope', emp)).status, 400);
+});

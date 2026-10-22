@@ -15,7 +15,7 @@ import { reconcileAutoTasks, reconcileTaskSet } from './auto-tasks.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
-import { OPEN_STATUSES, PRIORITY_RANK, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
+import { OPEN_STATUSES, PRIORITY_RANK, addDaysIso, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { markProgress } from '../../sales/api/progress.ts';
@@ -106,6 +106,29 @@ const inMyTeam = (c: Ctx, t: Task) => teamOpen(t) && (myTeams(c) as string[]).in
 const canSee = (c: Ctx, t: Task) => involved(c, t);
 const canManage = (c: Ctx, t: Task) => me(c).role === 'manager' || (t.createdBy !== null && t.createdBy === me(c).id);
 const teamName = (pos: string | null) => (pos && isTeam(pos) ? TASK_TEAMS[pos] : '');
+const VIEWS = ['mine', 'created', 'team', 'colleagues', 'unassigned', 'all'] as const;
+/** Điều kiện của từng chế độ xem (tab) – dùng chung cho danh sách và số đếm trên tab. */
+function viewCond(c: Ctx, view: string): SQL | undefined {
+  const m = me(c), teams = myTeams(c);
+  if (view === 'mine') return or(eq(tasks.assigneeId, m.id), teamOpenSql(teams));
+  if (view === 'created') return eq(tasks.createdBy, m.id);
+  if (view === 'team') return and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`, m.role === 'manager' ? undefined : teams.length ? inArray(tasks.assigneePosition, teams) : sql`false`);
+  if (view === 'unassigned') return m.role === 'manager' ? and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)) : sql`false`;
+  if (view === 'colleagues') { // việc của đồng nghiệp cùng chức vụ (không gồm việc của chính mình)
+    const pos = peerPos(c);
+    return pos ? and(peerCond(pos), sql`coalesce(${tasks.assigneeId}, '') <> ${m.id}`, sql`coalesce(${tasks.createdBy}, '') <> ${m.id}`) : sql`false`;
+  }
+  return undefined;
+}
+/** Mốc hạn: quá hạn · hôm nay · 7 ngày tới · sắp tới (mọi ngày sau hôm nay) · chưa đặt hạn. */
+function dueCond(due: string, today: string): SQL | undefined {
+  if (due === 'overdue') return sql`${tasks.dueDate} <> '' and ${tasks.dueDate} < ${today}`;
+  if (due === 'today') return eq(tasks.dueDate, today);
+  if (due === 'week') return sql`${tasks.dueDate} > ${today} and ${tasks.dueDate} <= ${addDaysIso(today, 7)}`;
+  if (due === 'upcoming') return sql`${tasks.dueDate} > ${today}`;
+  if (due === 'none') return or(isNull(tasks.dueDate), eq(tasks.dueDate, ''));
+  return undefined;
+}
 
 /** Người nhận: id nhân viên, hoặc `team:<chức vụ>` = giao cho cả nhóm, hoặc '' = chưa giao. */
 function parseAssignee(v: unknown): { assigneeId: string | null; assigneePosition: string | null } {
@@ -177,7 +200,11 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const mine = rows.filter(r => r.assigneeId === m.id || (!r.assigneeId && r.assigneePosition && teams.includes(r.assigneePosition)));
     return json({ accountingAvailable: me(c).role === 'employee' && canUseAccountingTasks(me(c)), open: mine.length, overdue: mine.filter(r => dueBucket(r.dueDate, today) === 'overdue').length, today: mine.filter(r => dueBucket(r.dueDate, today) === 'today').length,
       team: rows.filter(r => !r.assigneeId && r.assigneePosition && (m.role === 'manager' || teams.includes(r.assigneePosition))).length,
-      unassigned: m.role === 'manager' ? rows.filter(r => !r.assigneeId && !r.assigneePosition).length : 0 });
+      unassigned: m.role === 'manager' ? rows.filter(r => !r.assigneeId && !r.assigneePosition).length : 0,
+      // Số việc đang mở theo từng tab (cùng điều kiện với danh sách) + tên nhóm của tôi cho tab "Việc nhóm".
+      views: Object.fromEntries(await Promise.all(VIEWS.map(async v => [v, Number((await c.env.db.select({ n: sql<number>`count(*)` }).from(tasks)
+        .where(and(visible(c), viewCond(c, v), inArray(tasks.status, [...OPEN_STATUSES]))))[0]?.n ?? 0)] as const))),
+      teamNames: myTeams(c).map(t => TASK_TEAMS[t]), canViewColleagues: !!peerPos(c) });
   }, 'business');
 
   /**
@@ -189,21 +216,13 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     await syncAuto(c);
     const m = me(c), p = c.url.searchParams, view = p.get('view') || 'mine', status = p.get('status') || 'open', q = str(p.get('q'), 100).toLowerCase();
     const due = p.get('due') || '', today = vietnamDate().iso;
-    if (due && !['overdue', 'today', 'upcoming', 'none'].includes(due)) throw new AppError(400, 'Bộ lọc hạn công việc không hợp lệ.');
-    const where: (SQL | undefined)[] = [visible(c)];
-    if (due === 'overdue') where.push(sql`${tasks.dueDate} <> '' and ${tasks.dueDate} < ${today}`);
-    else if (due === 'today') where.push(eq(tasks.dueDate, today));
-    else if (due === 'upcoming') where.push(sql`${tasks.dueDate} > ${today}`);
-    else if (due === 'none') where.push(or(isNull(tasks.dueDate), eq(tasks.dueDate, '')));
-    const teams = myTeams(c);
-    if (view === 'mine') where.push(or(eq(tasks.assigneeId, m.id), teamOpenSql(teams)));
-    else if (view === 'created') where.push(eq(tasks.createdBy, m.id));
-    else if (view === 'team') where.push(and(isNull(tasks.assigneeId), sql`${tasks.assigneePosition} is not null`, m.role === 'manager' ? undefined : teams.length ? inArray(tasks.assigneePosition, teams) : sql`false`));
-    else if (view === 'unassigned') where.push(and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)));
-    else if (view === 'colleagues') { // việc của đồng nghiệp cùng chức vụ (không gồm việc của chính mình)
-      const pos = peerPos(c);
-      where.push(pos ? and(peerCond(pos), sql`coalesce(${tasks.assigneeId}, '') <> ${m.id}`, sql`coalesce(${tasks.createdBy}, '') <> ${m.id}`) : sql`false`);
-    }
+    if (due && !['overdue', 'today', 'week', 'upcoming', 'none'].includes(due)) throw new AppError(400, 'Bộ lọc hạn công việc không hợp lệ.');
+    const where: (SQL | undefined)[] = [visible(c), viewCond(c, view)];
+    // Người nhận: id nhân viên · team:<nhóm> (nhóm chưa ai nhận) · none (chưa giao).
+    const assignee = str(p.get('assignee'), 80);
+    if (assignee === 'none') where.push(and(isNull(tasks.assigneeId), isNull(tasks.assigneePosition)));
+    else if (assignee.startsWith('team:')) where.push(and(isNull(tasks.assigneeId), eq(tasks.assigneePosition, assignee.slice(5))));
+    else if (assignee) where.push(eq(tasks.assigneeId, assignee));
     if (status === 'open') where.push(inArray(tasks.status, [...OPEN_STATUSES]));
     else if (status === 'done') where.push(inArray(tasks.status, ['done', 'cancelled']));
     const priority = p.get('priority'), source = p.get('source');
@@ -213,6 +232,11 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       const pat = '%' + q.replace(/[%_\\]/g, '') + '%', inv = involvedSql(c);
       where.push(or(sql`lower(${tasks.title}) like ${pat}`, and(sql`lower(${tasks.description}) like ${pat}`, inv)));
     }
+    // Số việc theo mốc hạn với mọi bộ lọc khác (thẻ hạn trên trang) – đếm trước khi lọc hạn và trước giới hạn 500 dòng.
+    const n = (cond: SQL | undefined) => sql<number>`count(*) filter (where ${cond})`.mapWith(Number);
+    const [dueCounts] = await c.env.db.select({ overdue: n(dueCond('overdue', today)), today: n(dueCond('today', today)), week: n(dueCond('week', today)), upcoming: n(dueCond('upcoming', today)), none: n(dueCond('none', today)), total: sql<number>`count(*)`.mapWith(Number) })
+      .from(tasks).where(and(...where));
+    where.push(dueCond(due, today));
     const rows = await c.env.db.select().from(tasks).where(and(...where)).orderBy(status === 'done' ? desc(tasks.completedAt) : asc(tasks.dueDate), desc(tasks.createdAt)).limit(500);
     const ids = [...new Set(rows.flatMap(r => [r.assigneeId, r.createdBy, r.completedBy]).filter(Boolean) as string[])];
     const people = ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
@@ -221,7 +245,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       .where(rows.length ? inArray(taskComments.taskId, rows.map(r => r.id)) : sql`false`).groupBy(taskComments.taskId);
     // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
     const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
-    return json({ today, canViewColleagues: !!peerPos(c), tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
+    return json({ today, syncedAt: new Date().toISOString(), dueCounts, canViewColleagues: !!peerPos(c), tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), comments: canComment(c, t) ? Number(counts.find(x => x.taskId === t.id)?.n ?? 0) : 0, due: dueBucket(t.dueDate, today),
       canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) })) });
   }, 'business');
