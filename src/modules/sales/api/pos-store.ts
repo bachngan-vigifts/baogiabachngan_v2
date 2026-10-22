@@ -1,3 +1,4 @@
+import { orderNoForCheckout } from './pos-number.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
 import { flowInitialAmount, flowHoldUntil, saleFlowOf } from '../domain/pos-order-flow.ts';
@@ -27,7 +28,7 @@ import {
   stockHolds,
   packingSlips,
 } from '../schema.ts';
-import { nextDocNo, vietnamDate } from '../domain/sales.ts';
+import { vietnamDate } from '../domain/sales.ts';
 import { posLine, posMoney } from '../domain/pos-money.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
@@ -444,17 +445,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     if (!flow && mode === 'counter' && tendered < c.payable) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
     const now = posNow(),
       date = vietnamDate().iso;
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'pos-number:' + date}))`);
-    const numbers = await tx
-      .select({ no: salesOrders.orderNo })
-      .from(salesOrders)
-      .where(sql`${salesOrders.orderNo} like ${'POS_' + date.replaceAll('-', '') + '_%'}`);
     const id = crypto.randomUUID(),
-      orderNo = nextDocNo(
-        'POS',
-        date,
-        numbers.map((x) => x.no),
-      );
+      orderNo = await orderNoForCheckout(tx, date, qr);
     const snapshot = {
       register: c.register,
       customer: c.customer?.name ?? 'Khách lẻ',

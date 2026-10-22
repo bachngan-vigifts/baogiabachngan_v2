@@ -1,3 +1,5 @@
+import { nextPosOrderNo } from './pos-number.ts';
+import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrReference, posQrOrderNumbers } from '../domain/pos-qr-reference.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
 import { posStockSources } from './pos-stock-sources.ts';
@@ -179,15 +181,20 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const amount = Number(b.transferAmount ?? b.transfer_amount ?? b.amount);
       const account = posText(b.accountNumber ?? b.account_number, 100).replace(/\s+/g, '');
       const rawCode = posText(b.code, 100), content = posText(b.content ?? b.description, 1000);
-      const normalized = (rawCode || content).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const normalized = normalizePosReference(rawCode + ' ' + content);
       if (transferType !== 'in' || !Number.isFinite(amount) || amount <= 0 || !normalized.includes('POS'))
         throw new AppError(400, 'Giao dịch SePay không hợp lệ.');
       const rows = await c.env.db.select({ request: posPaymentRequests, bankAccount: posRegisters.bankAccount })
         .from(posPaymentRequests)
         .innerJoin(posShifts, eq(posShifts.id, posPaymentRequests.shiftId))
         .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
-        .orderBy(desc(posPaymentRequests.createdAt)).limit(200);
-      const hit = rows.find(x => normalized.includes(('POS' + x.request.id.replaceAll('-', '').slice(0, 12)).toUpperCase()));
+        .where(or(
+          ...posQrOrderNumbers(normalized).map(no => sql`${posPaymentRequests.cart} like ${'%"reservedOrderNo":"' + no + '"%'} `),
+          sql`position(('POS' || left(upper(replace(${posPaymentRequests.id},'-','')),12)) in ${normalized}) > 0`,
+        )).orderBy(desc(posPaymentRequests.createdAt));
+      const matches = rows.filter(x => matchesPosQrReference(x.request, normalized));
+      if (matches.length > 1) throw new AppError(409, 'Nội dung chuyển khoản khớp nhiều yêu cầu QR.');
+      const hit = matches[0];
       if (!hit) throw new AppError(404, 'Không tìm thấy yêu cầu QR POS tương ứng.');
       if (account && account !== hit.bankAccount.replace(/\s+/g, '')) throw new AppError(400, 'Tài khoản nhận tiền không thuộc quầy POS này.');
       if (Math.round(amount) !== Math.round(hit.request.amount)) throw new AppError(409, 'Số tiền SePay không khớp yêu cầu QR POS.');
@@ -923,6 +930,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           if (existing.expiresAt < posNow() || existing.confirmedAt) throw new AppError(409, 'QR hết hạn hoặc đã thu.');
           return { request: existing, register: calc.register };
         }
+        const reservedOrderNo = await nextPosOrderNo(tx, vietnamDate().iso);
         const now = posNow(),
           [request] = await tx
             .insert(posPaymentRequests)
@@ -930,7 +938,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               id: crypto.randomUUID(),
               shiftId: s.id,
               requestKey: key,
-              cart: JSON.stringify(calc.canonical),
+              cart: JSON.stringify({ ...calc.canonical, reservedOrderNo }),
               fingerprint: calc.fingerprint,
               amount: calc.payable,
               createdAt: now,
@@ -940,9 +948,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         return { request: request!, register: calc.register };
       });
       const { request: r, register: w } = result,
-        content = 'POS ' + r.id.replaceAll('-', '').slice(0, 12);
+        content = posQrContent(r);
       return json({
         id: r.id,
+        orderNo: reservedPosOrderNo(r.cart),
         amount: r.amount,
         expiresAt: r.expiresAt,
         content,
