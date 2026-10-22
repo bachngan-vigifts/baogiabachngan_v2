@@ -5,6 +5,7 @@ import { documentSequence, nextDocumentNumber } from './document-number.js';
 import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
+import { initPackingEarlyRequest } from './packing-early-request.js';
 import { reviewPurchaseCosts } from './purchase-cost-review.js';
 import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
@@ -3587,6 +3588,8 @@ const PACK_STATUS = { draft: ['Nháp – chưa gửi kho', 'warn'], sent: ['Đã
 const kg = v => v === null || v === undefined ? '' : `~${fmtNum(v)} kg`;
 const packing = { lines: [], orderId: '', hasSchedule: false };
 const packingSupplierChoices = initPackingSupplierChoices($('#pack-form'));
+const packingEarlyRequest = initPackingEarlyRequest({ root: $('#pack-form'), api, lines: () => packing.lines, parseNum, toast,
+  canRequest: () => can('page.purchases') && (isManager() || state.user?.positionId === 'sale-admin') });
 async function loadOrderPacking(orderId) {
   const box = $('#order-packing'); box.innerHTML = '';
   let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
@@ -3603,7 +3606,7 @@ async function loadOrderPacking(orderId) {
 /** Giao tới + gửi xe của phiếu đóng gói (một dòng). */
 const shipText = k => `${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in: ' + esc(k.shipName) : '🏠 Giao thẳng cho khách'}${k.carrierName ? ` · 🚚 Gửi xe ${esc(k.carrierName)}${k.carrierPhone ? ' (' + esc(k.carrierPhone) + ')' : ''}` : ''}`;
 /** Một dòng nguồn khác kho (cửa hàng / NCC / đại lý…) trong hộp yêu cầu đóng gói. */
-const packSourceRow = (qty = '') => `<div class="pack-src"><select data-src aria-label="Nguồn hàng">${Object.entries(PACK_SOURCES).filter(([k]) => k !== 'warehouse').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+const packSourceRow = (qty = '') => `<div class="pack-src"><select data-src aria-label="Nguồn hàng">${Object.entries(PACK_SOURCES).filter(([k]) => k !== 'warehouse').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}<option value="incoming">Hàng đang chờ về</option></select>
   <input data-src-note maxlength="200" placeholder="Tên cửa hàng / NCC / đại lý" aria-label="Lấy từ đâu"><input class="num-input" inputmode="decimal" data-src-qty value="${qty === '' ? '' : fmtNum(qty)}" placeholder="SL" aria-label="Số lượng">
   <button type="button" class="icon-btn danger" data-src-del title="Bỏ nguồn này" aria-label="Bỏ nguồn này">×</button></div>`;
 $('#order-pack').addEventListener('click', async () => {
@@ -3679,6 +3682,7 @@ $('#pack-form').addEventListener('input', e => {
 });
 /** Kiểm tra từng dòng: kho + các nguồn khác = số cần đóng; nguồn khác phải ghi rõ. Trả về danh sách phân bổ hoặc ném lỗi. */
 function readPackForm() {
+  if (packingEarlyRequest.isBusy()) throw new Error('Đang lưu phiếu xin lấy trước. Vui lòng chờ.');
   const out = [];
   for (const row of $$('.pack-line', $('#pack-lines'))) {
     const line = packing.lines.find(l => l.id === row.dataset.line), name = line?.name || '';
@@ -3689,6 +3693,7 @@ function readPackForm() {
     const av = row.dataset.av === '' ? null : Number(row.dataset.av);
     if (av !== null && wh > av + 1e-9 && !confirm(`"${name}": lấy từ kho ${fmtNum(wh)} nhưng tồn kho chỉ ${fmtNum(av)}. Vẫn lưu?`)) throw new Error('Sửa lại số lấy từ kho.');
     const srcs = $$('.pack-src', row).map(r => ({ source: r.querySelector('[data-src]').value, sourceNote: r.querySelector('[data-src-note]').value.trim(), qty: parseNum(r.querySelector('[data-src-qty]').value || '0') })).filter(x => x.qty > 0);
+    if (srcs.some(x => x.source === 'incoming')) throw new Error(`"${name}": bấm "Xin giao trước" để lưu phiếu nháp. Khi hàng đã sẵn sàng, chọn lại nguồn thực tế trước khi gửi kho đóng gói.`);
     const total = wh + srcs.reduce((t, x) => t + x.qty, 0);
     if (Math.abs(total - need) > 1e-9) throw new Error(`"${name}": kho ${fmtNum(wh)} + nguồn khác ${fmtNum(total - wh)} = ${fmtNum(total)}, chưa khớp số cần đóng ${fmtNum(need)}.`);
     const missing = srcs.find(x => !x.sourceNote); if (missing) throw new Error(`"${name}": ghi rõ ${PACK_SOURCES[missing.source].toLowerCase()} nào.`);
