@@ -484,9 +484,9 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     const create = doc.body.children.at(-1)!;
     const controls = create.querySelectorAll('input,textarea') as (Element & { name: string })[];
     assert.deepEqual(controls.map(c => c.name), ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit']);
-    const actionRow = create.querySelectorAll('div').find(e => e.className === 'pos-customer-form-actions')!;
-    assert.deepEqual(actionRow.children.map(b => b.textContent), ['Lưu & chọn khách', 'Huỷ']);
-    await actionRow.children[1]!.fire('click');
+    const actionRow = create.querySelectorAll('div').find(e => e.className.includes('pos-customer-form-actions'))!;
+    assert.deepEqual(actionRow.children.map(b => b.textContent), ['Huỷ', 'Lưu & chọn khách'], 'nút chính bên phải, cách nút Huỷ');
+    await actionRow.children[0]!.fire('click');
     assert.equal(create.open, false);
 
     await new Promise(r => setTimeout(r, 230));

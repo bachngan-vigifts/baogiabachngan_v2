@@ -333,7 +333,8 @@ table { width: 100%; border-collapse: collapse; }
   .bottom-nav a { display: grid; justify-items: center; gap: 2px; font-size: .7rem; font-weight: 600; color: var(--muted); padding: 4px 0; }
   .bottom-nav a.active { color: var(--red); }
   .bottom-nav svg { width: 21px; height: 21px; }
-  .page-head .btn.primary { display: none; }
+  /* Trang có nút ＋ tròn thì ẩn nút chính ở đầu trang; trang không có (Đơn mua, Điều chuyển kho…) vẫn giữ nút tạo mới. */
+  .page-head:has(.btn-add) .btn.primary { display: none; }
   /* Nút ＋ tròn (xanh lá, 44px) đứng góc trên phải đầu trang – thay cho nút ＋ ở thanh menu dưới */
   .page-head .btn-add, .page-head .head-actions { align-self: flex-start; }
   .page-head .head-actions { flex-wrap: nowrap; flex: none; }
@@ -1804,8 +1805,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   .modal-head { padding: 12px 12px 0; }
   .modal-head h2 { font-size: 15px; }
   .modal-body { padding: 12px; font-size: 11px; }
-  .modal-foot { gap: 6px; padding: 9px 12px 10px; }
-  .modal-foot .btn { min-height: 38px; }
+  .modal-foot { gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .modal-foot .btn { min-height: 42px; flex: 1 1 auto; }
   .bottom-nav { padding-top: 4px; }
   .bottom-nav a { gap: 1px; padding: 3px 0; font-size: 9px; }
   .bottom-nav svg { width: 18px; height: 18px; }
@@ -2146,3 +2147,25 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
 .import-summary dd.ok { color: var(--ok, #15803d); } .import-summary dd.warn { color: var(--warn, #b45309); }
 .import-summary .import-warn { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg, #fff7ed); color: var(--warn, #9a3412); font-size: .86rem; }
 .import-summary details { margin-top: 6px; } .import-summary summary { cursor: pointer; font-size: .86rem; }
+
+/* ---------- Biểu mẫu & hộp thoại: chuẩn chung (ô cao bằng nhau, nhãn không đẩy lệch ô, nút không dính) ---------- */
+:root { --field-h: 42px; }
+label { align-content: start; }
+.form-grid { align-items: end; }
+:is(dialog, .modal, .sup-form, .sup-drawer, .pos-modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=color]), select) {
+  min-height: var(--field-h); box-sizing: border-box;
+}
+:is(dialog, .modal, .sup-form, .sup-drawer) textarea { min-height: 72px; box-sizing: border-box; resize: vertical; }
+.modal-foot { flex-wrap: wrap; }
+.modal-foot .btn { white-space: nowrap; }
+/* Trên điện thoại cảm ứng: ô nhập ≥ 16px để iPhone không tự phóng to (đặt sau khối "gọn" để không bị ghi đè). */
+@media (max-width: 640px) and (hover: none) {
+  input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px !important; }
+  /* Chữ 16px cần ô cao ≥ 40px: bỏ chiều cao cứng (34px) của ô chọn ở thanh lọc để chữ không bị cắt chân. */
+  body select:not([multiple]), body input[type=date], body input[type=search] { height: auto; min-height: 40px; padding-block: 6px; }
+}
+/* Đầu trang trên điện thoại: tiêu đề giữ bề ngang, nhóm nút xuống hàng dưới khi không đủ chỗ (không ép tiêu đề thành cột hẹp). */
+@media (max-width: 850px) {
+  .page-head { flex-wrap: wrap; }
+  .page-head > :first-child { flex: 1 1 220px; min-width: 0; }
+}

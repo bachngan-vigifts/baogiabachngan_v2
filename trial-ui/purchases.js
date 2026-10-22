@@ -550,7 +550,6 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
   const ACTIONS = {
     submit: async () => {
-      if (!await confirmBox(`Gửi đơn ${current.ticketNumber} cho Manager duyệt giá? Sau khi gửi, Manager sẽ thấy đơn trong việc cần duyệt.`, { title: 'Gửi duyệt', ok: 'Gửi duyệt' })) return;
       try { current = await api(`/purchase-orders/${encodeURIComponent(current.id)}/submit`, 'POST', { revision: current.revision }); toast('Đã gửi Manager duyệt đơn mua.'); renderDetail(); load(); }
       catch (e) { toast(e.message || 'Không gửi duyệt được.', 'err'); }
     },

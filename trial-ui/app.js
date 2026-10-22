@@ -638,7 +638,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 // ---------------------------------------------------------------- điều hướng
 var posUi = null;
 var cashUi = null;
-const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();}});
+const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();},onChanged:()=>{loadNavigationBadges();tasksView().badge();}});
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving') });
@@ -4126,7 +4126,6 @@ document.addEventListener('click', async e => {
   const sub = e.target.closest('#order-submit');
   if (sub && sales.detail?.order) {
     const o = sales.detail.order, what = sales.detail.contract ? 'HĐKT' : 'đơn hàng';
-    if (!await confirmBox(`Đã xem kỹ ${what} ${sales.detail.contract?.contractNo || o.orderNo}? Gửi Manager duyệt.`, { title: 'Gửi duyệt', ok: 'Gửi duyệt' })) return;
     sub.disabled = true;
     try { await api('/orders/' + encodeURIComponent(o.id) + '/submit', 'POST', {}); toast(`Đã gửi Manager duyệt ${what}.`); openOrder(o.id); }
     catch (ex) { toast(ex.message, 'err'); sub.disabled = false; }

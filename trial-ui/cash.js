@@ -19,6 +19,8 @@ const kinds = {
 const entryName = r => /^Tên phiếu: ([^\r\n]{1,120})\n\n/.exec(r.reason || '')?.[1] || kinds[r.kind] || r.kind;
 const states = { posted: 'Đã ghi sổ', pending: 'Chờ duyệt', voided: 'Đã huỷ', explained: 'Đã giải trình', closed: 'Đã đóng' };
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+/** Ngày theo giờ Việt Nam của một thời điểm (thao tác 4h sáng 23/10 là 23/10, không phải 22/10 theo UTC). */
+const vnDay = at => at ? new Date(at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 const recLabel = { pending: 'Chờ nhân viên giải trình', explained: 'Chờ Manager duyệt', closed: 'Đã duyệt · đóng' };
 const recTone = { pending: 'warn', explained: 'info', closed: 'ok' };
 const REASONS = { counting: 'Đếm sai', wrong_change: 'Đưa nhầm tiền', small_change: 'Thiếu tiền lẻ', other: 'Khác', opening_cash: 'Chênh lệch tiền đầu ca' };
@@ -91,7 +93,7 @@ function table(headers) {
   t.append(h, body);
   return { t, body };
 }
-export function initCash({ root, api: request, user, toast, go, onShiftClosed = async () => {} }) {
+export function initCash({ root, api: request, user, toast, go, onShiftClosed = async () => {}, onChanged = () => {} }) {
   let summary = null,
     rows = [],
     periodTotals = { in: 0, out: 0, net: 0 },
@@ -355,7 +357,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
           button('Duyệt', () =>
             run(async () => {
               await api('/cash/entries/' + r.id + '/approve', 'POST', {});
-              await load();
+              await load(); onChanged();
             }),
           ),
         );
@@ -388,7 +390,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         ok.disabled = true; ok.textContent = 'Đang duyệt…';
         try { await api('/cash/entries/' + encodeURIComponent(r.id) + '/approve', 'POST', {}); }
         catch (e) { ok.disabled = false; ok.textContent = 'Duyệt phiếu'; throw e; }
-        m.close(); toast(`Đã duyệt ${r.entryNo} – đã tính vào két.`); await load();
+        m.close(); toast(`Đã duyệt ${r.entryNo} – đã tính vào két.`); await load(); onChanged();
       }), 'btn primary');
       m.foot.append(ok);
     }
@@ -449,7 +451,19 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     amount.input.inputMode = 'numeric'; amount.input.placeholder = '0'; reason.input.rows = 2;
     const grid = el('div', 'cash-form-grid');
     grid.append(labeled(adjustment ? 'Chiều điều chỉnh' : 'Tên phiếu', adjustment ? dir : kind), amount.box);
-    m.body.append(grid, reason.box, photo.box,
+    if (adjustment) {
+      // Nhập số tiền đếm thực tế → tự tính chiều + số chênh so với sổ (không phải tự trừ nhẩm).
+      const counted = field(`Tiền thực đếm trong két (sổ đang ghi ${money(summary.balance)})`, 'number'), result = el('p', 'cash-hint');
+      counted.input.min = '0'; counted.input.step = '1'; counted.input.inputMode = 'numeric'; counted.input.placeholder = 'Nhập để tự tính';
+      counted.input.addEventListener('input', () => {
+        if (counted.input.value === '') { result.textContent = ''; return; }
+        const diff = Number(counted.input.value) - Number(summary.balance || 0);
+        dir.value = diff >= 0 ? 'in' : 'out'; amount.input.value = diff ? String(Math.abs(diff)) : '';
+        result.textContent = diff ? `Chênh ${diff > 0 ? '+' : '−'}${money(Math.abs(diff))} → ${diff > 0 ? 'tăng' : 'giảm'} tiền két.` : 'Khớp sổ – không cần điều chỉnh.';
+      });
+      m.body.append(counted.box, result);
+    }
+    m.body.append(grid, reason.box, ...(adjustment ? [] : [photo.box]),
       el('p', 'cash-hint', adjustment
         ? 'Điều chỉnh chỉ sửa số dư theo sổ (kiểm kê lệch), không ghi thêm thu/chi tiền thật.'
         : `Từ ${money(summary.drawer.approvalThreshold)} phiếu chờ duyệt, chưa tính vào két. Manager được tự duyệt phiếu của mình.`));
@@ -468,7 +482,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         reconciliationId: recId,
       });
       m.close();
-      await load();
+      await load(); onChanged();
     });
   }
   async function compress(file) {
@@ -504,7 +518,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         reason: reason.input.value,
       });
       m.close();
-      await load();
+      await load(); onChanged();
     });
   }
   /** Cấu hình két: tên + ngưỡng duyệt (một hàng), số dư đầu kỳ tách khối riêng (chỉ nhập một lần). */
@@ -514,7 +528,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       threshold = field('Phiếu thu/chi từ số tiền này cần duyệt (VNĐ)', 'number', summary.drawer.approvalThreshold),
       opening = field('Tiền mặt thực có trong két lúc bắt đầu dùng (VNĐ)', 'number', ''),
       reason = field('Ghi chú (VD: kiểm đếm ngày 01/11)', 'text');
-    threshold.input.min = '1'; threshold.input.step = '1000'; threshold.input.inputMode = 'numeric';
+    threshold.input.min = '1'; threshold.input.step = '1'; threshold.input.inputMode = 'numeric';
     threshold.input.required = true;
     name.input.required = true;
     const grid = el('div', 'cash-form-grid'); grid.append(name.box, threshold.box);
@@ -709,8 +723,8 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
   /** Bước tiếp theo: chờ nhân viên của ca giải trình → chờ Manager duyệt → xong. */
   function recStep(r, me) {
     if (r.status === 'pending') return r.memberId === me ? { mine: true, action: 'Giải trình', text: 'Bạn cần giải trình' } : { text: 'Chờ ' + (r.memberName || 'nhân viên') + ' giải trình' };
-    if (r.status === 'explained') return { mine: !!summary.canManage, action: 'Xem & duyệt', text: 'Đã giải trình ' + dmy(String(r.explainedAt || '').slice(0, 10)) };
-    return { text: r.resolvedAt ? 'Đóng ' + dmy(r.resolvedAt.slice(0, 10)) : '' };
+    if (r.status === 'explained') return { mine: !!summary.canManage, action: 'Xem & duyệt', text: 'Đã giải trình ' + vnDay(r.explainedAt) };
+    return { text: r.resolvedAt ? 'Duyệt ' + vnDay(r.resolvedAt) : '' };
   }
   async function reconciliation(id) {
     const d = await api('/cash/reconciliations/' + id),
@@ -750,7 +764,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       m.body.append(note.box);
       submitForm(m, 'Duyệt giải trình & đóng', async () => {
         await api('/cash/reconciliations/' + id + '/close', 'POST', { reason: note.input.value });
-        m.close(); toast(`Đã duyệt ${r.reconciliationNo} – tra soát đã đóng.`); showUpdatedRec(r.id); await load();
+        m.close(); toast(`Đã duyệt ${r.reconciliationNo} – tra soát đã đóng.`); showUpdatedRec(r.id); await load(); onChanged();
       });
       action = true;
     } else if (r.status !== 'closed' && d.memberId === me) {
@@ -759,7 +773,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       m.body.append(explanation.box);
       submitForm(m, 'Gửi giải trình', async () => {
         await api('/cash/reconciliations/' + id + '/explain', 'POST', { explanation: explanation.input.value });
-        m.close(); toast(`Đã gửi giải trình ${r.reconciliationNo} – chờ Manager duyệt.`); showUpdatedRec(r.id); await load();
+        m.close(); toast(`Đã gửi giải trình ${r.reconciliationNo} – chờ Manager duyệt.`); showUpdatedRec(r.id); await load(); onChanged();
       });
       action = true;
     }

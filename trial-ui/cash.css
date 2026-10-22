@@ -274,3 +274,4 @@ button.sr-card-head { cursor: pointer; } button.sr-card-head .sr-aside { color: 
   .cash-dialog-foot .btn { flex: 1 1 calc(50% - 10px); }
   .cash-dialog-foot .btn.ghost { flex-basis: 100%; margin: 0; }
 }
+.cash-field input, .cash-field textarea, .cash-field select { font-weight: 400; }

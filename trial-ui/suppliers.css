@@ -122,3 +122,12 @@
 .pur-catalog-product > span { display: flex; flex-direction: column; gap: 3px; }
 .pur-catalog-pager { display: flex; justify-content: flex-end; gap: 10px; }
 @media(max-width: 600px) { .pur-mode-choices, .pur-catalog-list { grid-template-columns: 1fr; } .pur-mode-body { padding: 18px; } }
+
+/* Mua bổ sung: thẻ sản phẩm là <label> trong .sup-form (grid) – giữ ô tick bên trái, chữ bên phải. */
+.sup-form .pur-catalog-product { display: flex; }
+/* Ô nhập trong biểu mẫu đơn mua / NCC cao bằng chuẩn chung. */
+.sup-form input:not([type=checkbox]):not([type=radio]):not([type=file]), .sup-form select { min-height: var(--field-h, 42px); box-sizing: border-box; }
+/* Xin điều chuyển kho: mỗi dòng Mã hàng | SL | ✕ trên một hàng. */
+.transfer-lines { display: grid; gap: 8px; }
+.transfer-lines > .row-gap { display: grid; grid-template-columns: minmax(0, 1fr) 90px 40px; gap: 8px; align-items: center; }
+.sup-drawer-foot-sticky { position: sticky; bottom: -18px; margin: 0 -20px -18px; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; }
