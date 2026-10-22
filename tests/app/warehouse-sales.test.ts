@@ -61,8 +61,10 @@ test('đơn / HĐKT: chỉ bán từ kho của chức vụ; duyệt trừ kho b�
   assert.deepEqual(opts.warehouses.map((w: any) => w.id), ['vig']);
   assert.equal(opts.warehouses[0].lines[0].stock, 50, 'tồn theo sổ kho, không theo Sapo');
   assert.equal(await bal(s, 'vig'), 50, 'nháp chưa trừ');
+  assert.equal((await s.call(`/orders/${orderId}/packing`, s.emp)).data.soldWarehouseId, null, 'nháp chưa trừ kho → hộp đóng gói tính tồn như thường');
   assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   assert.equal(await bal(s, 'vig'), 40, 'duyệt → trừ 10 ở kho bán');
+  assert.equal((await s.call(`/orders/${orderId}/packing`, s.emp)).data.soldWarehouseId, 'vig', 'hộp đóng gói biết hàng của đơn đã trừ ở kho bán (cộng lại, không báo thiếu giả)');
   // Hàng đã trừ lúc duyệt: phiếu đóng gói xuất đúng kho bán, không trừ lần hai.
   const [line] = await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   await s.db.insert(packingSlips).values({ id: 'ps1', slipNo: 'PĐG1', orderId, status: 'sent', createdBy: 'emp', createdAt: now, updatedAt: now });

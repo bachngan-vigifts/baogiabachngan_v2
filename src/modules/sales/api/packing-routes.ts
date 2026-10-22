@@ -165,6 +165,8 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
           perCarton: c?.perCarton ?? null, cartonWeight: c?.cartonWeight ?? null, suggestion: s.text, cartonSize: s.cartonSize, weight: s.weight }; }),
       supplierChoices, schedules, scheduled: await hasDeliverySchedule(db, order.id),
       canRequest: !['cancelled', 'draft', 'delivered'].includes(order.status),
+      // Đơn CRM đã trừ kho bán lúc duyệt: hộp yêu cầu đóng gói tính tồn = tồn kho bán + phần đơn này đã trừ mà chưa đóng (không báo thiếu giả).
+      soldWarehouseId: order.channel === 'crm' && order.warehouseId && await saleMovesPosted(db, order.id) ? order.warehouseId : null,
       // Hộp "Yêu cầu đóng gói - Giao hàng": có phí in → mặc định giao về xưởng in; không thì giao thẳng cho khách.
       delivery: { hasPrintFee: await hasPrintFee(db, order.quoteId), customer: { name: order.customerName, address: order.address, ...orderRecipient(order), phone: orderRecipient(order).receiverPhone },
         workshops: await workshopList(db), carriers: await db.select({ name: shippingCarriers.name, phone: shippingCarriers.phone }).from(shippingCarriers).orderBy(asc(shippingCarriers.name)) },
