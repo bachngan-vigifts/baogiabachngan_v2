@@ -298,7 +298,7 @@ async function apiRequest(path, method = 'GET', body) {
   }
   if (state.user && sameSession) {
     if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
-    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|purchase-orders|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) { dataRefresh.saved(); queueMicrotask(() => { loadNavigationBadges(); dataRefresh.tick(); }); }
+    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|purchase-orders|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) dataRefresh.afterWrite(); // một lần làm mới (gồm số đếm menu) sau ~1 giây, không đọc lại 7–20 API nối đuôi
   }
   return data;
 }
@@ -2484,8 +2484,15 @@ function idb(mode, fn) {
   });
 }
 function useSnapshot(snap) {
-  catalog.version = snap.version; catalog.observedAt = snap.observedAt; catalog.items = hydrateSnapshot(snap);
+  catalog.raw = snap; catalog.version = snap.version; catalog.observedAt = snap.observedAt; catalog.items = hydrateSnapshot(snap);
   applyCatalogMeta({ policies: snap.policies, warehouses: snap.warehouses });
+}
+/** Bản chụp + phần tồn kho mới (GET /catalog-snapshot trả `stockOnly`): thay cột tồn (cuối mỗi dòng) và thời điểm tồn của từng mã. */
+function mergeSnapshotStock(raw, delta) {
+  const stock = new Map(delta.stock.map(([sku, qty, at]) => [sku, [qty, at]])), empty = raw.warehouses.map(() => null), at = raw.columns.indexOf('stockUpdatedAt');
+  return { ...raw, version: delta.version, observedAt: delta.observedAt, products: raw.products.map(row => {
+    const s = stock.get(row[0]), next = [...row]; next[next.length - 1] = s ? s[0] : empty; next[at] = s ? s[1] : null; return next;
+  }) };
 }
 /** Lấy bản chụp danh mục: bộ nhớ → IndexedDB (mở trang là có) → máy chủ (chỉ tải lại khi Sapo có thay đổi). */
 function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
@@ -2494,7 +2501,9 @@ function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
   catalog.loading = (async () => {
     if (!catalog.items) { try { const saved = await idb('readonly', st => st.get(IDB.key)); if (saved?.version) useSnapshot(saved); } catch { /* trình duyệt chặn IndexedDB */ } }
     try {
-      const d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      let d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      // Chỉ tồn kho đổi: ghép tồn mới vào bản đang có (không tải lại ~3 MB danh mục). Thiếu bản gốc thì tải đủ.
+      if (d.stockOnly) d = catalog.raw ? mergeSnapshotStock(catalog.raw, d) : await api('/catalog-snapshot');
       catalog.checkedAt = Date.now();
       if (!d.unchanged) {
         useSnapshot(d);

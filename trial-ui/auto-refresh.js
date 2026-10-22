@@ -33,25 +33,36 @@ export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, pr
   }
   function request() { syncRoute(); pending = true; }
   function saved() { draft = false; request(); }
+  /**
+   * Sau khi chính người dùng ghi dữ liệu: biết chắc có thay đổi nên KHÔNG đọc lại từng đường dẫn để so sánh,
+   * chỉ làm mới một lần, chờ một nhịp để thao tác vừa xong tự tải lại màn hình của nó trước (không tranh kết nối).
+   */
+  let afterWriteTimer;
+  function afterWrite(delay = 1200) { saved(); clearTimeout(afterWriteTimer); afterWriteTimer = setTimeout(() => { flush(); }, delay); }
   async function tick() {
     if (busy || !enabled() || doc.hidden) return;
     syncRoute();
     busy = true;
     const requestGeneration = generation, requestKey = key, paths = [...new Set([...primaryPaths(), ...[...records.keys()].reverse()])].slice(0, 20);
     try {
-      for (const path of paths) {
-        if (requestGeneration !== generation || requestKey !== routeKey() || !enabled()) break;
-        const previous = records.get(path);
-        checking.add(path);
-        try {
-          const data = await read(path);
-          if (requestGeneration !== generation || requestKey !== routeKey() || !enabled()) continue;
-          const next = signature(data);
-          records.set(path, next);
-          if (previous !== undefined && previous !== next) pending = true;
-        } catch { /* Lỗi mạng không được coi là dữ liệu bị xoá; kiểm tra lại ở lượt sau. */ }
-        finally { checking.delete(path); }
-      }
+      // Đọc song song tối đa 4 đường dẫn một lúc (trước đây tuần tự: 7–20 lượt gọi nối đuôi nhau sau mỗi lần lưu).
+      const queue = [...paths];
+      const worker = async () => {
+        for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+          if (requestGeneration !== generation || requestKey !== routeKey() || !enabled()) return;
+          const previous = records.get(path);
+          checking.add(path);
+          try {
+            const data = await read(path);
+            if (requestGeneration !== generation || requestKey !== routeKey() || !enabled()) continue;
+            const next = signature(data);
+            records.set(path, next);
+            if (previous !== undefined && previous !== next) pending = true;
+          } catch { /* Lỗi mạng không được coi là dữ liệu bị xoá; kiểm tra lại ở lượt sau. */ }
+          finally { checking.delete(path); }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, paths.length) }, worker));
       if (requestGeneration === generation && requestKey === routeKey()) await flush();
     } finally { busy = false; }
   }
@@ -71,5 +82,5 @@ export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, pr
   win.addEventListener('hashchange', syncRoute);
   function start() { draft = false; if (!timer) timer = schedule(tick, interval); }
   function stop() { generation++; cancel(timer); timer = undefined; records.clear(); pending = false; draft = false; warned = false; }
-  return { observe, request, saved, tick, start, stop };
+  return { observe, request, saved, afterWrite, tick, start, stop };
 }

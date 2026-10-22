@@ -33,6 +33,8 @@ export interface NotifyInput {
   actorId?: string | null; data?: Record<string, unknown>;
   /** false = chỉ đẩy Web Push, không lưu vào chuông thông báo (vd. tin nhắn chat – có hộp thư riêng). */
   persist?: boolean;
+  /** true = chờ gửi xong mới trả lời (trang "Gửi thử" cần kết quả từng thiết bị). Mặc định gửi nền. */
+  wait?: boolean;
 }
 
 /**
@@ -88,6 +90,17 @@ export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boole
     try { await env.db.insert(webNotifications).values(note); }
     catch (e) { console.error('notify insert failed', note.eventType, e instanceof Error ? e.message : e); return { ok: false, sent: 0, results: [] }; }
   }
+  // Web Push gọi dịch vụ ngoài (chậm 0,3–1,5 giây / thiết bị): chạy nền sau khi trả lời để nút thao tác không phải chờ.
+  // Bản ghi chuông thông báo ở trên vẫn lưu ngay. Không có waitUntil (test / máy chủ thử) thì chờ như cũ.
+  if (env.waitUntil && !n.wait) {
+    env.waitUntil(pushTo(env, n, note).catch(e => console.error('web push background failed', e instanceof Error ? e.message : e)));
+    return { ok: true, sent: 0, id: note.id, results: [] };
+  }
+  return pushTo(env, n, note);
+}
+
+type StoredNote = { id: string; eventType: string; title: string; body: string; url: string; targetRole: string | null; targetMemberId: string | null };
+async function pushTo(env: StaffEnv, n: NotifyInput, note: StoredNote): Promise<{ ok: boolean; sent: number; id?: string; results: PushResult[] }> {
   const results: PushResult[] = [];
   try {
     const keys = await vapidKeys(env);
@@ -161,7 +174,7 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
   router.post('/push/test', async c => {
     const me = (c.state.session as SessionState).member;
     const [d] = await c.env.db.select({ n: sql<number>`count(*)` }).from(webPushSubscriptions).where(and(eq(webPushSubscriptions.memberId, me.id), isNull(webPushSubscriptions.disabledAt)));
-    const r = await notify(c.env, { eventType: 'push_test', title: 'Thông báo thử', body: 'Máy này đã nhận được thông báo đẩy từ Bách Ngân.', url: '/index.html', targetMemberId: me.id, actorId: me.id, persist: false });
+    const r = await notify(c.env, { eventType: 'push_test', title: 'Thông báo thử', body: 'Máy này đã nhận được thông báo đẩy từ Bách Ngân.', url: '/index.html', targetMemberId: me.id, actorId: me.id, persist: false, wait: true });
     const devs = r.results.some(x => x.subscriptionId) ? await c.env.db.select({ id: webPushSubscriptions.id, userAgent: webPushSubscriptions.userAgent }).from(webPushSubscriptions)
       .where(inArray(webPushSubscriptions.id, r.results.map(x => x.subscriptionId).filter((x): x is string => !!x))) : [];
     return json({ devices: Number(d?.n ?? 0), sent: r.sent,
