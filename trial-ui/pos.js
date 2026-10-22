@@ -222,6 +222,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const chosen = s => s.options[s.selectedIndex]?.textContent || '';
     return {
       province, district, ward, retry, loadProvinces, chosen,
+      prefill: async (value = {}) => {
+        await loadProvinces();
+        if (!value.provinceId || ![...province.select.options].some(x => x.value === String(value.provinceId))) return;
+        province.select.value = String(value.provinceId);
+        fill(district.select, await loadLocations({ provinceId: value.provinceId }), 'Chọn Quận / Huyện');
+        if (!value.districtId || ![...district.select.options].some(x => x.value === String(value.districtId))) return;
+        district.select.value = String(value.districtId);
+        fill(ward.select, await loadLocations({ districtId: value.districtId }), 'Chọn Phường / Xã');
+        if (value.wardCode && [...ward.select.options].some(x => x.value === String(value.wardCode))) ward.select.value = String(value.wardCode);
+      },
       complete: () => !!(province.select.value && district.select.value && ward.select.value),
       fullAddress: (line) => [line.trim(), chosen(ward.select), chosen(district.select), chosen(province.select)].filter(Boolean).join(', '),
     };
@@ -606,7 +616,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     m.dlg.classList.add('pos-step-modal');
     const intro = el('p', 'pos-note pos-step-intro', 'Thông tin khách, điện thoại, sản phẩm, COD và khối lượng được giữ nguyên. Chỉ cần chọn lại địa chỉ giao hàng.');
     const serverError = el('p', 'error pos-step-error'); serverError.setAttribute('role', 'alert');
-    const address = field('Số nhà, tên đường', 'text', o.address || '');
+    const address = field('Số nhà, tên đường', 'text', o.ghnAddress?.addressLine || o.address || '');
     address.input.required = true; address.input.placeholder = 'Ví dụ: 123 Nguyễn Trãi';
     const ghn = ghnLocationFields(async (extra = {}) => (await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'locations', ...extra })).locations);
     const editView = el('div', 'pos-step-body'), section = el('section', 'pos-step-section'), grid = el('div', 'pos-step-grid');
@@ -652,7 +662,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       done.show(); await run(loadOrderBoard);
     });
     m.show();
-    run(ghn.loadProvinces);
+    run(() => ghn.prefill(o.ghnAddress || {}));
   }
   let printingTemporary = false;
   async function printTemporary() {

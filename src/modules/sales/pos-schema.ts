@@ -158,6 +158,7 @@ export const webStoreOrders = pgTable('web_store_orders', {
   phone: text('phone').notNull().default(''),
   email: text('email').notNull().default(''),
   address: text('address').notNull().default(''),
+  ghnAddressSnapshot: text('ghn_address_snapshot').notNull().default('{}'),
   total: doublePrecision('total').notNull().default(0),
   currency: text('currency').notNull().default('VND'),
   paymentMethod: text('payment_method').notNull().default(''),

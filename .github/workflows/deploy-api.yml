@@ -6,7 +6,7 @@ name: Triển khai API
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'supabase/**', 'package-lock.json', '.github/workflows/deploy-api.yml']
+    paths: ['src/**', 'supabase/**', 'migrations/postgres/**', 'package-lock.json', '.github/workflows/deploy-api.yml']
   workflow_dispatch:
 concurrency: deploy-api
 jobs:
@@ -39,6 +39,7 @@ jobs:
           tests/app/invoice-tasks.test.ts
           tests/app/pos-cod-deposit.test.ts
           tests/app/pos-ghn-sync.test.ts
+          tests/app/web-order-ghn-address.test.ts
           tests/app/pos-notifications.test.ts
           tests/db/pos-order-flow-access.test.ts
           tests/app/pos-order-flow.test.ts
@@ -91,7 +92,7 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != ''
         shell: bash
         run: |
-          query="$(<migrations/postgres/20261022030000_pos_delivery_ghn_tracking.sql)"$'\n'"$(<supabase/ghn-pos-lock-cron.sql)"
+          query="$(<migrations/postgres/20261022030000_pos_delivery_ghn_tracking.sql)"$'\n'"$(<migrations/postgres/20261022204500_web_order_ghn_address.sql)"$'\n'"$(<supabase/ghn-pos-lock-cron.sql)"
           payload=$(jq -n --arg query "$query" '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
@@ -112,3 +113,9 @@ jobs:
           if [ "$(echo "$response" | jq -r '.ok')" != 'true' ]; then
             echo "::warning::Đồng bộ GHN chạy xong nhưng có mã vận đơn cần kiểm tra."
           fi
+      - name: Bổ sung địa chỉ GHN cho đơn Web Lock cũ
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != '' && env.WEB_ORDER_ACTION_TOKEN != ''
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 600 \
+            -X POST "https://$PROJECT_REF.supabase.co/functions/v1/baogia-v2-api/api/staff/integrations/woocommerce/lock/backfill-addresses" \
+            -H "Authorization: Bearer $SAPO_SYNC_TOKEN" -H 'Content-Type: application/json' --data '{}'

@@ -61,6 +61,12 @@ const ghnLocationCache = new Map<string, { expires: number; locations: unknown[]
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
 const cachedGhnLocations = (key: string) => { const hit = ghnLocationCache.get(key); if (!hit || hit.expires < Date.now()) { ghnLocationCache.delete(key); return null; } return hit.locations; };
 const rememberGhnLocations = (key: string, locations: unknown[]) => { ghnLocationCache.set(key, { expires: Date.now() + 24 * 60 * 60 * 1000, locations }); return locations; };
+const completeGhnAddress = (raw: unknown) => {
+  const x = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const address = { addressLine: posText(x.addressLine, 300), provinceId: Math.max(0, Number(x.provinceId) || 0), provinceName: posText(x.provinceName, 100),
+    districtId: Math.max(0, Number(x.districtId) || 0), districtName: posText(x.districtName, 100), wardCode: posText(x.wardCode, 50), wardName: posText(x.wardName, 100) };
+  return address.addressLine && address.provinceId && address.provinceName && address.districtId && address.districtName && address.wardCode && address.wardName ? address : null;
+};
 type GhnPair = [number | string, string];
 const bundledGhnLocations = (provinceId: number, districtId: number) => {
   const data = ghnLocations as unknown as { p: GhnPair[]; d: Record<string, GhnPair[]>; w: Record<string, GhnPair[]> };
@@ -138,7 +144,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const register = regs.find(r => r.name.trim().toLowerCase() === wantedName.toLowerCase());
     if (!register) throw new AppError(409, `CRM chưa có quầy ${wantedName}.`);
     const billing = b.billing && typeof b.billing === 'object' ? b.billing as Record<string, unknown> : {};
-    const shipping = b.shipping && typeof b.shipping === 'object' ? b.shipping as Record<string, unknown> : billing;
+    const rawShipping = b.shipping && typeof b.shipping === 'object' ? b.shipping as Record<string, unknown> : {};
+    const hasShippingAddress = [rawShipping.address_1, rawShipping.address_2, rawShipping.city, rawShipping.state].some(x => String(x ?? '').trim());
+    const shipping = hasShippingAddress ? rawShipping : billing;
     const fullName = posText([billing.first_name, billing.last_name].filter(Boolean).join(' '), 200) || 'Khách lẻ';
     const address = posText([shipping.address_1, shipping.address_2, shipping.city, shipping.state].filter(Boolean).join(', '), 1000);
     const lines = Array.isArray(b.line_items) ? b.line_items.slice(0, 300).map((x: Record<string, unknown>) => ({
@@ -148,6 +156,21 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (Array.isArray(b.meta_data)) for (const row of b.meta_data) {
       if (row && typeof row === 'object') metadata.set(posText((row as Record<string, unknown>).key, 200), (row as Record<string, unknown>).value);
     }
+    const meta = (...keys: string[]) => {
+      for (const key of keys) { const value = metadata.get(key); if (value !== undefined && value !== null && String(value).trim()) return value; }
+      return '';
+    };
+    // Checkout Lock lưu mã GHN theo shipping/billing. Giữ cả fallback tên cũ để các đơn trước đây vẫn tự điền được.
+    const addressPrefix = hasShippingAddress ? 'shipping' : 'billing';
+    const ghnAddress = {
+      addressLine: posText(shipping.address_1, 300),
+      provinceId: Math.max(0, Number(meta(`_lnl_ghn_${addressPrefix}_province_id`, '_lnl_ghn_province_id')) || 0),
+      provinceName: posText(meta(`_lnl_ghn_${addressPrefix}_province_name`, '_lnl_ghn_province_name') || shipping.state, 100),
+      districtId: Math.max(0, Number(meta(`_lnl_ghn_${addressPrefix}_district_id`, '_lnl_ghn_district_id')) || 0),
+      districtName: posText(meta(`_lnl_ghn_${addressPrefix}_district_name`, '_lnl_ghn_district_name') || shipping.city, 100),
+      wardCode: posText(meta(`_lnl_ghn_${addressPrefix}_ward_code`, '_lnl_ghn_ward_code'), 50),
+      wardName: posText(meta(`_lnl_ghn_${addressPrefix}_ward_name`, '_lnl_ghn_ward_name') || shipping.address_2, 100),
+    };
     const financials = webOrderFinancials(b);
     // Woo's paid timestamp is explicit evidence. Neither order status nor payment method proves collection.
     const hasPayment = Object.hasOwn(b, 'date_paid_gmt') || Object.hasOwn(b, 'date_paid');
@@ -166,6 +189,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const now = posNow(), fields = {
       orderNo: number, registerId: register.id, status: posText(b.status, 50) || 'pending',
       customerName: fullName, phone: posText(billing.phone, 60), email: posText(billing.email, 200), address,
+      ghnAddressSnapshot: JSON.stringify(ghnAddress),
       total: Math.max(0, Number(b.total) || 0), currency: posText(b.currency, 20) || 'VND', paymentMethod: posText(b.payment_method_title ?? b.payment_method, 200),
       ...(snapshot ? {financialSnapshot: JSON.stringify(snapshot)} : {}),
       lines: JSON.stringify(lines), orderedAt: posText(b.date_created_gmt ?? b.date_created, 60) || now, updatedAt: posText(b.date_modified_gmt ?? b.date_modified, 60) || now,
@@ -182,7 +206,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if(!Array.isArray(b.line_items)) delete updateFields.lines;
     if(b.date_created_gmt === undefined && b.date_created === undefined) delete updateFields.orderedAt;
     if(b.billing === undefined){delete updateFields.customerName;delete updateFields.phone;delete updateFields.email;}
-    if(b.shipping === undefined && b.billing === undefined) delete updateFields.address;
+    if(b.shipping === undefined && b.billing === undefined) { delete updateFields.address; delete updateFields.ghnAddressSnapshot; }
     if(!Array.isArray(b.meta_data)){delete updateFields.ghnOrderCode;delete updateFields.ghnStatus;delete updateFields.ghnSortCode;delete updateFields.ghnFee;}
     const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
       .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
@@ -279,6 +303,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           return ({ ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
+          ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -383,15 +408,37 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const key = ghnCacheKey(order.source, bridgeInput.provinceId as number, bridgeInput.districtId as number);
       return json({ ok: true, locations: rememberGhnLocations(key, Array.isArray(result.locations) ? result.locations : []) });
     }
+    const confirmedAddress = action === 'confirm' && bridgeInput.addressLine ? {
+      addressLine: bridgeInput.addressLine, provinceId: bridgeInput.provinceId, provinceName: bridgeInput.provinceName,
+      districtId: bridgeInput.districtId, districtName: bridgeInput.districtName, wardCode: bridgeInput.wardCode, wardName: bridgeInput.wardName,
+    } : completeGhnAddress(result.ghnAddress);
     const fields = { status: posText(result.status, 50) || (action === 'complete' ? 'completed' : action === 'cancel' ? 'cancelled' : order.status), ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
       ghnStatus: posText(result.ghnStatus, 100) || order.ghnStatus, ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
-      ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow() };
+      ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow(),
+      ...(confirmedAddress ? { address: [confirmedAddress.addressLine, confirmedAddress.wardName, confirmedAddress.districtName, confirmedAddress.provinceName].filter(Boolean).join(', '), ghnAddressSnapshot: JSON.stringify(confirmedAddress) } : {}) };
     await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
     await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
       data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}) } });
     return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
   }, 'business');
+  router.post('/integrations/woocommerce/lock/backfill-addresses', async c => {
+    if (!c.env.webOrderAction?.token || !c.env.webOrderAction.lockUrl) throw new AppError(503, 'Chưa cấu hình kết nối Web Lock.');
+    const rows = await c.env.db.select().from(webStoreOrders).where(eq(webStoreOrders.source, 'lock')).orderBy(desc(webStoreOrders.updatedAt));
+    let updated = 0, skipped = 0; const errors: { orderNo: string; error: string }[] = [];
+    for (const order of rows.slice(0, 1000)) {
+      try {
+        const response = await (c.env.webOrderAction.fetch ?? fetch)(c.env.webOrderAction.lockUrl, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ orderId: order.externalId, action: 'refresh' }) });
+        const result = await response.json() as Record<string, unknown>;
+        if (!response.ok) throw new Error(posText(result.message, 300) || `HTTP ${response.status}`);
+        const address = completeGhnAddress(result.ghnAddress);
+        if (!address) { skipped++; continue; }
+        await c.env.db.update(webStoreOrders).set({ address: [address.addressLine, address.wardName, address.districtName, address.provinceName].join(', '), ghnAddressSnapshot: JSON.stringify(address), updatedAt: posText(result.updatedAt, 60) || order.updatedAt }).where(eq(webStoreOrders.id, order.id));
+        updated++;
+      } catch (e) { errors.push({ orderNo: order.orderNo, error: e instanceof Error ? e.message.slice(0, 300) : 'Lỗi không xác định' }); }
+    }
+    return json({ ok: errors.length === 0, checked: Math.min(rows.length, 1000), updated, skipped, errors });
+  }, 'sapo-sync');
   router.post('/pos/ghn/locations', async c => {
     const m = member(c); posPermission(m);
     const input = await readJson(c.req, 2000), registerId = posText(input.registerId, 100);
