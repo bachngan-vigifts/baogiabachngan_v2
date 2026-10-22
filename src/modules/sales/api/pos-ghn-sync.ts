@@ -82,16 +82,22 @@ async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: string,
 }
 
 export async function syncPosLockGhn(env: StaffEnv) {
-  const rows = await env.db.select({ id: deliveries.id, code: deliveries.trackingCode }).from(deliveries)
+  // Mỗi lượt tối đa 100 chuyến: chuyến lâu chưa kiểm trước (xoay vòng, không bỏ sót khi có nhiều hơn 100).
+  const rows = await env.db.select({ id: deliveries.id, code: deliveries.trackingCode, orderNo: salesOrders.orderNo }).from(deliveries)
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
     .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
     .where(and(eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'cod'), sql`lower(${posRegisters.name}) like '%lock%'`,
-      sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned', 'in_transit', 'failed']))).limit(100);
-  let updated = 0; const errors: { code: string; message: string }[] = [];
+      sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned', 'in_transit', 'failed'])))
+    .orderBy(sql`${deliveries.trackingUpdatedAt} asc nulls first`).limit(100);
+  let updated = 0; const errors: { code: string; orderNo: string; message: string }[] = [];
   for (const row of rows) try {
     const state = await ghnDetail(env, row.code);
     if (await applyGhnStatus(env, row.id, state.status, state.updatedAt)) updated++;
-  } catch (error) { errors.push({ code: row.code, message: error instanceof Error ? error.message : 'Lỗi GHN' }); }
+  } catch (error) {
+    errors.push({ code: row.code, orderNo: row.orderNo, message: error instanceof Error ? error.message : 'Lỗi GHN' });
+    // Ghi lại lúc kiểm để lượt sau xoay sang chuyến khác (mã sai không chặn mãi đầu hàng đợi).
+    await env.db.update(deliveries).set({ trackingUpdatedAt: new Date().toISOString() }).where(eq(deliveries.id, row.id));
+  }
   return { ok: errors.length === 0, checked: rows.length, updated, errors };
 }
 

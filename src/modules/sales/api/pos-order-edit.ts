@@ -61,6 +61,8 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
       if (saleFlowOf(order.posSnapshot)) throw new AppError(409,'Đơn cọc/trả trước giữ nguyên giá, chiết khấu và số lượng.');
       await assertNoReturnActivity(db,order.id);
       const active = ships.filter(s => s.status !== 'cancelled');
+      // Đã có vận đơn GHN: GHN giữ tiền thu hộ cũ → không đổi SL / giá ở CRM (thu sai tiền). Huỷ chuyến (huỷ luôn vận đơn) rồi tạo lại.
+      if (active.some(s => s.trackingCode)) throw new AppError(409, 'Đơn đã có vận đơn GHN: không đổi số lượng / giá (GHN vẫn thu hộ số cũ). Huỷ chuyến giao (huỷ luôn vận đơn GHN) rồi lập đơn mới, hoặc sửa tiền thu hộ trên GHN.', 'GHN_SHIPMENT_EXISTS');
       if (order.fulfillmentMode !== 'cod' || receipts.length || oldLines.some(l => l.deliveredQty > 0) || packs.length || contracts.length || active.some(s => s.status !== 'planned') || active.length > 1)
         throw new AppError(409, 'Chỉ đổi số lượng/giá khi COD chưa xuất hàng, chưa thu và có tối đa một chuyến chờ giao. Phiếu đã đóng gói cần xử lý trước.');
       if (active.length) {
@@ -119,6 +121,9 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
     const editable = ships.filter(s => ['planned', 'in_transit'].includes(s.status));
     if (!editable.length && ships.some(s => s.status === 'delivered' && (s.address !== address || s.receiverName !== receiverName || s.receiverPhone !== receiverPhone)))
       throw new AppError(409, 'Chuyến đã giao: không sửa thông tin giao hàng lịch sử.');
+    // Đã có vận đơn GHN: đổi người nhận / địa chỉ ở CRM không đổi trên GHN → shipper giao theo thông tin cũ. Sửa trên GHN trước.
+    if (editable.some(s => s.trackingCode && (s.address !== address || s.receiverName !== receiverName || s.receiverPhone !== receiverPhone)))
+      throw new AppError(409, 'Đơn đã có vận đơn GHN: sửa người nhận / địa chỉ trên trang GHN (CRM không tự đổi vận đơn), hoặc huỷ chuyến giao rồi tạo lại.', 'GHN_SHIPMENT_EXISTS');
     await db.update(deliveries).set({ address, receiverName, receiverPhone, updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
   }
   snapshot.customer = fields.customerName;

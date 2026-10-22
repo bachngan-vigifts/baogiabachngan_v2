@@ -426,7 +426,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     refreshPay();
   }
   const orderLabels = {
-    all: 'Tất cả đơn', pending: 'Chờ xử lý', packing: 'Đang đóng hàng',
+    all: 'Tất cả đơn', web: 'Đơn web', pending: 'Chờ xử lý', packing: 'Đang đóng hàng',
     waiting_delivery: 'Đợi giao', completed: 'Hoàn thành', cancelled: 'Đã hủy',
   };
   async function loadOrderBoard() {
@@ -490,11 +490,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     summary.append(el('p', 'pos-note', 'Không tính đơn đã hủy. Tổng giá trị đơn, chưa trừ trả hàng/hoàn tiền. Đơn web chưa gắn nhân viên bán.'));
     box.append(summary);
     const cards = el('div', 'pos-order-counts');
-    for (const id of ['all', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled']) {
-      const b = button('', 'pos-order-count' + (st.orderStatus === id ? ' active' : ''), () => {
+    // "Đơn web": đơn website còn cần xử lý (chưa hoàn thành / chưa huỷ) – có đơn thì số đỏ nhấp nháy để nhân viên thấy ngay.
+    for (const id of ['all', 'web', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled']) {
+      const n = d.counts[id] || 0, alert = id === 'web' && n > 0;
+      const b = button('', 'pos-order-count' + (st.orderStatus === id ? ' active' : '') + (id === 'web' ? ' pos-order-web' : '') + (alert ? ' has-alert' : ''), () => {
         st.orderStatus = id; run(loadOrderBoard);
       });
-      b.append(el('strong', '', d.counts[id] || 0), el('span', '', orderLabels[id]));
+      b.append(el('strong', alert ? 'pos-web-badge' : '', n), el('span', '', orderLabels[id]));
+      if (alert) b.setAttribute('aria-label', `Đơn web: ${n} đơn cần xử lý`);
       cards.append(b);
     }
     box.append(cards);
@@ -562,13 +565,40 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     if (o.actionsAvailable) actions.append(busyButton('Cập nhật trạng thái', 'btn secondary', 'Đang cập nhật…', async () => {
       await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'refresh' }); m.close(); toast('Đã cập nhật trạng thái đơn.', 'ok'); await loadOrderBoard();
     }));
-    if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) actions.append(busyButton('Huỷ đơn', 'btn danger', 'Đang huỷ…', async () => {
-      if (!await confirmBox(`Huỷ đơn ${o.orderNo}${o.ghnOrderCode ? ' và vận đơn GHN ' + o.ghnOrderCode : ''}?`, { title: 'Huỷ đơn website', ok: 'Huỷ đơn', danger: true })) return;
-      await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'cancel' }); m.close(); toast('Đã huỷ đơn' + (o.ghnOrderCode ? ' và vận đơn GHN.' : '.'), 'ok'); await loadOrderBoard();
-    }));
+    if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) {
+      actions.append(busyButton('Hoàn thành', 'btn primary', 'Đang hoàn thành…', async () => {
+        if (!await confirmBox(`Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;
+        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'complete' }); m.close(); toast('Đã hoàn thành đơn ' + o.orderNo + '.', 'ok'); await loadOrderBoard();
+      }));
+      actions.append(button('Huỷ đơn', 'btn danger', () => { m.close(); cancelWebOrder(o); }));
+    }
     actions.append(button('Đóng', 'btn secondary', m.close));
     m.body.append(actions);
     m.show();
+  }
+  /** Huỷ đơn website: bắt buộc lý do (≥ 3 ký tự) – gửi website + ghi nhật ký. Form khoá trong lúc gửi; lỗi thì giữ lý do để gửi lại. */
+  function cancelWebOrder(o) {
+    const m = formModal('Huỷ đơn web · ' + o.orderNo);
+    const reason = el('textarea'), box = el('label', 'pos-field'), error = el('p', 'error');
+    reason.rows = 3; reason.maxLength = 500; reason.required = true; reason.placeholder = 'Ví dụ: Khách đổi ý, hết hàng, trùng đơn…';
+    reason.setAttribute('aria-label', 'Lý do huỷ đơn'); error.setAttribute('role', 'alert');
+    box.append(el('span', '', 'Lý do huỷ (bắt buộc)'), reason);
+    const submit = el('button', 'btn danger', 'Huỷ đơn'); submit.type = 'submit';
+    const back = button('Quay lại', 'btn secondary', () => { if (!m.dlg.dataset.busy) { m.close(); showWebOrder(o); } });
+    const foot = el('div', 'pos-actions'); foot.append(back, submit);
+    m.form.append(el('p', '', o.customerName + ' · ' + money(o.total) + (o.ghnOrderCode ? ' · vận đơn GHN ' + o.ghnOrderCode : '')), box, error, foot);
+    m.form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (m.dlg.dataset.busy) return;
+      const text = reason.value.trim();
+      if (text.length < 3) { error.textContent = 'Nhập lý do huỷ đơn (ít nhất 3 ký tự).'; reason.focus?.(); return; }
+      error.textContent = ''; m.lock(true, submit, 'Đang huỷ…');
+      try {
+        await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'cancel', reason: text });
+        m.lock(false, submit); m.close(); toast('Đã huỷ đơn ' + o.orderNo + (o.ghnOrderCode ? ' và vận đơn GHN.' : '.'), 'ok'); await run(loadOrderBoard);
+      } catch (ex) { m.lock(false, submit); error.textContent = ex.message || 'Chưa huỷ được đơn.'; }
+    });
+    m.show(); reason.focus?.();
   }
   /** Đơn website chờ xử lý: chọn địa chỉ chuẩn GHN → kiểm tra lại → tạo vận đơn. Form khoá trong lúc gửi; lỗi thì giữ dữ liệu để sửa. */
   function showGhnAddress(o) {
@@ -1568,6 +1598,19 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       date = field('Ngày giao', 'date', today),
       ghnOrderCode = field('Mã vận đơn GHN (nếu đã có)', 'text', '');
     ghnOrderCode.input.placeholder = 'Ví dụ: GYMNNELK';
+    // Quầy Lock: bấm xác nhận là CRM tự tạo vận đơn GHN (shop 6096731) – cần khối lượng + cách xem hàng. Đã tạo tay thì nhập mã ở trên.
+    const autoGhn = /lock/i.test(st.register?.name || '');
+    const weight = field('Khối lượng (gram)', 'number', '500'), shipNote = field('Ghi chú cho shipper', 'text', '');
+    weight.input.min = '1'; weight.input.max = '50000'; weight.input.step = '1'; weight.input.inputMode = 'numeric';
+    shipNote.input.maxLength = 500; shipNote.input.placeholder = 'Ví dụ: Gọi trước khi giao, hàng dễ vỡ…';
+    const requiredNote = el('select'), requiredBox = el('label', 'pos-field');
+    requiredNote.setAttribute('aria-label', 'Cho khách xem hàng');
+    const requiredLabels = { CHOXEMHANGKHONGTHU: 'Cho xem hàng, không cho thử', CHOTHUHANG: 'Cho thử hàng', KHONGCHOXEMHANG: 'Không cho xem hàng' };
+    for (const [v, t] of Object.entries(requiredLabels)) { const o = el('option', '', t); o.value = v; requiredNote.append(o); }
+    requiredNote.value = 'CHOXEMHANGKHONGTHU';
+    requiredBox.append(el('span', '', 'Khi giao'), requiredNote);
+    const shipFee = Number(st.preview?.fees?.shippingFee || 0);
+    const shipInfo = el('p', 'pos-note', shipFee ? `Phí ship thu khách ${money(shipFee)} (đã cộng vào tiền COD). GHN tính phí vận chuyển cho shop.` : 'Free ship: không thu phí ship của khách (nhập ở ô "Phí ship" trong giỏ nếu cần thu). GHN tính phí vận chuyển cho shop.');
     const steps = el('ol', 'pos-steps');
     const stepItems = ['Thông tin giao', 'Kiểm tra lại', 'Tạo đơn COD'].map((t, i) => { const li = el('li', i ? '' : 'is-current'); li.append(el('b', '', String(i + 1)), el('span', '', t)); steps.append(li); return li; });
     const setStep = (n) => stepItems.forEach((li, i) => { li.className = i < n ? 'is-done' : i === n ? 'is-current' : ''; });
@@ -1598,6 +1641,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       ghnIntro,
       section('Người nhận', grid(receiver.box, phone.box)),
       section('Địa chỉ giao (chuẩn GHN)', address.box, grid(province.box, district.box, ward.box), ghn.retry, grid(date.box, ghnOrderCode.box)),
+      ...(autoGhn ? [section('Vận đơn GHN (tự tạo khi xác nhận)', grid(weight.box, requiredBox), shipNote.box, shipInfo)] : []),
       section('Thu trước', grid(deposit.box, methodBox), confirmation, summary),
       el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
       validation,
@@ -1639,13 +1683,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         ['Ngày giao', date.input.value.split('-').reverse().join('/')],
         ['Tổng đơn', money(total)],
         ...(n > 0 ? [['Đã thu trước', money(n) + (method.value === 'transfer' ? ' · chuyển khoản' : ' · tiền mặt')]] : []),
+        ...(autoGhn && !ghnOrderCode.input.value.trim() ? [['Vận đơn GHN', `Tự tạo · ${Number(weight.input.value).toLocaleString('vi-VN')} g · ${requiredLabels[requiredNote.value] || ''}` + (shipNote.input.value.trim() ? ' · ' + shipNote.input.value.trim() : '')],
+          ['Phí ship thu khách', shipFee ? money(shipFee) : 'Free ship']] : ghnOrderCode.input.value.trim() ? [['Mã vận đơn GHN', ghnOrderCode.input.value.trim()]] : []),
       ];
       const list = el('dl', 'pos-review-list');
       for (const [k, v] of lines) list.append(el('dt', '', k), el('dd', '', v));
       const due = el('section', 'pos-step-due'); due.append(el('span', '', 'Còn lại thu khi giao (COD)'), el('strong', '', money(total - n)));
       review.replaceChildren(el('p', 'pos-note pos-step-intro', 'Kiểm tra lần cuối thông tin người nhận, địa chỉ và tiền thu COD. Bấm xác nhận để tạo đơn.'), due, list);
       editView.hidden = true; review.hidden = false;
-      back.textContent = '← Sửa thông tin'; save.textContent = 'Xác nhận & tạo đơn COD'; save.disabled = false;
+      back.textContent = '← Sửa thông tin'; save.textContent = autoGhn && !ghnOrderCode.input.value.trim() ? 'Xác nhận, tạo đơn COD & vận đơn GHN' : 'Xác nhận & tạo đơn COD'; save.disabled = false;
     };
     m.form.append(steps, serverError, editView, review, footer);
     updateDeposit();
@@ -1656,6 +1702,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         updateDeposit(); if (save.disabled) return;
         if (!receiver.input.value.trim() || !phone.input.value.trim() || !address.input.value.trim()) { validation.textContent = 'Nhập đủ người nhận, điện thoại và số nhà, tên đường.'; return; }
         if (!ghn.complete()) { validation.textContent = 'Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã theo GHN.'; return toast(validation.textContent, 'err'); }
+        if (autoGhn && !ghnOrderCode.input.value.trim()) {
+          const w = Number(weight.input.value);
+          if (!Number.isInteger(w) || w < 1 || w > 50000) { validation.textContent = 'Nhập khối lượng từ 1 đến 50.000 gram (số nguyên).'; return; }
+          if (!/^0\d{9}$/.test(phone.input.value.replace(/[^\d+]/g, '').replace(/^\+?84/, '0'))) { validation.textContent = 'Số điện thoại người nhận cần 10 số, bắt đầu bằng 0 (GHN yêu cầu).'; return; }
+        }
         return showReview();
       }
       const n = Number(deposit.input.value);
@@ -1671,6 +1722,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           plannedDate: date.input.value,
           ...(ghnOrderCode.input.value.trim() ? { ghnOrderCode: ghnOrderCode.input.value.trim() } : {}),
           ghnProvinceId: province.select.value, ghnDistrictId: district.select.value, ghnWardCode: ward.select.value,
+          ...(autoGhn ? { ghnWeight: Number(weight.input.value), ghnRequiredNote: requiredNote.value, ghnNote: shipNote.input.value.trim() } : {}),
         },
       };
       setStep(2); serverError.textContent = '';
@@ -1739,8 +1791,20 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       const actions = el('div', 'pos-saved-actions');
       actions.append(button('In lại bill', 'btn secondary', () => printPos(d)));
       if (body.fulfillmentMode === 'cod') actions.append(ghnPortalLink(d.ghnOrderCode || ''));
+      // Vận đơn GHN tự tạo (quầy Lock): hiện mã + phí, hoặc lỗi + nút tạo lại (đơn COD đã lưu dù GHN lỗi).
+      const ghnInfo = el('div', 'pos-saved-ghn');
+      if (d.ghnShipment?.ok) ghnInfo.append(el('p', 'pos-saved-hint', `Đã tạo vận đơn GHN ${d.ghnShipment.orderCode}` + (d.ghnShipment.fee != null ? ` · phí GHN ${money(d.ghnShipment.fee)}` : '') + '.'));
+      else if (d.ghnShipment) {
+        const err = el('p', 'error', 'Chưa tạo được vận đơn GHN: ' + d.ghnShipment.message);
+        const retry = busyButton('Tạo lại vận đơn GHN', 'btn secondary', 'Đang tạo vận đơn GHN…', async () => {
+          const r = await api('/pos/cod/' + encodeURIComponent(d.ghnShipment.deliveryId) + '/ghn', 'POST', {});
+          err.className = 'pos-saved-hint'; err.textContent = `Đã tạo vận đơn GHN ${r.orderCode}` + (r.fee != null ? ` · phí GHN ${money(r.fee)}` : '') + '.';
+          retry.remove(); actions.prepend(ghnPortalLink(r.orderCode));
+        });
+        ghnInfo.append(err, retry);
+      }
       const next = button('Bán đơn tiếp', 'btn primary pos-saved-next', () => { saved.close(); nodes.search?.focus(); }); actions.append(next);
-      saved.body.append(summary, total, el('p', 'pos-saved-hint', 'Đơn đã được lưu. Có thể in lại bill hoặc tiếp tục bán hàng.'), actions);
+      saved.body.append(summary, total, el('p', 'pos-saved-hint', 'Đơn đã được lưu. Có thể in lại bill hoặc tiếp tục bán hàng.'), ghnInfo, actions);
       saved.show();
       next.focus();
       await load();
@@ -1769,7 +1833,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     try {
       const r = await api('/pos/ghn/sync', 'POST', {});
       status.textContent = 'GHN ' + new Date(r.syncedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) +
-        ': kiểm ' + r.checked + ' vận đơn, cập nhật ' + r.updated + (r.errors?.length ? ', ' + r.errors.length + ' lỗi (' + r.errors[0].code + ': ' + r.errors[0].message + ')' : '') + '.';
+        ': kiểm ' + r.checked + ' vận đơn, cập nhật ' + r.updated + (r.errors?.length ? ', ' + r.errors.length + ' lỗi (' + r.errors.map(e => (e.orderNo ? e.orderNo + ' · ' : '') + e.code + ': ' + e.message).join('; ') + ')' : '') + '.';
       if (r.updated && !r.cached) reopen();
     } catch (e) {
       status.textContent = e.message || 'Không đồng bộ được GHN.';
@@ -1802,6 +1866,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
             money(x.codAmount - x.paid),
         ),
       );
+      if (x.trackingCode) row.append(el('p', 'pos-note', 'GHN ' + x.trackingCode + (x.trackingStatus ? ' · ' + x.trackingStatus : '')), ghnPortalLink(x.trackingCode));
+      else if (x.canCreateGhn) {
+        const create = busyButton('Tạo vận đơn GHN', 'btn primary', 'Đang tạo vận đơn GHN…', async () => {
+          const r = await api('/pos/cod/' + encodeURIComponent(x.id) + '/ghn', 'POST', {});
+          toast('Đã tạo vận đơn GHN ' + r.orderCode + '.'); reopen();
+        });
+        row.append(el('p', 'pos-note', 'Chưa có vận đơn GHN.'), create);
+      }
       if (x.status === 'delivered') {
         const method = select(
             [

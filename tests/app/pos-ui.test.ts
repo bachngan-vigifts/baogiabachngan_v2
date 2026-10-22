@@ -681,7 +681,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
     const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
     await new Promise(r => setTimeout(r, 0));
-    const selects = modal.querySelectorAll('select'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects[3]!;
+    const selects = modal.querySelectorAll('select'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects.find(x => x.attributes['aria-label'] === 'Hình thức thu trước')!;
     province.value = 'p1'; await province.fire('change'); await new Promise(r => setTimeout(r, 0));
     district.value = 'd1'; await district.fire('change'); await new Promise(r => setTimeout(r, 0)); ward.value = 'w1';
     const confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
@@ -697,7 +697,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     await form.fire('submit'); assert.equal(save.textContent, 'Kiểm tra lại', 'thiếu địa chỉ thì chưa sang bước kiểm tra');
     assert.match(modal.textContent, /Nhập đủ người nhận, điện thoại và số nhà/);
     addressInput.value = '12 Lê Lợi'; phoneInput.value = '0900000000';
-    await form.fire('submit'); assert.equal(save.textContent, 'Xác nhận & tạo đơn COD');
+    await form.fire('submit'); assert.equal(save.textContent, 'Xác nhận, tạo đơn COD & vận đơn GHN', 'quầy Lock: xác nhận là tạo luôn vận đơn GHN');
     assert.match(modal.textContent, /12 Lê Lợi, Phường GHN, Quận GHN, Tỉnh GHN/);
     const sending = form.fire('submit');
     assert.equal(save.textContent, 'Đang tạo đơn COD…', 'đang gửi thì hiện trạng thái xử lý');
@@ -709,6 +709,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     assert.match(modal.textContent, /Máy chủ chưa tạo đơn/);
     const sent = calls.find(c => c.path === '/pos/checkout')!;
     assert.equal(sent.body.depositAmount, 50000); assert.equal(sent.body.method, 'transfer'); assert.equal(sent.body.confirmed, true);
+    assert.deepEqual([sent.body.delivery.ghnWeight, sent.body.delivery.ghnRequiredNote, sent.body.delivery.ghnDistrictId, sent.body.delivery.ghnWardCode], [500, 'CHOXEMHANGKHONGTHU', 'd1', 'w1'], 'quầy Lock gửi khối lượng + cách xem hàng để tự tạo vận đơn GHN');
     for (const [amount, remaining] of [[50000, 58000], [108000, 0]]) {
       const bill = buildPosPrint(doc, { ...sample, method: 'cod', total: 108000, depositAmount: amount, codAmount: remaining, depositMethod: 'transfer' });
       assert.match(bill.textContent, /Đã thu trước \/ tạm ứng \(chuyển khoản\)/);
@@ -946,5 +947,41 @@ test('Voucher trên đơn: gõ mã + số tiền thì giỏ gửi kèm voucher, 
     assert.equal(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, undefined);
     const bill = buildPosPrint(doc, withVoucher).textContent;
     assert.ok(bill.includes('Voucher (chia theo dòng)') && bill.includes('Voucher VC-1') && bill.includes('21.600'), bill);
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});
+
+test('Thẻ "Đơn web": số đỏ nhấp nháy khi có đơn cần xử lý, bấm lọc status=web; đơn web có Hoàn thành và Huỷ bắt buộc lý do', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: { path: string; body?: any }[] = [];
+    const webOrder = { id: 'w1', orderNo: 'WEB900', customerName: 'Khách web', total: 500000, external: true, source: 'lock', bucket: 'pending', paymentStatus: 'unknown', actionsAvailable: true, lines: '[]', currency: 'VND' };
+    const api = async (path: string, _m = 'GET', body?: any) => {
+      calls.push({ path, body });
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy', pricePolicyId: 'vat' }], current: null, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
+      if (path.startsWith('/pos/orders')) return { registerId: 'r', registers: [], counts: { all: 3, web: 2, pending: 2 }, orders: [webOrder], owners: [], totals: [] };
+      if (path.endsWith('/action')) return { ok: true, bucket: body.action === 'cancel' ? 'cancelled' : 'completed' };
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    const card = root.querySelectorAll('button').find(b => b.className.includes('pos-order-web'))!;
+    assert.ok(card.className.includes('has-alert'), 'có đơn web → thẻ báo đỏ');
+    assert.ok(card.querySelectorAll('strong').some(s => s.className === 'pos-web-badge' && s.textContent === '2'));
+    assert.match(card.textContent, /Đơn web/);
+    await card.fire('click'); await new Promise(r => setTimeout(r, 0));
+    assert.equal(new URLSearchParams(calls.filter(c => c.path.startsWith('/pos/orders')).at(-1)!.path.split('?')[1]).get('status'), 'web');
+    await root.querySelectorAll('button').find(b => b.className === 'pos-order-row')!.fire('click');
+    let dlg = doc.body.children.at(-1)!;
+    assert.ok(dlg.querySelectorAll('button').some(b => b.textContent === 'Hoàn thành'));
+    await dlg.querySelectorAll('button').find(b => b.textContent === 'Huỷ đơn')!.fire('click');
+    dlg = doc.body.children.at(-1)!;
+    const form = dlg.querySelectorAll('form')[0]!, reason = dlg.querySelectorAll('textarea')[0]!;
+    await form.fire('submit');
+    assert.equal(calls.some(c => c.path.endsWith('/action')), false, 'chưa nhập lý do thì không gửi');
+    assert.match(dlg.textContent, /Nhập lý do huỷ đơn/);
+    reason.value = 'Khách đổi ý'; await form.fire('submit'); await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(calls.find(c => c.path.endsWith('/action'))!.body, { action: 'cancel', reason: 'Khách đổi ý' });
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });

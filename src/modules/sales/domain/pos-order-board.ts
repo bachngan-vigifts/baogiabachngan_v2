@@ -11,7 +11,8 @@ export function filterPosOrderBoard<T extends BoardOrder>(rows: T[], params: URL
   const status = params.get('status') || 'all', owner = params.get('ownerId') || '';
   const from = params.get('from') || '', to = params.get('to') || '';
   const validDate = (s: string) => !s || /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s;
-  const statuses = ['all', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled'];
+  // `web`: đơn website còn cần xử lý (chưa hoàn thành / chưa huỷ) – thẻ "Đơn web" có số đỏ nhấp nháy ở Bán hàng nhanh.
+  const statuses = ['all', 'web', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled'];
   if (!['all', 'pos', 'web', 'cod'].includes(source) || !['all', 'paid', 'debt', 'unknown'].includes(payment) || !statuses.includes(status) || !validDate(from) || !validDate(to) || from && to && from > to)
     throw new AppError(400, 'Bộ lọc đơn hàng hoặc khoảng ngày không hợp lệ.');
   const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
@@ -21,9 +22,10 @@ export function filterPosOrderBoard<T extends BoardOrder>(rows: T[], params: URL
     (payment === 'all' || o.bucket !== 'cancelled' && o.paymentStatus === payment) &&
     (!from || o.orderDate >= from) && (!to || o.orderDate <= to) &&
     (!q || [o.orderNo, o.customerName, o.phone, o.ownerName, o.sapoOrderCode].some(v => fold(v || '').includes(q))));
-  const counts = { all: filtered.length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
-  for (const o of filtered) if (o.bucket in counts && o.bucket !== 'all') counts[o.bucket as keyof typeof counts]++;
-  const orders = filtered.filter(o => status === 'all' || o.bucket === status);
+  const webOpen = (o: BoardOrder) => o.orderSource === 'web' && o.bucket !== 'completed' && o.bucket !== 'cancelled';
+  const counts = { all: filtered.length, web: filtered.filter(webOpen).length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
+  for (const o of filtered) if (o.bucket in counts && o.bucket !== 'all' && o.bucket !== 'web') counts[o.bucket as keyof typeof counts]++;
+  const orders = filtered.filter(o => status === 'all' || (status === 'web' ? webOpen(o) : o.bucket === status));
   const totals = new Map<string, { currency: string; revenue: number; paid: number; outstanding: number; unknownPayment: number; orders: number }>();
   for (const o of orders) {
     if (o.bucket === 'cancelled') continue;

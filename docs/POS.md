@@ -259,4 +259,25 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
 - Mở **Ship COD** ở Bán hàng nhanh là CRM tự đồng bộ; có nút **↻ Đồng bộ GHN** để chạy lại. API `POST /pos/ghn/sync` (cần quyền bán hàng nhanh, kiểm ở máy chủ); bấm liên tục trong 60 giây dùng lại kết quả cũ, không gọi GHN lại.
 - Đồng bộ các chuyến COD của quầy Lock có mã vận đơn và chưa xong: GHN đã lấy hàng → *đang giao* + xuất kho một lần; GHN giao xong → *đã giao* + ghi thu COD (nguồn `ghn_cod`, không cộng vào két); hoàn / huỷ → *thất bại*.
 - Máy ngoài (n8n / OpenClaw) vẫn gọi được `POST /integrations/ghn/pos-lock/pull` bằng mã đồng bộ.
+- **Tự tạo vận đơn GHN (22/10/2026, quầy Lock – shop GHN 6096731):** bấm **"Xác nhận, tạo đơn COD & vận đơn GHN"** → CRM lưu đơn rồi gọi GHN `shipping-order/create` (`pos-ghn-create.ts`), gắn mã vận đơn vào chuyến giao → trạng thái tự đồng bộ về như trên.
+  - Form COD (quầy Lock) có thêm: **Khối lượng (gram, mặc định 500)**, **Khi giao** (mặc định *Cho xem hàng, không cho thử*; hoặc Cho thử / Không cho xem), **Ghi chú cho shipper**. Bắt buộc chọn đủ Tỉnh / Quận / Phường GHN; số điện thoại 10 số.
+  - **Phí ship nhập tay** ở ô "Phí ship · Không VAT" của giỏ: 0 = free ship; có số = thu khách (đã cộng vào tiền COD). GHN luôn tính phí vận chuyển cho shop (`payment_type_id = 1`), thu hộ đúng "Còn lại thu khi giao". Giá khai báo từng món = đơn giá đã gồm VAT; không mua bảo hiểm (`insurance_value = 0`).
+  - GHN lỗi (sai SĐT, địa chỉ…): **đơn vẫn lưu**, popup báo lý do + nút **Tạo lại vận đơn GHN**; danh sách **Ship COD** hiện mã vận đơn / trạng thái, chuyến chưa có mã có nút **Tạo vận đơn GHN** (`POST /pos/cod/:deliveryId/ghn`). Một lần: khoá chuyến trong lúc gọi GHN, đã có mã thì trả mã cũ, `client_order_code` = số đơn CRM.
+  - Đã nhập **mã vận đơn tay** thì không tự tạo. Quầy khác (Minh Long) vẫn tạo trên trang GHN rồi nhập mã.
+  - **Huỷ đơn / huỷ chuyến giao** trong CRM → tự huỷ vận đơn GHN (`switch-status/cancel`, `pos-ghn-cancel.ts`). GHN từ chối (đã lấy hàng…) thì CRM vẫn huỷ, thông báo lý do để huỷ trên trang GHN.
+  - Đã có vận đơn GHN thì **không sửa số lượng / giá / người nhận / địa chỉ** ở CRM (409 `GHN_SHIPMENT_EXISTS`) vì GHN vẫn giữ số cũ.
+  - Danh mục địa chỉ: có `GHN_API_TOKEN` thì lấy thẳng từ GHN khi bản đóng gói sẵn thiếu (trước đây đòi `WEB_ORDER_ACTION_TOKEN` nên báo "Chưa cấu hình kết nối GHN").
+  - Đồng bộ trạng thái: lỗi kèm **số đơn**; mỗi lượt 100 chuyến, chuyến lâu chưa kiểm trước (không bỏ sót).
+  - Lưu ở `posSnapshot.ghn` (quận / phường / khối lượng / cách xem hàng / mã / phí GHN) – không cần migration. Test: `tests/app/pos-ghn-create.test.ts`.
 - Cần secret **`GHN_API_TOKEN`** (token API của tài khoản GHN shop Lock, ShopId 6096731) trên GitHub → workflow "Triển khai API" đặt vào Supabase. Chưa có token thì CRM báo "CRM chưa có token GHN".
+
+## Thẻ "Đơn web" trên bảng đơn cửa hàng (22/10/2026)
+- Bảng **Đơn hàng cửa hàng** có thêm thẻ **Đơn web**, nằm cùng hàng với Tất cả đơn / Chờ xử lý / Đang đóng hàng / Đợi giao / Hoàn thành / Đã hủy.
+  - Số trên thẻ là số đơn website còn cần xử lý (chưa hoàn thành, chưa huỷ).
+  - Có đơn thì số **đỏ nhấp nháy**. Máy tắt hiệu ứng chuyển động thì chỉ đỏ, không nháy.
+  - Bấm thẻ để lọc riêng các đơn này: `GET /pos/orders?status=web`, `counts.web` (`pos-order-board.ts`).
+- Bấm vào đơn web: ngoài "Chọn địa chỉ & tạo vận đơn GHN" và "Cập nhật trạng thái", có thêm:
+  - **Hoàn thành**: hỏi xác nhận → `POST /pos/web-orders/:id/action { action: 'complete' }`. Website trả về không kèm trạng thái thì CRM ghi "Hoàn thành".
+  - **Huỷ đơn**: form **bắt buộc lý do** (≥ 3 ký tự; thiếu → 400 `reason_required`) → `{ action: 'cancel', reason }`. Lý do và tên người huỷ gửi sang website, ghi vào nhật ký `web-order-cancel`.
+- **Cần plugin trên website** (cầu nối `order-action-v7`, secret `WEB_ORDER_ACTION_TOKEN`) hiểu thao tác `complete` (chuyển đơn WooCommerce sang Hoàn thành) và trường `reason` khi huỷ. Plugin chưa hỗ trợ thì nút báo đúng lỗi website trả về; đơn trong CRM không đổi.
+- Test: `tests/app/pos.test.ts` (máy chủ), `tests/app/pos-ui.test.ts` (thẻ, form huỷ).

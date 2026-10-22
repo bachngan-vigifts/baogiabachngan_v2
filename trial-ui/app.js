@@ -345,6 +345,9 @@ const linkAllowed = hash => {
 };
 /** Danh bạ NCC: Manager và chức vụ có quyền "Danh bạ NCC" (mặc định Kế toán; máy chủ kiểm lại). */
 const canEditSuppliers = () => can('suppliers.edit');
+/** Kết quả huỷ vận đơn GHN kèm khi huỷ đơn / chuyến Ship COD quầy Lock (máy chủ: pos-ghn-cancel.ts). */
+const ghnCancelNote = r => !r?.ghnCancel ? '' : (r.ghnCancel.cancelled.length ? ` Đã huỷ vận đơn GHN ${r.ghnCancel.cancelled.join(', ')}.` : '')
+  + (r.ghnCancel.errors.length ? ` Chưa huỷ được trên GHN: ${r.ghnCancel.errors.map(e => e.code + ' – ' + e.message).join('; ')}. Huỷ trên trang GHN.` : '');
 const KHO_HOME = '#/kho';
 /** Trang mở đầu: kho → Trang kho; có Báo giá → Báo giá; còn lại → Công việc. */
 const homeHash = () => isWarehouse() ? KHO_HOME : can('page.quotes') ? '#/quotes' : '#/tasks';
@@ -3170,7 +3173,7 @@ document.addEventListener('click', async e => {
     if (!photos) return;
   } else if (to === 'cancelled' && !await confirmBox('Huỷ chuyến giao này?', { title: label, ok: label, danger: true })) return;
   b.disabled = true;
-  try { await api(`/deliveries/${encodeURIComponent(b.dataset.ship)}/status`, 'PUT', { status: to, ...(photos.length ? { photos } : {}) }); toast('Đã cập nhật: ' + label); if (!$('#view-order').hidden) openOrder(sales.order.id); else loadDeliveries(); }
+  try { const r = await api(`/deliveries/${encodeURIComponent(b.dataset.ship)}/status`, 'PUT', { status: to, ...(photos.length ? { photos } : {}) }); toast('Đã cập nhật: ' + label + ghnCancelNote(r), r?.ghnCancel?.errors?.length ? 'err' : undefined); if (!$('#view-order').hidden) openOrder(sales.order.id); else loadDeliveries(); }
   catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
 });
 
@@ -4088,7 +4091,7 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#order-cancel')) {
     const w = isContractDoc() ? 'HĐKT' : 'đơn';
     if (!await confirmBox(`Huỷ ${w} ${docNo()}? ${isContractDoc() ? 'HĐKT' : 'Đơn'} huỷ không còn tính công nợ; báo giá có thể lập lại.`, { title: 'Huỷ ' + w, ok: 'Huỷ ' + w, danger: true })) return;
-    try { await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.'); loadHolds(true); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
+    try { const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.' + ghnCancelNote(r), r?.ghnCancel?.errors?.length ? 'err' : undefined); loadHolds(true); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('#order-delete')) {
     const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';

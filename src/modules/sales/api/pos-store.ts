@@ -30,6 +30,7 @@ import {
 } from '../schema.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { allocatePosVoucher, parsePosVoucher, posLine, posMoney } from '../domain/pos-money.ts';
+import { parseGhnShip } from '../domain/pos-ghn.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
 import { orderHolds } from './hold-routes.ts';
@@ -445,6 +446,9 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     }
     const tendered = flow ? receivedInitial : mode === 'cod' ? depositAmount : method === 'cash' ? posMoney(b.tendered, 'Tiền khách đưa') : c.payable;
     if (!flow && mode === 'counter' && tendered < c.payable) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
+    // Ship COD: địa chỉ chuẩn GHN + khối lượng / cách xem hàng → posSnapshot.ghn (tạo vận đơn GHN ngay sau khi lưu, pos-ghn-create.ts).
+    const shipInput = b.delivery && typeof b.delivery === 'object' ? (b.delivery as Record<string, unknown>) : {};
+    const ghnShip = mode === 'cod' ? parseGhnShip(shipInput) : null;
     const now = posNow(),
       date = vietnamDate().iso;
     const id = crypto.randomUUID(),
@@ -466,6 +470,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       tendered,
       change: !flow && mode === 'counter' ? tendered - c.payable : 0,
       ...(c.exchange.amount ? { exchangeCredit: c.exchange.amount, payable: c.payable } : {}),
+      ...(ghnShip ? { ghn: ghnShip } : {}),
       createdAt: now,
       memberName: m.name,
       pricePolicyId: c.canonical.pricePolicyId,
