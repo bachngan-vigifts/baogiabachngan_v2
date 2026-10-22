@@ -2061,3 +2061,21 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 #view-tasks .task-top .btn.primary { display: inline-flex; }
 #view-tasks .task-kv-due { grid-template-columns: minmax(0, 1fr) 92px; }
 @media (max-width: 700px) { #view-tasks .task-top-actions kbd { display: none; } }
+
+/* Customer and product links in order/contract details remain visibly actionable. */
+#order-customer a,
+#order-lines td:first-child > a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+#order-customer a:hover,
+#order-lines td:first-child > a:hover {
+  text-decoration-thickness: 2px;
+}
+#order-customer a:focus-visible,
+#order-lines td:first-child > a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
