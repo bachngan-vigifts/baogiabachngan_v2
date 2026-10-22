@@ -2134,3 +2134,15 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
 .quote-source-row input {width:90px;}
 .quote-source-row [role="status"] {flex-basis:100%;}
 #order-create-sourcing, #contract-sourcing {display:grid;gap:10px;min-width:0;}
+
+/* Cập nhật kho từ file Sapo: tiến độ + bảng tóm tắt */
+.import-progress { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; font-weight: 600; }
+.import-progress i { display: block; height: 4px; border-radius: 4px; background: linear-gradient(90deg, transparent, var(--primary, #c8102e), transparent); background-size: 200% 100%; animation: import-run 1.2s linear infinite; }
+@keyframes import-run { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.import-status:empty { display: none; }
+.import-summary { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.import-summary dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 0; }
+.import-summary dt { color: var(--muted); } .import-summary dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.import-summary dd.ok { color: var(--ok, #15803d); } .import-summary dd.warn { color: var(--warn, #b45309); }
+.import-summary .import-warn { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg, #fff7ed); color: var(--warn, #9a3412); font-size: .86rem; }
+.import-summary details { margin-top: 6px; } .import-summary summary { cursor: pointer; font-size: .86rem; }

@@ -19,6 +19,30 @@ function el(tag, text, attrs = {}) { const node = document.createElement(tag); i
 function labelled(label, input) { const node = el('label', label); node.append(input); return node; }
 function option(value, label) { return el('option', label, { value }); }
 const normal = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
+/** Bảng tóm tắt xem trước / kết quả: dòng trong file → cập nhật / bỏ qua (kèm lý do và danh sách mã). */
+function summaryBox(p, hidden, applied = false) {
+  const box = el('div', undefined, { class: 'import-summary' }), list = el('dl');
+  const add = (label, value, tone = '') => { if (!value && tone !== 'ok') return; const dt = el('dt', label), dd = el('dd', fmt(value)); if (tone) dd.className = tone; list.append(dt, dd); };
+  add('Mã trong file', p.fileRows ?? p.matched);
+  add(applied ? 'Đã cập nhật' : 'Sẽ cập nhật', p.matched, 'ok');
+  add('Không có trong CRM (bỏ qua)', p.unknownCount, 'warn');
+  add('Mã trùng không xác định (bỏ qua)', p.ambiguousCount, 'warn');
+  add('Dòng ẩn trong file (bỏ qua)', hidden);
+  box.append(list);
+  if (p.ledgerWarehouses?.length) box.append(el('p', `⚠ ${p.ledgerWarehouses.join(', ')} đã chốt tồn đầu kỳ: tồn hiển thị lấy theo sổ kho CRM, số trong file chỉ lưu để đối chiếu (trang Đối chiếu Sapo) – muốn sửa lệch thì lập phiếu điều chỉnh.`, { class: 'import-warn' }));
+  // Mã không có trong CRM chỉ báo số lượng (tự bỏ qua); mã trùng không xác định liệt kê để sửa.
+  for (const [label, codes, count] of [['Mã không xác định', p.ambiguous, p.ambiguousCount]]) {
+    if (!codes?.length) continue;
+    const more = el('details'); more.append(el('summary', `${label} (${fmt(count)})`), el('p', codes.join(', ') + (count > codes.length ? ` … và ${fmt(count - codes.length)} mã khác` : ''), { class: 'muted small' }));
+    box.append(more);
+  }
+  if (!applied && p.samples?.length) {
+    const table = el('table', undefined, { class: 'data-table' }), tr = el('tr'); for (const h of ['Mã hàng', 'Kho CRM', 'Tồn cũ', 'Tồn mới']) tr.append(el('th', h)); const thead = el('thead'); thead.append(tr); table.append(thead);
+    const tbody = el('tbody'); for (const x of p.samples) { const r = el('tr'); for (const value of [x.sku, x.warehouse, fmt(x.before), fmt(x.after)]) r.append(el('td', value)); tbody.append(r); } table.append(tbody);
+    const wrap = el('div', undefined, { class: 'table-wrap' }); wrap.append(table); box.append(el('p', 'Xem trước 30 dòng đầu:', { class: 'muted small' }), wrap);
+  }
+  return box;
+}
 export async function openSapoStockImport({ api, isManager, onChanged, toast = () => {} }) {
   if (!isManager()) return;
   const data = await api('/products?limit=1'), stores = data.warehouses.filter(w => w.kind === 'stock');
@@ -33,7 +57,15 @@ export async function openSapoStockImport({ api, isManager, onChanged, toast = (
   const date = el('input', undefined, { type: 'datetime-local', required: '', 'aria-label': 'Thời điểm số liệu Sapo' });
   const now = new Date(); date.value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   body.append(labelled('Thời điểm số liệu trên Sapo', date));
-  const status = el('p', '', { role: 'status', 'aria-live': 'polite' }), previewBox = el('div'), cards = [];
+  const status = el('p', '', { role: 'status', 'aria-live': 'polite', class: 'import-status' }), previewBox = el('div'), cards = [];
+  // Tiến độ: chữ + thanh chạy + số giây (file lớn / mạng chậm vẫn thấy đang chạy, không tưởng bị treo).
+  const progress = el('div', undefined, { class: 'import-progress', hidden: '' }), progressText = el('span'), progressBar = el('i'); progress.append(progressText, progressBar);
+  let ticker = 0;
+  const step = text => { clearInterval(ticker); progress.hidden = false; const start = Date.now(); progressText.textContent = text;
+    ticker = setInterval(() => { progressText.textContent = `${text} (${Math.round((Date.now() - start) / 1000)} giây)`; }, 1000); };
+  const done = () => { clearInterval(ticker); progress.hidden = true; };
+  // Cho trình duyệt vẽ chữ "Đang …" trước khi đọc file nặng (đọc Excel chạy đồng bộ).
+  const paint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
   const close = el('button', 'Đóng', { type: 'button', class: 'btn secondary' }), review = el('button', 'Xem trước', { type: 'button', class: 'btn secondary' }), apply = el('button', 'Xác nhận cập nhật kho', { type: 'button', class: 'btn primary' });
   let preview = null, busy = false;
   function invalidate() { preview = null; apply.disabled = true; previewBox.replaceChildren(); }
@@ -52,7 +84,7 @@ export async function openSapoStockImport({ api, isManager, onChanged, toast = (
     function mapColumns() {
       invalidate(); controls.replaceChildren(); const h = state.rows[Number(header.value) - 1] || [], detected = detectSapoColumns([h]).mapping;
       for (const [key, label] of [['sku', 'Mã hàng'], ['onHand', 'Tồn']]) {
-        const select = el('select', undefined, { 'aria-label': label + ' ' + source }); select.append(option('', '— Chọn cột —'));
+        const select = el('select', undefined, { 'aria-label': label + ' ' + source.label }); select.append(option('', '— Chọn cột —'));
         h.forEach((name, i) => select.append(option(String(i), `${i + 1} · ${name ?? ''}`))); select.value = detected[key] >= 0 ? String(detected[key]) : ''; select.onchange = invalidate; mapping[key] = select; controls.append(labelled(label, select));
       }
     }
@@ -64,23 +96,26 @@ export async function openSapoStockImport({ api, isManager, onChanged, toast = (
     }
     file.onchange = async () => {
       if (busy) return; invalidate(); state.book = null; const selected = file.files[0]; if (!selected) { lock(false); return; }
-      lock(true); try {
+      lock(true); step(`Đang đọc file ${source.label}…`); await paint(); try {
         if (selected.size > 20000000) throw Error('Chọn file dưới 20 MB.');
         const x = await excel(), book = x.read(await selected.arrayBuffer(), { type: 'array', raw: true, cellStyles: true, cellNF: true, sheetRows: 50201 });
         sheet.replaceChildren(); book.SheetNames.forEach((name, i) => { if (!book.Workbook?.Sheets?.[i]?.Hidden) sheet.append(option(name, name)); });
         if (!sheet.options.length) throw Error('File không có trang tính hiển thị.'); state.book = book;
         for (const name of [...sheet.options].map(o => o.value)) {
-          if (detectSapoColumns(x.utils.sheet_to_json(book.Sheets[name], { header: 1, raw: true, range: 0 }).slice(0, 200)).header >= 0) { sheet.value = name; break; }
+          // Chỉ đọc 200 dòng đầu để tìm dòng tiêu đề (không chuyển cả trang tính).
+          const ws = book.Sheets[name], ref = ws['!ref']; if (!ref) continue;
+          const head = x.utils.decode_range(ref); head.e.r = Math.min(head.e.r, head.s.r + 199);
+          if (detectSapoColumns(x.utils.sheet_to_json(ws, { header: 1, raw: true, range: x.utils.encode_range(head) })).header >= 0) { sheet.value = name; break; }
         }
-        readSheet(); status.textContent = `Đã đọc ${source}. Kiểm tra kho và hai cột trước khi xem trước.`;
-      } catch (e) { state.book = null; status.textContent = `${source}: ${e.message}`; } finally { lock(false); }
+        readSheet(); status.textContent = `Đã đọc ${source.label}: ${fmt(Math.max(0, state.rows.length - Number(header.value)))} dòng dữ liệu. Kiểm tra kho và hai cột rồi bấm "Xem trước".`;
+      } catch (e) { state.book = null; status.textContent = `${source.label}: ${e.message}`; } finally { done(); lock(false); }
     };
     sheet.onchange = () => { try { readSheet(); } catch (e) { state.rows = []; invalidate(); status.textContent = e.message; } }; header.onchange = mapColumns; target.onchange = invalidate; body.append(card);
   }
-  body.append(status, previewBox); foot.append(close, review, apply); dialog.append(head, body, foot); document.body.append(dialog);
+  body.append(progress, status, previewBox); foot.append(close, review, apply); dialog.append(head, body, foot); document.body.append(dialog);
   close.onclick = () => { if (!busy) dialog.close(); }; dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); }); dialog.addEventListener('close', () => dialog.remove());
   review.onclick = async () => {
-    if (busy) return; invalidate(); lock(true);
+    if (busy) return; invalidate(); lock(true); step('Đang đọc dữ liệu các file…'); await paint();
     try {
       const selectedCards = cards.filter(c => c.book && c.file.files[0]);
       if (!selectedCards.length) throw Error('Chọn ít nhất một file Sapo trước khi xem trước.');
@@ -93,23 +128,28 @@ export async function openSapoStockImport({ api, isManager, onChanged, toast = (
       });
       const time = new Date(date.value); if (!Number.isFinite(time.getTime())) throw Error('Nhập thời điểm số liệu Sapo.');
       const input = { filename: selectedCards.map(c => c.file.files[0].name).join(' + ').slice(0, 300), observedAt: time.toISOString(), rows: combineSapoStockFiles(parsed) };
+      step(`Đang kiểm tra ${fmt(input.rows.length)} mã với CRM…`);
       const p = await api('/admin/products/import/sapo-stock/preview', 'POST', input); preview = p.matched ? { ...input, version: p.version } : null;
-      status.textContent = `${fmt(p.matched)} mã sẽ cập nhật${p.ambiguousCount ? ` · ${fmt(p.ambiguousCount)} mã không xác định` : ''}. Xem trước tối đa 30 dòng; bỏ qua ${fmt(parsed.reduce((n, f) => n + f.hidden, 0))} dòng ẩn.`;
-      const table = el('table', undefined, { class: 'data-table' }), tr = el('tr'); for (const h of ['Mã hàng', 'Kho CRM', 'Tồn cũ', 'Tồn mới']) tr.append(el('th', h)); const thead = el('thead'); thead.append(tr); table.append(thead);
-      const tbody = el('tbody'); for (const s of p.samples) { const r = el('tr'); for (const value of [s.sku, s.warehouse, fmt(s.before), fmt(s.after)]) r.append(el('td', value)); tbody.append(r); } table.append(tbody); const wrap = el('div', undefined, { class: 'table-wrap' }); wrap.append(table); previewBox.append(wrap);
-      for (const c of cards) previewBox.append(el('p', `${c.source} → ${stores.find(w => w.id === c.target.value)?.name || '?'}`));
-    } catch (e) { status.textContent = e.message; } finally { lock(false); }
+      const hidden = parsed.reduce((n, f) => n + f.hidden, 0);
+      status.textContent = p.matched ? `Sẵn sàng cập nhật ${fmt(p.matched)} mã. Kiểm tra bảng tóm tắt rồi bấm "Xác nhận cập nhật kho".` : 'Không có mã nào trong file khớp sản phẩm CRM – không có gì để cập nhật.';
+      previewBox.append(summaryBox(p, hidden));
+      for (const c of selectedCards) previewBox.append(el('p', `${c.source}: ${c.file.files[0].name} → ${stores.find(w => w.id === c.target.value)?.name || '?'}`, { class: 'muted small' }));
+    } catch (e) { status.textContent = e.message; } finally { done(); lock(false); }
   };
   apply.onclick = async () => {
     if (busy || !preview) return; lock(true);
+    step(`Đang lưu ${fmt(preview.rows.length)} mã vào CRM… file lớn có thể mất vài chục giây, đừng đóng cửa sổ.`);
     try {
       const p = await api('/admin/products/import/sapo-stock/apply', 'POST', preview); preview = null;
-      const message = `Đã cập nhật ${fmt(p.matched)} mã lúc ${new Date(p.updatedAt).toLocaleString('vi-VN')}.`;
-      status.textContent = message;
+      const message = `Đã cập nhật ${fmt(p.matched)} mã (${fmt(p.cells)} ô tồn) lúc ${new Date(p.updatedAt).toLocaleString('vi-VN')}.`;
+      // Giữ hộp mở với kết quả đầy đủ: bao nhiêu mã cập nhật, bao nhiêu bỏ qua và vì sao.
+      status.textContent = '✅ ' + message; previewBox.replaceChildren(summaryBox(p, 0, true));
+      for (const c of cards) { c.file.value = ''; c.book = null; }
+      review.hidden = true; apply.hidden = true; close.textContent = 'Xong';
+      toast(message);
       try { await onChanged(); } catch { /* cập nhật đã lưu; lỗi tải lại danh sách không đổi kết quả */ }
-      dialog.close(); toast(message);
     }
-    catch (e) { invalidate(); status.textContent = e.message + ' Xem trước lại trước khi cập nhật.'; } finally { lock(false); }
+    catch (e) { invalidate(); status.textContent = e.message + ' Xem trước lại trước khi cập nhật.'; } finally { done(); lock(false); }
   };
   lock(false); dialog.showModal();
 }

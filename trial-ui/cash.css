@@ -246,3 +246,31 @@ button.sr-card-head { cursor: pointer; } button.sr-card-head .sr-aside { color: 
 .cash-rec-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: .86rem; }
 .cash-rec-list li { display: flex; justify-content: space-between; gap: 10px; } .cash-rec-list li span:last-child { white-space: nowrap; }
 @media (max-width: 600px) { .cash-rec-nums { grid-template-columns: 1fr 1fr; } .cash-rec-nums .cash-rec-num:last-child { grid-column: 1 / -1; } .cash-rec-go { text-align: left; } }
+
+/* Hộp thoại sổ quỹ: thân cuộn, chân cố định chứa nút (không dính ô nhập), nút cách đều, xuống dòng trên điện thoại. */
+.cash-dialog[open] { display: flex; flex-direction: column; }
+.cash-dialog-form { display: flex; flex-direction: column; min-height: 0; max-height: 90dvh; margin: 0; }
+.cash-dialog-body { flex: 1 1 auto; min-height: 0; }
+.cash-dialog-body > :first-child { margin-top: 0; }
+.cash-dialog-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid #e1e7f0; background: #fafbfd; border-radius: 0 0 14px 14px; }
+.cash-dialog-foot:empty { display: none; }
+.cash-dialog-foot .btn { min-height: 42px; margin: 0; }
+.cash-dialog-foot .btn.ghost { margin-right: auto; }
+.cash-dialog-x { font-size: 22px; line-height: 1; width: 36px; height: 36px; }
+.cash-field input, .cash-field select { height: 44px; box-sizing: border-box; }
+.cash-field textarea { box-sizing: border-box; resize: vertical; }
+.cash-field > span { font-size: .9rem; }
+.cash-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; align-items: end; }
+.cash-form-grid > .cash-field { margin: 6px 0; }
+.cash-hint { margin: 2px 0 12px; color: #6b7b91; font-size: .85rem; }
+.cash-config-opening { border: 1px solid #e1e7f0; border-radius: 10px; padding: 12px 14px; background: #f8fafc; }
+.cash-config-opening h3 { margin: 0 0 4px; font-size: .95rem; }
+.cash-config-opening p { margin: 4px 0 0; }
+.cash-rec-updated { animation: cash-flash 2.4s ease-out; }
+@keyframes cash-flash { from { background: #fff4c2; } to { background: transparent; } }
+@media (max-width: 560px) {
+  .cash-form-grid { grid-template-columns: 1fr; }
+  .cash-dialog-foot { position: sticky; bottom: 0; }
+  .cash-dialog-foot .btn { flex: 1 1 calc(50% - 10px); }
+  .cash-dialog-foot .btn.ghost { flex-basis: 100%; margin: 0; }
+}

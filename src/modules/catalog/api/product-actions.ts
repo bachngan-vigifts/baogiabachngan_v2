@@ -5,6 +5,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products, productPrices, pricePolicies, productStock, warehouses, productEdits, stockImports, stockImportLines } from '../schema.ts';
+import { catalogStockHooks } from './stock-source.ts';
 
 const qty = z.number().finite().min(-1e12).max(1e12);
 const transaction = z.object({ onHand: qty, committed: qty.refine(n => n >= 0) }).strict();
@@ -93,7 +94,10 @@ export function registerProductActionRoutes(router: Router<StaffEnv>) {
     const parsed = payload.safeParse(await readJson(c.req, 20000000));
     if (!parsed.success) throw new AppError(400, 'Dữ liệu file không hợp lệ. Tối đa 50.000 mã cho file Sapo, 5.000 mã cho file khác.');
     const input = parsed.data, kind = c.params.kind!;
-    const summarize = (p: Awaited<ReturnType<typeof plan>>) => ({ version: p.version, matched: p.matched.length, cells: p.matched.reduce((n, r) => n + Object.keys(r.stock || r.fields || {}).length, 0), samples: p.samples, unknownCount: p.unknown.length, unknown: p.unknown.slice(0, 100), notLockCount: p.notLock.length, notLock: p.notLock.slice(0, 100), ambiguousCount: p.ambiguous.length, ambiguous: p.ambiguous.slice(0, 100) });
+    // Kho đã chốt tồn đầu kỳ: tồn hiển thị theo sổ kho CRM – báo rõ để người nhập không tưởng file "không cập nhật đủ".
+    const ledgerIds = kind === 'sapo-stock' && catalogStockHooks.ledger ? new Set(await catalogStockHooks.ledger(c.env.db)) : new Set<string>();
+    const summarize = (p: Awaited<ReturnType<typeof plan>>) => ({ version: p.version, fileRows: input.rows.length, matched: p.matched.length,
+      ledgerWarehouses: p.stores.filter(w => ledgerIds.has(w.id)).map(w => w.name), cells: p.matched.reduce((n, r) => n + Object.keys(r.stock || r.fields || {}).length, 0), samples: p.samples, unknownCount: p.unknown.length, unknown: p.unknown.slice(0, 100), notLockCount: p.notLock.length, notLock: p.notLock.slice(0, 100), ambiguousCount: p.ambiguous.length, ambiguous: p.ambiguous.slice(0, 100) });
     if (action === 'preview') return json(summarize(await plan(c.env.db, kind, input)));
     if (!input.version) throw new AppError(400, 'Xem trước file trước khi cập nhật.');
     const actor = (c.state.session as SessionState).member.id, now = new Date().toISOString();
@@ -109,7 +113,7 @@ export function registerProductActionRoutes(router: Router<StaffEnv>) {
         const incoming = new Set((await tx.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.kind, 'incoming'))).map(w => w.id));
         const rows = p.matched.flatMap(r => Object.entries(r.stock!).filter(([warehouseId]) => !incoming.has(warehouseId)).map(([warehouseId, quantity]) => ({ sku: r.sku, warehouseId, quantity, onHand: r.transactions?.[warehouseId]?.onHand ?? null, committed: r.transactions?.[warehouseId]?.committed ?? null })));
         await tx.insert(stockImports).values({ revision, key: 'crm:' + crypto.randomUUID(), filename: input.filename, observedAt: input.observedAt!, createdAt: now, createdBy: actor, count: p.matched.length });
-        for (const chunk of parts(rows)) {
+        for (const chunk of parts(rows, 2000)) { // 2.000 dòng / lệnh: ít lượt gọi DB (tham số < 65.535)
           await tx.insert(productStock).values(chunk.map(({ sku, warehouseId, quantity }) => ({ sku, warehouseId, quantity, updatedAt: now }))).onConflictDoUpdate({ target: [productStock.sku, productStock.warehouseId], set: { quantity: sql`excluded.quantity`, updatedAt: sql`excluded.updated_at` } });
           await tx.insert(stockImportLines).values(chunk.map(r => ({ ...r, importRevision: revision })));
         }

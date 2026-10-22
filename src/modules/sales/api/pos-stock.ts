@@ -6,7 +6,7 @@ import { warehouses } from '../../catalog/schema.ts';
  * Tồn chuẩn (docs/SO-KHO.md): kho thật đã chốt tồn đầu kỳ đọc số dư sổ kho (bán quầy, bán đơn / HĐKT, điều chuyển, nhận NCC…);
  * kho chưa chốt vẫn đọc tồn đồng bộ Sapo. Trước đây chỉ áp cho kho quầy POS – nay áp cho mọi kho đã chốt (yêu cầu 18/10/2026).
  */
-async function ledgerWarehouses(db: StockReadDb) {
+export async function ledgerWarehouses(db: StockReadDb) {
   return (await db.selectDistinct({ id: stockMoves.warehouseId }).from(stockMoves)
     .innerJoin(warehouses, and(eq(warehouses.id, stockMoves.warehouseId), eq(warehouses.kind, 'stock')))
     .where(eq(stockMoves.refType, 'opening'))).map(r => r.id);

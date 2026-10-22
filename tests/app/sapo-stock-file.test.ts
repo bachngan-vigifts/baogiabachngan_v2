@@ -53,7 +53,7 @@ test('API Sapo file: quyền Manager, snapshot nguyên tử, lưu raw totals, kh
   const endpoint = '/admin/products/import/sapo-stock/';
   assert.equal((await call(endpoint + 'preview', '', 'POST', stock)).status, 401); assert.equal((await call(endpoint + 'preview', emp, 'POST', stock)).status, 403); assert.equal((await call(endpoint + 'apply', emp, 'POST', stock)).status, 403);
   assert.equal((await call(endpoint + 'apply', mgr, 'POST', stock)).status, 400);
-  const preview = await call(endpoint + 'preview', mgr, 'POST', stock); assert.equal(preview.status, 200, JSON.stringify(preview.data)); assert.equal(preview.data.unknownCount, 1); assert.equal(preview.data.samples[0].after, 10);
+  const preview = await call(endpoint + 'preview', mgr, 'POST', stock); assert.equal(preview.status, 200, JSON.stringify(preview.data)); assert.equal(preview.data.unknownCount, 1); assert.equal(preview.data.fileRows, 2); assert.deepEqual(preview.data.ledgerWarehouses, []); assert.equal(preview.data.samples[0].after, 10);
   const invalid = { ...stock, rows: [{ ...stock.rows[0], transactions: { v: { onHand: 10, committed: 3 } } }], version: preview.data.version }; assert.equal((await call(endpoint + 'apply', mgr, 'POST', invalid)).status, 400);
   assert.equal((await db.select().from(stockImports)).length, 0);
   const applied = await call(endpoint + 'apply', mgr, 'POST', { ...stock, version: preview.data.version }); assert.equal(applied.status, 200, JSON.stringify(applied.data));
@@ -73,7 +73,7 @@ test('API Sapo file: quyền Manager, snapshot nguyên tử, lưu raw totals, kh
 test('form Cập nhật kho: nhập một file được, đổi kho phải xem trước lại, không render HTML từ SKU', async () => {
   let closes = 0;
   class Element {
-    tagName: string; children: Element[] = []; attributes: Record<string, string> = {}; parent: Element | null = null; textContent = ''; value = ''; disabled = false; files: any[] = []; onchange: any; onclick: any; listeners: Record<string, Function> = {};
+    tagName: string; children: Element[] = []; attributes: Record<string, string> = {}; parent: Element | null = null; textContent = ''; value = ''; disabled = false; hidden = false; files: any[] = []; onchange: any; onclick: any; listeners: Record<string, Function> = {};
     constructor(tag: string) { this.tagName = tag; }
     setAttribute(k: string, v: string) { this.attributes[k] = v; if (k === 'value') this.value = String(v); }
     append(...nodes: Element[]) { for (const n of nodes) { n.parent = this; this.children.push(n); if (this.tagName === 'select' && this.children.length === 1) this.value = n.value; } }
@@ -85,7 +85,7 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   }
   const document = { body: new Element('body'), head: new Element('head'), createElement: (tag: string) => new Element(tag) };
   const calls: any[] = [], notices: string[] = []; let refreshed = 0;
-  const ctx: any = { document, Date, URL, console, XLSX: { read: (value: any) => value, utils: { decode_range: () => ({ e: { r: 2 } }), sheet_to_json: (ws: any) => ws.rows, encode_cell: ({ r, c }: any) => `${r}:${c}` } } };
+  const ctx: any = { document, Date, URL, console, setInterval, clearInterval, setTimeout, requestAnimationFrame: (f: () => void) => setTimeout(f, 0), XLSX: { read: (value: any) => value, utils: { decode_range: () => ({ e: { r: 2 } }), sheet_to_json: (ws: any) => ws.rows, encode_cell: ({ r, c }: any) => `${r}:${c}` } } };
   vm.createContext(ctx);
   const pure = readFileSync(new URL('../../trial-ui/product-file.js', import.meta.url), 'utf8').replace(/export /g, '');
   const parse = readFileSync(new URL('../../trial-ui/sapo-stock-file.js', import.meta.url), 'utf8').replace(/^import .*;$/m, '').replace(/export /g, '');
@@ -116,5 +116,8 @@ test('form Cập nhật kho: nhập một file được, đổi kho phải xem t
   assert.ok(!all().some(x => String(x.textContent).includes('MISSING-1') || String(x.textContent).includes('Mã không tìm thấy')));
   targets[0]!.onchange(); assert.equal(apply.disabled, true, 'đổi kho vô hiệu hoá preview'); await apply.onclick(); assert.equal(calls.length, 1);
   await review.onclick(); await apply.onclick(); assert.equal(calls.at(-1).path, '/admin/products/import/sapo-stock/apply'); assert.equal(refreshed, 1); assert.equal(apply.disabled, true);
-  assert.equal(closes, 1); assert.match(notices[0]!, /^Đã cập nhật 1 mã lúc /);
+  // Hộp không tự đóng: hiện kết quả (số mã cập nhật, số bỏ qua) để người nhập đối chiếu; nút đổi thành "Xong".
+  assert.equal(closes, 0); assert.match(notices[0]!, /^Đã cập nhật 1 mã \(/);
+  assert.ok(all().some(x => x.tagName === 'dt' && x.textContent === 'Không có trong CRM (bỏ qua)'));
+  assert.equal(apply.hidden, true); assert.ok(button('Xong'));
 });
