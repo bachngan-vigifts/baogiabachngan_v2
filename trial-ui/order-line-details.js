@@ -19,7 +19,13 @@ export function renderOrderLineDetails({ head, body, details, order, lines }) {
   };
   for (const line of lines) {
     const tr = el('tr');
-    cell(tr, line.name, false, [line.sku, line.unit].filter(Boolean).join(' · '));
+    const name = cell(tr, '', false);
+    if (line.sku) {
+      const link = el('a', line.name); link.href = '#/products?sku=' + encodeURIComponent(line.sku);
+      name.append(link);
+    } else name.textContent = line.name;
+    const sub = [line.sku, line.unit].filter(Boolean).join(' · ');
+    if (sub) name.append(el('small', sub));
     cell(tr, num(line.qty)); cell(tr, num(line.deliveredQty));
     if (pos) {
       // Original POS prices include VAT under the VAT policy. Never present them as net prices.

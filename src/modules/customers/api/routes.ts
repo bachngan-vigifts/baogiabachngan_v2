@@ -1,3 +1,5 @@
+import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from './identity.ts';
+import { changedIdentity } from '../domain/identity.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { customerInput } from '../domain/customer-input.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
@@ -11,7 +13,6 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { customerBrandDiscounts, customerContacts, customerNotes, customers, customerStaff } from '../schema.ts';
 import { CUSTOMER_LIMITS, canListRetailCustomers } from '../domain/customer-config.ts';
-import { NORM_TAX_SQL, normTaxCode } from '../domain/tax-code.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Db = StaffEnv['db'];
@@ -56,14 +57,6 @@ async function activeStaff(db: Db, ids: string[]) {
   if (!ids.length) return [];
   return (await db.select({ id: employees.id }).from(employees)
     .where(and(inArray(employees.id, ids), eq(employees.active, true), isNull(employees.deletedAt), inArray(employees.role, ['employee', 'manager'])))).map(r => r.id);
-}
-
-/** Khách khác đã dùng MST này (chống trùng khách theo mã số thuế). */
-export async function customerWithTaxCode(db: Db, taxCode: string, exceptId?: string) {
-  const tax = normTaxCode(taxCode); if (!tax) return null;
-  const [row] = await db.select({ id: customers.id, name: customers.name }).from(customers)
-    .where(and(sql`${sql.raw(NORM_TAX_SQL('tax_code'))} = ${tax}`, exceptId ? ne(customers.id, exceptId) : undefined)).limit(1);
-  return row ?? null;
 }
 
 async function loadCustomer(db: Db, id: string) {
@@ -152,30 +145,37 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
 
+  router.get('/customers/duplicates/check', async c => {
+    const p = c.url.searchParams;
+    const matches = await findCustomerDuplicates(c.env.db, { name: (p.get('name') || '').slice(0,500), phone: (p.get('phone') || '').slice(0,40), taxCode: (p.get('taxCode') || '').slice(0,500) }, p.get('exceptId') || undefined);
+    return json({ matches: matches.map(m => ({ id: m.isRetail && !canListRetailCustomers(viewer(c)) ? null : m.id,
+      name: m.isRetail && !canListRetailCustomers(viewer(c)) ? 'Khách hàng trong danh mục hạn chế' : m.name, reasons: m.reasons })) });
+  }, 'business');
+
   const save = async (c: Ctx, update: boolean) => {
     const body = await readJson(c.req, 16_384), me = viewer(c);
     const now = nowIso(), id = update ? c.params.id! : crypto.randomUUID();
     const {fields,terms}=customerInput(body);
     const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
-    // Sửa khách mà không đổi MST thì không chặn (dữ liệu trùng cũ gộp bằng chức năng "Gộp khách trùng MST").
-    const unchanged = update && normTaxCode((await loadCustomer(c.env.db, id)).taxCode) === normTaxCode(fields.taxCode);
-    const dup = unchanged ? null : await customerWithTaxCode(c.env.db, fields.taxCode, update ? id : undefined);
-    if (dup) throw new AppError(409, `Mã số thuế ${fields.taxCode} đã có ở khách "${dup.name}". Mở khách đó thay vì tạo trùng.`, 'CUSTOMER_TAX_DUPLICATE');
-    if (update) {
-      await loadCustomer(c.env.db, id); await requireEdit(c.env.db, id, me);
-      if (!(await c.env.db.update(customers).set(row).where(eq(customers.id, id)).returning({ id: customers.id })).length) throw new AppError(404, 'Không tìm thấy khách hàng.');
-      return json({ id });
-    }
+    if (update) await requireEdit(c.env.db, id, me);
     // Khách mới: người tạo là người phụ trách (Manager chọn được người khác qua `ownerId`).
     const wanted = me.role === 'manager' && typeof body.ownerId === 'string' && body.ownerId ? body.ownerId : me.id;
-    const [ownerId] = await activeStaff(c.env.db, [wanted]);
+    const [ownerId] = update ? [] : await activeStaff(c.env.db, [wanted]);
     // Khách nhân viên tạo chờ Manager duyệt mới dùng được cho báo giá / đơn; Manager tạo thì có hiệu lực ngay.
     const mgr = me.role === 'manager';
     await c.env.db.transaction(async tx => {
+      await customerIdentityLock(tx);
+      const [previous] = update ? await tx.select().from(customers).where(eq(customers.id, id)).for('update') : [];
+      if (update && !previous) throw new AppError(404, 'Không tìm thấy khách hàng.');
+      rejectDuplicate(await findCustomerDuplicates(tx, changedIdentity(fields, previous), update ? id : undefined), canListRetailCustomers(me));
+      if (update) {
+        await tx.update(customers).set(row).where(eq(customers.id, id));
+        return;
+      }
       await tx.insert(customers).values({ id, createdAt: now, ...row, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null });
       if (ownerId) await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
     });
-    return json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
+    return update ? json({ id }) : json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
   };
   router.post('/customers', c => save(c, false), 'business');
   router.put('/customers/:id', c => save(c, true), 'business');

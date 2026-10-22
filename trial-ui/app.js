@@ -1,3 +1,4 @@
+import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
 import { initReceivingCalendar } from './receiving-calendar.js';
 import { documentSequence, nextDocumentNumber } from './document-number.js';
 import { orderRecipient } from './order-notes.js';
@@ -652,6 +653,7 @@ function route() {
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
   if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || homeHash()); if (lastRoutedHash) return; }
+  document.querySelectorAll('dialog.product-card').forEach(dlg => { dlg.close(); dlg.remove(); });
   lastRoutedHash = location.hash;
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = 'quotes', id] = path.split('/');
@@ -676,7 +678,11 @@ function route() {
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
   if (view === 'pos') posView().load();
   if (view === 'products' && !state.products) loadProducts();
-  if (view === 'products') { productAdmin().loadPending(); legacyImagesBox(); }
+  if (view === 'products') {
+    productAdmin().loadPending(); legacyImagesBox();
+    const sku = new URLSearchParams(query).get('sku');
+    if (sku) showProductCard(sku);
+  }
   if (view === 'orders') loadOrders();
   if (view === 'contracts') loadContracts();
   if (view === 'receiving') receivingView().load();
@@ -1246,9 +1252,20 @@ async function showProductCard(sku, name) {
       <div class="pc-head"><h3 class="pc-title">Lịch sử sản phẩm <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
     <div class="modal-foot"><button type="button" class="btn navy" data-x>Đóng</button></div>`;
   document.body.append(dlg); dlg.showModal();
-  const close = () => { dlg.close(); dlg.remove(); };
+  const close = () => { dlg.close(); };
+  dlg.addEventListener('close', () => {
+    const params = new URLSearchParams(location.hash.split('?')[1] || '');
+    if (location.hash.startsWith('#/products?') && params.get('sku') === sku) {
+      params.delete('sku');
+      history.replaceState(null, '', location.pathname + location.search + '#/products' + (params.size ? '?' + params : ''));
+    }
+  });
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
-  stockHtml(sku).then(r => { dlg.querySelector('[data-stock-box]').innerHTML = r.html; }).catch(ex => { dlg.querySelector('[data-stock-box]').innerHTML = `<p class="error">${esc(ex.message)}</p>`; });
+  stockHtml(sku).then(r => {
+    if (!dlg.isConnected) return;
+    dlg.querySelector('[data-stock-box]').innerHTML = r.html;
+    if (!name && r.product?.name) dlg.querySelector('h2').textContent = r.product.name;
+  }).catch(ex => { if (!dlg.isConnected) return; dlg.querySelector('[data-stock-box]').innerHTML = `<p class="error">${esc(ex.message)}</p>`; });
   const box = dlg.querySelector('[data-history]');
   let d;
   try { d = await api('/products/' + encodeURIComponent(sku) + '/history'); } catch (ex) { box.innerHTML = `<p class="error">${esc(ex.message)}</p>`; return; }
@@ -2662,13 +2679,21 @@ function customerDetail() {
 }
 function openCustomer(id, known) {
   customerId = id || null;
+  customerDuplicateCheck.reset();
   const form = $('#customer-form'); form.reset(); $('#customer-error').textContent = '';
   const c = id ? known || state.customers?.find(x => x.id === id) : null;
   if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit']) form.elements.namedItem(k).value = c[k] ?? '';
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
+  customerDuplicateCheck.refresh();
 }
 $('#customer-fields').append(customerFormFields().root);
+const customerDuplicateCheck = bindCustomerDuplicateCheck({
+  api, root: $('#customer-fields'), exceptId: () => customerId,
+  active: () => $('#customer-dialog').open,
+  read: () => Object.fromEntries(['name', 'phone', 'taxCode'].map(k => [k, $('#customer-form').elements.namedItem(k).value])),
+  onChoose: c => { $('#customer-dialog').close(); go('#/customers/' + encodeURIComponent(c.id)); },
+});
 $('#new-customer').addEventListener('click', () => openCustomer());
 $('#customer-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -3423,7 +3448,7 @@ async function openOrder(id) {
   }
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], [isK ? 'Ngày lập' : 'Ngày đặt', fmtDate(o.orderDate)]]
-    .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')
+    .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${k === 'Khách hàng' && o.customerId && canPage('customer') ? `<a href="#/customers/${encodeURIComponent(o.customerId)}">${esc(v)}</a>` : esc(v)}</dd>`).join('')
     // Giao dự kiến tô màu theo hạn: trễ/hôm nay đỏ, ≤3 ngày cam, ≤7 ngày xanh dương, xa hơn xanh lá.
     + `<dt>Giao dự kiến</dt><dd>${duePill(o.expectedDeliveryDate, { done: shipDone, fmt: fmtDate })}</dd>`;
   $('#order-lines-title').textContent = isK ? 'Hàng trong HĐKT' : 'Hàng trong đơn';

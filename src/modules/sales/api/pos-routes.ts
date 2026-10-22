@@ -26,7 +26,7 @@ import { defaultPosRegister } from '../domain/pos-register.ts';
 import { products, productPrices, productBarcodes, pricePolicies, warehouses } from '../../catalog/schema.ts';
 import { stockBalances } from '../../inventory/schema.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
-import { customerWithTaxCode } from '../../customers/api/routes.ts';
+import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from '../../customers/api/identity.ts';
 import { customerInput } from '../../customers/domain/customer-input.ts';
 import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlips } from '../schema.ts';
 import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
@@ -630,7 +630,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/customers',
     async (c) => {
       posPermission(member(c));
-      const q = posText(c.url.searchParams.get('q'), 100);
+      const q = posText(c.url.searchParams.get('q'), 100), focusedId = posText(c.url.searchParams.get('id'), 100);
       const list = await c.env.db
         .select({
           id: customers.id,
@@ -642,6 +642,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .where(
           and(
             eq(customers.approvalStatus, 'approved'),
+            focusedId ? eq(customers.id, focusedId) : undefined,
             !canListRetailCustomers(member(c)) ? eq(customers.isRetail, false) : c.url.searchParams.get('kind') === 'retail' ? eq(customers.isRetail, true) : c.url.searchParams.get('kind') === 'business' ? eq(customers.isRetail, false) : undefined,
             q
               ? or(
@@ -665,19 +666,26 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     },
     'business',
   );
+  router.get('/pos/customers/duplicates/check', async c => {
+    const m = member(c); posPermission(m);
+    const p = c.url.searchParams;
+    const matches = await findCustomerDuplicates(c.env.db, {name:(p.get('name')||'').slice(0,500),phone:(p.get('phone')||'').slice(0,40),taxCode:(p.get('taxCode')||'').slice(0,500)});
+    return json({matches:matches.map(x=>({id:x.isRetail&&!canListRetailCustomers(m)?null:x.id,name:x.isRetail&&!canListRetailCustomers(m)?'Khách hàng trong danh mục hạn chế':x.name,reasons:x.reasons}))});
+  }, 'business');
   router.post(
     '/pos/customers',
     async (c) => {
       const m = member(c);
       posPermission(m);
-      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b,true),{name,phone,taxCode}=fields;
+      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b,true),{name,phone}=fields;
       const customerIssue = posCustomerIssue({id: 'new', name});
       if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
-      if (taxCode && (await customerWithTaxCode(c.env.db, taxCode)))
-        throw new AppError(409, 'MST đã có khách hàng, hãy tìm khách có sẵn.');
+
       const id = crypto.randomUUID(),
         now = posNow();
       await c.env.db.transaction(async (tx) => {
+        await customerIdentityLock(tx);
+        rejectDuplicate(await findCustomerDuplicates(tx, fields), canListRetailCustomers(m));
         await tx.insert(customers).values({
           id,
           ...fields,...terms,

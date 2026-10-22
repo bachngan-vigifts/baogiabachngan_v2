@@ -30,7 +30,7 @@ test('Bổ sung khách: chỉ insert, bỏ ID/mã/điện thoại có sẵn, kh�
     { id: 116, name: 'Khách cùng tên', phone: '0903333333' }, { id: 117, name: 'Khách cùng tên', phone: '0904444444' },
   ];
   const r = await addRetailCustomers(f.db, raw);
-  assert.deepEqual(r, { received: 7, eligible: 6, added: 3, existing: 1, duplicate: 2, excluded: 1 });
+  assert.deepEqual(r, { received: 7, eligible: 6, added: 2, existing: 1, duplicate: 3, excluded: 1 });
   assert.equal((await addRetailCustomers(f.db, raw)).added, 0);
   assert.equal((await f.db.select().from(customers).where(eq(customers.id, '111')))[0]!.name, 'Giữ nguyên');
   await syncCustomers(f.db, { customers: [{ id: 114, name: 'Không được ghi đè khách retail' }] });
@@ -44,7 +44,8 @@ test('Bổ sung khách: chỉ insert, bỏ ID/mã/điện thoại có sẵn, kh�
     assert.equal(list.data.customers.some((c: any) => c.id === '114'), allowed);
     assert.equal((await f.call('/pos/customers?q=Khách&kind=retail', f.emp)).data.customers.some((c: any) => c.id === '114'), allowed);
   }
-  assert.equal((await f.call('/customers?kind=retail', f.mgr)).data.total, 3);
+  assert.equal((await f.call('/customers?kind=retail', f.mgr)).data.total, 2);
+  assert.equal((await f.db.select().from(customers).where(eq(customers.id,'117'))).length,0,'same normalized name is skipped');
 });
 test('Quét đủ trang khách riêng, tiếp tục đúng con trỏ, gọi lặp không thêm; không gọi sản phẩm/nhân viên', async () => {
   const f = await setup(), paths: string[] = [];
