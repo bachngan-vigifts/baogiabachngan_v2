@@ -1351,6 +1351,12 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .pack-av { font-size: 1rem; font-weight: 700; color: var(--ink); padding: 7px 0; } .pack-av.danger-text { color: var(--red); }
 .pack-warn { margin: 0; color: #a15c00; font-size: .85rem; font-weight: 600; }
 .pack-src { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 90px 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.pack-src:has([data-early-actions]:not([hidden])) { grid-template-columns: minmax(0, 1fr) 90px 32px; }
+.pack-early-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 0; }
+.pack-early-actions [data-early-result] { flex-basis: 100%; font-size: 12px; }
+.pack-early-actions a { color: var(--blue); text-decoration: underline; }
+.pack-incoming-hint { padding: 9px 11px; margin: 8px 0; border: 1px solid #b8d8f2; border-radius: 7px; background: #eff7ff; color: #195789; font-size: 12px; }
+.pack-incoming-hint small { display: block; margin-top: 4px; line-height: 1.5; }
 .pack-line [data-src-add] { justify-self: start; }
 .pack-slips { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
 .pack-slips .plain-list li { align-items: center; }
