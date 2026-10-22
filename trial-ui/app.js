@@ -3621,12 +3621,16 @@ $('#order-pack').addEventListener('click', async () => {
     const skus = [...new Set(todo.map(l => l.sku).filter(Boolean))], stock = new Map();
     try { for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); } } catch { /* không có số liệu tồn: để kho = đủ */ }
     $('#pack-order').textContent = `${docNo()} · ${o.customerName}`; $('#pack-error').textContent = ''; $('#pack-form').note.value = '';
+    // Đơn CRM đã trừ kho bán lúc duyệt: số dư kho bán đã trừ phần của chính đơn → cộng lại phần chưa đóng gói, chỉ tính kho bán.
+    const soldWh = d.soldWarehouseId || '', ownLeft = new Map();
+    for (const l of todo) if (l.sku) ownLeft.set(l.sku, (ownLeft.get(l.sku) || 0) + l.left);
+    const packAv = p => soldWh ? Math.max(0, (Number(p.stock?.[soldWh]) || 0) + (ownLeft.get(p.sku) || 0)) : Math.max(0, availableStock(p));
     $('#pack-lines').innerHTML = todo.map(l => {
-      const p = l.sku ? stock.get(l.sku) : null, av = p ? Math.max(0, availableStock(p)) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock;
+      const p = l.sku ? stock.get(l.sku) : null, av = p ? packAv(p) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock;
       return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}">
         <div class="pack-head"><b>${esc(l.name)}</b><small>${esc(l.sku || 'Chưa có mã')} · ${esc(l.unit || '')} · đơn ${fmtNum(l.qty)}${l.packed ? ` · đã có phiếu ${fmtNum(l.packed)}` : ''}</small></div>
         <div class="pack-grid"><label>Cần đóng<input class="num-input" inputmode="decimal" data-need value="${fmtNum(l.left)}"></label>
-          <label>Tồn kho<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</span></label>
+          <label>${soldWh ? `<span title="Tồn ${esc(o.warehouseName || 'kho bán')} + phần đơn này đã trừ lúc duyệt mà chưa đóng gói">Tồn kho bán</span>` : 'Tồn kho'}<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</span></label>
           <label>Lấy từ kho<input class="num-input" inputmode="decimal" data-wh value="${fmtNum(fromStock)}"></label></div>
         <p class="pack-warn" ${short > 1e-9 ? '' : 'hidden'}>⚠️ Kho không đủ – nhập phần còn lại lấy từ đâu.</p>
         <div data-srcs>${short > 1e-9 ? packSourceRow(short) : ''}</div>
