@@ -1,3 +1,4 @@
+import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
 import { posCustomerIssue } from './pos-customer.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { webOrderFinancialSummary } from './web-order-financials.js';
@@ -1245,6 +1246,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const save = el('button', 'btn primary', 'Lưu & chọn khách'); save.type = 'submit';
     actions.append(save, button('Huỷ', 'btn secondary', m.close));
     m.form.append(fields.root, error, actions);
+    const duplicateCheck = bindCustomerDuplicateCheck({api, root:fields.root, read:fields.read, endpoint:'/pos/customers/duplicates/check', active:()=>m.dlg.open,
+      onChoose: async c => {
+        try {
+          const result=await api('/pos/customers?id='+encodeURIComponent(c.id));
+          const existing=result.customers.find(x=>x.id===c.id);
+          if(!existing){error.textContent='Khách chưa được duyệt hoặc chưa có quyền chọn. Nhờ Manager kiểm tra.';return;}
+          const issue=posCustomerIssue(existing);if(issue){error.textContent=issue;return;}
+          st.customer=existing;nodes.customer.textContent=existing.name;invalidate();m.close();
+        }catch(ex){error.textContent=ex.message;}
+      }});
+    m.dlg.addEventListener('close', duplicateCheck.reset);
     m.form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (save.disabled) return;

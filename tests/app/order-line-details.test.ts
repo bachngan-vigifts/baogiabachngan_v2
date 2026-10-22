@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 // @ts-ignore browser-only DOM renderer
 import { renderOrderLineDetails } from '../../trial-ui/order-line-details.js';
 class Node {
-  children: Node[] = []; className = ''; text = '';
+  children: Node[] = []; className = ''; text = ''; href = '';
   constructor(public tag: string) {}
   set textContent(value: string) { this.text = String(value); this.children = []; }
   get textContent(): string { return this.text + this.children.map(n => n.textContent).join(''); }
@@ -24,6 +24,9 @@ test('POS order detail shows original price, discount, gross after discount, fee
       subtotal: 385186, tax: 29214, total: 414400, posSnapshot: JSON.stringify({ lines: [source] }),
       posFees: { services: [fee, { ...fee, name: 'Gói quà', quantity: 1, unitPrice: 5000, amount: 5000, subtotal: 4630, tax: 370 }], shippingFee: 20000 } } });
     assert.equal(head.children.length, 8);
+    const product = body.children[0]!.children[0]!.children[0]!;
+    assert.equal(product.tag, 'a'); assert.equal(product.href, '#/products?sku=001');
+    assert.equal(product.textContent, line.name);
     assert.deepEqual(body.children[0]!.children.slice(1).map(n => n.textContent), [
       '2', '0', '108.000 đgồm VAT', '10%Giảm 21.600 đ', '97.200 đgồm VAT', '8%14.400 đ', '194.400 đgồm VAT']);
     assert.equal(body.children.length, 4);
