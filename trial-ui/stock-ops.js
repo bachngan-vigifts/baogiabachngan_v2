@@ -6,6 +6,7 @@
  * API: src/modules/inventory/api/{transfer-routes,history-routes}.ts. DOM dựng bằng createElement / textContent.
  */
 import { downloadExcel } from './sheet-export.js';
+import { createPager } from './pager.js';
 
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
 const btn = (text, cls = 'btn secondary small', onClick) => { const b = el('button', cls, text); b.type = 'button'; if (onClick) b.addEventListener('click', onClick); return b; };
@@ -149,39 +150,65 @@ export function initTransfers({ api, root, toast, go }) {
 const GROUPS = [['', 'Tất cả'], ['sale', 'Bán hàng'], ['in', 'Nhập'], ['out', 'Xuất'], ['transfer', 'Điều chuyển'], ['adjust', 'Điều chỉnh / đầu kỳ']];
 
 export function initStockMoves({ api, root, toast }) {
-  let group = '', rows = [];
-  const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
+  let group = '', rows = [], request = 0;
+  const recordedAt = iso => iso ? new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' }) + ' ' + new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
+  const page = el('div', 'sup-page stock-history'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Lịch sử xuất nhập'),
-    el('p', 'muted', 'Mọi phát sinh sổ kho: bán hàng (duyệt đơn / HĐKT, bán quầy), nhập NCC, đóng gói, điều chuyển, điều chỉnh. Mới nhất trước, tối đa 1000 dòng.'));
+    el('p', 'muted', 'Theo dõi từng lần nhập, xuất và số tồn sau phát sinh theo từng mã hàng tại mỗi kho.'));
   const tools = el('div', 'row-gap');
-  const exp = btn('⬇ Xuất Excel', 'btn secondary', () => downloadExcel(`lich-su-xuat-nhap-${new Date().toISOString().slice(0, 10)}.xlsx`, [{ name: 'Xuất nhập',
-    header: ['Thời gian', 'Kho', 'Loại', 'Mã', 'Tên', 'Số lượng', 'ĐVT', 'Chứng từ', 'Ghi chú', 'Người làm'], autoFilter: true,
-    rows: rows.map(m => [dt(m.at), m.warehouse, m.kindLabel, m.sku, m.name, m.qty, m.unit, m.refNo, m.note, m.by]) }]).catch(e => toast(e.message, 'err')));
+  const exp = btn('↓ Xuất Excel', 'btn secondary', () => downloadExcel(`lich-su-xuat-nhap-${new Date().toISOString().slice(0, 10)}.xlsx`, [{ name: 'Xuất nhập',
+    header: ['Ngày ghi nhận', 'Nhân viên', 'Thao tác', 'Mã sản phẩm', 'Tên sản phẩm', 'Số lượng thay đổi', 'Tồn kho sau phát sinh', 'ĐVT', 'Mã chứng từ', 'Ghi chú', 'Kho'], autoFilter: true,
+    rows: rows.map(m => [recordedAt(m.at), m.by, m.kindLabel, m.sku, m.name, m.qty, m.balanceAfter ?? '', m.unit, m.refNo, m.note, m.warehouse]) }]).catch(e => toast(e.message, 'err')));
   tools.append(exp); head.append(titles, tools);
-  const panel = el('div', 'panel'), bar = el('div', 'toolbar'), chips = el('div', 'chips');
-  for (const [k, t] of GROUPS) { const c = btn(t, 'chip' + (k === group ? ' active' : ''), () => { group = k; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c)); load(); }); chips.append(c); }
-  const wh = select([['', 'Mọi kho']], '', 'Kho'), from = input('date'), to = input('date'), q = input('search', '', { placeholder: 'Mã, tên, số chứng từ…' });
-  for (const x of [wh, from, to]) x.addEventListener('change', () => load());
-  let timer = 0; q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 300); });
-  bar.append(wh, field('Từ', from), field('Đến', to), q);
-  const count = el('p', 'muted small');
-  const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), tbody = el('tbody'), thead = el('thead'), hr = el('tr');
-  for (const h of ['Thời gian', 'Kho', 'Loại', 'Mã / tên', 'SL', 'Chứng từ', 'Người làm']) hr.append(el('th', '', h));
-  thead.append(hr); table.append(thead, tbody); wrap.append(table); panel.append(chips, bar, count, wrap); page.append(head, panel); root.append(page);
+  const panel = el('div', 'panel'), bar = el('div', 'stock-history-filters'), chips = el('div', 'chips stock-history-tabs');
+  for (const [k, t] of GROUPS) { const c = btn(t, 'chip' + (k === group ? ' active' : ''), () => { group = k; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c)); reload(); }); chips.append(c); }
+  const wh = select([['', 'Tất cả kho']], '', 'Kho'), from = input('date'), to = input('date'), q = input('search', '', { placeholder: 'Tìm mã, tên sản phẩm hoặc chứng từ…' });
+  q.setAttribute('aria-label', 'Tìm sản phẩm hoặc chứng từ');
+  from.setAttribute('aria-label', 'Từ ngày'); to.setAttribute('aria-label', 'Đến ngày');
+  for (const x of [wh, from, to]) x.addEventListener('change', reload);
+  let timer = 0; q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(reload, 300); });
+  const clear = btn('Xoá bộ lọc', 'btn ghost small', () => { wh.value = from.value = to.value = q.value = ''; reload(); });
+  bar.append(field('Kho', wh), field('Tìm kiếm', q, 'stock-history-search'), field('Từ ngày', from), field('Đến ngày', to), clear);
+  const count = el('p', 'stock-history-count muted small'); count.setAttribute('role', 'status');
+  const wrap = el('div', 'table-wrap'), table = el('table', 'data-table stock-history-table'), tbody = el('tbody'), thead = el('thead'), hr = el('tr');
+  for (const h of ['Ngày ghi nhận', 'Nhân viên', 'Thao tác', 'Sản phẩm', 'Số lượng thay đổi', 'Tồn kho', 'Mã chứng từ', 'Kho']) hr.append(el('th', '', h));
+  hr.children[5].title = 'Tồn sổ kho sau phát sinh của mã hàng tại kho này, gồm cả lịch sử ngoài bộ lọc.';
+  const footer = el('div', 'pager'), pager = createPager(footer, 'stock-moves', render, 20);
+  thead.append(hr); table.append(thead, tbody); wrap.append(table); panel.append(chips, bar, count, wrap, footer); page.append(head, panel); root.append(page);
 
-  async function load() {
-    const p = new URLSearchParams();
-    if (group) p.set('group', group); if (wh.value) p.set('warehouseId', wh.value); if (from.value) p.set('from', from.value); if (to.value) p.set('to', to.value); if (q.value.trim()) p.set('q', q.value.trim());
-    let d; try { d = await api('/stock-moves?' + p); } catch (e) { toast(e.message, 'err'); return; }
-    if (wh.options.length === 1) for (const w of d.warehouses) { const o = el('option', '', w.name); o.value = w.id; wh.append(o); }
-    rows = d.moves;
-    count.textContent = `${rows.length} dòng` + (rows.length >= 1000 ? ' (đã đủ 1000 – lọc thêm để xem cũ hơn)' : '');
-    tbody.replaceChildren(...(rows.length ? rows.map(m => {
-      const tr = el('tr'), item = el('td', 'first'); item.append(el('b', '', m.sku), el('small', '', m.name));
-      const ref = el('td'); if (m.link) { const a = el('a', '', m.refNo || 'Mở'); a.href = m.link; ref.append(a); } else ref.textContent = m.refNo; if (m.note) ref.append(el('small', '', m.note));
-      tr.append(el('td', '', dt(m.at)), el('td', '', m.warehouse), el('td', '', m.kindLabel), item, el('td', m.qty < 0 ? 'danger-text' : 'paid-text', signed(m.qty)), ref, el('td', '', m.by));
+  function render() {
+    pager.render(rows.length);
+    tbody.replaceChildren(...(rows.length ? rows.slice(pager.offset, pager.offset + pager.limit).map(m => {
+      const tr = el('tr'), item = el('td', 'stock-history-product');
+      const product = el('a', '', m.sku); product.href = '#/products?sku=' + encodeURIComponent(m.sku);
+      item.append(product, el('small', '', m.name));
+      const ref = el('td', 'stock-history-ref');
+      if (m.link) { const a = el('a', '', m.refNo || 'Mở chứng từ'); a.href = m.link; ref.append(a); }
+      else ref.append(el('span', '', m.refNo || '—'));
+      if (m.note) ref.append(el('small', '', m.note));
+      const delta = el('td', 'stock-history-number ' + (m.qty < 0 ? 'danger-text' : 'paid-text'), signed(m.qty));
+      if (m.unit) delta.append(el('small', '', m.unit));
+      const balance = el('td', 'stock-history-number stock-history-balance' + (m.balanceAfter < 0 ? ' danger-text' : ''), m.balanceAfter == null ? '—' : num(m.balanceAfter));
+      balance.title = 'Tồn sau phát sinh · ' + m.sku + ' · ' + m.warehouse;
+      const action = el('td'); action.append(el('span', 'stock-history-action', m.kindLabel));
+      tr.append(el('td', 'stock-history-date', recordedAt(m.at)), el('td', '', m.by || '—'), action, item, delta, balance, ref, el('td', '', m.warehouse));
       return tr;
-    }) : [(() => { const tr = el('tr'), td = el('td', 'muted', 'Không có phát sinh.'); td.colSpan = 7; tr.append(td); return tr; })()]));
+    }) : [(() => { const tr = el('tr'), td = el('td', 'muted stock-history-empty', 'Không có phát sinh phù hợp với bộ lọc.'); td.colSpan = 8; tr.append(td); return tr; })()]));
+  }
+  function reload() { pager.reset(); load(); }
+  async function load() {
+    clearTimeout(timer);
+    const n = ++request, p = new URLSearchParams();
+    if (group) p.set('group', group); if (wh.value) p.set('warehouseId', wh.value); if (from.value) p.set('from', from.value); if (to.value) p.set('to', to.value); if (q.value.trim()) p.set('q', q.value.trim());
+    count.textContent = 'Đang tải lịch sử…'; exp.disabled = true; wrap.setAttribute('aria-busy', 'true');
+    try {
+      const d = await api('/stock-moves?' + p); if (n !== request) return;
+      if (wh.options.length === 1) for (const w of d.warehouses) { const o = el('option', '', w.name); o.value = w.id; wh.append(o); }
+      rows = d.moves;
+      count.textContent = `${rows.length.toLocaleString('vi-VN')} phát sinh · Mới nhất trước` + (rows.length >= 1000 ? ' · Đang hiển thị 1.000 dòng mới nhất, lọc thêm để xem lịch sử cũ.' : '') + ' · Tồn kho là tồn sau từng phát sinh.';
+      render();
+    } catch (e) { if (n !== request) return; rows = []; render(); count.textContent = 'Không tải được lịch sử. Vui lòng thử lại.'; toast(e.message, 'err'); }
+    finally { if (n === request) { exp.disabled = !rows.length; wrap.removeAttribute('aria-busy'); } }
   }
   return { load };
 }
