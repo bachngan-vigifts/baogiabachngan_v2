@@ -139,3 +139,42 @@ test('cấu hình kho bán: chỉ Manager / quyền phân quyền', async () => 
   assert.equal(r.status, 200);
   assert.deepEqual(r.data.warehouses.find((w: any) => w.id === 'ml').positions.sort(), ['sale', 'sales-lock', 'sales-ml']);
 });
+
+test('lịch sử kiểu thẻ kho: tồn sau phát sinh tính toàn lịch sử trước bộ lọc, tách từng mã/kho, giữ kín kho riêng', async () => {
+  const s = await setup();
+  const { stockMoves } = await import('../../src/modules/inventory/schema.ts');
+  await s.db.update(stockMoves).set({ createdAt: '2026-10-01T00:00:00.000Z' });
+  await postMoves(s.db as never, 'mgr', [
+    { sku: 'LY1', warehouseId: 'vig', qty: 8, kind: 'receipt', refType: 'supplier_receipt', refId: 'history-in', refNo: 'PNH-history' },
+    { sku: 'OTHER', warehouseId: 'vig', qty: 900, kind: 'opening', refType: 'opening', refId: 'history-other' },
+  ], '2026-10-02T00:00:00.000Z');
+  // Equal timestamps use the same deterministic id order as the displayed history.
+  await s.db.insert(stockMoves).values([
+    { id: 'history-a', sku: 'LY1', warehouseId: 'vig', qty: -3, kind: 'sale', refType: 'sales_order', refId: 'history-sale-a', refNo: 'DH-history-a', createdBy: 'mgr', createdAt: '2026-10-03T00:00:00.000Z' },
+    { id: 'history-b', sku: 'LY1', warehouseId: 'vig', qty: -2, kind: 'sale', refType: 'sales_order', refId: 'history-sale-b', refNo: 'DH-history-b', createdBy: 'mgr', createdAt: '2026-10-03T00:00:00.000Z' },
+  ]);
+  const all = await s.call('/stock-moves?q=LY1', s.ml);
+  assert.equal(all.status, 200, JSON.stringify(all.data));
+  assert.deepEqual(all.data.moves.filter((m: any) => m.id.startsWith('history-')).map((m: any) => [m.id, m.balanceAfter]), [['history-b', 53], ['history-a', 55]]);
+  assert.ok(!all.data.moves.some((m: any) => m.warehouseId === 'hd'));
+  assert.equal(all.data.moves.find((m: any) => m.warehouseId === 'ml').balanceAfter, 20);
+  const filtered = await s.call('/stock-moves?warehouseId=vig&group=sale&from=2026-10-03&to=2026-10-03&q=DH-history-b', s.ml);
+  assert.equal(filtered.status, 200, JSON.stringify(filtered.data));
+  assert.deepEqual(filtered.data.moves.map((m: any) => [m.qty, m.balanceAfter, m.link]), [[-2, 53, '#/orders/history-sale-b']]);
+  assert.equal((await s.call('/stock-moves?warehouseId=hd', s.ml)).data.moves.length, 0);
+  assert.equal((await s.call('/stock-moves?warehouseId=hd', s.mgr)).data.moves[0].balanceAfter, 7);
+  await s.db.insert(stockMoves).values(Array.from({ length: 1001 }, (_, i) => ({
+    id: 'history-limit-' + String(i).padStart(4, '0'), sku: 'LIMIT', warehouseId: 'vig', qty: 1,
+    kind: 'adjust' as const, refType: 'adjustment' as const, refId: 'limit-' + i, createdBy: 'mgr', createdAt: '2026-10-04T00:00:00.000Z',
+  })));
+  const capped = (await s.call('/stock-moves?warehouseId=vig&q=LIMIT', s.ml)).data.moves;
+  assert.equal(capped.length, 1000);
+  assert.equal(capped[0].balanceAfter, 1001, 'cộng cả dòng nằm ngoài giới hạn trả về');
+  assert.equal(capped.at(-1).balanceAfter, 2);
+  await postMoves(s.db as never, 'mgr', [{ sku: 'TZ', warehouseId: 'vig', qty: 2, kind: 'adjust', refType: 'adjustment', refId: 'tz-inside' }], '2026-10-02T18:00:00.000Z');
+  await postMoves(s.db as never, 'mgr', [{ sku: 'TZ', warehouseId: 'vig', qty: 5, kind: 'adjust', refType: 'adjustment', refId: 'tz-outside' }], '2026-10-03T18:00:00.000Z');
+  const vietnamDay = await s.call('/stock-moves?q=TZ&from=2026-10-03&to=2026-10-03', s.ml);
+  assert.deepEqual(vietnamDay.data.moves.map((m: any) => [m.qty, m.balanceAfter]), [[2, 2]], 'lọc ngày theo giờ Việt Nam giống ngày trên bảng');
+  assert.equal((await s.call('/stock-moves?from=2026-02-30', s.ml)).status, 400);
+
+});
