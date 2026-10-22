@@ -3,7 +3,7 @@ import { PROGRESS_STAGES } from './statuses.ts';
 /**
  * TIẾN TRÌNH SẢN PHẨM của đơn / HĐKT – hàm thuần. Mỗi bước tự xong theo chứng từ / công việc, hoặc Manager bấm xong nhanh:
  *  - Duyệt:      đơn / HĐKT đã được Manager duyệt (không còn nháp);
- *  - Xuất kho:   kho xác nhận đã đóng gói một phiếu đóng gói của đơn;
+ *  - Xuất kho:   kho xác nhận phiếu đóng gói, hoặc POS tại quầy đã giao và có xuất trực tiếp đủ từng mã;
  *  - In mẫu:     (chỉ đơn có phí in) việc "In mẫu" được hoàn thành;
  *  - Sản xuất:   (chỉ đơn có phí in) việc "Sản xuất" được hoàn thành;
  *  - Giao hàng:  đơn đã giao đủ.
@@ -24,10 +24,10 @@ const STEP: Record<ProgressStage, { label: string; doing: string }> = {
 /** Các bước áp dụng cho đơn: đơn không có phí in thì bỏ In mẫu / Sản xuất. */
 export const stagesFor = (printing: boolean): ProgressStage[] => PROGRESS_STAGES.filter(s => printing || (s !== 'sample' && s !== 'production'));
 
-export function orderProgress(i: { status: string; packed: boolean; printing: boolean; marks: Partial<Record<ProgressStage, ProgressMark>> }) {
+export function orderProgress(i: { status: string; packed: boolean; directExported?: boolean; printing: boolean; marks: Partial<Record<ProgressStage, ProgressMark>> }) {
   const auto: Partial<Record<ProgressStage, boolean>> = {
     approve: i.status !== 'draft' && i.status !== 'cancelled',
-    export: i.packed,
+    export: i.packed || i.directExported,
     delivered: i.status === 'delivered',
   };
   const stages = stagesFor(i.printing).map(key => {
