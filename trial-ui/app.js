@@ -3606,7 +3606,7 @@ async function loadOrderPacking(orderId) {
 /** Giao tới + gửi xe của phiếu đóng gói (một dòng). */
 const shipText = k => `${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in: ' + esc(k.shipName) : '🏠 Giao thẳng cho khách'}${k.carrierName ? ` · 🚚 Gửi xe ${esc(k.carrierName)}${k.carrierPhone ? ' (' + esc(k.carrierPhone) + ')' : ''}` : ''}`;
 /** Một dòng nguồn khác kho (cửa hàng / NCC / đại lý…) trong hộp yêu cầu đóng gói. */
-const packSourceRow = (qty = '') => `<div class="pack-src"><select data-src aria-label="Nguồn hàng">${Object.entries(PACK_SOURCES).filter(([k]) => k !== 'warehouse').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}<option value="incoming">Hàng đang chờ về</option></select>
+const packSourceRow = (qty = '', incoming = null) => `<div class="pack-src"><select data-src aria-label="Nguồn hàng">${Object.entries(PACK_SOURCES).filter(([k]) => k !== 'warehouse').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}<option value="incoming">Hàng đang chờ về${Number(incoming) > 0 ? ` (${fmtNum(Number(incoming))})` : ''}</option></select>
   <input data-src-note maxlength="200" placeholder="Tên cửa hàng / NCC / đại lý" aria-label="Lấy từ đâu"><input class="num-input" inputmode="decimal" data-src-qty value="${qty === '' ? '' : fmtNum(qty)}" placeholder="SL" aria-label="Số lượng">
   <button type="button" class="icon-btn danger" data-src-del title="Bỏ nguồn này" aria-label="Bỏ nguồn này">×</button></div>`;
 $('#order-pack').addEventListener('click', async () => {
@@ -3626,14 +3626,15 @@ $('#order-pack').addEventListener('click', async () => {
     for (const l of todo) if (l.sku) ownLeft.set(l.sku, (ownLeft.get(l.sku) || 0) + l.left);
     const packAv = p => soldWh ? Math.max(0, (Number(p.stock?.[soldWh]) || 0) + (ownLeft.get(p.sku) || 0)) : Math.max(0, availableStock(p));
     $('#pack-lines').innerHTML = todo.map(l => {
-      const p = l.sku ? stock.get(l.sku) : null, av = p ? packAv(p) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock;
-      return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}">
+      const p = l.sku ? stock.get(l.sku) : null, av = p ? packAv(p) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock, incoming = p ? kindStock(p, 'incoming') : null;
+      return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}" data-incoming="${incoming ?? ''}">
         <div class="pack-head"><b>${esc(l.name)}</b><small>${esc(l.sku || 'Chưa có mã')} · ${esc(l.unit || '')} · đơn ${fmtNum(l.qty)}${l.packed ? ` · đã có phiếu ${fmtNum(l.packed)}` : ''}</small></div>
         <div class="pack-grid"><label>Cần đóng<input class="num-input" inputmode="decimal" data-need value="${fmtNum(l.left)}"></label>
           <label>${soldWh ? `<span title="Tồn ${esc(o.warehouseName || 'kho bán')} + phần đơn này đã trừ lúc duyệt mà chưa đóng gói">Tồn kho bán</span>` : 'Tồn kho'}<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</span></label>
           <label>Lấy từ kho<input class="num-input" inputmode="decimal" data-wh value="${fmtNum(fromStock)}"></label></div>
         <p class="pack-warn" ${short > 1e-9 ? '' : 'hidden'}>⚠️ Kho không đủ – nhập phần còn lại lấy từ đâu.</p>
-        <div data-srcs>${short > 1e-9 ? packSourceRow(short) : ''}</div>
+        ${incoming > 0 ? `<p class="pack-incoming-hint" role="note"><b>Có hàng đang chờ về: ${fmtNum(incoming)} ${esc(p?.unit || l.unit || '')}</b><small>Tổng hàng chưa nhận từ các đơn mua NCC. Chọn “Hàng đang chờ về” rồi bấm “Xin giao trước” để lập phiếu nháp.</small></p>` : ''}
+        <div data-srcs>${short > 1e-9 ? packSourceRow(short, incoming) : ''}</div>
         <button type="button" class="btn ghost small" data-src-add>＋ Thêm nguồn hàng</button></div>`;
     }).join('');
     packingSupplierChoices.setSuppliers(d.supplierChoices || []);
@@ -3709,7 +3710,7 @@ function readPackForm() {
 }
 $('#pack-lines').addEventListener('click', e => {
   const row = e.target.closest('.pack-line'); if (!row) return;
-  if (e.target.closest('[data-src-add]')) { row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow()); row.querySelector('.pack-src:last-child [data-src-note]').focus(); }
+  if (e.target.closest('[data-src-add]')) { row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow('', Number(row.dataset.incoming))); row.querySelector('.pack-src:last-child [data-src-note]').focus(); }
   if (e.target.closest('[data-src-del]')) e.target.closest('.pack-src').remove();
 });
 $('#pack-lines').addEventListener('input', e => {
@@ -3718,7 +3719,7 @@ $('#pack-lines').addEventListener('input', e => {
   const need = parseNum(row.querySelector('[data-need]').value || '0'), wh = parseNum(row.querySelector('[data-wh]').value || '0');
   row.querySelector('.pack-warn').hidden = !(wh < need - 1e-9);
   // Kho thiếu mà chưa có dòng nguồn khác → thêm sẵn một dòng với phần còn lại.
-  if (wh < need - 1e-9 && !row.querySelector('.pack-src')) row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow(need - wh));
+  if (wh < need - 1e-9 && !row.querySelector('.pack-src')) row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow(need - wh, Number(row.dataset.incoming)));
 });
 $('#pack-form').addEventListener('submit', async e => {
   e.preventDefault();
