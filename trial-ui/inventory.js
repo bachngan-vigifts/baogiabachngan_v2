@@ -1,5 +1,5 @@
 /**
- * SỔ KHO (#/inventory) – giai đoạn 1 chạy song song với Sapo (docs/SO-KHO.md).
+ * ĐỐI CHIẾU TỒN SAPO (#/inventory; trang giao dịch "Sổ kho" là #/stock-moves – stock-ops.js) – giai đoạn 1 chạy song song với Sapo (docs/SO-KHO.md).
  *  Đối chiếu tồn sổ kho ↔ tồn Sapo theo (mã, kho) · thẻ kho từng mã · Manager chốt tồn đầu kỳ / lập phiếu điều chỉnh.
  * API: src/modules/inventory/api/routes.ts. DOM dựng bằng createElement / textContent.
  */
@@ -16,7 +16,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
   let status = null, rows = [], req = 0, onlyDiff = true;
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div');
-  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Sổ kho'),
+  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Đối chiếu tồn Sapo'),
     el('p', 'muted', 'Sổ kho tự ghi khi nhận hàng NCC và khi kho xác nhận đã đóng hàng. Đang chạy song song: Sapo vẫn là nguồn tồn chính – trang này so tồn sổ kho với tồn Sapo để tìm chỗ lệch.'));
   const tools = el('div', 'row-gap');
   head.append(titles, tools);

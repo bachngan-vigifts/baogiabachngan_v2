@@ -5,6 +5,20 @@ export const STOCK_REF_TYPES = ['opening', 'supplier_receipt', 'packing_slip', '
 export type StockRefType = typeof STOCK_REF_TYPES[number];
 export const STOCK_KIND_LABEL: Record<StockMoveKind, string> = { opening: 'Tồn đầu kỳ', receipt: 'Nhập NCC', issue: 'Xuất đóng gói', adjust: 'Điều chỉnh', reverse: 'Huỷ chứng từ', customer_return: 'Khách trả hàng',
   sale: 'Bán hàng (đơn / HĐKT)', transfer_out: 'Chuyển kho đi', transfer_in: 'Chuyển kho đến' };
+/** Diễn giải dòng sổ kho (cột "Giao dịch" của trang Sổ kho, như Sapo): theo loại phát sinh + loại chứng từ gốc. */
+export function stockMoveDescription(kind: StockMoveKind, refType: StockRefType): string {
+  switch (kind) {
+    case 'opening': return 'Chốt tồn đầu kỳ';
+    case 'receipt': return 'Nhập hàng vào kho';
+    case 'issue': return refType === 'pos_delivery' ? 'Xuất kho giao hàng cho khách/shipper' : 'Xuất kho đóng gói giao hàng';
+    case 'sale': return refType === 'pos_order' ? 'Xuất kho bán tại quầy' : 'Xuất kho bán hàng (duyệt đơn / HĐKT)';
+    case 'customer_return': return 'Khách trả hàng – nhập lại kho';
+    case 'adjust': return 'Điều chỉnh tồn kho';
+    case 'transfer_out': return 'Chuyển hàng sang kho khác';
+    case 'transfer_in': return 'Nhận hàng chuyển kho';
+    case 'reverse': return refType === 'sales_order' ? 'Huỷ / sửa đơn – hoàn lại kho' : refType === 'supplier_receipt' ? 'Huỷ phiếu nhập hàng' : 'Huỷ chứng từ – ghi ngược';
+  }
+}
 /** Phiếu điều chuyển kho: nhân viên xin → người duyệt duyệt / từ chối → Kho bấm "Đã chuyển" (trừ kho đi, cộng kho đến). */
 export const TRANSFER_STATUSES = ['pending', 'approved', 'done', 'rejected', 'cancelled'] as const;
 export type TransferStatus = typeof TRANSFER_STATUSES[number];

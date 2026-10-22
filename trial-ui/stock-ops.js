@@ -1,12 +1,11 @@
 /**
  * KHO BÁN THEO CHỨC VỤ – giao diện (docs/SO-KHO.md):
  *  - Điều chuyển kho (#/transfers, #/transfers/<id>): xin chuyển → người duyệt duyệt / từ chối → Kho bấm "Đã chuyển".
- *  - Lịch sử xuất nhập (#/stock-moves): mọi phát sinh sổ kho, lọc Bán hàng / Nhập / Xuất / Điều chuyển / Điều chỉnh, xuất Excel.
+ *  - Sổ kho (#/stock-moves, như Sổ kho Sapo): mọi giao dịch nhập / xuất, tồn sau giao dịch, lọc chi nhánh / ngày / giao dịch / nhãn hiệu / trạng thái, phân trang, xuất file.
  *  - Kho bán theo chức vụ (gắn dưới trang Phân quyền): kho ↔ chức vụ được bán + kho riêng (chỉ người bán kho đó thấy tồn).
  * API: src/modules/inventory/api/{transfer-routes,history-routes}.ts. DOM dựng bằng createElement / textContent.
  */
 import { downloadExcel } from './sheet-export.js';
-import { createPager } from './pager.js';
 
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
 const btn = (text, cls = 'btn secondary small', onClick) => { const b = el('button', cls, text); b.type = 'button'; if (onClick) b.addEventListener('click', onClick); return b; };
@@ -147,70 +146,128 @@ export function initTransfers({ api, root, toast, go }) {
   return { load: id => load(id), show };
 }
 
-const GROUPS = [['', 'Tất cả'], ['sale', 'Bán hàng'], ['in', 'Nhập'], ['out', 'Xuất'], ['transfer', 'Điều chuyển'], ['adjust', 'Điều chỉnh / đầu kỳ']];
+const GROUPS = [['', 'Tất cả giao dịch'], ['sale', 'Bán hàng'], ['in', 'Nhập kho'], ['out', 'Xuất kho'], ['transfer', 'Điều chuyển'], ['adjust', 'Điều chỉnh / đầu kỳ'], ['reverse', 'Huỷ chứng từ']];
+const STATUSES = [['', 'Mọi trạng thái'], ['active', 'Đang giao dịch'], ['inactive', 'Ngừng giao dịch']];
+const day = iso => iso ? new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+const time = iso => iso ? new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
+const isoDay = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const dash = v => v ? num(v) : '-';
+/** Nhãn ô khi bảng thành thẻ trên điện thoại (style.css: td[data-label]::before). */
+const labeled = (td, label) => { td.dataset.label = label; return td; };
+/** Bộ lọc trang Sổ kho ↔ query của link (#/stock-moves?q=…&warehouseId=…&from=…&to=…&group=…&brand=…&status=…): link mở đúng bộ lọc. */
+const FILTER_KEYS = ['q', 'warehouseId', 'from', 'to', 'group', 'brand', 'status'];
 
-export function initStockMoves({ api, root, toast }) {
-  let group = '', rows = [], request = 0;
-  const recordedAt = iso => iso ? new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' }) + ' ' + new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
-  const page = el('div', 'sup-page stock-history'), head = el('div', 'page-head'), titles = el('div');
-  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Lịch sử xuất nhập'),
-    el('p', 'muted', 'Theo dõi từng lần nhập, xuất và số tồn sau phát sinh theo từng mã hàng tại mỗi kho.'));
+/**
+ * SỔ KHO (#/stock-moves) – như "Sổ kho" của Sapo: mỗi dòng một giao dịch, cột Nhập kho / Xuất kho / Tồn kho sau giao dịch / Chi nhánh,
+ * dòng "Tổng N giao dịch" theo cả bộ lọc, phân trang, xuất file. Dữ liệu: GET /stock-moves (history-routes.ts).
+ * `linkAllowed(hash)`: chỉ hiện link chứng từ khi người xem mở được trang đó (không thì hiện chữ).
+ */
+export function initStockMoves({ api, root, toast, createPager, linkAllowed = () => true }) {
+  let rows = [], req = 0;
+  const f = Object.fromEntries(FILTER_KEYS.map(k => [k, '']));
+  const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
+  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Sổ kho'),
+    el('p', 'muted', 'Mọi giao dịch nhập / xuất của kho thật: bán hàng (duyệt đơn / HĐKT, bán quầy), nhập NCC, đóng gói, giao COD, khách trả, điều chuyển, điều chỉnh. Tự ghi theo chứng từ – không sửa tay.'));
   const tools = el('div', 'row-gap');
-  const exp = btn('↓ Xuất Excel', 'btn secondary', () => downloadExcel(`lich-su-xuat-nhap-${new Date().toISOString().slice(0, 10)}.xlsx`, [{ name: 'Xuất nhập',
-    header: ['Ngày ghi nhận', 'Nhân viên', 'Thao tác', 'Mã sản phẩm', 'Tên sản phẩm', 'Số lượng thay đổi', 'Tồn kho sau phát sinh', 'ĐVT', 'Mã chứng từ', 'Ghi chú', 'Kho'], autoFilter: true,
-    rows: rows.map(m => [recordedAt(m.at), m.by, m.kindLabel, m.sku, m.name, m.qty, m.balanceAfter ?? '', m.unit, m.refNo, m.note, m.warehouse]) }]).catch(e => toast(e.message, 'err')));
-  tools.append(exp); head.append(titles, tools);
-  const panel = el('div', 'panel'), bar = el('div', 'stock-history-filters'), chips = el('div', 'chips stock-history-tabs');
-  for (const [k, t] of GROUPS) { const c = btn(t, 'chip' + (k === group ? ' active' : ''), () => { group = k; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c)); reload(); }); chips.append(c); }
-  const wh = select([['', 'Tất cả kho']], '', 'Kho'), from = input('date'), to = input('date'), q = input('search', '', { placeholder: 'Tìm mã, tên sản phẩm hoặc chứng từ…' });
-  q.setAttribute('aria-label', 'Tìm sản phẩm hoặc chứng từ');
-  from.setAttribute('aria-label', 'Từ ngày'); to.setAttribute('aria-label', 'Đến ngày');
-  for (const x of [wh, from, to]) x.addEventListener('change', reload);
-  let timer = 0; q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(reload, 300); });
-  const clear = btn('Xoá bộ lọc', 'btn ghost small', () => { wh.value = from.value = to.value = q.value = ''; reload(); });
-  bar.append(field('Kho', wh), field('Tìm kiếm', q, 'stock-history-search'), field('Từ ngày', from), field('Đến ngày', to), clear);
-  const count = el('p', 'stock-history-count muted small'); count.setAttribute('role', 'status');
-  const wrap = el('div', 'table-wrap'), table = el('table', 'data-table stock-history-table'), tbody = el('tbody'), thead = el('thead'), hr = el('tr');
-  for (const h of ['Ngày ghi nhận', 'Nhân viên', 'Thao tác', 'Sản phẩm', 'Số lượng thay đổi', 'Tồn kho', 'Mã chứng từ', 'Kho']) hr.append(el('th', '', h));
-  hr.children[5].title = 'Tồn sổ kho sau phát sinh của mã hàng tại kho này, gồm cả lịch sử ngoài bộ lọc.';
-  const footer = el('div', 'pager'), pager = createPager(footer, 'stock-moves', render, 20);
-  thead.append(hr); table.append(thead, tbody); wrap.append(table); panel.append(chips, bar, count, wrap, footer); page.append(head, panel); root.append(page);
+  const exp = btn('⬇ Xuất file', 'btn secondary', exportFile);
+  const help = el('details', 'ledger-help'), sum = el('summary', '', 'Giải thích thuật ngữ'), dl = el('dl');
+  for (const [t, d] of [['Ngày ghi nhận', 'Lúc chứng từ ghi vào sổ kho (duyệt đơn, nhận hàng, xác nhận đóng gói / giao, điều chuyển xong…).'],
+    ['Giao dịch', 'Số chứng từ gốc (bấm để mở) và loại giao dịch.'], ['Nhập kho / Xuất kho', 'Số lượng cộng vào / trừ khỏi kho của dòng đó.'],
+    ['Tồn kho sau giao dịch', 'Tồn của mã đó tại chi nhánh ngay sau giao dịch (cộng dồn toàn bộ sổ kho, không phụ thuộc bộ lọc). Số âm = đã xuất nhiều hơn tồn ghi nhận.'],
+    ['Chi nhánh', 'Kho thật ghi nhận giao dịch. Kho riêng chỉ người được bán kho đó thấy.'], ['Huỷ chứng từ', 'Huỷ / sửa chứng từ không xoá dòng cũ mà ghi thêm dòng ngược lại.']]) dl.append(el('dt', '', t), el('dd', '', d));
+  help.append(sum, dl); tools.append(exp); head.append(titles, tools);
 
-  function render() {
-    pager.render(rows.length);
-    tbody.replaceChildren(...(rows.length ? rows.slice(pager.offset, pager.offset + pager.limit).map(m => {
-      const tr = el('tr'), item = el('td', 'stock-history-product');
-      const product = el('a', '', m.sku); product.href = '#/products?sku=' + encodeURIComponent(m.sku);
-      item.append(product, el('small', '', m.name));
-      const ref = el('td', 'stock-history-ref');
-      if (m.link) { const a = el('a', '', m.refNo || 'Mở chứng từ'); a.href = m.link; ref.append(a); }
-      else ref.append(el('span', '', m.refNo || '—'));
-      if (m.note) ref.append(el('small', '', m.note));
-      const delta = el('td', 'stock-history-number ' + (m.qty < 0 ? 'danger-text' : 'paid-text'), signed(m.qty));
-      if (m.unit) delta.append(el('small', '', m.unit));
-      const balance = el('td', 'stock-history-number stock-history-balance' + (m.balanceAfter < 0 ? ' danger-text' : ''), m.balanceAfter == null ? '—' : num(m.balanceAfter));
-      balance.title = 'Tồn sau phát sinh · ' + m.sku + ' · ' + m.warehouse;
-      const action = el('td'); action.append(el('span', 'stock-history-action', m.kindLabel));
-      tr.append(el('td', 'stock-history-date', recordedAt(m.at)), el('td', '', m.by || '—'), action, item, delta, balance, ref, el('td', '', m.warehouse));
-      return tr;
-    }) : [(() => { const tr = el('tr'), td = el('td', 'muted stock-history-empty', 'Không có phát sinh phù hợp với bộ lọc.'); td.colSpan = 8; tr.append(td); return tr; })()]));
+  const panel = el('div', 'panel'), bar = el('div', 'toolbar ledger-bar');
+  const wh = select([['', 'Tất cả chi nhánh']], '', 'Chi nhánh'), from = input('date'), to = input('date');
+  const q = input('search', '', { placeholder: 'Tìm theo mã SKU, tên sản phẩm, số chứng từ…' }); q.setAttribute('aria-label', 'Tìm sổ kho');
+  const group = select(GROUPS, '', 'Giao dịch'), brand = select([['', 'Mọi nhãn hiệu']], '', 'Nhãn hiệu'), status = select(STATUSES, '', 'Trạng thái sản phẩm');
+  const controls = { warehouseId: wh, from, to, q, group, brand, status };
+  for (const [k, c] of Object.entries(controls)) c.addEventListener(k === 'q' ? 'input' : 'change', () => { if (k === 'q') { clearTimeout(timer); timer = setTimeout(() => apply(k, c.value.trim()), 300); } else apply(k, c.value); });
+  let timer = 0;
+  bar.append(field('Chi nhánh', wh), field('Từ ngày', from), field('Đến ngày', to), field('Giao dịch', group), field('Nhãn hiệu', brand), field('Trạng thái', status), el('label', 'ledger-search'));
+  bar.lastChild.append(q);
+  const chips = el('div', 'chips ledger-chips');
+  const wrap = el('div', 'table-wrap'), table = el('table', 'data-table ledger-table'), thead = el('thead'), tbody = el('tbody'), hr = el('tr');
+  for (const [h, c] of [['#', 'num'], ['Ngày ghi nhận', ''], ['Giao dịch', ''], ['Phiên bản sản phẩm', ''], ['Nhập kho', 'num'], ['Xuất kho', 'num'], ['Tồn kho sau giao dịch', 'num'], ['Chi nhánh', '']]) hr.append(el('th', c, h));
+  thead.append(hr); table.append(thead, tbody); wrap.append(table);
+  const pagerEl = el('div', 'pager'), pager = createPager(pagerEl, 'stock-moves', () => load(), 20);
+  panel.append(bar, chips, help, wrap, pagerEl); page.append(head, panel); root.append(page);
+
+  /** Mặc định 30 ngày gần nhất (như Sapo). */
+  function defaults() { const now = new Date(), past = new Date(now.getTime() - 29 * 86400000); return { from: isoDay(past), to: isoDay(now) }; }
+  function apply(k, v) { f[k] = v; pager.reset(); syncHash(); load(); }
+  function syncHash() {
+    const p = new URLSearchParams(); for (const k of FILTER_KEYS) if (f[k]) p.set(k, f[k]);
+    const hash = '#/stock-moves' + (p.size ? '?' + p : '');
+    if (location.hash !== hash) history.replaceState(null, '', location.pathname + location.search + hash);
   }
-  function reload() { pager.reset(); load(); }
+  function params(extra = {}) {
+    const p = new URLSearchParams(); for (const k of FILTER_KEYS) if (f[k]) p.set(k, f[k]);
+    p.set('page', String(pager.page)); p.set('size', String(pager.limit)); for (const [k, v] of Object.entries(extra)) p.set(k, v);
+    return p;
+  }
+  function renderChips() {
+    const label = { warehouseId: 'Chi nhánh', from: 'Từ ngày', to: 'Đến ngày', q: 'Tìm', group: 'Giao dịch', brand: 'Nhãn hiệu', status: 'Trạng thái' };
+    const text = k => k === 'warehouseId' ? wh.selectedOptions[0]?.textContent : k === 'group' ? GROUPS.find(g => g[0] === f.group)?.[1] : k === 'status' ? STATUSES.find(x => x[0] === f.status)?.[1] : k === 'from' || k === 'to' ? day(f[k]) : f[k];
+    const active = FILTER_KEYS.filter(k => f[k] && k !== 'from' && k !== 'to');
+    chips.replaceChildren(...active.map(k => btn(`${label[k]}: ${text(k)} ×`, 'chip active', () => { f[k] = ''; controls[k].value = ''; pager.reset(); syncHash(); load(); })));
+    if (active.length > 1) chips.append(btn('Xoá bộ lọc', 'chip', () => { for (const k of active) { f[k] = ''; controls[k].value = ''; } pager.reset(); syncHash(); load(); }));
+    chips.hidden = !active.length;
+  }
+  /** Đổ danh sách chi nhánh / nhãn hiệu một lần (giữ giá trị đang lọc, kể cả giá trị lấy từ link). */
+  function fillOptions(sel, list, keep) {
+    if (sel.dataset.filled) return;
+    while (sel.options.length > 1) sel.lastChild.remove();
+    for (const [v, t] of list) { const o = el('option', '', t); o.value = v; sel.append(o); }
+    if (keep && !list.some(([v]) => v === keep)) { const o = el('option', '', keep); o.value = keep; sel.append(o); }
+    sel.value = keep; sel.dataset.filled = '1';
+  }
+  function itemCell(m) {
+    const td = el('td', 'ledger-item'), a = el('a', '', m.sku); a.href = '#/products?sku=' + encodeURIComponent(m.sku); a.title = 'Mở thẻ sản phẩm (tồn từng kho, lịch sử)';
+    td.append(a, el('small', '', m.name || 'Mã chưa có trong danh mục'));
+    if (!m.active) td.append(el('span', 'pill', 'Ngừng giao dịch'));
+    return td;
+  }
+  function refCell(m) {
+    const td = el('td', 'ledger-ref');
+    if (m.link && linkAllowed(m.link)) { const a = el('a', '', m.refNo || 'Mở chứng từ'); a.href = m.link; td.append(a); } else td.append(el('b', '', m.refNo || '—'));
+    td.append(el('small', '', m.description));
+    if (m.note || m.by) td.title = [m.note, m.by && 'Người làm: ' + m.by].filter(Boolean).join('\n');
+    return td;
+  }
   async function load() {
-    clearTimeout(timer);
-    const n = ++request, p = new URLSearchParams();
-    if (group) p.set('group', group); if (wh.value) p.set('warehouseId', wh.value); if (from.value) p.set('from', from.value); if (to.value) p.set('to', to.value); if (q.value.trim()) p.set('q', q.value.trim());
-    count.textContent = 'Đang tải lịch sử…'; exp.disabled = true; wrap.setAttribute('aria-busy', 'true');
-    try {
-      const d = await api('/stock-moves?' + p); if (n !== request) return;
-      if (wh.options.length === 1) for (const w of d.warehouses) { const o = el('option', '', w.name); o.value = w.id; wh.append(o); }
-      rows = d.moves;
-      count.textContent = `${rows.length.toLocaleString('vi-VN')} phát sinh · Mới nhất trước` + (rows.length >= 1000 ? ' · Đang hiển thị 1.000 dòng mới nhất, lọc thêm để xem lịch sử cũ.' : '') + ' · Tồn kho là tồn sau từng phát sinh.';
-      render();
-    } catch (e) { if (n !== request) return; rows = []; render(); count.textContent = 'Không tải được lịch sử. Vui lòng thử lại.'; toast(e.message, 'err'); }
-    finally { if (n === request) { exp.disabled = !rows.length; wrap.removeAttribute('aria-busy'); } }
+    const my = ++req;
+    let d; try { d = await api('/stock-moves?' + params()); } catch (e) { if (my === req) toast(e.message, 'err'); return; }
+    if (my !== req) return;
+    fillOptions(wh, d.warehouses.map(w => [w.id, w.name]), f.warehouseId); fillOptions(brand, d.brands.map(b => [b, b]), f.brand);
+    renderChips();
+    rows = d.moves; pager.render(d.total);
+    const total = el('tr', 'ledger-total'), lbl = el('td', '', `Tổng ${num(d.total)} giao dịch`); lbl.colSpan = 4;
+    total.append(lbl, labeled(el('td', 'num', num(d.totals.inQty)), 'Nhập'), labeled(el('td', 'num', num(d.totals.outQty)), 'Xuất'), el('td', 'ledger-empty'), el('td', 'ledger-empty'));
+    if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Không có giao dịch nào khớp bộ lọc.'); td.colSpan = 8; tr.append(td); tbody.replaceChildren(total, tr); return; }
+    tbody.replaceChildren(total, ...rows.map((m, i) => {
+      const tr = el('tr'), when = el('td', 'nowrap'); when.append(document.createTextNode(day(m.at)), el('small', '', time(m.at)));
+      tr.append(el('td', 'num muted ledger-no', pager.offset + i + 1), when, refCell(m), itemCell(m), labeled(el('td', 'num', dash(m.inQty)), 'Nhập'), labeled(el('td', 'num', dash(m.outQty)), 'Xuất'),
+        labeled(el('td', 'num' + (m.balanceAfter < 0 ? ' danger-text' : ''), num(m.balanceAfter)), 'Tồn sau'), labeled(el('td', 'ledger-wh', m.warehouse), 'Chi nhánh'));
+      return tr;
+    }));
   }
-  return { load };
+  async function exportFile() {
+    let d; try { d = await api('/stock-moves?' + params({ export: '1' })); } catch (e) { toast(e.message, 'err'); return; }
+    if (d.total > d.moves.length) toast(`Bộ lọc có ${num(d.total)} giao dịch – file lấy ${num(d.moves.length)} dòng mới nhất. Thu hẹp ngày để lấy đủ.`);
+    await downloadExcel(`so-kho_${f.from || 'tu-dau'}_den_${f.to || isoDay(new Date())}`, [{ name: 'Sổ kho', autoFilter: true,
+      header: ['Ngày ghi nhận', 'Giờ', 'Số chứng từ', 'Giao dịch', 'Mã SKU', 'Tên sản phẩm', 'Nhãn hiệu', 'ĐVT', 'Nhập kho', 'Xuất kho', 'Tồn sau giao dịch', 'Chi nhánh', 'Ghi chú', 'Người làm'],
+      rows: d.moves.map(m => [day(m.at), time(m.at), m.refNo, m.description, m.sku, m.name, m.brand, m.unit, m.inQty || null, m.outQty || null, m.balanceAfter, m.warehouse, m.note, m.by]) }]).catch(e => toast(e.message, 'err'));
+  }
+  /** Mở trang: lấy bộ lọc từ link (#/stock-moves?…); không có ngày thì 30 ngày gần nhất. */
+  function show(query = '') {
+    const p = new URLSearchParams(query), dflt = defaults();
+    for (const k of FILTER_KEYS) f[k] = (p.get(k) || '').trim();
+    if (!p.has('from') && !p.has('to')) Object.assign(f, dflt);
+    for (const [k, c] of Object.entries(controls)) { if (c.tagName === 'SELECT' && f[k] && ![...c.options].some(o => o.value === f[k])) { const o = el('option', '', f[k]); o.value = f[k]; c.append(o); } c.value = f[k]; }
+    pager.reset(); syncHash(); return load();
+  }
+  return { load, show };
 }
 
 /** Bảng kho ↔ chức vụ được bán (dưới trang Phân quyền). */

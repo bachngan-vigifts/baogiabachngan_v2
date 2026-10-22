@@ -948,6 +948,12 @@ test('ship trả trước xuất khi bàn giao vận chuyển, giao xong không 
     ).length,
     1,
   );
+  // Sổ kho: dòng xuất khi bàn giao vận chuyển mở đúng đơn gốc (link tra qua hook sales → inventory).
+  const cod = (await f.call('/stock-moves?group=sale', f.mgr)).data.moves.find(
+    (m: any) => m.refType === 'pos_delivery',
+  );
+  assert.equal(cod.link, '#/orders/' + encodeURIComponent(d!.orderId!));
+  assert.equal(cod.description, 'Xuất kho giao hàng cho khách/shipper');
 });
 test('danh sách mặc định không để đơn nhận sau cũ bị chìm bởi hơn 100 đơn hoàn tất; tìm kiếm và phân trang server', async () => {
   const f = await setup(),
