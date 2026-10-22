@@ -7,7 +7,8 @@ import { fold } from '../../../core/text/fold.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { credentials, employees, sessions, staffSapoLinks } from '../../staff/schema.ts';
 import { customers } from '../../customers/schema.ts';
-import { NORM_TAX_SQL, normTaxCode } from '../../customers/domain/tax-code.ts';
+import { customerIdentityLock, identityColumns } from '../../customers/api/identity.ts';
+import { changedIdentity, customerIdentityIndex } from '../../customers/domain/identity.ts';
 import { pricePolicies, productPrices, products, productStock, warehouses } from '../../catalog/schema.ts';
 import { sapoInventoryDocs } from '../schema.ts';
 import { registerSapoPullRoutes, pullStatus } from './sapo-pull.ts';
@@ -71,16 +72,14 @@ export async function syncCustomers(db: AnyDb, body: Record<string, unknown>) {
   const candidates = rows.filter(isEligibleSapoCustomer), others = rows.filter(r => !isEligibleSapoCustomer(r));
   let applied = 0, duplicates = 0, kept = 0;
   await db.transaction(async tx => {
-    // Chống trùng theo MST: khách Sapo MỚI mà MST đã có ở khách khác (thường là khách tạo trên web rồi đẩy đơn sang Sapo)
-    // thì không tạo thêm bản sao; khách Sapo đã có (cùng id) vẫn cập nhật bình thường.
-    const taxes = [...new Set(candidates.map(r => normTaxCode(r.taxCode)).filter(Boolean))];
-    const known = new Set((await tx.select({ id: customers.id }).from(customers).where(inArray(customers.id, candidates.map(r => r.id).concat('')))).map(r => r.id));
-    const taken = new Map<string, string>(taxes.length ? (await tx.select({ id: customers.id, tax: sql<string>`${sql.raw(NORM_TAX_SQL('tax_code'))}` }).from(customers)
-      .where(inArray(sql.raw(NORM_TAX_SQL('tax_code')), taxes))).map(r => [r.tax, r.id]) : []);
+    await customerIdentityLock(tx);
+    const existing = await tx.select({...identityColumns, sourceVersion:customers.sourceVersion}).from(customers);
+    const index = customerIdentityIndex(existing), versions = new Map(existing.map(r=>[r.id,r.sourceVersion]));
     const eligible = candidates.filter(r => {
-      const tax = normTaxCode(r.taxCode); if (!tax || known.has(r.id)) return true;
-      if (taken.has(tax) && taken.get(tax) !== r.id) { duplicates++; return false; }
-      taken.set(tax, r.id); return true;
+      const previous = index.get(r.id);
+      if (previous?.isRetail || (versions.get(r.id) ?? -1) > r.version) return true;
+      if (index.find(changedIdentity(r,previous), r.id).length) { duplicates++; return false; }
+      index.put({...r,isRetail:previous?.isRetail}); return true;
     });
     kept = eligible.length;
     if (eligible.length) {
@@ -97,9 +96,14 @@ export async function syncCustomers(db: AnyDb, body: Record<string, unknown>) {
       applied = done.length;
     }
     // Khách lẻ / không MST: không tạo mới; nếu đã có thì chỉ cập nhật tên và MST (giống web cũ).
-    for (const r of others)
+    for (const r of others) {
+      const previous=index.get(r.id);
+      if (!previous || previous.isRetail || (versions.get(r.id) ?? -1) > r.version) continue;
+      if (index.find(changedIdentity({name:r.name,taxCode:r.taxCode,phone:previous.phone},previous),r.id).length) {duplicates++;continue;}
       await tx.update(customers).set({ name: r.name, taxCode: r.taxCode, search: search(r), sourceVersion: r.version, syncedAt: now })
         .where(and(eq(customers.id, r.id), eq(customers.isRetail, false), sql`${customers.sourceVersion} <= ${r.version}`));
+      index.put({...previous,name:r.name,taxCode:r.taxCode});
+    }
   });
   return { received: raw.length, applied, skipped: raw.length - kept, duplicates };
 }
