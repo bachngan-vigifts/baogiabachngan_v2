@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { employees } from '../../src/modules/staff/schema.ts';
-import { test } from 'node:test';
+import { afterEach, beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -15,6 +15,10 @@ import { dashboardFilters } from '../../src/modules/dashboard/domain/filters.ts'
 
 const now = '2026-09-20T10:00:00.000Z';
 const month = '?from=2026-09&to=2026-09';
+// Fixed care records must not age as CI's wall clock advances. Date only; real async timers keep running.
+const dashboardClock = Date.parse('2026-10-21T16:59:59.000Z');
+beforeEach(() => mock.timers.enable({ apis: ['Date'], now: dashboardClock }));
+afterEach(() => mock.timers.reset());
 async function fixture() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const router = createAppRouter();
@@ -140,4 +144,17 @@ test('dashboard: đồng nghiệp cùng chức vụ và khách được chia s�
   const all = (await call('/dashboard/revenue' + month, mgr)).data;
   assert.equal(all.summary.actual, 1501 + 12345);
   assert.ok(all.employees.some((x: any) => x.id === 'new' && x.actual === 12345));
+});
+
+
+test('dashboard: neglected customers change at Vietnam midnight, independent of UTC day', async () => {
+  const {call,mgr}=await fixture();
+  const before=(await call('/dashboard/revenue'+month,mgr)).data.neglected;
+  assert.equal(before.total,1);
+  assert.deepEqual(before.customers.map((c:any)=>c.id),['never']);
+  // Same UTC date, but 00:00 on 22 October in Vietnam makes 21 September care overdue.
+  mock.timers.setTime(Date.parse('2026-10-21T17:00:00.000Z'));
+  const after=(await call('/dashboard/revenue'+month,mgr)).data.neglected;
+  assert.equal(after.total,2);
+  assert.deepEqual(after.customers.map((c:any)=>c.id).sort(),['never','two']);
 });
