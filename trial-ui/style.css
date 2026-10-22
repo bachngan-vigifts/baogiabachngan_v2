@@ -333,7 +333,8 @@ table { width: 100%; border-collapse: collapse; }
   .bottom-nav a { display: grid; justify-items: center; gap: 2px; font-size: .7rem; font-weight: 600; color: var(--muted); padding: 4px 0; }
   .bottom-nav a.active { color: var(--red); }
   .bottom-nav svg { width: 21px; height: 21px; }
-  .page-head .btn.primary { display: none; }
+  /* Trang có nút ＋ tròn thì ẩn nút chính ở đầu trang; trang không có (Đơn mua, Điều chuyển kho…) vẫn giữ nút tạo mới. */
+  .page-head:has(.btn-add) .btn.primary { display: none; }
   /* Nút ＋ tròn (xanh lá, 44px) đứng góc trên phải đầu trang – thay cho nút ＋ ở thanh menu dưới */
   .page-head .btn-add, .page-head .head-actions { align-self: flex-start; }
   .page-head .head-actions { flex-wrap: nowrap; flex: none; }
@@ -1169,6 +1170,12 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .product-card.modal { width: 900px; }
 .product-card .pc-title { font-size: .95rem; margin: 4px 0 8px; } .product-card .pc-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: 18px; }
 .product-card .pc-filter .chip { padding: 3px 9px; font-size: .78rem; }
+.product-card .pc-wh { max-width: 220px; padding: 4px 8px; font-size: .85rem; }
+.product-card .pc-led-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line, #e5e7eb); }
+.product-card .pc-led-main { min-width: 0; } .product-card .pc-led-main small { display: block; color: var(--muted); font-size: .76rem; }
+.product-card .pc-led-qty { display: flex; gap: 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.product-card .pc-led-qty span { display: flex; flex-direction: column; min-width: 44px; } .product-card .pc-led-qty small { color: var(--muted); font-size: .7rem; }
+@media (max-width: 520px) { .product-card .pc-led-row { flex-direction: column; gap: 4px; } .product-card .pc-led-qty { justify-content: flex-start; text-align: left; } }
 .product-card .pc-table td small { display: block; color: var(--muted); font-size: .76rem; }
 .prod-open { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; } .prod-open:hover .strong { color: var(--blue); text-decoration: underline; }
 
@@ -1798,8 +1805,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   .modal-head { padding: 12px 12px 0; }
   .modal-head h2 { font-size: 15px; }
   .modal-body { padding: 12px; font-size: 11px; }
-  .modal-foot { gap: 6px; padding: 9px 12px 10px; }
-  .modal-foot .btn { min-height: 38px; }
+  .modal-foot { gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .modal-foot .btn { min-height: 42px; flex: 1 1 auto; }
   .bottom-nav { padding-top: 4px; }
   .bottom-nav a { gap: 1px; padding: 3px 0; font-size: 9px; }
   .bottom-nav svg { width: 18px; height: 18px; }
@@ -2128,3 +2135,37 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
 .quote-source-row input {width:90px;}
 .quote-source-row [role="status"] {flex-basis:100%;}
 #order-create-sourcing, #contract-sourcing {display:grid;gap:10px;min-width:0;}
+
+/* Cập nhật kho từ file Sapo: tiến độ + bảng tóm tắt */
+.import-progress { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; font-weight: 600; }
+.import-progress i { display: block; height: 4px; border-radius: 4px; background: linear-gradient(90deg, transparent, var(--primary, #c8102e), transparent); background-size: 200% 100%; animation: import-run 1.2s linear infinite; }
+@keyframes import-run { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.import-status:empty { display: none; }
+.import-summary { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.import-summary dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 0; }
+.import-summary dt { color: var(--muted); } .import-summary dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.import-summary dd.ok { color: var(--ok, #15803d); } .import-summary dd.warn { color: var(--warn, #b45309); }
+.import-summary .import-warn { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg, #fff7ed); color: var(--warn, #9a3412); font-size: .86rem; }
+.import-summary details { margin-top: 6px; } .import-summary summary { cursor: pointer; font-size: .86rem; }
+
+/* ---------- Biểu mẫu & hộp thoại: chuẩn chung (ô cao bằng nhau, nhãn không đẩy lệch ô, nút không dính) ---------- */
+:root { --field-h: 42px; }
+label { align-content: start; }
+.form-grid { align-items: end; }
+:is(dialog, .modal, .sup-form, .sup-drawer, .pos-modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=color]), select) {
+  min-height: var(--field-h); box-sizing: border-box;
+}
+:is(dialog, .modal, .sup-form, .sup-drawer) textarea { min-height: 72px; box-sizing: border-box; resize: vertical; }
+.modal-foot { flex-wrap: wrap; }
+.modal-foot .btn { white-space: nowrap; }
+/* Trên điện thoại cảm ứng: ô nhập ≥ 16px để iPhone không tự phóng to (đặt sau khối "gọn" để không bị ghi đè). */
+@media (max-width: 640px) and (hover: none) {
+  input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px !important; }
+  /* Chữ 16px cần ô cao ≥ 40px: bỏ chiều cao cứng (34px) của ô chọn ở thanh lọc để chữ không bị cắt chân. */
+  body select:not([multiple]), body input[type=date], body input[type=search] { height: auto; min-height: 40px; padding-block: 6px; }
+}
+/* Đầu trang trên điện thoại: tiêu đề giữ bề ngang, nhóm nút xuống hàng dưới khi không đủ chỗ (không ép tiêu đề thành cột hẹp). */
+@media (max-width: 850px) {
+  .page-head { flex-wrap: wrap; }
+  .page-head > :first-child { flex: 1 1 220px; min-width: 0; }
+}

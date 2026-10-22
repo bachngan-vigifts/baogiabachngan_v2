@@ -126,16 +126,19 @@ export const SNAPSHOT_COLUMNS = ['sku', 'name', 'brand', 'pattern', 'unit', 'ima
 
 /** Phiên bản danh mục: đổi khi sản phẩm, giá hoặc tồn thay đổi (đồng bộ Sapo / nhập file). Tính bằng vài phép gộp, rất nhẹ. */
 export async function snapshotVersion(db: StaffEnv['db']) {
-  const [[p], [pr], [st], [ver]] = await Promise.all([
+  const [[p], [pr], [st], [ver], whs] = await Promise.all([
     db.select({ n: count(), at: sql<string>`coalesce(max(${products.updatedAt}), '')` }).from(products).where(eq(products.active, true)),
     db.select({ n: count(), sum: sql<string>`coalesce(sum(${productPrices.price}), 0)::text` }).from(productPrices),
     db.select({ n: count(), at: sql<string>`coalesce(max(${productStock.updatedAt}), '')`, sum: sql<string>`coalesce(sum(${productStock.quantity}), 0)::text` }).from(productStock),
     db.select({ observedAt: catalogVersions.observedAt }).from(catalogVersions).where(eq(catalogVersions.isCurrent, true)).limit(1),
+    db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
   ]);
   const extra = catalogStockHooks.stamp ? await catalogStockHooks.stamp(db) : '';
-  const raw = [p?.n, p?.at, pr?.n, pr?.sum, st?.n, st?.at, st?.sum, ver?.observedAt ?? '', extra].join('|');
-  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)));
-  return { version: [...hash.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join(''), observedAt: ver?.observedAt ?? null };
+  const digest = async (raw: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))).slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join('');
+  // Hai phần: sản phẩm + giá + danh sách kho (đổi ít) và tồn kho (đổi sau mỗi lần bán / nhập). Chỉ tồn đổi → trình duyệt chỉ tải tồn.
+  const base = await digest([p?.n, p?.at, pr?.n, pr?.sum, ver?.observedAt ?? '', whs.map(w => w.id).join(',')].join('|'));
+  const stock = (await digest([st?.n, st?.at, st?.sum, extra].join('|'))).slice(0, 12);
+  return { version: base + '.' + stock, base, stock, observedAt: ver?.observedAt ?? null };
 }
 
 /** Giá bán chỉ cho người làm báo giá / đơn / HĐKT (Manager, Sale, Kế toán…). Kho xem sản phẩm, tồn – không thấy giá. */
@@ -155,8 +158,21 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     // Bản không giá có phiên bản riêng: trình duyệt không dùng lại bản có giá đã lưu của người khác chức vụ.
     const hidden = await hiddenStockWarehouses(db, viewerOf(c));
     // Thiếu kho riêng (kho Hoá đơn) cũng là bản riêng: không dùng lại bản đã lưu của chức vụ khác.
-    const version = snap.version + (priced ? '' : ':np') + (hidden.size ? ':h' + [...hidden].sort().join('.') : ''), observedAt = snap.observedAt;
-    if (c.url.searchParams.get('v') === version) return json({ version, unchanged: true });
+    const variant = (priced ? '' : ':np') + (hidden.size ? ':h' + [...hidden].sort().join('.') : '');
+    const version = snap.base + variant + '~' + snap.stock, observedAt = snap.observedAt, have = c.url.searchParams.get('v') || '';
+    if (have === version) return json({ version, unchanged: true });
+    // Chỉ tồn kho đổi (bán / nhập / chuyển kho): trả riêng tồn theo mã (~vài trăm KB) thay vì cả danh mục (~3 MB).
+    if (have.split('~')[0] === snap.base + variant) {
+      const stores = (await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name))).filter(x => !hidden.has(x.id));
+      const raw = await db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock);
+      const at = new Map(stores.map((w, i) => [w.id, i])), bySku = new Map<string, [(number | null)[], string]>();
+      for (const s of (await effectiveCatalogStock(db, raw)).filter(r => !hidden.has(r.warehouseId))) {
+        const j = at.get(s.warehouseId); if (j === undefined) continue;
+        const row = bySku.get(s.sku) ?? [stores.map(() => null), ''];
+        row[0][j] = s.quantity; if (s.updatedAt > row[1]) row[1] = s.updatedAt; bySku.set(s.sku, row);
+      }
+      return json({ version, observedAt, stockOnly: true, stock: [...bySku].map(([sku, [qty, updatedAt]]) => [sku, qty, updatedAt || null]) });
+    }
     const [rows, policies, stores, prices, rawStock] = await Promise.all([
       db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.sku)),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),

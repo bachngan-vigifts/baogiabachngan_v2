@@ -258,7 +258,11 @@ test('tìm nhanh sản phẩm như web cũ: nhóm, khoảng giá theo bảng gi�
   assert.equal(searchProducts(items, { policy: 'le', min: 5, max: 1 }), null);
   // Sản phẩm/giá/tồn đổi → phiên bản đổi.
   await db.update(productStock).set({ quantity: 8 }).where(eq(productStock.sku, 'LHC-LY'));
-  assert.notEqual((await call('/catalog-snapshot?v=' + snap.data.version, emp)).data.version, snap.data.version);
+  const delta = (await call('/catalog-snapshot?v=' + snap.data.version, emp)).data;
+  assert.notEqual(delta.version, snap.data.version);
+  // Chỉ tồn đổi: trả riêng tồn theo mã, không tải lại cả danh mục.
+  assert.equal(delta.stockOnly, true); assert.equal(delta.products, undefined);
+  assert.deepEqual(delta.stock.find((r: any[]) => r[0] === 'LHC-LY'), ['LHC-LY', [8], '2026-10-06T05:00:00.000Z']);
 });
 
 test('tìm sản phẩm xếp theo mức liên quan (không theo bảng chữ cái); "0.5l" khớp "0.5 L"; trình duyệt ra đúng như máy chủ', async () => {

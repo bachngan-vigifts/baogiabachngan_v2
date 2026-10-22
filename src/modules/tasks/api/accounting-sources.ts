@@ -1,4 +1,5 @@
 import { readWebOrderFinancials, type WebOrderFinancials } from '../../sales/domain/web-order-financials.ts';
+import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
@@ -6,7 +7,7 @@ import { salesOrders, salesContracts, paymentSchedules, customerPayments } from 
 import { webStoreOrders } from '../../sales/pos-schema.ts';
 import { orderScopeFor } from '../../sales/api/routes.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
-import { debtCounts, receivable } from '../../sales/domain/sales.ts';
+import { debtCounts } from '../../sales/domain/sales.ts';
 import { incomingShipments, incomingShipmentLines, supplierPaymentSchedules, supplierPayments } from '../../suppliers/schema.ts';
 import { supplierDebt, canSeePrices } from '../../suppliers/domain/purchasing.ts';
 import { computeOrderTotals } from '../../suppliers/domain/order-totals.ts';
@@ -71,13 +72,14 @@ export async function accountingSources(db: Db, member: Member, rows: Task[], to
     db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, orders.map(o => o.o.id))),
     db.select().from(customerPayments).where(and(inArray(customerPayments.orderId, orders.map(o => o.o.id)), isNull(customerPayments.voidedAt))),
   ]) : [[], []];
+  const net = await netReceivables(db, orders.map(o => o.o.id), today); // đã trừ hàng khách trả
   for (const t of rows) {
     const kind = accountingKind(t.autoKey); if (!kind) continue;
     const source: AccountingSource = { kind, amount: null, currency: 'VND', docNo: '', link: '', linkLabel: '', outstanding: null, available: false };
     const sale = orders.find(p => p.o.id === t.sourceId), buy = buys.find(p => p.order.id === t.sourceId), web = webs.find(p => p.id === t.sourceId);
     if (sale && (kind === 'invoice' || kind === 'debt')) {
       const { o, k } = sale, ref = docRef(o.id, o.orderNo, k?.contractNo);
-      const r = receivable(schedules.filter(s => s.orderId === o.id), payments.filter(p => p.orderId === o.id), today);
+      const r = net.get(o.id)!;
       const valid = debtCounts(o.status, k?.status);
       Object.assign(source, { available: true, amount: kind === 'debt' ? r.overdue : o.total, total: o.total, paid: r.paid, balance: r.balance, overdue: r.overdue,
         docNo: ref.no, link: ref.link, linkLabel: k ? 'Mở HĐKT' : 'Mở đơn', taxCode: o.taxCode, invoiceMode: o.invoiceMode,

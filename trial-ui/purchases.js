@@ -550,7 +550,6 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
   const ACTIONS = {
     submit: async () => {
-      if (!await confirmBox(`Gửi đơn ${current.ticketNumber} cho Manager duyệt giá? Sau khi gửi, Manager sẽ thấy đơn trong việc cần duyệt.`, { title: 'Gửi duyệt', ok: 'Gửi duyệt' })) return;
       try { current = await api(`/purchase-orders/${encodeURIComponent(current.id)}/submit`, 'POST', { revision: current.revision }); toast('Đã gửi Manager duyệt đơn mua.'); renderDetail(); load(); }
       catch (e) { toast(e.message || 'Không gửi duyệt được.', 'err'); }
     },
@@ -898,9 +897,12 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       hd.append(nm, need);
       const full = btn(`Đủ ${num(l.missing)}`, 'btn secondary recv-full', () => { good.value = String(l.missing); bad.value = ''; sync(); });
       const row = el('div', 'recv-row'); row.append(field('Số đạt', good, 'recv-field'), field('Số hỏng', bad, 'recv-field bad'), full);
-      c.append(hd, row, nt); cards.append(c);
-      const x = { l, good, bad, nt, c };
-      for (const i of [good, bad]) i.addEventListener('input', sync);
+      const left = el('p', 'small muted recv-left');
+      c.append(hd, row, left, nt); cards.append(c);
+      const x = { l, good, bad, nt, c, left };
+      // Hàng hỏng nằm trong số NCC giao: gõ số hỏng thì số đạt tự giảm (đạt + hỏng ≤ cần nhận) – không ghi nhận đủ khi có hàng lỗi.
+      bad.addEventListener('input', () => { const b = Number(bad.value || 0); if (b > 0 && Number(good.value || 0) + b > l.missing) good.value = String(Math.max(0, l.missing - b)); sync(); });
+      good.addEventListener('input', sync);
       return x;
     });
     // Ảnh hàng hỏng: có số hỏng → bắt buộc 1–3 ảnh (bằng chứng đòi NCC bù); không hỏng → tuỳ chọn.
@@ -921,7 +923,13 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     });
     const hasBad = () => ins.some(x => Number(x.bad.value || 0) > 0);
     function sync() {
-      for (const x of ins) x.c.classList.toggle('done', Number(x.good.value || 0) + Number(x.bad.value || 0) > 0);
+      for (const x of ins) {
+        const g = Number(x.good.value || 0), b = Number(x.bad.value || 0), over = g + b > x.l.missing;
+        x.c.classList.toggle('done', g + b > 0);
+        x.left.className = 'small recv-left ' + (over ? 'danger-text' : 'muted');
+        x.left.textContent = over ? `Đạt + hỏng (${num(g + b)}) vượt số cần nhận ${num(x.l.missing)} – số đạt chỉ gồm hàng tốt.`
+          : g + b > 0 ? `Sau phiếu này còn thiếu ${num(x.l.missing - g)}${b ? ` (gồm ${num(b)} hỏng, NCC giao bù)` : ''}.` : '';
+      }
       phHint.textContent = hasBad() ? (photos.length ? `${photos.length}/3 ảnh.` : 'Có hàng hỏng: bắt buộc chụp 1–3 ảnh.') : 'Không có hàng hỏng thì không cần ảnh.';
       phHint.className = 'small ' + (hasBad() && !photos.length ? 'danger-text' : 'muted');
     }
@@ -933,6 +941,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const lines = ins.map(x => ({ lineId: x.l.id, goodQty: Number(x.good.value || 0), damagedQty: Number(x.bad.value || 0), note: x.nt.value })).filter(x => x.goodQty > 0 || x.damagedQty > 0);
       if (!lines.length) { err.textContent = 'Nhập số đạt hoặc số hỏng cho ít nhất một mã.'; return; }
       if (hasBad() && !photos.length) { err.textContent = 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.'; pick.focus(); return; }
+      const over = ins.find(x => Number(x.good.value || 0) + Number(x.bad.value || 0) > x.l.missing);
+      if (over) { err.textContent = `${over.l.sku}: đạt + hỏng vượt số cần nhận ${num(over.l.missing)}. Số đạt chỉ gồm hàng tốt.`; over.good.focus(); return; }
       run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(photos.length ? { photos } : {}) }), 'Đã ghi nhận hàng về – nhớ nhập kho trên Sapo.');
     });
     d.append(f);

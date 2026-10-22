@@ -32,7 +32,17 @@ const isTime = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 /** Việc tự sinh được đồng bộ tối đa mỗi 15 giây / phiên chạy (mở bảng việc liên tục không quét lại toàn bộ). `?refresh=1` ép đồng bộ ngay. */
 let lastReconcile = 0;
-const syncAuto = (c: Ctx) => syncAutoTasks(c.env, c.url.searchParams.get('refresh') === '1', me(c).id);
+// Mở trang / đếm việc: đồng bộ chạy nền (trả lời ngay, lượt sau thấy việc mới); bấm "Làm mới" (?refresh=1) thì chờ đồng bộ xong.
+const syncAuto = (c: Ctx) => {
+  const force = c.url.searchParams.get('refresh') === '1';
+  return force ? syncAutoTasks(c.env, true, me(c).id) : syncAutoTasksLater(c.env, me(c).id);
+};
+/** Đồng bộ việc tự sinh sau khi đã trả lời (~30 truy vấn) – nút / trang không phải chờ. Không có waitUntil (test) thì chạy luôn. */
+export function syncAutoTasksLater(env: StaffEnv, actorId: string | null = null, force = false) {
+  if (!env.waitUntil) return syncAutoTasks(env, force, actorId);
+  env.waitUntil(syncAutoTasks(env, force, actorId).catch(e => console.error('background auto tasks failed', e instanceof Error ? e.message : e)));
+  return Promise.resolve();
+}
 /**
  * Đồng bộ việc tự sinh rồi thông báo (chuông + Web Push) cho việc mới: người nhận; việc của nhóm → cả nhóm; chưa giao ai → Manager.
  * Tối đa 30 việc mỗi lượt (tránh dồn dập). Gọi từ trang Công việc và ngay sau khi lưu báo giá chờ duyệt.
@@ -62,7 +72,7 @@ async function notifyAutoTasks(env: StaffEnv, fresh: Awaited<ReturnType<typeof r
   if (env.waitUntil) env.waitUntil(job); else await job;
 }
 // Lưu báo giá chờ duyệt → tạo ngay việc "Duyệt báo giá" cho Manager và báo, không đợi ai mở trang Công việc.
-quoteSaveHooks.afterCommit.push(env => syncAutoTasks(env, true));
+quoteSaveHooks.afterCommit.push(env => syncAutoTasksLater(env, null, true));
 
 /** Các nhóm của tôi: nhóm trùng chức vụ (Kho, Kế toán, Sale Admin…) + nhóm có quyền tương ứng (`TEAM_PERMISSION`). Manager thấy mọi việc nên không cần. */
 const myTeams = (c: Ctx): TaskTeam[] => {

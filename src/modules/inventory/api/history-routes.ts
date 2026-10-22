@@ -12,8 +12,8 @@ import { hiddenWarehouseIds, sellerMatrix } from './warehouse-access.ts';
 
 /**
  * SỔ KHO (#/stock-moves – kiểu "Sổ kho" của Sapo; mọi nhân viên, trừ kho riêng không được xem) và CẤU HÌNH KHO BÁN (trang Phân quyền).
- *  GET /stock-moves?warehouseId=&group=&from=&to=&q=&brand=&status=&page=&size=
- *      mỗi dòng = một phát sinh sổ kho, mới nhất trước: Nhập / Xuất, tồn kho (của mã ở kho đó) ngay sau giao dịch, chứng từ + link.
+ *  GET /stock-moves?warehouseId=&group=&from=&to=&q=&brand=&status=&sku=&page=&size=  (sku = đúng một mã – lịch sử sản phẩm)
+ *      mỗi dòng = một phát sinh sổ kho, mới nhất trước: Nhập / Xuất, tồn kho (của mã ở kho đó) trước / sau giao dịch, chứng từ + link.
  *      `group`: sale = bán hàng (duyệt đơn / HĐKT, bán quầy, giao COD) · in = nhập (NCC, chuyển đến, khách trả) · out = xuất · transfer · adjust · reverse
  *      `status`: active = sản phẩm đang giao dịch · inactive = ngừng giao dịch. `size` 20 / 50 / 100 / 200 (xuất Excel: tối đa 5000).
  *      Kèm `total` (số giao dịch khớp bộ lọc) và `totals` { inQty, outQty } của cả bộ lọc (không chỉ trang đang xem).
@@ -52,7 +52,7 @@ const baseRef = (refId: string) => refId.split('#')[0]!;
 
 export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
   router.get('/stock-moves', async c => {
-    const db = c.env.db, p = c.url.searchParams, wh = p.get('warehouseId') || '', group = p.get('group') || '', q = (p.get('q') || '').trim().slice(0, 80).replace(/[\\%_]/g, '');
+    const db = c.env.db, p = c.url.searchParams, wh = p.get('warehouseId') || '', group = p.get('group') || '', q = (p.get('q') || '').trim().slice(0, 80).replace(/[\\%_]/g, ''), sku = (p.get('sku') || '').trim().slice(0, 200);
     const from = p.get('from'), to = p.get('to'), brand = (p.get('brand') || '').trim().slice(0, 120), status = p.get('status') || '';
     for (const date of [from, to]) if (date && (!isDate(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date))
       throw new AppError(400, 'Ngày lọc không hợp lệ.');
@@ -69,7 +69,7 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
     if (!ids.length) return json(empty);
     // Ngày lọc theo giờ Việt Nam (như trang Đơn hàng): giao dịch 6h sáng 22/10 thuộc ngày 22/10, không lùi về 21/10 theo UTC.
     const kinds = GROUPS[group], fromStart = isDate(from) ? new Date(from + 'T00:00:00+07:00').toISOString() : null, toEnd = isDate(to) ? new Date(to + 'T23:59:59.999+07:00').toISOString() : null;
-    const where = and(inArray(stockMoves.warehouseId, ids),
+    const where = and(inArray(stockMoves.warehouseId, ids), sku ? eq(stockMoves.sku, sku) : undefined,
       group === 'sale' ? inArray(stockMoves.refType, [...SALE_REFS]) : kinds ? inArray(stockMoves.kind, [...kinds]) : undefined,
       fromStart ? gte(stockMoves.createdAt, fromStart) : undefined, toEnd ? lte(stockMoves.createdAt, toEnd) : undefined,
       brand ? eq(products.brand, brand) : undefined, status === 'active' ? eq(products.active, true) : status === 'inactive' ? eq(products.active, false) : undefined,
@@ -77,7 +77,7 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
     // Tồn sau giao dịch: cộng dồn toàn bộ sổ kho của (mã, kho) tới dòng đó – tính trước khi lọc (lọc theo loại / ngày không làm sai số tồn).
     const ledger = db.select({ id: stockMoves.id,
       balanceAfter: sql<number>`sum(${stockMoves.qty}) over (partition by ${stockMoves.sku}, ${stockMoves.warehouseId} order by ${stockMoves.createdAt}, ${stockMoves.id} rows between unbounded preceding and current row)`.mapWith(Number).as('balance_after') })
-      .from(stockMoves).where(and(inArray(stockMoves.warehouseId, ids), toEnd ? lte(stockMoves.createdAt, toEnd) : undefined)).as('ledger');
+      .from(stockMoves).where(and(inArray(stockMoves.warehouseId, ids), sku ? eq(stockMoves.sku, sku) : undefined, toEnd ? lte(stockMoves.createdAt, toEnd) : undefined)).as('ledger');
     const [rows, [sum]] = await Promise.all([
       db.select({ m: stockMoves, balanceAfter: ledger.balanceAfter, by: employees.name, name: products.name, unit: products.unit, brand: products.brand, active: products.active }).from(stockMoves)
         .innerJoin(ledger, eq(ledger.id, stockMoves.id)).leftJoin(employees, eq(employees.id, stockMoves.createdBy)).leftJoin(products, eq(products.sku, stockMoves.sku))
@@ -97,7 +97,7 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
       moves: rows.map(({ m, balanceAfter, by, name, unit, brand, active }) => {
         const ref = baseRef(m.refId);
         return { id: m.id, at: m.createdAt, sku: m.sku, name: name ?? '', unit: unit ?? '', brand: brand ?? '', active: active ?? true,
-          warehouseId: m.warehouseId, warehouse: wName.get(m.warehouseId) ?? '', qty: m.qty, inQty: m.qty > 0 ? m.qty : 0, outQty: m.qty < 0 ? -m.qty : 0, balanceAfter: round(balanceAfter),
+          warehouseId: m.warehouseId, warehouse: wName.get(m.warehouseId) ?? '', qty: m.qty, inQty: m.qty > 0 ? m.qty : 0, outQty: m.qty < 0 ? -m.qty : 0, balanceBefore: round(balanceAfter - m.qty), balanceAfter: round(balanceAfter),
           kind: m.kind, kindLabel: STOCK_KIND_LABEL[m.kind as StockMoveKind] ?? m.kind, description: stockMoveDescription(m.kind as StockMoveKind, m.refType as StockRefType),
           refType: m.refType, refNo: m.refNo, note: m.note, by: by ?? '', link: directLink(m.refType, ref) || resolved.get(m.refType + '\u0000' + ref) || '' };
       }) });

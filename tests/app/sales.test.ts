@@ -116,7 +116,11 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
 
   // Công nợ: thu cọc, không thu vượt, đơn đã thu thì không huỷ được.
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 0 })).status, 400);
-  assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 7_452_000, paidAt: '2026-10-06', method: 'transfer', reference: 'UNC 123' })).status, 201);
+  const payKey = 'pay-key-0000000001', pay = { key: payKey, orderId: o.data.id, amount: 7_452_000, paidAt: '2026-10-06', method: 'transfer', reference: 'UNC 123' };
+  const paid1 = await call('/payments', emp, 'POST', pay);
+  assert.equal(paid1.status, 201);
+  // Mất mạng bấm lại cùng hộp thoại (cùng mã): trả lại phiếu cũ, không ghi thu hai lần.
+  assert.equal((await call('/payments', emp, 'POST', pay)).data.id, paid1.data.id);
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 99_000_000 })).status, 400);
   const debts = (await call('/receivables', emp)).data;
   assert.equal(debts.receivables.length, 1);

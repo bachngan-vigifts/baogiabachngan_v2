@@ -129,7 +129,9 @@ export function validateReceipt(progress: ReceiptProgress, input: { receivedDate
     if (Number.isNaN(goodQty) || Number.isNaN(damagedQty)) throw new AppError(400, `Số lượng nhận của ${line.sku} không hợp lệ.`);
     if (!goodQty && !damagedQty) continue;
     if (goodQty > line.missing) throw new AppError(400, `${line.sku}: nhận đạt ${goodQty} vượt số còn thiếu ${line.missing}.`);
-    if (damagedQty > line.ordered) throw new AppError(400, `${line.sku}: số hỏng vượt số đặt.`);
+    // Hàng hỏng nằm trong số hàng NCC giao đợt này: đạt + hỏng không vượt số còn thiếu (gõ hỏng mà quên bớt số đạt → không ghi nhận đủ / cộng kho thừa).
+    if (goodQty + damagedQty > line.missing + 1e-9)
+      throw new AppError(400, `${line.sku}: đạt ${goodQty} + hỏng ${damagedQty} vượt số còn thiếu ${line.missing}. Số đạt chỉ gồm hàng tốt (VD: giao 10, hỏng 2 → đạt 8).`, 'RECEIPT_OVER');
     out.push({ lineId: line.lineId, sku: line.sku, goodQty, damagedQty, note });
   }
   if (!out.length) throw new AppError(400, 'Nhập số lượng nhận cho ít nhất một mã.');

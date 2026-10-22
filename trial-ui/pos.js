@@ -712,7 +712,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   function requireCustomer() {
     const issue = posCustomerIssue(st.customer);
     if (!issue) return true;
-    toast(issue, 'err'); chooseCustomer(); return false;
+    // Chọn / tạo khách xong thì tự mở lại Thanh toán (không phải bấm THANH TOÁN lần nữa) – trong 3 phút.
+    toast(issue, 'err'); st.resumePaymentAt = Date.now(); chooseCustomer(); return false;
+  }
+  function resumePayment() {
+    const at = st.resumePaymentAt; st.resumePaymentAt = 0;
+    if (!at || Date.now() - at > 180000) return;
+    setTimeout(() => run(async () => { if (!st.preview) await preview(); openPayment(); }), 0);
   }
   function openPayment() {
     if (!active() || !st.preview || !st.cart.length || st.pending || st.busy) return;
@@ -732,7 +738,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     }
     nodes.methods = methods;
     const tender = el('div', 'pos-payment-cash'), moneyFields = el('div', 'pos-tender'), f = field('Khách đưa', 'number');
-    f.input.min = '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; f.input.addEventListener('input', refreshPay); nodes.tender = f.input;
+    f.input.min = '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; f.input.placeholder = '0'; f.input.addEventListener('input', refreshPay); nodes.tender = f.input;
     nodes.change = el('b', 'pos-change', '0 đ'); const cb = el('div', 'pos-change-card'); cb.append(el('span', 'pos-note', 'Tiền thối lại'), nodes.change); moneyFields.append(f.box, cb);
     const quick = el('div', 'pos-cash-quick');
     for (const [label, value] of [['Đủ tiền','due'],['100.000',100000],['200.000',200000],['500.000',500000],['1.000.000',1000000],['Xóa',0]]) quick.append(button(label, 'btn secondary', () => { nodes.tender.value = value === 'due' ? (st.preview.payable ?? st.preview.total) : value; refreshPay(); }));
@@ -1236,7 +1242,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         st.customer = c;
         nodes.customer.textContent = c ? c.name : 'Chọn khách hàng *';
         invalidate();
-        close();
+        close(); if (c) resumePayment();
       }
       function filter(value) {
         kind = value;
@@ -1325,7 +1331,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     const error = el('p', 'error'); error.setAttribute('role', 'alert');
     const actions = el('div', 'pos-customer-form-actions');
     const save = el('button', 'btn primary', 'Lưu & chọn khách'); save.type = 'submit';
-    actions.append(save, button('Huỷ', 'btn secondary', m.close));
+    actions.className += ' pos-form-actions';
+    actions.append(button('Huỷ', 'btn secondary', m.close), save);
     m.form.append(fields.root, error, actions);
     const duplicateCheck = bindCustomerDuplicateCheck({api, root:fields.root, read:fields.read, endpoint:'/pos/customers/duplicates/check', active:()=>m.dlg.open,
       onChoose: async c => {
@@ -1334,7 +1341,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           const existing=result.customers.find(x=>x.id===c.id);
           if(!existing){error.textContent='Khách chưa được duyệt hoặc chưa có quyền chọn. Nhờ Manager kiểm tra.';return;}
           const issue=posCustomerIssue(existing);if(issue){error.textContent=issue;return;}
-          st.customer=existing;nodes.customer.textContent=existing.name;invalidate();m.close();
+          st.customer=existing;nodes.customer.textContent=existing.name;invalidate();m.close();resumePayment();
         }catch(ex){error.textContent=ex.message;}
       }});
     m.dlg.addEventListener('close', duplicateCheck.reset);
@@ -1348,7 +1355,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
         st.customer = c;
         nodes.customer.textContent = c.name;
         invalidate();
-        m.close();
+        m.close(); resumePayment();
       } catch (ex) { error.textContent = ex.message; }
       finally { save.disabled = false; }
     });
@@ -1973,7 +1980,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     );
     const save = el('button', 'btn primary', 'Lưu quầy');
     save.type = 'submit';
-    m.form.append(save, button('Đóng', 'btn secondary', m.close));
+    const actions = el('div', 'pos-form-actions');
+    actions.append(button('Đóng', 'btn secondary', m.close), save);
+    m.form.append(actions);
     m.form.addEventListener('submit', (e) => {
       e.preventDefault();
       run(async () => {
