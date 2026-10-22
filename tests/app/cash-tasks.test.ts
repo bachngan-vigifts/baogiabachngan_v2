@@ -60,7 +60,14 @@ test('Kết ca lệch tiền: việc giải trình cho nhân viên → việc đ
   assert.equal(step2.find(t => t.autoKey!.endsWith(':explain'))!.status, 'done');
   const close = step2.find(t => t.autoKey!.endsWith(':close'))!;
   assert.equal(close.status, 'todo'); assert.equal(close.assigneeId, null);
+  const list = (status = '') => f.call('/cash/reconciliations' + (status ? '?status=' + status : ''), f.mgr).then(r => r.data);
+  assert.deepEqual((await list()).counts, { pending: 0, explained: 1, closed: 0, open: 1 });
+  assert.equal((await list()).items[0].memberId, 'emp'); assert.ok((await list()).items[0].businessDate);
+  const detail = (await f.call(`/cash/reconciliations/${recId}`, f.mgr)).data;
+  assert.equal(detail.memberId, 'emp'); assert.equal(detail.names.explainedBy, 'Tên emp');
   assert.equal((await f.call(`/cash/reconciliations/${recId}/close`, f.mgr, 'POST', { reason: 'Đã kiểm' })).status, 200);
+  assert.equal((await list()).items.length, 0, 'mặc định chỉ hiện tra soát cần xử lý');
+  assert.equal((await list('closed')).items.length, 1); assert.equal((await list('all')).items.length, 1);
   assert.ok((await byKey(f, 'cash-recon:')).every(t => t.status === 'done'));
 });
 
