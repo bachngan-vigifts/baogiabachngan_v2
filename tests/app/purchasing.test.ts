@@ -10,6 +10,7 @@ import { quotations, quoteLines } from '../../src/modules/quotes/schema.ts';
 import { salesOrders, salesOrderLines, salesContracts } from '../../src/modules/sales/schema.ts';
 import { vietnamDate } from '../../src/modules/sales/domain/sales.ts';
 import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
+import { incomingShipmentLines } from '../../src/modules/suppliers/schema.ts';
 
 /** ĐƠN MUA NCC (đợt 2): lập từ chứng từ nguồn, chống mua trùng, chia NCC, duyệt, xác nhận thay NCC, nhận hàng từng đợt, Sapo, thanh toán, huỷ. */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
@@ -484,4 +485,24 @@ test('purchase source pages include all quotes without duplicates, retain search
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const detail = (await call('/purchase-orders/' + created.data.ids[0], mgr)).data;
   assert.equal(detail.state, 'draft'); assert.equal(detail.lines[0].sku, '031106000'); assert.equal(detail.lines[0].quantity, 7);
+});
+
+test('tên hàng trên đơn mua NCC luôn là tên đầy đủ trong danh mục (dòng báo giá gõ gọn "Bộ trà 0.5" không làm thiếu tên)', async () => {
+  const s = await setup(), { call, emp, a } = s, db = (s as any).db;
+  const full = 'Bộ trà 0.5 L Came VCV (01503801403)';
+  await db.insert(products).values({ sku: '01503801403', name: full, unit: 'bộ', updatedAt: now });
+  await db.insert(quotations).values({ id: 'q2', creatorId: 'emp', quoteNo: 'B2B_2', quoteType: 'B2B', customer: 'Khách trà', quoteDate: '2026-09-10', data: '{"rows":[]}', createdAt: now, updatedAt: now });
+  await db.insert(quoteLines).values([{ id: 'ql3', quoteId: 'q2', lineNo: 1, sku: '01503801403', name: 'Bộ trà 0.5', unit: 'bộ', qty: 3 }, { id: 'ql4', quoteId: 'q2', lineNo: 2, sku: 'NGOAI-DM', name: 'Hàng ngoài danh mục', unit: 'cái', qty: 1 }]);
+  const src = (await call('/purchase-sources/quote/q2', emp)).data;
+  assert.deepEqual(src.lines.map((l: any) => l.name), [full, 'Hàng ngoài danh mục'], 'form lập đơn hiện tên danh mục; mã ngoài danh mục giữ tên dòng');
+  // Giao diện gửi tên gọn của dòng báo giá → máy chủ vẫn lưu tên danh mục.
+  const made = await call('/purchase-orders', emp, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [
+    { sku: '01503801403', name: 'Bộ trà 0.5', quantity: 3, sources: [{ type: 'quote', id: 'q2', quantity: 3 }] },
+    { sku: 'NGOAI-DM', name: 'Hàng ngoài danh mục', quantity: 1, sources: [{ type: 'quote', id: 'q2', quantity: 1 }] }] }] });
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  const id = made.data.ids[0];
+  assert.deepEqual((await call(`/purchase-orders/${id}`, emp)).data.lines.map((l: any) => l.name), [full, 'Hàng ngoài danh mục']);
+  // Đơn cũ đã lưu tên gọn: xem / in / gửi NCC vẫn ra tên đầy đủ.
+  await db.update(incomingShipmentLines).set({ name: 'Bộ trà 0.5' }).where(eq(incomingShipmentLines.sku, '01503801403'));
+  assert.equal((await call(`/purchase-orders/${id}`, emp)).data.lines[0].name, full);
 });

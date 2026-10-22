@@ -260,3 +260,33 @@ test('tìm nhanh sản phẩm như web cũ: nhóm, khoảng giá theo bảng gi�
   await db.update(productStock).set({ quantity: 8 }).where(eq(productStock.sku, 'LHC-LY'));
   assert.notEqual((await call('/catalog-snapshot?v=' + snap.data.version, emp)).data.version, snap.data.version);
 });
+
+test('tìm sản phẩm xếp theo mức liên quan (không theo bảng chữ cái); "0.5l" khớp "0.5 L"; trình duyệt ra đúng như máy chủ', async () => {
+  const { db, call, emp } = await setup();
+  const t = '2026-10-22T00:00:00.000Z';
+  await db.insert(products).values([
+    { sku: '01503801403', name: 'Bộ trà 0.5 L Came VCV (01503801403)', brand: 'Minh Long', unit: 'bộ', updatedAt: t },
+    { sku: '01503801500', name: 'Bộ trà 0.5 L Jasmine Hoàng Cung', brand: 'Minh Long', unit: 'bộ', updatedAt: t },
+    { sku: 'LHC4282DBRW_C', name: 'LHC4282DBRW_C - Ca nước giữ nhiệt 1.2L', brand: 'Lock&Lock', unit: 'cái', updatedAt: t },
+    { sku: 'TL-01', name: 'Tách trà Lys Trắng Ngà', brand: 'LYS', unit: 'cái', updatedAt: t },
+    { sku: 'ML-LY-02', name: 'Bộ ly sứ 6 món', brand: 'Minh Long', unit: 'bộ', updatedAt: t },
+    { sku: 'LY-500', name: 'Ly thủy tinh 500ml', brand: 'Khác', unit: 'cái', updatedAt: t },
+    { sku: 'HOP', name: 'Hộp đựng bộ trà cao cấp', brand: 'Khác', unit: 'cái', updatedAt: t },
+    { sku: 'XA', name: 'Bình hoa mai trang trí', brand: 'Khác', unit: 'cái', updatedAt: t },
+  ]);
+  const skus = async (q: string) => (await call('/products?limit=50&q=' + encodeURIComponent(q), emp)).data.products.map((p: any) => p.sku);
+  // Tên bắt đầu bằng cụm gõ lên trước (tên ngắn trước), rồi tên chứa nguyên cụm; không còn xếp A→Z làm "Bình hoa…" lên đầu.
+  assert.deepEqual((await skus('bo tra')).slice(0, 3), ['01503801500', '01503801403', 'HOP']);
+  assert.deepEqual((await skus('0.5l')).sort(), ['01503801403', '01503801500'], '"0.5l" khớp "0.5 L"');
+  assert.deepEqual(await skus('bo tra 0.5l came'), ['01503801403']);
+  assert.equal((await skus('lhc4282'))[0], 'LHC4282DBRW_C', 'mã gõ thiếu đuôi vẫn lên đầu');
+  assert.equal((await skus('LHC-4282'))[0], 'LHC4282DBRW_C', 'gõ có gạch nối vẫn khớp');
+  assert.equal((await skus('ly'))[0], 'LY-500', 'tên bắt đầu bằng "ly" trước tên chỉ chứa "ly"');
+  assert.deepEqual(await skus('500 ml'), ['LY-500']);
+  assert.equal((await skus('01503801403'))[0], '01503801403');
+  assert.deepEqual(await skus('ly tra khong co'), []);
+  // Gợi ý khi lập báo giá lọc trên trình duyệt: cùng kết quả, cùng thứ tự.
+  const items = hydrateSnapshot((await call('/catalog-snapshot', emp)).data);
+  for (const q of ['bo tra', '0.5l', 'bo tra 0.5l came', 'lhc4282', 'LHC-4282', 'ly', 'tra', '500 ml', '01503801403', 'minh long', 'giu nhiet 1.2l'])
+    assert.deepEqual(searchProducts(items, { q })!.map(p => p.sku), await skus(q), q);
+});

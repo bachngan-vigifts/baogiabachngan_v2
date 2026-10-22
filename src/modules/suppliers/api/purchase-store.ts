@@ -8,7 +8,7 @@ import { salesContracts, salesOrderLines, salesOrders } from '../../sales/schema
 import { orderScopeFor } from '../../sales/api/routes.ts';
 import { customerStockRequests } from '../../portal/schema.ts';
 import { customers } from '../../customers/schema.ts';
-import { productStock, warehouses } from '../../catalog/schema.ts';
+import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
   supplierReceiptLines, supplierReceipts, suppliers,
@@ -46,7 +46,7 @@ const MONEY_EVENTS = new Set(Object.keys(MONEY_EVENT_LABEL));
 export async function loadPurchase(db: Db, m: Member, id: string, today: string) {
   const [o] = await db.select().from(incomingShipments).where(and(eq(incomingShipments.id, id), purchaseScope(m))).limit(1);
   if (!o) throw new AppError(404, 'Không tìm thấy đơn mua hàng.');
-  const [lines, sources, receipts, receiptLines, schedules, payments, events, [supplier]] = await Promise.all([
+  const [storedLines, sources, receipts, receiptLines, schedules, payments, events, [supplier]] = await Promise.all([
     db.select().from(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id)).orderBy(asc(incomingShipmentLines.lineNo)),
     db.select().from(supplierOrderSources).where(eq(supplierOrderSources.shipmentId, id)).orderBy(asc(supplierOrderSources.createdAt)),
     db.select({ r: supplierReceipts, by: employees.name }).from(supplierReceipts).leftJoin(employees, eq(employees.id, supplierReceipts.receivedBy))
@@ -61,6 +61,9 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
     o.supplierId ? db.select({ id: suppliers.id, name: suppliers.name, phone: suppliers.phone, email: suppliers.email, address: suppliers.address, taxCode: suppliers.taxCode })
       .from(suppliers).where(eq(suppliers.id, o.supplierId)).limit(1) : Promise.resolve([]),
   ]);
+  // Đơn cũ có thể lưu tên gọn từ báo giá (vd "Bộ trà 0.5"): hiện, in PDF và gửi NCC theo tên đầy đủ trong danh mục.
+  const fullNames = await catalogNames(db, storedLines.map(l => l.sku));
+  const lines = storedLines.map(l => ({ ...l, name: fullNames.get(l.sku.toLowerCase()) ?? l.name }));
   const live = new Set(receipts.filter(x => !x.r.cancelledAt).map(x => x.r.id));
   const progress = receiptProgress(lines.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity })),
     receiptLines.filter(x => live.has(x.l.receiptId)).map(x => ({ lineId: x.l.lineId, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty })));
@@ -232,12 +235,27 @@ export interface SourceNeed { type: SourceType; id: string; no: string; customer
 // Cột trong select bị render không kèm tên bảng → viết rõ bảng để subquery không hiểu nhầm `id` của sales_contracts.
 const contractNoOf = sql<string | null>`(select sc.contract_no from ${salesContracts} sc where sc.order_id = ${salesOrders}.id limit 1)`;
 
+/**
+ * Tên đầy đủ trong danh mục theo mã (không phân biệt hoa thường). Dòng báo giá / đơn có thể được gõ gọn (vd "Bộ trà 0.5")
+ * – đơn mua NCC luôn hiện và ghi tên danh mục để NCC nhận đúng hàng; mã không có trong danh mục giữ tên của dòng.
+ */
+export async function catalogNames(db: Db, skus: readonly string[]): Promise<Map<string, string>> {
+  const keys = [...new Set(skus.map(s => s.trim().toLowerCase()).filter(Boolean))];
+  if (!keys.length) return new Map();
+  const rows = await db.select({ sku: products.sku, name: products.name }).from(products).where(inArray(sql`lower(${products.sku})`, keys));
+  return new Map(rows.filter(r => r.name.trim()).map(r => [r.sku.toLowerCase(), r.name]));
+}
+const withCatalogNames = async <T extends { sku: string; name: string }>(db: Db, lines: T[]): Promise<T[]> => {
+  const names = await catalogNames(db, lines.map(l => l.sku));
+  return lines.map(l => ({ ...l, name: names.get(l.sku.toLowerCase()) ?? l.name }));
+};
+
 export async function loadSourceNeed(db: Db, m: Member, type: string, id: string): Promise<SourceNeed> {
   if (type === 'quote') {
     const [q] = await db.select({ id: quotations.id, no: quotations.quoteNo, customer: quotations.customer }).from(quotations).where(and(eq(quotations.id, id), quotationPredicate(m))).limit(1);
     if (!q) throw new AppError(404, 'Không tìm thấy báo giá.');
     const lines = await db.select({ sku: quoteLines.sku, name: quoteLines.name, unit: quoteLines.unit, quantity: quoteLines.qty }).from(quoteLines).where(eq(quoteLines.quoteId, id)).orderBy(asc(quoteLines.lineNo));
-    return { type, id, no: q.no, customerName: q.customer, lines: lines.filter(l => l.sku) };
+    return { type, id, no: q.no, customerName: q.customer, lines: await withCatalogNames(db, lines.filter(l => l.sku)) };
   }
   if (type === 'order') {
     const [o] = await db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, status: salesOrders.status,
@@ -246,7 +264,7 @@ export async function loadSourceNeed(db: Db, m: Member, type: string, id: string
     if (!o) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
     if (o.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ.');
     const lines = await db.select({ sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit, quantity: salesOrderLines.qty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, id)).orderBy(asc(salesOrderLines.lineNo));
-    return { type, id, no: o.contractNo || o.no, customerName: o.customer, lines: lines.filter(l => l.sku) };
+    return { type, id, no: o.contractNo || o.no, customerName: o.customer, lines: await withCatalogNames(db, lines.filter(l => l.sku)) };
   }
   if (type === 'stock_request') {
     const [r] = await db.select({ r: customerStockRequests, customer: customers.name }).from(customerStockRequests).innerJoin(customers, eq(customers.id, customerStockRequests.customerId))
@@ -256,7 +274,7 @@ export async function loadSourceNeed(db: Db, m: Member, type: string, id: string
     const answered = new Map((JSON.parse(r.r.answerItems) as { sku: string; available: number }[]).map(a => [a.sku, a.available]));
     // Cần mua = khách hỏi − số đã báo đáp ứng được (chưa trả lời thì cần đủ số khách hỏi).
     const lines = asked.map(a => ({ sku: a.sku, name: a.name, unit: a.unit ?? '', quantity: Math.max(0, a.qty - (answered.get(a.sku) ?? 0)) })).filter(l => l.quantity > 0);
-    return { type, id, no: 'Hỏi tồn ' + r.r.createdAt.slice(0, 10).split('-').reverse().join('/'), customerName: r.customer, lines };
+    return { type, id, no: 'Hỏi tồn ' + r.r.createdAt.slice(0, 10).split('-').reverse().join('/'), customerName: r.customer, lines: await withCatalogNames(db, lines) };
   }
   throw new AppError(400, 'Loại chứng từ nguồn không hợp lệ.');
 }
