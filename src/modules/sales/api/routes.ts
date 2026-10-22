@@ -663,6 +663,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (status === 'cancelled') {
       const [paid] = await c.env.db.select({ n: sql<number>`count(*)` }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt)));
       const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
+      if (Number(paid?.n) > 0 && !lines.some(l => l.deliveredQty > 0) && order.channel === 'pos' && order.fulfillmentMode === 'cod')
+        throw new AppError(409, 'Đơn Ship COD đã thu cọc: dùng "Đổi / trả hàng" của đơn (thu hồi đơn chưa giao) để nhận hàng hoàn về kho và hoàn cọc cho khách.', 'COD_DEPOSIT_RECOVER');
       if (Number(paid?.n) > 0 || lines.some(l => l.deliveredQty > 0)) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
     }
     if (status === 'confirmed' && !canApprove(viewer(c))) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt đơn hàng / HĐKT.', 'APPROVER_ONLY');

@@ -171,6 +171,11 @@ Chọn chuyển khoản mà chưa đánh dấu thực nhận chỉ tạo `pos_pa
 
 **Đã đóng gói/xuất nhưng chưa giao**: dùng **Trả / Đổi / Hoàn**, thu hồi toàn bộ hàng đã xuất của đơn; không huỷ thẳng. Sau duyệt, dừng giao đơn và nhả phần chưa xuất; phải xác nhận thực nhận lại hàng mới nhập tồn và cho hoàn/đổi. Phần chưa xuất chỉ giảm công nợ, không tạo nhập kho giả. Mặc định hoàn tiền hàng, hoàn thêm phí chỉ Manager duyệt. Sau khi đã giao dùng nghiệp vụ trả hàng hiện có theo số lượng đã giao.
 
+**Ship COD bị GHN hoàn hàng** (GHN đã lấy hàng → kho đã trừ): khi hàng về tới cửa hàng,
+- đơn **chưa thu cọc**: Huỷ đơn rồi bấm **Nhận hàng hoàn** trên bảng đơn (cộng lại kho);
+- đơn **đã thu cọc** (không huỷ thẳng được): **Trả / Đổi / Hoàn** của đơn → thu hồi toàn bộ hàng đã xuất → Manager duyệt (đơn và chuyến giao tự huỷ) → xác nhận đã nhận hàng (cộng lại kho) → hoàn cọc (tối đa đúng số đã thu; phí ship chỉ hoàn khi Manager duyệt).
+Yêu cầu thu hồi chờ duyệt mà đơn kịp giao tới khách thì không duyệt được – huỷ yêu cầu và làm trả hàng thường.
+
 Báo cáo tách cọc thực nhận, thu nốt, trả trước, chuyển khoản chờ và đơn còn phải thu cùng két. Tiền mặt thực thu vào két ca thực nhận; chuyển khoản không vào két. Đơn chưa tất toán không chặn kết ca; báo cáo ca đã kết không đổi. Huỷ phiếu thu ghi nhầm không tự mở lại intent hay gia hạn giữ đã hết hạn; hàng đã xuất dùng trả/hoàn thay vì huỷ phiếu thu.
 
 Giao diện chỉ mở lựa chọn mới khi `/pos/options.orderFlowVersion >= 1` và gửi tạo đơn qua `/pos/order-flows/checkout` riêng; API cũ/rollback trả lỗi thay vì coi cọc là bán đã thanh toán đủ. Bán tại quầy/COD vẫn dùng `/pos/checkout`.
