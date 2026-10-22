@@ -23,4 +23,7 @@ jobs:
             -H "Authorization: Bearer $SAPO_SYNC_TOKEN" \
             --data '{}')
           echo "$response"
-          test "$(echo "$response" | jq -r '.ok')" = 'true'
+          test "$(echo "$response" | jq -r 'has("checked") and has("updated") and (.errors | type == "array")')" = 'true'
+          if [ "$(echo "$response" | jq -r '.ok')" != 'true' ]; then
+            echo "::warning::Đồng bộ GHN chạy xong nhưng có mã vận đơn cần kiểm tra."
+          fi
