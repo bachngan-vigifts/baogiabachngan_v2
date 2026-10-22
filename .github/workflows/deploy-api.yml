@@ -17,6 +17,7 @@ jobs:
       SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
       WEB_ORDER_ACTION_TOKEN: ${{ secrets.WEB_ORDER_ACTION_TOKEN }}
       GHN_API_TOKEN: ${{ secrets.GHN_API_TOKEN }}
+      GHN_WEBHOOK_TOKEN: ${{ secrets.GHN_WEBHOOK_TOKEN }}
       # Mã băm SHA-256 (hex) của khoá webhook SePay và token webhook WooCommerce. Bắt buộc: code không còn giá trị dự phòng.
       SEPAY_POS_API_KEY_HASH: ${{ secrets.SEPAY_POS_API_KEY_HASH }}
       WOO_LOCK_TOKEN_HASH: ${{ secrets.WOO_LOCK_TOKEN_HASH }}
@@ -74,7 +75,7 @@ jobs:
         run: supabase secrets set --project-ref "$PROJECT_REF" WEB_ORDER_ACTION_TOKEN="$WEB_ORDER_ACTION_TOKEN"
       - name: Cập nhật mã bí mật GHN
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.GHN_API_TOKEN != ''
-        run: supabase secrets set --project-ref "$PROJECT_REF" GHN_API_TOKEN="$GHN_API_TOKEN"
+        run: supabase secrets set --project-ref "$PROJECT_REF" GHN_API_TOKEN="$GHN_API_TOKEN" GHN_WEBHOOK_TOKEN="$GHN_WEBHOOK_TOKEN"
       - name: Kiểm tra mã webhook SePay / WooCommerce
         if: env.SUPABASE_ACCESS_TOKEN != ''
         # Thiếu mã thì dừng triển khai, tránh webhook thanh toán / đơn web bị từ chối âm thầm sau khi deploy.
