@@ -1,9 +1,12 @@
 import { initEarlyRequests } from './purchase-early-requests.js';
+import { installBusyButtons, withBusy } from './busy-buttons.js';
 const API=document.querySelector('meta[name="bn-api"]')?.content||'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
 const key='bn-v2-session',$=id=>document.getElementById(id);let token='';
 try{token=localStorage.getItem(key)||sessionStorage.getItem(key)||'';}catch{}
 const saveToken=value=>{token=value||'';try{if(token)localStorage.setItem(key,token);else localStorage.removeItem(key);sessionStorage.removeItem(key);}catch{}};
-async function api(path,method='GET',body) {
+installBusyButtons();
+function api(path,method='GET',body){return withBusy(method,apiRequest(path,method,body),path);}
+async function apiRequest(path,method='GET',body) {
   const headers={'content-type':'application/json'};if(token)headers.authorization='Bearer '+token;
   let r;try{r=await fetch(API+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});}catch{throw Error('Không kết nối được máy chủ. Vui lòng thử lại.');}
   const d=await r.json();if(d.sessionToken!==undefined)saveToken(d.sessionToken);
