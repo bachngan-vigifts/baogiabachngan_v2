@@ -15,6 +15,9 @@ import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
 import { posOrderReservations, posPaymentIntents } from '../../sales/pos-order-flow-schema.ts';
 import { posReturns } from '../../sales/return-schema.ts';
+import { cashEntries, cashReconciliations } from '../../sales/cash-schema.ts';
+import { posRegisters, posShifts } from '../../sales/pos-schema.ts';
+import { cashEntryName } from '../../sales/domain/cash.ts';
 import { openPurchases } from '../../suppliers/api/purchase-store.ts';
 import { stockTransfers } from '../../inventory/schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
@@ -312,7 +315,78 @@ export const RULES: Record<string, Rule> = {
       link: `#/orders/${d.orderId}`, assigneeId: ownerId ?? createdBy, priority: 'high' as const, dueDate: day(d.deliveredAt),
     }));
   },
+  /**
+   * SỔ QUỸ. Phiếu thu/chi từ ngưỡng duyệt trở lên (vd. nhân viên nộp két ≥ 1.000.000 đ) đang chờ duyệt → việc "chưa giao"
+   * cho Manager (người được chỉ định duyệt thấy ở hộp Cần duyệt, đúng cửa hàng). Tự hoàn thành khi phiếu được duyệt hoặc huỷ.
+   * Kết ca bị chặn khi còn phiếu chờ nên phiếu chờ luôn thuộc ca đang mở.
+   */
+  async cashApproval(db) {
+    const rows = await db.select({ e: cashEntries, by: employees.name }).from(cashEntries).innerJoin(employees, eq(employees.id, cashEntries.createdBy))
+      .where(eq(cashEntries.status, 'pending')).limit(500);
+    return rows.map(({ e, by }) => ({
+      autoKey: `cash-approve:${e.id}`, source: 'cash' as const, sourceId: e.id,
+      title: `Duyệt phiếu ${e.direction === 'in' ? 'thu' : 'chi'} ${e.entryNo} – ${cashEntryName(e)} ${vnd(e.amount)}`.slice(0, 200),
+      description: `${by} lập, chờ duyệt (ngưỡng ${vnd(e.approvalThresholdSnapshot)}). Nội dung: ${e.reason.replace(/^Tên phiếu: [^\n]*\n\n/, '').slice(0, 300)}`,
+      link: `#/cash?drawerId=${encodeURIComponent(e.drawerId)}&entryId=${encodeURIComponent(e.id)}`, assigneeId: null, priority: 'high' as const, dueDate: day(e.createdAt),
+    }));
+  },
+  /** Yêu cầu đổi / trả hàng POS chờ duyệt → việc "chưa giao" cho Manager (người được chỉ định duyệt thấy ở hộp Cần duyệt). */
+  async posReturnApproval(db) {
+    const rows = await db.select({ r: posReturns, by: employees.name, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName })
+      .from(posReturns).innerJoin(employees, eq(employees.id, posReturns.createdBy)).innerJoin(salesOrders, eq(salesOrders.id, posReturns.orderId))
+      .where(eq(posReturns.status, 'pending')).limit(500);
+    return rows.map(({ r, by, orderNo, customerName }) => ({
+      autoKey: `pos-return-approve:${r.id}`, source: 'cash' as const, sourceId: r.id,
+      title: `Duyệt yêu cầu ${r.kind === 'exchange' ? 'đổi' : 'trả'} hàng ${r.returnNo} – ${customerName}`.slice(0, 200),
+      description: `${by} lập cho bill ${orderNo}, ${vnd(r.total)}. Lý do: ${r.reason.slice(0, 300)}`,
+      link: `#/cash?returnOrderId=${encodeURIComponent(r.orderId)}`, assigneeId: null, priority: 'high' as const, dueDate: day(r.createdAt),
+    }));
+  },
+  /**
+   * Kết ca lệch tiền → phiếu tra soát. Chưa giải trình → việc cho nhân viên của ca giải trình; đã giải trình → việc "chưa giao"
+   * cho Manager xem và đóng. Khoá theo bước nên mỗi bước là một việc; đóng tra soát → tự hoàn thành.
+   */
+  async cashReconciliations(db) {
+    const rows = await db.select({ r: cashReconciliations, memberId: posShifts.memberId, businessDate: posShifts.businessDate, member: employees.name })
+      .from(cashReconciliations).innerJoin(posShifts, eq(posShifts.id, cashReconciliations.shiftId)).innerJoin(employees, eq(employees.id, posShifts.memberId))
+      .where(inArray(cashReconciliations.status, ['pending', 'explained'])).limit(500);
+    return rows.map(({ r, memberId, businessDate, member }) => {
+      const explain = r.status === 'pending', diff = `${r.difference > 0 ? 'thừa' : 'thiếu'} ${vnd(Math.abs(r.difference))}`;
+      return {
+        autoKey: `cash-recon:${r.id}:${explain ? 'explain' : 'close'}`, source: 'cash' as const, sourceId: r.id,
+        title: explain ? `Giải trình lệch két ${r.reconciliationNo} (${diff})` : `Đóng tra soát ${r.reconciliationNo} – ${member} (${diff})`,
+        description: explain ? `Ca ngày ${fmt(businessDate)}: két ${diff}. Ghi giải trình để Manager đóng tra soát.` : `${member} đã giải trình: ${r.explanation.slice(0, 300)}`,
+        link: `#/cash?drawerId=${encodeURIComponent(r.drawerId)}&reconciliationId=${encodeURIComponent(r.id)}`,
+        assigneeId: explain ? memberId : null, priority: 'high' as const, dueDate: addDaysIso(day(explain ? r.createdAt : r.explainedAt ?? r.createdAt)!, 1),
+      };
+    });
+  },
+  /** Ca bán hàng của ngày trước vẫn chưa kết → việc cho người mở ca kết ca (đếm két). Kết ca → tự hoàn thành. */
+  async shiftLeftOpen(db, today) {
+    const rows = await db.select({ s: posShifts, register: posRegisters.name }).from(posShifts).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
+      .where(and(isNull(posShifts.closedAt), sql`${posShifts.businessDate} < ${today}`)).limit(500);
+    return rows.map(({ s, register }) => ({
+      autoKey: `shift-open:${s.id}`, source: 'cash' as const, sourceId: s.id,
+      title: `Kết ca quầy ${register} ngày ${fmt(s.businessDate)}`,
+      description: 'Ca của ngày trước vẫn đang mở: đếm két và kết ca ở Sổ quỹ để chốt báo cáo ca và mở ca mới.',
+      link: '#/cash', assigneeId: s.memberId, priority: 'urgent' as const, dueDate: s.businessDate,
+    }));
+  },
 };
+
+const CASH_RULES = ['cashApproval', 'posReturnApproval', 'cashReconciliations', 'shiftLeftOpen'] as const;
+/**
+ * Đồng bộ ngay việc Sổ quỹ (nguồn 'cash') sau khi lập / duyệt / huỷ phiếu, yêu cầu đổi trả, kết ca, tra soát –
+ * không đợi ai mở trang Công việc. Người duyệt đã có thông báo riêng nên không báo thêm "Việc mới". Không bao giờ ném lỗi.
+ */
+export function cashTasksChanged(env: Pick<StaffEnv, 'db' | 'waitUntil'>) {
+  const job = (async () => {
+    const today = vietnamDate(new Date()).iso, wanted = new Map<string, AutoTask>();
+    for (const name of CASH_RULES) for (const t of await RULES[name]!(env.db, today)) wanted.set(t.autoKey, t);
+    await reconcileTaskSet(env.db, wanted, new Date(), eq(tasks.source, 'cash'));
+  })().catch(e => console.error('cash tasks sync failed', e instanceof Error ? e.message : e));
+  if (env.waitUntil) env.waitUntil(job); else return job;
+}
 
 /** Chạy mọi quy tắc rồi đồng bộ bảng `tasks`. Một quy tắc lỗi không chặn các quy tắc khác. */
 export async function reconcileAutoTasks(db: Db, now = new Date()) {

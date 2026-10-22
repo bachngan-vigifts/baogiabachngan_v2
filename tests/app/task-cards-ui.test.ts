@@ -58,3 +58,14 @@ test('bấm nhanh các thẻ: response cũ không ghi đè kết quả mới; th
   f.click('unassigned'); await flush(); assert.match(f.calls.filter(x => x.startsWith('/tasks?')).at(-1)!, /view=unassigned/);
   f.click('approvals'); await flush(); assert.equal(f.node('#tasks-approvals').hidden, false); assert.equal(f.node('.task-board').hidden, true);
 });
+
+test('bảng công việc chia theo nhóm việc; trong nhóm quá hạn → hôm nay → sắp tới, việc đã xong xuống cuối', async () => {
+  const ctx: any = { document: { getElementById() {}, addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
+  vm.createContext(ctx); vm.runInContext(source, ctx);
+  const t = (id: string, source: string, due: string, extra = {}) => ({ id, source, due, priority: 'normal', status: 'todo', ...extra });
+  const groups = ctx.groupTasks([t('m1', 'manual', 'today'), t('c1', 'cash', 'upcoming'), t('c2', 'receivable', 'overdue'), t('q1', 'quote', 'none'),
+    t('p1', 'packing', 'today'), t('c3', 'invoice', 'overdue', { status: 'done' }), t('c4', 'cash', 'today', { priority: 'urgent' }), t('x', 'unknown', 'none')]);
+  assert.deepEqual(JSON.parse(JSON.stringify(groups.map((g: any) => [g[0], g[2].map((x: any) => x.id)]))), [
+    ['sales', ['q1']], ['warehouse', ['p1']], ['money', ['c2', 'c4', 'c1', 'c3']], ['manual', ['m1', 'x']],
+  ]);
+});

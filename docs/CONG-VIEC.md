@@ -16,7 +16,8 @@ Trang **Công việc** (`#/tasks`) gom hai loại việc vào một danh sách:
 Thêm một nguồn việc tự sinh mới:
 1. Thêm khoá vào `TASK_SOURCES`.
 2. Viết một hàm trong `RULES`. Hàm trả danh sách các việc *cần có lúc này*, mỗi việc có `autoKey` duy nhất.
-3. Thêm nhãn và màu cho khoá mới vào `TASK_UI.source`.
+3. Thêm nhãn và màu cho khoá mới vào `TASK_UI.source` và đưa khoá vào một nhóm ở `TASK_UI.categories`.
+4. Viết migration đổi ràng buộc `chk_tasks_source` (vd. `20261022090000_task_source_cash.sql`).
 
 ## Việc tự sinh
 Mỗi lần mở bảng, hệ thống đồng bộ việc tự sinh, tối đa 15 giây một lần.
@@ -37,6 +38,20 @@ Mỗi lần mở bảng, hệ thống đồng bộ việc tự sinh, tối đa 1
 | Thu công nợ quá hạn | đơn có kỳ thu quá hạn | NV phụ trách đơn | Khẩn | kỳ quá hạn sớm nhất |
 | Nhận hàng nhập | đơn nhập Sapo (60 ngày gần đây) chưa hoàn tất | Nhóm **Kho** | Bình thường | +7 ngày |
 | Xuất kho & đóng hàng | NV phụ trách bấm **📦 Yêu cầu kho đóng hàng** ở một chuyến giao (ô Lịch giao hàng của đơn) | Nhóm **Kho** | Cao (giao trong 1 ngày: Khẩn) | ngày giao |
+| Duyệt phiếu thu/chi (Sổ quỹ) | phiếu từ ngưỡng duyệt trở lên đang chờ (vd. NV **nộp két** ≥ 1.000.000 đ) | *Chưa giao* (Manager) | Cao | ngày lập |
+| Duyệt đổi / trả hàng POS | yêu cầu đổi / trả đang chờ duyệt | *Chưa giao* (Manager) | Cao | ngày lập |
+| Giải trình lệch két | kết ca / mở ca lệch tiền → phiếu tra soát chưa giải trình | NV của ca | Cao | +1 ngày |
+| Đóng tra soát | NV đã giải trình, chờ Manager đóng | *Chưa giao* (Manager) | Cao | +1 ngày |
+| Kết ca quên | ca của ngày trước vẫn chưa kết | người mở ca | Khẩn | ngày của ca |
+
+Việc **Sổ quỹ** (nguồn `cash`) được đồng bộ **ngay** khi lập / duyệt / huỷ phiếu, lập / duyệt / huỷ yêu cầu đổi trả, mở / kết ca và giải trình / đóng tra soát (`cashTasksChanged`), không đợi ai mở trang Công việc. Người duyệt đã có thông báo riêng nên không báo thêm "Việc mới". Người **được Manager chỉ định duyệt** thấy phiếu thu/chi và đổi/trả ở hộp **Cần duyệt** (đúng két / quầy cửa hàng mình, không thấy phiếu tự lập).
+
+## Giao diện
+- Thẻ số nhanh (Việc của tôi · Quá hạn · Hôm nay · Chưa giao / Việc nhóm · Cần duyệt) – bấm để lọc.
+- Hàng lọc chính: người nhận + trạng thái + ô tìm; **Lọc thêm** mở hạn / ưu tiên / nguồn.
+- Ô **Giao việc mới** chỉ hiện người nhận / ưu tiên / hạn khi bắt đầu gõ.
+- Danh sách chia theo **nhóm việc** (`TASK_UI.categories`): *Bán hàng & khách* · *Kho & giao hàng* · *Tiền & sổ quỹ* · *Việc giao tay*; mỗi nhóm có số việc + số quá hạn, bấm tiêu đề để thu gọn. Trong nhóm: việc mở trước, quá hạn → hôm nay → sắp tới → chưa hạn, rồi mức ưu tiên.
+- Mỗi dòng: tên việc, nguồn, ưu tiên (chỉ hiện Cao / Khẩn), trạng thái (khi khác *Cần làm*), người nhận, hạn, nút **Mở** chứng từ. Đổi trạng thái chi tiết trong hộp việc.
 
 Quy định với việc tự sinh:
 - Không xoá được. Việc tự đóng khi chứng từ đã xử lý xong.

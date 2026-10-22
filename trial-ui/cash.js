@@ -125,8 +125,9 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     }
     const hash = globalThis.location?.hash || '';
     const link = new URLSearchParams(hash.split('?')[1] || '');
-    const linkedEntry = link.get('entryId');
-    if (linkedEntry && hash !== openedEntryLink && link.get('drawerId')) drawerId = link.get('drawerId');
+    const linkedEntry = link.get('entryId'), linkedRec = link.get('reconciliationId');
+    if ((linkedEntry || linkedRec) && hash !== openedEntryLink && link.get('drawerId')) drawerId = link.get('drawerId');
+    if (linkedRec && hash !== openedEntryLink) tab = 'reconcile';
     const result = await api('/cash');
     if (version !== loadVersion) return;
     summary = result;
@@ -139,6 +140,10 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       const detail = await api('/cash/entries/' + encodeURIComponent(linkedEntry));
       if (version !== loadVersion) return;
       openedEntryLink = hash; showEntry(detail.entry);
+    }
+    // Việc "Giải trình / đóng tra soát" mở thẳng phiếu tra soát.
+    if (linkedRec && hash !== openedEntryLink) {
+      openedEntryLink = hash; await reconciliation(encodeURIComponent(linkedRec));
     }
     // Thông báo "Yêu cầu đổi / trả hàng chờ duyệt" mở thẳng yêu cầu của bill đó.
     const linkedReturnOrder = link.get('returnOrderId');

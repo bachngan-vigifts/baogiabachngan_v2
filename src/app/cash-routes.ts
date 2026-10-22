@@ -1,4 +1,5 @@
-import { notifyCashApproval } from '../modules/sales/api/cash-approval-notification.ts';
+import { notifyCashApproval, notifyCashApprovers } from '../modules/sales/api/cash-approval-notification.ts';
+import { cashTasksChanged } from '../modules/tasks/api/auto-tasks.ts';
 import { allowedRegister, allowedDrawer, posScope } from '../modules/sales/api/pos-access.ts';
 import { auditLogs } from '../core/db/schema.ts';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
@@ -444,6 +445,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(eq(cashEntries.id, e.id));
         await cashAudit(tx, who(c).id, 'approve', 'cash-entries', e.id, { shiftId: e.shiftId, selfApproved: e.createdBy === who(c).id });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
@@ -470,6 +472,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
         if (e.status === 'posted') await voidClosedCashEffect(tx, e.shiftId, who(c).id, `${e.entryNo}: ${reason}`);
         await cashAudit(tx, who(c).id, 'void', 'cash-entries', e.id, { reason, shiftId: e.shiftId });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
@@ -514,6 +517,16 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       cashAccess(member);
       const b = await readJson(c.req, 5000);
       const result = await c.env.db.transaction((tx) => closeCashShift(tx, member, c.params.id!, b, shiftReport));
+      // Kết ca ở Sổ quỹ cũng báo người duyệt khi lệch tiền (như kết ca ở Bán hàng nhanh) và cập nhật việc Sổ quỹ ngay.
+      if (!result.replayed && result.cashDifference)
+        await notifyCashApprovers(c.env, result.shift.cashDrawerId, member.id, {
+          eventType: 'pos_shift_difference',
+          title: 'Kết ca lệch tiền mặt',
+          body: `${member.name}: ${result.cashDifference.toLocaleString('vi-VN')} đ. ${result.differenceReason}`,
+          url: '/index.html#/cash?drawerId=' + encodeURIComponent(result.shift.cashDrawerId),
+          data: { shiftId: result.shift.id },
+        }).catch(error => console.warn('shift difference notification failed', error instanceof Error ? error.message : 'unknown error'));
+      else if (!result.replayed) await cashTasksChanged(c.env);
       if (!result.replayed && c.env.posShiftReportWebhook) {
         const task = sendPosShiftReport(c.env, result).catch((error) =>
           console.error('POS_SHIFT_REPORT_WEBHOOK_FAILED', result.shift?.id, error instanceof Error ? error.message : error),
@@ -610,6 +623,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(eq(cashReconciliations.id, r.r.id));
         await cashAudit(tx, who(c).id, 'explain', 'cash-reconciliations', r.r.id, { explanation });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
@@ -634,6 +648,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
           .where(eq(cashReconciliations.id, r.id));
         await cashAudit(tx, who(c).id, 'close', 'cash-reconciliations', r.id, { reason });
       });
+      await cashTasksChanged(c.env);
       return json({ ok: true });
     },
     'business',
