@@ -6,7 +6,7 @@ import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { PosDb, PosMember } from './pos-store.ts';
 import { posText, reservedBySku } from './pos-store.ts';
-import { posLine, posMoney } from '../domain/pos-money.ts';
+import { allocatePosVoucher, parsePosVoucher, posLine, posMoney } from '../domain/pos-money.ts';
 import { cashAudit } from './cash-store.ts';
 import { customers } from '../../customers/schema.ts';
 import { stockBalances } from '../../inventory/schema.ts';
@@ -68,12 +68,17 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
         if (plannedLines.length !== oldLines.length || oldLines.some(l => !plannedLines.some(dl => dl.orderLineId === l.id && dl.qty === l.qty)))
           throw new AppError(409, 'Chuyến giao đã chia một phần: cần xử lý lịch giao trước khi đổi số lượng/giá.');
       }
-      computed = oldLines.map(l => {
+      const lineOf = (voucherShares: readonly number[]) => oldLines.map((l, i) => {
         const row = byId.get(l.id)!;
         if (row.qty === '' || row.price === '') throw new AppError(400, 'Không để trống số lượng hoặc đơn giá.');
         return posLine({ price: posMoney(row.price, 'Đơn giá'), qty: row.qty, discountType: row.discountType, discountValue: row.discountValue,
-          taxRate: l.taxRate, priceIncludesVat: l.taxRate > 0, vatEnabled: l.taxRate > 0 });
+          taxRate: l.taxRate, priceIncludesVat: l.taxRate > 0, vatEnabled: l.taxRate > 0, voucherAmount: voucherShares[i] ?? 0 });
       });
+      // Voucher của đơn (nếu có) chia lại theo số lượng / giá mới: % giữ tỷ lệ, VNĐ giữ số tiền (không được vượt tiền hàng mới).
+      const voucher = parsePosVoucher(snapshot.voucher ? { code: snapshot.voucher.code, type: snapshot.voucher.type, value: snapshot.voucher.value } : null);
+      const base = lineOf([]), split = allocatePosVoucher(base.map(l => l.listAmount - l.discountAmount), voucher);
+      computed = split.amount ? lineOf(split.shares) : base;
+      if (voucher) snapshot.voucher = { ...voucher, amount: split.amount };
       const skus = [...new Set(oldLines.map(l => l.sku))].sort();
       const warehouseId = snapshot.register?.warehouseId;
       if (typeof warehouseId !== 'string' || !warehouseId) throw new AppError(409, 'Thiếu kho gốc của đơn POS.');

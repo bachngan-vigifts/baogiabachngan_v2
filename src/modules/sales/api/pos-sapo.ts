@@ -44,7 +44,9 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
   if (!row) throw new AppError(404, 'Không tìm thấy đơn POS vừa tạo.', 'POS_ORDER_NOT_FOUND');
   const lines = await env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
   const o = row.order;
-  const fees = snapshotPosFees(JSON.parse(o.posSnapshot || '{}'));
+  const snapshot = JSON.parse(o.posSnapshot || '{}'), fees = snapshotPosFees(snapshot);
+  // Voucher nhập tay của đơn quầy: đã chia vào discount_amount từng dòng (trước thuế); ghi chú thêm mã để đối soát.
+  const voucher = snapshot.voucher && snapshot.voucher.amount ? ` · Voucher ${String(snapshot.voucher.code)}: −${Number(snapshot.voucher.amount)}đ` : '';
   const payload = {
     event: 'crm_pos_create_sapo_order',
     trigger_source: 'pos',
@@ -66,7 +68,7 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
     vat_amount: o.tax,
     total: o.total,
     fulfillment_mode: o.fulfillmentMode,
-    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + fees.services.filter(f => f.amount).map(f => ` · ${f.name}: ${f.quantity} × ${f.unitPrice}đ = ${f.amount}đ (VAT ${f.taxRate}%)`).join('') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (không VAT)` : '') + (o.note ? ` · Ghi chú: ${o.note}` : ''),
+    notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + fees.services.filter(f => f.amount).map(f => ` · ${f.name}: ${f.quantity} × ${f.unitPrice}đ = ${f.amount}đ (VAT ${f.taxRate}%)`).join('') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (không VAT)` : '') + voucher + (o.note ? ` · Ghi chú: ${o.note}` : ''),
   };
   let response: Response;
   try {

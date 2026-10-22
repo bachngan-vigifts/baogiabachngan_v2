@@ -62,8 +62,10 @@ export function renderOrderLineDetails({ head, body, details, order, lines }) {
   }
   const totals = el('dl', '', 'kv pos-order-totals');
   const add = (label, value) => totals.append(el('dt', label), el('dd', value));
-  add('Tổng CK từng dòng (đã trừ trong tiền hàng)', money(lines.reduce((sum, line) => sum + (line.discountAmount || 0), 0)));
-  add('Mã giảm giá', 'Chưa có mã được lưu trong đơn POS');
+  // discountAmount của dòng gồm cả phần voucher chia vào dòng (snapshot.voucher.amount) – tách ra để đọc rõ.
+  const voucher = snapshot.voucher && Number(snapshot.voucher.amount) > 0 ? snapshot.voucher : null;
+  add('Tổng CK từng dòng (đã trừ trong tiền hàng)', money(lines.reduce((sum, line) => sum + (line.discountAmount || 0), 0) - (voucher ? Number(voucher.amount) : 0)));
+  add('Voucher', voucher ? `${voucher.code}${voucher.type === 'percent' ? ` (${num(voucher.value)}%)` : ''} · −${money(voucher.amount)} (đã chia vào tiền hàng, trước VAT)` : 'Không dùng voucher');
   if (Number.isFinite(snapshot.exchangeCredit) && snapshot.exchangeCredit > 0) add('Khấu trừ từ phiếu đổi hàng', money(snapshot.exchangeCredit));
   add('Tiền hàng và phí sau CK, chưa VAT', money(order.subtotal));
   add('VAT', money(order.tax));

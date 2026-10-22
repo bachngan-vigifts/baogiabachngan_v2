@@ -913,3 +913,38 @@ test('POS stock: selected product says bỏ chọn; stock actions never add to c
   await new Promise(r=>setTimeout(r,240));
  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
+
+test('Voucher trên đơn: gõ mã + số tiền thì giỏ gửi kèm voucher, tổng hiện dòng Voucher; Bỏ voucher xoá; bill in tách voucher', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: any[] = [];
+    const withVoucher = { ...sample, discount: 41600, total: 174400, voucher: { code: 'VC-1', type: 'amount', value: 20000, amount: 20000 },
+      lines: [{ ...sample.lines[0], sku: '001', discountAmount: 41600, voucherAmount: 20000 }] };
+    const api = async (path: string, method = 'GET', body?: any) => {
+      calls.push({ path, body });
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Lock', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [{ sku: '001', name: 'Ly', price: 108000, available: 10 }], nextOffset: null };
+      if (path === '/pos/preview') return body?.voucher ? withVoucher : { ...sample, lines: [{ ...sample.lines[0], sku: '001' }] };
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
+    await new Promise(r => setTimeout(r, 230));
+    const box = root.querySelectorAll('section').find(e => e.className === 'pos-voucher')!;
+    const [code, value] = box.querySelectorAll('input');
+    code!.value = 'VC-1'; await code!.fire('input');
+    value!.value = '20000'; await value!.fire('input');
+    await new Promise(r => setTimeout(r, 230));
+    assert.deepEqual(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, { code: 'VC-1', type: 'amount', value: 20000 });
+    const totals = root.querySelectorAll('div').filter(d => d.className === 'pos-total-row').map(d => d.textContent);
+    assert.ok(totals.some(t => t.includes('Voucher VC-1') && t.includes('20.000')), totals.join(' | '));
+    assert.ok(totals.some(t => t.startsWith('Giảm giá') && t.includes('21.600')), 'Giảm giá chỉ còn CK dòng');
+    await box.querySelectorAll('button').find(b => b.textContent === 'Bỏ voucher')!.fire('click');
+    await new Promise(r => setTimeout(r, 230));
+    assert.equal(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, undefined);
+    const bill = buildPosPrint(doc, withVoucher).textContent;
+    assert.ok(bill.includes('Voucher (chia theo dòng)') && bill.includes('Voucher VC-1') && bill.includes('21.600'), bill);
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});
