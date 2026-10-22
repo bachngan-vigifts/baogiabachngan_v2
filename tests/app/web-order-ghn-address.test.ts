@@ -60,3 +60,16 @@ test('Backfill đơn Web Lock cũ chỉ lưu địa chỉ có đủ mã GHN', as
   const [stored] = await f.db.select().from(webStoreOrders);
   assert.equal(JSON.parse(stored!.ghnAddressSnapshot).wardCode, '550307');
 });
+
+test('Danh mục địa chỉ Web Lock lấy trực tiếp từ CRM, không gọi REST website', async () => {
+  const f = await setup();
+  await f.db.update(posRegisters).set({ name: 'CỬA HÀNG LOCKNLOCK CẦN THƠ' }).where(eq(posRegisters.id, f.registerId));
+  await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', { id: 3, number: 'WEB-3', status: 'pending', billing: { first_name: 'A' } });
+  const [stored] = await f.db.select().from(webStoreOrders);
+  let websiteCalls = 0;
+  f.env.webOrderAction = { token: 'private', lockUrl: 'https://lock.test/action', minhlongUrl: '', fetch: (async () => { websiteCalls++; throw new Error('Không được gọi website'); }) as typeof fetch };
+  const provinces = await f.call('/pos/web-orders/' + stored!.id + '/action', f.mgr, 'POST', { action: 'locations' });
+  assert.equal(provinces.status, 200, JSON.stringify(provinces.data));
+  assert.ok(provinces.data.locations.length > 0);
+  assert.equal(websiteCalls, 0);
+});
