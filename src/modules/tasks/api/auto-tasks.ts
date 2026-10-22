@@ -379,7 +379,7 @@ const CASH_RULES = ['cashApproval', 'posReturnApproval', 'cashReconciliations', 
  * Đồng bộ ngay việc Sổ quỹ (nguồn 'cash') sau khi lập / duyệt / huỷ phiếu, yêu cầu đổi trả, kết ca, tra soát –
  * không đợi ai mở trang Công việc. Người duyệt đã có thông báo riêng nên không báo thêm "Việc mới". Không bao giờ ném lỗi.
  */
-export function cashTasksChanged(env: Pick<StaffEnv, 'db' | 'waitUntil'>) {
+export function syncCashTasks(env: Pick<StaffEnv, 'db' | 'waitUntil'>) {
   const job = (async () => {
     const today = vietnamDate(new Date()).iso, wanted = new Map<string, AutoTask>();
     for (const name of CASH_RULES) for (const t of await RULES[name]!(env.db, today)) wanted.set(t.autoKey, t);

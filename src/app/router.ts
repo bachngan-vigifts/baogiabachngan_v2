@@ -25,7 +25,8 @@ import { registerEarlyRequestRoutes } from '../modules/suppliers/api/early-reque
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes, syncInvoiceTasks } from '../modules/tasks/api/routes.ts';
-import { invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
+import { cashTaskHooks, invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
+import { syncCashTasks } from '../modules/tasks/api/auto-tasks.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
 import { registerCustomerHubRoutes } from '../modules/customer-hub/api/routes.ts';
 import { registerCustomerDuplicateRoutes } from '../modules/customer-hub/api/duplicates.ts';
@@ -48,6 +49,7 @@ import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
+  cashTaskHooks.afterCommit = syncCashTasks;
   inventoryOpeningHooks.guard = guardPosOpening;
   catalogStockHooks.overlay = overlayPosStock;
   catalogStockHooks.stamp = posStockStamp;

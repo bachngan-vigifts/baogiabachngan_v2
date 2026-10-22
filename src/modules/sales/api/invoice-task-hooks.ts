@@ -7,3 +7,10 @@ export async function invoiceTasksChanged(env: StaffEnv, ref: InvoiceTaskRef, ac
   try { await invoiceTaskHooks.afterCommit?.(env, ref, actorId); }
   catch (e) { console.error('invoice task sync failed', ref, e instanceof Error ? e.message : e); }
 }
+
+/** Wired by the app: việc Sổ quỹ (duyệt phiếu, đổi/trả, tra soát, kết ca) đồng bộ ngay sau khi chứng từ đã lưu; lỗi không làm hỏng thao tác. */
+export const cashTaskHooks: { afterCommit?: (env: StaffEnv) => Promise<void> | void } = {};
+export async function cashTasksChanged(env: StaffEnv) {
+  try { await cashTaskHooks.afterCommit?.(env); }
+  catch (e) { console.error('cash task sync failed', e instanceof Error ? e.message : e); }
+}

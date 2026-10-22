@@ -3,7 +3,7 @@ import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
 import { posStockSources } from './pos-stock-sources.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
-import { cashTasksChanged } from '../../tasks/api/auto-tasks.ts';
+import { cashTasksChanged } from './invoice-task-hooks.ts';
 import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
 import { returnAccount, returnBalances } from './pos-return-credit.ts';

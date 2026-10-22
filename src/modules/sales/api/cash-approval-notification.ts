@@ -5,7 +5,7 @@ import { notifyMany } from '../../notifications/api/routes.ts';
 import { cashAccess } from './cash-store.ts';
 import { posStoreScopeFor } from './pos-access.ts';
 import { cashEntryName } from '../domain/cash.ts';
-import { cashTasksChanged } from '../../tasks/api/auto-tasks.ts';
+import { cashTasksChanged } from './invoice-task-hooks.ts';
 
 /** Người duyệt thu/chi xem được két này (Manager + người được chỉ định duyệt, đúng cửa hàng), trừ người lập. */
 async function cashApprovers(env: StaffEnv, drawerId: string, createdBy: string) {

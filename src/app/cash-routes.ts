@@ -1,5 +1,5 @@
 import { notifyCashApproval, notifyCashApprovers } from '../modules/sales/api/cash-approval-notification.ts';
-import { cashTasksChanged } from '../modules/tasks/api/auto-tasks.ts';
+import { cashTasksChanged } from '../modules/sales/api/invoice-task-hooks.ts';
 import { allowedRegister, allowedDrawer, posScope } from '../modules/sales/api/pos-access.ts';
 import { auditLogs } from '../core/db/schema.ts';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
