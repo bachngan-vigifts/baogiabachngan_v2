@@ -1,0 +1,26 @@
+name: Kiểm tra GHN POS Lock
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ghn-pos-lock-smoke.yml']
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
+      PROJECT_REF: taceqfnsorewelsbdckg
+    steps:
+      - name: Gọi đồng bộ GHN POS Lock trên production
+        shell: bash
+        run: |
+          test -n "$SAPO_SYNC_TOKEN"
+          response=$(curl --fail-with-body --silent --show-error --max-time 130 \
+            -X POST "https://$PROJECT_REF.supabase.co/functions/v1/baogia-v2-api/api/staff/integrations/ghn/pos-lock/pull" \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $SAPO_SYNC_TOKEN" \
+            --data '{}')
+          echo "$response"
+          test "$(echo "$response" | jq -r '.ok')" = 'true'
