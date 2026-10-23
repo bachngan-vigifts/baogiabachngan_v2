@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
+import { sniffImage } from '../../../core/http/image-bytes.ts';
 import { auditLogs } from '../../../core/db/schema.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -58,6 +59,24 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
       if (priceRows.length) await tx.insert(productPrices).values(priceRows);
     });
     return json({ sku: f.sku, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
+  }, 'business');
+
+  router.post('/product-images', async c => {
+    const me = viewer(c), store = c.env.productImages;
+    if (!['manager','employee'].includes(me.role)) throw new AppError(403, 'Chưa có quyền tải ảnh sản phẩm.');
+    if (!store?.publicUrl) throw new AppError(503, 'Kho ảnh sản phẩm chưa sẵn sàng. Vui lòng thử lại sau.');
+    const body = await readJson(c.req, 350_000), data = typeof body.image === 'string' ? body.image : '';
+    const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(data);
+    if (!match) throw new AppError(400, 'Chọn ảnh JPG, PNG hoặc WebP hợp lệ.');
+    let bytes: Uint8Array;
+    try { bytes = Uint8Array.from(atob(match[2]!), ch => ch.charCodeAt(0)); }
+    catch { throw new AppError(400, 'Dữ liệu ảnh không hợp lệ.'); }
+    if (bytes.length > 240_000) throw new AppError(413, 'Ảnh quá lớn. Chọn ảnh nhỏ hơn rồi thử lại.');
+    if (sniffImage(bytes) !== match[1]) throw new AppError(415, 'Nội dung file không đúng định dạng ảnh.');
+    const ext = { 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp' }[match[1]!]!;
+    const key = `uploads/${crypto.randomUUID()}.${ext}`;
+    await store.put(key, bytes, match[1]!);
+    return json({ imageUrl: store.publicUrl(key) }, 201);
   }, 'business');
 
   router.put('/products/:sku', async c => {
