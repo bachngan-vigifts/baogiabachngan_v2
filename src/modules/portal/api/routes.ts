@@ -1,4 +1,5 @@
 import { issuePartnerInvite } from './registration.ts';
+import { registerPartnerRegistrationRoutes } from './registration.ts';
 import { isRegistrationInvite } from '../domain/registration.ts';
 import { quoteHeadFor, quoteNumberPatterns } from '../../quotes/domain/quote-number.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
@@ -62,6 +63,7 @@ const ORDER_FIELDS = { id: salesOrders.id, orderNo: salesOrders.orderNo, contrac
   orderDate: salesOrders.orderDate, expectedDeliveryDate: salesOrders.expectedDeliveryDate, subtotal: salesOrders.subtotal, tax: salesOrders.tax, total: salesOrders.total, note: salesOrders.note };
 
 export function registerPortalRoutes(router: Router<StaffEnv>) {
+  registerPartnerRegistrationRoutes(router);
   // ======================= TRANG KHÁCH HÀNG (chỉ tài khoản khách) =======================
   router.get('/portal/me', async c => {
     const { account, customer, discounts } = await myAccount(c);
