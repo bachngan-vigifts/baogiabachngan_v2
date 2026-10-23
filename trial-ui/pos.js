@@ -52,10 +52,11 @@ const when = (d) => new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi
 /** Ô voucher trống của giỏ (mã / ghi chú, kiểu VNĐ | %, giá trị). */
 const emptyVoucher = () => ({ code: '', type: 'amount', value: '' });
 /**
- * `localSearch(q, policyId)`: lọc + xếp hạng trên danh mục đã tải sẵn (cùng thuật toán trang Sản phẩm) → mảng SKU, hoặc null khi chưa có danh mục.
- * Có kết quả: máy chủ chỉ trả giá / tồn / hàng giữ của các mã đang hiện (`/pos/catalog?skus=`) – gõ là ra, không quét cả danh mục.
+ * `localSearch(q, policyId)`: lọc + xếp hạng trên danh mục đã tải sẵn (cùng thuật toán trang Sản phẩm) → mảng {sku, name, unit, brand, imageUrl, price},
+ * hoặc null khi chưa có danh mục. Có kết quả: hiện ngay từ danh mục (tô đậm từ khoá bằng `matchRanges`), rồi máy chủ chỉ trả tồn / hàng giữ
+ * của các mã đang hiện (`/pos/catalog?skus=`, nhớ tạm vài giây) – gõ là ra, không quét cả danh mục.
  */
-export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, localSearch = () => null }) {
+export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, localSearch = () => null, matchRanges = () => [] }) {
   const st = {
     options: null,
     shift: null,
@@ -352,7 +353,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     nodes.search = input;
     input.addEventListener('input', () => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => run(() => search(false)), localSearch('', '') === null ? 220 : 80);
+      searchTimer = setTimeout(() => run(() => search(false, false, true)), localSearch('', '') === null ? 220 : 40);
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -1031,9 +1032,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       toast(e.message, 'err');
     }
   }
-  async function search(addScanned = false, more = false) {
+  /** Tồn / giá máy chủ của từng mã vừa xem (chỉ dùng khi đang gõ tìm, giữ 15 giây): gõ thêm / xoá chữ không phải hỏi lại. */
+  const liveCache = new Map(), LIVE_MS = 15000;
+  const cachedLive = (sku) => { const hit = liveCache.get(st.policy + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
+  async function search(addScanned = false, more = false, typed = false) {
     if (!st.register) return;
     if (more && st.catalogLoading) return;
+    if (!typed && !more) liveCache.clear(); // bán xong, đổi bảng giá, mở ca…: lấy tồn mới
     st.catalogLoading = true;
     const seq = ++searchSeq,
       q = nodes.search?.value.trim() || '',
@@ -1043,9 +1048,23 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     try {
       // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
       if (!more) st.localSkus = q && !addScanned ? localSearch(q, st.policy) : null;
-      const local = st.localSkus?.length ? st.localSkus : null;
+      const local = st.localSkus?.length ? st.localSkus : null; // [{sku, name, price…}] theo thứ tự xếp hạng
       const base = `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}`;
-      const bySkus = (skus) => api(`${base}&skus=${encodeURIComponent(skus.slice(offset, offset + limit).join(','))}`).then(d => ({ ...d, nextOffset: offset + limit < skus.length ? offset + limit : null }));
+      st.query = q;
+      // Danh mục tải sẵn: hiện ngay (tồn "đang tải" với mã chưa có trong bộ nhớ tạm), chỉ hỏi máy chủ phần còn thiếu.
+      const bySkus = async (previews) => {
+        const page = previews.slice(offset, offset + limit), nextOffset = offset + limit < previews.length ? offset + limit : null;
+        const show = () => page.map(x => cachedLive(x.sku) || { ...x, onHand: 0, reserved: 0, available: 0, loading: true });
+        const missing = page.filter(x => !cachedLive(x.sku)).map(x => x.sku);
+        if (missing.length && seq === searchSeq) { st.products = more ? [...st.products, ...show()] : show(); renderProducts(); }
+        if (missing.length) {
+          const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set();
+          for (const p of fresh.products) { liveCache.set(st.policy + '|' + p.sku, { p, at: now }); got.add(p.sku); }
+          // Mã không còn bán ở quầy (máy chủ không trả): bỏ khỏi danh sách.
+          return { products: show().filter(p => !p.loading || got.has(p.sku)).map(p => cachedLive(p.sku) || p), nextOffset };
+        }
+        return { products: show(), nextOffset };
+      };
       let d = local ? await bySkus(local) : await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
       // Enter / nút "Tìm" trên bàn phím điện thoại với chữ thường (không phải mã vạch): máy chủ không ra thì vẫn giữ danh sách lọc tại chỗ.
       if (addScanned && !more && !d.products.length) {
@@ -1089,11 +1108,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const priceStock = el('span', 'pos-product-price-stock');
       priceStock.append(
         el('strong', 'pos-product-price', money(p.price)),
-        el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', p.available <= 0 ? 'Hết hàng' : 'Còn ' + p.available),
+        p.loading ? el('small', 'pos-stock', 'Đang tải tồn…')
+          : el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', p.available <= 0 ? 'Hết hàng' : 'Còn ' + p.available),
       );
-      b.append(el('b', 'pos-product-name', p.name), el('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
+      b.append(marked('b', 'pos-product-name', p.name), marked('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
       b.title = p.name + ' · ' + p.sku;
-      b.disabled = !active() || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
+      b.disabled = !active() || p.loading || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
       tile.append(b);
       if (p.stockSources) {
         const stocks = el('div', 'pos-product-stocks');
@@ -1109,6 +1129,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
     if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', 'Không có sản phẩm phù hợp.'));
     markProductsInCart();
+  }
+  /** Chữ có tô đậm từ khoá đang tìm (cùng cách trang Sản phẩm). */
+  function marked(tag, cls, text) {
+    const t = String(text ?? ''), ranges = st.query ? matchRanges(t, st.query) : [];
+    if (!ranges.length) return el(tag, cls, t);
+    const node = el(tag, cls);
+    let i = 0;
+    for (const [a, b] of ranges) { if (a > i) node.append(el('span', '', t.slice(i, a))); node.append(el('mark', '', t.slice(a, b))); i = b; }
+    if (i < t.length) node.append(el('span', '', t.slice(i)));
+    return node;
   }
   const number = n => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(Number(n) || 0);
   function stockEntries(p) {

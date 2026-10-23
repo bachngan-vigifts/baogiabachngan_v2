@@ -22,6 +22,8 @@ export interface CatalogProduct {
   prices: Record<string, number | null>; stock: Record<string, number>;
   /** Chuỗi đã bỏ dấu để lọc nhanh (+ bản bỏ khoảng trắng / dấu câu cho từ có số, ký hiệu). */
   _hay: string; _compact: string; _name: string; _minhLong: boolean;
+  /** Vị trí trong bản chụp (máy chủ xếp sẵn mới tạo lên đầu): nhỏ = mới hơn. */
+  _order: number;
 }
 export interface SearchOptions { q?: string; group?: string; scope?: ProductScope | ''; policy?: string; min?: unknown; max?: unknown }
 
@@ -31,7 +33,7 @@ const GROUP_RE = Object.fromEntries(Object.entries(PRODUCT_GROUPS).map(([k, g]) 
 /** Dựng danh sách sản phẩm từ bản chụp gọn của `GET /catalog-snapshot`. */
 export function hydrateSnapshot(snap: CatalogSnapshot): CatalogProduct[] {
   const cols = snap.columns, n = cols.length;
-  return snap.products.map(row => {
+  return snap.products.map((row, order) => {
     const p = Object.fromEntries(cols.map((c, i) => [c, row[i]])) as unknown as CatalogProduct;
     const prices = row[n] as (number | null)[], stock = row[n + 1] as (number | null)[];
     p.prices = Object.fromEntries(snap.policies.map((x, i) => [x.id, prices[i] ?? null]));
@@ -42,11 +44,12 @@ export function hydrateSnapshot(snap: CatalogSnapshot): CatalogProduct[] {
     p._name = fold(p.name);
     const label = fold(`${p.brand ?? ''} ${p.name ?? ''}`);
     p._minhLong = MINH_LONG_WORDS.some(w => label.includes(w));
+    p._order = order;
     return p;
   });
 }
 
-/** Lọc + xếp hạng như máy chủ (product-rank.ts): mã đúng → mã bắt đầu → tên bắt đầu / chứa cụm gõ → …; cùng hạng tên ngắn trước. Trả null nếu khoảng giá sai. */
+/** Lọc + xếp hạng như máy chủ (product-rank.ts): mã đúng → mã bắt đầu → tên bắt đầu / chứa cụm gõ → …; cùng hạng mới tạo trước. Trả null nếu khoảng giá sai. */
 export function searchProducts(items: readonly CatalogProduct[], o: SearchOptions): CatalogProduct[] | null {
   const range = priceRange(o.min, o.max);
   if (!range) return null;
@@ -68,10 +71,9 @@ export function searchProducts(items: readonly CatalogProduct[], o: SearchOption
     }
     return true;
   });
-  const cmp = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
   const rank = new Map(out.map(p => [p, productRank(p, query)]));
-  return out.sort((a, b) => rank.get(a)! - rank.get(b)! || (words.length ? a._name.length - b._name.length : 0)
-    || cmp(a._name, b._name) || cmp(a.name, b.name) || cmp(a.sku, b.sku));
+  // Hạng liên quan trước; cùng hạng (hoặc không gõ tìm) thì mới tạo lên đầu – cùng thứ tự với máy chủ (productOrder).
+  return out.sort((a, b) => rank.get(a)! - rank.get(b)! || a._order - b._order);
 }
 
 /**
