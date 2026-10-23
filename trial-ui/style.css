@@ -607,7 +607,7 @@ table { width: 100%; border-collapse: collapse; }
 }
 label.btn { display: inline-flex; grid-auto-flow: unset; color: var(--ink); font-size: .92rem; }
 label.btn.busy { opacity: .55; pointer-events: none; }
-@media (max-width: 900px) { .page-head label.btn { display: none; } }
+@media (max-width: 900px) { .page-head label.btn, .product-tools label.btn { display: none; } }
 
 /* ---------- Bảng sản phẩm báo giá (cột theo web cũ) ---------- */
 .btn.navy { background: var(--navy); color: #fff; }
@@ -2218,3 +2218,6 @@ dialog.order-compose { width: 100vw; max-width: 100vw; height: 100dvh; max-heigh
 }
 /* Trang Sản phẩm: tô từ khoá đang tìm trong tên / mã. */
 .prod-cell mark { background: #fff1a8; color: inherit; border-radius: 2px; padding: 0 1px; }
+/* Trang Sản phẩm: công cụ dữ liệu của Manager gom một hàng, cùng kiểu nút, canh trái. */
+.product-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.product-tools-label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
