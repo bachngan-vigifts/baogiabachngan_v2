@@ -1,3 +1,4 @@
+import type { PermissionMember } from '../../staff/domain/permissions.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 import { posOrderReservations } from '../pos-order-flow-schema.ts';
@@ -96,6 +97,21 @@ async function holdView(c: Ctx, quoteId: string) {
   const active = rows.length > 0, ordered = await hasActiveOrder(c.env.db, quoteId);
   return { quoteId, holds: rows, expiresAt: active ? rows[0]!.expiresAt : null, by: active ? rows[0]!.by ?? '' : '', days: HOLD_DAYS, ordered,
     canHold: !active && !ordered && q.approvalStatus === 'approved', canRelease: active, canExtend: active && m.role === 'manager' };
+}
+
+/** Same reservations as the product list, for filtering before pagination. Read-only. */
+export async function catalogHeldQuantities(db: Db, member: PermissionMember, skus: string[]) {
+  if (!skus.length) return new Map<string, number>();
+  const [quotes, orders] = await Promise.all([
+    db.select({sku: stockHolds.sku, qty: stockHolds.qty}).from(stockHolds)
+      .innerJoin(quotations, eq(quotations.id, stockHolds.quoteId))
+      .where(and(live(nowIso()), inArray(stockHolds.sku, skus)))
+      .orderBy(asc(stockHolds.sku), asc(stockHolds.expiresAt)).limit(5000),
+    orderHolds(db, skus, undefined, posOrderStoreScope(member)),
+  ]);
+  const held = new Map<string, number>();
+  for (const row of [...quotes, ...orders]) held.set(row.sku, (held.get(row.sku) || 0) + Number(row.qty));
+  return held;
 }
 
 export function registerHoldRoutes(router: Router<StaffEnv>) {
