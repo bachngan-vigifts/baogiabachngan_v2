@@ -319,6 +319,7 @@ const state = {
   products: null, productTotal: 0, productQuery: '', productBrand: '', productWarehouse: '', productMinStock: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
+const canUpdateProducts = () => ['manager', 'employee'].includes(state.user?.role);
 /** Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC): Manager hoặc người được Manager bật cờ "Được duyệt". Máy chủ kiểm lại. */
 const canApprove = () => isManager() || state.user?.approver === true;
 /** Tài khoản Kho (chức vụ "warehouse"): chỉ các trang cần cho kho – Công việc, Lịch giao hàng, Phiếu đóng gói, Sản phẩm, Tin nhắn. */
@@ -1277,7 +1278,7 @@ async function showProductCard(sku, name) {
     <div class="modal-body"><h3 class="pc-title">Tồn kho hiện tại</h3><div data-stock-box><p class="muted">Đang tải tồn kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử nhập / xuất kho <small class="muted">· số lượng +/− và tồn trước → sau</small></h3><select class="pc-wh" data-ledger-wh aria-label="Lọc theo kho"><option value="">Tất cả kho</option></select></div><div data-ledger><p class="muted">Đang tải sổ kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử bán &amp; chứng từ <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
-    <div class="modal-foot">${isManager() ? '<button type="button" class="btn primary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<button type="button" class="btn navy" data-x>Đóng</button></div>`;
+    <div class="modal-foot">${canUpdateProducts() ? '<button type="button" class="btn primary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<button type="button" class="btn navy" data-x>Đóng</button></div>`;
   document.body.append(dlg); dlg.showModal();
   const close = () => { dlg.close(); };
   dlg.querySelector('[data-update-product-card]')?.addEventListener('click', () => { close(); productAdmin().openEdit(sku); });
@@ -2229,7 +2230,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, compress: compressImage, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); } });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, compress: compressImage, isManager, canApprove, canUpdate: canUpdateProducts, canSeePrices: seesPrices, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); } });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
@@ -2333,7 +2334,7 @@ function renderProducts() {
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
       <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}${held ? ` · đang treo ${fmtNum(held)}` : ''}">${fmtNum(stock)}${held ? `<small>treo ${fmtNum(held)}</small>` : ''}</td>
-      <td class="actions-cell"><div class="row-actions">${isManager() ? `<button type="button" class="btn secondary small" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;

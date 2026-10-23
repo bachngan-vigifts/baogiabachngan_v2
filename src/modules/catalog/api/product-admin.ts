@@ -6,7 +6,7 @@ import { auditLogs } from '../../../core/db/schema.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { canApprove } from '../../staff/domain/permissions.ts';
+import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { pricePolicies, productPrices, products } from '../schema.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -81,12 +81,14 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
 
   router.put('/products/:sku', async c => {
     const me = viewer(c);
-    if (me.role !== 'manager') throw new AppError(403, 'Chỉ Manager được cập nhật sản phẩm.', 'MANAGER_ONLY');
+    if (!['manager', 'employee'].includes(me.role)) throw new AppError(403, 'Chỉ nhân viên được cập nhật sản phẩm.');
     const body = await readJson(c.req, 16_000), sku = c.params.sku!;
     if (body.sku !== undefined && body.sku !== sku) throw new AppError(400, 'Không đổi mã SKU của sản phẩm đã có.');
     const f = cleanProduct(body, sku), expected = body.expectedUpdatedAt;
     if (typeof expected !== 'string' || !expected) throw new AppError(400, 'Tải lại thông tin sản phẩm trước khi cập nhật.');
     const rawPrices = body.prices && typeof body.prices === 'object' ? body.prices as Record<string, unknown> : {};
+    const seesPrices = me.role === 'manager' || ['page.quotes', 'page.orders', 'page.contracts'].some(k => can(me, k));
+    if (Object.keys(rawPrices).length && !seesPrices) throw new AppError(403, 'Chưa có quyền cập nhật giá sản phẩm.');
     await c.env.db.transaction(async tx => {
       const [before] = await tx.select().from(products).where(eq(products.sku, sku)).limit(1).for('update');
       if (!before) throw new AppError(404, 'Không tìm thấy sản phẩm.');

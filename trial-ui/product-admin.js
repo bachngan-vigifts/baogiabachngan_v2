@@ -5,7 +5,7 @@
 
 /** @param deps { api, toast, esc, money, confirmBox, isManager, userId, policies(), onChanged() } */
 export function initProductAdmin(deps) {
-  const { api, toast, esc, money, confirmBox, isManager } = deps, canApprove = deps.canApprove || isManager;
+  const { api, toast, esc, money, confirmBox, isManager } = deps, canApprove = deps.canApprove || isManager, canUpdate = deps.canUpdate || isManager;
   const box = document.getElementById('product-pending');
 
   async function loadPending() {
@@ -35,7 +35,7 @@ export function initProductAdmin(deps) {
 
   function openForm(product = null) {
     const editing = !!product;
-    const policies = deps.policies();
+    const policies = editing && deps.canSeePrices && !deps.canSeePrices() ? [] : deps.policies();
     const dlg = document.createElement('dialog'); dlg.className = 'modal';
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body form-grid cols-2">
@@ -115,7 +115,7 @@ export function initProductAdmin(deps) {
 
   let openingEdit = false;
   async function openEdit(sku) {
-    if (!isManager() || openingEdit) return;
+    if (!canUpdate() || openingEdit) return;
     openingEdit = true;
     try { const { product } = await api('/products/' + encodeURIComponent(sku)); openForm(product); }
     catch (ex) { toast(ex.message, 'err'); }
