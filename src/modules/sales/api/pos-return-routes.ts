@@ -494,6 +494,10 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             .set(fields)
             .where(eq(posReturns.id, r.id));
           if (r.requestContext === 'after_issue') {
+            // Chờ duyệt mà GHN / kho kịp báo đã giao: không thu hồi (đơn đã giao xử lý bằng trả hàng thường).
+            const [given] = await tx.select({ id: salesOrderLines.id }).from(salesOrderLines)
+              .where(and(eq(salesOrderLines.orderId, r.orderId), sql`${salesOrderLines.deliveredQty} > 0`)).limit(1);
+            if (given) throw new AppError(409, 'Đơn đã có hàng giao tới khách – huỷ yêu cầu thu hồi này và lập yêu cầu trả hàng thường.', 'ORDER_DELIVERED');
             const at = now();
             await tx
               .update(salesOrders)

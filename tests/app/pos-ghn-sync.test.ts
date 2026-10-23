@@ -49,6 +49,28 @@ test('GHN Lock: lấy hàng trừ kho một lần; giao xong hoàn tất và ghi
   assert.equal((await f.db.select().from(customerPayments)).length, 1, 'không ghi thu trùng');
 });
 
+test('Webhook GHN cập nhật đúng vận đơn, xác thực token/shop và chống ghi kho/COD trùng', async () => {
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, {
+    fulfillmentMode: 'cod', delivery, note: 'GHN-WEBHOOK1', depositAmount: 0,
+  }));
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  f.env.ghnWebhookToken = 'w'.repeat(40);
+  const payload = { OrderCode: 'WEBHOOK1', Status: 'picked', ShopID: 6096731, Time: '2026-10-22T04:00:00Z', Type: 'Switch_status' };
+  assert.equal((await f.call('/integrations/ghn/pos-lock/webhook?token=bad', '', 'POST', payload)).status, 401);
+  assert.equal((await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', { ...payload, ShopID: 999 })).status, 403);
+  const picked = await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', payload);
+  assert.equal(picked.status, 200, JSON.stringify(picked.data));
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'in_transit');
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8);
+  await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', payload);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8, 'GHN gửi lặp không trừ kho lần hai');
+  const delivered = { ...payload, Status: 'delivered', Time: '2026-10-22T05:00:00Z' };
+  await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', delivered);
+  await f.call('/integrations/ghn/pos-lock/webhook?token=' + 'w'.repeat(40), '', 'POST', delivered);
+  assert.equal((await f.db.select().from(customerPayments)).length, 1, 'GHN gửi delivered lặp không ghi COD lần hai');
+});
+
 test('Đồng bộ GHN ngay trong CRM: cần quyền bán hàng nhanh, báo rõ khi chưa có token, bấm liên tục không gọi GHN lại', async () => {
   const { resetGhnSyncThrottle } = await import('../../src/modules/sales/api/pos-ghn-sync.ts');
   resetGhnSyncThrottle();
@@ -67,4 +89,95 @@ test('Đồng bộ GHN ngay trong CRM: cần quyền bán hàng nhanh, báo rõ 
   const again = await f.call('/pos/ghn/sync', f.emp, 'POST', {});
   assert.equal(again.data.cached, true); assert.equal(calls, 1, 'trong 60 giây không gọi GHN lại');
   resetGhnSyncThrottle();
+});
+
+test('GHN hoàn hàng (đơn chưa cọc): không huỷ thẳng; thu hồi → duyệt huỷ đơn + chuyến thất bại → nhận hàng cộng kho một lần; GHN báo lại không xuất kho / ghi thu', async () => {
+  const { salesOrderLines } = await import('../../src/modules/sales/schema.ts');
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery, note: 'GHN-RET1234', depositAmount: 0 }));
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  let ghnStatus = 'picked';
+  f.env.ghnToken = 'test-ghn-token';
+  f.env.ghnFetch = (async () => Response.json({ data: { status: ghnStatus, updated_date: '2026-10-22T02:00:00Z' } })) as typeof fetch;
+  await syncPosLockGhn(f.env);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8, 'GHN lấy hàng: trừ kho');
+  ghnStatus = 'returned';
+  await syncPosLockGhn(f.env);
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'failed');
+
+  // Hàng đã rời kho: không huỷ thẳng để tự hoàn tồn – phải thu hồi và xác nhận nhận hàng thật.
+  const cancelled = await f.call('/orders/' + made.data.id + '/status', f.mgr, 'PUT', { status: 'cancelled' });
+  assert.equal(cancelled.status, 409); assert.equal(cancelled.data.code, 'RETURN_REQUIRED');
+  const lines = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, made.data.id));
+  const req = await f.call('/pos/returns', f.emp, 'POST', { key: crypto.randomUUID(), orderId: made.data.id, shiftId: shift.id, reason: 'GHN hoàn hàng',
+    lines: lines.map(l => ({ orderLineId: l.id, qty: l.qty })) });
+  assert.equal(req.status, 201, JSON.stringify(req.data)); assert.equal(req.data.requestContext, 'after_issue');
+  assert.equal((await f.call('/pos/returns/' + req.data.id + '/approve', f.mgr, 'POST', {})).status, 200);
+  assert.equal((await f.db.select().from(salesOrders).where(eq(salesOrders.id, made.data.id)))[0]!.status, 'cancelled');
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'cancelled', 'chuyến thất bại cũng huỷ theo đơn');
+  assert.equal((await syncPosLockGhn(f.env)).checked, 0, 'đơn đã huỷ không còn bị poll GHN');
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8, 'chưa nhận hàng thật: chưa cộng kho');
+  assert.equal((await f.call('/pos/returns/' + req.data.id + '/receive', f.emp, 'POST', { shiftId: shift.id, confirmed: true })).status, 200);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10, 'nhận hàng hoàn: kho về đủ');
+  assert.equal((await f.call('/pos/returns/' + req.data.id + '/receive', f.emp, 'POST', { shiftId: shift.id, confirmed: true })).data.replayed, true);
+
+  // Dù chuyến còn mở (dữ liệu cũ), GHN báo "delivered" trên đơn đã huỷ không được xuất kho lại hay ghi thu COD.
+  await f.db.update(deliveries).set({ status: 'failed' });
+  ghnStatus = 'delivered';
+  await syncPosLockGhn(f.env);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10, 'không trừ kho lần hai');
+  assert.equal((await f.db.select().from(customerPayments)).length, 0, 'không ghi thu COD trên đơn đã huỷ');
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'failed');
+});
+
+test('COD đã thu cọc, GHN hoàn hàng: không huỷ thẳng; thu hồi → duyệt huỷ đơn → nhận hàng về kho → hoàn đúng số cọc', async () => {
+  const { salesOrderLines } = await import('../../src/modules/sales/schema.ts');
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery, note: 'GHN-DEP1234', depositAmount: 50000 }));
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  let ghnStatus = 'picked';
+  f.env.ghnToken = 'test-ghn-token';
+  f.env.ghnFetch = (async () => Response.json({ data: { status: ghnStatus, updated_date: '2026-10-22T02:00:00Z' } })) as typeof fetch;
+  await syncPosLockGhn(f.env);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 8, 'GHN lấy hàng: trừ kho');
+  ghnStatus = 'returned'; await syncPosLockGhn(f.env);
+
+  const cancel = await f.call('/orders/' + made.data.id + '/status', f.mgr, 'PUT', { status: 'cancelled' });
+  assert.equal(cancel.status, 409); assert.equal(cancel.data.code, 'COD_DEPOSIT_RECOVER', 'chỉ đường sang thu hồi');
+
+  const view = (await f.call('/pos/returns?orderId=' + made.data.id, f.emp)).data;
+  assert.equal(view.recoveringIssued, true, 'đơn COD đã xuất chưa giao được thu hồi');
+  const lines = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, made.data.id));
+  const req = await f.call('/pos/returns', f.emp, 'POST', { key: crypto.randomUUID(), orderId: made.data.id, shiftId: shift.id, reason: 'GHN hoàn hàng',
+    lines: lines.map(l => ({ orderLineId: l.id, qty: l.qty })) });
+  assert.equal(req.status, 201, JSON.stringify(req.data)); assert.equal(req.data.requestContext, 'after_issue');
+  assert.equal((await f.call('/pos/returns/' + req.data.id + '/approve', f.mgr, 'POST', {})).status, 200);
+  assert.equal((await f.db.select().from(salesOrders).where(eq(salesOrders.id, made.data.id)))[0]!.status, 'cancelled');
+  assert.equal((await f.db.select().from(deliveries))[0]!.status, 'cancelled');
+  const got = await f.call('/pos/returns/' + req.data.id + '/receive', f.emp, 'POST', { shiftId: shift.id, confirmed: true });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10, 'nhận hàng hoàn: kho về đủ');
+  const refund = (amount: number) => f.call('/pos/returns/' + req.data.id + '/refund', f.emp, 'POST', { key: crypto.randomUUID(), shiftId: shift.id, confirmed: true, amount, method: 'cash' });
+  assert.equal((await refund(50001)).status, 409, 'không hoàn quá số cọc đã thu');
+  assert.equal((await refund(50000)).status, 201);
+  // Đơn đã huỷ: GHN báo lại không xuất kho / ghi thu.
+  ghnStatus = 'delivered'; await syncPosLockGhn(f.env);
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
+});
+
+test('thu hồi COD chờ duyệt mà đơn kịp giao tới khách: không duyệt được (không huỷ đơn đã giao)', async () => {
+  const { salesOrderLines } = await import('../../src/modules/sales/schema.ts');
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery, note: 'GHN-LATE123', depositAmount: 0 }));
+  f.env.ghnToken = 'test-ghn-token';
+  f.env.ghnFetch = (async () => Response.json({ data: { status: 'picked', updated_date: '2026-10-22T02:00:00Z' } })) as typeof fetch;
+  await syncPosLockGhn(f.env);
+  const lines = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, made.data.id));
+  const req = await f.call('/pos/returns', f.emp, 'POST', { key: crypto.randomUUID(), orderId: made.data.id, shiftId: shift.id, reason: 'Tưởng GHN hoàn',
+    lines: lines.map(l => ({ orderLineId: l.id, qty: l.qty })) });
+  assert.equal(req.status, 201, JSON.stringify(req.data));
+  await f.db.update(salesOrderLines).set({ deliveredQty: lines[0]!.qty }).where(eq(salesOrderLines.id, lines[0]!.id));
+  const approve = await f.call('/pos/returns/' + req.data.id + '/approve', f.mgr, 'POST', {});
+  assert.equal(approve.status, 409); assert.equal(approve.data.code, 'ORDER_DELIVERED');
+  assert.notEqual((await f.db.select().from(salesOrders).where(eq(salesOrders.id, made.data.id)))[0]!.status, 'cancelled');
 });

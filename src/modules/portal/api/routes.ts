@@ -1,4 +1,5 @@
 import { quoteHeadFor, quoteNumberPatterns } from '../../quotes/domain/quote-number.ts';
+import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -21,7 +22,7 @@ import { quoteHeaderIndex, quoteLineRows } from '../../quotes/domain/quote-index
 import { customerDiscount, totals } from '../../quotes/domain/quote-math.ts';
 import { customerPayments, deliveries, paymentSchedules, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { createOrderFromQuote } from '../../sales/api/routes.ts';
-import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { cleanDiscounts, isPhoneOnly, nextQuoteNo, parseDiscounts, PHONE_ONLY_DOMAIN, portalBrandAllowed, publicQuote, shownEmail } from '../domain/portal.ts';
@@ -195,11 +196,11 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount, paidAt: customerPayments.paidAt, method: customerPayments.method }).from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))).orderBy(asc(customerPayments.paidAt)),
       db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo, status: salesContracts.status, signedDate: salesContracts.signedDate, value: salesContracts.value }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]) : [[], [], [], [], []];
-    const today = vietnamDate().iso;
+    const today = vietnamDate().iso, net = await netReceivables(db, ids, today); // đã trừ hàng khách trả
     return json({ orders: orders.map(o => { const k = cts.find(x => x.orderId === o.id), counts = debtCounts(o.status, k?.status); return {
       ...o, contract: k && k.status !== 'cancelled' ? { contractNo: k.contractNo, status: k.status, signedDate: k.signedDate, value: k.value } : null, lines: lines.filter(l => l.orderId === o.id), deliveries: ships.filter(d => d.orderId === o.id),
       // Công nợ chỉ tính khi đơn đã được xác nhận hoặc HĐKT đã ký.
-      receivable: counts ? receivable(sch.filter(s => s.orderId === o.id), pay.filter(p => p.orderId === o.id), today) : null,
+      receivable: counts ? net.get(o.id)! : null,
       // Công nợ cho khách: các kỳ phải trả (cọc / phần còn lại, hạn) và các lần đã thanh toán.
       schedules: !counts ? [] : sch.filter(s => s.orderId === o.id).map(s => ({ kind: s.kind, amount: s.amount, dueDate: s.dueDate, note: s.note }))
         .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999')),

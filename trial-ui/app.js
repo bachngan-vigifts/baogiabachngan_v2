@@ -298,7 +298,7 @@ async function apiRequest(path, method = 'GET', body) {
   }
   if (state.user && sameSession) {
     if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
-    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|purchase-orders|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) { dataRefresh.saved(); queueMicrotask(() => { loadNavigationBadges(); dataRefresh.tick(); }); }
+    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|purchase-orders|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) dataRefresh.afterWrite(); // một lần làm mới (gồm số đếm menu) sau ~1 giây, không đọc lại 7–20 API nối đuôi
   }
   return data;
 }
@@ -638,7 +638,7 @@ $('#sapo-pull').addEventListener('click', async () => {
 // ---------------------------------------------------------------- điều hướng
 var posUi = null;
 var cashUi = null;
-const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();}});
+const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();},onChanged:()=>{loadNavigationBadges();tasksView().badge();}});
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving') });
@@ -1258,7 +1258,8 @@ async function showProductCard(sku, name) {
   const dlg = document.createElement('dialog'); dlg.className = 'modal wide product-card';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Sản phẩm · ${esc(sku)}</span><h2>${esc(name || sku)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body"><h3 class="pc-title">Tồn kho hiện tại</h3><div data-stock-box><p class="muted">Đang tải tồn kho…</p></div>
-      <div class="pc-head"><h3 class="pc-title">Lịch sử sản phẩm <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
+      <div class="pc-head"><h3 class="pc-title">Lịch sử nhập / xuất kho <small class="muted">· số lượng +/− và tồn trước → sau</small></h3><select class="pc-wh" data-ledger-wh aria-label="Lọc theo kho"><option value="">Tất cả kho</option></select></div><div data-ledger><p class="muted">Đang tải sổ kho…</p></div>
+      <div class="pc-head"><h3 class="pc-title">Lịch sử bán &amp; chứng từ <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
     <div class="modal-foot"><button type="button" class="btn navy" data-x>Đóng</button></div>`;
   document.body.append(dlg); dlg.showModal();
   const close = () => { dlg.close(); };
@@ -1275,6 +1276,7 @@ async function showProductCard(sku, name) {
     dlg.querySelector('[data-stock-box]').innerHTML = r.html;
     if (!name && r.product?.name) dlg.querySelector('h2').textContent = r.product.name;
   }).catch(ex => { if (!dlg.isConnected) return; dlg.querySelector('[data-stock-box]').innerHTML = `<p class="error">${esc(ex.message)}</p>`; });
+  productLedger(dlg, sku, close);
   const box = dlg.querySelector('[data-history]');
   let d;
   try { d = await api('/products/' + encodeURIComponent(sku) + '/history'); } catch (ex) { box.innerHTML = `<p class="error">${esc(ex.message)}</p>`; return; }
@@ -1299,6 +1301,39 @@ async function showProductCard(sku, name) {
   chipsBox.innerHTML = kinds.length > 1 ? [['', 'Tất cả'], ...kinds.map(k => [k, MOVE_UI[k]?.[0] || k])].map(([k, l]) => `<button type="button" class="chip" data-k="${esc(k)}" aria-pressed="${k === filter}">${esc(l)}</button>`).join('') : '';
   chipsBox.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; filter = b.dataset.k; chipsBox.querySelectorAll('[data-k]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render(); });
   render();
+}
+/**
+ * Thẻ sản phẩm – SỔ KHO CỦA MÃ (GET /stock-moves?sku=): mỗi lần nhập / xuất một dòng, mới nhất trước:
+ * thời gian, chứng từ (link), diễn giải, kho, tồn trước, số lượng +/−, tồn sau (của mã ở kho đó), người làm. Lọc kho, "Xem thêm" 20 dòng / lần.
+ */
+function productLedger(dlg, sku, close) {
+  const box = dlg.querySelector('[data-ledger]'), whSel = dlg.querySelector('[data-ledger-wh]');
+  let page = 1, rows = [], total = 0, seq = 0;
+  const signed = v => `<b class="${v > 0 ? 'paid-text' : 'danger-text'}">${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v), 3)}</b>`;
+  const draw = () => {
+    if (!rows.length) { box.innerHTML = '<p class="muted">Chưa có phát sinh sổ kho cho mã này' + (whSel.value ? ' ở kho đã chọn' : '') + ' (nhập NCC, bán / xuất kho, điều chuyển, trả hàng, điều chỉnh).</p>'; return; }
+    box.innerHTML = `<div class="pc-ledger">${rows.map(m => `<div class="pc-led-row">
+        <div class="pc-led-main">${m.link && linkAllowed(m.link) ? `<a href="${esc(m.link)}" data-close-card>${esc(m.refNo || m.kindLabel)}</a>` : `<b>${esc(m.refNo) || '—'}</b>`}
+          <small>${esc(m.description || m.kindLabel)} · ${esc(m.warehouse)}</small>${m.note ? `<small>${esc(m.note)}</small>` : ''}
+          <small>${fmtDate(m.at)} ${new Date(m.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}${m.by ? ' · ' + esc(m.by) : ''}</small></div>
+        <div class="pc-led-qty"><span><small>Tồn trước</small>${fmtNum(m.balanceBefore, 3)}</span><span><small>${m.qty > 0 ? 'Nhập' : 'Xuất'}</small>${signed(m.qty)}</span><span><small>Tồn sau</small><b>${fmtNum(m.balanceAfter, 3)}</b></span></div>
+      </div>`).join('')}</div>
+      <p class="muted small">${rows.length}/${total} phát sinh · Tồn trước / sau là tồn của mã tại đúng kho đó.</p>${rows.length < total ? '<button type="button" class="btn secondary small" data-more>Xem thêm</button>' : ''}`;
+    box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
+    box.querySelector('[data-more]')?.addEventListener('click', e => { e.target.disabled = true; e.target.textContent = 'Đang tải…'; page++; load(); });
+  };
+  const load = async () => {
+    const mine = ++seq, q = new URLSearchParams({ sku, page: String(page), size: '20' });
+    if (whSel.value) q.set('warehouseId', whSel.value);
+    try {
+      const d = await api('/stock-moves?' + q);
+      if (mine !== seq || !dlg.isConnected) return;
+      if (whSel.options.length === 1) for (const w of d.warehouses) whSel.append(new Option(w.name, w.id));
+      rows = page === 1 ? d.moves : [...rows, ...d.moves]; total = d.total; draw();
+    } catch (ex) { if (mine === seq && dlg.isConnected) box.innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
+  };
+  whSel.addEventListener('change', () => { page = 1; rows = []; box.innerHTML = '<p class="muted">Đang tải sổ kho…</p>'; load(); });
+  load();
 }
 // ----- hình của dòng (HRC: hình sản phẩm; B2B/VIGIFTS: maquette) – link ảnh hoặc tải ảnh lên, như web cũ
 let imageRow = -1, pendingImage = '';
@@ -2449,8 +2484,15 @@ function idb(mode, fn) {
   });
 }
 function useSnapshot(snap) {
-  catalog.version = snap.version; catalog.observedAt = snap.observedAt; catalog.items = hydrateSnapshot(snap);
+  catalog.raw = snap; catalog.version = snap.version; catalog.observedAt = snap.observedAt; catalog.items = hydrateSnapshot(snap);
   applyCatalogMeta({ policies: snap.policies, warehouses: snap.warehouses });
+}
+/** Bản chụp + phần tồn kho mới (GET /catalog-snapshot trả `stockOnly`): thay cột tồn (cuối mỗi dòng) và thời điểm tồn của từng mã. */
+function mergeSnapshotStock(raw, delta) {
+  const stock = new Map(delta.stock.map(([sku, qty, at]) => [sku, [qty, at]])), empty = raw.warehouses.map(() => null), at = raw.columns.indexOf('stockUpdatedAt');
+  return { ...raw, version: delta.version, observedAt: delta.observedAt, products: raw.products.map(row => {
+    const s = stock.get(row[0]), next = [...row]; next[next.length - 1] = s ? s[0] : empty; next[at] = s ? s[1] : null; return next;
+  }) };
 }
 /** Lấy bản chụp danh mục: bộ nhớ → IndexedDB (mở trang là có) → máy chủ (chỉ tải lại khi Sapo có thay đổi). */
 function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
@@ -2459,7 +2501,9 @@ function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
   catalog.loading = (async () => {
     if (!catalog.items) { try { const saved = await idb('readonly', st => st.get(IDB.key)); if (saved?.version) useSnapshot(saved); } catch { /* trình duyệt chặn IndexedDB */ } }
     try {
-      const d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      let d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      // Chỉ tồn kho đổi: ghép tồn mới vào bản đang có (không tải lại ~3 MB danh mục). Thiếu bản gốc thì tải đủ.
+      if (d.stockOnly) d = catalog.raw ? mergeSnapshotStock(catalog.raw, d) : await api('/catalog-snapshot');
       catalog.checkedAt = Date.now();
       if (!d.unchanged) {
         useSnapshot(d);
@@ -4103,7 +4147,6 @@ document.addEventListener('click', async e => {
   const sub = e.target.closest('#order-submit');
   if (sub && sales.detail?.order) {
     const o = sales.detail.order, what = sales.detail.contract ? 'HĐKT' : 'đơn hàng';
-    if (!await confirmBox(`Đã xem kỹ ${what} ${sales.detail.contract?.contractNo || o.orderNo}? Gửi Manager duyệt.`, { title: 'Gửi duyệt', ok: 'Gửi duyệt' })) return;
     sub.disabled = true;
     try { await api('/orders/' + encodeURIComponent(o.id) + '/submit', 'POST', {}); toast(`Đã gửi Manager duyệt ${what}.`); openOrder(o.id); }
     catch (ex) { toast(ex.message, 'err'); sub.disabled = false; }

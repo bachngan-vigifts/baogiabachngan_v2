@@ -48,6 +48,8 @@ export interface StaffEnv {
   webOrderAction?: { token: string; lockUrl: string; minhlongUrl: string; fetch?: typeof fetch };
   /** Token GHN phía máy chủ để tải danh mục tỉnh/huyện/xã; không bao giờ gửi ra trình duyệt. */
   ghnToken?: string;
+  /** Mã riêng trong URL callback GHN; tách biệt hoàn toàn với GHN_API_TOKEN. */
+  ghnWebhookToken?: string;
   /** Hàm gọi GHN thay thế khi kiểm thử; production dùng fetch mặc định. */
   ghnFetch?: typeof fetch;
   /** Chạy việc nền sau khi đã trả lời (Edge: EdgeRuntime.waitUntil). Không có thì việc nền được chờ xong rồi mới trả lời (test). */
@@ -244,7 +246,9 @@ export function createStaffRouter(options: StaffRouterOptions = {}): Router<Staf
     onSuccess: { wants: auditable, run: async (c, info) => {
       const member = (c.state.session as SessionState | undefined)?.member;
       const path = c.url.pathname.replace(/^\/api\/staff/, '') || '/';
-      await writeAudit(c.env.db, { actorId: member?.id ?? null, module: String(c.meta), ...auditFromRequest({ ...info, path, params: c.params }) });
+      const job = writeAudit(c.env.db, { actorId: member?.id ?? null, module: String(c.meta), ...auditFromRequest({ ...info, path, params: c.params }) });
+      // Nhật ký ghi nền sau khi trả lời (bớt một lượt gọi DB cho mỗi thao tác ghi); không có waitUntil (test) thì chờ như cũ.
+      if (c.env.waitUntil) c.env.waitUntil(job.catch(e => console.error('audit log failed', e instanceof Error ? e.message : e))); else await job;
     } } });
   registerAuthRoutes(router);
   registerMemberRoutes(router);

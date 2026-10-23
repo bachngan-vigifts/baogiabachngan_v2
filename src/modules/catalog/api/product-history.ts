@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { productMovements } from '../schema.ts';
 import { PRODUCT_HISTORY_LIMIT, type ProductMoveKind } from '../domain/product-history.ts';
@@ -33,9 +33,12 @@ export async function removeMovements(db: Db, refKeyPrefix: string) {
 }
 /** Mỗi mã chỉ giữ PRODUCT_HISTORY_LIMIT giao dịch mới nhất. */
 export async function trimHistory(db: Db, skus: string[]) {
-  for (const sku of skus) {
-    await db.execute(sql`DELETE FROM ${productMovements} WHERE ${productMovements.sku} = ${sku} AND ${productMovements.id} NOT IN (
-      SELECT ${productMovements.id} FROM ${productMovements} WHERE ${productMovements.sku} = ${sku} ORDER BY ${productMovements.occurredAt} DESC, ${productMovements.recordedAt} DESC LIMIT ${PRODUCT_HISTORY_LIMIT})`);
+  // Một lệnh cho cả lô mã (trước: một lệnh DELETE mỗi mã – đơn 20 dòng = 20 lượt gọi DB).
+  for (let i = 0; i < skus.length; i += 500) {
+    const part = skus.slice(i, i + 500);
+    await db.execute(sql`DELETE FROM ${productMovements} WHERE ${productMovements.id} IN (
+      SELECT id FROM (SELECT ${productMovements.id} AS id, row_number() OVER (PARTITION BY ${productMovements.sku} ORDER BY ${productMovements.occurredAt} DESC, ${productMovements.recordedAt} DESC) AS rn
+        FROM ${productMovements} WHERE ${inArray(productMovements.sku, part)}) ranked WHERE rn > ${PRODUCT_HISTORY_LIMIT})`);
   }
 }
 export async function historyOf(db: Db, sku: string) {

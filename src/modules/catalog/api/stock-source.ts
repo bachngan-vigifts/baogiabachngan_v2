@@ -14,6 +14,8 @@ export const catalogStockHooks: {
   stamp?: (db: StockReadDb) => Promise<string>;
   /** Kho riêng người xem không được thấy tồn (VD kho Hoá đơn với nhân viên không bán kho đó) – docs/SO-KHO.md. */
   hidden?: (db: StockReadDb, m: { role: string; positionId?: string | null }) => Promise<Set<string>>;
+  /** Kho đã chốt tồn đầu kỳ: tồn hiển thị lấy từ sổ kho CRM, file Sapo không đổi được (chỉ để đối chiếu). */
+  ledger?: (db: StockReadDb) => Promise<string[]>;
 } = {};
 export const hiddenStockWarehouses = (db: StockReadDb, m: { role: string; positionId?: string | null }) =>
   catalogStockHooks.hidden ? catalogStockHooks.hidden(db, m) : Promise.resolve(new Set<string>());

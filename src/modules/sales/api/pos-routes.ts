@@ -393,12 +393,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
     const scope = await allowedPosRegisters(c);
     if (!scope.ids.has(order.registerId)) throw new AppError(403, 'Bạn không được thao tác đơn của cửa hàng này.');
-    // Chọn địa chỉ khi chưa nối website: dùng danh mục đóng gói sẵn / GHN trực tiếp (có nối thì vẫn hỏi website như cũ, khớp plugin).
-    if (action === 'locations' && !c.env.webOrderAction?.token) {
+    // Danh mục GHN lấy trực tiếp trong CRM. Các hàm PHP của Web Lock chỉ được nạp ở checkout và trả 503 trong REST.
+    if (action === 'locations' && order.source === 'lock') {
       const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0);
       const key = ghnCacheKey(order.source, provinceId, districtId), known = cachedGhnLocations(key) ?? bundledGhnLocations(provinceId, districtId);
       if (known) return json({ ok: true, locations: rememberGhnLocations(key, known) });
       if (c.env.ghnToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
+      throw new AppError(503, 'CRM chưa có danh mục địa chỉ GHN này.');
     }
     if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website (secret WEB_ORDER_ACTION_TOKEN).');
     const terminal = webBucket(order.status, order.ghnStatus);

@@ -71,3 +71,15 @@ test('huỷ phiếu thu trước có lý do trả khoản đó về COD còn ph�
   assert.equal((await f.call('/pos/shifts/' + shift.id, f.emp)).data.cash, 0);
   assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
 });
+
+test('đã có vận đơn GHN: không huỷ phiếu cọc (GHN thu hộ số cũ – tránh ghi thu thừa khi GHN giao xong)', async () => {
+  const f = await setup(), shift = await f.open();
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery, depositAmount: 50000 }));
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  const [receipt] = await f.db.select().from(customerPayments), [ship] = await f.db.select().from(deliveries);
+  await f.db.update(deliveries).set({ trackingCode: 'GHN123', carrier: 'GHN' }).where(eq(deliveries.id, ship!.id));
+  const res = await f.call('/payments/' + receipt!.id + '/void', f.mgr, 'POST', { reason: 'Ghi nhầm tiền cọc' });
+  assert.equal(res.status, 409); assert.equal(res.data.code, 'COD_SHIPMENT_EXISTS');
+  assert.equal((await f.db.select().from(customerPayments))[0]!.voidedAt, null, 'phiếu cọc giữ nguyên');
+  assert.equal((await f.db.select().from(deliveries))[0]!.codAmount, 144400, 'tiền thu hộ không đổi');
+});

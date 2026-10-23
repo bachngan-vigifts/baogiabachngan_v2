@@ -17,9 +17,11 @@ const kinds = {
   customer_refund: 'Hoàn tiền khách',
 };
 const entryName = r => /^Tên phiếu: ([^\r\n]{1,120})\n\n/.exec(r.reason || '')?.[1] || kinds[r.kind] || r.kind;
-const states = { posted: 'Ghi', pending: 'Chờ duyệt', voided: 'Đã huỷ', explained: 'Đã giải trình', closed: 'Đã đóng' };
+const states = { posted: 'Đã ghi sổ', pending: 'Chờ duyệt', voided: 'Đã huỷ', explained: 'Đã giải trình', closed: 'Đã đóng' };
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
-const recLabel = { pending: 'Chờ giải trình', explained: 'Chờ Manager đóng', closed: 'Đã đóng' };
+/** Ngày theo giờ Việt Nam của một thời điểm (thao tác 4h sáng 23/10 là 23/10, không phải 22/10 theo UTC). */
+const vnDay = at => at ? new Date(at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+const recLabel = { pending: 'Chờ nhân viên giải trình', explained: 'Chờ Manager duyệt', closed: 'Đã duyệt · đóng' };
 const recTone = { pending: 'warn', explained: 'info', closed: 'ok' };
 const REASONS = { counting: 'Đếm sai', wrong_change: 'Đưa nhầm tiền', small_change: 'Thiếu tiền lẻ', other: 'Khác', opening_cash: 'Chênh lệch tiền đầu ca' };
 const recReason = r => [REASONS[r.reasonCode] || r.reasonCode, r.reasonNote].filter(Boolean).join(': ');
@@ -61,20 +63,20 @@ function select(items, value) {
   if (value != null) n.value = value;
   return n;
 }
+/** Hộp thoại sổ quỹ: đầu (tiêu đề + ×), thân cuộn, chân cố định chứa các nút (không dính vào ô nhập). */
 function dialog(title) {
   const d = el('dialog', 'cash-dialog'),
-    form = el('form'),
+    form = el('form', 'cash-dialog-form'),
     body = el('div', 'cash-dialog-body'),
+    foot = el('footer', 'cash-dialog-foot'),
     head = el('header');
-  head.append(
-    el('h2', '', title),
-    button('×', () => d.close()),
-  );
-  form.append(head, body);
+  const x = button('×', () => d.close(), 'icon-btn cash-dialog-x'); x.setAttribute('aria-label', 'Đóng');
+  head.append(el('h2', '', title), x);
+  form.append(head, body, foot);
   d.append(form);
   document.body.append(d);
   d.addEventListener('close', () => d.remove());
-  return { d, form, body, show: () => d.showModal(), close: () => d.close() };
+  return { d, form, body, foot, show: () => { if (!d.open) d.showModal(); }, close: () => d.close() };
 }
 function labeled(label, input) {
   const box = el('label', 'cash-field');
@@ -91,7 +93,7 @@ function table(headers) {
   t.append(h, body);
   return { t, body };
 }
-export function initCash({ root, api: request, user, toast, go, onShiftClosed = async () => {} }) {
+export function initCash({ root, api: request, user, toast, go, onShiftClosed = async () => {}, onChanged = () => {} }) {
   let summary = null,
     rows = [],
     periodTotals = { in: 0, out: 0, net: 0 },
@@ -111,7 +113,8 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     loadVersion = 0,
     listVersion = 0,
     openedEntryLink = '',
-    recStatus = 'open';
+    recStatus = 'open',
+    updatedRec = '';
   const api = (path, method, body) => request(
     drawerId && path.startsWith('/cash') ? path + (path.includes('?') ? '&' : '?') + 'drawerId=' + encodeURIComponent(drawerId) : path,
     method, body,
@@ -354,7 +357,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
           button('Duyệt', () =>
             run(async () => {
               await api('/cash/entries/' + r.id + '/approve', 'POST', {});
-              await load();
+              await load(); onChanged();
             }),
           ),
         );
@@ -381,16 +384,22 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       ['Người tạo', r.by || '—'], ['Hình thức thanh toán', r.method === 'transfer' ? 'Chuyển khoản' : r.method === 'other' ? 'Khác' : 'Tiền mặt'], ['Số tiền', money(r.amount)], ['Trạng thái', states[r.status] || r.status],
     ]) { const line = el('div', 'cash-pair'); line.append(el('span', '', label), el('b', '', value)); m.body.append(line); }
     if (r.voidReason) m.body.append(el('p', 'cash-warning', 'Lý do huỷ: ' + r.voidReason));
-    if (r.status === 'pending' && summary.canApprove && (r.createdBy !== user().id || summary.canSelfApprove))
-      m.body.append(button('Duyệt phiếu', () => run(async () => {
-        await api('/cash/entries/' + encodeURIComponent(r.id) + '/approve', 'POST', {}); m.close(); await load();
-      }), 'btn primary'));
-    m.body.append(button('Đóng', m.close)); m.show();
+    m.foot.append(button('Đóng', m.close));
+    if (r.status === 'pending' && summary.canApprove && (r.createdBy !== user().id || summary.canSelfApprove)) {
+      const ok = button('Duyệt phiếu', () => run(async () => {
+        ok.disabled = true; ok.textContent = 'Đang duyệt…';
+        try { await api('/cash/entries/' + encodeURIComponent(r.id) + '/approve', 'POST', {}); }
+        catch (e) { ok.disabled = false; ok.textContent = 'Duyệt phiếu'; throw e; }
+        m.close(); toast(`Đã duyệt ${r.entryNo} – đã tính vào két.`); await load(); onChanged();
+      }), 'btn primary');
+      m.foot.append(ok);
+    }
+    m.show();
   }
   function submitForm(m, saveText, fn) {
     const save = el('button', 'btn primary', saveText);
     save.type = 'submit';
-    m.body.append(save, button('Huỷ', m.close));
+    m.foot.append(button('Huỷ', m.close), save);
     m.form.addEventListener('submit', (e) => {
       e.preventDefault();
       if (save.disabled) return;
@@ -438,28 +447,26 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       for (const code of allowed) { const o = el('option'); o.value = kinds[code]; suggestions.append(o); }
       kind.setAttribute('list', suggestions.id); m.body.append(suggestions);
     }
-    m.body.append(labeled(adjustment ? 'Loại phiếu' : 'Tên phiếu', kind));
-    if (adjustment) m.body.append(labeled('Chiều điều chỉnh', dir));
-    m.body.append(
-      amount.box,
-      reason.box,
-      photo.box,
-      el(
-        'p',
-        'cash-warning',
-        'Từ ' +
-          money(summary.drawer.approvalThreshold) +
-          ' cần người có quyền duyệt; chưa tính vào két khi chờ. Manager được tự duyệt phiếu của mình.',
-      ),
-    );
-    if (adjustment)
-      m.body.append(
-        el(
-          'p',
-          'cash-warning',
-          'Điều chỉnh chỉ sửa số dư theo sổ, không ghi thêm thu/chi tiền thực vào ca đã kế thừa số đếm.',
-        ),
-      );
+    // Tên / chiều + số tiền trên một hàng (máy tính), nội dung, ảnh; ghi chú ngắn thay cho khối cảnh báo dài.
+    amount.input.inputMode = 'numeric'; amount.input.placeholder = '0'; reason.input.rows = 2;
+    const grid = el('div', 'cash-form-grid');
+    grid.append(labeled(adjustment ? 'Chiều điều chỉnh' : 'Tên phiếu', adjustment ? dir : kind), amount.box);
+    if (adjustment) {
+      // Nhập số tiền đếm thực tế → tự tính chiều + số chênh so với sổ (không phải tự trừ nhẩm).
+      const counted = field(`Tiền thực đếm trong két (sổ đang ghi ${money(summary.balance)})`, 'number'), result = el('p', 'cash-hint');
+      counted.input.min = '0'; counted.input.step = '1'; counted.input.inputMode = 'numeric'; counted.input.placeholder = 'Nhập để tự tính';
+      counted.input.addEventListener('input', () => {
+        if (counted.input.value === '') { result.textContent = ''; return; }
+        const diff = Number(counted.input.value) - Number(summary.balance || 0);
+        dir.value = diff >= 0 ? 'in' : 'out'; amount.input.value = diff ? String(Math.abs(diff)) : '';
+        result.textContent = diff ? `Chênh ${diff > 0 ? '+' : '−'}${money(Math.abs(diff))} → ${diff > 0 ? 'tăng' : 'giảm'} tiền két.` : 'Khớp sổ – không cần điều chỉnh.';
+      });
+      m.body.append(counted.box, result);
+    }
+    m.body.append(grid, reason.box, ...(adjustment ? [] : [photo.box]),
+      el('p', 'cash-hint', adjustment
+        ? 'Điều chỉnh chỉ sửa số dư theo sổ (kiểm kê lệch), không ghi thêm thu/chi tiền thật.'
+        : `Từ ${money(summary.drawer.approvalThreshold)} phiếu chờ duyệt, chưa tính vào két. Manager được tự duyệt phiếu của mình.`));
     if (recId) m.body.append(el('p', '', 'Phiếu tham chiếu tra soát đang xem.'));
     submitForm(m, 'Lưu phiếu', async () => {
       let img;
@@ -475,7 +482,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         reconciliationId: recId,
       });
       m.close();
-      await load();
+      await load(); onChanged();
     });
   }
   async function compress(file) {
@@ -511,31 +518,28 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         reason: reason.input.value,
       });
       m.close();
-      await load();
+      await load(); onChanged();
     });
   }
+  /** Cấu hình két: tên + ngưỡng duyệt (một hàng), số dư đầu kỳ tách khối riêng (chỉ nhập một lần). */
   function configure() {
-    const m = dialog('Cấu hình ' + summary.drawer.name),
+    const m = dialog('Cấu hình két'),
       name = field('Tên két', 'text', summary.drawer.name),
-      threshold = field('Ngưỡng cần duyệt (VNĐ)', 'number', summary.drawer.approvalThreshold),
-      opening = field('Số dư đầu kỳ (chỉ nhập một lần)', 'number', '0'),
-      reason = field('Lý do đầu kỳ', 'textarea');
-    threshold.input.min = '1';
+      threshold = field('Phiếu thu/chi từ số tiền này cần duyệt (VNĐ)', 'number', summary.drawer.approvalThreshold),
+      opening = field('Tiền mặt thực có trong két lúc bắt đầu dùng (VNĐ)', 'number', ''),
+      reason = field('Ghi chú (VD: kiểm đếm ngày 01/11)', 'text');
+    threshold.input.min = '1'; threshold.input.step = '1'; threshold.input.inputMode = 'numeric';
     threshold.input.required = true;
     name.input.required = true;
-    m.body.append(name.box, threshold.box);
+    const grid = el('div', 'cash-form-grid'); grid.append(name.box, threshold.box);
+    m.body.append(grid, el('p', 'cash-hint', 'Phiếu dưới ngưỡng tự ghi sổ; từ ngưỡng trở lên chờ người có quyền duyệt mới tính vào két.'));
+    const box = el('section', 'cash-config-opening');
     if (!summary.drawer.openingSetAt) {
-      opening.input.min = '0';
+      opening.input.min = '0'; opening.input.step = '1'; opening.input.inputMode = 'numeric'; opening.input.placeholder = '0';
       opening.input.required = reason.input.required = true;
-      m.body.append(opening.box, reason.box);
-    } else
-      m.body.append(
-        el(
-          'p',
-          '',
-          'Đầu kỳ đã chốt ' + money(summary.drawer.openingAmount) + '. Muốn sửa số dư, lập phiếu điều chỉnh.',
-        ),
-      );
+      box.append(el('h3', '', 'Số dư đầu kỳ · chỉ nhập một lần'), opening.box, reason.box);
+    } else box.append(el('h3', '', 'Số dư đầu kỳ'), el('p', '', 'Đã chốt ' + money(summary.drawer.openingAmount) + ' · ' + time(summary.drawer.openingSetAt) + '. Muốn sửa số dư: dùng "Điều chỉnh két".'));
+    m.body.append(box);
     submitForm(m, 'Lưu cấu hình', async () => {
       await api('/cash/config', 'POST', {
         name: name.input.value,
@@ -700,7 +704,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     const { t, body } = table(['Ca', 'Nhân viên', 'Chênh lệch', 'Trạng thái', '']);
     t.className += ' cash-rec-table';
     for (const r of data.items) {
-      const tr = el('tr', 'cash-rec-row'), step = recStep(r, me);
+      const tr = el('tr', 'cash-rec-row' + (r.id === updatedRec ? ' cash-rec-updated' : '')), step = recStep(r, me);
       const shift = el('td'); shift.append(el('b', '', dmy(r.businessDate) || time(r.createdAt)), el('small', 'muted', r.reconciliationNo + (r.reasonCode === 'opening_cash' ? ' · đầu ca' : ' · kết ca')));
       const diff = el('td', 'cash-rec-diff'); diff.append(recDiff(r.difference), el('small', 'muted', 'Sổ ' + money(r.expectedCash) + ' · đếm ' + money(r.countedCash)));
       const st = el('td'); st.append(el('span', 'pill ' + recTone[r.status], recLabel[r.status]), el('small', 'muted', step.text));
@@ -714,11 +718,13 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     if (offset) box.append(button('Trang trước', () => { offset = Math.max(0, offset - 50); run(reconciliations); }));
     if (data.nextOffset != null) box.append(button('Trang sau', () => { offset = data.nextOffset; run(reconciliations); }));
   }
-  /** Bước tiếp theo: chờ nhân viên của ca giải trình → chờ Manager đóng → xong. */
+  /** Vừa giải trình / duyệt: chuyển sang lọc "Tất cả" và tô sáng dòng đó để thấy ngay trạng thái mới (không biến mất khỏi danh sách). */
+  function showUpdatedRec(id) { updatedRec = id; recStatus = 'all'; tab = 'reconcile'; offset = 0; }
+  /** Bước tiếp theo: chờ nhân viên của ca giải trình → chờ Manager duyệt → xong. */
   function recStep(r, me) {
     if (r.status === 'pending') return r.memberId === me ? { mine: true, action: 'Giải trình', text: 'Bạn cần giải trình' } : { text: 'Chờ ' + (r.memberName || 'nhân viên') + ' giải trình' };
-    if (r.status === 'explained') return { mine: !!summary.canManage, action: 'Xem & đóng', text: 'Đã giải trình ' + dmy(String(r.explainedAt || '').slice(0, 10)) };
-    return { text: r.resolvedAt ? 'Đóng ' + dmy(r.resolvedAt.slice(0, 10)) : '' };
+    if (r.status === 'explained') return { mine: !!summary.canManage, action: 'Xem & duyệt', text: 'Đã giải trình ' + vnDay(r.explainedAt) };
+    return { text: r.resolvedAt ? 'Duyệt ' + vnDay(r.resolvedAt) : '' };
   }
   async function reconciliation(id) {
     const d = await api('/cash/reconciliations/' + id),
@@ -739,7 +745,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     const step = (done, title, who, text) => { const li = el('li', done ? 'done' : ''); li.append(el('b', '', title), ...(who ? [el('small', 'muted', who)] : []), ...(text ? [el('p', '', text)] : [])); steps.append(li); };
     step(true, 'Ghi nhận lệch', (d.names?.closedBy || '') + ' · ' + time(r.createdAt), recReason(r));
     step(!!r.explainedAt, 'Giải trình', r.explainedAt ? (d.names?.explainedBy || '') + ' · ' + time(r.explainedAt) : 'Chờ ' + d.memberName, r.explanation);
-    step(r.status === 'closed', 'Manager đóng tra soát', r.resolvedAt ? (d.names?.resolvedBy || '') + ' · ' + time(r.resolvedAt) : r.status === 'explained' ? 'Chờ Manager' : '', r.closeReason);
+    step(r.status === 'closed', 'Manager duyệt & đóng', r.resolvedAt ? (d.names?.resolvedBy || '') + ' · ' + time(r.resolvedAt) : r.status === 'explained' ? 'Chờ Manager' : '', r.closeReason);
     m.body.append(steps);
     // Chi tiết phụ thu gọn: phiếu trong ca, nhật ký.
     const more = (title, rows) => {
@@ -753,12 +759,12 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     // Hành động: đúng người của bước hiện tại (máy chủ kiểm lại: giải trình = nhân viên của ca, đóng = Manager).
     let action = false;
     if (summary.canManage && r.status === 'explained') {
-      const note = field('Kết luận / lý do đóng', 'textarea');
+      const note = field('Kết luận của Manager (VD: chấp nhận giải trình, trừ lương…)', 'textarea');
       note.input.required = true; note.input.rows = 2;
       m.body.append(note.box);
-      submitForm(m, 'Đóng tra soát', async () => {
+      submitForm(m, 'Duyệt giải trình & đóng', async () => {
         await api('/cash/reconciliations/' + id + '/close', 'POST', { reason: note.input.value });
-        m.close(); toast('Đã đóng tra soát.'); await load();
+        m.close(); toast(`Đã duyệt ${r.reconciliationNo} – tra soát đã đóng.`); showUpdatedRec(r.id); await load(); onChanged();
       });
       action = true;
     } else if (r.status !== 'closed' && d.memberId === me) {
@@ -767,13 +773,13 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       m.body.append(explanation.box);
       submitForm(m, 'Gửi giải trình', async () => {
         await api('/cash/reconciliations/' + id + '/explain', 'POST', { explanation: explanation.input.value });
-        m.close(); toast('Đã gửi giải trình.'); await load();
+        m.close(); toast(`Đã gửi giải trình ${r.reconciliationNo} – chờ Manager duyệt.`); showUpdatedRec(r.id); await load(); onChanged();
       });
       action = true;
     }
     if (summary.canManage && summary.activeShift && r.status !== 'closed')
-      m.body.append(button('Lập phiếu điều chỉnh két', () => { m.close(); entry('in', true, id); }));
-    if (!action) { m.body.append(button('Đóng', m.close)); m.show(); }
+      m.foot.prepend(button('Lập phiếu điều chỉnh két', () => { m.close(); entry('in', true, id); }, 'btn ghost'));
+    if (!action) { m.foot.append(button('Đóng', m.close)); m.show(); }
   }
   return {
     load,

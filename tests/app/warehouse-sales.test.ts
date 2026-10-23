@@ -157,6 +157,10 @@ test('Sổ kho (như Sapo): tồn sau giao dịch tính trước khi lọc, dòn
   assert.deepEqual((await get('q=BT1&group=sale')).moves.map((m: any) => m.refNo), ['DH_002']);
   const p2 = await get('q=BT1&page=2&size=20'); assert.equal(p2.total, 3); assert.equal(p2.moves.length, 0);
   assert.equal((await get('q=BT1&size=7')).size, 20, 'cỡ trang lạ → 20');
+  // Lịch sử sản phẩm (thẻ sản phẩm): đúng một mã, tồn trước → +/− → tồn sau.
+  const bySku = await get('sku=BT1');
+  assert.deepEqual(bySku.moves.map((m: any) => [m.balanceBefore, m.qty, m.balanceAfter]), [[2, 8, 10], [10, -8, 2], [0, 10, 10]]);
+  assert.equal((await get('sku=BT')).total, 0, 'sku lọc đúng mã, không tìm gần đúng');
   assert.ok(all.brands.includes('Lock&Lock'));
   assert.deepEqual([...new Set((await get('brand=' + encodeURIComponent('Lock&Lock'))).moves.map((m: any) => m.sku))], ['BT1']);
   assert.deepEqual([...new Set((await get('status=inactive')).moves.map((m: any) => m.sku))], ['BT1']);

@@ -129,6 +129,13 @@ export function initTransfers({ api, root, toast, go }) {
       catch { /* bỏ qua */ }
     }, 250); });
     find.setAttribute('list', 'transfer-sku-list');
+    // Chọn mã ở ô Tìm hàng là tự thêm vào dòng trống (không phải gõ lại mã ở dòng dưới); con trỏ nhảy sang ô SL.
+    find.addEventListener('change', () => {
+      const sku = find.value.trim(); if (![...list.options].some(o => o.value === sku)) return;
+      let row = [...lines.children].find(r => !r.querySelector('input[type=text]').value.trim());
+      if (!row) { lineRow(); row = lines.lastElementChild; }
+      row.querySelector('input[type=text]').value = sku; find.value = ''; row.querySelector('input[type=number]').focus();
+    });
     lineRow();
     const send = btn('Gửi duyệt', 'btn primary', async () => {
       const body = { fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
@@ -139,7 +146,8 @@ export function initTransfers({ api, root, toast, go }) {
     });
     const form = el('div', 'form-grid');
     form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('Tìm hàng', find, 'wide'));
-    drawer.append(h, form, list, el('h3', '', 'Mã hàng cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => lineRow()), el('div', 'row-gap'), send);
+    const foot = el('div', 'sup-drawer-foot-sticky'); foot.append(btn('Huỷ', 'btn secondary', close), send);
+    drawer.append(h, form, list, el('h3', '', 'Mã hàng cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => lineRow()), foot);
     drawer.hidden = false; shade.hidden = false;
   }
 

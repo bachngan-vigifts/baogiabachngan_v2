@@ -1,6 +1,7 @@
 import { supplierPaymentTasks } from './accounting-sources.ts';
+import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
-import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -10,7 +11,7 @@ import { customerPayments, deliveries, deliveryLines, packingSlipLines, packingS
 import { PACKING_SOURCE_LABEL } from '../../sales/domain/packing.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { progressOf } from '../../sales/api/progress.ts';
-import { debtCounts, receivable, vietnamDate } from '../../sales/domain/sales.ts';
+import { debtCounts, vietnamDate } from '../../sales/domain/sales.ts';
 import { sapoInventoryDocs } from '../../integrations/schema.ts';
 import { tasks } from '../schema.ts';
 import { posOrderReservations, posPaymentIntents } from '../../sales/pos-order-flow-schema.ts';
@@ -23,7 +24,7 @@ import { stockTransfers } from '../../inventory/schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
 import { dueFollowUps } from '../../care/api/routes.ts';
 import { CARE_TYPE_LABEL } from '../../care/domain/care.ts';
-import { addDaysIso, isOpen, type TaskPriority, type TaskSource } from '../domain/task-config.ts';
+import { addDaysIso, isOpen, OPEN_STATUSES, type TaskPriority, type TaskSource } from '../domain/task-config.ts';
 /** Số HĐKT theo bản ghi (bản ghi có HĐKT hiện là HĐKT, không phải đơn hàng). */
 async function contractNoMap(db: StaffEnv['db'], orderIds: string[]) {
   const rows = orderIds.length ? await db.select({ orderId: salesContracts.orderId, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, orderIds)) : [];
@@ -135,9 +136,11 @@ export const RULES: Record<string, Rule> = {
       db.select({ orderId: customerPayments.orderId, amount: customerPayments.amount }).from(customerPayments).where(and(inArray(customerPayments.orderId, ids), isNull(customerPayments.voidedAt))),
       db.select({ orderId: salesContracts.orderId, status: salesContracts.status, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, ids)),
     ]);
+    // SQL lọc ứng viên; số nợ thật tính lại đã trừ hàng khách trả (trả hàng hết nợ → việc tự đóng).
+    const net = await netReceivables(db, ids, today);
     return orders.flatMap(o => {
       if (!debtCounts(o.status, ks.find(k => k.orderId === o.id)?.status)) return [];
-      const r = receivable(allSch.filter(s => s.orderId === o.id), pays.filter(p => p.orderId === o.id), today);
+      const r = net.get(o.id)!;
       if (r.overdue <= 0) return [];
       const oldest = allSch.filter(s => s.orderId === o.id && s.dueDate && s.dueDate < today).map(s => s.dueDate!).sort()[0] ?? today;
       const ref = docRef(o.id, o.orderNo, ks.find(k => k.orderId === o.id)?.no);
@@ -399,6 +402,7 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
   return reconcileTaskSet(db, wanted, now, undefined, failed);
 }
 
+function* chunks<T>(xs: T[], size: number) { for (let i = 0; i < xs.length; i += size) yield xs.slice(i, i + size); }
 /** Reconcile only the selected keys after a committed business event; never close unrelated tasks. */
 export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, now = new Date(), scope?: SQL, failed = false) {
   const stamp = now.toISOString();
@@ -409,7 +413,8 @@ export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, no
   const who = (id: string | null | undefined) => (id && usable.has(id) ? id : null);
   for (const t of wanted.values()) t.assigneeId = who(t.assigneeId);
   const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, completedBy: tasks.completedBy, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
-    .from(tasks).where(and(isNotNull(tasks.autoKey), scope));
+    // Chỉ việc đang mở + việc đã đóng mà lượt này lại cần (mở lại / không tạo trùng) – không tải toàn bộ lịch sử việc đã xong.
+    .from(tasks).where(and(isNotNull(tasks.autoKey), scope, or(inArray(tasks.status, [...OPEN_STATUSES]), ...[...chunks([...wanted.keys()], 1000)].map(keys => inArray(tasks.autoKey, keys)))));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
   const fresh = [...wanted.values()].filter(t => !byKey.has(t.autoKey));
   const created = fresh.map(t => ({ ...t, id: crypto.randomUUID() }));

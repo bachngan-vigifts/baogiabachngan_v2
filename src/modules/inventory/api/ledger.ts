@@ -40,6 +40,7 @@ export async function guardInventoryOpening(db: LedgerDb, ids: readonly string[]
   }
 }
 
+const slices = <T>(xs: T[], size = 500) => Array.from({ length: Math.ceil(xs.length / size) }, (_, i) => xs.slice(i * size, (i + 1) * size));
 const moveKey = (m: MoveInput) => [m.refType, m.refId, m.sku, m.warehouseId, m.kind].join('\u0000');
 const balanceKey = (m: { sku: string; warehouseId: string }) => m.sku + '\u0000' + m.warehouseId;
 
@@ -60,7 +61,8 @@ export async function postMoves(db: LedgerDb, by: string, moves: readonly MoveIn
     const keys = [...new Map(batch.map(m => [balanceKey(m), { sku: m.sku, warehouseId: m.warehouseId }])).values()]
       .sort((a, b) => a.sku.localeCompare(b.sku) || a.warehouseId.localeCompare(b.warehouseId));
     // A missing balance must be locked too. Insert zero inside the transaction; failures roll it back.
-    for (const k of keys) await tx.insert(stockBalances).values({ ...k, qty: 0, updatedAt: now }).onConflictDoNothing();
+    // Gộp thành vài lệnh cho cả chứng từ (trước: 3 lượt gọi DB cho MỖI mã – đơn 20 dòng ≈ 60 lượt).
+    for (const part of slices(keys)) await tx.insert(stockBalances).values(part.map(k => ({ ...k, qty: 0, updatedAt: now }))).onConflictDoNothing();
     const balances = await tx.select().from(stockBalances).where(or(...keys.map(k => and(eq(stockBalances.sku, k.sku), eq(stockBalances.warehouseId, k.warehouseId)))))
       .orderBy(asc(stockBalances.sku), asc(stockBalances.warehouseId)).for('update');
     // Read AFTER locking: another transaction may have completed this same document while we waited.
@@ -74,13 +76,12 @@ export async function postMoves(db: LedgerDb, by: string, moves: readonly MoveIn
       return change && have + change < -0.0005 ? [`${k.sku} (còn ${have}, cần ${Math.max(0, -change)})`] : [];
     });
     if (short.length) throw new AppError(409, 'Tồn kho không đủ: ' + short.join('; ') + '. Dùng phiếu điều chỉnh hoặc điều chuyển để bổ sung tồn trước khi thực hiện / huỷ chứng từ.', 'STOCK_SHORT');
-    for (const m of pending) await tx.insert(stockMoves).values({ id: crypto.randomUUID(), ...m,
-      refNo: (m.refNo ?? '').slice(0, 60), note: (m.note ?? '').slice(0, 500), createdBy: by, createdAt: now });
-    for (const k of keys) {
-      const qty = delta.get(balanceKey(k)); if (!qty) continue;
-      await tx.update(stockBalances).set({ qty: sql`${stockBalances.qty} + ${qty}`, updatedAt: now })
-        .where(and(eq(stockBalances.sku, k.sku), eq(stockBalances.warehouseId, k.warehouseId)));
-    }
+    for (const part of slices(pending)) await tx.insert(stockMoves).values(part.map(m => ({ id: crypto.randomUUID(), ...m,
+      refNo: (m.refNo ?? '').slice(0, 60), note: (m.note ?? '').slice(0, 500), createdBy: by, createdAt: now })));
+    const changes = keys.map(k => ({ ...k, qty: delta.get(balanceKey(k)) ?? 0 })).filter(k => k.qty);
+    for (const part of slices(changes)) await tx.execute(sql`UPDATE ${stockBalances} SET ${sql.identifier('qty')} = ${stockBalances.qty} + v.d, ${sql.identifier('updated_at')} = ${now}
+      FROM (VALUES ${sql.join(part.map(k => sql`(${k.sku}, ${k.warehouseId}, ${k.qty}::double precision)`), sql`, `)}) AS v(sku, wh, d)
+      WHERE ${stockBalances.sku} = v.sku AND ${stockBalances.warehouseId} = v.wh`);
     return pending.length;
   });
 }

@@ -2,11 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
 import { setup } from '../helpers/pos-fixture.ts';
+import { netReceivables } from '../../src/modules/sales/api/pos-return-credit.ts';
+import { RULES } from '../../src/modules/tasks/api/auto-tasks.ts';
 import {
   salesOrderLines,
   customerPayments,
   deliveries,
   salesOrders,
+  paymentSchedules,
 } from '../../src/modules/sales/schema.ts';
 import {
   posReturns,
@@ -503,6 +506,10 @@ test('COD chưa thu: trả toàn bộ giảm công nợ nhưng không tạo ti�
     ok(await f.call('/orders/' + o.id, f.mgr)).receivable.balance,
     0,
   );
+  // Mọi màn hình công nợ dùng chung số đã trừ hàng trả: kỳ đã quá hạn nhưng hàng trả hết → không còn nợ, không sinh việc thu nợ.
+  await f.db.update(paymentSchedules).set({ dueDate: '2020-01-01' }).where(eq(paymentSchedules.orderId, o.id));
+  assert.equal((await netReceivables(f.db as never, [o.id], '2026-10-22')).get(o.id)!.balance, 0);
+  assert.deepEqual((await RULES.overdueDebt!(f.db as never, '2026-10-22')).filter(t => t.sourceId === o.id), []);
   const report = ok(await f.call('/pos/shifts/' + shift.id, f.emp));
   assert.equal(report.expectedCash, 500000);
   assert.equal(report.cod.pending.amount, 0);

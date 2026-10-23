@@ -101,6 +101,6 @@ test('dòng việc: việc tự hoàn thành theo chứng từ không có ô tic
   const auto = list.slice(list.indexOf('data-task="auto"')), hand = list.slice(list.indexOf('data-task="hand"'));
   assert.ok(list.indexOf('Quá hạn') < list.indexOf('Hôm nay'), 'nhóm theo hạn: quá hạn trước');
   assert.doesNotMatch(auto.slice(0, auto.indexOf('task-main')), /type="checkbox"/); assert.match(auto, /Tự động · không đóng tay/); assert.match(auto, /Chưa giao/);
-  assert.match(hand.slice(0, hand.indexOf('task-main')), /type="checkbox"/); assert.match(hand, /data-cycle[^>]*>Đang làm/); assert.match(hand, /trễ 2 ngày/);
+  assert.match(hand.slice(0, hand.indexOf('task-main')), /type="checkbox"/); assert.match(hand, /data-cycle[^>]*>Đang làm/); assert.match(hand, /trễ \d+ ngày/); // số ngày theo ngày chạy test
   for (const k of ['cash', 'transfer', 'invoice', 'care']) assert.match(f.node('#tasks-source').innerHTML, new RegExp(`value="${k}"`), 'ô Nguồn đủ nguồn việc');
 });

@@ -684,6 +684,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (status === 'cancelled') {
       const [paid] = await c.env.db.select({ n: sql<number>`count(*)` }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt)));
       const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
+      if (Number(paid?.n) > 0 && !lines.some(l => l.deliveredQty > 0) && order.channel === 'pos' && order.fulfillmentMode === 'cod')
+        throw new AppError(409, 'Đơn Ship COD đã thu cọc: dùng "Đổi / trả hàng" của đơn (thu hồi đơn chưa giao) để nhận hàng hoàn về kho và hoàn cọc cho khách.', 'COD_DEPOSIT_RECOVER');
       if (Number(paid?.n) > 0 || lines.some(l => l.deliveredQty > 0)) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền, không huỷ được.');
     }
     if (status === 'confirmed' && !canApprove(viewer(c))) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt đơn hàng / HĐKT.', 'APPROVER_ONLY');
@@ -1169,7 +1171,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (paidAt > vietnamDate().iso) throw new AppError(400, 'Ngày thu không được sau hôm nay.');
     const method = (body.method ?? 'transfer') as typeof PAYMENT_METHODS[number];
     if (!PAYMENT_METHODS.includes(method)) throw new AppError(400, 'Hình thức thanh toán không hợp lệ.');
-    const requestKey = posReceipt ? text(body.key,100) : null;
+    // Mã chống lặp: POS bắt buộc; đơn CRM có gửi thì dùng luôn (mạng chập chờn bấm lại không ghi thu hai lần).
+    const sentKey = text(body.key,100), requestKey = posReceipt || /^[a-zA-Z0-9_-]{16,100}$/.test(sentKey) ? sentKey : null;
     if(posReceipt && (!requestKey || !/^[a-zA-Z0-9_-]{16,100}$/.test(requestKey) || !Number.isSafeInteger(amount) || !['cash','transfer'].includes(method) || body.confirmed!==true)) throw new AppError(400,'Xác nhận đã thực nhận tiền, chọn tiền mặt/chuyển khoản và cung cấp mã chống lặp hợp lệ.');
     const scheduleId = body.scheduleId ? text(body.scheduleId, 80) : null;
     if (scheduleId && !(await c.env.db.select({ id: paymentSchedules.id }).from(paymentSchedules).where(and(eq(paymentSchedules.id, scheduleId), eq(paymentSchedules.orderId, order.id))).limit(1)).length)
@@ -1219,6 +1222,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     if (p.paymentSource === 'pos_cod_deposit') {
       const [order] = await tx.select({ snapshot: salesOrders.posSnapshot }).from(salesOrders).where(eq(salesOrders.id, p.orderId));
       const deliveryId = JSON.parse(order?.snapshot || '{}').codDeliveryId;
+      // GHN thu hộ đúng số tiền lúc tạo vận đơn: đã có vận đơn / đã đi giao mà cộng lại cọc vào COD → khi GHN giao xong CRM ghi thu thừa số cọc.
+      const [ship] = deliveryId ? await tx.select({ status: deliveries.status, trackingCode: deliveries.trackingCode }).from(deliveries).where(eq(deliveries.id, deliveryId)) : [];
+      if (ship && (ship.trackingCode || ship.status !== 'planned'))
+        throw new AppError(409, 'Chuyến COD đã có vận đơn / đã đi giao: GHN đang thu hộ số tiền cũ. Huỷ chuyến giao (huỷ vận đơn) rồi mới huỷ phiếu cọc.', 'COD_SHIPMENT_EXISTS');
       if (deliveryId) await tx.update(deliveries).set({ codAmount: sql`${deliveries.codAmount} + ${p.amount}`, updatedAt: nowIso() })
         .where(and(eq(deliveries.id, deliveryId), eq(deliveries.orderId, p.orderId)));
     }

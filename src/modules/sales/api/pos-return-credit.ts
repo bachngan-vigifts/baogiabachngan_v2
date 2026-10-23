@@ -6,7 +6,8 @@ import {
   posRefunds,
   posExchangeAllocations,
 } from '../return-schema.ts';
-import { salesOrders, customerPayments } from '../schema.ts';
+import { salesOrders, customerPayments, paymentSchedules } from '../schema.ts';
+import { receivable } from '../domain/sales.ts';
 import { posPaymentRequests, posShifts } from '../pos-schema.ts';
 import { returnBalance } from '../domain/pos-return-money.ts';
 export async function returnAccount(
@@ -275,4 +276,23 @@ export function netReturnInputs<
     schedules: reduce(schedules, adjustment?.credit || 0),
     payments: reduce(payments, adjustment?.settled || 0),
   };
+}
+
+/**
+ * Công nợ từng đơn ĐÃ TRỪ hàng khách trả (tiền hàng trả bớt phải thu; tiền đã hoàn / đổi bớt đã thu) – dùng chung cho mọi màn hình
+ * công nợ (Công nợ, khách hàng, cổng khách, nhân viên, việc tự động, tổng quan), để các nơi không lệch nhau.
+ */
+export async function netReceivables(db: CashDb, orderIds: string[], today: string) {
+  const out = new Map<string, ReturnType<typeof receivable>>();
+  if (!orderIds.length) return out;
+  const [sch, pay, adjustments] = await Promise.all([
+    db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, orderIds)),
+    db.select().from(customerPayments).where(and(inArray(customerPayments.orderId, orderIds), isNull(customerPayments.voidedAt))),
+    returnAdjustments(db, orderIds),
+  ]);
+  for (const id of orderIds) {
+    const net = netReturnInputs(sch.filter(s => s.orderId === id), pay.filter(p => p.orderId === id), adjustments.get(id));
+    out.set(id, receivable(net.schedules, net.payments, today));
+  }
+  return out;
 }

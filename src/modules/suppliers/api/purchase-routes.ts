@@ -12,6 +12,7 @@ import { can } from '../../staff/domain/permissions.ts';
 import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
+import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import {
@@ -502,6 +503,13 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const after = p.raw.progress.missing - v.lines.reduce((s, l) => s + l.goodQty, 0);
       // Nhận đủ: đánh dấu đơn đã nhận (cột cũ dùng cho cổng NCC / luật đóng băng).
       if (after <= 0) await tx.update(incomingShipments).set({ receivedAt: nowIso(), receivedBy: m.id, receivedWarehouse: whName }).where(eq(incomingShipments.id, id));
+      // Lịch sử sản phẩm: mỗi mã một dòng "Nhập hàng" (giá nhập chỉ Manager xem – lọc ở GET /products/:sku/history).
+      await recordMovements(tx, v.lines.map(l => {
+        const line = p.raw.lines.find(x => x.id === l.lineId);
+        return { refKey: `receipt:${receiptId}:${l.lineId}`, sku: l.sku, kind: 'purchase' as const, name: line?.name, qty: l.goodQty, unit: line?.unit, unitPrice: line?.price ?? null,
+          partner: p.raw.order.supplierName ?? '', location: whName, refCode: `${no} · ${p.raw.order.ticketNumber}`, link: `#/purchases/${id}`,
+          status: l.damagedQty ? `Đạt ${l.goodQty} · hỏng ${l.damagedQty} (NCC giao bù)` : 'Đã nhận', note: l.note, occurredAt: nowIso() };
+      }));
       await event(tx, id, m.id, 'receive', `Nhận hàng ${no}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId, lines: v.lines });
     });
     return json({ ...await viewOf(c, id), receiptId }, 201);
@@ -550,6 +558,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (r!.sapoStatus === 'done') fail(409, 'Phiếu đã nhập Sapo – huỷ phiếu nhập trên Sapo và mở lại trạng thái trước.');
       await tx.update(supplierReceipts).set({ cancelledAt: nowIso(), cancelledBy: m.id, cancelReason: reason }).where(eq(supplierReceipts.id, r!.id));
       await reverseRef(tx as unknown as Db, m.id, 'supplier_receipt', r!.id, `Huỷ phiếu nhận ${r!.receiptNo}: ${reason}`);
+      await removeMovements(tx, `receipt:${r!.id}:`);
       await tx.update(incomingShipments).set({ receivedAt: null, receivedBy: null }).where(eq(incomingShipments.id, shipmentId));
       await event(tx, shipmentId, m.id, 'cancel_receipt', `Huỷ phiếu nhận ${r!.receiptNo} – ${reason}`);
     });
