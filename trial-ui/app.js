@@ -1584,6 +1584,12 @@ function nqSetType(type, fetchServer = true) {
 function nqApplyTerms() {
   const d = defaultPaymentTerms(nq.type), c = nq.customer;
   if (!nq.paymentTouched) { $('#nq-deposit-rate').value = c?.depositRate ?? d.depositRate; $('#nq-payment-term').value = c?.paymentTerm || d.balanceTerm; }
+  const depositPolicy = $('#nq-deposit-policy'), paymentPolicy = $('#nq-payment-policy');
+  depositPolicy.hidden = c?.depositRate == null;
+  depositPolicy.textContent = c?.depositRate != null ? `Chính sách khách hàng: đặt cọc ${fmtNum(c.depositRate)}%.` : '';
+  const term = String(c?.paymentTerm ?? '').trim();
+  paymentPolicy.hidden = !term;
+  paymentPolicy.textContent = term ? `Chính sách khách hàng: ${/^\d+$/.test(term) ? (Number(term) === 0 ? 'thanh toán ngay sau khi giao hàng' : `thanh toán sau ${term} ngày kể từ ngày giao hàng`) : term}.` : '';
   const credit = $('#nq-credit');
   credit.hidden = !(c && c.creditLimit != null);
   credit.textContent = c && c.creditLimit != null ? `Giới hạn công nợ của ${c.name}: ${money(c.creditLimit)}` : '';
