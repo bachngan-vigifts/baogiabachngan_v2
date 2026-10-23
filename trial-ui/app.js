@@ -3055,11 +3055,13 @@ async function loadOrders() {
   try {
     // Đơn hàng và HĐKT là 2 luồng song song: trang này chỉ hiện đơn không có HĐKT.
     const d = await api('/orders?' + ordersQuery());
+    if (req !== ordersReq) return;
     ordersData = d;
     fillOrderFilter('#orders-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
     fillOrderFilter('#orders-branch', 'Tất cả chi nhánh', d.filterOptions?.branches);
     invoiceCount('orders', d.invoicePending);
     if (req !== ordersReq) return;
+    salesListSummary('orders', d.summary);
     ordersPager.render(d.total ?? d.orders.length);
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
       <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.quoteNo || 'Không từ báo giá')} · ${fmtDate(String(o.createdAt || o.orderDate).slice(0, 10))}</small></td>
@@ -3072,7 +3074,7 @@ async function loadOrders() {
       <td class="right num"><b>${money(o.total)}</b><small>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
       <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
-  } catch (e) { if (req === ordersReq) { listError('orders', e); ordersPager.render(0); } }
+  } catch (e) { if (req === ordersReq) { salesListSummary('orders', null); listError('orders', e); ordersPager.render(0); } }
 }
 // ----- danh sách HĐKT
 let contractsPager, contractsReq = 0;
@@ -3089,7 +3091,7 @@ async function loadContracts() {
     invoiceCount('contracts', d.invoicePending);
     if (req !== contractsReq) return;
     fillOrderFilter('#contracts-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
-    contractsSummary(d.summary);
+    salesListSummary('contracts', d.summary);
     contractsPager.render(d.total ?? d.contracts.length);
     // HĐKT là luồng riêng: mở #/contracts/<id>, dòng phụ là số báo giá (không hiện số đơn).
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
@@ -3097,13 +3099,14 @@ async function loadContracts() {
       <td>${esc(k.legalEntity)}<small>${esc(k.ownerName || '')}</small></td><td>${pill(ORDER_STATUS, k.orderStatus === 'draft' && !k.submittedAt ? 'unsubmitted' : k.orderStatus)}<small>${esc(CONTRACT_STATUS[k.status]?.[0] || '')}</small></td><td>${fmtDate(k.signedDate) || '—'}</td>
       <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus, 'HĐKT')}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</td></tr>`),
       'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
-  } catch (e) { if (req === contractsReq) { listError('contracts', e); contractsPager.render(0); } }
+  } catch (e) { if (req === contractsReq) { salesListSummary('contracts', null); listError('contracts', e); contractsPager.render(0); } }
 }
-/** Dòng tổng của trang HĐKT theo bộ lọc đang chọn (máy chủ cộng trên mọi trang; tiền không tính HĐKT đã huỷ). */
-function contractsSummary(s) {
-  const box = $('#contracts-stats'); if (!box) return;
+/** Tổng đơn / HĐKT theo bộ lọc trên mọi trang, không tính chứng từ đã huỷ. */
+function salesListSummary(key, s) {
+  const noun = key === 'orders' ? 'đơn hàng' : 'HĐKT';
+  const box = $(`#${key}-stats`); if (!box) return;
   if (!s) { box.innerHTML = ''; return; }
-  box.innerHTML = [['Số HĐKT', fmtNum(s.count), '', s.cancelled ? `Không tính ${fmtNum(s.cancelled)} HĐKT đã huỷ` : ''], ['Doanh thu', money(s.revenue), ''], ['Tiền cọc', money(s.deposit), ''],
+  box.innerHTML = [[key === 'orders' ? 'Số đơn hàng' : 'Số HĐKT', fmtNum(s.count), '', s.cancelled ? `Không tính ${fmtNum(s.cancelled)} ${noun} đã huỷ` : ''], ['Doanh thu', money(s.revenue), ''], ['Tiền cọc', money(s.deposit), ''],
     ['Đã thu', money(s.paid), ''], ['Còn phải thu', money(s.remaining), s.remaining > 0 ? 'danger-text' : '']]
     .map(([t, v, c, note]) => `<article class="stat"><small>${t}</small><strong class="${c}">${v}</strong>${note ? `<span class="stat-note">${note}</span>` : ''}</article>`).join('');
 }
