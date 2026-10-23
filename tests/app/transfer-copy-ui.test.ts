@@ -21,8 +21,8 @@ class Node {
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
 async function setup(status='cancelled',missing=false){
  const root=new Node(),posts:any[]=[],nav:string[]=[],messages:string[]=[];
- const source={id:'old',transferNo:'PCK-OLD',status,statusLabel:'Đã huỷ',fromWarehouseId:'a',toWarehouseId:'b',reason:'Bổ sung kho',lines:[{sku:'X',name:'Ly',qty:12,unit:'cái',fromStock:20,toStock:0},{sku:'Y',name:'Bát',qty:3,unit:'cái',fromStock:30,toStock:0}],actions:{}};
- const context:any={document:{createElement:(tag:string)=>new Node(tag),createTextNode:(s:string)=>{const n=new Node('text');n.textContent=s;return n;}},location:{hash:'#/transfers/old'},history:{replaceState(){}}};
+ const source={id:'old',transferNo:'PCK-OLD',status,statusLabel:'Đã huỷ',fromWarehouseId:'a',toWarehouseId:'b',reason:'Bổ sung kho',lines:[{sku:'X',name:'Ly',qty:12,unit:'cái',fromStock:20,toStock:0},{sku:'Y',name:'Bát',qty:3,unit:'cái',fromStock:30,toStock:0}],revision:1,actions:status==='pending'?{edit:true}:{}};
+ const context:any={crypto:{randomUUID:()=> '5a828b25-34cf-4145-bbab-43a53a5c465b'},document:{createElement:(tag:string)=>new Node(tag),createTextNode:(s:string)=>{const n=new Node('text');n.textContent=s;return n;}},location:{hash:'#/transfers/old'},history:{replaceState(){}}};
  const code=readFileSync(new URL('../../trial-ui/stock-ops.js',import.meta.url),'utf8').replace(/^import .*;\n/m,'').replace('export function initTransfers','globalThis.initTransfers = function').split('const GROUPS =')[0]!;
  runInNewContext(code,context);
  const ui=context.initTransfers({root,toast:(s:string)=>messages.push(s),go:(s:string)=>nav.push(s),api:async(path:string,method?:string,body?:any)=>{
@@ -49,4 +49,17 @@ test('sao chép: kho gốc đã bị ẩn phải chọn lại; đóng form khôn
  assert.equal(all(s.root).find(n=>n.tag==='select'&&n.attrs['aria-label']==='Kho đi')!.value,'');
  await s.button('Huỷ')!.click();assert.equal(s.posts.length,0);assert.equal(s.source.status,'cancelled');
  const active=await setup('approved');assert.equal(active.button('Sao chép phiếu'),undefined);
+});
+
+test('phiếu chờ duyệt: chỉnh sửa giữ số phiếu/ID, PUT revision và không bị tải lại form khi đang sửa',async()=>{
+ const s=await setup('pending');await s.button('Chỉnh sửa')!.click();
+ const qty=all(s.root).find(n=>n.type==='number')!;qty.value=25;
+ await s.ui.load('old');assert.equal(all(s.root).find(n=>n.type==='number'),qty);assert.equal(qty.value,25);
+ await s.button('Lưu thay đổi')!.click();assert.equal(s.posts[0].path,'/stock-transfers/old');
+ assert.equal(s.posts[0].body.revision,1);assert.equal(s.posts[0].body.lines[0].qty,25);assert.equal(s.posts[0].body.reason,'Bổ sung kho');
+ assert.equal(s.posts[0].body.clientKey,undefined);
+});
+test('mở lại cùng phiếu không dựng lại drawer, giữ nguyên nút thao tác',async()=>{
+ const s=await setup();const first=s.button('Sao chép phiếu');
+ await Promise.all([s.ui.show('old'),s.ui.show('old')]);assert.equal(s.button('Sao chép phiếu'),first);
 });

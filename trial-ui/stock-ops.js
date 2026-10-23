@@ -34,7 +34,7 @@ function ask(title, placeholder) {
 }
 
 export function initTransfers({ api, root, toast, go }) {
-  let data = null, filter = 'open';
+  let data = null, filter = 'open', listRun = 0, detailRun = 0, showing = '', rendered = '', inFlight = null, formOpen = false, posting = false, openedAt = 0;
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Điều chuyển kho'),
     el('p', 'muted', 'Kho của mình thiếu hàng: xin chuyển từ kho khác. Người duyệt duyệt, Kho bấm "Đã chuyển" thì sổ kho trừ kho đi, cộng kho đến.'));
@@ -52,13 +52,16 @@ export function initTransfers({ api, root, toast, go }) {
   const shade = el('div', 'sup-shade'); shade.hidden = true;
   const drawer = el('aside', 'sup-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
   root.append(page, shade, drawer);
-  const close = () => { drawer.hidden = true; shade.hidden = true; if (/^#\/transfers\//.test(location.hash)) history.replaceState(null, '', '#/transfers'); };
-  shade.addEventListener('click', close);
+  const close = () => { if(posting)return;detailRun++;showing='';rendered='';inFlight=null;formOpen=false;drawer.hidden = true; shade.hidden = true; if (/^#\/transfers\//.test(location.hash)) history.replaceState(null, '', '#/transfers'); };
+  shade.addEventListener('click', () => { if(Date.now()-openedAt>=400)close(); });
 
   async function load(openId) {
-    tbody.replaceChildren(el('tr'));
-    try { data = await api('/stock-transfers' + (filter ? '?status=' + filter : '')); }
-    catch (e) { tbody.replaceChildren(); toast(e.message, 'err'); return; }
+    const seq=++listRun;
+    if(openId&&showing!==openId){detailRun++;showing=openId;inFlight=null;}
+    if(!openId&&!formOpen){detailRun++;showing='';rendered='';inFlight=null;drawer.hidden=true;shade.hidden=true;}
+    if(!data)tbody.replaceChildren(el('tr'));
+    try { const next=await api('/stock-transfers' + (filter ? '?status=' + filter : ''));if(seq!==listRun)return;data=next; }
+    catch (e) { if(seq!==listRun)return;tbody.replaceChildren(); toast(e.message, 'err'); return; }
     tbody.replaceChildren(...(data.transfers.length ? data.transfers.map(t => {
       const tr = el('tr', 'clickable'); tr.tabIndex = 0;
       const no = el('td', 'first'); no.append(el('b', '', t.transferNo), el('small', '', dt(t.createdAt)));
@@ -68,12 +71,20 @@ export function initTransfers({ api, root, toast, go }) {
       tr.addEventListener('click', () => go('#/transfers/' + t.id)); tr.addEventListener('keydown', e => { if (e.key === 'Enter') go('#/transfers/' + t.id); });
       return tr;
     }) : [(() => { const tr = el('tr'), td = el('td', 'muted', 'Chưa có phiếu điều chuyển.'); td.colSpan = 5; tr.append(td); return tr; })()]));
-    if (openId) show(openId);
+    if (openId && !formOpen) await show(openId);
   }
 
-  async function show(id) {
+  function show(id) {
+    if(formOpen)return Promise.resolve();
+    if(inFlight&&showing===id)return inFlight;
+    const seq=++detailRun;showing=id;
+    const pending=drawDetail(id,seq).finally(()=>{if(inFlight===pending)inFlight=null;});inFlight=pending;return pending;
+  }
+  async function drawDetail(id,seq) {
     let t;
-    try { t = await api('/stock-transfers/' + encodeURIComponent(id)); } catch (e) { toast(e.message, 'err'); return; }
+    try { t = await api('/stock-transfers/' + encodeURIComponent(id)); } catch (e) { if(seq===detailRun)toast(e.message, 'err');return; }
+    if(seq!==detailRun||formOpen)return;
+    const key=JSON.stringify(t);if(rendered===key&&!drawer.hidden)return;rendered=key;
     drawer.replaceChildren();
     const h = el('div', 'sup-drawer-head'); h.append(el('h2', '', 'Phiếu ' + t.transferNo), btn('✕', 'icon-btn', close));
     const meta = el('div', 'sup-meta');
@@ -94,28 +105,30 @@ export function initTransfers({ api, root, toast, go }) {
       acts.dataset.busy = '1';
       const all = [...acts.querySelectorAll('button')], label = b.textContent;
       all.forEach(x => { x.disabled = true; }); b.textContent = busyText; b.className += ' is-busy'; b.setAttribute('aria-busy', 'true');
-      try { await api(`/stock-transfers/${t.id}/${path}`, 'POST', { revision: t.revision, ...body }); toast(msg); await load(t.id); }
+      try { await api(`/stock-transfers/${t.id}/${path}`, 'POST', { revision: t.revision, ...body }); toast(msg); if(showing===t.id)await load(t.id);else if(!showing)await load(); }
       catch (e) { toast(e.message, 'err'); }
       finally { delete acts.dataset.busy; all.forEach(x => { x.disabled = false; }); b.textContent = label; b.className = b.className.replace(' is-busy', ''); b.removeAttribute('aria-busy'); }
     };
     const act = (text, cls, busyText, fn) => { const b = btn(text, cls, () => fn(b, busyText)); acts.append(b); };
+    if (t.actions.edit) acts.append(btn('Chỉnh sửa', 'btn secondary', () => openForm(t,true)));
     if (t.actions.approve) act('Duyệt', 'btn ok', 'Đang duyệt…', (b, bt) => run('approve', {}, 'Đã duyệt – nhóm Kho nhận việc chuyển hàng.', b, bt));
     if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async (b, bt) => { if (acts.dataset.busy) return; const r = await ask('Từ chối điều chuyển', 'Lý do từ chối'); if (r) run('reject', { reason: r }, 'Đã từ chối.', b, bt); });
     if (t.actions.done) act('Đã chuyển', 'btn primary', 'Đang ghi sổ kho…', (b, bt) => run('done', {}, 'Đã ghi sổ kho: trừ kho đi, cộng kho đến.', b, bt));
     if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', (b, bt) => run('cancel', {}, 'Đã huỷ phiếu.', b, bt));
     if (t.status === 'cancelled') acts.append(btn('Sao chép phiếu', 'btn primary', () => openForm(t)));
     drawer.append(h, meta, tw, acts);
-    drawer.hidden = false; shade.hidden = false;
+    drawer.hidden = false; shade.hidden = false; openedAt=Date.now();
   }
 
-  async function openForm(source = null) {
+  async function openForm(source = null, editing = false) {
+    if(posting)return;detailRun++;inFlight=null;rendered='';formOpen=true;
     if (!data) await load();
     const whs = data?.warehouses || [];
     drawer.replaceChildren();
-    const h = el('div', 'sup-drawer-head'); h.append(el('h2', '', source ? 'Sao chép phiếu ' + source.transferNo : 'Xin điều chuyển kho'), btn('✕', 'icon-btn', close));
+    const h = el('div', 'sup-drawer-head'); h.append(el('h2', '', source ? (editing?'Chỉnh sửa phiếu ':'Sao chép phiếu ') + source.transferNo : 'Xin điều chuyển kho'), btn('✕', 'icon-btn', close));
     const opts = [['', 'Chọn kho'], ...whs.map(w => [w.id, w.name])];
     const from = select(opts, whs.some(w => w.id === source?.fromWarehouseId) ? source.fromWarehouseId : '', 'Kho đi'), to = select(opts, whs.some(w => w.id === source?.toWarehouseId) ? source.toWarehouseId : '', 'Kho đến');
-    const reason = input('text', source ? ('Sao chép từ ' + source.transferNo + ' · ' + source.reason).slice(0, 500) : '', { placeholder: 'VD: đơn của khách Kim Trần Gia cần hàng ở kho VIGIFTS', maxLength: 500 });
+    const reason = input('text', source ? (editing?source.reason:('Sao chép từ ' + source.transferNo + ' · ' + source.reason).slice(0, 500)) : '', { placeholder: 'VD: đơn của khách Kim Trần Gia cần hàng ở kho VIGIFTS', maxLength: 500 });
     const lines = el('div', 'transfer-lines');
     const lineRow = (sku = '', qty = '') => {
       const r = el('div', 'row-gap'), s = input('text', sku, { placeholder: 'Mã hàng' }), q = input('number', qty, { placeholder: 'SL', min: '0', step: 'any' });
@@ -138,19 +151,21 @@ export function initTransfers({ api, root, toast, go }) {
       row.querySelector('input[type=text]').value = sku; find.value = ''; row.querySelector('input[type=number]').focus();
     });
     if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty); else lineRow();
-    const send = btn('Gửi duyệt', 'btn primary', async () => {
-      const body = { fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
+    const clientKey=crypto.randomUUID();
+    const send = btn(editing?'Lưu thay đổi':'Gửi duyệt', 'btn primary', async () => {
+      if(posting)return;posting=true;
+      const body = { ...(editing?{revision:source.revision}:{clientKey}),fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
         lines: [...lines.children].map(r => ({ sku: r.querySelector('input[type=text]').value.trim(), qty: Number(r.querySelector('input[type=number]').value) })).filter(l => l.sku) };
       send.disabled = true;
-      try { const t = await api('/stock-transfers', 'POST', body); toast('Đã gửi phiếu ' + t.transferNo + ' – chờ duyệt.'); filter = 'open'; go('#/transfers/' + t.id); }
-      catch (e) { toast(e.message, 'err'); } finally { send.disabled = false; }
+      try { const t = await api(editing?'/stock-transfers/'+encodeURIComponent(source.id):'/stock-transfers', editing?'PUT':'POST', body); toast((editing?'Đã cập nhật phiếu ':'Đã gửi phiếu ') + t.transferNo + ' – chờ duyệt.'); formOpen=false;filter = 'open'; go('#/transfers/' + t.id); }
+      catch (e) { toast(e.message, 'err'); } finally { posting=false;send.disabled = false; }
     });
     const form = el('div', 'form-grid');
     form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('Tìm hàng', find, 'wide'));
     const foot = el('div', 'sup-drawer-foot-sticky'); foot.append(btn('Huỷ', 'btn secondary', close), send);
-    if (source) drawer.append(h, el('p', 'muted small', 'Phiếu gốc giữ trạng thái đã huỷ. Kiểm tra kho, mã và số lượng rồi bấm Gửi duyệt để tạo phiếu mới; chưa có phát sinh sổ kho.')); else drawer.append(h);
+    if (source) drawer.append(h, el('p', 'muted small', editing?'Chỉ sửa phiếu chờ duyệt. Lưu thay đổi không ghi sổ kho; phiếu vẫn cần duyệt.':'Phiếu gốc giữ trạng thái đã huỷ. Kiểm tra kho, mã và số lượng rồi bấm Gửi duyệt để tạo phiếu mới; chưa có phát sinh sổ kho.')); else drawer.append(h);
     drawer.append(form, list, el('h3', '', 'Mã hàng cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => lineRow()), foot);
-    drawer.hidden = false; shade.hidden = false;
+    drawer.hidden = false; shade.hidden = false;openedAt=Date.now();
   }
 
   return { load: id => load(id), show };
