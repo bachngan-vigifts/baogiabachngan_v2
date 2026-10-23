@@ -236,7 +236,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const has = a => v.actions.includes(a);
     const acts = el('div', 'pur-actions');
     for (const a of ['edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'pdf', 'cancel']) {
-      if (has(a)) acts.append(btn(a === 'confirm' && opts?.isManager ? (v.confirmedAt ? 'Cập nhật xác nhận NCC' : 'Manager xác nhận thay NCC') : ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' || a === 'submit' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
+      if (has(a)) acts.append(btn(a === 'confirm' && opts?.isManager ? (v.confirmedAt ? 'NCC đã xác nhận' : 'Manager xác nhận thay NCC') : ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' || a === 'submit' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
       // Cạnh nút PDF: gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
       if (a === 'pdf' && has('pdf')) {
         const mail = btn('✉ Gửi email NCC', 'btn secondary small', () => sendOrderEmail(mail));
