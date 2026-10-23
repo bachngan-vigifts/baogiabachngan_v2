@@ -31,7 +31,7 @@ jobs:
             )
           )
           from (
-            select o.order_no, o.customer_name, o.total, o.status, o.fulfillment_mode,
+            select o.order_no, o.customer_name, o.total, o.status, o.fulfillment_mode, r.name as register_name,
               o.created_at, coalesce(owner.name, creator.name, s.pos_snapshot::jsonb->>'memberName', '') as seller,
               'Bán hàng nhanh CRM' as source,
               coalesce((select sum(p.amount) from customer_payments p where p.order_id=o.id and p.voided_at is null and p.method='cash'),0) as cash,
@@ -45,7 +45,6 @@ jobs:
             left join staff_members creator on creator.id=o.created_by
             left join sales_orders s on s.id=o.id
             where o.channel='pos' and sh.business_date='DATE_TOKEN'
-              and (lower(r.name) like '%lock%' or lower(r.name) like '%ngô văn sở%')
           ) x;
           SQL
           )
