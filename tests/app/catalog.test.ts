@@ -294,3 +294,43 @@ test('tìm sản phẩm xếp theo mức liên quan (không theo bảng chữ c�
   for (const q of ['bo tra', '0.5l', 'bo tra 0.5l came', 'lhc4282', 'LHC-4282', 'ly', 'tra', '500 ml', '01503801403', 'minh long', 'giu nhiet 1.2l'])
     assert.deepEqual(searchProducts(items, { q })!.map(p => p.sku), await skus(q), q);
 });
+
+test('lọc tồn tối thiểu trước phân trang: biên, kho chọn, ẩn kho riêng, nguồn NCC/chờ về và sổ kho CRM', async () => {
+  const {db,call,emp}=await setup();const at=new Date().toISOString();
+  const mgr=(await call('/login','','POST',{email:'mgr@x.vn',password:PASSWORD})).cookie;
+  await db.insert(warehouses).values([
+    {id:'stk1',name:'Kho Một',kind:'stock'}, {id:'stk2',name:'Kho Hai',kind:'stock'},
+    {id:'private',name:'Kho riêng',kind:'stock',stockPrivate:true}, {id:'incoming',name:'Chờ về',kind:'incoming'},
+    {id:'supplier',name:'NCC',kind:'supplier'}, {id:'inactive',name:'Kho ngừng',kind:'stock',active:false},
+  ]);
+  await db.insert(products).values(['A','B','C','D','E','F'].map(sku=>({sku,name:sku,updatedAt:at})));
+  await db.insert(productStock).values([
+    {sku:'A',warehouseId:'stk1',quantity:9}, {sku:'B',warehouseId:'stk1',quantity:10},
+    {sku:'C',warehouseId:'stk1',quantity:20}, {sku:'C',warehouseId:'stk2',quantity:30},
+    {sku:'D',warehouseId:'private',quantity:500}, {sku:'D',warehouseId:'incoming',quantity:900},
+    {sku:'D',warehouseId:'supplier',quantity:900}, {sku:'D',warehouseId:'inactive',quantity:900},
+    {sku:'F',warehouseId:'stk1',quantity:200},
+  ].map(row=>({...row,updatedAt:at})));
+  const ids=(r:any)=>r.data.products.map((p:any)=>p.sku);
+  const first=await call('/products?minStock=10&limit=1',emp);assert.equal(first.status,200);assert.equal(first.data.total,3);assert.deepEqual(ids(first),['B']);
+  const next=await call('/products?minStock=10&limit=1&offset=1',emp);assert.equal(next.data.total,3);assert.deepEqual(ids(next),['C']);
+  const selected=await call('/products?minStock=50&stockWarehouse=stk1',emp);assert.deepEqual(ids(selected),['F']);
+  assert.deepEqual(ids(await call('/products?minStock=50',emp)),['C','F']);
+  assert.deepEqual(ids(await call('/products?minStock=200',emp)),['F']);
+  assert.deepEqual(ids(await call('/products?minStock=500',mgr)),['D']);
+  assert.deepEqual(ids(await call('/products?minStock=0',emp)),['A','B','C','D','E','F']);
+  for(const bad of ['-1','NaN','Infinity','1000000000001'])assert.equal((await call('/products?minStock='+bad,emp)).status,400);
+  for(const bad of ['private','incoming','supplier','inactive','missing'])assert.equal((await call('/products?minStock=10&stockWarehouse='+bad,emp)).status,400);
+  const {quotations}=await import('../../src/modules/quotes/schema.ts');
+  const {stockHolds}=await import('../../src/modules/sales/schema.ts');
+  await db.insert(quotations).values({id:'q-min',quoteNo:'BG-min',quoteType:'HRC',creatorId:'emp',customer:'Khách',data:'{}',createdAt:at,updatedAt:at});
+  await db.insert(stockHolds).values({id:'hold-min',quoteId:'q-min',sku:'C',qty:10,expiresAt:'2099-01-01T00:00:00.000Z',createdBy:'emp',createdAt:at});
+  assert.deepEqual(ids(await call('/products?minStock=50',emp)),['F']);
+  assert.deepEqual(ids(await call('/products?minStock=30&stockWarehouse=stk2',emp)),['C']);
+  const {stockMoves,stockBalances}=await import('../../src/modules/inventory/schema.ts');
+  await db.insert(stockMoves).values({id:'open1',sku:'B',warehouseId:'stk1',qty:1,kind:'opening',refType:'opening',refId:'open1',createdBy:'mgr',createdAt:at});
+  await db.insert(stockBalances).values({sku:'B',warehouseId:'stk1',qty:7,updatedAt:at});
+  assert.deepEqual(ids(await call('/products?minStock=10&stockWarehouse=stk1',emp)),[]);
+  assert.deepEqual(ids(await call('/products?minStock=7&stockWarehouse=stk1',emp)),['B']);
+  assert.equal((await call('/products?minStock=7&stockWarehouse=stk1',emp)).data.products[0].filteredStock,7);
+});

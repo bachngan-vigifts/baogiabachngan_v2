@@ -1,3 +1,4 @@
+import type { PermissionMember } from '../../staff/domain/permissions.ts';
 import { inArray } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { productStock } from '../schema.ts';
@@ -10,6 +11,7 @@ export interface CatalogStockRow {
 }
 /** App assembly injects an authoritative local warehouse reader without catalog depending on sales/inventory. */
 export const catalogStockHooks: {
+  held?: (db: StockReadDb, member: PermissionMember, skus: string[]) => Promise<Map<string, number>>;
   overlay?: (db: StockReadDb, rows: CatalogStockRow[], skus?: readonly string[]) => Promise<CatalogStockRow[]>;
   stamp?: (db: StockReadDb) => Promise<string>;
   /** Kho riêng người xem không được thấy tồn (VD kho Hoá đơn với nhân viên không bán kho đó) – docs/SO-KHO.md. */
