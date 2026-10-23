@@ -9,7 +9,7 @@ import { foldSql, paging } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { catalogVersions, pricePolicies, productBarcodes, productPrices, products, productStock, warehouses } from '../schema.ts';
 import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../domain/product-filters.ts';
-import { matchProductWords, productOrder } from './product-query.ts';
+import { matchProductWords, newestProducts, productOrder } from './product-query.ts';
 import { historyOf } from './product-history.ts';
 import { registerProductAdminRoutes } from './product-admin.ts';
 import { registerProductActionRoutes } from './product-actions.ts';
@@ -96,7 +96,8 @@ export async function snapshotVersion(db: StaffEnv['db']) {
   const extra = catalogStockHooks.stamp ? await catalogStockHooks.stamp(db) : '';
   const digest = async (raw: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))).slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join('');
   // Hai phần: sản phẩm + giá + danh sách kho (đổi ít) và tồn kho (đổi sau mỗi lần bán / nhập). Chỉ tồn đổi → trình duyệt chỉ tải tồn.
-  const base = await digest([p?.n, p?.at, pr?.n, pr?.sum, ver?.observedAt ?? '', whs.map(w => w.id).join(',')].join('|'));
+  // 'new1': dòng bản chụp xếp mới tạo lên đầu (đổi cách xếp thì đổi nhãn để trình duyệt bỏ bản đã lưu).
+  const base = await digest(['new1', p?.n, p?.at, pr?.n, pr?.sum, ver?.observedAt ?? '', whs.map(w => w.id).join(',')].join('|'));
   const stock = (await digest([st?.n, st?.at, st?.sum, extra].join('|'))).slice(0, 12);
   return { version: base + '.' + stock, base, stock, observedAt: ver?.observedAt ?? null };
 }
@@ -134,7 +135,8 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       return json({ version, observedAt, stockOnly: true, stock: [...bySku].map(([sku, [qty, updatedAt]]) => [sku, qty, updatedAt || null]) });
     }
     const [rows, policies, stores, prices, rawStock] = await Promise.all([
-      db.select().from(products).where(eq(products.active, true)).orderBy(asc(products.sku)),
+      // Dòng xếp sẵn mới tạo lên đầu: trình duyệt giữ thứ tự này khi không gõ tìm / cùng hạng liên quan.
+      db.select().from(products).where(eq(products.active, true)).orderBy(...newestProducts()),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
       db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)).then(ws => ws.filter(x => !hidden.has(x.id))),
       db.select({ sku: productPrices.sku, policyId: productPrices.policyId, price: productPrices.price }).from(productPrices),

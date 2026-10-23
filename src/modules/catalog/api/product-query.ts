@@ -23,10 +23,17 @@ export function matchProductWords(q: string | null) {
   }));
 }
 
-/** Thứ tự kết quả: hạng liên quan (0 mã đúng … 6 còn lại – xem product-rank.ts), cùng hạng tên ngắn trước, rồi theo tên. */
+/** Mới tạo lên trước: giờ tạo, sản phẩm cũ (chưa có giờ tạo) theo mã sản phẩm Sapo giảm dần, rồi theo tên. */
+export const newestProducts = (): SQL[] => [
+  sql`${products.createdAt} DESC NULLS LAST`,
+  sql`(case when ${products.sapoProductId} ~ '^[0-9]{1,18}$' then ${products.sapoProductId}::bigint end) DESC NULLS LAST`,
+  asc(foldSql(products.name)), asc(products.sku),
+];
+
+/** Thứ tự kết quả: hạng liên quan (0 mã đúng … 6 còn lại – xem product-rank.ts), cùng hạng thì mới tạo lên trước. Không gõ tìm: mới tạo lên đầu. */
 export function productOrder(q: string | null): SQL[] {
   const { words, phrase, compact } = parseQuery(q);
-  const byName = [asc(foldSql(products.name)), asc(products.name), asc(products.sku)];
+  const byName = newestProducts();
   if (!words.length) return byName;
   const name = foldedName(), sku = compactSql(foldSql(products.sku)), padded = sql`' ' || ${name}`;
   const nameHasAll = and(...words.map(w => {
@@ -42,5 +49,5 @@ export function productOrder(q: string | null): SQL[] {
     WHEN ${wordStarts} THEN 4
     WHEN ${nameHasAll} THEN 5
     ELSE 6 END`;
-  return [asc(rank), asc(sql`length(${products.name})`), ...byName];
+  return [asc(rank), ...byName];
 }

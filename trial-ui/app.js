@@ -650,9 +650,11 @@ const posLocalSearch = (q, policy) => {
   const found = searchCatalog(catalog.items, { q }) || [];
   // Bản danh mục không giá (người không xem giá): không lọc theo giá tại chỗ – máy chủ vẫn chỉ trả mã có giá.
   const priced = catalog.items.some(p => p.prices?.[policy] != null);
-  return (priced ? found.filter(p => p.prices?.[policy] != null) : found).map(p => p.sku);
+  // Trả sẵn tên / giá / ảnh để quầy hiện kết quả ngay; tồn có thể bán vẫn lấy từ máy chủ (/pos/catalog?skus=).
+  return (priced ? found.filter(p => p.prices?.[policy] != null) : found)
+    .map(p => ({ sku: p.sku, name: p.name, unit: p.unit, brand: p.brand, imageUrl: p.imageUrl, price: p.prices?.[policy] ?? null }));
 };
-const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch });
+const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
 const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };

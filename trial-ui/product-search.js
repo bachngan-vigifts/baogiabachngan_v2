@@ -62,7 +62,7 @@ function productRank(p, q) {
 var GROUP_RE = Object.fromEntries(Object.entries(PRODUCT_GROUPS).map(([k, g]) => [k, g.all.map((re) => new RegExp(re.replace(/\\[mM]/g, "\\b")))]));
 function hydrateSnapshot(snap) {
   const cols = snap.columns, n = cols.length;
-  return snap.products.map((row) => {
+  return snap.products.map((row, order) => {
     const p = Object.fromEntries(cols.map((c, i) => [c, row[i]]));
     const prices = row[n], stock = row[n + 1];
     p.prices = Object.fromEntries(snap.policies.map((x, i) => [x.id, prices[i] ?? null]));
@@ -75,6 +75,7 @@ function hydrateSnapshot(snap) {
     p._name = fold(p.name);
     const label = fold(`${p.brand ?? ""} ${p.name ?? ""}`);
     p._minhLong = MINH_LONG_WORDS.some((w) => label.includes(w));
+    p._order = order;
     return p;
   });
 }
@@ -99,9 +100,8 @@ function searchProducts(items, o) {
     }
     return true;
   });
-  const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
   const rank = new Map(out.map((p) => [p, productRank(p, query)]));
-  return out.sort((a, b) => rank.get(a) - rank.get(b) || (words.length ? a._name.length - b._name.length : 0) || cmp(a._name, b._name) || cmp(a.name, b.name) || cmp(a.sku, b.sku));
+  return out.sort((a, b) => rank.get(a) - rank.get(b) || a._order - b._order);
 }
 function matchRanges(text, q) {
   const { words } = parseQuery(q);

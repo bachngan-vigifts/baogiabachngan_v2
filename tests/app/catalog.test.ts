@@ -192,7 +192,7 @@ test('nhập theo lô: lô thường chỉ cập nhật (không ẩn), lô cuố
   assert.equal((await post({ products: [prod('A', 6), prod('B', 7)] })).status, 200);
   assert.equal((await post({ products: [prod('D', 8)], replaceAll: true, allSkus: ['A', 'B', 'D'] })).status, 200);
   list = (await call('/products', emp)).data;
-  assert.deepEqual(list.products.map((p: any) => [p.sku, p.prices[0].price]), [['A', 6], ['B', 7], ['D', 8]]);
+  assert.deepEqual(list.products.map((p: any) => [p.sku, p.prices[0].price]), [['D', 8], ['A', 6], ['B', 7]], 'mã mới tạo (D) lên đầu');
   const current = (await db.select().from(catalogVersions)).filter(v => v.isCurrent);
   assert.equal(current.length, 1); assert.equal(current[0]!.productCount, 3);
   // allSkus phải chứa mọi mã của lô.
@@ -279,8 +279,8 @@ test('tìm sản phẩm xếp theo mức liên quan (không theo bảng chữ c�
     { sku: 'XA', name: 'Bình hoa mai trang trí', brand: 'Khác', unit: 'cái', updatedAt: t },
   ]);
   const skus = async (q: string) => (await call('/products?limit=50&q=' + encodeURIComponent(q), emp)).data.products.map((p: any) => p.sku);
-  // Tên bắt đầu bằng cụm gõ lên trước (tên ngắn trước), rồi tên chứa nguyên cụm; không còn xếp A→Z làm "Bình hoa…" lên đầu.
-  assert.deepEqual((await skus('bo tra')).slice(0, 3), ['01503801500', '01503801403', 'HOP']);
+  // Tên bắt đầu bằng cụm gõ lên trước, rồi tên chứa nguyên cụm; không còn xếp A→Z làm "Bình hoa…" lên đầu. Cùng hạng, cùng lúc tạo: theo tên.
+  assert.deepEqual((await skus('bo tra')).slice(0, 3), ['01503801403', '01503801500', 'HOP']);
   assert.deepEqual((await skus('0.5l')).sort(), ['01503801403', '01503801500'], '"0.5l" khớp "0.5 L"');
   assert.deepEqual(await skus('bo tra 0.5l came'), ['01503801403']);
   assert.equal((await skus('lhc4282'))[0], 'LHC4282DBRW_C', 'mã gõ thiếu đuôi vẫn lên đầu');
@@ -293,6 +293,17 @@ test('tìm sản phẩm xếp theo mức liên quan (không theo bảng chữ c�
   const items = hydrateSnapshot((await call('/catalog-snapshot', emp)).data);
   for (const q of ['bo tra', '0.5l', 'bo tra 0.5l came', 'lhc4282', 'LHC-4282', 'ly', 'tra', '500 ml', '01503801403', 'minh long', 'giu nhiet 1.2l'])
     assert.deepEqual(searchProducts(items, { q })!.map(p => p.sku), await skus(q), q);
+  // Mới tạo lên đầu: không gõ tìm thì mã thêm sau đứng trước; cùng hạng liên quan thì mã mới trước. Sản phẩm cũ (chưa có giờ tạo) theo mã Sapo giảm dần.
+  await db.update(products).set({ createdAt: null, sapoProductId: '100' }).where(eq(products.sku, 'XA'));
+  await db.update(products).set({ createdAt: null, sapoProductId: '900' }).where(eq(products.sku, 'HOP'));
+  await db.insert(products).values({ sku: 'BT-NEW', name: 'Bộ trà 0.7 L Chim Lạc', brand: 'Minh Long', unit: 'bộ', updatedAt: t });
+  const all = await skus('');
+  assert.equal(all[0], 'BT-NEW', 'không gõ tìm: mới tạo lên đầu');
+  assert.deepEqual(all.slice(-2), ['HOP', 'XA'], 'sản phẩm cũ xếp cuối, mã Sapo lớn (tạo sau) trước');
+  assert.deepEqual((await skus('bo tra')).slice(0, 3), ['BT-NEW', '01503801403', '01503801500'], 'cùng hạng: mã mới tạo trước');
+  const fresh = hydrateSnapshot((await call('/catalog-snapshot', emp)).data);
+  for (const q of ['', 'bo tra', 'tra'])
+    assert.deepEqual(searchProducts(fresh, { q })!.map(p => p.sku), await skus(q), 'trình duyệt cùng thứ tự: ' + q);
 });
 
 test('tìm sản phẩm theo mã vạch (đúng một mã) trên máy chủ; mã vạch không khớp một phần', async () => {

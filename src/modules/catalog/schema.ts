@@ -65,6 +65,8 @@ export const products = pgTable('products', {
   sapoProductId: text('sapo_product_id'),
   active: boolean('active').notNull().default(true),
   updatedAt: text('updated_at').notNull(),
+  /** Giờ tạo (ISO, máy chủ CSDL tự điền khi thêm). Sản phẩm có trước cột này: null – xếp theo mã Sapo. */
+  createdAt: text('created_at').default(sql`to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`),
   /** Sản phẩm tạo trên web: người tạo (khác null = sản phẩm web, nhập file danh mục không ẩn) và trạng thái duyệt. */
   createdBy: text('created_by'),
   approvalStatus: text('approval_status', { enum: PRODUCT_APPROVAL_STATUSES }).notNull().default('approved'),
@@ -75,6 +77,7 @@ export const products = pgTable('products', {
   enumCheck('chk_products_approval', t.approvalStatus, PRODUCT_APPROVAL_STATUSES),
   index('idx_products_brand').on(t.brand),
   index('idx_products_name').on(t.name),
+  index('idx_products_created_at').on(t.createdAt),
   check('chk_products_tax_in', sql`${t.taxIn} IS NULL OR (${t.taxIn} >= 0 AND ${t.taxIn} <= 100)`),
   check('chk_products_tax_out', sql`${t.taxOut} IS NULL OR (${t.taxOut} >= 0 AND ${t.taxOut} <= 100)`),
 ]).enableRLS();

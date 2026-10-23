@@ -5,7 +5,7 @@
  *
  * Khớp: bỏ dấu, mọi từ khoá phải có trong (mã, tên, thương hiệu, mẫu). Từ có số / ký hiệu còn khớp khi bỏ khoảng trắng,
  * dấu câu ở cả hai phía: "0.5l" ↔ "0.5 L", "lhc4282" ↔ "LHC-4282", "500ml" ↔ "500 ml".
- * Xếp hạng (nhỏ = lên trước), cùng hạng thì tên ngắn trước rồi theo tên:
+ * Xếp hạng (nhỏ = lên trước), cùng hạng thì mới tạo lên trước:
  *   0 mã đúng · 1 mã bắt đầu bằng chuỗi gõ · 2 tên bắt đầu bằng cụm gõ · 3 tên chứa nguyên cụm
  *   4 mọi từ đứng đầu một chữ trong tên · 5 mọi từ nằm trong tên · 6 còn lại (khớp nhờ mã / thương hiệu / mẫu)
  */
