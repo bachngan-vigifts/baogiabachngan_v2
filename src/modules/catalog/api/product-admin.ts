@@ -1,11 +1,12 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
+import { sniffImage } from '../../../core/http/image-bytes.ts';
 import { auditLogs } from '../../../core/db/schema.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { canApprove } from '../../staff/domain/permissions.ts';
+import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { pricePolicies, productPrices, products } from '../schema.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -60,14 +61,34 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
     return json({ sku: f.sku, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
   }, 'business');
 
+  router.post('/product-images', async c => {
+    const me = viewer(c), store = c.env.productImages;
+    if (!['manager','employee'].includes(me.role)) throw new AppError(403, 'Chưa có quyền tải ảnh sản phẩm.');
+    if (!store?.publicUrl) throw new AppError(503, 'Kho ảnh sản phẩm chưa sẵn sàng. Vui lòng thử lại sau.');
+    const body = await readJson(c.req, 350_000), data = typeof body.image === 'string' ? body.image : '';
+    const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(data);
+    if (!match) throw new AppError(400, 'Chọn ảnh JPG, PNG hoặc WebP hợp lệ.');
+    let bytes: Uint8Array;
+    try { bytes = Uint8Array.from(atob(match[2]!), ch => ch.charCodeAt(0)); }
+    catch { throw new AppError(400, 'Dữ liệu ảnh không hợp lệ.'); }
+    if (bytes.length > 240_000) throw new AppError(413, 'Ảnh quá lớn. Chọn ảnh nhỏ hơn rồi thử lại.');
+    if (sniffImage(bytes) !== match[1]) throw new AppError(415, 'Nội dung file không đúng định dạng ảnh.');
+    const ext = { 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp' }[match[1]!]!;
+    const key = `uploads/${crypto.randomUUID()}.${ext}`;
+    await store.put(key, bytes, match[1]!);
+    return json({ imageUrl: store.publicUrl(key) }, 201);
+  }, 'business');
+
   router.put('/products/:sku', async c => {
     const me = viewer(c);
-    if (me.role !== 'manager') throw new AppError(403, 'Chỉ Manager được cập nhật sản phẩm.', 'MANAGER_ONLY');
+    if (!['manager', 'employee'].includes(me.role)) throw new AppError(403, 'Chỉ nhân viên được cập nhật sản phẩm.');
     const body = await readJson(c.req, 16_000), sku = c.params.sku!;
     if (body.sku !== undefined && body.sku !== sku) throw new AppError(400, 'Không đổi mã SKU của sản phẩm đã có.');
     const f = cleanProduct(body, sku), expected = body.expectedUpdatedAt;
     if (typeof expected !== 'string' || !expected) throw new AppError(400, 'Tải lại thông tin sản phẩm trước khi cập nhật.');
     const rawPrices = body.prices && typeof body.prices === 'object' ? body.prices as Record<string, unknown> : {};
+    const seesPrices = me.role === 'manager' || ['page.quotes', 'page.orders', 'page.contracts'].some(k => can(me, k));
+    if (Object.keys(rawPrices).length && !seesPrices) throw new AppError(403, 'Chưa có quyền cập nhật giá sản phẩm.');
     await c.env.db.transaction(async tx => {
       const [before] = await tx.select().from(products).where(eq(products.sku, sku)).limit(1).for('update');
       if (!before) throw new AppError(404, 'Không tìm thấy sản phẩm.');

@@ -8,7 +8,7 @@ import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { cashTasksChanged } from './invoice-task-hooks.ts';
 import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
-import { returnAccount, returnBalances, assertNoReturnActivity } from './pos-return-credit.ts';
+import { returnAccount, returnBalances } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
 import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
@@ -17,8 +17,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql 
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
-import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
-import { matchProductWords, productOrder } from '../../catalog/api/product-query.ts';
+import { foldSql } from '../../../core/text/fold.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
@@ -57,7 +56,6 @@ import {
   shiftReport,
 } from './pos-store.ts';
 import { autoCreateGhnForOrder } from './pos-ghn-create.ts';
-import { cancelWebOrderGhn, createWebOrderGhn, minhLongDirect, suggestedWebCod } from './web-order-ghn.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
@@ -77,10 +75,10 @@ const bundledGhnLocations = (provinceId: number, districtId: number) => {
   return rows.map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 };
 /** Danh mục Tỉnh / Quận / Phường trực tiếp từ GHN (cần GHN_API_TOKEN) – dùng khi bản đóng gói sẵn thiếu (vd quận mới tách). */
-async function ghnMasterData(env: StaffEnv, provinceId: number, districtId: number) {
+async function ghnMasterData(env: StaffEnv, provinceId: number, districtId: number, token = env.ghnToken) {
+  if (!token) throw new AppError(503, 'CRM chưa có token GHN cho cửa hàng này.');
   const path = districtId ? `/master-data/ward?district_id=${districtId}` : provinceId ? '/master-data/district' : '/master-data/province';
-  // Danh mục địa chỉ GHN như nhau giữa các shop: dùng token Lock, không có thì token Minh Long.
-  const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: (env.ghnToken || env.ghnMlToken)!, 'content-type': 'application/json' } };
+  const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: token, 'content-type': 'application/json' } };
   if (provinceId && !districtId) init.body = JSON.stringify({ province_id: provinceId });
   const response = await (env.ghnFetch ?? fetch)('https://online-gateway.ghn.vn/shiip/public-api' + path, init);
   let result: Record<string, unknown> = {}; try { result = await response.json() as Record<string, unknown>; } catch { /* GHN trả text khi lỗi */ }
@@ -132,35 +130,17 @@ const webBucket = (status: string, ghnStatus = '') => {
   if (['packing', 'packed'].includes(s)) return 'packing';
   return 'pending';
 };
-/**
- * Đơn web Minh Long khi website chưa có cầu nối: CRM tự xử lý (web-order-ghn.ts). Xác nhận = tạo vận đơn GHN Minh Long;
- * huỷ = huỷ vận đơn GHN trước rồi mới huỷ đơn; hoàn thành = ghi nhận trong CRM. Website không nhận lại trạng thái.
- */
-async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof member>, order: typeof webStoreOrders.$inferSelect, action: string, input: Record<string, unknown>, reason: string) {
-  const terminal = webBucket(order.status, order.ghnStatus);
-  if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
-  if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
-  if (action === 'complete' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã hoàn thành.' : 'Đơn đã huỷ, không hoàn thành được.');
-  let fields: Partial<typeof webStoreOrders.$inferInsert>;
-  if (action === 'confirm') {
-    const address = completeGhnAddress(input);
-    if (!address) throw new AppError(400, 'Vui lòng nhập đủ địa chỉ giao hàng GHN.', 'address_invalid');
-    const created = await createWebOrderGhn(c.env, order.id, address, input);
-    fields = created.order;
-  } else if (action === 'cancel') {
-    if (order.ghnOrderCode && !['cancel', 'cancelled'].includes(order.ghnStatus.toLowerCase())) await cancelWebOrderGhn(c.env, order.ghnOrderCode);
-    fields = { status: 'cancelled', ...(order.ghnOrderCode ? { ghnStatus: 'cancel' } : {}), updatedAt: posNow() };
-  } else if (action === 'complete') fields = { status: 'completed', updatedAt: posNow() };
-  else fields = {};
-  if (Object.keys(fields).length && action !== 'confirm') await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
-  const next = { ...order, ...fields };
-  await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
-  await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
-    data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, direct: true, ...(reason ? { reason } : {}) } });
-  return { ok: true, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, ghnSortCode: next.ghnSortCode, ghnFee: next.ghnFee, updatedAt: next.updatedAt,
-    bucket: webBucket(next.status, next.ghnStatus) };
-}
 export function registerPosRoutes(router: Router<StaffEnv>) {
+  /** Proxy master-data GHN riêng cho checkout Minh Long; token tài khoản GHN không bao giờ đưa ra trình duyệt/WordPress. */
+  router.post('/integrations/woocommerce/minhlong/ghn-locations', async c => {
+    const tokenHash = sha256Hex(c.url.searchParams.get('token') || '');
+    if (!c.env.wooMinhLongTokenHash || tokenHash !== c.env.wooMinhLongTokenHash) throw new AppError(401, 'Webhook không đúng website.');
+    const b = await readJson(c.req, 2000), provinceId = Math.max(0, Number(b.provinceId) || 0), districtId = Math.max(0, Number(b.districtId) || 0);
+    const key = ghnCacheKey('minhlong', provinceId, districtId), cached = cachedGhnLocations(key);
+    if (cached) return json({ ok: true, locations: cached, cached: true });
+    return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId, c.env.ghnMlToken)) });
+  }, 'web-order-sync');
+
   router.post('/integrations/woocommerce/:source/order', async c => {
     const source = c.params.source === 'lock' ? 'lock' : c.params.source === 'minhlong' ? 'minhlong' : '';
     if (!source) throw new AppError(404, 'Nguồn website không hợp lệ.');
@@ -239,15 +219,6 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if(b.billing === undefined){delete updateFields.customerName;delete updateFields.phone;delete updateFields.email;}
     if(b.shipping === undefined && b.billing === undefined) { delete updateFields.address; delete updateFields.ghnAddressSnapshot; }
     if(!Array.isArray(b.meta_data)){delete updateFields.ghnOrderCode;delete updateFields.ghnStatus;delete updateFields.ghnSortCode;delete updateFields.ghnFee;}
-    if (minhLongDirect(c.env, { source })) {
-      // Web Minh Long chưa có cầu nối: vận đơn GHN do CRM tạo (website không biết) – không xoá mã GHN; đơn CRM đã huỷ / hoàn thành không bị website kéo về "chờ xử lý".
-      if (!fields.ghnOrderCode) { delete updateFields.ghnOrderCode; delete updateFields.ghnStatus; delete updateFields.ghnSortCode; delete updateFields.ghnFee; }
-      const [current] = await c.env.db.select({ status: webStoreOrders.status, ghnStatus: webStoreOrders.ghnStatus }).from(webStoreOrders)
-        .where(and(eq(webStoreOrders.source, source), eq(webStoreOrders.externalId, externalId))).limit(1);
-      const done = current && ['completed', 'cancelled'].includes(webBucket(current.status, current.ghnStatus));
-      if (done && updateFields.status && !['completed', 'cancelled'].includes(webBucket(updateFields.status))) delete updateFields.status;
-      if (current?.ghnStatus && updateFields.status && webBucket(updateFields.status) === 'pending') delete updateFields.status;
-    }
     const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
       .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
@@ -309,7 +280,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const isDay = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
       const from = isDay(p.get('from')) ? p.get('from')! : '', to = isDay(p.get('to')) ? p.get('to')! : '';
       const windowFrom = from || to ? '' : new Date(Date.parse(vietnamDate().iso) - 30 * 86_400_000).toISOString().slice(0, 10);
-      const q = posText(p.get('q'), 200);
+      const like = '%' + posText(p.get('q'), 200).replace(/[\\%_]/g, '') + '%', hasQ = like !== '%%';
       const crmWanted = source === 'all' || source === 'pos' || source === 'cod', webWanted = (source === 'all' || source === 'web') && !ownerId;
       const rows = !crmWanted ? [] : await c.env.db.select({
         id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, phone: salesOrders.phone,
@@ -317,10 +288,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
         packingStatus: sql<string>`coalesce((select ${packingSlips.status} from ${packingSlips} where ${packingSlips.orderId}=${salesOrders.id} and ${packingSlips.status}<>'cancelled' order by ${packingSlips.updatedAt} desc limit 1),'')`,
         deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.plannedDate} desc limit 1),'')`,
-        cancelledReturnQty: sql<number>`case when exists(select 1 from pos_returns r where r.order_id=${salesOrders.id} and r.status not in ('cancelled','rejected')) then 0 else greatest(0, -coalesce((select sum(m.qty) from ${stockMoves} m where
+        cancelledReturnQty: sql<number>`greatest(0, -coalesce((select sum(m.qty) from ${stockMoves} m where
           (m.ref_type='pos_order' and m.ref_id=${salesOrders.id}) or
           (m.ref_type='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=m.ref_id and p.order_id=${salesOrders.id})) or
-          (m.ref_type='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=m.ref_id and d.order_id=${salesOrders.id}))), 0)) end`.mapWith(Number),
+          (m.ref_type='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=m.ref_id and d.order_id=${salesOrders.id}))), 0))`.mapWith(Number),
       }).from(salesOrders)
         .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
         .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
@@ -329,8 +300,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           ownerId ? eq(salesOrders.ownerId, ownerId) : undefined,
           from ? gte(salesOrders.orderDate, from) : undefined, to ? lte(salesOrders.orderDate, to) : undefined,
           windowFrom ? or(notInArray(salesOrders.status, ['delivered', 'cancelled']), gte(salesOrders.orderDate, windowFrom)) : undefined,
-          matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.sapoOrderCode, employees.name), q)))
-        .orderBy(...rankFirst(searchRank([salesOrders.orderNo, salesOrders.phone, salesOrders.sapoOrderCode], salesOrders.customerName, q)), desc(salesOrders.createdAt));
+          hasQ ? sql`${foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.sapoOrderCode, employees.name)} like ${foldSql(sql`${like}`)}` : undefined))
+        .orderBy(desc(salesOrders.createdAt));
       const webRows = !webWanted ? [] : await c.env.db.select().from(webStoreOrders).where(and(eq(webStoreOrders.registerId, registerId),
         from ? gte(webStoreOrders.orderedAt, from) : undefined, to ? lte(webStoreOrders.orderedAt, to + 'T23:59:59.999Z') : undefined,
         windowFrom ? or(notInArray(webStoreOrders.status, ['completed', 'cancelled', 'refunded', 'failed', 'trash']), gte(webStoreOrders.orderedAt, windowFrom)) : undefined))
@@ -345,9 +316,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
-          actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && (!!c.env.webOrderAction?.minhlongUrl || !!c.env.ghnMlToken),
-          // Minh Long chưa có cầu nối: CRM tự tạo vận đơn GHN – giao diện hỏi thêm tiền thu hộ / khối lượng.
-          ghnDirect: minhLongDirect(c.env, o), suggestedCod: minhLongDirect(c.env, o) ? suggestedWebCod(o) : null }); }),
+          actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const board = filterPosOrderBoard(decorated, c.url.searchParams);
       // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.
@@ -364,27 +333,6 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     },
     'business',
   );
-  // Cùng quyền/quầy với thao tác nhận hoàn; dùng tại chi tiết đơn, không phụ thuộc bộ lọc bảng POS.
-  router.get('/pos/orders/:id/cancelled-stock', async c => {
-    const m = member(c); posPermission(m);
-    const scope = await allowedPosRegisters(c), orderId = c.params.id!;
-    const [found] = await c.env.db.select({ order: salesOrders, registerId: posShifts.registerId })
-      .from(salesOrders).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
-      .where(and(eq(salesOrders.id, orderId), eq(salesOrders.channel, 'pos'))).limit(1);
-    if (!found) throw new AppError(404, 'Không tìm thấy đơn POS.');
-    if (!scope.ids.has(found.registerId)) throw new AppError(403, 'Bạn không được nhận hàng của cửa hàng này.');
-    if (found.order.status !== 'cancelled') return json({ lines: [], blockedReason: '' });
-    try { await assertNoReturnActivity(c.env.db, orderId); }
-    catch (e) { if (e instanceof AppError) return json({ lines: [], blockedReason: e.message }); throw e; }
-    const lines = await c.env.db.select({ sku: stockMoves.sku, warehouseId: stockMoves.warehouseId,
-      warehouseName: warehouses.name, qty: sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number) })
-      .from(stockMoves).innerJoin(warehouses, eq(warehouses.id, stockMoves.warehouseId))
-      .where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
-        (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
-        (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
-      .groupBy(stockMoves.sku, stockMoves.warehouseId, warehouses.name);
-    return json({ lines: lines.filter(l => l.qty > 0.0005), blockedReason: '' });
-  }, 'business');
   router.post('/pos/orders/:id/receive-cancelled-stock', async c => {
     const m = member(c); posPermission(m);
     const scope = await allowedPosRegisters(c), orderId = c.params.id!;
@@ -395,8 +343,6 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!scope.ids.has(found.registerId)) throw new AppError(403, 'Bạn không được nhận hàng của cửa hàng này.');
     if (found.order.status !== 'cancelled') throw new AppError(409, 'Chỉ nhận hàng hoàn của đơn đã huỷ.');
     const result = await c.env.db.transaction(async tx => {
-      await cashLock(tx);
-      await assertNoReturnActivity(tx,orderId);
       const [locked] = await tx.select({ status: salesOrders.status, orderNo: salesOrders.orderNo }).from(salesOrders)
         .where(eq(salesOrders.id, orderId)).for('update');
       if (locked?.status !== 'cancelled') throw new AppError(409, 'Đơn không còn ở trạng thái đã huỷ. Tải lại danh sách.');
@@ -404,7 +350,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .from(stockMoves).where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
           (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
           (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
-        .groupBy(stockMoves.sku, stockMoves.warehouseId);
+        .groupBy(stockMoves.sku);
       const pending = before.filter(x => x.qty > 0);
       if (!pending.length) return { received: false, replayed: true, lines: [] as { sku: string; qty: number }[] };
       const refs = await tx.selectDistinct({ refType: stockMoves.refType, refId: stockMoves.refId }).from(stockMoves)
@@ -417,7 +363,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .from(stockMoves).where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
           (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
           (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
-        .groupBy(stockMoves.sku, stockMoves.warehouseId);
+        .groupBy(stockMoves.sku);
       if (after.some(x => x.qty > 1e-9)) throw new AppError(409, 'Chưa hoàn đủ bút toán kho. Tải lại và kiểm tra sổ kho.', 'CANCELLED_STOCK_RETURN_INCOMPLETE');
       return { received: true, replayed: false, lines: pending };
     });
@@ -436,14 +382,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const scope = await allowedPosRegisters(c);
     if (!scope.ids.has(order.registerId)) throw new AppError(403, 'Bạn không được thao tác đơn của cửa hàng này.');
     // Danh mục GHN lấy trực tiếp trong CRM. Các hàm PHP của Web Lock chỉ được nạp ở checkout và trả 503 trong REST.
-    if (action === 'locations' && (order.source === 'lock' || minhLongDirect(c.env, order))) {
+    if (action === 'locations' && order.source === 'lock') {
       const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0);
       const key = ghnCacheKey(order.source, provinceId, districtId), known = cachedGhnLocations(key) ?? bundledGhnLocations(provinceId, districtId);
       if (known) return json({ ok: true, locations: rememberGhnLocations(key, known) });
-      if (c.env.ghnToken || c.env.ghnMlToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
+      if (c.env.ghnToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
       throw new AppError(503, 'CRM chưa có danh mục địa chỉ GHN này.');
     }
-    if (minhLongDirect(c.env, order)) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website (secret WEB_ORDER_ACTION_TOKEN).');
     const terminal = webBucket(order.status, order.ghnStatus);
     if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
@@ -735,10 +680,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         const [conflict] = await c.env.db.select({ sku: products.sku }).from(products).where(eq(products.sku, q)).limit(1);
         if (conflict) throw new AppError(409, 'Mã đang trùng SKU và barcode của hai sản phẩm. Nhờ Manager kiểm tra trước khi bán.');
       }
-      // `skus=a,b,c`: trình duyệt đã lọc + xếp hạng trên danh mục tải sẵn – máy chủ chỉ trả giá / tồn của đúng các mã đó, giữ thứ tự gửi lên.
-      const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(x => x.trim()).filter(Boolean))].slice(0, 60);
-      const offset = skuList.length ? 0 : Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
-      const limit = skuList.length ? skuList.length : Math.max(1, Math.min(60, Number(c.url.searchParams.get('limit')) || 60));
+      const offset = Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
+      const limit = Math.max(1, Math.min(60, Number(c.url.searchParams.get('limit')) || 60));
       const rows = await c.env.db
         .select({
           sku: products.sku,
@@ -758,21 +701,26 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             eq(products.approvalStatus, 'approved'),
             sql`${productPrices.price} is not null`,
             barcodeHit ? eq(products.sku, barcodeHit.sku) : undefined,
-            skuList.length ? inArray(products.sku, skuList) : undefined,
-            // Cùng quy tắc tìm với trang Sản phẩm (không dấu, nhiều từ, mã gõ thiếu dấu câu) + đúng mã / mã vạch.
-            q && !skuList.length
+            q
               ? or(
                   eq(products.sku, q),
                   sql`exists (select 1 from ${productBarcodes} where ${productBarcodes.sku}=${products.sku} and ${productBarcodes.barcode}=${q})`,
-                  matchProductWords(q),
+                  sql`${foldSql(products.name)} like ${
+                    '%' +
+                    q
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/đ/g, 'd')
+                      .toLowerCase() +
+                    '%'
+                  }`,
                 )
               : undefined,
           ),
         )
-        .orderBy(...productOrder(skuList.length ? null : q))
+        .orderBy(asc(products.name), asc(products.sku))
         .limit(limit)
         .offset(offset);
-      if (skuList.length) rows.sort((a, b) => skuList.indexOf(a.sku) - skuList.indexOf(b.sku));
       const reserved = rows.length
         ? await reservedBySku(
             c.env.db,
@@ -812,10 +760,23 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             eq(customers.approvalStatus, 'approved'),
             focusedId ? eq(customers.id, focusedId) : undefined,
             !canListRetailCustomers(member(c)) ? eq(customers.isRetail, false) : c.url.searchParams.get('kind') === 'retail' ? eq(customers.isRetail, true) : c.url.searchParams.get('kind') === 'business' ? eq(customers.isRetail, false) : undefined,
-            matchAllWords(foldSql(customers.name, customers.phone, customers.contact, customers.customerCode, customers.taxCode), q),
+            q
+              ? or(
+                  sql`${foldSql(customers.name)} like ${
+                    '%' +
+                    q
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/đ/g, 'd')
+                      .toLowerCase() +
+                    '%'
+                  }`,
+                  sql`${customers.phone} like ${'%' + q + '%'}`,
+                )
+              : undefined,
           ),
         )
-        .orderBy(...rankFirst(searchRank([customers.phone, customers.customerCode, customers.taxCode], customers.name, q)), desc(customers.createdAt), asc(customers.name))
+        .orderBy(asc(customers.name))
         .limit(20);
       return json({ customers: list, canListRetail: canListRetailCustomers(member(c)) });
     },
