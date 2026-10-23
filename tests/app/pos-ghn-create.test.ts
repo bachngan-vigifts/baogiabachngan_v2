@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
 import { setup } from '../helpers/pos-fixture.ts';
 import { deliveries, salesOrders } from '../../src/modules/sales/schema.ts';
+import { posRegisters } from '../../src/modules/sales/pos-schema.ts';
 import { syncPosLockGhn } from '../../src/modules/sales/api/pos-ghn-sync.ts';
 import { ghnCreateBody, ghnPhone, parseGhnShip } from '../../src/modules/sales/domain/pos-ghn.ts';
 
@@ -48,6 +49,23 @@ test('Ship COD quầy Lock: lưu đơn là tạo vận đơn GHN đúng dữ li�
   // Danh sách Ship COD hiện mã vận đơn; không còn nút tạo.
   const list = (await f.call('/pos/cod?shiftId=' + f.shift.id, f.emp)).data.deliveries;
   assert.deepEqual([list[0].trackingCode, list[0].canCreateGhn], ['GAB1XYZ', false]);
+});
+
+test('Ship COD showroom Minh Long dùng GHN_ML_API_TOKEN và ShopId lấy đúng từ tài khoản riêng', async () => {
+  const f = await setup();
+  const shift = await f.open();
+  await f.db.update(posRegisters).set({ name: 'Showroom Gốm Sứ Minh Long Cần Thơ' }).where(eq(posRegisters.id, f.registerId));
+  const calls: { url: string; headers: Record<string, string> }[] = [];
+  f.env.ghnMlToken = 'test-ghn-ml-token-unique';
+  f.env.ghnFetch = (async (input, init) => {
+    const url = String(input), headers = init?.headers as Record<string, string>; calls.push({ url, headers });
+    if (url.endsWith('/shop/all')) return Response.json({ code: 200, data: { shops: [{ id: 7000123, status: 1 }] } });
+    return Response.json({ code: 200, data: { order_code: 'GML123', total_fee: 21000 } });
+  }) as typeof fetch;
+  const made = await f.call('/pos/checkout', f.mgr, 'POST', f.cart(shift.id, { fulfillmentMode: 'cod', delivery: ghnDelivery }));
+  assert.equal(made.status, 201, JSON.stringify(made.data)); assert.equal(made.data.ghnOrderCode, 'GML123');
+  const create = calls.find(c => c.url.endsWith('/shipping-order/create'))!;
+  assert.deepEqual([create.headers.Token, create.headers.ShopId], ['test-ghn-ml-token-unique', '7000123']);
 });
 
 test('GHN lỗi: đơn COD vẫn lưu, trả lý do; danh sách Ship COD có nút tạo; tạo lại thành công; nhân viên quầy khác không tạo được', async () => {

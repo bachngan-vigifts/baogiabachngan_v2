@@ -6,6 +6,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { deliveries, salesOrderLines, salesOrders } from '../schema.ts';
 import { ghnCreateBody, type GhnShip } from '../domain/pos-ghn.ts';
 import { posPermission } from './pos-store.ts';
+import { posGhnAccount, posGhnKind } from './pos-ghn-account.ts';
 
 /**
  * TẠO VẬN ĐƠN GHN (shop Lock 6096731) cho chuyến giao Ship COD của quầy Lock – gọi API `shipping-order/create`.
@@ -15,14 +16,11 @@ import { posPermission } from './pos-store.ts';
  * Mã vận đơn ghi vào `deliveries.tracking_code` → đồng bộ trạng thái (pos-ghn-sync.ts) tự chạy tiếp.
  */
 const GHN_CREATE = 'https://online-gateway.ghn.vn/shiip/public-api/v2/shipping-order/create';
-export const LOCK_GHN_SHOP_ID = '6096731';
-const isLockRegister = (snapshot: { register?: { name?: unknown } }) => /lock/i.test(String(snapshot.register?.name ?? ''));
 const text = (v: unknown, max = 300) => String(v ?? '').trim().slice(0, max);
 
 export interface GhnCreated { orderCode: string; fee: number | null; expectedDelivery: string; existing: boolean }
 
 export async function createGhnShipment(env: StaffEnv, deliveryId: string): Promise<GhnCreated> {
-  if (!env.ghnToken) throw new AppError(503, 'CRM chưa có token GHN (secret GHN_API_TOKEN).', 'GHN_NOT_CONFIGURED');
   return env.db.transaction(async tx => {
     const [row] = await tx.select({ delivery: deliveries, order: salesOrders }).from(deliveries)
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, deliveryId)).limit(1).for('update');
@@ -30,7 +28,8 @@ export async function createGhnShipment(env: StaffEnv, deliveryId: string): Prom
     const snapshot = JSON.parse(row.order.posSnapshot || '{}');
     if (row.delivery.trackingCode) return { orderCode: row.delivery.trackingCode, fee: snapshot.ghn?.fee ?? null, expectedDelivery: snapshot.ghn?.expectedDelivery ?? '', existing: true };
     if (row.order.status === 'cancelled' || row.delivery.status !== 'planned') throw new AppError(409, 'Chỉ tạo vận đơn GHN cho chuyến giao đang chờ giao của đơn chưa huỷ.');
-    if (!isLockRegister(snapshot)) throw new AppError(409, 'Tự tạo vận đơn GHN chỉ áp dụng quầy Lock (shop GHN 6096731). Quầy khác: tạo trên GHN rồi nhập mã vận đơn.');
+    const account = await posGhnAccount(env, snapshot.register?.name);
+    if (!account) throw new AppError(409, 'Tự tạo vận đơn GHN chỉ áp dụng quầy Lock hoặc showroom Minh Long. Quầy khác: tạo trên GHN rồi nhập mã vận đơn.');
     const ship = snapshot.ghn as GhnShip | undefined;
     if (!ship?.districtId || !ship.wardCode) throw new AppError(409, 'Đơn chưa có địa chỉ chuẩn GHN (Quận/Huyện, Phường/Xã). Tạo trên GHN rồi nhập mã vận đơn vào chuyến giao.');
     const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, row.order.id)).orderBy(asc(salesOrderLines.lineNo));
@@ -43,7 +42,7 @@ export async function createGhnShipment(env: StaffEnv, deliveryId: string): Prom
     let response: Response;
     try {
       response = await (env.ghnFetch ?? fetch)(GHN_CREATE, {
-        method: 'POST', headers: { Token: env.ghnToken!, ShopId: LOCK_GHN_SHOP_ID, 'content-type': 'application/json' }, body: JSON.stringify(body),
+        method: 'POST', headers: { Token: account.token, ShopId: account.shopId, 'content-type': 'application/json' }, body: JSON.stringify(body),
         signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(20_000) : undefined,
       });
     } catch { throw new AppError(504, 'Không kết nối được GHN. Đơn đã lưu – bấm "Tạo lại vận đơn GHN" sau.', 'GHN_TIMEOUT'); }
@@ -68,9 +67,10 @@ export async function autoCreateGhnForOrder(env: StaffEnv, orderId: string) {
   const [row] = await env.db.select({ id: deliveries.id, code: deliveries.trackingCode, snapshot: salesOrders.posSnapshot }).from(deliveries)
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
     .where(and(eq(deliveries.orderId, orderId), eq(deliveries.status, 'planned'))).orderBy(asc(deliveries.createdAt)).limit(1);
-  if (!env.ghnToken || !row || row.code) return null;
+  if (!row || row.code) return null;
   const snapshot = JSON.parse(row.snapshot || '{}');
-  if (!isLockRegister(snapshot)) return null;
+  const kind = posGhnKind(snapshot.register?.name);
+  if (!kind || (kind === 'lock' ? !env.ghnToken : !env.ghnMlToken)) return null;
   if (!snapshot.ghn?.districtId) return { ok: false as const, deliveryId: row.id, message: 'Đơn chưa có địa chỉ chuẩn GHN (Quận/Huyện, Phường/Xã) nên chưa tạo vận đơn. Tạo trên GHN rồi nhập mã vào chuyến giao.' };
   try { return { ok: true as const, deliveryId: row.id, ...(await createGhnShipment(env, row.id)) }; }
   catch (e) { return { ok: false as const, deliveryId: row.id, message: e instanceof Error ? e.message : 'Không tạo được vận đơn GHN.' }; }

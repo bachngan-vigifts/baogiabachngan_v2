@@ -5,9 +5,6 @@ import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesOrderLines, salesOrders } from '../schema.ts';
-import { cashLock } from './cash-store.ts';
-import { assertNoStockRecovery } from './pos-order-flow-guards.ts';
-import { recordDispatch } from './cancellation-guards.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
 import { refreshOrderStatus } from './routes.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
@@ -15,17 +12,18 @@ import { vietnamDate } from '../domain/sales.ts';
 import { posPermission } from './pos-store.ts';
 import type { SessionState } from '../../staff/api/auth-routes.ts';
 import { webStoreOrders } from '../pos-schema.ts';
+import { LOCK_GHN_SHOP_ID, posGhnAccount, posGhnKind } from './pos-ghn-account.ts';
 
 const GHN_DETAIL = 'https://online-gateway.ghn.vn/shiip/public-api/v2/shipping-order/detail';
-const LOCK_GHN_SHOP_ID = '6096731';
 const IN_TRANSIT = new Set(['picked', 'storing', 'transporting', 'sorting', 'delivering', 'money_collect_delivering', 'delivery_fail', 'delivery_failed', 'exception']);
 const FAILED = new Set(['cancel', 'return', 'returned', 'returning', 'return_transporting', 'return_sorting', 'waiting_to_return', 'return_fail', 'damage', 'lost']);
 const text = (value: unknown, max = 100) => String(value ?? '').trim().slice(0, max);
 
-async function ghnDetail(env: StaffEnv, code: string) {
-  if (!env.ghnToken) throw new AppError(503, 'Chưa cấu hình GHN_API_TOKEN.');
+async function ghnDetail(env: StaffEnv, code: string, registerName: string) {
+  const account = await posGhnAccount(env, registerName);
+  if (!account) throw new AppError(409, 'Quầy không dùng GHN tự động.');
   const response = await (env.ghnFetch ?? fetch)(GHN_DETAIL, {
-    method: 'POST', headers: { Token: env.ghnToken, ShopId: LOCK_GHN_SHOP_ID, 'content-type': 'application/json' }, body: JSON.stringify({ order_code: code }),
+    method: 'POST', headers: { Token: account.token, ShopId: account.shopId, 'content-type': 'application/json' }, body: JSON.stringify({ order_code: code }),
   });
   const raw = await response.text(); let body: Record<string, unknown> = {};
   try { body = raw ? JSON.parse(raw) : {}; } catch { /* GHN có thể trả text khi lỗi. */ }
@@ -36,7 +34,6 @@ async function ghnDetail(env: StaffEnv, code: string) {
 
 export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: string, observedAt: string) {
   const result = await env.db.transaction(async tx => {
-    await cashLock(tx);
     const [row] = await tx.select({ delivery: deliveries, order: salesOrders }).from(deliveries)
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, deliveryId)).limit(1).for('update');
     if (!row || row.order.channel !== 'pos' || row.order.fulfillmentMode !== 'cod') return { changed: false, delivered: false, orderId: '' };
@@ -47,10 +44,8 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
     // Chuyến / đơn đã huỷ: chỉ lưu trạng thái GHN, không xuất kho, không ghi thu COD (hàng hoàn nhận lại qua "Nhận hàng hoàn").
     if (row.delivery.status === 'cancelled' || row.order.status === 'cancelled') return { changed: true, delivered: false, orderId: row.order.id };
 
-    if ((IN_TRANSIT.has(status)||status==='delivered') && row.delivery.status!=='delivered') await assertNoStockRecovery(tx,row.order.id);
     if (IN_TRANSIT.has(status) && !['in_transit', 'delivered'].includes(row.delivery.status)) {
       await tx.update(deliveries).set({ status: 'in_transit' }).where(eq(deliveries.id, deliveryId));
-      await recordDispatch(tx,row.order.id,row.delivery.id,row.order.createdBy,status);
       await issuePosDelivery(tx, row.order.id, row.delivery.id, row.order.createdBy, true);
       await tx.update(salesOrders).set({ status: 'delivering', updatedAt: now }).where(and(eq(salesOrders.id, row.order.id), eq(salesOrders.status, 'confirmed')));
     }
@@ -62,7 +57,6 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
 
     if (row.delivery.status !== 'in_transit') {
       await tx.update(deliveries).set({ status: 'in_transit' }).where(eq(deliveries.id, deliveryId));
-      await recordDispatch(tx,row.order.id,row.delivery.id,row.order.createdBy,status);
       await issuePosDelivery(tx, row.order.id, row.delivery.id, row.order.createdBy, true);
     }
     const deliveredOn = vietnamDate().iso;
@@ -94,15 +88,15 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
 
 export async function syncPosLockGhn(env: StaffEnv) {
   // Mỗi lượt tối đa 100 chuyến: chuyến lâu chưa kiểm trước (xoay vòng, không bỏ sót khi có nhiều hơn 100).
-  const rows = await env.db.select({ id: deliveries.id, code: deliveries.trackingCode, orderNo: salesOrders.orderNo }).from(deliveries)
+  const rows = await env.db.select({ id: deliveries.id, code: deliveries.trackingCode, orderNo: salesOrders.orderNo, registerName: posRegisters.name }).from(deliveries)
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
     .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
-    .where(and(eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'cod'), sql`lower(${posRegisters.name}) like '%lock%'`,
+    .where(and(eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'cod'), sql`(lower(${posRegisters.name}) like '%lock%' or lower(${posRegisters.name}) like '%minh long%' or lower(${posRegisters.name}) like '%gốm sứ%')`,
       sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned', 'in_transit', 'failed'])))
     .orderBy(sql`${deliveries.trackingUpdatedAt} asc nulls first`).limit(100);
   let updated = 0; const errors: { code: string; orderNo: string; message: string }[] = [];
   for (const row of rows) try {
-    const state = await ghnDetail(env, row.code);
+    const state = await ghnDetail(env, row.code, row.registerName);
     if (await applyGhnStatus(env, row.id, state.status, state.updatedAt)) updated++;
   } catch (error) {
     errors.push({ code: row.code, orderNo: row.orderNo, message: error instanceof Error ? error.message : 'Lỗi GHN' });
@@ -125,14 +119,21 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
     const shopId = text(body.ShopID ?? body.shop_id, 30);
     const observedAt = text(body.Time ?? body.updated_date ?? body.updated_at, 60) || new Date().toISOString();
     if (!orderCode || !status) throw new AppError(400, 'Webhook GHN thiếu mã vận đơn hoặc trạng thái.');
-    if (shopId && shopId !== LOCK_GHN_SHOP_ID) throw new AppError(403, 'Webhook không thuộc shop GHN Lock.');
-
-    const ships = await c.env.db.select({ id: deliveries.id }).from(deliveries).where(eq(deliveries.trackingCode, orderCode)).limit(2);
+    const ships = await c.env.db.select({ id: deliveries.id, snapshot: salesOrders.posSnapshot }).from(deliveries)
+      .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.trackingCode, orderCode)).limit(2);
+    if (shopId && ships.length) {
+      for (const ship of ships) {
+        const snapshot = JSON.parse(ship.snapshot || '{}'), kind = posGhnKind(snapshot.register?.name);
+        const expectedShopId = kind === 'lock' ? LOCK_GHN_SHOP_ID : (await posGhnAccount(c.env, snapshot.register?.name))?.shopId;
+        if (!expectedShopId || shopId !== expectedShopId) throw new AppError(403, 'Webhook không thuộc đúng shop GHN của quầy.');
+      }
+    }
     let updated = 0;
     for (const ship of ships) if (await applyGhnStatus(c.env, ship.id, status, observedAt)) updated++;
 
     const web = await c.env.db.select({ id: webStoreOrders.id, status: webStoreOrders.status, ghnStatus: webStoreOrders.ghnStatus }).from(webStoreOrders)
       .where(eq(webStoreOrders.ghnOrderCode, orderCode)).limit(2);
+    if (shopId && !ships.length && web.length && shopId !== LOCK_GHN_SHOP_ID) throw new AppError(403, 'Webhook đơn web không thuộc shop GHN Lock.');
     for (const row of web) {
       if (row.ghnStatus.toLowerCase() === 'delivered' && status !== 'delivered') continue;
       const orderStatus = status === 'delivered' ? 'completed' : FAILED.has(status) ? 'cancelled' : row.status;
@@ -151,7 +152,7 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
    */
   router.post('/pos/ghn/sync', async c => {
     posPermission((c.state.session as SessionState).member);
-    if (!c.env.ghnToken) throw new AppError(503, 'CRM chưa có token GHN (secret GHN_API_TOKEN). Thêm secret rồi chạy lại "Triển khai API".', 'GHN_NOT_CONFIGURED');
+    if (!c.env.ghnToken && !c.env.ghnMlToken) throw new AppError(503, 'CRM chưa có token GHN (GHN_API_TOKEN / GHN_ML_API_TOKEN).', 'GHN_NOT_CONFIGURED');
     const now = Date.now();
     if (lastSync && now - lastSync.at < SYNC_GAP_MS) return json({ ...lastSync.result, cached: true, syncedAt: new Date(lastSync.at).toISOString() });
     const result = await syncPosLockGhn(c.env);
