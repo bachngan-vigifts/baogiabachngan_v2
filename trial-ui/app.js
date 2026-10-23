@@ -1,3 +1,4 @@
+import { openMobileQuoteCapture } from './mobile-quote-capture.js';
 import { initApprovalLauncher } from './approval-launcher.js';
 import { installBusyButtons, withBusy } from './busy-buttons.js';
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
@@ -4362,6 +4363,7 @@ function updateQuoteActions() {
     b.title = linked ? 'Xem ' + (linked.contractNo || linked.orderNo) : editor.documentError ? 'Thử kiểm tra lại hồ sơ đã tạo'
       : block || 'Chọn tạo Đơn hàng (khách có HĐ nguyên tắc) hoặc HĐKT';
   }
+  const capture = $('#quote-capture'); capture.disabled = !!block; capture.title = block || 'Xem, lưu ảnh hoặc chia sẻ báo giá gọn cho khách';
   const dl = $('#quote-download'); dl.disabled = !!block; dl.title = block || ''; if (block) closeDownloadMenu();
   if (typeof drawQuoteHold === 'function' && $('#quote-hold')) drawQuoteHold();
   // Manager duyệt mọi báo giá; nhân viên phụ trách xác nhận báo giá khách gửi từ trang khách hàng.
@@ -4379,6 +4381,13 @@ function updateQuoteActions() {
   $('#quote-history').hidden = !mgr || !saved;
 }
 function closeDownloadMenu() { $('#download-menu').hidden = true; $('#quote-download').setAttribute('aria-expanded', 'false'); }
+$('#quote-capture').addEventListener('click', async () => {
+  if (!window.matchMedia('(max-width: 850px)').matches) return;
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  const quoteId = editor.id;
+  try { await openMobileQuoteCapture({doc:collectQuote(),canExport:()=>editor.id!==quoteId?'Mở lại đúng báo giá trước khi chia sẻ.':approvalBlock()}); }
+  catch (ex) { toast(ex.message, 'err'); }
+});
 $('#quote-download').addEventListener('click', e => {
   e.stopPropagation();
   const block = approvalBlock(); if (block) return toast(block, 'err');
