@@ -3075,18 +3075,31 @@ async function loadContracts() {
   contractsPager ||= createPager($('#contracts-pager'), 'contracts', () => loadContracts(), 50);
   $('#contracts-list').innerHTML = skeleton(9);
   try {
-    const inv = $('#contracts-filters .chip.active')?.dataset.invoice || '';
-    const d = await api(`/contracts?limit=${contractsPager.limit}&offset=${contractsPager.offset}${inv ? '&invoice=' + inv : ''}&q=` + encodeURIComponent($('#contracts-search').value));
+    const p = new URLSearchParams({ limit: String(contractsPager.limit), offset: String(contractsPager.offset), q: $('#contracts-search').value });
+    const status = $('#contracts-status-tabs .chip.active')?.dataset.status || '', inv = $('#contracts-filters .chip.active')?.dataset.invoice || '';
+    for (const [key, value] of [['status', status], ['invoice', inv], ['entity', $('#contracts-entity').value], ['owner', $('#contracts-owner').value],
+      ['dateBy', $('#contracts-date-by').value], ['from', $('#contracts-from').value], ['to', $('#contracts-to').value]]) if (value) p.set(key, value);
+    const d = await api('/contracts?' + p);
     invoiceCount('contracts', d.invoicePending);
     if (req !== contractsReq) return;
+    fillOrderFilter('#contracts-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    contractsSummary(d.summary);
     contractsPager.render(d.total ?? d.contracts.length);
     // HĐKT là luồng riêng: mở #/contracts/<id>, dòng phụ là số báo giá (không hiện số đơn).
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
       <td><a href="#/contracts/${esc(encodeURIComponent(k.orderId))}"><b>${esc(k.contractNo)}</b></a></td><td>${esc(k.customerName)}<small>${k.quoteNo ? 'Báo giá ' + esc(k.quoteNo) : ''}</small></td>
-      <td>${esc(k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
+      <td>${esc(k.legalEntity)}<small>${esc(k.ownerName || '')}</small></td><td>${pill(ORDER_STATUS, k.orderStatus === 'draft' && !k.submittedAt ? 'unsubmitted' : k.orderStatus)}<small>${esc(CONTRACT_STATUS[k.status]?.[0] || '')}</small></td><td>${fmtDate(k.signedDate) || '—'}</td>
       <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus, 'HĐKT')}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</td></tr>`),
       'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
   } catch (e) { if (req === contractsReq) { listError('contracts', e); contractsPager.render(0); } }
+}
+/** Dòng tổng của trang HĐKT theo bộ lọc đang chọn (máy chủ cộng trên mọi trang; tiền không tính HĐKT đã huỷ). */
+function contractsSummary(s) {
+  const box = $('#contracts-stats'); if (!box) return;
+  if (!s) { box.innerHTML = ''; return; }
+  box.innerHTML = [['Số HĐKT', fmtNum(s.count), '', s.cancelled ? `Không tính ${fmtNum(s.cancelled)} HĐKT đã huỷ` : ''], ['Doanh thu', money(s.revenue), ''], ['Tiền cọc', money(s.deposit), ''],
+    ['Đã thu', money(s.paid), ''], ['Còn phải thu', money(s.remaining), s.remaining > 0 ? 'danger-text' : '']]
+    .map(([t, v, c, note]) => `<article class="stat"><small>${t}</small><strong class="${c}">${v}</strong>${note ? `<span class="stat-note">${note}</span>` : ''}</article>`).join('');
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
 async function loadDeliveries() {
@@ -3147,6 +3160,21 @@ for (const [key, reload] of [['orders', () => { ordersPager?.reset(); loadOrders
     reload();
   });
 $('#orders-search').addEventListener('input', debounce(() => { ordersPager?.reset(); loadOrders(); }));
+// HĐKT: cùng bộ lọc như trang Đơn hàng (trạng thái, nhân viên, khoảng ngày) + pháp nhân; dòng tổng chạy theo bộ lọc.
+$('#contracts-status-tabs').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#contracts-status-tabs .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  contractsPager?.reset(); loadContracts();
+});
+const CONTRACT_FILTER_IDS = ['#contracts-entity', '#contracts-owner', '#contracts-date-by', '#contracts-from', '#contracts-to'];
+for (const id of CONTRACT_FILTER_IDS) $(id).addEventListener('change', () => { contractsPager?.reset(); loadContracts(); });
+$('#contracts-clear').addEventListener('click', () => {
+  for (const id of CONTRACT_FILTER_IDS) $(id).value = '';
+  $('#contracts-date-by').value = 'created'; $('#contracts-search').value = '';
+  $$('#contracts-status-tabs .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  $$('#contracts-filters .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  contractsPager?.reset(); loadContracts();
+});
 $('#orders-status-tabs').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
   $$('#orders-status-tabs .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
