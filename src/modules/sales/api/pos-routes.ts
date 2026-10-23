@@ -3,6 +3,7 @@ import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrRe
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
 import { posStockSources } from './pos-stock-sources.ts';
+import { matchProductWords, productOrder } from '../../catalog/api/product-query.ts';
 import { webOrderFinancials, readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { cashTasksChanged } from './invoice-task-hooks.ts';
@@ -674,14 +675,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId'))),
         policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId,
         q = posText(c.url.searchParams.get('q'), 100);
+      const requestedSkus = c.url.searchParams.get('skus');
+      const skus = [...new Set((requestedSkus || '').split(',').map(s => s.trim()).filter(Boolean))];
+      if (requestedSkus !== null && (!skus.length || skus.length > 60 || skus.some(s => s.length > 100))) throw new AppError(400, 'Yêu cầu từ 1 đến 60 mã sản phẩm hợp lệ.');
       if (![r.pricePolicyId, r.secondPricePolicyId].includes(policy)) throw new AppError(400, 'Bảng giá không hợp lệ.');
       const [barcodeHit] = q ? await c.env.db.select().from(productBarcodes).where(eq(productBarcodes.barcode, q)).limit(1) : [];
       if (barcodeHit && barcodeHit.sku !== q) {
         const [conflict] = await c.env.db.select({ sku: products.sku }).from(products).where(eq(products.sku, q)).limit(1);
         if (conflict) throw new AppError(409, 'Mã đang trùng SKU và barcode của hai sản phẩm. Nhờ Manager kiểm tra trước khi bán.');
       }
-      const offset = Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
-      const limit = Math.max(1, Math.min(60, Number(c.url.searchParams.get('limit')) || 60));
+      const offset = skus.length ? 0 : Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
+      const limit = skus.length || Math.max(1, Math.min(60, Number(c.url.searchParams.get('limit')) || 60));
       const rows = await c.env.db
         .select({
           sku: products.sku,
@@ -700,27 +704,22 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             eq(products.active, true),
             eq(products.approvalStatus, 'approved'),
             sql`${productPrices.price} is not null`,
-            barcodeHit ? eq(products.sku, barcodeHit.sku) : undefined,
-            q
-              ? or(
-                  eq(products.sku, q),
-                  sql`exists (select 1 from ${productBarcodes} where ${productBarcodes.sku}=${products.sku} and ${productBarcodes.barcode}=${q})`,
-                  sql`${foldSql(products.name)} like ${
-                    '%' +
-                    q
-                      .normalize('NFD')
-                      .replace(/[\u0300-\u036f]/g, '')
-                      .replace(/đ/g, 'd')
-                      .toLowerCase() +
-                    '%'
-                  }`,
-                )
-              : undefined,
+            skus.length ? inArray(products.sku, skus) : undefined,
+            !skus.length && barcodeHit ? eq(products.sku, barcodeHit.sku) : undefined,
+            !skus.length && q ? or(
+              matchProductWords(q),
+              sql`exists (select 1 from ${productBarcodes} where ${productBarcodes.sku}=${products.sku} and ${productBarcodes.barcode}=${q})`,
+            ) : undefined,
           ),
         )
-        .orderBy(asc(products.name), asc(products.sku))
+        .orderBy(...(q && !skus.length ? productOrder(q) : [asc(products.name), asc(products.sku)]))
         .limit(limit)
         .offset(offset);
+      // Trình duyệt đã xếp hạng: chỉ bổ sung tồn/giá cho đúng trang mã được yêu cầu.
+      if (skus.length) {
+        const rank = new Map(skus.map((sku, i) => [sku, i]));
+        rows.sort((a, b) => rank.get(a.sku)! - rank.get(b.sku)!);
+      }
       const reserved = rows.length
         ? await reservedBySku(
             c.env.db,
@@ -737,7 +736,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           reserved: reserved.get(p.sku) ?? 0,
           available: Math.max(0, (p.onHand ?? 0) - (reserved.get(p.sku) ?? 0)),
         })),
-        nextOffset: rows.length === limit ? offset + limit : null,
+        nextOffset: !skus.length && rows.length === limit ? offset + limit : null,
       });
     },
     'business',

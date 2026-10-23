@@ -112,6 +112,23 @@ test('POS tìm sản phẩm cùng thuật toán trang Sản phẩm; skus= trả 
  assert.equal(ordered.status,200,JSON.stringify(ordered.data));
  assert.deepEqual(ordered.data.products.map((p:any)=>p.sku),['LHC-4282','00123'],'giữ thứ tự gửi lên, bỏ mã không có giá ở bảng giá quầy');
  assert.equal(ordered.data.nextOffset,null);
+ // Hơn một trang danh mục: mã đang gõ không được thay bằng 60 mã đầu rồi biến mất.
+ const fillers=Array.from({length:65},(_,i)=>({sku:`FILL-${i}`,name:`AAA ${i}`,unit:'cái',updatedAt:now}));
+ await f.db.insert(products).values([...fillers,
+  {sku:'LHC3249PIK',name:'Bình giữ nhiệt Lock hồng',unit:'cái',updatedAt:now},
+  {sku:'LHC3249NVY',name:'Bình giữ nhiệt Lock xanh',unit:'cái',updatedAt:now},
+  {sku:'HIDDEN',name:'Đã ẩn',active:false,updatedAt:now},
+  {sku:'WAITING',name:'Chờ duyệt',approvalStatus:'pending',updatedAt:now}]);
+ await f.db.insert(productPrices).values([...fillers.map(p=>({sku:p.sku,policyId:'retail-vat',price:1000})),
+  ...['LHC3249PIK','LHC3249NVY','HIDDEN','WAITING'].map(sku=>({sku,policyId:'retail-vat',price:120000}))]);
+ await postMoves(f.db,'mgr',[{sku:'LHC3249PIK',warehouseId:'pos-wh',qty:3,kind:'opening',refType:'opening',refId:'lhc-opening'}]);
+ assert.deepEqual((await skus('lhc3249')).sort(),['LHC3249NVY','LHC3249PIK']);
+ const hydrated=await f.call(`/pos/catalog?registerId=${f.registerId}&skus=LHC3249PIK,LHC3249NVY,NOPRICE,HIDDEN,WAITING,MISSING&offset=60&limit=1`,f.emp);
+ assert.equal(hydrated.status,200);
+ assert.deepEqual(hydrated.data.products.map((p:any)=>[p.sku,p.onHand,p.available]),[['LHC3249PIK',3,3],['LHC3249NVY',0,0]]);
+ assert.equal(hydrated.data.nextOffset,null);
+ assert.equal((await f.call(`/pos/catalog?registerId=${f.registerId}&skus=`,f.emp)).status,400);
+ assert.equal((await f.call(`/pos/catalog?registerId=${f.registerId}&skus=${fillers.map(p=>p.sku).join(',')}`,f.emp)).status,400);
 });
 
 test('POS: còn 1 sau hai chuyến xuất không bị giữ thêm; phần chưa xuất và kho khác vẫn tách đúng',async()=>{
