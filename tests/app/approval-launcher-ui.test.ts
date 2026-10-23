@@ -13,12 +13,12 @@ async function setup(allowed=true){
  return{ui,button,badge,attrs,calls,navigation,events,timeouts,setCount:(n:number)=>count=n,fail:()=>failure=true,setPending:(p:Promise<any>)=>pending=p,logout:()=>{uid='';manager=false;ui.stop();}};
 }
 test('icon cần duyệt: hiện tổng/theo loại, mở đúng hộp và cập nhật sau duyệt',async()=>{
- const s=await setup();await s.ui.start();assert.equal(s.button.hidden,false);assert.equal(s.badge.textContent,'7');assert.match(s.button.title,/Báo giá: 3/);assert.equal(s.calls[0],'/approvals?summary=1');
- s.events.click!();assert.deepEqual(s.navigation,['#/tasks/approvals']);s.setCount(0);s.ui.scheduleRefresh();await s.timeouts.at(-1)!();assert.equal(s.badge.textContent,'0');assert.match(s.button.title,/Không có việc/);
+ const s=await setup();await s.ui.start();assert.equal(s.button.hidden,false);assert.equal(s.badge.textContent,'7');assert.equal(s.button.dataset.pending,'true');assert.match(s.button.title,/Báo giá: 3/);assert.equal(s.calls[0],'/approvals?summary=1');
+ s.events.click!();assert.deepEqual(s.navigation,['#/tasks/approvals']);s.setCount(0);s.ui.scheduleRefresh();await s.timeouts.at(-1)!();assert.equal(s.badge.textContent,'0');assert.equal(s.button.dataset.pending,'false');assert.match(s.button.title,/Không có việc/);
 });
 test('icon cần duyệt: ẩn với người không được duyệt; lỗi không biến thành số 0',async()=>{
  const denied=await setup(false);await denied.ui.start();assert.equal(denied.calls.length,0);assert.equal(denied.button.hidden,true);
- const s=await setup();await s.ui.start();s.fail();await s.ui.refresh();assert.equal(s.badge.textContent,'!');assert.match(s.button.title,/Mất kết nối/);
+ const s=await setup();await s.ui.start();s.fail();await s.ui.refresh();assert.equal(s.badge.textContent,'!');assert.equal(s.button.dataset.pending,'false');assert.match(s.button.title,/Mất kết nối/);
 });
 test('icon cần duyệt: phản hồi phiên cũ không hiện lại sau đăng xuất',async()=>{
  const s=await setup();let resolve!:(x:any)=>void;s.setPending(new Promise(r=>resolve=r));const loading=s.ui.start();s.logout();resolve({counts:{total:999}});await loading;assert.equal(s.button.hidden,true);assert.equal(s.badge.textContent,'0');
