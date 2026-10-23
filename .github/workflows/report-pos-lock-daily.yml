@@ -44,7 +44,8 @@ jobs:
             left join staff_members owner on owner.id=o.owner_id
             left join staff_members creator on creator.id=o.created_by
             left join sales_orders s on s.id=o.id
-            where o.channel='pos' and sh.business_date='DATE_TOKEN'
+            where o.channel='pos'
+              and (o.created_at::timestamptz at time zone 'Asia/Ho_Chi_Minh')::date='DATE_TOKEN'::date
           ) x;
           SQL
           )
