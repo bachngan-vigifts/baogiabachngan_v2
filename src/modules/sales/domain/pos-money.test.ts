@@ -30,7 +30,7 @@ test('POS: cho tự do CK nhưng từ chối vượt tiền hàng, âm, NaN và 
   assert.throws(() => posMoney(Infinity));
   assert.equal(posCashDifference(100000, 200000, 299999), -1);
 });
-test('POS voucher: chia theo tiền hàng sau CK dòng, tổng đúng bằng voucher; trừ vào giá gồm VAT, VAT tính lại; từ chối vượt tiền hàng / thiếu mã', () => {
+test('POS voucher: chia theo tiền hàng sau CK dòng, tổng đúng bằng voucher; trừ vào giá gồm VAT, VAT tính lại; từ chối vượt tiền hàng; mã không bắt buộc', () => {
   assert.deepEqual(allocatePosVoucher([100000, 200000], { code: 'VC', type: 'amount', value: 30000 }), { amount: 30000, shares: [10000, 20000] });
   const odd = allocatePosVoucher([1, 1, 1], { code: 'VC', type: 'amount', value: 2 });
   assert.equal(odd.shares.reduce((n, x) => n + x, 0), 2); assert.ok(odd.shares.every(x => x <= 1));
@@ -43,6 +43,7 @@ test('POS voucher: chia theo tiền hàng sau CK dòng, tổng đúng bằng vou
   assert.throws(() => posLine({ ...base, voucherAmount: 216001 }), /Voucher vượt/);
   assert.equal(parsePosVoucher(undefined), null); assert.equal(parsePosVoucher({ code: '', value: '' }), null);
   assert.deepEqual(parsePosVoucher({ code: '  VC  TET ', type: 'amount', value: '20000' }), { code: 'VC TET', type: 'amount', value: 20000 });
-  for (const bad of [{ code: '', type: 'amount', value: 5000 }, { code: 'VC', type: 'x', value: 1 }, { code: 'VC', type: 'percent', value: 101 }, { code: 'VC', type: 'amount', value: 1.5 }, 'VC'])
+  assert.deepEqual(parsePosVoucher({ code: '', type: 'amount', value: 5000 }), { code: '', type: 'amount', value: 5000 }, 'không ghi mã vẫn giảm được');
+  for (const bad of [{ code: 'VC', type: 'x', value: 1 }, { code: 'VC', type: 'percent', value: 101 }, { code: 'VC', type: 'amount', value: 1.5 }, 'VC'])
     assert.throws(() => parsePosVoucher(bad));
 });
