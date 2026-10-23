@@ -91,6 +91,37 @@ async function viewOf(c: Ctx, id: string) {
 }
 const lockSources = (tx: Tx) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('supplier_order_sources'))`);
 
+type SapoReceiptPayload = {
+  action: 'create_purchase_receipt'; source: 'quote_web';
+  crm_order_id: string; crm_receipt_id: string; ticket_number: string;
+  warehouse_name: string; employee_name: string; receipt_date: string;
+  supplier_name?: string;
+  items: { sku: string; name: string; unit: string; quantity: number }[];
+};
+
+/** Giao phiếu nhận vừa commit cho n8n. HTTP 2xx chỉ là đã nhận việc; callback Sapo mới được phép ghi `done`. */
+async function sendReceiptToClaw(env: StaffEnv, payload: SapoReceiptPayload) {
+  const raw = env.sapoGoodsReceiptWebhookUrl;
+  if (!raw) return { sent: null, error: 'Chưa cấu hình webhook n8n tạo phiếu nhập Sapo.' };
+  let url: URL;
+  try {
+    url = new URL(raw);
+    if (url.protocol !== 'https:' || url.hostname !== 'n8nthai.moarchvn.com' || !url.pathname.startsWith('/webhook/') || url.username || url.password) throw new Error();
+  } catch { return { sent: false, error: 'Cấu hình webhook n8n tạo phiếu nhập Sapo không hợp lệ.' }; }
+  try {
+    const response = await (env.sapoWebhookFetch ?? fetch)(url, {
+      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(payload),
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(45_000) : undefined,
+    });
+    const text = await response.text(); let result: Record<string, unknown> = {};
+    try { result = text ? JSON.parse(text) as Record<string, unknown> : {}; } catch { /* n8n có thể trả text */ }
+    if (!response.ok || result.ok === false || result.success === false || result.error) {
+      return { sent: false, error: String(result.message || result.error || `n8n báo lỗi (${response.status})`).slice(0, 500) };
+    }
+    return { sent: true, error: '' };
+  } catch { return { sent: false, error: 'Không kết nối được n8n; phiếu CRM vẫn được giữ để gửi lại an toàn.' }; }
+}
+
 // ---------------------------------------------------------------- dòng hàng + nguồn
 interface LineIn { sku: string; name: string; unit: string; quantity: number; price: number | null; taxRate: number | null; sources: { type: string; id: string; quantity: number }[] }
 function cleanLines(raw: unknown, prices: boolean): LineIn[] {
@@ -480,7 +511,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
     if (dup) { if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
     const photos = parsePhotos(body.photos);
-    let receiptId = '';
+    let receiptId = '', sapoPayload: SapoReceiptPayload | null = null;
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'receive');
       const v = validateReceipt(p.raw.progress, { receivedDate: body.receivedDate, lines: body.lines }, today());
@@ -511,7 +542,25 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
           status: l.damagedQty ? `Đạt ${l.goodQty} · hỏng ${l.damagedQty} (NCC giao bù)` : 'Đã nhận', note: l.note, occurredAt: nowIso() };
       }));
       await event(tx, id, m.id, 'receive', `Nhận hàng ${no}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId, lines: v.lines });
+      sapoPayload = {
+        action: 'create_purchase_receipt', source: 'quote_web', crm_order_id: id, crm_receipt_id: receiptId,
+        ticket_number: no, warehouse_name: whName, employee_name: m.name, receipt_date: v.receivedDate,
+        ...(p.raw.order.supplierName ? { supplier_name: p.raw.order.supplierName } : {}),
+        items: v.lines.filter(l => l.goodQty > 0).map(l => {
+          const source = p.raw.lines.find(x => x.id === l.lineId);
+          return { sku: l.sku, name: source?.name ?? '', unit: source?.unit ?? '', quantity: l.goodQty };
+        }),
+      };
     });
+    // Chỉ hàng đạt mới nhập Sapo. Phiếu toàn hàng hỏng không làm tăng tồn và không gọi webhook.
+    const committedPayload = sapoPayload as SapoReceiptPayload | null;
+    if (committedPayload && committedPayload.items.length) {
+      const delivered = await sendReceiptToClaw(c.env, committedPayload);
+      const note = delivered.sent ? 'Đã giao n8n/OpenClaw; chờ Sapo trả mã phiếu thật.' : delivered.error;
+      await db.update(supplierReceipts).set({ sapoStatus: delivered.sent === false ? 'failed' : 'pending', sapoNote: note, sapoUpdatedAt: nowIso(), sapoUpdatedBy: m.id }).where(eq(supplierReceipts.id, receiptId));
+    } else {
+      await db.update(supplierReceipts).set({ sapoStatus: 'not_needed', sapoNote: 'Không có hàng đạt để nhập Sapo.', sapoUpdatedAt: nowIso(), sapoUpdatedBy: m.id }).where(eq(supplierReceipts.id, receiptId));
+    }
     return json({ ...await viewOf(c, id), receiptId }, 201);
   }, 'business');
 

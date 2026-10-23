@@ -366,7 +366,7 @@ quoteSaveHooks.beforeSave.push(async (tx, old, member) => {
 });
 quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
-export function registerSalesRoutes(router: Router<StaffEnv>) {
+export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string }[]> } = {}) {
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
@@ -486,9 +486,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
       .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy, ...payments.map(p => p.voidedBy)].filter((x): x is string => !!x)));
     const person = (id: string) => people.find(p => p.id === id);
+    const purchases = can(viewer(c), 'page.purchases') && options.purchaseLinks ? await options.purchaseLinks(db, viewer(c), order) : [];
     const adjustment=(await returnAdjustments(db,[order.id])).get(order.id);
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     return json({
+      purchases,
       returnAdjustment: adjustment || null,
       effectiveSchedules: net.schedules,
       order: { ...order, warehouseName: order.warehouseId ? (await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, order.warehouseId)).limit(1))[0]?.name ?? '' : '', posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',

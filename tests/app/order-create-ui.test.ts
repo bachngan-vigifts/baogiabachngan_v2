@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes, orderRecipient } from '../../src/modules/sales/domain/order-notes.ts';
 
-function setup(pushResult: 'create' | 'cancel' = 'create', configReady = true, confirm = true, sourcing = false) {
+function setup(pushResult: 'create' | 'cancel' = 'create', configReady = true, confirm = true, sourcing: any = false) {
   const listeners = new Map<string, Function>(), dialogEvents = new Map<string, Function>();
   const fields: Record<string, { value: string; dataset: Record<string, string>; addEventListener: (event: string, fn: Function) => void; change: () => void }> = Object.fromEntries(['orderNo', 'customerName', 'orderDate', 'deliveryDate', 'deliveryAddress', 'receiverName', 'receiverPhone', 'note', 'pushSapo'].map(k => [k, (() => { const events = new Map<string, Function>(); return { value: '', dataset: {}, addEventListener: (event: string, fn: Function) => events.set(event, fn), change: () => events.get('change')?.() }; })()]));
   const form = { elements: fields, reset: () => { for (const f of Object.values(fields)) f.value = ''; fields.pushSapo!.value = 'no'; }, reportValidity: () => true, addEventListener: (key: string, f: Function) => listeners.set(key, f) };
@@ -15,7 +15,7 @@ function setup(pushResult: 'create' | 'cancel' = 'create', configReady = true, c
   runInNewContext(readFileSync(new URL('../../trial-ui/order-create.js', import.meta.url), 'utf8').replace(/^import .*;\n/, '').replace('export function initOrderCreate', 'globalThis.initOrderCreate = function'), context);
   const ui = context.initOrderCreate({ $: (id: string) => elements[id], todayIso: () => '2026-10-12',
     api: async (path: string) => { calls.push(path); if (path === '/orders/create-config') { if (!configReady) throw Object.assign(new Error('Missing route'), { status: 404 }); return { version: 2, noteMaxLength: 20000, recipientFields: true }; } if (path.startsWith('/orders/next-no?')) return { orderNo: 'DH_20261012_001' }; return { data: { quoteNo: 'BG_001', customer: 'Khách', contact: 'Người mua', phone: '0901000001', notes: '- Tổng thanh toán đã gồm VAT.\n- Phương thức thanh toán: Chuyển khoản.\n- Thời gian giao hàng: Theo thỏa thuận.\n- Địa chỉ giao hàng: Kho nhận hàng.\n- Thanh toán: 100% sau 30 ngày.\nTrân trọng kính chào.', customerAddress: 'Địa chỉ báo giá', deliveryDate: '2026-10-30' } }; },
-    ...(sourcing ? {createSourcing:async()=>({read:()=>({warehouseId:'vig',stockPlan:[{sku:'X',qty:2,type:'stock'}],note:'KẾ HOẠCH NGUỒN HÀNG'})})} : {}),
+    ...(sourcing ? {createSourcing:async()=>typeof sourcing==='object'?sourcing:({read:()=>({warehouseId:'vig',stockPlan:[{sku:'X',qty:2,type:'stock'}],note:'KẾ HOẠCH NGUỒN HÀNG'})})} : {}),
     confirmBox: async (message: string, options: any) => { confirmations.push({ message, options }); return confirm; },
     chooseSapo: async (_ref: any, opts: any) => { calls.push('sapo'); return pushResult === 'cancel' ? null : opts.run(7, true); },
   });
@@ -96,4 +96,14 @@ test('sinh đơn UI: gửi kế hoạch cấu trúc cùng đơn, giữ ghi chú 
   s.fields.note!.value='Ghi chú riêng';await s.submit();
   assert.equal(s.posts[0].body.warehouseId,'vig');assert.equal(s.posts[0].body.stockPlan[0].qty,2);
   assert.equal(s.posts[0].body.note,'Ghi chú riêng\n\nKẾ HOẠCH NGUỒN HÀNG');
+});
+
+test('sinh đơn chờ tạo đơn mua xong, dùng kế hoạch đã có liên kết; lỗi mua thì không gửi đơn bán',async()=>{
+  let prepared=0;const base={warehouseId:'vig',stockPlan:[{sku:'X',qty:2,type:'purchase'}],note:'Chưa tạo yêu cầu'};
+  const good=setup('create',true,true,{read:()=>base,prepare:async()=>{prepared++;return {...base,note:'Đơn mua NCC · #/purchases/p1'};}});
+  const pending=good.ui.choose({quoteId:'q1'},good.run);await new Promise(resolve=>setImmediate(resolve));await good.submit();await pending;
+  assert.equal(prepared,1);assert.match(good.posts[0].body.note,/#\/purchases\/p1/);assert.doesNotMatch(good.posts[0].body.note,/Chưa tạo yêu cầu/);
+  const bad=setup('create',true,true,{read:()=>base,prepare:async()=>{throw Error('Đơn mua chưa tạo được');}});
+  const stopped=bad.ui.choose({quoteId:'q1'},bad.run);await new Promise(resolve=>setImmediate(resolve));await bad.submit();
+  assert.equal(bad.posts.length,0);assert.match(bad.error.textContent,/Đơn mua chưa tạo được/);bad.dialog.close();await stopped;
 });

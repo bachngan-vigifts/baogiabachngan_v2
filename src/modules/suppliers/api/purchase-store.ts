@@ -39,6 +39,15 @@ export function purchaseScope(m: Member) {
   return and(PURCHASE, or(eq(incomingShipments.approvalStatus, 'approved'), eq(incomingShipments.createdBy, m.id)));
 }
 
+/** Related drafts/orders are still filtered by purchasing visibility, even when reached through a sales order. */
+export async function purchaseLinksForOrder(db: Db, m: Member, order: { id: string; quoteId: string | null }) {
+  return db.selectDistinct({ id: incomingShipments.id, number: incomingShipments.ticketNumber })
+    .from(supplierOrderSources).innerJoin(incomingShipments, eq(incomingShipments.id, supplierOrderSources.shipmentId))
+    .where(and(purchaseScope(m), isNull(incomingShipments.cancelledAt), or(
+      and(eq(supplierOrderSources.sourceType, 'order'), eq(supplierOrderSources.sourceId, order.id)),
+      order.quoteId ? and(eq(supplierOrderSources.sourceType, 'quote'), eq(supplierOrderSources.sourceId, order.quoteId)) : undefined)));
+}
+
 const MONEY_EVENT_LABEL: Record<string, string> = { approve: 'Manager duyệt đơn', import: 'Nhập từ file đơn NCC', prices: 'Lưu giá nhập', schedule: 'Sửa lịch trả NCC',
   pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC' }; // 'update' (sửa nháp) chỉ có số lượng / NCC – không ẩn
 const MONEY_EVENTS = new Set(Object.keys(MONEY_EVENT_LABEL));

@@ -3539,6 +3539,7 @@ async function openOrder(id) {
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
+  if(d.purchases?.length) $('#order-contract').insertAdjacentHTML('beforeend', '<p class="small">Đơn mua NCC: ' + d.purchases.map(p => `<a class="data-link" href="#/purchases/${encodeURIComponent(p.id)}">${esc(p.number)}</a>`).join(' · ') + '</p>');
   renderInvoice(o); renderProgress(d);
   // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
@@ -4200,6 +4201,8 @@ $('#contract-form').addEventListener('submit', async e => {
   if (no && no !== f.contractNo.dataset.auto) body.contractNo = no;
   try {
     Object.assign(body,target.sourcing.read());target.busy=true;f.querySelector('.modal-foot .btn.primary').disabled=true;
+    Object.assign(body,await target.sourcing.prepare());
+    if(contractTarget!==target)return;
     // Lập HĐKT: chọn có tạo đơn trên Sapo (chọn kho; Sapo lỗi → không lập HĐKT) hay chỉ lập trên web.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
       run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }) });

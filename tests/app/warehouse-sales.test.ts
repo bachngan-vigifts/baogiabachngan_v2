@@ -300,3 +300,14 @@ test('kế hoạch báo giá: sai tổng rollback cả đơn; HĐKT lưu phiếu
   const approved=await s.call(`/orders/${k.data.orderId}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   assert.equal(approved.status,200,JSON.stringify(approved.data));assert.equal(await bal(s,'vig'),50);
 });
+
+
+test('đơn bán hiển thị đơn mua theo báo giá nguồn; không nhân đôi liên kết cho nhiều mã và bỏ đơn mua đã huỷ',async()=>{
+ const s=await setup(),qid=await quote(s,'BG_PO_LINK',10);
+ const supplier=await s.call('/suppliers',s.mgr,'POST',{name:'NCC kiểm thử liên kết'});assert.equal(supplier.status,201,JSON.stringify(supplier.data));
+ const po=await s.call('/purchase-orders',s.emp,'POST',{orders:[{supplierId:supplier.data.supplier.id,warehouse:'KHO VIGIFTS',lines:[{sku:'LY1',quantity:10,sources:[{type:'quote',id:qid,quantity:10}]}]}]});assert.equal(po.status,201,JSON.stringify(po.data));
+ const order=await s.call('/orders',s.emp,'POST',{quoteId:qid,stockPlan:[{sku:'LY1',qty:10,type:'purchase',note:'NCC kiểm thử liên kết · #/purchases/'+po.data.ids[0]}]});assert.equal(order.status,201,JSON.stringify(order.data));
+ let detail=await s.call('/orders/'+order.data.id,s.emp);assert.equal(detail.status,200,JSON.stringify(detail.data));assert.equal(detail.data.purchases.length,1);assert.equal(detail.data.purchases[0].id,po.data.ids[0]);
+ const cancel=await s.call('/purchase-orders/'+po.data.ids[0]+'/cancel',s.emp,'POST',{reason:'Kiểm thử huỷ nháp'});assert.equal(cancel.status,200,JSON.stringify(cancel.data));
+ detail=await s.call('/orders/'+order.data.id,s.emp);assert.equal(detail.data.purchases.length,0);
+});

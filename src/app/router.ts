@@ -1,3 +1,4 @@
+import { purchaseLinksForOrder } from '../modules/suppliers/api/purchase-store.ts';
 import { registerPosOrderFlowRoutes } from '../modules/sales/api/pos-order-flow-routes.ts';
 import { supplierRegistrationHooks } from '../modules/portal/api/registration.ts';
 import { bindSupplier, boundSupplier, supplierOf } from '../modules/suppliers/api/registration-hooks.ts';
@@ -72,7 +73,7 @@ export function createAppRouter() {
   registerCatalogRoutes(router);
   registerSapoSyncRoutes(router);
   registerLegacyImageRoutes(router);
-  registerSalesRoutes(router);
+  registerSalesRoutes(router, { purchaseLinks: purchaseLinksForOrder });
   registerQuoteSourcingRoutes(router);
   registerPosRoutes(router);
   registerPosGhnSyncRoutes(router);
