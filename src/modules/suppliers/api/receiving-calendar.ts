@@ -7,7 +7,7 @@ import { outstandingLines } from './incoming-stock.ts';
 import type { Db } from './purchase-store.ts';
 
 /** Purchase receipts and early-pickup requests are distinct rows; quantities are never added together. */
-export async function receivingCalendar(db: Db, params: URLSearchParams, today: string) {
+export async function receivingCalendar(db: Db, params: URLSearchParams, today: string, options: {paginate?:boolean; reminderOnly?:boolean} = {}) {
   const from = params.get('from') || '', to = params.get('to') || '';
   if ((from && !isIsoDate(from)) || (to && !isIsoDate(to)) || (from && to && from > to))
     throw new AppError(400, 'Khoảng ngày nhận hàng không hợp lệ.');
@@ -45,6 +45,7 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
   const ownLines=new Map<string,{quantity:number;statuses:string[]}>();
   for(const e of early){const key=e.line.id+':'+e.allocation.supplierId;const own=ownLines.get(key)||{quantity:0,statuses:[]};own.quantity+=e.allocation.quantity;own.statuses.push(e.allocation.status);ownLines.set(key,own);}
   for (const {request,line,allocation,supplierName} of early) {
+    if(options.reminderOnly&&(request.status!=='submitted'||allocation.status==='rejected'))continue;
     const purchase = outstanding.get(allocation.purchaseLineId);
     if (!purchase || (supplier && allocation.supplierId !== supplier)) continue;
     const date = request.pickupDate || null;
@@ -63,5 +64,5 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
   const offset=Math.max(0,Math.floor(Number(params.get('offset'))||0)),limit=50;
   return {suppliers,total:rows.length,orderCount:new Set(rows.map(r=>r.type+':'+(r.requestId||r.orderId))).size,
     overdue:rows.filter(r=>r.date&&r.date<today).length,undated:rows.filter(r=>!r.date).length,
-    rows:rows.slice(offset,offset+limit),offset,limit,today};
+    rows:options.paginate===false?rows:rows.slice(offset,offset+limit),offset,limit,today};
 }

@@ -1,6 +1,7 @@
+import { receivingReminderTasks, RECEIVING_REMINDER_PREFIX } from './receiving-reminders.ts';
 import { registerAccountingTaskRoutes } from './accounting-routes.ts';
 import { accountingKind, canUseAccountingTasks, sourceManaged, sourceCompletionHelp } from '../domain/accounting.ts';
-import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, like, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -191,6 +192,13 @@ const statusPatch = (status: TaskStatus, by: string, t?: Task) => ({
 });
 
 export function registerTaskRoutes(router: Router<StaffEnv>) {
+  // Server-only cron endpoint: existing integrations token guard, never a staff cookie or public client key.
+  router.post('/integrations/tasks/receiving-reminders', async c => {
+    const now = new Date(), wanted = await receivingReminderTasks(c.env.db, now);
+    const result = await reconcileTaskSet(c.env.db, new Map(wanted.map(t => [t.autoKey,t])), now, like(tasks.autoKey, RECEIVING_REMINDER_PREFIX+'%'));
+    for (let offset=0;offset<result.fresh.length;offset+=30) await notifyAutoTasks(c.env,result.fresh.slice(offset,offset+30),null);
+    return json({created:result.created,closed:result.closed,updated:result.updated,reopened:result.reopened});
+  }, 'sapo-sync');
   registerAccountingTaskRoutes(router, { sync: syncAuto, visible, colleagues: c => peerPos(c) ? peerCond(peerPos(c)!) : undefined, loadTask, private: involved,
     serialize: (c, t) => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, viewOnly: !involved(c, t), canClaim: inMyTeam(c, t) || me(c).role === 'manager' && teamOpen(t) }) });
   /** Người nhận việc chọn được: nhân viên + Manager đang hoạt động. */
@@ -304,7 +312,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     if (b.status !== undefined) {
       if (completionFromSource(t) && (b.status === 'done' || b.status === 'cancelled' ||
         ((t.status === 'done' || t.status === 'cancelled') && b.status !== t.status))) {
-        throw new AppError(409, accountingKind(t.autoKey) ? sourceCompletionHelp(t.autoKey) : t.autoKey?.startsWith('invoice:') ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : t.autoKey?.startsWith('po-receive:') ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
+        throw new AppError(409, accountingKind(t.autoKey) ? sourceCompletionHelp(t.autoKey) : t.autoKey?.startsWith('invoice:') ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : (t.autoKey?.startsWith('po-receive:') || t.autoKey?.startsWith(RECEIVING_REMINDER_PREFIX)) ? 'Việc nhận hàng NCC tự hoàn thành theo đơn mua. Vui lòng ghi nhận hàng trên đơn mua, không đánh dấu hoàn thành thủ công.'
           : 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt, không đánh dấu hoàn thành thủ công.', 'TASK_SOURCE_MANAGED');
       }
       if (!TASK_STATUSES.includes(b.status as TaskStatus)) throw new AppError(400, 'Trạng thái không hợp lệ.');

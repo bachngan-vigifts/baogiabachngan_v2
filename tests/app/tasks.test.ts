@@ -1,3 +1,6 @@
+import { like } from 'drizzle-orm';
+import { receivingReminderTasks } from '../../src/modules/tasks/api/receiving-reminders.ts';
+import { reconcileTaskSet } from '../../src/modules/tasks/api/auto-tasks.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import { warehouses } from '../../src/modules/catalog/schema.ts';
 import { test } from 'node:test';
@@ -173,13 +176,17 @@ test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận vi�
   const { vietnamDate } = await import('../../src/modules/sales/domain/sales.ts');
   const supplier = await call('/suppliers', mgr, 'POST', { name: 'NCC kiểm tra tự hoàn thành' });
   const created = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: supplier.data.supplier.id,
-    warehouse: '12 Đường Giao Hàng', arrivalDate: vietnamDate().iso, lines: [{ sku: 'RECEIVE-TEST', name: 'Ly', quantity: 10 }] }] });
+    warehouse: '12 Đường Giao Hàng', arrivalDate: addDaysIso(vietnamDate().iso,-1), lines: [{ sku: 'RECEIVE-TEST', name: 'Ly', quantity: 10 }] }] });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const id = created.data.ids[0];
   let order = (await call(`/purchase-orders/${id}`, mgr)).data;
   order = (await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { revision: order.revision, lines: [{ lineId: order.lines[0].id, price: 100 }] })).data;
   const confirmed = await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
   assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data)); order = confirmed.data;
+  // Nhắc mới giao trực tiếp cho từng người lúc 08:00; seed đúng mốc hôm qua để test độc lập giờ chạy suite.
+  const atEight=new Date(addDaysIso(vietnamDate().iso,-1)+'T01:00:00Z');
+  const reminders=await receivingReminderTasks(db,atEight);
+  await reconcileTaskSet(db,new Map(reminders.map(t=>[t.autoKey,t])),atEight,like(tasks.autoKey,'receiving-due:%'));
   const list = (await call('/tasks?refresh=1', kho)).data.tasks;
   const task = list.find((t: any) => t.sourceId === id && t.completionFromSource);
   assert.ok(task, JSON.stringify(list));
@@ -189,7 +196,7 @@ test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận vi�
     assert.equal(rejected.status, 409); assert.equal(rejected.data.code, 'TASK_SOURCE_MANAGED');
   }
   let current = (await call(`/tasks/${task.id}`, kho)).data.task;
-  assert.equal(current.status, 'todo'); assert.equal(current.assigneeId, null, 'bấm hoàn thành bị chặn không tự nhận việc');
+  assert.equal(current.status, 'todo'); assert.equal(current.assigneeId, 'kho', 'nhắc 08:00 đã giao trực tiếp cho Kho; thao tác bị chặn không đổi người nhận');
   assert.equal((await call(`/tasks/${task.id}`, kho, 'PUT', { assigneeId: 'kho' })).status, 200);
   assert.equal((await call(`/tasks/${task.id}`, kho, 'PUT', { status: 'in_progress' })).status, 200);
   const received = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'task-receive-complete', warehouse: 'Kho việc nhận', lines: [{ lineId: order.lines[0].id, goodQty: 10 }] });

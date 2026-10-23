@@ -1,3 +1,4 @@
+import { receivingReminderTasks } from './receiving-reminders.ts';
 import { supplierPaymentTasks } from './accounting-sources.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
@@ -41,17 +42,18 @@ async function contractNoMap(db: StaffEnv['db'], orderIds: string[]) {
  */
 export interface AutoTask {
   autoKey: string; source: TaskSource; sourceId: string; title: string; description?: string; link: string;
-  assigneeId: string | null; priority: TaskPriority; dueDate: string | null;
+  assigneeId: string | null; priority: TaskPriority; dueDate: string | null; dueTime?: string | null;
   /** Giao cho nhóm (id chức vụ, vd. 'warehouse') khi không có người nhận cụ thể. */
   assigneePosition?: string | null;
 }
 type Db = StaffEnv['db'];
-type Rule = (db: Db, today: string) => Promise<AutoTask[]>;
+type Rule = (db: Db, today: string, now?: Date) => Promise<AutoTask[]>;
 const day = (iso: string | null | undefined) => (iso ? String(iso).slice(0, 10) : null);
 const fmt = (iso: string | null) => iso ? iso.split('-').reverse().join('/') : '';
 const vnd = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
 
 export const RULES: Record<string, Rule> = {
+  receivingReminders: (db, _today, now = new Date()) => receivingReminderTasks(db, now),
   /**
    * Hẹn chăm sóc khách (nhật ký chăm sóc) tới mốc "nhắc tôi trước" (1 ngày / 1 tuần / 1 tháng trước ngày hẹn) → việc cho nhân viên phụ trách. Khoá gồm ngày hẹn: dời hẹn = việc mới;
    * bấm "Đã chăm sóc" ở trang Chăm sóc KH → việc tự hoàn thành.
@@ -187,9 +189,7 @@ export const RULES: Record<string, Rule> = {
         assigneeId: null, priority: 'normal', dueDate: p.approvedAt ? addDaysIso(day(p.approvedAt)!, 2) : null });
       if (p.late) out.push({ ...base, autoKey: `po-late:${p.id}`, title: `Quá hẹn nhận hàng ${who}`, description: `Hẹn ${fmt(p.arrivalDate)}, còn thiếu ${new Intl.NumberFormat('vi-VN').format(p.missing)}. Liên hệ NCC hỏi ngày giao mới.`,
         assigneeId: p.createdBy, priority: 'urgent', dueDate: p.arrivalDate || null });
-      if ((p.state === 'confirmed' || p.state === 'partially_received') && p.arrivalDate && p.arrivalDate <= addDaysIso(today, 1)) out.push({ ...base, autoKey: `po-receive:${p.id}`,
-        title: `Nhận hàng ${who}`, description: `Còn thiếu ${new Intl.NumberFormat('vi-VN').format(p.missing)} sản phẩm. Kiểm đếm, ghi đạt / hỏng theo từng mã trên đơn mua.`,
-        assigneeId: null, assigneePosition: 'warehouse', priority: p.arrivalDate <= today ? 'high' : 'normal', dueDate: p.arrivalDate });
+      // Receipt reminders use per-line due dates and the 08:00 Vietnam rule for all three recipient roles.
       if (p.sapoPending > 0) out.push({ ...base, autoKey: `po-sapo:${p.id}`, title: `Nhập kho Sapo ${who}`, description: `${p.sapoPending} phiếu nhận chưa nhập kho Sapo (hoặc lỗi). Nhập trên Sapo rồi ghi mã phiếu Sapo vào phiếu nhận.`,
         assigneeId: null, assigneePosition: 'warehouse', priority: 'high', dueDate: today });
 
@@ -397,7 +397,7 @@ export async function reconcileAutoTasks(db: Db, now = new Date()) {
   const wanted = new Map<string, AutoTask>();
   let failed = false;
   for (const [name, rule] of Object.entries(RULES)) {
-    try { for (const t of await rule(db, today)) wanted.set(t.autoKey, t); } catch (e) { failed = true; console.error('auto task rule failed', name, e instanceof Error ? e.message : e); }
+    try { for (const t of await rule(db, today, now)) wanted.set(t.autoKey, t); } catch (e) { failed = true; console.error('auto task rule failed', name, e instanceof Error ? e.message : e); }
   }
   return reconcileTaskSet(db, wanted, now, undefined, failed);
 }
@@ -412,14 +412,14 @@ export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, no
     .where(and(eq(employees.active, true), isNull(employees.deletedAt), notInArray(employees.role, ['customer', 'supplier'])))).map(e => e.id));
   const who = (id: string | null | undefined) => (id && usable.has(id) ? id : null);
   for (const t of wanted.values()) t.assigneeId = who(t.assigneeId);
-  const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, completedBy: tasks.completedBy, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, title: tasks.title, description: tasks.description, priority: tasks.priority })
+  const existing = await db.select({ id: tasks.id, autoKey: tasks.autoKey, status: tasks.status, completedBy: tasks.completedBy, assigneeId: tasks.assigneeId, assigneePosition: tasks.assigneePosition, dueDate: tasks.dueDate, dueTime: tasks.dueTime, title: tasks.title, description: tasks.description, priority: tasks.priority })
     // Chỉ việc đang mở + việc đã đóng mà lượt này lại cần (mở lại / không tạo trùng) – không tải toàn bộ lịch sử việc đã xong.
     .from(tasks).where(and(isNotNull(tasks.autoKey), scope, or(inArray(tasks.status, [...OPEN_STATUSES]), ...[...chunks([...wanted.keys()], 1000)].map(keys => inArray(tasks.autoKey, keys)))));
   const byKey = new Map(existing.map(t => [t.autoKey!, t]));
   const fresh = [...wanted.values()].filter(t => !byKey.has(t.autoKey));
   const created = fresh.map(t => ({ ...t, id: crypto.randomUUID() }));
   const inserted = created.length ? await db.insert(tasks).values(created.map(t => ({ id: t.id, title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
-    sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing().returning({ id: tasks.id }) : [];
+    sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, dueTime: t.dueTime ?? null, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing().returning({ id: tasks.id }) : [];
   const insertedIds = new Set(inserted.map(t => t.id));
   let closed = 0, updated = 0, reopened = 0;
   for (const t of existing) {
@@ -436,8 +436,9 @@ export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, no
     if (!w) { await db.update(tasks).set({ status: 'done', completedAt: stamp, completedBy: null, updatedAt: stamp, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id)); closed++; continue; }
     // Mức ưu tiên chỉ đặt lúc tạo (nhân viên có thể nâng / hạ). Việc "chưa giao" / giao cho nhóm mà đã có người nhận (giao tay / bấm Nhận việc) thì giữ người đó.
     const assigneeId = w.assigneeId ?? who(t.assigneeId), assigneePosition = assigneeId ? null : (w.assigneePosition ?? null);
-    if (assigneeId !== t.assigneeId || assigneePosition !== t.assigneePosition || w.dueDate !== t.dueDate || w.title !== t.title || (w.description ?? '') !== t.description) {
-      await db.update(tasks).set({ assigneeId, assigneePosition, dueDate: w.dueDate, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
+    const dueTime = w.dueTime === undefined ? t.dueTime : w.dueTime;
+    if (assigneeId !== t.assigneeId || assigneePosition !== t.assigneePosition || w.dueDate !== t.dueDate || dueTime !== t.dueTime || w.title !== t.title || (w.description ?? '') !== t.description) {
+      await db.update(tasks).set({ assigneeId, assigneePosition, dueDate: w.dueDate, dueTime, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
     }
   }
   // `fresh`: việc vừa tự sinh (để đẩy thông báo cho người / nhóm nhận).
