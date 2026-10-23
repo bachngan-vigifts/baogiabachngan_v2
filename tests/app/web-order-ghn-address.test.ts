@@ -73,3 +73,18 @@ test('Danh mục địa chỉ Web Lock lấy trực tiếp từ CRM, không gọ
   assert.ok(provinces.data.locations.length > 0);
   assert.equal(websiteCalls, 0);
 });
+
+test('Checkout Web Minh Long lấy danh mục bằng token GHN Minh Long qua proxy kín', async () => {
+  const f = await setup();
+  const calls: { url: string; token: string; body: unknown }[] = [];
+  f.env.ghnMlToken = 'ghn-minh-long-private';
+  f.env.ghnFetch = (async (input, init) => {
+    calls.push({ url: String(input), token: String((init?.headers as Record<string, string>).Token), body: init?.body ? JSON.parse(String(init.body)) : null });
+    return Response.json({ code: 200, data: [{ DistrictID: 1574, DistrictName: 'Quận Ninh Kiều', Status: 1 }] });
+  }) as typeof fetch;
+  const response = await f.call('/integrations/woocommerce/minhlong/ghn-locations?token=test-ml-token', '', 'POST', { provinceId: 220 });
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  assert.deepEqual(response.data.locations, [{ id: 1574, name: 'Quận Ninh Kiều' }]);
+  assert.deepEqual(calls, [{ url: 'https://online-gateway.ghn.vn/shiip/public-api/master-data/district', token: 'ghn-minh-long-private', body: { province_id: 220 } }]);
+  assert.equal((await f.call('/integrations/woocommerce/minhlong/ghn-locations?token=wrong', '', 'POST', {})).status, 401);
+});
