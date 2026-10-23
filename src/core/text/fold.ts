@@ -4,14 +4,16 @@ import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
  * Tìm kiếm tiếng Việt không phân biệt dấu/hoa thường, chạy được trên PostgreSQL thật lẫn PGlite
  * (không cần extension `unaccent`): cùng một bảng chuyển chữ ở JS và trong SQL `translate()`.
  */
-const FROM = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
+/** Dấu rời (Unicode tổ hợp – NFD, hay gặp khi tên gõ trên Mac / nhập từ Sapo): không có ký tự tương ứng trong TO nên `translate()` xoá đi. */
+const MARKS = '\u0300\u0301\u0302\u0303\u0306\u0309\u031b\u0323';
+const FROM = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ' + MARKS;
 const TO = 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd';
 
 /** Chuẩn hoá chuỗi để so khớp: chữ thường, bỏ dấu, gộp khoảng trắng. */
 export function fold(value: unknown): string {
   const lower = String(value ?? '').toLowerCase().normalize('NFC');
   let out = '';
-  for (const ch of lower) { const i = FROM.indexOf(ch); out += i >= 0 ? TO[i] : ch; }
+  for (const ch of lower) { const i = FROM.indexOf(ch); out += i >= 0 ? TO[i] ?? '' : ch; }
   return out.trim().replace(/\s+/g, ' ');
 }
 

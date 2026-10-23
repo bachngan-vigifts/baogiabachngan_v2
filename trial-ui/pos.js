@@ -1045,9 +1045,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (!more) st.localSkus = q && !addScanned ? localSearch(q, st.policy) : null;
       const local = st.localSkus?.length ? st.localSkus : null;
       const base = `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}`;
-      const d = local
-        ? { ...(await api(`${base}&skus=${encodeURIComponent(local.slice(offset, offset + limit).join(','))}`)), nextOffset: offset + limit < local.length ? offset + limit : null }
-        : await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
+      const bySkus = (skus) => api(`${base}&skus=${encodeURIComponent(skus.slice(offset, offset + limit).join(','))}`).then(d => ({ ...d, nextOffset: offset + limit < skus.length ? offset + limit : null }));
+      let d = local ? await bySkus(local) : await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
+      // Enter / nút "Tìm" trên bàn phím điện thoại với chữ thường (không phải mã vạch): máy chủ không ra thì vẫn giữ danh sách lọc tại chỗ.
+      if (addScanned && !more && !d.products.length) {
+        const fallback = localSearch(q, st.policy);
+        if (fallback?.length) { st.localSkus = fallback; d = await bySkus(fallback); }
+      }
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
       st.products = more ? [...st.products, ...d.products] : d.products;
@@ -1056,7 +1060,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (addScanned) {
         const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
         if (p && p.available > 0) add(p, true);
-        else toast('Chọn đúng sản phẩm trong danh sách.');
+        else toast(d.products.length ? 'Chọn đúng sản phẩm trong danh sách.' : 'Không tìm thấy sản phẩm.');
       }
     } finally {
       st.catalogLoading = false;
