@@ -1,0 +1,50 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {and, eq, like} from 'drizzle-orm';
+import {setupEarly} from '../helpers/purchase-early-fixture.ts';
+import {receivingReminderTasks,RECEIVING_REMINDER_PREFIX} from '../../src/modules/tasks/api/receiving-reminders.ts';
+import {reconcileTaskSet} from '../../src/modules/tasks/api/auto-tasks.ts';
+import {tasks} from '../../src/modules/tasks/schema.ts';
+import {employees} from '../../src/modules/staff/schema.ts';
+import {incomingShipmentLines,incomingShipments,supplierReceipts,supplierReceiptLines} from '../../src/modules/suppliers/schema.ts';
+import {createAppRouter} from '../../src/app/router.ts';
+const scope=like(tasks.autoKey,RECEIVING_REMINDER_PREFIX+'%');
+const at=(day:string,time='01:00:00')=>new Date(day+'T'+time+'Z');
+async function sync(db:any,now:Date){const want=await receivingReminderTasks(db,now);return reconcileTaskSet(db,new Map(want.map(t=>[t.autoKey,t])),now,scope);}
+test('nhắc 08h VN: đúng ngày/mã hẹn, đúng Manager/Sale Admin/Kho; không nhân đôi và giữ việc quá hạn chưa nhận',async()=>{
+  const s=await setupEarly();
+  assert.equal((await receivingReminderTasks(s.db,at('2026-10-24','00:59:59'))).length,0);
+  const wanted=await receivingReminderTasks(s.db,at('2026-10-24'));assert.equal(wanted.length,3);
+  assert.deepEqual(wanted.map(t=>t.assigneeId).sort(),['kho','mgr','sa']);assert.ok(wanted.every(t=>t.dueDate==='2026-10-24'&&t.dueTime==='08:00'&&t.sourceId==='b1'));
+  const first=await Promise.all([sync(s.db,at('2026-10-24')),sync(s.db,at('2026-10-24'))]);assert.equal(first.reduce((n,r)=>n+r.created,0),3,'hai lượt đồng thời chỉ tạo 3 việc');
+  assert.equal((await sync(s.db,at('2026-10-24','01:05:00'))).created,0);
+  assert.equal((await sync(s.db,at('2026-10-25','00:30:00'))).closed,0,'việc hôm qua vẫn quá hạn khi còn hàng');
+  await s.db.update(incomingShipmentLines).set({promisedDate:'2026-10-26'}).where(eq(incomingShipmentLines.id,'line-b1'));
+  assert.equal((await sync(s.db,at('2026-10-25'))).closed,3,'dời hẹn đóng nhắc cũ, không nhắc trước ngày mới');
+  assert.equal((await sync(s.db,at('2026-10-26'))).created,3,'hẹn riêng từng mã ưu tiên hơn ngày đơn 24/10');
+  await s.db.update(incomingShipments).set({cancelledAt:'2026-10-26T02:00:00Z'}).where(eq(incomingShipments.id,'b1'));
+  assert.equal((await sync(s.db,at('2026-10-26','02:00:00'))).closed,3);
+});
+test('phiếu lấy trước: chỉ nhắc phần đã gửi/chưa từ chối, nhận đủ tự đóng; loại nhân viên đã khoá',async()=>{
+  const s=await setupEarly(),c=s.cookies;
+  const made=await s.call('/purchase-early-requests',c.mgr,'POST',{clientKey:'reminder-early-001',pickupDate:'2026-10-24',scope:{supplierId:'b'},lines:[{sku:'031106000',quantity:20}]});assert.equal(made.status,201);
+  assert.equal((await receivingReminderTasks(s.db,at('2026-10-24'))).length,3,'nháp không nhắc');
+  await s.call('/purchase-early-requests/'+made.data.id+'/submit',c.mgr,'POST',{revision:made.data.request.revision});
+  assert.equal((await receivingReminderTasks(s.db,at('2026-10-24'))).length,6);
+  await s.db.update(employees).set({active:false}).where(eq(employees.id,'sa'));
+  assert.equal((await sync(s.db,at('2026-10-24'))).created,4);
+  const request=(await s.call('/purchase-early-requests?id='+made.data.id,c.mgr)).data.requests[0];
+  assert.equal((await s.call('/supplier-portal/early-requests/'+request.lines[0].id+'/respond',c.ncc2,'POST',{status:'rejected'})).status,200);
+  assert.equal((await sync(s.db,at('2026-10-24','01:05:00'))).closed,2,'từ chối phiếu lấy trước đóng đúng phần nhắc');
+  await s.db.insert(supplierReceipts).values({id:'rcv-reminder',shipmentId:'b1',receiptNo:'PNH_REMIND',receivedDate:'2026-10-24',receivedBy:'kho',createdAt:'2026-10-24T02:00:00Z',clientKey:'rcv-reminder'});
+  await s.db.insert(supplierReceiptLines).values({receiptId:'rcv-reminder',lineId:'line-b1',sku:'031106000',goodQty:5000});
+  assert.equal((await sync(s.db,at('2026-10-24','02:00:00'))).closed,2,'nhận đủ đóng nhắc đơn mua');
+});
+test('cron nhắc nhận hàng: từ chối cookie Manager/token sai, token máy chủ hợp lệ chạy được, không đụng việc khác',async()=>{
+  const s=await setupEarly(),router=createAppRouter(),token='test-receiving-server-token-000000000000';
+  const call=async(headers:Record<string,string>)=>router.handle(new Request('https://trial.test/api/staff/integrations/tasks/receiving-reminders',{method:'POST',headers}),{db:s.db,sapoSyncToken:token});
+  assert.equal((await call({cookie:s.cookies.mgr!})).status,401);assert.equal((await call({authorization:'Bearer wrong'})).status,401);
+  await s.db.insert(tasks).values({id:'other-task',title:'Không liên quan',autoKey:'test-other:1',createdAt:'2026-10-24',updatedAt:'2026-10-24'});
+  assert.equal((await call({authorization:'Bearer '+token})).status,200);
+  assert.equal((await s.db.select().from(tasks).where(eq(tasks.id,'other-task')))[0]!.status,'todo');
+});

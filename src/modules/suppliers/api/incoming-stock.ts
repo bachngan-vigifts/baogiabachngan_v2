@@ -14,7 +14,7 @@ export async function outstandingLines(db: Db, skus?: readonly string[], catalog
     supplierStatus: incomingShipments.supplierStatus, promisedDate: incomingShipmentLines.promisedDate,
     imported: sql<boolean>`exists(select 1 from ${supplierOrderEvents} where ${supplierOrderEvents.shipmentId}=${incomingShipments.id} and ${supplierOrderEvents.action}='import')`,
     missingSource: sql<boolean>`not exists(select 1 from ${supplierOrderSources} where ${supplierOrderSources.shipmentId}=${incomingShipments.id} and ${supplierOrderSources.sourceType}<>'manual' and ${supplierOrderSources.sourceId}<>'')`,
-    orderId: incomingShipments.id, ticketNumber: incomingShipments.ticketNumber, supplierName: incomingShipments.supplierName,
+    createdAt: incomingShipments.createdAt, orderId: incomingShipments.id, ticketNumber: incomingShipments.ticketNumber, supplierName: incomingShipments.supplierName,
     internalNo: incomingShipments.supplierInternalOrderNumber, arrivalDate: incomingShipments.arrivalDate })
     .from(incomingShipmentLines).innerJoin(incomingShipments, eq(incomingShipments.id, incomingShipmentLines.shipmentId))
     .leftJoin(products, eq(products.sku, incomingShipmentLines.sku))

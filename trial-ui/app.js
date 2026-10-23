@@ -28,7 +28,7 @@ import { initSuppliers } from './suppliers.js';
 import { initPurchases } from './purchases.js';
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
-import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
+import { hydrateSnapshot, matchRanges, searchProducts as searchCatalog } from './product-search.js';
 import { defaultPaymentTerms, withPaymentNotes } from './quote-payment.js';
 import { setupNotifications } from './notify.js';
 import { setupDataRefresh } from './auto-refresh.js';
@@ -641,7 +641,7 @@ var cashUi = null;
 const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();},onChanged:()=>{loadNavigationBadges();tasksView().badge();}});
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
 let receivingUi;
-const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving') });
+const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
 const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 let currentHash = location.hash, suppressHash = false;
 window.addEventListener('hashchange', async () => {
@@ -2111,10 +2111,27 @@ function applyCatalogMeta(d) {
 }
 let productReq = 0, brandsLoaded = false;
 let productPager;
+/**
+ * Trang Sản phẩm lọc NGAY trên danh mục đã tải sẵn (GET /catalog-snapshot, cùng quy tắc khớp + xếp hạng với máy chủ – product-rank.ts):
+ * gõ là ra, không chờ máy chủ quét bỏ dấu cả danh mục. Chưa có bản chụp, hoặc bản chụp không có kết quả (quét mã vạch, sản phẩm vừa thêm)
+ * thì hỏi máy chủ như trước.
+ */
+function localProducts() {
+  // Lọc tồn tối thiểu theo kho (GET /products?minStock=) tính ở máy chủ trước phân trang – không lọc tại chỗ.
+  if (!catalog.items || state.productMinStock !== '') return null;
+  const found = searchCatalog(catalog.items, { q: state.productQuery }) || [];
+  const list = state.productBrand ? found.filter(p => p.brand === state.productBrand) : found;
+  return list.length || !state.productQuery.trim() ? list : null;
+}
 async function loadProducts() {
   loadHolds().then(() => { if (state.products) renderProducts?.(); });
   const req = ++productReq;
   productPager ||= createPager($('#product-pager'), 'products', () => loadProducts(), 50);
+  const local = localProducts();
+  if (local) {
+    state.products = local.slice(productPager.offset, productPager.offset + productPager.limit); state.productTotal = local.length;
+    renderProducts(); loadProductBrands(); return;
+  }
   state.products = null; renderProducts();
   try {
     const d = await api(`/products?limit=${productPager.limit}&offset=${productPager.offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}${state.productMinStock !== '' ? '&minStock='+encodeURIComponent(state.productMinStock)+'&stockWarehouse='+encodeURIComponent(state.productWarehouse) : ''}`);
@@ -2122,7 +2139,9 @@ async function loadProducts() {
     applyCatalogMeta(d);
     state.products = d.products; state.productTotal = d.total;
   } catch (e) { state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message); }
-  renderProducts();
+  renderProducts(); loadProductBrands();
+}
+function loadProductBrands() {
   if (!brandsLoaded) {
     brandsLoaded = true;
     api('/product-brands').then(d => {
@@ -2192,7 +2211,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; loadProducts(); loadCatalogSnapshot(); } });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
@@ -2270,6 +2289,13 @@ $('#product-actions').addEventListener('click', e => {
   else if (action === 'sapo-stock') openSapoStockImport({ api, isManager, toast, onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } }).catch(ex => toast(ex.message, 'err'));
   else if (action === 'stock' || action === 'packing') productActions().openImport(action).catch(ex => toast(ex.message, 'err'));
 });
+/** Tô đậm từ khoá đang tìm (không dấu, không phân biệt hoa thường) – chuỗi đã escape. */
+const markWords = (text, q) => {
+  const t = String(text ?? ''), ranges = q ? matchRanges(t, q) : [];
+  let out = '', i = 0;
+  for (const [a, b] of ranges) { out += esc(t.slice(i, a)) + '<mark>' + esc(t.slice(a, b)) + '</mark>'; i = b; }
+  return out + esc(t.slice(i));
+};
 function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
@@ -2284,7 +2310,7 @@ function renderProducts() {
     const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
     return `<tr>
       <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
-      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
+      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${markWords(p.name, state.productQuery)}</span><small>${markWords(p.sku, state.productQuery)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
@@ -2336,7 +2362,7 @@ function rowFromProduct(p) {
 const rowsFromProducts = list => list.map(rowFromProduct).filter(Boolean);
 let productTimer;
 const reloadProducts = () => { productPager?.reset(); loadProducts(); };
-$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, 250); });
+$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, catalog.items ? 40 : 250); });
 $('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; reloadProducts(); });
 $('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; if(state.productMinStock !== '') reloadProducts(); else renderProducts(); });
 $('#product-min-stock').addEventListener('input', e => { clearTimeout(productTimer); if(!e.target.validity.valid) return; state.productMinStock = e.target.value; productTimer = setTimeout(reloadProducts, 250); });
@@ -2380,7 +2406,7 @@ $('#catalog-file').addEventListener('change', async e => {
       $('#product-count').textContent = `Đang nhập ${Math.min(i + BATCH, n).toLocaleString('vi-VN')}/${n.toLocaleString('vi-VN')}…`;
     }
     toast(`Đã nhập ${n.toLocaleString('vi-VN')} sản phẩm.`);
-    brandsLoaded = false; state.selected.clear(); loadProducts();
+    brandsLoaded = false; state.selected.clear(); catalog.checkedAt = 0; loadProducts(); loadCatalogSnapshot();
   } catch (ex) { toast(ex.message + ' Chọn lại file để nhập tiếp.', 'err'); loadProducts(); }
   finally { label.classList.remove('busy'); }
 });
@@ -2527,6 +2553,7 @@ function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
         useSnapshot(d);
         idb('readwrite', st => st.put(d, IDB.key)).catch(() => {});
         if ($('#picker-dialog').open) loadPicker(); // đang mở hộp tìm thì cập nhật kết quả theo dữ liệu mới
+        if (state.products && location.hash.startsWith('#/products')) loadProducts(); // trang Sản phẩm: lọc lại trên dữ liệu mới
       }
     } catch { /* lỗi mạng: dùng bản đang có, hoặc tìm qua máy chủ */ }
     return catalog.items;
@@ -3570,8 +3597,11 @@ async function openOrder(id) {
     : '<p class="muted">Chưa có lịch giao.</p>');
   loadOrderPacking(o.id);
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
-  $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
+  $('#order-pack').disabled = true; $('#order-pack').title = 'Đang kiểm tra phiếu đóng gói…';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
+  const fullyScheduled = !d.lines.some(line => line.qty - line.deliveredQty - d.deliveries.filter(x => ['planned','in_transit'].includes(x.status)).flatMap(x => x.lines).filter(x => x.orderLineId === line.id).reduce((sum,x) => sum + x.qty,0) > 1e-9);
+  $('#order-new-delivery').disabled = fullyScheduled;
+  $('#order-new-delivery').title = fullyScheduled ? 'Mọi sản phẩm đã có đủ lịch giao.' : 'Tạo lịch cho phần hàng còn lại chưa lên lịch.';
   $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || (o.status === 'draft' && o.channel !== 'crm') || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = r.balance < 0 ? `<div class="pay-summary warn"><span>Còn phải hoàn / dùng đổi hàng</span><b>${money(-r.balance)}</b></div>` : o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
@@ -3678,11 +3708,17 @@ const packing = { lines: [], orderId: '', hasSchedule: false };
 const packingSupplierChoices = initPackingSupplierChoices($('#pack-form'));
 const packingEarlyRequest = initPackingEarlyRequest({ root: $('#pack-form'), api, lines: () => packing.lines, parseNum, toast,
   canRequest: () => can('page.purchases') && (isManager() || state.user?.positionId === 'sale-admin') });
+function syncOrderPackingButton(data) {
+  const button = $('#order-pack'), full = !data.lines.some(line => line.left > 1e-9);
+  button.disabled = !data.canRequest || full;
+  button.title = full ? 'Mọi sản phẩm đã có đủ phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.' : 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
+}
 async function loadOrderPacking(orderId) {
   const box = $('#order-packing'); box.innerHTML = '';
   let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
   if (sales.order?.id !== orderId) return;
   packing.lines = d.lines; packing.orderId = orderId;
+  syncOrderPackingButton(d);
   const live = d.slips.filter(x => x.status !== 'cancelled'), drafts = live.filter(x => x.status === 'draft');
   if (!live.length) return;
   box.innerHTML = `<div class="pack-slips"><div class="card-title-row"><b>Phiếu đóng gói</b>${drafts.length > 1 ? `<button type="button" class="btn primary small" data-slip-send-all>Gửi kho ${drafts.length} phiếu nháp</button>` : ''}</div>
@@ -3702,6 +3738,7 @@ $('#order-pack').addEventListener('click', async () => {
   const btn = $('#order-pack'); btn.disabled = true;
   try {
     const d = await api(`/orders/${encodeURIComponent(o.id)}/packing`); packing.lines = d.lines;
+    syncOrderPackingButton(d);
     if (!d.canRequest) return toast('Đơn chưa xác nhận, đã huỷ hoặc đã giao xong.', 'err');
     const todo = d.lines.filter(l => l.left > 1e-9);
     if (!todo.length) return toast('Mọi dòng hàng đã có phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.', 'err');
@@ -3728,7 +3765,7 @@ $('#order-pack').addEventListener('click', async () => {
     packingSupplierChoices.setSuppliers(d.supplierChoices || []);
     fillPackShip(d.delivery); fillPackSchedule(d.schedules || [], o);
     $('#pack-dialog').showModal();
-  } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+  } catch (ex) { toast(ex.message, 'err'); } finally { if (sales.order?.id === o.id) btn.disabled = !packing.lines.some(l => l.left > 1e-9); }
 });
 /** A single save can schedule the selected quantities and create the packing slips. */
 function fillPackSchedule(schedules, order) {

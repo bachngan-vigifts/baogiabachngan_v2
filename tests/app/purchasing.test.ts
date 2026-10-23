@@ -211,7 +211,7 @@ test('việc tự sinh + sơ đồ: chờ duyệt → chờ xác nhận → nh�
   await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], payment: { balanceDueDate: today } });
   assert.deepEqual(await keys(), [['po-confirm', 'manager'], ['po-pay', 'accounting']]);
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
-  assert.deepEqual((await keys()).map(k => k[0]).sort(), ['po-pay', 'po-receive']);
+  assert.deepEqual((await keys()).map(k => k[0]).sort(), ['po-pay'] /* Nhắc nhận hàng đã chuyển sang receivingReminders lúc 08:00, có test riêng. */);
   v = (await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-flow-1', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 2 }] })).data;
   assert.deepEqual((await keys()).sort(), [['po-pay', 'accounting'], ['po-sapo', 'warehouse']]);
   const flow = (await call('/flow', kho)).data;

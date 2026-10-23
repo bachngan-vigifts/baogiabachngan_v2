@@ -57,7 +57,11 @@ export function renderOrderLineDetails({ head, body, details, order, lines }) {
   }
   if (fees?.shippingFee) {
     const tr = el('tr', '', 'pos-order-shipping');
-    for (const [i, text] of ['Phí vận chuyển', '1', '—', money(fees.shippingFee), '—', money(fees.shippingFee), '0%', money(fees.shippingFee)].entries()) cell(tr, text, i > 0);
+    // Đơn từ 23/10/2026: phí ship đã gồm VAT (fees.shipping); đơn cũ không VAT.
+    const ship = fees.shipping ?? { taxRate: 0, tax: 0 }, basis = ship.taxRate > 0 ? 'gồm VAT' : 'không VAT';
+    cell(tr, 'Phí vận chuyển', false); cell(tr, '1'); cell(tr, '—');
+    cell(tr, money(fees.shippingFee), true, basis); cell(tr, '—'); cell(tr, money(fees.shippingFee));
+    cell(tr, num(ship.taxRate) + '%', true, money(ship.tax)); cell(tr, money(fees.shippingFee), true, basis);
     body.append(tr);
   }
   const totals = el('dl', '', 'kv pos-order-totals');
@@ -65,7 +69,7 @@ export function renderOrderLineDetails({ head, body, details, order, lines }) {
   // discountAmount của dòng gồm cả phần voucher chia vào dòng (snapshot.voucher.amount) – tách ra để đọc rõ.
   const voucher = snapshot.voucher && Number(snapshot.voucher.amount) > 0 ? snapshot.voucher : null;
   add('Tổng CK từng dòng (đã trừ trong tiền hàng)', money(lines.reduce((sum, line) => sum + (line.discountAmount || 0), 0) - (voucher ? Number(voucher.amount) : 0)));
-  add('Voucher', voucher ? `${voucher.code}${voucher.type === 'percent' ? ` (${num(voucher.value)}%)` : ''} · −${money(voucher.amount)} (trừ vào giá đã gồm VAT, VAT tính lại sau giảm)` : 'Không dùng voucher');
+  add('Mã giảm giá', voucher ? `${voucher.code || 'Không ghi mã'}${voucher.type === 'percent' ? ` (${num(voucher.value)}%)` : ''} · −${money(voucher.amount)} (trừ vào giá đã gồm VAT, VAT tính lại sau giảm)` : 'Không dùng mã giảm giá');
   if (Number.isFinite(snapshot.exchangeCredit) && snapshot.exchangeCredit > 0) add('Khấu trừ từ phiếu đổi hàng', money(snapshot.exchangeCredit));
   add('Tiền hàng và phí sau CK, chưa VAT', money(order.subtotal));
   add('VAT', money(order.tax));

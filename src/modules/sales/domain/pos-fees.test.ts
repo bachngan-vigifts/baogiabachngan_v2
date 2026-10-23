@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { calculatePosFees, posFeeInput, snapshotPosFees } from './pos-fees.ts';
-test('Phí dịch vụ theo bảng giá, ship không VAT và tiền VNĐ nguyên', () => {
+test('Phí dịch vụ theo bảng giá, ship đã gồm VAT (tách VAT) và tiền VNĐ nguyên', () => {
   const vat = calculatePosFees({ feeName: 'Phí in', feeAmount: 10800, shippingFee: 20000 }, 8);
-  assert.equal(vat.service.subtotal, 10000); assert.equal(vat.tax, 800);
-  assert.equal(vat.subtotal, 30000); assert.equal(vat.total, 30800);
+  // Ship 20.000 đã gồm VAT 8% = 18.519 + 1.481 (từ 23/10/2026); tổng khách trả không đổi.
+  assert.equal(vat.service.subtotal, 10000); assert.equal(vat.service.tax, 800); assert.equal(vat.tax, 800 + 1481);
+  assert.equal(vat.subtotal, 10000 + 18519); assert.equal(vat.total, 30800);
   const retail = calculatePosFees({ feeName: 'Phí in', feeAmount: 10800, shippingFee: 20000 }, 0);
   assert.equal(retail.tax, 0); assert.equal(retail.total, 30800);
   assert.equal(snapshotPosFees({}).total, 0);
@@ -22,7 +23,7 @@ test('Nhiều phí: tính VAT mỗi dòng, không giảm giá phí, lưu snapsho
   const d = calculatePosFees({ serviceFees: fees, shippingFee: 20000 }, 8);
   assert.equal(d.services.length, 2); assert.equal(d.service.amount, 205800); assert.equal(d.total, 225800);
   assert.equal(d.service.subtotal, d.services.reduce((n, f) => n + f.subtotal, 0));
-  assert.equal(d.tax, d.services.reduce((n, f) => n + f.tax, 0));
+  assert.equal(d.tax, d.services.reduce((n, f) => n + f.tax, 0) + d.shipping.tax);
   assert.deepEqual(snapshotPosFees({ fees: d }), d);
   assert.equal(calculatePosFees({ serviceFees: fees, shippingFee: 20000 }, 0).tax, 0);
   assert.deepEqual(posFeeInput({ serviceFees: [] }), {});

@@ -650,7 +650,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-voucher-title { font-size: var(--text-label); margin: 0 0 8px; }
 /* Cột giỏ hẹp: mã voucher chiếm cả hàng; số giảm · VNĐ/% · Bỏ voucher ở hàng dưới. */
 .pos-voucher-row { display: grid; grid-template-columns: minmax(0, 1fr) 84px auto; align-items: end; gap: 8px; }
-.pos-voucher-row > .pos-field:first-child { grid-column: 1 / -1; }
 .pos-voucher-row .pos-field { min-width: 0; margin-bottom: 0; }
 .pos-voucher-row .btn { min-height: 42px; }
 .pos-order-note { margin: 12px 0 4px; }
@@ -1017,7 +1016,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-stock-detail p { white-space:pre-wrap; margin:6px 0 0; }
 .pos-stock-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:18px; }
 .pos-stock-error { color:#b3261e; }
-@media(max-width:1366px) { .pos-grid { grid-auto-rows:minmax(244px,auto); max-height:calc(244px * 10 + 8px * 9); } .pos-product-stocks { padding:6px; } .pos-source-stock { font-size: var(--text-caption); } }
+@media(max-width:1366px) { .pos-grid { grid-auto-rows:minmax(244px,auto); max-height:calc(244px * 10 + 8px * 9); overflow-y:auto; overscroll-behavior:contain; } .pos-product-stocks { padding:6px; } .pos-source-stock { font-size: var(--text-caption); } }
 
 /* Các form mở sau bảng Thanh toán (Ship COD · VietQR · Đặt cọc · Ship trả trước): cùng khung với bảng Thanh toán. */
 .pos-step-modal { width: min(760px, 94vw); max-height: 92dvh; padding: 0; border-radius: 20px; box-shadow: 0 26px 80px #10251a4d; }
@@ -1109,3 +1108,5 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 @media (max-width: 480px) { .pos-form-actions .btn { flex: 1 1 calc(50% - 10px); } }
 .pos-payment-cash .pos-field input { border-bottom: 2px dashed #b9d8c6; border-radius: 0; }
 .pos-payment-cash .pos-field input:focus { border-bottom-color: #16884d; outline: none; }
+/* Nút × bỏ dòng phí / bỏ giảm giá: cao bằng ô nhập. */
+.pos-row-remove { width: 36px; height: 42px; align-self: end; }

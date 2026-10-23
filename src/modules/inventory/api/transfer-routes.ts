@@ -24,6 +24,7 @@ import { hiddenWarehouseIds } from './warehouse-access.ts';
  * Kho riêng (Hoá đơn) chỉ người bán kho đó / Manager thấy và chọn được. Tồn kho đi (đã chốt đầu kỳ) không đủ thì không cho chuyển.
  */
 type Ctx = RouteContext<StaffEnv>;
+type ReadDb = StaffEnv['db'] | Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 const me = (c: Ctx) => (c.state.session as SessionState).member;
 const fail = (status: number, message: string, code?: string): never => { throw new AppError(status, message, code); };
 const num = (v: unknown) => Math.round(Number(v) * 1000) / 1000;
@@ -31,9 +32,9 @@ const nowIso = () => new Date().toISOString();
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim() : '').slice(0, max);
 const canMove = (m: ReturnType<typeof me>) => can(m, 'stock.transfer');
 
-async function visibleWarehouses(c: Ctx) {
-  const hidden = await hiddenWarehouseIds(c.env.db, me(c));
-  return (await c.env.db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true)))
+async function visibleWarehouses(c: Ctx, db: ReadDb = c.env.db) {
+  const hidden = await hiddenWarehouseIds(db, me(c));
+  return (await db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true)))
     .orderBy(asc(warehouses.sortOrder), asc(warehouses.name))).filter(w => !hidden.has(w.id));
 }
 
@@ -59,6 +60,7 @@ async function viewOf(c: Ctx, id: string) {
     requestedByName: name(t!.requestedBy), approvedByName: name(t!.approvedBy), doneByName: name(t!.doneBy), cancelledByName: name(t!.cancelledBy),
     lines: lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, fromStock: at(l.sku, t!.fromWarehouseId), toStock: at(l.sku, t!.toWarehouseId) })),
     actions: {
+      edit: status === 'pending' && (m.role === 'manager' || t!.requestedBy === m.id),
       approve: status === 'pending' && canApprove(m), reject: status === 'pending' && canApprove(m),
       cancel: (status === 'pending' || status === 'approved') && (m.role === 'manager' || t!.requestedBy === m.id),
       done: status === 'approved' && canMove(m),
@@ -88,6 +90,26 @@ function background(env: StaffEnv, job: Promise<unknown>) {
   if (env.waitUntil) env.waitUntil(safe); else return safe;
 }
 
+async function transferInput(c: Ctx, body: Record<string, unknown>, db: ReadDb = c.env.db) {
+    const from = str(body.fromWarehouseId, 80), to = str(body.toWarehouseId, 80), reason = str(body.reason, 500);
+    const whs = await visibleWarehouses(c,db);
+    if (!whs.some(w => w.id === from) || !whs.some(w => w.id === to)) fail(400, 'Chọn kho đi và kho đến.');
+    if (from === to) fail(400, 'Kho đi và kho đến phải khác nhau.');
+    if (reason.length < 3) fail(400, 'Nhập lý do điều chuyển (VD: đơn của khách X cần hàng ở kho này).');
+    const want = new Map<string, number>();
+    for (const l of (Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).slice(0, 200)) {
+      const sku = str(l.sku, 200), qty = num(l.qty);
+      if (!sku) continue;
+      if (!(qty > 0 && qty <= 1e7)) fail(400, `Số lượng của ${sku} không hợp lệ.`);
+      want.set(sku, num((want.get(sku) ?? 0) + qty));
+    }
+    if (!want.size) fail(400, 'Thêm ít nhất một mã hàng cần chuyển.');
+    const found = await db.select({ sku: products.sku, name: products.name, unit: products.unit }).from(products).where(inArray(products.sku, [...want.keys()]));
+    const unknown = [...want.keys()].filter(s => !found.some(p => p.sku === s));
+    if (unknown.length) fail(400, 'Mã không có trong danh mục: ' + unknown.slice(0, 10).join(', '));
+  return { from,to,reason,whs,want,found };
+}
+
 export function registerTransferRoutes(router: Router<StaffEnv>) {
   router.get('/stock-transfers', async c => {
     const db = c.env.db, m = me(c), status = c.url.searchParams.get('status') || '', q = str(c.url.searchParams.get('q'), 80);
@@ -110,36 +132,46 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
 
   router.post('/stock-transfers', async c => {
     const db = c.env.db, m = me(c), body = await readJson(c.req, 100_000);
-    const from = str(body.fromWarehouseId, 80), to = str(body.toWarehouseId, 80), reason = str(body.reason, 500);
-    const whs = await visibleWarehouses(c);
-    if (!whs.some(w => w.id === from) || !whs.some(w => w.id === to)) fail(400, 'Chọn kho đi và kho đến.');
-    if (from === to) fail(400, 'Kho đi và kho đến phải khác nhau.');
-    if (reason.length < 3) fail(400, 'Nhập lý do điều chuyển (VD: đơn của khách X cần hàng ở kho này).');
-    const want = new Map<string, number>();
-    for (const l of (Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).slice(0, 200)) {
-      const sku = str(l.sku, 200), qty = num(l.qty);
-      if (!sku) continue;
-      if (!(qty > 0 && qty <= 1e7)) fail(400, `Số lượng của ${sku} không hợp lệ.`);
-      want.set(sku, num((want.get(sku) ?? 0) + qty));
-    }
-    if (!want.size) fail(400, 'Thêm ít nhất một mã hàng cần chuyển.');
-    const found = await db.select({ sku: products.sku, name: products.name, unit: products.unit }).from(products).where(inArray(products.sku, [...want.keys()]));
-    const unknown = [...want.keys()].filter(s => !found.some(p => p.sku === s));
-    if (unknown.length) fail(400, 'Mã không có trong danh mục: ' + unknown.slice(0, 10).join(', '));
-    const id = crypto.randomUUID(), now = nowIso(), day = now.slice(0, 10).replaceAll('-', '');
-    let transferNo = '';
+    const {from,to,reason,whs,want,found}=await transferInput(c,body);
+    const clientKey=body.clientKey;
+    if(clientKey!==undefined&&(typeof clientKey!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientKey)))fail(400,'Khóa tạo phiếu không hợp lệ.');
+    const id = typeof clientKey==='string'?clientKey:crypto.randomUUID(), now = nowIso(), day = now.slice(0, 10).replaceAll('-', '');
+    let transferNo = '',replayed=false;
     await db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'stock_transfer_client:'+id}))`);
+      const [old]=await tx.select().from(stockTransfers).where(eq(stockTransfers.id,id));
+      if(old){
+        const previous=await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId,id));
+        if(old.requestedBy!==m.id||old.fromWarehouseId!==from||old.toWarehouseId!==to||old.reason!==reason||previous.length!==want.size||previous.some(l=>want.get(l.sku)!==l.qty))fail(409,'Khóa tạo phiếu đã dùng cho nội dung khác. Mở phiếu mới để gửi lại.','IDEMPOTENCY_CONFLICT');
+        replayed=true;transferNo=old.transferNo;return;
+      }
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_transfer_no'))`);
       const [n] = await tx.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(stockTransfers).where(like(stockTransfers.transferNo, `PCK${day}-%`));
       transferNo = `PCK${day}-${String((n?.n ?? 0) + 1).padStart(3, '0')}`;
       await tx.insert(stockTransfers).values({ id, transferNo, fromWarehouseId: from, toWarehouseId: to, status: 'pending', reason, requestedBy: m.id, createdAt: now, updatedAt: now });
       await tx.insert(stockTransferLines).values(found.map(p => ({ id: crypto.randomUUID(), transferId: id, sku: p.sku, name: p.name, unit: p.unit, qty: want.get(p.sku)! })));
     });
+    if(replayed)return json({...await viewOf(c,id),replayed:true});
     const wName = (x: string) => whs.find(w => w.id === x)?.name ?? '';
     await background(c.env, notifyMany(c.env, 'approvers', { eventType: 'transfer_pending', title: 'Phiếu điều chuyển chờ duyệt', body: `${m.name}: ${transferNo} · ${wName(from)} → ${wName(to)} – ${reason}`,
       url: `/index.html#/transfers/${id}`, actorId: m.id, data: { transferId: id } }));
     return json(await viewOf(c, id), 201);
   }, 'business');
+
+  router.put('/stock-transfers/:id', async c => {
+    const m=me(c),id=c.params.id!,body=await readJson(c.req,100_000);
+    await viewOf(c,id);
+    if(!Number.isSafeInteger(body.revision)||Number(body.revision)<1)fail(400,'Thiếu phiên bản phiếu. Vui lòng tải lại.');
+    await c.env.db.transaction(async tx=>{
+      const t=await lock(tx,id,['pending'],body.revision);
+      if(m.role!=='manager'&&t.requestedBy!==m.id)fail(403,'Chỉ người xin hoặc Manager được sửa phiếu chờ duyệt.');
+      const {from,to,reason,want,found}=await transferInput(c,body,tx);
+      await tx.update(stockTransfers).set({fromWarehouseId:from,toWarehouseId:to,reason,updatedAt:nowIso(),...bump}).where(eq(stockTransfers.id,id));
+      await tx.delete(stockTransferLines).where(eq(stockTransferLines.transferId,id));
+      await tx.insert(stockTransferLines).values(found.map(p=>({id:crypto.randomUUID(),transferId:id,sku:p.sku,name:p.name,unit:p.unit,qty:want.get(p.sku)!})));
+    });
+    return json(await viewOf(c,id));
+  },'business');
 
   router.post('/stock-transfers/:id/approve', async c => {
     const m = me(c), id = c.params.id!, body = await readJson(c.req, 2_000);

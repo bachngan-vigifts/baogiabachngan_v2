@@ -75,3 +75,52 @@ test('hàng đang về: đối chiếu gốc, 20.000/3 đơn, Excel ngoài catal
   assert.equal((await call('/purchase-incoming')).status,401);
   assert.equal((await client.query<{n:number}>("select count(*)::int as n from supplier_stock_requests")).rows[0]!.n,0,'GET không tạo yêu cầu');
 });
+
+test('hàng đang về hiển thị phiếu lấy trước đã lưu: lọc loại trước phân trang, giữ nguyên tồn và phạm vi NCC/ngày',async()=>{
+  const {setupEarly}=await import('../helpers/purchase-early-fixture.ts');
+  const {db,call,cookies:c,client}=await setupEarly();
+  const {purchaseEarlyRequests,purchaseEarlyRequestLines,purchaseEarlyRequestAllocations}=await import('../../src/modules/suppliers/early-request-schema.ts');
+  const make=async(key:string,qty:number)=>{
+    const r=await call('/purchase-early-requests',c.mgr,'POST',{clientKey:key,pickupDate:'2026-10-24',lines:[{sku:'031106000',quantity:qty},{sku:'01654020803',quantity:5}]});
+    assert.equal(r.status,201);return r;
+  };
+  const first=await make('incoming-first',17000);
+  const base=await call('/purchase-incoming',c.mgr);assert.equal(base.status,200);
+  const main=base.data.rows.find((r:any)=>r.sku==='031106000');
+  assert.equal(main.quantity,20000);assert.equal(main.earlyQuantity,17000);assert.equal(main.earlyRequests.length,2);
+  assert.equal(main.earlyRequests.every((r:any)=>r.status==='draft'),true);
+  assert.equal(base.data.kpis.quantity,20010);assert.equal(base.data.kpis.earlyRequests,1);assert.equal(base.data.kpis.earlyQuantity,17005);
+  const source=await incomingBySku(db,new URLSearchParams('q=031106000'),'2026-10-23',false);
+  assert.equal(source.rows[0]!.quantity,20000,'nguồn nghiệp vụ không cộng hoặc trừ phiếu lấy trước');
+  const purchase=await call('/purchase-incoming?type=purchase&q=031106000',c.mgr);
+  assert.equal(purchase.data.rows[0].quantity,20000);assert.deepEqual(purchase.data.rows[0].earlyRequests,[]);
+  const one=await call('/purchase-incoming?type=early&supplierId=a&q=031106000',c.mgr);
+  assert.equal(one.data.rows[0].quantity,15000);assert.equal(one.data.rows[0].earlyQuantity,15000);assert.equal(one.data.rows[0].earlyRequests.length,1);
+  assert.doesNotMatch(JSON.stringify(one.data.rows[0].earlyRequests),/NCC b|PO-b1/);
+  const dated=await call('/purchase-incoming?type=early&from=2026-10-22&to=2026-10-24&q=031106000',c.mgr);
+  assert.equal(dated.data.rows[0].quantity,12000);assert.equal(dated.data.rows[0].earlyQuantity,9000,'ngày hẹn đơn mua nguồn giữ nguyên phạm vi');
+  assert.equal((await call('/purchase-incoming?type=unknown',c.mgr)).status,400);
+  assert.equal((await call('/purchase-incoming?type=early',c.ncc)).status,403);
+  const sent=await call('/purchase-early-requests/'+first.data.id+'/submit',c.mgr,'POST',{revision:1});assert.equal(sent.status,200);
+  const line=sent.data.request.lines.find((l:any)=>l.sku==='031106000');
+  await call('/supplier-portal/early-requests/'+line.id+'/respond',c.ncc,'POST',{status:'accepted',note:'Có hàng'});
+  const refreshed=await call('/purchase-incoming?type=early&q=031106000&supplierId=a',c.mgr);
+  assert.equal(refreshed.data.rows[0].earlyRequests[0].status,'accepted');
+  const another=await make('incoming-second',100);
+  await db.update(purchaseEarlyRequests).set({createdAt:'2090-01-01T00:00:00.000Z'}).where((await import('drizzle-orm')).eq(purchaseEarlyRequests.id,another.data.id));
+  for(let i=0;i<51;i++){
+    const id='incoming-page-'+i,lineId='incoming-line-'+i;
+    await db.insert(purchaseEarlyRequests).values({id,clientKey:id,payloadHash:id,createdBy:'mgr',createdAt:'2020-01-01T00:00:00.000Z',status:'submitted',pickupDate:'2026-10-24'});
+    await db.insert(purchaseEarlyRequestLines).values({id:lineId,requestId:id,lineNo:1,sku:'031106000',name:'Chén',unit:'Cái',quantity:1});
+    await db.insert(purchaseEarlyRequestAllocations).values({id:'incoming-alloc-'+i,requestLineId:lineId,purchaseLineId:'line-a1',supplierId:'a',quantity:1});
+  }
+  const counts=async()=>(await client.query(`select (select count(*)::int from stock_moves) as moves,(select count(*)::int from stock_balances) as balances,(select count(*)::int from supplier_receipts) as receipts,(select count(*)::int from supplier_payments) as payments,(select count(*)::int from purchase_early_requests) as requests`)).rows[0];
+  const before=await counts();
+  const full=await call('/purchase-incoming?type=early&supplierId=a&q=031106000',c.mgr);
+  assert.equal(full.data.rows[0].earlyRequests.length,53);assert.equal(full.data.rows[0].earlyRequests[0].id,another.data.id);
+  assert.equal(full.data.rows[0].quantity,15000);assert.equal(full.data.kpis.earlyRequests,53);
+  const paged=await call('/purchase-incoming?type=early&limit=1',c.mgr);
+  assert.equal(paged.data.rows.length,1);assert.equal(paged.data.total,2);assert.equal(paged.data.kpis.earlyRequests,53);
+  assert.equal((await call('/purchase-incoming?type=early&limit=1&offset=1',c.mgr)).data.rows.length,1);
+  assert.deepEqual(await counts(),before,'GET không ghi phiếu, kho, phiếu nhận hoặc chi tiền');
+});

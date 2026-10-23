@@ -68,7 +68,8 @@ function searchFilter(params: URLSearchParams, brand: string) {
   return and(
     eq(products.active, true),
     brand ? eq(products.brand, brand) : undefined,
-    matchProductWords(q),
+    // Gõ / quét đúng một mã vạch (bảng mã vạch, khoá chính) cũng ra sản phẩm.
+    exactSku ? or(matchProductWords(q), sql`EXISTS (SELECT 1 FROM ${productBarcodes} pb WHERE pb.sku = ${products.sku} AND pb.barcode = ${words[0]})`) : matchProductWords(q),
     groupCond, priceCond,
     scopeCond && exactSku ? or(scopeCond, exactSku) : scopeCond,
   );

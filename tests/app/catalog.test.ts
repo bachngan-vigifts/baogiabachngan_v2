@@ -6,7 +6,7 @@ import { createAppRouter } from '../../src/app/router.ts';
 import { pricePolicies, productBarcodes, productPrices, products, productStock, warehouses, catalogVersions } from '../../src/modules/catalog/schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { fold } from '../../src/core/text/fold.ts';
-import { hydrateSnapshot, searchProducts } from '../../src/modules/catalog/domain/product-search.ts';
+import { hydrateSnapshot, matchRanges, searchProducts } from '../../src/modules/catalog/domain/product-search.ts';
 import { eq } from 'drizzle-orm';
 
 const origin = 'https://trial.test';
@@ -293,6 +293,28 @@ test('tìm sản phẩm xếp theo mức liên quan (không theo bảng chữ c�
   const items = hydrateSnapshot((await call('/catalog-snapshot', emp)).data);
   for (const q of ['bo tra', '0.5l', 'bo tra 0.5l came', 'lhc4282', 'LHC-4282', 'ly', 'tra', '500 ml', '01503801403', 'minh long', 'giu nhiet 1.2l'])
     assert.deepEqual(searchProducts(items, { q })!.map(p => p.sku), await skus(q), q);
+});
+
+test('tìm sản phẩm theo mã vạch (đúng một mã) trên máy chủ; mã vạch không khớp một phần', async () => {
+  const { db, call, emp } = await setup();
+  const t = '2026-10-23T00:00:00.000Z';
+  await db.insert(products).values([{ sku: 'BT-01', name: 'Bình giữ nhiệt 500ml', brand: 'Lock&Lock', unit: 'cái', updatedAt: t }, { sku: 'LY-02', name: 'Ly sứ', brand: 'Minh Long', unit: 'cái', updatedAt: t }]);
+  await db.insert(productBarcodes).values({ barcode: '8936086370012', sku: 'BT-01' });
+  const skus = async (q: string) => (await call('/products?limit=50&q=' + encodeURIComponent(q), emp)).data.products.map((p: any) => p.sku);
+  assert.deepEqual(await skus('8936086370012'), ['BT-01']);
+  assert.deepEqual(await skus('893608637'), [], 'mã vạch phải đúng cả mã');
+  assert.deepEqual(await skus('binh giu nhiet'), ['BT-01'], 'tìm theo tên vẫn như cũ');
+});
+
+test('tô từ khoá: không dấu, không phân biệt hoa thường, gộp đoạn chồng nhau, vị trí theo chuỗi gốc', () => {
+  const name = 'Bình giữ nhiệt Lock&Lock 500ml';
+  const marked = (q: string) => matchRanges(name, q).map(([a, b]) => name.slice(a, b));
+  assert.deepEqual(marked('binh giu'), ['Bình', 'giữ']);
+  assert.deepEqual(marked('LOCK'), ['Lock', 'Lock']);
+  assert.deepEqual(marked('nhi nhiet'), ['nhiệt'], 'đoạn chồng nhau gộp làm một');
+  assert.deepEqual(marked('500'), ['500']);
+  assert.deepEqual(matchRanges(name, ''), []);
+  assert.deepEqual(matchRanges('LHC4282DBRW_C', 'lhc4282').map(([a, b]) => 'LHC4282DBRW_C'.slice(a, b)), ['LHC4282']);
 });
 
 test('lọc tồn tối thiểu trước phân trang: biên, kho chọn, ẩn kho riêng, nguồn NCC/chờ về và sổ kho CRM', async () => {

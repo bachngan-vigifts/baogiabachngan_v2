@@ -37,8 +37,11 @@ test('voucher: xem trước, thanh toán, dòng hàng chia voucher (trừ vào g
   // % theo tiền hàng sau CK dòng.
   const pct = await f.call('/pos/preview', f.emp, 'POST', f.cart(s.id, { voucher: { code: 'KH thân thiết', type: 'percent', value: 10 } }));
   assert.deepEqual([pct.data.voucher.amount, pct.data.total], [19440, 174960]);
-  // Bắt buộc mã; không vượt tiền hàng; giá trị sai.
-  for (const [bad, re] of [[{ code: '', type: 'amount', value: 5000 }, /mã/], [{ code: 'VC', type: 'amount', value: 194401 }, /vượt/], [{ code: 'VC', type: 'percent', value: 120 }, /%/]] as const) {
+  // Mã giảm giá không bắt buộc (23/10/2026): chỉ nhập số tiền / % là giảm được.
+  const noCode = await f.call('/pos/preview', f.emp, 'POST', f.cart(s.id, { voucher: { code: '', type: 'amount', value: 5000 } }));
+  assert.equal(noCode.status, 200, JSON.stringify(noCode.data)); assert.deepEqual([noCode.data.voucher.code, noCode.data.voucher.amount, noCode.data.total], ['', 5000, 189400]);
+  // Không vượt tiền hàng; giá trị sai.
+  for (const [bad, re] of [[{ code: 'VC', type: 'amount', value: 194401 }, /vượt/], [{ code: 'VC', type: 'percent', value: 120 }, /%/]] as const) {
     const r = await f.call('/pos/preview', f.emp, 'POST', f.cart(s.id, { voucher: bad }));
     assert.equal(r.status, 400); assert.match(r.data.error ?? r.data.message ?? JSON.stringify(r.data), re);
   }

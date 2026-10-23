@@ -5,7 +5,7 @@ import { assertPosFlowFulfillable } from './pos-order-flow-guards.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { cashLock } from './cash-store.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
-import { createScheduledDelivery } from './delivery-store.ts';
+import { createScheduledDelivery, ensurePackingSchedule } from './delivery-store.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -296,6 +296,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       if(order.channel==='pos')await cashLock(tx);if(saleFlowOf(order.posSnapshot))await assertPosFlowFulfillable(tx,order.id);
       const [freshOrder] = await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
       if (!freshOrder || ['draft','cancelled','delivered'].includes(freshOrder.status)) throw new AppError(409,'Duyệt đơn trước khi gửi phiếu đóng gói.');
+      await ensurePackingSchedule(tx,order.id,viewer(c).id);
       if (!await hasDeliverySchedule(tx,order.id)) throw new AppError(409,NO_SCHEDULE,'NO_DELIVERY_SCHEDULE');
       const changed=await tx.update(packingSlips).set({ status: 'sent', sentAt: now, sentBy: viewer(c).id, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'draft'))).returning({id:packingSlips.id});

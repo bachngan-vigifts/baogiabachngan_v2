@@ -27,7 +27,11 @@ export function posFeeInput(b: Record<string, unknown>): FeeInput {
   const fee = serviceInput(b.feeName, b.feeAmount, b.feeQuantity);
   return fee.name || fee.unitPrice || shippingFee ? { feeName: fee.name, feeAmount: fee.unitPrice, feeQuantity: fee.quantity, shippingFee } : {};
 }
-export function calculatePosFees(b: Record<string, unknown>, taxRate: number) {
+/**
+ * `shippingTaxRate`: phí ship nhập là giá ĐÃ GỒM VAT (từ 23/10/2026, cùng thuế suất quầy như phí dịch vụ) – khách trả đúng số nhập,
+ * VAT được tách ra. Đơn cũ lưu phí ship không VAT: snapshot không có `shipping.taxRate` → 0, số liệu đơn cũ giữ nguyên.
+ */
+export function calculatePosFees(b: Record<string, unknown>, taxRate: number, shippingTaxRate = taxRate) {
   const input = posFeeInput(b), shippingFee = input.shippingFee ?? 0;
   const calculate = (row: ServiceInput) => {
     const calculated = posLine({ price: row.unitPrice, qty: row.quantity, taxRate, priceIncludesVat: taxRate > 0, vatEnabled: taxRate > 0 });
@@ -38,12 +42,15 @@ export function calculatePosFees(b: Record<string, unknown>, taxRate: number) {
   const sum = (key: 'amount' | 'subtotal' | 'tax') => posMoney(services.reduce((n, s) => n + s[key], 0));
   // Aggregate remains available to returns, old clients and integrations. VAT rounds per fee line.
   const service = services.length === 1 ? services[0]! : { ...zero, name: services.length ? `Phí dịch vụ (${services.length} khoản)` : '', unitPrice: sum('amount'), listUnitPrice: sum('amount'), listAmount: sum('amount'), subtotal: sum('subtotal'), tax: sum('tax'), total: sum('amount'), amount: sum('amount') };
-  return { service, services, shippingFee, subtotal: posMoney(service.subtotal + shippingFee), tax: service.tax, total: posMoney(service.total + shippingFee) };
+  const ship = posLine({ price: shippingFee, qty: 1, taxRate: shippingTaxRate, priceIncludesVat: shippingTaxRate > 0, vatEnabled: shippingTaxRate > 0 });
+  const shipping = { amount: shippingFee, subtotal: shippingFee - ship.tax, tax: ship.tax, taxRate: shippingTaxRate };
+  return { service, services, shippingFee, shipping, subtotal: posMoney(service.subtotal + shipping.subtotal), tax: posMoney(service.tax + shipping.tax), total: posMoney(service.total + shippingFee) };
 }
-export function snapshotPosFees(snapshot: { fees?: ReturnType<typeof calculatePosFees> }) {
+export function snapshotPosFees(snapshot: { fees?: Partial<ReturnType<typeof calculatePosFees>> & Pick<ReturnType<typeof calculatePosFees>, 'service' | 'shippingFee'> }) {
   const f = snapshot.fees;
   if (!f) return calculatePosFees({}, 0);
-  if (Array.isArray(f.services)) return calculatePosFees({ serviceFees: f.services.map(s => ({ name: s.name, unitPrice: s.unitPrice, quantity: s.quantity })), shippingFee: f.shippingFee }, f.service.taxRate);
+  const shipRate = f.shipping?.taxRate ?? 0;
+  if (Array.isArray(f.services)) return calculatePosFees({ serviceFees: f.services.map(s => ({ name: s.name, unitPrice: s.unitPrice, quantity: s.quantity })), shippingFee: f.shippingFee }, f.service.taxRate, shipRate);
   const structured = Object.prototype.hasOwnProperty.call(f.service, 'quantity');
-  return calculatePosFees({ feeName: f.service.name, feeAmount: structured ? f.service.unitPrice : f.service.amount, feeQuantity: structured ? f.service.quantity : 1, shippingFee: f.shippingFee }, f.service.taxRate);
+  return calculatePosFees({ feeName: f.service.name, feeAmount: structured ? f.service.unitPrice : f.service.amount, feeQuantity: structured ? f.service.quantity : 1, shippingFee: f.shippingFee }, f.service.taxRate, shipRate);
 }

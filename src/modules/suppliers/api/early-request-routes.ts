@@ -106,6 +106,27 @@ async function audit(tx:Tx,m:Member,id:string,action:string,data:Record<string,u
   await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:m.id,module:'suppliers',action,entityType:'purchase-early-requests',entityId:id,data:JSON.stringify(data),createdAt:new Date().toISOString()});
 }
 
+/** Lock the same line for supplier and Manager responses; no inventory receipt is posted here. */
+async function respondEarlyLine(db:Db, actorId:string, id:string, supplierId:string, status:'accepted'|'rejected', note:string, auditAction:string) {
+  return db.transaction(async tx=>{
+      await tx.select({id:lines.id}).from(lines).where(eq(lines.id,id)).for('update');
+      const own=await tx.select().from(allocations).where(and(eq(allocations.requestLineId,id),eq(allocations.supplierId,supplierId)));
+      if(!own.length) fail(404,'Không tìm thấy dòng yêu cầu của NCC này.');
+      const [parent]=await tx.select({status:requests.status}).from(lines).innerJoin(requests,eq(requests.id,lines.requestId)).where(eq(lines.id,id));
+      if(parent?.status!=='submitted') fail(404,'Không tìm thấy dòng yêu cầu đã gửi NCC.');
+      const resolved=own.filter(a=>a.status!=='pending');
+      if(resolved.length) {
+        if(resolved.length===own.length&&resolved.every(a=>a.status===status&&a.responseNote===note)) return {replayed:true};
+        fail(409,'Dòng yêu cầu đã được phản hồi, vui lòng tải lại.');
+      }
+      const now=new Date().toISOString();
+      await tx.update(allocations).set({status,responseNote:note,respondedAt:now,respondedBy:actorId}).where(inArray(allocations.id,own.map(a=>a.id)));
+      await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId,module:'suppliers',action:auditAction,entityType:'purchase-early-request-lines',entityId:id,
+        data:JSON.stringify({supplierId,status,note,allocations:own.map(a=>({id:a.id,quantity:a.quantity}))}),createdAt:now});
+      return {replayed:false};
+  });
+}
+
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests',async c=>{guard(c);return json({requests:await earlyRequestList(c.env.db,c.url.searchParams.get('supplierId')||null,c.url.searchParams.get('id')||''),canViewPortal:me(c).role==='manager'});},'business');
   router.post('/purchase-early-requests',async c=>{
@@ -154,6 +175,12 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       return {replayed:false};
     });return json({...result,request:(await earlyRequestList(c.env.db,null,id))[0]});
   },'business');
+  router.post('/purchase-early-request-lines/:id/manager-confirm',async c=>{
+    guard(c);if(me(c).role!=='manager') fail(403,'Chỉ Manager được xác nhận thay NCC.');
+    const body=await readJson(c.req,8000),supplierId=typeof body.supplierId==='string'?body.supplierId.trim():'';
+    if(!supplierId) fail(400,'Chọn đúng NCC cần xác nhận.');
+    return json({ok:true,...await respondEarlyLine(c.env.db,me(c).id,c.params.id!,supplierId,'accepted','Manager xác nhận thay NCC','early-request-manager-confirm')});
+  },'business');
   router.get('/supplier-portal/early-requests',async c=>{
     const supplierId=isSupplier(me(c))?await supplierFor(c):null;
     return json({requests:await earlyRequestList(c.env.db,supplierId,c.url.searchParams.get('id')||'',true),canRespond:!!supplierId});
@@ -163,22 +190,6 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     if(body.status!=='accepted'&&body.status!=='rejected') fail(400,'Chọn đồng ý hoặc từ chối.');
     if(body.note!==undefined&&(typeof body.note!=='string'||body.note.length>1000)) fail(400,'Ghi chú tối đa 1.000 ký tự.');
     const status=body.status as 'accepted'|'rejected',note=typeof body.note==='string'?body.note.trim():'';
-    const result=await c.env.db.transaction(async tx=>{
-      await tx.select({id:lines.id}).from(lines).where(eq(lines.id,id)).for('update');
-      const own=await tx.select().from(allocations).where(and(eq(allocations.requestLineId,id),eq(allocations.supplierId,supplierId)));
-      if(!own.length) fail(404,'Không tìm thấy dòng yêu cầu của NCC này.');
-      const [parent]=await tx.select({status:requests.status}).from(lines).innerJoin(requests,eq(requests.id,lines.requestId)).where(eq(lines.id,id));
-      if(parent?.status!=='submitted') fail(404,'Không tìm thấy dòng yêu cầu đã gửi NCC.');
-      const resolved=own.filter(a=>a.status!=='pending');
-      if(resolved.length) {
-        if(resolved.length===own.length&&resolved.every(a=>a.status===status&&a.responseNote===note)) return {replayed:true};
-        fail(409,'Dòng yêu cầu đã được phản hồi, vui lòng tải lại.');
-      }
-      const now=new Date().toISOString();
-      await tx.update(allocations).set({status,responseNote:note,respondedAt:now,respondedBy:me(c).id}).where(inArray(allocations.id,own.map(a=>a.id)));
-      await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:me(c).id,module:'suppliers',action:'early-request-respond',entityType:'purchase-early-request-lines',entityId:id,
-        data:JSON.stringify({supplierId,status,note,allocations:own.map(a=>({id:a.id,quantity:a.quantity}))}),createdAt:now});
-      return {replayed:false};
-    });return json({ok:true,...result});
+    return json({ok:true,...await respondEarlyLine(c.env.db,me(c).id,id,supplierId,status,note,'early-request-respond')});
   },'supplier-portal');
 }

@@ -18,7 +18,7 @@ const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/')
 const num = v => Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 const key = () => (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
 const SOURCE_LABEL = { quote: 'Báo giá', order: 'Đơn / HĐKT', stock_request: 'Khách hỏi tồn' };
-const STATE_PILL = { draft: 'warn', awaiting_confirmation: 'info', confirmed: 'info', partially_received: 'warn', received: 'ok', cancelled: '' };
+const STATE_PILL = { draft: 'warn', awaiting_confirmation: 'warn', confirmed: 'info', partially_received: 'warn', received: 'ok', cancelled: '' };
 const SAPO_LABEL = { pending: ['Chờ nhập Sapo', 'warn'], done: ['Đã nhập Sapo', 'ok'], failed: ['Nhập Sapo lỗi', 'danger'], not_needed: ['Không cần nhập Sapo', ''] };
 const FILTERS = [['', 'Tất cả'], ['draft', 'Chờ duyệt'], ['awaiting_confirmation', 'Chờ NCC xác nhận'], ['confirmed', 'Chờ nhận hàng'], ['partially_received', 'Nhận một phần'],
   ['late', 'Quá hẹn'], ['sapo', 'Chờ nhập Sapo'], ['debt', 'Còn nợ NCC'], ['received', 'Đã nhận đủ'], ['cancelled', 'Đã huỷ']];
@@ -181,7 +181,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     }
   }
   async function load() {
-    if (incomingMode) return;
+    if (incomingMode) return incoming.refresh();
     const id = ++req;
     try {
       const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim(), state: filter }));
@@ -236,7 +236,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const has = a => v.actions.includes(a);
     const acts = el('div', 'pur-actions');
     for (const a of ['edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'pdf', 'cancel']) {
-      if (has(a)) acts.append(btn(ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' || a === 'submit' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
+      if (has(a)) acts.append(btn(a === 'confirm' && opts?.isManager ? (v.confirmedAt ? 'NCC đã xác nhận' : 'Manager xác nhận thay NCC') : ACTION_LABEL[a], a === 'cancel' ? 'btn secondary small danger-text' : a === 'approve' || a === 'receive' || a === 'submit' ? 'btn primary small' : 'btn secondary small', () => ACTIONS[a]()));
       // Cạnh nút PDF: gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
       if (a === 'pdf' && has('pdf')) {
         const mail = btn('✉ Gửi email NCC', 'btn secondary small', () => sendOrderEmail(mail));

@@ -47,6 +47,11 @@ const directLink = (refType: string, refId: string) => {
     default: return '';
   }
 };
+/** Quyền trang đích của link (khớp `linkAllowed` ở trial-ui/app.js) – người xem không mở được trang thì không trả link. */
+const LINK_PERMS: Record<string, readonly string[]> = {
+  orders: ['page.orders', 'page.contracts', 'page.receivables'], contracts: ['page.orders', 'page.contracts', 'page.receivables'], purchases: ['page.purchases'],
+};
+const linkVisible = (m: SessionState['member'], link: string) => { const need = LINK_PERMS[link.replace(/^#\//, '').split(/[/?]/)[0]!]; return !need || need.some(k => can(m, k)); };
 /** refId của dòng đảo / sửa đơn có hậu tố "#xxxx" (mỗi lần đồng bộ một mã riêng) – chứng từ gốc là phần trước "#". */
 const baseRef = (refId: string) => refId.split('#')[0]!;
 
@@ -92,6 +97,7 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
       const refIds = [...new Set(rows.filter(r => r.m.refType === refType).map(r => baseRef(r.m.refId)))];
       if (refIds.length) for (const [id, link] of await resolve(db, refIds)) resolved.set(refType + '\u0000' + id, link);
     }
+    const viewer = me(c), linkOf = (refType: string, ref: string) => { const l = directLink(refType, ref) || resolved.get(refType + '\u0000' + ref) || ''; return l && linkVisible(viewer, l) ? l : ''; };
     const wName = new Map(whs.map(w => [w.id, w.name])), round = (v: number) => Math.round(v * 1000) / 1000;
     return json({ ...empty, total: sum?.n ?? 0, totals: { inQty: round(sum?.inQty ?? 0), outQty: round(sum?.outQty ?? 0) },
       moves: rows.map(({ m, balanceAfter, by, name, unit, brand, active }) => {
@@ -99,7 +105,7 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
         return { id: m.id, at: m.createdAt, sku: m.sku, name: name ?? '', unit: unit ?? '', brand: brand ?? '', active: active ?? true,
           warehouseId: m.warehouseId, warehouse: wName.get(m.warehouseId) ?? '', qty: m.qty, inQty: m.qty > 0 ? m.qty : 0, outQty: m.qty < 0 ? -m.qty : 0, balanceBefore: round(balanceAfter - m.qty), balanceAfter: round(balanceAfter),
           kind: m.kind, kindLabel: STOCK_KIND_LABEL[m.kind as StockMoveKind] ?? m.kind, description: stockMoveDescription(m.kind as StockMoveKind, m.refType as StockRefType),
-          refType: m.refType, refNo: m.refNo, note: m.note, by: by ?? '', link: directLink(m.refType, ref) || resolved.get(m.refType + '\u0000' + ref) || '' };
+          refType: m.refType, refNo: m.refNo, note: m.note, by: by ?? '', link: linkOf(m.refType, ref) };
       }) });
   }, 'business');
 

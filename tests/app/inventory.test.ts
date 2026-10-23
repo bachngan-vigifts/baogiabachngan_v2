@@ -41,16 +41,19 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   assert.equal(st.openedAt, null); assert.equal(st.canManage, false);
   assert.equal((await call('/inventory/opening', kho, 'POST', { confirm: true })).status, 403, 'kho không chốt đầu kỳ');
   assert.equal((await call('/inventory/opening', mgr, 'POST', {})).status, 400, 'phải xác nhận');
-  // Trước khi chốt: lệch toàn bộ so với Sapo.
-  assert.equal((await call('/inventory/compare', mgr)).data.diffCount, 2);
+  // Trước khi chốt: kho chưa chốt không đưa vào bảng lệch, báo riêng là chưa đối chiếu được.
+  const before = (await call('/inventory/compare', mgr)).data;
+  assert.equal(before.diffCount, 0); assert.deepEqual(before.unopened, [{ warehouseId: 'ct', name: 'Kho Cần Thơ' }, { warehouseId: 'vg', name: 'Kho Vigifts' }]);
   const op = await call('/inventory/opening', mgr, 'POST', { confirm: true });
   assert.equal(op.status, 200, JSON.stringify(op.data)); assert.equal(op.data.lines, 2);
   st = (await call('/inventory/status', mgr)).data; assert.ok(st.openedAt); assert.ok(st.openedBy, 'ghi người chốt');
   let cmp = (await call('/inventory/compare', mgr)).data;
   assert.equal(cmp.diffCount, 0); assert.equal(cmp.rows.length, 0, 'mặc định chỉ hiện dòng lệch');
   assert.equal((await call('/inventory/compare?diff=0', mgr)).data.rows.length, 2);
-  // Chốt lại lần 2 khi không có gì đổi → không ghi thêm dòng.
-  assert.equal((await call('/inventory/opening', mgr, 'POST', { confirm: true })).data.lines, 0);
+  // Chốt lại lần 2 khi không có gì đổi → không ghi thêm dòng (chọn đúng kho); "Tất cả kho" bỏ qua kho đã chốt.
+  assert.equal((await call('/inventory/opening', mgr, 'POST', { confirm: true, warehouseId: 'ct' })).data.lines, 0);
+  const again = (await call('/inventory/opening', mgr, 'POST', { confirm: true })).data;
+  assert.equal(again.lines, 0); assert.deepEqual(again.results.map((r: any) => [r.warehouseId, r.status]), [['ct', 'skipped'], ['vg', 'skipped']]);
 
   // Phiếu nhận NCC: hàng đạt cộng vào đúng kho theo tên; huỷ phiếu → ghi dòng ngược lại.
   const sup = (await call('/suppliers', mgr, 'POST', { name: 'Minh Long', contacts: [{ kind: 'order', email: 'ml@ncc.vn' }] })).data.supplier.id;
@@ -60,7 +63,7 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
   const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,AAAA'] });
   assert.equal(rc.status, 201, JSON.stringify(rc.data));
-  const resetAfterReceipt = await call('/inventory/opening',mgr,'POST',{confirm:true});
+  const resetAfterReceipt = await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});
   assert.equal(resetAfterReceipt.status,409);assert.match(resetAfterReceipt.data.error,/supplier_receipt.*Dùng phiếu điều chỉnh để sửa lệch/);
   assert.deepEqual((await call('/inventory/compare', kho)).data.rows, [], 'Kho chỉ xem Vigifts, không lẫn nhận vào kho cửa hàng');
   cmp = (await call('/inventory/compare', mgr)).data;
@@ -115,11 +118,12 @@ test('sổ kho: tài khoản Kho chỉ có Vigifts; không thể sửa query đ�
   const st = (await call('/inventory/status', kho)).data;
   assert.deepEqual(st.warehouses.map((w: any) => w.id), ['vg']);
   assert.equal(st.defaultWarehouseId, 'vg'); assert.equal(st.warehouseRestricted, true);
-  assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows.map((r: any) => r.warehouseId), ['vg']);
+  assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.unopened.map((r: any) => r.warehouseId), ['vg'], 'chưa chốt: chỉ báo Vigifts chưa đối chiếu được');
   assert.equal((await call('/inventory/compare?warehouseId=ct', kho)).status, 403);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).status, 403);
   assert.equal((await call('/inventory/adjustments', kho, 'POST', { warehouseId: 'ct', reason: 'Kiểm kê', lines: [{sku:'LY1',qty:1}] })).status, 403);
   assert.equal((await call('/inventory/opening', kho, 'POST', {confirm:true})).data.lines, 1, 'nếu được cấp chốt tồn, vẫn chỉ chốt Vigifts');
+  assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows.map((r: any) => r.warehouseId), ['vg']);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 0, 'không ghi vào kho ngoài phạm vi');
   assert.deepEqual((await call('/inventory/status', mgr)).data.warehouses.map((w: any) => w.id), ['ct','vg']);
   // Inactive Vigifts must not silently expand the scope back to all warehouses.
@@ -129,29 +133,35 @@ test('sổ kho: tài khoản Kho chỉ có Vigifts; không thể sửa query đ�
   assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows, []);
 });
 
-test('chốt đầu kỳ: Sapo âm hoặc kho không có dòng chốt đều rollback toàn bộ, không tự tạo marker', async()=>{
+test('chốt đầu kỳ: Sapo âm hoặc kho không có tồn chỉ làm hỏng đúng kho đó, không tự tạo marker', async()=>{
   const {db,call,mgr}=await setup();
   const {eq}=await import('drizzle-orm'); const {stockMoves,stockBalances}=await import('../../src/modules/inventory/schema.ts');
   await db.update(productStock).set({quantity:-2}).where(eq(productStock.warehouseId,'ct'));
-  const negative=await call('/inventory/opening',mgr,'POST',{confirm:true});
-  assert.equal(negative.status,409);assert.equal(negative.data.code,'OPENING_NEGATIVE_STOCK');assert.match(negative.data.error,/LY1/);
+  const negative=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});
+  assert.equal(negative.status,409);assert.equal(negative.data.code,'OPENING_NEGATIVE_STOCK');assert.match(negative.data.error,/LY1 \(-2\)/);
   assert.equal((await db.select().from(stockMoves)).length,0);assert.equal((await db.select().from(stockBalances)).length,0);
   await db.update(productStock).set({quantity:0}).where(eq(productStock.warehouseId,'ct'));
-  const empty=await call('/inventory/opening',mgr,'POST',{confirm:true});
-  assert.equal(empty.status,409);assert.equal(empty.data.code,'WAREHOUSE_OPENING_EMPTY');assert.match(empty.data.error,/marker/);
+  const empty=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});
+  assert.equal(empty.status,409);assert.equal(empty.data.code,'WAREHOUSE_OPENING_EMPTY');
+  assert.equal(empty.data.error,'Kho "Kho Cần Thơ" không có tồn Sapo để chốt. Kiểm tra lại danh mục tồn Sapo của kho này.');assert.doesNotMatch(empty.data.error,/marker|migration/i);
   assert.equal((await db.select().from(stockMoves)).length,0);assert.equal((await db.select().from(stockBalances)).length,0);
   assert.equal((await call('/inventory/status',mgr)).data.openedAt,null);
+  // "Tất cả kho": kho rỗng báo lỗi riêng, kho có tồn vẫn chốt.
+  const all=await call('/inventory/opening',mgr,'POST',{confirm:true});
+  assert.equal(all.status,200);assert.equal(all.data.ok,false);
+  assert.deepEqual(all.data.results.map((r:any)=>[r.warehouseId,r.status,r.lines,r.code??'']),[['ct','failed',0,'WAREHOUSE_OPENING_EMPTY'],['vg','opened',1,'']]);
+  assert.deepEqual((await db.select().from(stockMoves)).map(m=>m.warehouseId),['vg']);
 });
 
 test('chốt lần đầu có phát sinh cũ và chốt lại sau điều chỉnh đều bị chặn, không ghi thêm',async()=>{
   const {db,call,mgr}=await setup();const {stockMoves}=await import('../../src/modules/inventory/schema.ts');
   // Historical invalid data is seeded directly; no new application write may create this state.
   await db.insert(stockMoves).values({id:'legacy',sku:'LY1',warehouseId:'ct',qty:1,kind:'adjust',refType:'adjustment',refId:'legacy',createdBy:'mgr',createdAt:now});
-  let r=await call('/inventory/opening',mgr,'POST',{confirm:true});assert.equal(r.status,409);assert.match(r.data.error,/chưa chốt.*adjustment/);
+  let r=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});assert.equal(r.status,409);assert.match(r.data.error,/chưa chốt.*adjustment/);
   assert.equal((await db.select().from(stockMoves)).length,1);
   await db.delete(stockMoves);assert.equal((await call('/inventory/opening',mgr,'POST',{confirm:true})).status,200);
   assert.equal((await call('/inventory/adjustments',mgr,'POST',{warehouseId:'ct',reason:'Kiểm kê',lines:[{sku:'LY1',qty:1}]})).status,201);
-  const before=await db.select().from(stockMoves);r=await call('/inventory/opening',mgr,'POST',{confirm:true});
+  const before=await db.select().from(stockMoves);r=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});
   assert.equal(r.status,409);assert.match(r.data.error,/Dùng phiếu điều chỉnh để sửa lệch/);assert.deepEqual(await db.select().from(stockMoves),before);
 });
 
@@ -175,7 +185,9 @@ test('chốt kho được chọn: mở kho mới không reset kho khác đã có
   assert.equal(opening.status,200,JSON.stringify(opening.data));assert.equal(opening.data.lines,1);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct',mgr)).data.balance,11);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=new',mgr)).data.balance,8);
-  const all=await call('/inventory/opening',mgr,'POST',{confirm:true});assert.equal(all.status,409);assert.equal(all.data.code,'WAREHOUSE_OPENING_USED');
+  const used=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});assert.equal(used.status,409);assert.equal(used.data.code,'WAREHOUSE_OPENING_USED');
+  const all=await call('/inventory/opening',mgr,'POST',{confirm:true});assert.equal(all.status,200);assert.equal(all.data.lines,0,'"Tất cả kho" không chốt lại kho đã chốt');
+  assert.ok(all.data.results.every((x:any)=>x.status==='skipped'));assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct',mgr)).data.balance,11);
   await call('/permissions/positions/warehouse',mgr,'PUT',{perms:['inventory.view','inventory.manage']});
   assert.equal((await call('/inventory/opening',kho,'POST',{confirm:true,warehouseId:'new'})).status,403);
 });

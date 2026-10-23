@@ -9,7 +9,7 @@ import { employees } from '../../staff/schema.ts';
 import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { stockBalances, stockMoves } from '../schema.ts';
 import { STOCK_KIND_LABEL } from '../domain/kinds.ts';
-import { postMoves, guardInventoryOpening } from './ledger.ts';
+import { postMoves, guardInventoryOpening, type LedgerDb } from './ledger.ts';
 import { hiddenWarehouseIds } from './warehouse-access.ts';
 import { hiddenStockWarehouses, readCatalogStock } from '../../catalog/api/stock-source.ts';
 
@@ -42,6 +42,12 @@ async function ledgerWarehouses(c: Ctx) {
   const all = (await stockWarehouses(c.env.db)).filter(w => !hidden.has(w.id));
   return restrictedLedger(c) ? all.filter(w => w.name.toLowerCase().includes('vigifts')) : all;
 }
+/** Kho đã chốt tồn đầu kỳ (có dòng 'opening') trong danh sách – mỗi kho xét riêng. */
+async function openedWarehouses(db: LedgerDb, ids: readonly string[]) {
+  if (!ids.length) return new Set<string>();
+  return new Set((await db.selectDistinct({ id: stockMoves.warehouseId }).from(stockMoves)
+    .where(and(eq(stockMoves.refType, 'opening'), inArray(stockMoves.warehouseId, [...ids])))).map(w => w.id));
+}
 async function checkLedgerWarehouse(c: Ctx, id: string) {
   if (!(await ledgerWarehouses(c)).some(w => w.id === id)) fail(403, 'Kho không thuộc phạm vi sổ kho của bạn.');
 }
@@ -73,16 +79,18 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
       .orderBy(asc(products.sku)).limit(30);
     const skus = found.map(p => p.sku);
     // Tồn theo cùng nguồn với danh mục: kho đã chốt đầu kỳ = sổ kho, kho chưa chốt = tồn Sapo. Kho riêng (Hoá đơn) ẩn với người không bán kho đó.
-    const [[open], rows, incoming, hidden] = await Promise.all([
-      db.select({ id: stockMoves.id }).from(stockMoves).where(eq(stockMoves.refType, 'opening')).limit(1),
+    const [opened, rows, incoming, hidden] = await Promise.all([
+      openedWarehouses(db, whs.map(w => w.id)),
       readCatalogStock(db, skus),
       skus.length && incomingLookup.read ? incomingLookup.read(db, skus).catch(() => [] as IncomingLine[]) : [] as IncomingLine[],
       hiddenStockWarehouses(db, me(c)),
     ]);
     whs = whs.filter(w => !hidden.has(w.id));
     const at = (sku: string, wh: string) => num(rows.find(r => r.sku === sku && r.warehouseId === wh)?.quantity ?? 0);
-    return json({ source: open ? 'ledger' : 'sapo', warehouses: whs, products: found.map(p => {
-      const stock = whs.map(w => ({ warehouseId: w.id, warehouse: w.name, qty: at(p.sku, w.id) }));
+    // Nguồn theo TỪNG kho: kho đã chốt = sổ kho, kho chưa chốt = Sapo; `source` chung = 'mixed' khi các kho khác nguồn.
+    const sourceOf = (id: string) => opened.has(id) ? 'ledger' as const : 'sapo' as const, sources = new Set(whs.map(w => sourceOf(w.id)));
+    return json({ source: sources.size > 1 ? 'mixed' : [...sources][0] ?? 'sapo', warehouses: whs.map(w => ({ ...w, source: sourceOf(w.id) })), products: found.map(p => {
+      const stock = whs.map(w => ({ warehouseId: w.id, warehouse: w.name, qty: at(p.sku, w.id), source: sourceOf(w.id) }));
       // Hàng đang về: đơn mua NCC đã duyệt còn chờ (không cộng vào tổng tồn); đơn hẹn sớm lên trước.
       const orders = incoming.filter(l => l.sku === p.sku).sort((a, b) => (a.arrivalDate || '9') < (b.arrivalDate || '9') ? -1 : 1)
         .map(l => ({ orderId: l.orderId, ticketNumber: l.ticketNumber, supplierName: l.supplierName, internalNo: l.internalNo, arrivalDate: l.arrivalDate, qty: num(l.left) }));
@@ -90,24 +98,35 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     }) });
   }, 'business');
 
+  // Trạng thái THEO KHO: ?warehouseId= → ngày chốt / người chốt / số dòng của đúng kho đó. Không chọn kho → mỗi kho trong
+  // `warehouses[]` mang trạng thái riêng; openedAt chung chỉ có khi MỌI kho trong phạm vi đã chốt (không lấy kho này báo cho kho khác).
   router.get('/inventory/status', async c => {
     guard(c);
-    const db = c.env.db, whs = await ledgerWarehouses(c), ids = whs.map(w => w.id);
-    const scope = ids.length ? inArray(stockMoves.warehouseId, ids) : sql`false`;
-    const [[open], [cnt]] = await Promise.all([
-      db.select({ at: stockMoves.createdAt, by: employees.name }).from(stockMoves).leftJoin(employees, eq(employees.id, stockMoves.createdBy))
-        .where(and(eq(stockMoves.refType, 'opening'), scope)).orderBy(desc(stockMoves.createdAt)).limit(1),
-      db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(stockMoves).where(scope),
+    const db = c.env.db, all = await ledgerWarehouses(c), wh = c.url.searchParams.get('warehouseId') || '';
+    if (wh) await checkLedgerWarehouse(c, wh);
+    const ids = all.map(w => w.id), scope = ids.length ? inArray(stockMoves.warehouseId, ids) : sql`false`;
+    const [opens, counts] = await Promise.all([
+      db.selectDistinctOn([stockMoves.warehouseId], { id: stockMoves.warehouseId, at: stockMoves.createdAt, by: employees.name }).from(stockMoves).leftJoin(employees, eq(employees.id, stockMoves.createdBy))
+        .where(and(eq(stockMoves.refType, 'opening'), scope)).orderBy(stockMoves.warehouseId, desc(stockMoves.createdAt)),
+      db.select({ id: stockMoves.warehouseId, n: sql<number>`count(*)`.mapWith(Number) }).from(stockMoves).where(scope).groupBy(stockMoves.warehouseId),
     ]);
-    return json({ openedAt: open?.at ?? null, openedBy: open?.by ?? '', moveCount: cnt?.n ?? 0, canManage: canManage(me(c)), warehouses: whs, warehouseRestricted: restrictedLedger(c), defaultWarehouseId: restrictedLedger(c) ? whs[0]?.id ?? null : null });
+    const whs = all.map(w => { const o = opens.find(x => x.id === w.id); return { ...w, openedAt: o?.at ?? null, openedBy: o?.by ?? '', moveCount: counts.find(x => x.id === w.id)?.n ?? 0 }; });
+    const one = wh ? whs.find(w => w.id === wh) : null, latest = whs.reduce<typeof whs[number] | null>((a, w) => w.openedAt && (!a || w.openedAt > a.openedAt!) ? w : a, null);
+    const allOpened = whs.length > 0 && whs.every(w => w.openedAt);
+    return json({ warehouseId: one?.id ?? null, openedAt: one ? one.openedAt : allOpened ? latest?.openedAt ?? null : null, openedBy: one ? one.openedBy : allOpened ? latest?.openedBy ?? '' : '',
+      moveCount: one ? one.moveCount : whs.reduce((t, w) => t + w.moveCount, 0), openedCount: whs.filter(w => w.openedAt).length,
+      canManage: canManage(me(c)), warehouses: whs, warehouseRestricted: restrictedLedger(c), defaultWarehouseId: restrictedLedger(c) ? whs[0]?.id ?? null : null });
   }, 'business');
 
   router.get('/inventory/compare', async c => {
     guard(c);
     const db = c.env.db, p = c.url.searchParams, wh = p.get('warehouseId') || '', q = (p.get('q') || '').trim().slice(0, 80), onlyDiff = p.get('diff') !== '0';
     if (wh) await checkLedgerWarehouse(c, wh);
-    const whs = await ledgerWarehouses(c), ids = wh ? whs.filter(w => w.id === wh).map(w => w.id) : whs.map(w => w.id);
-    if (!ids.length) return json({ rows: [], total: 0, diffCount: 0 });
+    const whs = await ledgerWarehouses(c), scoped = wh ? whs.filter(w => w.id === wh) : whs;
+    // Kho chưa chốt tồn đầu kỳ: sổ kho chưa có số để so → không đưa vào bảng / số dòng lệch, báo riêng trong `unopened`.
+    const opened = await openedWarehouses(db, scoped.map(w => w.id)), ids = scoped.filter(w => opened.has(w.id)).map(w => w.id);
+    const unopened = scoped.filter(w => !opened.has(w.id)).map(w => ({ warehouseId: w.id, name: w.name }));
+    if (!ids.length) return json({ rows: [], total: 0, diffCount: 0, unopened });
     // Ghép tồn sổ kho và tồn Sapo theo (mã, kho); thiếu bên nào coi như 0.
     const res = await db.execute(sql`
       with b as (select sku, warehouse_id, qty from ${stockBalances} where warehouse_id in ${ids}),
@@ -124,7 +143,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
       where coalesce(b.warehouse_id, s.warehouse_id) in ${ids} and abs(coalesce(b.qty, 0) - coalesce(s.quantity, 0)) > 0.0005) x`).then(r => (r as unknown as { rows?: unknown[] }).rows ?? (r as unknown as unknown[]));
     const names = new Map(whs.map(w => [w.id, w.name]));
     return json({ rows: rows.map(r => ({ sku: String(r.sku), name: String(r.name), unit: String(r.unit), warehouseId: String(r.warehouse_id), warehouse: names.get(String(r.warehouse_id)) ?? '',
-      ledger: num(r.ledger), sapo: num(r.sapo), diff: num(r.diff) })), diffCount: Number((d as { n?: number } | undefined)?.n ?? 0) });
+      ledger: num(r.ledger), sapo: num(r.sapo), diff: num(r.diff) })), diffCount: Number((d as { n?: number } | undefined)?.n ?? 0), unopened });
   }, 'business');
 
   router.get('/inventory/card', async c => {
@@ -146,6 +165,9 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
   }, 'business');
 
+  // Chốt tồn đầu kỳ THEO TỪNG KHO: mỗi kho một giao dịch riêng – kho lỗi (Sapo âm, không có tồn, đã có phát sinh) không chặn kho khác.
+  // Chọn một kho: lỗi → 409 như cũ; kho đã chốt được "chốt lại" (chỉ khi chưa có phát sinh khác). "Tất cả kho": chỉ chốt kho CHƯA chốt
+  // (kho đã chốt → skipped, muốn chốt lại phải chọn đúng kho), luôn 200 kèm `results` [{ warehouseId, name, status: opened|skipped|failed, lines, message, code }].
   router.post('/inventory/opening', async c => {
     const m = me(c);
     if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền chốt tồn đầu kỳ.');
@@ -154,29 +176,42 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     if (body.warehouseId !== undefined && typeof body.warehouseId !== 'string') fail(400,'Chọn kho chốt tồn hợp lệ.');
     const selected = String(body.warehouseId || '').trim();
     if (selected) await checkLedgerWarehouse(c,selected);
-    const db = c.env.db, openingWarehouses = (await ledgerWarehouses(c)).filter(w=>!selected||w.id===selected), ids = openingWarehouses.map(w => w.id);
-    if (!ids.length) fail(409, 'Chưa có kho thật nào (đồng bộ danh sách kho từ Sapo trước).');
+    const db = c.env.db, openingWarehouses = (await ledgerWarehouses(c)).filter(w=>!selected||w.id===selected);
+    if (!openingWarehouses.length) fail(409, 'Chưa có kho thật nào (đồng bộ danh sách kho từ Sapo trước).');
     const refId = crypto.randomUUID(), refNo = 'ĐK-' + new Date().toISOString().slice(0, 10).replaceAll('-', '');
-    let written = 0;
-    await db.transaction(async tx => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_ledger_opening'))`);
-      await guardInventoryOpening(tx, ids);
-      const [bal, sapo] = await Promise.all([
-        tx.select().from(stockBalances).where(inArray(stockBalances.warehouseId, ids)),
-        tx.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, qty: productStock.quantity }).from(productStock).where(inArray(productStock.warehouseId, ids)),
-      ]);
-      const negative = sapo.filter(s => s.qty < 0);
-      if (negative.length) throw new AppError(409, 'Tồn Sapo đang âm, chưa chốt được: ' + negative.slice(0, 10).map(s => `${s.sku} (${s.qty})`).join('; '), 'OPENING_NEGATIVE_STOCK');
-      const target = new Map<string, { sku: string; warehouseId: string; want: number; have: number }>();
-      for (const b of bal) target.set(b.sku + '\u0000' + b.warehouseId, { sku: b.sku, warehouseId: b.warehouseId, want: 0, have: b.qty });
-      for (const s of sapo) { const k = s.sku + '\u0000' + s.warehouseId, t = target.get(k); if (t) t.want = s.qty; else target.set(k, { sku: s.sku, warehouseId: s.warehouseId, want: s.qty, have: 0 }); }
-      const opened = new Set((await tx.selectDistinct({ id: stockMoves.warehouseId }).from(stockMoves).where(and(inArray(stockMoves.warehouseId, ids), eq(stockMoves.refType, 'opening')))).map(w => w.id));
-      const empty = ids.filter(id => !opened.has(id) && ![...target.values()].some(t => t.warehouseId === id && Math.abs(t.want - t.have) > 0.0005));
-      if (empty.length) throw new AppError(409, 'Kho không có dòng tồn đầu kỳ khác 0: ' + openingWarehouses.filter(w => empty.includes(w.id)).map(w => w.name).join(', ') + '. Chưa chốt kho; cần marker mở kho (migration phải được duyệt) để hỗ trợ trường hợp này.', 'WAREHOUSE_OPENING_EMPTY');
-      written = await postMoves(tx, m.id, [...target.values()].map(t => ({ sku: t.sku, warehouseId: t.warehouseId, qty: t.want - t.have, kind: 'opening' as const, refType: 'opening' as const, refId, refNo, note: 'Chốt tồn đầu kỳ theo tồn Sapo' })));
-    });
-    return json({ ok: true, refNo, lines: written });
+    const results: { warehouseId: string; name: string; status: 'opened' | 'skipped' | 'failed'; lines: number; message: string; code?: string }[] = [];
+    for (const w of openingWarehouses) {
+      try {
+        const lines = await db.transaction(async tx => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_ledger_opening'))`);
+          if (!selected && (await openedWarehouses(tx, [w.id])).size) return null;
+          await guardInventoryOpening(tx, [w.id]);
+          const [bal, sapo, [opened]] = await Promise.all([
+            tx.select({ sku: stockBalances.sku, qty: stockBalances.qty }).from(stockBalances).where(eq(stockBalances.warehouseId, w.id)),
+            tx.select({ sku: productStock.sku, qty: productStock.quantity }).from(productStock).where(eq(productStock.warehouseId, w.id)),
+            tx.select({ id: stockMoves.id }).from(stockMoves).where(and(eq(stockMoves.warehouseId, w.id), eq(stockMoves.refType, 'opening'))).limit(1),
+          ]);
+          const negative = sapo.filter(s => s.qty < 0);
+          if (negative.length) throw new AppError(409, `Kho "${w.name}" có ${negative.length} mã tồn Sapo âm, chưa chốt được: ` + negative.slice(0, 10).map(s => `${s.sku} (${s.qty})`).join('; ')
+            + (negative.length > 10 ? ` và ${negative.length - 10} mã khác` : '') + '. Sửa tồn trên Sapo rồi đồng bộ lại.', 'OPENING_NEGATIVE_STOCK');
+          const target = new Map<string, { sku: string; want: number; have: number }>();
+          for (const b of bal) target.set(b.sku, { sku: b.sku, want: 0, have: b.qty });
+          for (const s of sapo) { const t = target.get(s.sku); if (t) t.want = s.qty; else target.set(s.sku, { sku: s.sku, want: s.qty, have: 0 }); }
+          const changes = [...target.values()].filter(t => Math.abs(t.want - t.have) > 0.0005);
+          if (!opened && !changes.length) throw new AppError(409, `Kho "${w.name}" không có tồn Sapo để chốt. Kiểm tra lại danh mục tồn Sapo của kho này.`, 'WAREHOUSE_OPENING_EMPTY');
+          return postMoves(tx, m.id, changes.map(t => ({ sku: t.sku, warehouseId: w.id, qty: t.want - t.have, kind: 'opening' as const, refType: 'opening' as const, refId, refNo, note: 'Chốt tồn đầu kỳ theo tồn Sapo' })));
+        });
+        if (lines === null) results.push({ warehouseId: w.id, name: w.name, status: 'skipped', lines: 0, message: 'Kho đã chốt tồn đầu kỳ trước đó. Muốn chốt lại, chọn đúng kho này.' });
+        else results.push(lines ? { warehouseId: w.id, name: w.name, status: 'opened', lines, message: `Đã chốt ${lines} dòng tồn đầu kỳ.` }
+          : { warehouseId: w.id, name: w.name, status: 'skipped', lines: 0, message: 'Sổ kho đã khớp tồn Sapo, không cần ghi thêm.' });
+      } catch (e) {
+        if (selected) throw e;
+        if (!(e instanceof AppError)) console.error('inventory opening', w.id, e);
+        results.push({ warehouseId: w.id, name: w.name, status: 'failed', lines: 0, message: e instanceof AppError ? e.message : `Lỗi khi chốt kho "${w.name}", thử lại sau.`, code: e instanceof AppError ? e.code : undefined });
+      }
+    }
+    return json({ ok: results.every(r => r.status !== 'failed'), refNo, lines: results.reduce((t, r) => t + r.lines, 0), results });
   }, 'business');
 
   router.post('/inventory/adjustments', async c => {

@@ -8,7 +8,7 @@ import { createAppRouter } from '../../src/app/router.ts';
 import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
 import { stockBalances, warehouseSellers } from '../../src/modules/inventory/schema.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
-import { packingSlipLines, packingSlips, salesOrderLines } from '../../src/modules/sales/schema.ts';
+import { deliveries, deliveryLines, packingSlipLines, packingSlips, salesOrderLines } from '../../src/modules/sales/schema.ts';
 import { reconcileAutoTasks } from '../../src/modules/tasks/api/auto-tasks.ts';
 import { tasks } from '../../src/modules/tasks/schema.ts';
 
@@ -259,6 +259,10 @@ test('kế hoạch báo giá: duyệt trước, xuất từng phần; thiếu ng
   const change=await s.call(`/orders/${id}/warehouse`,s.mgr,'PUT',{warehouseId:'ml'});
   assert.equal(change.data.code,'STOCK_PLAN_IN_USE');
   const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
+  // Approval now creates the initial full trip; cancel it explicitly to exercise two partial trips.
+  const [initialTrip]=await s.db.select().from(deliveries).where(eq(deliveries.orderId,id));
+  assert.ok(initialTrip);
+  assert.equal((await s.call(`/deliveries/${initialTrip.id}/status`,s.emp,'PUT',{status:'cancelled'})).status,200);
   const scheduled=await s.call('/deliveries',s.emp,'POST',{orderId:id,plannedDate:'2026-10-24',lines:[{orderLineId:line!.id,qty:50}]});
   assert.equal(scheduled.status,201,JSON.stringify(scheduled.data));
   const second=await s.call('/deliveries',s.emp,'POST',{orderId:id,plannedDate:'2026-10-25',lines:[{orderLineId:line!.id,qty:20}]});
@@ -307,8 +311,9 @@ test('kế hoạch đã đóng nhưng chưa bàn giao: huỷ hoàn đúng các p
  const s=await setup(),q=await quote(s,'BG_PLAN_CANCEL',10);
  const o=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:5,type:'stock'},{sku:'LY1',qty:5,type:'purchase',note:'NCC đã bổ sung'}]});assert.equal(o.status,201);
  const id=o.data.id;assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
- const [l]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
- assert.equal((await s.call('/deliveries',s.emp,'POST',{orderId:id,plannedDate:'2026-10-25',lines:[{orderLineId:l!.id,qty:10}]})).status,201);
+ // #266: duyệt đơn có kế hoạch đóng gói tự tạo chuyến giao đầu cho cả 10 (không lập tay thêm được).
+ const {deliveries}=await import('../../src/modules/sales/schema.ts');
+ assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,1);
  for(const p of await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id))){
   assert.equal((await s.call(`/packing/${p.id}/send`,s.emp,'POST',{})).status,200);
   assert.equal((await s.call(`/packing/${p.id}/confirm`,s.kho,'POST',{warehouseId:'vig',photos:['data:image/jpeg;base64,'+'A'.repeat(200)]})).status,200);
@@ -326,4 +331,65 @@ test('đơn bán hiển thị đơn mua theo báo giá nguồn; không nhân đ�
  let detail=await s.call('/orders/'+order.data.id,s.emp);assert.equal(detail.status,200,JSON.stringify(detail.data));assert.equal(detail.data.purchases.length,1);assert.equal(detail.data.purchases[0].id,po.data.ids[0]);
  const cancel=await s.call('/purchase-orders/'+po.data.ids[0]+'/cancel',s.emp,'POST',{reason:'Kiểm thử huỷ nháp'});assert.equal(cancel.status,200,JSON.stringify(cancel.data));
  detail=await s.call('/orders/'+order.data.id,s.emp);assert.equal(detail.data.purchases.length,0);
+});
+
+test('điều chuyển chờ duyệt: sửa đúng quyền/revision, rollback lỗi; clientKey chống tạo trùng không ghi sổ',async()=>{
+  const s=await setup();
+  const {stockTransfers,stockTransferLines,stockMoves}=await import('../../src/modules/inventory/schema.ts');
+  const before=JSON.stringify(await s.db.select().from(stockBalances));const beforeMoves=(await s.db.select().from(stockMoves)).length;
+  const body={clientKey:'f35aa278-5a96-4fca-b00f-1d30db677698',fromWarehouseId:'vig',toWarehouseId:'ml',reason:'Cần hàng',lines:[{sku:'LY1',qty:10}]};
+  const concurrent=await Promise.all([s.call('/stock-transfers',s.emp,'POST',body),s.call('/stock-transfers',s.emp,'POST',body)]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,201]);
+  const made=concurrent.find(r=>r.status===201)!;const id=made.data.id,path='/stock-transfers/'+id;
+  const retry=await s.call('/stock-transfers',s.emp,'POST',body);assert.equal(retry.status,200);assert.equal(retry.data.replayed,true);assert.equal(retry.data.id,id);
+  assert.equal((await s.db.select().from(stockTransfers)).length,1);
+  assert.equal((await s.call('/stock-transfers',s.emp,'POST',{...body,lines:[{sku:'LY1',qty:11}]})).status,409);
+  assert.equal(made.data.actions.edit,true);
+  const edit={...body,revision:made.data.revision,reason:'Sửa số lượng',lines:[{sku:'LY1',qty:12}]};
+  assert.equal((await s.call(path,s.kho,'PUT',edit)).status,403);
+  assert.equal((await s.call(path,s.emp,'PUT',{...edit,revision:undefined})).status,400);
+  const changed=await s.call(path,s.emp,'PUT',edit);assert.equal(changed.status,200);assert.equal(changed.data.transferNo,made.data.transferNo);assert.equal(changed.data.status,'pending');assert.equal(changed.data.lines[0].qty,12);assert.equal(changed.data.revision,made.data.revision+1);
+  assert.equal((await s.call(path,s.emp,'PUT',edit)).status,409);
+  const revision=changed.data.revision;
+  for(const bad of [{lines:[{sku:'BAD',qty:1}]},{lines:[{sku:'LY1',qty:0}]},{toWarehouseId:'hd'},{toWarehouseId:'vig'}])assert.equal((await s.call(path,s.emp,'PUT',{...edit,revision,...bad})).status,400);
+  const stored=await s.call(path,s.emp);assert.equal(stored.data.revision,revision);assert.equal(stored.data.lines[0].qty,12);
+  const manager=await s.call(path,s.mgr,'PUT',{...edit,revision,lines:[{sku:'LY1',qty:15}]});assert.equal(manager.status,200);
+  assert.equal((await s.db.select().from(stockTransferLines)).length,1);
+  assert.equal(JSON.stringify(await s.db.select().from(stockBalances)),before);assert.equal((await s.db.select().from(stockMoves)).length,beforeMoves);
+  await s.call(path+'/approve',s.mgr,'POST',{revision:manager.data.revision});
+  assert.equal((await s.call(path,s.emp,'PUT',{...edit,revision:manager.data.revision+1})).status,409);
+  assert.equal((await s.call(path,s.emp)).data.actions.edit,false);
+});
+
+test('kế hoạch nguồn hàng: duyệt tự có lịch; gửi phiếu cũ bổ sung lịch thiếu một lần và không nhân đôi phiếu/tồn',async()=>{
+  const s=await setup(),q=await quote(s,'BG_PLAN_SCHEDULE',50);
+  const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-10-28',stockPlan:[{sku:'LY1',qty:30,type:'stock'},{sku:'LY1',qty:20,type:'transfer',note:'SR'}]});
+  assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.id;
+  assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,0,'chưa duyệt không lên lịch');
+  assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  const trips=await s.db.select().from(deliveries).where(eq(deliveries.orderId,id));assert.equal(trips.length,1);assert.equal(trips[0]!.plannedDate,'2026-10-28');
+  assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,trips[0]!.id))).reduce((n,l)=>n+l.qty,0),50);
+  const slips=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id));assert.equal(slips.length,2);
+  const packing=await s.call(`/orders/${id}/packing`,s.emp);assert.equal(packing.data.scheduled,true);assert.equal(packing.data.lines.every((l:any)=>l.left===0),true);
+  // Simulate legacy quote stock plans created without a trip, as reported in production.
+  await s.db.delete(deliveryLines).where(eq(deliveryLines.deliveryId,trips[0]!.id));await s.db.delete(deliveries).where(eq(deliveries.id,trips[0]!.id));
+  const before=await bal(s,'vig');
+  const sent=await Promise.all(slips.map(slip=>s.call(`/packing/${slip.id}/send`,s.emp,'POST',{})));
+  sent.forEach(r=>assert.equal(r.status,200,JSON.stringify(r.data)));
+  assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,1);
+  assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id))).length,2);assert.equal(await bal(s,'vig'),before);
+  assert.equal((await s.call(`/packing/${slips[0]!.id}/send`,s.emp,'POST',{})).status,409,'gửi lại không sinh thêm lịch');
+});
+
+test('lịch mặc định đóng gói: không tự phục hồi chuyến đã huỷ và không tạo lịch khi người gửi thiếu quyền',async()=>{
+  const s=await setup(),q=await quote(s,'BG_CANCEL_TRIP',10);
+  const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:10,type:'stock'}]});
+  assert.equal(made.status,201);
+  assert.equal((await s.call(`/orders/${made.data.id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  const [slip]=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,made.data.id));
+  const [trip]=await s.db.select().from(deliveries).where(eq(deliveries.orderId,made.data.id));
+  assert.equal((await s.call(`/deliveries/${trip!.id}/status`,s.emp,'PUT',{status:'cancelled'})).status,200);
+  const forbidden=await s.call(`/packing/${slip!.id}/send`,s.ml,'POST',{});assert.ok([403,404].includes(forbidden.status));
+  const send=await s.call(`/packing/${slip!.id}/send`,s.emp,'POST',{});assert.equal(send.status,409);assert.equal(send.data.code,'NO_DELIVERY_SCHEDULE');
+  const rows=await s.db.select().from(deliveries).where(eq(deliveries.orderId,made.data.id));assert.equal(rows.length,1);assert.equal(rows[0]!.status,'cancelled');
+  assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.id,slip!.id)))[0]!.status,'draft');
 });

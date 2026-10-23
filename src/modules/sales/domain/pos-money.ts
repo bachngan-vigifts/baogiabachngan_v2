@@ -59,7 +59,7 @@ export const posCashDifference = (opening: number, cashReceived: number, counted
 
 /**
  * VOUCHER nhập tay trên đơn Bán hàng nhanh: thu ngân ghi mã / ghi chú voucher + số tiền (VNĐ) hoặc % giảm cho cả đơn.
- * Không kiểm mã với danh sách phát hành; bắt buộc ghi mã để đối soát. Trừ THẲNG VÀO GIÁ ĐÃ GỒM VAT rồi tách lại VAT (vd 185.000 − 20.000 = 165.000, VAT 8% = 12.222): chia vào các dòng hàng theo
+ * Không kiểm mã với danh sách phát hành; mã không bắt buộc (23/10/2026) – chỉ cần số tiền hoặc %. Trừ THẲNG VÀO GIÁ ĐÃ GỒM VAT rồi tách lại VAT (vd 185.000 − 20.000 = 165.000, VAT 8% = 12.222): chia vào các dòng hàng theo
  * tỷ lệ tiền hàng sau chiết khấu dòng (VAT tính trên giá sau giảm). Không áp vào phí dịch vụ / phí ship.
  */
 export interface PosVoucher { code: string; type: 'percent' | 'amount'; value: number }
@@ -71,7 +71,7 @@ export function parsePosVoucher(input: unknown): PosVoucher | null {
   if (!code && !value) return null;
   const type = o.type === 'percent' ? 'percent' : o.type === 'amount' ? 'amount' : null;
   if (!type) throw new AppError(400, 'Chọn voucher giảm theo VNĐ hoặc %.');
-  if (!code) throw new AppError(400, 'Nhập mã / ghi chú voucher.');
+  if (!value && code) return null; // chỉ ghi mã, chưa nhập số giảm: không áp
   if (type === 'percent' ? !(Number.isFinite(value) && value > 0 && value <= 100) : !(Number.isSafeInteger(value) && value > 0))
     throw new AppError(400, type === 'percent' ? 'Voucher % phải từ 0 đến 100.' : 'Số tiền voucher không hợp lệ.');
   return { code, type, value };
