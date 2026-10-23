@@ -1,3 +1,5 @@
+import { issuePartnerInvite } from '../../portal/api/registration.ts';
+import { isRegistrationInvite } from '../../portal/domain/registration.ts';
 import { and, asc, count, eq, ilike, inArray, isNull, ne, notInArray, or } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -49,7 +51,7 @@ export async function supplierDetail(db: StaffEnv['db'], id: string) {
       .from(supplierAccounts).innerJoin(employees, eq(employees.id, supplierAccounts.memberId)).where(eq(supplierAccounts.supplierId, id)).orderBy(asc(employees.name)),
     db.select({ orders: count() }).from(incomingShipments).where(eq(incomingShipments.supplierId, id)),
   ]);
-  return { supplier, contacts, accounts, orders: Number(orders) };
+  return { supplier, contacts, accounts: accounts.map(a => ({ ...a, registrationPending: isRegistrationInvite(a.email), email: isRegistrationInvite(a.email) ? '' : a.email })), orders: Number(orders) };
 }
 
 export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
@@ -110,6 +112,20 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
     return json(await supplierDetail(db, id));
   }, 'business');
 
+  router.post('/suppliers/:id/invitations', async c => {
+    requireManager(c);
+    const supplier = await loadSupplier(c.env.db, c.params.id!);
+    if (!supplier.active) throw new AppError(409, 'NCC đã ngừng hoạt động, không mời đăng ký được.');
+    const body = await readJson(c.req, 4096);
+    const memberId = typeof body.memberId === 'string' ? body.memberId : undefined;
+    if (memberId) {
+      const [a] = await c.env.db.select().from(supplierAccounts).where(and(eq(supplierAccounts.memberId, memberId), eq(supplierAccounts.supplierId, supplier.id))).limit(1);
+      if (!a) throw new AppError(404, 'Không tìm thấy lời mời của NCC này.');
+    }
+    return json(await issuePartnerInvite(c.env.db, { kind: 'supplier', entityId: supplier.id, entityName: supplier.name,
+      actorId: member(c).id, origin: c.url.origin, now: (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))(), memberId }), memberId ? 200 : 201);
+  }, 'ncc-admin');
+
   router.put('/suppliers/:id/accounts', async c => {
     requireManager(c);
     const db = c.env.db, id = c.params.id!, body = await readJson(c.req, 8_192), me = member(c);
@@ -120,6 +136,9 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
     const plans = ids.map(mid => { const m = members.find(x => x.id === mid); return planAccountLink(me, m && !m.deletedAt ? m : null, supplier); });
     const now = nowIso();
     await db.transaction(async tx => {
+      const old = await tx.select({ id: supplierAccounts.memberId }).from(supplierAccounts).where(eq(supplierAccounts.supplierId, id));
+      const lockIds = [...new Set([...ids, ...old.map(a => a.id)])].sort();
+      if (lockIds.length) await tx.select({ id: employees.id }).from(employees).where(inArray(employees.id, lockIds)).orderBy(asc(employees.id)).for('update');
       await tx.delete(supplierAccounts).where(and(eq(supplierAccounts.supplierId, id), ids.length ? notInArray(supplierAccounts.memberId, ids) : undefined));
       // Mỗi tài khoản thuộc đúng một NCC: gắn sang NCC này thì bỏ gắn ở NCC cũ.
       for (const p of plans) await tx.insert(supplierAccounts).values({ ...p, createdAt: now, createdBy: me.id })
@@ -133,6 +152,6 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
     const rows = await c.env.db.select({ id: employees.id, name: employees.name, email: employees.email, role: employees.role, positionId: employees.positionId, supplierId: supplierAccounts.supplierId, supplierName: suppliers.name })
       .from(employees).leftJoin(supplierAccounts, eq(supplierAccounts.memberId, employees.id)).leftJoin(suppliers, eq(suppliers.id, supplierAccounts.supplierId))
       .where(and(eq(employees.active, true), isNull(employees.deletedAt), or(eq(employees.role, 'supplier'), eq(employees.positionId, 'supplier')))).orderBy(asc(employees.name));
-    return json({ accounts: rows.map(({ role: _r, positionId: _p, ...r }) => r) });
+    return json({ accounts: rows.map(({ role: _r, positionId: _p, ...r }) => ({ ...r, registrationPending: isRegistrationInvite(r.email), email: isRegistrationInvite(r.email) ? '' : r.email })) });
   }, 'ncc-admin');
 }

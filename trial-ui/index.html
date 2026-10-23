@@ -801,21 +801,19 @@
     <p class="muted small">Khách đăng nhập để xem và tạo báo giá, đặt hàng, theo dõi đơn. Khách không thấy tồn kho, giá nhập. Báo giá và đơn khách gửi chuyển cho nhân viên phụ trách xác nhận.</p>
     <ul class="plain-list account-list" id="accounts-list"></ul>
     <div class="banner" id="account-link" hidden>
-      <p><b>Gửi link này cho khách</b> để khách tự đặt mật khẩu (hiệu lực 15 phút):</p>
+      <p id="account-link-note">Gửi riêng link mời để khách tự đăng ký (24 giờ, dùng một lần).</p>
       <div class="copy-row"><input id="account-link-url" readonly><button type="button" class="btn secondary small" id="account-link-copy">Chép link</button></div>
     </div>
     <form id="account-form" class="form-grid cols-2" novalidate>
-      <h3 class="span-2">Tạo tài khoản mới</h3>
-      <label>Tên người dùng<input name="name" required maxlength="200" placeholder="Ví dụ: Chị Lan – phòng mua hàng"></label>
-      <label>Số di động đăng nhập<input name="phone" maxlength="40" inputmode="tel" placeholder="0901234567"><small class="muted">Khách đăng nhập bằng số này.</small></label>
-      <label>Email <small class="muted">(không bắt buộc)</small><input name="email" type="text" inputmode="email" autocapitalize="none" maxlength="254" placeholder="Bỏ trống nếu khách không có email"><small class="muted">Có email thì khách đăng nhập được bằng cả email.</small></label>
+      <h3 class="span-2">Mời khách tự đăng ký tài khoản</h3>
+      <p class="muted span-2">Link gắn sẵn hồ sơ khách hàng này. Khách tự nhập họ tên, email / số di động và mật khẩu khi mở link.</p>
       <fieldset class="span-2 manager-only discount-fields"><legend>Chiết khấu riêng theo nhãn hàng (%) – chỉ Manager</legend>
         <label>Minh Long<input name="d_minhLong" inputmode="decimal" placeholder="0"></label>
         <label>Minh Long - Lys<input name="d_lys" inputmode="decimal" placeholder="0"></label>
         <label>Lock&amp;Lock<input name="d_lock" inputmode="decimal" placeholder="0"></label>
       </fieldset>
       <p class="error span-2" id="account-error" role="alert"></p>
-      <div class="span-2"><button class="btn primary">Tạo tài khoản &amp; lấy link</button></div>
+      <div class="span-2"><button class="btn primary">Lấy link mời đăng ký</button></div>
     </form>
   </div>
 </dialog>
