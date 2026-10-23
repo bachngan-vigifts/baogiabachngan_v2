@@ -1,3 +1,5 @@
+import { issuePartnerInvite } from './registration.ts';
+import { isRegistrationInvite } from '../domain/registration.ts';
 import { quoteHeadFor, quoteNumberPatterns } from '../../quotes/domain/quote-number.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -283,10 +285,22 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
       .where(eq(customerAccounts.customerId, c.params.id!)).orderBy(asc(customerAccounts.createdAt));
     const owners = rows.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, rows.map(r => r.account.ownerId))) : [];
     return json({ accounts: rows.map(r => ({
-      memberId: r.account.memberId, name: r.name, email: shownEmail(r.email), phone: r.phone, active: r.active, activated: !!r.passwordHash,
+      memberId: r.account.memberId, registrationPending: isRegistrationInvite(r.email), name: r.name, email: isRegistrationInvite(r.email) ? '' : shownEmail(r.email), phone: r.phone, active: r.active, activated: !!r.passwordHash,
       owner: owners.find(o => o.id === r.account.ownerId) ?? { id: r.account.ownerId, name: '' }, discounts: parseDiscounts(r.account.discounts),
       canManage: member(c).role === 'manager' || r.account.ownerId === member(c).id,
     })) });
+  }, 'business');
+
+  router.post('/customers/:id/invitations', async c => {
+    const me = member(c), db = c.env.db, id = c.params.id!, body = await readJson(c.req, 8000);
+    const [cust] = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
+    if (!cust) throw new AppError(404, 'Không tìm thấy khách hàng.');
+    if (cust.approvalStatus === 'pending') throw new AppError(409, 'Khách hàng đang chờ Manager duyệt, chưa mời đăng ký được.', 'CUSTOMER_PENDING');
+    if (!(await customerAccess(db, id, me)).canSeeAll) throw new AppError(403, 'Chỉ Manager hoặc nhân viên phụ trách / được chia sẻ khách này mới mời đăng ký được.');
+    const discounts = cleanDiscounts(body.discounts);
+    if (me.role !== 'manager' && Object.keys(discounts).length) throw new AppError(403, 'Chỉ Manager được đặt chiết khấu riêng cho khách.');
+    return json(await issuePartnerInvite(db, { kind: 'customer', entityId: id, entityName: cust.name, actorId: me.id, discounts,
+      origin: c.url.origin, now: (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))() }), 201);
   }, 'business');
 
   /**
@@ -378,6 +392,11 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
   router.post('/customer-accounts/:memberId/reset', async c => {
     const row = await manageable(c), db = c.env.db, token = newToken(), nowSec = (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))();
     const [m] = await db.select({ email: employees.email, phone: employees.phone }).from(employees).where(eq(employees.id, row.memberId)).limit(1);
+    if (m && isRegistrationInvite(m.email)) {
+      const [cust] = await db.select({ name: customers.name }).from(customers).where(eq(customers.id, row.customerId)).limit(1);
+      return json(await issuePartnerInvite(db, { kind: 'customer', entityId: row.customerId, entityName: cust?.name || '', memberId: row.memberId,
+        actorId: member(c).id, origin: c.url.origin, now: nowSec }));
+    }
     await db.transaction(async tx => {
       await tx.update(credentials).set({ activationHash: sha256Hex(token), activationExpires: nowSec + ACTIVATION_TTL_SECONDS, passwordHash: null, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, row.memberId));
       await tx.delete(sessions).where(eq(sessions.memberId, row.memberId));

@@ -3381,7 +3381,6 @@ let accCustomer = null;
 async function openAccounts(c) {
   if (!c) return;
   accCustomer = c; $('#accounts-title').textContent = c.name; $('#account-form').reset(); $('#account-error').textContent = ''; $('#account-link').hidden = true;
-  $('#account-form').email.value = c.email || ''; $('#account-form').name.value = c.contact || ''; $('#account-form').phone.value = c.phone || '';
   $$('.manager-only', $('#accounts-dialog')).forEach(el => el.hidden = !isManager());
   $('#accounts-dialog').showModal(); await drawAccounts();
 }
@@ -3392,29 +3391,29 @@ async function drawAccounts() {
   try {
     const { accounts } = await api('/customers/' + encodeURIComponent(accCustomer.id) + '/accounts');
     list.innerHTML = accounts.length ? accounts.map(a => `<li data-member="${esc(a.memberId)}">
-      <div><b>${esc(a.name)}</b> <span class="pill ${a.active ? (a.activated ? 'ok' : 'warn') : 'muted'}">${a.active ? (a.activated ? 'Đang dùng' : 'Chưa đặt mật khẩu') : 'Đã khoá'}</span>
-        <small>${[a.email ? esc(a.email) : '', a.phone ? 'ĐT ' + esc(a.phone) : ''].filter(Boolean).join(' · ')}${!a.email ? ' (đăng nhập bằng số di động)' : ''} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
+      <div><b>${esc(a.name)}</b> <span class="pill ${a.active ? (a.activated ? 'ok' : 'warn') : 'muted'}">${a.active ? (a.activated ? 'Đang dùng' : a.registrationPending ? 'Chờ tự đăng ký' : 'Chưa đặt mật khẩu') : 'Đã khoá'}</span>
+        <small>${[a.email ? esc(a.email) : '', a.phone ? 'ĐT ' + esc(a.phone) : ''].filter(Boolean).join(' · ')}${!a.email && !a.registrationPending ? ' (đăng nhập bằng số di động)' : ''} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
         <small>CK riêng: ${Object.keys(DISCOUNT_LABELS).map(k => `${DISCOUNT_LABELS[k]} ${fmtNum(a.discounts[k] || 0)}%`).join(' · ')}</small></div>
       ${a.canManage ? `<div class="row-actions">${isManager() ? '<button type="button" class="btn ghost small" data-acc-discount>Đặt CK</button>' : ''}
-        <button type="button" class="btn ghost small" data-acc-phone>${a.phone ? 'Đổi SĐT' : 'Thêm SĐT'}</button>
-        <button type="button" class="btn ghost small" data-acc-reset>Cấp lại link</button>
+        ${!a.registrationPending ? `<button type="button" class="btn ghost small" data-acc-phone>${a.phone ? 'Đổi SĐT' : 'Thêm SĐT'}</button>` : ''}
+        <button type="button" class="btn ghost small" data-acc-reset>${a.registrationPending ? 'Cấp lại link đăng ký' : 'Đặt lại mật khẩu'}</button>
         <button type="button" class="btn ghost small" data-acc-active="${a.active ? 0 : 1}">${a.active ? 'Khoá' : 'Mở khoá'}</button></div>` : ''}
-    </li>`).join('') : '<li class="muted">Khách này chưa có tài khoản. Tạo tài khoản bên dưới rồi gửi link cho khách tự đặt mật khẩu.</li>';
+    </li>`).join('') : '<li class="muted">Khách này chưa có tài khoản. Lấy link mời bên dưới để khách tự đăng ký tài khoản.</li>';
     list._accounts = accounts;
   } catch (ex) { list.innerHTML = `<li class="error">${esc(ex.message)}</li>`; }
 }
-function showAccountLink(url) {
+function showAccountLink(url, registration = false) {
+  $('#account-link-note').textContent = registration ? 'Gửi riêng link này để khách tự đăng ký (24 giờ, dùng một lần). Tài khoản sẽ gắn đúng khách hàng này.' : 'Link đặt lại mật khẩu cho tài khoản hiện có (15 phút).';
   $('#account-link').hidden = false; $('#account-link-url').value = url;
-  navigator.clipboard?.writeText(url).then(() => toast('Đã chép link vào bộ nhớ. Gửi link cho khách (hiệu lực 15 phút).')).catch(() => {});
+  navigator.clipboard?.writeText(url).then(() => toast('Đã chép link vào bộ nhớ. Gửi riêng link cho đúng người nhận.')).catch(() => {});
 }
 const readDiscounts = f => Object.fromEntries(Object.keys(DISCOUNT_LABELS).map(k => [k, f.elements['d_' + k]?.value === '' ? 0 : parseNum(f.elements['d_' + k]?.value || '0')]));
 $('#account-form').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target, err = $('#account-error'); err.textContent = '';
-  const body = { customerId: accCustomer.id, name: f.name.value.trim(), email: f.email.value.trim(), phone: f.phone.value.trim() };
-  if (!body.email && !body.phone) { err.textContent = 'Nhập số di động (hoặc email) để khách đăng nhập.'; f.phone.focus(); return; }
+  const body = {}, customer = accCustomer;
   if (isManager()) body.discounts = readDiscounts(f);
-  try { const r = await api('/customer-accounts', 'POST', body); showAccountLink(r.url); f.reset(); await drawAccounts(); }
+  try { const r = await api('/customers/' + encodeURIComponent(customer.id) + '/invitations', 'POST', body); if (accCustomer?.id !== customer.id) return; showAccountLink(r.url, true); f.reset(); await drawAccounts(); }
   catch (ex) { err.textContent = ex.message; }
 });
 $('#accounts-list').addEventListener('click', async e => {
@@ -3427,7 +3426,7 @@ $('#accounts-list').addEventListener('click', async e => {
       if (phone === null) return;
       await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { phone: phone.trim() }); toast('Đã cập nhật số điện thoại.'); return drawAccounts();
     }
-    if (e.target.closest('[data-acc-reset]')) { showAccountLink((await api(`/customer-accounts/${encodeURIComponent(id)}/reset`, 'POST', {})).url); return drawAccounts(); }
+    if (e.target.closest('[data-acc-reset]')) { showAccountLink((await api(`/customer-accounts/${encodeURIComponent(id)}/reset`, 'POST', {})).url, a.registrationPending); return drawAccounts(); }
     const act = e.target.closest('[data-acc-active]');
     if (act) { await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { active: act.dataset.accActive === '1' }); toast(act.dataset.accActive === '1' ? 'Đã mở khoá tài khoản.' : 'Đã khoá tài khoản.'); return drawAccounts(); }
     if (e.target.closest('[data-acc-discount]')) openDiscount(a, drawAccounts);
