@@ -1933,6 +1933,11 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .incoming-table td:nth-child(5) small { overflow-wrap: anywhere; }
 .incoming-table td:last-child input { width: 110px; min-width: 0; text-align: right; }
 .incoming-table input[type="checkbox"] { width: 16px; height: 16px; accent-color: #128653; }
+
+.incoming-early-order { border-left: 3px solid var(--blue); padding: 8px; margin: 6px 0; background: var(--blue-50); }
+.incoming-early-order .data-link { color: var(--blue); text-decoration: underline; }
+.incoming-table td .incoming-early-order { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; white-space: normal; }
+
 .incoming-code { background: none; border: 0; padding: 4px 0; color: #146b48; font: inherit; font-weight: 700; cursor: pointer; text-align: left; }
 .incoming-selected { background: #edf9f2; }
 .incoming-orders { display: grid; gap: 8px; padding: 10px; background: #f6faf8; }

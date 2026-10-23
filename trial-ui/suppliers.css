@@ -131,7 +131,3 @@
 .transfer-lines { display: grid; gap: 8px; }
 .transfer-lines > .row-gap { display: grid; grid-template-columns: minmax(0, 1fr) 90px 40px; gap: 8px; align-items: center; }
 .sup-drawer-foot-sticky { position: sticky; bottom: -18px; margin: 0 -20px -18px; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; }
-
-.incoming-early-order { border-left: 3px solid var(--blue); padding: 8px; margin: 6px 0; background: var(--blue-50); }
-.incoming-early-order .data-link { color: var(--blue); text-decoration: underline; }
-.incoming-table td .incoming-early-order { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; white-space: normal; }
