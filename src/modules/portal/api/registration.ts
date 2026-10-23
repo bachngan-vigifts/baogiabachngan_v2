@@ -1,4 +1,8 @@
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
+import type { Router, RouteContext } from '../../../core/http/router.ts';
+import { json, readJson } from '../../../core/http/router.ts';
+import { clientIp, limit, type StaffEnv } from '../../staff/api/auth-routes.ts';
+import { RATE_LIMITS } from '../../staff/domain/session.ts';
 import { AppError } from '../../../core/errors.ts';
 import { hashPassword } from '../../../core/auth/password.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
@@ -7,11 +11,25 @@ import { newToken, sha256Hex } from '../../staff/domain/session.ts';
 import { normalizePhone } from '../../staff/domain/login-id.ts';
 import { phoneKeySql } from '../../staff/repo/auth-repo.ts';
 import { customers } from '../../customers/schema.ts';
-import { suppliers, supplierAccounts } from '../../suppliers/schema.ts';
 import { customerAccounts } from '../schema.ts';
 import { INVITE_DOMAIN, INVITE_TTL_SECONDS, isRegistrationInvite, type PartnerKind } from '../domain/registration.ts';
 import { PHONE_ONLY_DOMAIN } from '../domain/portal.ts';
 
+/**
+ * Tài khoản NCC nằm ở module suppliers (suppliers đã phụ thuộc portal) → portal không import ngược, đọc / ghi qua hook
+ * nối ở src/app/router.ts (cài đặt: suppliers/api/registration-hooks.ts).
+ */
+type Tx = Parameters<Parameters<AnyDb['transaction']>[0]>[0];
+export const supplierRegistrationHooks: {
+  boundSupplier?: (db: AnyDb | Tx, memberId: string) => Promise<string | undefined>;
+  bindSupplier?: (db: AnyDb | Tx, p: { memberId: string; supplierId: string; actorId: string; at: string }) => Promise<void>;
+  supplierOf?: (db: AnyDb | Tx, memberId: string, supplierId: string) => Promise<{ name: string; active: boolean } | undefined>;
+} = {};
+const supplierHooks = () => {
+  const h = supplierRegistrationHooks;
+  if (!h.boundSupplier || !h.bindSupplier || !h.supplierOf) throw new AppError(503, 'Chưa nối đăng ký tài khoản NCC.');
+  return h as Required<typeof h>;
+};
 const invalid = () => new AppError(400, 'Link đăng ký đã hết hạn, đã dùng hoặc bị thu hồi. Vui lòng nhờ nhân viên cấp lại.');
 const text = (v: unknown, max: number) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 const makeToken = (kind: PartnerKind, entityId: string) => `${newToken()}.${kind}.${encodeURIComponent(entityId)}`;
@@ -32,7 +50,7 @@ export async function issuePartnerInvite(db: AnyDb, p: { kind: PartnerKind; enti
       if (!m || !m.active || !isRegistrationInvite(m.email) || m.role !== p.kind || m.positionId !== p.kind || m.deletedAt) throw invalid();
       const [binding] = p.kind === 'customer'
         ? await tx.select({ id: customerAccounts.customerId }).from(customerAccounts).where(eq(customerAccounts.memberId, memberId))
-        : await tx.select({ id: supplierAccounts.supplierId }).from(supplierAccounts).where(eq(supplierAccounts.memberId, memberId));
+        : [{ id: await supplierHooks().boundSupplier(tx, memberId) }];
       if (binding?.id !== p.entityId) throw invalid();
       const rows = await tx.update(credentials).set({ activationHash: sha256Hex(token), activationExpires: p.now + INVITE_TTL_SECONDS })
         .where(and(eq(credentials.memberId, memberId), isNull(credentials.passwordHash))).returning({ id: credentials.memberId });
@@ -41,7 +59,7 @@ export async function issuePartnerInvite(db: AnyDb, p: { kind: PartnerKind; enti
       await tx.insert(employees).values({ id: memberId, email: `invite-${crypto.randomUUID()}${INVITE_DOMAIN}`, name: `Chờ đăng ký · ${p.entityName}`, phone: '', role: p.kind, positionId: p.kind, active: true, createdAt: at });
       await tx.insert(credentials).values({ memberId, activationHash: sha256Hex(token), activationExpires: p.now + INVITE_TTL_SECONDS, version: 0 });
       if (p.kind === 'customer') await tx.insert(customerAccounts).values({ memberId, customerId: p.entityId, ownerId: p.actorId, createdBy: p.actorId, discounts: JSON.stringify(p.discounts || {}), createdAt: at, updatedAt: at });
-      else await tx.insert(supplierAccounts).values({ memberId, supplierId: p.entityId, createdBy: p.actorId, createdAt: at });
+      else await supplierHooks().bindSupplier(tx, { memberId, supplierId: p.entityId, actorId: p.actorId, at });
     }
   });
   return { memberId, url: link(p.origin, token), expiresAt: (p.now + INVITE_TTL_SECONDS) * 1000 };
@@ -62,8 +80,7 @@ export async function registrationInfo(db: AnyDb, raw: unknown, now: number) {
     if (!r || r.approval === 'pending') throw invalid();
     return { memberId: m.id, kind: 'customer' as const, entityName: r.name, expiresAt: m.expires! * 1000 };
   }
-  const [r] = await db.select({ name: suppliers.name, active: suppliers.active }).from(supplierAccounts)
-    .innerJoin(suppliers, eq(suppliers.id, supplierAccounts.supplierId)).where(and(eq(supplierAccounts.memberId, m.id), eq(supplierAccounts.supplierId, entityId))).limit(1);
+  const r = await supplierHooks().supplierOf(db, m.id, entityId);
   if (!r?.active) throw invalid();
   return { memberId: m.id, kind: 'supplier' as const, entityName: r.name, expiresAt: m.expires! * 1000 };
 }
@@ -100,4 +117,24 @@ export async function completeRegistration(db: AnyDb, body: Record<string, unkno
     await tx.delete(sessions).where(eq(sessions.memberId, initial.memberId));
   });
   return { ok: true, login: email.endsWith(PHONE_ONLY_DOMAIN) ? phone : email, portal: initial.kind === 'customer' ? '/customer.html' : '/supplier.html' };
+}
+
+/** Đăng ký qua link mời (công khai – kiểm mã mời băm + hạn dùng, giới hạn số lần thử như kích hoạt tài khoản). */
+export function registerPartnerRegistrationRoutes(router: Router<StaffEnv>) {
+  const nowSec = (c: RouteContext<StaffEnv>) => (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))();
+  router.post('/registration-info', async c => {
+    const body = await readJson(c.req, 4096);
+    await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
+    registrationHash(body.token);
+    const info = await registrationInfo(c.env.db, body.token, nowSec(c));
+    return json({ kind: info.kind, entityName: info.entityName, expiresAt: info.expiresAt });
+  }, 'public');
+
+  router.post('/register-partner', async c => {
+    const body = await readJson(c.req, 4096);
+    await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
+    const hash = registrationHash(body.token);
+    await limit(c, 'registration:' + hash, RATE_LIMITS.activation);
+    return json(await completeRegistration(c.env.db, body, nowSec(c), c.env.passwordIterations));
+  }, 'public');
 }

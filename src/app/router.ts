@@ -1,4 +1,6 @@
 import { registerPosOrderFlowRoutes } from '../modules/sales/api/pos-order-flow-routes.ts';
+import { supplierRegistrationHooks } from '../modules/portal/api/registration.ts';
+import { bindSupplier, boundSupplier, supplierOf } from '../modules/suppliers/api/registration-hooks.ts';
 import { registerPosReturnRoutes } from '../modules/sales/api/pos-return-routes.ts';
 import { authorizePosStore } from '../modules/sales/api/pos-access.ts';
 import { registerCashRoutes } from './cash-routes.ts';
@@ -62,6 +64,7 @@ export function createAppRouter() {
   catalogStockHooks.stamp = posStockStamp;
   catalogStockHooks.hidden = hiddenWarehouseIds;
   catalogStockHooks.ledger = ledgerWarehouses;
+  Object.assign(supplierRegistrationHooks, { boundSupplier, bindSupplier, supplierOf });
   const router = createStaffRouter({ authorizeSynctime, authorizeSession: authorizePosStore });
   registerQuoteRoutes(router);
   registerImageFetchRoutes(router);
