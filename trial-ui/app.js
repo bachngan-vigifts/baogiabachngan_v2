@@ -1,4 +1,5 @@
 import { openMobileQuoteCapture } from './mobile-quote-capture.js';
+import { createApprovalFeed } from './approval-feed.js';
 import { initApprovalLauncher } from './approval-launcher.js';
 import { installBusyButtons, withBusy } from './busy-buttons.js';
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
@@ -3371,10 +3372,12 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
+function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
-function approvalView() { return approvalUi ||= initApprovalLauncher({api,button:$('#approval-launcher'),badge:$('#approval-launcher-count'),canApprove,userId:()=>state.user?.id,go}); }
+var approvalFeed = null;
+function sharedApprovalFeed() { return approvalFeed ||= createApprovalFeed({api,userId:()=>state.user?.id,canApprove}); }
+function approvalView() { return approvalUi ||= initApprovalLauncher({approvalFeed:sharedApprovalFeed(),api,button:$('#approval-launcher'),badge:$('#approval-launcher-count'),canApprove,userId:()=>state.user?.id,go}); }
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
 /** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
 async function refreshData() {

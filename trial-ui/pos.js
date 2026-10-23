@@ -582,8 +582,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       el('p', 'pos-note', 'Trạng thái GHN: ' + (o.ghnStatus || 'Đã tạo vận đơn') + (o.ghnFee ? ' · Phí: ' + money(o.ghnFee) : '')),
       ghnPortalLink(o.ghnOrderCode),
     );
-    const actions = el('div', 'pos-actions');
-    if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary', () => { m.close(); showGhnAddress(o); }));
+    m.dlg.classList.add('pos-web-order-modal');
+    const actions = el('div', 'pos-actions pos-web-order-actions');
+    if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary pos-web-order-ship', () => { m.close(); showGhnAddress(o); }));
     if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) {
       actions.append(busyButton('Hoàn thành', 'btn primary', 'Đang hoàn thành…', async () => {
         if (!await confirmBox(o.ghnDirect ? `Xác nhận đơn ${o.orderNo} đã hoàn thành? CRM ghi nhận hoàn thành; website Minh Long chưa có cầu nối nên cập nhật trạng thái trên website bằng tay.` : `Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;

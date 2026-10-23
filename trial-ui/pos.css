@@ -1155,3 +1155,10 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-catalog-controls { grid-template-columns: minmax(0, 1fr) minmax(230px, .85fr); }
   .pos-catalog-controls .pos-search .btn { min-width: 64px; padding-inline: 6px; }
 }
+
+/* Web order detail: delivery first, then secondary actions. Labels must wrap on phones. */
+.pos-web-order-modal h2 { padding-right: 44px; overflow-wrap: anywhere; }
+.pos-web-order-modal .pos-web-order-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.pos-web-order-modal .pos-web-order-actions .btn { min-width: 0; min-height: 48px; height: auto; white-space: normal; overflow-wrap: anywhere; padding: 10px 12px; line-height: 1.35; }
+.pos-web-order-actions .pos-web-order-ship { grid-column: 1 / -1; }
+.pos-web-order-actions > .btn:last-child { grid-column: 1 / -1; }
