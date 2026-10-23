@@ -317,7 +317,8 @@ test('điều chuyển chờ duyệt: sửa đúng quyền/revision, rollback l�
   const {stockTransfers,stockTransferLines,stockMoves}=await import('../../src/modules/inventory/schema.ts');
   const before=JSON.stringify(await s.db.select().from(stockBalances));const beforeMoves=(await s.db.select().from(stockMoves)).length;
   const body={clientKey:'f35aa278-5a96-4fca-b00f-1d30db677698',fromWarehouseId:'vig',toWarehouseId:'ml',reason:'Cần hàng',lines:[{sku:'LY1',qty:10}]};
-  const made=await s.call('/stock-transfers',s.emp,'POST',body);assert.equal(made.status,201);const id=made.data.id,path='/stock-transfers/'+id;
+  const concurrent=await Promise.all([s.call('/stock-transfers',s.emp,'POST',body),s.call('/stock-transfers',s.emp,'POST',body)]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,201]);
+  const made=concurrent.find(r=>r.status===201)!;const id=made.data.id,path='/stock-transfers/'+id;
   const retry=await s.call('/stock-transfers',s.emp,'POST',body);assert.equal(retry.status,200);assert.equal(retry.data.replayed,true);assert.equal(retry.data.id,id);
   assert.equal((await s.db.select().from(stockTransfers)).length,1);
   assert.equal((await s.call('/stock-transfers',s.emp,'POST',{...body,lines:[{sku:'LY1',qty:11}]})).status,409);
