@@ -1,3 +1,4 @@
+import { incomingBySkuView } from './incoming-view.ts';
 import { receivingCalendar } from './receiving-calendar.ts';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -7,7 +8,6 @@ import { sendMail } from '../../../core/mail/send-mail.ts';
 import { postMoves, assertWarehousesOpened, lockLedger, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { outstandingLines, syncIncomingStock } from './incoming-stock.ts';
-import { incomingBySku } from './incoming-by-sku.ts';
 import { can } from '../../staff/domain/permissions.ts';
 import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -193,7 +193,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   router.get('/purchase-incoming', async c => {
     guard(c);
-    return json({ ...await incomingBySku(c.env.db, c.url.searchParams, today()),
+    return json({ ...await incomingBySkuView(c.env.db, c.url.searchParams, today()),
       canRequest: me(c).role === 'manager' || me(c).positionId === 'sale-admin', canSend: me(c).role === 'manager' || me(c).positionId === 'sale-admin',
       canViewSuppliers:canEditSuppliers(me(c)),canViewStock:can(me(c),'page.stock-lookup') });
   }, 'business');

@@ -181,7 +181,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     }
   }
   async function load() {
-    if (incomingMode) return;
+    if (incomingMode) return incoming.refresh();
     const id = ++req;
     try {
       const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim(), state: filter }));
