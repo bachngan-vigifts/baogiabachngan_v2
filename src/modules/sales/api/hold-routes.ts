@@ -75,6 +75,8 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
     sku: salesOrderLines.sku, qty: sql<number>`${legacyRemaining}`.mapWith(Number),
     orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName,
     contractNo: sql<string | null>`max(${salesContracts.contractNo})`,
+    /** Đơn chưa gắn kho bán (đơn cũ): giữ hàng trên tổng tồn mọi kho, không biết kho nào xuất. */
+    unassigned: sql<boolean>`(${sellingWarehouse}) is null`,
   }).from(salesOrderLines).innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId))
     .leftJoin(salesContracts, and(eq(salesContracts.orderId, salesOrders.id), ne(salesContracts.status, 'cancelled')))
     .where(and(storeScope,
@@ -88,7 +90,7 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
     .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId)).innerJoin(salesOrderLines, eq(salesOrderLines.id, posOrderReservations.orderLineId))
     .where(and(storeScope,eq(posOrderReservations.status, 'active'), gt(posOrderReservations.expiresAt, nowIso()), inArray(salesOrders.status, ['draft','confirmed','delivering']), skus ? inArray(salesOrderLines.sku, skus) : undefined, warehouseId ? eq(posOrderReservations.warehouseId, warehouseId) : undefined))
     .groupBy(salesOrderLines.sku, salesOrders.id).limit(5000);
-  return [...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true}))];
+  return [...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true,unassigned:false}))];
 }
 
 /** Báo giá đã lập đơn / HĐKT còn hiệu lực: hàng do đơn giữ – không giữ thêm theo báo giá (tránh giữ trùng). */

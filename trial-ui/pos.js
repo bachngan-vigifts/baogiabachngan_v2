@@ -1081,20 +1081,24 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         const missing = page.filter(x => !cachedLive(x.sku)).map(x => x.sku);
         if (missing.length && seq === searchSeq) { st.products = more ? [...st.products, ...show()] : show(); renderProducts(); }
         if (missing.length) {
-          const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set();
+          const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set(), asked = new Set(missing);
+          // Máy chủ chưa hiểu `skus=` (đang triển khai dở / bản cũ) thì trả danh sách khác: không xoá các ô, chuyển sang tìm theo từ khoá.
+          if (fresh.products.some(p => !asked.has(p.sku))) return null;
           for (const p of fresh.products) { liveCache.set(st.policy + '|' + p.sku, { p, at: now }); got.add(p.sku); }
           // Mã không còn bán ở quầy (máy chủ không trả): bỏ khỏi danh sách.
           return { products: show().filter(p => !p.loading || got.has(p.sku)).map(p => cachedLive(p.sku) || p), nextOffset };
         }
         return { products: show(), nextOffset };
       };
-      let d = local ? await bySkus(local) : await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
+      const byQuery = () => api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
+      let d = local ? await bySkus(local) : null;
+      if (!d) { if (local) st.localSkus = null; d = await byQuery(); } // trang tiếp theo cũng tìm theo từ khoá
       // Enter / quét mã: chỉ tự thêm vào giỏ khi máy chủ báo khớp CHÍNH XÁC mã vạch / SKU. Chữ thường (tìm theo tên): chỉ hiện danh sách
       // (ưu tiên danh sách lọc tại chỗ – cùng thứ tự với khi gõ), không tự thêm sản phẩm nào.
       const exact = addScanned && !more ? d.products.find(p => p.sku === d.exactSku) : null;
       if (addScanned && !more && !exact) {
         const fallback = localSearch(q, st.policy);
-        if (fallback?.length) { st.localSkus = fallback; d = await bySkus(fallback); }
+        if (fallback?.length) { const viaLocal = await bySkus(fallback); if (viaLocal) { st.localSkus = fallback; d = viaLocal; } }
       }
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;

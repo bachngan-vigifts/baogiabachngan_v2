@@ -441,6 +441,37 @@ test('POS Enter: chữ thường chỉ hiện danh sách, không tự thêm vào
   }
 });
 
+test('POS gõ tìm: máy chủ chưa hiểu skus= (bản cũ / đang triển khai) thì không xoá sản phẩm, chuyển sang tìm theo từ khoá', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: string[] = [];
+    const api = async (path: string) => {
+      calls.push(path);
+      if (path.startsWith('/pos/options'))
+        return { registers: [{ id: 'r', name: 'Quầy 1', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }], current: { id: 's', registerId: 'r', memberId: 'emp' },
+          shifts: [], templates: [], policies: [{ id: 'vat', name: 'Giá bán lẻ (+ VAT)' }, { id: 'retail', name: 'Giá bán lẻ' }] };
+      if (path.startsWith('/pos/catalog')) {
+        const p = new URLSearchParams(path.split('?')[1]);
+        // Máy chủ cũ bỏ qua skus=: luôn trả mã đầu danh mục theo tên.
+        if (p.get('skus')) return { products: [{ sku: 'AAA', name: 'Ấm', unit: 'cái', price: 1, available: 3 }], nextOffset: null };
+        return { products: p.get('q') ? [{ sku: 'LY1', name: 'Ly sứ', unit: 'cái', price: 1, available: 4 }] : [], nextOffset: null };
+      }
+      throw Error(path);
+    };
+    const ui = initPos({ api, root, toast() {}, user: () => ({ id: 'emp', name: 'NV', perms: ['pos.sell'] }), confirmBox: async () => true, go() {},
+      localSearch: (q: string) => q ? [{ sku: 'LY1', name: 'Ly sứ', unit: 'cái', price: 1 }] : [] });
+    await ui.load();
+    const input = root.querySelectorAll('input').find(i => i.attributes['aria-label'] === 'Tìm hoặc quét sản phẩm')!;
+    input.value = 'ly'; await input.fire('input'); await new Promise(r => setTimeout(r, 120));
+    const names = root.querySelectorAll('b').filter(x => x.className === 'pos-product-name').map(x => x.textContent);
+    assert.deepEqual(names, ['Ly sứ'], 'vẫn hiện sản phẩm tìm được, không biến mất');
+    assert.ok(calls.some(c => c.includes('&q=ly')), 'đã chuyển sang tìm theo từ khoá');
+  } finally {
+    Object.assign(globalThis, { document: prevDoc, window: prevWin });
+  }
+});
+
 test('POS mobile lấy 20 sản phẩm mỗi lượt và tự tải tiếp khi cuộn', () => {
   const js = readFileSync('trial-ui/pos.js', 'utf8'), css = readFileSync('trial-ui/pos.css', 'utf8');
   assert.match(js, /mobile \? 20 : 60/);

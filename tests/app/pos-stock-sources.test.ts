@@ -73,8 +73,12 @@ test('POS không trừ giữ hàng từ kho khác; giữ cùng kho vẫn chặn 
  const short=await f.call('/pos/checkout',f.emp,'POST',f.cart(shift.id));assert.equal(short.status,409,JSON.stringify(short.data));assert.equal(short.data.code,'POS_STOCK_SHORT');
  const paid=await f.call('/pos/checkout',f.emp,'POST',f.cart(shift.id,{rows:[{sku:'00123',qty:1,discountType:'percent',discountValue:0}]}));assert.equal(paid.status,201,JSON.stringify(paid.data));
  assert.equal((await f.db.select().from(stockBalances).where(eq(stockBalances.warehouseId,'pos-wh')))[0]!.qty,2,'bán đúng 1, vẫn còn 2 cho đơn cùng kho');
+ // Đơn / HĐKT cũ chưa chọn kho bán: tính trên tổng tồn – VIGIFTS còn trống 139-50=89 thì kho cửa hàng không bị trừ.
  await insert('DH_NO_WAREHOUSE',null,1);
- assert.equal((await reservedBySku(f.db,['00123'],'pos-wh')).get('00123'),3,'giữ cũ chưa chọn kho vẫn được bảo vệ');
+ assert.equal((await reservedBySku(f.db,['00123'],'pos-wh')).get('00123'),2,'đơn chưa chọn kho được VIGIFTS che: kho cửa hàng chỉ trừ đơn cùng kho');
+ await insert('DH_NO_WAREHOUSE_BIG',null,100);
+ assert.equal((await reservedBySku(f.db,['00123'],'pos-wh')).get('00123'),2+12,'101 chưa chọn kho, VIGIFTS che 89: 12 còn lại vẫn được bảo vệ ở kho cửa hàng');
+ assert.equal((await reservedBySku(f.db,['00123'])).get('00123'),50+2+101,'tổng giữ hàng toàn hệ thống không đổi');
 });
 
 test('POS: giữ hàng theo báo giá (không gắn kho) chỉ trừ vào kho quầy phần mà kho khác không đủ che',async()=>{
