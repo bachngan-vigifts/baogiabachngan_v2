@@ -800,6 +800,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           available: Math.max(0, (p.onHand ?? 0) - (reserved.get(p.sku) ?? 0)),
         })),
         nextOffset: rows.length === limit ? offset + limit : null,
+        // Khớp chính xác mã vạch / SKU (không phân biệt hoa thường): quầy chỉ tự thêm vào giỏ khi có mã này (Enter / quét mã).
+        exactSku: q && !skuList.length ? barcodeHit?.sku ?? rows.find(p => p.sku.toLowerCase() === q.toLowerCase())?.sku ?? null : null,
       });
     },
     'business',

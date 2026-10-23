@@ -410,6 +410,37 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
     assert.ok(!/\.innerHTML\s*=|insertAdjacentHTML/.test(readFileSync(p, 'utf8')), p);
 });
 
+test('POS Enter: chữ thường chỉ hiện danh sách, không tự thêm vào giỏ; chỉ tự thêm khi máy chủ báo khớp chính xác mã / mã vạch', async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), calls: any[] = [], toasts: string[] = [];
+    const api = async (path: string, method = 'GET', body?: any) => {
+      calls.push({ path, method, body });
+      if (path.startsWith('/pos/options'))
+        return { registers: [{ id: 'r', name: 'Quầy 1', pricePolicyId: 'vat', secondPricePolicyId: 'retail' }], current: { id: 's', registerId: 'r', memberId: 'emp' },
+          shifts: [], templates: [], policies: [{ id: 'vat', name: 'Giá bán lẻ (+ VAT)' }, { id: 'retail', name: 'Giá bán lẻ' }] };
+      if (path.startsWith('/pos/catalog')) {
+        const q = new URLSearchParams(path.split('?')[1]).get('q') || '';
+        return { products: [{ sku: '001', name: 'Ly sứ', unit: 'cái', price: 108000, available: 10 }], nextOffset: null, exactSku: q.toLowerCase() === '001' || q === '8930001' ? '001' : null };
+      }
+      if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }], temporary: true };
+      throw Error(path);
+    };
+    const ui = initPos({ api, root, toast: (m: string) => toasts.push(m), user: () => ({ id: 'emp', name: 'NV', perms: ['pos.sell'] }), confirmBox: async () => true, go() {} });
+    await ui.load();
+    const input = root.querySelectorAll('input').find(i => i.attributes['aria-label'] === 'Tìm hoặc quét sản phẩm')!;
+    const inCart = () => root.querySelectorAll('button').find(x => x.className === 'pos-product')!.attributes['aria-pressed'];
+    input.value = 'ly'; await input.fire('keydown', { key: 'Enter' }); await new Promise(r => setTimeout(r, 0));
+    assert.equal(inCart(), 'false', 'tìm theo tên ra 1 kết quả vẫn không tự thêm vào giỏ');
+    assert.equal(toasts.at(-1), 'Chọn đúng sản phẩm trong danh sách.');
+    input.value = '8930001'; await input.fire('keydown', { key: 'Enter' }); await new Promise(r => setTimeout(r, 0));
+    assert.equal(inCart(), 'true', 'mã vạch khớp chính xác: tự thêm vào giỏ');
+  } finally {
+    Object.assign(globalThis, { document: prevDoc, window: prevWin });
+  }
+});
+
 test('POS mobile lấy 20 sản phẩm mỗi lượt và tự tải tiếp khi cuộn', () => {
   const js = readFileSync('trial-ui/pos.js', 'utf8'), css = readFileSync('trial-ui/pos.css', 'utf8');
   assert.match(js, /mobile \? 20 : 60/);
