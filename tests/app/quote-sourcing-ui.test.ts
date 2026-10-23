@@ -17,16 +17,16 @@ class Node {
   remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);}
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
-async function setup(fail=false){
+async function setup(fail=false,overrides:any={},confirm=true){
   const host=new Node(),posts:any[]=[];let current=true;
   const ctx:any={document:{createElement:(tag:string)=>new Node(tag)},crypto:{randomUUID:()=> 'safe-client-key'}};
   runInNewContext(readFileSync(new URL('../../trial-ui/quote-sourcing.js',import.meta.url),'utf8').replace('export async function initQuoteSourcing','globalThis.initQuoteSourcing = async function'),ctx);
   const api=async(path:string,method?:string,body?:any)=>{
-    if(method){posts.push({path,body});if(fail)throw Error('Mất kết nối');if(path==='/stock-transfers')return{id:'t1'};if(path==='/purchase-orders')return{ids:['p1']};return{request:{id:'e1'}};}
+    if(method){posts.push({path,body});if(fail)throw Error('Mất kết nối');if(path==='/stock-transfers')return{id:'t1'};if(path==='/purchase-orders')return{ids:body.orders.map((_:any,i:number)=>'p'+(i+1))};return{request:{id:'e1'}};}
     if(path==='/purchase-options')return{suppliers:[{id:'s1',name:'NCC Một'}]};
-    return{quoteNo:'BG1',customerName:'Khách',canPurchase:true,canRequestEarly:true,warehouses:[{id:'a',name:'Kho bán',opened:true,canSell:true},{id:'b',name:'Kho xin',opened:true,canSell:false}],lines:[{sku:'X',name:'Sản phẩm',unit:'cái',qty:3,stock:{a:2,b:1},incoming:1}]};
+    return{quoteNo:'BG1',customerName:'Khách',canPurchase:true,canRequestEarly:true,warehouses:[{id:'a',name:'Kho bán',opened:true,canSell:true},{id:'b',name:'Kho xin',opened:true,canSell:false}],lines:[{sku:'X',name:'Sản phẩm',unit:'cái',qty:3,stock:{a:2,b:1},incoming:1}],...overrides};
   };
-  const ui=await ctx.initQuoteSourcing({api,host,quoteId:'q',confirmBox:async()=>true,isCurrent:()=>current});
+  const ui=await ctx.initQuoteSourcing({api,host,quoteId:'q',confirmBox:async()=>confirm,isCurrent:()=>current});
   const label=(name:string)=>all(host).find(n=>n.attrs['aria-label']===name)!;
   const button=(name:string)=>all(host).find(n=>n.tag==='button'&&n.textContent===name)!;
   return{host,ui,posts,label,button,close:()=>{current=false;}};
@@ -51,4 +51,22 @@ test('nguồn hàng UI: mất kết nối sau gửi không cho bấm lặp mù; 
   const s=await setup(true);s.label('Kho xin hàng X').value='b';await s.button('Xin hàng').fire();await s.button('Xin hàng').fire();
   assert.equal(s.posts.length,1);assert.match(s.host.textContent,/Kiểm tra danh sách/);
   const closed=await setup();closed.label('Kho xin hàng X').value='b';closed.close();await closed.button('Xin hàng').fire();assert.equal(closed.posts.length,0);
+});
+
+test('sinh đơn: tự gộp nguồn đặt NCC chưa bấm tạo theo NCC; lưu liên kết và không tạo lại khi gửi tiếp',async()=>{
+  const lines=['X','Y'].map(sku=>({sku,name:sku,unit:'bộ',qty:3,stock:{a:2},incoming:0}));
+  const s=await setup(false,{lines});
+  for(const sku of ['X','Y']){s.label('Nguồn hàng '+sku).value='purchase';await s.label('Nguồn hàng '+sku).fire('change');s.label('Nhà cung cấp '+sku).value='s1';}
+  assert.equal(s.posts.length,0);
+  const plan=await s.ui.prepare();assert.equal(s.posts.length,1);assert.equal(s.posts[0].path,'/purchase-orders');assert.equal(s.posts[0].body.orders.length,1);assert.equal(s.posts[0].body.orders[0].lines.length,2);
+  assert.equal(s.posts[0].body.orders[0].lines[0].sources[0].id,'q');assert.match(plan.note,/#\/purchases\/p1/);assert.doesNotMatch(plan.note,/Chưa tạo yêu cầu/);
+  await s.ui.prepare();assert.equal(s.posts.length,1);assert.equal(s.label('Nguồn hàng X').disabled,true);
+});
+test('sinh đơn: từ chối/không quyền/số lượng sai không tạo đơn mua; lỗi mạng chặn tạo lặp và không trả kế hoạch thành công',async()=>{
+  const cancelled=await setup(false,{},false);cancelled.label('Nguồn hàng X').value='purchase';await cancelled.label('Nguồn hàng X').fire('change');cancelled.label('Nhà cung cấp X').value='s1';
+  await assert.rejects(()=>cancelled.ui.prepare(),/Đã dừng/);assert.equal(cancelled.posts.length,0);
+  const no=await setup(false,{canPurchase:false});no.label('Nguồn hàng X').value='purchase';await no.label('Nguồn hàng X').fire('change');no.label('Nhà cung cấp X').value='s1';await assert.rejects(()=>no.ui.prepare(),/không có quyền/);assert.equal(no.posts.length,0);
+  const bad=await setup();bad.label('Nguồn hàng X').value='purchase';await bad.label('Nguồn hàng X').fire('change');bad.label('Nhà cung cấp X').value='s1';bad.label('Số lượng nguồn hàng X').value=2;await assert.rejects(()=>bad.ui.prepare(),/tổng lấy từ kho/);assert.equal(bad.posts.length,0);
+  const lost=await setup(true);lost.label('Nguồn hàng X').value='purchase';await lost.label('Nguồn hàng X').fire('change');lost.label('Nhà cung cấp X').value='s1';
+  await assert.rejects(()=>lost.ui.prepare(),/Chưa xác định/);await assert.rejects(()=>lost.ui.prepare(),/chưa xác định/);assert.equal(lost.posts.length,1);
 });

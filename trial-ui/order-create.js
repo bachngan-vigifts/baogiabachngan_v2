@@ -60,8 +60,10 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, crea
     if (!await confirmBox(`Xác nhận sinh đơn hàng?\n\nSố đơn: ${orderNo}\nKhách hàng: ${customerName}`, { title: 'Xác nhận sinh đơn hàng', ok: 'Xác nhận sinh đơn' })) return;
     me.busy = true; submit.disabled = true; error.textContent = '';
     const fields = { orderNo, receiverName: form.elements.receiverName.value, receiverPhone: form.elements.receiverPhone.value, orderDate: form.elements.orderDate.value, deliveryDate: form.elements.deliveryDate.value, deliveryAddress: form.elements.deliveryAddress.value, note: form.elements.note.value };
-    Object.assign(fields,sourcing,{note:[fields.note,sourcing.note].filter(Boolean).join('\n\n')});
     try {
+      if(me.sourcing?.prepare)sourcing=await me.sourcing.prepare();
+      if(current!==me)return;
+      Object.assign(fields,sourcing,{note:[fields.note,sourcing.note].filter(Boolean).join('\n\n')});
       const push = form.elements.pushSapo.value === 'yes'; submit.textContent = push ? 'Tiếp tục chọn kho Sapo…' : 'Đang sinh đơn hàng…';
       const r = push ? await chooseSapo({ quoteId: me.ref.quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: (loc, enabled) => me.run(fields, loc, enabled) })
         : await me.run(fields, null, false);
