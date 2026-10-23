@@ -2230,3 +2230,24 @@ dialog.order-compose { width: 100vw; max-width: 100vw; height: 100dvh; max-heigh
 /* Shares the chat anchor, including mobile navigation and POS positioning. */
 .approval-launcher { translate: 0 -70px; }
 .approval-launcher[data-empty="true"] .badge { background: var(--muted); }
+
+.mobile-quote-capture { display: none; }
+@media (max-width: 850px) {
+  .mobile-quote-capture { display: inline-flex; }
+  #view-editor [data-quote-panel='products'] > .card-title-row #toggle-subs { grid-column: 1; grid-row: 1; }
+  #view-editor [data-quote-panel='products'] > .card-title-row #add-line { grid-column: 2; grid-row: 1; }
+  #view-editor [data-quote-panel='products'] > .card-title-row #quote-capture { grid-column: 2; grid-row: 2; }
+}
+.quote-capture-dialog { width: min(390px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 0; border: 0; border-radius: 20px; background: #fff; color: #131b28; }
+.quote-capture-dialog[open] { display: flex; flex-direction: column; }
+.quote-capture-dialog::backdrop { background: #10182866; }
+.quote-capture-gallery { overflow: auto; min-height: 0; }
+.quote-capture-gallery section { border-bottom: 1px solid #e5e7eb; }
+.quote-capture-gallery img { display: block; width: 100%; height: auto; }
+.quote-capture-download { display: block; padding: 12px 20px; color: #168454; font-size: 13px; text-decoration: underline; }
+.quote-capture-actions { display: flex; flex: none; gap: 12px; padding: 16px; border-top: 1px solid #e5e7eb; background: #fff; }
+.quote-capture-actions .btn { min-height: 48px; flex: 1; border-radius: 12px; }
+.quote-capture-actions .btn.primary { background: #168454; border-color: #168454; color: #fff; }
+.quote-capture-error:empty { display: none; }
+.quote-capture-error { color: #b42318; padding: 8px 16px; margin: 0; font-size: 13px; }
+.quote-capture-hint { color: #6b7280; font-size: 13px; padding: 10px 16px; margin: 0; flex: none; }
