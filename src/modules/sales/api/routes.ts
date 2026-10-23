@@ -430,7 +430,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     // Số đơn đang chờ xuất hoá đơn (cùng phạm vi + luồng, không theo ô tìm / bộ lọc) cho nút lọc "Chờ xuất hoá đơn".
     const pendingWhere = and(orderScope(c), ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'),
       flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined);
-    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}], ownerOptions, branchOptions, [{ n: crmCount = 0 } = {}]] = await Promise.all([
+    const live = and(where, ne(salesOrders.status, 'cancelled'));
+    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}], ownerOptions, branchOptions, [{ n: crmCount = 0 } = {}], [sum], [paidRow]] = await Promise.all([
       c.env.db.select({ n: count() }).from(salesOrders).where(where),
       c.env.db.select({ order: salesOrders, ownerName: employees.name,
         branchName: sql<string>`coalesce((select ${posRegisters.name} from ${posShifts} inner join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} where ${posShifts.id}=${salesOrders.shiftId} limit 1),'VIGIFTS / CRM')`,
@@ -441,7 +442,17 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(scopedFlow).orderBy(asc(employees.name)),
       c.env.db.selectDistinct({ id: posRegisters.id, name: posRegisters.name }).from(salesOrders).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId)).where(scopedFlow).orderBy(asc(posRegisters.name)),
       c.env.db.select({ n: count() }).from(salesOrders).where(and(scopedFlow, ne(salesOrders.channel, 'pos'))),
+      c.env.db.select({ n: count(), revenue: sql<number>`coalesce(sum(${salesOrders.total}), 0)::float8`,
+        // Kỳ cọc CRM; POS dùng phiếu thu cọc/thu trước COD nếu không có kỳ cọc riêng.
+        deposit: sql<number>`coalesce(sum(coalesce(
+          (select sum(ps.amount) from ${paymentSchedules} ps where ps.order_id=${salesOrders}.id and ps.kind='deposit'),
+          (select sum(cp.amount) from ${customerPayments} cp where cp.order_id=${salesOrders}.id and cp.voided_at is null and cp.payment_source in ('pos_deposit','pos_cod_deposit')), 0)), 0)::float8`,
+      }).from(salesOrders).where(live),
+      c.env.db.select({ paid: sql<number>`coalesce(sum(${customerPayments.amount}), 0)::float8` }).from(customerPayments)
+        .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId)).where(and(live, isNull(customerPayments.voidedAt))),
     ]);
+    const revenue = Number(sum?.revenue ?? 0), paid = Number(paidRow?.paid ?? 0);
+    const summary = { count: Number(sum?.n ?? 0), cancelled: Number(total) - Number(sum?.n ?? 0), revenue, deposit: Number(sum?.deposit ?? 0), paid, remaining: Math.max(0, revenue - paid) };
     const ids = rows.map(r => r.order.id);
     const [debts, contracts] = await Promise.all([
       receivableOf(c.env.db, ids),
@@ -451,7 +462,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
       const orderSource = r.channel !== 'pos' ? 'crm' : r.fulfillmentMode === 'cod' || /ghn/i.test(deliveryCarrier) ? 'ghn' : 'pos';
       return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }),
-      total: Number(total), limit, offset, invoicePending: Number(invoicePending), filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...branchOptions] } });
+      total: Number(total), limit, offset, invoicePending: Number(invoicePending), summary, filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...branchOptions] } });
   }, 'business');
 
   /** Hồ sơ đang hiệu lực của báo giá: dùng ID chính xác, giữ nguyên quyền xem đơn. */
