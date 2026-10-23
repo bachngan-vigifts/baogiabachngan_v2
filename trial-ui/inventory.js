@@ -30,7 +30,8 @@ export function initInventory({ api, root, toast, confirmBox }) {
   const countEl = el('span', 'muted small');
   bar.append(wh, label, diffLabel, countEl);
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('thead'), tbody = el('tbody');
-  table.append(thead, tbody); wrap.append(table); panel.append(bar, wrap);
+  const unopenedEl = el('div', 'inv-unopened');
+  table.append(thead, tbody); wrap.append(table); panel.append(bar, unopenedEl, wrap);
   page.append(head, info, panel);
   const shade = el('div', 'sup-shade'); shade.hidden = true;
   const drawer = el('aside', 'sup-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
@@ -40,7 +41,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !drawer.hidden) close(); });
   let timer = 0;
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(loadRows, 250); });
-  wh.addEventListener('change', loadRows);
+  wh.addEventListener('change', () => { if (status) renderStatus(); loadRows(); });
   diffBox.addEventListener('change', () => { onlyDiff = diffBox.checked; loadRows(); });
 
   function frame(eyebrow, title) {
@@ -50,29 +51,54 @@ export function initInventory({ api, root, toast, confirmBox }) {
     return drawer;
   }
 
+  /** Kết quả chốt "Tất cả kho": từng kho đã chốt / bỏ qua / lỗi kèm lý do (không gộp thành một thông báo chung). */
+  function openingResults(r) {
+    const d = frame('Chốt tồn đầu kỳ · ' + (r.refNo || ''), 'Kết quả theo kho');
+    const t = el('table', 'data-table'), th = el('tr'), tb = el('tbody'), LABEL = { opened: 'Đã chốt', skipped: 'Bỏ qua', failed: 'Chưa chốt được' };
+    for (const [h, cl] of [['Kho', ''], ['Kết quả', ''], ['Số dòng', 'num'], ['Ghi chú', '']]) th.append(el('th', cl, h));
+    t.append(el('thead'), tb); t.tHead.append(th);
+    for (const x of r.results || []) {
+      const tr = el('tr');
+      tr.append(el('td', '', x.name), el('td', x.status === 'failed' ? 'pur-late' : '', LABEL[x.status] || x.status), el('td', 'num', num(x.lines)), el('td', 'small', x.message || ''));
+      tb.append(tr);
+    }
+    const tw = el('div', 'table-wrap'); tw.append(t); d.append(tw);
+  }
+
   function renderStatus() {
     info.replaceChildren(); tools.replaceChildren();
-    const s = status;
-    if (s.openedAt) info.append(el('p', '', `Đã chốt tồn đầu kỳ lúc ${dt(s.openedAt)}${s.openedBy ? ' – ' + s.openedBy : ''} · ${num(s.moveCount)} dòng phát sinh.`));
-    else info.append(el('p', 'pur-late', 'Chưa chốt tồn đầu kỳ: bấm "Chốt tồn đầu kỳ" để lấy tồn Sapo hiện tại làm điểm bắt đầu cho sổ kho.'));
-    if (s.canManage) {
-      tools.append(btn('Phiếu điều chỉnh', 'btn secondary', () => adjustForm()));
-      tools.append(btn(s.openedAt ? 'Chốt lại tồn đầu kỳ' : 'Chốt tồn đầu kỳ', s.openedAt ? 'btn ghost' : 'btn primary', async () => {
-        const target = wh.value ? s.warehouses.find(w=>w.id===wh.value)?.name : 'tất cả kho';
-        const msg = `Chốt tồn cho ${target}. ` + (s.openedAt ? 'Chỉ chốt lại được khi kho chưa có phát sinh ngoài tồn đầu kỳ. Kho đã nhập, xuất hoặc điều chỉnh phải dùng phiếu điều chỉnh để sửa lệch. Tiếp tục?'
-          : 'Lấy tồn Sapo hiện tại làm tồn đầu kỳ cho sổ kho?');
-        if (!await confirmBox(msg, { title: 'Chốt tồn đầu kỳ', ok: 'Chốt tồn' })) return;
-        try { const r = await api('/inventory/opening', 'POST', { confirm: true, ...(wh.value ? {warehouseId:wh.value} : {}) }); toast(`Đã chốt tồn đầu kỳ (${num(r.lines)} dòng).`); load(); }
-        catch (e) { toast(e.message || 'Không chốt được.', 'err'); }
-      }));
-    }
-    const keep = wh.value;
+    const s = status, keep = wh.value;
     wh.replaceChildren();
     if (!s.warehouseRestricted) wh.append(Object.assign(el('option', '', 'Tất cả kho'), { value: '' }));
     if (s.warehouseRestricted && !s.warehouses.length) wh.append(Object.assign(el('option', '', 'Chưa có kho VIGIFTS'), { value: '' }));
     wh.disabled = s.warehouseRestricted && !s.warehouses.length;
     for (const w of s.warehouses) wh.append(Object.assign(el('option', '', w.name), { value: w.id }));
     wh.value = s.warehouses.some(w => w.id === keep) ? keep : s.defaultWarehouseId || '';
+    // Trạng thái theo kho đang chọn; "Tất cả kho" liệt kê từng kho (đã chốt lúc nào, ai chốt / chưa chốt).
+    const sel = s.warehouses.find(w => w.id === wh.value), opened = w => `Đã chốt tồn đầu kỳ lúc ${dt(w.openedAt)}${w.openedBy ? ' – ' + w.openedBy : ''} · ${num(w.moveCount)} dòng phát sinh.`;
+    if (sel) info.append(sel.openedAt ? el('p', '', `${sel.name}: ${opened(sel)}`)
+      : el('p', 'pur-late', `${sel.name} chưa chốt tồn đầu kỳ: bấm "Chốt tồn đầu kỳ" để lấy tồn Sapo hiện tại của kho này làm điểm bắt đầu cho sổ kho.`));
+    else if (s.warehouses.length) {
+      const ul = el('ul', 'inv-wh-status');
+      for (const w of s.warehouses) ul.append(el('li', w.openedAt ? '' : 'pur-late', `${w.name}: ${w.openedAt ? opened(w) : 'chưa chốt tồn đầu kỳ.'}`));
+      info.append(ul);
+    }
+    const unopened = s.warehouses.filter(w => !w.openedAt);
+    // "Chốt lại" chỉ cho đúng một kho đã chốt đang được chọn; "Tất cả kho" chỉ chốt các kho chưa chốt.
+    if (s.canManage && s.warehouses.length) {
+      tools.append(btn('Phiếu điều chỉnh', 'btn secondary', () => adjustForm()));
+      if (sel || unopened.length) tools.append(btn(sel?.openedAt ? 'Chốt lại tồn đầu kỳ' : 'Chốt tồn đầu kỳ', sel?.openedAt ? 'btn ghost' : 'btn primary', async () => {
+        const msg = sel ? `Chốt tồn cho ${sel.name}. ` + (sel.openedAt ? 'Chỉ chốt lại được khi kho chưa có phát sinh ngoài tồn đầu kỳ. Kho đã nhập, xuất hoặc điều chỉnh phải dùng phiếu điều chỉnh để sửa lệch. Tiếp tục?'
+          : 'Lấy tồn Sapo hiện tại làm tồn đầu kỳ cho kho này?')
+          : `Chốt tồn đầu kỳ cho ${unopened.length} kho chưa chốt (${unopened.map(w => w.name).join(', ')}). Mỗi kho chốt riêng: kho lỗi không ảnh hưởng kho khác. Tiếp tục?`;
+        if (!await confirmBox(msg, { title: 'Chốt tồn đầu kỳ', ok: 'Chốt tồn' })) return;
+        try {
+          const r = await api('/inventory/opening', 'POST', { confirm: true, ...(sel ? { warehouseId: sel.id } : {}) });
+          if (sel) toast(`Đã chốt tồn đầu kỳ ${sel.name} (${num(r.lines)} dòng).`); else openingResults(r);
+          load();
+        } catch (e) { toast(e.message || 'Không chốt được.', 'err'); }
+      }));
+    }
     if (s.warehouseRestricted) info.append(el('p', 'muted small', 'Sổ kho của nhân viên Kho chỉ hiển thị KHO VIGIFTS.'));
   }
 
@@ -91,12 +117,17 @@ export function initInventory({ api, root, toast, confirmBox }) {
       tbody.append(tr);
     }
   }
+  /** Kho chưa chốt: sổ kho chưa có số để so, không đưa vào bảng lệch. */
+  function renderUnopened(list) {
+    unopenedEl.replaceChildren();
+    for (const w of list) unopenedEl.append(el('p', 'pur-late', `${w.name} chưa chốt tồn đầu kỳ, chưa đối chiếu được.`));
+  }
   async function loadRows() {
     const id = ++req;
     try {
       const d = await api('/inventory/compare?' + new URLSearchParams({ warehouseId: wh.value, q: search.value.trim(), diff: onlyDiff ? '1' : '0' }));
-      if (id !== req) return; rows = d.rows; renderRows(d.diffCount);
-    } catch (e) { if (id === req) { rows = []; renderRows(0); toast(e.message || 'Không tải được sổ kho.', 'err'); } }
+      if (id !== req) return; rows = d.rows; renderRows(d.diffCount); renderUnopened(d.unopened || []);
+    } catch (e) { if (id === req) { rows = []; renderRows(0); renderUnopened([]); toast(e.message || 'Không tải được sổ kho.', 'err'); } }
   }
   async function load() {
     try { status = await api('/inventory/status'); renderStatus(); await loadRows(); }

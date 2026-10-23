@@ -96,7 +96,9 @@ export function initStockLookup({ api, root }) {
     try {
       const r = await api('/inventory/lookup?q=' + encodeURIComponent(text));
       if (my !== req) return;
-      note.textContent = r.products.length ? `${r.products.length} mã · tồn theo ${r.source === 'ledger' ? 'sổ kho' : 'Sapo (đồng bộ gần nhất)'}` : 'Không tìm thấy mã nào.';
+      // Nguồn tồn theo TỪNG kho (kho đã chốt = sổ kho, chưa chốt = Sapo) – không lấy một kho báo cho mọi kho.
+      const SRC = { ledger: 'sổ kho', sapo: 'Sapo (đồng bộ gần nhất)' };
+      note.textContent = r.products.length ? `${r.products.length} mã · tồn theo ${r.source === 'mixed' ? 'từng kho (ghi bên cạnh tên kho)' : SRC[r.source] || SRC.sapo}` : 'Không tìm thấy mã nào.';
       out.replaceChildren(...r.products.map(p => {
         const c = el('article', 'card lookup-item');
         const top = el('div', 'lookup-top');
@@ -105,7 +107,11 @@ export function initStockLookup({ api, root }) {
         const total = el('div', 'lookup-total'); total.append(el('strong', p.total > 0 ? '' : 'danger-text', num(p.total)), el('small', 'muted', p.unit || 'tổng'));
         top.append(name, total);
         const rows = el('ul', 'lookup-stock');
-        for (const s of p.stock) { const li = el('li', s.qty > 0 ? '' : 'muted'); li.append(el('span', '', s.warehouse), el('b', '', num(s.qty))); rows.append(li); }
+        for (const s of p.stock) {
+          const li = el('li', s.qty > 0 ? '' : 'muted'), w = el('span', '', s.warehouse);
+          if (r.source === 'mixed') w.append(el('small', 'muted', ' · ' + (SRC[s.source] || SRC.sapo)));
+          li.append(w, el('b', '', num(s.qty))); rows.append(li);
+        }
         c.append(top, rows);
         // Hàng đang về: đơn mua NCC đã duyệt còn chờ nhận (không cộng vào tổng tồn) – từng đơn: số đơn, NCC, ngày hẹn.
         const inc = p.incoming;

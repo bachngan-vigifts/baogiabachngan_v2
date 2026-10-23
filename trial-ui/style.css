@@ -2152,6 +2152,9 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
 :root { --field-h: 42px; }
 label { align-content: start; }
 .form-grid { align-items: end; }
+/* Tạo báo giá: ô có dòng chính sách bên dưới (đặt cọc / hạn thanh toán) – canh theo đầu ô để hai ô cùng hàng thẳng nhau; ô ngày cao bằng ô chữ. */
+#new-quote-form .form-grid { align-items: start; }
+#new-quote-form .form-grid input { height: var(--field-h); }
 :is(dialog, .modal, .sup-form, .sup-drawer, .pos-modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=color]), select) {
   min-height: var(--field-h); box-sizing: border-box;
 }

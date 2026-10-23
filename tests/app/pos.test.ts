@@ -515,6 +515,7 @@ test('POS: không chốt lại tồn Sapo đè lên hàng đã bán; giảm 100%
   assert.equal((await db.select().from(customerPayments)).length, 0);
   const reset = await call('/inventory/opening', mgr, 'POST', {
     confirm: true,
+    warehouseId: 'pos-wh',
   });
   assert.equal(reset.status, 409, JSON.stringify(reset.data));
   assert.equal((await db.select().from(stockBalances))[0]!.qty, 9);

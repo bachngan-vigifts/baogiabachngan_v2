@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { AppError } from '../../../core/errors.ts';
 import { warehouses } from '../../catalog/schema.ts';
@@ -43,6 +43,14 @@ export async function guardInventoryOpening(db: LedgerDb, ids: readonly string[]
 const slices = <T>(xs: T[], size = 500) => Array.from({ length: Math.ceil(xs.length / size) }, (_, i) => xs.slice(i * size, (i + 1) * size));
 const moveKey = (m: MoveInput) => [m.refType, m.refId, m.sku, m.warehouseId, m.kind].join('\u0000');
 const balanceKey = (m: { sku: string; warehouseId: string }) => m.sku + '\u0000' + m.warehouseId;
+const LOCK_CHUNK = 500;
+/** Thứ tự khoá (sku, warehouse_id) do Postgres sắp – một tham số JSON, không giới hạn số mã. */
+async function sortedKeys(db: LedgerDb, keys: readonly { sku: string; warehouseId: string }[]) {
+  const res = await db.execute(sql`select k.sku, k.warehouse_id from jsonb_to_recordset(${JSON.stringify(keys.map(k => ({ sku: k.sku, warehouse_id: k.warehouseId })))}::jsonb)
+    as k(sku text, warehouse_id text) order by k.sku, k.warehouse_id`);
+  const rows = (res as unknown as { rows?: { sku: string; warehouse_id: string }[] }).rows ?? (res as unknown as { sku: string; warehouse_id: string }[]);
+  return rows.map(r => ({ sku: r.sku, warehouseId: r.warehouse_id }));
+}
 
 export async function postMoves(db: LedgerDb, by: string, moves: readonly MoveInput[], now = new Date().toISOString()): Promise<number> {
   // Also safe for callers with a root connection; within a document transaction this is a savepoint.
@@ -63,22 +71,29 @@ export async function postMoves(db: LedgerDb, by: string, moves: readonly MoveIn
     // A missing balance must be locked too. Insert zero inside the transaction; failures roll it back.
     // Gộp thành vài lệnh cho cả chứng từ (trước: 3 lượt gọi DB cho MỖI mã – đơn 20 dòng ≈ 60 lượt).
     for (const part of slices(keys)) await tx.insert(stockBalances).values(part.map(k => ({ ...k, qty: 0, updatedAt: now }))).onConflictDoNothing();
-    const balances = await tx.select().from(stockBalances).where(or(...keys.map(k => and(eq(stockBalances.sku, k.sku), eq(stockBalances.warehouseId, k.warehouseId)))))
-      .orderBy(asc(stockBalances.sku), asc(stockBalances.warehouseId)).for('update');
+    // Khoá theo đúng thứ tự (sku, warehouse_id) của Postgres. Lô lớn (chốt đầu kỳ ~20.000 mã) chia ≤500 khoá / lệnh
+    // (giới hạn 65.535 tham số); thứ tự toàn cục do chính Postgres sắp (cùng collation với ORDER BY bên dưới) nên các lô nối tiếp nhau.
+    const ordered = keys.length <= LOCK_CHUNK ? keys : await sortedKeys(tx, keys);
+    const balances = new Map<string, number>();
+    for (const part of slices(ordered, LOCK_CHUNK)) for (const b of await tx.select({ sku: stockBalances.sku, warehouseId: stockBalances.warehouseId, qty: stockBalances.qty }).from(stockBalances)
+      .where(sql`(${stockBalances.sku}, ${stockBalances.warehouseId}) in (${sql.join(part.map(k => sql`(${k.sku}, ${k.warehouseId})`), sql`, `)})`)
+      .orderBy(asc(stockBalances.sku), asc(stockBalances.warehouseId)).for('update')) balances.set(balanceKey(b), b.qty);
     // Read AFTER locking: another transaction may have completed this same document while we waited.
-    const recorded = new Set((await tx.select().from(stockMoves).where(or(...batch.map(m => and(eq(stockMoves.refType, m.refType), eq(stockMoves.refId, m.refId),
-      eq(stockMoves.sku, m.sku), eq(stockMoves.warehouseId, m.warehouseId), eq(stockMoves.kind, m.kind)))))).map(moveKey));
+    const recorded = new Set<string>();
+    for (const part of slices(batch, LOCK_CHUNK)) for (const r of await tx.select({ refType: stockMoves.refType, refId: stockMoves.refId, sku: stockMoves.sku, warehouseId: stockMoves.warehouseId, kind: stockMoves.kind })
+      .from(stockMoves).where(sql`(${stockMoves.refType}, ${stockMoves.refId}, ${stockMoves.sku}, ${stockMoves.warehouseId}, ${stockMoves.kind}) in (${sql.join(part.map(m =>
+        sql`(${m.refType}, ${m.refId}, ${m.sku}, ${m.warehouseId}, ${m.kind})`), sql`, `)})`)) recorded.add(moveKey(r as MoveInput));
     const pending = batch.filter(m => !recorded.has(moveKey(m)));
     const delta = new Map<string, number>();
     for (const m of pending) delta.set(balanceKey(m), (delta.get(balanceKey(m)) ?? 0) + m.qty);
-    const short = keys.flatMap(k => {
-      const have = balances.find(b => balanceKey(b) === balanceKey(k))?.qty ?? 0, change = delta.get(balanceKey(k)) ?? 0;
+    const short = ordered.flatMap(k => {
+      const have = balances.get(balanceKey(k)) ?? 0, change = delta.get(balanceKey(k)) ?? 0;
       return change && have + change < -0.0005 ? [`${k.sku} (còn ${have}, cần ${Math.max(0, -change)})`] : [];
     });
-    if (short.length) throw new AppError(409, 'Tồn kho không đủ: ' + short.join('; ') + '. Dùng phiếu điều chỉnh hoặc điều chuyển để bổ sung tồn trước khi thực hiện / huỷ chứng từ.', 'STOCK_SHORT');
+    if (short.length) throw new AppError(409, 'Tồn kho không đủ: ' + short.slice(0, 10).join('; ') + (short.length > 10 ? ` và ${short.length - 10} mã khác` : '') + '. Dùng phiếu điều chỉnh hoặc điều chuyển để bổ sung tồn trước khi thực hiện / huỷ chứng từ.', 'STOCK_SHORT');
     for (const part of slices(pending)) await tx.insert(stockMoves).values(part.map(m => ({ id: crypto.randomUUID(), ...m,
       refNo: (m.refNo ?? '').slice(0, 60), note: (m.note ?? '').slice(0, 500), createdBy: by, createdAt: now })));
-    const changes = keys.map(k => ({ ...k, qty: delta.get(balanceKey(k)) ?? 0 })).filter(k => k.qty);
+    const changes = ordered.map(k => ({ ...k, qty: delta.get(balanceKey(k)) ?? 0 })).filter(k => k.qty);
     for (const part of slices(changes)) await tx.execute(sql`UPDATE ${stockBalances} SET ${sql.identifier('qty')} = ${stockBalances.qty} + v.d, ${sql.identifier('updated_at')} = ${now}
       FROM (VALUES ${sql.join(part.map(k => sql`(${k.sku}, ${k.warehouseId}, ${k.qty}::double precision)`), sql`, `)}) AS v(sku, wh, d)
       WHERE ${stockBalances.sku} = v.sku AND ${stockBalances.warehouseId} = v.wh`);
