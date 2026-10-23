@@ -15,7 +15,7 @@ import { can } from '../../staff/domain/permissions.ts';
 import { employees, positions } from '../../staff/schema.ts';
 import { posSharedShiftStoreScope } from './pos-access.ts';
 import { products, productPrices, productBarcodes, warehouses, pricePolicies } from '../../catalog/schema.ts';
-import { stockBalances, stockMoves } from '../../inventory/schema.ts';
+import { stockBalances } from '../../inventory/schema.ts';
 import { postMoves, lockLedger, assertWarehousesOpened } from '../../inventory/api/ledger.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { posRegisters, posShifts, posShiftTemplates, posStockCounts, posPaymentRequests } from '../pos-schema.ts';
@@ -26,7 +26,6 @@ import {
   paymentSchedules,
   deliveries,
   stockHolds,
-  packingSlips,
 } from '../schema.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { allocatePosVoucher, parsePosVoucher, posLine, posMoney } from '../domain/pos-money.ts';
@@ -215,35 +214,13 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
       .groupBy(stockHolds.sku),
     orderHolds(db, skus, warehouseId),
   ]);
-  const issued =
-    warehouseId && orders.length
-      ? await db
-          .select({
-            orderId: packingSlips.orderId,
-            sku: stockMoves.sku,
-            qty: sql<number>`-sum(${stockMoves.qty})`.mapWith(Number),
-          })
-          .from(stockMoves)
-          .innerJoin(packingSlips, eq(packingSlips.id, stockMoves.refId))
-          .where(
-            and(
-              eq(stockMoves.refType, 'packing_slip'),
-              eq(stockMoves.warehouseId, warehouseId),
-              inArray(
-                packingSlips.orderId,
-                orders.map((o) => o.orderId),
-              ),
-            ),
-          )
-          .groupBy(packingSlips.orderId, stockMoves.sku)
-      : [];
   const out = new Map<string, number>();
   // Giữ hàng theo báo giá tính trên TỔNG tồn mọi kho (không gắn kho). Kho quầy chỉ gánh phần mà tồn trống ở các kho
   // khác không đủ che – báo giá giữ hàng ở kho VIGIFTS không làm kho cửa hàng hiện "Hết hàng" (23/10/2026).
   const quoteShare = warehouseId && quotes.length ? await quoteHoldShare(db, quotes, warehouseId) : new Map(quotes.map(r => [r.sku, r.qty]));
   for (const [sku, qty] of quoteShare) if (qty > 0) out.set(sku, (out.get(sku) ?? 0) + qty);
   for (const r of orders) {
-    const quantity = Math.max(0, r.qty - (r.timed ? 0 : issued.find((x) => x.orderId === r.orderId && x.sku === r.sku)?.qty ?? 0));
+    const quantity = r.qty; // orderHolds already removes quantities issued by packing or POS delivery.
     out.set(r.sku, (out.get(r.sku) ?? 0) + quantity);
   }
   return out;

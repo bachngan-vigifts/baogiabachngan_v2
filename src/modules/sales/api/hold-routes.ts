@@ -1,6 +1,7 @@
 import type { PermissionMember } from '../../staff/domain/permissions.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
+import { posRegisters, posShifts } from '../pos-schema.ts';
 import { posOrderReservations } from '../pos-order-flow-schema.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
@@ -61,18 +62,27 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
   // Đơn / HĐKT CRM đã trừ kho bán lúc duyệt (sổ kho) ở kho đã chốt đầu kỳ: tồn hiển thị đã trừ – không giữ thêm lần nữa.
   const ledgerCounted = sql`EXISTS (SELECT 1 FROM ${stockMoves} m WHERE m.ref_type = 'sales_order' AND (m.ref_id = ${salesOrders.id} OR m.ref_id LIKE ${salesOrders.id} || '#%')
     AND EXISTS (SELECT 1 FROM ${stockMoves} o WHERE o.warehouse_id = m.warehouse_id AND o.ref_type = 'opening'))`;
+  // Legacy POS orders often have no warehouse_id; their register still gives the exact selling warehouse.
+  const sellingWarehouse = sql`coalesce(${salesOrders.warehouseId}, (select ${posRegisters.warehouseId} from ${posShifts} join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} where ${posShifts.id}=${salesOrders.shiftId} and ${salesOrders.channel}='pos'))`;
+  // Issued stock has already reduced stock_balances. Delivered quantities and issued moves may describe
+  // the same units, so subtract their maximum, never both. Reverse moves reduce net issued quantity.
+  const legacyIssued = sql`coalesce((select greatest(0,-sum(${stockMoves.qty})) from ${stockMoves}
+    where ${stockMoves.sku}=${salesOrderLines.sku} ${warehouseId ? sql`and ${stockMoves.warehouseId}=${warehouseId}` : sql``}
+      and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id}))
+        or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;
+  const legacyRemaining = sql`greatest(0,sum(${salesOrderLines.qty})-greatest(sum(${salesOrderLines.deliveredQty}),max(${legacyIssued})))`;
   const legacy = await db.select({
-    sku: salesOrderLines.sku, qty: sql<number>`sum(${salesOrderLines.qty} - ${salesOrderLines.deliveredQty})`.mapWith(Number),
+    sku: salesOrderLines.sku, qty: sql<number>`${legacyRemaining}`.mapWith(Number),
     orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName,
     contractNo: sql<string | null>`max(${salesContracts.contractNo})`,
   }).from(salesOrderLines).innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId))
     .leftJoin(salesContracts, and(eq(salesContracts.orderId, salesOrders.id), ne(salesContracts.status, 'cancelled')))
     .where(and(storeScope,
-      // A known selling warehouse reserves only that warehouse. Legacy orders without one retain their global hold.
-      warehouseId ? or(eq(salesOrders.warehouseId, warehouseId), isNull(salesOrders.warehouseId)) : undefined,
+      // Unknown non-POS warehouse still retains its conservative global hold.
+      warehouseId ? sql`(${sellingWarehouse}=${warehouseId} or ${sellingWarehouse} is null)` : undefined,
       eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
-      gt(salesOrderLines.qty, salesOrderLines.deliveredQty), skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`, sql`NOT (${ledgerCounted})`))
-    .groupBy(salesOrderLines.sku, salesOrders.id).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
+      skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`, sql`NOT (${ledgerCounted})`))
+    .groupBy(salesOrderLines.sku, salesOrders.id).having(sql`${legacyRemaining}>0`).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
   const issued = sql`coalesce((select -sum(${stockMoves.qty}) from ${stockMoves} where ${stockMoves.sku}=${salesOrderLines.sku} and ${stockMoves.warehouseId}=${posOrderReservations.warehouseId} and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id})) or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;
   const timed = await db.select({ sku: salesOrderLines.sku, qty: sql<number>`sum(greatest(0,${posOrderReservations.qty}-greatest(${salesOrderLines.deliveredQty},${issued})))`.mapWith(Number), orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, contractNo: sql<string | null>`null` })
     .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId)).innerJoin(salesOrderLines, eq(salesOrderLines.id, posOrderReservations.orderLineId))
