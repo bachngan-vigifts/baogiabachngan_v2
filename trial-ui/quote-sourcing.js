@@ -3,8 +3,29 @@ const num=n=>Number(n||0).toLocaleString('vi-VN',{maximumFractionDigits:3});
 const select=(items,label)=>{const s=el('select');s.setAttribute('aria-label',label);for(const [value,name] of items){const o=el('option','',name);o.value=value;s.append(o);}return s;};
 const qty=(value,label)=>{const n=el('input');n.type='number';n.min='0';n.step='0.001';n.value=value;n.setAttribute('aria-label',label);return n;};
 const button=(text,fn)=>{const b=el('button','btn secondary small',text);b.type='button';b.addEventListener('click',fn);return b;};
+/** A separate choice keeps deferring purchasing distinct from cancelling document creation. */
+export function chooseSourcePurchase({count,skuCount,quoteNo,canPurchase}) {
+  return new Promise(resolve=>{
+    const dialog=el('dialog','modal purchase-source-choice');
+    dialog.setAttribute('aria-label','Tạo đơn mua NCC cùng đơn bán');
+    const head=el('div','modal-head');head.append(el('h2','','Tạo đơn mua NCC ngay?'));
+    const body=el('div','modal-body');body.append(
+      el('p','',`${quoteNo}: ${skuCount} mã cần đặt từ ${count} NCC.`),
+      el('p','muted','Tạo ngay: gộp theo NCC thành đơn mua nháp, cần duyệt riêng. Đơn mua đã tạo vẫn được giữ nếu bước sinh đơn bán/HĐKT sau đó bị dừng.'),
+      el('p','muted','Đặt NCC sau: tiếp tục sinh đơn bán/HĐKT và lưu kế hoạch nguồn hàng, chưa tạo đơn mua.'));
+    if(!canPurchase)body.append(el('p','muted','Bạn chưa có quyền lập đơn mua NCC. Có thể tiếp tục và nhờ người có quyền đặt sau.'));
+    const foot=el('div','modal-foot');
+    const back=button('Quay lại rà nguồn',()=>finish(null));
+    const later=button('Đặt NCC sau · Tiếp tục',()=>finish('later'));
+    const now=button('Tạo đơn mua nháp ngay',()=>finish('create'));now.className='btn primary';now.disabled=!canPurchase;
+    foot.append(back,later,now);dialog.append(head,body,foot);
+    function finish(value){dialog.close();dialog.remove();resolve(value);}
+    dialog.addEventListener('cancel',e=>{e.preventDefault();finish(null);});
+    document.body.append(dialog);dialog.showModal();later.focus();
+  });
+}
 /** Source allocations become packing drafts; request buttons explicitly save related purchasing/transfer requests. */
-export async function initQuoteSourcing({api,host,quoteId,confirmBox,isCurrent=()=>true}) {
+export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurchase=chooseSourcePurchase,isCurrent=()=>true}) {
   host.replaceChildren(el('p','muted','Đang lấy kho và nguồn hàng…'));
   const data=await api('/quotes/'+encodeURIComponent(quoteId)+'/stock-plan');
   if(!isCurrent())return null;
@@ -12,8 +33,10 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,isCurrent=(
   const warehouse=select([['','Chọn kho bán / kho xuất'],...selling.map(w=>[w.id,w.name+(w.opened?'':' · Chưa chốt đầu kỳ')])],'Kho bán / kho xuất');
   if(selling.length===1)warehouse.value=selling[0].id;
   const heading=el('h3','','Lấy hàng từ đâu?'),label=el('label','','Kho bán / kho xuất');label.append(warehouse);
-  const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Phần đặt NCC chưa lập yêu cầu sẽ được gộp theo NCC và tạo đơn mua nháp khi sinh đơn/HĐKT. Các nút tạo riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
-  const list=el('div'),error=el('p','error');error.setAttribute('role','alert');host.replaceChildren(heading,label,hint,list,error);
+  const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT, bạn chọn tạo đơn mua nháp ngay hoặc đặt NCC sau. Các nút tạo riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
+  const summary=el('p','quote-source-summary',`${data.lines.length} mã sản phẩm · Rà số lượng và nguồn cho từng mã`);
+  const toolbar=el('div','quote-source-toolbar');toolbar.append(heading,summary,label,hint);
+  const list=el('div','quote-source-list'),error=el('p','error');error.setAttribute('role','alert');host.replaceChildren(toolbar,list,error);
   let busy=false,suppliers=null;const cards=[];
   const requireWarehouse=()=>{if(!warehouse.value)throw Error('Chọn kho bán / kho xuất trước.');return data.warehouses.find(w=>w.id===warehouse.value);};
   const markBusy=value=>{busy=value;warehouse.disabled=value||cards.some(c=>c.sources.some(s=>s.saved||s.uncertain));for(const c of cards){c.from.disabled=value;for(const s of c.sources){for(const i of [s.type,s.location,s.supplier,s.amount,s.remove])i.disabled=value||!!s.saved||!!s.uncertain;s.action.disabled=value||!!s.saved||!!s.uncertain||(s.type.value==='incoming'&&!data.canRequestEarly)||(s.type.value==='purchase'&&!data.canPurchase);}}};
@@ -50,15 +73,17 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,isCurrent=(
     }
     row.append(type,location,supplier,amount,action,remove,result);card.sourcesHost.append(row);sync();return entry;
   }
-  function draw(){list.replaceChildren();cards.length=0;for(const line of data.lines){
-    const box=el('div','pack-line'),head=el('div','pack-head');head.append(el('b','',line.name),el('small','',`${line.sku} · ${num(line.qty)} ${line.unit}`));
+  function draw(){list.replaceChildren();cards.length=0;for(const [index,line] of data.lines.entries()){
+    const box=el('div','pack-line'),head=el('div','pack-head');head.append(el('b','',`${index+1}. ${line.name}`),el('small','',`${line.sku} · ${num(line.qty)} ${line.unit}`));
     const grid=el('div','pack-grid'),need=el('label','','Cần lấy'),total=qty(line.qty,'Cần lấy '+line.sku);total.readOnly=true;need.append(total);
     const available=el('label','','Tồn kho bán'),stock=el('span','pack-av');available.append(stock);
     const take=el('label','','Lấy từ kho'),from=qty(0,'Lấy từ kho '+line.sku);take.append(from);grid.append(need,available,take);
     const sourcesHost=el('div'),card={line,from,stock,sourcesHost,sources:[]};cards.push(card);
-    box.append(head,grid);
-    if(line.incoming>0)box.append(el('p','pack-incoming-hint',`Có hàng đang chờ về: ${num(line.incoming)} ${line.unit}`));
-    box.append(sourcesHost,button('＋ Thêm nguồn hàng',()=>{if(busy)return;source(card,Math.max(0,line.qty-Number(from.value)-card.sources.reduce((n,s)=>n+Number(s.amount.value),0)));}));list.append(box);
+    const allocation=el('div','quote-source-allocation'),stockBlock=el('div','quote-source-stock'),requests=el('div','quote-source-requests');
+    stockBlock.append(grid);
+    if(line.incoming>0)stockBlock.append(el('p','pack-incoming-hint',`Có hàng đang chờ về: ${num(line.incoming)} ${line.unit}`));
+    requests.append(sourcesHost,button('＋ Thêm nguồn hàng',()=>{if(busy)return;source(card,Math.max(0,line.qty-Number(from.value)-card.sources.reduce((n,s)=>n+Number(s.amount.value),0)));}));
+    allocation.append(stockBlock,requests);box.append(head,allocation);list.append(box);
     const amount=warehouse.value?Math.max(0,Number(line.stock[warehouse.value]||0)):0;stock.textContent=warehouse.value?num(amount):'Chọn kho';from.value=Math.min(line.qty,amount);
     if(Number(from.value)<line.qty)source(card,line.qty-Number(from.value));
   }}
@@ -87,11 +112,13 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,isCurrent=(
     planner.read(); // Validate every allocation before creating any request.
     const pending=cards.flatMap(card=>card.sources.filter(entry=>entry.type.value==='purchase'&&!entry.saved&&Number(entry.amount.value)>0).map(entry=>({card,entry,quantity:Number(entry.amount.value)})));
     if(!pending.length)return planner.read();
-    if(!data.canPurchase)throw Error('Bạn không có quyền lập đơn mua NCC.');
     const destination=requireWarehouse(),groups=new Map();
     for(const item of pending){const id=item.entry.supplier.value;if(!groups.has(id))groups.set(id,[]);groups.get(id).push(item);}
-    if(!await confirmBox(`Tạo ${groups.size} đơn mua NCC nháp cho ${data.quoteNo} trước khi sinh đơn/HĐKT? Đơn mua cần duyệt riêng và vẫn được giữ nếu dừng bước sinh đơn/HĐKT.`,{title:'Đặt hàng NCC theo nguồn đã chọn',ok:'Tạo đơn mua nháp'}))throw Error('Đã dừng tạo đơn mua NCC. Chưa sinh đơn/HĐKT.');
+    const choice=await choosePurchase({count:groups.size,skuCount:new Set(pending.map(p=>p.card.line.sku)).size,quoteNo:data.quoteNo,canPurchase:data.canPurchase});
     if(!isCurrent())throw Error('Form đã đóng. Mở lại trước khi sinh đơn.');
+    if(choice==='later')return planner.read();
+    if(choice!=='create')throw Error('Đã quay lại rà nguồn hàng. Chưa sinh đơn/HĐKT.');
+    if(!data.canPurchase)throw Error('Bạn không có quyền lập đơn mua NCC.');
     const batches=[...groups.values()];
     const orders=batches.map(items=>{
       const lines=new Map();
