@@ -67,7 +67,10 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
     contractNo: sql<string | null>`max(${salesContracts.contractNo})`,
   }).from(salesOrderLines).innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId))
     .leftJoin(salesContracts, and(eq(salesContracts.orderId, salesOrders.id), ne(salesContracts.status, 'cancelled')))
-    .where(and(storeScope,eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
+    .where(and(storeScope,
+      // A known selling warehouse reserves only that warehouse. Legacy orders without one retain their global hold.
+      warehouseId ? or(eq(salesOrders.warehouseId, warehouseId), isNull(salesOrders.warehouseId)) : undefined,
+      eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
       gt(salesOrderLines.qty, salesOrderLines.deliveredQty), skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`, sql`NOT (${ledgerCounted})`))
     .groupBy(salesOrderLines.sku, salesOrders.id).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
   const issued = sql`coalesce((select -sum(${stockMoves.qty}) from ${stockMoves} where ${stockMoves.sku}=${salesOrderLines.sku} and ${stockMoves.warehouseId}=${posOrderReservations.warehouseId} and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id})) or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;

@@ -50,3 +50,29 @@ test('POS catalog batches all stock sources, uses approved incoming lines and pr
  assert.equal(saved!.approvalStatus,'pending');assert.equal(saved!.submittedAt,null);
  assert.equal((await f.call(path,f.emp)).data.products[0].stockSources.incoming.qty,20,'new draft is not incoming stock');
 });
+
+test('POS không trừ giữ hàng từ kho khác; giữ cùng kho vẫn chặn bán vượt khả dụng',async()=>{
+ const f=await setup(),now=new Date().toISOString();
+ const {salesOrders,salesOrderLines}=await import('../../src/modules/sales/schema.ts');
+ const {reservedBySku}=await import('../../src/modules/sales/api/pos-store.ts');
+ await f.db.insert(warehouses).values({id:'vig-scope',name:'KHO VIGIFTS',kind:'stock'});
+ await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'vig-scope',qty:139,kind:'opening',refType:'opening',refId:'vig-scope-opening'},{sku:'00123',warehouseId:'pos-wh',qty:-7,kind:'adjust',refType:'adjustment',refId:'scope-three-left'}]);
+ const insert=async(id:string,warehouseId:string|null,qty:number)=>{
+  await f.db.insert(salesOrders).values({id,orderNo:id,quoteType:'HRC',customerName:'Khách giữ hàng',ownerId:'mgr',createdBy:'mgr',warehouseId,orderDate:now.slice(0,10),status:'confirmed',holdsStock:true,createdAt:now,updatedAt:now});
+  await f.db.insert(salesOrderLines).values({id:id+'-line',orderId:id,lineNo:1,sku:'00123',name:'Ly sứ',unit:'cái',qty});
+ };
+ await insert('DH_OTHER_WAREHOUSE','vig-scope',50);
+ const path=`/pos/catalog?registerId=${f.registerId}&q=00123`;
+ let p=(await f.call(path,f.emp)).data.products[0];
+ assert.deepEqual([p.onHand,p.reserved,p.available],[3,0,3],'tồn cửa hàng 3 không bị trừ 50 giữ tại VIGIFTS');
+ assert.equal((await reservedBySku(f.db,['00123'],'vig-scope')).get('00123'),50);
+ assert.equal((await reservedBySku(f.db,['00123'])).get('00123'),50,'tổng giữ hàng toàn hệ thống không đổi');
+ await insert('DH_SAME_WAREHOUSE','pos-wh',2);
+ p=(await f.call(path,f.emp)).data.products[0];assert.deepEqual([p.onHand,p.reserved,p.available],[3,2,1]);
+ const shift=await f.open();
+ const short=await f.call('/pos/checkout',f.emp,'POST',f.cart(shift.id));assert.equal(short.status,409,JSON.stringify(short.data));assert.equal(short.data.code,'POS_STOCK_SHORT');
+ const paid=await f.call('/pos/checkout',f.emp,'POST',f.cart(shift.id,{rows:[{sku:'00123',qty:1,discountType:'percent',discountValue:0}]}));assert.equal(paid.status,201,JSON.stringify(paid.data));
+ assert.equal((await f.db.select().from(stockBalances).where(eq(stockBalances.warehouseId,'pos-wh')))[0]!.qty,2,'bán đúng 1, vẫn còn 2 cho đơn cùng kho');
+ await insert('DH_NO_WAREHOUSE',null,1);
+ assert.equal((await reservedBySku(f.db,['00123'],'pos-wh')).get('00123'),3,'giữ cũ chưa chọn kho vẫn được bảo vệ');
+});
