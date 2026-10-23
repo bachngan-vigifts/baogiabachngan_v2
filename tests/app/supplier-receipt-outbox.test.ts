@@ -106,3 +106,16 @@ test('Callback HTTP: xác thực bắt buộc, schema/link đầy đủ; callbac
  assert.equal((await call(f.result(id,{sapo_purchase_order_id:'OTHER'}))).status,400);
  assert.equal((await call(f.result(id,{crm_order_id:'OTHER'}))).status,409);
 });
+
+
+test('Callback lỗi tới trước HTTP 2xx: giữ failed, dispatcher không đổi lại pending',async()=>{
+ const f=await fixture();let id='';
+ f.env.sapoWebhookFetch=(async (_url:any,init:any)=>{
+  id=JSON.parse(init.body).crm_receipt.id;
+  await receiptResult(f.db,f.result(id,{ok:false,error:'Không khớp kho trên Sapo'}));
+  return Response.json({ok:true});
+ }) as typeof fetch;
+ await f.receive();assert.equal((await f.job(id)).status,'failed');assert.equal((await f.row(id)).sapoStatus,'failed');
+ assert.equal((await f.job(id)).dispatchToken,null);
+ await receiptResult(f.db,f.result(id));assert.equal((await f.job(id)).status,'done');
+});

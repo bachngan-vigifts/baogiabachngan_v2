@@ -85,13 +85,13 @@ export async function receiptResult(db: AnyDb, b: Record<string, unknown>) {
     }
     const now=new Date().toISOString(), before=receiptLink(r);
     if (!b.ok) {
-      await tx.update(receiptJobs).set({status:'failed',lastError:'Claw báo xử lý không thành công; xem execution n8n để biết chi tiết.',leaseUntil:null,leaseToken:null,updatedAt:now}).where(eq(receiptJobs.receiptId,id));
+      await tx.update(receiptJobs).set({status:'failed',lastError:'Claw báo xử lý không thành công; xem execution n8n để biết chi tiết.',leaseUntil:null,leaseToken:null,dispatchToken:null,dispatchUntil:null,updatedAt:now}).where(eq(receiptJobs.receiptId,id));
       if(!reconcile)await tx.update(supplierReceipts).set({sapoStatus:'failed',sapoNote:'Claw báo xử lý không thành công; có thể gửi lại kết quả hoặc đối soát.',sapoUpdatedAt:now,sapoUpdatedBy:null}).where(eq(supplierReceipts.id,id));
       return {duplicate:false};
     }
     const after={sapoPurchaseOrderId:po,sapoReceiptId:sapo,sapoReceiptCode:code,sapoReceiptUrl:url,sapoVerifiedAt:now,sapoStatus:'done' as const,sapoUpdatedAt:now};
     await tx.update(supplierReceipts).set({...after,sapoNote:'Đã xác minh phiếu Sapo qua callback.',sapoUpdatedBy:null}).where(eq(supplierReceipts.id,id));
-    await tx.update(receiptJobs).set({status:'done',lastError:'',leaseUntil:null,leaseToken:null,updatedAt:now}).where(eq(receiptJobs.receiptId,id));
+    await tx.update(receiptJobs).set({status:'done',lastError:'',leaseUntil:null,leaseToken:null,dispatchToken:null,dispatchUntil:null,updatedAt:now}).where(eq(receiptJobs.receiptId,id));
     await tx.insert(supplierOrderEvents).values({id:crypto.randomUUID(),shipmentId:order,at:now,actorId:null,action:reconcile?'sapo_reconcile':'sapo_callback',summary:`${r.receiptNo}: xác minh Sapo ${code}`,data:JSON.stringify({receiptId:id,before,after,reconciliationId:j.reconciliationId})});
     return {duplicate:false};
   });

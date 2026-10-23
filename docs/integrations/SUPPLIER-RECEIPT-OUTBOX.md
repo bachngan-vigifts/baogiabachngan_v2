@@ -16,7 +16,7 @@ Phạm vi PR: CRM, migration và contract. Không sửa workflow, không thao t�
 
 Job duy nhất theo receipt ID, có payload snapshot và SHA-256, số lần gửi, lỗi gần nhất. Thiếu SKU/giá/CK/VAT/NCC giữ `needs_review`, không gọi webhook; kho không hợp lệ bị từ chối trước khi ghi nhận. Giá 0, CK 0, VAT 0 hợp lệ; null không tự đổi thành 0. Chỉ gửi số lượng đạt > 0. Giá/thuế lấy dòng đơn mua, ưu tiên confirmed_purchase_discount kể cả bằng 0.
 
-State: queued → callback_pending khi HTTP nhận việc → processing khi Claw claim → done sau callback đã xác minh. Claim có thể xảy ra trước HTTP trả về. Lỗi gửi/callback → failed; xung đột hoặc lease thực thi hết hạn → needs_review. HTTP 2xx không ghi `done`. Callback có thể tới trước HTTP trả về; dispatcher không ghi đè done/processing/needs_review.
+State: queued → callback_pending khi HTTP nhận việc → processing khi Claw claim → done sau callback đã xác minh. Claim có thể xảy ra trước HTTP trả về. Lỗi gửi/callback → failed; xung đột hoặc lease thực thi hết hạn → needs_review. HTTP 2xx không ghi `done`. Callback có thể tới trước HTTP trả về; dispatcher không ghi đè done/processing/needs_review hoặc failed do callback đến trước HTTP response.
 
 Lease giao HTTP 60 giây và lease thực thi 15 phút độc lập. Cả hai claim bằng transaction/row lock. Claw nhận HTTP webhook phải gọi claim, chỉ execution nhận 200 mới được thao tác UI. Execution nhận 409 phải dừng, không được tạo phiếu. Nếu lease thực thi hết hạn, không tự claim lại để tạo; chuyển đối soát. Callback phải gửi `lease_token` nếu execution đã claim; callback cũ không được vượt yêu cầu đối soát mới.
 
