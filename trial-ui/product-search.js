@@ -102,7 +102,34 @@ function searchProducts(items, o) {
   const rank = new Map(out.map((p) => [p, productRank(p, query)]));
   return out.sort((a, b) => rank.get(a) - rank.get(b) || (words.length ? a._name.length - b._name.length : 0) || cmp(a._name, b._name) || cmp(a.name, b.name) || cmp(a.sku, b.sku));
 }
+function matchRanges(text, q) {
+  const { words } = parseQuery(q);
+  if (!words.length || !text) return [];
+  const folded = Array.from(text, (ch) => {
+    const f = fold(ch);
+    return f.length === 1 ? f : ch.toLowerCase().length === 1 ? ch.toLowerCase() : ch;
+  });
+  const at = [];
+  let i = 0;
+  for (const ch of text) {
+    at.push(i);
+    i += ch.length;
+  }
+  at.push(i);
+  const hay = folded.join(""), ranges = [];
+  if (hay.length !== folded.length) return [];
+  for (const w of words) for (let from = hay.indexOf(w); from >= 0; from = hay.indexOf(w, from + w.length)) ranges.push([at[from], at[from + w.length]]);
+  ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const out = [];
+  for (const r of ranges) {
+    const last = out[out.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else out.push([...r]);
+  }
+  return out;
+}
 export {
   hydrateSnapshot,
+  matchRanges,
   searchProducts
 };

@@ -28,7 +28,7 @@ import { initSuppliers } from './suppliers.js';
 import { initPurchases } from './purchases.js';
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
-import { hydrateSnapshot, searchProducts as searchCatalog } from './product-search.js';
+import { hydrateSnapshot, matchRanges, searchProducts as searchCatalog } from './product-search.js';
 import { defaultPaymentTerms, withPaymentNotes } from './quote-payment.js';
 import { setupNotifications } from './notify.js';
 import { setupDataRefresh } from './auto-refresh.js';
@@ -2111,10 +2111,26 @@ function applyCatalogMeta(d) {
 }
 let productReq = 0, brandsLoaded = false;
 let productPager;
+/**
+ * Trang Sản phẩm lọc NGAY trên danh mục đã tải sẵn (GET /catalog-snapshot, cùng quy tắc khớp + xếp hạng với máy chủ – product-rank.ts):
+ * gõ là ra, không chờ máy chủ quét bỏ dấu cả danh mục. Chưa có bản chụp, hoặc bản chụp không có kết quả (quét mã vạch, sản phẩm vừa thêm)
+ * thì hỏi máy chủ như trước.
+ */
+function localProducts() {
+  if (!catalog.items) return null;
+  const found = searchCatalog(catalog.items, { q: state.productQuery }) || [];
+  const list = state.productBrand ? found.filter(p => p.brand === state.productBrand) : found;
+  return list.length || !state.productQuery.trim() ? list : null;
+}
 async function loadProducts() {
   loadHolds().then(() => { if (state.products) renderProducts?.(); });
   const req = ++productReq;
   productPager ||= createPager($('#product-pager'), 'products', () => loadProducts(), 50);
+  const local = localProducts();
+  if (local) {
+    state.products = local.slice(productPager.offset, productPager.offset + productPager.limit); state.productTotal = local.length;
+    renderProducts(); loadProductBrands(); return;
+  }
   state.products = null; renderProducts();
   try {
     const d = await api(`/products?limit=${productPager.limit}&offset=${productPager.offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}`);
@@ -2122,7 +2138,9 @@ async function loadProducts() {
     applyCatalogMeta(d);
     state.products = d.products; state.productTotal = d.total;
   } catch (e) { state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message); }
-  renderProducts();
+  renderProducts(); loadProductBrands();
+}
+function loadProductBrands() {
   if (!brandsLoaded) {
     brandsLoaded = true;
     api('/product-brands').then(d => {
@@ -2192,7 +2210,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => loadProducts() });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; loadProducts(); loadCatalogSnapshot(); } });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
@@ -2270,6 +2288,13 @@ $('#product-actions').addEventListener('click', e => {
   else if (action === 'sapo-stock') openSapoStockImport({ api, isManager, toast, onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } }).catch(ex => toast(ex.message, 'err'));
   else if (action === 'stock' || action === 'packing') productActions().openImport(action).catch(ex => toast(ex.message, 'err'));
 });
+/** Tô đậm từ khoá đang tìm (không dấu, không phân biệt hoa thường) – chuỗi đã escape. */
+const markWords = (text, q) => {
+  const t = String(text ?? ''), ranges = q ? matchRanges(t, q) : [];
+  let out = '', i = 0;
+  for (const [a, b] of ranges) { out += esc(t.slice(i, a)) + '<mark>' + esc(t.slice(a, b)) + '</mark>'; i = b; }
+  return out + esc(t.slice(i));
+};
 function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
@@ -2284,7 +2309,7 @@ function renderProducts() {
     const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
     return `<tr>
       <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
-      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
+      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${markWords(p.name, state.productQuery)}</span><small>${markWords(p.sku, state.productQuery)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
@@ -2336,7 +2361,7 @@ function rowFromProduct(p) {
 const rowsFromProducts = list => list.map(rowFromProduct).filter(Boolean);
 let productTimer;
 const reloadProducts = () => { productPager?.reset(); loadProducts(); };
-$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, 250); });
+$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, catalog.items ? 40 : 250); });
 $('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; reloadProducts(); });
 $('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; renderProducts(); });
 $('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });
@@ -2379,7 +2404,7 @@ $('#catalog-file').addEventListener('change', async e => {
       $('#product-count').textContent = `Đang nhập ${Math.min(i + BATCH, n).toLocaleString('vi-VN')}/${n.toLocaleString('vi-VN')}…`;
     }
     toast(`Đã nhập ${n.toLocaleString('vi-VN')} sản phẩm.`);
-    brandsLoaded = false; state.selected.clear(); loadProducts();
+    brandsLoaded = false; state.selected.clear(); catalog.checkedAt = 0; loadProducts(); loadCatalogSnapshot();
   } catch (ex) { toast(ex.message + ' Chọn lại file để nhập tiếp.', 'err'); loadProducts(); }
   finally { label.classList.remove('busy'); }
 });
@@ -2526,6 +2551,7 @@ function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
         useSnapshot(d);
         idb('readwrite', st => st.put(d, IDB.key)).catch(() => {});
         if ($('#picker-dialog').open) loadPicker(); // đang mở hộp tìm thì cập nhật kết quả theo dữ liệu mới
+        if (state.products && location.hash.startsWith('#/products')) loadProducts(); // trang Sản phẩm: lọc lại trên dữ liệu mới
       }
     } catch { /* lỗi mạng: dùng bản đang có, hoặc tìm qua máy chủ */ }
     return catalog.items;
