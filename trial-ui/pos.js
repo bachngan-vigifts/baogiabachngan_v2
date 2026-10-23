@@ -940,19 +940,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   /** VOUCHER nhập tay cho cả đơn (pos-money.ts › parsePosVoucher): mã / ghi chú + số tiền VNĐ hoặc %; máy chủ chia vào các dòng, trừ thẳng vào giá đã gồm VAT rồi tách lại VAT. */
   function drawVoucher() {
     const box = el('section', 'pos-voucher'), row = el('div', 'pos-voucher-row');
-    const code = field('Mã giảm giá', 'text', st.voucher.code), value = field('Giảm', 'number', st.voucher.value);
-    code.input.maxLength = 60; code.input.placeholder = 'Không bắt buộc'; code.input.autocomplete = 'off';
+    const value = field('Giảm', 'number', st.voucher.value);
     value.input.min = '0'; value.input.step = '1'; value.input.inputMode = 'numeric'; value.input.placeholder = '0';
     const mode = el('select'); mode.setAttribute('aria-label', 'Giảm theo');
     for (const [v, t] of [['amount', 'VNĐ'], ['percent', '%']]) { const o = el('option', '', t); o.value = v; mode.append(o); }
     mode.value = st.voucher.type;
     const modeBox = el('label', 'pos-field pos-voucher-mode'); modeBox.append(el('span', '', 'Theo'), mode);
-    code.input.addEventListener('input', () => { st.voucher.code = code.input.value; invalidate(); });
     value.input.addEventListener('input', () => { st.voucher.value = value.input.value; invalidate(); });
     mode.addEventListener('change', () => { st.voucher.type = mode.value; invalidate(); });
-    const clear = button('×', 'icon-btn pos-row-remove', () => { st.voucher = emptyVoucher(); code.input.value = value.input.value = ''; mode.value = 'amount'; invalidate(); });
+    const clear = button('×', 'icon-btn pos-row-remove', () => { st.voucher = emptyVoucher(); value.input.value = ''; mode.value = 'amount'; invalidate(); });
     clear.setAttribute('aria-label', 'Bỏ giảm giá'); clear.title = 'Bỏ giảm giá';
-    row.append(code.box, value.box, modeBox, clear);
+    row.append(value.box, modeBox, clear);
     box.append(row);
     return box;
   }
