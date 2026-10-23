@@ -364,10 +364,10 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             requestedServiceFee: service,
             requestedShippingFee: shipping,
             subtotal: recoveringIssued
-              ? o.subtotal - fees.service.subtotal - fees.shippingFee
+              ? o.subtotal - fees.service.subtotal - fees.shipping.subtotal
               : lines.reduce((n, l) => n + l.subtotal, 0),
             tax: recoveringIssued
-              ? o.tax - fees.service.tax
+              ? o.tax - fees.service.tax - fees.shipping.tax
               : lines.reduce((n, l) => n + l.tax, 0),
             total: recoveringIssued
               ? o.total - fees.service.amount - fees.shippingFee

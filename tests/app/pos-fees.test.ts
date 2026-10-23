@@ -4,13 +4,16 @@ import { setup } from '../helpers/pos-fixture.ts';
 import { customerPayments, salesOrders, salesOrderLines } from '../../src/modules/sales/schema.ts';
 import { stockBalances } from '../../src/modules/inventory/schema.ts';
 import { posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
+import { calculatePosFees, snapshotPosFees } from '../../src/modules/sales/domain/pos-fees.ts';
 
 test('POS có phí: bill tạm/QR không ghi thu/xuất, checkout khớp tiền, chống replay đổi phí và chỉ xuất hàng thật', async () => {
   const f = await setup({ viaClaw: true }), shift = await f.open();
   const body = f.cart(shift.id, { feeName: 'Phí gói quà', feeAmount: 5400, feeQuantity: 2, shippingFee: 20000, tendered: 300000, total: 1, tax: 0 });
   const preview = await f.call('/pos/preview', f.emp, 'POST', body);
   assert.equal(preview.status, 200, JSON.stringify(preview.data));
-  assert.equal(preview.data.subtotal, 210000); assert.equal(preview.data.tax, 15200); assert.equal(preview.data.total, 225200);
+  // Phí ship nhập đã gồm VAT (từ 23/10/2026): 20.000 = 18.519 trước thuế + 1.481 VAT 8%; khách trả không đổi.
+  assert.equal(preview.data.subtotal, 208519); assert.equal(preview.data.tax, 16681); assert.equal(preview.data.total, 225200);
+  assert.deepEqual(preview.data.fees.shipping, { amount: 20000, subtotal: 18519, tax: 1481, taxRate: 8 });
   assert.equal(preview.data.fees.service.tax, 800);
   const qr = await f.call('/pos/qr', f.emp, 'POST', { ...body, key: crypto.randomUUID() });
   assert.equal(qr.status, 200); assert.equal(qr.data.amount, 225200);
@@ -35,7 +38,7 @@ test('POS có phí: bill tạm/QR không ghi thu/xuất, checkout khớp tiền,
   const report = (await f.call('/cash/shifts/' + shift.id, f.emp)).data;
   assert.equal(report.cash, 225200);
   assert.equal(f.hooks[0]!.body.total, 225200);
-  assert.equal(f.hooks[0]!.body.additional_fees.shipping.tax_percent, 0);
+  assert.equal(f.hooks[0]!.body.additional_fees.shipping.tax_percent, 8); assert.equal(f.hooks[0]!.body.additional_fees.shipping.tax_amount, 1481);
   assert.equal(f.hooks[0]!.body.additional_fees.service.tax_amount, 800);
   assert.equal(f.hooks[0]!.body.additional_fees.service.kind, 'other_service');
   assert.equal(f.hooks[0]!.body.additional_fees.service.quantity, 2);
@@ -88,4 +91,15 @@ test('POS nhiều phí: snapshot/chi tiết/COD giữ từng dòng, server tính
   const codDetail = (await f.call('/orders/'+cod.data.id,f.mgr)).data;
   assert.equal(codDetail.deliveries[0].codAmount,420200);
   assert.equal(codDetail.order.posFees.services[0].amount,195000);
+});
+
+test('phí ship: đơn mới tách VAT trong số đã gồm VAT; đơn cũ (snapshot không có thuế suất ship) giữ nguyên không VAT', () => {
+  const fresh = calculatePosFees({ shippingFee: 30000 }, 8);
+  assert.deepEqual(fresh.shipping, { amount: 30000, subtotal: 27778, tax: 2222, taxRate: 8 });
+  assert.deepEqual([fresh.subtotal, fresh.tax, fresh.total], [27778, 2222, 30000], 'khách trả đúng số nhập');
+  assert.deepEqual(snapshotPosFees({ fees: fresh }).shipping, fresh.shipping, 'đọc lại đơn mới giữ VAT ship');
+  const old = { service: calculatePosFees({}, 8).service, services: [], shippingFee: 30000, subtotal: 30000, tax: 0, total: 30000 };
+  const reread = snapshotPosFees({ fees: old as never });
+  assert.deepEqual([reread.shipping.tax, reread.subtotal, reread.tax, reread.total], [0, 30000, 0, 30000], 'đơn cũ không đổi số');
+  assert.equal(calculatePosFees({ shippingFee: 30000 }, 0).shipping.tax, 0, 'giá không VAT: ship không VAT');
 });

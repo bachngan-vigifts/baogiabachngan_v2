@@ -1109,3 +1109,5 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 @media (max-width: 480px) { .pos-form-actions .btn { flex: 1 1 calc(50% - 10px); } }
 .pos-payment-cash .pos-field input { border-bottom: 2px dashed #b9d8c6; border-radius: 0; }
 .pos-payment-cash .pos-field input:focus { border-bottom-color: #16884d; outline: none; }
+/* Nút × bỏ dòng phí / bỏ giảm giá: cao bằng ô nhập. */
+.pos-row-remove { width: 36px; height: 42px; align-self: end; }

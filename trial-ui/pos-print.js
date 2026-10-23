@@ -82,7 +82,7 @@ export function buildPosPrint(doc, data, kind = 'bill') {
           'Giảm ' + (item.discountType === 'percent' ? item.discountValue + '%' : 'theo dòng'),
           '−' + money(lineDiscount),
         );
-      if (item.voucherAmount) line('Voucher (chia theo dòng)', '−' + money(item.voucherAmount));
+      if (item.voucherAmount) line('Mã giảm giá (chia theo dòng)', '−' + money(item.voucherAmount));
       line('Thành tiền', money(item.total));
     }
     for (const fee of data.fees?.services ?? (data.fees?.service ? [data.fees.service] : [])) {
@@ -90,9 +90,9 @@ export function buildPosPrint(doc, data, kind = 'bill') {
       line(fee.name + ' (trước thuế)', money(fee.subtotal));
       if (fee.quantity != null && fee.unitPrice != null) line(`${fee.quantity} × ${money(fee.unitPrice)}`, money(fee.amount));
     }
-    if (data.fees?.shippingFee) line('Phí ship (không VAT)', money(data.fees.shippingFee));
+    if (data.fees?.shippingFee) line(data.fees.shipping?.taxRate ? 'Phí ship (trước thuế)' : 'Phí ship (không VAT)', money(data.fees.shipping?.subtotal ?? data.fees.shippingFee));
     sheet.append(node(doc, 'div', '', 'bill-total-separator'));
-    if (data.voucher?.amount) line('Voucher ' + data.voucher.code + (data.voucher.type === 'percent' ? ` (${data.voucher.value}%)` : ''), '−' + money(data.voucher.amount));
+    if (data.voucher?.amount) line('Mã giảm giá' + (data.voucher.code ? ' ' + data.voucher.code : '') + (data.voucher.type === 'percent' ? ` (${data.voucher.value}%)` : ''), '−' + money(data.voucher.amount));
     line('TỔNG THÀNH TIỀN', money(data.subtotal), true);
     line('VAT', money(data.tax), true);
     line('TỔNG THANH TOÁN', money(data.total), true);
