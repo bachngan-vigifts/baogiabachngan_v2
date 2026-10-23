@@ -168,3 +168,14 @@ Trên đơn mua đã duyệt, Sale Admin và Kế toán được ghi nhận NCC 
 Không mở quyền duyệt giá hoặc huỷ đơn đã duyệt, huỷ phiếu nhận, huỷ khoản trả. Không thay quyền trên cổng NCC hay quyền duyệt yêu cầu xin lấy trước. Không thêm quyền/schema/migration; nhận hàng vẫn không cộng tồn Sapo. Email chỉ gửi khi người dùng thực hiện thao tác, đơn đã duyệt và dịch vụ mail được cấu hình.
 
 Sale Admin được xem giá và dùng PDF/gửi email ngay trên đơn mua đã duyệt, kể cả khi không có quyền xem giá mua toàn cục. Ngoại lệ theo đơn này không mở giá đơn nháp hoặc cấp quyền duyệt giá. Nhận hàng/ghi trả/lịch trả giữ các quyền hiện có; huỷ đơn vẫn chặn khi có hàng đã nhận hoặc khoản trả còn hiệu lực. Huỷ phiếu nhận và huỷ khoản trả vẫn chỉ Manager.
+
+## Lập đơn mua bổ sung – trang riêng (23/10/2026)
+- "+ Lập đơn mua" → **Mua bổ sung** mở trang `#/purchases/new?mode=restock` (`trial-ui/purchase-restock.js`), không còn popup chọn sản phẩm dạng catalogue.
+- Đầu trang: **Nhà cung cấp** (chọn nhiều để chia đơn; NCC đầu nhận phần còn lại), **Hẹn giao**, **Địa chỉ giao hàng**, **Ghi chú**.
+- **Danh sách mua**: mỗi mã một dòng – Mã · Tên · ĐVT · **Kho SR** · **Kho VIGIFTS** · **Đang về** · SL đặt (thêm cột từng NCC khi chia). Rê chuột vào ô tồn để xem tồn từng kho.
+  - Ô tìm: gõ mã / tên (không dấu, nhiều từ – cùng thuật toán trang Sản phẩm), mũi tên lên / xuống chọn, **Enter** thêm và nhảy vào ô SL; Enter ở ô SL quay lại ô tìm.
+  - Tồn: `GET /purchase-products?q=` / `?skus=` (máy chủ, quyền đơn mua). Kho SR = kho tên bắt đầu "SR" (hoặc chứa "showroom"); Kho VIGIFTS = kho tên chứa "VIGIFTS"; Đang về = đơn mua NCC đã duyệt chưa nhận đủ. Đọc như trang Sản phẩm (kho đã chốt đầu kỳ lấy sổ kho CRM); kho riêng người xem không được thấy thì không tính.
+- **Cập nhật bằng file Excel**: tải **file mẫu** (Mã hàng · Tên hàng – không bắt buộc · Số lượng đặt; điền sẵn các mã đang lập), chọn file .xlsx / .xls / .csv → bảng xem trước từng dòng (Thêm mới / Cập nhật SL cũ → mới / lỗi: không có trong danh mục, SL không hợp lệ, thiếu mã); chọn "Cập nhật vào danh sách đang lập" hoặc "Thay toàn bộ danh sách". Mã trùng trong file cộng dồn.
+- Thanh dưới cùng luôn hiện số mã / tổng SL và **Tạo đơn nháp**. Danh sách tự lưu nháp trên máy (mở lại trang tiếp tục; tạo đơn xong thì xoá nháp).
+- Sửa kèm: cột "Tồn kho" khi lập đơn theo chứng từ trước đây luôn lấy số đồng bộ Sapo – nay đọc như trang Sản phẩm (sổ kho CRM với kho đã chốt đầu kỳ).
+- Test: `tests/app/purchase-restock.test.ts`.

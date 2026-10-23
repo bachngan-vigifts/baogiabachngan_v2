@@ -9,7 +9,8 @@ import { salesContracts, salesOrderLines, salesOrders } from '../../sales/schema
 import { orderScopeFor } from '../../sales/api/routes.ts';
 import { customerStockRequests } from '../../portal/schema.ts';
 import { customers } from '../../customers/schema.ts';
-import { products, productStock, warehouses } from '../../catalog/schema.ts';
+import { products, warehouses } from '../../catalog/schema.ts';
+import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
   supplierReceiptLines, supplierReceipts, suppliers,
@@ -313,13 +314,17 @@ export async function sourceWithRemaining(db: Db, m: Member, type: string, id: s
   return { source: { type: need.type, id: need.id, no: need.no, customerName: need.customerName }, lines: lines.map(l => ({ ...l, stock: stock.get(l.sku.toLowerCase()) ?? null })) };
 }
 
-/** Tồn kho thật (tổng các kho loại `stock` đang dùng, số đồng bộ từ Sapo) theo mã; mã chưa có số liệu tồn thì không có trong map. */
+/**
+ * Tồn kho thật (tổng các kho loại `stock` đang dùng) theo mã; mã chưa có số liệu tồn thì không có trong map.
+ * Đọc như trang Sản phẩm: kho đã chốt đầu kỳ lấy sổ kho CRM, kho chưa chốt lấy số đồng bộ Sapo (trước đây luôn lấy số Sapo).
+ */
 export async function stockOf(db: Db, skus: string[]) {
   const out = new Map<string, number>();
   if (!skus.length) return out;
-  const rows = await db.select({ sku: productStock.sku, qty: productStock.quantity }).from(productStock).innerJoin(warehouses, eq(warehouses.id, productStock.warehouseId))
-    .where(and(inArray(productStock.sku, [...new Set(skus)]), eq(warehouses.kind, 'stock'), eq(warehouses.active, true)));
-  for (const r of rows) out.set(r.sku.toLowerCase(), (out.get(r.sku.toLowerCase()) ?? 0) + r.qty);
+  const [rows, stores] = await Promise.all([readCatalogStock(db, [...new Set(skus)]),
+    db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true)))]);
+  const ids = new Set(stores.map(w => w.id));
+  for (const r of rows) if (ids.has(r.warehouseId)) out.set(r.sku.toLowerCase(), (out.get(r.sku.toLowerCase()) ?? 0) + r.quantity);
   return out;
 }
 

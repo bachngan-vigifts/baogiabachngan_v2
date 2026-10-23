@@ -394,7 +394,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }));
     const filters = el('div', 'pos-product-filters');
     for (const [id, label] of [['all','Tất cả'],['available','Còn hàng'],['low','Còn ít hàng'],['out','Hết hàng']]) {
-      const b = button(label, 'btn pos-filter' + (st.productFilter === id ? ' active' : ''), () => { st.productFilter = id; renderProducts(); });
+      const b = button(label, 'btn pos-filter' + (st.productFilter === id ? ' active' : ''), () => { st.productFilter = id; renderProducts(); fillFiltered(true); });
       b.dataset.filter = id; filters.append(b);
     }
     filters.hidden = true;
@@ -1089,8 +1089,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         return { products: show(), nextOffset };
       };
       let d = local ? await bySkus(local) : await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
-      // Enter / nút "Tìm" trên bàn phím điện thoại với chữ thường (không phải mã vạch): máy chủ không ra thì vẫn giữ danh sách lọc tại chỗ.
-      if (addScanned && !more && !d.products.length) {
+      // Enter / quét mã: chỉ tự thêm vào giỏ khi máy chủ báo khớp CHÍNH XÁC mã vạch / SKU. Chữ thường (tìm theo tên): chỉ hiện danh sách
+      // (ưu tiên danh sách lọc tại chỗ – cùng thứ tự với khi gõ), không tự thêm sản phẩm nào.
+      const exact = addScanned && !more ? d.products.find(p => p.sku === d.exactSku) : null;
+      if (addScanned && !more && !exact) {
         const fallback = localSearch(q, st.policy);
         if (fallback?.length) { st.localSkus = fallback; d = await bySkus(fallback); }
       }
@@ -1099,14 +1101,25 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       st.products = more ? [...st.products, ...d.products] : d.products;
       renderProducts();
       nodes.more.hidden = d.nextOffset == null;
-      if (addScanned) {
-        const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
-        if (p && p.available > 0) add(p, true);
-        else toast(d.products.length ? 'Chọn đúng sản phẩm trong danh sách.' : 'Không tìm thấy sản phẩm.');
+      if (addScanned && !more) {
+        if (exact && exact.available > 0) add(exact, true);
+        else toast(exact ? 'Mã ' + exact.sku + ' đã hết hàng ở quầy.' : d.products.length ? 'Chọn đúng sản phẩm trong danh sách.' : 'Không tìm thấy sản phẩm.');
       }
     } finally {
-      st.catalogLoading = false;
+      // Chỉ request mới nhất mới mở khoá (request cũ kết thúc muộn không làm nút "Xem thêm" chạy trùng).
+      if (seq === searchSeq) st.catalogLoading = false;
     }
+    if (seq === searchSeq) fillFiltered(!more);
+  }
+  /** Lọc Còn hàng / Còn ít / Hết hàng chỉ lọc trên các mã đã tải: ít quá (không đủ cuộn) thì tự tải thêm, tối đa 5 trang mỗi lượt lọc. */
+  let autoMore = 0;
+  function fillFiltered(reset = false) {
+    if (reset) autoMore = 0;
+    if (st.productFilter === 'all' || st.offset == null || st.catalogLoading || autoMore >= 5) return;
+    const shown = nodes.grid?.querySelectorAll?.('.pos-product-tile')?.length ?? 0;
+    if (shown >= 12) return;
+    autoMore++;
+    run(() => search(false, true));
   }
   function renderProducts() {
     if (!nodes.grid) return;

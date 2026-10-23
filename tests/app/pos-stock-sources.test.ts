@@ -106,6 +106,9 @@ test('POS tìm sản phẩm cùng thuật toán trang Sản phẩm; skus= trả 
  const skus=async(q:string)=>(await f.call(`/pos/catalog?registerId=${f.registerId}&q=${encodeURIComponent(q)}`,f.emp)).data.products.map((p:any)=>p.sku);
  assert.deepEqual(await skus('su ly'),['00123'],'nhiều từ không đúng thứ tự (trước: phải gõ đúng cụm "ly su")');
  assert.deepEqual(await skus('lhc4282'),['LHC-4282'],'mã gõ thiếu gạch nối');
+ const exact=async(q:string)=>(await f.call(`/pos/catalog?registerId=${f.registerId}&q=${encodeURIComponent(q)}`,f.emp)).data.exactSku;
+ assert.equal(await exact('lhc-4282'),'LHC-4282','đúng SKU (không phân biệt hoa thường): báo khớp chính xác');
+ assert.equal(await exact('giu nhiet'),null,'tìm theo tên: không có mã khớp chính xác');
  assert.deepEqual(await skus('giu nhiet 1.2l'),['LHC-4282']);
  assert.deepEqual(await skus('bộ trà 0.7 chim lạc'),['BT-NFD'],'tên lưu dạng Unicode tổ hợp (NFD, gõ trên Mac / nhập từ Sapo) vẫn bỏ dấu được');
  const ordered=await f.call(`/pos/catalog?registerId=${f.registerId}&skus=LHC-4282,NOPRICE,00123`,f.emp);

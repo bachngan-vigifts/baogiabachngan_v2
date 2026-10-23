@@ -2,6 +2,7 @@ import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } fro
 import { downloadExcel } from './sheet-export.js';
 import { initPurchaseIncoming } from './purchase-incoming.js';
 import { choosePurchaseMode, createRestockPicker } from './purchase-create-mode.js';
+import { initRestockPage } from './purchase-restock.js';
 /**
  * ĐƠN MUA HÀNG NCC (#/purchases) – xem docs/NCC-PAGE.md mục "Đơn mua hàng".
  *  #/purchases                 danh sách + lọc trạng thái
@@ -133,7 +134,14 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
   const shade = el('div', 'sup-shade'); shade.hidden = true; shade.addEventListener('click', () => close());
   const drawer = el('aside', 'sup-drawer pur-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
-  root.append(page, shade, drawer);
+  // Lập đơn mua bổ sung: trang riêng (#/purchases/new?mode=restock) – danh sách dài không phải cuộn trong popup.
+  const restockHost = el('div', 'pur-rs-host'); restockHost.hidden = true;
+  root.append(page, restockHost, shade, drawer);
+  function showRestock(on) {
+    restockHost.hidden = !on; page.hidden = on;
+    if (on) { hide(); initRestockPage({ api, host: restockHost, toast, go, options, loadXlsx, confirmBox, onBack: () => go('#/purchases') }).open(); }
+    else restockHost.replaceChildren();
+  }
   let timer = 0;
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !drawer.hidden) close(); });
@@ -197,6 +205,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   /** Router gọi: id = '' (danh sách) | 'new' (lập đơn, ?type=&id=) | id đơn. */
   async function show(id, query = '') {
     const params = new URLSearchParams(query);
+    if (id === 'new' && params.get('mode') === 'restock') { showRestock(true); return; }
+    if (!restockHost.hidden) showRestock(false);
     if (params.get('mode') === 'incoming') setMode(true,params.get('request')||'');
     else if (!id) setMode(incomingMode);
     else load();
@@ -978,6 +988,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   // ---------------------------------------------------------------- lập đơn (từ chứng từ, chia nhiều NCC)
   async function openCreate(src, mode) {
     if (!src && !mode) { choosePurchaseMode(choice => openCreate(null, choice)); return; }
+    if (!src && mode === 'restock') { go('#/purchases/new?mode=restock'); return; }
     mode = src ? 'source' : mode;
     let o;
     try { o = await options(); } catch (e) { toast(e.message, 'err'); return; }
