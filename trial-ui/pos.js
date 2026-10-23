@@ -582,14 +582,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       el('p', 'pos-note', 'Trạng thái GHN: ' + (o.ghnStatus || 'Đã tạo vận đơn') + (o.ghnFee ? ' · Phí: ' + money(o.ghnFee) : '')),
       ghnPortalLink(o.ghnOrderCode),
     );
-    const actions = el('div', 'pos-actions');
-    if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary', () => { m.close(); showGhnAddress(o); }));
-    if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) {
-      actions.append(busyButton('Hoàn thành', 'btn primary', 'Đang hoàn thành…', async () => {
+    // Nút chính (tạo vận đơn khi chờ xử lý, hoàn thành khi đang giao) chiếm cả dòng; Hoàn thành / Huỷ / Đóng chia đều dòng dưới.
+    const actions = el('div', 'pos-actions pos-web-actions'), open = o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket), ghn = open && o.bucket === 'pending';
+    if (ghn) actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary pos-web-main', () => { m.close(); showGhnAddress(o); }));
+    if (open) {
+      actions.append(busyButton('Hoàn thành', ghn ? 'btn secondary' : 'btn primary pos-web-main', 'Đang hoàn thành…', async () => {
         if (!await confirmBox(o.ghnDirect ? `Xác nhận đơn ${o.orderNo} đã hoàn thành? CRM ghi nhận hoàn thành; website Minh Long chưa có cầu nối nên cập nhật trạng thái trên website bằng tay.` : `Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;
         await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'complete' }); m.close(); toast('Đã hoàn thành đơn ' + o.orderNo + '.', 'ok'); await loadOrderBoard();
       }));
-      actions.append(button('Huỷ đơn', 'btn danger', () => { m.close(); cancelWebOrder(o); }));
+      actions.append(button('Huỷ đơn', 'btn danger-outline', () => { m.close(); cancelWebOrder(o); }));
     }
     actions.append(button('Đóng', 'btn secondary', m.close));
     m.body.append(actions);
