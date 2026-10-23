@@ -14,7 +14,6 @@ import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { posPermission } from './pos-store.ts';
 import type { SessionState } from '../../staff/api/auth-routes.ts';
-import { sha256Hex } from '../../staff/domain/session.ts';
 import { webStoreOrders } from '../pos-schema.ts';
 
 const GHN_DETAIL = 'https://online-gateway.ghn.vn/shiip/public-api/v2/shipping-order/detail';
@@ -119,8 +118,7 @@ const SYNC_GAP_MS = 60_000;
 
 export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
   router.post('/integrations/ghn/pos-lock/webhook', async c => {
-    const secret = c.env.ghnWebhookToken || '', supplied = c.url.searchParams.get('token') || '';
-    if (secret.length < 32 || sha256Hex(secret) !== sha256Hex(supplied)) throw new AppError(401, 'Webhook GHN không hợp lệ.');
+    // Mã bí mật kiểm ở khu vực 'ghn-webhook' (auth-routes.ts), như webhook SePay / đơn web.
     const body = await readJson(c.req, 64_000);
     const orderCode = text(body.OrderCode ?? body.order_code, 100).toUpperCase();
     const status = text(body.Status ?? body.status, 100).toLowerCase();
@@ -143,7 +141,7 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
       updated++;
     }
     return json({ ok: true, orderCode, status, updated });
-  }, 'public');
+  }, 'ghn-webhook');
 
   // Máy gọi (n8n / OpenClaw) bằng mã đồng bộ.
   router.post('/integrations/ghn/pos-lock/pull', async c => json(await syncPosLockGhn(c.env)), 'sapo-sync');

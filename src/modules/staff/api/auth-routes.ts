@@ -121,6 +121,14 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
       throw new AppError(401, 'Webhook đơn web không hợp lệ.');
     return;
   }
+  if (area === 'ghn-webhook') {
+    // GHN gọi kèm ?token=…; so khớp băm (thời gian không đổi). Thiếu GHN_WEBHOOK_TOKEN (≥ 32 ký tự) thì từ chối.
+    const secret = c.env.ghnWebhookToken || '', got = sha256Hex(c.url.searchParams.get('token') || ''), want = secret.length >= 32 ? sha256Hex(secret) : '';
+    let diff = want ? got.length ^ want.length : 1;
+    for (let i = 0; i < want.length; i++) diff |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
+    if (diff) throw new AppError(401, 'Webhook GHN không hợp lệ.');
+    return;
+  }
   if (area === 'synctime-sync') {
     if (!options.authorizeSynctime) throw new AppError(503, 'Chưa cấu hình xác thực SyncTime.');
     return options.authorizeSynctime(c.req, c.env.db);
