@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
+import { auditLogs } from '../../../core/db/schema.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
@@ -11,10 +12,10 @@ type Ctx = RouteContext<StaffEnv>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 const SKU = /^[A-Za-z0-9][A-Za-z0-9._\-/ ]{0,63}$/;
 
-function cleanProduct(body: Record<string, unknown>) {
+function cleanProduct(body: Record<string, unknown>, existingSku?: string) {
   const t = (k: string, max: number) => { const v = body[k] ?? ''; if (typeof v !== 'string' || v.length > max) throw new AppError(400, 'Thông tin sản phẩm không hợp lệ.'); return v.trim(); };
-  const sku = t('sku', 64), name = t('name', 500);
-  if (!SKU.test(sku)) throw new AppError(400, 'Mã sản phẩm (SKU) chỉ gồm chữ, số và . _ - / (tối đa 64 ký tự).');
+  const sku = existingSku ?? t('sku', 64), name = t('name', 500);
+  if (existingSku === undefined && !SKU.test(sku)) throw new AppError(400, 'Mã sản phẩm (SKU) chỉ gồm chữ, số và . _ - / (tối đa 64 ký tự).');
   if (!name) throw new AppError(400, 'Nhập tên sản phẩm.');
   const imageUrl = t('imageUrl', 2000);
   if (imageUrl && !/^https:\/\/\S+$/i.test(imageUrl)) throw new AppError(400, 'Link ảnh phải bắt đầu bằng https://');
@@ -57,6 +58,33 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
       if (priceRows.length) await tx.insert(productPrices).values(priceRows);
     });
     return json({ sku: f.sku, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
+  }, 'business');
+
+  router.put('/products/:sku', async c => {
+    const me = viewer(c);
+    if (me.role !== 'manager') throw new AppError(403, 'Chỉ Manager được cập nhật sản phẩm.', 'MANAGER_ONLY');
+    const body = await readJson(c.req, 16_000), sku = c.params.sku!;
+    if (body.sku !== undefined && body.sku !== sku) throw new AppError(400, 'Không đổi mã SKU của sản phẩm đã có.');
+    const f = cleanProduct(body, sku), expected = body.expectedUpdatedAt;
+    if (typeof expected !== 'string' || !expected) throw new AppError(400, 'Tải lại thông tin sản phẩm trước khi cập nhật.');
+    const rawPrices = body.prices && typeof body.prices === 'object' ? body.prices as Record<string, unknown> : {};
+    await c.env.db.transaction(async tx => {
+      const [before] = await tx.select().from(products).where(eq(products.sku, sku)).limit(1).for('update');
+      if (!before) throw new AppError(404, 'Không tìm thấy sản phẩm.');
+      if (before.updatedAt !== expected) throw new AppError(409, 'Sản phẩm vừa được thay đổi. Đóng và mở lại để lấy thông tin mới.', 'PRODUCT_CHANGED');
+      if (before.approvalStatus !== 'approved') throw new AppError(409, 'Sản phẩm đang chờ duyệt. Duyệt sản phẩm trước khi cập nhật.');
+      const policies = new Set((await tx.select({ id: pricePolicies.id }).from(pricePolicies)).map(p => p.id));
+      if (Object.keys(rawPrices).some(id => !policies.has(id))) throw new AppError(400, 'Bảng giá không tồn tại. Tải lại danh mục rồi thử lại.');
+      const oldPrices = await tx.select().from(productPrices).where(eq(productPrices.sku, sku));
+      const changedPrices = Object.entries(rawPrices).map(([policyId, value]) => ({ sku, policyId, price: value == null || value === '' ? null : f.prices[policyId]! }));
+      const now = new Date(Math.max(Date.now(), Date.parse(before.updatedAt) + 1)).toISOString();
+      const fields = { name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl };
+      await tx.update(products).set({ ...fields, updatedAt: now }).where(eq(products.sku, sku));
+      for (const row of changedPrices) await tx.insert(productPrices).values(row).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price: row.price } });
+      await tx.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: me.id, module: 'catalog', action: 'update', entityType: 'products', entityId: sku,
+        data: JSON.stringify({ before: { name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, prices: oldPrices }, after: { ...fields, prices: changedPrices } }), createdAt: now });
+    });
+    return json({ ok: true, sku });
   }, 'business');
 
   router.post('/products/:sku/approve', async c => {
