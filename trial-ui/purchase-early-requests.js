@@ -21,6 +21,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     for(const request of requests) {
       const card=el('article','card early-request-card'),head=el('div','row-gap');card.dataset.requestId=request.id;
       head.append(el('strong','',`Phiếu lấy trước · ${time(request.createdAt)}`),el('span','sup-pill '+(request.status==='pending'?'warn':''),labels[request.status]||request.status));
+      if(!portal&&canViewPortal&&request.requestStatus==='submitted'&&request.lines.some(line=>line.allocations.some(a=>a.status==='pending'&&line.allocations.filter(b=>b.supplierId===a.supplierId).every(b=>b.status==='pending')))) head.append(btn('Manager xác nhận thay NCC',()=>confirmForSupplier(request),'btn primary small'));
       card.append(head,el('p','small','Ngày lấy: '+date(request.pickupDate)));
       if(!portal) {
         const open=el('a','small','Mở phiếu');open.href='#/purchases?mode=incoming&request='+encodeURIComponent(request.id);card.append(open);
@@ -51,6 +52,34 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       }
       list.append(card);
     }
+  }
+  function confirmForSupplier(request) {
+    const modal=el('dialog','modal early-request-dialog'),header=el('div','modal-head'),body=el('div','modal-body');
+    let busy=false;
+    const close=btn('Đóng',()=>{if(!busy)modal.close();});
+    header.append(el('h2','','Manager xác nhận thay NCC'),close);
+    body.append(el('p','muted','Chỉ xác nhận những mã NCC đã đồng ý. Thao tác này không nhận hàng hoặc cộng tồn kho.'));
+    const actions=[];
+    for(const line of request.lines) {
+      const suppliers=new Map();
+      for(const a of line.allocations){const group=suppliers.get(a.supplierId)||[];group.push(a);suppliers.set(a.supplierId,group);}
+      for(const [supplierId,allocations] of suppliers) {
+        if(!allocations.every(a=>a.status==='pending'))continue;
+        const box=el('section','early-request-line'),error=el('p','error');error.setAttribute('role','alert');
+        box.append(el('b','',`${line.sku} · ${line.name}`),el('p','',`${allocations[0].supplierName} · ${number(allocations.reduce((sum,a)=>sum+a.quantity,0))} ${line.unit||''}`));
+        const action=btn('Xác nhận mã '+line.sku,async()=>{
+          if(busy)return;busy=true;close.disabled=true;actions.forEach(b=>b.disabled=true);error.textContent='';
+          try {
+            await api('/purchase-early-request-lines/'+encodeURIComponent(line.id)+'/manager-confirm','POST',{supplierId});
+            modal.close();await load(request.id);await onSaved(request);
+          }catch(e){error.textContent=e.message||'Không xác nhận được. Vui lòng tải lại phiếu.';}
+          finally{busy=false;close.disabled=false;actions.forEach(b=>b.disabled=false);}
+        },'btn primary small');
+        actions.push(action);box.append(action,error);body.append(box);
+      }
+    }
+    modal.append(header,body);document.body.append(modal);
+    modal.addEventListener('cancel',e=>{if(busy)e.preventDefault();});modal.addEventListener('close',()=>modal.remove(),{once:true});modal.showModal();
   }
   function edit(initial) {
     if(!canWrite()||portal)return;
