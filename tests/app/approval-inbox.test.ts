@@ -53,6 +53,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
 
   let d = await inbox();
   assert.deepEqual(d.counts, { quote: 1, order: 1, contract: 1, purchase: 0, transfer: 0, cash: 0, return: 0, customer: 1, product: 1, total: 5 });
+  assert.deepEqual((await call('/approvals?summary=1',mgr)).data.counts,d.counts,'số trên icon khớp mọi loại chứng từ');
   const byKind = Object.fromEntries(d.items.map((i: any) => [i.kind, i]));
   assert.deepEqual([byKind.quote.title, byKind.quote.by, byKind.quote.link], ['Báo giá HRC_I1', 'Tên emp', `#/quotes/${q1.data.id}`]);
   assert.equal(byKind.order.link, `#/orders/${o2.data.id}`); assert.ok(byKind.order.amount > 0, 'đơn kèm giá trị');
