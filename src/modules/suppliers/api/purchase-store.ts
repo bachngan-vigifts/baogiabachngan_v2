@@ -13,7 +13,7 @@ import { products, warehouses } from '../../catalog/schema.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
-  supplierReceiptLines, supplierReceipts, suppliers,
+  supplierReceiptLines, supplierReceipts, suppliers, receiptJobs,
 } from '../schema.ts';
 import { computeOrderTotals, hidePrices } from '../domain/order-totals.ts';
 import {
@@ -78,6 +78,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   const live = new Set(receipts.filter(x => !x.r.cancelledAt).map(x => x.r.id));
   const progress = receiptProgress(lines.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity })),
     receiptLines.filter(x => live.has(x.l.receiptId)).map(x => ({ lineId: x.l.lineId, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty })));
+  const jobs = receipts.length ? await db.select({receiptId:receiptJobs.receiptId,status:receiptJobs.status,action:receiptJobs.action,lastError:receiptJobs.lastError,attempts:receiptJobs.attempts}).from(receiptJobs).where(inArray(receiptJobs.receiptId,receipts.map(x=>x.r.id))) : [];
   const totals = computeOrderTotals({ rows: lines, depositRate: o.depositRate, paidAmount: 0 });
   const debt = supplierDebt(totals.total, schedules, payments.map(x => x.p), today);
   const a = asActor(m), prices = canSeePurchasePrices(a, o);
@@ -106,7 +107,8 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
       schedules: prices ? schedules.map(s => ({ id: s.id, kind: s.kind, amount: s.amount, dueDate: s.dueDate, note: s.note })) : [],
       payments: prices ? payments.map(({ p, by }) => ({ id: p.id, amount: p.amount, paidDate: p.paidDate, method: p.method, reference: p.reference, note: p.note,
         hasAttachment: Boolean(p.attachmentKey), attachmentName: p.attachmentName, by, createdAt: p.createdAt, voidedAt: p.voidedAt, voidReason: p.voidReason })) : [],
-      receipts: receipts.map(({ r, by }) => ({ id: r.id, receiptNo: r.receiptNo, receivedDate: r.receivedDate, by, warehouse: r.warehouse, note: r.note,
+      receipts: receipts.map(({ r, by }) => ({ id: r.id, shipmentId:r.shipmentId, receiptNo: r.receiptNo, receivedDate: r.receivedDate, by, warehouse: r.warehouse, note: r.note,
+        sapoPurchaseOrderId:r.sapoPurchaseOrderId, sapoReceiptId:r.sapoReceiptId, sapoReceiptUrl:r.sapoReceiptUrl, sapoVerifiedAt:r.sapoVerifiedAt, sapoUpdatedAt:r.sapoUpdatedAt, job:jobs.find(j=>j.receiptId===r.id) ?? null,
         sapoStatus: r.sapoStatus, sapoReceiptCode: r.sapoReceiptCode, sapoNote: r.sapoNote, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
         lines: receiptLines.filter(x => x.l.receiptId === r.id).map(x => ({ lineId: x.l.lineId, sku: x.l.sku, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty, note: x.l.note })) })),
       // Nội dung lịch sử có số tiền (duyệt, nhập file, giá nhập, lịch trả, trả / huỷ trả, sửa nháp): người không xem được giá chỉ thấy tên thao tác.
