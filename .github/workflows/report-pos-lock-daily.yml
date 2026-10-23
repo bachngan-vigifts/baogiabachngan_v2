@@ -32,6 +32,7 @@ jobs:
           )
           from (
             select o.order_no, o.customer_name, o.total, o.status, o.fulfillment_mode, r.name as register_name,
+              coalesce(o.note, '') as note,
               o.created_at, coalesce(owner.name, creator.name, s.pos_snapshot::jsonb->>'memberName', '') as seller,
               'Bán hàng nhanh CRM' as source,
               coalesce((select sum(p.amount) from customer_payments p where p.order_id=o.id and p.voided_at is null and p.method='cash'),0) as cash,
