@@ -8,6 +8,7 @@ import { sendMail } from '../../../core/mail/send-mail.ts';
 import { postMoves, assertWarehousesOpened, lockLedger, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { outstandingLines, syncIncomingStock } from './incoming-stock.ts';
+import { purchaseProducts } from './purchase-products.ts';
 import { can } from '../../staff/domain/permissions.ts';
 import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -32,6 +33,7 @@ import { asActor, listPurchases, purchaseCounts, supplierPayables, loadPurchase,
  *  GET  /purchase-options                NCC đang hoạt động (để chọn)
  *  GET  /purchase-sources?q=             tìm báo giá / đơn-HĐKT / khách hỏi tồn để lập đơn mua
  *  GET  /purchase-sources/:type/:id      các mã của chứng từ + đã đặt + còn cần đặt (chống mua trùng)
+ *  GET  /purchase-products?q=|skus=      sản phẩm + tồn Kho SR / Kho VIGIFTS / Hàng đang về (lập đơn mua bổ sung)
  *  POST /purchase-orders                 tạo 1..n đơn nháp (chia nhiều NCC) { orders: [...] }
  *  PUT  /purchase-orders/:id             sửa nháp (người tạo / Manager) – `revision`
  *  POST /purchase-orders/:id/send-email  gửi email đơn đặt hàng kèm PDF tới NCC từ máy chủ (Resend) – Manager / Kế toán, đơn đã duyệt
@@ -225,6 +227,12 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const sources = await sourceCandidates(c.env.db, me(c), c.url.searchParams.get('q') ?? '', offset);
     const hasMore = ['quote', 'order', 'stock_request'].some(type => sources.filter(s => s.type === type).length === 8);
     return json({ sources, nextOffset: hasMore ? offset + 8 : null });
+  }, 'business');
+  // Lập đơn mua bổ sung: tìm sản phẩm (?q=&offset=) hoặc theo mã (?skus=a,b – nhập Excel), kèm tồn Kho SR / Kho VIGIFTS / Hàng đang về.
+  router.get('/purchase-products', async c => {
+    guard(c);
+    const p = c.url.searchParams, skus = p.has('skus') ? (p.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean) : undefined;
+    return json(await purchaseProducts(c.env.db, me(c), { q: (p.get('q') || '').slice(0, 100), skus, offset: Number(p.get('offset')) || 0, limit: Number(p.get('limit')) || 20 }));
   }, 'business');
   router.get('/purchase-sources/:type/:id', async c => { guard(c); return json(await sourceWithRemaining(c.env.db, me(c), c.params.type!, c.params.id!)); }, 'business');
 
