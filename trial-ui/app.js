@@ -313,7 +313,7 @@ initAvatars(api); // ô nào có data-av tự hiện ảnh đại diện
 let approvalUi = null;
 const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
-  quoteFilter: { q: '', type: '', owner: '', sort: 'updated' },
+  quoteFilter: { q: '', type: '', owner: '', sort: 'created' },
   customerQuery: '', customerTotal: 0, memberQuery: '', memberStatus: '',
   products: null, productTotal: 0, productQuery: '', productBrand: '', productWarehouse: '', productMinStock: '', policies: [], warehouses: [], selected: new Map(),
 };
@@ -642,7 +642,16 @@ $('#sapo-pull').addEventListener('click', async () => {
 var posUi = null;
 var cashUi = null;
 const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();},onChanged:()=>{loadNavigationBadges();tasksView().badge();}});
-const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent() });
+// Bán hàng nhanh tìm trên danh mục tải sẵn như trang Sản phẩm: chỉ mã có giá ở bảng giá đang chọn (máy chủ vẫn lọc lại).
+const posLocalSearch = (q, policy) => {
+  if (!catalog.items) return null;
+  if (!q) return [];
+  const found = searchCatalog(catalog.items, { q }) || [];
+  // Bản danh mục không giá (người không xem giá): không lọc theo giá tại chỗ – máy chủ vẫn chỉ trả mã có giá.
+  const priced = catalog.items.some(p => p.prices?.[policy] != null);
+  return (priced ? found.filter(p => p.prices?.[policy] != null) : found).map(p => p.sku);
+};
+const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
 const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };

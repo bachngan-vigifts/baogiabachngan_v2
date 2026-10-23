@@ -1,7 +1,7 @@
 import { quotationPredicate } from './department-access.ts';
 import { canApprove } from '../../staff/domain/permissions.ts';
 import { and, asc, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
-import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
+import { fold, foldSql, matchAllWords, paging, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -65,14 +65,14 @@ export async function assignQuoteNo(tx: Tx, quoteNo: string, exceptId?: string):
 
 export function registerQuoteRoutes(router: Router<StaffEnv>) {
   /**
-   * Danh sách báo giá – lọc, sắp xếp, phân trang trên máy chủ (`?q=&type=&owner=mine|others&sort=updated|date|no|value&limit=&offset=`).
+   * Danh sách báo giá – lọc, sắp xếp, phân trang trên máy chủ (`?q=&type=&owner=mine|others&sort=created|updated|date|no|value&limit=&offset=`).
    * Kèm `total` (số báo giá khớp bộ lọc), `all` (tổng báo giá xem được), `value` (tổng giá trị khớp bộ lọc; null khi quá nhiều),
    * `month` (`?month=YYYY-MM`: số lượng + giá trị báo giá tháng đó) và `hasOthers` (có báo giá của người khác để hiện bộ lọc người tạo).
    */
   router.get('/quotes', async c => {
     const viewer = (c.state.session as SessionState).member, p = c.url.searchParams, db = c.env.db;
     const { limit, offset } = paging(c.url, 100, 500);
-    const scope = quotationPredicate(viewer), type = p.get('type') || '', owner = p.get('owner') || '', sort = p.get('sort') || 'updated';
+    const scope = quotationPredicate(viewer), type = p.get('type') || '', owner = p.get('owner') || '', sort = p.get('sort') || 'created';
     const where = and(scope,
       type === 'HRC' || type === 'B2B' || type === 'VIGIFTS' ? eq(quotations.quoteType, type) : undefined,
       owner === 'mine' ? eq(quotations.creatorId, viewer.id) : owner === 'others' ? ne(quotations.creatorId, viewer.id) : undefined,
@@ -97,8 +97,10 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       const got = ids.length ? await db.select().from(quotations).where(inArray(quotations.id, ids)) : [];
       rows = ids.map(id => got.find(r => r.id === id)!).filter(Boolean);
     } else {
+      // Mặc định: báo giá mới tạo lên trên cùng; có từ khoá thì báo giá khớp nhất (số báo giá đúng / bắt đầu bằng chuỗi gõ…) lên trước.
       const order = sort === 'date' ? [sql`${quotations.quoteDate} DESC NULLS LAST`, desc(quotations.updatedAt), desc(quotations.id)]
-        : sort === 'no' ? [asc(quotations.quoteNo), asc(quotations.id)] : [desc(quotations.updatedAt), desc(quotations.id)];
+        : sort === 'no' ? [asc(quotations.quoteNo), asc(quotations.id)] : sort === 'updated' ? [desc(quotations.updatedAt), desc(quotations.id)]
+        : [...rankFirst(searchRank([quotations.quoteNo], quotations.customer, p.get('q'))), desc(quotations.createdAt), desc(quotations.id)];
       rows = await db.select().from(quotations).where(where).orderBy(...order).limit(limit).offset(offset);
     }
     const customerCreators = new Set(rows.length ? (await db.select({ id: employees.id }).from(employees)

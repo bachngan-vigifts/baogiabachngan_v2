@@ -8,7 +8,7 @@ import { and, asc, count, desc, eq, exists, inArray, isNull, ne, or, sql } from 
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
-import { fold, foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
+import { fold, foldSql, matchAllWords, paging, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { customerBrandDiscounts, customerContacts, customerNotes, customers, customerStaff } from '../schema.ts';
@@ -123,7 +123,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
 
   // Tìm không dấu theo tên, người liên hệ, điện thoại, email, MST, mã KH; phân trang (?q=&limit=&offset=).
   // `?mine=1`: chỉ khách mình phụ trách hoặc được chia sẻ. Mỗi dòng kèm người phụ trách.
-  // Thứ tự: khách mới tạo lên trên cùng (created_at giảm dần; dữ liệu cũ không có ngày tạo xuống cuối), cùng ngày thì theo tên.
+  // Thứ tự: có từ khoá thì khớp nhất lên trước (searchRank); còn lại khách mới tạo lên trên cùng (created_at giảm dần; dữ liệu cũ không có ngày tạo xuống cuối), cùng ngày thì theo tên.
   router.get('/customers', async c => {
     const { limit, offset } = paging(c.url, 100, 500), me = viewer(c);
     const mine = c.url.searchParams.get('mine') === '1'
@@ -137,7 +137,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval);
     const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}]] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
-      c.env.db.select().from(customers).where(where).orderBy(desc(customers.createdAt), asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
+      c.env.db.select().from(customers).where(where).orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, c.url.searchParams.get('q'))), desc(customers.createdAt), asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
       c.env.db.select({ pending: count() }).from(customers).where(and(eq(customers.approvalStatus, 'pending'), segment)),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));

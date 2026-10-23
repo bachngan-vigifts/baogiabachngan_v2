@@ -51,7 +51,11 @@ const select = (items, value) => {
 const when = (d) => new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 /** Ô voucher trống của giỏ (mã / ghi chú, kiểu VNĐ | %, giá trị). */
 const emptyVoucher = () => ({ code: '', type: 'amount', value: '' });
-export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }) {
+/**
+ * `localSearch(q, policyId)`: lọc + xếp hạng trên danh mục đã tải sẵn (cùng thuật toán trang Sản phẩm) → mảng SKU, hoặc null khi chưa có danh mục.
+ * Có kết quả: máy chủ chỉ trả giá / tồn / hàng giữ của các mã đang hiện (`/pos/catalog?skus=`) – gõ là ra, không quét cả danh mục.
+ */
+export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, localSearch = () => null }) {
   const st = {
     options: null,
     shift: null,
@@ -348,7 +352,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.search = input;
     input.addEventListener('input', () => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => run(() => search(false)), 220);
+      searchTimer = setTimeout(() => run(() => search(false)), localSearch('', '') === null ? 220 : 80);
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -1037,9 +1041,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       mobile = window.matchMedia?.('(max-width: 850px)')?.matches === true,
       limit = mobile ? 20 : 60;
     try {
-      const d = await api(
-        `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`,
-      );
+      // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
+      if (!more) st.localSkus = q && !addScanned ? localSearch(q, st.policy) : null;
+      const local = st.localSkus?.length ? st.localSkus : null;
+      const base = `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}`;
+      const d = local
+        ? { ...(await api(`${base}&skus=${encodeURIComponent(local.slice(offset, offset + limit).join(','))}`)), nextOffset: offset + limit < local.length ? offset + limit : null }
+        : await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
       st.products = more ? [...st.products, ...d.products] : d.products;
