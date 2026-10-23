@@ -16,7 +16,7 @@ import { reconcileAutoTasks, reconcileTaskSet } from './auto-tasks.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
-import { OPEN_STATUSES, PRIORITY_RANK, addDaysIso, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
+import { OPEN_STATUSES, addDaysIso, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { markProgress } from '../../sales/api/progress.ts';
@@ -255,14 +255,14 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const [dueCounts] = await c.env.db.select({ overdue: n(dueCond('overdue', today)), today: n(dueCond('today', today)), week: n(dueCond('week', today)), upcoming: n(dueCond('upcoming', today)), none: n(dueCond('none', today)), total: sql<number>`count(*)`.mapWith(Number) })
       .from(tasks).where(and(...where));
     where.push(dueCond(due, today));
-    const rows = await c.env.db.select().from(tasks).where(and(...where)).orderBy(status === 'done' ? desc(tasks.completedAt) : asc(tasks.dueDate), desc(tasks.createdAt)).limit(500);
+    // Việc sinh sau (mới tạo) lên trên cùng; quá 500 việc thì giữ các việc mới nhất.
+    const rows = await c.env.db.select().from(tasks).where(and(...where)).orderBy(desc(tasks.createdAt), desc(tasks.id)).limit(500);
     const ids = [...new Set(rows.flatMap(r => [r.assigneeId, r.createdBy, r.completedBy]).filter(Boolean) as string[])];
     const people = ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
     const name = (id: string | null) => id ? people.find(x => x.id === id)?.name ?? '' : '';
     const counts = await c.env.db.select({ taskId: taskComments.taskId, n: sql<number>`count(*)` }).from(taskComments)
       .where(rows.length ? inArray(taskComments.taskId, rows.map(r => r.id)) : sql`false`).groupBy(taskComments.taskId);
-    // Đang mở: quá hạn trước, rồi theo hạn, rồi ưu tiên.
-    const sorted = status === 'done' ? rows : [...rows].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
+    const sorted = rows;
     return json({ today, syncedAt: new Date().toISOString(), dueCounts, canViewColleagues: !!peerPos(c), tasks: sorted.map(t => ({ ...forViewer(c, t), auto: !!t.autoKey, autoKey: undefined, assigneeName: name(t.assigneeId), teamName: teamName(t.assigneePosition), canClaim: inMyTeam(c, t) || (m.role === 'manager' && teamOpen(t)), creatorName: t.createdBy ? name(t.createdBy) : 'Hệ thống',
       completedByName: name(t.completedBy), comments: canComment(c, t) ? Number(counts.find(x => x.taskId === t.id)?.n ?? 0) : 0, due: dueBucket(t.dueDate, today),
       canManage: canManage(c, t), canDelete: !t.autoKey && canManage(c, t), viewOnly: !involved(c, t) })) });

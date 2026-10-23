@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
@@ -65,26 +65,26 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
     if(c.url.searchParams.get('summary')==='1') return json({counts:await readCounts()});
     const [qs, os, cs, ps, pos, trs, ces, rets] = await Promise.all([
       db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, createdAt: quotations.createdAt, updatedAt: quotations.updatedAt, by: employees.name, role: employees.role })
-        .from(quotations).leftJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.approvalStatus, 'pending')).orderBy(asc(quotations.updatedAt)).limit(LIMIT),
+        .from(quotations).leftJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.approvalStatus, 'pending')).orderBy(desc(quotations.updatedAt)).limit(LIMIT),
       db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total, createdAt: salesOrders.createdAt, by: employees.name })
-        .from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.createdBy)).where(and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt))).orderBy(asc(salesOrders.createdAt)).limit(LIMIT),
+        .from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.createdBy)).where(and(eq(salesOrders.status, 'draft'), isNotNull(salesOrders.submittedAt))).orderBy(desc(salesOrders.createdAt)).limit(LIMIT),
       db.select({ id: customers.id, name: customers.name, phone: customers.phone, taxCode: customers.taxCode, createdAt: customers.createdAt, by: employees.name })
-        .from(customers).leftJoin(employees, eq(employees.id, customers.createdBy)).where(eq(customers.approvalStatus, 'pending')).orderBy(asc(customers.createdAt)).limit(LIMIT),
+        .from(customers).leftJoin(employees, eq(employees.id, customers.createdBy)).where(eq(customers.approvalStatus, 'pending')).orderBy(desc(customers.createdAt)).limit(LIMIT),
       db.select({ sku: products.sku, name: products.name, updatedAt: products.updatedAt, by: employees.name })
-        .from(products).leftJoin(employees, eq(employees.id, products.createdBy)).where(eq(products.approvalStatus, 'pending')).orderBy(asc(products.updatedAt)).limit(LIMIT),
+        .from(products).leftJoin(employees, eq(employees.id, products.createdBy)).where(eq(products.approvalStatus, 'pending')).orderBy(desc(products.updatedAt)).limit(LIMIT),
       db.select({ id: incomingShipments.id, ticketNumber: incomingShipments.ticketNumber, supplierName: incomingShipments.supplierName, submittedAt: incomingShipments.submittedAt, by: employees.name })
         .from(incomingShipments).leftJoin(employees, eq(employees.id, incomingShipments.createdBy))
         .where(and(eq(incomingShipments.source, 'supplier-order'), ne(incomingShipments.approvalStatus, 'approved'), isNull(incomingShipments.cancelledAt), isNotNull(incomingShipments.submittedAt)))
-        .orderBy(asc(incomingShipments.submittedAt)).limit(LIMIT),
+        .orderBy(desc(incomingShipments.submittedAt)).limit(LIMIT),
       db.select({ id: stockTransfers.id, no: stockTransfers.transferNo, reason: stockTransfers.reason, createdAt: stockTransfers.createdAt, by: employees.name,
         from: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.fromWarehouseId})`,
         to: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.toWarehouseId})` })
-        .from(stockTransfers).leftJoin(employees, eq(employees.id, stockTransfers.requestedBy)).where(eq(stockTransfers.status, 'pending')).orderBy(asc(stockTransfers.createdAt)).limit(LIMIT),
+        .from(stockTransfers).leftJoin(employees, eq(employees.id, stockTransfers.requestedBy)).where(eq(stockTransfers.status, 'pending')).orderBy(desc(stockTransfers.createdAt)).limit(LIMIT),
       cashOk ? db.select({ e: cashEntries, by: employees.name }).from(cashEntries).leftJoin(employees, eq(employees.id, cashEntries.createdBy))
-        .where(and(eq(cashEntries.status, 'pending'), notMine(cashEntries.createdBy), inStore(cashEntries.drawerId, store?.scope.drawers))).orderBy(asc(cashEntries.createdAt)).limit(LIMIT) : [],
+        .where(and(eq(cashEntries.status, 'pending'), notMine(cashEntries.createdBy), inStore(cashEntries.drawerId, store?.scope.drawers))).orderBy(desc(cashEntries.createdAt)).limit(LIMIT) : [],
       cashOk ? db.select({ r: posReturns, by: employees.name, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName }).from(posReturns)
         .innerJoin(salesOrders, eq(salesOrders.id, posReturns.orderId)).leftJoin(employees, eq(employees.id, posReturns.createdBy))
-        .where(and(eq(posReturns.status, 'pending'), notMine(posReturns.createdBy), inStore(posReturns.registerId, store?.scope.registers))).orderBy(asc(posReturns.createdAt)).limit(LIMIT) : [],
+        .where(and(eq(posReturns.status, 'pending'), notMine(posReturns.createdBy), inStore(posReturns.registerId, store?.scope.registers))).orderBy(desc(posReturns.createdAt)).limit(LIMIT) : [],
     ]);
     const contracts = os.length ? await db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo }).from(salesContracts)
       .where(and(inArray(salesContracts.orderId, os.map(o => o.id)))) : [];
@@ -108,7 +108,8 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
       ...cs.map(k => ({ kind: 'customer' as const, id: k.id, title: `Khách hàng ${k.name}`, sub: [k.phone, k.taxCode && 'MST ' + k.taxCode].filter(Boolean).join(' · '),
         by: k.by ?? '', at: k.createdAt, amount: null, link: `#/customers/${encodeURIComponent(k.id)}` })),
       ...ps.map(p => ({ kind: 'product' as const, id: p.sku, title: `Sản phẩm ${p.name}`, sub: `Mã ${p.sku}`, by: p.by ?? '', at: p.updatedAt, amount: null, link: '#/products' })),
-    ].sort((a, b) => (a.at || '').localeCompare(b.at || ''));
+    // Mới sinh lên trên cùng (cùng quy tắc danh sách công việc); nhiều quá giới hạn thì giữ các chứng từ mới nhất.
+    ].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
     const counts = Object.fromEntries(APPROVAL_KINDS.map(k => [k, items.filter(i => i.kind === k).length])) as Record<ApprovalKind, number>;
     const capped = [qs,os,cs,ps,pos,trs,ces,rets].some(rows=>rows.length===LIMIT);
     const totals = capped ? await readCounts() : { ...counts, total: items.length };

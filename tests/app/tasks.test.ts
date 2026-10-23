@@ -269,3 +269,13 @@ test('trang Công việc: số đếm theo tab (summary.views), số theo mốc 
   assert.equal((await call('/tasks?view=all&assignee=emp', mgr)).data.tasks.length, 6);
   assert.equal((await call('/tasks?due=nope', emp)).status, 400);
 });
+
+test('danh sách công việc: việc sinh sau (mới tạo) lên trên cùng, không xếp theo hạn', async () => {
+  const { call, mgr } = await setup();
+  for (const [title, dueDate] of [['Việc 1 hạn gần', '2026-10-24'], ['Việc 2 không hạn', undefined], ['Việc 3 hạn xa', '2027-01-01']] as const) {
+    assert.equal((await call('/tasks', mgr, 'POST', { title, ...(dueDate ? { dueDate } : {}) })).status, 201);
+    await new Promise(r => setTimeout(r, 5));
+  }
+  const titles = (await call('/tasks?view=created', mgr)).data.tasks.map((t: any) => t.title).filter((t: string) => t.startsWith('Việc '));
+  assert.deepEqual(titles, ['Việc 3 hạn xa', 'Việc 2 không hạn', 'Việc 1 hạn gần']);
+});
