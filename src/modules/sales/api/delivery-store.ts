@@ -1,11 +1,11 @@
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { orderRecipient } from '../domain/order-notes.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
-import { deliveries, deliveryLines, salesOrderLines, salesOrders } from '../schema.ts';
-import { nextDocNo } from '../domain/sales.ts';
+import { deliveries, deliveryLines, packingSlips, salesOrderLines, salesOrders } from '../schema.ts';
+import { nextDocNo, vietnamDate } from '../domain/sales.ts';
 
 type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 const text = (value: unknown, max: number) => {
@@ -61,4 +61,17 @@ export async function createScheduledDelivery(tx: Tx, orderId: string, body: Rec
     assigneeId: body.assigneeId ? text(body.assigneeId, 80) : null, note: text(body.note, 2000), createdBy: actorId, createdAt: now, updatedAt: now });
   await tx.insert(deliveryLines).values([...quantities].map(([orderLineId, qty]) => ({ deliveryId: id, orderLineId, qty })));
   return { id, plannedDate: date };
+}
+
+/** Packing plans imply one initial customer trip. Caller holds the order lock; no stock is issued here. */
+export async function ensurePackingSchedule(tx: Tx, orderId: string, actorId: string) {
+  const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id,orderId)).for('update');
+  if (!order || order.channel !== 'crm' || ['draft','cancelled','delivered'].includes(order.status)) return;
+  const [packing] = await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,orderId),ne(packingSlips.status,'cancelled'))).limit(1);
+  if (!packing) return;
+  const [existing] = await tx.select({id:deliveries.id}).from(deliveries).where(eq(deliveries.orderId,orderId)).limit(1);
+  if (existing) return; // Do not undo an explicit cancellation.
+  const made = await createScheduledDelivery(tx,orderId,{plannedDate:order.expectedDeliveryDate||vietnamDate().iso},actorId);
+  if (!order.expectedDeliveryDate) await tx.update(salesOrders).set({expectedDeliveryDate:made.plannedDate}).where(eq(salesOrders.id,orderId));
+  return made;
 }

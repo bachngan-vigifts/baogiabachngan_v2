@@ -1,3 +1,4 @@
+import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { cancelGhnShipments } from './pos-ghn-cancel.ts';
@@ -706,6 +707,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       await tx.update(salesOrders).set({ status, warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Sổ kho: duyệt → trừ kho bán; huỷ đơn đã duyệt → cộng lại (đơn nháp chưa trừ thì không ghi gì).
       await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);
+      if (status === 'confirmed') await ensurePackingSchedule(tx,order.id,viewer(c).id);
       // Huỷ: dọn việc còn treo của đơn – phiếu đóng gói chưa đóng / chuyến giao chưa giao huỷ theo (việc kho / giao tự đóng);
       // phiếu kho đã đóng (đã ghi xuất sổ kho) thì ghi dòng đảo – hàng về lại kho – rồi huỷ phiếu.
       if (status === 'cancelled') {

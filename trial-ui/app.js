@@ -3576,8 +3576,11 @@ async function openOrder(id) {
     : '<p class="muted">Chưa có lịch giao.</p>');
   loadOrderPacking(o.id);
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
-  $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
+  $('#order-pack').disabled = true; $('#order-pack').title = 'Đang kiểm tra phiếu đóng gói…';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
+  const fullyScheduled = !d.lines.some(line => line.qty - line.deliveredQty - d.deliveries.filter(x => ['planned','in_transit'].includes(x.status)).flatMap(x => x.lines).filter(x => x.orderLineId === line.id).reduce((sum,x) => sum + x.qty,0) > 1e-9);
+  $('#order-new-delivery').disabled = fullyScheduled;
+  $('#order-new-delivery').title = fullyScheduled ? 'Mọi sản phẩm đã có đủ lịch giao.' : 'Tạo lịch cho phần hàng còn lại chưa lên lịch.';
   $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || (o.status === 'draft' && o.channel !== 'crm') || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = r.balance < 0 ? `<div class="pay-summary warn"><span>Còn phải hoàn / dùng đổi hàng</span><b>${money(-r.balance)}</b></div>` : o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
@@ -3684,11 +3687,17 @@ const packing = { lines: [], orderId: '', hasSchedule: false };
 const packingSupplierChoices = initPackingSupplierChoices($('#pack-form'));
 const packingEarlyRequest = initPackingEarlyRequest({ root: $('#pack-form'), api, lines: () => packing.lines, parseNum, toast,
   canRequest: () => can('page.purchases') && (isManager() || state.user?.positionId === 'sale-admin') });
+function syncOrderPackingButton(data) {
+  const button = $('#order-pack'), full = !data.lines.some(line => line.left > 1e-9);
+  button.disabled = !data.canRequest || full;
+  button.title = full ? 'Mọi sản phẩm đã có đủ phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.' : 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
+}
 async function loadOrderPacking(orderId) {
   const box = $('#order-packing'); box.innerHTML = '';
   let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
   if (sales.order?.id !== orderId) return;
   packing.lines = d.lines; packing.orderId = orderId;
+  syncOrderPackingButton(d);
   const live = d.slips.filter(x => x.status !== 'cancelled'), drafts = live.filter(x => x.status === 'draft');
   if (!live.length) return;
   box.innerHTML = `<div class="pack-slips"><div class="card-title-row"><b>Phiếu đóng gói</b>${drafts.length > 1 ? `<button type="button" class="btn primary small" data-slip-send-all>Gửi kho ${drafts.length} phiếu nháp</button>` : ''}</div>
@@ -3708,6 +3717,7 @@ $('#order-pack').addEventListener('click', async () => {
   const btn = $('#order-pack'); btn.disabled = true;
   try {
     const d = await api(`/orders/${encodeURIComponent(o.id)}/packing`); packing.lines = d.lines;
+    syncOrderPackingButton(d);
     if (!d.canRequest) return toast('Đơn chưa xác nhận, đã huỷ hoặc đã giao xong.', 'err');
     const todo = d.lines.filter(l => l.left > 1e-9);
     if (!todo.length) return toast('Mọi dòng hàng đã có phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.', 'err');
@@ -3734,7 +3744,7 @@ $('#order-pack').addEventListener('click', async () => {
     packingSupplierChoices.setSuppliers(d.supplierChoices || []);
     fillPackShip(d.delivery); fillPackSchedule(d.schedules || [], o);
     $('#pack-dialog').showModal();
-  } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+  } catch (ex) { toast(ex.message, 'err'); } finally { if (sales.order?.id === o.id) btn.disabled = !packing.lines.some(l => l.left > 1e-9); }
 });
 /** A single save can schedule the selected quantities and create the packing slips. */
 function fillPackSchedule(schedules, order) {
