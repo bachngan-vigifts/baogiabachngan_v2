@@ -312,7 +312,7 @@ const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
   quoteFilter: { q: '', type: '', owner: '', sort: 'updated' },
   customerQuery: '', customerTotal: 0, memberQuery: '', memberStatus: '',
-  products: null, productTotal: 0, productQuery: '', productBrand: '', policies: [], warehouses: [], selected: new Map(),
+  products: null, productTotal: 0, productQuery: '', productBrand: '', productWarehouse: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
 /** Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC): Manager hoặc người được Manager bật cờ "Được duyệt". Máy chủ kiểm lại. */
@@ -2098,6 +2098,11 @@ const thumb = p => imgTag(p.imageUrl);
 function applyCatalogMeta(d) {
   if (d.policies) state.policies = d.policies;
   if (d.warehouses) state.warehouses = d.warehouses;
+  const stockWarehouses = state.warehouses.filter(w => w.kind === 'stock');
+  if (state.productWarehouse && !stockWarehouses.some(w => w.id === state.productWarehouse)) state.productWarehouse = '';
+  const warehouse = $('#product-warehouse');
+  warehouse.innerHTML = '<option value="">Tất cả kho</option>' + stockWarehouses.map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
+  warehouse.value = state.productWarehouse;
   const sel = $('#product-policy');
   sel.innerHTML = state.policies.map(p => `<option value="${esc(p.id)}">Bảng giá: ${esc(p.name)}</option>`).join('');
   sel.value = currentPolicy(); sel.hidden = state.policies.length < 2;
@@ -2269,16 +2274,21 @@ function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
   const list = state.products, filtered = state.productQuery || state.productBrand;
+  const warehouse = state.warehouses.find(w => w.id === state.productWarehouse);
+  $('#product-stock-head').textContent = warehouse ? `Tồn · ${warehouse.name}` : 'Tồn kho';
   $('#product-count').textContent = state.productTotal ? `${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
   tbody.innerHTML = list.map(p => {
-    const price = productPrice(p), stock = availableStock(p), sel = state.selected.has(p.sku);
+    const price = productPrice(p), stock = warehouse ? (Number(p.stock?.[warehouse.id]) || 0) : availableStock(p), sel = state.selected.has(p.sku);
+    // Giữ báo giá hiện chưa gắn theo kho: không trừ toàn bộ số treo vào từng kho riêng.
+    const held = warehouse ? 0 : heldQty(p.sku);
+    const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
     return `<tr>
       <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
       <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
-      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}${heldQty(p.sku) ? ` · đang treo ${fmtNum(heldQty(p.sku))}` : ''}">${fmtNum(stock)}${heldQty(p.sku) ? `<small>treo ${fmtNum(heldQty(p.sku))}</small>` : ''}</td>
+      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}${held ? ` · đang treo ${fmtNum(held)}` : ''}">${fmtNum(stock)}${held ? `<small>treo ${fmtNum(held)}</small>` : ''}</td>
       <td class="actions-cell"><div class="row-actions">${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
@@ -2328,6 +2338,7 @@ let productTimer;
 const reloadProducts = () => { productPager?.reset(); loadProducts(); };
 $('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, 250); });
 $('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; reloadProducts(); });
+$('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; renderProducts(); });
 $('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });
 $('#product-list').addEventListener('change', e => {
   const box = e.target.closest('[data-select]'); if (!box) return;
