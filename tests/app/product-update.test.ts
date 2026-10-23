@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
 import {setup} from '../helpers/pos-fixture.ts';
 import {products,productPrices,productStock} from '../../src/modules/catalog/schema.ts';
+import {employees} from '../../src/modules/staff/schema.ts';
 import {auditLogs} from '../../src/core/db/schema.ts';
 
 test('Manager cập nhật sản phẩm/giá: giữ SKU, thuế, kho, trạng thái và ID Sapo; ghi audit, chặn ghi đè bản cũ',async()=>{
@@ -11,7 +12,8 @@ test('Manager cập nhật sản phẩm/giá: giữ SKU, thuế, kho, trạng th
  const original=(await f.call('/products/00123',f.mgr)).data.product;
  const stocks=await f.db.select().from(productStock).where(eq(productStock.sku,'00123'));
  const body={sku:'00123',name:'Ly đã cập nhật',brand:'Minh Long',unit:'bộ',pattern:'Trắng',imageUrl:'https://example.com/ly.png',prices:{retail:123456,'retail-vat':0},expectedUpdatedAt:original.updatedAt};
- assert.equal((await f.call('/products/00123',f.emp,'PUT',body)).status,403);
+ assert.equal((await f.call('/products/00123',f.ncc,'PUT',body)).status,403);
+ assert.equal((await f.call('/products/00123','','PUT',body)).status,401);
  assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...body,sku:'OTHER'})).status,400);
  assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...body,prices:{retail:-1}})).status,400);
  assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...body,prices:{unknown:1}})).status,400);
@@ -31,4 +33,33 @@ test('Manager cập nhật sản phẩm/giá: giữ SKU, thuế, kho, trạng th
  const waiting=(await f.call('/products/WAIT-UPDATE',f.mgr)).data.product;
  assert.equal((await f.call('/products/WAIT-UPDATE',f.mgr,'PUT',{...body,sku:'WAIT-UPDATE',expectedUpdatedAt:waiting.updatedAt})).status,409);
  assert.equal((await f.call('/products/MISSING',f.mgr,'PUT',{...body,sku:'MISSING'})).status,404);
+});
+
+
+test('Nhân viên các vị trí cập nhật danh mục; kho không ghi đè giá bị ẩn',async()=>{
+ const f=await setup();
+ const stocks=await f.db.select().from(productStock);
+ const prices=await f.db.select().from(productPrices);
+ for(const positionId of ['sales-lock','sale-admin','accounting','warehouse']){
+  await f.db.update(employees).set({positionId}).where(eq(employees.id,'emp'));
+  const current=(await f.call('/products/00123',f.emp)).data.product;
+  const body={sku:current.sku,name:`Ly ${positionId}`,brand:current.brand,unit:current.unit,pattern:current.pattern,imageUrl:current.imageUrl,prices:{},expectedUpdatedAt:current.updatedAt};
+  const saved=await f.call('/products/00123',f.emp,'PUT',body);
+  assert.equal(saved.status,200,JSON.stringify(saved.data));
+  assert.equal((await f.call('/products/00123',f.mgr)).data.product.name,body.name);
+  assert.equal((await f.call('/products/00123',f.emp,'PUT',body)).status,409);
+  if(positionId==='warehouse'){
+   assert.deepEqual(current.prices,[]);
+   const latest=(await f.call('/products/00123',f.emp)).data.product;
+   assert.equal((await f.call('/products/00123',f.emp,'PUT',{...body,expectedUpdatedAt:latest.updatedAt,prices:{retail:1}})).status,403);
+  }
+ }
+ assert.deepEqual(await f.db.select().from(productPrices),prices);
+ assert.deepEqual(await f.db.select().from(productStock),stocks);
+ const audit=await f.db.select().from(auditLogs).where(eq(auditLogs.entityId,'00123'));
+ assert.equal(audit.filter(a=>a.action==='update' && a.actorId==='emp').length,4);
+ await f.db.update(employees).set({positionId:'sales-lock'}).where(eq(employees.id,'emp'));
+ const latest=(await f.call('/products/00123',f.emp)).data.product;
+ assert.equal((await f.call('/products/00123',f.emp,'PUT',{...latest,expectedUpdatedAt:latest.updatedAt,prices:{retail:120000}})).status,200);
+ assert.equal((await f.call('/products/00123',f.mgr)).data.product.prices.find((p:any)=>p.policyId==='retail').price,120000);
 });
