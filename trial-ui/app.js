@@ -1275,9 +1275,10 @@ async function showProductCard(sku, name) {
     <div class="modal-body"><h3 class="pc-title">Tồn kho hiện tại</h3><div data-stock-box><p class="muted">Đang tải tồn kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử nhập / xuất kho <small class="muted">· số lượng +/− và tồn trước → sau</small></h3><select class="pc-wh" data-ledger-wh aria-label="Lọc theo kho"><option value="">Tất cả kho</option></select></div><div data-ledger><p class="muted">Đang tải sổ kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử bán &amp; chứng từ <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
-    <div class="modal-foot"><button type="button" class="btn navy" data-x>Đóng</button></div>`;
+    <div class="modal-foot">${isManager() ? '<button type="button" class="btn primary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<button type="button" class="btn navy" data-x>Đóng</button></div>`;
   document.body.append(dlg); dlg.showModal();
   const close = () => { dlg.close(); };
+  dlg.querySelector('[data-update-product-card]')?.addEventListener('click', () => { close(); productAdmin().openEdit(sku); });
   dlg.addEventListener('close', () => {
     const params = new URLSearchParams(location.hash.split('?')[1] || '');
     if (location.hash.startsWith('#/products?') && params.get('sku') === sku) {
@@ -2226,7 +2227,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; loadProducts(); loadCatalogSnapshot(); } });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); } });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
@@ -2330,7 +2331,7 @@ function renderProducts() {
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
       <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}${held ? ` · đang treo ${fmtNum(held)}` : ''}">${fmtNum(stock)}${held ? `<small>treo ${fmtNum(held)}</small>` : ''}</td>
-      <td class="actions-cell"><div class="row-actions">${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+      <td class="actions-cell"><div class="row-actions">${isManager() ? `<button type="button" class="btn secondary small" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
@@ -2389,6 +2390,8 @@ $('#product-list').addEventListener('change', e => {
   renderSelection();
 });
 $('#product-list').addEventListener('click', e => {
+  const update = e.target.closest('[data-update-product]');
+  if (update) { productAdmin().openEdit(update.dataset.updateProduct); return; }
   const b = e.target.closest('[data-quote-product]'); if (!b) return;
   const rows = rowsFromProducts([state.products.find(x => x.sku === b.dataset.quoteProduct)]);
   if (!rows.length) return;

@@ -33,10 +33,11 @@ export function initProductAdmin(deps) {
     } catch (ex) { toast(ex.message, 'err'); }
   });
 
-  function openCreate() {
+  function openForm(product = null) {
+    const editing = !!product;
     const policies = deps.policies();
     const dlg = document.createElement('dialog'); dlg.className = 'modal';
-    dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>Thêm sản phẩm</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body form-grid cols-2">
         <label>Mã sản phẩm (SKU)<input name="sku" required maxlength="64" placeholder="VD: ML-BT-001" autocapitalize="characters"></label>
         <label>Đơn vị tính<input name="unit" maxlength="50" placeholder="cái, bộ, hộp…"></label>
@@ -45,29 +46,46 @@ export function initProductAdmin(deps) {
         <label>Mẫu / hoạ tiết<input name="pattern" maxlength="200"></label>
         <label class="span-2">Link ảnh (https://…)<input name="imageUrl" type="url" maxlength="2000" placeholder="Không bắt buộc"></label>
         ${policies.map(p => `<label>Giá: ${esc(p.name)}<input name="price:${esc(p.id)}" inputmode="numeric" placeholder="0"></label>`).join('')}
-        <p class="muted small span-2">${isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
+        <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
         <p class="error span-2" data-err role="alert"></p>
       </div>
-      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Lưu sản phẩm</button></div></form>
+      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button type="submit" class="btn primary">${editing ? 'Lưu cập nhật' : 'Lưu sản phẩm'}</button></div></form>
       <datalist id="pa-brands">${[...document.querySelectorAll('#product-brand option')].map(o => o.value).filter(Boolean).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
+    if (editing) {
+      for (const key of ['sku','unit','name','brand','pattern','imageUrl']) dlg.querySelector('form').elements.namedItem(key).value = product[key] || '';
+      dlg.querySelector('[name="sku"]').readOnly = true;
+      for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; dlg.querySelector('form').elements.namedItem('price:' + policy.id).value = price == null ? '' : String(price); }
+    }
     document.body.append(dlg); dlg.showModal();
     dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', () => dlg.close()));
     dlg.addEventListener('close', () => dlg.remove());
+    let saving = false;
     dlg.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault();
+      if (saving) return;
       const f = e.target.elements, err = dlg.querySelector('[data-err]'), v = k => f.namedItem(k).value.trim();
       const prices = {};
-      for (const p of policies) { const raw = v('price:' + p.id).replace(/[^\d]/g, ''); if (raw) prices[p.id] = Number(raw); }
+      for (const p of policies) { const raw = v('price:' + p.id).replace(/[\s.,]/g, ''); if (raw && !/^\d+$/.test(raw)) { err.textContent = 'Giá phải là số nguyên VNĐ từ 0 trở lên.'; return; } if (raw) prices[p.id] = Number(raw); else if (editing) prices[p.id] = null; }
       const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
       if (!body.sku || !body.name) { err.textContent = 'Nhập mã SKU và tên sản phẩm.'; return; }
+      const submit = dlg.querySelector('button[type=submit]'); saving = true; if (submit) submit.disabled = true; err.textContent = '';
       try {
-        const r = await api('/products', 'POST', body);
+        const r = editing ? await api('/products/' + encodeURIComponent(product.sku), 'PUT', { ...body, expectedUpdatedAt: product.updatedAt }) : await api('/products', 'POST', body);
         dlg.close();
-        toast(r.approvalStatus === 'approved' ? `Đã thêm ${body.name}.` : `Đã gửi ${body.name} – chờ Manager duyệt.`);
+        toast(editing ? `Đã cập nhật ${body.name}.` : r.approvalStatus === 'approved' ? `Đã thêm ${body.name}.` : `Đã gửi ${body.name} – chờ Manager duyệt.`);
         loadPending(); deps.onChanged();
       } catch (ex) { err.textContent = ex.message; }
+      finally { saving = false; if (submit) submit.disabled = false; }
     });
   }
 
-  return { openCreate, loadPending };
+  let openingEdit = false;
+  async function openEdit(sku) {
+    if (!isManager() || openingEdit) return;
+    openingEdit = true;
+    try { const { product } = await api('/products/' + encodeURIComponent(sku)); openForm(product); }
+    catch (ex) { toast(ex.message, 'err'); }
+    finally { openingEdit = false; }
+  }
+  return { openCreate: () => openForm(), openEdit, loadPending };
 }

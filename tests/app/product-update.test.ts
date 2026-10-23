@@ -1,0 +1,34 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {eq} from 'drizzle-orm';
+import {setup} from '../helpers/pos-fixture.ts';
+import {products,productPrices,productStock} from '../../src/modules/catalog/schema.ts';
+import {auditLogs} from '../../src/core/db/schema.ts';
+
+test('Manager cập nhật sản phẩm/giá: giữ SKU, thuế, kho, trạng thái và ID Sapo; ghi audit, chặn ghi đè bản cũ',async()=>{
+ const f=await setup();
+ await f.db.update(products).set({sapoProductId:'sapo-123',taxable:true,taxIn:8,taxOut:10,taxBasis:'Chưa VAT',perCarton:12}).where(eq(products.sku,'00123'));
+ const original=(await f.call('/products/00123',f.mgr)).data.product;
+ const stocks=await f.db.select().from(productStock).where(eq(productStock.sku,'00123'));
+ const body={sku:'00123',name:'Ly đã cập nhật',brand:'Minh Long',unit:'bộ',pattern:'Trắng',imageUrl:'https://example.com/ly.png',prices:{retail:123456,'retail-vat':0},expectedUpdatedAt:original.updatedAt};
+ assert.equal((await f.call('/products/00123',f.emp,'PUT',body)).status,403);
+ assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...body,sku:'OTHER'})).status,400);
+ assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...body,prices:{retail:-1}})).status,400);
+ assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...body,prices:{unknown:1}})).status,400);
+ assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...body,expectedUpdatedAt:''})).status,400);
+ assert.equal((await f.call('/products/00123',f.mgr)).data.product.name,original.name,'invalid inputs write nothing');
+ const saved=await f.call('/products/00123',f.mgr,'PUT',body);assert.equal(saved.status,200,JSON.stringify(saved.data));
+ const p=(await f.call('/products/00123',f.mgr)).data.product;
+ for(const key of ['sku','taxable','taxIn','taxOut','taxBasis','perCarton','sapoProductId','approvalStatus','active','createdBy','approvedBy'])assert.equal(p[key],original[key],key);
+ for(const key of ['name','brand','unit','pattern','imageUrl'] as const)assert.equal(p[key],body[key]);
+ assert.equal(p.prices.find((v:any)=>v.policyId==='retail').price,123456);assert.equal(p.prices.find((v:any)=>v.policyId==='retail-vat').price,0);
+ assert.deepEqual(await f.db.select().from(productStock).where(eq(productStock.sku,'00123')),stocks);
+ const stale=await f.call('/products/00123',f.mgr,'PUT',{...body,name:'Ghi đè cũ'});assert.equal(stale.status,409);assert.equal(stale.data.code,'PRODUCT_CHANGED');
+ const audits=await f.db.select().from(auditLogs).where(eq(auditLogs.entityId,'00123'));assert.equal(audits.filter(a=>a.action==='update').length,1);
+ const clear=await f.call('/products/00123',f.mgr,'PUT',{...body,expectedUpdatedAt:p.updatedAt,prices:{retail:null}});assert.equal(clear.status,200);
+ const prices=await f.db.select().from(productPrices).where(eq(productPrices.sku,'00123'));assert.equal(prices.find(v=>v.policyId==='retail')!.price,null);assert.equal(prices.find(v=>v.policyId==='retail-vat')!.price,0,'omitted policies unchanged');
+ const pending=await f.call('/products',f.emp,'POST',{sku:'WAIT-UPDATE',name:'Chờ duyệt'});assert.equal(pending.status,201);
+ const waiting=(await f.call('/products/WAIT-UPDATE',f.mgr)).data.product;
+ assert.equal((await f.call('/products/WAIT-UPDATE',f.mgr,'PUT',{...body,sku:'WAIT-UPDATE',expectedUpdatedAt:waiting.updatedAt})).status,409);
+ assert.equal((await f.call('/products/MISSING',f.mgr,'PUT',{...body,sku:'MISSING'})).status,404);
+});
