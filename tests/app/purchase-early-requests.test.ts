@@ -106,3 +106,54 @@ test('hai lần bấm đồng thời dùng cùng key chỉ lưu một phiếu nh
   assert.deepEqual(results.map(r=>r.status).sort(),[200,201]);assert.equal(results[0]!.data.id,results[1]!.data.id);
   assert.equal((await db.select().from(purchaseEarlyRequests)).length,1);assert.equal((await db.select().from(purchaseEarlyRequestLines)).length,1);
 });
+
+test('lịch nhận: phiếu xin mới trên cùng, lọc loại/SKU/NCC trước phân trang; Manager xác nhận đúng phần NCC và audit riêng',async()=>{
+  const {db,call,cookies:c,client}=await setupEarly();
+  const old=await call('/purchase-early-requests',c.mgr,'POST',{clientKey:'calendar-old',pickupDate:'2026-10-24',lines:[{sku:'031106000',quantity:100}]});
+  const newer=await call('/purchase-early-requests',c.mgr,'POST',{clientKey:'calendar-new',pickupDate:'2026-10-23',lines:[{sku:'031106000',quantity:17000},{sku:'01654020803',quantity:5}]});
+  assert.equal(newer.status,201);newer.data.request=(await call('/purchase-early-requests/'+newer.data.id+'/submit',c.mgr,'POST',{revision:1})).data.request;
+  await db.update(purchaseEarlyRequests).set({createdAt:'2026-10-25T10:00:00.000Z'}).where(eq(purchaseEarlyRequests.id,newer.data.id));
+  await db.update(purchaseEarlyRequests).set({createdAt:'2026-10-24T10:00:00.000Z'}).where(eq(purchaseEarlyRequests.id,old.data.id));
+  const early=await call('/purchase-receiving-calendar?type=early&sku=031106000',c.mgr);
+  assert.equal(early.status,200);assert.equal(early.data.canConfirmEarly,true);assert.equal(early.data.total,3);
+  assert.equal(early.data.rows[0].requestId,newer.data.id);assert.equal(early.data.rows[1].requestId,newer.data.id);
+  assert.equal(early.data.rows.every((r:any)=>r.lines.every((l:any)=>l.sku==='031106000')),true);
+  assert.equal(early.data.rows.find((r:any)=>r.supplierId==='a'&&r.requestId===newer.data.id).lines[0].requestedQty,15000);
+  const one=await call('/purchase-receiving-calendar?type=early&sku=031106000&supplierId=b',c.mgr);
+  assert.equal(one.data.total,1);assert.equal(one.data.rows[0].lines[0].requestedQty,2000);
+  const purchases=await call('/purchase-receiving-calendar?type=purchase&sku=031106000',c.kho);
+  assert.equal(purchases.data.rows.every((r:any)=>r.type==='purchase'),true);assert.equal(purchases.data.canConfirmEarly,false);
+  assert.equal((await call('/purchase-receiving-calendar?type=wrong',c.mgr)).status,400);
+  assert.equal((await call('/purchase-receiving-calendar?type=early&sku=not-found',c.mgr)).data.total,0);
+  const line=newer.data.request.lines.find((l:any)=>l.sku==='031106000'),path='/purchase-early-request-lines/'+line.id+'/manager-confirm';
+  for(const who of ['sa','emp','kho','kt','ncc'])assert.equal((await call(path,c[who],'POST',{supplierId:'a'})).status,403,who);
+  assert.equal((await call(path,c.mgr,'POST',{supplierId:'missing'})).status,404);
+  const counts=async()=>(await client.query(`select (select count(*)::int from stock_moves) as moves,(select count(*)::int from stock_balances) as balances,(select count(*)::int from supplier_receipts) as receipts,(select count(*)::int from supplier_payments) as payments`)).rows[0];
+  const before=await counts();
+  assert.equal((await call(path,c.mgr,'POST',{supplierId:'a'})).status,200);
+  assert.equal((await call(path,c.mgr,'POST',{supplierId:'a'})).data.replayed,true);
+  const allocations=await db.select().from(purchaseEarlyRequestAllocations).where(eq(purchaseEarlyRequestAllocations.requestLineId,line.id));
+  assert.equal(allocations.filter(a=>a.supplierId==='a').every(a=>a.status==='accepted'&&a.respondedBy==='mgr'),true);
+  assert.equal(allocations.filter(a=>a.supplierId==='b').every(a=>a.status==='pending'),true);
+  assert.deepEqual(await counts(),before,'xác nhận NCC không phải nhận hàng, nhập kho hoặc chi tiền');
+  assert.equal((await call('/supplier-portal/early-requests/'+line.id+'/respond',c.ncc,'POST',{status:'rejected'})).status,409);
+  const audit=await client.query<{actor_id:string;data:string}>("select actor_id,data from audit_logs where action='early-request-manager-confirm'");
+  assert.equal(audit.rows.length,1);assert.equal(audit.rows[0]!.actor_id,'mgr');assert.equal(JSON.parse(audit.rows[0]!.data).allocations.reduce((s:number,a:any)=>s+a.quantity,0),15000);
+  const draftLine=old.data.request.lines[0].id;
+  assert.equal((await call('/purchase-early-request-lines/'+draftLine+'/manager-confirm',c.mgr,'POST',{supplierId:'a'})).status,404);
+  const rejected=await call('/purchase-early-requests',c.mgr,'POST',{clientKey:'calendar-reject',pickupDate:'2026-10-23',lines:[{sku:'031106000',quantity:1}]});
+  rejected.data.request=(await call('/purchase-early-requests/'+rejected.data.id+'/submit',c.mgr,'POST',{revision:1})).data.request;
+  const rejectedLine=rejected.data.request.lines[0].id;
+  await call('/supplier-portal/early-requests/'+rejectedLine+'/respond',c.ncc,'POST',{status:'rejected'});
+  assert.equal((await call('/purchase-early-request-lines/'+rejectedLine+'/manager-confirm',c.mgr,'POST',{supplierId:'a'})).status,409,'không ghi đè phản hồi đã có');
+  // More than 50 headers: calendar totals and later pages cannot inherit earlyRequestList's 50-header cap.
+  for(let i=0;i<51;i++){
+    const id='cal-page-'+i,lineId='cal-line-'+i;
+    await db.insert(purchaseEarlyRequests).values({id,clientKey:id,payloadHash:id,createdBy:'mgr',createdAt:'2026-01-01T00:00:00.000Z',status:'submitted',pickupDate:'2026-10-23'});
+    await db.insert(purchaseEarlyRequestLines).values({id:lineId,requestId:id,lineNo:1,sku:'031106000',name:'Hàng',unit:'cái',quantity:1});
+    await db.insert(purchaseEarlyRequestAllocations).values({id:'cal-alloc-'+i,requestLineId:lineId,purchaseLineId:'line-a1',supplierId:'a',quantity:1});
+  }
+  const page=await call('/purchase-receiving-calendar?type=early&sku=031106000',c.mgr);
+  assert.equal(page.data.total,55);assert.equal(page.data.rows.length,50);
+  assert.equal((await call('/purchase-receiving-calendar?type=early&sku=031106000&offset=50',c.mgr)).data.rows.length,5);
+});

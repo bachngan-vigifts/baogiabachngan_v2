@@ -200,7 +200,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   router.get('/purchase-receiving-calendar', async c => {
     guard(c);
-    return json(await receivingCalendar(c.env.db, c.url.searchParams, today()));
+    return json({...await receivingCalendar(c.env.db, c.url.searchParams, today()),canConfirmEarly:me(c).role==='manager'});
   }, 'business');
 
   router.get('/purchase-orders', async c => {
