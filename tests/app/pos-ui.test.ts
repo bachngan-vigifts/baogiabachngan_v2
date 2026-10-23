@@ -79,12 +79,6 @@ const doc = {
   body: new Element('body'),
 };
 
-test('nút thao tác GHN tự động áp dụng giống nhau cho quầy Lock và Minh Long', () => {
-  assert.equal(isAutoGhnRegister('CỬA HÀNG LOCKNLOCK CẦN THƠ'), true);
-  assert.equal(isAutoGhnRegister('Showroom Gốm Sứ Minh Long Cần Thơ'), true);
-  assert.equal(isAutoGhnRegister('Quầy Bách Ngân'), false);
-});
-
 // Choose a named customer through the real picker for payment scenarios.
 let selectingFixtureCustomer = false;
 const initPos = (options: any) => initPosDirect({ ...options, api: (path: string, ...args: any[]) => {
@@ -516,7 +510,7 @@ test('POS: bảng đơn nằm cuối, thêm/xoá nhiều dòng phí và phí shi
     await ui.load();
     assert.equal(root.children[0]!.children.at(-1)!.className, 'pos-card pos-order-board');
     await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
-    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm khoản phí')!.fire('click');
+    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm dòng')!.fire('click');
     const fee = root.querySelectorAll('div').find(e => e.className === 'pos-service-fee')!;
     assert.equal(fee.hidden, false);
     const [name, quantity, amount, feeTotal] = fee.querySelectorAll('input');
@@ -524,19 +518,19 @@ test('POS: bảng đơn nằm cuối, thêm/xoá nhiều dòng phí và phí shi
     quantity!.value = '2'; await quantity!.fire('input');
     amount!.value = '10800'; await amount!.fire('input');
     assert.equal(feeTotal!.value, '21.600 đ');
-    const shipping = root.querySelectorAll('label').find(e => e.textContent === 'Phí ship · Không VAT')!.querySelectorAll('input')[0]!;
+    const shipping = root.querySelectorAll('label').find(e => e.textContent === 'Phí ship')!.querySelectorAll('input')[0]!;
     shipping.value = '20000'; await shipping.fire('input');
     await new Promise(r => setTimeout(r, 230));
     const request = calls.filter(c => c.path === '/pos/preview').at(-1)!;
     assert.deepEqual(request.body.serviceFees, [{ name: 'Phí in', quantity: '2', unitPrice: '10800' }]); assert.equal(request.body.shippingFee, '20000');
-    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm khoản phí')!.fire('click');
+    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm dòng')!.fire('click');
     const second = root.querySelectorAll('div').filter(e => e.className === 'pos-service-fee')[1]!;
     const [n2,q2,p2,t2] = second.querySelectorAll('input');
     n2!.value = 'Phí gói quà'; await n2!.fire('input'); q2!.value = '3'; await q2!.fire('input'); p2!.value = '65000'; await p2!.fire('input');
     assert.equal(t2!.value, '195.000 đ');
     await new Promise(r => setTimeout(r, 230));
     assert.deepEqual(calls.filter(c => c.path === '/pos/preview').at(-1)!.body.serviceFees, [{ name: 'Phí in', quantity: '2', unitPrice: '10800' }, { name: 'Phí gói quà', quantity: '3', unitPrice: '65000' }]);
-    await second.querySelectorAll('button').find(b => b.textContent === 'Bỏ phí')!.fire('click');
+    await second.querySelectorAll('button').find(b => b.attributes['aria-label'] === 'Bỏ khoản phí')!.fire('click');
     assert.equal(root.querySelectorAll('div').filter(e => e.className === 'pos-service-fee')[0]!.querySelectorAll('input')[0]!.value, 'Phí in');
     const totals = root.querySelectorAll('div').find(e => e.className === 'pos-totals')!;
     assert.equal(totals.children.at(-2)!.tag, 'label', 'Ô phí ship ngay trên tổng cộng');
@@ -549,7 +543,7 @@ test('POS: bảng đơn nằm cuối, thêm/xoá nhiều dòng phí và phí shi
     assert.ok(multiBill.textContent.includes('<script>Gói quà</script> (trước thuế)180.556 đ'));
     assert.ok(multiBill.textContent.includes('3 × 65.000 đ195.000 đ'));
     assert.equal(multiBill.querySelectorAll('script').length, 0);
-    await root.querySelectorAll('button').find(b => b.textContent === 'Bỏ phí')!.fire('click');
+    await root.querySelectorAll('button').find(b => b.attributes['aria-label'] === 'Bỏ khoản phí')!.fire('click');
     assert.equal(root.querySelectorAll('div').filter(e => e.className === 'pos-service-fee').length, 0);
     await new Promise(r => setTimeout(r, 230));
     const cleared = calls.filter(c => c.path === '/pos/preview').at(-1)!.body;
@@ -639,7 +633,7 @@ test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản
     const check = payment.querySelectorAll('input').find(i => i.type === 'checkbox')!;
     check.checked = true; await check.fire('change');
     const area = root.querySelectorAll('section').find(e => e.className === 'pos-extra-fees')!;
-    assert.equal(area.children.at(-2)!.textContent, 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.');
+    assert.equal(area.children.at(-2)!.textContent, '+ Thêm dòng', 'không còn dòng diễn giải dưới phần phí');
     const note = area.querySelectorAll('textarea')[0]!;
     const text = '<img src=x onerror=alert(1)>\nGiao chiều';
     note.value = text; await note.fire('input');
@@ -895,6 +889,9 @@ test('POS stock: selected product says bỏ chọn; stock actions never add to c
    throw Error(path);
   };
   const ui=initPos({root,api,toast(){},user:()=>({id:'emp'}),confirmBox:async()=>true,go:(url:string)=>links.push(url)});await ui.load();
+  const stockDetails=root.querySelectorAll('details').find(x=>x.className==='pos-product-stock-details')!;
+  assert.ok(stockDetails);assert.equal(stockDetails.open,false,'stock sources start collapsed');
+  assert.equal(stockDetails.querySelectorAll('summary')[0]!.attributes['aria-label'],'Xem tồn các kho của LY1');
   const card=root.querySelectorAll('button').find(x=>x.className==='pos-product')!;
   await card.fire('click');assert.match(card.textContent,/Bỏ chọn/);assert.equal(card.attributes['aria-pressed'],'true');
   await card.fire('click');assert.equal(card.attributes['aria-pressed'],'false');assert.ok(!card.textContent.includes('Bỏ chọn'));
@@ -921,7 +918,7 @@ test('POS stock: selected product says bỏ chọn; stock actions never add to c
  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
 
-test('Voucher trên đơn: gõ mã + số tiền thì giỏ gửi kèm voucher, tổng hiện dòng Voucher; Bỏ voucher xoá; bill in tách voucher', async () => {
+test('Giảm giá trên đơn (không còn ô mã, #264): gõ số tiền thì giỏ gửi kèm, tổng hiện dòng giảm; nút × xoá; bill in tách phần giảm', async () => {
   const prevDoc = globalThis.document, prevWin = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
@@ -940,19 +937,19 @@ test('Voucher trên đơn: gõ mã + số tiền thì giỏ gửi kèm voucher, 
     await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
     const box = root.querySelectorAll('section').find(e => e.className === 'pos-voucher')!;
-    const [code, value] = box.querySelectorAll('input');
-    code!.value = 'VC-1'; await code!.fire('input');
+    const inputs = box.querySelectorAll('input'), value = inputs[0];
+    assert.equal(inputs.length, 1, 'chỉ còn ô số tiền / %');
     value!.value = '20000'; await value!.fire('input');
     await new Promise(r => setTimeout(r, 230));
-    assert.deepEqual(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, { code: 'VC-1', type: 'amount', value: 20000 });
+    assert.deepEqual(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, { code: '', type: 'amount', value: 20000 });
     const totals = root.querySelectorAll('div').filter(d => d.className === 'pos-total-row').map(d => d.textContent);
-    assert.ok(totals.some(t => t.includes('Voucher VC-1') && t.includes('20.000')), totals.join(' | '));
+    assert.ok(totals.some(t => t.includes('Mã giảm giá VC-1') && t.includes('20.000')), totals.join(' | '));
     assert.ok(totals.some(t => t.startsWith('Giảm giá') && t.includes('21.600')), 'Giảm giá chỉ còn CK dòng');
-    await box.querySelectorAll('button').find(b => b.textContent === 'Bỏ voucher')!.fire('click');
+    await box.querySelectorAll('button').find(b => b.attributes['aria-label'] === 'Bỏ giảm giá')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
     assert.equal(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, undefined);
     const bill = buildPosPrint(doc, withVoucher).textContent;
-    assert.ok(bill.includes('Voucher (chia theo dòng)') && bill.includes('Voucher VC-1') && bill.includes('21.600'), bill);
+    assert.ok(bill.includes('Mã giảm giá (chia theo dòng)') && bill.includes('Mã giảm giá VC-1') && bill.includes('21.600'), bill);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
 
@@ -990,4 +987,10 @@ test('Thẻ "Đơn web": số đỏ nhấp nháy khi có đơn cần xử lý, b
     reason.value = 'Khách đổi ý'; await form.fire('submit'); await new Promise(r => setTimeout(r, 0));
     assert.deepEqual(calls.find(c => c.path.endsWith('/action'))!.body, { action: 'cancel', reason: 'Khách đổi ý' });
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+});
+
+test('nút thao tác GHN tự động áp dụng giống nhau cho quầy Lock và Minh Long', () => {
+  assert.equal(isAutoGhnRegister('CỬA HÀNG LOCKNLOCK CẦN THƠ'), true);
+  assert.equal(isAutoGhnRegister('Showroom Gốm Sứ Minh Long Cần Thơ'), true);
+  assert.equal(isAutoGhnRegister('Quầy Bách Ngân'), false);
 });

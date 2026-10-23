@@ -56,7 +56,12 @@ export const isAutoGhnRegister = (name = '') => {
 };
 /** Ô voucher trống của giỏ (mã / ghi chú, kiểu VNĐ | %, giá trị). */
 const emptyVoucher = () => ({ code: '', type: 'amount', value: '' });
-export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }) {
+/**
+ * `localSearch(q, policyId)`: lọc + xếp hạng trên danh mục đã tải sẵn (cùng thuật toán trang Sản phẩm) → mảng {sku, name, unit, brand, imageUrl, price},
+ * hoặc null khi chưa có danh mục. Có kết quả: hiện ngay từ danh mục (tô đậm từ khoá bằng `matchRanges`), rồi máy chủ chỉ trả tồn / hàng giữ
+ * của các mã đang hiện (`/pos/catalog?skus=`, nhớ tạm vài giây) – gõ là ra, không quét cả danh mục.
+ */
+export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, localSearch = () => null, matchRanges = () => [] }) {
   const st = {
     options: null,
     shift: null,
@@ -140,7 +145,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       value ? sessionStorage.setItem(pendingKey(), JSON.stringify(value)) : sessionStorage.removeItem(pendingKey());
     } catch {}
   }
-  /** Voucher gửi máy chủ: chỉ khi đã gõ mã hoặc số tiền (máy chủ kiểm: bắt buộc mã, không vượt tiền hàng). */
+  /** Mã giảm giá gửi máy chủ: chỉ khi đã gõ mã hoặc số tiền (máy chủ kiểm: không vượt tiền hàng; mã không bắt buộc). */
   const voucherInput = () => {
     const code = st.voucher.code.trim(), value = Number(st.voucher.value) || 0;
     return code || value ? { code, type: st.voucher.type, value } : null;
@@ -353,7 +358,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     nodes.search = input;
     input.addEventListener('input', () => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => run(() => search(false)), 220);
+      searchTimer = setTimeout(() => run(() => search(false, false, true)), localSearch('', '') === null ? 220 : 40);
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -399,7 +404,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       filterToggle.setAttribute('aria-expanded', String(!filters.hidden));
     });
     filterToggle.setAttribute('aria-expanded', 'false');
-    left.append(searchBox, catalogTools, filterToggle, filters);
+    const controls = el('div', 'pos-catalog-controls');
+    controls.append(searchBox, catalogTools, filterToggle, filters);
+    left.append(controls);
     const grid = el('div', 'pos-grid');
     nodes.grid = grid;
     grid.addEventListener('scroll', () => {
@@ -903,10 +910,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   }
   function drawFees(right) {
     const box = el('section', 'pos-extra-fees'), list = el('div', 'pos-service-fees');
-    const shipping = field('Phí ship · Không VAT', 'number', st.shippingFee);
+    const shipping = field('Phí ship', 'number', st.shippingFee);
     shipping.input.min = '0'; shipping.input.step = '1'; shipping.input.inputMode = 'numeric'; shipping.input.placeholder = '0 đ';
     shipping.input.addEventListener('input', () => { st.shippingFee = shipping.input.value; invalidate(); });
-    const add = button('+ Thêm khoản phí', 'btn secondary small', () => {
+    const add = button('+ Thêm dòng', 'btn secondary small', () => {
       if (st.serviceFees.length >= 50) return;
       st.serviceFees.push({ name: '', quantity: '1', unitPrice: '' }); renderServices()?.focus(); invalidate();
     });
@@ -921,9 +928,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           if (property !== 'name') { f.input.min = property === 'quantity' ? '1' : '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; }
           f.input.addEventListener('input', () => { fee[property] = f.input.value; update(); invalidate(); });
         }
-        service.append(name.box, quantity.box, amount.box, total.box, button('Bỏ phí', 'btn ghost small', () => {
+        const remove = button('×', 'icon-btn pos-row-remove', () => {
           st.serviceFees = st.serviceFees.filter(row => row !== fee); renderServices(); invalidate();
-        }));
+        });
+        remove.setAttribute('aria-label', 'Bỏ khoản phí'); remove.title = 'Bỏ khoản phí';
+        service.append(name.box, quantity.box, amount.box, total.box, remove);
         list.append(service); lastName = name.input;
       }
       add.disabled = st.serviceFees.length >= 50; return lastName;
@@ -935,7 +944,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     note.setAttribute('aria-label', 'Ghi chú đơn hàng');
     note.addEventListener('input', () => { st.note = note.value; });
     noteBox.append(el('span', '', 'Ghi chú đơn hàng'), note);
-    box.append(list, add, el('p', 'pos-note', 'Phí dịch vụ theo bảng giá; không áp dụng chiết khấu sản phẩm.'), noteBox);
+    box.append(list, add, noteBox);
     right.append(drawVoucher(), box);
     nodes.feeControls = box;
     nodes.shippingField = shipping.box;
@@ -943,19 +952,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
   /** VOUCHER nhập tay cho cả đơn (pos-money.ts › parsePosVoucher): mã / ghi chú + số tiền VNĐ hoặc %; máy chủ chia vào các dòng, trừ thẳng vào giá đã gồm VAT rồi tách lại VAT. */
   function drawVoucher() {
     const box = el('section', 'pos-voucher'), row = el('div', 'pos-voucher-row');
-    const code = field('Mã / ghi chú voucher', 'text', st.voucher.code), value = field('Giảm', 'number', st.voucher.value);
-    code.input.maxLength = 60; code.input.placeholder = 'Ví dụ: VC-TET2026, voucher KH thân thiết…'; code.input.autocomplete = 'off';
+    const value = field('Giảm', 'number', st.voucher.value);
     value.input.min = '0'; value.input.step = '1'; value.input.inputMode = 'numeric'; value.input.placeholder = '0';
-    const mode = el('select'); mode.setAttribute('aria-label', 'Voucher giảm theo');
+    const mode = el('select'); mode.setAttribute('aria-label', 'Giảm theo');
     for (const [v, t] of [['amount', 'VNĐ'], ['percent', '%']]) { const o = el('option', '', t); o.value = v; mode.append(o); }
     mode.value = st.voucher.type;
     const modeBox = el('label', 'pos-field pos-voucher-mode'); modeBox.append(el('span', '', 'Theo'), mode);
-    code.input.addEventListener('input', () => { st.voucher.code = code.input.value; invalidate(); });
     value.input.addEventListener('input', () => { st.voucher.value = value.input.value; invalidate(); });
     mode.addEventListener('change', () => { st.voucher.type = mode.value; invalidate(); });
-    const clear = button('Bỏ voucher', 'btn ghost small', () => { st.voucher = emptyVoucher(); code.input.value = value.input.value = ''; mode.value = 'amount'; invalidate(); });
-    row.append(code.box, value.box, modeBox, clear);
-    box.append(el('h3', 'pos-voucher-title', 'Voucher'), row, el('p', 'pos-note', 'Giảm cho cả đơn, trừ thẳng vào giá đã gồm VAT (VAT tính lại theo số sau giảm; chia theo từng dòng hàng). Không áp vào phí dịch vụ, phí ship. Bắt buộc ghi mã / ghi chú để đối soát.'));
+    const clear = button('×', 'icon-btn pos-row-remove', () => { st.voucher = emptyVoucher(); value.input.value = ''; mode.value = 'amount'; invalidate(); });
+    clear.setAttribute('aria-label', 'Bỏ giảm giá'); clear.title = 'Bỏ giảm giá';
+    row.append(value.box, modeBox, clear);
+    box.append(row);
     return box;
   }
   function updateTotals() {
@@ -964,7 +972,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
     for (const [label, value] of [
       ['Tạm tính', d ? money(d.total + d.discount) : st.cart.length ? 'Đang tính…' : '0 đ'],
       ['Giảm giá', d ? '−' + money(d.discount - (d.voucher?.amount || 0)) : '—'],
-      ...(d?.voucher?.amount ? [['Voucher ' + d.voucher.code, '−' + money(d.voucher.amount)]] : []),
+      ...(d?.voucher?.amount ? [['Mã giảm giá' + (d.voucher.code ? ' ' + d.voucher.code : ''), '−' + money(d.voucher.amount)]] : []),
       ...((d?.fees?.services ?? (d?.fees?.service ? [d.fees.service] : [])).filter(f => f.amount).map(f => [f.name + ' (trước thuế)', money(f.subtotal)])),
       ['VAT', d ? money(d.tax) : '—'],
       ['Cần thu', d ? money(d.payable ?? d.total) : st.cart.length ? 'Đang tính…' : '0 đ'],
@@ -1029,9 +1037,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       toast(e.message, 'err');
     }
   }
-  async function search(addScanned = false, more = false) {
+  /** Tồn / giá máy chủ của từng mã vừa xem (chỉ dùng khi đang gõ tìm, giữ 15 giây): gõ thêm / xoá chữ không phải hỏi lại. */
+  const liveCache = new Map(), LIVE_MS = 15000;
+  const cachedLive = (sku) => { const hit = liveCache.get(st.policy + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
+  async function search(addScanned = false, more = false, typed = false) {
     if (!st.register) return;
     if (more && st.catalogLoading) return;
+    if (!typed && !more) liveCache.clear(); // bán xong, đổi bảng giá, mở ca…: lấy tồn mới
     st.catalogLoading = true;
     const seq = ++searchSeq,
       q = nodes.search?.value.trim() || '',
@@ -1039,9 +1051,31 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       mobile = window.matchMedia?.('(max-width: 850px)')?.matches === true,
       limit = mobile ? 20 : 60;
     try {
-      const d = await api(
-        `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`,
-      );
+      // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
+      if (!more) st.localSkus = q && !addScanned ? localSearch(q, st.policy) : null;
+      const local = st.localSkus?.length ? st.localSkus : null; // [{sku, name, price…}] theo thứ tự xếp hạng
+      const base = `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}`;
+      st.query = q;
+      // Danh mục tải sẵn: hiện ngay (tồn "đang tải" với mã chưa có trong bộ nhớ tạm), chỉ hỏi máy chủ phần còn thiếu.
+      const bySkus = async (previews) => {
+        const page = previews.slice(offset, offset + limit), nextOffset = offset + limit < previews.length ? offset + limit : null;
+        const show = () => page.map(x => cachedLive(x.sku) || { ...x, onHand: 0, reserved: 0, available: 0, loading: true });
+        const missing = page.filter(x => !cachedLive(x.sku)).map(x => x.sku);
+        if (missing.length && seq === searchSeq) { st.products = more ? [...st.products, ...show()] : show(); renderProducts(); }
+        if (missing.length) {
+          const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set();
+          for (const p of fresh.products) { liveCache.set(st.policy + '|' + p.sku, { p, at: now }); got.add(p.sku); }
+          // Mã không còn bán ở quầy (máy chủ không trả): bỏ khỏi danh sách.
+          return { products: show().filter(p => !p.loading || got.has(p.sku)).map(p => cachedLive(p.sku) || p), nextOffset };
+        }
+        return { products: show(), nextOffset };
+      };
+      let d = local ? await bySkus(local) : await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
+      // Enter / nút "Tìm" trên bàn phím điện thoại với chữ thường (không phải mã vạch): máy chủ không ra thì vẫn giữ danh sách lọc tại chỗ.
+      if (addScanned && !more && !d.products.length) {
+        const fallback = localSearch(q, st.policy);
+        if (fallback?.length) { st.localSkus = fallback; d = await bySkus(fallback); }
+      }
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
       st.products = more ? [...st.products, ...d.products] : d.products;
@@ -1050,7 +1084,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       if (addScanned) {
         const p = d.products.find((p) => p.sku === q) || (d.products.length === 1 ? d.products[0] : null);
         if (p && p.available > 0) add(p, true);
-        else toast('Chọn đúng sản phẩm trong danh sách.');
+        else toast(d.products.length ? 'Chọn đúng sản phẩm trong danh sách.' : 'Không tìm thấy sản phẩm.');
       }
     } finally {
       st.catalogLoading = false;
@@ -1079,13 +1113,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       const priceStock = el('span', 'pos-product-price-stock');
       priceStock.append(
         el('strong', 'pos-product-price', money(p.price)),
-        el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', p.available <= 0 ? 'Hết hàng' : 'Còn ' + p.available),
+        p.loading ? el('small', 'pos-stock', 'Đang tải tồn…')
+          : el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', p.available <= 0 ? 'Hết hàng' : 'Còn ' + p.available),
       );
-      b.append(el('b', 'pos-product-name', p.name), el('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
+      b.append(marked('b', 'pos-product-name', p.name), marked('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
       b.title = p.name + ' · ' + p.sku;
-      b.disabled = !active() || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
+      b.disabled = !active() || p.loading || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
       tile.append(b);
       if (p.stockSources) {
+        const details = el('details', 'pos-product-stock-details');
+        const summary = el('summary', '', 'Tồn các kho');
+        summary.setAttribute('aria-label', 'Xem tồn các kho của ' + p.sku);
+        details.append(summary);
         const stocks = el('div', 'pos-product-stocks');
         for (const entry of stockEntries(p)) {
           const view = button(`${entry.label}: ${number(entry.qty)}`, 'pos-source-stock', () => showProductStock(p, entry.key));
@@ -1093,12 +1132,23 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
           view.setAttribute('aria-label', `${entry.label} của ${p.sku}: ${number(entry.qty)}. Xem tồn và xin hàng`);
           stocks.append(view);
         }
-        tile.append(stocks);
+        details.append(stocks);
+        tile.append(details);
       }
       nodes.grid.append(tile);
     }
     if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', 'Không có sản phẩm phù hợp.'));
     markProductsInCart();
+  }
+  /** Chữ có tô đậm từ khoá đang tìm (cùng cách trang Sản phẩm). */
+  function marked(tag, cls, text) {
+    const t = String(text ?? ''), ranges = st.query ? matchRanges(t, st.query) : [];
+    if (!ranges.length) return el(tag, cls, t);
+    const node = el(tag, cls);
+    let i = 0;
+    for (const [a, b] of ranges) { if (a > i) node.append(el('span', '', t.slice(i, a))); node.append(el('mark', '', t.slice(a, b))); i = b; }
+    if (i < t.length) node.append(el('span', '', t.slice(i)));
+    return node;
   }
   const number = n => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(Number(n) || 0);
   function stockEntries(p) {
