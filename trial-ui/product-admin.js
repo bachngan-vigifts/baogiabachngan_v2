@@ -45,6 +45,12 @@ export function initProductAdmin(deps) {
         <label>Thương hiệu<input name="brand" maxlength="200" list="pa-brands"></label>
         <label>Mẫu / hoạ tiết<input name="pattern" maxlength="200"></label>
         <label class="span-2">Link ảnh (https://…)<input name="imageUrl" type="url" maxlength="2000" placeholder="Không bắt buộc"></label>
+        <div class="span-2 product-image-picker">
+          <button type="button" class="btn secondary small" data-image-choose>Tải ảnh lên</button><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-image-file hidden>
+          <button type="button" class="btn ghost small" data-image-clear hidden>Bỏ ảnh đã chọn</button>
+          <small class="muted" data-image-status>Chọn ảnh từ máy hoặc điện thoại. Ảnh được lưu khi bấm Lưu.</small>
+          <div data-image-preview hidden></div>
+        </div>
         ${policies.map(p => `<label>Giá: ${esc(p.name)}<input name="price:${esc(p.id)}" inputmode="numeric" placeholder="0"></label>`).join('')}
         <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
         <p class="error span-2" data-err role="alert"></p>
@@ -56,6 +62,29 @@ export function initProductAdmin(deps) {
       dlg.querySelector('[name="sku"]').readOnly = true;
       for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; dlg.querySelector('form').elements.namedItem('price:' + policy.id).value = price == null ? '' : String(price); }
     }
+    const imageInput = dlg.querySelector('[name="imageUrl"]'), preview = dlg.querySelector('[data-image-preview]'), imageStatus = dlg.querySelector('[data-image-status]'), clearImage = dlg.querySelector('[data-image-clear]');
+    let pendingImage = '', imageBusy = false, imageSequence = 0;
+    function drawImage(src) {
+      preview.replaceChildren(); preview.hidden = !src;
+      if (src) { const img = document.createElement('img'); img.src = src; img.alt = 'Ảnh sản phẩm đã chọn'; img.style.cssText = 'display:block;max-width:100%;height:110px;object-fit:contain;margin-top:8px'; preview.append(img); }
+      clearImage.hidden = !pendingImage;
+    }
+    drawImage(imageInput.value);
+    imageInput.addEventListener('input', () => { imageSequence++; pendingImage = ''; imageBusy = false; drawImage(imageInput.value.trim()); });
+    dlg.querySelector('[data-image-choose]').addEventListener('click', () => dlg.querySelector('[data-image-file]').click());
+    dlg.querySelector('[data-image-file]').addEventListener('change', async e => {
+      const file = e.target.files?.[0]; e.target.value = ''; if (!file) return;
+      const sequence = ++imageSequence; imageBusy = true; imageStatus.textContent = 'Đang chuẩn bị ảnh…';
+      try {
+        if (file.size > 20 * 1024 * 1024) throw Error('Ảnh quá lớn (tối đa 20 MB trước khi thu nhỏ).');
+        if (!deps.compress) throw Error('Chưa tải được công cụ xử lý ảnh. Vui lòng tải lại trang.');
+        const data = await deps.compress(file);
+        if (sequence !== imageSequence || !dlg.isConnected) return;
+        pendingImage = data; imageInput.value = ''; drawImage(data); imageStatus.textContent = 'Ảnh đã chọn — bấm Lưu để cập nhật.';
+      } catch (ex) { if (sequence === imageSequence) imageStatus.textContent = ex.message; }
+      finally { if (sequence === imageSequence) imageBusy = false; }
+    });
+    clearImage.addEventListener('click', () => { imageSequence++; pendingImage = ''; imageBusy = false; imageInput.value = product?.imageUrl || ''; drawImage(imageInput.value); imageStatus.textContent = 'Đã bỏ ảnh vừa chọn.'; });
     document.body.append(dlg); dlg.showModal();
     dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', () => dlg.close()));
     dlg.addEventListener('close', () => dlg.remove());
@@ -63,19 +92,24 @@ export function initProductAdmin(deps) {
     dlg.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault();
       if (saving) return;
+      if (imageBusy) { dlg.querySelector('[data-err]').textContent = 'Đợi xử lý ảnh xong rồi bấm Lưu.'; return; }
       const f = e.target.elements, err = dlg.querySelector('[data-err]'), v = k => f.namedItem(k).value.trim();
       const prices = {};
       for (const p of policies) { const raw = v('price:' + p.id).replace(/[\s.,]/g, ''); if (raw && !/^\d+$/.test(raw)) { err.textContent = 'Giá phải là số nguyên VNĐ từ 0 trở lên.'; return; } if (raw) prices[p.id] = Number(raw); else if (editing) prices[p.id] = null; }
       const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
       if (!body.sku || !body.name) { err.textContent = 'Nhập mã SKU và tên sản phẩm.'; return; }
-      const submit = dlg.querySelector('button[type=submit]'); saving = true; if (submit) submit.disabled = true; err.textContent = '';
+      const submit = dlg.querySelector('button[type=submit]'), imageControls = [imageInput,clearImage,dlg.querySelector('[data-image-choose]')]; saving = true; if (submit) submit.disabled = true; imageControls.forEach(el => el.disabled = true); err.textContent = '';
       try {
+        if (pendingImage) {
+          const uploaded = await api('/product-images', 'POST', { image: pendingImage });
+          body.imageUrl = uploaded.imageUrl; imageInput.value = uploaded.imageUrl; pendingImage = ''; drawImage(uploaded.imageUrl);
+        }
         const r = editing ? await api('/products/' + encodeURIComponent(product.sku), 'PUT', { ...body, expectedUpdatedAt: product.updatedAt }) : await api('/products', 'POST', body);
         dlg.close();
         toast(editing ? `Đã cập nhật ${body.name}.` : r.approvalStatus === 'approved' ? `Đã thêm ${body.name}.` : `Đã gửi ${body.name} – chờ Manager duyệt.`);
         loadPending(); deps.onChanged();
       } catch (ex) { err.textContent = ex.message; }
-      finally { saving = false; if (submit) submit.disabled = false; }
+      finally { saving = false; if (submit) submit.disabled = false; imageControls.forEach(el => el.disabled = false); }
     });
   }
 

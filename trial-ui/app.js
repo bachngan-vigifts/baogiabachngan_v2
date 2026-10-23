@@ -2227,7 +2227,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); } });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, compress: compressImage, isManager, canApprove, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); } });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
