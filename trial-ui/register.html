@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Bách Ngân · Đăng ký tài khoản</title>
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<section class="auth">
+  <main class="auth-card">
+    <div class="auth-logo"><img src="brand-strip.jpeg" alt="Bách Ngân – Vigifts" width="1139" height="188"></div>
+    <h1>Đăng ký tài khoản</h1>
+    <p id="registration-note" role="status">Đang kiểm tra lời mời…</p>
+    <p><b id="registration-entity"></b></p>
+    <form id="registration-form" hidden>
+      <p class="muted small">Tài khoản sẽ gắn với hồ sơ trên. Nếu không đúng công ty của bạn, hãy liên hệ người gửi.</p>
+      <label>Họ tên người đăng ký<input name="name" autocomplete="name" required maxlength="200"></label>
+      <label>Email<input name="email" type="email" autocomplete="email" maxlength="254" autocapitalize="none"></label>
+      <label>Số di động<input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
+      <p id="registration-login-help" class="muted small"></p>
+      <label>Mật khẩu<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+      <label>Nhập lại mật khẩu<input name="password2" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+      <label class="show-password"><input id="registration-show-password" type="checkbox"> Hiện mật khẩu</label>
+      <button class="btn primary block" id="registration-submit">Đăng ký tài khoản</button>
+    </form>
+    <p id="registration-error" class="error" role="alert"></p>
+    <a id="registration-login" class="btn primary block" hidden>Đăng nhập</a>
+  </main>
+</section>
+<script type="module" src="register.js"></script>
+</body>
+</html>

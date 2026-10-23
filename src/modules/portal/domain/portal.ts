@@ -1,3 +1,4 @@
+import { isRegistrationInvite } from './registration.ts';
 import { nextDocumentNumber } from '../../../core/document-number.ts';
 /** Quy tắc thuần của trang khách hàng (không DB/HTTP). */
 import { AppError } from '../../../core/errors.ts';
@@ -53,4 +54,4 @@ export function nextQuoteNo(prefix: string, ymd: string, used: readonly string[]
 export const PHONE_ONLY_DOMAIN = '@sdt.invalid';
 export const isPhoneOnly = (email: string) => email.endsWith(PHONE_ONLY_DOMAIN);
 /** Hiện cho người dùng: tài khoản chỉ có SĐT thì để trống email. */
-export const shownEmail = (email: string) => (isPhoneOnly(email) ? '' : email);
+export const shownEmail = (email: string) => (isPhoneOnly(email) || isRegistrationInvite(email) ? '' : email);

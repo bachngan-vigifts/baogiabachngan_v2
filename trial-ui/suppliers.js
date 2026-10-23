@@ -97,15 +97,46 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
     contacts.append(addBtn);
     // Tài khoản NCC
     const accounts = el('section', 'sup-section');
-    accounts.append(el('h3', '', 'Tài khoản NCC đăng nhập'), el('p', 'muted small', 'Tài khoản chức vụ NCC (tạo ở trang Nhân viên). Mỗi tài khoản thuộc đúng một NCC – chọn ở đây sẽ bỏ gắn ở NCC cũ. Tài khoản chỉ thấy đơn của NCC mình.'));
+    accounts.append(el('h3', '', 'Tài khoản NCC đăng nhập'), el('p', 'muted small', 'Mời NCC tự nhập thông tin và đăng ký tài khoản. Link gắn sẵn đúng NCC này, dùng một lần trong 24 giờ. Tài khoản chỉ thấy đơn của NCC mình. Các tài khoản có sẵn vẫn gắn được bên dưới.'));
     const linked = new Set(current.accounts.map(a => a.id)), box = el('div', 'sup-accounts');
     if (!candidates?.length) box.append(el('p', 'muted small', 'Chưa có tài khoản chức vụ NCC nào.'));
     for (const a of candidates || []) {
       const l = el('label', 'sup-account'), cb = el('input'); cb.type = 'checkbox'; cb.value = a.id; cb.checked = linked.has(a.id); cb.name = 'account';
-      const info = el('span'); info.append(el('b', '', a.name), el('small', 'muted', ' ' + a.email + (a.supplierId && a.supplierId !== s.id ? ` · đang gắn: ${a.supplierName}` : '')));
+      const info = el('span'); info.append(el('b', '', a.name), el('small', 'muted', ' ' + (a.registrationPending ? 'Chờ tự đăng ký' : a.email) + (a.supplierId && a.supplierId !== s.id ? ` · đang gắn: ${a.supplierName}` : '')));
       l.append(cb, info); box.append(l);
     }
     accounts.append(box);
+    if (!isNew && s.active && canLinkAccounts()) {
+      const invite = el('button', 'btn primary small', 'Tạo tài khoản NCC · Lấy link đăng ký'); invite.type = 'button';
+      const result = el('div', 'banner'); result.hidden = true;
+      const note = el('p', 'small', 'Gửi riêng link này cho đúng NCC. Link đăng ký dùng một lần, hết hạn sau 24 giờ.');
+      const row = el('div', 'copy-row'), url = el('input'), copy = el('button', 'btn secondary small', 'Chép link'); url.readOnly = true; url.setAttribute('aria-label', 'Link đăng ký NCC'); copy.type = 'button';
+      copy.onclick = async () => { try { await navigator.clipboard.writeText(url.value); toast('Đã chép link đăng ký.'); } catch { url.select(); toast('Chọn và chép link trong ô.'); } };
+      row.append(url, copy); result.append(note, row);
+      invite.onclick = async () => {
+        invite.disabled = true;
+        try {
+          const r = await api('/suppliers/' + encodeURIComponent(s.id) + '/invitations', 'POST', {});
+          if (current?.supplier?.id !== s.id) return;
+          url.value = r.url; result.hidden = false; candidates = null;
+          const pending = { id: r.memberId, name: 'Chờ tự đăng ký', registrationPending: true };
+          current.accounts.push(pending); linked.add(r.memberId); box.querySelector('p')?.remove();
+          const l = el('label', 'sup-account'), cb = el('input'); cb.type = 'checkbox'; cb.name = 'account'; cb.value = r.memberId; cb.checked = true;
+          l.append(cb, el('span', '', 'Chờ NCC tự đăng ký')); box.append(l); load();
+        } catch (e) { toast(e.message, 'err'); } finally { invite.disabled = false; }
+      };
+      accounts.append(invite, result);
+      for (const a of current.accounts.filter(a => a.registrationPending)) {
+        const renew = el('button', 'btn secondary small', 'Cấp lại link đăng ký · ' + a.name); renew.type = 'button';
+        renew.onclick = async () => {
+          renew.disabled = true;
+          try { const r = await api('/suppliers/' + encodeURIComponent(s.id) + '/invitations', 'POST', { memberId: a.id }); url.value = r.url; result.hidden = false; }
+          catch (e) { toast(e.message, 'err'); } finally { renew.disabled = false; }
+        };
+        accounts.append(renew);
+      }
+    }
+
     if (isNew) accounts.append(el('p', 'muted small', 'Lưu nhà cung cấp trước rồi gắn tài khoản.'));
     const err = el('p', 'error'); err.setAttribute('role', 'alert');
     const foot = el('div', 'sup-drawer-foot');
