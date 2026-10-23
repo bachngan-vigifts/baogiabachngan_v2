@@ -21,7 +21,7 @@ import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-ro
 import { registerQuoteSourcingRoutes } from '../modules/sales/api/quote-sourcing-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
-import { registerHoldRoutes } from '../modules/sales/api/hold-routes.ts';
+import { registerHoldRoutes, catalogHeldQuantities } from '../modules/sales/api/hold-routes.ts';
 import { registerProgressRoutes } from '../modules/sales/api/progress-routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
 import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modules/suppliers/api/directory-routes.ts';
@@ -62,6 +62,7 @@ export function createAppRouter() {
   stockRefLinkHooks.pos_return = posReturnStockLinks;
   stockRefLinkHooks.supplier_receipt = supplierReceiptStockLinks;
   catalogStockHooks.overlay = overlayPosStock;
+  catalogStockHooks.held = catalogHeldQuantities;
   catalogStockHooks.stamp = posStockStamp;
   catalogStockHooks.hidden = hiddenWarehouseIds;
   catalogStockHooks.ledger = ledgerWarehouses;
