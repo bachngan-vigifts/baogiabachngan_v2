@@ -49,7 +49,7 @@ import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } 
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
 import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, sapoPushViaClaw, sendOrderToClaw, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
-import { CONTRACT_STATUSES, DELIVERY_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
+import { CONTRACT_STATUSES, DELIVERY_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
   addDays, compactCode, contractNumber, debtAging, debtCounts, contractSchedules, legalCode, nextDocNo, orderLinesFromQuote, orderStatusFromLines,
   orderTotals, receivable, vietnamDate, type OrderStatus,
@@ -861,22 +861,44 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   // ================= HĐKT =================
   router.get('/contracts', async c => {
     const { limit, offset } = paging(c.url, 200, 500);
-    const invoice = c.url.searchParams.get('invoice') || '';
-    const where = and(orderScope(c), matchAllWords(foldSql(salesContracts.contractNo, salesOrders.quoteNo, salesOrders.customerName), c.url.searchParams.get('q')),
-      invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined);
-    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}]] = await Promise.all([
+    const sp = c.url.searchParams, invoice = sp.get('invoice') || '', status = sp.get('status') || '', owner = sp.get('owner') || '', entity = sp.get('entity') || '';
+    const from = sp.get('from') || '', to = sp.get('to') || '', dateBy = sp.get('dateBy') === 'signed' ? 'signed' : 'created';
+    if ((from && !isDate(from)) || (to && !isDate(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày không hợp lệ.');
+    if (status && status !== 'unsubmitted' && !(ORDER_STATUSES as readonly string[]).includes(status)) throw new AppError(400, 'Trạng thái không hợp lệ.');
+    if (entity && !(LEGAL_ENTITIES as readonly string[]).includes(entity)) throw new AppError(400, 'Pháp nhân không hợp lệ.');
+    const scope = orderScope(c);
+    // Cùng bộ lọc với trang Đơn hàng: trạng thái theo đơn đi kèm HĐKT (nháp / chờ duyệt / đã duyệt / đang giao / hoàn thành / huỷ).
+    const where = and(scope, matchAllWords(foldSql(salesContracts.contractNo, salesOrders.quoteNo, salesOrders.customerName), sp.get('q')),
+      invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined,
+      status === 'unsubmitted' ? and(eq(salesOrders.status, 'draft'), isNull(salesOrders.submittedAt)) : status ? eq(salesOrders.status, status as OrderStatus) : undefined,
+      owner ? eq(salesOrders.ownerId, owner) : undefined,
+      entity ? eq(salesContracts.legalEntity, entity as typeof LEGAL_ENTITIES[number]) : undefined,
+      dateBy === 'signed' ? and(from ? gte(salesContracts.signedDate, from) : undefined, to ? lte(salesContracts.signedDate, to) : undefined)
+        : and(from ? gte(salesContracts.createdAt, new Date(from + 'T00:00:00+07:00').toISOString()) : undefined, to ? lte(salesContracts.createdAt, new Date(to + 'T23:59:59.999+07:00').toISOString()) : undefined));
+    // Dòng tổng theo đúng bộ lọc (mọi trang, không chỉ trang đang xem); tiền không tính HĐKT đã huỷ.
+    const live = and(where, ne(salesOrders.status, 'cancelled'));
+    const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}], [sum], [paidRow], ownerOptions] = await Promise.all([
       c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(where),
       c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
-      invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
-      .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
+      invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo, submittedAt: salesOrders.submittedAt, ownerName: employees.name })
+      .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).leftJoin(employees, eq(employees.id, salesOrders.ownerId))
       .where(where).orderBy(...rankFirst(searchRank([salesContracts.contractNo, salesOrders.quoteNo], salesOrders.customerName, c.url.searchParams.get('q'))), desc(salesContracts.createdAt), desc(salesContracts.id)).limit(limit).offset(offset),
       c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
-        .where(and(orderScope(c), ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'))),
+        .where(and(scope, ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'))),
+      c.env.db.select({ n: count(), value: sql<number>`coalesce(sum(${salesContracts.value}), 0)::float8`, deposit: sql<number>`coalesce(sum(${salesContracts.depositAmount}), 0)::float8` }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(live),
+      c.env.db.select({ paid: sql<number>`coalesce(sum(${customerPayments.amount}), 0)::float8` }).from(customerPayments)
+        .innerJoin(salesContracts, eq(salesContracts.orderId, customerPayments.orderId)).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
+        .where(and(live, isNull(customerPayments.voidedAt))),
+      c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
+        .innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(scope).orderBy(asc(employees.name)),
     ]);
+    const revenue = Number(sum?.value ?? 0), paid = Number(paidRow?.paid ?? 0);
+    const summary = { count: Number(sum?.n ?? 0), cancelled: Number(total) - Number(sum?.n ?? 0), revenue, deposit: Number(sum?.deposit ?? 0), paid, remaining: Math.max(0, revenue - paid) };
     const debts = await receivableOf(c.env.db, [...new Set(rows.map(r => r.contract.orderId))]);
     return json({ contracts: rows.map(r => ({ ...r.contract, data: undefined, orderNo: r.orderNo, customerName: r.customerName, quoteNo: r.quoteNo, orderStatus: r.orderStatus,
-      invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo,
-      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status) })), total: Number(total), limit, offset, invoicePending: Number(invoicePending) });
+      invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo, ownerName: r.ownerName ?? '',
+      receivable: debts.get(r.contract.orderId), debtCounts: debtCounts(r.orderStatus, r.contract.status), submittedAt: r.submittedAt })), total: Number(total), limit, offset, invoicePending: Number(invoicePending),
+      summary, filterOptions: { owners: ownerOptions } });
   }, 'business');
 
   /**

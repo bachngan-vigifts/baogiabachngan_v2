@@ -472,12 +472,22 @@
         <div><span class="eyebrow">Bán hàng</span><h1>Hợp đồng kinh tế</h1><p class="muted">HĐKT lập từ báo giá đã duyệt; số HĐKT cấp tự động theo pháp nhân như web cũ.</p></div>
         <button type="button" class="btn-add" id="contracts-new" title="Lập HĐKT từ báo giá đã duyệt" aria-label="Lập HĐKT"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
-      
+      <div class="orders-status-tabs chips" id="contracts-status-tabs" role="group" aria-label="Lọc trạng thái HĐKT">
+        <button type="button" class="chip active" data-status="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-status="unsubmitted" aria-pressed="false">Nháp</button><button type="button" class="chip" data-status="draft" aria-pressed="false">Chờ duyệt</button><button type="button" class="chip" data-status="confirmed" aria-pressed="false">Đã duyệt</button><button type="button" class="chip" data-status="delivering" aria-pressed="false">Đang giao</button><button type="button" class="chip" data-status="delivered" aria-pressed="false">Hoàn thành</button><button type="button" class="chip" data-status="cancelled" aria-pressed="false">Đã huỷ</button>
+      </div>
       <div class="panel">
-        <div class="toolbar">
+        <div class="toolbar orders-toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số báo giá, khách hàng…" aria-label="Tìm"></label>
           <div class="chips" id="contracts-filters" role="group" aria-label="Lọc hoá đơn"><button type="button" class="chip active" data-invoice="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-invoice="requested" aria-pressed="false" title="Đã yêu cầu xuất hoá đơn, chưa nhập số hoá đơn">🧾 Chờ xuất hoá đơn <span class="count" data-invoice-count></span></button></div>
         </div>
+        <div class="orders-filter-grid" id="contracts-filter-grid">
+          <label>Pháp nhân<select id="contracts-entity"><option value="">Tất cả pháp nhân</option><option value="BN">Bách Ngân (BN)</option><option value="VG">Vigifts (VG)</option><option value="QTV">QTV</option></select></label>
+          <label>Nhân viên<select id="contracts-owner"><option value="">Tất cả nhân viên</option></select></label>
+          <label>Lọc ngày theo<select id="contracts-date-by"><option value="created">Ngày lập HĐKT</option><option value="signed">Ngày ký</option></select></label>
+          <label>Từ ngày<input type="date" id="contracts-from"></label><label>Đến ngày<input type="date" id="contracts-to"></label>
+          <button type="button" class="btn ghost small" id="contracts-clear">Xóa bộ lọc</button>
+        </div>
+        <div class="stats contracts-stats" id="contracts-stats" aria-live="polite"></div>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Báo giá</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hoá đơn</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
         <div id="contracts-empty" class="empty" hidden><p class="muted" id="contracts-empty-text"></p></div>
         <div class="pager" id="contracts-pager" hidden></div>
