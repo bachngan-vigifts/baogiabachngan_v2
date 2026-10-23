@@ -1,3 +1,4 @@
+import { initApprovalLauncher } from './approval-launcher.js';
 import { installBusyButtons, withBusy } from './busy-buttons.js';
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
 import { initReceivingCalendar } from './receiving-calendar.js';
@@ -297,6 +298,7 @@ async function apiRequest(path, method = 'GET', body) {
     throw new ApiError(data.error || 'Không thực hiện được thao tác.', res.status, data.code);
   }
   if (state.user && sameSession) {
+    if (method !== 'GET' && /^\/(quotes|orders|contracts|purchase-orders|stock-transfers|customers|products|cash|pos)(\/|\?|$)/.test(path)) approvalUi?.scheduleRefresh();
     if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
     else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|purchase-orders|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) dataRefresh.afterWrite(); // một lần làm mới (gồm số đếm menu) sau ~1 giây, không đọc lại 7–20 API nối đuôi
   }
@@ -308,6 +310,7 @@ watchCsp(r => { if (!token) return false; api('/csp-report', 'POST', r).catch(()
 initAvatars(api); // ô nào có data-av tự hiện ảnh đại diện
 
 // ---------------------------------------------------------------- trạng thái
+let approvalUi = null;
 const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
   quoteFilter: { q: '', type: '', owner: '', sort: 'updated' },
@@ -359,7 +362,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -506,7 +509,7 @@ async function loadAll() {
   // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
   const jobs = [can('page.quotes') && loadQuotes(), can('page.customers') && loadCustomers()].filter(Boolean);
   if (isManager()) jobs.push(loadMembers(), loadSapoSync());
-  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (can('page.care')) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false;
+  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (can('page.care')) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false; approvalView().start();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
 }
@@ -3325,11 +3328,12 @@ function careView() { return careUi ||= initCare({ api, toast, confirmBox, isMan
 function tasksView() { return tasksUi ||= initTasks({ api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
+function approvalView() { return approvalUi ||= initApprovalLauncher({api,button:$('#approval-launcher'),badge:$('#approval-launcher-count'),canApprove,userId:()=>state.user?.id,go}); }
 function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
 /** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
 async function refreshData() {
   if (!state.user) return;
-  const jobs = [loadQuotes(), loadStockBadge(), loadNavigationBadges(), tasksView().badge(), chatView().badge()];
+  const jobs = [approvalView().refresh(), loadQuotes(), loadStockBadge(), loadNavigationBadges(), tasksView().badge(), chatView().badge()];
   if (can('page.care')) jobs.push(careView().badge());
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);

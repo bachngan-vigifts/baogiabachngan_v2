@@ -1,3 +1,5 @@
+import { products } from '../../src/modules/catalog/schema.ts';
+import { eq } from 'drizzle-orm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -73,4 +75,14 @@ test('xoá nhân viên: khỏi danh sách, đăng xuất, email tạo lại đư
   assert.equal((await call('/admin/members/emp', mgr, 'DELETE')).status, 404);
   const again = await call('/admin/members', mgr, 'POST', { name: 'Nhân viên mới', email: 'emp@x.vn', phone: '0901234567', positionId: 'sale' });
   assert.equal(again.status, 201, 'email cũ dùng lại được');
+});
+
+test('số đếm cần duyệt: đủ trên 200 mục, summary không gửi chi tiết và vẫn chặn người không được duyệt',async()=>{
+ const s=await setup();
+ await s.db.insert(products).values(Array.from({length:205},(_,i)=>({sku:'WAIT-'+i,name:'Hàng chờ '+i,approvalStatus:'pending' as const,createdBy:'emp',updatedAt:'2026-10-23'})));
+ assert.equal((await s.call('/approvals?summary=1',s.emp)).status,403);
+ const summary=await s.call('/approvals?summary=1',s.mgr);assert.equal(summary.status,200);assert.equal(summary.data.counts.product,205);assert.equal(summary.data.counts.total,205);assert.equal(summary.data.items,undefined);
+ const list=await s.call('/approvals',s.mgr);assert.equal(list.data.items.length,200);assert.equal(list.data.counts.total,205);assert.equal(list.data.truncated,true);
+ await s.db.update(products).set({approvalStatus:'approved'}).where(eq(products.sku,'WAIT-0'));
+ assert.equal((await s.call('/approvals?summary=1',s.mgr)).data.counts.total,204);
 });

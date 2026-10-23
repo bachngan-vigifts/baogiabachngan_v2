@@ -44,6 +44,25 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
     const store = cashOk ? await posStoreScopeFor(db, member) : undefined;
     const notMine = (col: typeof cashEntries.createdBy | typeof posReturns.createdBy) => member.role === 'manager' ? undefined : ne(col, member.id);
     const inStore = (col: typeof cashEntries.drawerId | typeof posReturns.registerId, ids: string[] | undefined) => ids ? (ids.length ? inArray(col, ids) : sql`false`) : undefined;
+    const pendingOrders = and(eq(salesOrders.status,'draft'),isNotNull(salesOrders.submittedAt));
+    const hasContract = sql`exists(select 1 from ${salesContracts} where ${salesContracts.orderId}=${salesOrders.id})`;
+    // Exact counts without transferring document details or inheriting the list's 200-row cap.
+    const readCounts = async () => {
+      const n = sql<number>`count(*)`.mapWith(Number);
+      const [quote,orders,customer,product,purchase,transfer,cash,returned] = await Promise.all([
+        db.select({n}).from(quotations).where(eq(quotations.approvalStatus,'pending')),
+        db.select({order:sql<number>`count(*) filter(where not ${hasContract})`.mapWith(Number),contract:sql<number>`count(*) filter(where ${hasContract})`.mapWith(Number)}).from(salesOrders).where(pendingOrders),
+        db.select({n}).from(customers).where(eq(customers.approvalStatus,'pending')),
+        db.select({n}).from(products).where(eq(products.approvalStatus,'pending')),
+        db.select({n}).from(incomingShipments).where(and(eq(incomingShipments.source,'supplier-order'),ne(incomingShipments.approvalStatus,'approved'),isNull(incomingShipments.cancelledAt),isNotNull(incomingShipments.submittedAt))),
+        db.select({n}).from(stockTransfers).where(eq(stockTransfers.status,'pending')),
+        cashOk ? db.select({n}).from(cashEntries).where(and(eq(cashEntries.status,'pending'),notMine(cashEntries.createdBy),inStore(cashEntries.drawerId,store?.scope.drawers))) : [],
+        cashOk ? db.select({n}).from(posReturns).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(eq(posReturns.status,'pending'),notMine(posReturns.createdBy),inStore(posReturns.registerId,store?.scope.registers))) : [],
+      ]);
+      const counts = {quote:quote[0]?.n??0,order:orders[0]?.order??0,contract:orders[0]?.contract??0,customer:customer[0]?.n??0,product:product[0]?.n??0,purchase:purchase[0]?.n??0,transfer:transfer[0]?.n??0,cash:cash[0]?.n??0,return:returned[0]?.n??0};
+      return {...counts,total:Object.values(counts).reduce((sum,n)=>sum+n,0)};
+    };
+    if(c.url.searchParams.get('summary')==='1') return json({counts:await readCounts()});
     const [qs, os, cs, ps, pos, trs, ces, rets] = await Promise.all([
       db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, createdAt: quotations.createdAt, updatedAt: quotations.updatedAt, by: employees.name, role: employees.role })
         .from(quotations).leftJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.approvalStatus, 'pending')).orderBy(asc(quotations.updatedAt)).limit(LIMIT),
@@ -91,6 +110,8 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
       ...ps.map(p => ({ kind: 'product' as const, id: p.sku, title: `Sản phẩm ${p.name}`, sub: `Mã ${p.sku}`, by: p.by ?? '', at: p.updatedAt, amount: null, link: '#/products' })),
     ].sort((a, b) => (a.at || '').localeCompare(b.at || ''));
     const counts = Object.fromEntries(APPROVAL_KINDS.map(k => [k, items.filter(i => i.kind === k).length])) as Record<ApprovalKind, number>;
-    return json({ counts: { ...counts, total: items.length }, items });
+    const capped = [qs,os,cs,ps,pos,trs,ces,rets].some(rows=>rows.length===LIMIT);
+    const totals = capped ? await readCounts() : { ...counts, total: items.length };
+    return json({ counts: totals, items, ...(totals.total>items.length?{truncated:true}:{} ) });
   }, 'business');
 }

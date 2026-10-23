@@ -2226,3 +2226,7 @@ dialog.order-compose { width: 100vw; max-width: 100vw; height: 100dvh; max-heigh
 /* Trang Sản phẩm: công cụ dữ liệu của Manager gom một hàng, cùng kiểu nút, canh trái. */
 .product-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
 .product-tools-label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+
+/* Shares the chat anchor, including mobile navigation and POS positioning. */
+.approval-launcher { translate: 0 -70px; }
+.approval-launcher[data-empty="true"] .badge { background: var(--muted); }
