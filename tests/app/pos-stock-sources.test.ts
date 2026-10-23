@@ -113,3 +113,48 @@ test('POS tìm sản phẩm cùng thuật toán trang Sản phẩm; skus= trả 
  assert.deepEqual(ordered.data.products.map((p:any)=>p.sku),['LHC-4282','00123'],'giữ thứ tự gửi lên, bỏ mã không có giá ở bảng giá quầy');
  assert.equal(ordered.data.nextOffset,null);
 });
+
+test('POS: còn 1 sau hai chuyến xuất không bị giữ thêm; phần chưa xuất và kho khác vẫn tách đúng',async()=>{
+ const f=await setup(),s=await f.open(),now=new Date().toISOString();
+ const {salesOrders,salesOrderLines,deliveries}=await import('../../src/modules/sales/schema.ts');
+ const {orderHolds}=await import('../../src/modules/sales/api/hold-routes.ts');
+ const {reservedBySku}=await import('../../src/modules/sales/api/pos-store.ts');
+ const {reverseRef}=await import('../../src/modules/inventory/api/ledger.ts');
+ await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'pos-wh',qty:-7,kind:'adjust',refType:'adjustment',refId:'three-before-dispatch'}]);
+ await f.db.insert(warehouses).values({id:'other-dispatch',name:'Kho khác',kind:'stock'});
+ await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'other-dispatch',qty:20,kind:'opening',refType:'opening',refId:'other-dispatch-open'}]);
+ async function order(id:string,qty:number){
+  await f.db.insert(salesOrders).values({id,orderNo:id,channel:'pos',shiftId:s.id,quoteType:'HRC',customerName:'Khách COD',ownerId:'emp',createdBy:'emp',warehouseId:null,orderDate:now.slice(0,10),status:'delivering',holdsStock:true,createdAt:now,updatedAt:now});
+  await f.db.insert(salesOrderLines).values({id:id+'-line',orderId:id,lineNo:1,sku:'00123',name:'Ly',unit:'cái',qty,deliveredQty:0});
+  await f.db.insert(deliveries).values({id:id+'-delivery',deliveryNo:id+'-GH',orderId:id,plannedDate:now.slice(0,10),status:'in_transit',createdBy:'emp',createdAt:now,updatedAt:now});
+ }
+ await order('OUT-A',1);await order('OUT-B',1);
+ for(const id of ['OUT-A','OUT-B'])await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'pos-wh',qty:-1,kind:'issue',refType:'pos_delivery',refId:id+'-delivery',refNo:id}]);
+ const path=`/pos/catalog?registerId=${f.registerId}&q=00123`,product=async()=>(await f.call(path,f.emp)).data.products[0];
+ let p=await product();assert.deepEqual([p.onHand,p.reserved,p.available],[1,0,1]);
+ assert.equal((await orderHolds(f.db,['00123'])).length,0,'global holds also remove stock already issued');
+ await order('NOT-OUT',1);p=await product();assert.deepEqual([p.onHand,p.reserved,p.available],[1,1,0],'unissued order still holds the last unit');
+ assert.equal((await reservedBySku(f.db,['00123'],'other-dispatch')).get('00123')||0,0,'legacy POS derives warehouse from register, not every warehouse');
+ await f.db.update(salesOrders).set({status:'cancelled'}).where(eq(salesOrders.id,'NOT-OUT'));
+ p=await product();assert.equal(p.available,1);
+ const paid=await f.call('/pos/checkout',f.emp,'POST',f.cart(s.id,{rows:[{sku:'00123',qty:1,discountType:'percent',discountValue:0}]}));assert.equal(paid.status,201,JSON.stringify(paid.data));
+ p=await product();assert.deepEqual([p.onHand,p.reserved,p.available],[0,0,0]);
+ await f.db.transaction(tx=>reverseRef(tx,'mgr','pos_delivery','OUT-A-delivery','Nhận lại hàng chưa giao'));
+ p=await product();assert.deepEqual([p.onHand,p.reserved,p.available],[1,1,0],'reversed issue restores the real outstanding hold while order remains active');
+});
+
+test('CRM giữ hàng: packing + POS xuất từng phần, đã giao không bị trừ lần hai; mã trùng dòng gộp trước',async()=>{
+ const f=await setup(),now=new Date().toISOString();
+ const {salesOrders,salesOrderLines,deliveries,packingSlips}=await import('../../src/modules/sales/schema.ts');
+ const {orderHolds}=await import('../../src/modules/sales/api/hold-routes.ts');
+ await f.db.insert(salesOrders).values({id:'PARTIAL-HOLD',orderNo:'PARTIAL-HOLD',quoteType:'HRC',warehouseId:'pos-wh',customerName:'Khách',ownerId:'mgr',createdBy:'mgr',orderDate:now.slice(0,10),status:'delivering',holdsStock:true,createdAt:now,updatedAt:now});
+ await f.db.insert(salesOrderLines).values([{id:'PARTIAL-L1',orderId:'PARTIAL-HOLD',lineNo:1,sku:'00123',name:'Ly',qty:2,deliveredQty:2},{id:'PARTIAL-L2',orderId:'PARTIAL-HOLD',lineNo:2,sku:'00123',name:'Ly khác dòng',qty:3,deliveredQty:0}]);
+ await f.db.insert(deliveries).values({id:'PARTIAL-GH',deliveryNo:'PARTIAL-GH',orderId:'PARTIAL-HOLD',plannedDate:now.slice(0,10),createdBy:'mgr',createdAt:now,updatedAt:now});
+ await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'pos-wh',qty:-2,kind:'issue',refType:'pos_delivery',refId:'PARTIAL-GH'}]);
+ const qty=async()=>(await orderHolds(f.db,['00123'],'pos-wh'))[0]?.qty??0;
+ assert.equal(await qty(),3,'sum quantity/delivered first; same issue does not get deducted from each matching line');
+ await f.db.insert(packingSlips).values({id:'PARTIAL-PACK',slipNo:'PARTIAL-PACK',orderId:'PARTIAL-HOLD',source:'warehouse',sourceNote:'Kho POS',status:'packed',createdBy:'mgr',createdAt:now,updatedAt:now});
+ await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'pos-wh',qty:-1,kind:'issue',refType:'packing_slip',refId:'PARTIAL-PACK'}]);
+ assert.equal(await qty(),2,'three issued including two delivered: only two still need stock');
+ const p=(await f.call(`/pos/catalog?registerId=${f.registerId}&q=00123`,f.emp)).data.products[0];assert.deepEqual([p.onHand,p.reserved,p.available],[7,2,5],'no extra POS-side subtraction of packing');
+});
