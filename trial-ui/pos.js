@@ -394,7 +394,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift }
       filterToggle.setAttribute('aria-expanded', String(!filters.hidden));
     });
     filterToggle.setAttribute('aria-expanded', 'false');
-    left.append(searchBox, catalogTools, filterToggle, filters);
+    const controls = el('div', 'pos-catalog-controls');
+    controls.append(searchBox, catalogTools, filterToggle, filters);
+    left.append(controls);
     const grid = el('div', 'pos-grid');
     nodes.grid = grid;
     grid.addEventListener('scroll', () => {
