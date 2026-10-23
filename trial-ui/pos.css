@@ -295,6 +295,20 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-actions .btn.primary {
   background: #168148;
 }
+/* Chi tiết đơn web: nút chính một dòng riêng, các nút phụ chia đều bên dưới. */
+.pos-actions.pos-web-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.pos-web-actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 8px;
+}
+.pos-web-actions .btn.pos-web-main {
+  flex-basis: 100%;
+}
 .pos-catalog > .btn {
   margin-top: 12px;
 }
@@ -1156,9 +1170,5 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-catalog-controls .pos-search .btn { min-width: 64px; padding-inline: 6px; }
 }
 
-/* Web order detail: delivery first, then secondary actions. Labels must wrap on phones. */
+/* Leave room for the close control even when the order reference wraps. */
 .pos-web-order-modal h2 { padding-right: 44px; overflow-wrap: anywhere; }
-.pos-web-order-modal .pos-web-order-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
-.pos-web-order-modal .pos-web-order-actions .btn { min-width: 0; min-height: 48px; height: auto; white-space: normal; overflow-wrap: anywhere; padding: 10px 12px; line-height: 1.35; }
-.pos-web-order-actions .pos-web-order-ship { grid-column: 1 / -1; }
-.pos-web-order-actions > .btn:last-child { grid-column: 1 / -1; }
