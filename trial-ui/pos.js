@@ -1096,6 +1096,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       b.disabled = !active() || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
       tile.append(b);
       if (p.stockSources) {
+        const details = el('details', 'pos-product-stock-details');
+        const summary = el('summary', '', 'Tồn các kho');
+        summary.setAttribute('aria-label', 'Xem tồn các kho của ' + p.sku);
+        details.append(summary);
         const stocks = el('div', 'pos-product-stocks');
         for (const entry of stockEntries(p)) {
           const view = button(`${entry.label}: ${number(entry.qty)}`, 'pos-source-stock', () => showProductStock(p, entry.key));
@@ -1103,7 +1107,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           view.setAttribute('aria-label', `${entry.label} của ${p.sku}: ${number(entry.qty)}. Xem tồn và xin hàng`);
           stocks.append(view);
         }
-        tile.append(stocks);
+        details.append(stocks);
+        tile.append(details);
       }
       nodes.grid.append(tile);
     }
