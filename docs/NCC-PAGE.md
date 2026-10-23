@@ -40,7 +40,7 @@ Nơi sửa **mọi thứ về NCC mà trước đây phải sửa code**:
 | Nhận hàng từng đợt | Kho, Manager | Ghi theo từng mã: đạt / hỏng / ghi chú. Hàng hỏng không tính vào số đã nhận, vẫn tính là còn thiếu. `clientKey` duy nhất, nên bấm lặp không tạo phiếu thứ hai. Số đạt không được vượt số còn thiếu; ngày nhận không được sau hôm nay. |
 | Huỷ phiếu nhận | Manager | Chỉ huỷ được khi phiếu chưa nhập Sapo. |
 | Trả NCC | Manager, Kế toán | Khoản trả có `clientKey`, không được vượt số còn nợ, đính kèm được chứng từ ảnh/PDF ≤ 6 MB (lưu ở kho file private). Công nợ tính FIFO theo lịch trả, có quá hạn và kỳ tới. |
-| Huỷ đơn | Người lập (đơn nháp) / Manager | Bắt buộc ghi lý do. Không huỷ được khi đã nhận hàng hoặc đã trả tiền. Huỷ xong, số đã đặt được trả lại cho chứng từ nguồn. |
+| Huỷ đơn | Người lập (đơn nháp) / Manager / Sale Admin (đơn đã duyệt) | Bắt buộc ghi lý do. Không huỷ được khi đã nhận hàng hoặc đã trả tiền. Huỷ xong, số đã đặt được trả lại cho chứng từ nguồn. |
 
 **Nhập đơn mua từ file Excel tổng đơn của NCC (Manager)** – nút "Nhập từ file NCC" ở trang Đơn mua (mẫu file Minh Long).
 - **Cột đọc:** Đơn hàng (số đơn phía NCC) · Ngày giao gốc · Mã hàng · Tên hàng · Sl đặt · ĐG Bán · Chiết khấu · SL giao. Các cột khác bỏ qua.
@@ -166,3 +166,5 @@ Hộp Yêu cầu đóng gói của đơn/HĐKT lấy danh sách NCC đang hoạt
 Trên đơn mua đã duyệt, Sale Admin và Kế toán được ghi nhận NCC xác nhận, nhận hàng, ghi trả NCC, sửa lịch trả, tải PDF/Excel và gửi email NCC. Giao diện dùng `actions` do API cấp; kiểm quyền và trạng thái vẫn chạy ở server. Các quyền giá mua/thanh toán hiện có giữ nguyên; bổ sung xác nhận thay NCC cho đúng hai chức vụ và nhận hàng cho Kế toán. Lịch sử ghi người thực hiện, không gắn nhãn Manager cho thao tác của nhân viên.
 
 Không mở quyền duyệt giá hoặc huỷ đơn đã duyệt, huỷ phiếu nhận, huỷ khoản trả. Không thay quyền trên cổng NCC hay quyền duyệt yêu cầu xin lấy trước. Không thêm quyền/schema/migration; nhận hàng vẫn không cộng tồn Sapo. Email chỉ gửi khi người dùng thực hiện thao tác, đơn đã duyệt và dịch vụ mail được cấu hình.
+
+Sale Admin được xem giá và dùng PDF/gửi email ngay trên đơn mua đã duyệt, kể cả khi không có quyền xem giá mua toàn cục. Ngoại lệ theo đơn này không mở giá đơn nháp hoặc cấp quyền duyệt giá. Nhận hàng/ghi trả/lịch trả giữ các quyền hiện có; huỷ đơn vẫn chặn khi có hàng đã nhận hoặc khoản trả còn hiệu lực. Huỷ phiếu nhận và huỷ khoản trả vẫn chỉ Manager.

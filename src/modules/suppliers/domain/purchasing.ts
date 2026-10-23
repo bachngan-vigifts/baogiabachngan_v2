@@ -18,11 +18,14 @@ export interface Actor { id: string; role: Role; active: boolean; positionId?: s
 const isManager = (a: Actor | null | undefined) => Boolean(a?.active && a.role === 'manager' && !isSupplier(a));
 const isEmployee = (a: Actor | null | undefined) => Boolean(a?.active && a.role === 'employee' && !isSupplier(a) && a.positionId !== 'customer');
 export const isWarehouseStaff = (a: Actor | null | undefined) => isEmployee(a) && a!.positionId === 'warehouse';
+export const isSaleAdminStaff = (a: Actor | null | undefined) => isEmployee(a) && a!.positionId === SALE_ADMIN_POSITION_ID;
 export const isAccountantStaff = (a: Actor | null | undefined) => isEmployee(a) && a!.positionId === 'accounting';
 
 /** Ai thấy giá / tiền của đơn mua: Manager và Kế toán. Nhân viên khác và kho thấy đơn nhưng ẩn giá (giá vốn). */
 // Người được duyệt đơn mua phải thấy / nhập giá mua khi duyệt.
 export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && (can(a, 'purchases.prices') || canApprove(a));
+/** Sale Admin được xử lý và xem đầy đủ chứng từ đã duyệt, không mở giá của đơn nháp khi chưa được cấp quyền. */
+export const canSeePurchasePrices = (a: Actor | null | undefined, o: Pick<OrderFlags, 'approvalStatus'>) => canSeePrices(a) || isSaleAdminStaff(a) && o.approvalStatus === 'approved';
 export const canUsePurchasing = (a: Actor | null | undefined) => isManager(a) || isEmployee(a);
 export const canReceive = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a) || isEmployee(a) && can(a, 'purchases.receive');
 /** Staff record an actual supplier confirmation; this does not approve purchase prices or early requests. */
@@ -85,9 +88,9 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       if (p.anyReceived) return no(409, 'Đơn đã nhận hàng – không huỷ được. Huỷ các phiếu nhận trước.');
       if (p.paid > 0) return no(409, 'Đơn đã có thanh toán – huỷ các khoản trả trước khi huỷ đơn.');
       if (state === 'draft') return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được huỷ đơn nháp.');
-      return manager ? OK : no(403, 'Chỉ Manager được huỷ đơn mua đã duyệt.');
+      return manager || isSaleAdminStaff(a) ? OK : no(403, 'Chỉ Manager hoặc Sale Admin được huỷ đơn mua đã duyệt.');
     case 'pdf':
-      return canSeePrices(a) ? OK : no(403, 'Chỉ Manager hoặc Kế toán tải được PDF đơn mua (có giá).');
+      return canSeePurchasePrices(a, o) ? OK : no(403, 'Chỉ người được xem giá mua tải được PDF đơn mua.');
   }
 }
 export const PURCHASE_ACTIONS: PurchaseAction[] = ['edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf'];
