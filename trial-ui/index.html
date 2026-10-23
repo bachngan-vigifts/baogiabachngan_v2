@@ -25,6 +25,15 @@
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
+<section id="app-startup" class="auth" aria-label="Đang mở CRM">
+  <div class="auth-card">
+    <h1>Bách Ngân · CRM</h1>
+    <p id="app-startup-message" role="status">Đang tải CRM và kiểm tra phiên đăng nhập…</p>
+    <button type="button" class="btn primary" id="app-startup-retry" hidden>Tải lại trang</button>
+    <noscript>Vui lòng bật JavaScript trong trình duyệt để sử dụng CRM.</noscript>
+  </div>
+</section>
+
 <!-- ============ ĐĂNG NHẬP / KÍCH HOẠT ============ -->
 <section id="auth" class="auth" hidden>
   <main class="auth-card">
@@ -1155,6 +1164,7 @@
       </div>
     </div>
 <div id="print-sheet" class="print-sheet ps-root" aria-hidden="true"></div>
+<script src="app-startup.js"></script>
 <script src="excel-export.js" defer></script>
   <script type="module" src="app.js"></script>
 </body>

@@ -17,6 +17,7 @@ jobs:
       SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
       WEB_ORDER_ACTION_TOKEN: ${{ secrets.WEB_ORDER_ACTION_TOKEN }}
       GHN_API_TOKEN: ${{ secrets.GHN_API_TOKEN }}
+      GHN_ML_API_TOKEN: ${{ secrets.GHN_ML_API_TOKEN }}
       GHN_WEBHOOK_TOKEN: ${{ secrets.GHN_WEBHOOK_TOKEN }}
       # Mã băm SHA-256 (hex) của khoá webhook SePay và token webhook WooCommerce. Bắt buộc: code không còn giá trị dự phòng.
       SEPAY_POS_API_KEY_HASH: ${{ secrets.SEPAY_POS_API_KEY_HASH }}
@@ -76,6 +77,9 @@ jobs:
       - name: Cập nhật mã bí mật GHN
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.GHN_API_TOKEN != ''
         run: supabase secrets set --project-ref "$PROJECT_REF" GHN_API_TOKEN="$GHN_API_TOKEN" GHN_WEBHOOK_TOKEN="$GHN_WEBHOOK_TOKEN"
+      - name: Cập nhật mã bí mật GHN Minh Long
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.GHN_ML_API_TOKEN != ''
+        run: supabase secrets set --project-ref "$PROJECT_REF" GHN_ML_API_TOKEN="$GHN_ML_API_TOKEN"
       - name: Kiểm tra mã webhook SePay / WooCommerce
         if: env.SUPABASE_ACCESS_TOKEN != ''
         # Thiếu mã thì dừng triển khai, tránh webhook thanh toán / đơn web bị từ chối âm thầm sau khi deploy.
@@ -100,13 +104,6 @@ jobs:
       - name: Triển khai Edge Function
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: supabase functions deploy baogia-v2-api --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
-      - name: Cài lịch nhắc nhận hàng 08h Việt Nam
-        if: env.SUPABASE_ACCESS_TOKEN != ''
-        shell: bash
-        run: |
-          payload=$(jq -n --rawfile query supabase/receiving-reminders-cron.sql '{query:$query}')
-          curl --fail-with-body --silent --show-error --max-time 60 -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       - name: Kiểm tra đồng bộ GHN POS Lock trên production
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != '' && env.GHN_API_TOKEN != ''
         shell: bash

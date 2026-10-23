@@ -172,7 +172,8 @@ Chọn chuyển khoản mà chưa đánh dấu thực nhận chỉ tạo `pos_pa
 **Đã đóng gói/xuất nhưng chưa giao**: dùng **Trả / Đổi / Hoàn**, thu hồi toàn bộ hàng đã xuất của đơn; không huỷ thẳng. Sau duyệt, dừng giao đơn và nhả phần chưa xuất; phải xác nhận thực nhận lại hàng mới nhập tồn và cho hoàn/đổi. Phần chưa xuất chỉ giảm công nợ, không tạo nhập kho giả. Mặc định hoàn tiền hàng, hoàn thêm phí chỉ Manager duyệt. Sau khi đã giao dùng nghiệp vụ trả hàng hiện có theo số lượng đã giao.
 
 **Ship COD bị GHN hoàn hàng** (GHN đã lấy hàng → kho đã trừ): khi hàng về tới cửa hàng,
-không huỷ thẳng (hàng đã rời kho – `RETURN_REQUIRED`); dùng **Trả / Đổi / Hoàn** của đơn → thu hồi toàn bộ hàng đã xuất → Manager duyệt (đơn và chuyến giao tự huỷ) → xác nhận đã nhận hàng (cộng lại kho) → nếu đã thu cọc thì hoàn cọc (tối đa đúng số đã thu; phí ship chỉ hoàn khi Manager duyệt).
+- đơn **chưa thu cọc**: Huỷ đơn rồi bấm **Nhận hàng hoàn** trên bảng đơn (cộng lại kho);
+- đơn **đã thu cọc** (không huỷ thẳng được): **Trả / Đổi / Hoàn** của đơn → thu hồi toàn bộ hàng đã xuất → Manager duyệt (đơn và chuyến giao tự huỷ) → xác nhận đã nhận hàng (cộng lại kho) → hoàn cọc (tối đa đúng số đã thu; phí ship chỉ hoàn khi Manager duyệt).
 Yêu cầu thu hồi chờ duyệt mà đơn kịp giao tới khách thì không duyệt được – huỷ yêu cầu và làm trả hàng thường.
 
 Báo cáo tách cọc thực nhận, thu nốt, trả trước, chuyển khoản chờ và đơn còn phải thu cùng két. Tiền mặt thực thu vào két ca thực nhận; chuyển khoản không vào két. Đơn chưa tất toán không chặn kết ca; báo cáo ca đã kết không đổi. Huỷ phiếu thu ghi nhầm không tự mở lại intent hay gia hạn giữ đã hết hạn; hàng đã xuất dùng trả/hoàn thay vì huỷ phiếu thu.
@@ -263,7 +264,7 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
 - Mở **Ship COD** ở Bán hàng nhanh là CRM tự đồng bộ; có nút **↻ Đồng bộ GHN** để chạy lại. API `POST /pos/ghn/sync` (cần quyền bán hàng nhanh, kiểm ở máy chủ); bấm liên tục trong 60 giây dùng lại kết quả cũ, không gọi GHN lại.
 - Đồng bộ các chuyến COD của quầy Lock có mã vận đơn và chưa xong: GHN đã lấy hàng → *đang giao* + xuất kho một lần; GHN giao xong → *đã giao* + ghi thu COD (nguồn `ghn_cod`, không cộng vào két); hoàn / huỷ → *thất bại*.
 - Máy ngoài (n8n / OpenClaw) vẫn gọi được `POST /integrations/ghn/pos-lock/pull` bằng mã đồng bộ.
-- **Tự tạo vận đơn GHN (22/10/2026, quầy Lock – shop GHN 6096731):** bấm **"Xác nhận, tạo đơn COD & vận đơn GHN"** → CRM lưu đơn rồi gọi GHN `shipping-order/create` (`pos-ghn-create.ts`), gắn mã vận đơn vào chuyến giao → trạng thái tự đồng bộ về như trên.
+- **Tự tạo vận đơn GHN (quầy Lock và showroom Minh Long):** bấm **"Xác nhận, tạo đơn COD & vận đơn GHN"** → CRM lưu đơn rồi gọi GHN `shipping-order/create` (`pos-ghn-create.ts`) bằng đúng tài khoản của quầy, gắn mã vận đơn vào chuyến giao → trạng thái tự đồng bộ về như trên.
   - Form COD (quầy Lock) có thêm: **Khối lượng (gram, mặc định 500)**, **Khi giao** (mặc định *Cho xem hàng, không cho thử*; hoặc Cho thử / Không cho xem), **Ghi chú cho shipper**. Bắt buộc chọn đủ Tỉnh / Quận / Phường GHN; số điện thoại 10 số.
   - **Phí ship nhập tay** ở ô "Phí ship · Không VAT" của giỏ: 0 = free ship; có số = thu khách (đã cộng vào tiền COD). GHN luôn tính phí vận chuyển cho shop (`payment_type_id = 1`), thu hộ đúng "Còn lại thu khi giao". Giá khai báo từng món = đơn giá đã gồm VAT; không mua bảo hiểm (`insurance_value = 0`).
   - GHN lỗi (sai SĐT, địa chỉ…): **đơn vẫn lưu**, popup báo lý do + nút **Tạo lại vận đơn GHN**; danh sách **Ship COD** hiện mã vận đơn / trạng thái, chuyến chưa có mã có nút **Tạo vận đơn GHN** (`POST /pos/cod/:deliveryId/ghn`). Một lần: khoá chuyến trong lúc gọi GHN, đã có mã thì trả mã cũ, `client_order_code` = số đơn CRM.
@@ -273,7 +274,7 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
   - Danh mục địa chỉ: có `GHN_API_TOKEN` thì lấy thẳng từ GHN khi bản đóng gói sẵn thiếu (trước đây đòi `WEB_ORDER_ACTION_TOKEN` nên báo "Chưa cấu hình kết nối GHN").
   - Đồng bộ trạng thái: lỗi kèm **số đơn**; mỗi lượt 100 chuyến, chuyến lâu chưa kiểm trước (không bỏ sót).
   - Lưu ở `posSnapshot.ghn` (quận / phường / khối lượng / cách xem hàng / mã / phí GHN) – không cần migration. Test: `tests/app/pos-ghn-create.test.ts`.
-- Cần secret **`GHN_API_TOKEN`** (token API của tài khoản GHN shop Lock, ShopId 6096731) trên GitHub → workflow "Triển khai API" đặt vào Supabase. Chưa có token thì CRM báo "CRM chưa có token GHN".
+- Cần secret **`GHN_API_TOKEN`** cho shop Lock (ShopId 6096731) và **`GHN_ML_API_TOKEN`** cho showroom Minh Long trên GitHub → workflow "Triển khai API" đặt vào Supabase. ShopId Minh Long được lấy từ API `shop/all`; nếu tài khoản có nhiều shop thì cấu hình thêm `GHN_ML_SHOP_ID` trực tiếp trong Supabase.
 
 ## Thẻ "Đơn web" trên bảng đơn cửa hàng (22/10/2026)
 - Bảng **Đơn hàng cửa hàng** có thêm thẻ **Đơn web**, nằm cùng hàng với Tất cả đơn / Chờ xử lý / Đang đóng hàng / Đợi giao / Hoàn thành / Đã hủy.

@@ -889,6 +889,9 @@ test('POS stock: selected product says bỏ chọn; stock actions never add to c
    throw Error(path);
   };
   const ui=initPos({root,api,toast(){},user:()=>({id:'emp'}),confirmBox:async()=>true,go:(url:string)=>links.push(url)});await ui.load();
+  const stockDetails=root.querySelectorAll('details').find(x=>x.className==='pos-product-stock-details')!;
+  assert.ok(stockDetails);assert.equal(stockDetails.open,false,'stock sources start collapsed');
+  assert.equal(stockDetails.querySelectorAll('summary')[0]!.attributes['aria-label'],'Xem tồn các kho của LY1');
   const card=root.querySelectorAll('button').find(x=>x.className==='pos-product')!;
   await card.fire('click');assert.match(card.textContent,/Bỏ chọn/);assert.equal(card.attributes['aria-pressed'],'true');
   await card.fire('click');assert.equal(card.attributes['aria-pressed'],'false');assert.ok(!card.textContent.includes('Bỏ chọn'));

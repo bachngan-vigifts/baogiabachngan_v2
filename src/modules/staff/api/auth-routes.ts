@@ -51,6 +51,9 @@ export interface StaffEnv {
   webOrderAction?: { token: string; lockUrl: string; minhlongUrl: string; fetch?: typeof fetch };
   /** Token GHN phía máy chủ để tải danh mục tỉnh/huyện/xã; không bao giờ gửi ra trình duyệt. */
   ghnToken?: string;
+  /** Token/shop GHN riêng của showroom Minh Long; ShopId có thể bỏ trống để lấy từ API shop/all. */
+  ghnMlToken?: string;
+  ghnMlShopId?: string;
   /** Mã riêng trong URL callback GHN; tách biệt hoàn toàn với GHN_API_TOKEN. */
   ghnWebhookToken?: string;
   /** Hàm gọi GHN thay thế khi kiểm thử; production dùng fetch mặc định. */
