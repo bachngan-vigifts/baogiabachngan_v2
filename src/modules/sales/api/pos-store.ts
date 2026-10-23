@@ -188,7 +188,7 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     fingerprint: sha256Hex(JSON.stringify({ canonical, lines, total })),
   };
 }
-/** Phần giữ-theo-báo-giá rơi vào `warehouseId`: tổng giữ trừ tồn trống ở các kho thật khác (tồn − hàng đơn đang giữ ở kho đó). */
+/** Phần giữ không gắn kho (báo giá, đơn chưa chọn kho) rơi vào `warehouseId`: tổng giữ trừ tồn trống ở các kho thật khác (tồn − hàng đơn đang giữ ở kho đó). */
 async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[], warehouseId: string) {
   const skus = quotes.map(q => q.sku);
   const [stock, whs, allOrders, hereOrders] = await Promise.all([
@@ -215,11 +215,14 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
     orderHolds(db, skus, warehouseId),
   ]);
   const out = new Map<string, number>();
-  // Giữ hàng theo báo giá tính trên TỔNG tồn mọi kho (không gắn kho). Kho quầy chỉ gánh phần mà tồn trống ở các kho
-  // khác không đủ che – báo giá giữ hàng ở kho VIGIFTS không làm kho cửa hàng hiện "Hết hàng" (23/10/2026).
-  const quoteShare = warehouseId && quotes.length ? await quoteHoldShare(db, quotes, warehouseId) : new Map(quotes.map(r => [r.sku, r.qty]));
-  for (const [sku, qty] of quoteShare) if (qty > 0) out.set(sku, (out.get(sku) ?? 0) + qty);
+  // Giữ hàng KHÔNG gắn kho – báo giá giữ hàng và đơn / HĐKT cũ chưa chọn kho bán – tính trên TỔNG tồn mọi kho. Kho quầy chỉ gánh
+  // phần mà tồn trống ở các kho khác không đủ che: hàng giữ cho khách sỉ ở kho VIGIFTS không làm kho cửa hàng hiện "Hết hàng" (23/10/2026).
+  const global = new Map(quotes.map(r => [r.sku, r.qty]));
+  for (const r of orders) if (r.unassigned) global.set(r.sku, (global.get(r.sku) ?? 0) + r.qty);
+  const share = warehouseId && global.size ? await quoteHoldShare(db, [...global].map(([sku, qty]) => ({ sku, qty })), warehouseId) : global;
+  for (const [sku, qty] of share) if (qty > 0) out.set(sku, (out.get(sku) ?? 0) + qty);
   for (const r of orders) {
+    if (r.unassigned) continue;
     const quantity = r.qty; // orderHolds already removes quantities issued by packing or POS delivery.
     out.set(r.sku, (out.get(r.sku) ?? 0) + quantity);
   }
