@@ -958,6 +958,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (contract.status !== 'draft' && me.role !== 'manager') throw new AppError(403, 'HĐKT đã ký / hoàn tất. Chỉ Manager được chỉnh sửa hoặc huỷ.', 'CONTRACT_APPROVED');
       if (body.revision !== undefined && (!Number.isSafeInteger(body.revision) || body.revision !== contract.revision))
         throw new AppError(409, 'HĐKT đã thay đổi. Vui lòng mở lại trước khi lưu.', 'CONTRACT_CHANGED');
+      // Nhận tiền trước duyệt vẫn là thực thu: không huỷ HĐKT để bỏ qua khoản đã nhận.
+      if (body.status === 'cancelled') {
+        const [paid] = await tx.select({ id: customerPayments.id }).from(customerPayments)
+          .where(and(eq(customerPayments.orderId, found.order.id), isNull(customerPayments.voidedAt))).limit(1);
+        if (paid) throw new AppError(409, 'HĐKT đã thu tiền, không huỷ được. Cần xử lý khoản đã thu trước.', 'ORDER_HAS_PAYMENTS');
+      }
       const financial = body.depositRate !== undefined || body.paymentDays !== undefined;
       if (financial && me.role !== 'manager') throw new AppError(403, 'Chỉ Manager được sửa tỷ lệ cọc và thời hạn thanh toán.');
       const set: Partial<typeof salesContracts.$inferInsert> = { updatedAt: nowIso() };
@@ -1127,7 +1133,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const order = await loadOrder(c, text(body.orderId, 80));
     if(saleFlowOf(order.posSnapshot))throw new AppError(409,'Đơn cọc/trả trước: dùng Thu tiền trong POS để kiểm tra ca và giữ hàng.');
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
-    if (order.status === 'draft') throw new AppError(409, 'Đơn hàng / HĐKT chưa được duyệt, chưa ghi thu được (chưa phát sinh công nợ).', 'ORDER_NOT_APPROVED');
+    if (order.status === 'draft' && order.channel !== 'crm') throw new AppError(409, 'Đơn POS chưa được duyệt, chưa ghi thu được.', 'ORDER_NOT_APPROVED');
     const posReceipt = order.channel === 'pos';
     if(posReceipt && order.fulfillmentMode==='cod') throw new AppError(409,'Thu COD tại Bán hàng nhanh để gắn đúng chuyến giao.','POS_PAYMENT_REQUIRED');
     if(posReceipt && !can(me,'pos.sell')) throw new AppError(403,'Cần quyền POS để ghi lại khoản thu vào ca.');
@@ -1161,7 +1167,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         if (paidAt !== vietnamDate().iso) throw new AppError(400, 'Tiền vào két ghi nhận ngày thực thu hôm nay.');
         cashShiftId = cashShift.id;
       }
-      await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      const [fresh] = await tx.select({ status: salesOrders.status, channel: salesOrders.channel }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      if (!fresh || fresh.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
+      if (fresh.status === 'draft' && fresh.channel !== 'crm') throw new AppError(409, 'Đơn POS chưa được duyệt, chưa ghi thu được.', 'ORDER_NOT_APPROVED');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
       await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, requestKey, paymentSource:posReceipt?'pos':'manual', amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
