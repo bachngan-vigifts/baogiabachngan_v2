@@ -59,7 +59,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   assert.equal(byKind.order.link, `#/orders/${o2.data.id}`); assert.ok(byKind.order.amount > 0, 'đơn kèm giá trị');
   assert.equal(byKind.contract.title, 'HĐKT ' + k3.data.contractNo, 'HĐKT không hiện số đơn'); assert.equal(byKind.contract.link, `#/contracts/${o3.data.id}`);
   assert.equal(byKind.product.sub, 'Mã NEW-01');
-  assert.ok(d.items.every((i: any, k: number) => k === 0 || (d.items[k - 1].at || '') <= (i.at || '')), 'chờ lâu nhất lên trước');
+  assert.ok(d.items.every((i: any, k: number) => k === 0 || (d.items[k - 1].at || '') >= (i.at || '')), 'mới sinh lên trên cùng');
 
   // Duyệt ở màn hình gốc → biến khỏi hộp.
   await call(`/quotes/${q1.data.id}/approve`, mgr, 'POST', { revision: 1 });

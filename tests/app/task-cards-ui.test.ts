@@ -84,10 +84,12 @@ test('dòng việc: việc tự hoàn thành theo chứng từ không có ô tic
   const ctx: any = { document: { getElementById() {}, addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
   vm.createContext(ctx); vm.runInContext(source, ctx);
   const t = (id: string, source: string, due: string, extra = {}) => ({ id, source, due, priority: 'normal', status: 'todo', ...extra });
-  const groups = ctx.groupTasks([t('m1', 'manual', 'today'), t('c1', 'cash', 'upcoming'), t('c2', 'receivable', 'overdue'), t('q1', 'quote', 'none'),
-    t('p1', 'packing', 'today'), t('c3', 'invoice', 'overdue', { status: 'done' }), t('c4', 'cash', 'today', { priority: 'urgent' }), t('k1', 'care', 'today'), t('x', 'unknown', 'none')]);
+  // Trong nhóm: việc mở trước, rồi việc sinh sau (mới tạo) lên trên cùng – không còn xếp theo hạn / ưu tiên.
+  const at = (h: number) => ({ createdAt: `2026-10-23T${String(h).padStart(2, '0')}:00:00.000Z` });
+  const groups = ctx.groupTasks([t('m1', 'manual', 'today'), t('c1', 'cash', 'upcoming', at(10)), t('c2', 'receivable', 'overdue', at(8)), t('q1', 'quote', 'none'),
+    t('p1', 'packing', 'today'), t('c3', 'invoice', 'overdue', { status: 'done', ...at(11) }), t('c4', 'cash', 'today', { priority: 'urgent', ...at(9) }), t('k1', 'care', 'today'), t('x', 'unknown', 'none')]);
   assert.deepEqual(JSON.parse(JSON.stringify(groups.map((g: any) => [g[0], g[2].map((x: any) => x.id)]))), [
-    ['sales', ['q1']], ['warehouse', ['p1']], ['money', ['c2', 'c4', 'c1', 'c3']], ['care', ['k1']], ['manual', ['m1', 'x']],
+    ['sales', ['q1']], ['warehouse', ['p1']], ['money', ['c1', 'c4', 'c2', 'c3']], ['care', ['k1']], ['manual', ['m1', 'x']],
   ]);
   const byDue = ctx.groupByDue([t('a', 'manual', 'today'), t('b', 'manual', 'overdue'), t('c', 'manual', 'none'), t('d', 'manual', 'today', { status: 'done' })]);
   assert.deepEqual(JSON.parse(JSON.stringify(byDue.map((g: any) => [g[0], g[2].map((x: any) => x.id)]))), [['overdue', ['b']], ['today', ['a']], ['none', ['c']], ['closed', ['d']]]);

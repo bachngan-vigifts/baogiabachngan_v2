@@ -29,14 +29,12 @@ export const TASK_UI = {
   dueCards: [['overdue', 'Quá hạn', 'cần xử lý ngay'], ['today', 'Đến hạn hôm nay', 'trong ngày'], ['week', 'Sắp tới', '7 ngày tới'], ['none', 'Chưa đặt hạn', 'nên đặt hạn']],
 };
 const DUE_LABEL = { overdue: 'Quá hạn', today: 'Hôm nay', week: '7 ngày tới', upcoming: 'Sắp tới', none: 'Chưa đặt hạn' };
-const DUE_RANK = { overdue: 0, today: 1, upcoming: 2, none: 3 }, PRIO_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
 const isClosed = t => t.status === 'done' || t.status === 'cancelled';
-/** Chia việc theo nhóm việc; trong nhóm: việc mở trước, quá hạn → hôm nay → sắp tới → chưa hạn, rồi ưu tiên, rồi hạn sớm. */
+/** Chia việc theo nhóm việc; trong nhóm: việc mở trước, rồi việc sinh sau (mới tạo) lên trên cùng. */
 export function groupTasks(list) {
   const cat = t => TASK_UI.categories.find(([, , src]) => src.includes(t.source))?.[0] || 'manual';
   return TASK_UI.categories.map(([k, label]) => [k, label, list.filter(t => cat(t) === k).sort((a, b) =>
-    (isClosed(a) - isClosed(b)) || (DUE_RANK[a.due] ?? 3) - (DUE_RANK[b.due] ?? 3) || (PRIO_RANK[a.priority] ?? 2) - (PRIO_RANK[b.priority] ?? 2)
-    || String(a.dueDate || '9').localeCompare(String(b.dueDate || '9')))]).filter(([, , items]) => items.length);
+    (isClosed(a) - isClosed(b)) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))]).filter(([, , items]) => items.length);
 }
 /** Chia việc theo hạn (mặc định): Quá hạn · Hôm nay · Sắp tới · Chưa đặt hạn; việc đã xong / huỷ gom cuối. */
 export function groupByDue(list) {
@@ -197,7 +195,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     if (!d) { box.innerHTML = '<p class="error">Chưa tải được danh sách cần duyệt.</p>'; return; }
     const items = st.kind ? d.items.filter(i => i.kind === st.kind) : d.items;
     box.innerHTML = `<div class="chips approval-kinds" role="group" aria-label="Lọc loại"><button type="button" class="chip" data-kind="" aria-pressed="${!st.kind}">Tất cả <b>${d.counts.total}</b></button>${Object.entries(KIND).filter(([k]) => d.counts[k] || st.kind === k).map(([k, [l]]) => `<button type="button" class="chip" data-kind="${k}" aria-pressed="${st.kind === k}">${l} <b>${d.counts[k] ?? 0}</b></button>`).join('')}</div>
-      ${d.truncated ? '<p class="muted small">Danh sách đang rút gọn các chứng từ cũ nhất. Số đếm là toàn bộ; các mục tiếp theo xuất hiện khi duyệt xong mục cũ.</p>' : ''}${items.length ? `<div class="table-wrap"><table class="data-table task-table approval-table"><thead><tr><th>Cần duyệt</th><th>Người tạo</th><th>Chờ từ</th><th class="right">Giá trị</th><th><span class="sr-only">Mở</span></th></tr></thead><tbody>
+      ${d.truncated ? '<p class="muted small">Danh sách chỉ hiện các chứng từ mới nhất. Số đếm là toàn bộ; mở trang từng loại để xem các chứng từ cũ hơn.</p>' : ''}${items.length ? `<div class="table-wrap"><table class="data-table task-table approval-table"><thead><tr><th>Cần duyệt</th><th>Người tạo</th><th>Chờ từ</th><th class="right">Giá trị</th><th><span class="sr-only">Mở</span></th></tr></thead><tbody>
       ${items.map(i => `<tr><td class="task-main"><div class="task-title">${esc(i.title)}</div><div class="task-meta"><span class="pill ${KIND[i.kind][1]} src">${esc(KIND[i.kind][0])}</span>${i.sub ? `<span class="muted task-desc">${esc(i.sub)}</span>` : ''}</div></td>
         <td data-label="Người tạo">${esc(i.by || '—')}</td><td data-label="Chờ từ">${i.at ? esc(ago(i.at)) : '—'}</td><td${i.amount ? ' data-label="Giá trị"' : ''} class="right num">${i.amount ? money(i.amount) : ''}</td>
         <td class="task-go"><a class="btn primary small" href="${esc(i.link)}">Mở để duyệt</a></td></tr>`).join('')}</tbody></table></div>`
