@@ -57,6 +57,7 @@ import {
   shiftReport,
 } from './pos-store.ts';
 import { autoCreateGhnForOrder } from './pos-ghn-create.ts';
+import { cancelWebOrderGhn, createWebOrderGhn, minhLongDirect, suggestedWebCod } from './web-order-ghn.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
@@ -78,7 +79,8 @@ const bundledGhnLocations = (provinceId: number, districtId: number) => {
 /** Danh mục Tỉnh / Quận / Phường trực tiếp từ GHN (cần GHN_API_TOKEN) – dùng khi bản đóng gói sẵn thiếu (vd quận mới tách). */
 async function ghnMasterData(env: StaffEnv, provinceId: number, districtId: number) {
   const path = districtId ? `/master-data/ward?district_id=${districtId}` : provinceId ? '/master-data/district' : '/master-data/province';
-  const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: env.ghnToken!, 'content-type': 'application/json' } };
+  // Danh mục địa chỉ GHN như nhau giữa các shop: dùng token Lock, không có thì token Minh Long.
+  const init: RequestInit = { method: provinceId && !districtId ? 'POST' : 'GET', headers: { Token: (env.ghnToken || env.ghnMlToken)!, 'content-type': 'application/json' } };
   if (provinceId && !districtId) init.body = JSON.stringify({ province_id: provinceId });
   const response = await (env.ghnFetch ?? fetch)('https://online-gateway.ghn.vn/shiip/public-api' + path, init);
   let result: Record<string, unknown> = {}; try { result = await response.json() as Record<string, unknown>; } catch { /* GHN trả text khi lỗi */ }
@@ -130,6 +132,34 @@ const webBucket = (status: string, ghnStatus = '') => {
   if (['packing', 'packed'].includes(s)) return 'packing';
   return 'pending';
 };
+/**
+ * Đơn web Minh Long khi website chưa có cầu nối: CRM tự xử lý (web-order-ghn.ts). Xác nhận = tạo vận đơn GHN Minh Long;
+ * huỷ = huỷ vận đơn GHN trước rồi mới huỷ đơn; hoàn thành = ghi nhận trong CRM. Website không nhận lại trạng thái.
+ */
+async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof member>, order: typeof webStoreOrders.$inferSelect, action: string, input: Record<string, unknown>, reason: string) {
+  const terminal = webBucket(order.status, order.ghnStatus);
+  if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
+  if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
+  if (action === 'complete' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã hoàn thành.' : 'Đơn đã huỷ, không hoàn thành được.');
+  let fields: Partial<typeof webStoreOrders.$inferInsert>;
+  if (action === 'confirm') {
+    const address = completeGhnAddress(input);
+    if (!address) throw new AppError(400, 'Vui lòng nhập đủ địa chỉ giao hàng GHN.', 'address_invalid');
+    const created = await createWebOrderGhn(c.env, order.id, address, input);
+    fields = created.order;
+  } else if (action === 'cancel') {
+    if (order.ghnOrderCode && !['cancel', 'cancelled'].includes(order.ghnStatus.toLowerCase())) await cancelWebOrderGhn(c.env, order.ghnOrderCode);
+    fields = { status: 'cancelled', ...(order.ghnOrderCode ? { ghnStatus: 'cancel' } : {}), updatedAt: posNow() };
+  } else if (action === 'complete') fields = { status: 'completed', updatedAt: posNow() };
+  else fields = {};
+  if (Object.keys(fields).length && action !== 'confirm') await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
+  const next = { ...order, ...fields };
+  await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
+  await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
+    data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, direct: true, ...(reason ? { reason } : {}) } });
+  return { ok: true, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, ghnSortCode: next.ghnSortCode, ghnFee: next.ghnFee, updatedAt: next.updatedAt,
+    bucket: webBucket(next.status, next.ghnStatus) };
+}
 export function registerPosRoutes(router: Router<StaffEnv>) {
   router.post('/integrations/woocommerce/:source/order', async c => {
     const source = c.params.source === 'lock' ? 'lock' : c.params.source === 'minhlong' ? 'minhlong' : '';
@@ -209,6 +239,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if(b.billing === undefined){delete updateFields.customerName;delete updateFields.phone;delete updateFields.email;}
     if(b.shipping === undefined && b.billing === undefined) { delete updateFields.address; delete updateFields.ghnAddressSnapshot; }
     if(!Array.isArray(b.meta_data)){delete updateFields.ghnOrderCode;delete updateFields.ghnStatus;delete updateFields.ghnSortCode;delete updateFields.ghnFee;}
+    if (minhLongDirect(c.env, { source })) {
+      // Web Minh Long chưa có cầu nối: vận đơn GHN do CRM tạo (website không biết) – không xoá mã GHN; đơn CRM đã huỷ / hoàn thành không bị website kéo về "chờ xử lý".
+      if (!fields.ghnOrderCode) { delete updateFields.ghnOrderCode; delete updateFields.ghnStatus; delete updateFields.ghnSortCode; delete updateFields.ghnFee; }
+      const [current] = await c.env.db.select({ status: webStoreOrders.status, ghnStatus: webStoreOrders.ghnStatus }).from(webStoreOrders)
+        .where(and(eq(webStoreOrders.source, source), eq(webStoreOrders.externalId, externalId))).limit(1);
+      const done = current && ['completed', 'cancelled'].includes(webBucket(current.status, current.ghnStatus));
+      if (done && updateFields.status && !['completed', 'cancelled'].includes(webBucket(updateFields.status))) delete updateFields.status;
+      if (current?.ghnStatus && updateFields.status && webBucket(updateFields.status) === 'pending') delete updateFields.status;
+    }
     const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
       .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
@@ -306,7 +345,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
-          actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && !!c.env.webOrderAction?.minhlongUrl }); }),
+          actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && (!!c.env.webOrderAction?.minhlongUrl || !!c.env.ghnMlToken),
+          // Minh Long chưa có cầu nối: CRM tự tạo vận đơn GHN – giao diện hỏi thêm tiền thu hộ / khối lượng.
+          ghnDirect: minhLongDirect(c.env, o), suggestedCod: minhLongDirect(c.env, o) ? suggestedWebCod(o) : null }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const board = filterPosOrderBoard(decorated, c.url.searchParams);
       // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.
@@ -395,13 +436,14 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const scope = await allowedPosRegisters(c);
     if (!scope.ids.has(order.registerId)) throw new AppError(403, 'Bạn không được thao tác đơn của cửa hàng này.');
     // Danh mục GHN lấy trực tiếp trong CRM. Các hàm PHP của Web Lock chỉ được nạp ở checkout và trả 503 trong REST.
-    if (action === 'locations' && order.source === 'lock') {
+    if (action === 'locations' && (order.source === 'lock' || minhLongDirect(c.env, order))) {
       const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0);
       const key = ghnCacheKey(order.source, provinceId, districtId), known = cachedGhnLocations(key) ?? bundledGhnLocations(provinceId, districtId);
       if (known) return json({ ok: true, locations: rememberGhnLocations(key, known) });
-      if (c.env.ghnToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
+      if (c.env.ghnToken || c.env.ghnMlToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
       throw new AppError(503, 'CRM chưa có danh mục địa chỉ GHN này.');
     }
+    if (minhLongDirect(c.env, order)) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website (secret WEB_ORDER_ACTION_TOKEN).');
     const terminal = webBucket(order.status, order.ghnStatus);
     if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');

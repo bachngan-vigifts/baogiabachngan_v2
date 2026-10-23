@@ -586,7 +586,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (o.actionsAvailable && o.bucket === 'pending') actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary', () => { m.close(); showGhnAddress(o); }));
     if (o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket)) {
       actions.append(busyButton('Hoàn thành', 'btn primary', 'Đang hoàn thành…', async () => {
-        if (!await confirmBox(`Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;
+        if (!await confirmBox(o.ghnDirect ? `Xác nhận đơn ${o.orderNo} đã hoàn thành? CRM ghi nhận hoàn thành; website Minh Long chưa có cầu nối nên cập nhật trạng thái trên website bằng tay.` : `Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;
         await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'complete' }); m.close(); toast('Đã hoàn thành đơn ' + o.orderNo + '.', 'ok'); await loadOrderBoard();
       }));
       actions.append(button('Huỷ đơn', 'btn danger', () => { m.close(); cancelWebOrder(o); }));
@@ -623,7 +623,19 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function showGhnAddress(o) {
     const m = formModal('Hoàn thiện địa chỉ GHN · ' + o.orderNo);
     m.dlg.classList.add('pos-step-modal');
-    const intro = el('p', 'pos-note pos-step-intro', 'Thông tin khách, điện thoại, sản phẩm, COD và khối lượng được giữ nguyên. Chỉ cần chọn lại địa chỉ giao hàng.');
+    // Web Minh Long chưa có cầu nối: CRM tự tạo vận đơn bằng tài khoản GHN Minh Long nên hỏi thêm tiền thu hộ / khối lượng / cách xem hàng.
+    const direct = !!o.ghnDirect;
+    const intro = el('p', 'pos-note pos-step-intro', direct
+      ? 'CRM tạo vận đơn bằng tài khoản GHN Minh Long. Kiểm tra tiền thu hộ (đơn đã thanh toán online nhập 0) và khối lượng.'
+      : 'Thông tin khách, điện thoại, sản phẩm, COD và khối lượng được giữ nguyên. Chỉ cần chọn lại địa chỉ giao hàng.');
+    const cod = field('Tiền thu hộ (COD)', 'number', String(o.suggestedCod ?? o.total ?? 0)), weight = field('Khối lượng (gram)', 'number', '1000');
+    cod.input.min = '0'; cod.input.max = String(Math.round(o.total || 0)); cod.input.step = '1'; cod.input.inputMode = 'numeric';
+    weight.input.min = '1'; weight.input.max = '50000'; weight.input.step = '1'; weight.input.inputMode = 'numeric';
+    const requiredNote = el('select'), requiredBox = el('label', 'pos-field');
+    requiredNote.setAttribute('aria-label', 'Cho khách xem hàng');
+    for (const [v, t] of Object.entries({ CHOXEMHANGKHONGTHU: 'Cho xem hàng, không cho thử', CHOTHUHANG: 'Cho thử hàng', KHONGCHOXEMHANG: 'Không cho xem hàng' })) { const op = el('option', '', t); op.value = v; requiredNote.append(op); }
+    requiredNote.value = 'CHOXEMHANGKHONGTHU';
+    requiredBox.append(el('span', '', 'Khi giao'), requiredNote);
     const serverError = el('p', 'error pos-step-error'); serverError.setAttribute('role', 'alert');
     const address = field('Số nhà, tên đường', 'text', o.ghnAddress?.addressLine || o.address || '');
     address.input.required = true; address.input.placeholder = 'Ví dụ: 123 Nguyễn Trãi';
@@ -632,6 +644,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     grid.append(ghn.province.box, ghn.district.box, ghn.ward.box);
     section.append(el('h3', '', 'Địa chỉ giao (chuẩn GHN)'), address.box, grid, ghn.retry);
     editView.append(intro, section);
+    if (direct) { const shipBox = el('section', 'pos-step-section'), shipGrid = el('div', 'pos-step-grid'); shipGrid.append(cod.box, weight.box, requiredBox); shipBox.append(el('h3', '', 'Vận đơn GHN Minh Long'), shipGrid); editView.append(shipBox); }
     const review = el('div', 'pos-step-body pos-step-review'); review.hidden = true;
     const submit = el('button', 'btn primary', 'Kiểm tra lại'); submit.type = 'submit';
     let reviewing = false;
@@ -643,11 +656,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       e.preventDefault();
       if (m.dlg.dataset.busy) return;
       if (!address.input.value.trim() || !ghn.complete()) { serverError.textContent = 'Nhập số nhà và chọn đủ Tỉnh/Thành, Quận/Huyện, Phường/Xã.'; return; }
+      const codValue = Number(cod.input.value), weightValue = Number(weight.input.value);
+      if (direct && (!Number.isFinite(codValue) || codValue < 0 || codValue > Math.round(o.total || 0))) { serverError.textContent = 'Tiền thu hộ phải từ 0 đến tổng đơn.'; return; }
+      if (direct && (!Number.isInteger(weightValue) || weightValue < 1 || weightValue > 50000)) { serverError.textContent = 'Khối lượng phải từ 1 đến 50.000 gram.'; return; }
       serverError.textContent = '';
       if (!reviewing) {
         reviewing = true;
         const list = el('dl', 'pos-review-list');
-        for (const [k, v] of [['Khách', o.customerName + (o.phone ? ' · ' + o.phone : '')], ['Địa chỉ', ghn.fullAddress(address.input.value)], ['Tổng đơn', money(o.total)]]) list.append(el('dt', '', k), el('dd', '', v));
+        for (const [k, v] of [['Khách', o.customerName + (o.phone ? ' · ' + o.phone : '')], ['Địa chỉ', ghn.fullAddress(address.input.value)], ['Tổng đơn', money(o.total)],
+          ...(direct ? [['Thu hộ (COD)', money(codValue)], ['Khối lượng', weightValue.toLocaleString('vi-VN') + ' g'], ['Khi giao', requiredNote.selectedOptions?.[0]?.textContent || requiredNote.value]] : [])]) list.append(el('dt', '', k), el('dd', '', v));
         review.replaceChildren(el('p', 'pos-note pos-step-intro', 'Kiểm tra lần cuối địa chỉ trước khi tạo vận đơn GHN.'), list);
         editView.hidden = true; review.hidden = false; back.textContent = '← Sửa địa chỉ'; submit.textContent = 'Xác nhận & tạo vận đơn GHN';
         return;
@@ -656,7 +673,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       let result;
       try {
         result = await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm', addressLine: address.input.value.trim(),
-          provinceId: ghn.province.select.value, provinceName: ghn.chosen(ghn.province.select), districtId: ghn.district.select.value, districtName: ghn.chosen(ghn.district.select), wardCode: ghn.ward.select.value, wardName: ghn.chosen(ghn.ward.select) });
+          provinceId: ghn.province.select.value, provinceName: ghn.chosen(ghn.province.select), districtId: ghn.district.select.value, districtName: ghn.chosen(ghn.district.select), wardCode: ghn.ward.select.value, wardName: ghn.chosen(ghn.ward.select),
+          ...(direct ? { codAmount: Number(cod.input.value), ghnWeight: Number(weight.input.value), ghnRequiredNote: requiredNote.value } : {}) });
       } catch (err) {
         m.lock(false, submit); edit(); serverError.textContent = err.message || 'Chưa tạo được vận đơn. Kiểm tra lại rồi gửi lại.';
         return;

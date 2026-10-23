@@ -286,3 +286,14 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
   - **Huỷ đơn**: form **bắt buộc lý do** (≥ 3 ký tự; thiếu → 400 `reason_required`) → `{ action: 'cancel', reason }`. Lý do và tên người huỷ gửi sang website, ghi vào nhật ký `web-order-cancel`.
 - **Cần plugin trên website** (cầu nối `order-action-v7`, secret `WEB_ORDER_ACTION_TOKEN`) hiểu thao tác `complete` (chuyển đơn WooCommerce sang Hoàn thành) và trường `reason` khi huỷ. Plugin chưa hỗ trợ thì nút báo đúng lỗi website trả về; đơn trong CRM không đổi.
 - Test: `tests/app/pos.test.ts` (máy chủ), `tests/app/pos-ui.test.ts` (thẻ, form huỷ).
+
+## Đơn web Minh Long xử lý thẳng với GHN (23/10/2026)
+- Website Minh Long **chưa có cầu nối** `order-action` như web Lock (`webOrderAction.minhlongUrl` trống). Có secret **`GHN_ML_API_TOKEN`** thì CRM tự xử lý đơn web Minh Long (`web-order-ghn.ts`), các nút giống đơn web Lock:
+  - **Chọn địa chỉ & tạo vận đơn GHN:** danh mục Tỉnh / Quận / Phường lấy trong CRM; form có thêm **Tiền thu hộ (COD)** (gợi ý: đơn đã thanh toán online theo Woo `date_paid` = 0, còn lại = tổng đơn; không vượt tổng đơn), **Khối lượng** (mặc định 1.000 g), **Khi giao**. CRM gọi GHN `shipping-order/create` bằng tài khoản GHN Minh Long, `client_order_code` = `WEB-<số đơn web>` (không trùng số đơn POS cùng shop). Một lần: khoá đơn trong lúc gọi GHN; đã có mã thì báo 409.
+  - **Huỷ đơn:** huỷ vận đơn trên GHN **trước**; GHN từ chối (đã lấy hàng…) thì **không** huỷ đơn trong CRM (409 `GHN_CANCEL_FAILED`) – xử lý trên trang GHN rồi huỷ lại.
+  - **Hoàn thành:** ghi nhận trong CRM.
+  - **Trạng thái GHN:** nút "Đồng bộ GHN" / lịch đồng bộ (`/integrations/ghn/pos-lock/pull`) hỏi GHN cả đơn web Minh Long; webhook GHN nhận đơn web Minh Long khi `ShopID` là shop Minh Long. Giao xong → *Hoàn thành*; hoàn / huỷ → *Đã huỷ*.
+  - Webhook WooCommerce Minh Long gửi lại đơn: **không xoá** mã vận đơn CRM đã tạo và không kéo đơn đã có vận đơn / đã xong về "Chờ xử lý".
+- **Website Minh Long không nhận lại trạng thái** (chưa có cầu nối): cập nhật trạng thái đơn trên website bằng tay. Khi website có cầu nối, đặt `minhlongUrl` thì đơn Minh Long đi qua cầu nối như Lock.
+- Muốn GHN tự báo trạng thái ngay: khai báo webhook trên tài khoản GHN Minh Long trỏ về `…/api/staff/integrations/ghn/pos-lock/webhook?token=<GHN_WEBHOOK_TOKEN>` (không khai báo thì vẫn cập nhật qua lịch đồng bộ).
+- Test: `tests/app/web-order-minhlong-ghn.test.ts`.
