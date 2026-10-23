@@ -17,7 +17,7 @@ test('ảnh dài: chia trang không mất sản phẩm, tổng tiền chỉ ở 
  const pages=quoteCapturePages(model,366,(s:string,size:number)=>s.length*size*.55);assert.ok(pages.length>1);
  const texts=pages.flatMap((p:any)=>p.ops.filter((o:any)=>o.kind==='text').map((o:any)=>o.text));
  for(let i=0;i<80;i++)assert.equal(texts.filter((s:string)=>s==='MÃ_HÀNG_'+i).length,1,'đủ đúng một lần mã '+i);
- assert.equal(texts.filter((s:string)=>s==='Thành tiền').length,1);assert.equal(texts.includes('Chiết khấu'),false);assert.ok(pages.at(-1).ops.some((o:any)=>o.text==='8.000.000 đ'));
+ assert.equal(texts.filter((s:string)=>s==='Tổng thanh toán').length,1);assert.equal(texts.includes('Chiết khấu'),false);assert.ok(pages.at(-1).ops.some((o:any)=>o.text==='8.000.000 đ'));
  assert.ok(pages.every((p:any)=>p.height>0&&p.height<1700));
 });
 test('ảnh báo giá: VAT hỗn hợp và HRC/B2B/Vigifts luôn giữ tổng chuẩn, không tự đặt ngày hiệu lực',async()=>{
@@ -44,4 +44,17 @@ test('chụp báo giá không cần lưu/duyệt, không ghi API; tải file v�
   assert.equal(node('#quote-download').disabled,!!block,'download approval unchanged');
   await click();assert.equal(captures.length,1);assert.equal(captures[0].doc,doc,'use current form contents');assert.equal(captures[0].canExport,undefined,'no approval check on PNG sharing');assert.equal(writes.length,0,'capture does not save or submit');
  }
+});
+
+
+test('ảnh gọn: đơn giá sau CK, bỏ CK tổng và luôn đủ thành tiền/VAT/thanh toán',async()=>{
+ const {quoteCaptureModel,quoteCapturePages}=await load();
+ const doc={type:'HRC',quoteNo:'BG-2026-0142',customer:'Nguyễn Thị Hương',vat:8,rows:[{name:'Bình giữ nhiệt Minh Long 500ml',sku:'031106000',qty:2,price:185000,discount:10},{name:'Bộ quà tặng VIGIFTS Premium',sku:'VG-PREM-01',qty:1,price:450000},{name:'Khăn lụa cao cấp',sku:'KH-LUA-03',qty:3,price:95000,discountType:'amount',discount:50000/3}]};
+ const model=quoteCaptureModel(doc);assert.equal(model.rows[0].unitAfterDiscount,166500);assert.equal(Math.round(model.rows[2].unitAfterDiscount),78333);assert.equal(Math.round(model.subtotal),1018000);assert.equal(model.tax,81440);assert.equal(model.total,1099440);
+ for(const width of [296,366,390]){
+  const pages=quoteCapturePages(model,width,(s:string,size:number)=>s.length*size*.5),ops=pages.flatMap((p:any)=>p.ops),texts=ops.filter((o:any)=>o.kind==='text').map((o:any)=>o.text);
+  for(const label of ['Tổng thành tiền','Tiền VAT','Tổng thanh toán'])assert.equal(texts.filter((s:string)=>s===label).length,1);
+  assert.equal(texts.includes('Chiết khấu'),false);assert.ok(texts.includes('Đơn giá sau CK: 166.500 đ'));assert.ok(texts.includes('Đơn giá sau CK: 78.333 đ'));assert.ok(texts.includes('235.000 đ'),'line total is not recomputed from rounded display price');assert.ok(pages[0].height<800,'three rows are compact');
+ }
+ const zero=quoteCaptureModel({...doc,vat:0}),zeroText=quoteCapturePages(zero,366,(s:string,size:number)=>s.length*size*.5)[0].ops.filter((o:any)=>o.kind==='text').map((o:any)=>o.text);assert.ok(zeroText.includes('Tiền VAT'));assert.ok(zeroText.includes('0 đ'));
 });
