@@ -994,3 +994,42 @@ test('nút thao tác GHN tự động áp dụng giống nhau cho quầy Lock v�
   assert.equal(isAutoGhnRegister('Showroom Gốm Sứ Minh Long Cần Thơ'), true);
   assert.equal(isAutoGhnRegister('Quầy Bách Ngân'), false);
 });
+
+test('Tìm POS: giữ sản phẩm khi chưa xác minh tồn, không giả hết hàng; thử lại đúng mã và không nhận phản hồi tìm cũ',async()=>{
+ const prevDoc=globalThis.document,prevWin=globalThis.window;
+ Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+ try{
+  const root=new Element('section'),notices:string[]=[],calls:string[]=[];
+  const previews=[{sku:'LHC3249PIK',name:'Bình hồng',price:100000},{sku:'LHC3249NVY',name:'Bình xanh',price:100000}];
+  let mode='missing',release:((d:any)=>void)|undefined;
+  const api=async(path:string)=>{
+   calls.push(path);
+   if(path.startsWith('/pos/options'))return{registers:[{id:'r',name:'Lock',pricePolicyId:'vat'}],current:{id:'s',registerId:'r'},policies:[],templates:[],shifts:[]};
+   if(path.startsWith('/pos/catalog')){
+    if(!path.includes('&skus='))return{products:[],nextOffset:null};
+    if(mode==='error')throw Error('Mất kết nối');
+    if(mode==='slow')return new Promise(r=>{release=r;});
+    if(mode==='missing')return{products:[{sku:'UNRELATED',name:'Mã khác',price:1,available:999}],nextOffset:null};
+    return{products:previews.map((p,i)=>({...p,onHand:i?0:3,reserved:0,available:i?0:3})),nextOffset:null};
+   }
+   if(path.startsWith('/pos/orders'))return{orders:[],total:0};
+   throw Error(path);
+  };
+  const ui=initPos({root,api,toast:(m:string)=>notices.push(m),user:()=>({id:'mgr',role:'manager'}),confirmBox:async()=>true,go(){},localSearch:(q:string)=>q==='other'?[{sku:'OTHER',name:'Sản phẩm khác',price:2000}]:q?previews:[]});
+  await ui.load();
+  const input=root.querySelectorAll('input').find(i=>i.attributes['aria-label']==='Tìm hoặc quét sản phẩm')!;
+  const type=async(q:string)=>{input.value=q;await input.fire('input');await new Promise(r=>setTimeout(r,70));};
+  const cards=()=>root.querySelectorAll('button').filter(b=>b.className==='pos-product');
+  await type('lhc3249');assert.equal(cards().length,2);assert.ok(cards().every(c=>c.disabled));
+  assert.match(root.textContent,/Chưa xác minh tồn tại quầy/);assert.doesNotMatch(root.textContent,/Không có sản phẩm phù hợp|Mã khác/);assert.ok(cards().every(c=>!c.textContent.includes('Hết hàng')));
+  mode='error';await root.querySelectorAll('button').find(b=>b.textContent==='Thử tải lại tồn kho')!.fire('click');
+  assert.equal(cards().length,2);assert.doesNotMatch(root.textContent,/Đang tải tồn/);assert.ok(notices.some(n=>n.includes('Mất kết nối')));
+  mode='ok';await root.querySelectorAll('button').find(b=>b.textContent==='Thử tải lại tồn kho')!.fire('click');
+  assert.equal(cards().length,2);assert.equal(cards()[0]!.disabled,false);assert.equal(cards()[1]!.disabled,true);assert.match(root.textContent,/Còn 3/);assert.match(root.textContent,/Hết hàng/);
+  assert.ok(calls.some(p=>p.includes('skus=LHC3249PIK%2CLHC3249NVY')));
+  // Một yêu cầu tìm cũ đang chờ không được chèn mã/tồn vào kết quả mới.
+  mode='slow';await type('other');assert.ok(release);mode='ok';await type('lhc3249');
+  release!({products:[{sku:'OTHER',name:'Phản hồi cũ',price:1,available:999}],nextOffset:null});await new Promise(r=>setTimeout(r,0));
+  assert.equal(cards().length,2);assert.doesNotMatch(root.textContent,/Phản hồi cũ/);
+ }finally{Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});

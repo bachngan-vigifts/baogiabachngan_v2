@@ -1057,7 +1057,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   /** Tồn / giá máy chủ của từng mã vừa xem (chỉ dùng khi đang gõ tìm, giữ 15 giây): gõ thêm / xoá chữ không phải hỏi lại. */
   const liveCache = new Map(), LIVE_MS = 15000;
-  const cachedLive = (sku) => { const hit = liveCache.get(st.policy + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
+  const cachedLive = (scope, sku) => { const hit = liveCache.get(scope + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
   async function search(addScanned = false, more = false, typed = false) {
     if (!st.register) return;
     if (more && st.catalogLoading) return;
@@ -1067,7 +1067,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       q = nodes.search?.value.trim() || '',
       offset = more ? st.offset : 0,
       mobile = window.matchMedia?.('(max-width: 850px)')?.matches === true,
-      limit = mobile ? 20 : 60;
+      limit = mobile ? 20 : 60,
+      scope = st.register.id + '|' + st.policy;
     try {
       // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
       if (!more) st.localSkus = q && !addScanned ? localSearch(q, st.policy) : null;
@@ -1077,14 +1078,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       // Danh mục tải sẵn: hiện ngay (tồn "đang tải" với mã chưa có trong bộ nhớ tạm), chỉ hỏi máy chủ phần còn thiếu.
       const bySkus = async (previews) => {
         const page = previews.slice(offset, offset + limit), nextOffset = offset + limit < previews.length ? offset + limit : null;
-        const show = () => page.map(x => cachedLive(x.sku) || { ...x, onHand: 0, reserved: 0, available: 0, loading: true });
-        const missing = page.filter(x => !cachedLive(x.sku)).map(x => x.sku);
+        const pending = x => cachedLive(scope, x.sku) || { ...x, onHand: null, reserved: null, available: null, loading: true };
+        const show = () => page.map(pending);
+        const missing = page.filter(x => !cachedLive(scope, x.sku)).map(x => x.sku);
         if (missing.length && seq === searchSeq) { st.products = more ? [...st.products, ...show()] : show(); renderProducts(); }
         if (missing.length) {
-          const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set();
-          for (const p of fresh.products) { liveCache.set(st.policy + '|' + p.sku, { p, at: now }); got.add(p.sku); }
-          // Mã không còn bán ở quầy (máy chủ không trả): bỏ khỏi danh sách.
-          return { products: show().filter(p => !p.loading || got.has(p.sku)).map(p => cachedLive(p.sku) || p), nextOffset };
+          let fresh;
+          try { fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`); }
+          catch (e) {
+            if (seq === searchSeq) toast('Chưa tải được tồn kho của quầy. Bấm thử lại. ' + e.message, 'err');
+          }
+          if (seq !== searchSeq) return { products: [], nextOffset };
+          const now = Date.now(), requested = new Set(missing);
+          for (const p of fresh?.products || []) if (requested.has(p.sku)) liveCache.set(scope + '|' + p.sku, { p, at: now });
+          // Giữ mã tìm thấy khi chưa xác minh được tồn/giá tại quầy; không coi thiếu dữ liệu là hết hàng.
+          return { products: page.map(x => cachedLive(scope, x.sku) || { ...x, onHand: null, reserved: null, available: null, loading: false, stockError: true }), nextOffset };
         }
         return { products: show(), nextOffset };
       };
@@ -1105,13 +1113,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         else toast(d.products.length ? 'Chọn đúng sản phẩm trong danh sách.' : 'Không tìm thấy sản phẩm.');
       }
     } finally {
-      st.catalogLoading = false;
+      if (seq === searchSeq) st.catalogLoading = false;
     }
   }
   function renderProducts() {
     if (!nodes.grid) return;
     nodes.grid.replaceChildren();
-    for (const p of st.products.filter(p => st.productFilter === 'all' || st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0)) {
+    for (const p of st.products.filter(p => p.loading || p.stockError || st.productFilter === 'all' || st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0)) {
       const tile = el('article', 'pos-product-tile');
       const b = button('', 'pos-product', () => {
         if (st.pending || st.busy) return;
@@ -1131,12 +1139,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const priceStock = el('span', 'pos-product-price-stock');
       priceStock.append(
         el('strong', 'pos-product-price', money(p.price)),
-        p.loading ? el('small', 'pos-stock', 'Đang tải tồn…')
+        p.stockError ? el('small', 'pos-stock', 'Chưa xác minh tồn tại quầy') : p.loading ? el('small', 'pos-stock', 'Đang tải tồn của quầy…')
           : el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', p.available <= 0 ? 'Hết hàng' : 'Còn ' + p.available),
       );
       b.append(marked('b', 'pos-product-name', p.name), marked('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
       b.title = p.name + ' · ' + p.sku;
-      b.disabled = !active() || p.loading || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
+      b.disabled = !active() || p.loading || p.stockError || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
       tile.append(b);
       if (p.stockSources) {
         const details = el('details', 'pos-product-stock-details');
@@ -1155,6 +1163,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       }
       nodes.grid.append(tile);
     }
+    if (st.products.some(p => p.stockError)) nodes.grid.append(button('Thử tải lại tồn kho', 'btn secondary', () => run(() => search())));
     if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', 'Không có sản phẩm phù hợp.'));
     markProductsInCart();
   }
