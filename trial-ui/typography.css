@@ -25,7 +25,8 @@
   .data-table th, .line-table th, .sup-table th, .pur-lines th { font-size: var(--text-small); font-weight: 500; }
   .data-table td, .sup-table td, .pur-lines td { font-size: var(--text-label); }
   /* Two-line product names and larger source controls need room in the POS tiles. */
-  .pos-grid { grid-auto-rows: minmax(300px, auto); max-height: calc(300px * 10 + 8px * 9); }
+  /* Có giới hạn chiều cao thì phải cuộn bên trong: không tràn đè lên bảng Đơn hàng cửa hàng ở màn > 1366px. */
+  .pos-grid { grid-auto-rows: minmax(300px, auto); max-height: calc(300px * 10 + 8px * 9); overflow-y: auto; overscroll-behavior: contain; }
   .pos-product-name { height: 40px; flex-basis: 40px; font-size: var(--text-label); }
   .pos-line-top b, .pos-line-top strong { font-size: var(--text-label); }
   .pos-product-price-stock strong { font-size: var(--text-body); }

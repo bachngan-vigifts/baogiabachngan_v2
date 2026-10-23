@@ -915,7 +915,7 @@ test('POS stock: selected product says bỏ chọn; stock actions never add to c
  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
 
-test('Mã giảm giá trên đơn: gõ mã + số tiền thì giỏ gửi kèm, tổng hiện dòng Mã giảm giá; nút × xoá; bill in tách phần giảm', async () => {
+test('Giảm giá trên đơn (không còn ô mã, #264): gõ số tiền thì giỏ gửi kèm, tổng hiện dòng giảm; nút × xoá; bill in tách phần giảm', async () => {
   const prevDoc = globalThis.document, prevWin = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
@@ -934,11 +934,11 @@ test('Mã giảm giá trên đơn: gõ mã + số tiền thì giỏ gửi kèm, 
     await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
     await new Promise(r => setTimeout(r, 230));
     const box = root.querySelectorAll('section').find(e => e.className === 'pos-voucher')!;
-    const [code, value] = box.querySelectorAll('input');
-    code!.value = 'VC-1'; await code!.fire('input');
+    const inputs = box.querySelectorAll('input'), value = inputs[0];
+    assert.equal(inputs.length, 1, 'chỉ còn ô số tiền / %');
     value!.value = '20000'; await value!.fire('input');
     await new Promise(r => setTimeout(r, 230));
-    assert.deepEqual(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, { code: 'VC-1', type: 'amount', value: 20000 });
+    assert.deepEqual(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, { code: '', type: 'amount', value: 20000 });
     const totals = root.querySelectorAll('div').filter(d => d.className === 'pos-total-row').map(d => d.textContent);
     assert.ok(totals.some(t => t.includes('Mã giảm giá VC-1') && t.includes('20.000')), totals.join(' | '));
     assert.ok(totals.some(t => t.startsWith('Giảm giá') && t.includes('21.600')), 'Giảm giá chỉ còn CK dòng');

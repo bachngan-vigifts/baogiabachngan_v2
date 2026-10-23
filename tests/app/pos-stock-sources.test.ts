@@ -76,3 +76,23 @@ test('POS không trừ giữ hàng từ kho khác; giữ cùng kho vẫn chặn 
  await insert('DH_NO_WAREHOUSE',null,1);
  assert.equal((await reservedBySku(f.db,['00123'],'pos-wh')).get('00123'),3,'giữ cũ chưa chọn kho vẫn được bảo vệ');
 });
+
+test('POS: giữ hàng theo báo giá (không gắn kho) chỉ trừ vào kho quầy phần mà kho khác không đủ che',async()=>{
+ const f=await setup(),now=new Date().toISOString(),later=new Date(Date.now()+864e5).toISOString();
+ const {quotations}=await import('../../src/modules/quotes/schema.ts');
+ const {stockHolds}=await import('../../src/modules/sales/schema.ts');
+ await f.db.insert(warehouses).values({id:'vig-q',name:'KHO VIGIFTS',kind:'stock'});
+ await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'vig-q',qty:40,kind:'opening',refType:'opening',refId:'vig-q-opening'}]);
+ await f.db.insert(quotations).values({id:'q-hold',creatorId:'emp',quoteNo:'B2B_HOLD',quoteType:'B2B',customer:'Khách giữ',quoteDate:now.slice(0,10),data:'{"rows":[]}',createdAt:now,updatedAt:now});
+ const hold=async(qty:number)=>{await f.db.delete(stockHolds);await f.db.insert(stockHolds).values({id:'h-'+qty,quoteId:'q-hold',sku:'00123',qty,status:'active',expiresAt:later,createdBy:'mgr',createdAt:now});};
+ const path=`/pos/catalog?registerId=${f.registerId}&q=00123`;
+ await hold(30);
+ let p=(await f.call(path,f.emp)).data.products[0];
+ assert.deepEqual([p.onHand,p.reserved,p.available],[10,0,10],'VIGIFTS còn 40 che đủ 30 giữ: kho cửa hàng không bị trừ');
+ await hold(45);
+ p=(await f.call(path,f.emp)).data.products[0];
+ assert.deepEqual([p.onHand,p.reserved,p.available],[10,5,5],'VIGIFTS chỉ che 40: 5 còn lại giữ ở kho cửa hàng');
+ await hold(60);
+ p=(await f.call(path,f.emp)).data.products[0];
+ assert.deepEqual([p.onHand,p.reserved,p.available],[10,20,0],'giữ vượt tổng tồn: kho cửa hàng hết hàng');
+});

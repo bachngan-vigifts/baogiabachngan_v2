@@ -34,6 +34,7 @@ import { parseGhnShip } from '../domain/pos-ghn.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
 import { orderHolds } from './hold-routes.ts';
+import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 export type PosDb = StaffEnv['db'] | Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 export type PosMember = SessionState['member'];
 export const posNow = () => new Date().toISOString();
@@ -188,6 +189,22 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     fingerprint: sha256Hex(JSON.stringify({ canonical, lines, total })),
   };
 }
+/** Phần giữ-theo-báo-giá rơi vào `warehouseId`: tổng giữ trừ tồn trống ở các kho thật khác (tồn − hàng đơn đang giữ ở kho đó). */
+async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[], warehouseId: string) {
+  const skus = quotes.map(q => q.sku);
+  const [stock, whs, allOrders, hereOrders] = await Promise.all([
+    readCatalogStock(db, skus),
+    db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true))),
+    orderHolds(db, skus),
+    orderHolds(db, skus, warehouseId),
+  ]);
+  const others = new Set(whs.map(w => w.id).filter(id => id !== warehouseId)), free = new Map<string, number>();
+  for (const r of stock) if (others.has(r.warehouseId)) free.set(r.sku, (free.get(r.sku) ?? 0) + Math.max(0, r.quantity));
+  // Đơn giữ ở kho khác (đơn chưa gắn kho đã tính vào kho này – nằm trong cả hai danh sách nên tự triệt tiêu).
+  for (const r of allOrders) free.set(r.sku, (free.get(r.sku) ?? 0) - r.qty);
+  for (const r of hereOrders) free.set(r.sku, (free.get(r.sku) ?? 0) + r.qty);
+  return new Map(quotes.map(q => [q.sku, Math.max(0, q.qty - Math.max(0, free.get(q.sku) ?? 0))]));
+}
 export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: string) {
   const now = posNow();
   const [quotes, orders] = await Promise.all([
@@ -221,7 +238,10 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
           .groupBy(packingSlips.orderId, stockMoves.sku)
       : [];
   const out = new Map<string, number>();
-  for (const r of quotes) out.set(r.sku, (out.get(r.sku) ?? 0) + r.qty);
+  // Giữ hàng theo báo giá tính trên TỔNG tồn mọi kho (không gắn kho). Kho quầy chỉ gánh phần mà tồn trống ở các kho
+  // khác không đủ che – báo giá giữ hàng ở kho VIGIFTS không làm kho cửa hàng hiện "Hết hàng" (23/10/2026).
+  const quoteShare = warehouseId && quotes.length ? await quoteHoldShare(db, quotes, warehouseId) : new Map(quotes.map(r => [r.sku, r.qty]));
+  for (const [sku, qty] of quoteShare) if (qty > 0) out.set(sku, (out.get(sku) ?? 0) + qty);
   for (const r of orders) {
     const quantity = Math.max(0, r.qty - (r.timed ? 0 : issued.find((x) => x.orderId === r.orderId && x.sku === r.sku)?.qty ?? 0));
     out.set(r.sku, (out.get(r.sku) ?? 0) + quantity);
