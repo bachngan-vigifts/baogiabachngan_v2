@@ -1,5 +1,4 @@
 import { flowIssued } from './pos-order-flow-guards.ts';
-import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import {
   posOrderReservations,
   posPaymentIntents,
@@ -110,9 +109,8 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
       allocations: account.allocations.filter((x) => x.returnId === r.id),
     })),
   );
-  const issued = recoverable(o) ? await flowIssued(db, o.id) : [];
+  const issued = await flowIssued(db,o.id);
   const recoveringIssued =
-    recoverable(o) &&
     lines.every((l) => l.deliveredQty === 0) &&
     issued.some((i) => i.qty > 0);
   const { returns: unused, ...summary } = account;
@@ -138,12 +136,6 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
     viewerId: who(c).id,
   };
 }
-/**
- * Đơn đã xuất kho nhưng khách chưa nhận (chưa giao dòng nào) được "thu hồi": nhận lại toàn bộ hàng đã xuất + hoàn tiền đã thu.
- * Đơn cọc / ship trả trước, và đơn Ship COD (GHN lấy hàng rồi hoàn về – kể cả đơn đã thu cọc, vốn không huỷ thẳng được).
- */
-const recoverable = (o: { posSnapshot: string | null; channel: string; fulfillmentMode: string | null }) =>
-  !!saleFlowOf(o.posSnapshot) || (o.channel === 'pos' && o.fulfillmentMode === 'cod');
 export function registerPosReturnRoutes(router: Router<StaffEnv>) {
   router.get(
     '/pos/returns',
@@ -226,11 +218,8 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           .from(salesOrderLines)
           .where(eq(salesOrderLines.orderId, o.id))
           .for('update');
-        const issued = recoverable(o)
-          ? await flowIssued(tx, o.id)
-          : [];
+        const issued = await flowIssued(tx,o.id);
         const recoveringIssued =
-          recoverable(o) &&
           old.every((l) => l.deliveredQty === 0) &&
           issued.some((i) => i.qty > 0);
         const rs = await tx
@@ -495,6 +484,11 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             approvalNote: note,
             updatedAt: now(),
           };
+          if (r.requestContext === 'after_issue') {
+            const account=await returnAccount(tx,r.orderId);
+            if(account.netDue-fields.total>account.netPaid+0.5)
+              throw new AppError(409,'Thu hồi còn công nợ phí chưa được thanh toán hoặc duyệt giảm. Xử lý khoản phí còn lại hoặc lập lại yêu cầu có đủ phí để Manager duyệt trước khi huỷ đơn.','RETURN_FEES_UNSETTLED');
+          }
           await tx
             .update(posReturns)
             .set(fields)
