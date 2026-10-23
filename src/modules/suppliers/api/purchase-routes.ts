@@ -22,7 +22,7 @@ import {
 import { computeOrderTotals } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { canEditSuppliers, defaultRecipients } from '../domain/directory.ts';
-import { buildSchedules, canPay, canReceive, canSeePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
+import { buildSchedules, canPay, canReceive, canSeePrices, canSeePurchasePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
 import { asActor, listPurchases, purchaseCounts, supplierPayables, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
 
 /**
@@ -301,7 +301,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const p = await loadPurchase(db, m, id, today());
     if (p.raw.order.cancelledAt) fail(409, 'Đơn mua đã huỷ.');
     if (kind === 'order') {
-      if (!canSeePrices(asActor(m))) fail(403, 'Chỉ Manager hoặc Kế toán gửi đơn đặt hàng cho NCC.');
+      if (!canSeePurchasePrices(asActor(m), p.raw.order)) fail(403, 'Bạn không có quyền gửi đơn đặt hàng có giá cho NCC.');
       if (p.raw.order.approvalStatus !== 'approved') fail(409, 'Manager duyệt giá trước khi gửi đơn cho NCC.');
     }
     const contacts = p.raw.order.supplierId ? await db.select({ kind: supplierContacts.kind, email: supplierContacts.email }).from(supplierContacts).where(eq(supplierContacts.supplierId, p.raw.order.supplierId)) : [];
@@ -633,9 +633,10 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   router.get('/supplier-payments/:id/attachment', async c => {
     guard(c);
     const db = c.env.db, m = me(c);
-    if (!canSeePrices(asActor(m))) fail(403, 'Chỉ Manager hoặc Kế toán xem chứng từ thanh toán.');
     const [pay] = await db.select().from(supplierPayments).where(eq(supplierPayments.id, c.params.id!)).limit(1);
     if (!pay?.attachmentKey) fail(404, 'Khoản trả không có chứng từ.');
+    const purchase = await loadPurchase(db, m, pay!.shipmentId, today());
+    if (!canSeePurchasePrices(asActor(m), purchase.raw.order)) fail(403, 'Bạn không có quyền xem chứng từ thanh toán của đơn này.');
     if (!c.env.files) fail(503, 'Chưa cấu hình kho file.');
     const url = (await c.env.files!.signedUrls([pay!.attachmentKey], 600)).get(pay!.attachmentKey);
     if (!url) fail(404, 'Không tạo được link chứng từ.');

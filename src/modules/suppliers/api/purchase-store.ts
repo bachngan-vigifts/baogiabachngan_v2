@@ -15,7 +15,7 @@ import {
 } from '../schema.ts';
 import { computeOrderTotals, hidePrices } from '../domain/order-totals.ts';
 import {
-  canSeePrices, canPay, canApprovePurchase, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
+  canSeePrices, canSeePurchasePrices, canPay, canApprovePurchase, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
   type Actor, type NeedLine,
 } from '../domain/purchasing.ts';
 
@@ -69,7 +69,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
     receiptLines.filter(x => live.has(x.l.receiptId)).map(x => ({ lineId: x.l.lineId, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty })));
   const totals = computeOrderTotals({ rows: lines, depositRate: o.depositRate, paidAmount: 0 });
   const debt = supplierDebt(totals.total, schedules, payments.map(x => x.p), today);
-  const a = asActor(m), prices = canSeePrices(a);
+  const a = asActor(m), prices = canSeePurchasePrices(a, o);
   const flags = { approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy, submittedAt: o.submittedAt };
   const state = purchaseState(flags, progress);
   const shownTotals = prices ? totals : hidePrices(totals);
