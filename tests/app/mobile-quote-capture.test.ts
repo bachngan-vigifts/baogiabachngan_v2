@@ -25,3 +25,23 @@ test('ảnh báo giá: VAT hỗn hợp và HRC/B2B/Vigifts luôn giữ tổng ch
  for(const type of ['HRC','B2B','VIGIFTS'] as const){const doc={type,vat:8,rows:[{name:'A',qty:7,price:123456.78,discount:7.5,printFee:1500,taxRate:10},{name:'B',qty:3,price:98765.4,discountType:'amount' as const,discount:123.45,taxRate:8}]};assert.equal(quoteCaptureModel(doc).total,totals(doc).total);assert.equal(quoteCaptureModel(doc).validUntil,'');}
  assert.throws(()=>quoteCaptureModel({rows:[]}),/Thêm ít nhất/);
 });
+
+// Exercise the real button wiring: capture must work on unsaved/unapproved edits,
+// while the existing approval gate still applies to document downloads.
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
+test('chụp báo giá không cần lưu/duyệt, không ghi API; tải file vẫn giữ điều kiện cũ',async()=>{
+ const source=readFileSync('trial-ui/app.js','utf8');
+ const actions=source.slice(source.indexOf('function updateQuoteActions()'),source.indexOf('function closeDownloadMenu()'));
+ const handler=source.slice(source.indexOf("$('#quote-capture').addEventListener"),source.indexOf("$('#quote-download').addEventListener"));
+ for(const scenario of [{id:null,dirty:true,status:'draft',canEdit:true},{id:'q1',dirty:true,status:'draft',canEdit:true},{id:'q1',dirty:false,status:'pending',canEdit:true},{id:'q1',dirty:false,status:'approved',canEdit:false}]){
+  const nodes:Record<string,any>={},captures:any[]=[],writes:any[]=[],doc={type:'HRC',quoteNo:'BG',rows:[{name:'Nội dung chưa lưu',sku:'LY',qty:2,price:100000}]};let click!:()=>Promise<void>;
+  const node=(id:string)=>nodes[id]||=( {dataset:{},disabled:false,hidden:false,addEventListener:(_name:string,fn:any)=>{if(id==='#quote-capture')click=fn;}} );
+  const block=scenario.dirty?'Lưu thay đổi trước.':scenario.status!=='approved'?'Chờ duyệt':null;
+  const ctx:any={editor:{...scenario,approval:{status:scenario.status,canEdit:scenario.canEdit}},isManager:()=>false,approvalBlock:()=>block,saving:false,$:node,qf:{querySelectorAll:()=>[node('#quote-capture'),node('#edit-input')]},closeDownloadMenu(){},window:{matchMedia:()=>({matches:true})},collectQuote:()=>doc,openMobileQuoteCapture:async(opts:any)=>captures.push(opts),api:(...args:any[])=>writes.push(args),toast:(message:string)=>{throw Error(message);}};
+  runInNewContext(actions+'\n'+handler+'\nupdateQuoteActions();',ctx);
+  assert.equal(node('#quote-capture').disabled,false,JSON.stringify(scenario));
+  assert.equal(node('#quote-download').disabled,!!block,'download approval unchanged');
+  await click();assert.equal(captures.length,1);assert.equal(captures[0].doc,doc,'use current form contents');assert.equal(captures[0].canExport,undefined,'no approval check on PNG sharing');assert.equal(writes.length,0,'capture does not save or submit');
+ }
+});
