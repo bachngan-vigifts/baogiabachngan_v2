@@ -131,3 +131,8 @@
 .transfer-lines { display: grid; gap: 8px; }
 .transfer-lines > .row-gap { display: grid; grid-template-columns: minmax(0, 1fr) 90px 40px; gap: 8px; align-items: center; }
 .sup-drawer-foot-sticky { position: sticky; bottom: -18px; margin: 0 -20px -18px; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; }
+
+.receiving-line { display: grid; gap: 4px; padding: 7px 0; }
+.receiving-line + .receiving-line { border-top: 1px solid var(--line); }
+.receiving-line .btn { justify-self: start; white-space: normal; }
+#view-receiving .data-link { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
