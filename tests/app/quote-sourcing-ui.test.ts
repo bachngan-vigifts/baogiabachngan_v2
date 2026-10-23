@@ -17,16 +17,16 @@ class Node {
   remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);}
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
-async function setup(fail=false,overrides:any={},confirm=true){
+async function setup(fail=false,overrides:any={},confirm=true,choice:string|null='create'){
   const host=new Node(),posts:any[]=[];let current=true;
   const ctx:any={document:{createElement:(tag:string)=>new Node(tag)},crypto:{randomUUID:()=> 'safe-client-key'}};
-  runInNewContext(readFileSync(new URL('../../trial-ui/quote-sourcing.js',import.meta.url),'utf8').replace('export async function initQuoteSourcing','globalThis.initQuoteSourcing = async function'),ctx);
+  runInNewContext(readFileSync(new URL('../../trial-ui/quote-sourcing.js',import.meta.url),'utf8').replace('export function chooseSourcePurchase','function chooseSourcePurchase').replace('export async function initQuoteSourcing','globalThis.initQuoteSourcing = async function'),ctx);
   const api=async(path:string,method?:string,body?:any)=>{
     if(method){posts.push({path,body});if(fail)throw Error('Mất kết nối');if(path==='/stock-transfers')return{id:'t1'};if(path==='/purchase-orders')return{ids:body.orders.map((_:any,i:number)=>'p'+(i+1))};return{request:{id:'e1'}};}
     if(path==='/purchase-options')return{suppliers:[{id:'s1',name:'NCC Một'}]};
     return{quoteNo:'BG1',customerName:'Khách',canPurchase:true,canRequestEarly:true,warehouses:[{id:'a',name:'Kho bán',opened:true,canSell:true},{id:'b',name:'Kho xin',opened:true,canSell:false}],lines:[{sku:'X',name:'Sản phẩm',unit:'cái',qty:3,stock:{a:2,b:1},incoming:1}],...overrides};
   };
-  const ui=await ctx.initQuoteSourcing({api,host,quoteId:'q',confirmBox:async()=>confirm,isCurrent:()=>current});
+  const ui=await ctx.initQuoteSourcing({api,host,quoteId:'q',confirmBox:async()=>confirm,choosePurchase:async()=>choice,isCurrent:()=>current});
   const label=(name:string)=>all(host).find(n=>n.attrs['aria-label']===name)!;
   const button=(name:string)=>all(host).find(n=>n.tag==='button'&&n.textContent===name)!;
   return{host,ui,posts,label,button,close:()=>{current=false;}};
@@ -63,10 +63,42 @@ test('sinh đơn: tự gộp nguồn đặt NCC chưa bấm tạo theo NCC; lưu
   await s.ui.prepare();assert.equal(s.posts.length,1);assert.equal(s.label('Nguồn hàng X').disabled,true);
 });
 test('sinh đơn: từ chối/không quyền/số lượng sai không tạo đơn mua; lỗi mạng chặn tạo lặp và không trả kế hoạch thành công',async()=>{
-  const cancelled=await setup(false,{},false);cancelled.label('Nguồn hàng X').value='purchase';await cancelled.label('Nguồn hàng X').fire('change');cancelled.label('Nhà cung cấp X').value='s1';
-  await assert.rejects(()=>cancelled.ui.prepare(),/Đã dừng/);assert.equal(cancelled.posts.length,0);
+  const cancelled=await setup(false,{},true,null);cancelled.label('Nguồn hàng X').value='purchase';await cancelled.label('Nguồn hàng X').fire('change');cancelled.label('Nhà cung cấp X').value='s1';
+  await assert.rejects(()=>cancelled.ui.prepare(),/Đã quay lại/);assert.equal(cancelled.posts.length,0);
   const no=await setup(false,{canPurchase:false});no.label('Nguồn hàng X').value='purchase';await no.label('Nguồn hàng X').fire('change');no.label('Nhà cung cấp X').value='s1';await assert.rejects(()=>no.ui.prepare(),/không có quyền/);assert.equal(no.posts.length,0);
   const bad=await setup();bad.label('Nguồn hàng X').value='purchase';await bad.label('Nguồn hàng X').fire('change');bad.label('Nhà cung cấp X').value='s1';bad.label('Số lượng nguồn hàng X').value=2;await assert.rejects(()=>bad.ui.prepare(),/tổng lấy từ kho/);assert.equal(bad.posts.length,0);
   const lost=await setup(true);lost.label('Nguồn hàng X').value='purchase';await lost.label('Nguồn hàng X').fire('change');lost.label('Nhà cung cấp X').value='s1';
   await assert.rejects(()=>lost.ui.prepare(),/Chưa xác định/);await assert.rejects(()=>lost.ui.prepare(),/chưa xác định/);assert.equal(lost.posts.length,1);
+});
+
+test('sinh đơn: đặt NCC sau vẫn trả kế hoạch đầy đủ, không tạo đơn mua và ghi rõ chưa tạo yêu cầu',async()=>{
+  const s=await setup(false,{},true,'later');
+  s.label('Nguồn hàng X').value='purchase';await s.label('Nguồn hàng X').fire('change');s.label('Nhà cung cấp X').value='s1';
+  const plan=await s.ui.prepare();
+  assert.equal(s.posts.length,0);assert.equal(plan.warehouseId,'a');
+  assert.match(plan.note,/NCC Một · Chưa tạo yêu cầu/);
+  assert.equal(plan.stockPlan.find((p:any)=>p.type==='purchase').qty,1);
+  assert.equal(s.label('Nguồn hàng X').disabled,false);
+});
+test('sinh đơn: chưa có quyền mua vẫn được lưu kế hoạch và đặt NCC sau',async()=>{
+  const s=await setup(false,{canPurchase:false},true,'later');
+  s.label('Nguồn hàng X').value='purchase';await s.label('Nguồn hàng X').fire('change');s.label('Nhà cung cấp X').value='s1';
+  assert.match((await s.ui.prepare()).note,/Chưa tạo yêu cầu/);assert.equal(s.posts.length,0);
+});
+
+test('hộp chọn mua NCC: tạo ngay, đặt sau và Escape trả kết quả riêng, luôn dọn hộp thoại',async()=>{
+  const body=new Node();let shown=0;
+  class DialogNode extends Node {showModal(){shown++;}close(){}focus(){}}
+  const context:any={document:{body,createElement:(tag:string)=>new DialogNode(tag)}};
+  const code=readFileSync(new URL('../../trial-ui/quote-sourcing.js',import.meta.url),'utf8').split('/** Source allocations')[0]!.replace('export function chooseSourcePurchase','globalThis.chooseSourcePurchase = function');
+  runInNewContext(code,context);
+  for(const choice of ['create','later',null]){
+    const promise=context.chooseSourcePurchase({count:2,skuCount:9,quoteNo:'BG1',canPurchase:true});
+    assert.match(body.textContent,/9 mã cần đặt từ 2 NCC/);
+    const dialog=body.children[0]!;
+    if(choice===null)dialog.events.cancel!({preventDefault(){}});
+    else await all(dialog).find(n=>n.tag==='button'&&n.textContent.startsWith(choice==='create'?'Tạo đơn mua':'Đặt NCC sau'))!.fire();
+    assert.equal(await promise,choice);assert.equal(body.children.length,0);
+  }
+  assert.equal(shown,3);
 });
