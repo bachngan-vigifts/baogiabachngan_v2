@@ -48,11 +48,11 @@ test('trả lại báo giá: chỉ người duyệt, phải có lý do, về nh�
   assert.equal((await s.call('/approvals', s.mgr)).data.counts.quote, 1);
 });
 
-test('giao hàng: không thu tiền đơn nháp; đi đúng thứ tự trạng thái; giao xong báo người phụ trách; lịch sử đơn có thao tác chuyến giao', async () => {
+test('giao hàng: đi đúng thứ tự trạng thái; giao xong báo người phụ trách; lịch sử đơn có thao tác chuyến giao', async () => {
   const s = await setup(), qid = await quote(s, 'BG_GH');
   assert.equal((await s.call(`/quotes/${qid}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
   const o = await s.call('/orders', s.emp, 'POST', { quoteId: qid }), orderId = (o.data.order?.id ?? o.data.id) as string;
-  assert.equal((await s.call('/payments', s.mgr, 'POST', { orderId, amount: 1000 })).data.code, 'ORDER_NOT_APPROVED');
+  // Đơn CRM nháp nay được ghi thu trước khi duyệt (bdd00c8) – kiểm ở tests/app/crm-early-receipts.test.ts.
   assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   await s.db.insert(deliveries).values({ id: 'dl1', deliveryNo: 'GH1', orderId, plannedDate: '2026-10-20', status: 'failed', createdBy: 'emp', createdAt: now, updatedAt: now });
   assert.equal((await s.call('/deliveries/dl1/status', s.mgr, 'PUT', { status: 'delivered' })).data.code, 'DELIVERY_STATUS_FLOW', 'thất bại → phải lên lịch lại trước');

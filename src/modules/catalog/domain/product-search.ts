@@ -73,3 +73,24 @@ export function searchProducts(items: readonly CatalogProduct[], o: SearchOption
   return out.sort((a, b) => rank.get(a)! - rank.get(b)! || (words.length ? a._name.length - b._name.length : 0)
     || cmp(a._name, b._name) || cmp(a.name, b.name) || cmp(a.sku, b.sku));
 }
+
+/**
+ * Vị trí các từ khoá trong một chuỗi hiển thị (tên / mã) để tô đậm kết quả: so khớp không dấu, không phân biệt hoa thường,
+ * trả các đoạn [đầu, cuối) theo chỉ số của chuỗi gốc, đã gộp đoạn chồng nhau. Ký tự không bỏ dấu được 1:1 thì so nguyên dạng.
+ */
+export function matchRanges(text: string, q: unknown): [number, number][] {
+  const { words } = parseQuery(q);
+  if (!words.length || !text) return [];
+  const folded = Array.from(text, ch => { const f = fold(ch); return f.length === 1 ? f : ch.toLowerCase().length === 1 ? ch.toLowerCase() : ch; });
+  // Chỉ số theo ký tự (code point) → chỉ số UTF-16 của chuỗi gốc.
+  const at: number[] = []; let i = 0;
+  for (const ch of text) { at.push(i); i += ch.length; }
+  at.push(i);
+  const hay = folded.join(''), ranges: [number, number][] = [];
+  if (hay.length !== folded.length) return [];
+  for (const w of words) for (let from = hay.indexOf(w); from >= 0; from = hay.indexOf(w, from + w.length)) ranges.push([at[from]!, at[from + w.length]!]);
+  ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const out: [number, number][] = [];
+  for (const r of ranges) { const last = out[out.length - 1]; if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]); else out.push([...r]); }
+  return out;
+}
