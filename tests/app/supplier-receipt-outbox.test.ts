@@ -36,6 +36,12 @@ test('Outbox: nhận từng phần, payload giá/CK/VAT chính xác, callback l�
 test('Outbox: timeout giữ một phiếu/job; lỗi callback rồi thành công; claim nguyên tử, fencing và lease hết hạn',async()=>{
  const f=await fixture();f.env.sapoWebhookFetch=(async()=>{throw Error('timeout');}) as typeof fetch;
  const id=await f.receive();assert.equal((await f.job(id)).status,'failed');assert.equal((await f.db.select().from(supplierReceipts)).length,1);
+ const hash=(await f.job(id)).payloadHash,stock=await f.db.select().from(stockMoves);
+ f.env.sapoWebhookFetch=(async (_url:any,init:any)=>{f.calls.push(JSON.parse(init.body));return Response.json({ok:true});}) as typeof fetch;
+ assert.equal((await f.call(`/supplier-receipts/${id}/retry-sapo`,f.emp,'POST',{})).status,403);
+ assert.equal((await f.call(`/supplier-receipts/${id}/retry-sapo`,f.mgr,'POST',{})).status,200);
+ assert.equal(f.calls[0].idempotency_key,id);assert.equal((await f.job(id)).payloadHash,hash);assert.equal((await f.job(id)).attempts,2);
+ assert.equal((await f.db.select().from(supplierReceipts)).length,1);assert.deepEqual(await f.db.select().from(stockMoves),stock);
  await receiptResult(f.db,f.result(id,{ok:false,error:'private-token'}));assert.equal((await f.job(id)).status,'failed');assert.ok(!(await f.row(id)).sapoNote.includes('private-token'));
  await receiptResult(f.db,f.result(id));assert.equal((await f.job(id)).status,'done');
  const id2=await f.receive();
