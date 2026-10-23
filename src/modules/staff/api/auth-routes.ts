@@ -1,5 +1,4 @@
-import { registrationHash, registrationInfo, completeRegistration } from '../../portal/api/registration.ts';
-import { isRegistrationInvite } from '../../portal/domain/registration.ts';
+import { isRegistrationInvite } from '../domain/registration-invite.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { FileStore } from '../../../core/storage/file-store.ts';
 import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
@@ -75,7 +74,8 @@ export interface SessionState { member: MemberRow & { active: boolean }; tokenHa
 const now = (c: Ctx) => (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))();
 const session = (c: Ctx) => c.state.session as SessionState;
 
-async function limit(c: Ctx, key: string, max: number) {
+/** Giới hạn số lần thử theo khoá (IP, link kích hoạt / mời…) – dùng chung cho route công khai của module khác (portal). */
+export async function limit(c: Ctx, key: string, max: number) {
   if (await repo.countAttempt(c.env.db, key, now(c)) > max) throw tooManyAttempts();
 }
 /**
@@ -189,22 +189,6 @@ export function registerAuthRoutes(router: Router<StaffEnv>): void {
     const ok = await repo.completeActivation(c.env.db, { memberId: found.memberId, email: found.email, tokenHash: hash, passwordHash, now: now(c) });
     if (!ok) throw new AppError(400, 'Liên kết đã được sử dụng.');
     return json({ ok: true });
-  }, 'public');
-
-  router.post('/registration-info', async c => {
-    const body = await readJson(c.req, 4096);
-    await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
-    registrationHash(body.token);
-    const info = await registrationInfo(c.env.db, body.token, now(c));
-    return json({ kind: info.kind, entityName: info.entityName, expiresAt: info.expiresAt });
-  }, 'public');
-
-  router.post('/register-partner', async c => {
-    const body = await readJson(c.req, 4096);
-    await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
-    const hash = registrationHash(body.token);
-    await limit(c, 'registration:' + hash, RATE_LIMITS.activation);
-    return json(await completeRegistration(c.env.db, body, now(c), c.env.passwordIterations));
   }, 'public');
 
   router.post('/login', async c => {
