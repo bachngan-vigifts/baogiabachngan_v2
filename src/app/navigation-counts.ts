@@ -1,3 +1,4 @@
+import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../modules/suppliers/early-request-schema.ts';
 import { outstandingLines } from '../modules/suppliers/api/incoming-stock.ts';
 import { canUsePurchasing } from '../modules/suppliers/domain/purchasing.ts';
 import { cashReconciliations } from '../modules/sales/cash-schema.ts';
@@ -30,7 +31,11 @@ export function registerNavigationCounts(router: Router<StaffEnv>) {
       db.select({count}).from(cashReconciliations).innerJoin(posShifts,eq(posShifts.id,cashReconciliations.shiftId)).where(and(can(m,'cash.view-all')?undefined:eq(posShifts.memberId,m.id),sql`${cashReconciliations.status}<>'closed'`)),
       can(m, 'page.purchases') && canUsePurchasing(asActor(m)) ? outstandingLines(db) : [],
     ]);
-    return json({ receiving: new Set(incoming.map(l => l.orderId)).size, cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
+    const early=incoming.length?await db.selectDistinct({id:purchaseEarlyRequests.id}).from(purchaseEarlyRequests)
+      .innerJoin(purchaseEarlyRequestLines,eq(purchaseEarlyRequestLines.requestId,purchaseEarlyRequests.id))
+      .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
+      .where(inArray(purchaseEarlyRequestAllocations.purchaseLineId,incoming.map(l=>l.lineId))):[];
+    return json({ receiving: new Set(incoming.map(l => l.orderId)).size+early.length, cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
       purchases: purchases.all - purchases.received - purchases.cancelled });
   }, 'business');
 }

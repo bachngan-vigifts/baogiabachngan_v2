@@ -115,7 +115,7 @@ test('lịch nhận: phiếu xin mới trên cùng, lọc loại/SKU/NCC trướ
   await db.update(purchaseEarlyRequests).set({createdAt:'2026-10-25T10:00:00.000Z'}).where(eq(purchaseEarlyRequests.id,newer.data.id));
   await db.update(purchaseEarlyRequests).set({createdAt:'2026-10-24T10:00:00.000Z'}).where(eq(purchaseEarlyRequests.id,old.data.id));
   const early=await call('/purchase-receiving-calendar?type=early&sku=031106000',c.mgr);
-  assert.equal(early.status,200);assert.equal(early.data.canConfirmEarly,true);assert.equal(early.data.total,3);
+  assert.equal(early.status,200);assert.equal((await call('/navigation-counts',c.mgr)).data.receiving,(await call('/purchase-receiving-calendar',c.mgr)).data.orderCount);assert.equal(early.data.canConfirmEarly,true);assert.equal(early.data.total,3);
   assert.equal(early.data.rows[0].requestId,newer.data.id);assert.equal(early.data.rows[1].requestId,newer.data.id);
   assert.equal(early.data.rows.every((r:any)=>r.lines.every((l:any)=>l.sku==='031106000')),true);
   assert.equal(early.data.rows.find((r:any)=>r.supplierId==='a'&&r.requestId===newer.data.id).lines[0].requestedQty,15000);
