@@ -59,11 +59,13 @@ test('chống mua trùng: còn cần đặt = cần − đã đặt; gộp mã l
 });
 
 
-test('Sale Admin và Kế toán có xác nhận, nhận hàng, trả NCC, lịch trả, PDF; không có quyền duyệt/huỷ thay Manager',()=>{
+test('Sale Admin và Kế toán có xác nhận, nhận hàng, trả NCC, lịch trả, PDF; không duyệt thay Manager; chỉ Sale Admin huỷ được đơn đã duyệt',()=>{
   for(const positionId of ['sale-admin','accounting']) {
     const actor: Actor={id:'office',role:'employee',active:true,positionId};
     for(const action of ['confirm','receive','pay','schedule','pdf'] as const) assert.equal(checkPurchase(action,actor,approved,none).ok,true);
-    for(const action of ['approve','cancel'] as const) assert.equal(checkPurchase(action,actor,approved,none).ok,false);
+    assert.equal(checkPurchase('approve',actor,approved,none).ok,false);
+    // #253: Sale Admin huỷ được đơn mua đã duyệt (chưa nhận hàng, chưa trả tiền); Kế toán thì không.
+    assert.equal(checkPurchase('cancel',actor,approved,none).ok,positionId==='sale-admin');
     assert.equal(checkPurchase('confirm',{...actor,active:false},approved,none).ok,false);
     assert.equal(checkPurchase('receive',{...actor,role:'supplier'},approved,none).ok,false);
     assert.equal(checkPurchase('receive',actor,draft,none).ok,false);
