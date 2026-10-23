@@ -67,7 +67,13 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
  * Gắn bảng công việc vào #view-tasks. `api(path, method, body)`, `toast(msg, kind)`, `go(hash)`, `isManager()`, `userId()`.
  * Trả về { load(id?), badge() }.
  */
-export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '' }) {
+export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '' }) {
+  /**
+   * Lưu sẵn danh sách theo bộ lọc (trong bộ nhớ trang, không lưu ổ đĩa): mở lại trang Công việc hiện ngay bản trước rồi tải bản mới ở nền.
+   * Mọi thao tác ghi (giao việc, sửa, xoá, bình luận…) xoá bản lưu để lần tải sau lấy dữ liệu mới.
+   */
+  const cache = new Map(), CACHE_MAX = 20;
+  const api = (path, method = 'GET', body) => { if (method !== 'GET') cache.clear(); return rawApi(path, method, body); };
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
   const st = { view: 'mine', status: 'open', priority: '', source: '', assignee: '', search: '', due: '', people: null, list: [], tab: 'tasks', kind: '', approvals: null,
     summary: null, dueCounts: null, collapsed: new Set(), groupBy: store.get('bn-tasks-group') === 'category' ? 'category' : 'due', selected: '', refresh: false };
@@ -206,6 +212,43 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     renderTabs();
   }
 
+  const syncText = d => `Đồng bộ lúc ${hm(d.syncedAt || new Date().toISOString())} · việc tự sinh cập nhật khi mở trang`;
+  /** Vẽ trang từ dữ liệu `/tasks` + `/tasks/summary` (bản lưu sẵn hoặc bản mới). */
+  async function apply(d, s, request, focusId) {
+    if (s?.accountingAvailable) {
+      if (!accountingEntry) {
+        accountingEntry = document.createElement('button'); accountingEntry.type = 'button'; accountingEntry.className = 'btn secondary'; accountingEntry.textContent = 'Nhóm Kế toán';
+        accountingEntry.addEventListener('click', () => { accountingMode = true; load(); }); q('.task-top-actions').prepend(accountingEntry);
+      }
+      if (accountingMode === undefined) accountingMode = positionId() === 'accounting';
+      if (accountingMode && st.tab !== 'approvals') {
+        if (!accountingBoard) { const { initAccountingTasks } = await import('./accounting-tasks.js'); accountingBoard = initAccountingTasks({ root, api, toast, userId, back: () => { accountingMode = false; accountingBoard.hide(); load(); } }); }
+        if (request !== loadSequence) return;
+        await accountingBoard.load(focusId); return;
+      }
+    } else { accountingMode = false; if (accountingEntry) accountingEntry.hidden = true; }
+    accountingBoard?.hide();
+    if (s) st.summary = s;
+    if (st.view === 'colleagues' && !d.canViewColleagues) st.view = 'mine';
+    st.list = d.tasks; st.dueCounts = d.dueCounts || null;
+    if (!q('#tasks-quick-assignee').options.length) q('#tasks-quick-assignee').innerHTML = personOptions(userId(), isManager());
+    if (!q('#tasks-assignee').options.length) fillFilters();
+    q('#tasks-sync').textContent = syncText(d);
+    showTab(st.tab); renderCards(); renderList();
+    q('#tasks-empty-text').textContent = emptyText();
+    if (focusId) openDetail(focusId);
+    else if (panelTask && wide()) { if (st.list.some(t => t.id === panelTask)) showPanel(panelTask); else closePanel(); }
+  }
+  /** Tải sẵn bảng việc mặc định (gọi lúc rảnh sau khi đăng nhập): lần bấm đầu vào trang Công việc hiện ngay. */
+  async function prefetch() {
+    if (cache.size) return;
+    const params = new URLSearchParams({ view: st.view, status: st.status });
+    try {
+      const [d, s] = await Promise.all([rawApi('/tasks?' + params), rawApi('/tasks/summary'), people()]);
+      if (!cache.has(params.toString())) cache.set(params.toString(), { d, s });
+    } catch { /* bỏ qua: mở trang sẽ tải như thường */ }
+  }
+
   async function load(focusId) {
     const request = ++loadSequence;
     if (focusId === 'approvals') { focusId = undefined; st.tab = 'approvals'; }
@@ -218,34 +261,27 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     if (st.due) params.set('due', st.due);
     if (st.priority) params.set('priority', st.priority); if (st.source) params.set('source', st.source);
     if (st.assignee) params.set('assignee', st.assignee); if (st.search) params.set('q', st.search);
-    if (st.refresh) { params.set('refresh', '1'); st.refresh = false; }
+    const key = params.toString();
+    if (st.refresh) { params.set('refresh', '1'); st.refresh = false; cache.delete(key); }
+    // Bản lưu sẵn: hiện ngay (không chờ máy chủ), mở việc được chọn một lần; bản mới về thì vẽ lại nếu khác.
+    const hit = cache.get(key);
+    if (hit) { try { await apply(hit.d, hit.s, request, focusId); } catch { /* bản lưu hỏng: chờ bản mới */ } focusId = undefined; }
     try {
-      const [d, s] = await Promise.all([api('/tasks?' + params), badge(), loadApprovals()]);
+      // "Cần duyệt" (nặng nhất) không chặn danh sách: chỉ chờ khi đang mở thẻ Cần duyệt, còn lại tải sau rồi cập nhật số trên thẻ.
+      const approvals = loadApprovals();
+      const [d, s] = await Promise.all([api('/tasks?' + params), badge(), ...(st.tab === 'approvals' ? [approvals] : [])]);
       if (request !== loadSequence) return;
-      if (s?.accountingAvailable) {
-        if (!accountingEntry) {
-          accountingEntry = document.createElement('button'); accountingEntry.type = 'button'; accountingEntry.className = 'btn secondary'; accountingEntry.textContent = 'Nhóm Kế toán';
-          accountingEntry.addEventListener('click', () => { accountingMode = true; load(); }); q('.task-top-actions').prepend(accountingEntry);
-        }
-        if (accountingMode === undefined) accountingMode = positionId() === 'accounting';
-        if (accountingMode && st.tab !== 'approvals') {
-          if (!accountingBoard) { const { initAccountingTasks } = await import('./accounting-tasks.js'); accountingBoard = initAccountingTasks({ root, api, toast, userId, back: () => { accountingMode = false; accountingBoard.hide(); load(); } }); }
-          if (request !== loadSequence) return;
-          await accountingBoard.load(focusId); return;
-        }
-      } else { accountingMode = false; if (accountingEntry) accountingEntry.hidden = true; }
-      accountingBoard?.hide();
-      if (s) st.summary = s;
-      if (st.view === 'colleagues' && !d.canViewColleagues) st.view = 'mine';
-      st.list = d.tasks; st.dueCounts = d.dueCounts || null;
-      if (!q('#tasks-quick-assignee').options.length) q('#tasks-quick-assignee').innerHTML = personOptions(userId(), isManager());
-      if (!q('#tasks-assignee').options.length) fillFilters();
-      q('#tasks-sync').textContent = `Đồng bộ lúc ${hm(d.syncedAt || new Date().toISOString())} · việc tự sinh cập nhật khi mở trang`;
-      showTab(st.tab); renderCards(); renderList();
-      q('#tasks-empty-text').textContent = emptyText();
-      if (focusId) openDetail(focusId);
-      else if (panelTask && wide()) { if (st.list.some(t => t.id === panelTask)) showPanel(panelTask); else closePanel(); }
-    } catch (e) { if (request !== loadSequence) return; list.innerHTML = `<p class="error task-empty">${esc(e.message)}</p>`; }
+      const same = hit && JSON.stringify(hit.d.tasks) === JSON.stringify(d.tasks) && JSON.stringify(hit.d.dueCounts) === JSON.stringify(d.dueCounts);
+      cache.delete(key); cache.set(key, { d, s });
+      if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+      if (same) { if (s) { st.summary = s; renderTabs(); } q('#tasks-sync').textContent = syncText(d); }
+      else await apply(d, s, request, focusId);
+      if (st.tab !== 'approvals') approvals.then(() => { if (request === loadSequence) renderTabs(); });
+    } catch (e) {
+      if (request !== loadSequence) return;
+      // Đang hiện bản lưu sẵn: giữ danh sách, chỉ báo lỗi tải bản mới.
+      if (hit) toast(e.message, 'err'); else list.innerHTML = `<p class="error task-empty">${esc(e.message)}</p>`;
+    }
   }
 
   async function update(id, body, msg) {
@@ -442,5 +478,5 @@ export function initTasks({ api, toast, confirmBox = async t => confirm(t), go, 
     } else if (e.key === 'Enter' && st.selected) { e.preventDefault(); openDetail(st.selected); }
     else if (e.key === 'Escape' && panelTask) closePanel();
   });
-  return { load, badge, refreshPeople: () => { st.people = null; } };
+  return { load, badge, prefetch, refreshPeople: () => { st.people = null; } };
 }

@@ -513,6 +513,8 @@ async function loadAll() {
   loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (can('page.care')) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false; approvalView().start();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
+  // Tải sẵn bảng Công việc lúc rảnh: lần bấm đầu vào trang Công việc hiện ngay (sau đó vẫn tải bản mới ở nền).
+  setTimeout(() => { if (state.user) tasksView().prefetch(); }, 2500);
 }
 function showGlobalError(message) { const el = $('#global-error'); el.textContent = message; el.hidden = false; }
 // Báo giá: lọc, sắp xếp, phân trang trên máy chủ (GET /quotes); trang này chỉ giữ các báo giá của trang đang xem.
