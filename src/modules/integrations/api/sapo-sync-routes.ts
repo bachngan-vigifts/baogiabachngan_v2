@@ -11,6 +11,7 @@ import { customerIdentityLock, identityColumns } from '../../customers/api/ident
 import { changedIdentity, customerIdentityIndex } from '../../customers/domain/identity.ts';
 import { pricePolicies, productPrices, products, productStock, warehouses } from '../../catalog/schema.ts';
 import { sapoInventoryDocs } from '../schema.ts';
+import { incomingShipments, supplierReceipts } from '../../suppliers/schema.ts';
 import { registerSapoPullRoutes, pullStatus } from './sapo-pull.ts';
 import { isEligibleSapoCustomer, mapSapoCustomer, mapSapoProduct, mapSapoStaff, records, type SapoCustomer, type SapoVariant } from '../domain/sapo-mapping.ts';
 
@@ -25,6 +26,7 @@ const observedAt = (body: Record<string, unknown>) => {
 
 /** Đường dẫn nhận dữ liệu Sapo (khai báo cho Codex/luồng trung gian và webhook Sapo). Giữ như web cũ. */
 export const SAPO_SYNC_PATHS = { products: '/integrations/sapo/product', customers: '/integrations/sapo/customers', staff: '/integrations/sapo/staff' } as const;
+export const SAPO_GOODS_RECEIPT_RESULT_PATH = '/integrations/sapo/goods-receipt-result';
 
 /**
  * Đồng bộ một chiều Sapo → app (sản phẩm, khách hàng, nhân viên). Không dùng phiên đăng nhập: khu vực 'sapo-sync'
@@ -56,6 +58,33 @@ export function registerSapoSyncRoutes(router: Router<StaffEnv>) {
   router.post(SAPO_SYNC_PATHS.customers, async c => json(await syncCustomers(c.env.db, await readJson(c.req, 2_000_000))), 'sapo-sync');
   router.post(SAPO_SYNC_PATHS.staff, async c => json(await syncStaff(c.env.db, await readJson(c.req, 500_000))), 'sapo-sync');
   router.post(SAPO_SYNC_PATHS.products, async c => json(await syncProducts(c.env.db, await readJson(c.req, 5_000_000))), 'sapo-sync');
+  router.post(SAPO_GOODS_RECEIPT_RESULT_PATH, async c => {
+    const body = await readJson(c.req, 50_000);
+    const receiptId = String(body.crm_receipt_id || '').trim(), orderId = String(body.crm_order_id || '').trim();
+    const ok = body.ok === true, sapoId = String(body.sapo_receipt_id || '').trim(), code = String(body.sapo_receipt_code || '').trim();
+    const message = String(body.message || body.error || '').trim().slice(0, 500);
+    if (!receiptId) throw new AppError(400, 'Thiếu crm_receipt_id.');
+    if (ok && (!sapoId || !code)) throw new AppError(400, 'Kết quả thành công phải có đủ ID và mã phiếu Sapo.');
+    let shipmentId = '';
+    await c.env.db.transaction(async tx => {
+      const [receipt] = await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id, receiptId)).limit(1).for('update');
+      if (!receipt) throw new AppError(404, 'Không tìm thấy phiếu nhận CRM.');
+      if (orderId && receipt.shipmentId !== orderId) throw new AppError(409, 'Phiếu nhận không thuộc đơn mua được callback.');
+      shipmentId = receipt.shipmentId;
+      if (receipt.cancelledAt) throw new AppError(409, 'Phiếu nhận đã huỷ.');
+      if (receipt.sapoStatus === 'done') {
+        if (ok && receipt.sapoReceiptCode === code) return;
+        throw new AppError(409, 'Phiếu đã có kết quả Sapo khác; không ghi đè.');
+      }
+      await tx.update(supplierReceipts).set({
+        sapoStatus: ok ? 'done' : 'failed', sapoReceiptCode: ok ? code : receipt.sapoReceiptCode,
+        sapoNote: (ok ? `Sapo ID ${sapoId}${message ? ` · ${message}` : ''}` : message || 'Handler Sapo báo lỗi.').slice(0, 500),
+        sapoUpdatedAt: new Date().toISOString(), sapoUpdatedBy: null,
+      }).where(eq(supplierReceipts.id, receiptId));
+      if (ok) await tx.update(incomingShipments).set({ sapoReceiptId: sapoId, sapoReceiptCode: code, stockSyncedAt: new Date().toISOString() }).where(eq(incomingShipments.id, shipmentId));
+    });
+    return json({ ok: true, crm_receipt_id: receiptId, status: ok ? 'done' : 'failed', sapo_receipt_id: ok ? sapoId : null, sapo_receipt_code: ok ? code : null });
+  }, 'sapo-sync');
 
 }
 

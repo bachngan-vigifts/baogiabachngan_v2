@@ -387,7 +387,7 @@ quoteSaveHooks.beforeSave.push(async (tx, old, member) => {
 });
 quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
-export function registerSalesRoutes(router: Router<StaffEnv>) {
+export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string }[]> } = {}) {
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
@@ -507,9 +507,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
       .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy, ...payments.map(p => p.voidedBy)].filter((x): x is string => !!x)));
     const person = (id: string) => people.find(p => p.id === id);
+    const purchases = can(viewer(c), 'page.purchases') && options.purchaseLinks ? await options.purchaseLinks(db, viewer(c), order) : [];
     const adjustment=(await returnAdjustments(db,[order.id])).get(order.id);
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     return json({
+      purchases,
       returnAdjustment: adjustment || null,
       effectiveSchedules: net.schedules,
       order: { ...order, warehouseName: order.warehouseId ? (await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, order.warehouseId)).limit(1))[0]?.name ?? '' : '', posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
@@ -978,6 +980,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
       if (body.revision !== undefined && (!Number.isSafeInteger(body.revision) || body.revision !== contract.revision))
         throw new AppError(409, 'HĐKT đã thay đổi. Vui lòng mở lại trước khi lưu.', 'CONTRACT_CHANGED');
       if (contract.status === 'cancelled' && body.status !== undefined && body.status !== 'cancelled') throw new AppError(409,'HĐKT đã huỷ, không mở lại riêng trạng thái hợp đồng.');
+      // Nhận tiền trước duyệt vẫn là thực thu: không huỷ HĐKT để bỏ qua khoản đã nhận.
+      if (body.status === 'cancelled') {
+        const [paid] = await tx.select({ id: customerPayments.id }).from(customerPayments)
+          .where(and(eq(customerPayments.orderId, found.order.id), isNull(customerPayments.voidedAt))).limit(1);
+        if (paid) throw new AppError(409, 'HĐKT đã thu tiền, không huỷ được. Cần xử lý khoản đã thu trước.', 'ORDER_HAS_PAYMENTS');
+      }
       const financial = body.depositRate !== undefined || body.paymentDays !== undefined;
       if (financial && me.role !== 'manager') throw new AppError(403, 'Chỉ Manager được sửa tỷ lệ cọc và thời hạn thanh toán.');
       const set: Partial<typeof salesContracts.$inferInsert> = { updatedAt: nowIso() };
@@ -1160,7 +1168,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
     const order = await loadOrder(c, text(body.orderId, 80));
     if(saleFlowOf(order.posSnapshot))throw new AppError(409,'Đơn cọc/trả trước: dùng Thu tiền trong POS để kiểm tra ca và giữ hàng.');
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
-    if (order.status === 'draft') throw new AppError(409, 'Đơn hàng / HĐKT chưa được duyệt, chưa ghi thu được (chưa phát sinh công nợ).', 'ORDER_NOT_APPROVED');
+    if (order.status === 'draft' && order.channel !== 'crm') throw new AppError(409, 'Đơn POS chưa được duyệt, chưa ghi thu được.', 'ORDER_NOT_APPROVED');
     const posReceipt = order.channel === 'pos';
     if(posReceipt && order.fulfillmentMode==='cod') throw new AppError(409,'Thu COD tại Bán hàng nhanh để gắn đúng chuyến giao.','POS_PAYMENT_REQUIRED');
     if(posReceipt && !can(me,'pos.sell')) throw new AppError(403,'Cần quyền POS để ghi lại khoản thu vào ca.');
@@ -1194,8 +1202,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>) {
         if (paidAt !== vietnamDate().iso) throw new AppError(400, 'Tiền vào két ghi nhận ngày thực thu hôm nay.');
         cashShiftId = cashShift.id;
       }
-      const [fresh]=await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
-      if(!fresh||['draft','cancelled'].includes(fresh.status))throw new AppError(409,'Đơn chưa duyệt hoặc đã huỷ, không ghi thu được.');
+      const [fresh] = await tx.select({ status: salesOrders.status, channel: salesOrders.channel }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      if (!fresh || fresh.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
+      if (fresh.status === 'draft' && fresh.channel !== 'crm') throw new AppError(409, 'Đơn POS chưa được duyệt, chưa ghi thu được.', 'ORDER_NOT_APPROVED');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
       await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, requestKey, paymentSource:posReceipt?'pos':'manual', amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });

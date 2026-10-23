@@ -15,7 +15,7 @@ import {
 } from '../schema.ts';
 import { computeOrderTotals, hidePrices } from '../domain/order-totals.ts';
 import {
-  canSeePrices, canPay, canApprovePurchase, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
+  canSeePrices, canSeePurchasePrices, canPay, canApprovePurchase, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
   type Actor, type NeedLine,
 } from '../domain/purchasing.ts';
 
@@ -37,6 +37,15 @@ export function purchaseScope(m: Member) {
   if (a.role === 'manager' || canSeePrices(a) || canPay(a) || canApprovePurchase(a)) return PURCHASE;
   if (isWarehouseStaff(a)) return and(PURCHASE, eq(incomingShipments.approvalStatus, 'approved'));
   return and(PURCHASE, or(eq(incomingShipments.approvalStatus, 'approved'), eq(incomingShipments.createdBy, m.id)));
+}
+
+/** Related drafts/orders are still filtered by purchasing visibility, even when reached through a sales order. */
+export async function purchaseLinksForOrder(db: Db, m: Member, order: { id: string; quoteId: string | null }) {
+  return db.selectDistinct({ id: incomingShipments.id, number: incomingShipments.ticketNumber })
+    .from(supplierOrderSources).innerJoin(incomingShipments, eq(incomingShipments.id, supplierOrderSources.shipmentId))
+    .where(and(purchaseScope(m), isNull(incomingShipments.cancelledAt), or(
+      and(eq(supplierOrderSources.sourceType, 'order'), eq(supplierOrderSources.sourceId, order.id)),
+      order.quoteId ? and(eq(supplierOrderSources.sourceType, 'quote'), eq(supplierOrderSources.sourceId, order.quoteId)) : undefined)));
 }
 
 const MONEY_EVENT_LABEL: Record<string, string> = { approve: 'Manager duyệt đơn', import: 'Nhập từ file đơn NCC', prices: 'Lưu giá nhập', schedule: 'Sửa lịch trả NCC',
@@ -69,7 +78,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
     receiptLines.filter(x => live.has(x.l.receiptId)).map(x => ({ lineId: x.l.lineId, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty })));
   const totals = computeOrderTotals({ rows: lines, depositRate: o.depositRate, paidAmount: 0 });
   const debt = supplierDebt(totals.total, schedules, payments.map(x => x.p), today);
-  const a = asActor(m), prices = canSeePrices(a);
+  const a = asActor(m), prices = canSeePurchasePrices(a, o);
   const flags = { approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy, submittedAt: o.submittedAt };
   const state = purchaseState(flags, progress);
   const shownTotals = prices ? totals : hidePrices(totals);

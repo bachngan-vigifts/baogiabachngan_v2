@@ -2,7 +2,7 @@ import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
@@ -514,4 +514,36 @@ test('tên hàng trên đơn mua NCC luôn là tên đầy đủ trong danh mụ
   // Đơn cũ đã lưu tên gọn: xem / in / gửi NCC vẫn ra tên đầy đủ.
   await db.update(incomingShipmentLines).set({ name: 'Bộ trà 0.5' }).where(eq(incomingShipmentLines.sku, '01503801403'));
   assert.equal((await call(`/purchase-orders/${id}`, emp)).data.lines[0].name, full);
+});
+
+
+test('Sale Admin thiếu purchases.prices: đủ nút trên đơn đã duyệt, không mở giá/duyệt nháp; huỷ đơn giữ điều kiện nhận/trả', async () => {
+  const sent:any[]=[];
+  const s=await setup({mailer:{apiKey:'re_test_key_123456',from:'CRM <crm@example.test>',fetch:async(_url:string,init:RequestInit)=>{sent.push(JSON.parse(String(init.body)));return Response.json({id:'mail-test'});}}});
+  await s.db.execute(sql`delete from staff_position_permissions where position_id='sale-admin' and permission='purchases.prices'`);
+  const make=async()=>{
+    const made=await s.call('/purchase-orders',s.emp,'POST',{orders:[{supplierId:s.a,warehouse:'Kho nhận',lines:[{sku:'LY1',quantity:2}]}]});
+    assert.equal(made.status,201,JSON.stringify(made.data));return made.data.ids[0];
+  };
+  const approve=async(id:string)=>{const d=(await s.call('/purchase-orders/'+id,s.mgr)).data;const r=await s.call(`/purchase-orders/${id}/approve`,s.mgr,'POST',{lines:d.lines.map((l:any)=>({lineId:l.id,price:100}))});assert.equal(r.status,200,JSON.stringify(r.data));};
+  const id=await make();
+  const draft=(await s.call('/purchase-orders/'+id,s.sa)).data;
+  assert.equal(draft.priceHidden,true);assert.equal(draft.totals,null);assert.equal(draft.actions.includes('approve'),false);assert.equal(draft.actions.includes('pdf'),false);
+  assert.equal((await s.call(`/purchase-orders/${id}/approve`,s.sa,'POST',{})).status,403);
+  assert.equal((await s.call(`/purchase-orders/${id}/cancel`,s.sa,'POST',{reason:'Không được huỷ nháp của người khác'})).status,403);
+  await approve(id);
+  const view=(await s.call('/purchase-orders/'+id,s.sa)).data;
+  assert.equal(view.priceHidden,false);assert.ok(view.totals);assert.ok(view.debt);
+  for(const a of ['confirm','receive','pay','schedule','pdf','cancel'])assert.ok(view.actions.includes(a),a);
+  const mail=await s.call(`/purchase-orders/${id}/send-email`,s.sa,'POST',{pdf:Buffer.from('%PDF-1.4 test').toString('base64')});assert.equal(mail.status,200,JSON.stringify(mail.data));assert.equal(sent.length,1);
+  const paid=await s.call(`/purchase-orders/${id}/payments`,s.sa,'POST',{clientKey:crypto.randomUUID(),amount:50,paidDate:'2026-10-01',method:'transfer',attachment:{name:'test.pdf',mime:'application/pdf',data:Buffer.from('%PDF-1.4 test').toString('base64')}});
+  assert.equal(paid.status,201,JSON.stringify(paid.data));
+  const payment=paid.data.payments[0];const attachment=await s.call(`/supplier-payments/${payment.id}/attachment`,s.sa);assert.equal(attachment.status,200,JSON.stringify(attachment.data));
+  assert.equal((await s.call(`/supplier-payments/${payment.id}/void`,s.sa,'POST',{reason:'Không có quyền huỷ khoản trả'})).status,403);
+  assert.equal((await s.call(`/purchase-orders/${id}/cancel`,s.sa,'POST',{reason:'Không được huỷ đơn đã trả'})).status,409);
+  const cancelId=await make();await approve(cancelId);
+  const cancelled=await s.call(`/purchase-orders/${cancelId}/cancel`,s.sa,'POST',{reason:'Đổi kế hoạch mua hàng'});assert.equal(cancelled.status,200,JSON.stringify(cancelled.data));assert.equal(cancelled.data.state,'cancelled');assert.ok(cancelled.data.events.some((e:any)=>e.action==='cancel'&&e.by==='Tên sa'));
+  const receivedId=await make();await approve(receivedId);const ready=(await s.call('/purchase-orders/'+receivedId,s.sa)).data;
+  const received=await s.call(`/purchase-orders/${receivedId}/receipts`,s.sa,'POST',{clientKey:crypto.randomUUID(),warehouse:'Kho nhận kiểm thử',lines:[{lineId:ready.lines[0].id,goodQty:1}]});assert.equal(received.status,201,JSON.stringify(received.data));
+  assert.equal((await s.call(`/purchase-orders/${receivedId}/cancel`,s.sa,'POST',{reason:'Không được huỷ đơn đã nhận'})).status,409);
 });

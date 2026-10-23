@@ -37,6 +37,8 @@ export interface StaffEnv {
   sapoOrderWebhookUrl?: string;
   sapoHdktOrderWebhookUrl?: string;
   sapoPosOrderWebhookUrl?: string;
+  /** Phiếu nhận hàng CRM → n8n/OpenClaw → Sapo; callback dùng chung SAPO_SYNC_TOKEN. */
+  sapoGoodsReceiptWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
   /** Báo cáo kết ca POS được đẩy bất đồng bộ sang hàng đợi Claw/Zalo. */
   posShiftReportWebhook?: { url: string; token: string; fetch?: typeof fetch };

@@ -312,7 +312,7 @@ const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
   quoteFilter: { q: '', type: '', owner: '', sort: 'updated' },
   customerQuery: '', customerTotal: 0, memberQuery: '', memberStatus: '',
-  products: null, productTotal: 0, productQuery: '', productBrand: '', policies: [], warehouses: [], selected: new Map(),
+  products: null, productTotal: 0, productQuery: '', productBrand: '', productWarehouse: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
 /** Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC): Manager hoặc người được Manager bật cờ "Được duyệt". Máy chủ kiểm lại. */
@@ -2098,6 +2098,11 @@ const thumb = p => imgTag(p.imageUrl);
 function applyCatalogMeta(d) {
   if (d.policies) state.policies = d.policies;
   if (d.warehouses) state.warehouses = d.warehouses;
+  const stockWarehouses = state.warehouses.filter(w => w.kind === 'stock');
+  if (state.productWarehouse && !stockWarehouses.some(w => w.id === state.productWarehouse)) state.productWarehouse = '';
+  const warehouse = $('#product-warehouse');
+  warehouse.innerHTML = '<option value="">Tất cả kho</option>' + stockWarehouses.map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
+  warehouse.value = state.productWarehouse;
   const sel = $('#product-policy');
   sel.innerHTML = state.policies.map(p => `<option value="${esc(p.id)}">Bảng giá: ${esc(p.name)}</option>`).join('');
   sel.value = currentPolicy(); sel.hidden = state.policies.length < 2;
@@ -2269,16 +2274,21 @@ function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
   const list = state.products, filtered = state.productQuery || state.productBrand;
+  const warehouse = state.warehouses.find(w => w.id === state.productWarehouse);
+  $('#product-stock-head').textContent = warehouse ? `Tồn · ${warehouse.name}` : 'Tồn kho';
   $('#product-count').textContent = state.productTotal ? `${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
   tbody.innerHTML = list.map(p => {
-    const price = productPrice(p), stock = availableStock(p), sel = state.selected.has(p.sku);
+    const price = productPrice(p), stock = warehouse ? (Number(p.stock?.[warehouse.id]) || 0) : availableStock(p), sel = state.selected.has(p.sku);
+    // Giữ báo giá hiện chưa gắn theo kho: không trừ toàn bộ số treo vào từng kho riêng.
+    const held = warehouse ? 0 : heldQty(p.sku);
+    const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
     return `<tr>
       <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
       <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${esc(p.name)}</span><small>${esc(p.sku)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
-      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockDetail(p))}${heldQty(p.sku) ? ` · đang treo ${fmtNum(heldQty(p.sku))}` : ''}">${fmtNum(stock)}${heldQty(p.sku) ? `<small>treo ${fmtNum(heldQty(p.sku))}</small>` : ''}</td>
+      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}${held ? ` · đang treo ${fmtNum(held)}` : ''}">${fmtNum(stock)}${held ? `<small>treo ${fmtNum(held)}</small>` : ''}</td>
       <td class="actions-cell"><div class="row-actions">${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
@@ -2328,6 +2338,7 @@ let productTimer;
 const reloadProducts = () => { productPager?.reset(); loadProducts(); };
 $('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, 250); });
 $('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; reloadProducts(); });
+$('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; renderProducts(); });
 $('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });
 $('#product-list').addEventListener('change', e => {
   const box = e.target.closest('[data-select]'); if (!box) return;
@@ -3549,6 +3560,7 @@ async function openOrder(id) {
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
+  if(d.purchases?.length) $('#order-contract').insertAdjacentHTML('beforeend', '<p class="small">Đơn mua NCC: ' + d.purchases.map(p => `<a class="data-link" href="#/purchases/${encodeURIComponent(p.id)}">${esc(p.number)}</a>`).join(' · ') + '</p>');
   renderInvoice(o); renderProgress(d);
   // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
@@ -3559,7 +3571,7 @@ async function openOrder(id) {
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
   $('#order-pack').disabled = false; $('#order-pack').title = 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
-  $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || o.status === 'draft' || r.balance <= 0;
+  $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || (o.status === 'draft' && o.channel !== 'crm') || r.balance <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = r.balance < 0 ? `<div class="pay-summary warn"><span>Còn phải hoàn / dùng đổi hàng</span><b>${money(-r.balance)}</b></div>` : o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
     ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
@@ -3567,7 +3579,8 @@ async function openOrder(id) {
        <small>Đã thu ${money(r.paid)} / ${money(r.due)}</small></div>`;
   // Phiếu đã huỷ: gạch ngang + ai huỷ, lý do (không tính vào đã thu). Manager / quyền "Huỷ phiếu thu" huỷ phiếu ghi nhầm (bắt buộc lý do).
   if(d.returnAdjustment){const n=document.createElement('p');n.className='pos-note';n.textContent='Hàng/phí đã trả: '+money(d.returnAdjustment.credit)+' · Giá trị sau trả: '+money(r.due)+' · Đã hoàn hoặc dùng đổi hàng: '+money(d.returnAdjustment.settled);$('#order-debt').append(n);}
-  $('#order-payments').innerHTML = paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li class="${p.voidedAt ? 'payment-voided' : ''}" data-payment="${esc(p.id)}"><span>${fmtDate(p.paidAt)} · ${p.paymentSource === 'pos_exchange_credit' ? 'Tiền đổi hàng' : p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b>${p.voidedAt ? `<small class="void-note danger-text">Đã huỷ${p.voidedByName ? ' bởi ' + esc(p.voidedByName) : ''} · ${fmtDate(p.voidedAt)}: ${esc(p.voidReason)}</small>` : ''}${!p.voidedAt && d.canVoidPayment && !d.returnAdjustment && p.paymentSource!=='pos_exchange_credit' ? `<button type="button" class="btn ghost small danger-text" data-void-payment="${esc(p.id)}">Huỷ phiếu…</button>` : ''}</li>`).join('')}</ul>`
+  const earlyReceiptNote = o.channel === 'crm' && o.status === 'draft' ? '<p class="muted small">Có thể ghi nhận tiền đã thực thu trước khi duyệt. Phiếu thu có hiệu lực ngay; đơn hàng / HĐKT vẫn chờ duyệt.</p>' : '';
+  $('#order-payments').innerHTML = earlyReceiptNote + paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li class="${p.voidedAt ? 'payment-voided' : ''}" data-payment="${esc(p.id)}"><span>${fmtDate(p.paidAt)} · ${p.paymentSource === 'pos_exchange_credit' ? 'Tiền đổi hàng' : p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b>${p.voidedAt ? `<small class="void-note danger-text">Đã huỷ${p.voidedByName ? ' bởi ' + esc(p.voidedByName) : ''} · ${fmtDate(p.voidedAt)}: ${esc(p.voidReason)}</small>` : ''}${!p.voidedAt && d.canVoidPayment && !d.returnAdjustment && p.paymentSource!=='pos_exchange_credit' ? `<button type="button" class="btn ghost small danger-text" data-void-payment="${esc(p.id)}">Huỷ phiếu…</button>` : ''}</li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>');
   if (o.channel === 'pos' && o.fulfillmentMode === 'cod' && o.status !== 'cancelled' && r.balance > 0 && can('pos.sell')) {
     for (const delivery of d.deliveries.filter(x => x.status === 'delivered' && x.codAmount > d.payments.filter(p => !p.voidedAt && p.deliveryId === x.id).reduce((n, p) => n + p.amount, 0)))
@@ -4209,6 +4222,8 @@ $('#contract-form').addEventListener('submit', async e => {
   if (no && no !== f.contractNo.dataset.auto) body.contractNo = no;
   try {
     Object.assign(body,target.sourcing.read());target.busy=true;f.querySelector('.modal-foot .btn.primary').disabled=true;
+    Object.assign(body,await target.sourcing.prepare());
+    if(contractTarget!==target)return;
     // Lập HĐKT: chọn có tạo đơn trên Sapo (chọn kho; Sapo lỗi → không lập HĐKT) hay chỉ lập trên web.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
       run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }) });

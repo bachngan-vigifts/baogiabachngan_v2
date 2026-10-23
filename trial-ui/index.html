@@ -377,12 +377,13 @@
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="product-search" type="search" placeholder="Tìm tên, mã SKU, thương hiệu… (gõ không dấu được)" aria-label="Tìm sản phẩm"></label>
           <select id="product-brand" aria-label="Thương hiệu"><option value="">Mọi thương hiệu</option></select>
+          <select id="product-warehouse" aria-label="Kho xem tồn"><option value="">Tất cả kho</option></select>
           <select id="product-policy" aria-label="Bảng giá dùng khi lập báo giá"></select>
           <span class="muted small" id="product-count"></span>
         </div>
         <div class="table-wrap">
           <table class="data-table" id="product-table">
-            <thead><tr><th class="check-col"><span class="sr-only">Chọn</span></th><th>Sản phẩm</th><th>Thương hiệu</th><th>ĐVT</th><th class="right" id="product-price-head">Giá</th><th class="right">Tồn kho</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <thead><tr><th class="check-col"><span class="sr-only">Chọn</span></th><th>Sản phẩm</th><th>Thương hiệu</th><th>ĐVT</th><th class="right" id="product-price-head">Giá</th><th class="right" id="product-stock-head">Tồn kho</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
             <tbody id="product-list"></tbody>
           </table>
         </div>
