@@ -28,7 +28,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
-import { foldSql, matchAllWords, paging } from '../../../core/text/fold.ts';
+import { foldSql, matchAllWords, paging, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -436,7 +436,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         branchName: sql<string>`coalesce((select ${posRegisters.name} from ${posShifts} inner join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} where ${posShifts.id}=${salesOrders.shiftId} limit 1),'VIGIFTS / CRM')`,
         deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.updatedAt} desc limit 1),'')`,
         deliveryCarrier: sql<string>`coalesce((select ${deliveries.carrier} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.updatedAt} desc limit 1),'')`,
-      }).from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.ownerId)).where(where).orderBy(desc(salesOrders.orderDate), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(limit).offset(offset),
+      }).from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.ownerId)).where(where).orderBy(...rankFirst(searchRank([salesOrders.orderNo, salesOrders.quoteNo, salesOrders.phone], salesOrders.customerName, q)), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(limit).offset(offset),
       c.env.db.select({ n: count() }).from(salesOrders).where(pendingWhere),
       c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(scopedFlow).orderBy(asc(employees.name)),
       c.env.db.selectDistinct({ id: posRegisters.id, name: posRegisters.name }).from(salesOrders).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId)).where(scopedFlow).orderBy(asc(posRegisters.name)),
@@ -854,7 +854,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       .from(quotations).where(and(quotationPredicate(viewer(c)), eq(quotations.approvalStatus, 'approved'),
         sql`NOT EXISTS (SELECT 1 FROM ${salesOrders} WHERE ${salesOrders.quoteId} = ${quotations.id} AND ${salesOrders.status} <> 'cancelled')`,
         matchAllWords(foldSql(quotations.quoteNo, quotations.customer), c.url.searchParams.get('q'))))
-      .orderBy(desc(quotations.updatedAt)).limit(30);
+      .orderBy(...rankFirst(searchRank([quotations.quoteNo], quotations.customer, c.url.searchParams.get('q'))), desc(quotations.createdAt), desc(quotations.id)).limit(30);
     return json({ quotes: rows });
   }, 'business');
 
@@ -869,7 +869,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
       invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
-      .where(where).orderBy(desc(salesContracts.createdAt), desc(salesContracts.id)).limit(limit).offset(offset),
+      .where(where).orderBy(...rankFirst(searchRank([salesContracts.contractNo, salesOrders.quoteNo], salesOrders.customerName, c.url.searchParams.get('q'))), desc(salesContracts.createdAt), desc(salesContracts.id)).limit(limit).offset(offset),
       c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
         .where(and(orderScope(c), ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'))),
     ]);
@@ -1143,7 +1143,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       want === 'paid' ? sql`${due} > 0 AND ${paid} >= ${due}` : sql`${due} > ${paid}`,
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.taxCode,
         sql`(SELECT ${salesContracts.contractNo} FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`), c.url.searchParams.get('q'))))
-      .orderBy(desc(salesOrders.orderDate)).limit(2000);
+      .orderBy(...rankFirst(searchRank([salesOrders.orderNo, salesOrders.phone, salesOrders.taxCode], salesOrders.customerName, c.url.searchParams.get('q'))), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(2000);
     const contracts = rows.length ? await c.env.db.select({ orderId: salesContracts.orderId, status: salesContracts.status, no: salesContracts.contractNo }).from(salesContracts).where(inArray(salesContracts.orderId, rows.map(r => r.id))) : [];
     const counted = rows.filter(r => debtCounts(r.status, contracts.find(x => x.orderId === r.id)?.status)), ids = counted.map(r => r.id);
     const [sch, pay] = ids.length ? await Promise.all([

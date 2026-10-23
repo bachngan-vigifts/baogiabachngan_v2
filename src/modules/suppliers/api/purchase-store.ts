@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, like, or, sql } from 'drizzle-orm';
+import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
@@ -116,16 +117,18 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
 
 export interface PurchaseListFilter { q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }
 function purchaseListScope(m: Member, filter: PurchaseListFilter) {
-  const q = (filter.q ?? '').trim().slice(0, 80), likeQ = '%' + q.replace(/[\\%_]/g, x => '\\' + x) + '%';
+  const q = (filter.q ?? '').trim().slice(0, 80);
   return and(purchaseScope(m), filter.openOnly ? isNull(incomingShipments.cancelledAt) : undefined, filter.supplierId ? eq(incomingShipments.supplierId, filter.supplierId) : undefined,
-    q ? or(ilike(incomingShipments.ticketNumber, likeQ), ilike(incomingShipments.supplierInternalOrderNumber, likeQ), ilike(incomingShipments.supplierName, likeQ), ilike(incomingShipments.note, likeQ),
-      sql`exists (select 1 from ${supplierOrderSources} where ${supplierOrderSources.shipmentId} = ${incomingShipments.id} and (${supplierOrderSources.sourceNo} ilike ${likeQ} or ${supplierOrderSources.customerName} ilike ${likeQ} or ${supplierOrderSources.sku} ilike ${likeQ}))`) : undefined);
+    // Tìm chung (không dấu, nhiều từ, mã gõ thiếu dấu câu – core/text/fold.ts): trên đơn mua hoặc trên nguồn (báo giá / đơn bán / mã hàng).
+    q ? or(matchAllWords(foldSql(incomingShipments.ticketNumber, incomingShipments.supplierInternalOrderNumber, incomingShipments.supplierName, incomingShipments.note), q),
+      sql`exists (select 1 from ${supplierOrderSources} where ${supplierOrderSources.shipmentId} = ${incomingShipments.id} and ${matchAllWords(foldSql(supplierOrderSources.sourceNo, supplierOrderSources.customerName, supplierOrderSources.sku), q)})`) : undefined);
 }
 
 /** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
 export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
   const rows = await db.select().from(incomingShipments).where(purchaseListScope(m, filter))
-    .orderBy(desc(incomingShipments.createdAt)).limit(Math.min(filter.limit ?? 300, filter.openOnly ? 5000 : 500));
+    .orderBy(...rankFirst(searchRank([incomingShipments.ticketNumber, incomingShipments.supplierInternalOrderNumber], incomingShipments.supplierName, filter.q)), desc(incomingShipments.createdAt))
+    .limit(Math.min(filter.limit ?? 300, filter.openOnly ? 5000 : 500));
   const ids = rows.map(r => r.id);
   if (!ids.length) return [];
   const [lines, rl, schedules, payments] = await Promise.all([
@@ -322,18 +325,18 @@ export async function stockOf(db: Db, skus: string[]) {
 
 /** Tìm nhanh chứng từ nguồn để lập đơn mua (đúng phạm vi xem). */
 export async function sourceCandidates(db: Db, m: Member, q: string, offset = 0) {
-  const term = q.trim().slice(0, 60), likeQ = '%' + term.replace(/[\\%_]/g, x => '\\' + x) + '%';
+  const term = q.trim().slice(0, 60);
   const [qs, os, rs] = await Promise.all([
     db.select({ id: quotations.id, no: quotations.quoteNo, customer: quotations.customer, at: quotations.updatedAt }).from(quotations)
-      .where(and(quotationPredicate(m), term ? or(ilike(quotations.quoteNo, likeQ), ilike(quotations.customer, likeQ)) : undefined)).orderBy(desc(quotations.updatedAt), quotations.id).limit(8).offset(offset),
+      .where(and(quotationPredicate(m), matchAllWords(foldSql(quotations.quoteNo, quotations.customer), term)))
+      .orderBy(...rankFirst(searchRank([quotations.quoteNo], quotations.customer, term)), desc(quotations.createdAt), quotations.id).limit(8).offset(offset),
     db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, at: salesOrders.createdAt,
       contractNo: contractNoOf }).from(salesOrders)
-      .where(and(orderScopeFor(m), sql`${salesOrders.status} <> 'cancelled'`, term ? or(ilike(salesOrders.orderNo, likeQ), ilike(salesOrders.customerName, likeQ),
-        sql`exists (select 1 from ${salesContracts} where ${salesContracts.orderId} = ${salesOrders.id} and ${salesContracts.contractNo} ilike ${likeQ})`) : undefined))
-      .orderBy(desc(salesOrders.createdAt), salesOrders.id).limit(8).offset(offset),
+      .where(and(orderScopeFor(m), sql`${salesOrders.status} <> 'cancelled'`, matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, contractNoOf), term)))
+      .orderBy(...rankFirst(searchRank([salesOrders.orderNo, contractNoOf], salesOrders.customerName, term)), desc(salesOrders.createdAt), salesOrders.id).limit(8).offset(offset),
     db.select({ id: customerStockRequests.id, customer: customers.name, at: customerStockRequests.createdAt }).from(customerStockRequests)
       .innerJoin(customers, eq(customers.id, customerStockRequests.customerId))
-      .where(and(m.role === 'manager' ? undefined : eq(customerStockRequests.ownerId, m.id), term ? ilike(customers.name, likeQ) : undefined))
+      .where(and(m.role === 'manager' ? undefined : eq(customerStockRequests.ownerId, m.id), matchAllWords(foldSql(customers.name), term)))
       .orderBy(desc(customerStockRequests.createdAt), customerStockRequests.id).limit(8).offset(offset),
   ]);
   return [

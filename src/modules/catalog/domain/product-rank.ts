@@ -9,24 +9,10 @@
  *   0 mã đúng · 1 mã bắt đầu bằng chuỗi gõ · 2 tên bắt đầu bằng cụm gõ · 3 tên chứa nguyên cụm
  *   4 mọi từ đứng đầu một chữ trong tên · 5 mọi từ nằm trong tên · 6 còn lại (khớp nhờ mã / thương hiệu / mẫu)
  */
-import { fold } from '../../../core/text/fold.ts';
+import { fold, compactText, needsCompact, parseQuery, type SearchQuery } from '../../../core/text/fold.ts';
 
-export interface SearchQuery {
-  /** Từ khoá đã bỏ dấu (tối đa 10). */ words: string[];
-  /** Cụm gõ đã bỏ dấu, một khoảng trắng giữa các từ. */ phrase: string;
-  /** Chuỗi gõ chỉ còn chữ + số (so với mã). */ compact: string;
-}
-
-/** Bỏ mọi ký tự không phải chữ / số (sau khi đã bỏ dấu). */
-export const compactText = (folded: string) => folded.replace(/[^a-z0-9]/g, '');
-/** Từ có số hoặc ký hiệu mới khớp kiểu bỏ khoảng trắng (tránh "ly" khớp nhầm "bol yen"). */
-export const needsCompact = (word: string) => /[0-9]/.test(word) || /[^a-z0-9]/.test(word);
-
-export function parseQuery(q: unknown): SearchQuery {
-  const phrase = fold(q);
-  const words = phrase.split(' ').filter(Boolean).slice(0, 10);
-  return { words, phrase: words.join(' '), compact: compactText(phrase) };
-}
+// Quy tắc tách từ khoá / bỏ khoảng trắng dùng chung cho mọi ô tìm (core/text/fold.ts).
+export { compactText, needsCompact, parseQuery, type SearchQuery };
 
 /** Một từ khoá có trong chuỗi tìm (đã bỏ dấu) không. */
 export function wordMatches(hay: string, compactHay: string, word: string): boolean {

@@ -11,7 +11,7 @@ import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
-import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
+import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positionPermissions } from '../../staff/schema.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
@@ -282,7 +282,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       .where(and(posOrderStoreScope(m),all ? undefined : orderScopeFor(m),
         (PACKING_STATUSES as readonly string[]).includes(status) ? eq(packingSlips.status, status as typeof PACKING_STATUSES[number]) : undefined,
         matchAllWords(foldSql(packingSlips.slipNo, salesOrders.orderNo, salesContracts.contractNo, salesOrders.customerName), p.get('q'))))
-      .orderBy(desc(packingSlips.updatedAt)).limit(200);
+      .orderBy(...rankFirst(searchRank([packingSlips.slipNo, salesOrders.orderNo, salesContracts.contractNo], salesOrders.customerName, p.get('q'))), desc(packingSlips.createdAt), desc(packingSlips.id)).limit(200);
     return json({ slips: rows.map(r => ({ ...r.slip, sourceLabel: PACKING_SOURCE_LABEL[r.slip.source], orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName, expectedDeliveryDate: r.expectedDeliveryDate })) });
   }, 'business');
 

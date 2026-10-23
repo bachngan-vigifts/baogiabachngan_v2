@@ -17,7 +17,7 @@ async function setup() {
   };
   const login = async (email: string) => (await router.handle(new Request(origin + '/api/staff/login', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: PASSWORD }) }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const }))
     .headers.get('set-cookie')!.split(';')[0]!;
-  return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), other: await login('new@x.vn'), old: await login('old@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), other: await login('new@x.vn'), old: await login('old@x.vn') };
 }
 
 test('lịch sử mua hàng: gộp theo mã, số đơn, lần mua gần nhất', () => {
@@ -130,4 +130,22 @@ test('điều khoản riêng của khách: % cọc, hạn thanh toán, giới h�
   assert.equal((await call('/customers/' + c.data.id, mgr, 'PUT', { name: 'Khách điều khoản 2' })).status, 200);
   got = (await call('/customers/' + c.data.id, mgr)).data.customer;
   assert.deepEqual([got.name, got.depositRate], ['Khách điều khoản 2', 40]);
+});
+
+test('tìm khách hàng dùng thuật toán chung: SĐT / mã gõ có hoặc không dấu cách, khớp nhất lên đầu, cùng mức thì mới tạo trước', async () => {
+  const { db, call, mgr } = await setup();
+  const { customers } = await import('../../src/modules/customers/schema.ts');
+  const row = (id: string, name: string, phone: string, code: string, createdAt: string) =>
+    ({ id, name, contact: '', phone, email: '', address: '', search: '', customerCode: code, sourceVersion: 0, syncedAt: '', createdAt, updatedAt: createdAt });
+  await db.insert(customers).values([
+    row('c-old', 'Công ty Minh Long Việt', '0901 234 567', 'KH-0001', '2026-01-01T00:00:00.000Z'),
+    row('c-new', 'Đại lý Ly sứ Minh Long', '0287 777 888', 'KH-0002', '2026-10-01T00:00:00.000Z'),
+    row('c-start', 'Minh Long Shop', '0999 000 111', 'KH-0003', '2026-05-01T00:00:00.000Z'),
+  ]);
+  const ids = async (q: string) => (await call('/customers?limit=50&q=' + encodeURIComponent(q), mgr)).data.customers.map((c: any) => c.id).filter((id: string) => id.startsWith('c-'));
+  assert.deepEqual(await ids('0901234567'), ['c-old'], 'SĐT gõ liền khớp SĐT có dấu cách');
+  assert.deepEqual(await ids('kh0002'), ['c-new'], 'mã gõ thiếu gạch nối');
+  assert.deepEqual(await ids('long minh'), ['c-new', 'c-start', 'c-old'], 'nhiều từ không cần đúng thứ tự; cùng mức khớp thì mới tạo trước');
+  assert.deepEqual(await ids('minh long'), ['c-start', 'c-new', 'c-old'], 'tên bắt đầu bằng cụm gõ lên đầu, rồi mới tạo trước');
+  assert.deepEqual(await ids(''), ['c-new', 'c-start', 'c-old'], 'không tìm: mới tạo lên trên cùng');
 });

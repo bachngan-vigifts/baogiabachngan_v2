@@ -11,6 +11,13 @@ function fold(value) {
   }
   return out.trim().replace(/\s+/g, " ");
 }
+var compactText = (folded) => folded.replace(/[^a-z0-9]/g, "");
+var needsCompact = (word) => /[0-9]/.test(word) || /[a-z0-9][^a-z0-9]+[a-z0-9]/.test(word);
+function parseQuery(q) {
+  const phrase = fold(q);
+  const words = phrase.split(" ").filter(Boolean).slice(0, 10);
+  return { words, phrase: words.join(" "), compact: compactText(phrase) };
+}
 
 // src/modules/catalog/domain/product-filters.ts
 var PRODUCT_GROUPS = {
@@ -32,13 +39,6 @@ function priceRange(min, max) {
 }
 
 // src/modules/catalog/domain/product-rank.ts
-var compactText = (folded) => folded.replace(/[^a-z0-9]/g, "");
-var needsCompact = (word) => /[0-9]/.test(word) || /[^a-z0-9]/.test(word);
-function parseQuery(q) {
-  const phrase = fold(q);
-  const words = phrase.split(" ").filter(Boolean).slice(0, 10);
-  return { words, phrase: words.join(" "), compact: compactText(phrase) };
-}
 function wordMatches(hay, compactHay, word) {
   if (hay.includes(word)) return true;
   const c = compactText(word);

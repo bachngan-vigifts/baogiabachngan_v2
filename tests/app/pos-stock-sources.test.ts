@@ -96,3 +96,18 @@ test('POS: giữ hàng theo báo giá (không gắn kho) chỉ trừ vào kho qu
  p=(await f.call(path,f.emp)).data.products[0];
  assert.deepEqual([p.onHand,p.reserved,p.available],[10,20,0],'giữ vượt tổng tồn: kho cửa hàng hết hàng');
 });
+
+test('POS tìm sản phẩm cùng thuật toán trang Sản phẩm; skus= trả đúng thứ tự trình duyệt đã xếp hạng',async()=>{
+ const f=await setup(),now=new Date().toISOString();
+ const {products,productPrices}=await import('../../src/modules/catalog/schema.ts');
+ await f.db.insert(products).values([{sku:'LHC-4282',name:'Bình giữ nhiệt Lock 1.2L',unit:'cái',updatedAt:now},{sku:'NOPRICE',name:'Ly sứ không giá',unit:'cái',updatedAt:now}]);
+ await f.db.insert(productPrices).values({sku:'LHC-4282',policyId:'retail-vat',price:250000});
+ const skus=async(q:string)=>(await f.call(`/pos/catalog?registerId=${f.registerId}&q=${encodeURIComponent(q)}`,f.emp)).data.products.map((p:any)=>p.sku);
+ assert.deepEqual(await skus('su ly'),['00123'],'nhiều từ không đúng thứ tự (trước: phải gõ đúng cụm "ly su")');
+ assert.deepEqual(await skus('lhc4282'),['LHC-4282'],'mã gõ thiếu gạch nối');
+ assert.deepEqual(await skus('giu nhiet 1.2l'),['LHC-4282']);
+ const ordered=await f.call(`/pos/catalog?registerId=${f.registerId}&skus=LHC-4282,NOPRICE,00123`,f.emp);
+ assert.equal(ordered.status,200,JSON.stringify(ordered.data));
+ assert.deepEqual(ordered.data.products.map((p:any)=>p.sku),['LHC-4282','00123'],'giữ thứ tự gửi lên, bỏ mã không có giá ở bảng giá quầy');
+ assert.equal(ordered.data.nextOffset,null);
+});

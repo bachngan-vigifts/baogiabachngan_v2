@@ -1,6 +1,7 @@
 import { issuePartnerInvite } from '../../portal/api/registration.ts';
+import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import { isRegistrationInvite } from '../../portal/domain/registration.ts';
-import { and, asc, count, eq, ilike, inArray, isNull, ne, notInArray, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, ne, notInArray, or } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -58,10 +59,10 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
   router.get('/suppliers', async c => {
     requireEditor(c);
     const q = (c.url.searchParams.get('q') ?? '').trim().slice(0, 100), active = c.url.searchParams.get('active');
-    const like = '%' + q.replace(/[\\%_]/g, m => '\\' + m) + '%';
-    const where = and(q ? or(ilike(suppliers.name, like), ilike(suppliers.taxCode, like), ilike(suppliers.phone, like), ilike(suppliers.email, like)) : undefined,
+    const where = and(matchAllWords(foldSql(suppliers.name, suppliers.taxCode, suppliers.phone, suppliers.email), q),
       active === '1' ? eq(suppliers.active, true) : active === '0' ? eq(suppliers.active, false) : undefined);
-    const rows = await c.env.db.select().from(suppliers).where(where).orderBy(asc(suppliers.active), asc(suppliers.name)).limit(500);
+    // Có từ khoá: khớp nhất lên trước; còn lại NCC mới tạo lên trên cùng.
+    const rows = await c.env.db.select().from(suppliers).where(where).orderBy(...rankFirst(searchRank([suppliers.taxCode, suppliers.phone], suppliers.name, q)), asc(suppliers.active), desc(suppliers.createdAt), asc(suppliers.name)).limit(500);
     const ids = rows.map(r => r.id);
     const [contacts, accounts, orders] = ids.length ? await Promise.all([
       c.env.db.select({ id: supplierContacts.supplierId, n: count() }).from(supplierContacts).where(inArray(supplierContacts.supplierId, ids)).groupBy(supplierContacts.supplierId),
