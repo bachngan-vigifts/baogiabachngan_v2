@@ -332,9 +332,15 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
 
   function receiptCard(r) {
     const card = el('div', 'pur-card' + (r.cancelledAt ? ' is-off' : ''));
-    const top = el('div', 'pur-card-head'); const [lbl, cls] = SAPO_LABEL[r.sapoStatus] || [r.sapoStatus, ''];
+    const verified = !!r.sapoVerifiedAt && !!r.sapoReceiptId && !!r.sapoReceiptUrl;
+    const top = el('div', 'pur-card-head'); const [lbl, cls] = r.sapoStatus === 'done' && !verified ? ['Đã ghi thủ công · cần đối soát', 'warn'] : SAPO_LABEL[r.sapoStatus] || [r.sapoStatus, ''];
     top.append(el('b', '', `${r.receiptNo} · ${dmy(r.receivedDate)}`), el('span', 'sup-pill ' + (r.cancelledAt ? '' : cls), r.cancelledAt ? 'Đã huỷ' : lbl + (r.sapoReceiptCode ? ' · ' + r.sapoReceiptCode : '')));
     card.append(top, el('small', 'muted', `${r.by || ''}${r.warehouse ? ' · ' + r.warehouse : ''}${r.note ? ' · ' + r.note : ''}`));
+    if (verified) {
+      try { const url = new URL(r.sapoReceiptUrl); if(url.origin === 'https://bachngankiengiang.mysapogo.com' && url.pathname === '/admin/purchase_orders/'+r.sapoPurchaseOrderId && !url.username && !url.password && !url.search && !url.hash) { const a=el('a','btn secondary small','Mở phiếu Sapo'); a.href=url.href; a.target='_blank'; a.rel='noopener noreferrer';card.append(a); } } catch { /* link không hợp lệ */ }
+    }
+    if(r.job) card.append(el('p','muted small', ({queued:'Đang chờ gửi n8n',processing:'Claw đang xử lý',callback_pending:'Đã giao n8n · chờ kết quả Sapo',done:'Đã xác minh liên kết Sapo',failed:'Gửi/xử lý chưa thành công',needs_review:'Cần đối soát dữ liệu hoặc kết quả'})[r.job.status] || r.job.status));
+    if(r.job?.lastError) card.append(el('p','pur-note danger small',r.job.lastError));
     card.append(el('p', 'small', r.lines.map(l => `${l.sku}: đạt ${num(l.goodQty)}${l.damagedQty ? `, hỏng ${num(l.damagedQty)}` : ''}${l.note ? ` (${l.note})` : ''}`).join(' · ')));
     if (r.photos?.length) {
       const ph = el('div', 'ship-photos');
@@ -346,21 +352,17 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const o = opts || {};
     if (!o.canReceive) return card;
     const tools = el('div', 'pur-inline'), err = errorBox();
-    const setSapo = (status, extra) => body => run(body.button, err, () => api(`/supplier-receipts/${encodeURIComponent(r.id)}/sapo`, 'PUT', { status, ...extra(body) }), 'Đã cập nhật nhập kho Sapo.');
-    if (r.sapoStatus !== 'done') {
-      tools.append(
-        btn('Đã nhập Sapo…', 'btn primary small', () => inlineForm(card, 'Mã phiếu nhập kho trên Sapo', 'VD: PN00123', 'Lưu', setSapo('done', b => ({ code: b.value })))),
-        btn('Báo lỗi Sapo…', 'btn secondary small', () => inlineForm(card, 'Lỗi khi nhập Sapo (giữ phiếu để xử lý tiếp)', 'Mô tả lỗi', 'Lưu', setSapo('failed', b => ({ note: b.value })))),
-      );
-      if (r.sapoStatus !== 'not_needed') tools.append(btn('Không cần nhập', 'btn secondary small', e => run(e.currentTarget, err, () => api(`/supplier-receipts/${encodeURIComponent(r.id)}/sapo`, 'PUT', { status: 'not_needed', note: '' }))));
-      else tools.append(btn('Chuyển lại chờ nhập', 'btn secondary small', e => run(e.currentTarget, err, () => api(`/supplier-receipts/${encodeURIComponent(r.id)}/sapo`, 'PUT', { status: 'pending' }))));
-    }
     if (o.isManager) {
-      if (r.sapoStatus === 'done') tools.append(btn('Mở lại (nhập nhầm)', 'btn secondary small', async e => {
-        if (!await confirmBox(`Mở lại phiếu ${r.receiptNo}? Chỉ làm khi đã huỷ phiếu nhập ${r.sapoReceiptCode} trên Sapo, tránh cộng tồn hai lần.`, { title: 'Mở lại nhập Sapo', ok: 'Mở lại', danger: true })) return;
-        run(e.target, err, () => api(`/supplier-receipts/${encodeURIComponent(r.id)}/sapo`, 'PUT', { status: 'pending', note: 'Manager mở lại' }));
+      if(r.job && ['failed','callback_pending'].includes(r.job.status) && r.sapoStatus!=='done')tools.append(btn('Gửi lại yêu cầu n8n','btn secondary small',async e=>{
+        if(!await confirmBox('Gửi lại cùng mã phiếu. Claw phải tra cứu phiếu đã có trước khi tạo; không lập phiếu nhận CRM khác.',{ok:'Gửi lại'}))return;
+        await run(e.currentTarget,err,async()=>{await api(`/supplier-receipts/${encodeURIComponent(r.id)}/retry-sapo`,'POST',{});return api(`/purchase-orders/${encodeURIComponent(r.shipmentId)}`);});
       }));
-      else tools.append(btn('Huỷ phiếu…', 'btn secondary small danger-text', () => inlineForm(card, 'Lý do huỷ phiếu nhận', 'VD: đếm nhầm', 'Huỷ phiếu', b => run(b.button, err, () => api(`/supplier-receipts/${encodeURIComponent(r.id)}/cancel`, 'POST', { reason: b.value }), 'Đã huỷ phiếu nhận.'))));
+      tools.append(btn('Đối soát phiếu Sapo đã có','btn secondary small',()=>inlineForm(card,'Lý do đối soát (không tạo phiếu Sapo)','VD: mã nhập tay khác mã Sapo','Yêu cầu đối soát',b=>run(b.button,err,async()=>{
+        const expected={sapoPurchaseOrderId:r.sapoPurchaseOrderId||'',sapoReceiptId:r.sapoReceiptId||'',sapoReceiptCode:r.sapoReceiptCode||'',sapoReceiptUrl:r.sapoReceiptUrl||'',sapoVerifiedAt:r.sapoVerifiedAt||null,sapoStatus:r.sapoStatus,sapoUpdatedAt:r.sapoUpdatedAt||null};
+        await api(`/supplier-receipts/${encodeURIComponent(r.id)}/reconcile-sapo`,'POST',{reason:b.value,expected});
+        return api(`/purchase-orders/${encodeURIComponent(r.shipmentId)}`);
+      }))));
+      if(!verified && r.sapoStatus!=='done')tools.append(btn('Huỷ phiếu…','btn secondary small danger-text',()=>inlineForm(card,'Lý do huỷ phiếu nhận','VD: đếm nhầm','Huỷ phiếu',b=>run(b.button,err,()=>api(`/supplier-receipts/${encodeURIComponent(r.id)}/cancel`,'POST',{reason:b.value}),'Đã huỷ phiếu nhận.'))));
     }
     card.append(tools, err);
     return card;

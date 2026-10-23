@@ -137,7 +137,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal(again.data.duplicate, true); assert.equal(again.data.receipts.length, 1);
   v = again.data; assert.equal(v.state, 'partially_received');
   assert.deepEqual(v.lines.map((l: any) => [l.good, l.damaged, l.missing]), [[6, 1, 4], [0, 0, 5]]);
-  assert.equal(v.receipts[0].sapoStatus, 'pending', 'đã nhận ≠ đã nhập Sapo');
+  assert.equal(v.receipts[0].sapoStatus, 'failed', 'chưa cấu hình webhook: giữ phiếu, báo lỗi giao job; không coi là đã nhập Sapo');
   assert.equal((await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000002', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 5 }] })).status, 400, 'vượt số thiếu');
   const overBad = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000012', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: [photo] });
   assert.equal(overBad.status, 400, 'còn thiếu 4: đạt 4 + hỏng 1 → không ghi nhận đủ'); assert.equal(overBad.data.code, 'RECEIPT_OVER');
@@ -150,12 +150,8 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   const rid = v.receipts[0].id;
   assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'failed' })).status, 400, 'lỗi phải ghi chú');
   assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'failed', note: 'Sapo 500' })).data.receipts[0].sapoStatus, 'failed');
-  assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'done' })).status, 400, 'thiếu mã phiếu');
-  assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'done', code: 'PN001' })).data.receipts[0].sapoReceiptCode, 'PN001');
-  assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'done', code: 'PN001' })).status, 200, 'gửi lại cùng mã: không đổi');
-  assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'done', code: 'PN002' })).status, 409, 'không nhập Sapo hai lần');
-  assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'pending' })).status, 403, 'kho không mở lại');
-  assert.equal((await call(`/supplier-receipts/${rid}/cancel`, mgr, 'POST', { reason: 'Nhầm' })).status, 409, 'đã nhập Sapo không huỷ phiếu');
+  assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'done' })).status, 409, 'không đánh dấu hoàn tất thủ công');
+  assert.equal((await call(`/supplier-receipts/${rid}/sapo`, kho, 'PUT', { status: 'done', code: 'PN001' })).status, 409, 'chỉ callback đã xác minh mới hoàn tất');
   assert.equal((await call(`/purchase-orders/${id}/cancel`, mgr, 'POST', { reason: 'Đổi NCC' })).status, 409, 'đã nhận hàng không huỷ đơn');
 
   // Nhận đợt 2 đủ → đã nhận.
@@ -163,7 +159,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal(v.state, 'received'); assert.equal(v.receipts.length, 2);
   assert.match(v.receipts.map((r: any) => r.receiptNo).join(','), /PNH_\d{8}_/);
   // Huỷ phiếu chưa nhập Sapo (chỉ Manager) → quay lại nhận một phần.
-  const r2 = v.receipts.find((r: any) => r.sapoStatus === 'pending').id;
+  const r2 = v.receipts.find((r: any) => r.id !== rid).id;
   assert.equal((await call(`/supplier-receipts/${r2}/cancel`, kho, 'POST', { reason: 'Nhầm' })).status, 403);
   v = (await call(`/supplier-receipts/${r2}/cancel`, mgr, 'POST', { reason: 'Đếm nhầm' })).data;
   assert.equal(v.state, 'partially_received');
@@ -191,7 +187,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   // Lọc danh sách.
   const list = async (state: string, who = mgr) => (await call('/purchase-orders?state=' + state, who)).data.orders.map((o: any) => o.id);
   assert.deepEqual(await list('partially_received'), [id]);
-  assert.deepEqual(await list('sapo'), [], 'phiếu còn lại đã nhập Sapo');
+  assert.deepEqual(await list('sapo'), [id], 'phiếu còn lại chưa có callback xác minh, vẫn cần xử lý Sapo');
   assert.deepEqual(await list('draft'), []);
   assert.ok(v.events.length >= 8, 'có lịch sử thao tác');
 });

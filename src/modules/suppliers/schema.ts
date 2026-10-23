@@ -324,6 +324,10 @@ export const supplierReceipts = pgTable('supplier_receipts', {
   clientKey: text('client_key').notNull(),
   sapoStatus: text('sapo_status', { enum: SAPO_STATUSES }).notNull().default('pending'),
   sapoReceiptCode: text('sapo_receipt_code').notNull().default(''),
+  sapoPurchaseOrderId: text('sapo_purchase_order_id').notNull().default(''),
+  sapoReceiptId: text('sapo_receipt_id').notNull().default(''),
+  sapoReceiptUrl: text('sapo_receipt_url').notNull().default(''),
+  sapoVerifiedAt: text('sapo_verified_at'),
   sapoNote: text('sapo_note').notNull().default(''),
   sapoUpdatedAt: text('sapo_updated_at'),
   sapoUpdatedBy: text('sapo_updated_by'),
@@ -336,6 +340,8 @@ export const supplierReceipts = pgTable('supplier_receipts', {
   uniqueIndex('idx_supplier_receipts_client_key').on(t.clientKey),
   index('idx_supplier_receipts_shipment').on(t.shipmentId, t.createdAt),
   index('idx_supplier_receipts_sapo').on(t.sapoStatus),
+  uniqueIndex('idx_supplier_receipts_sapo_id').on(t.sapoReceiptId).where(sql`${t.sapoReceiptId} <> ''`),
+  check('chk_supplier_receipt_verified',sql`${t.sapoVerifiedAt} is null or (${t.sapoReceiptId} <> '' and ${t.sapoPurchaseOrderId} <> '' and ${t.sapoReceiptCode} <> '' and ${t.sapoReceiptUrl} <> '' and ${t.sapoStatus} = 'done')`),
   enumCheck('chk_supplier_receipts_sapo', t.sapoStatus, [...SAPO_STATUSES]),
 ]).enableRLS();
 
@@ -411,3 +417,22 @@ export const supplierOrderEvents = pgTable('supplier_order_events', {
   /** Chi tiết (JSON): thay đổi dòng hàng, giá trị cũ/mới… */
   data: text('data').notNull().default('{}'),
 }, t => [index('idx_supplier_order_events_shipment').on(t.shipmentId, t.at)]).enableRLS();
+
+
+export const receiptJobs = pgTable('supplier_receipt_jobs', {
+  receiptId: text('receipt_id').primaryKey().references(() => supplierReceipts.id),
+  action: text('action', { enum: ['create_purchase_receipt','reconcile_existing'] }).notNull(),
+  status: text('status', { enum: ['queued','processing','callback_pending','done','failed','needs_review'] }).notNull(),
+  payload: text('payload').notNull(),
+  payloadHash: text('payload_hash').notNull(),
+  attempts: bigint('attempts', {mode:'number'}).notNull().default(0),
+  dispatchToken: text('dispatch_token'), dispatchUntil: text('dispatch_until'),
+  leaseToken: text('lease_token'), leaseUntil: text('lease_until'),
+  reconciliationId: text('reconciliation_id'), expectedLink: text('expected_link'),
+  lastError: text('last_error').notNull().default(''),
+  createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [index('idx_supplier_receipt_jobs_pending').on(t.status,t.updatedAt),
+  enumCheck('chk_receipt_job_action',t.action,['create_purchase_receipt','reconcile_existing']),
+  enumCheck('chk_receipt_job_status',t.status,['queued','processing','callback_pending','done','failed','needs_review']),
+  check('chk_receipt_job_attempts',sql`${t.attempts} >= 0`),
+]).enableRLS();
