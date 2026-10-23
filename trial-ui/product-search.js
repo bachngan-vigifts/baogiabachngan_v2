@@ -1,13 +1,14 @@
 // TỰ SINH bởi `npm run ui:build` từ src/modules/catalog/domain/product-search.ts – không sửa tay.
 // src/core/text/fold.ts
-var FROM = "\xE0\xE1\u1EA1\u1EA3\xE3\xE2\u1EA7\u1EA5\u1EAD\u1EA9\u1EAB\u0103\u1EB1\u1EAF\u1EB7\u1EB3\u1EB5\xE8\xE9\u1EB9\u1EBB\u1EBD\xEA\u1EC1\u1EBF\u1EC7\u1EC3\u1EC5\xEC\xED\u1ECB\u1EC9\u0129\xF2\xF3\u1ECD\u1ECF\xF5\xF4\u1ED3\u1ED1\u1ED9\u1ED5\u1ED7\u01A1\u1EDD\u1EDB\u1EE3\u1EDF\u1EE1\xF9\xFA\u1EE5\u1EE7\u0169\u01B0\u1EEB\u1EE9\u1EF1\u1EED\u1EEF\u1EF3\xFD\u1EF5\u1EF7\u1EF9\u0111";
+var MARKS = "\u0300\u0301\u0302\u0303\u0306\u0309\u031B\u0323";
+var FROM = "\xE0\xE1\u1EA1\u1EA3\xE3\xE2\u1EA7\u1EA5\u1EAD\u1EA9\u1EAB\u0103\u1EB1\u1EAF\u1EB7\u1EB3\u1EB5\xE8\xE9\u1EB9\u1EBB\u1EBD\xEA\u1EC1\u1EBF\u1EC7\u1EC3\u1EC5\xEC\xED\u1ECB\u1EC9\u0129\xF2\xF3\u1ECD\u1ECF\xF5\xF4\u1ED3\u1ED1\u1ED9\u1ED5\u1ED7\u01A1\u1EDD\u1EDB\u1EE3\u1EDF\u1EE1\xF9\xFA\u1EE5\u1EE7\u0169\u01B0\u1EEB\u1EE9\u1EF1\u1EED\u1EEF\u1EF3\xFD\u1EF5\u1EF7\u1EF9\u0111" + MARKS;
 var TO = "aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd";
 function fold(value) {
   const lower = String(value ?? "").toLowerCase().normalize("NFC");
   let out = "";
   for (const ch of lower) {
     const i = FROM.indexOf(ch);
-    out += i >= 0 ? TO[i] : ch;
+    out += i >= 0 ? TO[i] ?? "" : ch;
   }
   return out.trim().replace(/\s+/g, " ");
 }
