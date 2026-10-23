@@ -312,7 +312,7 @@ const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
   quoteFilter: { q: '', type: '', owner: '', sort: 'updated' },
   customerQuery: '', customerTotal: 0, memberQuery: '', memberStatus: '',
-  products: null, productTotal: 0, productQuery: '', productBrand: '', productWarehouse: '', policies: [], warehouses: [], selected: new Map(),
+  products: null, productTotal: 0, productQuery: '', productBrand: '', productWarehouse: '', productMinStock: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
 /** Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC): Manager hoặc người được Manager bật cờ "Được duyệt". Máy chủ kiểm lại. */
@@ -2117,7 +2117,8 @@ let productPager;
  * thì hỏi máy chủ như trước.
  */
 function localProducts() {
-  if (!catalog.items) return null;
+  // Lọc tồn tối thiểu theo kho (GET /products?minStock=) tính ở máy chủ trước phân trang – không lọc tại chỗ.
+  if (!catalog.items || state.productMinStock !== '') return null;
   const found = searchCatalog(catalog.items, { q: state.productQuery }) || [];
   const list = state.productBrand ? found.filter(p => p.brand === state.productBrand) : found;
   return list.length || !state.productQuery.trim() ? list : null;
@@ -2133,7 +2134,7 @@ async function loadProducts() {
   }
   state.products = null; renderProducts();
   try {
-    const d = await api(`/products?limit=${productPager.limit}&offset=${productPager.offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}`);
+    const d = await api(`/products?limit=${productPager.limit}&offset=${productPager.offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}${state.productMinStock !== '' ? '&minStock='+encodeURIComponent(state.productMinStock)+'&stockWarehouse='+encodeURIComponent(state.productWarehouse) : ''}`);
     if (req !== productReq) return;
     applyCatalogMeta(d);
     state.products = d.products; state.productTotal = d.total;
@@ -2298,12 +2299,12 @@ const markWords = (text, q) => {
 function renderProducts() {
   const tbody = $('#product-list');
   if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
-  const list = state.products, filtered = state.productQuery || state.productBrand;
+  const list = state.products, filtered = state.productQuery || state.productBrand || state.productMinStock !== '';
   const warehouse = state.warehouses.find(w => w.id === state.productWarehouse);
   $('#product-stock-head').textContent = warehouse ? `Tồn · ${warehouse.name}` : 'Tồn kho';
   $('#product-count').textContent = state.productTotal ? `${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
   tbody.innerHTML = list.map(p => {
-    const price = productPrice(p), stock = warehouse ? (Number(p.stock?.[warehouse.id]) || 0) : availableStock(p), sel = state.selected.has(p.sku);
+    const price = productPrice(p), stock = state.productMinStock !== '' && p.filteredStock !== undefined ? Number(p.filteredStock) : warehouse ? (Number(p.stock?.[warehouse.id]) || 0) : availableStock(p), sel = state.selected.has(p.sku);
     // Giữ báo giá hiện chưa gắn theo kho: không trừ toàn bộ số treo vào từng kho riêng.
     const held = warehouse ? 0 : heldQty(p.sku);
     const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
@@ -2363,7 +2364,8 @@ let productTimer;
 const reloadProducts = () => { productPager?.reset(); loadProducts(); };
 $('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, catalog.items ? 40 : 250); });
 $('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; reloadProducts(); });
-$('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; renderProducts(); });
+$('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; if(state.productMinStock !== '') reloadProducts(); else renderProducts(); });
+$('#product-min-stock').addEventListener('input', e => { clearTimeout(productTimer); if(!e.target.validity.valid) return; state.productMinStock = e.target.value; productTimer = setTimeout(reloadProducts, 250); });
 $('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });
 $('#product-list').addEventListener('change', e => {
   const box = e.target.closest('[data-select]'); if (!box) return;

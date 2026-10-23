@@ -1,8 +1,8 @@
 /* Danh bạ nhà cung cấp (#/suppliers) và các trang Mua hàng dùng chung kiểu ngăn kéo bên phải. */
 .sup-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.sup-sub { display: block; font-size: .78rem; }
+.sup-sub { display: block; font-size: var(--text-caption); }
 .data-table tr.is-off td { color: var(--muted); }
-.sup-pill { display: inline-block; font-size: .74rem; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: #eef2f7; color: var(--muted); white-space: nowrap; }
+.sup-pill { display: inline-block; font-size: var(--text-caption); font-weight: 700; padding: 3px 9px; border-radius: 99px; background: #eef2f7; color: var(--muted); white-space: nowrap; }
 .sup-pill.ok { background: var(--green-50); color: var(--green); }
 .sup-pill.warn { background: var(--amber-50); color: var(--amber); }
 .sup-pill.danger { background: #fdecea; color: #b42318; }
@@ -10,13 +10,13 @@
 .sup-shade { position: fixed; inset: 0; z-index: 60; background: #0f1d3338; }
 .sup-drawer { position: fixed; z-index: 61; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); overflow-y: auto; padding: 18px 20px; background: var(--surface); box-shadow: var(--shadow-lg); display: grid; align-content: start; gap: 14px; }
 .sup-drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.sup-drawer-head h2 { margin: 2px 0 0; font-size: 1.25rem; }
+.sup-drawer-head h2 { margin: 2px 0 0; font-size: var(--text-heading); }
 .sup-form { display: grid; gap: 16px; }
 .sup-form .form-grid.two { grid-template-columns: 1fr 1fr; }
-.sup-form label { display: grid; gap: 5px; font-size: .84rem; font-weight: 600; color: var(--ink); }
-.sup-form input, .sup-form select, .sup-form textarea { font: inherit; font-size: .88rem; font-weight: 400; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); min-width: 0; }
+.sup-form label { display: grid; gap: 5px; font-size: var(--text-small); font-weight: 600; color: var(--ink); }
+.sup-form input, .sup-form select, .sup-form textarea { font: inherit; font-size: var(--text-small); font-weight: 400; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); min-width: 0; }
 .sup-section { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
-.sup-section h3 { margin: 0; font-size: .95rem; }
+.sup-section h3 { margin: 0; font-size: var(--text-label); }
 .sup-section > .btn { justify-self: start; }
 .sup-contacts { display: grid; gap: 8px; }
 .sup-contact { display: grid; grid-template-columns: 118px 1fr 1.3fr 118px auto; gap: 6px; align-items: center; }
@@ -30,14 +30,14 @@
 .pur-drawer { width: min(920px, 100vw); }
 .pur-head-tools { display: flex; gap: 6px; align-items: center; }
 .pur-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.pur-info { display: grid; grid-template-columns: max-content 1fr max-content 1fr; gap: 6px 14px; margin: 0; font-size: .86rem; }
+.pur-info { display: grid; grid-template-columns: max-content 1fr max-content 1fr; gap: 6px 14px; margin: 0; font-size: var(--text-small); }
 .pur-info dt { color: var(--muted); }
 .pur-info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .pur-lines td, .pur-lines th { vertical-align: top; }
 .pur-lines td.num, .data-table td.num { text-align: right; white-space: nowrap; }
 .pur-late { color: #b42318 !important; font-weight: 700; }
 .pur-gap { margin-left: 6px; }
-.pur-total { margin: 4px 0 0; text-align: right; font-size: .9rem; }
+.pur-total { margin: 4px 0 0; text-align: right; font-size: var(--text-small); }
 .pur-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
 .pur-note.danger { background: #fdecea; color: #b42318; }
 .pur-note.warn { background: var(--amber-50); color: var(--amber); } .pur-note ul { margin: 4px 0 0; padding-left: 18px; }
@@ -50,34 +50,34 @@
 .pur-inline-form label { flex: 1 1 260px; }
 .pur-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .pur-kpi { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
-.pur-kpi b { font-size: .92rem; }
+.pur-kpi b { font-size: var(--text-label); }
 .pur-kpi.warn b { color: var(--amber); } .pur-kpi.ok b { color: var(--green); } .pur-kpi.danger b { color: #b42318; }
-.pur-list, .pur-history { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: .86rem; }
+.pur-list, .pur-history { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--text-small); }
 .pur-history { list-style: none; padding: 0; }
 .pur-history li { display: grid; gap: 1px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
-.sup-section h4 { margin: 6px 0 0; font-size: .86rem; }
+.sup-section h4 { margin: 6px 0 0; font-size: var(--text-small); }
 .pur-qty { width: 76px; }
 .pur-money { width: 120px; }
-.pur-lines input { font: inherit; font-size: .86rem; padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 6px; }
+.pur-lines input { font: inherit; font-size: var(--text-small); padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 6px; }
 .pur-installments { display: grid; gap: 6px; }
 .pur-inst { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
 .pur-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; }
 .pur-result { display: grid; justify-items: start; gap: 3px; text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; font: inherit; }
 .pur-result:hover:not(:disabled) { border-color: var(--blue); }
 .pur-result:disabled { opacity: .5; cursor: default; }
-.pur-create .pur-inline input { font: inherit; font-size: .86rem; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px; }
+.pur-create .pur-inline input { font: inherit; font-size: var(--text-small); padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px; }
 .pur-manual { display: grid; grid-template-columns: 160px minmax(0, 1fr) 80px 80px auto; gap: 6px; }
 .pur-manual input { width: 100%; min-width: 0; }
 /* Lập đơn mua: cột tồn kho / còn cần đặt / SL cần đặt */
 .pur-grid th { white-space: nowrap; }
 .pur-grid td.pur-stock { font-weight: 700; }
 .pur-stock.ok { color: var(--green); } .pur-stock.warn { color: var(--amber); } .pur-stock.out { color: #b42318; } .pur-stock.none { color: var(--muted); font-weight: 400; }
-.pur-remain b { color: var(--blue); font-size: .95rem; }
+.pur-remain b { color: var(--blue); font-size: var(--text-label); }
 .pur-want input { border-color: var(--blue) !important; background: var(--blue-50); font-weight: 700; }
 .pur-extra { color: var(--amber); font-weight: 600; }
 .pur-result.is-added { opacity: 1; border-color: var(--green); background: var(--green-50); cursor: default; }
 .pur-result.is-added b, .pur-result.is-added small { color: var(--ink); }
-.pur-added { font-size: .74rem; font-weight: 700; color: var(--green); }
+.pur-added { font-size: var(--text-caption); font-weight: 700; color: var(--green); }
 .pur-grid td:first-child { max-width: 230px; }
 .pur-grid td.pur-src { max-width: 150px; overflow-wrap: anywhere; }
 .pur-grid th { white-space: normal; min-width: 64px; }
@@ -96,13 +96,13 @@
 }
 
 .pur-sup-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.pur-sup-chip { display: inline-flex; align-items: center; gap: 4px; font-size: .84rem; padding: 3px 4px 3px 10px; background: var(--green-50); color: var(--green); }
-.pur-sup-chip .icon-btn { width: 22px; height: 22px; min-height: 0; padding: 0; font-size: .95rem; }
+.pur-sup-chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-small); padding: 3px 4px 3px 10px; background: var(--green-50); color: var(--green); }
+.pur-sup-chip .icon-btn { width: 22px; height: 22px; min-height: 0; padding: 0; font-size: var(--text-label); }
 .pur-sup-chips[hidden] { display: none; }
 
 /* Sổ kho (#/inventory) */
 .inv-status p { margin: 0; }
-.inv-check { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; white-space: nowrap; }
+.inv-check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-small); white-space: nowrap; }
 .inv-adjust-lines { display: grid; gap: 6px; }
 @media (max-width: 900px) { .page-head .pur-import { display: none; } }
 

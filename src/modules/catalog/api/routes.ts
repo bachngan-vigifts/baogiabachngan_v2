@@ -206,7 +206,28 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     // `skus=a,b,c`: lấy đúng các mã (kể cả đã ẩn) – dùng để bổ sung ảnh/thông tin cho dòng báo giá cũ.
     const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 300);
     const { limit, offset } = skuList.length ? { limit: skuList.length, offset: 0 } : paged;
-    const where = skuList.length ? inArray(products.sku, skuList) : searchFilter(c.url.searchParams, brand);
+    let where = skuList.length ? inArray(products.sku, skuList) : searchFilter(c.url.searchParams, brand);
+    const minimumText = c.url.searchParams.get('minStock');
+    let thresholdQuantities: Map<string, number> | undefined;
+    if (minimumText !== null && minimumText.trim() !== '') {
+      const minimum = Number(minimumText);
+      if (!Number.isFinite(minimum) || minimum < 0 || minimum > 1e12) throw new AppError(400, 'Tồn từ phải là số không âm, tối đa 1.000.000.000.000.');
+      const warehouseId = c.url.searchParams.get('stockWarehouse') || '';
+      const visible = (await db.select({id: warehouses.id}).from(warehouses)
+        .where(and(eq(warehouses.active, true), eq(warehouses.kind, 'stock')))).filter(w => !hidden.has(w.id));
+      if (warehouseId && !visible.some(w => w.id === warehouseId)) throw new AppError(400, 'Kho lọc tồn không hợp lệ hoặc bạn không được xem kho này.');
+      const stockIds = new Set(warehouseId ? [warehouseId] : visible.map(w => w.id));
+      const candidates = (await db.select({sku: products.sku}).from(products).where(where)).map(p => p.sku);
+      const raw = candidates.length ? await db.select().from(productStock).where(inArray(productStock.sku, candidates)) : [];
+      const [effective, held] = await Promise.all([
+        candidates.length ? effectiveCatalogStock(db, raw, candidates) : Promise.resolve([]),
+        !warehouseId && catalogStockHooks.held ? catalogStockHooks.held(db, viewerOf(c), candidates) : Promise.resolve(new Map<string, number>()),
+      ]);
+      thresholdQuantities = new Map(candidates.map(sku => [sku, -(held.get(sku) || 0)]));
+      for (const row of effective) if (stockIds.has(row.warehouseId)) thresholdQuantities.set(row.sku, (thresholdQuantities.get(row.sku) || 0) + row.quantity);
+      const matched = candidates.filter(sku => thresholdQuantities!.get(sku)! >= minimum);
+      where = and(where, matched.length ? inArray(products.sku, matched) : sql`false`);
+    }
     const [[{ total = 0 } = {}], rows, policies, stores, version] = await Promise.all([
       db.select({ total: count() }).from(products).where(where),
       db.select().from(products).where(where).orderBy(...productOrder(c.url.searchParams.get('q'))).limit(limit).offset(offset),
@@ -237,6 +258,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
         ...r,
         prices: !priced ? [] : policies.filter(p => p.id in (priceMap.get(r.sku) ?? {})).map(p => ({ policyId: p.id, price: priceMap.get(r.sku)![p.id] ?? null })),
         stock: stockMap.get(r.sku) ?? {},
+        ...(thresholdQuantities ? { filteredStock: thresholdQuantities.get(r.sku) ?? 0 } : {}),
         /** Lần cập nhật tồn gần nhất của mã này (đồng bộ Sapo / nhập file). */
         stockUpdatedAt: stockAt.get(r.sku) ?? null,
       })),

@@ -103,18 +103,19 @@ export function initTransfers({ api, root, toast, go }) {
     if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async (b, bt) => { if (acts.dataset.busy) return; const r = await ask('Từ chối điều chuyển', 'Lý do từ chối'); if (r) run('reject', { reason: r }, 'Đã từ chối.', b, bt); });
     if (t.actions.done) act('Đã chuyển', 'btn primary', 'Đang ghi sổ kho…', (b, bt) => run('done', {}, 'Đã ghi sổ kho: trừ kho đi, cộng kho đến.', b, bt));
     if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', (b, bt) => run('cancel', {}, 'Đã huỷ phiếu.', b, bt));
+    if (t.status === 'cancelled') acts.append(btn('Sao chép phiếu', 'btn primary', () => openForm(t)));
     drawer.append(h, meta, tw, acts);
     drawer.hidden = false; shade.hidden = false;
   }
 
-  async function openForm() {
+  async function openForm(source = null) {
     if (!data) await load();
     const whs = data?.warehouses || [];
     drawer.replaceChildren();
-    const h = el('div', 'sup-drawer-head'); h.append(el('h2', '', 'Xin điều chuyển kho'), btn('✕', 'icon-btn', close));
+    const h = el('div', 'sup-drawer-head'); h.append(el('h2', '', source ? 'Sao chép phiếu ' + source.transferNo : 'Xin điều chuyển kho'), btn('✕', 'icon-btn', close));
     const opts = [['', 'Chọn kho'], ...whs.map(w => [w.id, w.name])];
-    const from = select(opts, '', 'Kho đi'), to = select(opts, '', 'Kho đến');
-    const reason = input('text', '', { placeholder: 'VD: đơn của khách Kim Trần Gia cần hàng ở kho VIGIFTS', maxLength: 500 });
+    const from = select(opts, whs.some(w => w.id === source?.fromWarehouseId) ? source.fromWarehouseId : '', 'Kho đi'), to = select(opts, whs.some(w => w.id === source?.toWarehouseId) ? source.toWarehouseId : '', 'Kho đến');
+    const reason = input('text', source ? ('Sao chép từ ' + source.transferNo + ' · ' + source.reason).slice(0, 500) : '', { placeholder: 'VD: đơn của khách Kim Trần Gia cần hàng ở kho VIGIFTS', maxLength: 500 });
     const lines = el('div', 'transfer-lines');
     const lineRow = (sku = '', qty = '') => {
       const r = el('div', 'row-gap'), s = input('text', sku, { placeholder: 'Mã hàng' }), q = input('number', qty, { placeholder: 'SL', min: '0', step: 'any' });
@@ -136,7 +137,7 @@ export function initTransfers({ api, root, toast, go }) {
       if (!row) { lineRow(); row = lines.lastElementChild; }
       row.querySelector('input[type=text]').value = sku; find.value = ''; row.querySelector('input[type=number]').focus();
     });
-    lineRow();
+    if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty); else lineRow();
     const send = btn('Gửi duyệt', 'btn primary', async () => {
       const body = { fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
         lines: [...lines.children].map(r => ({ sku: r.querySelector('input[type=text]').value.trim(), qty: Number(r.querySelector('input[type=number]').value) })).filter(l => l.sku) };
@@ -147,7 +148,8 @@ export function initTransfers({ api, root, toast, go }) {
     const form = el('div', 'form-grid');
     form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('Tìm hàng', find, 'wide'));
     const foot = el('div', 'sup-drawer-foot-sticky'); foot.append(btn('Huỷ', 'btn secondary', close), send);
-    drawer.append(h, form, list, el('h3', '', 'Mã hàng cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => lineRow()), foot);
+    if (source) drawer.append(h, el('p', 'muted small', 'Phiếu gốc giữ trạng thái đã huỷ. Kiểm tra kho, mã và số lượng rồi bấm Gửi duyệt để tạo phiếu mới; chưa có phát sinh sổ kho.')); else drawer.append(h);
+    drawer.append(form, list, el('h3', '', 'Mã hàng cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => lineRow()), foot);
     drawer.hidden = false; shade.hidden = false;
   }
 
