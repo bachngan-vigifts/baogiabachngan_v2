@@ -311,3 +311,30 @@ test('đơn bán hiển thị đơn mua theo báo giá nguồn; không nhân đ�
  const cancel=await s.call('/purchase-orders/'+po.data.ids[0]+'/cancel',s.emp,'POST',{reason:'Kiểm thử huỷ nháp'});assert.equal(cancel.status,200,JSON.stringify(cancel.data));
  detail=await s.call('/orders/'+order.data.id,s.emp);assert.equal(detail.data.purchases.length,0);
 });
+
+test('điều chuyển chờ duyệt: sửa đúng quyền/revision, rollback lỗi; clientKey chống tạo trùng không ghi sổ',async()=>{
+  const s=await setup();
+  const {stockTransfers,stockTransferLines,stockMoves}=await import('../../src/modules/inventory/schema.ts');
+  const before=JSON.stringify(await s.db.select().from(stockBalances));const beforeMoves=(await s.db.select().from(stockMoves)).length;
+  const body={clientKey:'f35aa278-5a96-4fca-b00f-1d30db677698',fromWarehouseId:'vig',toWarehouseId:'ml',reason:'Cần hàng',lines:[{sku:'LY1',qty:10}]};
+  const concurrent=await Promise.all([s.call('/stock-transfers',s.emp,'POST',body),s.call('/stock-transfers',s.emp,'POST',body)]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,201]);
+  const made=concurrent.find(r=>r.status===201)!;const id=made.data.id,path='/stock-transfers/'+id;
+  const retry=await s.call('/stock-transfers',s.emp,'POST',body);assert.equal(retry.status,200);assert.equal(retry.data.replayed,true);assert.equal(retry.data.id,id);
+  assert.equal((await s.db.select().from(stockTransfers)).length,1);
+  assert.equal((await s.call('/stock-transfers',s.emp,'POST',{...body,lines:[{sku:'LY1',qty:11}]})).status,409);
+  assert.equal(made.data.actions.edit,true);
+  const edit={...body,revision:made.data.revision,reason:'Sửa số lượng',lines:[{sku:'LY1',qty:12}]};
+  assert.equal((await s.call(path,s.kho,'PUT',edit)).status,403);
+  assert.equal((await s.call(path,s.emp,'PUT',{...edit,revision:undefined})).status,400);
+  const changed=await s.call(path,s.emp,'PUT',edit);assert.equal(changed.status,200);assert.equal(changed.data.transferNo,made.data.transferNo);assert.equal(changed.data.status,'pending');assert.equal(changed.data.lines[0].qty,12);assert.equal(changed.data.revision,made.data.revision+1);
+  assert.equal((await s.call(path,s.emp,'PUT',edit)).status,409);
+  const revision=changed.data.revision;
+  for(const bad of [{lines:[{sku:'BAD',qty:1}]},{lines:[{sku:'LY1',qty:0}]},{toWarehouseId:'hd'},{toWarehouseId:'vig'}])assert.equal((await s.call(path,s.emp,'PUT',{...edit,revision,...bad})).status,400);
+  const stored=await s.call(path,s.emp);assert.equal(stored.data.revision,revision);assert.equal(stored.data.lines[0].qty,12);
+  const manager=await s.call(path,s.mgr,'PUT',{...edit,revision,lines:[{sku:'LY1',qty:15}]});assert.equal(manager.status,200);
+  assert.equal((await s.db.select().from(stockTransferLines)).length,1);
+  assert.equal(JSON.stringify(await s.db.select().from(stockBalances)),before);assert.equal((await s.db.select().from(stockMoves)).length,beforeMoves);
+  await s.call(path+'/approve',s.mgr,'POST',{revision:manager.data.revision});
+  assert.equal((await s.call(path,s.emp,'PUT',{...edit,revision:manager.data.revision+1})).status,409);
+  assert.equal((await s.call(path,s.emp)).data.actions.edit,false);
+});
