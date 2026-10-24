@@ -1266,7 +1266,7 @@ async function stockHtml(sku) {
 document.addEventListener('click', e => { const b = e.target.closest('[data-product-card]'); if (b) showProductCard(b.dataset.productCard, b.dataset.name); });
 /** Loại biến động trong lịch sử sản phẩm: nhãn, màu, chiều (+ nhập / − xuất). Cùng khoá với PRODUCT_MOVE_KINDS ở máy chủ. */
 const MOVE_UI = {
-  sale: ['Bán', 'order', ''], delivery: ['Xuất kho giao hàng', 'debt', '−'], purchase: ['Nhập hàng', 'stock', '+'], transfer: ['Điều chuyển', 'delivery', ''],
+  sale: ['Bán', 'order', ''], delivery: ['Giao hàng', 'debt', '−'], purchase: ['Nhập hàng', 'stock', '+'], transfer: ['Điều chuyển', 'delivery', ''],
   adjustment: ['Cân bằng kho', 'purchase', '±'], customer_return: ['Khách trả hàng', 'contract', '+'], supplier_return: ['Trả hàng NCC', 'quote', '−'],
 };
 /**
@@ -1314,7 +1314,7 @@ async function showProductCard(sku, name) {
         <td>${h.link && linkAllowed(h.link) ? `<a href="${esc(h.link)}" data-close-card>${esc(h.refCode)}</a>` : esc(h.refCode) || '—'}</td>
         <td>${esc(h.partner) || '<span class="muted">—</span>'}${h.location ? `<small>${esc(h.location)}</small>` : ''}${h.note ? `<small>${esc(h.note)}</small>` : ''}</td>
         <td class="right">${qtyCell(h)}</td><td class="right num">${h.unitPrice === null || h.unitPrice === undefined ? '—' : money(h.unitPrice)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Xuất kho: chuyến giao "Đã giao" · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
+      <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Giao hàng: chuyến giao "Đã giao" (chưa phải bút toán xuất kho; xem Lịch sử nhập / xuất kho bên trên) · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
     box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
   };
   const chipsBox = dlg.querySelector('[data-filter]');
@@ -4019,7 +4019,7 @@ async function openPacking(id) {
       <label>Ghi chú (tuỳ chọn)<input id="slip-confirm-note" maxlength="1000" placeholder="Ví dụ: 3 thùng, đã dán tem"></label>
       <h2 class="card-title"><span class="step-no">${k.source === 'warehouse' ? 4 : 3}</span> Bấm khi đã đóng xong</h2>
       <p class="muted small" id="slip-confirm-hint"></p>
-      <button class="btn primary big-btn" id="slip-confirm" disabled>✅ Đã đóng xong</button></div>` : ''}`;
+      <button class="btn primary big-btn" id="slip-confirm" disabled>✅ ${k.source === 'warehouse' ? 'Đã xuất kho' : 'Đã đóng xong'}</button></div>` : ''}`;
   slipPicks.clear(); slipPickTotal = d.canConfirm ? d.lines.length : 0;
   try { for (const i of JSON.parse(localStorage.getItem('bn-pick-' + k.id) || '[]')) if (i < slipPickTotal) slipPicks.add(i); } catch { /* bỏ qua */ }
   $$('.pick-tick', body).forEach(c => { c.checked = slipPicks.has(Number(c.dataset.pick)); c.closest('tr').classList.toggle('picked', c.checked); });
@@ -4087,7 +4087,7 @@ document.addEventListener('click', async e => {
   try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}) }); toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
   catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
 });
-/** Kho bán của đơn CRM (trừ kho khi duyệt): nháp – người sửa được đơn đổi; đã duyệt – chỉ Manager (docs/SO-KHO.md). */
+/** Kho dự kiến xuất của đơn CRM (chỉ trừ khi xác nhận xuất): nháp – người sửa được đơn đổi; đã duyệt – chỉ Manager (docs/SO-KHO.md). */
 function saleWarehouseRow(o) {
   if ((o.channel || 'crm') !== 'crm') return '';
   const canChange = o.status !== 'cancelled' && (o.status === 'draft' ? o.canEdit !== false : isManager());
@@ -4098,8 +4098,8 @@ document.addEventListener('click', async e => {
   const o = sales.detail.order;
   let wh; try { wh = await api(`/orders/${encodeURIComponent(o.id)}/warehouses`); } catch (ex) { toast(ex.message, 'err'); return; }
   if (!wh.warehouses.length) { toast('Nhân viên phụ trách chưa được gán kho bán nào. Manager gán ở trang Phân quyền › Kho bán theo chức vụ.', 'err'); return; }
-  const v = await verifyBox({ title: 'Kho bán ' + docNo(sales.detail), eyebrow: 'Kho hàng sẽ trừ khi duyệt',
-    intro: o.status === 'draft' ? 'Đơn nháp: chưa trừ kho. Khi duyệt sẽ trừ ở kho chọn dưới đây.' : 'Đơn đã duyệt: phần đã trừ chuyển sang kho mới.',
+  const v = await verifyBox({ title: 'Kho bán ' + docNo(sales.detail), eyebrow: 'Kho dự kiến xuất hàng',
+    intro: 'Duyệt đơn chỉ giữ hàng. Tồn kho chỉ giảm khi kho xác nhận xuất hàng; đổi kho dự kiến không phải thao tác xuất kho.',
     rows: wh.warehouses.map(w => [esc(w.name), w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}`).join('<br>') || '—']),
     fields: `<label class="verify-field"><span>Kho bán</span><select name="warehouseId">${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === wh.warehouseId ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>`,
     ok: 'Lưu kho bán' });
@@ -4120,12 +4120,12 @@ async function verifyAndConfirmOrder() {
     if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast})) return;
   } catch (ex) { toast(ex.message, 'err'); return; }
   const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
-  // Kho bán (đơn CRM): duyệt = trừ kho này trong sổ kho. Chỉ kho người phụ trách được bán (Manager: mọi kho) – docs/SO-KHO.md.
+  // Kho bán (đơn CRM): duyệt giữ hàng; phiếu kho xác nhận mới trừ sổ kho. Chỉ kho người phụ trách được bán (Manager: mọi kho) – docs/SO-KHO.md.
   let wh = null;
   if ((o.channel || 'crm') === 'crm') { try { wh = await api(`/orders/${encodeURIComponent(o.id)}/warehouses`); } catch (ex) { toast(ex.message, 'err'); return; } }
   const whPick = wh?.warehouseId || (wh?.warehouses.length === 1 ? wh.warehouses[0].id : '');
   const whStock = w => w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}${l.stock < l.need ? ' <b class="danger-text">thiếu</b>' : ''}`).join('<br>');
-  const whField = wh && wh.warehouses.length ? `<label class="verify-field"><span>Kho bán (trừ kho khi duyệt)</span><select name="warehouseId">${wh.configured && !whPick ? '<option value="">Chọn kho</option>' : ''}${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === whPick ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>` : '';
+  const whField = wh && wh.warehouses.length ? `<label class="verify-field"><span>Kho dự kiến xuất hàng</span><select name="warehouseId">${wh.configured && !whPick ? '<option value="">Chọn kho</option>' : ''}${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === whPick ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>` : '';
   const whRow = wh && wh.warehouses.length ? [['Tồn tại kho bán', wh.warehouses.map(w => `<b>${esc(w.name)}</b><br>${whStock(w) || '<span class="muted">—</span>'}`).join('<br>')]] : [];
   const v = await verifyBox({
     title: `Duyệt ${isContractDoc(d) ? 'HĐKT' : 'đơn'} ${docNo(d)}`, eyebrow: 'Kiểm tra trước khi duyệt',

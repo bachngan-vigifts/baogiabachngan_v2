@@ -334,7 +334,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       const [w] = typeof body.warehouseId === 'string' ? await c.env.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, body.warehouseId), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).limit(1) : [];
       if (!w) throw new AppError(400, 'Chọn kho xuất hàng.');
       if (order.channel === 'pos' && order.shiftId) { const [r] = await c.env.db.select({warehouseId:posRegisters.warehouseId}).from(posShifts).innerJoin(posRegisters,eq(posRegisters.id,posShifts.registerId)).where(eq(posShifts.id,order.shiftId));if(r && r.warehouseId !== w.id) throw new AppError(400,'Đơn POS cần xuất đúng kho của quầy.'); }
-      // Đơn CRM có kho bán: hàng đã trừ khỏi kho bán lúc duyệt – kho xuất phải đúng kho bán, không trừ lần hai.
+      // Đơn CRM xuất đúng kho đã chọn. Chỉ phiếu kiểu cũ đã trừ lúc duyệt mới bỏ qua trừ lần hai.
       if (order.channel === 'crm' && order.warehouseId && order.warehouseId !== w.id) throw new AppError(400, 'Xuất đúng kho bán đã chọn cho đơn. Cần kho khác: xin điều chuyển hàng về kho bán.');
       stockWarehouseId = w.id;
     }
