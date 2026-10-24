@@ -1169,3 +1169,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-catalog-controls { grid-template-columns: minmax(0, 1fr) minmax(230px, .85fr); }
   .pos-catalog-controls .pos-search .btn { min-width: 64px; padding-inline: 6px; }
 }
+
+/* Leave room for the close control even when the order reference wraps. */
+.pos-web-order-modal h2 { padding-right: 44px; overflow-wrap: anywhere; }

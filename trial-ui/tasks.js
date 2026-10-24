@@ -65,7 +65,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
  * Gắn bảng công việc vào #view-tasks. `api(path, method, body)`, `toast(msg, kind)`, `go(hash)`, `isManager()`, `userId()`.
  * Trả về { load(id?), badge() }.
  */
-export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '' }) {
+export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '', approvalFeed }) {
   /**
    * Lưu sẵn danh sách theo bộ lọc (trong bộ nhớ trang, không lưu ổ đĩa): mở lại trang Công việc hiện ngay bản trước rồi tải bản mới ở nền.
    * Mọi thao tác ghi (giao việc, sửa, xoá, bình luận…) xoá bản lưu để lần tải sau lấy dữ liệu mới.
@@ -75,6 +75,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   const root = document.getElementById('view-tasks'), q = s => root.querySelector(s);
   const st = { view: 'mine', status: 'open', priority: '', source: '', assignee: '', search: '', due: '', people: null, list: [], tab: 'tasks', kind: '', approvals: null,
     summary: null, dueCounts: null, collapsed: new Set(), groupBy: store.get('bn-tasks-group') === 'category' ? 'category' : 'due', selected: '', refresh: false };
+  let approvalPending = null, approvalError = false, approvalOwner = userId();
   let searchTimer, loadSequence = 0, accountingMode, accountingBoard, accountingEntry, panelTask = null;
   const wide = () => !!globalThis.matchMedia?.('(min-width: 1280px)').matches;
 
@@ -185,16 +186,33 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   // Duyệt vẫn làm ở màn hình của từng loại (bấm "Mở"), giữ nguyên hộp kiểm tra như hiện nay.
   const KIND = { quote: ['Báo giá', 'sales'], order: ['Đơn hàng', 'sales'], contract: ['HĐKT', 'sales'], purchase: ['Đơn mua NCC', 'stock'], transfer: ['Điều chuyển kho', 'stock'], cash: ['Thu / chi sổ quỹ', 'debt'], return: ['Đổi / trả hàng', 'sales'], customer: ['Khách hàng', 'manual'], product: ['Sản phẩm', 'stock'] };
   const money = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
-  async function loadApprovals() {
-    if (!canApprove()) { st.approvals = null; return null; }
-    try { st.approvals = await api('/approvals'); } catch { st.approvals = null; }
+  function approvalSnapshot() {
+    const who = userId();
+    if (who !== approvalOwner || !canApprove()) { st.approvals = null; approvalPending = null; approvalError = false; approvalOwner = who; }
+    if (approvalFeed) st.approvals = approvalFeed.peek();
     return st.approvals;
   }
+  function loadApprovals(force = false) {
+    if (!canApprove()) { st.approvals = null; return Promise.resolve(null); }
+    approvalSnapshot();
+    if (approvalPending) return approvalPending;
+    const who = userId(); approvalError = false;
+    const request = Promise.resolve().then(() => approvalFeed ? approvalFeed.load({ force }) : api('/approvals')).then(data => {
+      if (data && who === userId() && canApprove()) st.approvals = data;
+      return data;
+    }).catch(() => { if (who === userId()) approvalError = true; return null; }).finally(() => {
+      if (approvalPending === request) approvalPending = null;
+      if (who === userId()) { renderTabs(); if (st.tab === 'approvals') renderApprovals(); }
+    });
+    approvalPending = request;
+    return request;
+  }
   function renderApprovals() {
-    const box = q('#tasks-approvals'), d = st.approvals;
-    if (!d) { box.innerHTML = '<p class="error">Chưa tải được danh sách cần duyệt.</p>'; return; }
+    const box = q('#tasks-approvals'), d = approvalSnapshot();
+    const notice = approvalError ? '<p class="error" role="status">Chưa cập nhật được danh sách. <button type="button" class="btn secondary small" data-retry-approvals>Thử lại</button></p>' : '';
+    if (!d) { box.innerHTML = notice || '<p class="muted task-empty" role="status">Đang tải danh sách cần duyệt…</p>'; return; }
     const items = st.kind ? d.items.filter(i => i.kind === st.kind) : d.items;
-    box.innerHTML = `<div class="chips approval-kinds" role="group" aria-label="Lọc loại"><button type="button" class="chip" data-kind="" aria-pressed="${!st.kind}">Tất cả <b>${d.counts.total}</b></button>${Object.entries(KIND).filter(([k]) => d.counts[k] || st.kind === k).map(([k, [l]]) => `<button type="button" class="chip" data-kind="${k}" aria-pressed="${st.kind === k}">${l} <b>${d.counts[k] ?? 0}</b></button>`).join('')}</div>
+    box.innerHTML = `${notice}<div class="chips approval-kinds" role="group" aria-label="Lọc loại"><button type="button" class="chip" data-kind="" aria-pressed="${!st.kind}">Tất cả <b>${d.counts.total}</b></button>${Object.entries(KIND).filter(([k]) => d.counts[k] || st.kind === k).map(([k, [l]]) => `<button type="button" class="chip" data-kind="${k}" aria-pressed="${st.kind === k}">${l} <b>${d.counts[k] ?? 0}</b></button>`).join('')}</div>
       ${d.truncated ? '<p class="muted small">Danh sách chỉ hiện các chứng từ mới nhất. Số đếm là toàn bộ; mở trang từng loại để xem các chứng từ cũ hơn.</p>' : ''}${items.length ? `<div class="table-wrap"><table class="data-table task-table approval-table"><thead><tr><th>Cần duyệt</th><th>Người tạo</th><th>Chờ từ</th><th class="right">Giá trị</th><th><span class="sr-only">Mở</span></th></tr></thead><tbody>
       ${items.map(i => `<tr><td class="task-main"><div class="task-title">${esc(i.title)}</div><div class="task-meta"><span class="pill ${KIND[i.kind][1]} src">${esc(KIND[i.kind][0])}</span>${i.sub ? `<span class="muted task-desc">${esc(i.sub)}</span>` : ''}</div></td>
         <td data-label="Người tạo">${esc(i.by || '—')}</td><td data-label="Chờ từ">${i.at ? esc(ago(i.at)) : '—'}</td><td${i.amount ? ' data-label="Giá trị"' : ''} class="right num">${i.amount ? money(i.amount) : ''}</td>
@@ -205,10 +223,15 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     st.tab = canApprove() && tab === 'approvals' ? 'approvals' : 'tasks';
     const appr = st.tab === 'approvals';
     q('#tasks-approvals').hidden = !appr;
-    for (const sel of ['.task-board', '#tasks-stats', '.task-filterbar']) q(sel).hidden = appr;
+    for (const sel of ['.task-board', '#tasks-stats', '.task-filterbar', '.task-foot']) q(sel).hidden = appr;
     if (appr) { q('#tasks-active').hidden = true; renderApprovals(); } else renderActive();
     renderTabs();
   }
+
+  approvalFeed?.subscribe?.(() => {
+    approvalSnapshot(); renderTabs();
+    if (st.tab === 'approvals') { approvalError = false; renderApprovals(); }
+  });
 
   const syncText = d => `Đồng bộ lúc ${hm(d.syncedAt || new Date().toISOString())} · việc tự sinh cập nhật khi mở trang`;
   /** Vẽ trang từ dữ liệu `/tasks` + `/tasks/summary` (bản lưu sẵn hoặc bản mới). */
@@ -239,10 +262,11 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   }
   /** Tải sẵn bảng việc mặc định (gọi lúc rảnh sau khi đăng nhập): lần bấm đầu vào trang Công việc hiện ngay. */
   async function prefetch() {
+    void loadApprovals();
     if (cache.size) return;
     const params = new URLSearchParams({ view: st.view, status: st.status });
     try {
-      const [d, s] = await Promise.all([rawApi('/tasks?' + params), rawApi('/tasks/summary'), people()]);
+      const [d, s] = await Promise.all([rawApi('/tasks?' + params), rawApi('/tasks/summary')]);
       if (!cache.has(params.toString())) cache.set(params.toString(), { d, s });
     } catch { /* bỏ qua: mở trang sẽ tải như thường */ }
   }
@@ -250,10 +274,15 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   async function load(focusId) {
     const request = ++loadSequence;
     if (focusId === 'approvals') { focusId = undefined; st.tab = 'approvals'; }
+    if (st.tab === 'approvals' && canApprove()) {
+      accountingBoard?.hide(); showTab('approvals');
+      const force = st.refresh; st.refresh = false;
+      const loading = loadApprovals(force); renderApprovals();
+      await loading; return;
+    }
     const list = q('#tasks-list');
     if (!st.list.length) list.innerHTML = '<p class="muted task-empty">Đang tải…</p>';
-    await people();
-    if (request !== loadSequence) return;
+    void people().then(() => { if (request === loadSequence) fillFilters(); });
     if (st.view === 'unassigned' && !isManager()) st.view = 'mine';
     const params = new URLSearchParams({ view: st.view, status: st.status });
     if (st.due) params.set('due', st.due);
@@ -420,7 +449,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   q('#tasks-refresh').addEventListener('click', () => { st.refresh = true; load(); });
   q('#tasks-view').addEventListener('click', e => {
     const b = e.target.closest('[data-v]'); if (!b) return;
-    if (b.dataset.v === 'approvals') { showTab('approvals'); return; }
+    if (b.dataset.v === 'approvals') { load('approvals'); return; }
     st.view = b.dataset.v; st.assignee = ''; showTab('tasks'); fillFilters(); load();
   });
   q('#tasks-status').addEventListener('click', e => {
@@ -447,6 +476,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     st.groupBy = b.dataset.group; store.set('bn-tasks-group', st.groupBy); st.collapsed.clear(); renderList();
   });
   q('#tasks-approvals').addEventListener('click', e => {
+    if (e.target.closest('[data-retry-approvals]')) { void loadApprovals(true); renderApprovals(); return; }
     const b = e.target.closest('[data-kind]'); if (!b) return;
     st.kind = b.dataset.kind; renderApprovals();
   });

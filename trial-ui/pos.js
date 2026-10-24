@@ -582,6 +582,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       el('p', 'pos-note', 'Trạng thái GHN: ' + (o.ghnStatus || 'Đã tạo vận đơn') + (o.ghnFee ? ' · Phí: ' + money(o.ghnFee) : '')),
       ghnPortalLink(o.ghnOrderCode),
     );
+    m.dlg.classList.add('pos-web-order-modal');
     // Nút chính (tạo vận đơn khi chờ xử lý, hoàn thành khi đang giao) chiếm cả dòng; Hoàn thành / Huỷ / Đóng chia đều dòng dưới.
     const actions = el('div', 'pos-actions pos-web-actions'), open = o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket), ghn = open && o.bucket === 'pending';
     if (ghn) actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary pos-web-main', () => { m.close(); showGhnAddress(o); }));
