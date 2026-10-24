@@ -59,6 +59,8 @@ export function initReceivingCalendar({ api, root, confirmBox = async () => fals
               });row.append(b);
             }
           }
+          if(r.type==='early'&&d.canReceiveEarly)for(const option of l.receiptOptions||[]){const receive=el('a','btn primary small','Nhận hàng · '+option.ticketNumber);
+            receive.href='#/purchases/'+encodeURIComponent(option.orderId)+'?receive=1&earlyRequestId='+encodeURIComponent(r.requestId);row.append(receive);}
           lines.append(row);
         }
         tr.append(date, order, el('td', '', r.supplierName), lines); body.append(tr);

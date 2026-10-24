@@ -8,7 +8,8 @@ import { sha256Hex } from '../../staff/domain/session.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { purchaseEarlyRequests as requests, purchaseEarlyRequestLines as lines, purchaseEarlyRequestAllocations as allocations } from '../early-request-schema.ts';
 import { incomingShipments, incomingShipmentLines, supplierAccounts, suppliers } from '../schema.ts';
-import { canUsePurchasing } from '../domain/purchasing.ts';
+import { earlyReceiptAvailability, earlyReceiptContext } from './early-receiving.ts';
+import { canUsePurchasing, canReceive } from '../domain/purchasing.ts';
 import { incomingBySku } from './incoming-by-sku.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import type { Db, Member } from './purchase-store.ts';
@@ -128,7 +129,17 @@ async function respondEarlyLine(db:Db, actorId:string, id:string, supplierId:str
 }
 
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
-  router.get('/purchase-early-requests',async c=>{guard(c);return json({requests:await earlyRequestList(c.env.db,c.url.searchParams.get('supplierId')||null,c.url.searchParams.get('id')||''),canViewPortal:me(c).role==='manager'});},'business');
+  router.get('/purchase-early-requests',async c=>{
+    guard(c);const requests=await earlyRequestList(c.env.db,c.url.searchParams.get('supplierId')||null,c.url.searchParams.get('id')||'');
+    const availability=await earlyReceiptAvailability(c.env.db,requests.map(r=>r.id));
+    const byAllocation=new Map(availability.map(r=>[r.allocationId,r]));
+    return json({requests:requests.map(r=>({...r,lines:r.lines.map(l=>({...l,allocations:l.allocations.map(a=>({...a,
+      remainingToReceive:byAllocation.get(a.id)?.remaining??0,receivedQty:byAllocation.get(a.id)?.receivedQty??0}))}))})),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
+  },'business');
+  router.get('/purchase-early-requests/:id/receiving',async c=>{
+    guard(c);if(!canReceive(me(c)))fail(403,'Bạn không có quyền nhận hàng NCC.');
+    return json(await earlyReceiptContext(c.env.db,c.params.id!,c.url.searchParams.get('orderId')||''));
+  },'business');
   router.post('/purchase-early-requests',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được gửi yêu cầu lấy trước.');
     const input=cleanInput(await readJson(c.req,100000)),payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate}));

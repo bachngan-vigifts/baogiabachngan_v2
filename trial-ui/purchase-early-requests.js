@@ -12,16 +12,21 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const n=++requestNo;
     try {const params=new URLSearchParams();if(id)params.set('id',id);if(supplierId&&!portal)params.set('supplierId',supplierId);
       const data=await api((portal?'/supplier-portal/early-requests':'/purchase-early-requests')+(params.size?'?'+params:''));if(n!==requestNo)return;
-      render(data.requests,!!data.canRespond,!!data.canViewPortal);return data.requests;
+      render(data.requests,!!data.canRespond,!!data.canViewPortal,!!data.canReceive);return data.requests;
     } catch(e) {if(n===requestNo) list.replaceChildren(el('p','error',e.message||'Không tải được phiếu xin lấy trước.'));}
   }
-  function render(requests,canRespond,canViewPortal) {
+  function render(requests,canRespond,canViewPortal,canReceive) {
     list.replaceChildren();
     if(!requests.length) list.append(el('p','muted','Chưa có phiếu xin lấy trước.'));
     for(const request of requests) {
       const card=el('article','card early-request-card'),head=el('div','row-gap');card.dataset.requestId=request.id;
       head.append(el('strong','',`Phiếu lấy trước · ${time(request.createdAt)}`),el('span','sup-pill '+(request.status==='pending'?'warn':''),labels[request.status]||request.status));
       if(!portal&&canViewPortal&&request.requestStatus==='submitted'&&request.lines.some(line=>line.allocations.some(a=>a.status==='pending'&&line.allocations.filter(b=>b.supplierId===a.supplierId).every(b=>b.status==='pending')))) head.append(btn('Manager xác nhận thay NCC',()=>confirmForSupplier(request),'btn primary small'));
+      if(!portal&&canReceive&&request.requestStatus==='submitted'){
+        const orders=new Map(request.lines.flatMap(l=>l.allocations).filter(a=>a.status==='accepted'&&a.remainingToReceive>0).map(a=>[a.orderId,a.ticketNumber]));
+        for(const [orderId,number] of orders){const receive=el('a','btn primary small','Nhận hàng · '+number);
+          receive.href='#/purchases/'+encodeURIComponent(orderId)+'?receive=1&earlyRequestId='+encodeURIComponent(request.id);head.append(receive);}
+      }
       card.append(head,el('p','small','Ngày lấy: '+date(request.pickupDate)));
       if(!portal) {
         const open=el('a','small','Mở phiếu');open.href='#/purchases?mode=incoming&request='+encodeURIComponent(request.id);card.append(open);

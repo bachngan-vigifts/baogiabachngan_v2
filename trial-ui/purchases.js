@@ -246,7 +246,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     else if (!id) setMode(incomingMode);
     else load();
     if (id === 'new') { const p = new URLSearchParams(query); openCreate(p.get('type') && p.get('id') ? { type: p.get('type'), id: p.get('id') } : null); }
-    else if (id) openDetail(id, new URLSearchParams(query).get('receive') === '1');
+    else if (id) openDetail(id, new URLSearchParams(query).get('receive') === '1', new URLSearchParams(query).get('earlyRequestId') || '');
     else hide();
   }
 
@@ -274,11 +274,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   // ---------------------------------------------------------------- chi tiết
   let openingId = '';
   const markOpening = id => { openingId = id; for (const tr of tbody.children) tr.toggleAttribute('aria-busy', !!id && tr.dataset.id === id); };
-  async function openDetail(id, receive = false) {
+  async function openDetail(id, receive = false, earlyRequestId = '') {
     // Đang mở đúng đơn này: bỏ qua lần bấm / điều hướng trùng (dòng hiện đang tải).
     if (openingId === id) return;
     markOpening(id);
-    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) receiveForm(); }
+    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) { const context=earlyRequestId?await api('/purchase-early-requests/'+encodeURIComponent(earlyRequestId)+'/receiving?orderId='+encodeURIComponent(id)):null; if(current?.id===id)receiveForm(context); } }
     catch (e) { toast(e.message || 'Không mở được đơn mua.', 'err'); close(); }
     finally { if (openingId === id) markOpening(''); }
   }
@@ -926,7 +926,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     d.append(f);
   }
 
-  function receiveForm() {
+  function receiveForm(earlyContext = null) {
     const v = current, clientKey = key(); // một lần mở hộp nhận = một mã: bấm lặp / mạng chập chờn không tạo phiếu thứ hai
     const d = frame('Nhận hàng', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     const date = input('date', today(), { max: today() }), note = input('text', '', { maxLength: 1000 });
@@ -941,7 +941,9 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const g = el('div', 'form-grid two'); g.append(field('Ngày nhận', date), field('Kho nhận *', wh), field('Ghi chú', note, 'span-2'));
     // Mỗi mã một thẻ: "Cần nhận N" to, ô "Số đạt" / "Số hỏng" có nhãn, nút "Đủ N" điền nhanh (dễ dùng trên điện thoại).
     const cards = el('div', 'recv-cards');
-    const ins = v.lines.filter(l => l.missing > 0).map(l => {
+    if(earlyContext)f.append(el('p','muted','Nhận theo phiếu xin lấy trước đã được đồng ý. Chỉ nhận các mã và số lượng còn lại trong phiếu này.'));
+    const receiveLines=earlyContext?v.lines.flatMap(l=>{const allowed=earlyContext.lines.find(x=>x.lineId===l.id);return allowed?[{...l,missing:Math.min(l.missing,allowed.remaining)}]:[];}):v.lines;
+    const ins = receiveLines.filter(l => l.missing > 0).map(l => {
       const good = qtyInput('', l.missing), bad = qtyInput(''), nt = input('text', '', { maxLength: 300, placeholder: 'Ghi chú (tuỳ chọn)' });
       good.inputMode = bad.inputMode = 'numeric';
       const c = el('div', 'recv-card'), hd = el('div', 'recv-head'), nm = el('div');
@@ -996,7 +998,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       if (hasBad() && !photos.length) { err.textContent = 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.'; pick.focus(); return; }
       const over = ins.find(x => Number(x.good.value || 0) + Number(x.bad.value || 0) > x.l.missing);
       if (over) { err.textContent = `${over.l.sku}: đạt + hỏng vượt số cần nhận ${num(over.l.missing)}. Số đạt chỉ gồm hàng tốt.`; over.good.focus(); return; }
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(photos.length ? { photos } : {}) }), 'Đã ghi nhận hàng về – nhớ nhập kho trên Sapo.');
+      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(earlyContext?{earlyRequestId:earlyContext.requestId}:{}), ...(photos.length ? { photos } : {}) }), 'Đã ghi nhận hàng về – nhớ nhập kho trên Sapo.');
     });
     d.append(f);
   }
