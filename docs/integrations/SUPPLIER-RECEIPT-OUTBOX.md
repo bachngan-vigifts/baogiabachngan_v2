@@ -39,7 +39,11 @@ Trước mọi thao tác tạo, Claw phải tìm phiếu đã có bằng tham ch
 }
 ```
 
-Không gửi giá sau CK thay cho `unit_price`. Không gửi hàng hỏng. Payload đã commit bất biến khi retry; chỉ sửa dữ liệu thiếu qua quy trình kiểm tra nghiệp vụ, không tự tái dựng giá sau khi đã gửi.
+Không gửi giá sau CK thay cho `unit_price`. Không gửi hàng hỏng. Payload đã commit bất biến khi retry; không tự tái dựng giá sau khi đã gửi.
+
+Ngoại lệ tương thích ĐVT: `items[].unit` được trim, thiếu/rỗng thì lấy `products.unit` theo **SKU chính xác**, vẫn trống thì dùng `Cái`. Áp dụng lúc tạo job nhận hàng/đối soát và trước dispatch/claim job cũ chưa chạy. Việc chuẩn hoá và cập nhật SHA-256 nằm trong transaction khoá job, trước khi trao lease. Không sửa payload worker đang xử lý; không tái đọc giá, CK, VAT, số lượng hay ghi tồn. Receipt ID và idempotency key giữ nguyên. Nếu CRM đã lưu bất kỳ liên kết Sapo nào, job tạo mới không được dispatch/claim/retry; Manager phải yêu cầu đối soát. Với phiếu chưa có liên kết CRM, n8n/Claw vẫn phải tra cứu Sapo trước khi tạo (CRM không có API Sapo để thay bước này).
+
+Giao diện giữ nút gửi lại trước khi chờ xác nhận, dùng `data-receipt-retry` và `data-receipt-reconcile` (nút submit đối soát). Nút không tìm thấy không làm mất thông báo lỗi backend; chỉ phục hồi trạng thái nếu nút còn trong DOM. HTTP 200 với `sent:false, skipped:false` cũng hiển thị lỗi giao việc. Không tự retry production để kiểm thử.
 
 ## Endpoint và callback
 

@@ -266,9 +266,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   const errorBox = () => { const e = el('p', 'error'); e.setAttribute('role', 'alert'); return e; };
   /** Chạy thao tác ghi: khoá nút, báo lỗi tại chỗ, thành công thì vẽ lại chi tiết. */
   async function run(button, err, fn, ok) {
-    err.textContent = ''; button.disabled = true;
+    err.textContent = ''; const disabled = button?.disabled ?? false; if (button) button.disabled = true;
     try { const v = await fn(); if (ok) toast(ok); if (v && v.id) { current = v; renderDetail(); } load(); return v; }
-    catch (e) { err.textContent = e.message || 'Không thực hiện được.'; button.disabled = false; }
+    catch (e) { const message = e?.message || 'Không thực hiện được.'; err.textContent = message; if (!err.isConnected) toast(message, 'err'); }
+    finally { if (button?.isConnected) button.disabled = disabled; }
   }
 
   // ---------------------------------------------------------------- chi tiết
@@ -394,27 +395,33 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     if (!o.canReceive) return card;
     const tools = el('div', 'pur-inline'), err = errorBox();
     if (o.isManager) {
-      if(r.job && ['failed','callback_pending'].includes(r.job.status) && r.sapoStatus!=='done')tools.append(btn('Gửi lại yêu cầu n8n','btn secondary small',async e=>{
-        if(!await confirmBox('Gửi lại cùng mã phiếu. Claw phải tra cứu phiếu đã có trước khi tạo; không lập phiếu nhận CRM khác.',{ok:'Gửi lại'}))return;
-        await run(e.currentTarget,err,async()=>{await api(`/supplier-receipts/${encodeURIComponent(r.id)}/retry-sapo`,'POST',{});return api(`/purchase-orders/${encodeURIComponent(r.shipmentId)}`);});
-      }));
+      if(r.job && ['failed','callback_pending'].includes(r.job.status) && r.sapoStatus!=='done') {
+        const retry = btn('Gửi lại yêu cầu n8n','btn secondary small',async()=>{
+          const button = card.querySelector('[data-receipt-retry]');
+          if(!await confirmBox('Gửi lại cùng mã phiếu. Claw phải tra cứu phiếu đã có trước khi tạo; không lập phiếu nhận CRM khác.',{ok:'Gửi lại'}))return;
+          await run(button,err,async()=>{const sent=await api(`/supplier-receipts/${encodeURIComponent(r.id)}/retry-sapo`,'POST',{});if(!sent.sent&&!sent.skipped)throw new Error('Chưa gửi được yêu cầu n8n. Kiểm tra lỗi trên phiếu và execution trước khi thử lại.');return api(`/purchase-orders/${encodeURIComponent(r.shipmentId)}`);});
+        });
+        retry.dataset.receiptRetry = r.id; tools.append(retry);
+      }
       tools.append(btn('Đối soát phiếu Sapo đã có','btn secondary small',()=>inlineForm(card,'Lý do đối soát (không tạo phiếu Sapo)','VD: mã nhập tay khác mã Sapo','Yêu cầu đối soát',b=>run(b.button,err,async()=>{
         const expected={sapoPurchaseOrderId:r.sapoPurchaseOrderId||'',sapoReceiptId:r.sapoReceiptId||'',sapoReceiptCode:r.sapoReceiptCode||'',sapoReceiptUrl:r.sapoReceiptUrl||'',sapoVerifiedAt:r.sapoVerifiedAt||null,sapoStatus:r.sapoStatus,sapoUpdatedAt:r.sapoUpdatedAt||null};
-        await api(`/supplier-receipts/${encodeURIComponent(r.id)}/reconcile-sapo`,'POST',{reason:b.value,expected});
+        const sent=await api(`/supplier-receipts/${encodeURIComponent(r.id)}/reconcile-sapo`,'POST',{reason:b.value,expected});
+        if(!sent.sent&&!sent.skipped)throw new Error('Chưa gửi được yêu cầu đối soát n8n. Kiểm tra execution trước khi thử lại.');
         return api(`/purchase-orders/${encodeURIComponent(r.shipmentId)}`);
-      }))));
+      }),'data-receipt-reconcile')));
       if(!verified && r.sapoStatus!=='done')tools.append(btn('Huỷ phiếu…','btn secondary small danger-text',()=>inlineForm(card,'Lý do huỷ phiếu nhận','VD: đếm nhầm','Huỷ phiếu',b=>run(b.button,err,()=>api(`/supplier-receipts/${encodeURIComponent(r.id)}/cancel`,'POST',{reason:b.value}),'Đã huỷ phiếu nhận.'))));
     }
     card.append(tools, err);
     return card;
   }
   /** Ô nhập một dòng ngay trong thẻ (mã Sapo, lý do huỷ…). */
-  function inlineForm(host, label, placeholder, okText, submit) {
+  function inlineForm(host, label, placeholder, okText, submit, submitAttribute = '') {
     host.querySelector('.pur-inline-form')?.remove();
     const f = el('form', 'pur-inline-form'), i = input('text', '', { placeholder, maxLength: 500, required: true });
     const ok = el('button', 'btn primary small', okText); ok.type = 'submit';
+    if (submitAttribute) ok.setAttribute(submitAttribute, '');
     f.append(field(label, i), ok, btn('Thôi', 'btn secondary small', () => f.remove()));
-    f.addEventListener('submit', e => { e.preventDefault(); if (i.value.trim()) submit({ value: i.value.trim(), button: ok }); });
+    f.addEventListener('submit', e => { e.preventDefault(); if (i.value.trim()) submit({ value: i.value.trim(), button: submitAttribute ? f.querySelector(`[${submitAttribute}]`) : ok }); });
     host.append(f); i.focus();
   }
   function paymentRow(p) {
