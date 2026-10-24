@@ -3112,20 +3112,29 @@ function salesListSummary(key, s) {
     .map(([t, v, c, note]) => `<article class="stat"><small>${t}</small><strong class="${c}">${v}</strong>${note ? `<span class="stat-note">${note}</span>` : ''}</article>`).join('');
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
+/** Bộ lọc chi tiết Lịch giao hàng (máy chủ lọc): nhân viên phụ trách, loại chứng từ, đơn vị giao, hoá đơn. */
+const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice'];
+let deliveriesReq = 0;
 async function loadDeliveries() {
   // Kho: 7 ngày trước (chuyến trễ chưa giao) → ngày mai; người khác 7 ngày trước → 30 ngày tới.
   if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
-  $('#deliveries-list').innerHTML = skeleton(6);
+  $('#deliveries-list').innerHTML = skeleton(7);
   try {
     const focusId = new URLSearchParams(location.hash.split('?')[1] || '').get('deliveryId');
-    const d = await api(`/deliveries?id=${encodeURIComponent(focusId || '')}&from=${$('#deliveries-from').value}&to=${$('#deliveries-to').value}&status=${encodeURIComponent($('#deliveries-status .chip.active')?.dataset.status ?? '')}`);
+    const params = new URLSearchParams({ id: focusId || '', from: $('#deliveries-from').value, to: $('#deliveries-to').value, status: $('#deliveries-status .chip.active')?.dataset.status ?? '' });
+    for (const k of DELIVERY_FILTERS) { const v = $('#deliveries-' + k).value; if (v) params.set(k, v); }
+    const req = ++deliveriesReq, d = await api('/deliveries?' + params);
+    if (req !== deliveriesReq) return;
+    fillOrderFilter('#deliveries-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#deliveries-carrier', 'Tất cả', (d.filterOptions?.carriers || []).map(c => ({ id: c, name: c })));
     const q = focusId ? '' : normalize($('#deliveries-search').value);
     const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.contractNo || x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}</small></td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small></td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
-      <td>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
+      <td>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}</td>
+      <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
   } catch (e) { listError('deliveries', e); }
 }
@@ -3141,11 +3150,20 @@ const deliveryButtons = x => ['planned', 'in_transit'].includes(x.status)
 /** Ảnh xác nhận đã giao (hàng đã giao / biên bản ký nhận) – bấm để xem lớn. */
 const deliveryPhotos = x => x.photos?.length ? `<span class="ship-photos">${x.photos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Ảnh giao hàng ${i + 1}" loading="lazy"></a>`).join('')}</span>` : '';
 // ----- công nợ
+/** Bộ lọc chi tiết trang Công nợ (máy chủ lọc trước khi cộng tổng). */
+const RECEIVABLE_FILTERS = ['source', 'kind', 'owner', 'branch', 'invoice', 'delivery', 'from', 'to'];
+let receivablesReq = 0;
 async function loadReceivables() {
-  $('#receivables-list').innerHTML = skeleton(7);
+  $('#receivables-list').innerHTML = skeleton(9);
   try {
     const status = $('#receivables-filters .chip.active')?.dataset.status ?? '';
-    const d = await api('/receivables?q=' + encodeURIComponent($('#receivables-search').value) + (status ? '&status=' + status : ''));
+    const params = new URLSearchParams({ q: $('#receivables-search').value });
+    if (status) params.set('status', status);
+    for (const k of RECEIVABLE_FILTERS) { const v = $('#receivables-' + k).value; if (v) params.set(k, v); }
+    const req = ++receivablesReq, d = await api('/receivables?' + params);
+    if (req !== receivablesReq) return;
+    fillOrderFilter('#receivables-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#receivables-branch', 'Tất cả chi nhánh', d.filterOptions?.branches);
     const a = d.totals.aging || { d30: 0, d60: 0, over60: 0 };
     $('#receivable-stats').innerHTML = [['Phải thu', d.totals.due, ''], ['Đã thu', d.totals.paid, ''], ['Còn lại', d.totals.balance, ''], ['Quá hạn', d.totals.overdue, d.totals.overdue > 0 ? 'danger-text' : '']]
       .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('')
@@ -3155,12 +3173,15 @@ async function loadReceivables() {
     fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
       <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}${r.ownerName ? ' · ' + esc(r.ownerName) : ''}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
       <td>${r.aging?.oldestDue ? `<span class="danger-text">Quá ${r.aging.overdueDays} ngày</span><small>hạn ${fmtDate(r.aging.oldestDue)}</small>` : r.nextDueDate ? fmtDate(r.nextDueDate) : r.status === 'paid' ? '—' : '<span class="muted">Chưa có hạn</span>'}</td>
-      <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : '<span class="muted">Chưa xuất</span>'}</td>
+      <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : r.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td>
+      <td>${r.deliveryStatus ? pill(DELIVERY_STATUS, r.deliveryStatus) : '<span class="muted">—</span>'}<small>${esc(r.deliveryCarrier || '')}</small></td>
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
       <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) : '—'}</td></tr>`),
       status === 'paid' ? 'Chưa có đơn nào đã thu đủ.' : status === 'overdue' ? 'Không có công nợ quá hạn.' : 'Không còn công nợ phải thu. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
   } catch (e) { listError('receivables', e); }
 }
+for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).addEventListener('change', loadReceivables);
+$('#receivables-clear').addEventListener('click', () => { for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).value = ''; $('#receivables-search').value = ''; loadReceivables(); });
 /** Số trên nút "Chờ xuất hoá đơn" (ẩn khi 0). */
 function invoiceCount(key, n) { const c = $(`#${key}-filters [data-invoice-count]`); if (c) c.textContent = n ? String(n) : ''; }
 for (const [key, reload] of [['orders', () => { ordersPager?.reset(); loadOrders(); }], ['contracts', () => { contractsPager?.reset(); loadContracts(); }]])
@@ -3281,9 +3302,9 @@ $('#receivables-export').addEventListener('click', async e => {
   const rows = state.receivables || [], b = e.currentTarget; if (!rows.length) return toast('Không có dòng công nợ để xuất.', 'err');
   b.disabled = true;
   try {
-    await downloadExcel('cong-no', [{ name: 'Công nợ', widths: [34, 18, 16, 14, 14, 16, 14, 14, 14, 14, 14, 12, 14, 14, 14, 18],
-      header: ['Khách hàng', 'Số đơn / HĐKT', 'Phụ trách', 'Ngày đặt', 'Tình trạng', 'Số hoá đơn', 'Phải thu', 'Đã thu', 'Còn lại', 'Quá hạn', 'Hạn thu kế tiếp', 'Số ngày quá hạn', 'Quá hạn 1–30', 'Quá hạn 31–60', 'Quá hạn >60', 'Điện thoại'],
-      rows: rows.map(r => [r.customerName, r.contractNo ? 'HĐKT ' + r.contractNo : r.orderNo, r.ownerName || '', r.orderDate, DEBT_STATUS[r.status]?.[0] || r.status, r.invoiceNo || '',
+    await downloadExcel('cong-no', [{ name: 'Công nợ', widths: [34, 18, 16, 14, 14, 16, 12, 14, 14, 14, 14, 14, 12, 14, 14, 14, 18],
+      header: ['Khách hàng', 'Số đơn / HĐKT', 'Phụ trách', 'Ngày đặt', 'Tình trạng', 'Số hoá đơn', 'Giao hàng', 'Phải thu', 'Đã thu', 'Còn lại', 'Quá hạn', 'Hạn thu kế tiếp', 'Số ngày quá hạn', 'Quá hạn 1–30', 'Quá hạn 31–60', 'Quá hạn >60', 'Điện thoại'],
+      rows: rows.map(r => [r.customerName, r.contractNo ? 'HĐKT ' + r.contractNo : r.orderNo, r.ownerName || '', r.orderDate, DEBT_STATUS[r.status]?.[0] || r.status, r.invoiceNo || '', DELIVERY_STATUS[r.deliveryStatus]?.[0] || '',
         r.due, r.paid, r.balance, r.overdue, r.nextDueDate || '', r.aging?.overdueDays || 0, r.aging?.buckets.d30 || 0, r.aging?.buckets.d60 || 0, r.aging?.buckets.over60 || 0, r.phone || '']) }]);
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
 });
@@ -3292,7 +3313,13 @@ $('#receivables-filters').addEventListener('click', e => {
   $$('#receivables-filters .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
   loadReceivables();
 });
-for (const id of ['#deliveries-from', '#deliveries-to']) $(id).addEventListener('change', loadDeliveries);
+for (const id of ['#deliveries-from', '#deliveries-to', ...DELIVERY_FILTERS.map(k => '#deliveries-' + k)]) $(id).addEventListener('change', loadDeliveries);
+$('#deliveries-clear').addEventListener('click', () => {
+  for (const k of DELIVERY_FILTERS) $('#deliveries-' + k).value = '';
+  $('#deliveries-search').value = '';
+  $$('#deliveries-status .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  loadDeliveries();
+});
 $('#deliveries-status').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
   $$('#deliveries-status .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });

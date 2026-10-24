@@ -516,7 +516,7 @@
         <label>Đến ngày<input type="date" id="deliveries-to"></label>
         <div class="delivery-status"><span id="deliveries-status-label">Trạng thái</span>
           <div class="chips" id="deliveries-status" role="group" aria-labelledby="deliveries-status-label">
-            <button type="button" class="chip active" data-status="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-status="planned" aria-pressed="false">Chưa giao</button><button type="button" class="chip" data-status="in_transit" aria-pressed="false">Đang giao</button><button type="button" class="chip" data-status="delivered" aria-pressed="false">Đã giao</button>
+            <button type="button" class="chip active" data-status="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-status="planned" aria-pressed="false">Chưa giao</button><button type="button" class="chip" data-status="in_transit" aria-pressed="false">Đang giao</button><button type="button" class="chip" data-status="delivered" aria-pressed="false">Đã giao</button><button type="button" class="chip" data-status="failed" aria-pressed="false">Giao lỗi</button><button type="button" class="chip" data-status="cancelled" aria-pressed="false">Đã huỷ</button>
           </div>
         </div>
       </div>
@@ -524,7 +524,14 @@
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="deliveries-search" type="search" placeholder="Lọc theo khách hàng, số đơn…" aria-label="Tìm"></label>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
+        <div class="orders-filter-grid" id="deliveries-filter-grid">
+          <label>Nhân viên<select id="deliveries-owner"><option value="">Tất cả nhân viên</option></select></label>
+          <label>Loại chứng từ<select id="deliveries-kind"><option value="">Đơn hàng + HĐKT</option><option value="order">Đơn hàng</option><option value="contract">HĐKT</option></select></label>
+          <label>Đơn vị giao<select id="deliveries-carrier"><option value="">Tất cả</option></select></label>
+          <label>Hoá đơn<select id="deliveries-invoice"><option value="">Tất cả</option><option value="none">Chưa yêu cầu xuất</option><option value="requested">Chờ xuất hoá đơn</option><option value="issued">Đã xuất hoá đơn</option></select></label>
+          <button type="button" class="btn ghost small" id="deliveries-clear">Xóa bộ lọc</button>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
         <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
       </div>
     </section>
@@ -614,7 +621,17 @@
           <button type="button" class="btn secondary small" id="receivables-export" title="Tải bảng công nợ đang xem ra Excel">⬇ Excel</button>
           <div class="chips" id="receivables-filters" role="group" aria-label="Lọc công nợ"><button type="button" class="chip active" data-status="" aria-pressed="true">Còn phải thu</button><button type="button" class="chip" data-status="overdue" aria-pressed="false">Quá hạn</button><button type="button" class="chip" data-status="paid" aria-pressed="false">Đã thu đủ</button></div>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn / HĐKT</th><th>Tình trạng</th><th>Hạn thu</th><th>Số hoá đơn</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
+        <div class="orders-filter-grid" id="receivables-filter-grid">
+          <label>Nguồn đơn<select id="receivables-source"><option value="">Tất cả nguồn</option><option value="crm">CRM</option><option value="pos">POS tại quầy</option><option value="ghn">COD / GHN</option></select></label>
+          <label>Loại chứng từ<select id="receivables-kind"><option value="">Đơn hàng + HĐKT</option><option value="order">Đơn hàng</option><option value="contract">HĐKT</option></select></label>
+          <label>Nhân viên<select id="receivables-owner"><option value="">Tất cả nhân viên</option></select></label>
+          <label>Chi nhánh<select id="receivables-branch"><option value="">Tất cả chi nhánh</option></select></label>
+          <label>Hoá đơn<select id="receivables-invoice"><option value="">Tất cả</option><option value="none">Chưa yêu cầu xuất</option><option value="requested">Chờ xuất hoá đơn</option><option value="issued">Đã xuất hoá đơn</option></select></label>
+          <label>Giao hàng<select id="receivables-delivery"><option value="">Tất cả</option><option value="none">Chưa có chuyến giao</option><option value="planned">Chờ giao</option><option value="in_transit">Đang giao</option><option value="delivered">Đã giao</option><option value="failed">Giao lỗi</option></select></label>
+          <label>Từ ngày<input type="date" id="receivables-from"></label><label>Đến ngày<input type="date" id="receivables-to"></label>
+          <button type="button" class="btn ghost small" id="receivables-clear">Xóa bộ lọc</button>
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn / HĐKT</th><th>Tình trạng</th><th>Hạn thu</th><th>Hoá đơn</th><th>Giao hàng</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
         <div id="receivables-empty" class="empty" hidden><p class="muted" id="receivables-empty-text"></p></div>
       </div>
     </section>
