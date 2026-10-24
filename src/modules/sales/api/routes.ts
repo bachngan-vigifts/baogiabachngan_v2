@@ -1057,17 +1057,33 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   router.get('/deliveries', async c => {
     const focusId = c.url.searchParams.get('id');
     const from = focusId ? null : c.url.searchParams.get('from'), to = focusId ? null : c.url.searchParams.get('to'), status = focusId ? '' : c.url.searchParams.get('status') || '';
-    const rows = await c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
-      contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address })
+    // Bộ lọc chi tiết: nhân viên phụ trách đơn, loại chứng từ (đơn / HĐKT), đơn vị giao, hoá đơn của đơn.
+    const sp = c.url.searchParams, owner = focusId ? '' : sp.get('owner') || '', kind = focusId ? '' : sp.get('kind') || '';
+    const carrier = focusId ? '' : sp.get('carrier') || '', invoice = focusId ? '' : sp.get('invoice') || '';
+    const scope = and(sql`${salesOrders.channel} <> 'pos'`, deliveryScope(c));
+    const [rows, ownerOptions, carrierOptions] = await Promise.all([c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
+      contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address, ownerName: employees.name, invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
-      .where(and(sql`${salesOrders.channel} <> 'pos'`, deliveryScope(c), focusId ? eq(deliveries.id, focusId) : undefined, isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
-        status ? eq(deliveries.status, status as never) : undefined))
-      .orderBy(desc(deliveries.plannedDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(500);
+      .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
+      .where(and(scope, focusId ? eq(deliveries.id, focusId) : undefined, isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
+        status ? eq(deliveries.status, status as never) : undefined,
+        owner ? eq(salesOrders.ownerId, owner) : undefined,
+        kind === 'contract' ? isNotNull(salesContracts.orderId) : kind === 'order' ? isNull(salesContracts.orderId) : undefined,
+        carrier ? eq(deliveries.carrier, carrier) : undefined,
+        invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined))
+      .orderBy(desc(deliveries.plannedDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(500),
+      c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+        .innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(scope).orderBy(asc(employees.name)),
+      c.env.db.selectDistinct({ carrier: deliveries.carrier }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+        .where(and(scope, ne(deliveries.carrier, ''))).orderBy(asc(deliveries.carrier)),
+    ]);
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
     // Liên hệ / địa chỉ của khách trên đơn: kho (không xem được danh bạ khách) vẫn có đủ thông tin để liên hệ giao hàng.
     const photos = await photoUrls(c.env.db, c.env.files, 'delivery', rows.filter(r => r.d.status === 'delivered').map(r => r.d.id));
     return json({ canCancel: !isWarehouseMember(viewer(c)), deliveries: rows.map(r => ({ ...r.d, shippingFee: isWarehouseMember(viewer(c)) ? null : r.d.shippingFee, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
-      customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress, photos: photos.get(r.d.id) ?? [] })) });
+      customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress, ownerName: r.ownerName ?? '', invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo,
+      photos: photos.get(r.d.id) ?? [] })),
+      filterOptions: { owners: ownerOptions, carriers: carrierOptions.map(x => x.carrier).filter(Boolean) } });
   }, 'business');
 
   /** Lên lịch giao: số lượng mỗi dòng không vượt phần còn lại (đã trừ hàng đã giao và các chuyến đang chờ giao). */
@@ -1166,12 +1182,30 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   // ================= CÔNG NỢ =================
   /** Công nợ theo đơn: chỉ đơn đã xác nhận hoặc có HĐKT đã ký (đơn nháp / huỷ không tính). `?status=open|overdue|paid` lọc theo tình trạng. */
   router.get('/receivables', async c => {
-    const want = c.url.searchParams.get('status') || '';
+    const want = c.url.searchParams.get('status') || '', sp = c.url.searchParams;
+    // Bộ lọc chi tiết (cùng nghĩa trang Đơn hàng): nguồn đơn, loại chứng từ, nhân viên, chi nhánh, hoá đơn, giao hàng, ngày tạo đơn.
+    const kind = sp.get('kind') || '', owner = sp.get('owner') || '', branch = sp.get('branch') || '', source = sp.get('source') || '';
+    const invoice = sp.get('invoice') || '', delivery = sp.get('delivery') || '', from = sp.get('from') || '', to = sp.get('to') || '';
+    if ((from && !isDate(from)) || (to && !isDate(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày không hợp lệ.');
+    if (delivery && delivery !== 'none' && !DELIVERY_STATUSES.includes(delivery as typeof DELIVERY_STATUSES[number])) throw new AppError(400, 'Trạng thái giao hàng không hợp lệ.');
+    const isGhn = or(eq(salesOrders.fulfillmentMode, 'cod'), sql`EXISTS (SELECT 1 FROM ${deliveries} WHERE ${deliveries.orderId}=${salesOrders.id} AND lower(${deliveries.carrier}) LIKE '%ghn%')`);
+    const hasContract = sql`EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})`;
+    const lastDelivery = sql`(select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.updatedAt} desc limit 1)`;
+    const filters = and(
+      kind === 'contract' ? hasContract : kind === 'order' ? sql`NOT ${hasContract}` : undefined,
+      owner ? eq(salesOrders.ownerId, owner) : undefined,
+      branch === 'crm' ? ne(salesOrders.channel, 'pos') : branch ? sql`EXISTS (SELECT 1 FROM ${posShifts} WHERE ${posShifts.id}=${salesOrders.shiftId} AND ${posShifts.registerId}=${branch})` : undefined,
+      source === 'crm' ? ne(salesOrders.channel, 'pos') : source === 'pos' ? and(eq(salesOrders.channel, 'pos'), sql`NOT (${isGhn})`) : source === 'ghn' ? isGhn : undefined,
+      invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined,
+      delivery === 'none' ? sql`${lastDelivery} IS NULL` : delivery ? sql`${lastDelivery} = ${delivery}` : undefined,
+      from ? gte(salesOrders.createdAt, new Date(from + 'T00:00:00+07:00').toISOString()) : undefined,
+      to ? lte(salesOrders.createdAt, new Date(to + 'T23:59:59.999+07:00').toISOString()) : undefined,
+    );
     // Lọc trong SQL trước khi giới hạn số dòng: chỉ đơn có công nợ (đã duyệt hoặc HĐKT đã ký) và – trừ khi xem "Đã thu đủ" – còn phải thu,
     // để đơn cũ còn nợ không bị đơn mới đã thu đủ đẩy ra khỏi danh sách.
     const due = sql`((SELECT coalesce(sum(${paymentSchedules.amount}), 0) FROM ${paymentSchedules} WHERE ${paymentSchedules.orderId} = ${salesOrders.id}) - (select coalesce(sum(${posReturns.total}),0) from ${posReturns} where ${posReturns.orderId}=${salesOrders.id} and ${posReturns.creditEffectiveAt} is not null))`;
     const paid = sql`((SELECT coalesce(sum(${customerPayments.amount}), 0) FROM ${customerPayments} WHERE ${customerPayments.orderId} = ${salesOrders.id} AND ${customerPayments.voidedAt} IS NULL) - (select coalesce(sum(${posRefunds.amount}),0) from ${posRefunds} inner join ${posReturns} on ${posReturns.id}=${posRefunds.returnId} where ${posReturns.orderId}=${salesOrders.id}) - (select coalesce(sum(${posExchangeAllocations.amount}),0) from ${posExchangeAllocations} inner join ${posReturns} on ${posReturns.id}=${posExchangeAllocations.returnId} where ${posReturns.orderId}=${salesOrders.id} and ${posExchangeAllocations.status}='applied'))`;
-    const rows = await c.env.db.select().from(salesOrders).where(and(orderScope(c), ne(salesOrders.status, 'cancelled'),
+    const rows = await c.env.db.select().from(salesOrders).where(and(orderScope(c), ne(salesOrders.status, 'cancelled'), filters,
       or(ne(salesOrders.status, 'draft'), sql`EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id} AND ${salesContracts.status} IN ('signed', 'completed'))`),
       want === 'paid' ? sql`${due} > 0 AND ${paid} >= ${due}` : sql`${due} > ${paid}`,
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.taxCode,
@@ -1185,16 +1219,26 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     ]) : [[], []];
     const today = vietnamDate().iso, owners = new Map((ids.length ? await c.env.db.select({ id: employees.id, name: employees.name }).from(employees)
       .where(inArray(employees.id, [...new Set(counted.map(r => r.ownerId))])) : []).map(e => [e.id, e.name]));
-    const adjustments=await returnAdjustments(c.env.db,ids);
+    const live = and(orderScope(c), ne(salesOrders.status, 'cancelled'));
+    const [adjustments, deliveryRows, ownerOptions, branchOptions] = await Promise.all([returnAdjustments(c.env.db, ids),
+      ids.length ? c.env.db.select({ orderId: deliveries.orderId, status: deliveries.status, carrier: deliveries.carrier }).from(deliveries)
+        .where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))).orderBy(desc(deliveries.updatedAt)) : [],
+      c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(live).orderBy(asc(employees.name)),
+      c.env.db.selectDistinct({ id: posRegisters.id, name: posRegisters.name }).from(salesOrders).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId)).where(live).orderBy(asc(posRegisters.name)),
+    ]);
+    const deliveryOf = new Map<string, { status: string; carrier: string | null }>();
+    for (const d of deliveryRows) if (!deliveryOf.has(d.orderId)) deliveryOf.set(d.orderId, d);
     const list = counted.map(r => {
       const net=netReturnInputs(sch.filter(x=>x.orderId===r.id),pay.filter(x=>x.orderId===r.id),adjustments.get(r.id)),s=net.schedules,p=net.payments;
       return { orderId: r.id, orderNo: r.orderNo, contractNo: contracts.find(x => x.orderId === r.id)?.no ?? null, customerId: r.customerId, customerName: r.customerName, phone: r.phone,
-        orderDate: r.orderDate, orderStatus: r.status, invoiceNo: r.invoiceNo, ownerName: owners.get(r.ownerId) ?? '', ...receivable(s, p, today), aging: debtAging(s, p, today) };
+        orderDate: r.orderDate, orderStatus: r.status, invoiceNo: r.invoiceNo, invoiceStatus: r.invoiceStatus, ownerName: owners.get(r.ownerId) ?? '',
+        deliveryStatus: deliveryOf.get(r.id)?.status ?? '', deliveryCarrier: deliveryOf.get(r.id)?.carrier ?? '', ...receivable(s, p, today), aging: debtAging(s, p, today) };
     })
       .filter(r => r.status !== 'none' && (!want || r.status === want || (want === 'open' && r.status === 'overdue')));
     const sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => list.reduce((s, r) => s + r[k], 0);
     const aged = (k: 'd30' | 'd60' | 'over60') => list.reduce((s, r) => s + r.aging.buckets[k], 0);
-    return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue'), aging: { d30: aged('d30'), d60: aged('d60'), over60: aged('over60') } } });
+    return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue'), aging: { d30: aged('d30'), d60: aged('d60'), over60: aged('over60') } },
+      filterOptions: { owners: ownerOptions, branches: [{ id: 'crm', name: 'VIGIFTS / CRM' }, ...branchOptions] } });
   }, 'business');
 
   /** Ghi nhận phiếu thu. Không thu vượt số còn phải thu của đơn. */

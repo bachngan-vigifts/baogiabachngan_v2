@@ -22,6 +22,7 @@ import { posRegisters, posShifts } from '../../sales/pos-schema.ts';
 import { cashEntryName } from '../../sales/domain/cash.ts';
 import { openPurchases } from '../../suppliers/api/purchase-store.ts';
 import { stockTransfers } from '../../inventory/schema.ts';
+import { warehouseStaff } from '../../inventory/api/transfer-routes.ts';
 import { warehouses } from '../../catalog/schema.ts';
 import { dueFollowUps } from '../../care/api/routes.ts';
 import { CARE_TYPE_LABEL } from '../../care/domain/care.ts';
@@ -165,18 +166,22 @@ export const RULES: Record<string, Rule> = {
    * Đơn mua NCC (trang #/purchases): chờ Manager duyệt → chờ NCC xác nhận (Manager ghi nhận thay) → kho nhận khi tới hẹn → kho nhập Sapo
    * → Kế toán trả NCC khi tới kỳ (≤ 3 ngày). Quá hẹn giao mà chưa nhận đủ → người lập đơn theo dõi NCC. Mỗi bước xong thì việc tự hoàn thành.
    */
-  /** Phiếu điều chuyển kho: chờ duyệt → nhóm người duyệt (chưa giao người); đã duyệt → nhóm Kho chuyển hàng. Xong / huỷ thì việc tự đóng. */
+  /** Phiếu điều chuyển kho: chờ duyệt → từng nhân viên kho được xin (không có thì Manager); đã duyệt → nhóm Kho chuyển hàng. Xong / huỷ thì việc tự đóng. */
   async stockTransfers(db, today) {
     const rows = await db.select({ t: stockTransfers, from: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.fromWarehouseId})`,
       to: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.toWarehouseId})` })
       .from(stockTransfers).where(inArray(stockTransfers.status, ['pending', 'approved'])).limit(2000);
+    const staff = new Map<string, string[]>();
+    for (const w of new Set(rows.filter(r => r.t.status === 'pending').map(r => r.t.fromWarehouseId))) staff.set(w, await warehouseStaff(db, w));
     return rows.map(({ t, from, to }) => {
       const base = { source: 'transfer' as const, sourceId: t.id, link: `#/transfers/${t.id}` }, what = `${t.transferNo} · ${from} → ${to}`;
-      return t.status === 'pending'
-        ? { ...base, autoKey: `transfer-approve:${t.id}`, title: `Duyệt điều chuyển ${what}`, description: t.reason, assigneeId: null, priority: 'normal' as const, dueDate: addDaysIso(day(t.createdAt)!, 1) }
-        : { ...base, autoKey: `transfer-move:${t.id}`, title: `Chuyển hàng ${what}`, description: `Lấy hàng ở ${from}, chuyển sang ${to}, rồi bấm "Đã chuyển" trên phiếu. Lý do: ${t.reason}`,
-          assigneeId: null, assigneePosition: 'warehouse', priority: 'high' as const, dueDate: t.approvedAt ? addDaysIso(day(t.approvedAt)!, 1) : today };
-    });
+      if (t.status !== 'pending') return [{ ...base, autoKey: `transfer-move:${t.id}`, title: `Chuyển hàng ${what}`, description: `Lấy hàng ở ${from}, chuyển sang ${to}, rồi bấm "Đã chuyển" trên phiếu. Lý do: ${t.reason}`,
+        assigneeId: null, assigneePosition: 'warehouse', priority: 'high' as const, dueDate: t.approvedAt ? addDaysIso(day(t.approvedAt)!, 1) : today }];
+      // Chờ duyệt: mỗi nhân viên kho được xin một việc "Cho / Từ chối" (một người bấm là mọi việc tự đóng); kho chưa gán chức vụ bán → việc chưa giao cho Manager.
+      const deciders = (staff.get(t.fromWarehouseId) ?? []).filter(id => id !== t.requestedBy);
+      const approve = { ...base, title: `Duyệt phiếu xin hàng ${what}`, description: `Bấm Cho hoặc Từ chối trên phiếu. Lý do xin: ${t.reason}`, priority: 'high' as const, dueDate: day(t.createdAt) };
+      return deciders.length ? deciders.map(id => ({ ...approve, autoKey: `transfer-approve:${t.id}:${id}`, assigneeId: id })) : [{ ...approve, autoKey: `transfer-approve:${t.id}`, assigneeId: null }];
+    }).flat();
   },
   async supplierPurchases(db, today) {
     const out: AutoTask[] = [];
