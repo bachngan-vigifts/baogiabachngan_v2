@@ -92,7 +92,7 @@ export function bindManualProductLookup({ api, sku, name, unit, host, add, activ
 const RECEIVABLE = new Set(['awaiting_confirmation', 'confirmed', 'partially_received']);
 
 export function initPurchases({ api, root, toast, confirmBox, money, go, today, kho = () => false, compressPhoto = null }) {
-  let rows = [], filter = '', req = 0, opts = null, current = null;
+  let rows = [], all = [], counts = {}, filter = '', req = 0, opts = null, current = null, canPrices = false;
   let disposeLookup = () => {};
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div');
@@ -100,9 +100,13 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     el('p', 'muted', 'Lập đơn từ báo giá, đơn / HĐKT hoặc khách hỏi tồn; Manager duyệt giá; kho nhận hàng từng đợt rồi nhập kho trên Sapo (Sapo là nguồn tồn chính).'));
   const add = btn('+ Lập đơn mua', 'btn primary', () => openCreate());
   // Manager: nhập các đơn đã đặt với NCC từ file Excel tổng đơn của NCC (mẫu Minh Long) – trial-ui/purchase-import.js.
-  const importBtn = btn('Nhập từ file NCC', 'btn secondary pur-import', () => importForm()); importBtn.hidden = true;
+  const importBtn = btn('Nhập từ file NCC', 'btn secondary pur-import'); importBtn.hidden = true;
   // Công nợ NCC theo nhà cung cấp (người xem được giá NCC: Manager, Kế toán…): bảng tổng + xuất Excel.
-  const payBtn = btn('💰 Công nợ NCC', 'btn secondary', () => payablesDialog()); payBtn.hidden = true;
+  /** Nút mở hộp / form có tải dữ liệu: khoá + vòng xoay tới khi mở xong, bấm thêm bị bỏ qua. */
+  const guarded = (b, fn) => async () => { if (b.dataset.busy === '1') return; b.dataset.busy = '1'; b.classList.add('is-busy'); b.setAttribute('aria-busy', 'true');
+    try { await fn(); } finally { delete b.dataset.busy; b.classList.remove('is-busy'); b.removeAttribute('aria-busy'); } };
+  const payBtn = btn('💰 Công nợ NCC', 'btn secondary'); payBtn.addEventListener('click', guarded(payBtn, () => payablesDialog())); payBtn.hidden = true;
+  importBtn.addEventListener('click', guarded(importBtn, () => importForm()));
   const headTools = el('div', 'row-gap head-actions'); headTools.append(payBtn, importBtn, add);
   head.append(titles, headTools);
   options().then(o => { importBtn.hidden = !o.isManager || kho(); payBtn.hidden = !o.canSeePrices || kho(); }).catch(() => {});
@@ -112,9 +116,20 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   const countEl = el('span', 'muted small');
   bar.append(label, countEl);
   const chips = el('div', 'chips pur-chips');
-  for (const [v, t] of FILTERS) { const c = btn(t, 'chip' + (v === '' ? ' active' : ''), () => { filter = v; chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c)); load(); }); c.dataset.filter = v; chips.append(c); }
+  // Lọc trạng thái ngay trên danh sách đã tải (máy chủ trả mọi trạng thái một lần): bấm chip không gọi lại máy chủ, không bị bấm trùng.
+  const setFilter = v => { filter = v; chips.querySelectorAll('.chip').forEach(x => { const on = x.dataset.filter === v; x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); }); applyFilters(); };
+  for (const [v, t] of FILTERS) { const c = btn(t, 'chip' + (v === '' ? ' active' : ''), () => setFilter(v)); c.dataset.filter = v; c.setAttribute('aria-pressed', String(v === '')); chips.append(c); }
+  // Bộ lọc chi tiết (lọc tại chỗ): nhà cung cấp, người lập, ngày lập, hẹn giao.
+  const pick = (label, first) => { const sel = el('select'); sel.append(Object.assign(el('option', '', first), { value: '' })); return { sel, box: field(label, sel) }; };
+  const fSup = pick('Nhà cung cấp', 'Tất cả NCC'), fBy = pick('Người lập', 'Tất cả người lập');
+  const fFrom = input('date'), fTo = input('date'), fDue = el('select');
+  for (const [v, t] of [['', 'Tất cả'], ['overdue', 'Đã quá hẹn'], ['7', 'Trong 7 ngày tới'], ['none', 'Chưa có ngày hẹn']]) fDue.append(Object.assign(el('option', '', t), { value: v }));
+  const clear = btn('Xóa bộ lọc', 'btn ghost small', () => { for (const x of [fSup.sel, fBy.sel, fFrom, fTo, fDue]) x.value = ''; search.value = ''; setFilter(''); load(); });
+  const filterGrid = el('div', 'orders-filter-grid pur-filter-grid');
+  filterGrid.append(fSup.box, fBy.box, field('Lập từ ngày', fFrom), field('Đến ngày', fTo), field('Hẹn giao', fDue), clear);
+  for (const x of [fSup.sel, fBy.sel, fFrom, fTo, fDue]) x.addEventListener('change', applyFilters);
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('thead'), tbody = el('tbody');
-  table.append(thead, tbody); wrap.append(table); panel.append(bar, chips, wrap);
+  table.append(thead, tbody); wrap.append(table); panel.append(bar, filterGrid, chips, wrap);
   // Kho: thẻ to "Hàng NCC chờ nhận" thay cho bảng (bấm thẻ mở thẳng form nhận hàng); nút nhỏ để xem mọi đơn.
   const khoBox = el('div', 'kho-recv'); khoBox.hidden = true;
   let khoAll = false;
@@ -183,23 +198,43 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const st = el('td'); st.append(el('span', 'sup-pill ' + (STATE_PILL[r.state] ?? ''), r.stateLabel));
       if (r.sapoPending) st.append(el('span', 'sup-pill warn pur-gap', `${r.sapoPending} phiếu chờ Sapo`));
       tr.append(st);
-      const open = () => go('#/purchases/' + encodeURIComponent(r.id));
+      tr.dataset.id = r.id; if (openingId === r.id) tr.setAttribute('aria-busy', 'true');
+      const open = () => { if (openingId !== r.id) go('#/purchases/' + encodeURIComponent(r.id)); };
       tr.addEventListener('click', open); tr.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
       tbody.append(tr);
     }
   }
+  const inState = (r, v) => !v || r.state === v || (v === 'late' && r.late) || (v === 'sapo' && r.sapoPending > 0) || (v === 'debt' && (r.balance ?? 0) > 0 && r.state !== 'cancelled' && r.state !== 'draft');
+  const fillPick = (p, items) => { const v = p.sel.value; p.sel.replaceChildren(p.sel.options[0]); for (const [id, name] of items) p.sel.append(Object.assign(el('option', '', name), { value: id })); if (items.some(([id]) => id === v)) p.sel.value = v; };
+  /** Lọc tại chỗ + đếm số trên chip theo bộ lọc chi tiết (không bộ lọc chi tiết thì dùng số máy chủ đếm trên toàn bộ). */
+  function applyFilters() {
+    const today = new Date().toISOString().slice(0, 10), week = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+    const detail = r => (!fSup.sel.value || r.supplierId === fSup.sel.value) && (!fBy.sel.value || r.createdBy === fBy.sel.value)
+      && (!fFrom.value || String(r.createdAt).slice(0, 10) >= fFrom.value) && (!fTo.value || String(r.createdAt).slice(0, 10) <= fTo.value)
+      && (!fDue.value || (fDue.value === 'overdue' ? r.late : fDue.value === 'none' ? !r.arrivalDate : !!r.arrivalDate && r.arrivalDate >= today && r.arrivalDate <= week && r.state !== 'received' && r.state !== 'cancelled'));
+    const base = all.filter(detail), narrowed = base.length !== all.length;
+    for (const [v, t] of FILTERS) {
+      const chip = [...chips.children].find(c => c.dataset.filter === v);
+      const n = narrowed ? base.filter(r => inState(r, v)).length : Number(counts?.[v || 'all'] || 0);
+      chip.textContent = `${t} (${n.toLocaleString('vi-VN')})`;
+    }
+    rows = base.filter(r => inState(r, filter)); renderList(canPrices);
+  }
+  /** Đang tải: chip + ô lọc báo bận (không bấm chồng), bảng mờ nhẹ; chỉ kết quả của lần tải mới nhất được vẽ. */
+  const busy = on => { panel.classList.toggle('is-busy', on); panel.setAttribute('aria-busy', String(on)); chips.querySelectorAll('.chip').forEach(c => { c.disabled = on && !all.length; }); };
   async function load() {
     if (incomingMode) return incoming.refresh();
     const id = ++req;
+    busy(true);
     try {
-      const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim(), state: filter }));
+      const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim() }));
       if (id !== req) return;
-      for (const [v, t] of FILTERS) {
-        const chip = [...chips.children].find(c => c.dataset.filter === v);
-        chip.textContent = `${t} (${Number(d.counts?.[v || 'all'] || 0).toLocaleString('vi-VN')})`;
-      }
-      rows = d.orders; renderList(d.canSeePrices);
+      all = d.orders || []; counts = d.counts || {}; canPrices = d.canSeePrices;
+      fillPick(fSup, [...new Map(all.filter(r => r.supplierId).map(r => [r.supplierId, r.supplierName || r.supplierId]))].sort((a, b) => a[1].localeCompare(b[1], 'vi')));
+      fillPick(fBy, [...new Map(all.filter(r => r.createdBy).map(r => [r.createdBy, r.createdByName || 'Không rõ']))].sort((a, b) => a[1].localeCompare(b[1], 'vi')));
+      applyFilters();
     } catch (e) { if (id === req) toast(e.message || 'Không tải được đơn mua.', 'err'); }
+    finally { if (id === req) busy(false); }
   }
 
   /** Router gọi: id = '' (danh sách) | 'new' (lập đơn, ?type=&id=) | id đơn. */
@@ -237,9 +272,15 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
 
   // ---------------------------------------------------------------- chi tiết
+  let openingId = '';
+  const markOpening = id => { openingId = id; for (const tr of tbody.children) tr.toggleAttribute('aria-busy', !!id && tr.dataset.id === id); };
   async function openDetail(id, receive = false) {
+    // Đang mở đúng đơn này: bỏ qua lần bấm / điều hướng trùng (dòng hiện đang tải).
+    if (openingId === id) return;
+    markOpening(id);
     try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) receiveForm(); }
     catch (e) { toast(e.message || 'Không mở được đơn mua.', 'err'); close(); }
+    finally { if (openingId === id) markOpening(''); }
   }
   function renderDetail() {
     const v = current, d = frame(v.stateLabel + (v.confirmedOnBehalf ? ' · Ghi nhận thay NCC' : ''), `${v.ticketNumber} · ${v.supplier?.name || ''}`);
@@ -693,7 +734,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         const tr = el('tr', 'clickable'); tr.tabIndex = 0;
         const next = el('td', '', r.nextDueDate ? `${dmy(r.nextDueDate)} · ${money(r.nextDueAmount)}` : '—'); if (r.nextDueDate && r.nextDueDate <= d.today) next.className = 'pur-late';
         tr.append(el('td', '', r.supplierName || '—'), el('td', 'num', String(r.orders)), el('td', 'num', money(r.balance)), el('td', 'num' + (r.overdue > 0 ? ' pur-late' : ''), r.overdue > 0 ? money(r.overdue) : '—'), next);
-        const pick = () => { dlg.close(); search.value = r.supplierName || ''; filter = 'debt'; chips.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === 'debt')); load(); };
+        const pick = () => { dlg.close(); search.value = r.supplierName || ''; filter = 'debt'; chips.querySelectorAll('.chip').forEach(c => { const on = c.dataset.filter === 'debt'; c.classList.toggle('active', on); c.setAttribute('aria-pressed', String(on)); }); load(); };
         tr.addEventListener('click', pick); tr.addEventListener('keydown', e => { if (e.key === 'Enter') pick(); });
         tb.append(tr);
       }

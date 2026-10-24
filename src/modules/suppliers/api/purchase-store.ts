@@ -142,6 +142,8 @@ export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilte
     db.select().from(supplierPayments).where(inArray(supplierPayments.shipmentId, ids)),
   ]);
   const prices = canSeePrices(asActor(m));
+  const creatorIds = [...new Set(rows.map(r => r.createdBy).filter((x): x is string => !!x))];
+  const creators = new Map((creatorIds.length ? await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, creatorIds)) : []).map(e => [e.id, e.name]));
   const pendingSapo = await db.select({ shipmentId: supplierReceipts.shipmentId, n: sql<number>`count(*)`.mapWith(Number) }).from(supplierReceipts)
     .where(and(inArray(supplierReceipts.shipmentId, ids), isNull(supplierReceipts.cancelledAt), inArray(supplierReceipts.sapoStatus, ['pending', 'failed']))).groupBy(supplierReceipts.shipmentId);
   const out = rows.map(o => {
@@ -152,7 +154,7 @@ export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilte
     const state = purchaseState({ approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy }, progress), submitted = o.submittedAt !== null;
     const promised = ls.map(l => l.promisedDate).filter(Boolean).sort()[0] || o.arrivalDate || '';
     return { id: o.id, ticketNumber: o.ticketNumber, internalNo: o.supplierInternalOrderNumber, supplierId: o.supplierId, supplierName: o.supplierName, state, stateLabel: purchaseStateLabel(state, o), submitted,
-      createdAt: o.createdAt, createdBy: o.createdBy, arrivalDate: promised, lineCount: ls.length, ordered: progress.ordered, good: progress.good, missing: progress.missing, damaged: progress.damaged,
+      createdAt: o.createdAt, createdBy: o.createdBy, createdByName: (o.createdBy && creators.get(o.createdBy)) || '', arrivalDate: promised, lineCount: ls.length, ordered: progress.ordered, good: progress.good, missing: progress.missing, damaged: progress.damaged,
       late: Boolean(promised && promised < today && !progress.fullyReceived && !o.cancelledAt && o.approvalStatus === 'approved'),
       sapoPending: pendingSapo.find(x => x.shipmentId === o.id)?.n ?? 0,
       total: prices ? total : null, balance: prices ? debt.balance : null, overdue: prices ? debt.overdue : null, debtStatus: prices ? debt.status : null,
