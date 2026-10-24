@@ -6,7 +6,7 @@ import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
-import { stockBalances, warehouseSellers } from '../../src/modules/inventory/schema.ts';
+import { stockBalances, stockMoves, warehouseSellers } from '../../src/modules/inventory/schema.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import { deliveries, deliveryLines, packingSlipLines, packingSlips, salesOrderLines } from '../../src/modules/sales/schema.ts';
 import { reconcileAutoTasks } from '../../src/modules/tasks/api/auto-tasks.ts';
@@ -14,7 +14,7 @@ import { tasks } from '../../src/modules/tasks/schema.ts';
 
 /**
  * Kho bán theo chức vụ (docs/SO-KHO.md): Sale bán KHO VIGIFTS, NVBH bán SR Minh Long - Lock, Kế toán bán kho Hoá đơn (kho riêng);
- * duyệt đơn trừ kho bán, huỷ cộng lại; điều chuyển xin → duyệt → Kho chuyển; lịch sử xuất nhập.
+ * duyệt giữ hàng, xác nhận xuất mới trừ; điều chuyển xin → duyệt → Kho chuyển; lịch sử xuất nhập.
  */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
 async function setup() {
@@ -50,7 +50,7 @@ async function quote(s: S, no: string, qty = 10) {
   return q.data.id as string;
 }
 
-test('đơn / HĐKT: chỉ bán từ kho của chức vụ; duyệt trừ kho bán, huỷ cộng lại; đóng gói không trừ lần hai', async () => {
+test('đơn / HĐKT: duyệt chỉ giữ hàng; xác nhận xuất đúng kho mới trừ, huỷ hoàn lại', async () => {
   const s = await setup(), q1 = await quote(s, 'BG_K1');
   assert.equal((await s.call('/orders', s.emp, 'POST', { quoteId: q1, warehouseId: 'ml' })).data.code, 'WAREHOUSE_NOT_ALLOWED', 'Sale không bán từ kho Minh Long');
   const o = await s.call('/orders', s.emp, 'POST', { quoteId: q1 });
@@ -63,9 +63,9 @@ test('đơn / HĐKT: chỉ bán từ kho của chức vụ; duyệt trừ kho b�
   assert.equal(await bal(s, 'vig'), 50, 'nháp chưa trừ');
   assert.equal((await s.call(`/orders/${orderId}/packing`, s.emp)).data.soldWarehouseId, null, 'nháp chưa trừ kho → hộp đóng gói tính tồn như thường');
   assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
-  assert.equal(await bal(s, 'vig'), 40, 'duyệt → trừ 10 ở kho bán');
-  assert.equal((await s.call(`/orders/${orderId}/packing`, s.emp)).data.soldWarehouseId, 'vig', 'hộp đóng gói biết hàng của đơn đã trừ ở kho bán (cộng lại, không báo thiếu giả)');
-  // Hàng đã trừ lúc duyệt: phiếu đóng gói xuất đúng kho bán, không trừ lần hai.
+  assert.equal(await bal(s, 'vig'), 50, 'duyệt không trừ tồn thực');
+  assert.equal((await s.call(`/orders/${orderId}/packing`, s.emp)).data.soldWarehouseId, null, 'đơn mới không có dòng trừ lúc duyệt');
+  // Chỉ xác nhận phiếu đúng kho bán mới được ghi xuất.
   const [line] = await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   await s.db.insert(packingSlips).values({ id: 'ps1', slipNo: 'PĐG1', orderId, status: 'sent', createdBy: 'emp', createdAt: now, updatedAt: now });
   await s.db.insert(packingSlipLines).values({ id: 'psl1', slipId: 'ps1', orderLineId: line!.id, sku: 'LY1', name: 'Ly sứ', unit: 'cái', qty: 10 } as never);
@@ -73,7 +73,9 @@ test('đơn / HĐKT: chỉ bán từ kho của chức vụ; duyệt trừ kho b�
   assert.equal((await s.call('/packing/ps1/confirm', s.kho, 'POST', { warehouseId: 'ml', photos: [photo] })).status, 400, 'xuất sai kho bán');
   const ok = await s.call('/packing/ps1/confirm', s.kho, 'POST', { warehouseId: 'vig', photos: [photo] });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
-  assert.equal(await bal(s, 'vig'), 40, 'đóng gói không trừ thêm');
+  assert.equal(await bal(s, 'vig'), 40, 'xác nhận xuất mới trừ 10');
+  assert.equal((await s.call('/packing/ps1/confirm', s.kho, 'POST', { warehouseId: 'vig', photos: [photo] })).status, 409);
+  assert.equal(await bal(s, 'vig'), 40, 'bấm lại không trừ trùng');
   // Manager đổi kho bán đơn đã duyệt: chuyển phần đã trừ sang kho mới.
   assert.equal((await s.call(`/orders/${orderId}/warehouse`, s.emp, 'PUT', { warehouseId: 'ml' })).status, 403);
   // Huỷ không được vì đã đóng gói? Đơn chưa giao / chưa thu → huỷ được, hàng về lại kho bán.
@@ -86,13 +88,13 @@ test('Manager đổi kho bán đơn đã duyệt; duyệt đơn chưa có kho m�
   const o = await s.call('/orders', s.mgr, 'POST', { quoteId: q, warehouseId: 'vig' });
   assert.equal(o.status, 201);
   assert.equal((await s.call(`/orders/${o.data.id}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
-  assert.equal(await bal(s, 'vig'), 46);
+  assert.equal(await bal(s, 'vig'), 50);
   assert.equal((await s.call(`/orders/${o.data.id}/warehouse`, s.mgr, 'PUT', { warehouseId: 'ml' })).status, 200);
-  assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [50, 16], 'chuyển phần đã trừ sang kho mới');
+  assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [50, 20], 'đổi kho dự kiến không chuyển tồn thực');
   // Bỏ kho của đơn nháp: Sale chỉ có một kho nên tự chọn khi duyệt.
   const q3 = await quote(s, 'BG_K3', 1), o3 = await s.call('/orders', s.emp, 'POST', { quoteId: q3 });
   assert.equal((await s.call(`/orders/${o3.data.id}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, warehouseId: 'hd' })).status, 200, 'Manager chọn mọi kho');
-  assert.equal(await bal(s, 'hd'), 6);
+  assert.equal(await bal(s, 'hd'), 7, 'duyệt HĐKT/đơn chưa xuất không trừ kho Hoá đơn');
 });
 
 test('kho Hoá đơn: chỉ Kế toán + Manager thấy tồn; Sale vẫn thấy tồn các kho khác', async () => {
@@ -429,4 +431,75 @@ test('phiếu xin hàng: nhân viên kho được xin Cho / Từ chối (không 
   assert.equal((await s.call(`/stock-transfers/${own.data.id}/approve`, s.emp, 'POST', {})).status, 403);
   const rejected = await s.call(`/stock-transfers/${own.data.id}/reject`, s.mgr, 'POST', { reason: 'Kho đang kiểm kê' });
   assert.equal(rejected.status, 200, 'Manager vẫn duyệt / từ chối thay');
+});
+
+
+test('tồn đầu 0 + nhập 5: duyệt đơn không trừ; xuất 2 rồi 3 về 0, giảm giữ hàng đúng phần đã xuất', async () => {
+  const s = await setup();
+  await postMoves(s.db, 'mgr', [{sku:'LY1',warehouseId:'vig',qty:-50,kind:'adjust',refType:'adjustment',refId:'reset-fixture'}]);
+  assert.equal(await bal(s,'vig'),0);
+  await postMoves(s.db, 'mgr', [{sku:'LY1',warehouseId:'vig',qty:5,kind:'receipt',refType:'supplier_receipt',refId:'receipt-five'}]);
+  const q = await quote(s,'BG_ZERO_FIVE',5), made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig'}), id=made.data.id;
+  const approved=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  assert.equal(approved.status,200,JSON.stringify(approved.data)); assert.equal(await bal(s,'vig'),5);
+  assert.equal((await s.db.select().from(stockMoves).where(eq(stockMoves.refType,'sales_order'))).length,0);
+  const held=async()=>((await s.call('/stock-holds?warehouseId=vig',s.mgr)).data.holds as any[]).filter(h=>h.orderId===id).reduce((sum,h)=>sum+h.qty,0);
+  assert.equal(await held(),5);
+  const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
+  const photo='data:image/jpeg;base64,'+'A'.repeat(200);
+  for(const [i,qty] of [[1,2],[2,3]] as const) {
+    const slipId='partial-'+i;
+    await s.db.insert(packingSlips).values({id:slipId,slipNo:'PDG_PART_'+i,orderId:id,status:'sent',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
+    await s.db.insert(packingSlipLines).values({id:'part-line-'+i,slipId,orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty});
+    const response=await s.call(`/packing/${slipId}/confirm`,s.kho,'POST',{warehouseId:'vig',photos:[photo]});
+    assert.equal(response.status,200,JSON.stringify(response.data));
+    assert.equal(await bal(s,'vig'),i===1?3:0); assert.equal(await held(),i===1?3:0);
+  }
+  assert.equal(await bal(s,'ml'),20,'không trừ kho khác');
+});
+
+test('legacy debit không trừ lần hai khi xác nhận xuất; đổi kho bị chặn; huỷ hoàn đúng một lần', async()=>{
+  const s=await setup(),q=await quote(s,'BG_LEGACY',5),made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig'}),id=made.data.id;
+  await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  await postMoves(s.db,'mgr',[{sku:'LY1',warehouseId:'vig',qty:-5,kind:'sale',refType:'sales_order',refId:id}]);
+  assert.equal((await s.call(`/orders/${id}/warehouse`,s.mgr,'PUT',{warehouseId:'ml'})).data.code,'ORDER_ALREADY_ISSUED');
+  const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
+  await s.db.insert(packingSlips).values({id:'legacy-pack',slipNo:'LEGACY_PACK',orderId:id,status:'sent',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
+  await s.db.insert(packingSlipLines).values({id:'legacy-line',slipId:'legacy-pack',orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty:5});
+  const response=await s.call('/packing/legacy-pack/confirm',s.kho,'POST',{warehouseId:'vig',photos:['data:image/jpeg;base64,'+'A'.repeat(200)]});
+  assert.equal(response.status,200,JSON.stringify(response.data));assert.equal(await bal(s,'vig'),45);
+  const cancel=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'cancelled'});assert.equal(cancel.status,200,JSON.stringify(cancel.data));assert.equal(await bal(s,'vig'),50);
+});
+
+
+test('HĐKT không kế hoạch đóng gói: duyệt không trừ; đánh dấu đã giao không tự xác nhận phiếu SKU', async()=>{
+  const s=await setup(),q=await quote(s,'BG_CONTRACT_NO_PLAN',5);
+  const {quotations}=await import('../../src/modules/quotes/schema.ts');
+  const [qr]=await s.db.select().from(quotations).where(eq(quotations.id,q));const data=JSON.parse(qr!.data);data.customerTaxCode='1800000000';
+  await s.db.update(quotations).set({data:JSON.stringify(data)}).where(eq(quotations.id,q));
+  const k=await s.call('/contracts',s.emp,'POST',{quoteId:q,contractNo:'CONTRACT-NO-PLAN',legalEntity:'BN',warehouseId:'vig'});
+  assert.equal(k.status,201,JSON.stringify(k.data));const id=k.data.orderId;
+  assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  assert.equal(await bal(s,'vig'),50);assert.equal((await s.db.select().from(stockMoves).where(eq(stockMoves.refType,'sales_order'))).length,0);
+  const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
+  await s.db.insert(packingSlips).values({id:'not-issued',slipNo:'NOT_ISSUED',orderId:id,status:'sent',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
+  await s.db.insert(packingSlipLines).values({id:'not-issued-line',slipId:'not-issued',orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty:5});
+  await s.db.insert(packingSlips).values({id:'draft-not-issued',slipNo:'DRAFT_NOT_ISSUED',orderId:id,status:'draft',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
+  await s.db.insert(packingSlipLines).values({id:'draft-not-issued-line',slipId:'draft-not-issued',orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty:5});
+  assert.equal((await s.call(`/orders/${id}/progress`,s.mgr,'POST',{stage:'delivered'})).status,200);
+  const [draft]=await s.db.select().from(packingSlips).where(eq(packingSlips.id,'draft-not-issued'));assert.equal(draft!.status,'draft','không huỷ phiếu SKU chưa xác nhận xuất chỉ vì đánh dấu giao hàng');
+  const [slip]=await s.db.select().from(packingSlips).where(eq(packingSlips.id,'not-issued'));
+  assert.equal(slip!.status,'sent','tiến trình giao hàng không giả lập xác nhận xuất kho');assert.equal(await bal(s,'vig'),50);
+});
+
+test('thiếu tồn không cản duyệt nhưng chặn xác nhận xuất và rollback phiếu/ảnh/số dư',async()=>{
+  const s=await setup(),q=await quote(s,'BG_SHORT_ISSUE',51),made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig'}),id=made.data.id;
+  const approve=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(approve.status,200,JSON.stringify(approve.data));
+  const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
+  await s.db.insert(packingSlips).values({id:'short-issue',slipNo:'SHORT_ISSUE',orderId:id,status:'sent',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
+  await s.db.insert(packingSlipLines).values({id:'short-issue-line',slipId:'short-issue',orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty:51});
+  const result=await s.call('/packing/short-issue/confirm',s.kho,'POST',{warehouseId:'vig',photos:['data:image/jpeg;base64,'+'A'.repeat(200)]});
+  assert.equal(result.status,409);assert.equal(result.data.code,'STOCK_SHORT');assert.equal(await bal(s,'vig'),50);
+  const [slip]=await s.db.select().from(packingSlips).where(eq(packingSlips.id,'short-issue'));assert.equal(slip!.status,'sent');
+  const {packingSlipPhotos}=await import('../../src/modules/sales/schema.ts');assert.equal((await s.db.select().from(packingSlipPhotos).where(eq(packingSlipPhotos.slipId,'short-issue'))).length,0);
 });

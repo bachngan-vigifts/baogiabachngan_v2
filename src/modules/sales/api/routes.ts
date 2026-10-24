@@ -203,22 +203,15 @@ export async function pickSaleWarehouse(db: StaffEnv['db'] | Tx, ownerId: string
   }
   return configured && ownerList.length === 1 ? ownerList[0]!.id : null;
 }
-const ACTIVE_ORDER: readonly string[] = ['confirmed', 'delivering', 'delivered'];
-/**
- * Sổ kho theo đơn kênh CRM: đơn / HĐKT đã duyệt trừ kho bán; huỷ / đổi kho / Manager sửa số lượng → ghi phần chênh lệch (inventory/api/ledger.ts).
- * Đơn POS / web có luồng xuất kho riêng (pos_order, pos_delivery) – không đụng.
+/** Approval only reserves stock. Physical issues are posted by packing confirmation.
+ * Old approval debits are retained as history; cancellation may reverse those legacy debits.
  */
 export async function syncOrderStock(tx: Tx, by: string, orderId: string, note: string) {
-  const [o] = await tx.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, status: salesOrders.status, warehouseId: salesOrders.warehouseId, channel: salesOrders.channel })
+  const [o] = await tx.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, status: salesOrders.status, channel: salesOrders.channel })
     .from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
-  if (!o || o.channel !== 'crm') return 0;
-  // A source plan approves the sale first; physical issues are posted by each packing confirmation.
-  // Keep this mode even if a draft is cancelled, so replanning never creates a full-order debit.
-  const planned = (await tx.select({id:packingSlips.id}).from(packingSlips).where(eq(packingSlips.orderId,orderId)).limit(1)).length > 0;
-  const deferred = planned && !await saleMovesPosted(tx,orderId);
-  const lines = deferred ? [] : await tx.select({ sku: salesOrderLines.sku, qty: salesOrderLines.qty }).from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
+  if (!o || o.channel !== 'crm' || o.status !== 'cancelled' || !await saleMovesPosted(tx, orderId)) return 0;
   const no = docRef(o.id, o.orderNo, (await contractNosOf(tx, [o.id])).get(o.id)).no;
-  return syncSaleMoves(tx, by, { id: o.id, no, warehouseId: o.warehouseId, active: ACTIVE_ORDER.includes(o.status) }, lines, note);
+  return syncSaleMoves(tx, by, { id: o.id, no, warehouseId: null, active: false }, [], note);
 }
 async function assertCanCancelDocument(tx:Tx,orderId:string) {
   const [o]=await tx.select().from(salesOrders).where(eq(salesOrders.id,orderId));
@@ -334,6 +327,13 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
   let plan: ReturnType<typeof amendmentLines>;
   try { plan = amendmentLines(oldLines, lines, reserved, new Set([...links, ...packed].map(l => l.id))); }
   catch (e) { throw new AppError(409, (e as Error).message, 'ORDER_LINE_IN_USE'); }
+  // Legacy approval debits must not silently follow edits to quantities or SKUs.
+  const quantities = (rows: readonly { sku: string; qty: number }[]) => {
+    const totals = new Map<string, number>(); for (const row of rows) totals.set(row.sku, (totals.get(row.sku) ?? 0) + row.qty);
+    return JSON.stringify([...totals].sort(([a], [b]) => a.localeCompare(b)));
+  };
+  if (quantities(oldLines) !== quantities(plan.updates) && await saleMovesPosted(tx, order.id))
+    throw new AppError(409, 'Đơn đã ghi trừ kho theo cơ chế cũ. Đối soát xuất/hoàn kho trước khi sửa mã hoặc số lượng.', 'ORDER_STOCK_POSTED');
   // Tạm chuyển thứ tự để sắp xếp lại không đụng unique (order_id, line_no).
   for (const l of oldLines) await tx.update(salesOrderLines).set({ lineNo: -l.lineNo }).where(eq(salesOrderLines.id, l.id));
   for (const l of plan.remove) await tx.delete(salesOrderLines).where(eq(salesOrderLines.id, l.id));
@@ -359,7 +359,7 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
   await syncPaymentSchedules(tx, { ...order, ...t, status: orderStatusFromLines(order.status, plan.updates) }, k);
   if (order.status !== 'draft') {
     await refreshOrderStatus(tx, order.id, null);
-    // Manager sửa số lượng đơn / HĐKT đã duyệt: sổ kho trừ thêm / cộng lại phần chênh lệch ở kho bán.
+    // Sửa chứng từ không xuất kho; chỉ hoàn các dòng trừ kiểu cũ nếu chứng từ đã huỷ.
     await syncOrderStock(tx, member.id, order.id, `Manager sửa ${order.orderNo} theo báo giá ${quote.quoteNo}`);
     await removeMovements(tx, `sale:${order.id}:`);
     await recordSaleMovements(tx, order.id);
@@ -607,7 +607,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
 
   /**
    * Đổi kho bán của đơn / HĐKT. Nháp: người phụ trách / người tạo (kho người phụ trách được bán). Đã duyệt: chỉ Manager – sổ kho
-   * chuyển phần đã trừ sang kho mới. Đơn cũ đã xuất kho qua phiếu đóng gói (trước khi có kho bán) thì không đổi được (tránh trừ hai lần).
+   * chỉ đổi kho dự kiến trước khi xuất. Đơn cũ đã xuất kho qua phiếu đóng gói (trước khi có kho bán) thì không đổi được (tránh trừ hai lần).
    */
   router.put('/orders/:id/warehouse', async c => {
     const body = await readJson(c.req, 1_024), me = viewer(c), order = await loadOrder(c, c.params.id!);
@@ -621,6 +621,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       const [locked] = await tx.select({ status: salesOrders.status, warehouseId: salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
       if (locked.warehouseId === warehouseId) return;
+      if (await saleMovesPosted(tx, order.id)) throw new AppError(409, 'Đơn đã ghi trừ kho theo cơ chế cũ. Đối soát xuất/hoàn kho trước khi đổi kho bán.', 'ORDER_ALREADY_ISSUED');
       const planned = await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,order.id),ne(packingSlips.status,'cancelled'))).limit(1);
       if (planned.length && !await saleMovesPosted(tx,order.id)) throw new AppError(409,'Huỷ các phiếu kế hoạch nguồn hàng rồi lập lại trước khi đổi kho bán.','STOCK_PLAN_IN_USE');
       if (order.status !== 'draft' && !locked.warehouseId) {
@@ -706,13 +707,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (status === 'confirmed' && order.status !== 'draft') throw new AppError(409, 'Chỉ duyệt được đơn đang chờ duyệt.');
     // Bước xác thực: nhân viên phải đánh dấu đã kiểm tra các thông tin quan trọng trước khi duyệt đơn.
     if (status === 'confirmed' && body.verified !== true) throw new AppError(400, 'Kiểm tra và đánh dấu đủ các thông tin quan trọng trước khi xác nhận đơn.', 'VERIFY_REQUIRED');
-    // Duyệt = trừ kho bán (đơn CRM): người duyệt chọn / đổi kho được (trong kho người phụ trách được bán); đã bật phân kho bán thì bắt buộc có kho.
+    // Duyệt chỉ giữ hàng, chưa trừ tồn (đơn CRM): người duyệt chọn / đổi kho được (trong kho người phụ trách được bán); đã bật phân kho bán thì bắt buộc có kho.
     let warehouseId = order.warehouseId;
     let ghnDeliveryIds: string[] = [];
     if (status === 'confirmed' && order.channel === 'crm') {
       if (body.warehouseId !== undefined && body.warehouseId !== order.warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), body.warehouseId);
       if (!warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), undefined);
-      if (!warehouseId && await sellersConfigured(c.env.db)) throw new AppError(409, 'Chọn kho bán (kho hàng sẽ trừ) trước khi duyệt.', 'WAREHOUSE_REQUIRED');
+      if (!warehouseId && await sellersConfigured(c.env.db)) throw new AppError(409, 'Chọn kho dự kiến xuất hàng trước khi duyệt.', 'WAREHOUSE_REQUIRED');
     }
     await c.env.db.transaction(async tx => {
       // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
@@ -731,7 +732,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         }
       }
       await tx.update(salesOrders).set({ status, warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
-      // Sổ kho: duyệt → trừ kho bán; huỷ đơn đã duyệt → cộng lại (đơn nháp chưa trừ thì không ghi gì).
+      // Duyệt không ghi sổ kho; khi huỷ chỉ hoàn các dòng trừ kiểu cũ. Phiếu xuất được đảo ở cancelDocumentChildren.
       await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);
       if (status === 'confirmed') await ensurePackingSchedule(tx,order.id,viewer(c).id);
       // Huỷ: dọn việc còn treo của đơn – phiếu đóng gói chưa đóng / chuyến giao chưa giao huỷ theo (việc kho / giao tự đóng);

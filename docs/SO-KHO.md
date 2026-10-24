@@ -92,12 +92,15 @@ Tài khoản kho chỉ thấy các trang cần dùng, chữ to, nút to.
 - Ai cũng xem tồn các kho khác, **trừ kho riêng** (Hoá đơn): chỉ chức vụ bán kho đó + Manager thấy (danh mục, Tra tồn, lịch sử, điều chuyển).
 - Bảng gán còn trống = tính năng chưa bật (không bắt chọn kho, đơn không trừ kho theo đơn).
 
-**Trừ kho khi duyệt đơn / HĐKT (kênh CRM):**
-- Hộp duyệt có ô **Kho bán** và tồn từng mã tại kho đó (báo "thiếu" nếu không đủ). Đã bật phân kho mà chưa có kho → 409 `WAREHOUSE_REQUIRED`.
-- Duyệt → sổ kho ghi dòng **Bán hàng** (âm) ở kho bán. Huỷ đơn đã duyệt → cộng lại. Manager sửa số lượng đơn đã duyệt / đổi kho bán → ghi phần chênh lệch.
-- Phiếu đóng gói của đơn đã trừ lúc duyệt: kho xuất phải đúng kho bán và **không trừ lần hai**. Giữ hàng không tính lại đơn đã trừ.
-- Đơn POS / web giữ luồng xuất kho riêng (bán quầy, giao COD) như trước.
-- Trang chi tiết đơn có dòng **Kho bán** + nút **Đổi kho** (nháp: người sửa được đơn; đã duyệt: Manager).
+**Duyệt giữ hàng, xác nhận xuất mới trừ kho (kênh CRM, từ 24/10/2026):**
+- Duyệt đơn / HĐKT xác nhận nghiệp vụ và kho dự kiến, không ghi bút toán trừ kho. Đơn giữ phần chưa xuất ở kho bán; tồn thực và khả dụng sau giữ hàng là hai số khác nhau.
+- Kho xác nhận **Đã xuất kho** trên phiếu đóng gói nguồn Kho: chọn đúng kho, đủ ảnh và số lượng. Server kiểm tồn trong transaction, ghi `stock_moves` và cập nhật `stock_balances` cùng lần. Không đủ tồn thì toàn bộ xác nhận rollback; bấm lặp không trừ thêm.
+- Xuất từng phần chỉ trừ số lượng trên phiếu đó, đồng thời giảm giữ hàng phần đã xuất. Kho khác không bị trừ. Đổi kho dự kiến trước khi xuất không chuyển số dư thực.
+- Duyệt, sửa báo giá hay đánh dấu tiến trình không thay thao tác xác nhận xuất. Đã giao không tự hoàn tất hoặc huỷ phiếu có SKU chưa xác nhận xuất.
+- Huỷ đơn chưa xuất không cộng kho; huỷ phiếu đã xuất theo cơ chế hiện hành ghi dòng đảo, không xoá lịch sử.
+- **Tương thích đơn cũ:** các bút toán trừ lúc duyệt đã ghi được giữ nguyên. Khi xác nhận đóng gói không trừ lần hai; huỷ hoàn phần cũ. Chặn đổi kho/sửa mã hoặc số lượng đơn cũ đã trừ để yêu cầu đối soát, không tự dịch chuyển số dư hoặc sửa lịch sử.
+- Lịch sử bán/chứng từ ghi “Giao hàng” theo chuyến giao; chỉ `stock_moves` là bằng chứng đã trừ sổ kho. Đơn cũ đã giao nhưng thiếu kho/phiếu xuất cần đối soát đúng kho trước khi bù.
+- POS / web giữ luồng xuất kho riêng hiện hành.
 
 **Điều chuyển kho** (`#/transfers`, bảng `stock_transfers` + `stock_transfer_lines`):
 1. Nhân viên bấm **＋ Xin điều chuyển**: kho đi, kho đến, lý do, các mã + số lượng → **Chờ duyệt** (báo người duyệt, vào hộp **Cần duyệt**, việc "Duyệt điều chuyển").
@@ -137,7 +140,7 @@ Mỗi dòng là **một giao dịch** trong `stock_moves`, mới nhất trước
 | Chốt tồn đầu kỳ (Đối chiếu tồn Sapo) | opening | opening | Chốt tồn đầu kỳ | – |
 | Nhận hàng NCC (số đạt) | receipt | supplier_receipt | Nhập hàng vào kho | Đơn mua `#/purchases/<id>` |
 | Huỷ phiếu nhận NCC | reverse | supplier_receipt | Huỷ phiếu nhập hàng | Đơn mua |
-| Duyệt đơn / HĐKT kênh CRM (trừ kho bán) | sale | sales_order | Xuất kho bán hàng (duyệt đơn / HĐKT) | Đơn `#/orders/<id>` |
+| Duyệt đơn / HĐKT kênh CRM (trừ kho bán) | sale | sales_order | Xuất kho khi duyệt (lịch sử cơ chế cũ) | Đơn `#/orders/<id>` |
 | Huỷ / sửa SL / đổi kho đơn đã duyệt | reverse hoặc sale (phần chênh) | sales_order | Huỷ / sửa đơn – hoàn lại kho | Đơn |
 | Xác nhận đóng gói (đơn chưa trừ lúc duyệt) | issue | packing_slip | Xuất kho đóng gói giao hàng | Phiếu `#/packing/<id>` |
 | Bán tại quầy POS | sale | pos_order | Xuất kho bán tại quầy | Đơn |
