@@ -176,9 +176,11 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     return json({...await receivingCalendar(c.env.db, c.url.searchParams, today()),canConfirmEarly:me(c).role==='manager'});
   }, 'business');
 
+  let lastIncomingSync = 0;
   router.get('/purchase-orders', async c => {
     guard(c); const p = c.url.searchParams;
-    await syncIncomingStock(c.env.db).catch(() => {});
+    // Tồn "Hàng chờ về" đồng bộ tối đa mỗi phút một lần: bấm lọc / gõ tìm liên tục không chạy lại phép tính nặng mỗi lượt.
+    if (Date.now() - lastIncomingSync > 60_000) { lastIncomingSync = Date.now(); await syncIncomingStock(c.env.db).catch(() => { lastIncomingSync = 0; }); }
     const filter = { q: p.get('q') ?? '', supplierId: p.get('supplierId') ?? '', state: p.get('state') ?? '' }, day = today();
     const [orders, counts] = await Promise.all([listPurchases(c.env.db, me(c), filter, day), purchaseCounts(c.env.db, me(c), filter, day)]);
     return json({ orders, counts, canSeePrices: canSeePrices(asActor(me(c))), today: day });

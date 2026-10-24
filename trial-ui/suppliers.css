@@ -195,3 +195,10 @@
   .pur-rs-foot { flex-wrap: wrap; }
   .pur-rs-foot .btn { flex: 1 1 100%; }
 }
+
+/* Đơn mua NCC: lưới bộ lọc chi tiết + trạng thái đang tải (bảng mờ nhẹ, không bấm chồng). */
+.pur-filter-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) auto; margin: 0 0 10px; }
+.panel.is-busy .table-wrap { opacity: .55; transition: opacity .15s; }
+.panel.is-busy .pur-chips::after { content: 'Đang tải…'; align-self: center; margin-left: 6px; color: var(--muted); font-size: var(--text-caption); }
+#view-purchases tr[aria-busy] { cursor: progress; }
+@media (max-width: 850px) { .pur-filter-grid { grid-template-columns: 1fr 1fr; } }
