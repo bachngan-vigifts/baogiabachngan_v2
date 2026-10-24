@@ -33,7 +33,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
   const warehouse=select([['','Chọn kho bán / kho xuất'],...selling.map(w=>[w.id,w.name+(w.opened?'':' · Chưa chốt đầu kỳ')])],'Kho bán / kho xuất');
   if(selling.length===1)warehouse.value=selling[0].id;
   const heading=el('h3','','Lấy hàng từ đâu?'),label=el('label','','Kho bán / kho xuất');label.append(warehouse);
-  const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT, bạn chọn tạo đơn mua nháp ngay hoặc đặt NCC sau. Các nút tạo riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
+  const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT: phần xin hàng từ kho khác tự lập phiếu điều chuyển chờ duyệt; phần đặt NCC bạn chọn tạo đơn mua nháp ngay hoặc đặt sau. Các nút tạo riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
   const summary=el('p','quote-source-summary',`${data.lines.length} mã sản phẩm · Rà số lượng và nguồn cho từng mã`);
   const toolbar=el('div','quote-source-toolbar');toolbar.append(heading,summary,label,hint);
   const list=el('div','quote-source-list'),error=el('p','error');error.setAttribute('role','alert');host.replaceChildren(toolbar,list,error);
@@ -88,6 +88,25 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     if(Number(from.value)<line.qty)source(card,line.qty-Number(from.value));
   }}
   warehouse.addEventListener('change',()=>{error.textContent='';draw();});draw();
+  /** Xin hàng từ kho khác chưa bấm "Xin hàng": khi sinh đơn tự lập phiếu điều chuyển (gộp theo kho xin), không để kế hoạch chỉ nằm trên giấy. */
+  async function createPendingTransfers(){
+    const pending=cards.flatMap(card=>card.sources.filter(entry=>entry.type.value==='transfer'&&!entry.saved&&!entry.uncertain&&Number(entry.amount.value)>0).map(entry=>({card,entry,quantity:Number(entry.amount.value)})));
+    if(!pending.length)return;
+    const destination=requireWarehouse(),groups=new Map();
+    for(const item of pending){const id=item.entry.location.value;if(!groups.has(id))groups.set(id,[]);groups.get(id).push(item);}
+    markBusy(true);
+    try{
+      for(const [from,items] of groups){
+        const lines=new Map();for(const {card,quantity} of items)lines.set(card.line.sku,(lines.get(card.line.sku)||0)+quantity);
+        let response;
+        try{response=await api('/stock-transfers','POST',{fromWarehouseId:from,toWarehouseId:destination.id,reason:`Báo giá ${data.quoteNo} · ${data.customerName}`.slice(0,500),lines:[...lines].map(([sku,qty])=>({sku,qty}))});}
+        catch(e){if(!e.status||e.status>=500){for(const {entry} of items)entry.uncertain=true;error.textContent='Chưa xác định phiếu xin hàng đã lưu hay chưa. Kiểm tra danh sách Điều chuyển kho theo báo giá trước khi tạo thêm.';throw Error(error.textContent);}throw e;}
+        const href='#/transfers/'+encodeURIComponent(response.id);
+        for(const {entry,quantity} of items){entry.saved={quantity,type:'transfer',from:entry.location.selectedOptions[0]?.textContent,href,text:'Phiếu xin hàng · Chờ duyệt'};const link=el('a','',entry.saved.text);link.href=href;link.target='_blank';link.rel='noopener';entry.result.replaceChildren(link);}
+      }
+    }finally{markBusy(false);}
+    if(!isCurrent())throw Error('Form đã đóng. Các phiếu xin hàng đã lập được giữ trong Điều chuyển kho.');
+  }
   const planner={read(){if(!cards.length)return {};if(busy)throw Error('Đang lưu yêu cầu nguồn hàng, vui lòng chờ.');const w=requireWarehouse();
     const stockPlan=[];
     const plan=[`KẾ HOẠCH NGUỒN HÀNG · ${data.quoteNo}`,`Kho bán: ${w.name}`];
@@ -110,6 +129,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
   },async prepare(){
     if(!isCurrent())throw Error('Form đã đóng. Mở lại trước khi sinh đơn.');
     planner.read(); // Validate every allocation before creating any request.
+    await createPendingTransfers();
     const pending=cards.flatMap(card=>card.sources.filter(entry=>entry.type.value==='purchase'&&!entry.saved&&Number(entry.amount.value)>0).map(entry=>({card,entry,quantity:Number(entry.amount.value)})));
     if(!pending.length)return planner.read();
     const destination=requireWarehouse(),groups=new Map();

@@ -62,6 +62,19 @@ test('sinh đơn: tự gộp nguồn đặt NCC chưa bấm tạo theo NCC; lưu
   assert.equal(s.posts[0].body.orders[0].lines[0].sources[0].id,'q');assert.match(plan.note,/#\/purchases\/p1/);assert.doesNotMatch(plan.note,/Chưa tạo yêu cầu/);
   await s.ui.prepare();assert.equal(s.posts.length,1);assert.equal(s.label('Nguồn hàng X').disabled,true);
 });
+test('sinh đơn: xin hàng kho khác chưa bấm "Xin hàng" tự lập phiếu điều chuyển (gộp theo kho xin), không tạo lại',async()=>{
+  const lines=['X','Y'].map(sku=>({sku,name:sku,unit:'bộ',qty:3,stock:{a:2,b:5},incoming:0}));
+  const s=await setup(false,{lines});
+  for(const sku of ['X','Y'])s.label('Kho xin hàng '+sku).value='b';
+  assert.equal(s.posts.length,0);
+  const plan=await s.ui.prepare();
+  assert.equal(s.posts.length,1);assert.equal(s.posts[0].path,'/stock-transfers');
+  assert.deepEqual(JSON.parse(JSON.stringify(s.posts[0].body)),{fromWarehouseId:'b',toWarehouseId:'a',reason:'Báo giá BG1 · Khách',lines:[{sku:'X',qty:1},{sku:'Y',qty:1}]});
+  assert.match(plan.note,/#\/transfers\/t1/);assert.doesNotMatch(plan.note,/Chưa tạo yêu cầu/);
+  await s.ui.prepare();assert.equal(s.posts.length,1,'gửi lại không tạo phiếu thứ hai');
+  const lost=await setup(true);lost.label('Kho xin hàng X').value='b';
+  await assert.rejects(()=>lost.ui.prepare(),/Chưa xác định phiếu xin hàng/);await assert.rejects(()=>lost.ui.prepare(),/chưa xác định/);assert.equal(lost.posts.length,1);
+});
 test('sinh đơn: từ chối/không quyền/số lượng sai không tạo đơn mua; lỗi mạng chặn tạo lặp và không trả kế hoạch thành công',async()=>{
   const cancelled=await setup(false,{},true,null);cancelled.label('Nguồn hàng X').value='purchase';await cancelled.label('Nguồn hàng X').fire('change');cancelled.label('Nhà cung cấp X').value='s1';
   await assert.rejects(()=>cancelled.ui.prepare(),/Đã quay lại/);assert.equal(cancelled.posts.length,0);
