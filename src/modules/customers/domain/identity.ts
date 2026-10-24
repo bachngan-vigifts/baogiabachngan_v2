@@ -26,11 +26,12 @@ export function changedIdentity(next: CustomerIdentity, previous?: CustomerIdent
 }
 export type IdentityRow = CustomerIdentity & { id: string; name: string; isRetail?: boolean };
 /** Shared for bulk imports: update the index as each accepted record enters the batch. */
-export function customerIdentityIndex(rows: readonly IdentityRow[]) {
+/** `byName`: đồng bộ / nhập khách từ Sapo vẫn bỏ qua khách trùng tên (giữ như cũ); tạo / sửa khách trong CRM và POS tắt (trùng tên được phép). */
+export function customerIdentityIndex(rows: readonly IdentityRow[], { byName = true } = {}) {
   const all = new Map<string, IdentityRow>(), keys = new Map<string, Set<string>>();
   const tokens = (c: CustomerIdentity) => {
     const k = identityKeys(c);
-    return [...(k.taxCode ? ['taxCode:' + k.taxCode] : []), ...k.phone.map(p => 'phone:' + p), ...(k.name ? ['name:' + k.name] : [])];
+    return [...(k.taxCode ? ['taxCode:' + k.taxCode] : []), ...k.phone.map(p => 'phone:' + p), ...(byName && k.name ? ['name:' + k.name] : [])];
   };
   const put = (row: IdentityRow) => {
     const old = all.get(row.id);

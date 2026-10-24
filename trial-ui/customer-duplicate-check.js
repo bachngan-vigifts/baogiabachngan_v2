@@ -8,7 +8,7 @@ export function bindCustomerDuplicateCheck({ api, root, read, endpoint = '/custo
   async function refresh() {
     const id = ++request, data = read();
     const params = new URLSearchParams({ name: data.name || '', phone: data.phone || '', taxCode: data.taxCode || '', exceptId: exceptId() || '' });
-    if (![data.name, data.phone, data.taxCode].some(v => v?.trim())) return reset();
+    if (![data.phone, data.taxCode].some(v => v?.trim())) return reset(); // trùng tên được phép: chỉ kiểm SĐT / MST
     try {
       const result = await api(endpoint + '?' + params);
       if (id !== request || !root.isConnected || !active()) return;
@@ -25,7 +25,7 @@ export function bindCustomerDuplicateCheck({ api, root, read, endpoint = '/custo
     } catch { if (id === request) { box.replaceChildren(); box.hidden = false; const note = document.createElement('p'); note.className = 'muted small'; note.textContent = 'Chưa kiểm tra được khách trùng. Máy chủ sẽ kiểm tra lại khi lưu.'; box.append(note); } }
   }
   root.addEventListener('input', e => {
-    if (!['name', 'phone', 'taxCode'].includes(e.target.name)) return;
+    if (!['phone', 'taxCode'].includes(e.target.name)) return;
     reset(); timer = setTimeout(refresh, 300);
   });
   return { reset, refresh };
