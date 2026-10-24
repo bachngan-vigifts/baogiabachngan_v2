@@ -26,7 +26,7 @@ test('counter POS export follows full direct stock evidence, without altering or
   for (const id of ['complete', 'returned']) { assert.equal(p.get(id)!.done, true, id); assert.equal(p.get(id)!.stages.find(s => s.key === 'export')!.by, 'auto'); }
   for (const id of ['missing', 'partial', 'reversed', 'wrong-sku', 'cod', 'crm', 'duplicate-sku', 'multi-sku', 'pending-flow']) assert.equal(p.get(id)!.stages.find(s => s.key === 'export')!.done, false, id);
   assert.equal(p.get('cancelled')!.done, false); assert.equal(p.get('cancelled')!.current, null);
-  assert.equal(p.get('packed')!.stages.find(s => s.key === 'export')!.done, true, 'CRM packing document unchanged');
+  assert.equal(p.get('packed')!.stages.find(s => s.key === 'export')!.done, false, 'CRM packed label without confirmed lines and ledger is not proof of export');
   assert.deepEqual(await db.select({ total: sql<number>`sum(${stockMoves.qty})`, count: sql<number>`count(*)` }).from(stockMoves), before);
   assert.equal((await progressOf(db, ['complete', 'complete'])).size, 1);
   assert.equal((await progressOf(db, [])).size, 0);

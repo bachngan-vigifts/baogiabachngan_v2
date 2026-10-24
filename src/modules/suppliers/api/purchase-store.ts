@@ -108,7 +108,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
       payments: prices ? payments.map(({ p, by }) => ({ id: p.id, amount: p.amount, paidDate: p.paidDate, method: p.method, reference: p.reference, note: p.note,
         hasAttachment: Boolean(p.attachmentKey), attachmentName: p.attachmentName, by, createdAt: p.createdAt, voidedAt: p.voidedAt, voidReason: p.voidReason })) : [],
       receipts: receipts.map(({ r, by }) => ({ id: r.id, shipmentId:r.shipmentId, receiptNo: r.receiptNo, receivedDate: r.receivedDate, by, warehouse: r.warehouse, note: r.note,
-        sapoPurchaseOrderId:r.sapoPurchaseOrderId, sapoReceiptId:r.sapoReceiptId, sapoReceiptUrl:r.sapoReceiptUrl, sapoVerifiedAt:r.sapoVerifiedAt, sapoUpdatedAt:r.sapoUpdatedAt, job:jobs.find(j=>j.receiptId===r.id) ?? null,
+        historicalImport:r.clientKey.startsWith('import:'), sapoPurchaseOrderId:r.sapoPurchaseOrderId, sapoReceiptId:r.sapoReceiptId, sapoReceiptUrl:r.sapoReceiptUrl, sapoVerifiedAt:r.sapoVerifiedAt, sapoUpdatedAt:r.sapoUpdatedAt, job:jobs.find(j=>j.receiptId===r.id) ?? null,
         sapoStatus: r.sapoStatus, sapoReceiptCode: r.sapoReceiptCode, sapoNote: r.sapoNote, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
         lines: receiptLines.filter(x => x.l.receiptId === r.id).map(x => ({ lineId: x.l.lineId, sku: x.l.sku, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty, note: x.l.note })) })),
       // Nội dung lịch sử có số tiền (duyệt, nhập file, giá nhập, lịch trả, trả / huỷ trả, sửa nháp): người không xem được giá chỉ thấy tên thao tác.

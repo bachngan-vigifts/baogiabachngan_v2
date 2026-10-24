@@ -24,19 +24,19 @@ const STEP: Record<ProgressStage, { label: string; doing: string }> = {
 /** Các bước áp dụng cho đơn: đơn không có phí in thì bỏ In mẫu / Sản xuất. */
 export const stagesFor = (printing: boolean): ProgressStage[] => PROGRESS_STAGES.filter(s => printing || (s !== 'sample' && s !== 'production'));
 
-export function orderProgress(i: { status: string; packed: boolean; directExported?: boolean; printing: boolean; marks: Partial<Record<ProgressStage, ProgressMark>> }) {
+export function orderProgress(i: { status: string; packed: boolean; directExported?: boolean; physicalExportRequired?: boolean; printing: boolean; marks: Partial<Record<ProgressStage, ProgressMark>> }) {
   const auto: Partial<Record<ProgressStage, boolean>> = {
     approve: i.status !== 'draft' && i.status !== 'cancelled',
     export: i.packed || i.directExported,
     delivered: i.status === 'delivered',
   };
   const stages = stagesFor(i.printing).map(key => {
-    const mark = i.marks[key] ?? null, byDoc = !!auto[key];
+    const mark = (key==='export'||key==='approve')&&i.physicalExportRequired?null:i.marks[key] ?? null, byDoc = !!auto[key];
     return { key, label: STEP[key].label, done: byDoc || !!mark, by: byDoc ? 'auto' as const : mark?.source ?? null, at: byDoc ? null : mark?.at ?? null, byName: byDoc ? null : mark?.byName ?? null };
   });
   const current = i.status === 'cancelled' ? null : stages.find(s => !s.done)?.key ?? null;
   const label = i.status === 'cancelled' ? 'Đã huỷ' : current ? STEP[current].doing : 'Đã giao hàng';
-  return { stages, current, label, printing: i.printing, done: !current && i.status !== 'cancelled' };
+  return { physicalExportRequired:!!i.physicalExportRequired, stages, current, label, printing: i.printing, done: !current && i.status !== 'cancelled' };
 }
 export type OrderProgress = ReturnType<typeof orderProgress>;
 

@@ -1,3 +1,4 @@
+import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { and, eq } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -35,6 +36,10 @@ export function registerProgressRoutes(router: Router<StaffEnv>) {
       if (stage === 'all') throw new AppError(400, 'Chọn bước cần bỏ đánh dấu.');
       await unmarkProgress(c.env.db, order.id, list.slice(list.indexOf(stage)));
     } else {
+      const physical=(await crmStockFulfilment(c.env.db,[order.id])).get(order.id);
+      if(physical?.lines.length&&physical.status==='draft')throw new AppError(409,'Duyệt đơn bằng thao tác duyệt chứng từ, không đánh dấu tiến trình để thay bước duyệt.','ORDER_NOT_APPROVED');
+      if(physical?.lines.length&&!physical.complete&&stagesUpTo(printing,stage).includes('export'))
+        throw new AppError(409,'Chưa xuất đủ hàng. Xác nhận phiếu xuất đúng kho/nguồn trước; đánh dấu tiến trình không ghi xuất kho.','STOCK_NOT_PACKED');
       await markProgress(c.env.db, order.id, stagesUpTo(printing, stage), 'manual', viewer(c).id);
       // Manager đánh dấu đã giao hàng → phiếu đóng gói còn treo tự hoàn tất.
       if (stage === 'all' || stage === 'delivered') {
