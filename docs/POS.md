@@ -285,6 +285,15 @@ Việc tự sinh chỉ được tính lại khi có người mở trang Công vi
   - **Hoàn thành**: hỏi xác nhận → `POST /pos/web-orders/:id/action { action: 'complete' }`. Website trả về không kèm trạng thái thì CRM ghi "Hoàn thành".
   - **Huỷ đơn**: form **bắt buộc lý do** (≥ 3 ký tự; thiếu → 400 `reason_required`) → `{ action: 'cancel', reason }`. Lý do và tên người huỷ gửi sang website, ghi vào nhật ký `web-order-cancel`.
 - **Cần plugin trên website** (cầu nối `order-action-v7`, secret `WEB_ORDER_ACTION_TOKEN`) hiểu thao tác `complete` (chuyển đơn WooCommerce sang Hoàn thành) và trường `reason` khi huỷ. Plugin chưa hỗ trợ thì nút báo đúng lỗi website trả về; đơn trong CRM không đổi.
+
+### Lỗi tạo vận đơn Web Lock và giới hạn xác minh
+
+- CRM giữ nguyên các mã bridge trả: `ghn_handler_unavailable`, `address_invalid`, `ghn_create_failed`, `ghn_empty_response`. HTTP 200 nhưng không có `ghnOrderCode` hợp lệ cũng là `ghn_empty_response`, không ghi thành công giả. Không suy ra địa chỉ sai chỉ vì thiếu mã vận đơn.
+- Địa chỉ gửi từ form được đối chiếu district thuộc province và ward thuộc district trước khi gọi bridge. Có token GHN thì dùng master-data live; không có token thì chỉ dùng danh mục đóng gói nếu có đủ địa bàn. Danh mục không truy cập được không phải bằng chứng địa chỉ sai.
+- Giao diện chỉ mở lại bước sửa địa chỉ cho `address_invalid`. Lỗi khác giữ nguyên form, khách, sản phẩm, COD và khối lượng. Message từ bridge được làm sạch HTML/credential trước khi hiển thị; log chỉ gồm mã đơn, mã lỗi, HTTP status và các cờ trường có/không, không ghi raw request/response.
+- Đã có mã GHN trong CRM thì xác nhận lại trả mã hiện hữu, không gọi bridge tạo mới. Mã đang lưu nhưng không hợp lệ phải đối soát. Đây không thay thế chống trùng tại website: bridge vẫn phải kiểm tra Woo metadata, khoá thao tác theo đơn và tra GHN theo `client_order_code` ổn định, đặc biệt sau khi mất phản hồi.
+
+Chẩn đoán đơn Lock `21496` (chỉ đọc, 24/10/2026): CRM chưa lưu mã GHN; snapshot có province `211`, district `1929`, ward `490707`, khớp danh mục đóng gói ngày 20/10/2026. Chưa xác nhận metadata Woo hiện tại hoặc master-data GHN live. Probe `OPTIONS` bridge bị HTTP 403; không gọi `confirm`. File `scripts/install_web_order_action_bridge.js` và định nghĩa `lnl_ghn_create_order_from_wc_order` không có trong bản main `c8fefdf` hoặc kết quả tìm mã nguồn được cấp. Vì vậy chưa kết luận handler không được nạp, chưa sửa/nạp dependency PHP, chưa xác minh vận đơn GHN thực tế. Test CRM dùng mock; cần bổ sung source/quyền đọc website để hoàn tất phần WordPress và chống trùng sau timeout. Không deploy riêng phần này như một bản sửa hoàn chỉnh cho website.
 - Test: `tests/app/pos.test.ts` (máy chủ), `tests/app/pos-ui.test.ts` (thẻ, form huỷ).
 
 ## Đơn web Minh Long xử lý thẳng với GHN (23/10/2026)

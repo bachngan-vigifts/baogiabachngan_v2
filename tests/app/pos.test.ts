@@ -305,9 +305,9 @@ test('Đơn website: chuyển đúng địa chỉ người dùng chọn sang c�
   await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', { id: 901, number: 'WEB901', status: 'pending', total: '100000', billing: { first_name: 'Khách', phone: '0901' }, line_items: [] });
   const [order] = await f.db.select().from(webStoreOrders);
   const result = await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'confirm', addressLine: '123 Nguyễn Trãi', provinceId: 220,
-    provinceName: 'Cần Thơ', districtId: 1442, districtName: 'Ninh Kiều', wardCode: '550307', wardName: 'An Khánh' });
+    provinceName: 'Cần Thơ', districtId: 1572, districtName: 'Ninh Kiều', wardCode: '550105', wardName: 'An Khánh' });
   assert.equal(result.status, 200, JSON.stringify(result.data));
-  assert.equal(sent.addressLine, '123 Nguyễn Trãi'); assert.equal(sent.wardCode, '550307'); assert.equal(sent.orderId, '901');
+  assert.equal(sent.addressLine, '123 Nguyễn Trãi'); assert.equal(sent.wardCode, '550105'); assert.equal(sent.orderId, '901');
 });
 test('POS: giữ riêng báo cáo ca, NVBH cùng cửa hàng xem bill; khách POS dùng ngay; mã vạch không mất số 0', async () => {
   const { db, call, emp, mgr, other, ncc, registerId, open, cart } = await setup();

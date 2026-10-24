@@ -14,25 +14,25 @@ test('Web Lock giữ địa chỉ GHN có cấu trúc, đưa lên danh sách và
     line_items: [{ sku: '00123', name: 'Ly', quantity: 1, total: '150000' }],
     meta_data: [
       { key: '_lnl_ghn_shipping_province_id', value: '220' }, { key: '_lnl_ghn_shipping_province_name', value: 'Cần Thơ' },
-      { key: '_lnl_ghn_shipping_district_id', value: '1574' }, { key: '_lnl_ghn_shipping_district_name', value: 'Quận Ninh Kiều' },
-      { key: '_lnl_ghn_shipping_ward_code', value: '550307' }, { key: '_lnl_ghn_shipping_ward_name', value: 'Phường An Hội' },
+      { key: '_lnl_ghn_shipping_district_id', value: '1572' }, { key: '_lnl_ghn_shipping_district_name', value: 'Quận Ninh Kiều' },
+      { key: '_lnl_ghn_shipping_ward_code', value: '550104' }, { key: '_lnl_ghn_shipping_ward_name', value: 'Phường An Hội' },
     ],
   };
   let response = await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', payload);
   assert.equal(response.status, 200, JSON.stringify(response.data));
   let [stored] = await f.db.select().from(webStoreOrders);
-  assert.deepEqual(JSON.parse(stored!.ghnAddressSnapshot), { addressLine: '123 Nguyễn Trãi', provinceId: 220, provinceName: 'Cần Thơ', districtId: 1574, districtName: 'Quận Ninh Kiều', wardCode: '550307', wardName: 'Phường An Hội' });
+  assert.deepEqual(JSON.parse(stored!.ghnAddressSnapshot), { addressLine: '123 Nguyễn Trãi', provinceId: 220, provinceName: 'Cần Thơ', districtId: 1572, districtName: 'Quận Ninh Kiều', wardCode: '550104', wardName: 'Phường An Hội' });
   const board = await f.call('/pos/orders?registerId=' + f.registerId, f.mgr);
-  assert.equal(board.data.orders[0].ghnAddress.wardCode, '550307');
+  assert.equal(board.data.orders[0].ghnAddress.wardCode, '550104');
 
   let sent: any;
   f.env.webOrderAction = { token: 'private', lockUrl: 'https://lock.test/action', minhlongUrl: '', fetch: (async (_url, init) => {
     sent = JSON.parse(String(init?.body));
     return Response.json({ status: 'processing', ghnOrderCode: 'GYMTEST' });
   }) as typeof fetch };
-  response = await f.call('/pos/web-orders/' + stored!.id + '/action', f.mgr, 'POST', { action: 'confirm', addressLine: '456 Đường Mới', provinceId: 220, provinceName: 'Cần Thơ', districtId: 1574, districtName: 'Quận Ninh Kiều', wardCode: '550308', wardName: 'Phường Tân An' });
+  response = await f.call('/pos/web-orders/' + stored!.id + '/action', f.mgr, 'POST', { action: 'confirm', addressLine: '456 Đường Mới', provinceId: 220, provinceName: 'Cần Thơ', districtId: 1572, districtName: 'Quận Ninh Kiều', wardCode: '550111', wardName: 'Phường Tân An' });
   assert.equal(response.status, 200, JSON.stringify(response.data));
-  assert.equal(sent.wardCode, '550308');
+  assert.equal(sent.wardCode, '550111');
   [stored] = await f.db.select().from(webStoreOrders);
   assert.equal(JSON.parse(stored!.ghnAddressSnapshot).addressLine, '456 Đường Mới');
   assert.equal(stored!.address, '456 Đường Mới, Phường Tân An, Quận Ninh Kiều, Cần Thơ');

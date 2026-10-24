@@ -61,6 +61,7 @@ import {
 } from './pos-store.ts';
 import { autoCreateGhnForOrder } from './pos-ghn-create.ts';
 import { cancelWebOrderGhn, createWebOrderGhn, minhLongDirect, suggestedWebCod } from './web-order-ghn.ts';
+import { readWebBridgeResult, validWebGhnCode } from './web-order-bridge-result.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
 const ghnCacheKey = (source: string, provinceId: number, districtId: number) => `${source}:${provinceId}:${districtId}`;
@@ -448,7 +449,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
     const scope = await allowedPosRegisters(c);
     if (!scope.ids.has(order.registerId)) throw new AppError(403, 'Bạn không được thao tác đơn của cửa hàng này.');
-    // Danh mục GHN lấy trực tiếp trong CRM. Các hàm PHP của Web Lock chỉ được nạp ở checkout và trả 503 trong REST.
+    // Danh mục GHN trong CRM không phụ thuộc các hàm PHP checkout của website.
     if (action === 'locations' && (order.source === 'lock' || minhLongDirect(c.env, order))) {
       const provinceId = Math.max(0, Number(input.provinceId) || 0), districtId = Math.max(0, Number(input.districtId) || 0);
       const key = ghnCacheKey(order.source, provinceId, districtId), known = cachedGhnLocations(key) ?? bundledGhnLocations(provinceId, districtId);
@@ -457,6 +458,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       throw new AppError(503, 'CRM chưa có danh mục địa chỉ GHN này.');
     }
     if (minhLongDirect(c.env, order)) return json(await minhLongWebAction(c, m, order, action, input, reason));
+    if(action==='confirm'&&order.ghnOrderCode){
+      if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_create_failed');
+      return json({ok:true,existing:true,status:order.status,ghnOrderCode:order.ghnOrderCode,ghnStatus:order.ghnStatus,ghnSortCode:order.ghnSortCode,ghnFee:order.ghnFee,bucket:webBucket(order.status,order.ghnStatus)});
+    }
     if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website (secret WEB_ORDER_ACTION_TOKEN).');
     const terminal = webBucket(order.status, order.ghnStatus);
     if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
@@ -479,11 +484,23 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       bridgeInput.wardCode = posText(input.wardCode, 50);
       bridgeInput.wardName = posText(input.wardName, 100);
       if (!bridgeInput.addressLine || !bridgeInput.provinceId || !bridgeInput.districtId || !bridgeInput.wardCode) throw new AppError(400, 'Vui lòng nhập đủ địa chỉ giao hàng GHN.', 'address_invalid');
+      if(order.source==='lock'){
+        // Use live master-data when a token is configured. Never turn a lookup outage into an address error.
+        const lookup=async(province:number,district:number)=>{
+          try{return c.env.ghnToken||c.env.ghnMlToken?await ghnMasterData(c.env,province,district):bundledGhnLocations(province,district);}
+          catch{throw new AppError(502,'Chưa đối chiếu được danh mục GHN. Giữ nguyên địa chỉ; kiểm tra kết nối GHN trước khi gửi lại.','ghn_create_failed');}
+        };
+        const districts=await lookup(Number(bridgeInput.provinceId),0);
+        const wards=await lookup(0,Number(bridgeInput.districtId));
+        if(!districts||!wards)throw new AppError(503,'Chưa đối chiếu được danh mục GHN. Giữ nguyên địa chỉ; không tạo vận đơn khi chưa xác minh được.','ghn_create_failed');
+        if(!districts.some(d=>String(d.id)===String(bridgeInput.districtId))||!wards.some(w=>String(w.id)===bridgeInput.wardCode))
+          throw new AppError(400,'Quận/Huyện hoặc Phường/Xã không thuộc địa bàn đã chọn theo danh mục GHN.','address_invalid');
+      }
     }
-    const response = await (c.env.webOrderAction.fetch ?? fetch)(url, { method: 'POST', headers: { authorization: `Bearer ${c.env.webOrderAction.token}`, 'content-type': 'application/json' }, body: JSON.stringify(bridgeInput) });
-    const raw = await response.text(); let result: Record<string, unknown> = {};
-    try { result = JSON.parse(raw); } catch {}
-    if (!response.ok) throw new AppError(response.status >= 500 ? 502 : 409, posText(result.message, 500) || 'Website chưa xử lý được đơn.', posText(result.code, 80) || undefined);
+    let response:Response;
+    try{response=await (c.env.webOrderAction.fetch ?? fetch)(url,{method:'POST',headers:{authorization:`Bearer ${c.env.webOrderAction.token}`,'content-type':'application/json'},body:JSON.stringify(bridgeInput),signal:AbortSignal.timeout(30_000)});}
+    catch{throw new AppError(502,'Mất kết nối website; chưa rõ kết quả xử lý. Tra cứu vận đơn trên website/GHN trước khi gửi lại.','ghn_create_failed');}
+    const result=await readWebBridgeResult(response,action,{orderId:order.externalId,source:order.source},[c.env.webOrderAction.token,c.env.ghnToken,c.env.ghnMlToken]);
     if (action === 'locations') {
       const key = ghnCacheKey(order.source, bridgeInput.provinceId as number, bridgeInput.districtId as number);
       return json({ ok: true, locations: rememberGhnLocations(key, Array.isArray(result.locations) ? result.locations : []) });
@@ -492,7 +509,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       addressLine: bridgeInput.addressLine, provinceId: bridgeInput.provinceId, provinceName: bridgeInput.provinceName,
       districtId: bridgeInput.districtId, districtName: bridgeInput.districtName, wardCode: bridgeInput.wardCode, wardName: bridgeInput.wardName,
     } : completeGhnAddress(result.ghnAddress);
-    const fields = { status: posText(result.status, 50) || (action === 'complete' ? 'completed' : action === 'cancel' ? 'cancelled' : order.status), ghnOrderCode: posText(result.ghnOrderCode, 100) || order.ghnOrderCode,
+    const fields = { status: posText(result.status, 50) || (action === 'complete' ? 'completed' : action === 'cancel' ? 'cancelled' : order.status), ghnOrderCode: validWebGhnCode(result.ghnOrderCode) ? result.ghnOrderCode : order.ghnOrderCode,
       ghnStatus: posText(result.ghnStatus, 100) || order.ghnStatus, ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow(),
       ...(confirmedAddress ? { address: [confirmedAddress.addressLine, confirmedAddress.wardName, confirmedAddress.districtName, confirmedAddress.provinceName].filter(Boolean).join(', '), ghnAddressSnapshot: JSON.stringify(confirmedAddress) } : {}) };
