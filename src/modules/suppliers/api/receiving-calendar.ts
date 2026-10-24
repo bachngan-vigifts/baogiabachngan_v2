@@ -1,3 +1,4 @@
+import { earlyReceiptAvailability } from './early-receiving.ts';
 import { eq } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { isIsoDate } from '../domain/quantity.ts';
@@ -23,7 +24,7 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
     .innerJoin(supplierTable,eq(supplierTable.id,purchaseEarlyRequestAllocations.supplierId));
   const suppliers = [...new Map([...all.map(l => ({id:l.supplierId,name:l.supplierName})),...early.map(l=>({id:l.allocation.supplierId,name:l.supplierName}))].map(s=>[s.id,s])).values()]
     .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-  type Line = {lineId:string;sku:string;name:string;unit:string;left:number;requestedQty?:number;status?:string;canConfirm?:boolean};
+  type Line = {lineId:string;sku:string;name:string;unit:string;left:number;requestedQty?:number;status?:string;canConfirm?:boolean;receiptOptions?:{orderId:string;ticketNumber:string;remaining:number}[]};
   type Row = {type:'purchase'|'early';orderId:string;requestId?:string;supplierId:string|null;ticketNumber:string;supplierName:string;date:string|null;createdAt:string;lines:Line[]};
   const groups = new Map<string,Row>();
   const matchesDate = (date:string|null) => !(date && ((from && date < from) || (to && date > to))) &&
@@ -41,11 +42,14 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
     }
     group.lines.push({lineId:l.lineId,sku:l.sku,name:l.name,unit:l.unit,left:l.left});
   }
+  const receiptAvailability=new Map((await earlyReceiptAvailability(db,[...new Set(early.map(e=>e.request.id))])).map(r=>[r.allocationId,r]));
   const outstanding = new Map(all.map(l=>[l.lineId,l]));
   const ownLines=new Map<string,{quantity:number;statuses:string[]}>();
   for(const e of early){const key=e.line.id+':'+e.allocation.supplierId;const own=ownLines.get(key)||{quantity:0,statuses:[]};own.quantity+=e.allocation.quantity;own.statuses.push(e.allocation.status);ownLines.set(key,own);}
   for (const {request,line,allocation,supplierName} of early) {
     if(options.reminderOnly&&(request.status!=='submitted'||allocation.status==='rejected'))continue;
+    const receipt=receiptAvailability.get(allocation.id);
+    if(allocation.status==='accepted'&&request.status==='submitted'&&!receipt?.remaining)continue;
     const purchase = outstanding.get(allocation.purchaseLineId);
     if (!purchase || (supplier && allocation.supplierId !== supplier)) continue;
     const date = request.pickupDate || null;
@@ -57,8 +61,9 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
     let saved=group.lines.find(l=>l.lineId===line.id);
     if(!saved){const own=ownLines.get(line.id+':'+allocation.supplierId)!;saved={lineId:line.id,sku:line.sku,name:line.name,unit:line.unit,left:0,requestedQty:own.quantity,
       status:request.status==='draft'?'draft':own.statuses.every(s=>s===own.statuses[0])?own.statuses[0]!:'mixed',
-      canConfirm:request.status==='submitted'&&own.statuses.every(s=>s==='pending')};group.lines.push(saved);}
-    saved.left+=Math.min(allocation.quantity,purchase.left);
+      receiptOptions:[],canConfirm:request.status==='submitted'&&own.statuses.every(s=>s==='pending')};group.lines.push(saved);}
+    saved.left+=allocation.status==='accepted'&&request.status==='submitted'?(receipt?.remaining??0):Math.min(allocation.quantity,purchase.left);
+    if(receipt?.remaining)saved.receiptOptions!.push({orderId:receipt.orderId,ticketNumber:receipt.ticketNumber,remaining:receipt.remaining});
   }
   const rows=[...groups.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.type.localeCompare(b.type)||a.ticketNumber.localeCompare(b.ticketNumber)||a.orderId.localeCompare(b.orderId)||(a.date||'').localeCompare(b.date||''));
   const offset=Math.max(0,Math.floor(Number(params.get('offset'))||0)),limit=50;

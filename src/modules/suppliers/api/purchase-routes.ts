@@ -1,3 +1,4 @@
+import { earlyReceiptContext } from './early-receiving.ts';
 import { queueReceiptJob, dispatchReceiptJob, registerReceiptJobRoutes } from './receipt-outbox.ts';
 import { incomingBySkuView } from './incoming-view.ts';
 import { receivingCalendar } from './receiving-calendar.ts';
@@ -173,7 +174,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   router.get('/purchase-receiving-calendar', async c => {
     guard(c);
-    return json({...await receivingCalendar(c.env.db, c.url.searchParams, today()),canConfirmEarly:me(c).role==='manager'});
+    return json({...await receivingCalendar(c.env.db, c.url.searchParams, today()),canConfirmEarly:me(c).role==='manager',canReceiveEarly:canReceive(asActor(me(c)))});
   }, 'business');
 
   let lastIncomingSync = 0;
@@ -492,10 +493,22 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
     if (dup) { if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
     const photos = parsePhotos(body.photos);
-    let receiptId = '';
+    let receiptId = '', duplicate = false;
     await db.transaction(async tx => {
+      // Recheck replay after the parent lock: simultaneous retries must not create another receipt.
+      await tx.select({id:incomingShipments.id}).from(incomingShipments).where(eq(incomingShipments.id,id)).for('update');
+      const [existing]=await tx.select({id:supplierReceipts.id,shipmentId:supplierReceipts.shipmentId}).from(supplierReceipts).where(eq(supplierReceipts.clientKey,clientKey)).limit(1);
+      if(existing){if(existing.shipmentId!==id)fail(409,'Mã chống bấm lặp đã dùng cho đơn khác.');receiptId=existing.id;duplicate=true;return;}
       const p = await lockAndCheck(c, tx, id, 'receive');
       const v = validateReceipt(p.raw.progress, { receivedDate: body.receivedDate, lines: body.lines }, today());
+      const earlyRequestId=typeof body.earlyRequestId==='string'?body.earlyRequestId:undefined;
+      if(body.earlyRequestId!==undefined&&(!earlyRequestId?.trim()||earlyRequestId.length>100))fail(400,'Mã phiếu xin lấy trước không hợp lệ.');
+      if(earlyRequestId!==undefined){
+        const context=await earlyReceiptContext(tx,earlyRequestId,id);
+        for(const l of v.lines){const allowed=context.lines.find(r=>r.lineId===l.lineId);
+          if(!allowed||l.goodQty+l.damagedQty>allowed.remaining+0.0005)fail(409,`${l.sku}: vượt lượng còn được nhận của phiếu xin lấy trước.`);
+        }
+      }
       // Có hàng hỏng: bắt buộc 1–3 ảnh làm bằng chứng đòi NCC bù (Manager xem trên đơn mua).
       if (!photos.length && v.lines.some(l => l.damagedQty > 0)) fail(400, 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.');
       receiptId = crypto.randomUUID();
@@ -522,7 +535,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
           partner: p.raw.order.supplierName ?? '', location: whName, refCode: `${no} · ${p.raw.order.ticketNumber}`, link: `#/purchases/${id}`,
           status: l.damagedQty ? `Đạt ${l.goodQty} · hỏng ${l.damagedQty} (NCC giao bù)` : 'Đã nhận', note: l.note, occurredAt: nowIso() };
       }));
-      await event(tx, id, m.id, 'receive', `Nhận hàng ${no}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId, lines: v.lines });
+      // Keep provenance compact: the event size cap must never truncate the request/receipt link. Lines already live in supplier_receipt_lines.
+      await event(tx, id, m.id, 'receive', `Nhận hàng ${no}${earlyRequestId?' theo phiếu xin lấy trước':''}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId, ...(earlyRequestId?{earlyRequestId}:{lines:v.lines}) });
       const [supplier] = p.raw.order.supplierId ? await tx.select().from(suppliers).where(eq(suppliers.id,p.raw.order.supplierId)).limit(1) : [];
       const payload = {
         schema_version: 1, action: 'create_purchase_receipt', source: 'crm_supplier_receipt', idempotency_key: receiptId,
@@ -546,6 +560,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if(payload.items.length)await queueReceiptJob(tx,receiptId,payload,missing.length?'Thiếu dữ liệu: '+missing.join(', '):'');
       else await tx.update(supplierReceipts).set({sapoStatus:'not_needed',sapoNote:'Không có hàng đạt để nhập Sapo.'}).where(eq(supplierReceipts.id,receiptId));
     });
+    if(duplicate)return json({...await viewOf(c,id),receiptId,duplicate:true});
     const delivery = dispatchReceiptJob(c.env,receiptId).catch(() => ({sent:false,skipped:false}));
     if(c.env.waitUntil)c.env.waitUntil(delivery);else await delivery;
     return json({ ...await viewOf(c, id), receiptId }, 201);

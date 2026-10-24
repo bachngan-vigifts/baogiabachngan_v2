@@ -80,3 +80,13 @@ Bảng gốc từ SQL chỉ đọc trong preflight; lượng được tái dựn
 - Ba migration nêu trên; `docs/PURCHASE-EARLY-REQUESTS-SCHEMA.md` và tài liệu này.
 
 Các mục [CHƯA CHỐT] giữ đúng mặc định prompt: không cho vượt số còn về; Sale Admin không duyệt thay NCC; vai trò xem giữ quyền hiện tại, chưa mở thêm vai trò. Chưa có quyết định khác để tự đổi các mặc định này. Bước DB đã được duyệt và hoàn tất; không tự merge PR hoặc triển khai.
+
+## Nhận hàng sau khi NCC đồng ý (24/10/2026)
+
+Thẻ phiếu tại Nhà cung cấp/Hàng đang về và dòng Lịch nhận hàng có nút **Nhận hàng · mã đơn mua** khi allocation đã được đồng ý, đơn mua đã duyệt/chưa huỷ, còn lượng chờ nhận và người xem có quyền nhận hàng hiện hành. Một phiếu phân bổ qua nhiều đơn mua hiển thị nút theo từng đơn; không gộp phiếu nhận khác NCC/đơn.
+
+Link `/purchases/<orderId>?receive=1&earlyRequestId=<requestId>` mở form nhận có sẵn, chỉ đưa vào các dòng được đồng ý của đúng đơn và giới hạn số lượng bằng min(phần xin còn thiếu, phần đơn mua còn thiếu). Server đọc lại điều kiện này trong transaction đang khoá đơn, không tin số còn lại trên giao diện. NCC đồng ý không tự nhận hàng hay cộng tồn.
+
+Phiếu nhận vẫn đi qua `POST /purchase-orders/:id/receipts`, sử dụng `clientKey`, kiểm quyền, kiểm kho thật/đầu kỳ, lưu ảnh hàng hỏng, ledger, lịch sử và outbox Sapo hiện hành. Khi có `earlyRequestId`, sự kiện receive lưu cặp `{receiptId,earlyRequestId}` gọn để không bị cắt bởi giới hạn audit; chi tiết vẫn ở bảng dòng phiếu nhận. Tính lượng đã nhận từ các phiếu còn hiệu lực, nên huỷ phiếu nhận khôi phục phần còn nhận. Nhận đủ thì nút ẩn và dòng lịch lấy trước không còn chờ nhận, dù đơn mua vẫn còn các phần khác.
+
+Kiểm tra replay thêm một lần sau khoá đơn để hai request đồng thời cùng `clientKey` trả cùng phiếu, không thêm lịch sử/tồn/outbox. Không thêm bảng/cột/migration hoặc quyền mới. Không suy diễn liên kết cho phiếu nhận cũ chưa có request ID; các phiếu đó vẫn giảm phần còn thiếu của đơn mua để giới hạn nhận thực tế.

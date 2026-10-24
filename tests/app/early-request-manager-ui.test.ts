@@ -23,7 +23,7 @@ class Node {
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
 
-async function setup({manager=true,portal=false,status='submitted'}={}) {
+async function setup({manager=true,portal=false,status='submitted',receive=false,remaining=20}={}) {
   const host=new Node(),body=new Node('body'),calls:any[]=[];let accepted=false,fail=false,saved=0;
   Node.prototype.showModal=function(){this.open=true;};
   Node.prototype.close=function(){this.open=false;this.events.close?.();};
@@ -31,10 +31,10 @@ async function setup({manager=true,portal=false,status='submitted'}={}) {
   runInNewContext(readFileSync(new URL('../../trial-ui/purchase-early-requests.js',import.meta.url),'utf8').replace('export function initEarlyRequests','globalThis.initEarlyRequests = function'),context);
   const api=async(path:string,method?:string,data?:any)=>{
     if(method){calls.push({path,data});if(fail)throw Error('Phiếu đã thay đổi');accepted=true;return{ok:true};}
-    return{canViewPortal:manager,requests:[{id:'r1',createdAt:'2026-10-23T01:00:00Z',pickupDate:'2026-10-24',requestStatus:status,status:accepted?'accepted':'pending',lines:[{id:'l1',sku:'SKU1',name:'Ly',quantity:20,unit:'Cái',status:accepted?'accepted':'pending',allocations:[{supplierId:'s1',supplierName:'NCC A',quantity:20,status:accepted?'accepted':'pending',orderId:'o1',ticketNumber:'PO1'}]}]}]};
+    return{canViewPortal:manager,canReceive:receive,requests:[{id:'r1',createdAt:'2026-10-23T01:00:00Z',pickupDate:'2026-10-24',requestStatus:status,status:accepted?'accepted':'pending',lines:[{id:'l1',sku:'SKU1',name:'Ly',quantity:20,unit:'Cái',status:accepted?'accepted':'pending',allocations:[{supplierId:'s1',supplierName:'NCC A',quantity:20,remainingToReceive:accepted?remaining:0,status:accepted?'accepted':'pending',orderId:'o1',ticketNumber:'PO1'}]}]}]};
   };
   const ui=context.initEarlyRequests({api,host,portal,onSaved:async()=>saved++});await ui.load();
-  return{host,body,calls,get saved(){return saved;},fail:()=>fail=true,button:(text:string)=>all(body).concat(all(host)).find(n=>n.tag==='button'&&n.textContent===text)};
+  return{host,body,calls,get saved(){return saved;},fail:()=>fail=true,receiveLink:()=>all(host).find(n=>n.tag==='a'&&n.textContent.startsWith('Nhận hàng')),button:(text:string)=>all(body).concat(all(host)).find(n=>n.tag==='button'&&n.textContent===text)};
 }
 test('Manager xác nhận từ cạnh trạng thái: đúng mã/NCC, tải lại và không gửi trùng',async()=>{
   const s=await setup();await s.button('Manager xác nhận thay NCC')!.click();
@@ -49,4 +49,13 @@ test('không hiện xác nhận thay cho nhân viên, cổng NCC hoặc phiếu 
 test('xác nhận lỗi hiện thông báo server và cho thử lại',async()=>{
   const s=await setup();s.fail();await s.button('Manager xác nhận thay NCC')!.click();await s.button('Xác nhận mã SKU1')!.click();
   assert.match(s.body.textContent,/Phiếu đã thay đổi/);assert.equal(s.button('Xác nhận mã SKU1')!.disabled,false);assert.equal(s.saved,0);
+});
+
+test('receipt link appears after acceptance only for receiving staff and retains exact request/order IDs',async()=>{
+ const s=await setup({receive:true});assert.equal(s.receiveLink(),undefined);
+ await s.button('Manager xác nhận thay NCC')!.click();await s.button('Xác nhận mã SKU1')!.click();
+ assert.equal(s.receiveLink()!.href,'#/purchases/o1?receive=1&earlyRequestId=r1');
+ for(const opts of [{receive:false},{receive:true,portal:true},{receive:true,remaining:0}]){
+  const blocked=await setup(opts);if(!opts.portal){await blocked.button('Manager xác nhận thay NCC')!.click();await blocked.button('Xác nhận mã SKU1')!.click();}assert.equal(blocked.receiveLink(),undefined);
+ }
 });
