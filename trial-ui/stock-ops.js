@@ -1,6 +1,6 @@
 /**
  * KHO BÁN THEO CHỨC VỤ – giao diện (docs/SO-KHO.md):
- *  - Điều chuyển kho (#/transfers, #/transfers/<id>): xin chuyển → người duyệt duyệt / từ chối → Kho bấm "Đã chuyển".
+ *  - Điều chuyển kho (#/transfers, #/transfers/<id>): xin chuyển → nhân viên kho được xin (hoặc Manager) Cho / Từ chối → Kho bấm "Đã chuyển".
  *  - Sổ kho (#/stock-moves, như Sổ kho Sapo): mọi giao dịch nhập / xuất, tồn sau giao dịch, lọc chi nhánh / ngày / giao dịch / nhãn hiệu / trạng thái, phân trang, xuất file.
  *  - Kho bán theo chức vụ (gắn dưới trang Phân quyền): kho ↔ chức vụ được bán + kho riêng (chỉ người bán kho đó thấy tồn).
  * API: src/modules/inventory/api/{transfer-routes,history-routes}.ts. DOM dựng bằng createElement / textContent.
@@ -37,7 +37,7 @@ export function initTransfers({ api, root, toast, go }) {
   let data = null, filter = 'open', listRun = 0, detailRun = 0, showing = '', rendered = '', inFlight = null, formOpen = false, posting = false, openedAt = 0;
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Điều chuyển kho'),
-    el('p', 'muted', 'Kho của mình thiếu hàng: xin chuyển từ kho khác. Người duyệt duyệt, Kho bấm "Đã chuyển" thì sổ kho trừ kho đi, cộng kho đến.'));
+    el('p', 'muted', 'Kho của mình thiếu hàng: xin chuyển từ kho khác. Nhân viên kho được xin (hoặc Manager) bấm Cho / Từ chối; bấm "Đã chuyển" thì sổ kho trừ kho đi, cộng kho đến. Chờ quá 1 giờ hệ thống nhắc lại.'));
   const tools = el('div', 'row-gap'), add = btn('＋ Xin điều chuyển', 'btn primary', () => openForm());
   tools.append(add); head.append(titles, tools);
   const panel = el('div', 'panel'), bar = el('div', 'toolbar chips');
@@ -111,8 +111,8 @@ export function initTransfers({ api, root, toast, go }) {
     };
     const act = (text, cls, busyText, fn) => { const b = btn(text, cls, () => fn(b, busyText)); acts.append(b); };
     if (t.actions.edit) acts.append(btn('Chỉnh sửa', 'btn secondary', () => openForm(t,true)));
-    if (t.actions.approve) act('Duyệt', 'btn ok', 'Đang duyệt…', (b, bt) => run('approve', {}, 'Đã duyệt – nhóm Kho nhận việc chuyển hàng.', b, bt));
-    if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async (b, bt) => { if (acts.dataset.busy) return; const r = await ask('Từ chối điều chuyển', 'Lý do từ chối'); if (r) run('reject', { reason: r }, 'Đã từ chối.', b, bt); });
+    if (t.actions.approve) act('Cho xin hàng', 'btn ok', 'Đang duyệt…', (b, bt) => run('approve', {}, 'Đã cho – chuyển hàng rồi bấm "Đã chuyển".', b, bt));
+    if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async (b, bt) => { if (acts.dataset.busy) return; const r = await ask('Từ chối phiếu xin hàng', 'Lý do từ chối (người xin sẽ nhận được)'); if (r) run('reject', { reason: r }, 'Đã từ chối.', b, bt); });
     if (t.actions.done) act('Đã chuyển', 'btn primary', 'Đang ghi sổ kho…', (b, bt) => run('done', {}, 'Đã ghi sổ kho: trừ kho đi, cộng kho đến.', b, bt));
     if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', (b, bt) => run('cancel', {}, 'Đã huỷ phiếu.', b, bt));
     if (t.status === 'cancelled') acts.append(btn('Sao chép phiếu', 'btn primary', () => openForm(t)));

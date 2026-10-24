@@ -8,6 +8,7 @@ import type { SessionState, StaffEnv } from '../modules/staff/api/auth-routes.ts
 import { quotations } from '../modules/quotes/schema.ts';
 import { customerPayments, deliveries, packingSlips, salesContracts, salesOrders, stockHolds } from '../modules/sales/schema.ts';
 import { expireHolds } from '../modules/sales/api/hold-routes.ts';
+import { remindPendingTransfers } from '../modules/inventory/api/transfer-routes.ts';
 import { tasks } from '../modules/tasks/schema.ts';
 import { incomingShipments } from '../modules/suppliers/schema.ts';
 import { customerActivities } from '../modules/care/schema.ts';
@@ -30,6 +31,9 @@ export function registerPulseRoutes(router: Router<StaffEnv>) {
     const total = (t: unknown) => sql`(select count(*) from ${t})`;
     // Giữ hàng quá hạn: bỏ treo + báo nhân viên (nhịp này chạy khi có người đang dùng hệ thống).
     await expireHolds(c.env).catch(() => 0);
+    // Phiếu xin hàng chờ duyệt quá 1 giờ: nhắc kho được xin + người duyệt (mỗi giờ một lần, chạy nền).
+    const remind = remindPendingTransfers(c.env).catch(e => { console.error('transfer reminder failed', e instanceof Error ? e.message : e); return 0; });
+    if (c.env.waitUntil) c.env.waitUntil(remind); else await remind;
     const [[row], notifyAt, chatUnread] = await Promise.all([
       db.select({
         s: sql<string>`concat_ws('|', ${latest(cashEntries.updatedAt)}, ${latest(cashReconciliations.updatedAt)}, ${latest(cashDrawers.updatedAt)}, ${latest(customerPayments.voidedAt)}, ${latest(posShifts.openedAt)}, ${latest(posShifts.closedAt)}, ${latest(stockBalances.updatedAt)}, ${latest(quotations.updatedAt)}, ${latest(salesOrders.updatedAt)}, ${latest(salesContracts.updatedAt)}, ${latest(deliveries.updatedAt)},
