@@ -1172,3 +1172,18 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 
 /* Leave room for the close control even when the order reference wraps. */
 .pos-web-order-modal h2 { padding-right: 44px; overflow-wrap: anywhere; }
+
+/* Giỏ "Đơn hiện tại" gọn (24/10/2026): mỗi món 2 dòng – tên (tối đa 2 dòng, chữ nhỏ) + giá, rồi số lượng + giảm giá; bớt khoảng trống. */
+.pos-checkout .pos-lines { min-height: 0; }
+.pos-checkout .pos-line { padding: 6px 0; gap: 4px; }
+.pos-checkout .pos-line-top { align-items: start; gap: 6px; }
+.pos-checkout .pos-line-top b.pos-line-name { font-size: var(--text-caption); line-height: 1.3; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pos-checkout .pos-line-sku { font-weight: 500; color: #7b8580; }
+.pos-checkout .pos-line-top strong { font-size: var(--text-caption); line-height: 1.3; }
+.pos-checkout .pos-line-top .btn { min-height: 20px; padding: 0 4px; }
+.pos-checkout .pos-line-edit { margin-top: 0; gap: 6px; }
+.pos-checkout .pos-line-edit .pos-note { font-size: var(--text-caption); }
+.pos-checkout .pos-line .pos-qty { gap: 4px; }
+.pos-checkout .pos-line .pos-qty .btn { width: 30px; min-height: 30px; height: 30px; border-radius: 8px; font-size: var(--text-label); }
+.pos-checkout .pos-line .pos-qty input { width: 32px; height: 30px; padding: 0; font-size: var(--text-label) !important; }
+.pos-checkout .pos-line-edit > input, .pos-checkout .pos-line-edit > select { height: 30px; min-height: 30px; padding: 2px 6px; font-size: var(--text-caption) !important; }

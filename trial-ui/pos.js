@@ -838,9 +838,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         invalidate();
       });
       remove.setAttribute('aria-label', 'Bỏ ' + x.name + ' khỏi đơn');
-      top.append(el('b', '', x.name), amount, remove);
+      // Gọn: tên đã chứa mã thì không lặp dòng mã riêng; tên dài cắt 2 dòng (rê chuột xem đủ).
+      const name = el('b', 'pos-line-name', x.name);
+      name.title = x.name + ' · ' + x.sku;
+      if (!String(x.name).toLowerCase().includes(String(x.sku).toLowerCase())) name.append(el('small', 'pos-line-sku', ' · ' + x.sku));
+      top.append(name, amount, remove);
       lineTotals.set(x.sku, amount);
-      row.append(top, el('small', 'pos-note', x.sku));
+      row.append(top);
       const edit = el('div', 'pos-line-edit'),
         qtyBox = el('div', 'pos-qty'),
         qty = el('input');
