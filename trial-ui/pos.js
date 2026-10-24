@@ -1416,7 +1416,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function newCustomer() {
     const m = formModal('Khách mới – dùng ngay');
     m.dlg.className += ' pos-customer-create';
-    const fields = customerFormFields({ requirePhone: true });
+    const fields = customerFormFields();
+    fields.controls.phone.placeholder = 'Để trống = Bán người tiêu dùng';
     const error = el('p', 'error'); error.setAttribute('role', 'alert');
     const actions = el('div', 'pos-customer-form-actions');
     const save = el('button', 'btn primary', 'Lưu & chọn khách'); save.type = 'submit';
@@ -1440,9 +1441,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       error.textContent = '';
       save.disabled = true;
       try {
-        const c = await api('/pos/customers', 'POST', fields.read());
+        const typed = fields.read(), c = await api('/pos/customers', 'POST', typed);
         st.customer = c;
         nodes.customer.textContent = c.name;
+        // Không SĐT / MST: máy chủ trả khách chung "Bán người tiêu dùng"; tên vừa nhập ghi vào ghi chú đơn để không mất.
+        if (c.shared) {
+          const who = 'Người mua: ' + typed.name;
+          if (typed.name && !st.note.includes(who)) st.note = st.note.trim() ? who + '\n' + st.note : who;
+          toast('Không có SĐT: dùng khách chung "' + c.name + '", tên khách ghi vào ghi chú đơn.');
+        }
         invalidate();
         m.close(); resumePayment();
       } catch (ex) { error.textContent = ex.message; }

@@ -9,6 +9,7 @@ test('customer identity normalization: Vietnamese text, formatting, multiple pho
   assert.deepEqual(index.find({phone:'0901 222 333'})[0]!.reasons,['phone']);
   assert.equal(index.find({taxCode:'01234'}).length,0,'branch tax code is distinct');
   assert.equal(index.find({name:'FPT NHAT PHUONG'},'a').length,0,'exclude current customer');
+  assert.equal(customerIdentityIndex([{id:'a',name:'FPT Nhật Phương'}],{byName:false}).find({name:'FPT NHAT PHUONG'}).length,0,'CRM/POS: same name is not a duplicate');
   assert.equal(index.find({name:'',phone:'',taxCode:''}).length,0);
   const emptyTax=customerIdentityIndex([{id:'z',name:'Khách A',taxCode:'0000000000'}]);
   assert.equal(emptyTax.find({name:'Khách B',taxCode:'0000000000'}).length,0,'all-zero placeholder tax is not an identity');

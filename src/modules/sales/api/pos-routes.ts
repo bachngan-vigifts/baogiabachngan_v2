@@ -31,6 +31,9 @@ import type { StockRefType } from '../../inventory/domain/kinds.ts';
 import { customers, customerStaff } from '../../customers/schema.ts';
 import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from '../../customers/api/identity.ts';
 import { customerInput } from '../../customers/domain/customer-input.ts';
+import { customerPhoneKeys, identityKeys } from '../../customers/domain/identity.ts';
+/** Khách chung cho người mua không để lại SĐT / MST ở quầy. */
+const CONSUMER_NAME = 'Bán người tiêu dùng', CONSUMER_CODE = 'BAN-NGUOI-TIEU-DUNG';
 import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlips } from '../schema.ts';
 import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
 import { posMoney } from '../domain/pos-money.ts';
@@ -844,12 +847,24 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       const m = member(c);
       posPermission(m);
-      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b,true),{name,phone}=fields;
+      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b),{name,phone}=fields;
       const customerIssue = posCustomerIssue({id: 'new', name});
       if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
 
       const id = crypto.randomUUID(),
         now = posNow();
+      // Không SĐT và không MST: không tạo hồ sơ mới, dùng khách chung "Bán người tiêu dùng" (tên vừa nhập trình duyệt ghi vào ghi chú đơn).
+      if (!customerPhoneKeys(phone).length && !identityKeys(fields).taxCode) {
+        const shared = await c.env.db.transaction(async (tx) => {
+          await customerIdentityLock(tx);
+          const [hit] = await tx.select({ id: customers.id, name: customers.name }).from(customers).where(eq(customers.customerCode, CONSUMER_CODE)).limit(1);
+          if (hit) return hit;
+          await tx.insert(customers).values({ id, name: CONSUMER_NAME, customerCode: CONSUMER_CODE, contact: '', phone: '', email: '', address: '', taxCode: '', isRetail: true,
+            search: CONSUMER_NAME + ' ' + CONSUMER_CODE, sourceVersion: 0, syncedAt: now, createdAt: now, createdBy: m.id, approvalStatus: 'approved', approvedAt: now, approvedBy: m.id });
+          return { id, name: CONSUMER_NAME };
+        });
+        return json({ ...shared, phone: '', shared: true }, 200);
+      }
       await c.env.db.transaction(async (tx) => {
         await customerIdentityLock(tx);
         rejectDuplicate(await findCustomerDuplicates(tx, fields), canListRetailCustomers(m));

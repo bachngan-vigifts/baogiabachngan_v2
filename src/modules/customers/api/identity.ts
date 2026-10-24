@@ -1,6 +1,5 @@
 import { and, asc, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
-import { foldSql } from '../../../core/text/fold.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { customers } from '../schema.ts';
 import { NORM_TAX_SQL } from '../domain/tax-code.ts';
@@ -14,14 +13,13 @@ export async function findCustomerDuplicates(db: Db, input: CustomerIdentity, ex
   const numeric = sql`regexp_replace(token, '[^0-9]', '', 'g')`;
   const phone = sql`case when ${numeric} like '0084%' then '0' || substr(${numeric}, 5)
     when ${numeric} like '84%' and length(${numeric}) in (11,12) then '0' || substr(${numeric}, 3) else ${numeric} end`;
-  const name = sql`trim(regexp_replace(${foldSql(sql`normalize(${customers.name}, NFC)`)}, '[^a-z0-9]+', ' ', 'g'))`;
+  // Tạo / sửa khách trong CRM và POS: chỉ chống trùng MST và số điện thoại – trùng tên được phép (nhiều khách cùng tên "Anh Khải").
   const conditions = [k.taxCode ? sql`${sql.raw(NORM_TAX_SQL('tax_code'))} = ${k.taxCode}` : undefined,
-    k.name ? sql`${name} = ${k.name}` : undefined,
     k.phone.length ? sql`exists(select 1 from regexp_split_to_table(${customers.phone}, E'[,;/\\n]+') token where ${phone} in (${sql.join(k.phone.map(p => sql`${p}`), sql`, `)}))` : undefined].filter(Boolean);
   if (!conditions.length) return [];
   const rows = await db.select(identityColumns).from(customers).where(and(exceptId ? ne(customers.id, exceptId) : undefined, or(...conditions)))
     .orderBy(asc(customers.name), asc(customers.id)).limit(20);
-  return customerIdentityIndex(rows).find(input, exceptId);
+  return customerIdentityIndex(rows, { byName: false }).find(input, exceptId);
 }
 export function rejectDuplicate(matches: Awaited<ReturnType<typeof findCustomerDuplicates>>, seeRetail = true) {
   if (!matches.length) return;
