@@ -1,5 +1,5 @@
 import { like } from 'drizzle-orm';
-import { confirmDirectSupply } from '../helpers/confirmed-direct-supply.ts';
+import { confirmWarehouseSupply } from '../helpers/confirmed-warehouse-supply.ts';
 import { receivingReminderTasks } from '../../src/modules/tasks/api/receiving-reminders.ts';
 import { reconcileTaskSet } from '../../src/modules/tasks/api/auto-tasks.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
@@ -145,7 +145,7 @@ test('đơn đến hạn giao → việc cho NV phụ trách; bấm "Yêu cầu 
   // Chuyến giao đi → việc đóng hàng (nếu còn mở) và việc "đến hạn giao" tự hoàn thành khi giao xong.
   const g2pack = await call('/tasks/packing', emp, 'POST', { deliveryId: g.data.id });
   assert.equal(g2pack.status, 201, 're-request sau khi kho đã xong');
-  await confirmDirectSupply(call,mgr,o.data.id);
+  await confirmWarehouseSupply(db,call,mgr,o.data.id);
   await call('/deliveries/' + g.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: today });
   mine = (await call('/tasks?refresh=1&view=all&status=all', mgr)).data.tasks;
   assert.equal(mine.find((t: any) => t.id === pack.data.id).status, 'done');
