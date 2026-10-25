@@ -459,7 +459,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     }
     if (minhLongDirect(c.env, order)) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if(action==='confirm'&&order.ghnOrderCode){
-      if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_create_failed');
+      if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_reconcile_failed');
       return json({ok:true,existing:true,status:order.status,ghnOrderCode:order.ghnOrderCode,ghnStatus:order.ghnStatus,ghnSortCode:order.ghnSortCode,ghnFee:order.ghnFee,bucket:webBucket(order.status,order.ghnStatus)});
     }
     if (!c.env.webOrderAction?.token) throw new AppError(503, 'Chưa cấu hình kết nối thao tác đơn website (secret WEB_ORDER_ACTION_TOKEN).');
@@ -488,18 +488,18 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         // Use live master-data when a token is configured. Never turn a lookup outage into an address error.
         const lookup=async(province:number,district:number)=>{
           try{return c.env.ghnToken||c.env.ghnMlToken?await ghnMasterData(c.env,province,district):bundledGhnLocations(province,district);}
-          catch{throw new AppError(502,'Chưa đối chiếu được danh mục GHN. Giữ nguyên địa chỉ; kiểm tra kết nối GHN trước khi gửi lại.','ghn_create_failed');}
+          catch{throw new AppError(502,'Chưa đối chiếu được danh mục GHN. Giữ nguyên địa chỉ; kiểm tra kết nối GHN trước khi gửi lại.','ghn_reconcile_failed');}
         };
         const districts=await lookup(Number(bridgeInput.provinceId),0);
         const wards=await lookup(0,Number(bridgeInput.districtId));
-        if(!districts||!wards)throw new AppError(503,'Chưa đối chiếu được danh mục GHN. Giữ nguyên địa chỉ; không tạo vận đơn khi chưa xác minh được.','ghn_create_failed');
+        if(!districts||!wards)throw new AppError(503,'Chưa đối chiếu được danh mục GHN. Giữ nguyên địa chỉ; không tạo vận đơn khi chưa xác minh được.','ghn_reconcile_failed');
         if(!districts.some(d=>String(d.id)===String(bridgeInput.districtId))||!wards.some(w=>String(w.id)===bridgeInput.wardCode))
           throw new AppError(400,'Quận/Huyện hoặc Phường/Xã không thuộc địa bàn đã chọn theo danh mục GHN.','address_invalid');
       }
     }
     let response:Response;
     try{response=await (c.env.webOrderAction.fetch ?? fetch)(url,{method:'POST',headers:{authorization:`Bearer ${c.env.webOrderAction.token}`,'content-type':'application/json'},body:JSON.stringify(bridgeInput),signal:AbortSignal.timeout(30_000)});}
-    catch{throw new AppError(502,'Mất kết nối website; chưa rõ kết quả xử lý. Tra cứu vận đơn trên website/GHN trước khi gửi lại.','ghn_create_failed');}
+    catch{throw new AppError(502,'Mất kết nối website; chưa rõ kết quả xử lý. Tra cứu vận đơn trên website/GHN trước khi gửi lại.','ghn_reconcile_failed');}
     const result=await readWebBridgeResult(response,action,{orderId:order.externalId,source:order.source},[c.env.webOrderAction.token,c.env.ghnToken,c.env.ghnMlToken]);
     if (action === 'locations') {
       const key = ghnCacheKey(order.source, bridgeInput.provinceId as number, bridgeInput.districtId as number);

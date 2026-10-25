@@ -12,7 +12,7 @@ class Node {
  get selectedOptions(){return [{textContent:this.value}];}
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
-for(const direct of [false,true])for(const code of ['ghn_handler_unavailable','ghn_empty_response','ghn_create_failed','address_invalid'])test(`Form ${direct?'Minh Long':'Lock'}: ${code} giữ dữ liệu, chỉ lỗi địa chỉ mới trở về sửa`,async()=>{
+for(const direct of [false,true])for(const code of ['ghn_handler_unavailable','address_invalid','ghn_rejected','ghn_response_missing_order_code','ghn_reconcile_failed','ghn_metadata_persist_failed','ghn_empty_response','ghn_create_failed'])test(`Form ${direct?'Minh Long':'Lock'}: ${code} giữ dữ liệu, chỉ lỗi địa chỉ mới trở về sửa`,async()=>{
  const form=new Node('form'),dlg=new Node('dialog'),calls:any[]=[];
  const province=new Node('select'),district=new Node('select'),ward=new Node('select');province.value='211';district.value='1929';ward.value='490707';
  const order={id:'fake-id',orderNo:'21496',customerName:'Khách kiểm thử',phone:'0901234567',total:100000,suggestedCod:90000,ghnDirect:direct,lines:'[{"sku":"00123","quantity":1}]',ghnAddress:{addressLine:'Đường kiểm thử',provinceId:211,districtId:1929,wardCode:'490707'}};
