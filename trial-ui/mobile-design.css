@@ -94,6 +94,10 @@
  .crm-list-card .mobile-action-trigger { min-height:44px;min-width:44px;width:44px!important;padding:2px; }
  .crm-designed-page .table-wrap { overflow:visible; }
  .crm-designed-page .data-table { width:100%;min-width:0; }
+ /* Every designed list switches at 850px, including the legacy 681–850px gap. */
+ .crm-designed-page .data-table:has(.crm-list-card),.crm-designed-page .data-table:has(.crm-list-card) > tbody { display:block; }
+ .crm-designed-page .data-table:has(.crm-list-card) > thead { display:none; }
+ .crm-list-card > td { display:block; }
  .crm-designed-page .empty { padding:20px 0; }
  .crm-designed-page .empty-icon { display:none; }
  .crm-designed-page .task-tabs-row { display:flex;overflow-x:auto;flex-wrap:nowrap;border-bottom:1px solid var(--line); }
