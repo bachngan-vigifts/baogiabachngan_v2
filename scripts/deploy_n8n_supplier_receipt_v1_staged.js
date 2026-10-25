@@ -77,14 +77,14 @@ export function buildReceiptWorkflow({salesWorkflow,handoffNodeName,crmBase}) {
 const number = (value, max = Infinity) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max;
 const validateReceiptPayload = ${validateReceiptPayload.toString()};
 const receiptTask = ${receiptTask.toString()};
-const p = validateReceiptPayload($json.body);
+const p = validateReceiptPayload($input.first().json.body);
 return [{json:{receipt_task:receiptTask(p,${JSON.stringify(crmBase)}),handoff_key:'supplier-receipt:'+p.idempotency_key+':'+(p.reconciliation_id||'create')}}];`;
   const nodes=[
     {id:'receipt-webhook',name:'CRM receipt webhook',type:'n8n-nodes-base.webhook',typeVersion:2,position:[0,0],parameters:{httpMethod:'POST',path:'sapo-goods-receipt-from-quote-web',responseMode:'responseNode',options:{}}},
     {id:'receipt-contract',name:'Validate receipt and prepare task',type:'n8n-nodes-base.code',typeVersion:2,position:[260,0],parameters:{mode:'runOnceForAllItems',jsCode:validateCode}},
     handoff,
-    {id:'receipt-admission',name:'Validate handoff admission',type:'n8n-nodes-base.code',typeVersion:2,position:[780,0],parameters:{mode:'runOnceForAllItems',jsCode:`const b=$json.body;
-if($json.statusCode<200 || $json.statusCode>=300 || !b || b.ok===false || b.error || typeof b.runId!=='string' || !b.runId) throw new Error('OPENCLAW_ADMISSION_NOT_CONFIRMED');
+    {id:'receipt-admission',name:'Validate handoff admission',type:'n8n-nodes-base.code',typeVersion:2,position:[780,0],parameters:{mode:'runOnceForAllItems',jsCode:`const input=$input.first().json,b=input.body;
+if(!Number.isFinite(input.statusCode) || input.statusCode<200 || input.statusCode>=300 || !b || b.ok===false || b.error || typeof b.runId!=='string' || !b.runId) throw new Error('OPENCLAW_ADMISSION_NOT_CONFIRMED');
 return [{json:{ok:true,status:'callback_pending',runId:b.runId}}];`}},
     {id:'receipt-accepted',name:'Accepted, await CRM callback',type:'n8n-nodes-base.respondToWebhook',typeVersion:1.4,position:[1040,0],parameters:{respondWith:'json',responseBody:'={{ $json }}',options:{responseCode:202}}},
     {id:'receipt-error',name:'Handoff unavailable',type:'n8n-nodes-base.respondToWebhook',typeVersion:1.4,position:[780,220],parameters:{respondWith:'json',responseBody:JSON.stringify({ok:false,error:'OPENCLAW_HANDOFF_UNAVAILABLE'}),options:{responseCode:503}}},

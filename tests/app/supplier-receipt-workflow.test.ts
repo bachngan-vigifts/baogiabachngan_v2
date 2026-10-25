@@ -35,7 +35,7 @@ test('Offline workflow reuses sales hook credential/agent/session, copies no sal
 });
 test('Generated code in VM with n8n bindings: zero price preserved, task requires claim and no damaged goods',()=>{
  const f=fixture(),w=f.build(),node=w.nodes.find((n:any)=>n.id==='receipt-contract');
- const run=(p:any)=>runInNewContext(`(function(){${node.parameters.jsCode}})()`,{$json:{body:p}})[0].json;
+ const run=(p:any)=>runInNewContext(`(function(){${node.parameters.jsCode}})()`,{$input:{first:()=>({json:{body:p}})}})[0].json;
  const result=run(f.p);assert.equal(result.handoff_key,'supplier-receipt:receipt-id:create');
  assert.match(result.receipt_task,/goods-receipt-jobs\/claim/);assert.match(result.receipt_task,/CHỈ TRA CỨU/);
  assert.match(result.receipt_task,/Không nhập hàng hỏng/);assert.match(result.receipt_task,/"unit_price":0/);
@@ -46,10 +46,11 @@ test('Generated code in VM with n8n bindings: zero price preserved, task require
 });
 test('Generated admission validator never calls accepted HTTP done; rejects missing/failed runId',()=>{
  const w=fixture().build(),node=w.nodes.find((n:any)=>n.id==='receipt-admission');
- const run=(input:any)=>runInNewContext(`(function(){${node.parameters.jsCode}})()`,{$json:input})[0].json;
+ const run=(input:any)=>runInNewContext(`(function(){${node.parameters.jsCode}})()`,{$input:{first:()=>({json:input})}})[0].json;
  assert.equal(run({statusCode:200,body:{ok:true,runId:'run-id'}}).status,'callback_pending');
  for(const body of [{ok:true},{ok:false,runId:'x'},{error:'session full',runId:'x'}])assert.throws(()=>run({statusCode:200,body}),/ADMISSION_NOT_CONFIRMED/);
  assert.throws(()=>run({statusCode:503,body:{ok:true,runId:'x'}}),/ADMISSION_NOT_CONFIRMED/);
+ assert.throws(()=>run({body:{ok:true,runId:'x'}}),/ADMISSION_NOT_CONFIRMED/);
 });
 test('Compiler refuses guessed handoff, inline credential, dynamic old-node routing, ambiguous agent node',()=>{
  for(const scenario of ['sales-url','inline-header','no-credential','dynamic-session','query-token','multiple-nodes','embedded-token']){
