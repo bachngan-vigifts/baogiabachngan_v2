@@ -9,10 +9,16 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  test:
+  test-shards:
+    name: test shard ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
-    # The full PGlite suite now exceeds 20 minutes on GitHub-hosted runners.
+    # The unsharded PGlite suite hit 35m after 1,050 tests on a hosted runner.
+    # Both disjoint file shards use the same full globs/concurrency as npm test; no tests are skipped.
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,4 +29,15 @@ jobs:
         run: php --version
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      # Node test options must precede the file globs; npm test -- ... appends them too late.
+      - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/2 "tests/**/*.test.ts" "src/**/*.test.ts"
+  # Preserve the existing required check name; failure/cancellation in either shard fails the gate.
+  test:
+    if: ${{ always() }}
+    needs: test-shards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both test shards
+        env:
+          RESULT: ${{ needs.test-shards.result }}
+        run: test "$RESULT" = success
