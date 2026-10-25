@@ -1,3 +1,4 @@
+import { registerStockIntegrityRoutes } from './stock-integrity-routes.ts';
 import { purchaseLinksForOrder } from '../modules/suppliers/api/purchase-store.ts';
 import { registerPosOrderFlowRoutes } from '../modules/sales/api/pos-order-flow-routes.ts';
 import { supplierRegistrationHooks } from '../modules/portal/api/registration.ts';
@@ -107,6 +108,7 @@ export function createAppRouter() {
   registerPulseRoutes(router);
   registerNavigationCounts(router);
   registerInventoryRoutes(router);
+  registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
   registerStockHistoryRoutes(router);
   registerFlowRoutes(router);

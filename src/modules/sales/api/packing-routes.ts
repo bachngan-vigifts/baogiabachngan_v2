@@ -348,6 +348,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       }
       const [fresh] = await tx.select({status:salesOrders.status,warehouseId:salesOrders.warehouseId}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
       if (!fresh || ['draft','cancelled'].includes(fresh.status) || fresh.warehouseId !== order.warehouseId) throw new AppError(409,'Đơn hàng vừa thay đổi. Mở lại phiếu trước khi xác nhận.');
+      if(order.channel==='crm'&&slip.source==='store'&&(await tx.select({id:packingSlipLines.id}).from(packingSlipLines).where(and(eq(packingSlipLines.slipId,slip.id),sql`${packingSlipLines.sku}<>''`)).limit(1)).length)throw new AppError(409,'Hàng từ kho/cửa hàng khác: xác nhận điều chuyển về kho xuất rồi lập phiếu nguồn Kho; không bỏ qua bút toán xuất.','TRANSFER_REQUIRED');
       const soldAtApproval = order.channel === 'crm' && !!fresh.warehouseId && await saleMovesPosted(tx,order.id);
       await assertPosFlowFulfillable(tx,order.id);
       if (stockWarehouseId) { await lockLedger(tx); await assertWarehousesOpened(tx, [stockWarehouseId]); }

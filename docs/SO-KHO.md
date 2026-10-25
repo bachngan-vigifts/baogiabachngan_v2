@@ -19,7 +19,32 @@
 | Huỷ phiếu nhận NCC | ghi dòng ngược lại |
 | Kho xác nhận "đã đóng hàng" (phiếu đóng gói, nguồn = Kho) | **−** khỏi kho xuất. Kho xuất bắt buộc chọn lúc xác nhận. |
 
-**Kho nhận không khớp danh sách kho:** phiếu nhận vẫn được lưu, nhưng sổ kho không ghi. Lịch sử đơn mua có dòng báo "chưa ghi sổ kho". Muốn bù thì Manager lập phiếu điều chỉnh.
+**Kho nhận không khớp danh sách kho:** từ chối toàn bộ thao tác nhận; không lưu phiếu riêng lẻ ngoài giao dịch kho. Kho phải là kho thật đang hoạt động và đã mở sổ.
+
+## Chuỗi chứng từ nhập → xuất → giao
+
+| Bước | Tác động tồn sổ kho |
+|---|---|
+| Duyệt đơn / HĐKT | Giữ hàng, không trừ tồn |
+| Duyệt phiếu xin lấy trước | Cho phép nhận trong lượng đã chấp thuận, không cộng tồn |
+| Lưu phiếu nhận NCC (thường hoặc lấy trước) | Cộng số đạt vào đúng kho trong cùng transaction |
+| Gửi phiếu đóng gói | Chưa trừ tồn |
+| Kho xác nhận **Đã xuất kho** | Trừ đúng lượng trên phiếu, đúng kho xuất, chỉ một lần |
+| POS tại quầy thanh toán và giao ngay | Giữ cơ chế xuất trực tiếp theo chứng từ POS; không cần phiếu đóng gói CRM |
+| Bàn giao / Đã giao | Kiểm tra đủ nguồn đã xác nhận; không trừ thêm |
+| Callback n8n/OpenClaw | Lưu liên kết Sapo; không cộng tồn CRM lần nữa |
+
+- Mỗi dòng đơn được đối chiếu riêng, kể cả nhiều dòng cùng SKU và xuất nhiều đợt. Không lấy một phiếu đã xuất làm bằng chứng cho toàn bộ đơn.
+- Giao thẳng từ NCC/đại lý/nguồn ngoài cần phiếu nguồn được xác nhận thực tế; không trừ kho nội bộ và không tiếp tục giữ lượng hàng nội bộ tương ứng.
+- Nguồn cửa hàng khác phải qua điều chuyển rồi xuất tại kho thực tế. Không tự chọn kho mặc định khi thiếu thông tin.
+- Mọi đơn CRM có hàng, kể cả đơn cũ thiếu kế hoạch/kho, đều phải có đủ xác nhận nguồn trước khi giao. Đánh dấu tiến độ thủ công không thay thế duyệt đơn hay xuất kho.
+- Các đơn cũ đã trừ lúc duyệt không trừ lần hai khi xác nhận phiếu. Vẫn cần phiếu xác nhận nguồn để chứng minh việc xuất thực tế.
+- Không huỷ phiếu nhận khi đang gửi/chờ callback/đang có worker xử lý. Phải dừng và xác minh n8n/OpenClaw trước, tránh CRM hoàn tồn nhưng bên ngoài vẫn nhập. Các đường ghi khoá theo thứ tự đơn mua → phiếu nhận → job → sổ kho.
+- Phiếu lịch sử sinh khi nhập file NCC không phải thao tác nhận hàng mới. Thiếu kho phải đối chiếu tồn đầu kỳ; không tự ghi bù vì có thể đã nằm trong tồn mở sổ.
+
+### Đối soát chỉ đọc
+
+Manager gọi `GET /warehouse-workflow-audit?offset=0` để kiểm tra số dư so với sổ, phiếu nhận so với phát sinh đúng kho, và đơn đang/đã giao thiếu bằng chứng xuất. Mỗi trang 100 bản ghi, có tổng số và thông tin trang tiếp. Báo cáo không thay đổi dữ liệu; không coi việc thiếu chứng từ tự động là bằng chứng phải trừ bù. Cần xác minh kho, kỳ mở sổ và chứng từ thực tế trước khi sửa lịch sử.
 
 ## Trang "Đối chiếu tồn Sapo" (#/inventory) – chỉ Manager / quyền "Sổ kho – xem"
 (Trước đây tên là "Sổ kho". Từ 22/10/2026 tên "Sổ kho" dùng cho trang giao dịch `#/stock-moves` bên dưới.)

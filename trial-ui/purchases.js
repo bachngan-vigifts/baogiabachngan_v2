@@ -383,6 +383,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     if(r.job) card.append(el('p','muted small', ({queued:'Đang chờ gửi n8n',processing:'Claw đang xử lý',callback_pending:'Đã giao n8n · chờ kết quả Sapo',done:'Đã xác minh liên kết Sapo',failed:'Gửi/xử lý chưa thành công',needs_review:'Cần đối soát dữ liệu hoặc kết quả'})[r.job.status] || r.job.status));
     if(r.job?.lastError) card.append(el('p','pur-note danger small',r.job.lastError));
     card.append(el('p', 'small', r.lines.map(l => `${l.sku}: đạt ${num(l.goodQty)}${l.damagedQty ? `, hỏng ${num(l.damagedQty)}` : ''}${l.note ? ` (${l.note})` : ''}`).join(' · ')));
+    if(r.historicalImport)card.append(el('p','muted small','Phiếu lịch sử từ file NCC; không phải thao tác nhận hàng mới. Đối chiếu kỳ tồn đầu trước khi ghi thêm kho.'));
     if (r.photos?.length) {
       const ph = el('div', 'ship-photos');
       for (const [i, u] of r.photos.entries()) { const a = el('a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; const img = el('img'); img.src = u; img.alt = `Ảnh hàng hỏng ${i + 1}`; img.loading = 'lazy'; a.append(img); ph.append(a); }
