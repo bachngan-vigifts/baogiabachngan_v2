@@ -23,4 +23,7 @@ jobs:
           echo "$response" | jq -e '.code == 200 and (.data.shops | type == "array")' >/dev/null
           count=$(echo "$response" | jq '.data.shops | length')
           echo "Tìm thấy $count shop GHN Minh Long:"
-          echo "$response" | jq -r '.data.shops[] | "- \(.shop_id) | \(.name)"'
+          # GHN returns _id on shop/all; older adapters also use shop_id/id.
+          # Emit only safe shop metadata, never the complete API response or token.
+          echo "$response" | jq -e 'all(.data.shops[]; ((.shop_id // ._id // .id) | tostring) | test("^[1-9][0-9]*$"))' >/dev/null
+          echo "$response" | jq -c '.data.shops[] | {shop_id:(.shop_id // ._id // .id),name,status}'
