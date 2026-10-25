@@ -27,4 +27,14 @@ npm install --prefix /tmp/pos-browser playwright
 PLAYWRIGHT_MODULE=/tmp/pos-browser/node_modules/playwright/index.mjs node scripts/testing/portal-forgot-password.mjs
 ```
 
-Có thể đặt `CHROMIUM_PATH`; script giả lập toàn bộ API và chặn truy cập ngoài localhost. Không thêm Playwright vào dependencies production. Phiên phát triển chưa gửi mail thật, chưa xác nhận inbox/Resend production và chưa deploy.
+Có thể đặt `CHROMIUM_PATH`; script giả lập toàn bộ API và chặn truy cập ngoài localhost. Không thêm Playwright vào dependencies production. Các test phát triển không gửi mail thật hoặc xác nhận inbox/Resend production.
+
+## Lỗi rollout “Không tìm thấy” ngày 25/10/2026
+
+PR308 đã merge tại f846f51…; UI deploy nhanh hơn API đang xếp hàng sau một lượt deploy cũ. Nút quên mật khẩu mới gọi POST /forgot-password vào API cũ, nhận404. Đây là thiếu endpoint ở bản triển khai, không phải phản hồi tài khoản không tồn tại (endpoint hiện hành luôn trả thông báo chung cho trường hợp đó).
+
+Lượt API cũ40187220063 được hủy khi mới chạy test, chưa có bước ghi production; commit mới bao gồm commit cũ. Run40187235677 cho f846f51… sau đó thành công, có bước deploy Edge Function thành công. Probe email rỗng đã đổi từ404 sang400 kiểm tra email; không yêu cầu đổi mật khẩu hoặc gửi mail tài khoản thật. Source release gate/thông báo404 bên dưới vẫn cần PR/review trước khi triển khai.
+
+Workflow UI bổ sung bước chờ source API gần nhất trên first-parent của main. Chỉ cho phát hành UI khi run tương ứng đúng SHA thành công **và bước Triển khai Edge Function thực sự thành công**. Workflow thành công do bỏ qua thiếu secret không được coi là API đã lên. Thất bại/hết thời gian chờ giữ UI cũ; bước chờ chỉ đọc Actions metadata, không tự deploy hoặc bỏ test. UI-only commit cũng chờ API nguồn mà nó phụ thuộc, không chỉ kiểm diff của commit UI cuối.
+
+Nếu vẫn gặp endpoint404 trong lúc rollout hoặc cấu hình lệch, form thông báo chức năng đang cập nhật, giữ email và cho thử lại; không hiển thị404 như lỗi tra cứu tài khoản. Test browser giả lập404 → thử lại200 trên cả3 trang và kiểm chống gửi trùng. Không gửi mail thật để kiểm thử lỗi này.
