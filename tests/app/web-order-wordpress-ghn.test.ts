@@ -18,7 +18,7 @@ const variables={
 for(const expression of literal.matchAll(/\$\{([^}]+)\}/g))assert.ok(Object.hasOwn(variables,expression[1]!), 'only known template variables; never execute installer');
 const bridge=runInNewContext(literal,variables,{timeout:1000}) as string;
 const scenarios=[
- 'handler-missing','config-missing','success','existing','found','address-invalid','selected-address','partial-address',
+ 'handler-missing','config-missing','success','lookup-prefixed-not-found','existing','found','address-invalid','selected-address','partial-address',
  'lookup-unavailable','lookup-ambiguous','lookup-permission','lookup-wrong-client','lookup-wrong-shop',
  'ghn-rejected','ghn-address-rejected','ghn-empty-message','empty-response','malformed-response','timeout-found','timeout-late',
  'persist-throw','persist-drop','persist-unreadable','post-status-fail','intent-fail','intent-drop','order-changed','concurrent','legacy-71','legacy-125',

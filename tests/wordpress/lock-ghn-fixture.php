@@ -122,6 +122,7 @@ function wp_remote_request($url,$args){
         if($scenario==='lookup-unavailable'){return new WP_Error('http_request_failed','untrusted secret');}
         if($scenario==='lookup-ambiguous'){return response(404,array('code'=>404,'message'=>'Not found'));}
         if($scenario==='lookup-permission'){return response(400,array('code'=>400,'message'=>'CLIENT_NOT_OWNER_OF_SHOP'));}
+        if($scenario==='lookup-prefixed-not-found'){return response(400,array('code'=>400,'message'=>'Lỗi gọi API: corev2_tenant_order_detail_by_client_order_code - Đơn hàng không tồn tại','data'=>null));}
         if($scenario==='lookup-wrong-client'||$scenario==='lookup-wrong-shop'){
             $data=carrier();$data[$scenario==='lookup-wrong-client'?'client_order_code':'shop_id']=$scenario==='lookup-wrong-client'?'OTHER':999;
             return response(200,array('code'=>200,'data'=>$data));

@@ -33,8 +33,10 @@ function lnl_crm_ghn_lookup($client_code) {
     $response = lnl_crm_ghn_http('/v2/shipping-order/detail-by-client-code', array('client_order_code' => $client_code), 'GET');
     if (is_wp_error($response)) { return $response; }
     $body = $response['body']; $data = $body['data'] ?? null;
+    $not_found = 'Đơn hàng không tồn tại';
+    $message = trim((string) ($body['message'] ?? ''));
     if ($response['http'] === 400 && ($body['code'] ?? null) === 400 && empty($data)
-        && trim((string) ($body['message'] ?? '')) === 'Đơn hàng không tồn tại') { return null; }
+        && ($message === $not_found || substr($message, -strlen($not_found)) === $not_found)) { return null; }
     $config = lnl_crm_ghn_config();
     if ($response['http'] !== 200 || ($body['code'] ?? null) !== 200 || !is_array($data)
         || !lnl_crm_ghn_valid_code($data['order_code'] ?? null)
