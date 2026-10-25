@@ -43,13 +43,13 @@ const screenshotDir=process.env.MOBILE_SCREENSHOT_DIR||'/workspace/scratch/crm-m
 async function settle(page){await page.waitForTimeout(180);}
 async function shot(page,name,width){await page.screenshot({path:screenshotDir+'/'+name+'-'+width+'.png',fullPage:false});}
 async function goto(page,hash){await page.evaluate(h=>location.hash=h,hash);await settle(page);}
-try{for(const width of [390,1280]){
+try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'390,1280').split(',').map(Number)){
  const context=await browser.newContext({viewport:{width,height:844},locale:'vi-VN'});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
  await context.addInitScript(({token,user})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{token,user});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(origin+'/index.html#/contracts');await page.locator('#contracts-list tr.clickable').first().waitFor();await settle(page);
  assert.equal(await page.locator('#contracts-list .crm-list-card').count(),1);
- if(width===390){
+ if(width<=850){
   assert.equal(await page.locator('.crm-mobile-nav a').count(),4);assert.equal(await page.locator('.crm-mobile-nav button').textContent(),'⋯Thêm');
   assert.equal(await page.locator('#contracts-entity').isVisible(),false);await shot(page,'contracts-list',width);
   const before=writes.length;await page.getByRole('button',{name:'Lọc HĐKT',exact:true}).click();await page.locator('#contracts-entity').selectOption('BN');
@@ -61,14 +61,14 @@ try{for(const width of [390,1280]){
  assert.equal(await page.locator('.crm-document-sheet #view-order').count(),1);assert.equal(await page.locator('#view-order').count(),1,'no cloned document IDs');
  await page.getByRole('button',{name:'Đóng chi tiết HĐKT',exact:true}).click();await page.waitForFunction(()=>location.hash==='#/contracts');await page.locator('.crm-document-sheet').waitFor({state:'hidden'});
  await goto(page,'#/quotes');await page.locator('#quote-list tr.clickable').first().waitFor();await shot(page,'quotes-list',width);
- await goto(page,'#/customers/'+customerId);await page.locator('.crm-customer-person strong').waitFor({state:width===390?'visible':'hidden'});await settle(page);await shot(page,'customer-detail',width);
- if(width===390){assert.equal(await page.getByRole('button',{name:'Chăm sóc',exact:true}).first().isVisible(),true);assert.equal(await page.locator('.crm-mobile-nav [aria-current=page]').textContent(),'Khách hàng');}
+ await goto(page,'#/customers/'+customerId);await page.locator('.crm-customer-person strong').waitFor({state:width<=850?'visible':'hidden'});await settle(page);await shot(page,'customer-detail',width);
+ if(width<=850){assert.equal(await page.getByRole('button',{name:'Chăm sóc',exact:true}).first().isVisible(),true);assert.equal(await page.locator('.crm-mobile-nav [aria-current=page]').textContent(),'Khách hàng');}
  await goto(page,'#/tasks');await page.locator('.task-row').first().waitFor();await settle(page);await shot(page,'tasks',width);
  await goto(page,'#/care');await page.locator('#view-care [data-list] tr').first().waitFor();await settle(page);await shot(page,'care',width);
  // Error/retry preserves list filters and never dispatches a business write.
  failOrders=true;await goto(page,'#/orders');await page.locator('#view-orders .crm-list-retry').waitFor({state:'visible'});const beforeRetry=writes.length;await page.locator('#view-orders .crm-list-retry').click();await page.locator('#orders-list tr.clickable').first().waitFor();assert.equal(writes.length,beforeRetry);
  await shot(page,'orders-list',width);
- if(width===390){
+ if(width<=850){
   await page.locator('.crm-mobile-nav button').click();await page.locator('.crm-more-sheet').waitFor({state:'visible'});assert.equal(await page.locator('.crm-more-sheet a[href="#/contracts"]').count(),1);await page.getByRole('button',{name:'Đóng các trang',exact:true}).click();
   await goto(page,'#/quotes/new');
   const form=page.locator('#quote-form');await form.waitFor({state:'visible'});
@@ -77,5 +77,5 @@ try{for(const width of [390,1280]){
   assert.equal(await form.locator('[data-quote-panel=info]').first().isVisible(),true);assert.equal(await form.locator('[data-quote-panel=products]').first().isVisible(),true);assert.equal(await form.locator('[data-quote-panel=review]').first().isVisible(),true);
   await shot(page,'quote-form',width);
  }
- assert.deepEqual(errors,[]);console.log(JSON.stringify({width,screenshots:true,realRouter:true,filterQueries:true,documentOwnership:true,localDraft:width===390,errors}));await context.close();
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({width,screenshots:true,realRouter:true,filterQueries:true,documentOwnership:true,localDraft:width<=850,errors}));await context.close();
 }}finally{await browser.close();server.close();await f.client.close();}
