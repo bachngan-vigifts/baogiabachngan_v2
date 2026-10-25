@@ -129,6 +129,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   for (const [v, t] of [['', 'Tất cả'], ['overdue', 'Đã quá hẹn'], ['7', 'Trong 7 ngày tới'], ['none', 'Chưa có ngày hẹn']]) fDue.append(Object.assign(el('option', '', t), { value: v }));
   const clear = btn('Xóa bộ lọc', 'btn ghost small', () => { for (const x of [fSup.sel, fBy.sel, fFrom, fTo, fDue]) x.value = ''; search.value = ''; setFilter(''); load(); });
   const filterGrid = el('div', 'orders-filter-grid pur-filter-grid');
+  clear.dataset.clear='all';
   filterGrid.append(fSup.box, fBy.box, field('Lập từ ngày', fFrom), field('Đến ngày', fTo), field('Hẹn giao', fDue), clear);
   for (const x of [fSup.sel, fBy.sel, fFrom, fTo, fDue]) x.addEventListener('change', applyFilters);
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('thead'), tbody = el('tbody');
@@ -138,6 +139,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   let khoAll = false;
   let incomingMode = false;
   const modes = el('div', 'row-gap pur-view-modes'), incomingHost = el('section', 'purchase-incoming'); incomingHost.hidden = true;
+  modes.dataset.mobileActions='off';
   const incoming = initPurchaseIncoming({ api, host: incomingHost, go });
   const listMode = btn('Danh sách đơn', 'btn secondary', () => setMode(false));
   const skuMode = btn('Hàng đang về theo mã', 'btn secondary', () => setMode(true)); modes.append(listMode, skuMode);
@@ -183,6 +185,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
   function renderList(prices) {
     if (incomingMode) return;
+    root.dataset.resultCount=String(rows.length);
     const isKho = kho();
     khoBox.hidden = !isKho; panel.hidden = isKho && !khoAll; add.hidden = isKho; if (isKho) importBtn.hidden = true;
     if (isKho) renderKho();

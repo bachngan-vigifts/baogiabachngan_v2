@@ -32,6 +32,7 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
   status.addEventListener('change', load);
 
   function renderList() {
+    root.dataset.resultCount=String(rows.length);
     tbody.replaceChildren();
     countEl.textContent = rows.length + ' nhà cung cấp';
     if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Chưa có nhà cung cấp nào.'); td.colSpan = 7; tr.append(td); tbody.append(tr); return; }

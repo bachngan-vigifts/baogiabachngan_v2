@@ -38,3 +38,11 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/testing/pos-mobile-
 ```
 
 `mobile-design-system.mjs` chạy **router CRM thật + PGlite mới**, chỉ ở localhost; tạo dữ liệu giả trong DB thử. Kiểm tra bộ lọc chỉ đọc, quyền sở hữu DOM khi mở HĐKT, thử lại sau lỗi, nháp sau tải lại; chụp 390px/1280px. `mobile-actions.mjs` kiểm tra menu, form/submitter, file mẫu, thao tác động, đổi kích thước tại 360/390/430/1280px. Toàn bộ suite chạy hai shard qua CI. Chưa thay kiểm tra trên Safari/iPhone thật.
+
+### P2 — vận hành
+
+`mobile-profiles-p2.js` chỉ định cột cần xem nhanh theo từng danh sách. Đơn mua không được xem giá dùng bộ cột ngắn sẵn có; không thêm giá vào DOM. Thu/chi dùng chính ô tiền đầu vào để chọn vị trí, không tính lại tiền. Hàng đang về giữ ô chọn/SL, liên kết nguồn và phần mở rộng; chọn/lọc không tự gửi phiếu. Kho và đóng gói giữ các kiểm tra nhập/xuất hiện có. POS giữ giới hạn sản phẩm và vùng cuộn riêng.
+
+Bộ lọc động được trả về vị trí gốc khi chuyển desktop; nguồn bị ẩn thì nút lọc tương ứng cũng ẩn. Form NCC một cột, footer lưu hiện ngoài menu; phân trang và chuyển chế độ danh sách/hàng đang về giữ trực tiếp.
+
+Chạy browser với `MOBILE_DESIGN_PHASE=2`: thêm dữ liệu NCC/đơn mua/chuyến giao/thu tiền vào PGlite mới; chụp các trang vận hành, thử sửa form NCC không lưu, chọn SL xin hàng trước rồi lọc vẫn giữ lựa chọn. Không có yêu cầu ghi nghiệp vụ trong các thao tác đọc/chọn/lọc. Mỗi ảnh kiểm tra không tràn ngang ở 390px/1280px.

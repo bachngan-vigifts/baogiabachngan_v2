@@ -63,6 +63,7 @@ export function initPurchaseIncoming({ api, host, go }) {
   }
   function render() {
     if (!data) return;
+    host.dataset.resultCount=String(data.total??data.rows.length);
     documentHint.textContent=`${number(data.kpis.earlyRequests||0)} phiếu lấy trước · SL đã xin ${number(data.kpis.earlyQuantity||0)} (không cộng thêm vào Đang về). Bộ lọc ngày áp dụng ngày hẹn đơn mua nguồn; ngày lấy hiển thị trên từng phiếu.`;
     hr.children[7].textContent=documentType.value==='early'?'SL đã xin lấy trước':'SL cần lấy trước';
     kpis.replaceChildren();

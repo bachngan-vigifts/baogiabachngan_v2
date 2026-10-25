@@ -5,9 +5,11 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {setup} from '../../tests/helpers/pos-fixture.ts';
 import {customers} from '../../src/modules/customers/schema.ts';
+import {suppliers,incomingShipments,incomingShipmentLines} from '../../src/modules/suppliers/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url));
 const f=await setup(),ok=(r,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
+const phase=Number(process.env.MOBILE_DESIGN_PHASE||1);
 const customerId='design-customer';
 await f.db.insert(customers).values({id:customerId,name:'CÔNG TY PHƯỚC ĐỨC',contact:'Anh Minh',phone:'0903123218',email:'minh@example.invalid',address:'12 Nguyễn Huệ, Cần Thơ',taxCode:'0101234567',customerCode:'BN-CUZN04196',search:'phuoc duc anh minh',sourceVersion:0,syncedAt:''});
 async function quote(no){return ok(await f.call('/quotes',f.mgr,'POST',{type:'HRC',quoteNo:no,date:'2026-10-25',customer:'CÔNG TY PHƯỚC ĐỨC',customerId,contact:'Anh Minh',phone:'0903123218',vat:8,rows:[{sku:'00123',name:'Bộ trà Hoàng Cung 0.65L',unit:'Bộ',qty:2,price:185000,taxRate:8},{sku:'LY-X',name:'Khăn lụa Hoàng Cung',unit:'Cái',qty:1,price:85000,taxRate:8}]}),201);}
@@ -20,6 +22,15 @@ ok(await f.call('/tasks',f.mgr,'POST',{title:'Gọi xác nhận đơn cho Anh Mi
 const cfg=ok(await f.call('/care/config',f.mgr));
 ok(await f.call('/care',f.mgr,'POST',{customerId,contactName:'Anh Minh',remindBefore:'1d',type:cfg.types[0].key,content:'Gửi lại báo giá bộ trà, hẹn khách xác nhận',result:cfg.results[0].key,nextAt:new Date(Date.now()+864e5).toISOString().slice(0,10)}),201);
 const user=ok(await f.call('/me',f.mgr)).user,token=f.mgr.split('=')[1];
+if(phase>=2){
+ const now=new Date().toISOString();
+ await f.db.insert(suppliers).values({id:'design-supplier',name:'Nhà máy Gốm sứ Hoàng Cung',nameKey:'gom su hoang cung',phone:'0909876543',createdAt:now,createdBy:'mgr',updatedAt:now});
+ await f.db.insert(incomingShipments).values({id:'design-po',ticketNumber:'DMH_20261025_001',source:'supplier-order',warehouse:'Kho POS',supplierId:'design-supplier',supplierName:'Nhà máy Gốm sứ Hoàng Cung',approvalStatus:'approved',supplierStatus:'confirmed',arrivalDate:now.slice(0,10),createdAt:now,createdBy:'mgr',updatedAt:now});
+ await f.db.insert(incomingShipmentLines).values({id:'design-po-line',shipmentId:'design-po',lineNo:1,sku:'00123',name:'Ly sứ Hoàng Cung',unit:'Cái',quantity:29,unitPrice:185000});
+ ok(await f.call('/deliveries',f.mgr,'POST',{orderId:order.id,plannedDate:now.slice(0,10)}),201);
+ await f.open();
+ ok(await f.call('/cash/entries',f.emp,'POST',{key:crypto.randomUUID(),kind:'other_income',amount:1668600,reason:'Thu tiền đơn hàng thử nghiệm'}),201);
+}
 const writes=[],reads=[];let failOrders=false;
 const server=createServer(async(req,res)=>{try{
  const u=new URL(req.url,'http://localhost'),path=u.pathname;
@@ -41,7 +52,7 @@ const origin='http://127.0.0.1:'+server.address().port;
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
 const screenshotDir=process.env.MOBILE_SCREENSHOT_DIR||'/workspace/scratch/crm-mobile-design';await mkdir(screenshotDir,{recursive:true});
 async function settle(page){await page.waitForTimeout(180);}
-async function shot(page,name,width){await page.screenshot({path:screenshotDir+'/'+name+'-'+width+'.png',fullPage:false});}
+async function shot(page,name,width){assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'page must not overflow horizontally: '+name);await page.screenshot({path:screenshotDir+'/'+name+'-'+width+'.png',fullPage:false});}
 async function goto(page,hash){await page.evaluate(h=>location.hash=h,hash);await settle(page);}
 try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'390,1280').split(',').map(Number)){
  const context=await browser.newContext({viewport:{width,height:844},locale:'vi-VN'});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
@@ -75,7 +86,32 @@ try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'390,1280').split(',')
  // Error/retry preserves list filters and never dispatches a business write.
  failOrders=true;await goto(page,'#/orders');await page.locator('#view-orders .crm-list-retry').waitFor({state:'visible'});const beforeRetry=writes.length;await page.locator('#view-orders .crm-list-retry').click();await page.locator('#orders-list tr.clickable').first().waitFor();assert.equal(writes.length,beforeRetry);
  await shot(page,'orders-list',width);
+ if(phase>=2){
+  const before=writes.length;
+  for(const [hash,selector,name]of [
+   ['#/purchases','#view-purchases .crm-list-card','purchases'],
+   ['#/suppliers','#view-suppliers .crm-list-card','suppliers'],
+   ['#/receiving','#view-receiving .crm-list-card','receiving'],
+   ['#/deliveries','#deliveries-list .crm-list-card','deliveries'],
+   ['#/receivables','#receivables-list .crm-list-card','receivables'],
+   ['#/cashbook','#cashbook-list .crm-list-card','cashbook'],
+   ['#/cash','#view-cash .crm-list-card','cash'],
+  ]){await goto(page,hash);await page.locator(selector).first().waitFor();await settle(page);await shot(page,name,width);}
+  assert.equal(writes.length,before,'opening operations pages never posts stock, payment or shipping actions');
+  await goto(page,'#/suppliers');await page.locator('#view-suppliers tr.clickable').first().click();
+  const supplierForm=page.locator('#view-suppliers .sup-drawer:not([hidden]) form');await supplierForm.waitFor();
+  assert.equal(await supplierForm.getByRole('button',{name:'Lưu thay đổi',exact:true}).isVisible(),true);
+  await supplierForm.locator('[name=name]').fill('Tên sửa thử chưa lưu');assert.equal(writes.length,before);
+  await page.locator('#view-suppliers .sup-drawer-head button').click();
+  await goto(page,'#/purchases?mode=incoming');await page.locator('.incoming-table .crm-list-card').first().waitFor();
+  const qty=page.getByLabel('SL cần lấy trước mã 00123',{exact:true});await qty.fill('2');
+  assert.equal(await page.getByRole('button',{name:'Lưu và gửi NCC',exact:true}).isEnabled(),true);
+  await shot(page,'incoming',width);assert.equal(writes.length,before,'selection stays local until explicit submission');
+  if(width<=850){await page.getByRole('button',{name:'Lọc hàng đang về',exact:true}).click();await page.getByLabel('Nhà cung cấp',{exact:true}).selectOption('design-supplier');await page.locator('.purchase-incoming .crm-filter-foot .primary').click();await qty.waitFor();assert.equal(await qty.inputValue(),'2','filter preserves selected quantity');}
+  await goto(page,'#/stock-lookup?q=00123');await page.locator('.lookup-item').first().waitFor();assert.equal(await page.locator('.lookup-bar button[type=submit]').isVisible(),true);await shot(page,'stock-lookup',width);
+ }
  if(width<=850){
+  await page.locator('.view:not([hidden]) h1').first().click();await settle(page);
   await page.locator('.crm-mobile-nav button').click();await page.locator('.crm-more-sheet').waitFor({state:'visible'});assert.equal(await page.locator('.crm-more-sheet a[href="#/contracts"]').count(),1);await page.getByRole('button',{name:'Đóng các trang',exact:true}).click();
   await goto(page,'#/quotes/new');
   const form=page.locator('#quote-form');await form.waitFor({state:'visible'});
