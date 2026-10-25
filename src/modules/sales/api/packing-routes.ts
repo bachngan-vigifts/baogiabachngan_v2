@@ -29,6 +29,7 @@ import { nextDocNo, vietnamDate } from '../domain/sales.ts';
 import { docRef } from '../domain/doc-ref.ts';
 import { orderScopeFor, setExpectedDeliveryDate } from './routes.ts';
 import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
+import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
 
 /*
  * Phiếu đóng gói (xuất kho):
@@ -264,6 +265,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       // Kho không xem được đơn: chỉ đưa thông tin cần để đóng & giao.
       order: { id: order.id, orderNo: order.orderNo, contractNo: contracts[0]?.contractNo ?? '', legalEntity: contracts[0]?.legalEntity ?? null, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, receiverName: order.receiverName, receiverPhone: order.receiverPhone, email: order.email, address: order.address,
         taxCode: order.taxCode, customerCode: cust?.code ?? '', note: order.note, expectedDeliveryDate: order.expectedDeliveryDate },
+      requiresWarehouseIssue: slip.source==='warehouse'||lines.some(l=>l.sku.trim()),
       canOpenOrder: manage, canSend: manage && slip.status === 'draft', canCancel: manage && (slip.status === 'draft' || slip.status === 'sent'), canConfirm: canConfirm(m, slip.status),
     });
   }, 'business');
@@ -328,9 +330,10 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     const photos = Array.isArray(body.photos) ? body.photos : [];
     if (photos.length < PHOTO_MIN || photos.length > PHOTO_MAX) throw new AppError(400, `Chụp ${PHOTO_MIN}–${PHOTO_MAX} ảnh hàng đã đóng trước khi xác nhận.`);
     for (const p of photos) if (typeof p !== 'string' || p.length > PHOTO_MAX_CHARS || !PHOTO_RE.test(p)) throw new AppError(400, 'Ảnh không hợp lệ hoặc quá lớn. Chụp lại rồi thử lại.');
-    // Nguồn = Kho: bắt buộc chọn kho xuất → ghi phiếu xuất vào sổ kho (Sapo vẫn là nguồn tồn chính, sổ kho để đối chiếu).
+    // NCC/đại lý/điều chuyển chỉ là nguồn bổ sung: mọi hàng có SKU phải thực nhập rồi xuất từ kho thật.
+    const slipLines=await c.env.db.select({sku:packingSlipLines.sku,qty:packingSlipLines.qty}).from(packingSlipLines).where(eq(packingSlipLines.slipId,slip.id));
     let stockWarehouseId: string | null = null;
-    if (slip.source === 'warehouse') {
+    if (slip.source === 'warehouse'||slipLines.some(l=>l.sku.trim())) {
       const [w] = typeof body.warehouseId === 'string' ? await c.env.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, body.warehouseId), eq(warehouses.kind, 'stock'), eq(warehouses.active, true))).limit(1) : [];
       if (!w) throw new AppError(400, 'Chọn kho xuất hàng.');
       if (order.channel === 'pos' && order.shiftId) { const [r] = await c.env.db.select({warehouseId:posRegisters.warehouseId}).from(posShifts).innerJoin(posRegisters,eq(posRegisters.id,posShifts.registerId)).where(eq(posShifts.id,order.shiftId));if(r && r.warehouseId !== w.id) throw new AppError(400,'Đơn POS cần xuất đúng kho của quầy.'); }
@@ -348,18 +351,23 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       }
       const [fresh] = await tx.select({status:salesOrders.status,warehouseId:salesOrders.warehouseId}).from(salesOrders).where(eq(salesOrders.id,order.id)).for('update');
       if (!fresh || ['draft','cancelled'].includes(fresh.status) || fresh.warehouseId !== order.warehouseId) throw new AppError(409,'Đơn hàng vừa thay đổi. Mở lại phiếu trước khi xác nhận.');
-      if(order.channel==='crm'&&slip.source==='store'&&(await tx.select({id:packingSlipLines.id}).from(packingSlipLines).where(and(eq(packingSlipLines.slipId,slip.id),sql`${packingSlipLines.sku}<>''`)).limit(1)).length)throw new AppError(409,'Hàng từ kho/cửa hàng khác: xác nhận điều chuyển về kho xuất rồi lập phiếu nguồn Kho; không bỏ qua bút toán xuất.','TRANSFER_REQUIRED');
-      const soldAtApproval = order.channel === 'crm' && !!fresh.warehouseId && await saleMovesPosted(tx,order.id);
+      const soldAtApproval = order.channel === 'crm' && await saleMovesPosted(tx,order.id);
+      const beforeLegacy=soldAtApproval?(await crmStockFulfilment(tx,[order.id])).get(order.id):undefined;
       await assertPosFlowFulfillable(tx,order.id);
       if (stockWarehouseId) { await lockLedger(tx); await assertWarehousesOpened(tx, [stockWarehouseId]); }
       const done = await tx.update(packingSlips).set({ status: 'packed', packedAt: now, packedBy: m.id, packedNote: text(body.note, 1000), stockWarehouseId, updatedAt: now, revision: sql`${packingSlips.revision} + 1` })
         .where(and(eq(packingSlips.id, slip.id), eq(packingSlips.status, 'sent'))).returning({ id: packingSlips.id });
       if (!done.length) throw new AppError(409, 'Phiếu vừa được người khác xác nhận.');
       await tx.insert(packingSlipPhotos).values((photos as string[]).map(dataUrl => ({ id: crypto.randomUUID(), slipId: slip.id, dataUrl, bytes: Math.floor(dataUrl.length * 3 / 4), createdBy: m.id, createdAt: now })));
-      if (stockWarehouseId && !soldAtApproval) {
+      if (stockWarehouseId) {
         const lines = await tx.select({ sku: packingSlipLines.sku, qty: packingSlipLines.qty }).from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id));
-
-        await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: stockWarehouseId!, qty: -l.qty, kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` })), now);
+        // A legacy approval may have issued only part of the order. Consume exactly its
+        // newly covered quantities; an arbitrary old sales_order move cannot exempt this whole slip.
+        const afterLegacy=soldAtApproval?(await crmStockFulfilment(tx,[order.id])).get(order.id):undefined;
+        const covered=new Map<string,number>();
+        for(const l of afterLegacy?.lines??[])covered.set(l.sku,(covered.get(l.sku)??0)+l.issued-(beforeLegacy?.lines.find(b=>b.lineId===l.lineId)?.issued??0));
+        const grouped=new Map<string,number>();for(const l of lines)grouped.set(l.sku,(grouped.get(l.sku)??0)+l.qty);
+        await postMoves(tx, m.id, [...grouped].map(([sku,qty]) => ({ sku, warehouseId: stockWarehouseId!, qty: -Math.max(0,qty-Math.max(0,covered.get(sku)??0)), kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` })), now);
       }
     });
     const to = slip.sentBy ?? slip.createdBy;

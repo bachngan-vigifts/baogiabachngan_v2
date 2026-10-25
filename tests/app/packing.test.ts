@@ -30,6 +30,8 @@ const photo = 'data:image/jpeg;base64,' + Buffer.from('anh-hang-da-dong').toStri
 test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu (gợi ý thùng + cân nặng); gửi kho → việc nhóm Kho; kho xác nhận kèm 1–3 ảnh', async () => {
   const { db, call, emp, mgr, kho } = await setup();
   await db.insert(products).values({ sku: 'DIA31', name: 'Dĩa 31 cm', unit: 'cái', perCarton: 24, cartonWeight: 12, cartonLength: 60, cartonWidth: 40, cartonHeight: 30, updatedAt: '2026-10-01' });
+  await db.insert(warehouses).values({id:'packing-stock',name:'Kho xuất',kind:'stock'});
+  await postMoves(db,'mgr',[{sku:'DIA31',warehouseId:'packing-stock',qty:20,kind:'opening',refType:'opening',refId:'packing-opening'}]);
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_P1', customer: 'Khách P', vat: 8, rows: [{ name: 'Dĩa 31 cm', sku: 'DIA31', unit: 'cái', qty: 100, price: 100000 }, { name: 'Hộp quà', unit: 'hộp', qty: 10, price: 5000 }] });
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
@@ -89,7 +91,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   assert.equal((await call(`/packing/${sup.id}/confirm`, kho, 'POST', { photos: [] })).status, 400);
   assert.equal((await call(`/packing/${sup.id}/confirm`, kho, 'POST', { photos: [photo, photo, photo, photo] })).status, 400);
   assert.equal((await call(`/packing/${sup.id}/confirm`, kho, 'POST', { photos: ['data:text/html;base64,PHNjcmlwdD4='] })).status, 400);
-  assert.equal((await call(`/packing/${sup.id}/confirm`, kho, 'POST', { photos: [photo, photo], note: 'Đã dán tem' })).status, 200);
+  assert.equal((await call(`/packing/${sup.id}/confirm`, kho, 'POST', { warehouseId:'packing-stock',photos: [photo, photo], note: 'Đã dán tem' })).status, 200);
   const done = (await call(`/packing/${sup.id}`, emp)).data;
   assert.deepEqual([done.slip.status, done.slip.packedByName, done.photos.length, done.canConfirm], ['packed', 'Thủ kho', 2, false]);
   assert.equal((await khoTasks()).length, 0, 'việc đóng gói tự hoàn thành');

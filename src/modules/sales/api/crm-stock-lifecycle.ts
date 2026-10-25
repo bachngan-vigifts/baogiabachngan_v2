@@ -9,12 +9,14 @@ const key=(...parts:(string|null)[])=>JSON.stringify(parts);
 export async function crmStockFulfilment(db:ReadDb,ids:readonly string[]){
  const result=new Map<string,{orderId:string;orderNo:string;warehouseId:string|null;status:string;lines:{lineId:string;sku:string;needed:number;issued:number;missing:number}[];complete:boolean}>();
  if(!ids.length)return result;
- const [orders,lines,packed]=await Promise.all([
-  db.select({id:salesOrders.id,no:salesOrders.orderNo,warehouseId:salesOrders.warehouseId,status:salesOrders.status}).from(salesOrders).where(and(inArray(salesOrders.id,[...ids]),eq(salesOrders.channel,'crm'))),
+ const [orders,lines,packed,plans]=await Promise.all([
+  db.select({id:salesOrders.id,no:salesOrders.orderNo,warehouseId:salesOrders.warehouseId,status:salesOrders.status})
+   .from(salesOrders).where(and(inArray(salesOrders.id,[...ids]),eq(salesOrders.channel,'crm'))),
   db.select({id:salesOrderLines.id,orderId:salesOrderLines.orderId,sku:salesOrderLines.sku,qty:salesOrderLines.qty}).from(salesOrderLines).where(inArray(salesOrderLines.orderId,[...ids])),
   db.select({orderId:packingSlips.orderId,slipId:packingSlips.id,source:packingSlips.source,warehouseId:packingSlips.stockWarehouseId,by:packingSlips.packedBy,at:packingSlips.packedAt,
     lineId:packingSlipLines.orderLineId,sku:packingSlipLines.sku,qty:packingSlipLines.qty}).from(packingSlips).innerJoin(packingSlipLines,eq(packingSlipLines.slipId,packingSlips.id))
    .where(and(inArray(packingSlips.orderId,[...ids]),eq(packingSlips.status,'packed'))).orderBy(packingSlips.id,packingSlipLines.id),
+  db.select({orderId:packingSlips.orderId}).from(packingSlips).where(and(inArray(packingSlips.orderId,[...ids]),sql`${packingSlips.status}<>'cancelled'`)),
  ]);
  const [issues,legacy]=await Promise.all([
   db.select({slipId:packingSlips.id,warehouseId:stockMoves.warehouseId,sku:stockMoves.sku,qty:sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number)})
@@ -32,14 +34,19 @@ export async function crmStockFulfilment(db:ReadDb,ids:readonly string[]){
   for(const p of packed.filter(p=>p.orderId===o.id)){
    const line=p.lineId?byLine.get(p.lineId):undefined;
    if(!line||line.sku!==p.sku||!p.by||!p.at||!(p.qty>0))continue;
-   let valid=p.qty;
-   if(p.source==='warehouse'){
-    if(!p.warehouseId||(o.warehouseId&&p.warehouseId!==o.warehouseId))continue;
-    const own=key(p.slipId,p.warehouseId,p.sku),old=key(o.id,p.warehouseId,p.sku);
-    const used=Math.min(p.qty,issueLeft.get(own)??0);issueLeft.set(own,(issueLeft.get(own)??0)-used);
-    const oldUsed=Math.min(p.qty-used,legacyLeft.get(old)??0);legacyLeft.set(old,(legacyLeft.get(old)??0)-oldUsed);valid=used+oldUsed;
-   }else if(p.source==='store')continue; // Inter-warehouse goods must transfer, then issue from the actual warehouse.
+   // Origin (supplier/agent/store/other) never substitutes a physical warehouse issue.
+   if(!p.warehouseId||(o.warehouseId&&p.warehouseId!==o.warehouseId))continue;
+   const own=key(p.slipId,p.warehouseId,p.sku),old=key(o.id,p.warehouseId,p.sku);
+   const used=Math.min(p.qty,issueLeft.get(own)??0);issueLeft.set(own,(issueLeft.get(own)??0)-used);
+   const oldUsed=Math.min(p.qty-used,legacyLeft.get(old)??0);legacyLeft.set(old,(legacyLeft.get(old)??0)-oldUsed);
+   const valid=used+oldUsed;
    line.issued=Math.min(line.needed,line.issued+valid);line.missing=Math.max(0,line.needed-line.issued);
+  }
+  // Old orders issued directly against sales_order before packing was introduced.
+  // Their real net ledger entries are proof; never post them again or infer a warehouse.
+  if(!plans.some(p=>p.orderId===o.id))for(const line of expected)for(const issue of legacy.filter(i=>i.orderId===o.id&&i.sku===line.sku&&(!o.warehouseId||i.warehouseId===o.warehouseId))){
+   const k=key(o.id,issue.warehouseId,line.sku),take=Math.min(line.missing,legacyLeft.get(k)??0);
+   legacyLeft.set(k,(legacyLeft.get(k)??0)-take);line.issued+=take;line.missing=Math.max(0,line.needed-line.issued);
   }
   result.set(o.id,{orderId:o.id,orderNo:o.no,warehouseId:o.warehouseId,status:o.status,lines:expected,complete:expected.length>0&&expected.every(l=>l.missing<=0.0005)});
  }

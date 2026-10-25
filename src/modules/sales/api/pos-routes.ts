@@ -147,7 +147,6 @@ async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof
   const terminal = webBucket(order.status, order.ghnStatus);
   if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
   if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
-  if (action === 'complete' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã hoàn thành.' : 'Đơn đã huỷ, không hoàn thành được.');
   let fields: Partial<typeof webStoreOrders.$inferInsert>;
   if (action === 'confirm') {
     const address = completeGhnAddress(input);
@@ -157,8 +156,7 @@ async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof
   } else if (action === 'cancel') {
     if (order.ghnOrderCode && !['cancel', 'cancelled'].includes(order.ghnStatus.toLowerCase())) await cancelWebOrderGhn(c.env, order.ghnOrderCode);
     fields = { status: 'cancelled', ...(order.ghnOrderCode ? { ghnStatus: 'cancel' } : {}), updatedAt: posNow() };
-  } else if (action === 'complete') fields = { status: 'completed', updatedAt: posNow() };
-  else fields = {};
+  } else fields = {};
   if (Object.keys(fields).length && action !== 'confirm') await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
   const next = { ...order, ...fields };
   await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
@@ -368,7 +366,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           const paid = payment ? (payment.paidAt ? o.total : 0) : null;
           return ({ ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
-          packingStatus: '', deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
+          packingStatus: '', warehouseReconciliationRequired:true, deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && (!!c.env.webOrderAction?.minhlongUrl || !!c.env.ghnMlToken),
@@ -470,6 +468,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       throw new AppError(503, 'CRM chưa có danh mục địa chỉ GHN này.');
     }
     if (action === 'complete' && order.ghnOrderCode) throw new AppError(409,'Đơn có vận đơn GHN chỉ hoàn thành theo trạng thái giao thành công của GHN.','GHN_STATUS_MANAGED');
+    // Website mirrors have no verified CRM warehouse issue link. Carrier truth remains
+    // authoritative, but a manual completion must never fabricate warehouse completion.
+    if(action==='complete')throw new AppError(409,'Đơn website chưa có chứng từ xuất kho đã đối soát trong CRM. Hoàn tất nhập/xuất kho trước khi xác nhận hoàn thành.','WAREHOUSE_EXPORT_REQUIRED');
     if (minhLongDirect(c.env, order)) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if(action==='confirm'&&order.ghnOrderCode){
       if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_reconcile_failed');

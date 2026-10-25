@@ -1009,12 +1009,12 @@ test('Giảm giá trên đơn (không còn ô mã, #264): gõ số tiền thì g
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
 
-test('Thẻ "Đơn web": số đỏ nhấp nháy khi có đơn cần xử lý, bấm lọc status=web; đơn web có Hoàn thành và Huỷ bắt buộc lý do', async () => {
+test('Thẻ "Đơn web": lọc đơn, chặn nút hoàn thành khi kho chưa đối soát; huỷ bắt buộc lý do', async () => {
   const prevDoc = globalThis.document, prevWin = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
     const root = new Element('section'), calls: { path: string; body?: any }[] = [];
-    const webOrder = { id: 'w1', orderNo: 'WEB900', customerName: 'Khách web', total: 500000, external: true, source: 'lock', bucket: 'pending', paymentStatus: 'unknown', actionsAvailable: true, lines: '[]', currency: 'VND' };
+    const webOrder = { id: 'w1', orderNo: 'WEB900', customerName: 'Khách web', total: 500000, external: true, source: 'lock', bucket: 'pending', paymentStatus: 'unknown', actionsAvailable: true, warehouseReconciliationRequired:true, lines: '[]', currency: 'VND' };
     const api = async (path: string, _m = 'GET', body?: any) => {
       calls.push({ path, body });
       if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy', pricePolicyId: 'vat' }], current: null, shifts: [], templates: [], policies: [] };
@@ -1033,7 +1033,8 @@ test('Thẻ "Đơn web": số đỏ nhấp nháy khi có đơn cần xử lý, b
     assert.equal(new URLSearchParams(calls.filter(c => c.path.startsWith('/pos/orders')).at(-1)!.path.split('?')[1]).get('status'), 'web');
     await root.querySelectorAll('div').find(b => b.className === 'pos-order-row')!.fire('click');
     let dlg = doc.body.children.at(-1)!;
-    assert.ok(dlg.querySelectorAll('button').some(b => b.textContent === 'Hoàn thành'));
+    assert.ok(!dlg.querySelectorAll('button').some(b => b.textContent === 'Hoàn thành'));
+    assert.match(dlg.textContent,/cần đối soát chứng từ nhập\/xuất/);
     await dlg.querySelectorAll('button').find(b => b.textContent === 'Huỷ đơn')!.fire('click');
     dlg = doc.body.children.at(-1)!;
     const form = dlg.querySelectorAll('form')[0]!, reason = dlg.querySelectorAll('textarea')[0]!;
