@@ -2,6 +2,7 @@ import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } fro
 import { downloadExcel } from './sheet-export.js';
 import { initPurchaseIncoming } from './purchase-incoming.js';
 import { choosePurchaseMode, createRestockPicker } from './purchase-create-mode.js';
+import { openEarlyRequestFile } from './purchase-early-file.js';
 import { initRestockPage } from './purchase-restock.js';
 /**
  * ĐƠN MUA HÀNG NCC (#/purchases) – xem docs/NCC-PAGE.md mục "Đơn mua hàng".
@@ -107,9 +108,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     try { await fn(); } finally { delete b.dataset.busy; b.classList.remove('is-busy'); b.removeAttribute('aria-busy'); } };
   const payBtn = btn('💰 Công nợ NCC', 'btn secondary'); payBtn.addEventListener('click', guarded(payBtn, () => payablesDialog())); payBtn.hidden = true;
   importBtn.addEventListener('click', guarded(importBtn, () => importForm()));
-  const headTools = el('div', 'row-gap head-actions'); headTools.append(payBtn, importBtn, add);
+  const earlyFile = btn('Xin hàng trước bằng file', 'btn secondary pur-early-file'); earlyFile.hidden = true;
+  earlyFile.addEventListener('click', guarded(earlyFile, async () => { const o = await options(); if (!o.canRequestEarly) return; openEarlyRequestFile({api, loadXlsx, suppliers:o.suppliers, today:today(), go}); }));
+  const headTools = el('div', 'row-gap head-actions'); headTools.append(payBtn, importBtn, earlyFile, add);
   head.append(titles, headTools);
-  options().then(o => { importBtn.hidden = !o.isManager || kho(); payBtn.hidden = !o.canSeePrices || kho(); }).catch(() => {});
+  options().then(o => { importBtn.hidden = !o.isManager || kho(); earlyFile.hidden = !o.canRequestEarly || kho(); payBtn.hidden = !o.canSeePrices || kho(); }).catch(() => {});
   const panel = el('div', 'panel'), bar = el('div', 'toolbar');
   const search = input('search', '', { placeholder: 'Tìm số đơn, số đơn NCC, NCC, mã hàng, số báo giá / HĐKT, khách…' }); search.setAttribute('aria-label', 'Tìm đơn mua');
   const label = el('label', 'search'); label.append(search);

@@ -41,6 +41,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
           if(!portal) {const order=el('a','',a.ticketNumber);order.href='#/purchases/'+encodeURIComponent(a.orderId)+'?mode=incoming';p.append(order);}
           else p.append(el('span','',a.ticketNumber));
           p.append(el('span','',` · ${a.supplierName} · ${number(a.quantity)} · Hẹn ${date(a.due)} · ${labels[a.status]}`));
+          if(a.supplierOrderNo)p.append(el('span','',' · Số đơn NCC: '+a.supplierOrderNo));
           if(a.respondedAt)p.append(el('span','',` · ${time(a.respondedAt)}`));if(a.responseNote)p.append(el('span','',' · '+a.responseNote));box.append(p);
         }
         if(portal&&canRespond&&line.status==='pending') {
@@ -96,16 +97,18 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const dateInput=el('input');dateInput.type='date';dateInput.value=initial.pickupDate||'';dateInput.setAttribute('aria-label','Ngày lấy');
     const label=el('label','','Ngày lấy');label.append(dateInput);
     const hint=el('p','muted small','Lưu nháp để chỉnh sửa. NCC chỉ thấy phiếu sau khi anh/chị bấm Gửi NCC.');
-    const table=el('table','data-table'),head=el('thead'),tr=el('tr');for(const t of ['Mã hàng','Sản phẩm','SL cần lấy trước',''])tr.append(el('th','',t));head.append(tr);
+    const table=el('table','data-table'),head=el('thead'),tr=el('tr');for(const t of ['Mã hàng','Sản phẩm','Đơn lấy hàng / Số đơn NCC','SL cần lấy trước',''])tr.append(el('th','',t));head.append(tr);
     const rows=el('tbody'),fields=[];table.append(head,rows);const wrap=el('div','table-wrap');wrap.append(table);
     const error=el('p','error incoming-validation');error.hidden=true;error.setAttribute('role','alert');
     const changed=()=>{dirty=true;sync();};
-    for(const line of initial.lines) {
-      const row=el('tr'),qty=el('input');qty.type='number';qty.min='1';qty.step='1';qty.value=line.quantity;qty.setAttribute('aria-label','Số lượng nháp mã '+line.sku);
+    const pinned=JSON.parse(initial.scope?.orderSources||'{}');
+    const editLines=initial.lines.flatMap(line=>pinned[line.sku]?.length?pinned[line.sku].map(source=>({...line,quantity:source.quantity,source})):[line]);
+    for(const line of editLines) {
+      const row=el('tr'),qty=el('input');qty.type='number';qty.min='1';qty.step='1';qty.value=line.quantity;qty.setAttribute('aria-label','Số lượng nháp mã '+line.sku+(line.source?' · '+line.source.orderNo:''));
       const td=el('td');td.append(qty);const remove=el('td');let removed=false;
       remove.append(btn('Bỏ mã '+line.sku,()=>{removed=true;row.remove();changed();}));
-      row.append(el('td','',line.sku),el('td','',line.name||''),td,remove);rows.append(row);
-      fields.push({sku:line.sku,qty,removed:()=>removed});qty.addEventListener('input',changed);
+      row.append(el('td','',line.sku),el('td','',line.name||''),el('td','',line.source?line.source.orderNo+(line.source.supplierOrderNo?' · NCC: '+line.source.supplierOrderNo:''):'Tự phân bổ'),td,remove);rows.append(row);
+      fields.push({sku:line.sku,source:line.source,qty,removed:()=>removed});qty.addEventListener('input',changed);
     }
     const save=btn('Lưu nháp',()=>saveDraft(),'btn primary'),send=btn('Gửi NCC',()=>submit(),'btn primary'),state=el('span','muted small');
     const back=btn('Đóng',()=>{if(!busy)dialog.close();});foot.append(state,back,save,send);body.append(label,hint,wrap,error);form.append(header,body,foot);dialog.append(form);
@@ -113,8 +116,16 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     modal.addEventListener('cancel',e=>{if(busy)e.preventDefault();});modal.addEventListener('close',()=>modal.remove(),{once:true});
     function sync(){save.disabled=busy;send.disabled=busy||!draft||dirty||!dateInput.value;send.title=!dateInput.value?'Nhập ngày lấy và lưu nháp trước khi gửi':dirty?'Lưu nháp trước khi gửi':'';state.textContent=draft?`Đã lưu nháp · phiên bản ${draft.revision}`:'Chưa lưu';}
     function fail(message){error.textContent=message;error.hidden=!message;}
-    function values(){const items=fields.filter(f=>!f.removed()).map(f=>({sku:f.sku,quantity:Number(f.qty.value)}));
-      if(!items.length||items.some(l=>!Number.isSafeInteger(l.quantity)||l.quantity<=0))throw Error('Chọn ít nhất một mã, số lượng phải là số nguyên dương.');return items;}
+    function values(){
+      const groups=new Map();
+      for(const f of fields.filter(f=>!f.removed())){
+        const quantity=Number(f.qty.value);if(!Number.isSafeInteger(quantity)||quantity<=0)throw Error('Số lượng phải là số nguyên dương.');
+        const line=groups.get(f.sku)||{sku:f.sku,quantity:0,...(f.source?{sourceOrders:[]}:{})};line.quantity+=quantity;
+        if(!Number.isSafeInteger(line.quantity))throw Error('Tổng số lượng quá lớn.');
+        if(f.source)line.sourceOrders.push({...f.source,quantity});groups.set(f.sku,line);
+      }
+      if(!groups.size)throw Error('Chọn ít nhất một mã.');return [...groups.values()];
+    }
     async function saveDraft(){if(busy)return;fail('');let items;try{items=values();}catch(e){fail(e.message);return;}
       busy=true;sync();
       try {

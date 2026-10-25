@@ -179,3 +179,7 @@ Sale Admin được xem giá và dùng PDF/gửi email ngay trên đơn mua đã
 - Thanh dưới cùng luôn hiện số mã / tổng SL và **Tạo đơn nháp**. Danh sách tự lưu nháp trên máy (mở lại trang tiếp tục; tạo đơn xong thì xoá nháp).
 - Sửa kèm: cột "Tồn kho" khi lập đơn theo chứng từ trước đây luôn lấy số đồng bộ Sapo – nay đọc như trang Sản phẩm (sổ kho CRM với kho đã chốt đầu kỳ).
 - Test: `tests/app/purchase-restock.test.ts`.
+
+### Xin hàng trước bằng file
+
+Manager/Sale Admin dùng nút **Xin hàng trước bằng file** tại đầu trang Đơn mua NCC: tải mẫu Excel → chọn NCC/ngày lấy → chọn file → xem trước → lưu phiếu nháp → mở phiếu để Gửi NCC. Dùng luồng xin lấy trước hiện có, không tự tạo phiếu nhận/cộng kho. Xem [hướng dẫn và kiểm thử](PURCHASE-EARLY-FILE.md).
