@@ -61,7 +61,7 @@ import {
 } from './pos-store.ts';
 import { autoCreateGhnForOrder } from './pos-ghn-create.ts';
 import { cancelWebOrderGhn, createWebOrderGhn, minhLongDirect, suggestedWebCod } from './web-order-ghn.ts';
-import { GHN_FAILED, webGhnOrderStatus } from '../domain/ghn-status.ts';
+import { GHN_FAILED, GHN_WAITING, webGhnOrderStatus } from '../domain/ghn-status.ts';
 import { readWebBridgeResult, validWebGhnCode } from './web-order-bridge-result.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
@@ -130,7 +130,7 @@ const webBucket = (status: string, ghnStatus = '') => {
   const g = ghnStatus.toLowerCase();
   if (g === 'delivered') return 'completed';
   if (GHN_FAILED.has(g)) return 'cancelled';
-  if (['ready_to_pick', 'picking', 'money_collect_picking', 'picked', 'storing', 'transporting', 'sorting', 'delivering', 'delivery_fail', 'delivery_failed', 'exception'].includes(g)) return 'waiting_delivery';
+  if (GHN_WAITING.has(g)) return 'waiting_delivery';
   const s = status.toLowerCase();
   if (['cancelled', 'refunded', 'failed', 'trash'].includes(s)) return 'cancelled';
   if (['completed'].includes(s)) return 'completed';

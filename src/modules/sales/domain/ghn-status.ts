@@ -1,5 +1,5 @@
 /** Carrier observations take precedence over website/manual shipping labels. */
-export const GHN_WAITING = new Set(['ready_to_pick', 'picking', 'money_collect_picking', 'picked', 'storing', 'transporting', 'sorting', 'delivering', 'delivery_fail', 'delivery_failed', 'exception']);
+export const GHN_WAITING = new Set(['ready_to_pick', 'picking', 'money_collect_picking', 'picked', 'storing', 'transporting', 'sorting', 'delivering', 'money_collect_delivering', 'delivery_fail', 'delivery_failed', 'exception']);
 export const GHN_FAILED = new Set(['cancel', 'return', 'returned', 'returning', 'return_transporting', 'return_sorting', 'waiting_to_return', 'return_fail', 'damage', 'lost']);
 export function webGhnOrderStatus(status: string, fallback: string) {
   const carrier = status.trim().toLowerCase();
