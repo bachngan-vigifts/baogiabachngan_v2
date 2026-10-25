@@ -17,6 +17,8 @@ export const bundleOrderNotes = () => bundle('src/modules/sales/domain/order-not
 export const POS_CUSTOMER_OUT = join(root, 'trial-ui', 'pos-customer.js');
 export const bundlePosCustomer = () => bundle('src/modules/sales/domain/pos-customer.ts');
 export const PRODUCT_SEARCH_OUT = join(root, 'trial-ui', 'product-search.js');
+export const EARLY_ORDER_SOURCES_OUT = join(root, 'trial-ui', 'early-order-sources.js');
+export const bundleEarlyOrderSources = () => bundle('src/modules/suppliers/domain/early-order-sources.ts');
 
 function bundle(entry: string): string {
   const result = buildSync({
@@ -29,7 +31,7 @@ export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-mat
 export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  for (const [out, code] of [[DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()]] as const) {
+  for (const [out, code] of [[DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
     if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
     console.log('Đã ghi', out);
   }

@@ -12,6 +12,7 @@ import { earlyReceiptAvailability, earlyReceiptContext } from './early-receiving
 import { canUsePurchasing, canReceive, canSendEarlyRequest } from '../domain/purchasing.ts';
 import { incomingBySku } from './incoming-by-sku.ts';
 import { isIsoDate } from '../domain/quantity.ts';
+import {resolveEarlyOrderSources,EarlySourceError} from '../domain/early-order-sources.ts';
 import type { Db, Member } from './purchase-store.ts';
 type Ctx = RouteContext<StaffEnv>;
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -36,10 +37,12 @@ function cleanSources(raw:unknown,quantity:number,sku:string):OrderSource[]|unde
   const seen=new Set<string>();
   const sources=raw.map((entry:unknown)=>{
     const r=entry&&typeof entry==='object'?entry as Record<string,unknown>:{};
-    if(typeof r.orderNo!=='string'||!r.orderNo.trim()||r.orderNo.length>200||r.supplierOrderNo!==undefined&&(typeof r.supplierOrderNo!=='string'||r.supplierOrderNo.length>200))fail(400,`${sku}: số đơn mua / số đơn NCC không hợp lệ.`);
+    if(r.orderNo!==undefined&&(typeof r.orderNo!=='string'||r.orderNo.length>200)||r.supplierOrderNo!==undefined&&(typeof r.supplierOrderNo!=='string'||r.supplierOrderNo.length>200))fail(400,`${sku}: số đơn mua CRM / số đơn NCC không hợp lệ.`);
     if(typeof r.quantity!=='number'||!Number.isSafeInteger(r.quantity)||r.quantity<=0)fail(400,`${sku}: số lượng theo đơn phải là số nguyên dương.`);
-    const orderNo=r.orderNo.trim(),key=sourceKey(orderNo);if(seen.has(key))fail(400,`${sku}: nguồn đơn mua bị lặp.`);seen.add(key);
-    return {orderNo,supplierOrderNo:typeof r.supplierOrderNo==='string'?r.supplierOrderNo.trim():'',quantity:r.quantity};
+    const orderNo=typeof r.orderNo==='string'?r.orderNo.trim():'',supplierOrderNo=typeof r.supplierOrderNo==='string'?r.supplierOrderNo.trim():'';
+    const key=orderNo?'crm:'+sourceKey(orderNo):supplierOrderNo?'supplier:'+sourceKey(supplierOrderNo):'auto';
+    if(seen.has(key))fail(400,`${sku}: nguồn đơn mua bị lặp.`);seen.add(key);
+    return {orderNo,supplierOrderNo,quantity:r.quantity};
   }).sort((a,b)=>sourceKey(a.orderNo).localeCompare(sourceKey(b.orderNo)));
   if(sources.reduce((sum,r)=>sum+r.quantity,0)!==quantity)fail(400,`${sku}: tổng số lượng theo đơn không khớp số lượng xin.`);
   return sources;
@@ -109,25 +112,23 @@ async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanIn
   const oldLines=await tx.select({id:lines.id}).from(lines).where(eq(lines.requestId,id));
   if(oldLines.length) await tx.delete(allocations).where(inArray(allocations.requestLineId,oldLines.map(l=>l.id)));
   await tx.delete(lines).where(eq(lines.requestId,id));
+  const resolvedSources:Record<string,OrderSource[]>={};
   for(const [i,want] of input.selected.entries()) {
     const row=current.rows.find(r=>r.sku===want.sku),allOrders=row?.orders.filter(o=>orderIds.includes(o.id))||[];
-    const groups=want.sourceOrders?.map(source=>({quantity:source.quantity,orders:allOrders.filter(o=>sourceKey(o.ticketNumber)===sourceKey(source.orderNo)&&(!source.supplierOrderNo||sourceKey(o.internalNo||'')===sourceKey(source.supplierOrderNo))),label:source.orderNo}))
-      ?? [{quantity:want.quantity,orders:allOrders,label:'phạm vi đã chọn'}];
-    const units=new Set(groups.flatMap(g=>g.orders.map(o=>o.unit.trim())));
-    if(units.size>1)fail(409,`${want.sku}: đơn vị tính không thống nhất, cần kiểm tra lại đơn mua.`);
-    for(const group of groups){
-      const available=group.orders.reduce((sum,o)=>sum+Math.floor(o.quantity),0);
-      if(!row||!group.orders.length||group.quantity>available)fail(409,`${want.sku}: chỉ còn ${available.toLocaleString('vi-VN')} đang về tại ${group.label}. Không chuyển sang đơn khác.`,'EARLY_QUANTITY_EXCEEDED');
+    let resolved;
+    try{resolved=resolveEarlyOrderSources(allOrders,want.sourceOrders??[{orderNo:'',supplierOrderNo:'',quantity:want.quantity}]);}
+    catch(e){if(e instanceof EarlySourceError)fail(409,`${want.sku}: ${e.message}`,e.code);throw e;}
+    if(want.sourceOrders)resolvedSources[want.sku]=resolved.sources;
+    const lineId=crypto.randomUUID();await tx.insert(lines).values({id:lineId,requestId:id,lineNo:i+1,sku:row!.sku,name:row!.name,unit:resolved.unit,quantity:want.quantity});
+    for(const {order,quantity} of resolved.allocations){
+      if(!order.supplierId)fail(409,`${want.sku}: đơn mua chưa có NCC.`);
+      await tx.insert(allocations).values({id:crypto.randomUUID(),requestLineId:lineId,purchaseLineId:order.lineId,supplierId:order.supplierId,quantity,status:'pending'});
     }
-    const lineId=crypto.randomUUID();await tx.insert(lines).values({id:lineId,requestId:id,lineNo:i+1,sku:row!.sku,name:row!.name,unit:[...units][0]!,quantity:want.quantity});
-    for(const group of groups){
-      let left=group.quantity;
-      for(const order of group.orders){
-        if(!left)break;const quantity=Math.min(left,Math.floor(order.quantity));if(!quantity)continue;
-        if(!order.supplierId)fail(409,`${want.sku}: đơn mua chưa có NCC.`);
-        await tx.insert(allocations).values({id:crypto.randomUUID(),requestLineId:lineId,purchaseLineId:order.lineId,supplierId:order.supplierId,quantity,status:'pending'});left-=quantity;
-      }
-    }
+  }
+  if(Object.keys(resolvedSources).length){
+    if(Object.values(resolvedSources).reduce((n,s)=>n+s.length,0)>300)fail(400,'Phân bổ vượt 300 nguồn đơn mua; tách thành phiếu nhỏ hơn.');
+    input.scope.orderSources=JSON.stringify(resolvedSources);
+    await tx.update(requests).set({scope:JSON.stringify(input.scope)}).where(eq(requests.id,id));
   }
 }
 async function audit(tx:Tx,m:Member,id:string,action:string,data:Record<string,unknown>) {

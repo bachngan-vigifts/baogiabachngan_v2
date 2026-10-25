@@ -48,9 +48,20 @@ test('file → existing draft API: correct permissions, supplier scope, no early
  assert.equal((await call('/purchase-early-requests',c.emp,'POST',body)).status,403);
 });
 
-test('file: same SKU can use two explicit orders; order number required, supplier reference optional',()=>{
+test('file: clear headers, optional CRM/NCC references and old template compatibility',()=>{
  const parsed=parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'PO-a1','NCC-001'],['031106000','Ly',3,'PO-a2','']]);
  assert.deepEqual(parsed.errors,[]);assert.deepEqual(earlyFileRequestLines(parsed.lines),[{sku:'031106000',quantity:5,sourceOrders:[{orderNo:'PO-a1',supplierOrderNo:'NCC-001',quantity:2},{orderNo:'PO-a2',supplierOrderNo:'',quantity:3}]}]);
- assert.ok(parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'','']]).errors.length);
- assert.ok(parseEarlyRequestSheet([['Mã hàng','Số lượng xin trước'],['031106000',2]]).errors.length);
+ assert.deepEqual(parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'','']]).errors,[]);
+ assert.deepEqual(parseEarlyRequestSheet([['Mã hàng','Số lượng xin trước'],['031106000',2]]).errors,[]);
+ const supplierOnly=parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'','000123'],['031106000','Ly',3,'','000124']]);
+ assert.deepEqual(supplierOnly.errors,[]);assert.equal(supplierOnly.lines[0].supplierOrderNo,'000123');
+ assert.ok(parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'','000123'],['031106000','Ly',3,'','000123']]).errors.length);
+ const old=parseEarlyRequestSheet([['Mã hàng','Tên hàng','Số lượng xin trước','Lấy ở số đơn hàng nào','Số đơn NCC (không bắt buộc)'],['031106000','Ly',2,'','000123']]);
+ assert.deepEqual(old.errors,[]);assert.equal(old.lines[0].supplierOrderNo,'000123');
+ const template=earlyRequestTemplate(X),sheet=template.Sheets[template.SheetNames[0]];
+ assert.equal(sheet.D1.v,'Số đơn mua CRM (DMH)');assert.equal(sheet.E1.v,'Số đơn của NCC');
+ assert.equal(sheet.D2.z,'@');assert.equal(sheet.E2.z,'@');
+ sheet.A2={t:'s',v:'031106000',z:'@'};sheet.C2={t:'n',v:2};sheet.E2={t:'s',v:'000123',z:'@'};
+ const roundtrip=readEarlyRequestWorkbook(X,X.read(X.write(template,{type:'buffer',bookType:'xlsx'}),{type:'buffer'}));
+ assert.deepEqual(roundtrip.errors,[]);assert.equal(roundtrip.lines[0].orderNo,'');assert.equal(roundtrip.lines[0].supplierOrderNo,'000123');
 });
