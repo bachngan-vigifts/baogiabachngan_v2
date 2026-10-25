@@ -22,6 +22,8 @@ export function installMobileActions(){
   }
  }
  function sync(r){
+  for(const item of r.items)if(item.matches('[data-mobile-primary],[data-mobile-inline],.btn-add')){const slot=r.slots.get(item);if(slot?.isConnected)slot.after(item);r.slots.delete(item);slot?.remove();}
+  r.items=r.items.filter(n=>!n.matches('[data-mobile-primary],[data-mobile-inline],.btn-add'));
   r.items=r.items.filter(n=>n.isConnected&&(r.list.contains(n)||n.parentElement===r.parent));
   for(const [item,slot]of r.slots)if(!r.items.includes(item)){slot.remove();r.slots.delete(item);}
   for(const item of r.items)labelIcons(item);
@@ -40,7 +42,7 @@ export function installMobileActions(){
  function enhance(parent){
   if(parent.closest(skip))return;
   // Filters and editable values stay inline. Group only their adjacent action controls.
-  const items=[...parent.children].filter(n=>n.matches(controls)&&!n.matches('.mobile-action-trigger,.chip,[role="tab"],[role="radio"]'));
+  const items=[...parent.children].filter(n=>n.matches(controls)&&!n.matches('.mobile-action-trigger,.crm-filter-trigger,.btn-add,[data-mobile-primary],[data-mobile-inline],.chip,[role="tab"],[role="radio"]'));
   if(!items.length)return;
   const existing=records.get(parent);
   if(existing){for(const item of items){if(existing.slots.has(item))continue;const slot=document.createComment('action position');item.before(slot);existing.slots.set(item,slot);labelIcons(item);existing.list.append(item);existing.items.push(item);}return;}
@@ -83,7 +85,7 @@ export function installMobileActions(){
   for(const r of records.values())sync(r);
  }
  function schedule(){if(!frame)frame=requestAnimationFrame(scan);}
- new MutationObserver(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style','disabled']});
+ new MutationObserver(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style','disabled','data-mobile-primary','data-mobile-inline']});
  media.addEventListener('change',schedule);
  document.addEventListener('close',e=>{if(e.target instanceof HTMLDialogElement)for(const r of records.values())if(e.target.contains(r.list))close(r);},true);
  window.addEventListener('hashchange',()=>{for(const r of records.values())close(r);});

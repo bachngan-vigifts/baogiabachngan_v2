@@ -1,4 +1,5 @@
 import { bindForgotPassword } from './forgot-password.js';
+import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
 import { openMobileQuoteCapture } from './mobile-quote-capture.js';
 import { createApprovalFeed } from './approval-feed.js';
@@ -461,6 +462,7 @@ $('#logout').addEventListener('click', async () => {
   toggleAccountMenu(false);
   if (editor.dirty && !await confirmBox('Báo giá đang sửa chưa được lưu. Vẫn đăng xuất?', { ok: 'Đăng xuất' })) return;
   editor.dirty = false;
+  quoteDeviceDraft.logout();
   try { await api('/logout', 'POST', {}); } catch { /* vẫn thoát */ }
   state.quotes = state.customers = state.members = state.products = null;
   showAuth(); $('#auth-note').textContent = 'Đã đăng xuất.';
@@ -783,6 +785,7 @@ function renderQuotes() {
   $('#quote-owner').hidden = !state.quoteMeta?.hasOthers;
   const list = state.quotes;
   renderStats(); quotePager.render(state.quoteMeta?.total ?? list.length);
+  $('#view-quotes').dataset.resultCount=String(state.quoteMeta?.total??list.length);
   tbody.innerHTML = list.map(q => `
     <tr class="clickable" data-open="${esc(q.id)}">
       <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : q.approvalStatus === 'draft' ? '<span class="pill">Nháp</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
@@ -841,7 +844,7 @@ function setMobileQuoteStep(step, scroll = true) {
   });
   $('#quote-step-back').disabled = index === 0;
   $('#quote-step-next').hidden = index === MOBILE_QUOTE_STEPS.length - 1;
-  $('#save-quote-m').hidden = index !== MOBILE_QUOTE_STEPS.length - 1;
+  $('#save-quote-m').hidden = false;
   $('#m-step-label').textContent = `Bước ${index + 1}/3 · ${['Thông tin', 'Sản phẩm', 'Kiểm tra'][index]}`;
   if (scroll && matchMedia('(max-width: 850px)').matches) $('#view-editor').scrollIntoView({ block: 'start' });
 }
@@ -1049,8 +1052,10 @@ function fillEditor(id, revision, data, meta = {}) {
   refreshQuoteDocument(id); refreshQuoteHold(id);
   updateQuoteActions();
   fillMissingImages();
+  quoteDeviceDraft.offer();
 }
-function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; updateQuoteActions(); } }
+const quoteDeviceDraft=bindQuoteDeviceDraft({form:qf,user:()=>state.user?.id,id:()=>editor.id,revision:()=>editor.revision,dirty:()=>editor.dirty,readData:collectQuote,restore:data=>{fillEditor(editor.id,editor.revision,data);markDirty();}});
+function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; updateQuoteActions(); } quoteDeviceDraft.schedule(); }
 qf.addEventListener('input', e => {
   if (e.target.name === 'notes') editor.base.paymentNotesManual = true;
   markDirty();
@@ -1873,7 +1878,7 @@ function collectQuote() {
 }
 function validateQuote(data) {
   const problems = [];
-  const mark = (name, bad) => { field(name).classList.toggle('invalid', bad); if (bad) problems.push(name); };
+  const mark = (name, bad) => { field(name).classList.toggle('invalid', bad);field(name).dispatchEvent?.(new CustomEvent('crm-field-validity',{bubbles:true,detail:{invalid:bad}})); if (bad) problems.push(name); };
   mark('quoteNo', !data.quoteNo); mark('customer', !data.customer); mark('date', !data.date);
   mark('vat', !(data.vat >= 0 && data.vat <= 100));
   if (problems.length) return 'Vui lòng điền đủ các ô được đánh dấu đỏ.';
@@ -1894,7 +1899,7 @@ async function saveQuote() {
     setMobileQuoteStep(panel?.dataset.quotePanel || (data.rows.length ? 'products' : 'products'));
     err.textContent = problem; toast(problem, 'err'); invalid?.focus(); return;
   }
-  const saveSequence = editorLoadSequence, saveHash = location.hash, wasNew = !editor.id;
+  const saveSequence = editorLoadSequence, saveHash = location.hash, wasNew = !editor.id, deviceDraftId=editor.id;
   saving = true; $('#save-quote').disabled = $('#save-quote-m').disabled = true;
   try {
     const saved = editor.id
@@ -1903,6 +1908,7 @@ async function saveQuote() {
     if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast('Đã lưu ' + saved.data.quoteNo); loadQuotes(); return; }
     const keepApproval = !wasNew && saved.approvalStatus === 'approved' ? { approvedAt: editor.approval?.at, approvedByName: editor.approval?.by } : {};
     fillEditor(saved.id, saved.revision, saved.data, { ...keepApproval, approvalStatus: saved.approvalStatus });
+    quoteDeviceDraft.saved(deviceDraftId);
     if (wasNew) { suppressHash = true; location.hash = '#/quotes/' + encodeURIComponent(saved.id); currentHash = location.hash; }
     if (saved.approvalRevoked) toast('Đã lưu. Báo giá chuyển về "Nháp" – bấm "Gửi duyệt" để Manager duyệt lại.');
     else if (saved.approvalStatus === 'pending') toast((wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · đang đợi Manager duyệt.');
@@ -2735,6 +2741,7 @@ function renderCustomers() {
   if (!state.customers) { tbody.innerHTML = skeleton(7); return; }
   const list = state.customers;
   $('#customer-count').textContent = `${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
+  $('#view-customers').dataset.resultCount=String(state.customerTotal);
   customerPager?.render(state.customerTotal);
   tbody.innerHTML = list.map(c => `
     <tr class="clickable" data-href="#/customers/${esc(encodeURIComponent(c.id))}">
@@ -3041,10 +3048,12 @@ const docNo = (d = sales.detail) => d?.contract?.contractNo || d?.order?.orderNo
 const isContractDoc = (d = sales.detail) => !!d?.contract;
 const debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 function fillList(key, rows, emptyText) {
+  const view=$('#view-'+key);if(view)view.dataset.loadState='ready';
   $(`#${key}-list`).innerHTML = rows.join('');
   $(`#${key}-empty`).hidden = rows.length > 0; $(`#${key}-empty-text`).textContent = emptyText;
 }
-const listError = (key, e) => { $(`#${key}-list`).innerHTML = ''; $(`#${key}-empty`).hidden = false; $(`#${key}-empty-text`).textContent = e.message; };
+const listError = (key, e) => { const view=$('#view-'+key);if(view)view.dataset.loadState='error';$(`#${key}-list`).innerHTML = ''; $(`#${key}-empty`).hidden = false; $(`#${key}-empty-text`).textContent = e.message; };
+window.addEventListener('crm-reload-current',e=>{if(!state.user)return;const reload={quotes:loadQuotes,orders:loadOrders,contracts:loadContracts,customers:loadCustomers,tasks:()=>tasksView().load(),care:()=>careView().load()}[e.detail?.view];reload?.();});
 
 const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
 /** Nút in nhanh phiếu đóng gói / phiếu giao hàng trên dòng đơn / HĐKT (đơn đã xác nhận, chưa huỷ). */
@@ -3075,6 +3084,7 @@ async function loadOrders() {
     const d = await api('/orders?' + ordersQuery());
     if (req !== ordersReq) return;
     ordersData = d;
+    $('#view-orders').dataset.resultCount=String(d.total??d.orders.length);
     fillOrderFilter('#orders-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
     fillOrderFilter('#orders-branch', 'Tất cả chi nhánh', d.filterOptions?.branches);
     invoiceCount('orders', d.invoicePending);
@@ -3108,6 +3118,7 @@ async function loadContracts() {
     const d = await api('/contracts?' + p);
     invoiceCount('contracts', d.invoicePending);
     if (req !== contractsReq) return;
+    $('#view-contracts').dataset.resultCount=String(d.total??d.contracts.length);
     fillOrderFilter('#contracts-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
     salesListSummary('contracts', d.summary);
     contractsPager.render(d.total ?? d.contracts.length);

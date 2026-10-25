@@ -70,7 +70,7 @@ try{for(const width of [360,390,430,1280]){
   });assert.ok(checkedForms>=20,'all static CRM forms remain operable: '+checkedForms);
   // Existing quote custom menu must not hide the shared trigger or primary actions.
   await page.evaluate(()=>showView('view-editor'));await openGroup(page,'#view-editor .quote-actions');assert.equal(await page.locator('#save-quote').isVisible(),true);await page.keyboard.press('Escape');
-  await page.evaluate(()=>showView('view-customers'));assert.equal(await page.locator('#new-customer').isVisible(),false);await openGroup(page,'#view-customers .page-head');assert.equal(await page.locator('#new-customer').isVisible(),true);await page.keyboard.press('Escape');
+  await page.evaluate(()=>showView('view-customers'));assert.equal(await page.locator('#new-customer').isVisible(),true,'create action stays visible');
   await page.evaluate(()=>showView('view-products'));await openGroup(page,'#product-actions');const [chooser]=await Promise.all([page.waitForEvent('filechooser'),page.locator('#catalog-import-label').click()]);await chooser.setFiles({name:'catalog.json',mimeType:'application/json',buffer:Buffer.from('{}')});await page.waitForFunction(()=>!document.querySelector(':popover-open'));
   // Real purchasing module, dynamic dialog, real template file download.
   await page.evaluate(()=>showView('view-purchases'));await openGroup(page,'#view-purchases .head-actions');await page.getByRole('button',{name:'Xin hàng trước bằng file',exact:true}).click();
@@ -89,6 +89,6 @@ try{for(const width of [360,390,430,1280]){
   await page.keyboard.press('Escape');
   if(process.env.MOBILE_SCREENSHOT_DIR){await mkdir(process.env.MOBILE_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.MOBILE_SCREENSHOT_DIR+'/orders-'+width+'.png'});}
  }else{assert.equal(await page.locator('#orders-new').isVisible(),true);assert.equal(await page.locator('#orders-list .mobile-action-trigger').isVisible(),false);await page.locator('[data-check="print"]').click();assert.deepEqual(await page.evaluate(()=>actions),['print']);}
- const fonts=await page.locator('#view-orders h1').evaluate(e=>({heading:getComputedStyle(e).fontSize,body:getComputedStyle(document.body).fontSize}));assert.deepEqual(fonts,mobile?{heading:'19px',body:'14px'}:{heading:'24px',body:'16px'});
+ const fonts=await page.locator('#view-orders h1').evaluate(e=>({heading:getComputedStyle(e).fontSize,body:getComputedStyle(document.body).fontSize}));assert.deepEqual(fonts,mobile?{heading:'22px',body:'14px'}:{heading:'24px',body:'16px'});
  assert.deepEqual(errors,[]);console.log(JSON.stringify({width,groups:await page.locator('.mobile-action-list').count(),delegation:true,forms:true,desktopRestored:true,fonts}));await context.close();
 }}finally{await browser.close();server.close();}

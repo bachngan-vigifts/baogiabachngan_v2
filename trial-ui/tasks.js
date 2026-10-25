@@ -163,6 +163,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
       <div class="task-st" data-label="Trạng thái">${state}</div></div>`;
   }
   function renderList() {
+    root.dataset.resultCount=String(st.dueCounts?.total??st.list.length);
     const groups = st.groupBy === 'category' ? groupTasks(st.list) : groupByDue(st.list);
     q('#tasks-list').innerHTML = groups.map(([k, label, items]) => {
       const late = items.filter(t => t.due === 'overdue' && !isClosed(t)).length, shut = st.collapsed.has(k);

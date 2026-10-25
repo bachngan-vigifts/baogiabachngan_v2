@@ -14,7 +14,7 @@ const fmtPct = n => Number(n).toLocaleString('vi-VN', { maximumFractionDigits: 2
 export function initCustomerDetail(deps) {
   const { api, toast, esc, money, fmtDate, pill, payCell, confirmBox, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS } = deps;
   const root = document.getElementById('customer-detail');
-  const st = { id: '', d: null, tab: 'orders', people: null, seq: 0 };
+  const st = { id: '', d: null, tab: globalThis.matchMedia?.('(max-width: 850px)')?.matches ? 'overview' : 'orders', people: null, seq: 0 };
   const q = s => root.querySelector(s);
   const QUOTE_STATUS = { draft: ['Nháp', 'off'], pending: ['Chờ duyệt', 'warn'], approved: ['Đã duyệt', 'ok'] };
   const STOCK_STATUS = { open: ['Chờ trả lời', 'warn'], answered: ['Đã trả lời', 'ok'] };
@@ -84,13 +84,17 @@ export function initCustomerDetail(deps) {
         <small>${esc([x.title, x.phone, x.email].filter(Boolean).join(' · ')) || '—'}</small>${x.note ? `<small class="muted">${esc(x.note)}</small>` : ''}</span>
         ${a.canEdit ? `<span class="row-actions"><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
         <button class="icon-btn" data-contact-del="${esc(x.id)}" aria-label="Xoá ${esc(x.name)}" title="Xoá"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button></span>` : ''}</li>`).join('');
-    const tab = TABS.find(t => t.key === st.tab) || TABS[0];
+    const tabs=[{key:'overview',label:'Tổng quan',count:()=>null,html:()=>''},...TABS];
+    const tab = tabs.find(t => t.key === st.tab) || tabs[0];
+    root.dataset.detailTab=tab.key;
     root.innerHTML = `
       <div class="editor-head">
         <div class="editor-title"><a class="btn ghost small" href="#/customers">‹ Khách hàng</a><h1>${esc(c.name)}</h1>
           <span class="pill ${c.fromSapo ? 'blue' : 'off'}">${c.fromSapo ? 'Sapo' : 'Tạo trên web'}</span>${pending ? '<span class="pill warn">Chờ duyệt</span>' : ''}</div>
         <div class="editor-actions">${a.canEdit ? '<button class="btn secondary" data-act="edit" title="Chỉ nhân viên phụ trách hoặc Manager">Sửa thông tin</button>' : ''}${pending ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
       </div>
+      <section class="crm-customer-hero"><div class="crm-customer-person"><span class="avatar">${esc((c.contact||c.name).split(/\s+/).filter(Boolean).slice(-2).map(s=>s[0]).join(''))}</span><div><strong>${esc(c.contact||c.name)}</strong><small>${esc(c.name)}${c.customerCode?' · '+esc(c.customerCode):''}</small>${d.owner?`<span class="pill blue">Phụ trách: ${esc(d.owner.name)}</span>`:''}</div></div>
+        <div class="crm-customer-quick" data-mobile-actions="off">${c.phone?`<a class="btn secondary" href="tel:${esc(c.phone.replace(/[^\d+]/g,''))}">Gọi</a>`:''}${deps.onCare&&!pending?'<button type="button" class="btn secondary" data-act="care-new">Chăm sóc</button>':''}${pending?'':'<button type="button" class="btn primary" data-act="quote">Báo giá</button>'}</div></section>
       ${pending ? `<div class="approval-box"><div class="approval-head"><b>Khách hàng mới đang chờ Manager duyệt</b><small class="muted">Chưa lập báo giá, đặt hàng hay cấp tài khoản cho khách này được tới khi được duyệt.</small></div>
         <div class="row-actions">${(deps.canApprove || deps.isManager)() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt khách hàng</button>' : ''}
         <button type="button" class="btn ghost small danger-text" data-act="reject">${(deps.canApprove || deps.isManager)() ? 'Từ chối' : 'Xoá'}</button></div></div>` : ''}
@@ -123,7 +127,7 @@ export function initCustomerDetail(deps) {
           ${contacts ? `<ul class="plain-list cd-contacts">${contacts}</ul>` : '<p class="muted cd-empty">Chưa có người liên hệ bổ sung (kế toán, mua hàng, người nhận hàng…).</p>'}</div>
       </div>
       <div class="card cd-tabs-card">
-        <div class="chips cd-tabs" role="tablist">${TABS.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label} <b>${t.count(d)}</b></button>`).join('')}</div>
+        <div class="chips cd-tabs" role="tablist">${tabs.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label}${t.count(d)!=null?` <b>${t.count(d)}</b>`:''}</button>`).join('')}</div>
         <div class="cd-tab-body">${tab.html(d)}</div>
       </div>`;
     renderGeneralNote();
