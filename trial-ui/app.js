@@ -1,4 +1,5 @@
 import { bindForgotPassword } from './forgot-password.js';
+import { createSessionResume } from './session-resume.js';
 import { openMobileQuoteCapture } from './mobile-quote-capture.js';
 import { createApprovalFeed } from './approval-feed.js';
 import { initApprovalLauncher } from './approval-launcher.js';
@@ -279,7 +280,8 @@ let token = '';
 // Giữ đăng nhập sau khi đóng app / tab: lưu ở localStorage (sessionStorage bị xoá mỗi lần đóng, nhất là app trên iPhone).
 // Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
 try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
-const saveToken = t => { token = t || ''; try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
+const saveToken = t => { const next=t||'';if(next!==token||!next)sessionResume.clear();token=next;try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
+const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>token,verify:()=>api('/me'),open:openWorkspace,refresh:refreshWorkspaceUser});
 
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
@@ -407,7 +409,9 @@ $('#login-form').addEventListener('submit', async e => {
 });
 
 async function enter() {
-  const { user } = await api('/me');
+  await sessionResume.resume({useCache:false});
+}
+function applyWorkspaceUser(user) {
   if (user.role === 'supplier' || user.positionId === 'supplier') {
     location.replace('supplier.html');
     return;
@@ -428,11 +432,21 @@ async function enter() {
   $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   $$('[data-nav=tasks]').forEach(el => { if (isWarehouse()) el.hidden = true; });
   document.body.classList.toggle('role-warehouse', isWarehouse());
+  return true;
+}
+function openWorkspace(user) {
+  if(!applyWorkspaceUser(user))return;
   if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
   notifier.start(); dataRefresh.start(); dataRefresh.tick(); pulse.start();
+}
+function refreshWorkspaceUser(user) {
+  const access=u=>JSON.stringify([u?.role,u?.positionId,u?.perms,u?.approver,u?.dataScope,u?.departmentId]);
+  const previous=access(state.user);
+  if(!applyWorkspaceUser(user))return;
+  if(previous!==access(user)){route();loadAll();}
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -2978,11 +2992,12 @@ if (activation) { setupActivationForm(); showAuth(); }
 else if (token) resume();
 else showAuth();
 /**
- * Mở lại app khi đã có phiên: chỉ đăng xuất khi máy chủ báo phiên hết hạn (401). Mất mạng / máy chủ chưa sẵn sàng thì
- * GIỮ phiên, hiện nút "Thử lại" (tự thử lại khi có mạng) thay vì bắt đăng nhập lại.
+ * Mở ngay giao diện bằng hồ sơ phiên đã lưu; /me cập nhật nền. Chưa có hồ sơ thì xác minh một lần.
+ * Mất mạng/5xx không đóng giao diện đang mở; 401 vẫn thu hồi phiên như các API khác.
  */
 function resume() {
-  enter().catch(e => {
+  sessionResume.resume().catch(e => {
+    if(state.user&&token)return;
     if (e.status === 401) return showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
     showAuth(e.message, { keepToken: true });
     const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn secondary small'; retry.textContent = 'Thử lại';
