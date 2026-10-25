@@ -11,7 +11,7 @@ try{
    const url=route.request().url();
    if(url.includes('/api/staff/')){
     const endpoint=url.split('/api/staff')[1];
-    if(endpoint==='/forgot-password'){calls.push(route.request().postDataJSON());await new Promise(r=>setTimeout(r,100));await route.fulfill({status:200,json:{ok:true,message:'Nếu email khớp tài khoản đang hoạt động, hệ thống sẽ gửi liên kết đặt lại mật khẩu.'},headers:{'access-control-allow-origin':origin}});}
+    if(endpoint==='/forgot-password'){calls.push(route.request().postDataJSON());await new Promise(r=>setTimeout(r,100));await route.fulfill(calls.length===1?{status:404,json:{error:'Không tìm thấy.'},headers:{'access-control-allow-origin':origin}}:{status:200,json:{ok:true,message:'Nếu email khớp tài khoản đang hoạt động, hệ thống sẽ gửi liên kết đặt lại mật khẩu.'},headers:{'access-control-allow-origin':origin}});}
     else await route.fulfill({status:endpoint==='/me'?401:200,json:endpoint==='/me'?{error:'Vui lòng đăng nhập.'}:{ok:true},headers:{'access-control-allow-origin':origin}});
    }else if(url.startsWith(origin+'/'))await route.continue();else await route.abort();
   });
@@ -19,9 +19,13 @@ try{
   await page.getByRole('button',{name:'Quên mật khẩu?',exact:true}).click();
   await page.getByLabel('Email nhận liên kết đặt lại mật khẩu',{exact:true}).fill('account@example.test');
   await page.locator('dialog[open] form').evaluate(f=>{f.requestSubmit();f.requestSubmit();});
+  await page.getByRole('status').filter({hasText:'đang được cập nhật'}).waitFor();
+  assert.equal(calls.length,1);assert.equal(await page.getByLabel('Email nhận liên kết đặt lại mật khẩu',{exact:true}).inputValue(),'account@example.test');
+  assert.equal(await page.getByRole('button',{name:'Gửi liên kết đặt lại',exact:true}).isEnabled(),true);
+  await page.locator('dialog[open] form').evaluate(f=>f.requestSubmit());
   await page.getByRole('status').filter({hasText:'Nếu email khớp'}).waitFor();
-  assert.equal(calls.length,1);assert.deepEqual(calls[0],{email:'account@example.test',...(audience?{audience}:{})});
-  assert.deepEqual(errors,[]);console.log(path+': recovery button, email and duplicate-click protection passed');await context.close();
+  assert.equal(calls.length,2);assert.deepEqual(calls[0],{email:'account@example.test',...(audience?{audience}:{})});assert.deepEqual(calls[1],calls[0]);
+  assert.deepEqual(errors,[]);console.log(path+': recovery button, rollout404, retry and duplicate-click protection passed');await context.close();
  }
  const context=await browser.newContext({viewport:{width:390,height:844}}),calls=[];
  await context.route('**/*',async route=>{

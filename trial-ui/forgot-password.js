@@ -14,7 +14,7 @@ export function bindForgotPassword({button,api,email=()=>'',audience}) {
     form.addEventListener('submit',async e=>{
       e.preventDefault();if(busy||!form.reportValidity())return;busy=true;submit.disabled=close.disabled=input.disabled=true;message.textContent='Đang xử lý…';
       try{const result=await api('/forgot-password','POST',{email:input.value.trim(),...(audience?{audience}:{})});message.className='';message.textContent=result.message;}
-      catch(e){message.className='error';message.textContent=e.message||'Không gửi được yêu cầu. Vui lòng thử lại.';}
+      catch(e){message.className='error';message.textContent=e?.status===404?'Chức năng đặt lại mật khẩu đang được cập nhật. Vui lòng thử lại sau ít phút.':e?.message||'Không gửi được yêu cầu. Vui lòng thử lại.';}
       finally{busy=false;submit.disabled=close.disabled=input.disabled=false;}
     });
     actions.append(submit,close);form.append(title,note,label,message,actions);dialog.append(form);document.body.append(dialog);
