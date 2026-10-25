@@ -1137,6 +1137,19 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-catalog-controls .pos-filter-toggle { justify-self: start; margin: 0; }
 .pos-catalog-controls .pos-product-filters { flex-wrap: wrap; overflow: visible; margin: 0; }
 .pos-catalog > .pos-grid, .pos-catalog > .btn { flex: none; }
+.pos-catalog-pages { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 10px; flex: none; }
+
+/* Mobile: a short product viewport, with page scrolling continuing to the customer/cart. */
+@media (max-width: 850px) {
+  .pos-catalog > .pos-grid {
+    min-height: 0;
+    max-height: min(48vh, 420px);
+    max-height: min(48svh, 420px);
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+    touch-action: pan-y;
+  }
+}
 
 /* Stock sources stay available on demand; give product photography the main space. */
 .pos-product-stock-details { flex: none; border-top: 1px solid #e1ebe5; }
