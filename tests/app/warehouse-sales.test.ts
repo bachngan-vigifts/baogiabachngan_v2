@@ -486,7 +486,7 @@ test('HĐKT không kế hoạch đóng gói: duyệt không trừ; đánh dấu 
   await s.db.insert(packingSlipLines).values({id:'not-issued-line',slipId:'not-issued',orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty:5});
   await s.db.insert(packingSlips).values({id:'draft-not-issued',slipNo:'DRAFT_NOT_ISSUED',orderId:id,status:'draft',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
   await s.db.insert(packingSlipLines).values({id:'draft-not-issued-line',slipId:'draft-not-issued',orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty:5});
-  assert.equal((await s.call(`/orders/${id}/progress`,s.mgr,'POST',{stage:'delivered'})).status,200);
+  assert.equal((await s.call(`/orders/${id}/progress`,s.mgr,'POST',{stage:'delivered'})).data.code,'STOCK_NOT_PACKED');
   const [draft]=await s.db.select().from(packingSlips).where(eq(packingSlips.id,'draft-not-issued'));assert.equal(draft!.status,'draft','không huỷ phiếu SKU chưa xác nhận xuất chỉ vì đánh dấu giao hàng');
   const [slip]=await s.db.select().from(packingSlips).where(eq(packingSlips.id,'not-issued'));
   assert.equal(slip!.status,'sent','tiến trình giao hàng không giả lập xác nhận xuất kho');assert.equal(await bal(s,'vig'),50);

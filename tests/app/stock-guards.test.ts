@@ -115,10 +115,12 @@ test('đóng gói CRM đủ tồn: ghi đúng một lần; điều chỉnh dươ
   assert.equal((await f.call('/inventory/adjustments',f.mgr,'POST',{warehouseId:'a',reason:'Kiểm kê',lines:[{sku:'X',qty:1}]})).status,201);
 });
 
-for(const opened of [false,true]) test(`duyệt đơn CRM: ${opened?'vượt tồn':'chưa chốt'} rollback trạng thái`,async()=>{
+for(const opened of [false,true]) test(`duyệt đơn CRM: ${opened?'chưa đủ hàng':'chưa chốt'} chỉ giữ hàng, không ghi xuất`,async()=>{
   const f=await fixture(opened);await seedOrder(f,'draft','a',11);const before=await f.snapshot();
   const r=await f.call('/orders/o/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
-  assert.equal(r.status,409,JSON.stringify(r.data));assert.equal(r.data.code,opened?'STOCK_SHORT':'WAREHOUSE_NOT_OPENED');assert.deepEqual(await f.snapshot(),before);
+  assert.equal(r.status,200,JSON.stringify(r.data));
+  const after=await f.snapshot();assert.deepEqual(after.counts,before.counts);assert.deepEqual(after.balances,before.balances);
+  assert.equal(after.orders[0]!.status,'confirmed');
 });
 
 test('điều chuyển done: cả kho đi và đến phải mở, phiếu và hai kho rollback',async()=>{

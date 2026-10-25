@@ -1,3 +1,4 @@
+import {confirmDirectSupply} from '../helpers/confirmed-direct-supply.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
@@ -37,7 +38,8 @@ test('Kế toán: kho giao đủ đơn/HĐKT tạo việc ngay, giữ yêu cầu
   const [line] = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, id));
   const ship = async () => ok(await f.call('/deliveries', f.emp, 'POST', { orderId: id, plannedDate: '2026-10-20', lines: [{ orderLineId: line!.id, qty: 1 }] }), 201);
   const done = async (deliveryId: string) => ok(await f.call(`/deliveries/${deliveryId}/status`, warehouse, 'PUT', { status: 'delivered', photos: ['data:image/jpeg;base64,' + Buffer.from('delivery-photo').toString('base64')] }));
-  await done((await ship()).id);
+  const firstTrip=await ship();await confirmDirectSupply(f.call,f.mgr,id);
+  await done(firstTrip.id);
   assert.equal((await invoiceRows(f, id)).length, 0, 'giao một phần chưa tự yêu cầu');
   await done((await ship()).id);
   const [task] = await invoiceRows(f, id);
@@ -61,6 +63,8 @@ test('Kế toán: yêu cầu thủ công trước giao và Manager đánh dấu 
   const f = await setup(), a = await order(f, 'INV-MANUAL'), b = await order(f, 'INV-PROGRESS');
   ok(await f.call(`/orders/${a}/invoice-request`, f.emp, 'POST', { mode: 'draft', email: 'a@example.com' }));
   assert.match((await invoiceRows(f, a))[0]!.title, /^Yêu cầu xuất hoá đơn/);
+  const sourceTrip=ok(await f.call('/deliveries',f.emp,'POST',{orderId:b,plannedDate:'2026-10-24'}),201);void sourceTrip;
+  await confirmDirectSupply(f.call,f.mgr,b);
   ok(await f.call(`/orders/${b}/progress`, f.mgr, 'POST', { stage: 'delivered' }));
   assert.match((await invoiceRows(f, b))[0]!.title, /^Đã giao hàng · Chờ hoá đơn/);
   assert.equal((await invoiceRows(f, a))[0]!.status, 'todo', 'đồng bộ riêng B không đóng nhầm A');

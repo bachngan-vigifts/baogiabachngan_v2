@@ -30,6 +30,15 @@ async function prepareReceiptPayload(db: AnyDb, job: typeof receiptJobs.$inferSe
   return snapshot;
 }
 const hasSapoLink = (r: Receipt) => !!(r.sapoVerifiedAt || r.sapoPurchaseOrderId || r.sapoReceiptId || r.sapoReceiptCode || r.sapoReceiptUrl);
+type ReceiptTx=Parameters<Parameters<AnyDb['transaction']>[0]>[0];
+/** Global supplier write order: purchase → receipt → outbox → ledger. */
+export async function lockReceiptForWrite(tx:ReceiptTx,id:string){
+  const [hint]=await tx.select({shipmentId:supplierReceipts.shipmentId}).from(supplierReceipts).where(eq(supplierReceipts.id,id));
+  if(hint)await tx.select({id:incomingShipments.id}).from(incomingShipments).where(eq(incomingShipments.id,hint.shipmentId)).for('update');
+  const [receipt]=await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id,id)).for('update');
+  if(receipt&&hint&&receipt.shipmentId!==hint.shipmentId)throw new AppError(409,'Phiếu nhận vừa thay đổi đơn nguồn. Tải lại phiếu.');
+  return receipt;
+}
 export const receiptLink = (r: Receipt) => ({ sapoPurchaseOrderId: r.sapoPurchaseOrderId, sapoReceiptId: r.sapoReceiptId, sapoReceiptCode: r.sapoReceiptCode, sapoReceiptUrl: r.sapoReceiptUrl, sapoVerifiedAt: r.sapoVerifiedAt, sapoStatus: r.sapoStatus, sapoUpdatedAt: r.sapoUpdatedAt });
 export function validReceiptLink(po: string, id: string, code: string, link: string) {
   if (!/^[1-9]\d*$/.test(po) || !/^[1-9]\d*$/.test(id) || !code || code.length > 100) return false;
@@ -48,7 +57,7 @@ const webhook = (env: StaffEnv) => {
 export async function dispatchReceiptJob(env: StaffEnv, receiptId: string) {
   const token = crypto.randomUUID(), now = new Date().toISOString();
   const job = await env.db.transaction(async tx => {
-    const [r] = await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id, receiptId)).for('update');
+    const r = await lockReceiptForWrite(tx,receiptId);
     const [j] = await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId, receiptId)).for('update');
     if (!r || !j || r.cancelledAt || !['queued','failed'].includes(j.status) || (j.dispatchUntil && j.dispatchUntil > now) || (j.leaseUntil && j.leaseUntil > now)) return null;
     if ((r.sapoStatus === 'done' || hasSapoLink(r)) && j.action !== 'reconcile_existing') return null;
@@ -65,7 +74,7 @@ export async function dispatchReceiptJob(env: StaffEnv, receiptId: string) {
     if (!response.ok || result.ok === false || result.success === false || result.error) error = `n8n từ chối giao việc (HTTP ${response.status}); cần kiểm tra execution trước khi thử lại.`;
   } catch (e) { error = e instanceof AppError && e.status===503 ? e.message : 'Chưa xác định n8n đã nhận việc hay chưa. Tra cứu Sapo theo mã CRM trước khi thử lại; không tạo phiếu mới vì timeout.'; }
   await env.db.transaction(async tx => {
-    await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id, receiptId)).for('update');
+    await lockReceiptForWrite(tx,receiptId);
     const [j] = await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId, receiptId)).for('update');
     if (!j || j.dispatchToken !== token) return;
     const mutable = ['queued','failed'].includes(j.status);
@@ -81,7 +90,7 @@ export async function receiptResult(db: AnyDb, b: Record<string, unknown>) {
   if (b.ok && !validReceiptLink(po,sapo,code,url)) throw new AppError(400,'Kết quả thành công cần đủ ID đơn nhập, ID phiếu, mã và link Sapo hợp lệ.');
   // Không lưu nguyên thông báo bên ngoài: có thể chứa credential. Mã lỗi cố định; execution ở n8n giữ chi tiết.
   const result = await db.transaction(async tx => {
-    const [r] = await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id,id)).for('update');
+    const r = await lockReceiptForWrite(tx,id);
     if (!r) throw new AppError(404,'Không tìm thấy phiếu nhận CRM.');
     if (r.shipmentId !== order || r.cancelledAt) throw new AppError(409,'Phiếu không thuộc đơn hoặc đã huỷ.');
     const [j] = await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,id)).for('update');
@@ -132,7 +141,7 @@ export function registerReceiptJobRoutes(router: Router<StaffEnv>) {
   router.post('/integrations/sapo/goods-receipt-jobs/claim',async c=>{
     const b=await readJson(c.req,2000),id=String(b.crm_receipt_id||''),now=new Date().toISOString();
     const out=await c.env.db.transaction(async tx=>{
-      const [r]=await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id,id)).for('update');
+      const r=await lockReceiptForWrite(tx,id);
       const [j]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,id)).for('update');
       if(!r||!j)throw new AppError(404,'Không có job phiếu nhận.');
       if(r.cancelledAt||['done','needs_review'].includes(j.status)||((r.sapoStatus==='done'||hasSapoLink(r))&&j.action!=='reconcile_existing'))throw new AppError(409,'Job không cho phép thực thi; cần đối soát.');
@@ -153,7 +162,7 @@ export function registerReceiptJobRoutes(router: Router<StaffEnv>) {
   router.post('/supplier-receipts/:id/retry-sapo',async c=>{
     manager(c);const id=c.params.id!;
     await c.env.db.transaction(async tx=>{
-      const [r]=await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id,id)).for('update');
+      const r=await lockReceiptForWrite(tx,id);
       const [j]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,id)).for('update');
       if(!r||!j)throw new AppError(404,'Không có job.');
       if(r.cancelledAt||r.sapoStatus==='done'||(hasSapoLink(r)&&j.action!=='reconcile_existing')||!['failed','callback_pending'].includes(j.status)||j.leaseToken)throw new AppError(409,'Không thể gửi lại; cần đối soát hoặc đang xử lý.');
@@ -166,7 +175,7 @@ export function registerReceiptJobRoutes(router: Router<StaffEnv>) {
     if(reason.length<3||reason.length>500||!b.expected)throw new AppError(400,'Cần lý do và bản chụp liên kết hiện tại.');
     const reconciliationId=crypto.randomUUID(),now=new Date().toISOString();
     await c.env.db.transaction(async tx=>{
-      const [r]=await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id,id)).for('update');
+      const r=await lockReceiptForWrite(tx,id);
       if(!r)throw new AppError(404,'Không có phiếu nhận.');
       if(r.cancelledAt)throw new AppError(409,'Phiếu đã huỷ.');
       const expected=receiptLink(r);

@@ -14,7 +14,7 @@ import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { quotations, quoteLines } from '../../quotes/schema.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { notify } from '../../notifications/api/routes.ts';
-import { salesContracts, salesOrderLines, salesOrders, stockHolds, packingSlips, deliveries } from '../schema.ts';
+import { salesContracts, salesOrderLines, salesOrders, stockHolds, packingSlips, packingSlipLines, deliveries } from '../schema.ts';
 import { HOLD_DAYS } from '../domain/statuses.ts';
 
 /**
@@ -70,7 +70,11 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
     where ${stockMoves.sku}=${salesOrderLines.sku} ${warehouseId ? sql`and ${stockMoves.warehouseId}=${warehouseId}` : sql``}
       and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id}))
         or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;
-  const legacyRemaining = sql`greatest(0,sum(${salesOrderLines.qty})-greatest(sum(${salesOrderLines.deliveredQty}),max(${legacyIssued})))`;
+  // Confirmed direct supplier/agent fulfilment does not consume local stock and must not keep a phantom local reservation.
+  const directConfirmed = sql`coalesce((select sum(pl.qty) from ${packingSlipLines} pl join ${packingSlips} p on p.id=pl.slip_id
+    where ${salesOrders.channel}='crm' and p.order_id=${salesOrders.id} and p.status='packed' and p.source in ('supplier','agent','other')
+      and p.packed_by is not null and p.packed_at is not null and pl.sku=${salesOrderLines.sku}),0)`;
+  const legacyRemaining = sql`greatest(0,sum(${salesOrderLines.qty})-greatest(sum(${salesOrderLines.deliveredQty}),max(${legacyIssued})+max(${directConfirmed})))`;
   const legacy = await db.select({
     sku: salesOrderLines.sku, qty: sql<number>`${legacyRemaining}`.mapWith(Number),
     orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName,

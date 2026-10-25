@@ -1,3 +1,4 @@
+import {confirmLocalIssue} from '../helpers/confirmed-local-issue.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
@@ -17,8 +18,8 @@ async function contract(){
  ok(await f.call('/orders/'+k.orderId+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
  return {...f,k};
 }
-test('huỷ HĐKT qua API hợp đồng phải huỷ đơn và hoàn đúng kho trong cùng transaction',async()=>{
- const f=await contract();assert.equal(await balance(f),8);
+test('huỷ HĐKT chưa xuất qua API hợp đồng không cộng tồn chưa từng trừ',async()=>{
+ const f=await contract();assert.equal(await balance(f),10,'duyệt chưa xuất thì chưa trừ');
  ok(await f.call('/contracts/'+f.k.id,f.mgr,'PUT',{status:'cancelled'}));
  assert.equal((await f.db.select().from(salesOrders))[0]!.status,'cancelled');assert.equal(await balance(f),10);
  assert.equal((await f.db.select().from(salesContracts))[0]!.status,'cancelled');
@@ -36,6 +37,7 @@ test('HĐKT đã thu tiền không được lách kiểm tra bằng PUT hợp đ
 test('đơn CRM đang vận chuyển không tự hoàn tồn khi huỷ đơn hoặc huỷ chuyến',async()=>{
  const f=await contract(),[line]=await f.db.select().from(salesOrderLines);
  const d=ok(await f.call('/deliveries',f.mgr,'POST',{orderId:f.k.orderId,...delivery,lines:[{orderLineId:line!.id,qty:2}]}),201);
+ await confirmLocalIssue(f,f.k.orderId);
  ok(await f.call('/deliveries/'+d.id+'/status',f.mgr,'PUT',{status:'in_transit'}));
  ok(await f.call('/orders/'+f.k.orderId+'/status',f.mgr,'PUT',{status:'cancelled'}),409);
  ok(await f.call('/deliveries/'+d.id+'/status',f.mgr,'PUT',{status:'cancelled'}),409);
@@ -85,6 +87,7 @@ test('GHN không giao tiếp khi COD đang thu hồi; không mở lại đơn đ
 test('lùi nhãn chuyến giao không được xoá dấu vết đã xuất; không tự hoàn tồn sau failed → planned',async()=>{
  const f=await contract(),[l]=await f.db.select().from(salesOrderLines);
  const d=ok(await f.call('/deliveries',f.mgr,'POST',{orderId:f.k.orderId,...delivery,lines:[{orderLineId:l!.id,qty:2}]}),201);
+ await confirmLocalIssue(f,f.k.orderId);
  for(const status of ['in_transit','failed','planned'])ok(await f.call('/deliveries/'+d.id+'/status',f.mgr,'PUT',{status}));
  ok(await f.call('/orders/'+f.k.orderId+'/status',f.mgr,'PUT',{status:'cancelled'}),409);assert.equal(await balance(f),8);
 });
