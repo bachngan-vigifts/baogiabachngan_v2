@@ -1,3 +1,4 @@
+import { bindForgotPassword } from './forgot-password.js';
 // Bách Ngân · Trang khách hàng: xem/tạo báo giá, đặt hàng, theo dõi đơn. Không có tồn kho, giá nhập.
 // Tính tiền dùng đúng hàm của máy chủ (quote-math.js sinh từ src/modules/quotes/domain/quote-math.ts).
 import { totals, after } from './quote-math.js';
@@ -52,6 +53,7 @@ async function apiRequest(path, method = 'GET', body) {
 // CSP chỉ báo cáo: vi phạm gửi về máy chủ khi đã đăng nhập.
 watchCsp(r => { if (!token) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
 
+bindForgotPassword({button:$('#c-forgot-password'),api,email:()=>$('#c-email').value,audience:'customer'});
 const ORDER_STATUS = { draft: ['Chờ xác nhận', 'warn'], confirmed: ['Đã xác nhận', 'blue'], delivering: ['Đang giao', 'warn'], delivered: ['Đã giao xong', 'ok'], cancelled: ['Đã huỷ', 'off'] };
 const DELIVERY_STATUS = { planned: 'Đã lên lịch', in_transit: 'Đang giao', delivered: 'Đã giao', failed: 'Giao không thành công' };
 const pill = (map, s) => `<span class="pill ${map[s]?.[1] || ''}">${esc(map[s]?.[0] || s)}</span>`;
@@ -62,7 +64,7 @@ const st = { me: null, items: [], cart: new Map(), catalogVersion: '' };
 const view = which => { $('#c-auth').hidden = which !== 'auth'; $('#c-staff').hidden = which !== 'staff'; $('#portal').hidden = $('#p-head').hidden = which !== 'portal'; };
 let activation = null;
 let checkingActivation = false;
-const usedActivationNote = 'Liên kết đặt mật khẩu này đã dùng hoặc hết hạn. Anh/chị đăng nhập bằng tài khoản đã đăng ký; nếu quên mật khẩu, liên hệ nhân viên phụ trách để cấp link mới.';
+const usedActivationNote = 'Liên kết đặt mật khẩu này đã dùng hoặc hết hạn. Anh/chị đăng nhập bằng tài khoản đã đăng ký; nếu quên mật khẩu, bấm Quên mật khẩu để nhận link mới qua email.';
 // Chỉ lỗi liên kết từ API mới đổi flow; lỗi mạng, giới hạn thử hoặc mật khẩu vẫn cho thử lại.
 const invalidActivation = ex => ex.status === 400 && /^Liên kết (?:kích hoạt không hợp lệ|đã hết hạn|đã được sử dụng)/.test(ex.message);
 function activationToLogin() {

@@ -34,7 +34,7 @@ test('MỌI route của staff đều khai báo khu vực truy cập (không có 
   const routes = router.list();
   assert.ok(routes.length >= 6);
   for (const r of routes) assert.ok(['public', 'self', 'supplier-portal', 'ncc-admin', 'admin', 'business'].includes(r.meta as string), `${r.method} ${r.pattern}`);
-  assert.deepEqual(routes.filter(r => r.meta === 'public').map(r => r.pattern.replace(/[\^$\\/?]/g, '')).sort(), ['activate', 'activation-info', 'login']);
+  assert.deepEqual(routes.filter(r => r.meta === 'public').map(r => r.pattern.replace(/[\^$\\/?]/g, '')).sort(), ['activate', 'activation-info', 'forgot-password', 'login']);
 });
 
 test('vòng đời tài khoản: xem liên kết → kích hoạt → đăng nhập → /me → đăng xuất', async () => {
