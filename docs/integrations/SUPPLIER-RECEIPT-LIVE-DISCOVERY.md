@@ -1,16 +1,27 @@
 # Điều tra nguồn live NCC/Sapo — 25/10/2026 UTC
 
-Đây là bằng chứng quan sát trong môi trường Codex hiện tại, không phải xác nhận trạng thái Sapo. Không deploy, activate workflow, merge, gửi webhook hoặc retry PNH_20261025_001 / DMH_20261016_059.
+Đây là bằng chứng quan sát trong môi trường Codex ban đầu và lần kiểm tra bổ sung trực tiếp trên host OpenClaw, không phải xác nhận trạng thái Sapo. Không deploy, activate workflow, merge, gửi webhook hoặc retry PNH_20261025_001 / DMH_20261016_059.
+
+## Bổ sung từ host OpenClaw — 25/10/2026 10:55–11:50 UTC
+
+- Host có credential n8n hợp lệ trong kho credential riêng; chỉ dùng trong tiến trình và không in giá trị.
+- Workflow live là `YrvQihypiSc0odI9` — **Sapo supplier receipt v1 (CRM → OpenClaw UI)**, đang active nhưng có deployment gate đóng.
+- Execution `12140` lúc `2026-10-25T07:50:00.357Z` và `12145` lúc `2026-10-25T07:59:09.083Z` đều kết thúc tại `Respond Contract V1` với HTTP 503. Node `Validate Contract V1 and Deployment Gate` trả `deployment_gate_closed` vì `LIVE_ENABLED=false`.
+- Vì dừng ở gate, hai execution trên chưa chạy `Claim CRM Job`, chưa handoff OpenClaw và chưa thao tác Sapo. Đây là nguyên nhân 503 đã xác minh; không phải bằng chứng queue/admission đầy.
+- Workflow bán hàng live `mYC4bwhlkvliy42l` và workflow receipt hiện hành đều handoff bằng `Execute Command`; không có workflow live nào dùng HTTP `/hooks/agent` và danh sách credential n8n không có credential OpenClaw agent-hook dùng chung.
+- Code node handoff hiện hành chứa material xác thực OpenClaw inline. Không sao chép giá trị vào source, log hay báo cáo; không được mở gate bằng workflow này. Cần chuyển sang credential/env/runtime helper được quản lý trước khi activate.
+- Host đã đọc được GitHub bằng `GH_TOKEN` lưu trong OpenClaw, fetch `main` mới nhất `f846f51e14467d575dd89b2e6f12a71b1d2a2be6` và source PR #309. Không cần bundle/source gửi tay.
+- Contract/consumer/outbox/worker/workflow/warehouse targeted tests: 36/36 pass; typecheck và UI build pass sau khi cài dev dependencies từ lockfile. Chưa chạy mutation live.
 
 ## Checkout và lịch sử đã kiểm tra
 
 | Vị trí/nguồn | Branch/commit | Kết quả |
 | --- | --- | --- |
 | `/workspace/baogiabachngan_v2` | main `3051dcffeed8d57ccaa27be1cd3998833e7840c0`; nhánh sửa `fix/supplier-receipt-sapo-workflow`, commit ban đầu `8e7ff18bc881caad872a2b0269bb2d5a34626c74` | Working tree sạch trước điều tra; `git pull origin main` thành công, đã cập nhật. Các thay đổi tiếp theo chỉ trên nhánh PR #309. |
-| `/home/node/.openclaw/workspace/work/sites/crm-pos-lock-ghn-source-handoff` | Không thể đọc branch/SHA: đường dẫn không tồn tại | `/home/node` không tồn tại; không tự coi nhánh remote nào là checkout này. |
-| `/home/node/.openclaw/workspace/work/sites/crm-pos-lock-ghn-sync` | Không thể đọc branch/SHA: đường dẫn không tồn tại | Không thể đối chiếu working tree trên host OpenClaw từ máy hiện tại. |
-| `/home/node/.openclaw/workspace/work/sites/baogiabachngan-v2-n8n` | Không thể đọc branch/SHA: đường dẫn không tồn tại | Không coi bản cũ này là live. |
-| `/home/node/.openclaw/workspace/scripts/{sapo_goods_receipt_from_quote_web.js,deploy_n8n_supplier_receipt_v1_staged.js,create_n8n_sapo_goods_receipt_from_quote_web_workflow.js,supplier_receipt_contract_v1.js}` | Không tồn tại trên máy hiện tại | Không đọc/patch giả các script ngoài repo. Các script mới trong PR là source mới, không phải bản sao đã xác minh từ runtime. |
+| `/home/node/.openclaw/workspace/work/sites/crm-pos-lock-ghn-source-handoff` | `chore/lock-ghn-bridge-source`, `1b9d95d2b44547cd5e3ad811507bcfa21f881410` | Worktree lịch sử/handoff; không coi là production live. |
+| `/home/node/.openclaw/workspace/work/sites/crm-pos-lock-ghn-sync` | `feat/pos-lock-ghn-sync`, `f06fcb7e8294c604c94285954966af5acb5cd152` | Worktree cũ có `sendReceiptToClaw`; không dùng làm base sửa. |
+| `/home/node/.openclaw/workspace/work/sites/baogiabachngan-v2-n8n` | remote main đã fetch tới `f846f51e14467d575dd89b2e6f12a71b1d2a2be6` | Repo/worktree nguồn dùng để tạo worktree PR riêng; các thay đổi có sẵn của user được giữ nguyên. |
+| `/home/node/.openclaw/workspace/scripts/{sapo_goods_receipt_from_quote_web.js,deploy_n8n_supplier_receipt_v1_staged.js,create_n8n_sapo_goods_receipt_from_quote_web_workflow.js,supplier_receipt_contract_v1.js}` | Đã đọc trên host | Handler cũ dùng Sapo API và payload `quote_web`; không thay mù vào consumer V1/browser task. Script CRM job/contract local tồn tại nhưng worker journal mới chỉ nằm trong PR. |
 | Remote `origin/chore/lock-ghn-bridge-source` | `1b9d95d2b44547cd5e3ad811507bcfa21f881410` | Có source handoff WordPress; không chứng minh là checkout OpenClaw live. |
 | Remote `origin/feat/supplier-receipt-outbox` | `1e07a1bf59660632fa908d2485bdcb723b18dd3d` | Outbox/claim/callback mới; đã có trong main sau các cập nhật tiếp theo. |
 | Remote `origin/feat/pos-lock-ghn-sync` | `7217e2bd889772f00b810e8bb4817da771d574be` | Nhánh lịch sử POS; không tự coi là production hiện hành. |
@@ -43,9 +54,7 @@ Tìm filename trong `/workspace`, `/tmp`, `/home`, `/opt`; kiểm tra toàn bộ
 
 Phản hồi phân loại tại 09:08:47 UTC: `Error 1010: Access denied`, `The site owner has blocked access based on your browser's signature.`, `retryable:false`. Sau khi nhận diện không đổi user-agent, không đổi đường mạng để vượt chặn, không tiếp tục dò API n8n. GH_TOKEN chỉ dùng GitHub, không thử làm token n8n. Không có SSH host/identity được cấu hình để đọc các đường dẫn trên máy OpenClaw.
 
-**Workflow live tìm được: chưa có workflow record nào truy cập được.** Ba đường webhook bán hàng và một đường nhập hàng là config source, không được trình bày thành workflow live đã đọc.
-
-**Node/error gây 503 lúc 07:51 UTC: chưa xác định.** Cloudflare 1010/403 khi điều tra là lỗi khác, không được gán làm nguyên nhân 503 trước đó. Chỉ có thông báo CRM cho biết HTTP giao việc trả 503. Tài liệu OpenClaw có trường hợp queue/admission đầy trả 503, nhưng chưa có execution/runId chứng minh trường hợp này.
+Các hạn chế 403 Cloudflare ở môi trường Codex ban đầu vẫn là dữ kiện đúng cho môi trường đó. Trên host OpenClaw, credential n8n hợp lệ đã cho phép đọc workflow/execution và xác minh nguyên nhân 503 như phần bổ sung phía trên.
 
 ## Source bổ sung để tiếp tục trên runtime hiện có
 
@@ -56,8 +65,8 @@ Phản hồi phân loại tại 09:08:47 UTC: `Error 1010: Access denied`, `The 
 
 Kiểm thử mới: generated Code node chạy trong VM với n8n bindings, body/credentials/routing được kiểm, HTTP admission chỉ trả callback_pending, timeout/callback replay và dữ liệu riêng tư có test. **Chưa chạy trên n8n/OpenClaw/Sapo thật.**
 
-## Một đầu mối truy cập còn thiếu
+## Điều kiện còn thiếu trước khi mở live
 
-Cần **kết nối được cấp quyền tới đúng host OpenClaw đang chứa các đường dẫn `/home/node/.openclaw/...`** (qua execution environment hoặc SSH identity được cấu hình). Đầu mối đó cho phép tự đọc script/handoff live và credential n8n tại chỗ, không cần anh gửi token trong chat. Nếu không thể cấp kết nối, export workflow bán hàng + receipt và execution 07:51 được khử bí mật là phương án thay thế. Chưa thể kết luận root cause hoặc sửa đúng script runtime không hiện diện bằng cách đoán nội dung file.
+Không còn thiếu checkout hay quyền đọc runtime. Điều kiện kỹ thuật còn thiếu là **một handoff OpenClaw được quản lý bằng credential/env hoặc helper runtime**, thay cho material xác thực inline trong Code node. Compiler PR hiện cố ý chỉ nhận HTTP `/hooks/agent` có credential reference; runtime live hiện không có node/credential kiểu đó. Vì thay đổi credential hoặc quyền truy cập production cần phê duyệt riêng, PR giữ workflow staging `active:false` và không tự mở gate.
 
 Tham chiếu giao thức (không chứng minh phiên bản runtime live): [OpenClaw inbound webhooks](https://docs.openclaw.ai/automation/cron-jobs/webhooks), đã đọc 25/10/2026. HTTP200/runId là admission, không phải hàng đã nhập; `Idempotency-Key` phía gateway chỉ bổ sung, outbox/claim CRM vẫn là hàng rào bền vững.
