@@ -122,8 +122,8 @@ export function installMobileDesign(profiles){
  function quoteLines(){
   for(const row of document.querySelectorAll('#line-list tr[data-i]')){
    if(row.querySelector('[data-mobile-line-toggle]'))continue;
-   const actions=row.querySelector('.col-act');if(!actions)continue;
-   const b=make('button','btn secondary small','Chi tiết');b.type='button';b.dataset.mobileLineToggle='';b.setAttribute('aria-expanded','false');
+   const actions=row.querySelector('.line-actions,.col-act');if(!actions)continue;
+   const b=make('button','btn secondary small','Chi tiết');b.type='button';b.dataset.mobileLineToggle='';b.dataset.mobileInline='';b.setAttribute('aria-expanded','false');
    b.onclick=()=>{const on=row.dataset.mobileExpanded!=='true';row.dataset.mobileExpanded=String(on);b.setAttribute('aria-expanded',String(on));};actions.prepend(b);
   }
  }
