@@ -224,3 +224,55 @@
  #view-editor .editor-head .back svg { display:block;color:var(--brand-navy);stroke:currentColor;width:20px;height:20px;flex:none; }
  .crm-form-mode .chat-launcher { display:none!important; }
 }
+/* P2 operations: original receipt controls and warehouse quantities stay usable. */
+@media screen and (max-width:850px){
+ #view-deliveries .delivery-range { display:block; }
+ #view-deliveries .delivery-status > span { display:none; }
+ .crm-card-selection { grid-column:1;grid-row:5;min-height:44px;display:flex;align-items:center; }
+ .crm-card-quantity { grid-column:2;grid-row:5;max-width:140px!important; }
+ .crm-card-quantity input { width:100%; }
+ .incoming-details { display:block!important;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:12px; }
+ .incoming-details > td { display:block!important; }
+ .incoming-details > td::before { display:none!important; }
+ .incoming-table .crm-card-meta { display:flex;align-items:center;gap:12px; }
+ .incoming-table .crm-card-meta button { min-height:44px; }
+ .incoming-selection { position:sticky;bottom:0;z-index:4;flex-wrap:wrap;background:#fff;border-top:1px solid var(--line);padding:12px; }
+ .incoming-selection > div { flex:1 1 100%; }
+ .incoming-selection > [data-mobile-primary]:not([hidden]) { display:flex!important;justify-content:center;flex:1;min-height:44px; }
+ .incoming-kpis,.cash-stats { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+ .cash-stat strong { font-size:20px; }
+ .cash-head { display:flex;align-items:center;flex-wrap:wrap;gap:8px; }
+ .cash-head h1 { font-size:22px; }
+ .cash-title { flex:1; }
+ .cash-head :is(.cash-eyebrow,.cash-note) { display:none; }
+ .cash-tools.cash-ledger-tools:has(> .crm-filter-sheet) { display:block; }
+ .cash-dialog-foot { position:sticky;bottom:0;z-index:3;background:#fff;padding-bottom:calc(12px + env(safe-area-inset-bottom)); }
+ .cash-dialog-foot [data-mobile-primary]:not([hidden]) { display:flex!important;justify-content:center;flex:1; }
+ .cash-form-grid { grid-template-columns:minmax(0,1fr)!important; }
+ .cash-content > .data-table { display:block;width:100%;min-width:0; }
+ .lookup-bar { display:flex;gap:8px; }
+ .lookup-bar input { min-width:0;flex:1; }
+ .lookup-bar [data-mobile-primary] { min-width:60px;flex:none; }
+ .lookup-top { gap:10px; }
+ .lookup-incoming { overflow-wrap:anywhere; }
+ #view-packing .editor-head { flex-wrap:wrap;gap:8px; }
+ #view-packing .editor-title { min-width:0; }
+ #view-packing .editor-title h1 { overflow-wrap:anywhere;white-space:normal; }
+ body:has(.sup-drawer:not([hidden])) .crm-mobile-nav { display:none!important; }
+ .sup-drawer:not([hidden]) { max-height:100dvh;overflow-y:auto;overscroll-behavior:contain; }
+ .sup-contact { grid-template-columns:minmax(0,1fr)!important; }
+ .sup-drawer-foot [data-mobile-primary]:not([hidden]),.sup-drawer-foot-sticky [data-mobile-primary]:not([hidden]) { display:flex!important;justify-content:center;min-height:44px; }
+ .pur-view-modes { flex-wrap:nowrap; }
+ #view-stock-requests .page-head { flex-wrap:wrap; }
+ #view-stock-requests .page-head > .chips { flex-basis:100%; }
+}
+@media screen and (max-width:850px){
+ :is(#receivables-list,#deliveries-list,.incoming-table) .crm-card-title small { display:block!important; }
+}
+@media screen and (max-width:850px){
+ .incoming-selection { color:var(--ink); }
+ .incoming-selection .btn.secondary { color:var(--brand-navy);background:#fff;border-color:var(--line); }
+ .pur-view-modes { gap:8px;margin-bottom:12px; }
+ .pur-view-modes > .btn { flex:1;justify-content:center;font-size:12px;padding:8px; }
+ .pur-view-modes > [aria-pressed=true] { color:#fff;background:var(--brand-navy);border-color:var(--brand-navy); }
+}

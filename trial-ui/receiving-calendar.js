@@ -30,6 +30,7 @@ export function initReceivingCalendar({ api, root, confirmBox = async () => fals
     try {
       const d = await api('/purchase-receiving-calendar?' + new URLSearchParams({ from: from.value, to: to.value, supplierId: supplier.value, state: state.value, type:type.value,sku:sku.value,q: q.value, offset: String(offset) }));
       if (id !== request) return;
+      root.dataset.resultCount=String(d.total);
       if (offset && !d.rows.length) { offset = 0; return load(); }
       const keep = supplier.value; supplier.replaceChildren(Object.assign(el('option', '', 'Tất cả NCC'), { value: '' }));
       for (const s of d.suppliers) supplier.append(Object.assign(el('option', '', s.name), { value: s.id }));

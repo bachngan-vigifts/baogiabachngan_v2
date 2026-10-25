@@ -59,7 +59,7 @@ export function installMobileDesign(profiles){
   const body=make('div','crm-filter-fields'),foot=make('footer','crm-filter-foot'),clear=make('button','btn secondary','Xóa lọc'),apply=make('button','btn primary','Xem kết quả');clear.type=apply.type='button';foot.append(clear,apply);group.append(head,body,foot);
   const trigger=make('button','btn secondary crm-filter-trigger','Lọc');trigger.type='button';trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-label','Lọc '+profile.title);
   const slots=new Map();for(const n of parts){const slot=document.createComment('filter position');n.before(slot);slots.set(n,slot);body.append(n);}
-  const header=root.querySelector('.page-head');(header||source).append(trigger);source.append(group);
+  const header=root.querySelector('.page-head,.cash-head');(header||source).append(trigger);source.append(group);
   const r={root,source,group,body,trigger,parts,slots,clear,apply,profile};filters.set(source,r);
   trigger.onclick=()=>{group.showPopover();trigger.setAttribute('aria-expanded','true');};close.onclick=apply.onclick=()=>group.hidePopover();group.addEventListener('toggle',e=>trigger.setAttribute('aria-expanded',String(e.newState==='open')));
   clear.onclick=()=>{
@@ -71,6 +71,7 @@ export function installMobileDesign(profiles){
  function syncFilters(){
   for(const [source,r]of filters){
    if(!source.isConnected){r.trigger.remove();filters.delete(source);continue;}
+   const unavailable=!visible(source);if(r.trigger.hidden!==unavailable)r.trigger.hidden=unavailable;
    if(media.matches){r.group.setAttribute('popover','auto');for(const n of r.parts)if(n.parentElement!==r.body)r.body.append(n);}
    else{if(r.group.matches(':popover-open'))r.group.hidePopover();r.group.removeAttribute('popover');for(const n of r.parts){const slot=r.slots.get(n);if(slot.isConnected&&n.previousSibling!==slot)slot.after(n);}}
    const count=[...r.body.querySelectorAll('input,select')].filter(n=>visible(n)&&!['button','submit','hidden'].includes(n.type)&&((n.type==='checkbox'||n.type==='radio')?n.checked!==n.defaultChecked:n.value!==(n.tagName==='SELECT'?(n.options[0]?.value||''):''))).length;
@@ -84,16 +85,18 @@ export function installMobileDesign(profiles){
    const cells=[...row.children].filter(n=>n.tagName==='TD');if(cells.length<2)continue;
    row.classList.add('crm-list-card');
    cells.forEach(n=>n.classList.add('crm-card-extra'));
-   for(const [kind,index]of Object.entries(p.card||{})){const n=cells[index];if(n){n.classList.remove('crm-card-extra');n.classList.add('crm-card-'+kind);}}
-   for(const action of cells.filter(n=>n.matches('.row-actions,.actions-cell')||n.querySelector('button,a.btn'))){action.classList.remove('crm-card-extra');action.classList.add('crm-card-actions');}
+   const layout=typeof p.card==='function'?p.card(cells):p.card;
+   for(const [kind,index]of Object.entries(layout||{})){const n=cells[index];if(n){n.classList.remove('crm-card-extra');n.classList.add('crm-card-'+kind);}}
+   for(const action of cells.filter(n=>n.matches('.row-actions,.actions-cell')||n.classList.contains('crm-card-extra')&&n.querySelector('button.btn,button.icon-btn,a.btn'))){action.classList.remove('crm-card-extra');action.classList.add('crm-card-actions');}
    cardRows.add(row);
   }
  }
  function primaryControls(){
   const mark=n=>{if(n&&!n.hasAttribute('data-mobile-primary'))n.dataset.mobilePrimary='';};
   for(const el of document.querySelectorAll('.page-head .btn-add'))mark(el);
+  for(const el of document.querySelectorAll('.lookup-bar button[type=submit],.incoming-selection > .btn.primary'))mark(el);
   for(const header of document.querySelectorAll('.page-head')){
-   const primary=header.querySelector('.btn.primary:not(.mobile-action-trigger)');if(primary&&!/huỷ|hủy|xoá|xóa|đóng/i.test(primary.textContent))mark(primary);
+   const primary=header.querySelector('.btn.primary:not(.mobile-action-trigger)');if(primary&&!/huỷ|hủy|xoá|xóa|đóng/i.test(primary.textContent)){mark(primary);if(/^[+＋]/.test(primary.textContent.trim())&&!primary.hasAttribute('data-mobile-create'))primary.dataset.mobileCreate='';}
   }
   for(const n of document.querySelectorAll('#orders-new,#contracts-new,#new-customer,#tasks-new,[data-care-new]'))if(!n.hasAttribute('data-mobile-create')){n.dataset.mobileCreate='';mark(n);}
   for(const foot of document.querySelectorAll('.modal-foot,.sup-drawer-foot,.sup-drawer-foot-sticky,.pos-form-actions,.cash-dialog-foot')){
@@ -102,7 +105,7 @@ export function installMobileDesign(profiles){
   }
  }
  function kpis(){
-  for(const n of document.querySelectorAll('.stats .stat strong')){
+  for(const n of document.querySelectorAll('.stats .stat strong,.cash-stat strong')){
    if(n.dataset.kpiFull&&n.textContent===n.dataset.kpiCompact){if(!media.matches)setText(n,n.dataset.kpiFull);continue;}
    const text=n.textContent.trim(),compact=compactKpi(text);if(!compact)continue;
    n.dataset.kpiFull=text;n.dataset.kpiCompact=compact;n.title=text;if(media.matches)setText(n,compact);
