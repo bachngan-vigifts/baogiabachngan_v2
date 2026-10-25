@@ -472,12 +472,6 @@ test('POS gõ tìm: máy chủ chưa hiểu skus= (bản cũ / đang triển kha
   }
 });
 
-test('POS mobile lấy 20 sản phẩm mỗi lượt và tự tải tiếp khi cuộn', () => {
-  const js = readFileSync('trial-ui/pos.js', 'utf8'), css = readFileSync('trial-ui/pos.css', 'utf8');
-  assert.match(js, /mobile \? 20 : 60/);
-  assert.match(js, /grid\.scrollTop \+ grid\.clientHeight >= grid\.scrollHeight - 120/);
-  assert.match(css, /max-height: calc\(164px \* 10 \+ 8px \* 9\); overflow-y: auto/);
-});
 test('Bán hàng nhanh có bảng đơn theo cửa hàng và đủ bộ lọc trạng thái vận hành', () => {
   const source = readFileSync('trial-ui/pos.js', 'utf8');
   for (const label of ['Đơn hàng cửa hàng', 'Tất cả đơn', 'Chờ xử lý', 'Đang đóng hàng', 'Đợi giao', 'Hoàn thành', 'Đã hủy'])
@@ -1055,4 +1049,51 @@ test('nút thao tác GHN tự động áp dụng giống nhau cho quầy Lock v�
   assert.equal(isAutoGhnRegister('CỬA HÀNG LOCKNLOCK CẦN THƠ'), true);
   assert.equal(isAutoGhnRegister('Showroom Gốm Sứ Minh Long Cần Thơ'), true);
   assert.equal(isAutoGhnRegister('Quầy Bách Ngân'), false);
+});
+
+for (const mobile of [true, false]) test(`POS ${mobile ? 'mobile phân trang' : 'desktop nối trang'}: số ô bị giới hạn đúng, chuyển trang không mất giỏ`, async () => {
+  const prevDoc = globalThis.document, prevWin = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {}, matchMedia: () => ({ matches: mobile }) } });
+  try {
+    const root = new Element('section'), catalogs: URLSearchParams[] = [];
+    const product = (i: number) => ({ sku: 'SP'+i, name: 'Sản phẩm '+i, price: 1000, available: 10 });
+    const api = async (path: string) => {
+      if (path.startsWith('/pos/options')) return {registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:{id:'s',registerId:'r',memberId:'emp'},shifts:[],templates:[],policies:[]};
+      if (path.startsWith('/pos/catalog')) {
+        const q = new URLSearchParams(path.split('?')[1]); catalogs.push(q);
+        const offset=Number(q.get('offset')),limit=Number(q.get('limit'));
+        return {products:Array.from({length:limit},(_,i)=>product(offset+i)),nextOffset:offset+limit<400?offset+limit:null};
+      }
+      if (path==='/pos/preview') return {...sample,lines:[{...sample.lines[0],sku:'SP0'}]};
+      return {orders:[],counts:{}};
+    };
+    const ui=initPos({api,root,toast(){},user:()=>({id:'emp',perms:['pos.sell']}),confirmBox:async()=>true,go(){}});
+    await ui.load();
+    const products=()=>root.querySelectorAll('button').filter(b=>b.className==='pos-product');
+    assert.equal(root.querySelectorAll('button').find(b=>b.className.includes('pos-mobile-cart-open'))!.disabled,false,'customer/order shortcut works with an empty cart');
+    const grid=root.querySelectorAll('div').find(x=>x.className==='pos-grid')!;
+    const next=root.querySelectorAll('button').find(x=>x.textContent===(mobile?'Trang tiếp ›':'Xem thêm sản phẩm'))!;
+    const previous=root.querySelectorAll('button').find(x=>x.textContent==='‹ Trang trước')!;
+    assert.equal(products().length,mobile?20:60);
+    await products()[0]!.fire('click');
+    assert.equal(products()[0]!.attributes['aria-pressed'],'true');
+    await next.fire('click');
+    assert.equal(products().length,mobile?20:120);
+    assert.equal(catalogs.at(-1)!.get('offset'),mobile?'20':'60');
+    if(mobile){
+      await previous.fire('click');
+      assert.equal(products().length,20);
+      assert.equal(products()[0]!.attributes['aria-pressed'],'true','paging preserves the selected cart');
+      assert.equal(previous.hidden,true);
+      const count=catalogs.length;
+      Object.assign(grid,{scrollTop:900,clientHeight:200,scrollHeight:1000});
+      for(let i=0;i<6;i++)await grid.fire('scroll');
+      await new Promise(r=>setTimeout(r,0));
+      assert.equal(catalogs.length,count,'scrolling never requests more mobile products');
+      await root.querySelectorAll('button').find(b=>b.dataset.filter==='out')!.fire('click');
+      await new Promise(r=>setTimeout(r,0));
+      assert.equal(catalogs.length,count,'sparse stock filters never scan additional mobile pages');
+    }
+    await new Promise(r=>setTimeout(r,250)); // settle the cart preview before restoring the DOM
+  } finally { Object.assign(globalThis,{document:prevDoc,window:prevWin}); }
 });

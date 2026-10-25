@@ -84,6 +84,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     orderRegisterId: '',
     productFilter: 'all',
     catalogLoading: false,
+    catalogPages: [0],
     offset: 0,
     request: 0,
     showMenu: false,
@@ -96,6 +97,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     pendingUser = '',
     nodes = {},
     lineTotals = new Map();
+  const catalogMedia = window.matchMedia?.('(max-width: 850px)');
+  const mobileCatalog = () => catalogMedia?.matches === true;
   const run = async (fn) => {
     try {
       return await fn();
@@ -169,6 +172,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function invalidate() {
     st.qr = null;
     st.preview = null;
+    updateMobileDock();
     if (nodes.confirm) { nodes.confirm.checked = false; nodes.confirm.disabled = false; }
     if (nodes.transferLabel) nodes.transferLabel.textContent = 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản';
     refreshPay();
@@ -410,12 +414,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const grid = el('div', 'pos-grid');
     nodes.grid = grid;
     grid.addEventListener('scroll', () => {
-      if (st.offset != null && !st.catalogLoading && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 120)
+      if (!mobileCatalog() && st.offset != null && !st.catalogLoading && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 120)
         run(() => search(false, true));
     });
     left.append(grid);
+    const pages = el('nav', 'pos-catalog-pages');
+    pages.setAttribute('aria-label', 'Trang sản phẩm');
+    nodes.previous = button('‹ Trang trước', 'btn secondary', () => run(() => search(false, true, false, true)));
+    nodes.previous.hidden = true;
     nodes.more = button('Xem thêm sản phẩm', 'btn secondary', () => run(() => search(false, true)));
-    left.append(nodes.more);
+    pages.append(nodes.previous, nodes.more);
+    left.append(pages);
     const bh = el('div', 'pos-basket-head'), basketTitle = el('div');
     nodes.cartCount = el('span', 'pos-cart-count', `${st.cart.length} món`);
     basketTitle.append(el('h2', '', 'Đơn hiện tại'), nodes.cartCount);
@@ -1020,7 +1029,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     nodes.mobileCartCount.textContent = `Đơn hiện tại · ${count} món`;
     nodes.mobileCartCustomer.textContent = st.customer?.name || 'Chưa chọn khách hàng';
     nodes.mobileCartTotal.textContent = d ? money(d.payable ?? d.total) : count ? 'Đang tính…' : '0 đ';
-    nodes.mobileCartOpen.disabled = !count;
+    // Viewing the order/customer is useful even before adding the first product.
   }
   function refreshPay() {
     if (!nodes.pay) return;
@@ -1066,15 +1075,19 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   /** Tồn / giá máy chủ của từng mã vừa xem (chỉ dùng khi đang gõ tìm, giữ 15 giây): gõ thêm / xoá chữ không phải hỏi lại. */
   const liveCache = new Map(), LIVE_MS = 15000;
   const cachedLive = (sku) => { const hit = liveCache.get(st.policy + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
-  async function search(addScanned = false, more = false, typed = false) {
+  async function search(addScanned = false, more = false, typed = false, previous = false) {
     if (!st.register) return;
     if (more && st.catalogLoading) return;
+    if (more && (nodes.search?.value.trim() || '') !== st.query) return;
+    if (previous && st.catalogPages.length < 2) return;
     if (!typed && !more) liveCache.clear(); // bán xong, đổi bảng giá, mở ca…: lấy tồn mới
     st.catalogLoading = true;
+    nodes.more.disabled = true;
+    nodes.previous.disabled = true;
     const seq = ++searchSeq,
       q = nodes.search?.value.trim() || '',
-      offset = more ? st.offset : 0,
-      mobile = window.matchMedia?.('(max-width: 850px)')?.matches === true,
+      offset = previous ? st.catalogPages.at(-2) : more ? st.offset : 0,
+      mobile = mobileCatalog(), append = more && !mobile,
       limit = mobile ? 20 : 60;
     try {
       // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
@@ -1087,7 +1100,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         const page = previews.slice(offset, offset + limit), nextOffset = offset + limit < previews.length ? offset + limit : null;
         const show = () => page.map(x => cachedLive(x.sku) || { ...x, onHand: 0, reserved: 0, available: 0, loading: true });
         const missing = page.filter(x => !cachedLive(x.sku)).map(x => x.sku);
-        if (missing.length && seq === searchSeq) { st.products = more ? [...st.products, ...show()] : show(); renderProducts(); }
+        if (missing.length && seq === searchSeq && (!mobile || !more)) { st.products = append ? [...st.products, ...show()] : show(); renderProducts(); }
         if (missing.length) {
           const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set(), asked = new Set(missing);
           // Máy chủ chưa hiểu `skus=` (đang triển khai dở / bản cũ) thì trả danh sách khác: không xoá các ô, chuyển sang tìm theo từ khoá.
@@ -1110,8 +1123,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       }
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
-      st.products = more ? [...st.products, ...d.products] : d.products;
+      st.products = append ? [...st.products, ...d.products] : d.products;
+      if (!more) st.catalogPages = [0];
+      else if (previous) st.catalogPages.pop();
+      else if (mobile) st.catalogPages.push(offset);
       renderProducts();
+      if (mobile || !more) nodes.grid.scrollTop = 0;
+      nodes.previous.hidden = !mobile || st.catalogPages.length < 2;
+      nodes.more.textContent = mobile ? 'Trang tiếp ›' : 'Xem thêm sản phẩm';
       nodes.more.hidden = d.nextOffset == null;
       if (addScanned && !more) {
         if (exact && exact.available > 0) add(exact, true);
@@ -1119,7 +1138,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       }
     } finally {
       // Chỉ request mới nhất mới mở khoá (request cũ kết thúc muộn không làm nút "Xem thêm" chạy trùng).
-      if (seq === searchSeq) st.catalogLoading = false;
+      if (seq === searchSeq) {
+        st.catalogLoading = false;
+        nodes.more.disabled = false;
+        nodes.previous.disabled = false;
+      }
     }
     if (seq === searchSeq) fillFiltered(!more);
   }
@@ -1127,6 +1150,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   let autoMore = 0;
   function fillFiltered(reset = false) {
     if (reset) autoMore = 0;
+    if (mobileCatalog()) return; // Mobile pages stay bounded, even when filtering sparse stock.
     if (st.productFilter === 'all' || st.offset == null || st.catalogLoading || autoMore >= 5) return;
     const shown = nodes.grid?.querySelectorAll?.('.pos-product-tile')?.length ?? 0;
     if (shown >= 12) return;
@@ -1180,7 +1204,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       }
       nodes.grid.append(tile);
     }
-    if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', 'Không có sản phẩm phù hợp.'));
+    if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', mobileCatalog() && st.productFilter !== 'all'
+      ? 'Không có sản phẩm phù hợp trên trang này. Đổi trang hoặc tìm theo tên/mã.' : 'Không có sản phẩm phù hợp.'));
     markProductsInCart();
   }
   /** Chữ có tô đậm từ khoá đang tìm (cùng cách trang Sản phẩm). */
@@ -2134,6 +2159,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       e.preventDefault();
       e.returnValue = '';
     }
+  });
+  catalogMedia?.addEventListener?.('change', () => {
+    if (root.isConnected && !root.hidden && st.register) run(() => search(false));
   });
   return { load, dirty };
 }
