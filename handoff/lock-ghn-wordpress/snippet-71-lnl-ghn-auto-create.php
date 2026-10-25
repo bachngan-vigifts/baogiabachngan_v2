@@ -8,10 +8,10 @@ if (!defined('ABSPATH')) {
 }
 
 if (!defined('LNL_GHN_TOKEN')) {
-    define('LNL_GHN_TOKEN', 'REDACTED_RUNTIME_SECRET');
+    define('LNL_GHN_TOKEN', (string) getenv('LNL_GHN_TOKEN'));
 }
 if (!defined('LNL_GHN_SHOP_ID')) {
-    define('LNL_GHN_SHOP_ID', 6096731);
+    define('LNL_GHN_SHOP_ID', (int) getenv('LNL_GHN_SHOP_ID'));
 }
 if (!defined('LNL_GHN_AUTO_CREATE_ENABLED')) {
     define('LNL_GHN_AUTO_CREATE_ENABLED', true);
@@ -71,91 +71,12 @@ function lnl_ghn_auto_create_order_on_processing($order_id, $order = null) {
 }
 
 function lnl_ghn_create_order_from_wc_order(WC_Order $order) {
-    $address = lnl_ghn_get_order_address($order);
-    $phone = lnl_ghn_get_order_phone($order);
-    $name = trim($order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name());
-    if (!$name) {
-        $name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
+    if (!function_exists('lnl_crm_ghn_confirm')) {
+        throw new RuntimeException('Dịch vụ GHN dùng chung chưa được nạp; không tạo vận đơn.');
     }
-
-    if (!$name) {
-        throw new Exception('thiếu tên người nhận');
-    }
-    if (!$phone) {
-        throw new Exception('thiếu số điện thoại người nhận');
-    }
-    if (!$address) {
-        throw new Exception('thiếu địa chỉ người nhận');
-    }
-
-    $mapped = lnl_ghn_get_order_ghn_location($order);
-    if (empty($mapped['district_id']) || empty($mapped['ward_code'])) {
-        $mapped = lnl_ghn_map_address($address);
-    }
-    if (empty($mapped['district_id']) || empty($mapped['ward_code'])) {
-        throw new Exception('không map được phường/quận GHN từ địa chỉ: ' . $address);
-    }
-
-    $package = lnl_ghn_get_order_package($order);
-    $cod_amount = strtolower((string) $order->get_payment_method()) === 'cod' ? (int) round((float) $order->get_total()) : 0;
-    $insurance_value = min((int) round((float) $order->get_total()), 5000000);
-
-    $items = array();
-    foreach ($order->get_items('line_item') as $item) {
-        if (!$item instanceof WC_Order_Item_Product) {
-            continue;
-        }
-        $product = $item->get_product();
-        $items[] = array(
-            'name' => mb_substr($item->get_name(), 0, 120),
-            'code' => $product ? (string) $product->get_sku() : '',
-            'quantity' => max(1, (int) $item->get_quantity()),
-            'price' => max(0, (int) round((float) $order->get_line_subtotal($item, false, false) / max(1, (int) $item->get_quantity()))),
-            'length' => $package['length'],
-            'width' => $package['width'],
-            'height' => $package['height'],
-            'weight' => max(1, (int) ceil($package['weight'] / max(1, count($order->get_items('line_item'))))),
-        );
-    }
-
-    $payload = array(
-        'payment_type_id' => 2,
-        'required_note' => 'CHOXEMHANGKHONGTHU',
-        'note' => 'Đơn WooCommerce #' . $order->get_order_number(),
-        'client_order_code' => (string) $order->get_order_number(),
-        'to_name' => $name,
-        'to_phone' => $phone,
-        'to_address' => $address,
-        'to_ward_code' => (string) $mapped['ward_code'],
-        'to_district_id' => (int) $mapped['district_id'],
-        'cod_amount' => $cod_amount,
-        'content' => 'LocknLockOnline - đơn #' . $order->get_order_number(),
-        'weight' => $package['weight'],
-        'length' => $package['length'],
-        'width' => $package['width'],
-        'height' => $package['height'],
-        'insurance_value' => $insurance_value,
-        'service_type_id' => 2,
-        'items' => $items,
-    );
-
-    $response = lnl_ghn_api_request('/v2/shipping-order/create', $payload, true);
-
-    if ((int) ($response['code'] ?? 0) !== 200) {
-        $message = $response['message'] ?? $response['code_message_value'] ?? 'GHN trả lỗi không xác định';
-        throw new Exception($message);
-    }
-
-    $data = $response['data'] ?? array();
-    if (empty($data['order_code'])) {
-        throw new Exception('GHN không trả mã vận đơn');
-    }
-
-    return array(
-        'order_code' => $data['order_code'],
-        'sort_code' => $data['sort_code'] ?? '',
-        'total_fee' => $data['total_fee'] ?? 0,
-    );
+    $result = lnl_crm_ghn_confirm($order);
+    if (is_wp_error($result)) { throw new RuntimeException($result->get_error_message()); }
+    return $result;
 }
 
 function lnl_ghn_get_order_address(WC_Order $order) {

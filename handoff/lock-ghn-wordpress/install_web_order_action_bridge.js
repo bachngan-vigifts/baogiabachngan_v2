@@ -39,51 +39,56 @@ function nonce(html) {
   const m=html.match(/CODE_SNIPPETS\s*=\s*(\{.*?\});/s); if(m) try { const x=JSON.parse(m[1]); if(x.restAPI?.nonce) return x.restAPI.nonce; } catch {}
   return (html.match(/"root":"[^"]+wp-json[^"]*","nonce":"([^"]+)"/)||[])[1] || (html.match(/"snippets":"[^"]+","nonce":"([^"]+)"/)||[])[1];
 }
+// Pure PHP services are embedded without activating the exported checkout/cron snippets.
+const phpSource = name => fs.readFileSync(require('path').join(__dirname, name), 'utf8').replace(/^<\?php\s*/, '');
+const ghnService = phpSource('ghn-service.php'), ghnProvider = phpSource('ghn-provider.php');
 const code = `/** Claw: thao tác đơn website từ CRM Bán hàng (chốt/GHN, bổ sung địa chỉ, huỷ, làm mới). */
 if (!defined('ABSPATH')) { return; }
+${ghnService}
+${ghnProvider}
 add_action('rest_api_init', function () {
   register_rest_route('vigifts/v1', '/order-action-v7', array('methods'=>'POST','permission_callback'=>'__return_true','callback'=>function(WP_REST_Request $r) {
     $auth=(string)$r->get_header('authorization'); $provided=preg_match('/^Bearer\\s+(.+)$/i',$auth,$m)?$m[1]:'';
     if (!$provided || !hash_equals('${tokenHash}', hash('sha256',$provided))) return new WP_Error('forbidden','Kết nối CRM không hợp lệ.',array('status'=>401));
     $id=absint($r->get_param('orderId')); $action=sanitize_key((string)$r->get_param('action')); $order=wc_get_order($id);
     if (!$order) return new WP_Error('not_found','Không tìm thấy đơn trên website.',array('status'=>404));
-    $status=$order->get_status(); $code=(string)$order->get_meta('_lnl_ghn_order_code');
+    $status=$order->get_status(); $stored_code=$order->get_meta('_lnl_ghn_order_code'); $code=is_string($stored_code)?$stored_code:'';
     if ($action==='locations') {
       $province=absint($r->get_param('provinceId')); $district=absint($r->get_param('districtId')); $rows=array();
       try {
-        if ($district && function_exists('lnl_ghn_get_wards')) { foreach ((array)lnl_ghn_get_wards($district) as $x) $rows[]=array('id'=>sanitize_text_field($x['WardCode']??''),'name'=>sanitize_text_field($x['WardName']??'')); }
-        elseif ($province && function_exists('lnl_ghn_get_districts')) { foreach ((array)lnl_ghn_get_districts($province) as $x) $rows[]=array('id'=>absint($x['DistrictID']??0),'name'=>sanitize_text_field($x['DistrictName']??'')); }
-        elseif (function_exists('lnl_ghn_get_provinces')) { foreach ((array)lnl_ghn_get_provinces() as $x) $rows[]=array('id'=>absint($x['ProvinceID']??0),'name'=>sanitize_text_field($x['ProvinceName']??'')); }
-        else return new WP_Error('ghn_locations','Website chưa có kết nối danh mục địa chỉ GHN.',array('status'=>503));
+        $data=lnl_crm_ghn_locations($district?'/master-data/ward':($province?'/master-data/district':'/master-data/province'),$district?array('district_id'=>$district):($province?array('province_id'=>$province):array()));
+        if(is_wp_error($data)) return $data;
+        foreach($data as $x) {
+          $rows[]=array('id'=>$district?sanitize_text_field($x['WardCode']??''):absint($x[$province?'DistrictID':'ProvinceID']??0),
+            'name'=>sanitize_text_field($x[$district?'WardName':($province?'DistrictName':'ProvinceName')]??''));
+        }
       } catch(Exception $e) { return new WP_Error('ghn_locations',$e->getMessage(),array('status'=>502)); }
       return array('ok'=>true,'locations'=>array_values(array_filter($rows,function($x){return !empty($x['id'])&&!empty($x['name']);})));
     }
     if ($action==='confirm') {
-      if (in_array($status,array('completed','cancelled','refunded','failed'),true)) return new WP_Error('bad_status','Trạng thái đơn không cho phép chốt.',array('status'=>409));
-      $address=sanitize_text_field((string)$r->get_param('addressLine')); $province_id=absint($r->get_param('provinceId')); $district_id=absint($r->get_param('districtId')); $ward_code=sanitize_text_field((string)$r->get_param('wardCode'));
-      if ($address || $province_id || $district_id || $ward_code) {
-        $province_name=sanitize_text_field((string)$r->get_param('provinceName')); $district_name=sanitize_text_field((string)$r->get_param('districtName')); $ward_name=sanitize_text_field((string)$r->get_param('wardName'));
-        if (!$address || !$province_id || !$district_id || !$ward_code || !$province_name || !$district_name || !$ward_name) return new WP_Error('address_invalid','Vui lòng nhập đủ địa chỉ, Tỉnh/Thành, Quận/Huyện và Phường/Xã.',array('status'=>409));
-        $order->set_shipping_address_1($address); $order->set_shipping_address_2($ward_name); $order->set_shipping_city($district_name); $order->set_shipping_state($province_name);
-        $order->update_meta_data('_lnl_ghn_shipping_province_id',$province_id); $order->update_meta_data('_lnl_ghn_shipping_province_name',$province_name);
-        $order->update_meta_data('_lnl_ghn_shipping_district_id',$district_id); $order->update_meta_data('_lnl_ghn_shipping_district_name',$district_name);
-        $order->update_meta_data('_lnl_ghn_shipping_ward_code',$ward_code); $order->update_meta_data('_lnl_ghn_shipping_ward_name',$ward_name);
-        $order->update_meta_data('_lnl_ghn_province_id',$province_id); $order->update_meta_data('_lnl_ghn_province_name',$province_name);
-        $order->update_meta_data('_lnl_ghn_district_id',$district_id); $order->update_meta_data('_lnl_ghn_district_name',$district_name);
-        $order->update_meta_data('_lnl_ghn_ward_code',$ward_code); $order->update_meta_data('_lnl_ghn_ward_name',$ward_name); $order->save();
+      $input=array();
+      foreach(array('addressLine','provinceId','provinceName','districtId','districtName','wardCode','wardName') as $field) {
+        if($r->get_param($field)!==null) $input[$field]=sanitize_text_field((string)$r->get_param($field));
       }
-      if ($status!=='processing') $order->update_status('processing','CRM Bán hàng: chốt đơn và yêu cầu tạo vận đơn GHN.');
-      $order=wc_get_order($id); $code=(string)$order->get_meta('_lnl_ghn_order_code');
-      if (!$code && function_exists('lnl_ghn_create_order_from_wc_order')) {
-        try { $x=lnl_ghn_create_order_from_wc_order($order); if(!empty($x['order_code'])){$order->update_meta_data('_lnl_ghn_order_code',sanitize_text_field($x['order_code']));$order->update_meta_data('_lnl_ghn_sort_code',sanitize_text_field($x['sort_code']??''));$order->update_meta_data('_lnl_ghn_total_fee',absint($x['total_fee']??0));$order->update_meta_data('_lnl_ghn_last_status','ready_to_pick');$order->save();} } catch(Exception $e){ return new WP_Error('ghn_create',$e->getMessage(),array('status'=>409)); }
+      $x=lnl_crm_ghn_confirm($order,$input);
+      if(is_wp_error($x)) {
+        error_log(wp_json_encode(array('event'=>'crm_ghn_failure','order_id'=>$id,'code'=>$x->get_error_code(),
+          'legacy_handler_loaded'=>function_exists('lnl_ghn_create_order_from_wc_order'),'provider_loaded'=>function_exists('lnl_crm_ghn_prepare'))));
+        return $x;
       }
-      if (!(string)$order->get_meta('_lnl_ghn_order_code')) return new WP_Error('address_invalid','Website chưa tạo được vận đơn GHN; vui lòng hoàn thiện địa chỉ người nhận.',array('status'=>409));
+      // Status hooks run only after the carrier code has been saved and read back.
+      try {
+        $order=lnl_crm_ghn_reload($id);
+        if(in_array($order->get_status(),array('pending','on-hold'),true)&&($x['status']??'')==='ready_to_pick') $order->update_status('processing','CRM Bán hàng: đã xác minh vận đơn GHN.');
+      } catch(Throwable $e) { return lnl_crm_ghn_error('ghn_metadata_persist_failed','Đã có mã GHN; chưa cập nhật được trạng thái WooCommerce. Chỉ đối soát, không tạo mới.',502); }
     } elseif ($action==='cancel') {
       if ($status==='completed') return new WP_Error('delivered','Đơn đã hoàn thành, không thể huỷ.',array('status'=>409));
       if ($code && function_exists('lnl_ghn_api_request')) { try { $x=lnl_ghn_api_request('/v2/switch-status/cancel',array('order_codes'=>array($code)),true); if((int)($x['code']??0)!==200) return new WP_Error('ghn_cancel',sanitize_text_field($x['message']??'GHN chưa huỷ được vận đơn.'),array('status'=>409)); } catch(Exception $e){ return new WP_Error('ghn_cancel',$e->getMessage(),array('status'=>409)); } }
       $order->update_meta_data('_lnl_ghn_last_status','cancel'); $order->update_status('cancelled','CRM Bán hàng: huỷ đơn'.($code?' và vận đơn GHN '.$code:'').'.'); $order->save();
     } elseif ($action!=='refresh') return new WP_Error('bad_action','Thao tác không hợp lệ.',array('status'=>400));
-    $order=wc_get_order($id); $prefix=$order->has_shipping_address()?'shipping':'billing';
+    try { $order=$action==='confirm'?lnl_crm_ghn_reload($id):wc_get_order($id); }
+    catch(Throwable $e) { return lnl_crm_ghn_error('ghn_metadata_persist_failed','Đã có vận đơn; chưa đọc lại được mã WooCommerce. Chỉ đối soát, không tạo mới.',502); }
+    $prefix=$order->has_shipping_address()?'shipping':'billing';
     $get_meta=function($field)use($order,$prefix){$v=(string)$order->get_meta('_lnl_ghn_'.$prefix.'_'.$field);return $v!==''?$v:(string)$order->get_meta('_lnl_ghn_'.$field);};
     $ghn_address=array('addressLine'=>$prefix==='shipping'?$order->get_shipping_address_1():$order->get_billing_address_1(),'provinceId'=>absint($get_meta('province_id')),'provinceName'=>sanitize_text_field($get_meta('province_name')?:($prefix==='shipping'?$order->get_shipping_state():$order->get_billing_state())),'districtId'=>absint($get_meta('district_id')),'districtName'=>sanitize_text_field($get_meta('district_name')?:($prefix==='shipping'?$order->get_shipping_city():$order->get_billing_city())),'wardCode'=>sanitize_text_field($get_meta('ward_code')),'wardName'=>sanitize_text_field($get_meta('ward_name')?:($prefix==='shipping'?$order->get_shipping_address_2():$order->get_billing_address_2())));
     return array('ok'=>true,'status'=>$order->get_status(),'ghnOrderCode'=>(string)$order->get_meta('_lnl_ghn_order_code'),'ghnStatus'=>(string)$order->get_meta('_lnl_ghn_last_status'),'ghnSortCode'=>(string)$order->get_meta('_lnl_ghn_sort_code'),'ghnFee'=>(float)$order->get_meta('_lnl_ghn_total_fee'),'ghnAddress'=>$ghn_address,'updatedAt'=>gmdate('c'));

@@ -19,6 +19,8 @@ jobs:
         with:
           node-version: 22.22.0
           cache: npm
+      - name: PHP runtime for WordPress contract tests
+        run: php --version
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
