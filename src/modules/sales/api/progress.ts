@@ -1,3 +1,4 @@
+import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
@@ -23,7 +24,7 @@ export async function progressOf(db: Db | Tx, orderIds: string[]): Promise<Map<s
   const ids = [...new Set(orderIds)];
   if (!ids.length) return new Map();
   const counterDelivered = and(inArray(salesOrders.id, ids), eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'counter'), eq(salesOrders.status, 'delivered'));
-  const [orders, packed, printing, marks, counterLines, counterMoves] = await Promise.all([
+  const [orders, packed, printing, marks, counterLines, counterMoves, fulfilment] = await Promise.all([
     db.select({ id: salesOrders.id, status: salesOrders.status }).from(salesOrders).where(inArray(salesOrders.id, ids)),
     db.selectDistinct({ orderId: packingSlips.orderId }).from(packingSlips).where(and(inArray(packingSlips.orderId, ids), eq(packingSlips.status, 'packed'))),
     printingOrders(db, ids),
@@ -37,6 +38,7 @@ export async function progressOf(db: Db | Tx, orderIds: string[]): Promise<Map<s
     db.select({ orderId: salesOrders.id, sku: stockMoves.sku, qty: sql<number>`-sum(${stockMoves.qty})`.mapWith(Number) })
       .from(stockMoves).innerJoin(salesOrders, eq(salesOrders.id, stockMoves.refId))
       .where(and(counterDelivered, eq(stockMoves.refType, 'pos_order'))).groupBy(salesOrders.id, stockMoves.sku),
+    crmStockFulfilment(db, ids),
   ]);
   const packedSet = new Set(packed.map(p => p.orderId));
   const issued = new Map(counterMoves.map(r => [JSON.stringify([r.orderId, r.sku]), r.qty]));
@@ -46,7 +48,9 @@ export async function progressOf(db: Db | Tx, orderIds: string[]): Promise<Map<s
   return new Map(orders.map(o => {
     const m: Partial<Record<ProgressStage, ProgressMark>> = {};
     for (const x of marks) if (x.orderId === o.id) m[x.stage] = { source: x.source, at: x.at, byName: x.byName };
-    return [o.id, orderProgress({ status: o.status, packed: packedSet.has(o.id), directExported: directExports.has(o.id), printing: printing.has(o.id), marks: m })];
+    const physical=fulfilment.get(o.id);
+    const required=!!physical?.lines.length;
+    return [o.id, orderProgress({ status: o.status, physicalExportRequired:required, packed: required?physical!.complete:packedSet.has(o.id), directExported: directExports.has(o.id), printing: printing.has(o.id), marks: m })];
   }));
 }
 

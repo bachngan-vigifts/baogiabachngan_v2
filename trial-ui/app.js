@@ -3709,16 +3709,18 @@ function renderProgress(d) {
   const box = $('#order-progress'), p = d.progress;
   box.hidden = !p; if (!p) return;
   const cancelled = d.order.status === 'cancelled', canMark = isManager() && !cancelled;
+  const stockPending=p.physicalExportRequired&&p.stages.some(s=>s.key==='export'&&!s.done);
   const by = s => s.by === 'auto' ? 'Tự động theo chứng từ' : s.by === 'task' ? `Hoàn thành việc${s.byName ? ' · ' + s.byName : ''}` : s.by === 'manual' ? `Manager đánh dấu${s.byName ? ' · ' + s.byName : ''}` : '';
   box.innerHTML = `<div class="card-title-row"><h2 class="card-title">Tiến trình sản phẩm</h2>
       <span class="pill ${cancelled ? 'muted' : p.done ? 'ok' : 'info'}">${esc(p.label)}</span>
-      ${canMark && !p.done ? '<button type="button" class="btn secondary small" data-progress="all" title="Đánh dấu xong tất cả các bước (chỉ tiến trình – không đổi giao hàng, công nợ)">✓ Hoàn thành tất cả</button>' : ''}</div>
+      ${canMark && !p.done && !stockPending ? '<button type="button" class="btn secondary small" data-progress="all" title="Đánh dấu xong tất cả các bước (chỉ tiến trình – không đổi giao hàng, công nợ)">✓ Hoàn thành tất cả</button>' : ''}</div>
     <ol class="progress-steps">${p.stages.map((s, i) => `<li class="${s.done ? 'done' : s.key === p.current ? 'current' : ''}">
       <span class="dot" aria-hidden="true">${s.done ? '✓' : i + 1}</span><b>${esc(s.label)}</b>
       <small>${s.done ? esc(by(s)) + (s.at ? ' · ' + fmtDate(s.at.slice(0, 10)) : '') : s.key === p.current ? 'Đang ở bước này' : 'Chưa tới'}</small>
-      ${canMark && !s.done ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
+      ${canMark && !s.done && !(['approve','export'].includes(s.key) && p.physicalExportRequired) && !stockPending ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
       ${canMark && s.by === 'manual' ? `<button type="button" class="link-btn muted" data-progress-undo="${esc(s.key)}" title="Bỏ đánh dấu tay ở bước này và các bước sau">Bỏ</button>` : ''}
     </li>`).join('')}</ol>
+    ${p.physicalExportRequired?'<p class="muted small">Xuất kho chỉ hoàn thành theo phiếu xác nhận xuất đủ hàng đúng kho/nguồn; đánh dấu tiến trình không thay phiếu xuất.</p>':''}
     ${p.printing ? '' : '<p class="muted small">Đơn không có phí in nên không có bước In mẫu / Sản xuất.</p>'}`;
 }
 $('#order-progress').addEventListener('click', async e => {

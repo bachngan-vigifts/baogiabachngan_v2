@@ -94,11 +94,14 @@ test('tiến trình: duyệt → kho xác nhận đóng gói → việc In mẫu
   assert.equal((await call(`/orders/${id}/progress`, mgr, 'POST', { stage: 'approve', done: false })).data.progress.stages[2].by, 'task', 'bỏ dấu tay không xoá bước xong theo việc');
 });
 
-test('tiến trình: đơn không in chỉ có Duyệt → Xuất kho → Giao hàng; Manager bấm "Xong" một bước = xong cả các bước trước', async () => {
+test('tiến trình hàng có SKU không được bấm Xong thay duyệt/xuất thực tế', async () => {
   const { call, mgr, order, progress } = await setup();
   const id = await order('B2B_KIN', 0);
   assert.deepEqual((await progress(id)).stages.map((s: any) => s.key), ['approve', 'export', 'delivered']);
-  assert.equal((await call(`/orders/${id}/progress`, mgr, 'POST', { stage: 'sample' })).status, 400, 'không có bước In mẫu');
-  const r = await call(`/orders/${id}/progress`, mgr, 'POST', { stage: 'export' });
-  assert.deepEqual(r.data.progress.stages.map((s: any) => [s.key, s.done, s.by]), [['approve', true, 'manual'], ['export', true, 'manual'], ['delivered', false, null]]);
+  assert.equal((await call(`/orders/${id}/progress`, mgr, 'POST', { stage: 'sample' })).status, 400);
+  assert.equal((await call(`/orders/${id}/progress`, mgr, 'POST', { stage: 'export' })).data.code,'ORDER_NOT_APPROVED');
+  assert.equal((await call(`/orders/${id}/status`,mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  assert.equal((await call(`/orders/${id}/progress`,mgr,'POST',{stage:'export'})).data.code,'STOCK_NOT_PACKED');
+  assert.equal((await call(`/orders/${id}/progress`,mgr,'POST',{stage:'all'})).data.code,'STOCK_NOT_PACKED');
+  assert.equal((await progress(id)).stages.find((s:any)=>s.key==='export').done,false);
 });

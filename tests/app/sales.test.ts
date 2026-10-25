@@ -1,3 +1,4 @@
+import {confirmDirectSupply} from '../helpers/confirmed-direct-supply.ts';
 import { salesOrders, deliveries, packingSlips } from '../../src/modules/sales/schema.ts';
 import { vietnamDate } from '../../src/modules/sales/domain/sales.ts';
 import { documentDate } from '../../src/core/document-number.ts';
@@ -91,6 +92,7 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: '2026-10-11', lines: [{ orderLineId: ly.id, qty: 41 }] })).status, 400, 'chuyến đang chờ cũng tính');
   const cal = (await call('/deliveries?from=2026-10-01&to=2026-10-31', emp)).data.deliveries;
   assert.equal(cal.length, 1); assert.match(cal[0].deliveryNo, /^GH_001_10102026$/); assert.equal(cal[0].receiverName, 'Chị Lan'); assert.equal(cal[0].address, '1 Lê Lợi');
+  await confirmDirectSupply(call,mgr,o.data.id);
   assert.equal((await call('/deliveries/' + g1.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-10' })).status, 200);
   assert.equal((await call('/deliveries/' + g1.data.id + '/status', emp, 'PUT', { status: 'cancelled' })).status, 409);
   d = (await call('/orders/' + o.data.id, emp)).data;
@@ -165,6 +167,7 @@ test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sa
   const first = await order(1);
   // Xuất kho giao hàng.
   const g = await call('/deliveries', emp, 'POST', { orderId: first, plannedDate: '2026-10-07' });
+  await confirmDirectSupply(call,mgr,first);
   await call('/deliveries/' + g.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-07' });
   // Chứng từ kho Sapo: nhập hàng, cân bằng kho (chênh lệch có dấu), điều chuyển.
   await syncSapoDocs(db, 'purchase_order', [{ id: 9, code: 'PON0009', status: 'completed', supplier: { name: 'Minh Long I' }, created_on: '2026-10-01T02:00:00Z', line_items: [{ sku: 'ML-TRA', quantity: 50, price: 80000 }] }], new Map());
@@ -214,6 +217,7 @@ test('xuất hoá đơn: giao xong tự yêu cầu / nhân viên bấm yêu cầ
   const a = await order('HRC_A'), b = await order('HRC_B');
   // Đơn A: giao xong → tự yêu cầu xuất hoá đơn.
   const g = await call('/deliveries', emp, 'POST', { orderId: a, plannedDate: '2026-10-07' });
+  await confirmDirectSupply(call,mgr,a);
   await call('/deliveries/' + g.data.id + '/status', emp, 'PUT', { status: 'delivered', deliveredOn: '2026-10-07' });
   let A = (await call('/orders/' + a, emp)).data.order;
   assert.deepEqual([A.invoiceStatus, A.invoiceRequestedBy], ['requested', null]);

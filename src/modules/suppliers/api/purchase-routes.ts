@@ -1,3 +1,4 @@
+import { lockReceiptForWrite } from './receipt-outbox.ts';
 import { earlyReceiptContext } from './early-receiving.ts';
 import { queueReceiptJob, dispatchReceiptJob, registerReceiptJobRoutes } from './receipt-outbox.ts';
 import { incomingBySkuView } from './incoming-view.ts';
@@ -19,7 +20,7 @@ import { recordMovements, removeMovements } from '../../catalog/api/product-hist
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import {
-  incomingShipmentLines, incomingShipments, supplierContacts, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
+  incomingShipmentLines, incomingShipments, supplierContacts, receiptJobs, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
   supplierReceiptLines, supplierReceipts, suppliers,
 } from '../schema.ts';
 import { computeOrderTotals } from '../domain/order-totals.ts';
@@ -577,7 +578,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (status === 'failed' && !note) fail(400, 'Ghi lại lỗi Sapo để xử lý tiếp.');
     let shipmentId = '';
     await db.transaction(async tx => {
-      const [r] = await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id, c.params.id!)).limit(1).for('update');
+      const r = await lockReceiptForWrite(tx,c.params.id!);
       if (!r) fail(404, 'Không tìm thấy phiếu nhận.');
       shipmentId = r!.shipmentId;
       await loadPurchase(tx as unknown as Db, m, shipmentId, today()); // kiểm phạm vi xem
@@ -599,11 +600,14 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (reason.length < 3) fail(400, 'Nhập lý do huỷ phiếu nhận.');
     let shipmentId = '';
     await db.transaction(async tx => {
-      const [r] = await tx.select().from(supplierReceipts).where(eq(supplierReceipts.id, c.params.id!)).limit(1).for('update');
+      const r = await lockReceiptForWrite(tx,c.params.id!);
       if (!r) fail(404, 'Không tìm thấy phiếu nhận.');
       shipmentId = r!.shipmentId;
       if (r!.cancelledAt) return;
       if (r!.sapoStatus === 'done') fail(409, 'Phiếu đã nhập Sapo – huỷ phiếu nhập trên Sapo và mở lại trạng thái trước.');
+      const [job]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,r!.id)).for('update');
+      if(job&&(job.dispatchToken||job.leaseToken||['processing','callback_pending'].includes(job.status)))
+        throw new AppError(409,'Phiếu đang/chờ xử lý nhập Sapo. Dừng và xác minh kết quả luồng n8n/OpenClaw trước khi huỷ để tránh lệch kho.','RECEIPT_SYNC_IN_PROGRESS');
       await tx.update(supplierReceipts).set({ cancelledAt: nowIso(), cancelledBy: m.id, cancelReason: reason }).where(eq(supplierReceipts.id, r!.id));
       await reverseRef(tx as unknown as Db, m.id, 'supplier_receipt', r!.id, `Huỷ phiếu nhận ${r!.receiptNo}: ${reason}`);
       await removeMovements(tx, `receipt:${r!.id}:`);
