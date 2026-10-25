@@ -61,6 +61,13 @@ try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'390,1280').split(',')
  assert.equal(await page.locator('.crm-document-sheet #view-order').count(),1);assert.equal(await page.locator('#view-order').count(),1,'no cloned document IDs');
  await page.getByRole('button',{name:'Đóng chi tiết HĐKT',exact:true}).click();await page.waitForFunction(()=>location.hash==='#/contracts');await page.locator('.crm-document-sheet').waitFor({state:'hidden'});
  await goto(page,'#/quotes');await page.locator('#quote-list tr.clickable').first().waitFor();await shot(page,'quotes-list',width);
+ if(width<=850){
+  const before=writes.length;await goto(page,'#/quotes/'+q.id);const row=page.locator('#line-list tr[data-i]').first();await row.waitFor();
+  const toggle=row.getByRole('button',{name:'Chi tiết',exact:true});await toggle.waitFor({state:'visible'});await toggle.click();
+  assert.equal(await row.locator('.col-unit').isVisible(),true);await row.locator('.col-qty input').fill('3');
+  await page.waitForFunction(()=>document.querySelector('#m-total').textContent.replace(/\D/g,'')==='691200');assert.equal(writes.length,before,'quantity editing does not save without confirmation');
+  await shot(page,'quote-lines',width);await goto(page,'#/customers/'+customerId);await page.getByRole('button',{name:'Rời trang',exact:true}).click();
+ }
  await goto(page,'#/customers/'+customerId);await page.locator('.crm-customer-person strong').waitFor({state:width<=850?'visible':'hidden'});await settle(page);await shot(page,'customer-detail',width);
  if(width<=850){assert.equal(await page.getByRole('button',{name:'Chăm sóc',exact:true}).first().isVisible(),true);assert.equal(await page.locator('.crm-mobile-nav [aria-current=page]').textContent(),'Khách hàng');}
  await goto(page,'#/tasks');await page.locator('.task-row').first().waitFor();await settle(page);await shot(page,'tasks',width);
