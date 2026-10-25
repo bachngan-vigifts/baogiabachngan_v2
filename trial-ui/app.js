@@ -1,3 +1,4 @@
+import { bindForgotPassword } from './forgot-password.js';
 import { openMobileQuoteCapture } from './mobile-quote-capture.js';
 import { createApprovalFeed } from './approval-feed.js';
 import { initApprovalLauncher } from './approval-launcher.js';
@@ -359,6 +360,7 @@ const KHO_HOME = '#/kho';
 const homeHash = () => isWarehouse() ? KHO_HOME : can('page.quotes') ? '#/quotes' : '#/tasks';
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
+bindForgotPassword({button:$('#forgot-password'),api,email:()=>$('#email').value});
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
 let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('token') : null;
 

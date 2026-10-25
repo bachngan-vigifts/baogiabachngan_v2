@@ -1,3 +1,4 @@
+import { bindForgotPassword } from './forgot-password.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
 import { installBusyButtons, withBusy } from './busy-buttons.js';
 const API=document.querySelector('meta[name="bn-api"]')?.content||'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff';
@@ -13,6 +14,7 @@ async function apiRequest(path,method='GET',body) {
   if(!r.ok){if(r.status===401&&!path.startsWith('/login')){$('supplier-auth').hidden=false;$('supplier-requests').hidden=true;}
     throw Object.assign(Error(d.error||'Không thực hiện được.'),{status:r.status});}return d;
 }
+bindForgotPassword({button:$('supplier-forgot-password'),api,email:()=>$('login-name').value,audience:'supplier'});
 const list=initEarlyRequests({api,host:$('supplier-requests'),portal:true});
 async function enter(){
   $('supplier-error').textContent='';

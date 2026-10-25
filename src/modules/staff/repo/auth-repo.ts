@@ -115,7 +115,21 @@ export async function getPasswordHash(db: AnyDb, memberId: string): Promise<stri
 /** Đổi mật khẩu: tăng phiên bản và xoá MỌI phiên của người đó (kể cả phiên hiện tại – phải đăng nhập lại). */
 export async function changePassword(db: AnyDb, memberId: string, passwordHash: string) {
   await db.transaction(async tx => {
-    await tx.update(credentials).set({ passwordHash, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, memberId));
+    await tx.update(credentials).set({ passwordHash, activationHash:null, activationExpires:null, version: sql`${credentials.version} + 1` }).where(eq(credentials.memberId, memberId));
     await tx.delete(sessions).where(eq(sessions.memberId, memberId));
+  });
+}
+
+/** Keep the current password/sessions valid while sending a one-use recovery link.
+ * A mail failure rolls back the token update; serialized credential locks prevent concurrent sends replacing each other mid-send.
+ */
+export async function issuePortalPasswordReset(db: AnyDb, p: { email: string; audience?: 'supplier' | 'customer'; tokenHash: string; expires: number }, deliver: (member: {email:string;role:'supplier'|'customer'})=>Promise<void>) {
+  return db.transaction(async tx => {
+    const [member] = await tx.select({id:employees.id,email:employees.email,role:employees.role,active:employees.active})
+      .from(employees).innerJoin(credentials,eq(credentials.memberId,employees.id))
+      .where(eq(employees.email,p.email)).for('update');
+    if (!member?.active || !['supplier','customer'].includes(member.role) || member.email.endsWith('.invalid') || (p.audience && member.role !== p.audience)) return;
+    await tx.update(credentials).set({activationHash:p.tokenHash,activationExpires:p.expires}).where(eq(credentials.memberId,member.id));
+    await deliver({email:member.email,role:member.role as 'supplier'|'customer'});
   });
 }

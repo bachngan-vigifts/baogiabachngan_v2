@@ -14,7 +14,7 @@ import { RATE_LIMITS, SESSION_LIFETIME_SECONDS, shouldRenewSession, clearedSessi
 import * as repo from '../repo/auth-repo.ts';
 import { registerMemberRoutes } from './member-routes.ts';
 import { registerAvatarRoutes } from './avatar-routes.ts';
-import type { MailerConfig } from '../../../core/mail/send-mail.ts';
+import { isEmail, mailerReady, sendMail, type MailerConfig } from '../../../core/mail/send-mail.ts';
 
 /** Môi trường mà các route của `staff` cần. Nơi lắp ráp ứng dụng (src/app) tạo ra từ bindings của Cloudflare. */
 export interface StaffEnv {
@@ -174,6 +174,30 @@ function checkSyncToken(c: Ctx): void {
 
 export function registerAuthRoutes(router: Router<StaffEnv>): void {
   // ---- Công khai ----
+  // Same sender/config as supplier order mail; recovery is private (no order-mail CC list).
+  router.post('/forgot-password', async c => {
+    const body = await readJson(c.req,4096);
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    if (!isEmail(email)) throw new AppError(400,'Nhập email đã đăng ký tài khoản.');
+    if (body.audience !== undefined && (typeof body.audience !== 'string' || !['supplier','customer'].includes(body.audience))) throw new AppError(400,'Loại tài khoản không hợp lệ.');
+    await limit(c,'reset-ip:'+clientIp(c.req.headers),10);
+    await limit(c,'reset-email:'+email,3);
+    if (!mailerReady(c.env.mailer)) throw new AppError(503,'Chức năng gửi email chưa sẵn sàng. Vui lòng thử lại sau.');
+    const token = newToken();
+    const deliver = async () => {
+      try {
+        await repo.issuePortalPasswordReset(c.env.db,{email,audience:body.audience as 'supplier'|'customer'|undefined,tokenHash:sha256Hex(token),expires:now(c)+3600},async member=>{
+          const url = new URL('/reset-password.html',c.url.origin);
+          url.hash = new URLSearchParams({token,portal:member.role}).toString();
+          await sendMail(c.env.mailer,{to:[member.email],subject:'Đặt lại mật khẩu tài khoản Bách Ngân',
+            text:`Anh/chị đã yêu cầu đặt lại mật khẩu tài khoản Bách Ngân.\n\nMở liên kết sau để đặt mật khẩu mới (hiệu lực 60 phút, dùng một lần):\n${url.href}\n\nNếu không yêu cầu, anh/chị có thể bỏ qua email này. Mật khẩu hiện tại vẫn giữ nguyên.`});
+        });
+      } catch { console.warn('password_reset_mail_failed'); } // Never expose account existence, tokens or provider responses.
+    };
+    if (c.env.waitUntil) c.env.waitUntil(deliver()); else await deliver();
+    return json({ok:true,message:'Nếu email khớp tài khoản đang hoạt động, hệ thống sẽ gửi liên kết đặt lại mật khẩu. Vui lòng kiểm tra cả thư rác.'},200,{'cache-control':'no-store'});
+  },'public');
+
   router.post('/activation-info', async c => {
     const body = await readJson(c.req, 4096);
     await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
