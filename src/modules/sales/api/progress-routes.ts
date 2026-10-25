@@ -1,4 +1,4 @@
-import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
+import { assertCrmOrderCompletion, crmStockFulfilment } from './crm-stock-lifecycle.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { and, eq } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -32,21 +32,26 @@ export function registerProgressRoutes(router: Router<StaffEnv>) {
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn / HĐKT đã huỷ.');
     const printing = (await printingOrders(c.env.db, [order.id])).has(order.id), list = stagesFor(printing);
     if (stage !== 'all' && !list.includes(stage)) throw new AppError(400, 'Đơn này không có bước đó (đơn không in thì không có In mẫu / Sản xuất).');
-    if (body.done === false) {
-      if (stage === 'all') throw new AppError(400, 'Chọn bước cần bỏ đánh dấu.');
-      await unmarkProgress(c.env.db, order.id, list.slice(list.indexOf(stage)));
-    } else {
-      const physical=(await crmStockFulfilment(c.env.db,[order.id])).get(order.id);
-      if(physical?.lines.length&&physical.status==='draft')throw new AppError(409,'Duyệt đơn bằng thao tác duyệt chứng từ, không đánh dấu tiến trình để thay bước duyệt.','ORDER_NOT_APPROVED');
-      if(physical?.lines.length&&!physical.complete&&stagesUpTo(printing,stage).includes('export'))
-        throw new AppError(409,'Chưa xuất đủ hàng. Xác nhận phiếu xuất đúng kho/nguồn trước; đánh dấu tiến trình không ghi xuất kho.','STOCK_NOT_PACKED');
-      await markProgress(c.env.db, order.id, stagesUpTo(printing, stage), 'manual', viewer(c).id);
-      // Manager đánh dấu đã giao hàng → phiếu đóng gói còn treo tự hoàn tất.
-      if (stage === 'all' || stage === 'delivered') {
-        await closeSlipsOfDeliveredOrders(c.env.db, [order.id]);
-        await invoiceTasksChanged(c.env, { orderId: order.id }, viewer(c).id);
+    await c.env.db.transaction(async tx => {
+      const [fresh] = await tx.select({ status: salesOrders.status }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      if (!fresh || fresh.status === 'cancelled') throw new AppError(409, 'Đơn / HĐKT đã huỷ hoặc vừa thay đổi.');
+      if (body.done === false) {
+        if (stage === 'all') throw new AppError(400, 'Chọn bước cần bỏ đánh dấu.');
+        await unmarkProgress(tx, order.id, list.slice(list.indexOf(stage)));
+      } else {
+        if (stage === 'all' || stage === 'delivered') await assertCrmOrderCompletion(tx, order.id);
+        const physical=(await crmStockFulfilment(tx,[order.id])).get(order.id);
+        if(physical?.lines.length&&physical.status==='draft')throw new AppError(409,'Duyệt đơn bằng thao tác duyệt chứng từ, không đánh dấu tiến trình để thay bước duyệt.','ORDER_NOT_APPROVED');
+        if(physical?.lines.length&&!physical.complete&&stagesUpTo(printing,stage).includes('export'))
+          throw new AppError(409,'Chưa xuất đủ hàng. Xác nhận phiếu xuất đúng kho/nguồn trước; đánh dấu tiến trình không ghi xuất kho.','STOCK_NOT_PACKED');
+        await markProgress(tx, order.id, stagesUpTo(printing, stage), 'manual', viewer(c).id);
+        // Manager đánh dấu đã giao hàng → phiếu đóng gói còn treo tự hoàn tất.
+        if (stage === 'all' || stage === 'delivered') {
+          await closeSlipsOfDeliveredOrders(tx, [order.id]);
+        }
       }
-    }
+    });
+    if (body.done !== false && (stage === 'all' || stage === 'delivered')) await invoiceTasksChanged(c.env, { orderId: order.id }, viewer(c).id);
     return json({ progress: (await progressOf(c.env.db, [order.id])).get(order.id) });
   }, 'business');
 }

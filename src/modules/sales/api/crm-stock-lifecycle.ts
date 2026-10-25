@@ -45,6 +45,16 @@ export async function crmStockFulfilment(db:ReadDb,ids:readonly string[]){
  }
  return result;
 }
+/** Final order completion has the same physical dependency as an individual dispatch.
+ * Never infer an issue from delivered quantities or create inventory movements here.
+ * Caller holds the order lock and commits delivery/quantities/status in one transaction.
+ */
+export async function assertCrmOrderCompletion(db:ReadDb,orderId:string){
+ const state=(await crmStockFulfilment(db,[orderId])).get(orderId);
+ if(!state?.lines.length)return;
+ if(['draft','cancelled'].includes(state.status))throw new AppError(409,'Duyệt đơn / HĐKT trước khi hoàn thành giao hàng.','ORDER_NOT_APPROVED');
+ if(!state.complete)throw new AppError(409,'Chưa xác nhận xuất đủ hàng đúng kho/nguồn. Xác nhận phiếu xuất trước khi hoàn thành giao hàng.','STOCK_NOT_PACKED');
+}
 /** Caller locks the order. Every CRM delivery must have enough real, confirmed source coverage. */
 export async function assertCrmDispatch(db:ReadDb,orderId:string,deliveryId:string){
  const state=(await crmStockFulfilment(db,[orderId])).get(orderId);if(!state)return;

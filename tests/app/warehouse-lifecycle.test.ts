@@ -8,6 +8,7 @@ import {products,warehouses} from '../../src/modules/catalog/schema.ts';
 import {incomingShipmentLines} from '../../src/modules/suppliers/schema.ts';
 import {stockBalances,stockMoves} from '../../src/modules/inventory/schema.ts';
 import {salesOrderLines,salesOrders,orderProgressMarks,deliveries} from '../../src/modules/sales/schema.ts';
+import {refreshOrderStatus} from '../../src/modules/sales/api/routes.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 const photo='data:image/jpeg;base64,'+'A'.repeat(200),sku='031106000';
@@ -100,4 +101,24 @@ test('NCC giao thẳng: xác nhận nguồn rồi mới giao; không trừ kho C
  assert.equal((await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'in_transit'})).data.code,'STOCK_NOT_PACKED');
  const second=await f.pack(1,'supplier');ok(await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{photos:[photo]}));assert.equal(await held(),0);assert.equal(await f.balance(),10);
  ok(await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'delivered'}));assert.equal(await f.balance(),10);assert.equal(await f.balance('other'),10);
+});
+
+// Protect callers beyond the delivery screen (e.g. document amendments/import adapters).
+test('hoàn thành tổng phải có xuất đủ; thất bại rollback số đã giao, trạng thái và không tự trừ kho',async()=>{
+ const f=await fixture(),before=await f.db.select().from(stockMoves);
+ await assert.rejects(f.db.transaction(async tx=>{
+  for(const line of f.lines)await tx.update(salesOrderLines).set({deliveredQty:line.qty}).where(eq(salesOrderLines.id,line.id));
+  await refreshOrderStatus(tx,f.order.id,'2026-10-25');
+ }), (e:any)=>e.code==='STOCK_NOT_PACKED');
+ const detail=ok(await f.call('/orders/'+f.order.id,f.cookies.emp));
+ assert.equal(detail.order.status,'confirmed');
+ assert.ok(detail.lines.every((l:any)=>l.deliveredQty===0));
+ assert.deepEqual(await f.db.select().from(stockMoves),before);
+ // A stale delivered document must be reported, never converted into fictitious stock proof.
+ await f.db.update(salesOrders).set({status:'delivered'}).where(eq(salesOrders.id,f.order.id));
+ const stale=ok(await f.call('/orders/'+f.order.id,f.cookies.emp)).progress;
+ assert.equal(stale.reconciliationRequired,true);
+ assert.equal(stale.stages.find((s:any)=>s.key==='delivered').done,false);
+ assert.equal(stale.stages.find((s:any)=>s.key==='export').done,false);
+ assert.deepEqual(await f.db.select().from(stockMoves),before);
 });

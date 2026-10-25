@@ -1,4 +1,5 @@
 import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
+import { assertCrmOrderCompletion } from './crm-stock-lifecycle.ts';
 import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
@@ -170,9 +171,10 @@ export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.
 }
 /** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán. */
 export async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
-  const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
+  const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1).for('update');
   const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   const status = orderStatusFromLines(order!.status as OrderStatus, lines);
+  if (status === 'delivered') await assertCrmOrderCompletion(tx, orderId);
   if (status !== order!.status) await tx.update(salesOrders).set({ status, updatedAt: nowIso() }).where(eq(salesOrders.id, orderId));
   // Giao xong mà chưa ai yêu cầu xuất hoá đơn → tự yêu cầu (sinh việc cho nhóm Kế toán).
   if (status === 'delivered' && order!.invoiceStatus === 'none')
