@@ -46,7 +46,8 @@ for(const early of [false,true])test(`${early?'lấy trước đã đồng ý':'
  const body={clientKey:crypto.randomUUID(),warehouse:'KHO VIGIFTS',receivedDate:'2026-10-24',lines:[{lineId:'line-a1',goodQty:5,damagedQty:0}],...(earlyRequestId?{earlyRequestId}:{})};
  const receipt=ok(await f.call('/purchase-orders/a1/receipts',c.kho,'POST',body),201);assert.equal(await f.balance(),5);assert.equal(f.outbound.length,1);
  ok(await f.call('/purchase-orders/a1/receipts',c.kho,'POST',body));assert.equal(await f.balance(),5);assert.equal(f.outbound.length,1);
- const result={schema_version:1,action:'goods_receipt_result',idempotency_key:receipt.receiptId,crm_order_id:'a1',crm_receipt_id:receipt.receiptId,ok:true,sapo_purchase_order_id:'1234',sapo_receipt_id:'5678',sapo_receipt_code:'PCN-TEST',sapo_receipt_url:'https://bachngankiengiang.mysapogo.com/admin/purchase_orders/1234'};
+ const claim=ok(await f.call('/integrations/sapo/goods-receipt-jobs/claim','', 'POST',{crm_receipt_id:receipt.receiptId}));
+ const result={schema_version:1,action:'goods_receipt_result',idempotency_key:receipt.receiptId,crm_order_id:'a1',crm_receipt_id:receipt.receiptId,lease_token:claim.lease_token,ok:true,sapo_purchase_order_id:'1234',sapo_receipt_id:'5678',sapo_receipt_code:'PCN-TEST',sapo_receipt_url:'https://bachngankiengiang.mysapogo.com/admin/purchase_orders/1234'};
  ok(await f.call('/integrations/sapo/goods-receipt-result','', 'POST',result));ok(await f.call('/integrations/sapo/goods-receipt-result','', 'POST',result));assert.equal(await f.balance(),5);
  const first=await f.pack(0);ok(await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));assert.equal(await f.balance(),3);
  assert.equal(ok(await f.call('/orders/'+f.order.id,c.emp)).progress.stages.find((s:any)=>s.key==='export').done,false,'xuất một dòng SKU lặp không hoàn thành cả đơn');
@@ -80,7 +81,7 @@ test('đơn cũ không kho/không kế hoạch không được giao thiếu xu�
  assert.equal(await f.balance('other'),99,'audit never silently repairs balances');
 });
 
-test('không huỷ phiếu nhập khi OpenClaw đang xử lý; callback thất bại giải phóng lease rồi mới được hoàn kho',async()=>{
+test('không huỷ phiếu nhập khi OpenClaw đang xử lý hoặc chưa xác định đã tạo trên Sapo; giữ kho chờ đối soát',async()=>{
  const f=await fixture(),c=f.cookies;
  const receipt=ok(await f.call('/purchase-orders/a1/receipts',c.kho,'POST',{clientKey:crypto.randomUUID(),warehouse:'KHO VIGIFTS',lines:[{lineId:'line-a1',goodQty:5}]}),201);
  assert.equal(await f.balance(),5);
@@ -89,7 +90,7 @@ test('không huỷ phiếu nhập khi OpenClaw đang xử lý; callback thất b
  const claim=ok(await f.call('/integrations/sapo/goods-receipt-jobs/claim','', 'POST',{crm_receipt_id:receipt.receiptId}));
  assert.equal((await cancel()).data.code,'RECEIPT_SYNC_IN_PROGRESS');
  ok(await f.call('/integrations/sapo/goods-receipt-result','', 'POST',{schema_version:1,action:'goods_receipt_result',idempotency_key:receipt.receiptId,crm_order_id:'a1',crm_receipt_id:receipt.receiptId,lease_token:claim.lease_token,ok:false}));
- ok(await cancel());assert.equal(await f.balance(),0);ok(await cancel());assert.equal(await f.balance(),0,'huỷ lặp không hoàn hai lần');
+ assert.equal((await cancel()).data.code,'RECEIPT_SYNC_IN_PROGRESS');assert.equal(await f.balance(),5,'chưa xác định kết quả Sapo không được tự hoàn kho CRM');
 });
 
 test('NCC giao thẳng: xác nhận nguồn rồi mới giao; không trừ kho CRM và không giữ hàng ảo tại kho bán',async()=>{

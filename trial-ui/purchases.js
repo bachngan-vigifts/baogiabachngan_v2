@@ -382,6 +382,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     top.append(el('b', '', `${r.receiptNo} · ${dmy(r.receivedDate)}`), el('span', 'sup-pill ' + (r.cancelledAt ? '' : cls), r.cancelledAt ? 'Đã huỷ' : lbl + (r.sapoReceiptCode ? ' · ' + r.sapoReceiptCode : '')));
     card.append(top, el('small', 'muted', `${r.by || ''}${r.warehouse ? ' · ' + r.warehouse : ''}${r.note ? ' · ' + r.note : ''}`));
     if (verified) {
+      card.append(el('small','muted',`Đơn nhập Sapo #${r.sapoPurchaseOrderId} · Phiếu nhận #${r.sapoReceiptId}`));
       try { const url = new URL(r.sapoReceiptUrl); if(url.origin === 'https://bachngankiengiang.mysapogo.com' && url.pathname === '/admin/purchase_orders/'+r.sapoPurchaseOrderId && !url.username && !url.password && !url.search && !url.hash) { const a=el('a','btn secondary small','Mở phiếu Sapo'); a.href=url.href; a.target='_blank'; a.rel='noopener noreferrer';card.append(a); } } catch { /* link không hợp lệ */ }
     }
     if(r.job) card.append(el('p','muted small', ({queued:'Đang chờ gửi n8n',processing:'Claw đang xử lý',callback_pending:'Đã giao n8n · chờ kết quả Sapo',done:'Đã xác minh liên kết Sapo',failed:'Gửi/xử lý chưa thành công',needs_review:'Cần đối soát dữ liệu hoặc kết quả'})[r.job.status] || r.job.status));
