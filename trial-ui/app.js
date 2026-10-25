@@ -4007,7 +4007,7 @@ async function openPacking(id) {
     return;
   }
   let d; try { d = await api('/packing/' + encodeURIComponent(id)); } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; return; }
-  const k = d.slip, o = d.order; slipPhotos.length = 0;
+  const k = d.slip, o = d.order, needsWarehouse = d.requiresWarehouseIssue ?? (k.source === 'warehouse' || d.lines.some(l => String(l.sku || '').trim())); slipPhotos.length = 0;
   $('#packing-title').textContent = k.slipNo; $('#breadcrumb').textContent = k.slipNo; document.title = k.slipNo + ' · Bách Ngân';
   $('#packing-status').innerHTML = pill(PACK_STATUS, k.status);
   $('#packing-back').href = d.canOpenOrder ? docHref(o.id, o.contractNo) : isWarehouse() ? '#/packing' : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? (o.contractNo ? '‹ HĐKT' : '‹ Đơn hàng') : isWarehouse() ? '‹ Phiếu đóng gói' : '‹ Công việc';
@@ -4036,16 +4036,16 @@ async function openPacking(id) {
       <p class="muted small">Chụp 1–3 ảnh (ảnh tự nén nhỏ để không đầy bộ nhớ).</p>
       <label class="btn secondary big-btn pick-photo">📷 Chụp / chọn ảnh<input type="file" id="slip-photo-input" accept="image/*" capture="environment" multiple hidden></label>
       <div class="pack-photos" id="slip-photo-preview"></div>
-      ${k.source === 'warehouse' ? '<h2 class="card-title"><span class="step-no">3</span> Chọn kho xuất hàng</h2><label class="sr-only" for="slip-confirm-wh">Xuất từ kho</label><select id="slip-confirm-wh" class="big-select" required><option value="">— Chọn kho xuất —</option></select>' : ''}
+      ${needsWarehouse ? '<h2 class="card-title"><span class="step-no">3</span> Chọn kho xuất hàng</h2><p class="muted small">Hàng từ NCC, đại lý hoặc điều chuyển phải nhập đủ vào kho xuất trước khi giao.</p><label class="sr-only" for="slip-confirm-wh">Xuất từ kho</label><select id="slip-confirm-wh" class="big-select" required><option value="">— Chọn kho xuất —</option></select>' : ''}
       <label>Ghi chú (tuỳ chọn)<input id="slip-confirm-note" maxlength="1000" placeholder="Ví dụ: 3 thùng, đã dán tem"></label>
-      <h2 class="card-title"><span class="step-no">${k.source === 'warehouse' ? 4 : 3}</span> Bấm khi đã đóng xong</h2>
+      <h2 class="card-title"><span class="step-no">${needsWarehouse ? 4 : 3}</span> Bấm khi đã đóng xong</h2>
       <p class="muted small" id="slip-confirm-hint"></p>
-      <button class="btn primary big-btn" id="slip-confirm" disabled>✅ ${k.source === 'warehouse' ? 'Đã xuất kho' : 'Đã đóng xong'}</button></div>` : ''}`;
+      <button class="btn primary big-btn" id="slip-confirm" disabled>✅ ${needsWarehouse ? 'Đã xuất kho' : 'Đã đóng xong'}</button></div>` : ''}`;
   slipPicks.clear(); slipPickTotal = d.canConfirm ? d.lines.length : 0;
   try { for (const i of JSON.parse(localStorage.getItem('bn-pick-' + k.id) || '[]')) if (i < slipPickTotal) slipPicks.add(i); } catch { /* bỏ qua */ }
   $$('.pick-tick', body).forEach(c => { c.checked = slipPicks.has(Number(c.dataset.pick)); c.closest('tr').classList.toggle('picked', c.checked); });
   drawSlipGate();
-  // Nguồn = Kho: chọn kho xuất → ghi phiếu xuất vào sổ kho (trial-ui/inventory.js); nhớ kho đã chọn lần trước trên máy này.
+  // Mọi nguồn hàng vật lý đều chọn kho thực xuất; nguồn NCC/đại lý không thay phiếu nhập/xuất.
   const whSel = document.getElementById('slip-confirm-wh');
   if (whSel) stockWarehouses().then(list => {
     let last = ''; try { last = localStorage.getItem('bn-pack-wh') || ''; } catch { /* bỏ qua */ }

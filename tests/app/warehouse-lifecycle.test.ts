@@ -7,7 +7,8 @@ import type {StaffEnv} from '../../src/modules/staff/api/auth-routes.ts';
 import {products,warehouses} from '../../src/modules/catalog/schema.ts';
 import {incomingShipmentLines} from '../../src/modules/suppliers/schema.ts';
 import {stockBalances,stockMoves} from '../../src/modules/inventory/schema.ts';
-import {salesOrderLines,salesOrders,orderProgressMarks,deliveries} from '../../src/modules/sales/schema.ts';
+import {salesOrderLines,salesOrders,salesContracts,orderProgressMarks,deliveries,deliveryLines,packingSlips} from '../../src/modules/sales/schema.ts';
+import {crmStockFulfilment} from '../../src/modules/sales/api/crm-stock-lifecycle.ts';
 import {refreshOrderStatus} from '../../src/modules/sales/api/routes.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
@@ -62,7 +63,7 @@ test('đơn cũ không kho/không kế hoạch không được giao thiếu xu�
  const f=await fixture(),c=f.cookies;
  const storeSlip=await f.pack(0,'store');
  const storeResult=await f.call('/packing/'+storeSlip.id+'/confirm',c.kho,'POST',{warehouseId:'other',photos:[photo]});
- assert.equal(storeResult.data.code,'TRANSFER_REQUIRED');assert.equal(await f.balance('other'),10);
+ assert.equal(storeResult.status,400);assert.equal(await f.balance('other'),10);
  await f.db.update(salesOrders).set({warehouseId:null,status:'confirmed'}).where(eq(salesOrders.id,f.order.id));
  assert.equal((await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'delivered'})).data.code,'STOCK_NOT_PACKED');
  assert.equal((await f.db.select().from(deliveries).where(eq(deliveries.id,f.trip.id)))[0]!.status,'planned');
@@ -92,16 +93,26 @@ test('không huỷ phiếu nhập khi OpenClaw đang xử lý; callback thất b
  ok(await cancel());assert.equal(await f.balance(),0);ok(await cancel());assert.equal(await f.balance(),0,'huỷ lặp không hoàn hai lần');
 });
 
-test('NCC giao thẳng: xác nhận nguồn rồi mới giao; không trừ kho CRM và không giữ hàng ảo tại kho bán',async()=>{
+for(const source of ['supplier','agent','store','other'])test(`${source}: bắt buộc nhập kho rồi xuất, không nguồn nào bỏ qua ledger`,async()=>{
  const f=await fixture(),c=f.cookies;
- await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:10,kind:'adjust',refType:'adjustment',refId:'fixture-local-stock'}]);
+ const first=await f.pack(0,source);
+ assert.equal((await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{photos:[photo]})).status,400);
+ assert.equal((await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{warehouseId:'other',photos:[photo]})).status,400,'không lấy kho khác thay kho bán');
+ assert.equal((await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]})).data.code,'STOCK_SHORT','kho nguồn có tồn không thay được nhập/điều chuyển vào kho xuất');
+ assert.equal(ok(await f.call('/packing/'+first.id,c.kho)).slip.status,'sent');
+ assert.equal((await f.db.select().from(stockMoves)).some(m=>m.refId===first.id),false);
+ ok(await f.call('/purchase-orders/a1/receipts',c.kho,'POST',{clientKey:crypto.randomUUID(),warehouse:'KHO VIGIFTS',lines:[{lineId:'line-a1',goodQty:5}]}),201);
+ assert.equal(await f.balance(),5);
  const held=async()=>ok(await f.call('/stock-holds?warehouseId=vig',c.mgr)).holds.filter((h:any)=>h.orderId===f.order.id).reduce((n:number,h:any)=>n+h.qty,0);
  assert.equal(await held(),5);
- const first=await f.pack(0,'supplier');ok(await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{photos:[photo]}));assert.equal(await f.balance(),10);assert.equal(await held(),3);
+ ok(await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));assert.equal(await f.balance(),3);assert.equal(await held(),3);
  assert.equal((await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'in_transit'})).data.code,'STOCK_NOT_PACKED');
- const second=await f.pack(1,'supplier');ok(await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{photos:[photo]}));assert.equal(await held(),0);assert.equal(await f.balance(),10);
- ok(await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'delivered'}));assert.equal(await f.balance(),10);assert.equal(await f.balance('other'),10);
+ const second=await f.pack(1,source);ok(await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));
+ assert.equal(await f.balance(),0);assert.equal(await held(),0);
+ ok(await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}),409);assert.equal(await f.balance(),0);
+ ok(await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'delivered'}));assert.equal(await f.balance(),0);assert.equal(await f.balance('other'),10);
 });
+
 
 // Protect callers beyond the delivery screen (e.g. document amendments/import adapters).
 test('hoàn thành tổng phải có xuất đủ; thất bại rollback số đã giao, trạng thái và không tự trừ kho',async()=>{
@@ -121,4 +132,60 @@ test('hoàn thành tổng phải có xuất đủ; thất bại rollback số đ
  assert.equal(stale.stages.find((s:any)=>s.key==='delivered').done,false);
  assert.equal(stale.stages.find((s:any)=>s.key==='export').done,false);
  assert.deepEqual(await f.db.select().from(stockMoves),before);
+});
+
+test('221 kho + 29 NCC nhập kho: 229 - 221 + 29 - 29 = 8, xác nhận lại không trừ hai lần',async()=>{
+ const f=await fixture(),c=f.cookies;
+ await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:229,kind:'opening',refType:'opening',refId:'initial-229'}]);
+ for(const [i,qty] of [[0,221],[1,29]] as const){
+  f.lines[i]!.qty=qty;
+  await f.db.update(salesOrderLines).set({qty}).where(eq(salesOrderLines.id,f.lines[i]!.id));
+  await f.db.update(deliveryLines).set({qty}).where(eq(deliveryLines.orderLineId,f.lines[i]!.id));
+ }
+ await f.db.update(incomingShipmentLines).set({quantity:29}).where(eq(incomingShipmentLines.id,'line-a1'));
+ await f.db.update(salesOrders).set({warehouseId:null}).where(eq(salesOrders.id,f.order.id));
+ const first=await f.pack(0),second=await f.pack(1,'supplier');
+ ok(await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));assert.equal(await f.balance(),8);
+ assert.equal((await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]})).data.code,'STOCK_SHORT');
+ ok(await f.call('/purchase-orders/a1/receipts',c.kho,'POST',{clientKey:crypto.randomUUID(),warehouse:'KHO VIGIFTS',lines:[{lineId:'line-a1',goodQty:29}]}),201);assert.equal(await f.balance(),37);
+ ok(await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));assert.equal(await f.balance(),8);
+ ok(await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}),409);assert.equal(await f.balance(),8);
+ assert.equal((await crmStockFulfilment(f.db,[f.order.id])).get(f.order.id)?.complete,true);
+});
+
+test('phiếu NCC/đại lý cũ đã packed nhưng chưa có bút toán không được tính xuất hoặc bỏ giữ hàng',async()=>{
+ const f=await fixture(),c=f.cookies,p=await f.pack(0,'supplier');
+ await f.db.update(packingSlips).set({status:'packed',packedBy:'mgr',packedAt:new Date().toISOString(),stockWarehouseId:'vig'}).where(eq(packingSlips.id,p.id));
+ const state=(await crmStockFulfilment(f.db,[f.order.id])).get(f.order.id)!;assert.equal(state.lines[0]!.issued,0);assert.equal(state.complete,false);
+ const holds=ok(await f.call('/stock-holds?warehouseId=vig',c.mgr)).holds.filter((h:any)=>h.orderId===f.order.id);
+ assert.equal(holds.reduce((n:number,h:any)=>n+h.qty,0),5);
+ assert.equal((await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'delivered'})).data.code,'STOCK_NOT_PACKED');
+});
+
+test('legacy chỉ trừ trước 2/5: không miễn trừ cả phiếu 3 còn lại vì có bất kỳ sales_order move',async()=>{
+ const f=await fixture(),c=f.cookies;
+ await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:5,kind:'opening',refType:'opening',refId:'legacy-opening'}]);
+ await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:-2,kind:'sale',refType:'sales_order',refId:f.order.id}]);
+ const first=await f.pack(0,'supplier');ok(await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));assert.equal(await f.balance(),3);
+ const second=await f.pack(1,'agent');ok(await f.call('/packing/'+second.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));assert.equal(await f.balance(),0);
+ assert.equal((await f.db.select().from(stockMoves)).filter(m=>m.refId===second.id).reduce((n,m)=>n+m.qty,0),-3);
+ assert.equal((await crmStockFulfilment(f.db,[f.order.id])).get(f.order.id)?.complete,true);
+});
+
+test('legacy đã xuất trực tiếp đầy đủ, chưa dùng packing: công nhận ledger thật, không ép xuất lần hai',async()=>{
+ const f=await fixture();
+ await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:5,kind:'opening',refType:'opening',refId:'legacy-complete-opening'}]);
+ await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:-5,kind:'sale',refType:'sales_order',refId:f.order.id}]);
+ assert.equal((await crmStockFulfilment(f.db,[f.order.id])).get(f.order.id)?.complete,true);
+ assert.equal(await f.balance(),0);
+});
+
+test('HĐKT cũng không được hoàn tất khi chưa đủ xuất, không đổi revision/tài chính khi bị chặn',async()=>{
+ const f=await fixture(),at=new Date().toISOString();
+ await f.db.insert(salesContracts).values({id:'contract-stock',contractNo:'HĐKT-STOCK',orderId:f.order.id,legalEntity:'BN',status:'signed',createdBy:'mgr',createdAt:at,updatedAt:at});
+ const denied=await f.call('/contracts/contract-stock',f.cookies.mgr,'PUT',{status:'completed',revision:1,paymentDays:10});
+ assert.equal(denied.data.code,'STOCK_NOT_PACKED');const [unchanged]=await f.db.select().from(salesContracts);assert.equal(unchanged!.status,'signed');assert.equal(unchanged!.revision,1);assert.equal(unchanged!.paymentDays,0);
+ await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:5,kind:'opening',refType:'opening',refId:'contract-stock-opening'}]);
+ for(const i of [0,1]){const p=await f.pack(i,'supplier');ok(await f.call('/packing/'+p.id+'/confirm',f.cookies.kho,'POST',{warehouseId:'vig',photos:[photo]}));}
+ ok(await f.call('/contracts/contract-stock',f.cookies.mgr,'PUT',{status:'completed',revision:1}));
 });

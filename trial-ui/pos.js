@@ -594,9 +594,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     m.dlg.classList.add('pos-web-order-modal');
     // Nút chính (tạo vận đơn khi chờ xử lý, hoàn thành khi đang giao) chiếm cả dòng; Hoàn thành / Huỷ / Đóng chia đều dòng dưới.
     const actions = el('div', 'pos-actions pos-web-actions'), open = o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket), ghn = open && o.bucket === 'pending';
+    if(o.warehouseReconciliationRequired)m.body.append(el('p','pos-note','Kho: cần đối soát chứng từ nhập/xuất. Trạng thái GHN chỉ xác nhận tình trạng giao hàng.'));
     if (ghn) actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary pos-web-main', () => { m.close(); showGhnAddress(o); }));
     if (open) {
-      actions.append(busyButton('Hoàn thành', ghn ? 'btn secondary' : 'btn primary pos-web-main', 'Đang hoàn thành…', async () => {
+      if(!o.warehouseReconciliationRequired)actions.append(busyButton('Hoàn thành', ghn ? 'btn secondary' : 'btn primary pos-web-main', 'Đang hoàn thành…', async () => {
         if (!await confirmBox(o.ghnDirect ? `Xác nhận đơn ${o.orderNo} đã hoàn thành? CRM ghi nhận hoàn thành; website Minh Long chưa có cầu nối nên cập nhật trạng thái trên website bằng tay.` : `Xác nhận đơn ${o.orderNo} đã hoàn thành? Website sẽ chuyển đơn sang "Hoàn thành".`, { title: 'Hoàn thành đơn website', ok: 'Hoàn thành' })) return;
         await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'complete' }); m.close(); toast('Đã hoàn thành đơn ' + o.orderNo + '.', 'ok'); await loadOrderBoard();
       }));

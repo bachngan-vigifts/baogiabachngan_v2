@@ -280,7 +280,7 @@ test('Đơn website: đúng quầy được chốt, bổ sung địa chỉ GHN, 
   const audit = (await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, order!.id))).find(x => x.action === 'web-order-cancel')!;
   assert.match(JSON.stringify(audit), /Khách đổi ý/, 'nhật ký ghi lý do huỷ');
 });
-test('Đơn website: Hoàn thành gửi cầu nối, website không trả trạng thái thì vẫn chuyển Hoàn thành; rời thẻ Đơn web', async () => {
+test('Đơn website chưa có chứng từ xuất kho: chặn hoàn thành trước cầu nối, giữ trạng thái giao thực tế', async () => {
   const f = await setup(); const sent: Record<string, unknown>[] = [];
   f.env.webOrderAction = { token: 'server-only', lockUrl: 'https://lock.test/action', minhlongUrl: '', fetch: (async (_input, init) => {
     sent.push(JSON.parse(String(init?.body))); return Response.json({ ok: true });
@@ -291,10 +291,11 @@ test('Đơn website: Hoàn thành gửi cầu nối, website không trả trạn
   const [order] = await f.db.select().from(webStoreOrders);
   assert.equal((await f.call(`/pos/orders?registerId=${f.registerId}`, f.mgr)).data.counts.web, 1);
   const done = await f.call(`/pos/web-orders/${order!.id}/action`, f.emp, 'POST', { action: 'complete' });
-  assert.equal(done.status, 200, JSON.stringify(done.data)); assert.equal(done.data.bucket, 'completed');
-  assert.equal(sent[0]!.action, 'complete');
+  assert.equal(done.status, 409, JSON.stringify(done.data)); assert.equal(done.data.code, 'WAREHOUSE_EXPORT_REQUIRED');
+  assert.equal(sent.length,0);
   const board = (await f.call(`/pos/orders?registerId=${f.registerId}`, f.mgr)).data;
-  assert.deepEqual([board.counts.web, board.counts.completed], [0, 1]);
+  assert.deepEqual([board.counts.web, board.counts.completed], [1, 0]);
+  assert.equal(board.orders.find((o:any)=>o.id===order!.id).warehouseReconciliationRequired,true);
 });
 test('Đơn website: chuyển đúng địa chỉ người dùng chọn sang cầu nối GHN', async () => {
   const f = await setup(); let sent: Record<string, unknown> = {};
