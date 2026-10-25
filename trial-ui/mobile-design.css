@@ -125,13 +125,13 @@
  #quote-form #line-head { display:none!important; }
  #quote-form #line-list tr { display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px;margin:0 0 10px;border:1px solid var(--line);border-radius:12px;background:#fff; }
  #quote-form #line-list td { position:static!important;display:block;width:auto!important;min-width:0!important;max-width:none!important;border:0;padding:0!important; }
- #quote-form #line-list td::before { content:attr(data-label);display:block;font-size:12px;color:var(--muted); }
+ #view-editor #quote-form #line-list td[data-label]::before { content:attr(data-label);display:block;font-size:12px;color:var(--muted); }
  #quote-form #line-list .col-product { grid-column:1/-1; }
  #quote-form #line-list .col-img,#quote-form #line-list .col-idx { display:none!important; }
  #quote-form #line-list .col-qty { grid-column:1;grid-row:2; }
  #quote-form #line-list .col-price { grid-column:2;grid-row:2; }
- #quote-form #line-list .col-total { grid-column:3;grid-row:2;align-self:end;font-size:14px;text-align:right; }
- #quote-form #line-list .col-act { grid-column:1/-1;display:flex!important;justify-content:flex-end;gap:8px; }
+ #quote-form #line-list :is(.col-total,.line-total) { grid-column:3;grid-row:2;align-self:end;font-size:14px;text-align:right; }
+ #quote-form #line-list :is(.col-act,.line-actions) { grid-column:1/-1;display:flex!important;justify-content:flex-end;gap:8px; }
  #quote-form #line-list tr:not([data-mobile-expanded=true]) :is(.col-unit,.col-disc,.col-print,.col-after,.col-pd,.col-cost,.sub-field,.product-meta) { display:none!important; }
  #quote-form #line-list [data-mobile-line-toggle] { display:inline-flex;min-height:36px; }
  #quote-form #line-list input { max-width:100%;min-width:0; }
