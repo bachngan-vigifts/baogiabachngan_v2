@@ -678,7 +678,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           provinceId: ghn.province.select.value, provinceName: ghn.chosen(ghn.province.select), districtId: ghn.district.select.value, districtName: ghn.chosen(ghn.district.select), wardCode: ghn.ward.select.value, wardName: ghn.chosen(ghn.ward.select),
           ...(direct ? { codAmount: Number(cod.input.value), ghnWeight: Number(weight.input.value), ghnRequiredNote: requiredNote.value } : {}) });
       } catch (err) {
-        m.lock(false, submit); edit(); serverError.textContent = err.message || 'Chưa tạo được vận đơn. Kiểm tra lại rồi gửi lại.';
+        m.lock(false, submit);
+        if (err.code === 'address_invalid') edit();
+        serverError.textContent = err.message || 'Chưa tạo được vận đơn. Giữ nguyên thông tin và kiểm tra kết quả trước khi gửi lại.';
         return;
       }
       m.lock(false, submit); m.close(); toast('Đã lưu địa chỉ và tạo vận đơn GHN.', 'ok');
