@@ -16,6 +16,14 @@ test('GHN Lock: lấy hàng trừ kho một lần; giao xong hoàn tất và ghi
   assert.equal(made.status, 201, JSON.stringify(made.data));
   const [ship] = await f.db.select().from(deliveries);
   assert.equal(ship!.trackingCode, 'ABC1234');
+  for (const status of ['in_transit','delivered','failed']) {
+    const manual = await f.call('/deliveries/' + ship!.id + '/status', f.mgr, 'PUT', { status });
+    assert.equal(manual.status, 409);
+    assert.equal(manual.data.code, 'GHN_STATUS_MANAGED');
+  }
+  assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10, 'manual attempts never issue stock');
+  assert.equal((await f.db.select().from(customerPayments)).length, 0);
+
   let ghnStatus = 'picked';
   f.env.ghnToken = 'test-ghn-token';
   f.env.ghnFetch = (async (_input, init) => {

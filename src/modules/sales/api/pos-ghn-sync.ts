@@ -17,9 +17,11 @@ import type { SessionState } from '../../staff/api/auth-routes.ts';
 import { webStoreOrders } from '../pos-schema.ts';
 import { LOCK_GHN_SHOP_ID, posGhnAccount, posGhnKind } from './pos-ghn-account.ts';
 
+import { GHN_FAILED, webGhnOrderStatus } from '../domain/ghn-status.ts';
+
 const GHN_DETAIL = 'https://online-gateway.ghn.vn/shiip/public-api/v2/shipping-order/detail';
 const IN_TRANSIT = new Set(['picked', 'storing', 'transporting', 'sorting', 'delivering', 'money_collect_delivering', 'delivery_fail', 'delivery_failed', 'exception']);
-const FAILED = new Set(['cancel', 'return', 'returned', 'returning', 'return_transporting', 'return_sorting', 'waiting_to_return', 'return_fail', 'damage', 'lost']);
+const FAILED = GHN_FAILED;
 const text = (value: unknown, max = 100) => String(value ?? '').trim().slice(0, max);
 
 async function ghnDetail(env: StaffEnv, code: string, registerName: string) {
@@ -96,8 +98,8 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
 /** Trạng thái GHN của đơn web (Lock qua cầu nối, Minh Long do CRM tạo vận đơn): giao xong → hoàn thành, hoàn / huỷ → huỷ. */
 async function applyWebGhnStatus(env: StaffEnv, row: { id: string; status: string; ghnStatus: string }, status: string, observedAt: string) {
   if (row.ghnStatus.toLowerCase() === 'delivered' && status !== 'delivered') return false;
-  if (row.ghnStatus.toLowerCase() === status) return false;
-  const orderStatus = status === 'delivered' ? 'completed' : FAILED.has(status) ? 'cancelled' : row.status;
+  const orderStatus = webGhnOrderStatus(status, row.status);
+  if (row.ghnStatus.toLowerCase() === status && row.status === orderStatus) return false;
   await env.db.update(webStoreOrders).set({ status: orderStatus, ghnStatus: status, updatedAt: observedAt }).where(eq(webStoreOrders.id, row.id));
   await invoiceTasksChanged(env, { webOrderId: row.id });
   return true;

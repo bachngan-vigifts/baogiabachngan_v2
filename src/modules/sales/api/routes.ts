@@ -1,4 +1,5 @@
 import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
+import { isGhnTracked } from '../domain/ghn-status.ts';
 import { assertCrmOrderCompletion } from './crm-stock-lifecycle.ts';
 import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
@@ -1146,6 +1147,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       }
       const [freshDeliveryOrder]=await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
       if (!freshDeliveryOrder || (freshDeliveryOrder.status==='cancelled' && status!=='cancelled')) throw new AppError(409,'Đơn đã huỷ, không giao được.');
+      const [carrierDelivery] = await tx.select().from(deliveries).where(eq(deliveries.id,row.d.id)).for('update');
+      if (flowOrder?.channel === 'pos' && carrierDelivery && isGhnTracked(carrierDelivery) && status !== 'cancelled')
+        throw new AppError(409,'Vận đơn GHN tự cập nhật theo hãng vận chuyển. Bấm Đồng bộ GHN để lấy trạng thái mới nhất; không đánh dấu giao hàng thủ công.','GHN_STATUS_MANAGED');
       if(status==='cancelled') await assertNotDispatched(tx,row.d.orderId,row.d.id);
       // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
       const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })
