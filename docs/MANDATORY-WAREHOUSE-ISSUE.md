@@ -7,6 +7,7 @@ Quy tắc Anh Thái xác nhận ngày 25/10/2026: mọi hàng từ NCC, đại l
 - Phiếu đóng gói có SKU bắt buộc chọn kho stock đang hoạt động, đúng kho bán/quầy nếu đơn đã gắn kho. Áp dụng mọi source: warehouse/supplier/agent/store/other. Source cũ vẫn giữ làm thông tin nguồn; stockWarehouseId ghi kho thực xuất.
 - Xác nhận ghi trạng thái, ảnh, phát sinh xuất và số dư cùng transaction. postMoves khóa số dư, chặn thiếu tồn và chống ghi lặp. Thiếu hàng ở kho xuất vẫn bị chặn dù kho khác có hàng.
 - Bước xuất/hoàn thành CRM chỉ tính lượng có bút toán thực đúng kho, không tin nhãn packed của NCC/đại lý. Không giải phóng giữ hàng chỉ từ nhãn đó.
+- API cập nhật HĐKT cũng kiểm xuất kho trước khi chuyển completed, trong cùng transaction/khóa đơn; bị chặn không đổi revision hoặc tài chính. Không có HĐKT completed trên dữ liệu thật tại lần rà soát.
 - Chứng từ legacy đã ghi sales_order được dùng đúng lượng còn lại, không miễn trừ cả phiếu vì thấy một bút toán. Legacy xuất trực tiếp đầy đủ trước khi có packing vẫn được công nhận bằng ledger thật; không ép trừ lần hai.
 - UI điện thoại/desktop luôn yêu cầu kho cho hàng có SKU. Dòng dịch vụ không SKU không tự tạo bút toán kho.
 - POS vẫn xuất từ kho quầy; test prepaid/COD/GHN kiểm tra không trừ lặp khi đã có packing issue.

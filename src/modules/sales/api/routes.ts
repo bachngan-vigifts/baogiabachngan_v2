@@ -1030,6 +1030,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       const set: Partial<typeof salesContracts.$inferInsert> = { updatedAt: nowIso() };
       if (body.status !== undefined) { if (!CONTRACT_STATUSES.includes(body.status as never)) throw new AppError(400, 'Trạng thái HĐKT không hợp lệ.'); set.status = body.status as never; }
       if ((body.status === 'signed' || body.status === 'completed') && found.order.status === 'draft') throw new AppError(409, 'HĐKT chưa được Manager duyệt (đơn đang chờ duyệt), chưa đánh dấu ký được.', 'ORDER_NOT_APPROVED');
+      if(body.status==='completed')await assertCrmOrderCompletion(tx,found.order.id);
       if (body.signedDate !== undefined) { if (body.signedDate && !isDate(body.signedDate)) throw new AppError(400, 'Ngày ký không hợp lệ.'); set.signedDate = (body.signedDate as string) || null; }
       if (body.depositRate !== undefined) {
         const rate = Number(body.depositRate);

@@ -7,7 +7,7 @@ import type {StaffEnv} from '../../src/modules/staff/api/auth-routes.ts';
 import {products,warehouses} from '../../src/modules/catalog/schema.ts';
 import {incomingShipmentLines} from '../../src/modules/suppliers/schema.ts';
 import {stockBalances,stockMoves} from '../../src/modules/inventory/schema.ts';
-import {salesOrderLines,salesOrders,orderProgressMarks,deliveries,deliveryLines,packingSlips} from '../../src/modules/sales/schema.ts';
+import {salesOrderLines,salesOrders,salesContracts,orderProgressMarks,deliveries,deliveryLines,packingSlips} from '../../src/modules/sales/schema.ts';
 import {crmStockFulfilment} from '../../src/modules/sales/api/crm-stock-lifecycle.ts';
 import {refreshOrderStatus} from '../../src/modules/sales/api/routes.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
@@ -178,4 +178,14 @@ test('legacy đã xuất trực tiếp đầy đủ, chưa dùng packing: công 
  await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:-5,kind:'sale',refType:'sales_order',refId:f.order.id}]);
  assert.equal((await crmStockFulfilment(f.db,[f.order.id])).get(f.order.id)?.complete,true);
  assert.equal(await f.balance(),0);
+});
+
+test('HĐKT cũng không được hoàn tất khi chưa đủ xuất, không đổi revision/tài chính khi bị chặn',async()=>{
+ const f=await fixture(),at=new Date().toISOString();
+ await f.db.insert(salesContracts).values({id:'contract-stock',contractNo:'HĐKT-STOCK',orderId:f.order.id,legalEntity:'BN',status:'signed',createdBy:'mgr',createdAt:at,updatedAt:at});
+ const denied=await f.call('/contracts/contract-stock',f.cookies.mgr,'PUT',{status:'completed',revision:1,paymentDays:10});
+ assert.equal(denied.data.code,'STOCK_NOT_PACKED');const [unchanged]=await f.db.select().from(salesContracts);assert.equal(unchanged!.status,'signed');assert.equal(unchanged!.revision,1);assert.equal(unchanged!.paymentDays,0);
+ await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:5,kind:'opening',refType:'opening',refId:'contract-stock-opening'}]);
+ for(const i of [0,1]){const p=await f.pack(i,'supplier');ok(await f.call('/packing/'+p.id+'/confirm',f.cookies.kho,'POST',{warehouseId:'vig',photos:[photo]}));}
+ ok(await f.call('/contracts/contract-stock',f.cookies.mgr,'PUT',{status:'completed',revision:1}));
 });
