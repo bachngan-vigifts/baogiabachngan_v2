@@ -3592,7 +3592,8 @@ async function openOrder(id) {
   $('#order-back').href = d.contract ? '#/contracts' : '#/orders'; $('#order-back').textContent = d.contract ? '‹ HĐKT' : '‹ Đơn đặt hàng';
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (d.contract ? 'contracts' : 'orders')));
   const stKey = (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status);
-  $('#order-status').outerHTML = `<span class="pill ${ORDER_STATUS[stKey]?.[1] || ''}" id="order-status">${esc(ORDER_STATUS[stKey]?.[0] || o.status)}</span>`;
+  const stockConflict = d.progress?.reconciliationRequired;
+  $('#order-status').outerHTML = `<span class="pill ${stockConflict ? 'warn' : ORDER_STATUS[stKey]?.[1] || ''}" id="order-status">${esc(stockConflict ? 'Cần đối soát xuất kho' : ORDER_STATUS[stKey]?.[0] || o.status)}</span>`;
   // Liên kết các bước của đơn
   const step = (done, label, sub, href) => `<${href ? `a href="${href}"` : 'div'} class="flow-step ${done ? 'done' : ''}"><b>${esc(label)}</b><small>${esc(sub)}</small></${href ? 'a' : 'div'}>`;
   const shipped = d.lines.reduce((s, l) => s + l.deliveredQty, 0), totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
@@ -3600,7 +3601,7 @@ async function openOrder(id) {
     step(!!o.quoteId, 'Báo giá', o.quoteNo || 'Không có', o.quoteId ? `#/quotes/${encodeURIComponent(o.quoteId)}` : ''),
     ...(!d.contract ? [step(true, 'Đơn đặt hàng', o.orderNo)] : []),
     step(!!d.contract, 'HĐKT', d.contract ? d.contract.contractNo : 'Chưa lập', d.contract ? '#/contracts' : ''),
-    step(o.status === 'delivered', 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao`, '#/deliveries'),
+    step(o.status === 'delivered' && !stockConflict, 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao${stockConflict ? ' · Chưa đủ xác nhận xuất kho' : ''}`, '#/deliveries'),
     step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : r.balance<0?'Còn hoàn '+money(-r.balance):'Đã thu đủ', '#/receivables'),
   ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
   // Phiếu đóng gói / phiếu giao hàng / yêu cầu đóng gói chỉ dùng được khi đơn đã lên lịch giao (có chuyến chưa huỷ).
@@ -3720,6 +3721,7 @@ function renderProgress(d) {
       ${canMark && !s.done && !(['approve','export'].includes(s.key) && p.physicalExportRequired) && !stockPending ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
       ${canMark && s.by === 'manual' ? `<button type="button" class="link-btn muted" data-progress-undo="${esc(s.key)}" title="Bỏ đánh dấu tay ở bước này và các bước sau">Bỏ</button>` : ''}
     </li>`).join('')}</ol>
+    ${p.reconciliationRequired?'<p class="pill warn" role="alert">Đơn đã ghi nhận giao hàng nhưng chưa đủ chứng từ xuất kho. Cần đối soát phiếu xuất và sổ kho; không đánh dấu hoàn thành thay cho xuất hàng.</p>':''}
     ${p.physicalExportRequired?'<p class="muted small">Xuất kho chỉ hoàn thành theo phiếu xác nhận xuất đủ hàng đúng kho/nguồn; đánh dấu tiến trình không thay phiếu xuất.</p>':''}
     ${p.printing ? '' : '<p class="muted small">Đơn không có phí in nên không có bước In mẫu / Sản xuất.</p>'}`;
 }

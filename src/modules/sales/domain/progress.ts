@@ -25,18 +25,21 @@ const STEP: Record<ProgressStage, { label: string; doing: string }> = {
 export const stagesFor = (printing: boolean): ProgressStage[] => PROGRESS_STAGES.filter(s => printing || (s !== 'sample' && s !== 'production'));
 
 export function orderProgress(i: { status: string; packed: boolean; directExported?: boolean; physicalExportRequired?: boolean; printing: boolean; marks: Partial<Record<ProgressStage, ProgressMark>> }) {
+  const exportReady = !!(i.packed || i.directExported);
+  const deliveryBlocked = !!i.physicalExportRequired && !exportReady;
+  const reconciliationRequired = i.status !== 'cancelled' && deliveryBlocked && (i.status === 'delivered' || !!i.marks.delivered);
   const auto: Partial<Record<ProgressStage, boolean>> = {
     approve: i.status !== 'draft' && i.status !== 'cancelled',
-    export: i.packed || i.directExported,
-    delivered: i.status === 'delivered',
+    export: exportReady,
+    delivered: i.status === 'delivered' && !deliveryBlocked,
   };
   const stages = stagesFor(i.printing).map(key => {
-    const mark = (key==='export'||key==='approve')&&i.physicalExportRequired?null:i.marks[key] ?? null, byDoc = !!auto[key];
+    const mark = ((key==='export'||key==='approve')&&i.physicalExportRequired)||(key==='delivered'&&deliveryBlocked)?null:i.marks[key] ?? null, byDoc = !!auto[key];
     return { key, label: STEP[key].label, done: byDoc || !!mark, by: byDoc ? 'auto' as const : mark?.source ?? null, at: byDoc ? null : mark?.at ?? null, byName: byDoc ? null : mark?.byName ?? null };
   });
   const current = i.status === 'cancelled' ? null : stages.find(s => !s.done)?.key ?? null;
   const label = i.status === 'cancelled' ? 'Đã huỷ' : current ? STEP[current].doing : 'Đã giao hàng';
-  return { physicalExportRequired:!!i.physicalExportRequired, stages, current, label, printing: i.printing, done: !current && i.status !== 'cancelled' };
+  return { physicalExportRequired:!!i.physicalExportRequired, reconciliationRequired, stages, current, label, printing: i.printing, done: !current && i.status !== 'cancelled' };
 }
 export type OrderProgress = ReturnType<typeof orderProgress>;
 

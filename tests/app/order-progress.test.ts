@@ -105,3 +105,17 @@ test('tiến trình hàng có SKU không được bấm Xong thay duyệt/xuất
   assert.equal((await call(`/orders/${id}/progress`,mgr,'POST',{stage:'all'})).data.code,'STOCK_NOT_PACKED');
   assert.equal((await progress(id)).stages.find((s:any)=>s.key==='export').done,false);
 });
+
+test('giao hàng phụ thuộc xuất thực tế; dấu tay cũ không che mâu thuẫn chứng từ',()=>{
+ for(const status of ['confirmed','delivered']){
+  const marks={delivered:{source:'manual' as const,at:'2026-10-25T00:00:00Z'}};
+  const blocked=orderProgress({status,packed:false,physicalExportRequired:true,printing:false,marks});
+  assert.equal(blocked.reconciliationRequired,true);
+  assert.equal(blocked.stages.find(s=>s.key==='delivered')!.done,false);
+  assert.equal(blocked.done,false);
+  const reconciled=orderProgress({status,packed:true,physicalExportRequired:true,printing:false,marks});
+  assert.equal(reconciled.reconciliationRequired,false);
+  assert.equal(reconciled.done,true);
+ }
+ assert.equal(orderProgress({status:'cancelled',packed:false,physicalExportRequired:true,printing:false,marks:{}}).reconciliationRequired,false);
+});

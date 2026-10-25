@@ -61,6 +61,7 @@ import {
 } from './pos-store.ts';
 import { autoCreateGhnForOrder } from './pos-ghn-create.ts';
 import { cancelWebOrderGhn, createWebOrderGhn, minhLongDirect, suggestedWebCod } from './web-order-ghn.ts';
+import { GHN_FAILED, GHN_WAITING, webGhnOrderStatus } from '../domain/ghn-status.ts';
 import { readWebBridgeResult, validWebGhnCode } from './web-order-bridge-result.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
@@ -126,10 +127,11 @@ function posOrderBucket(o: { status: string; fulfillmentMode: string; packingSta
   return 'pending';
 }
 const webBucket = (status: string, ghnStatus = '') => {
+  if (['refunded', 'trash'].includes(status.toLowerCase())) return 'cancelled';
   const g = ghnStatus.toLowerCase();
   if (g === 'delivered') return 'completed';
-  if (['return', 'returned', 'returning', 'return_transporting', 'return_sorting', 'waiting_to_return'].includes(g)) return 'cancelled';
-  if (['ready_to_pick', 'picking', 'money_collect_picking', 'picked', 'storing', 'transporting', 'sorting', 'delivering', 'delivery_fail', 'delivery_failed', 'exception'].includes(g)) return 'waiting_delivery';
+  if (GHN_FAILED.has(g)) return 'cancelled';
+  if (GHN_WAITING.has(g)) return 'waiting_delivery';
   const s = status.toLowerCase();
   if (['cancelled', 'refunded', 'failed', 'trash'].includes(s)) return 'cancelled';
   if (['completed'].includes(s)) return 'completed';
@@ -253,6 +255,16 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (done && updateFields.status && !['completed', 'cancelled'].includes(webBucket(updateFields.status))) delete updateFields.status;
       if (current?.ghnStatus && updateFields.status && webBucket(updateFields.status) === 'pending') delete updateFields.status;
     }
+    // Website labels/status-only events cannot overwrite the carrier's known shipping outcome.
+    const [carrierState] = await c.env.db.select({ status: webStoreOrders.status, code: webStoreOrders.ghnOrderCode, ghnStatus: webStoreOrders.ghnStatus }).from(webStoreOrders)
+      .where(and(eq(webStoreOrders.source, source), eq(webStoreOrders.externalId, externalId))).limit(1);
+    if (carrierState?.code && !fields.ghnOrderCode) {
+      delete updateFields.ghnOrderCode; delete updateFields.ghnStatus; delete updateFields.ghnSortCode; delete updateFields.ghnFee;
+    }
+    if (carrierState?.ghnStatus === 'delivered' && (!fields.ghnOrderCode || fields.ghnOrderCode === carrierState.code)) updateFields.ghnStatus = 'delivered';
+    fields.status = webGhnOrderStatus(fields.ghnStatus, fields.status);
+    const effectiveGhnStatus = updateFields.ghnStatus ?? carrierState?.ghnStatus ?? fields.ghnStatus;
+    if (effectiveGhnStatus) updateFields.status = webGhnOrderStatus(effectiveGhnStatus, updateFields.status ?? carrierState?.status ?? fields.status);
     const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
       .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
@@ -457,6 +469,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (c.env.ghnToken || c.env.ghnMlToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
       throw new AppError(503, 'CRM chưa có danh mục địa chỉ GHN này.');
     }
+    if (action === 'complete' && order.ghnOrderCode) throw new AppError(409,'Đơn có vận đơn GHN chỉ hoàn thành theo trạng thái giao thành công của GHN.','GHN_STATUS_MANAGED');
     if (minhLongDirect(c.env, order)) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if(action==='confirm'&&order.ghnOrderCode){
       if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_reconcile_failed');
@@ -513,6 +526,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       ghnStatus: posText(result.ghnStatus, 100) || order.ghnStatus, ghnSortCode: posText(result.ghnSortCode, 100) || order.ghnSortCode,
       ghnFee: Math.max(0, Number(result.ghnFee) || order.ghnFee), updatedAt: posText(result.updatedAt, 60) || posNow(),
       ...(confirmedAddress ? { address: [confirmedAddress.addressLine, confirmedAddress.wardName, confirmedAddress.districtName, confirmedAddress.provinceName].filter(Boolean).join(', '), ghnAddressSnapshot: JSON.stringify(confirmedAddress) } : {}) };
+    if (order.ghnStatus === 'delivered' && fields.ghnOrderCode === order.ghnOrderCode) fields.ghnStatus = 'delivered';
+    fields.status = webGhnOrderStatus(fields.ghnStatus, fields.status);
     await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
     await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,

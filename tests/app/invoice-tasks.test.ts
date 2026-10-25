@@ -113,6 +113,9 @@ test('Kế toán: GHN delivered tự đẩy cả khi Woo chưa completed; webhoo
   ok(await send(delivered)); await reconcileAutoTasks(f.db);
   assert.equal((await invoiceRows(f, web!.id)).length, 1); assert.equal((await invoiceRows(f, web!.id))[0]!.status, 'done');
   ok(await send({ ...delivered, id: 902, number: 'WEB-902', status: 'refunded' }));
+  const [refunded] = await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.externalId, '902'));
+  assert.equal(refunded!.status, 'refunded', 'carrier delivery must not reverse a financial refund');
+  assert.equal(refunded!.ghnStatus, 'delivered', 'keep the actual carrier observation separately');
   assert.equal((await invoiceRows(f)).length, 1, 'đơn hoàn tiền không thêm nhiệm vụ xuất hoá đơn');
   const firstDate = task.createdAt;
   assert.equal((await invoiceRows(f, web!.id))[0]!.createdAt, firstDate);

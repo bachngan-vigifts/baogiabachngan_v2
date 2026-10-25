@@ -1,4 +1,6 @@
 import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
+import { isGhnTracked } from '../domain/ghn-status.ts';
+import { assertCrmOrderCompletion } from './crm-stock-lifecycle.ts';
 import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
@@ -170,9 +172,10 @@ export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.
 }
 /** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán. */
 export async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
-  const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
+  const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1).for('update');
   const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
   const status = orderStatusFromLines(order!.status as OrderStatus, lines);
+  if (status === 'delivered') await assertCrmOrderCompletion(tx, orderId);
   if (status !== order!.status) await tx.update(salesOrders).set({ status, updatedAt: nowIso() }).where(eq(salesOrders.id, orderId));
   // Giao xong mà chưa ai yêu cầu xuất hoá đơn → tự yêu cầu (sinh việc cho nhóm Kế toán).
   if (status === 'delivered' && order!.invoiceStatus === 'none')
@@ -1144,6 +1147,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       }
       const [freshDeliveryOrder]=await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
       if (!freshDeliveryOrder || (freshDeliveryOrder.status==='cancelled' && status!=='cancelled')) throw new AppError(409,'Đơn đã huỷ, không giao được.');
+      const [carrierDelivery] = await tx.select().from(deliveries).where(eq(deliveries.id,row.d.id)).for('update');
+      if (flowOrder?.channel === 'pos' && carrierDelivery && isGhnTracked(carrierDelivery) && status !== 'cancelled')
+        throw new AppError(409,'Vận đơn GHN tự cập nhật theo hãng vận chuyển. Bấm Đồng bộ GHN để lấy trạng thái mới nhất; không đánh dấu giao hàng thủ công.','GHN_STATUS_MANAGED');
       if(status==='cancelled') await assertNotDispatched(tx,row.d.orderId,row.d.id);
       // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
       const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })

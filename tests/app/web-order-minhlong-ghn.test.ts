@@ -110,3 +110,23 @@ test('Web Minh Long: có cầu nối website thì đi qua cầu nối như Lock,
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.deepEqual([bridge, ghn.length, r.data.ghnOrderCode], [1, 0, 'BRIDGE1']);
 });
+
+test('GHN ưu tiên hơn website hoàn thành; không cho bấm hoàn thành tay, delivered không lùi theo website',async()=>{
+ const {f,order,sync,act}=await minhLong();
+ const o=await order(599,{status:'completed',meta_data:[{key:'_lnl_ghn_order_code',value:'PRIORITY599'},{key:'_lnl_ghn_last_status',value:'delivering'}]});
+ assert.equal(o.status,'processing');
+ assert.equal((await act(o.id,{action:'complete'})).data.code,'GHN_STATUS_MANAGED');
+ await sync({id:599,status:'completed',meta_data:[]});
+ let stored=(await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.id,o.id)))[0]!;
+ assert.equal(stored.ghnOrderCode,'PRIORITY599');assert.equal(stored.status,'processing');
+ f.env.ghnWebhookToken='w'.repeat(40);
+ const hook=(status:string)=>f.call('/integrations/ghn/pos-lock/webhook?token='+'w'.repeat(40),'','POST',{OrderCode:'PRIORITY599',Status:status,ShopID:885001});
+ assert.equal((await hook('delivered')).status,200);
+ await sync({id:599,status:'processing',meta_data:[{key:'_lnl_ghn_order_code',value:'PRIORITY599'},{key:'_lnl_ghn_last_status',value:'delivering'}]});
+ stored=(await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.id,o.id)))[0]!;
+ assert.equal(stored.status,'completed');assert.equal(stored.ghnStatus,'delivered');
+ // Same carrier event also repairs a stale website label.
+ await f.db.update(webStoreOrders).set({status:'processing'}).where(eq(webStoreOrders.id,o.id));
+ assert.equal((await hook('delivered')).status,200);
+ assert.equal((await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.id,o.id)))[0]!.status,'completed');
+});
