@@ -18,6 +18,7 @@ jobs:
       WEB_ORDER_ACTION_TOKEN: ${{ secrets.WEB_ORDER_ACTION_TOKEN }}
       GHN_API_TOKEN: ${{ secrets.GHN_API_TOKEN }}
       GHN_ML_API_TOKEN: ${{ secrets.GHN_ML_API_TOKEN }}
+      GHN_ML_SHOP_ID: ${{ secrets.GHN_ML_SHOP_ID }}
       GHN_WEBHOOK_TOKEN: ${{ secrets.GHN_WEBHOOK_TOKEN }}
       # Mã băm SHA-256 (hex) của khoá webhook SePay và token webhook WooCommerce. Bắt buộc: code không còn giá trị dự phòng.
       SEPAY_POS_API_KEY_HASH: ${{ secrets.SEPAY_POS_API_KEY_HASH }}
@@ -78,8 +79,8 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.GHN_API_TOKEN != ''
         run: supabase secrets set --project-ref "$PROJECT_REF" GHN_API_TOKEN="$GHN_API_TOKEN" GHN_WEBHOOK_TOKEN="$GHN_WEBHOOK_TOKEN"
       - name: Cập nhật mã bí mật GHN Minh Long
-        if: env.SUPABASE_ACCESS_TOKEN != '' && env.GHN_ML_API_TOKEN != ''
-        run: supabase secrets set --project-ref "$PROJECT_REF" GHN_ML_API_TOKEN="$GHN_ML_API_TOKEN"
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.GHN_ML_API_TOKEN != '' && env.GHN_ML_SHOP_ID != ''
+        run: supabase secrets set --project-ref "$PROJECT_REF" GHN_ML_API_TOKEN="$GHN_ML_API_TOKEN" GHN_ML_SHOP_ID="$GHN_ML_SHOP_ID"
       - name: Kiểm tra mã webhook SePay / WooCommerce
         if: env.SUPABASE_ACCESS_TOKEN != ''
         # Thiếu mã thì dừng triển khai, tránh webhook thanh toán / đơn web bị từ chối âm thầm sau khi deploy.

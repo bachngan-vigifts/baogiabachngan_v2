@@ -1,0 +1,26 @@
+name: Kiểm tra shop GHN Minh Long
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      GHN_ML_API_TOKEN: ${{ secrets.GHN_ML_API_TOKEN }}
+    steps:
+      - name: Kiểm tra token
+        if: env.GHN_ML_API_TOKEN == ''
+        run: |
+          echo "::error::Thiếu secret GHN_ML_API_TOKEN."
+          exit 1
+      - name: Liệt kê ID và tên shop
+        if: env.GHN_ML_API_TOKEN != ''
+        shell: bash
+        run: |
+          response=$(curl --fail-with-body --silent --show-error --max-time 30 \
+            'https://online-gateway.ghn.vn/shiip/public-api/v2/shop/all' \
+            -H "Token: $GHN_ML_API_TOKEN")
+          echo "$response" | jq -e '.code == 200 and (.data.shops | type == "array")' >/dev/null
+          count=$(echo "$response" | jq '.data.shops | length')
+          echo "Tìm thấy $count shop GHN Minh Long:"
+          echo "$response" | jq -r '.data.shops[] | "- \(.shop_id) | \(.name)"'
