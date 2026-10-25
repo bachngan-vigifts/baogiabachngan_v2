@@ -11,7 +11,7 @@ export function compactKpi(text){
 }
 export function installMobileDesign(profiles){
  const media=matchMedia('(max-width: 850px)'),wide=matchMedia('(min-width: 1280px)');
- const filters=new Map(),cardRows=new WeakSet(),documentSections=new Map();let frame=0,navSignature='',ignoreClose=0,lastContracts='#/contracts';
+ const filters=new Map(),cardRows=new WeakSet(),documentSections=new Map(),kpiExtras=new Map();let frame=0,navSignature='',ignoreClose=0,lastContracts='#/contracts';
  const nav=make('nav','crm-mobile-nav');nav.setAttribute('aria-label','Điều hướng điện thoại');
  const more=make('dialog','crm-sheet crm-more-sheet'),moreHead=make('header','crm-sheet-head'),moreTitle=make('h2','','Thêm'),moreClose=make('button','icon-btn','×'),moreBody=make('div','crm-more-grid');
  moreClose.type='button';moreClose.setAttribute('aria-label','Đóng các trang');moreClose.onclick=()=>more.close();moreHead.append(moreTitle,moreClose);more.append(moreHead,moreBody);document.body.append(nav,more);
@@ -59,7 +59,7 @@ export function installMobileDesign(profiles){
   const body=make('div','crm-filter-fields'),foot=make('footer','crm-filter-foot'),clear=make('button','btn secondary','Xóa lọc'),apply=make('button','btn primary','Xem kết quả');clear.type=apply.type='button';foot.append(clear,apply);group.append(head,body,foot);
   const trigger=make('button','btn secondary crm-filter-trigger','Lọc');trigger.type='button';trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-label','Lọc '+profile.title);
   const slots=new Map();for(const n of parts){const slot=document.createComment('filter position');n.before(slot);slots.set(n,slot);body.append(n);}
-  const header=root.querySelector('.page-head,.cash-head');(header||source).append(trigger);source.append(group);
+  const header=root.querySelector('.page-head,.cash-head,.dash-head');(header||source).append(trigger);source.append(group);
   const r={root,source,group,body,trigger,parts,slots,clear,apply,profile};filters.set(source,r);
   trigger.onclick=()=>{group.showPopover();trigger.setAttribute('aria-expanded','true');};close.onclick=apply.onclick=()=>group.hidePopover();group.addEventListener('toggle',e=>trigger.setAttribute('aria-expanded',String(e.newState==='open')));
   clear.onclick=()=>{
@@ -96,7 +96,7 @@ export function installMobileDesign(profiles){
   for(const el of document.querySelectorAll('.page-head .btn-add'))mark(el);
   for(const el of document.querySelectorAll('.lookup-bar button[type=submit],.incoming-selection > .btn.primary'))mark(el);
   for(const header of document.querySelectorAll('.page-head')){
-   const primary=header.querySelector('.btn.primary:not(.mobile-action-trigger)');if(primary&&!/huỷ|hủy|xoá|xóa|đóng/i.test(primary.textContent)){mark(primary);if(/^[+＋]/.test(primary.textContent.trim())&&!primary.hasAttribute('data-mobile-create'))primary.dataset.mobileCreate='';}
+   const primary=header.querySelector('.btn.primary:not(.mobile-action-trigger)');if(primary&&!/huỷ|hủy|xoá|xóa|đóng|chốt tồn|điều chỉnh|đồng bộ/i.test(primary.textContent)){mark(primary);if(/^[+＋]/.test(primary.textContent.trim())&&!primary.hasAttribute('data-mobile-create'))primary.dataset.mobileCreate='';}
   }
   for(const n of document.querySelectorAll('#orders-new,#contracts-new,#new-customer,#tasks-new,[data-care-new]'))if(!n.hasAttribute('data-mobile-create')){n.dataset.mobileCreate='';mark(n);}
   for(const foot of document.querySelectorAll('.modal-foot,.sup-drawer-foot,.sup-drawer-foot-sticky,.pos-form-actions,.cash-dialog-foot')){
@@ -109,6 +109,14 @@ export function installMobileDesign(profiles){
    if(n.dataset.kpiFull&&n.textContent===n.dataset.kpiCompact){if(!media.matches)setText(n,n.dataset.kpiFull);continue;}
    const text=n.textContent.trim(),compact=compactKpi(text);if(!compact)continue;
    n.dataset.kpiFull=text;n.dataset.kpiCompact=compact;n.title=text;if(media.matches)setText(n,compact);
+  }
+ }
+ function extraKpis(){
+  for(const [host,r]of kpiExtras)if(!host.isConnected){r.details.remove();kpiExtras.delete(host);}
+  for(const host of document.querySelectorAll('.dash-kpis')){
+   let r=kpiExtras.get(host);if(!r){const parts=[...host.children].slice(4);if(!parts.length)continue;const details=make('details','crm-kpi-extras'),summary=make('summary','','Chỉ số khác'),body=make('div','crm-kpi-extra-grid'),slots=new Map();details.append(summary,body);host.after(details);for(const part of parts){const slot=document.createComment('KPI position');part.before(slot);slots.set(part,slot);}r={parts,slots,details,body};kpiExtras.set(host,r);}
+   if(r.details.hidden===media.matches)r.details.hidden=!media.matches;
+   for(const part of r.parts){if(media.matches){if(part.parentElement!==r.body)r.body.append(part);}else{const slot=r.slots.get(part);if(slot.isConnected&&part.previousSibling!==slot)slot.after(part);}}
   }
  }
  function quoteLines(){
@@ -145,7 +153,7 @@ export function installMobileDesign(profiles){
    for(const b of root.querySelectorAll(':scope > .chips .chip.active,#type-filter .chip.active')){if(root.dataset.resultCount===undefined)continue;let count=b.querySelector('.crm-chip-count');if(!count){count=make('span','crm-chip-count');b.append(count);}setText(count,' '+Number(root.dataset.resultCount).toLocaleString('vi-VN'));}
    if(root.dataset.loadState==='error'){let retry=root.querySelector('.crm-list-retry');if(!retry){retry=make('button','btn secondary crm-list-retry','Thử lại');retry.type='button';retry.onclick=()=>window.dispatchEvent(new CustomEvent('crm-reload-current',{detail:{view:root.id.replace('view-','')}}));(root.querySelector('.empty')||root).append(retry);}retry.hidden=false;}else{const retry=root.querySelector('.crm-list-retry');if(retry&&!retry.hidden)retry.hidden=true;}
   }
-  primaryControls();syncFilters();syncNav();syncDocument();kpis();quoteLines();formLabels();taskModes();
+  primaryControls();syncFilters();syncNav();syncDocument();kpis();extraKpis();quoteLines();formLabels();taskModes();
   document.body.classList.toggle('crm-form-mode',/^#\/quotes\//.test(location.hash));
  }
  const schedule=()=>{if(!frame)frame=requestAnimationFrame(scan);};
