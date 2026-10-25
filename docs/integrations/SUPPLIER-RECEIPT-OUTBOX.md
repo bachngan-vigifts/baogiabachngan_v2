@@ -95,7 +95,7 @@ Test/mock: DMH_20261022_004 / PNH_20261022_004, CRM order `ea306b3a-da8d-4e31-aa
 
 - Working tree sạch trước thao tác; đã `git switch main` + **`git pull origin main`**, base `3051dcffeed8d57ccaa27be1cd3998833e7840c0`; nhánh `fix/supplier-receipt-sapo-workflow`. Checkout source: `/workspace/baogiabachngan_v2`, remote GitHub `bachngan-vigifts/baogiabachngan_v2`. Các nhánh cũ được giữ nguyên.
 - `.github/workflows/deploy-api.yml` chỉ triển khai `supabase/functions/baogia-v2-api` từ main. Lần deploy API thành công gần nhất quan sát qua GitHub API: commit `d00ed916461d0254cf0ae8257246bbe745c1318a`, run [40168922466](https://github.com/bachngan-vigifts/baogiabachngan_v2/actions/runs/40168922466). Outbox ở base main mới nhất không khác commit đó. Đây là bằng chứng pipeline deploy, chưa đọc fingerprint runtime production.
-- Máy này không có `/home/node/.openclaw/workspace/work/sites/`; ba script người dùng nêu không có trong main. Không có credential/máy n8n/OpenClaw hoặc execution log được cung cấp; chưa thể xác định checkout live phía Claw. Không chỉnh archive/handoff.
+- Máy này không có `/home/node/.openclaw/workspace/work/sites/`; ba script người dùng nêu không có trong main. Đã kiểm tra filesystem, remote/history, repo khác, environment/credential mechanism và API n8n; xem [báo cáo điều tra chi tiết](SUPPLIER-RECEIPT-LIVE-DISCOVERY.md). API n8n bị Cloudflare1010 chặn; chưa có nguồn runtime Claw truy cập được. Không chỉnh archive/handoff.
 - HTTP 503 của PNH_20261025_001 / DMH_20261016_059 chứng minh endpoint từ chối giao việc; không chứng minh Sapo chưa được tạo. Chưa đọc execution/Sapo của phiếu thật, chưa retry hoặc sửa phiếu thật.
 - Lỗi code đã tái hiện: dispatch batch chỉ nhặt queued, bỏ failed sau 503; callback chưa claim vẫn ghi done; callback lỗi giải phóng lease làm mất dấu execution chưa rõ kết quả; đối soát tái đọc giá hiện tại. Các trường hợp này có test PGlite.
 
@@ -112,10 +112,38 @@ Test/mock: DMH_20261022_004 / PNH_20261022_004, CRM order `ea306b3a-da8d-4e31-aa
 
 Điều phối claim trước, validate null/giá 0, lookup trước tạo và lần nữa sau resolve master-data, tạo → activate → receive → readback, rồi callback đủ ID/code/link. Existing phải đúng loại/đã nhận đủ và toàn bộ dữ liệu khớp; draft/partial/mismatch → needs_review. Reconcile chỉ tra cứu/callback, không gọi create/activate/receive. Callback thành công thất bại đường truyền thì retry **nguyên body callback đã lưu trong execution**; không chạy lại phần tạo. Adapter/n8n phải giữ body callback trong dữ liệu execution bền vững, không log lease hoặc secret công khai.
 
-Chưa thêm/thay `deploy_n8n_supplier_receipt_v1_staged.js` vì chưa có bản live để patch; không tạo script giả danh triển khai. Cần checkout/export workflow + adapter live để nối và chạy acceptance trên staging trước khi tuyên bố hoàn tất end-to-end. Khi rollout phải đồng bộ consumer có claim với CRM callback bắt buộc lease; consumer cũ không claim sẽ nhận 409.
+Đã thêm `deploy_n8n_supplier_receipt_v1_staged.js` dưới dạng **compiler offline**, không phải script deploy live đã được đối chiếu. Nó đọc export bán hàng rồi tái dùng node OpenClaw `/hooks/agent`/credential reference/agent/session/model; chỉ thay task nhập hàng, xuất workflow inactive. Không yêu cầu checkout adapter riêng: tái dùng browser/tools của session bán hàng, hoặc nhúng `runSupplierReceipt` vào handler/helper hiện có. Cần kết nối host OpenClaw để đối chiếu kiểu handoff live và chạy acceptance staging trước khi tuyên bố hoàn tất end-to-end. Khi rollout phải đồng bộ consumer có claim với CRM callback bắt buộc lease; consumer cũ không claim sẽ nhận 409.
 
 ## Kiểm thử hồi quy
 
 - `node --import tsx --test tests/app/supplier-receipt-outbox.test.ts tests/app/supplier-receipt-consumer.test.ts`
 - Các test warehouse-lifecycle/receipt buttons/link/early receipts kiểm tra không cộng tồn lần hai và không huỷ kho khi kết quả Sapo chưa rõ.
 - Typecheck + UI build; toàn bộ network/Sapo/mail dùng mock. Cron SQL đã đối chiếu cấu trúc với lịch hiện có và tài liệu Supabase; chưa cài hoặc kiểm chứng thực thi pg_cron trên môi trường hosted.
+
+
+## Worker IO và workflow staging offline
+
+`receiptCrmClient` trong `scripts/supplier_receipt_worker_io.js` dùng base API được cấu hình + SAPO_SYNC_TOKEN hiện có; không redirect credential, timeout 30s, không in raw lỗi/provider body. `callback()` lưu body vào `receiptResultJournal` trước HTTP; mỗi receipt/lease có file riêng0600 dưới dir0700, atomic rename + fsync. Chỉ mục file SHA-256 không chứa token/mã phiếu. `replayResult(receiptId,leaseToken)` gửi lại nguyên callback đã lưu và không claim/tạo đơn. Không đặt journal trong repo/public web root. Đây là credential ngắn hạn, chỉ host worker được đọc.
+
+Ví dụ nhúng vào handler trên **cùng host/session hiện có**, không chạy khi chỉ import module:
+
+```js
+import {receiptCrmClient,receiptResultJournal} from './supplier_receipt_worker_io.js';
+import {runSupplierReceipt} from './sapo_goods_receipt_from_quote_web.js';
+const crm=receiptCrmClient({baseUrl:process.env.CRM_STAFF_API_BASE,token:process.env.SAPO_SYNC_TOKEN,
+  journal:receiptResultJournal(process.env.RECEIPT_RESULT_JOURNAL_DIR)});
+// existingSapoHelpers là helper UI của runtime hiện có theo contract ở trên.
+await runSupplierReceipt({crm,sapo:existingSapoHelpers,notification});
+// Khi chỉ callback lỗi mạng: await crm.replayResult(receiptId,leaseToken);
+```
+
+Dựng workflow không gọi mạng hoặc ghi production:
+
+```sh
+node scripts/deploy_n8n_supplier_receipt_v1_staged.js \
+  --sales-workflow /secure/export-sales-workflow.json \
+  --crm-base https://crm-staging.example/api/staff \
+  --out /tmp/supplier-receipt-staged.json
+```
+
+Chỉ hỗ trợ node HTTP generic `/hooks/agent` có credential reference và routing literal đã đối chiếu. Nếu có nhiều node dùng `--handoff-node`; nếu source dùng Execute Command/subworkflow hoặc routing expression phụ thuộc node cũ, compiler dừng để patch theo source thật, không đoán node. Không nhúng token vào JSON. Output inactive, từ chối ghi đè file. Chưa import/activate workflow; nếu rollout đường webhook cũ phải xử lý workflow trùng path có kiểm soát. HTTP202/runId chỉ là accepted/callback_pending. Task agent phải tự claim và xác minh kết quả Sapo trước callback. Giao thức đã đối chiếu [OpenClaw docs](https://docs.openclaw.ai/automation/cron-jobs/webhooks); chưa khẳng định phiên bản/kiểu handoff live tương thích.
