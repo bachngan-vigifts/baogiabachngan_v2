@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { bundleDocumentNumber, DOCUMENT_NUMBER_OUT, bundlePosCustomer, POS_CUSTOMER_OUT, bundleQuoteMath, bundleProductSearch, bundleOrderNotes, ORDER_NOTES_OUT, PRODUCT_SEARCH_OUT, QUOTE_MATH_OUT } from '../../scripts/build-trial-ui.ts';
 import * as math from '../../src/modules/quotes/domain/quote-math.ts';
+import {bundleEarlyOrderSources,EARLY_ORDER_SOURCES_OUT} from '../../scripts/build-trial-ui.ts';
 
 const ui = join(import.meta.dirname, '../../trial-ui');
 
@@ -15,6 +16,7 @@ test('trial-ui/quote-math.js được sinh từ quote-math.ts và chưa cũ (ch�
   assert.equal(readFileSync(PRODUCT_SEARCH_OUT, 'utf8'), bundleProductSearch());
   assert.equal(readFileSync(ORDER_NOTES_OUT, 'utf8'), bundleOrderNotes());
   assert.equal(readFileSync(POS_CUSTOMER_OUT, 'utf8'), bundlePosCustomer());
+  assert.equal(readFileSync(EARLY_ORDER_SOURCES_OUT, 'utf8'), bundleEarlyOrderSources());
 });
 
 test('giao diện tính tiền giống hệt máy chủ trên báo giá ngẫu nhiên', async () => {
