@@ -127,6 +127,7 @@ function posOrderBucket(o: { status: string; fulfillmentMode: string; packingSta
   return 'pending';
 }
 const webBucket = (status: string, ghnStatus = '') => {
+  if (['refunded', 'trash'].includes(status.toLowerCase())) return 'cancelled';
   const g = ghnStatus.toLowerCase();
   if (g === 'delivered') return 'completed';
   if (GHN_FAILED.has(g)) return 'cancelled';
