@@ -12,6 +12,8 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const html = `<!doctype html><html class="app-shell" lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="/trial-ui/style.css"><link rel="stylesheet" href="/trial-ui/pos.css">
+<link rel="stylesheet" href="/trial-ui/typography.css"><link rel="stylesheet" href="/trial-ui/mobile-actions.css">
+<script type="module" src="/trial-ui/mobile-actions-init.js"></script>
 <div class="workspace"><main class="main"><header class="topbar">CRM thử nghiệm</header><section class="view" id="view-pos"></section></main></div>
 <script type="module">
 import {initPos} from '/trial-ui/pos.js';

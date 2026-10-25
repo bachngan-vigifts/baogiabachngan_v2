@@ -1,0 +1,43 @@
+/* One action surface for staff, POS and portals. Desktop and print keep the original controls. */
+.mobile-action-trigger, .mobile-action-heading, .mobile-action-label { display: none; }
+.mobile-action-list { display: contents; }
+@media screen and (max-width: 850px) {
+  :root { --text-caption: 12px; --text-small: 13px; --text-label: 13px; --text-body: 14px; --text-heading: 19px; }
+  body { font-size: 14px; line-height: 1.45; }
+  h1, .page-head h1, .auth-card h1 { font-size: 19px; line-height: 1.35; }
+  h2, h3, .card-title, .sup-section h3, .sup-drawer-head h2 { font-size: 15px; line-height: 1.4; }
+  label, .field-label, .sup-form label, .data-table td, .sup-table td, .pur-lines td { font-size: 13px; }
+  .btn, .btn.ghost, .btn.small, .nav, .side-nav .nav { font-size: 13px; }
+  /* 16px inputs prevent Safari from zooming into a field; surrounding text keeps the compact scale. */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea { font-size: 16px !important; }
+  .page-head, .orders-head { flex-direction: row !important; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .page-head > div:first-child:not(:has(> .mobile-action-list)) { flex: 1; min-width: 0; }
+  .page-head :is(.row-gap,.head-actions):has(> .mobile-action-list) { display: flex; justify-content: flex-end; flex: none; width: auto !important; }
+  .page-head .mobile-action-trigger > span:last-child:not(:first-child) { display: none; }
+  .page-head .mobile-action-trigger { width: 44px !important; padding: 8px; }
+  .page-head p { font-size: 12px; line-height: 1.4; }
+  .toolbar .search { border-radius: 24px; background: #f0f1f4; }
+  /* These lists already become cards on mobile; their old desktop minimum width clipped the cards. */
+  .data-table.orders-table, .data-table.cashbook-table { min-width: 0; width: 100%; max-width: 100%; }
+  .orders-table td:first-child { font-weight: 600; }
+  .orders-table td:first-child small { font-weight: 400; }
+  .mobile-action-trigger:not([hidden]) { display: inline-flex !important; align-items: center; justify-content: center; gap: 5px; flex: none !important; width: auto !important; min-width: 44px; min-height: 44px; margin: 0; padding: 8px 12px; border-radius: 22px; border: 0; background: #edeef2; color: #56606e; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .mobile-action-trigger > span:first-child { font: 700 24px/1 system-ui; }
+  .mobile-action-trigger.mobile-action-row { width: 44px !important; padding: 8px; margin-left: auto; }
+  .mobile-action-list[popover]:not(:popover-open) { display: none !important; }
+  .mobile-action-list[popover]:popover-open { display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 4px !important; position: fixed !important; inset: auto 8px max(8px, env(safe-area-inset-bottom)) !important; width: auto !important; max-width: 480px; max-height: min(76dvh, 640px); margin: 0 auto !important; padding: 8px 12px 14px !important; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; border: 1px solid #e4e7ec; border-radius: 18px; background: #fff; color: #27313f; box-shadow: 0 12px 44px #18223033; font-family: var(--font); font-size: 14px; }
+  .mobile-action-list::backdrop { background: #10182852; }
+  .mobile-action-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 0 8px; border-bottom: 1px solid #e8eaef; }
+  .mobile-action-heading strong { font-size: 14px; font-weight: 600; }
+  .mobile-action-heading .icon-btn { min-width: 44px; min-height: 44px; font: 24px/1 system-ui; }
+  body .mobile-action-list[popover]:popover-open :is(.btn,.icon-btn,.btn-add), body .mobile-action-list[popover]:popover-open > .menu-wrap > button { display: flex !important; position: static !important; align-items: center; justify-content: flex-start; gap: 10px; flex: none !important; width: 100% !important; height: auto !important; min-height: 46px; margin: 0 !important; padding: 10px 12px !important; border-radius: 8px; font-size: 14px !important; line-height: 1.4; text-align: left; white-space: normal; }
+  body .mobile-action-list[popover]:popover-open .mobile-action-heading .icon-btn { width: 44px !important; justify-content: center; padding: 8px !important; font-size: 24px !important; }
+  body .mobile-action-list[popover]:popover-open [hidden] { display: none !important; }
+  .mobile-action-list:popover-open .mobile-action-label { display: inline; }
+  .mobile-action-list:popover-open .menu-wrap { display: block; width: 100%; }
+  .mobile-action-list:popover-open .menu { position: static; width: 100%; box-shadow: none; border: 0; padding: 4px 8px; }
+  .mobile-action-list:popover-open .menu button { min-height: 44px; width: 100%; white-space: normal; }
+  /* Replaced by the same shared sheet; the quote's step/navigation/save dock remains separate. */
+  body:has(.quote-actions > .mobile-action-list) #quote-mobile-more { display: none !important; }
+  #view-editor .quote-actions:has(> .mobile-action-list) { display: flex !important; position: static; width: auto; padding: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
+}

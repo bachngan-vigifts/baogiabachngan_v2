@@ -3800,7 +3800,7 @@ $('#invoice-req-form').addEventListener('submit', async e => {
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'invoice-form') return;
   e.preventDefault();
-  const f = e.target, btn = f.querySelector('button'); btn.disabled = true;
+  const f = e.target, btn = f.querySelector('button[type="submit"],button:not([type])'); btn.disabled = true;
   try { await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice`, 'PUT', { invoiceNo: f.invoiceNo.value, invoiceDate: f.invoiceDate.value }); toast('Đã lưu số hoá đơn.'); openOrder(sales.order.id); tasksView().badge(); }
   catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
 });

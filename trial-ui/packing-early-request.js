@@ -24,7 +24,7 @@ export function initPackingEarlyRequest({ root, api, lines, parseNum, canRequest
       actions.append(button, hint, result); row.append(actions);
     }
     actions.hidden = !incoming;
-    const button = actions.querySelector('button');
+    const button = actions.querySelector('[data-early-create]');
     button.disabled = busy || !canRequest();
     button.title = canRequest() ? '' : 'Manager hoặc Sale Admin có quyền mua hàng mới được lập phiếu.';
   }
