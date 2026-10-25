@@ -1966,6 +1966,10 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .early-request-dialog { width: min(800px,calc(100vw - 24px)); max-height: 90dvh; padding: 0; }
 .early-request-dialog .modal-body { overflow: auto; max-height: 65dvh; }
 .early-request-dialog input[type="number"] { width: 120px; }
+.early-file-dialog .modal-body > label { display: grid; gap: 6px; margin: 12px 0; }
+.early-file-dialog .error { white-space: pre-line; }
+.early-file-dialog .early-file-error { color: #b42318; }
+.early-file-dialog .modal-foot { flex-wrap: wrap; gap: 8px; }
 @media (max-width: 650px) {
   .incoming-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .incoming-field { flex: 1 1 130px; min-width: 0; }

@@ -9,7 +9,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { purchaseEarlyRequests as requests, purchaseEarlyRequestLines as lines, purchaseEarlyRequestAllocations as allocations } from '../early-request-schema.ts';
 import { incomingShipments, incomingShipmentLines, supplierAccounts, suppliers } from '../schema.ts';
 import { earlyReceiptAvailability, earlyReceiptContext } from './early-receiving.ts';
-import { canUsePurchasing, canReceive } from '../domain/purchasing.ts';
+import { canUsePurchasing, canReceive, canSendEarlyRequest } from '../domain/purchasing.ts';
 import { incomingBySku } from './incoming-by-sku.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import type { Db, Member } from './purchase-store.ts';
@@ -17,7 +17,7 @@ type Ctx = RouteContext<StaffEnv>;
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 const me = (c: Ctx) => (c.state.session as SessionState).member;
 function fail(status:number, message:string, code?:string):never { throw new AppError(status,message,code); }
-export const canSendEarlyRequest = (m:Member) => canUsePurchasing(m) && (m.role==='manager' || m.positionId==='sale-admin');
+export { canSendEarlyRequest } from '../domain/purchasing.ts';
 const guard = (c:Ctx) => { if(!canUsePurchasing(me(c))) fail(403,'Bạn không có quyền xem yêu cầu lấy trước.'); };
 const asDb = (tx:Tx) => tx as unknown as Db;
 async function supplierFor(c:Ctx) {

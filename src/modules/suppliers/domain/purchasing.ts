@@ -26,6 +26,7 @@ export const isAccountantStaff = (a: Actor | null | undefined) => isEmployee(a) 
 export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && (can(a, 'purchases.prices') || canApprove(a));
 /** Sale Admin được xử lý và xem đầy đủ chứng từ đã duyệt, không mở giá của đơn nháp khi chưa được cấp quyền. */
 export const canSeePurchasePrices = (a: Actor | null | undefined, o: Pick<OrderFlags, 'approvalStatus'>) => canSeePrices(a) || isSaleAdminStaff(a) && o.approvalStatus === 'approved';
+export const canSendEarlyRequest = (a: Actor) => canUsePurchasing(a) && (a.role === 'manager' || a.positionId === SALE_ADMIN_POSITION_ID);
 export const canUsePurchasing = (a: Actor | null | undefined) => isManager(a) || isEmployee(a);
 export const canReceive = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a) || isEmployee(a) && can(a, 'purchases.receive');
 /** Staff record an actual supplier confirmation; this does not approve purchase prices or early requests. */
