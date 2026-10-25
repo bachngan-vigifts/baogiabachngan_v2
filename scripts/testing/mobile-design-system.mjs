@@ -11,6 +11,7 @@ const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url));
 const f=await setup(),ok=(r,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 const phase=Number(process.env.MOBILE_DESIGN_PHASE||1);
+let packingId='';
 const customerId='design-customer';
 await f.db.insert(customers).values({id:customerId,name:'CÔNG TY PHƯỚC ĐỨC',contact:'Anh Minh',phone:'0903123218',email:'minh@example.invalid',address:'12 Nguyễn Huệ, Cần Thơ',taxCode:'0101234567',customerCode:'BN-CUZN04196',search:'phuoc duc anh minh',sourceVersion:0,syncedAt:''});
 async function quote(no){return ok(await f.call('/quotes',f.mgr,'POST',{type:'HRC',quoteNo:no,date:'2026-10-25',customer:'CÔNG TY PHƯỚC ĐỨC',customerId,contact:'Anh Minh',phone:'0903123218',vat:8,rows:[{sku:'00123',name:'Bộ trà Hoàng Cung 0.65L',unit:'Bộ',qty:2,price:185000,taxRate:8},{sku:'LY-X',name:'Khăn lụa Hoàng Cung',unit:'Cái',qty:1,price:85000,taxRate:8}]}),201);}
@@ -29,6 +30,8 @@ if(phase>=2){
  await f.db.insert(incomingShipments).values({id:'design-po',ticketNumber:'DMH_20261025_001',source:'supplier-order',warehouse:'Kho POS',supplierId:'design-supplier',supplierName:'Nhà máy Gốm sứ Hoàng Cung',approvalStatus:'approved',supplierStatus:'confirmed',arrivalDate:now.slice(0,10),createdAt:now,createdBy:'mgr',updatedAt:now});
  await f.db.insert(incomingShipmentLines).values({id:'design-po-line',shipmentId:'design-po',lineNo:1,sku:'00123',name:'Ly sứ Hoàng Cung',unit:'Cái',quantity:29,price:185000});
  ok(await f.call('/deliveries',f.mgr,'POST',{orderId:order.id,plannedDate:now.slice(0,10)}),201);
+ const packing=ok(await f.call('/orders/'+order.id+'/packing',f.mgr));
+ packingId=ok(await f.call('/orders/'+order.id+'/packing',f.mgr,'POST',{allocations:[{orderLineId:packing.lines.find(l=>l.sku==='00123').id,qty:2,source:'warehouse',warehouseId:'pos-wh'}]}),201).slips[0].id;
  await f.open();
  ok(await f.call('/cash/entries',f.emp,'POST',{key:crypto.randomUUID(),kind:'other_income',amount:1668600,reason:'Thu tiền đơn hàng thử nghiệm'}),201);
 }
@@ -110,6 +113,10 @@ try{for(const width of [390,1280]){
   await shot(page,'incoming',width);assert.equal(writes.length,before,'selection stays local until explicit submission');
   if(width===390){await page.getByRole('button',{name:'Lọc hàng đang về',exact:true}).click();await page.getByLabel('Nhà cung cấp',{exact:true}).selectOption('design-supplier');await page.locator('.purchase-incoming .crm-filter-foot .primary').click();await qty.waitFor();assert.equal(await qty.inputValue(),'2','filter preserves selected quantity');}
   await goto(page,'#/stock-lookup?q=00123');await page.locator('.lookup-item').first().waitFor();assert.equal(await page.locator('.lookup-bar button[type=submit]').isVisible(),true);await shot(page,'stock-lookup',width);
+  await goto(page,'#/packing/'+packingId);await page.locator('#packing-body .card').first().waitFor();await shot(page,'packing',width);
+  await goto(page,'#/stock-requests');await page.locator('#stock-req-empty').waitFor({state:'visible'});await shot(page,'stock-requests',width);
+  await goto(page,'#/pos');await page.locator('.pos-head').waitFor();await settle(page);await shot(page,'pos',width);
+  assert.equal(writes.length,before,'opening packing, requests and POS must not dispatch business actions');
  }
  if(phase>=3){
   const before=writes.length;
