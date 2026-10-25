@@ -9,14 +9,14 @@ const api=async(path,method,body)=>{
  reads.push(path);
  if(path==='/purchase-options')return {suppliers:[{id:'a',name:'NCC A'}],isManager:true,canRequestEarly:true};
  if(path.startsWith('/purchase-orders?'))return {orders:[],counts:{}};
- if(path.startsWith('/purchase-incoming?')){const p=new URL(path,location.origin).searchParams;return {canRequest:true,rows:p.getAll('sku').filter(s=>s==='031106000').map(sku=>({sku,name:'Ly chuẩn theo đơn mua',quantity:20,unitConflict:false}))};}
+ if(path.startsWith('/purchase-incoming?')){const p=new URL(path,location.origin).searchParams;return {canRequest:true,rows:p.getAll('sku').filter(s=>s==='031106000').map(sku=>({sku,name:'Ly chuẩn theo đơn mua',quantity:20,unitConflict:false,orders:[{ticketNumber:'PO-a1',internalNo:'NCC-001',quantity:20,unit:'Cái'}]}))};}
  throw Error('Unexpected read: '+path);
 };
 window.ui=initPurchases({root:document.querySelector('#root'),api,toast:console.log,confirmBox:async()=>true,money:String,go:href=>window.dest=href,today:()=> '2026-10-25'});await ui.load();window.ready=true;
 </script>`;
 const server=createServer(async(req,res)=>{try{res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':req.url.endsWith('.css')?'text/css':'text/html; charset=utf-8');res.end(req.url==='/trial-ui/test'?html:await readFile(repo+req.url));}catch{res.writeHead(404).end();}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
 const ctx={};runInNewContext(await readFile(repo+'/trial-ui/xlsx.full.min.js','utf8'),ctx);const X=ctx.XLSX;
-const buffer=qty=>{const b=X.utils.book_new();X.utils.book_append_sheet(b,X.utils.aoa_to_sheet([['Mã hàng','Tên hàng','Số lượng xin trước'],['031106000','Tên tham khảo',qty]]),'Xin hàng trước');return Buffer.from(new Uint8Array(X.write(b,{bookType:'xlsx',type:'array'})));};
+const buffer=qty=>{const b=X.utils.book_new();X.utils.book_append_sheet(b,X.utils.aoa_to_sheet([['Mã hàng','Tên hàng','Số lượng xin trước','Lấy ở số đơn hàng nào','Số đơn NCC'],['031106000','Tên tham khảo',qty,'PO-a1','']]),'Xin hàng trước');return Buffer.from(new Uint8Array(X.write(b,{bookType:'xlsx',type:'array'})));};
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
 try{for(const width of [390,1280]){const context=await browser.newContext({viewport:{width,height:844}});const origin='http://127.0.0.1:'+server.address().port;await context.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port+'/trial-ui/test');await page.waitForFunction(()=>window.ready);
@@ -31,7 +31,19 @@ try{for(const width of [390,1280]){const context=await browser.newContext({viewp
  await page.getByRole('button',{name:'Lưu phiếu nháp',exact:true}).click();
  await page.getByRole('button',{name:'Thử lưu lại',exact:true}).click();
  await page.getByRole('link',{name:'Mở phiếu / Gửi NCC',exact:true}).waitFor();
- const writes=await page.evaluate(()=>window.writes);assert.equal(writes.length,2);assert.equal(writes[0].body.clientKey,writes[1].body.clientKey);assert.deepEqual(writes[0].body.lines,[{sku:'031106000',quantity:5}]);assert.ok(writes.every(w=>w.path==='/purchase-early-requests'));
+ const writes=await page.evaluate(()=>window.writes);assert.equal(writes.length,2);assert.equal(writes[0].body.clientKey,writes[1].body.clientKey);assert.deepEqual(writes[0].body.lines,[{sku:'031106000',quantity:5,sourceOrders:[{orderNo:'PO-a1',supplierOrderNo:'',quantity:5}]}]);assert.ok(writes.every(w=>w.path==='/purchase-early-requests'));
  await page.getByRole('link',{name:'Mở phiếu / Gửi NCC',exact:true}).click();assert.equal(await page.evaluate(()=>window.dest),'#/purchases?mode=incoming&request=file-request');assert.deepEqual(errors,[]);
+ // Editing a pinned draft must preserve per-order quantities in its PUT payload.
+ await page.evaluate(async()=>{
+  const {initEarlyRequests}=await import('/trial-ui/purchase-early-requests.js');
+  const host=document.createElement('section');document.body.append(host);
+  const sourceOrders=[{orderNo:'PO-a1',supplierOrderNo:'NCC-001',quantity:5},{orderNo:'PO-a2',supplierOrderNo:'',quantity:7}];
+  const draft={id:'draft-pin',revision:1,status:'draft',requestStatus:'draft',createdAt:'2026-10-25T00:00:00Z',pickupDate:'2026-10-25',scope:{orderSources:JSON.stringify({'031106000':sourceOrders})},lines:[{id:'line',sku:'031106000',name:'Ly',unit:'Cái',quantity:12,status:'pending',allocations:[]}]};
+  const ui=initEarlyRequests({host,canWrite:()=>true,api:async(path,method,body)=>{if(method){window.edited=body;return {request:{...draft,revision:2}};}return {requests:[draft]};}});await ui.open('draft-pin');
+ });
+ await page.getByLabel('Số lượng nháp mã 031106000 · PO-a1',{exact:true}).fill('3');
+ await page.getByRole('button',{name:'Lưu nháp',exact:true}).click();
+ const edited=await page.evaluate(()=>window.edited);
+ assert.deepEqual(edited.lines,[{sku:'031106000',quantity:10,sourceOrders:[{orderNo:'PO-a1',supplierOrderNo:'NCC-001',quantity:3},{orderNo:'PO-a2',supplierOrderNo:'',quantity:7}]}]);
  console.log(JSON.stringify({width,template:true,leadingZero:true,invalidBlocked:true,draftRetrySameKey:true,autoSubmit:false}));await context.close();}}
 finally{await browser.close();server.close();}

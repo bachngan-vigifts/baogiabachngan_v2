@@ -1,5 +1,5 @@
 /** File import creates only a draft through the existing, permission-checked early-request API. */
-export const EARLY_FILE_HEADER = ['Mã hàng', 'Tên hàng', 'Số lượng xin trước'];
+export const EARLY_FILE_HEADER = ['Mã hàng', 'Tên hàng', 'Số lượng xin trước', 'Lấy ở số đơn hàng nào', 'Số đơn NCC (không bắt buộc)'];
 const fold = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().replace(/\s+/g,' ').trim();
 export function parseEarlyRequestSheet(table, raw = table) {
   const errors=[], lines=[], seen=new Map();
@@ -9,26 +9,41 @@ export function parseEarlyRequestSheet(table, raw = table) {
     sku:names.findIndex(v=>['ma hang','sku'].includes(v)),
     name:names.findIndex(v=>['ten hang','ten san pham'].includes(v)),
     qty:names.findIndex(v=>['so luong xin truoc','sl xin truoc','so luong'].includes(v)),
+    order:names.findIndex(v=>['lay o so don hang nao','so don hang','so don mua'].includes(v)),
+    supplierOrder:names.findIndex(v=>['so don ncc','so don ncc (khong bat buoc)'].includes(v)),
   };
-  if(columns.sku<0||columns.qty<0)return {lines,errors:['Thiếu cột Mã hàng hoặc Số lượng xin trước. Hãy dùng file mẫu.']};
-  if(names.filter(v=>['ma hang','sku'].includes(v)).length!==1||names.filter(v=>['so luong xin truoc','sl xin truoc','so luong'].includes(v)).length!==1)
-    return {lines,errors:['Cột mã hàng hoặc số lượng bị lặp.']};
+  if(columns.sku<0||columns.qty<0||columns.order<0)return {lines,errors:['Thiếu cột Mã hàng, Số lượng xin trước hoặc Lấy ở số đơn hàng nào. Hãy dùng file mẫu.']};
+  if(names.filter(v=>['ma hang','sku'].includes(v)).length!==1||names.filter(v=>['so luong xin truoc','sl xin truoc','so luong'].includes(v)).length!==1||names.filter(v=>['lay o so don hang nao','so don hang','so don mua'].includes(v)).length!==1||names.filter(v=>['so don ncc','so don ncc (khong bat buoc)'].includes(v)).length>1)
+    return {lines,errors:['Cột mã hàng, số lượng hoặc số đơn bị lặp.']};
   let count=0;
   for(let i=header+1;i<table.length;i++){
     const row=table[i];if(!row.some(v=>String(v??'').trim()))continue;
     if(++count>300){errors.push('Mỗi file tối đa 300 dòng hàng.');break;}
     const rawQuantity=raw[i]?.[columns.qty];
     const sku=String(row[columns.sku]??'').trim(), quantityText=String(typeof rawQuantity==='number'?rawQuantity:row[columns.qty]??'').trim(),quantity=Number(quantityText);
+    const orderNo=String(row[columns.order]??'').trim(),supplierOrderNo=String(row[columns.supplierOrder]??'').trim();
+    const pair=JSON.stringify([sku,orderNo.toLocaleLowerCase('vi')]);
     const problems=[];
+    if(!orderNo||orderNo.length>200||supplierOrderNo.length>200)problems.push('nhập số đơn lấy hàng; số đơn tối đa 200 ký tự');
     if(!sku||sku.length>200)problems.push('mã hàng trống hoặc quá dài');
     if(!/^\d+$/.test(quantityText)||!Number.isSafeInteger(quantity)||quantity<=0)problems.push('số lượng phải là số nguyên dương, không dùng dấu phân cách');
-    if(seen.has(sku))problems.push('mã hàng trùng dòng '+seen.get(sku));
-    if(sku)seen.set(sku,i+1);
+    if(seen.has(pair))problems.push('mã hàng và đơn lấy hàng trùng dòng '+seen.get(pair));
+    if(sku&&orderNo)seen.set(pair,i+1);
     if(problems.length)errors.push(`Dòng ${i+1}: ${problems.join('; ')}.`);
-    else lines.push({row:i+1,sku,name:String(row[columns.name]??'').trim(),quantity});
+    else lines.push({row:i+1,sku,name:String(row[columns.name]??'').trim(),quantity,orderNo,supplierOrderNo});
   }
   if(!count)errors.push('Chưa có dòng hàng. Điền mã và số lượng vào file mẫu.');
   return {lines,errors};
+}
+export function earlyFileRequestLines(rows) {
+  const groups=new Map();
+  for(const row of rows){
+    const line=groups.get(row.sku)||{sku:row.sku,quantity:0,sourceOrders:[]};
+    line.quantity+=row.quantity;
+    if(!Number.isSafeInteger(line.quantity))throw Error(row.sku+': tổng số lượng quá lớn.');
+    line.sourceOrders.push({orderNo:row.orderNo,supplierOrderNo:row.supplierOrderNo||'',quantity:row.quantity});groups.set(row.sku,line);
+  }
+  return [...groups.values()];
 }
 export function readEarlyRequestWorkbook(X, workbook) {
   const sheet=workbook.Sheets[workbook.SheetNames[0]];
@@ -45,13 +60,14 @@ export function readEarlyRequestWorkbook(X, workbook) {
 export function earlyRequestTemplate(X) {
   const workbook=X.utils.book_new(), sheet=X.utils.aoa_to_sheet([EARLY_FILE_HEADER]);
   // Text cells prevent Excel from dropping leading zeroes when entering SKUs.
-  for(let r=1;r<=300;r++)sheet[X.utils.encode_cell({r,c:0})]={t:'s',v:'',z:'@'};
-  sheet['!ref']='A1:C301';sheet['!cols']=[{wch:24},{wch:50},{wch:24}];
+  for(let r=1;r<=300;r++)for(const c of [0,3,4])sheet[X.utils.encode_cell({r,c})]={t:'s',v:'',z:'@'};
+  sheet['!ref']='A1:E301';sheet['!cols']=[{wch:24},{wch:50},{wch:24},{wch:30},{wch:30}];
   X.utils.book_append_sheet(workbook,sheet,'Xin hàng trước');
   X.utils.book_append_sheet(workbook,X.utils.aoa_to_sheet([
-    ['Hướng dẫn'],['Điền tại sheet Xin hàng trước. Tối đa 300 mã, không lặp mã.'],
+    ['Hướng dẫn'],['Điền tại sheet Xin hàng trước. Tối đa 300 dòng; cùng mã ở nhiều đơn được tách dòng, không lặp mã + số đơn.'],
     ['Mã hàng: giữ dạng Text để không mất số 0 đầu. Tên hàng chỉ để tham khảo.'],
     ['Số lượng xin trước: số nguyên dương, ví dụ 1000; không ghi 1.000 hoặc 1,000.'],
+    ['Lấy ở số đơn hàng nào: bắt buộc, đúng số đơn mua CRM. Số đơn NCC là tham chiếu bổ sung, có thể để trống.'],
     ['Chỉ xin hàng còn đang về từ đơn mua đã duyệt. Chọn NCC và ngày lấy trên màn hình.'],
     ['Chọn file để xem trước; lưu nháp, kiểm tra rồi bấm Gửi NCC tại phiếu. Không tự nhận hàng hay cộng kho.'],
   ]),'Hướng dẫn');
@@ -79,7 +95,7 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go}) {
   const preview=el('div','table-wrap');
   const save=button('Lưu phiếu nháp',async()=>{
     if(busy||saved||!valid||!date.value)return;
-    const payload=uncertain?attempt.body:{lines:parsed.lines.map(l=>({sku:l.sku,quantity:l.quantity})),pickupDate:date.value,scope:{supplierId:supplier.value,status:'all'}};
+    const payload=uncertain?attempt.body:{lines:earlyFileRequestLines(parsed.lines),pickupDate:date.value,scope:{supplierId:supplier.value,status:'all'}};
     const fingerprint=JSON.stringify(payload);
     if(attempt?.fingerprint!==fingerprint)attempt={fingerprint,key:crypto.randomUUID(),body:payload};
     lock(true);error.textContent='';
@@ -107,15 +123,16 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go}) {
       }
       if(seq!==sequence||!dialog.open)return;
       const table=el('table','data-table'),th=el('tr'),thead=el('thead'),tbody=el('tbody');
-      for(const title of ['Dòng','Mã hàng','Tên hàng','SL xin trước','Còn đang về','Kiểm tra'])th.append(el('th','',title));thead.append(th);table.append(thead,tbody);
+      for(const title of ['Dòng','Mã hàng','Tên hàng','SL xin trước','Lấy ở số đơn hàng nào','Số đơn NCC','Còn tại đơn','Kiểm tra'])th.append(el('th','',title));thead.append(th);table.append(thead,tbody);
       let problems=0;
       for(const line of parsed.lines){
-        const source=lookup.get(line.sku),available=Math.floor(Number(source?.quantity)||0);
-        const issue=!source?'Không có hàng đang về trong phạm vi NCC đã chọn':source.unitConflict?'ĐVT không thống nhất':line.quantity>available?'Vượt lượng còn đang về':'';
+        const source=lookup.get(line.sku),matches=(source?.orders||[]).filter(o=>String(o.ticketNumber).trim().toLocaleLowerCase('vi')===line.orderNo.toLocaleLowerCase('vi')&&(!line.supplierOrderNo||String(o.internalNo||'').trim().toLocaleLowerCase('vi')===line.supplierOrderNo.toLocaleLowerCase('vi')));
+        const available=matches.reduce((sum,o)=>sum+Math.floor(Number(o.quantity)||0),0),units=new Set(matches.map(o=>o.unit));
+        const issue=!matches.length?'Không khớp mã / số đơn / số đơn NCC trong phạm vi chọn':units.size>1?'ĐVT không thống nhất':line.quantity>available?'Vượt lượng còn tại đơn đã chọn':'';
         if(issue)problems++;const row=el('tr');
-        for(const value of [line.row,line.sku,source?.name||line.name,line.quantity,available,issue||'Hợp lệ'])row.append(el('td',issue?'early-file-error':'',value));tbody.append(row);
+        for(const value of [line.row,line.sku,source?.name||line.name,line.quantity,line.orderNo,line.supplierOrderNo||'—',available,issue||'Hợp lệ'])row.append(el('td',issue?'early-file-error':'',value));tbody.append(row);
       }
-      preview.append(table);valid=problems===0;status.textContent=`${parsed.lines.length} mã · ${problems} dòng cần sửa. Chưa lưu hoặc gửi NCC.`;
+      earlyFileRequestLines(parsed.lines);preview.append(table);valid=problems===0;status.textContent=`${parsed.lines.length} mã · ${problems} dòng cần sửa. Chưa lưu hoặc gửi NCC.`;
     }catch(e){error.textContent=e.message||'Không đối chiếu được hàng đang về.';status.textContent='Chưa xác minh được dữ liệu. Chọn lại file hoặc NCC để thử lại.';}
     finally{if(seq===sequence)lock(false);}
   }
@@ -131,7 +148,7 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go}) {
     if(parsed)await validate();
   });
   supplier.addEventListener('change',validate);date.addEventListener('input',sync);
-  body.append(el('p','muted','Tải mẫu, điền tối đa 300 mã rồi chọn file. Tên hàng chỉ để tham khảo; hệ thống đối chiếu theo mã. Lưu nháp không gửi NCC, không nhận hàng hoặc cộng kho.'),
+  body.append(el('p','muted','Tải mẫu, điền tối đa 300 mã rồi chọn file. Nhập đúng số đơn mua cần lấy hàng; Số đơn NCC có thể để trống. Cùng mã ở nhiều đơn được tách dòng. Hệ thống không tự chuyển sang đơn khác. Lưu nháp không gửi NCC, không nhận hàng hoặc cộng kho.'),
     label('Nhà cung cấp',supplier),label('Ngày lấy *',date),template,label('File Excel / CSV (tối đa 2 MB)',file),status,error,preview);
   foot.append(save);dialog.append(head,body,foot);document.body.append(dialog);
   dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{++sequence;dialog.remove();},{once:true});dialog.showModal();sync();

@@ -28,7 +28,23 @@ async function supplierFor(c:Ctx) {
   if(!mapping) fail(403,'Tài khoản chưa được gắn với NCC đang hoạt động.');
   return mapping.id;
 }
-function cleanInput(body:Record<string,unknown>) {
+type OrderSource = {orderNo:string;supplierOrderNo:string;quantity:number};
+const sourceKey = (value:string) => value.trim().toLocaleLowerCase('vi');
+function cleanSources(raw:unknown,quantity:number,sku:string):OrderSource[]|undefined {
+  if(raw===undefined)return;
+  if(!Array.isArray(raw)||!raw.length||raw.length>300)fail(400,`${sku}: nguồn đơn mua không hợp lệ.`);
+  const seen=new Set<string>();
+  const sources=raw.map((entry:unknown)=>{
+    const r=entry&&typeof entry==='object'?entry as Record<string,unknown>:{};
+    if(typeof r.orderNo!=='string'||!r.orderNo.trim()||r.orderNo.length>200||r.supplierOrderNo!==undefined&&(typeof r.supplierOrderNo!=='string'||r.supplierOrderNo.length>200))fail(400,`${sku}: số đơn mua / số đơn NCC không hợp lệ.`);
+    if(typeof r.quantity!=='number'||!Number.isSafeInteger(r.quantity)||r.quantity<=0)fail(400,`${sku}: số lượng theo đơn phải là số nguyên dương.`);
+    const orderNo=r.orderNo.trim(),key=sourceKey(orderNo);if(seen.has(key))fail(400,`${sku}: nguồn đơn mua bị lặp.`);seen.add(key);
+    return {orderNo,supplierOrderNo:typeof r.supplierOrderNo==='string'?r.supplierOrderNo.trim():'',quantity:r.quantity};
+  }).sort((a,b)=>sourceKey(a.orderNo).localeCompare(sourceKey(b.orderNo)));
+  if(sources.reduce((sum,r)=>sum+r.quantity,0)!==quantity)fail(400,`${sku}: tổng số lượng theo đơn không khớp số lượng xin.`);
+  return sources;
+}
+function cleanInput(body:Record<string,unknown>,preserved:Record<string,OrderSource[]>={}) {
   if(typeof body.clientKey!=='string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(body.clientKey)) fail(400,'Khóa gửi yêu cầu không hợp lệ.');
   if(!Array.isArray(body.lines) || !body.lines.length || body.lines.length>300) fail(400,'Chọn từ 1 đến 300 mã hàng.');
   const seen=new Set<string>();
@@ -37,8 +53,10 @@ function cleanInput(body:Record<string,unknown>) {
     const sku=typeof r.sku==='string'?r.sku.trim():'';
     if(!sku || sku.length>200 || seen.has(sku)) fail(400,'Mã hàng trống hoặc bị lặp.'); seen.add(sku);
     if(typeof r.quantity!=='number' || !Number.isSafeInteger(r.quantity) || r.quantity<=0) fail(400,`${sku}: số lượng phải là số nguyên dương.`);
-    return {sku,quantity:r.quantity};
+    const sourceOrders=cleanSources(r.sourceOrders??preserved[sku],r.quantity,sku);
+    return {sku,quantity:r.quantity,...(sourceOrders?{sourceOrders}:{})};
   }).sort((a,b)=>a.sku.localeCompare(b.sku));
+  if(selected.reduce((sum,l)=>sum+(l.sourceOrders?.length||1),0)>300)fail(400,'Mỗi phiếu tối đa 300 dòng nguồn đơn mua.');
   const raw=body.scope && typeof body.scope==='object' && !Array.isArray(body.scope)?body.scope as Record<string,unknown>:{};
   const scope:Record<string,string>={};
   for(const key of ['supplierId','from','to','status']) {
@@ -47,6 +65,8 @@ function cleanInput(body:Record<string,unknown>) {
     scope[key]=value;
   }
   scope.status ||= 'all';
+  const pinned=Object.fromEntries(selected.filter(l=>l.sourceOrders).map(l=>[l.sku,l.sourceOrders]));
+  if(Object.keys(pinned).length)scope.orderSources=JSON.stringify(pinned);
   const pickupDate=body.pickupDate??'';
   if(typeof pickupDate!=='string'||pickupDate!==''&&!isIsoDate(pickupDate)) fail(400,'Ngày lấy không hợp lệ.');
   return {clientKey:body.clientKey,selected,scope,pickupDate};
@@ -59,7 +79,7 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id='', sub
   const headers=await db.select().from(requests).where(and(id?eq(requests.id,id):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(50);
   if(id && !headers.length) fail(404,'Không tìm thấy yêu cầu lấy trước.');
   if(!headers.length) return [];
-  const details=await db.select({line:lines,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,
+  const details=await db.select({line:lines,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
     supplierName:suppliers.name,due:sql<string>`coalesce(nullif(${incomingShipmentLines.promisedDate},''),${incomingShipments.arrivalDate},'')`})
     .from(lines).innerJoin(allocations,eq(allocations.requestLineId,lines.id)).innerJoin(incomingShipmentLines,eq(incomingShipmentLines.id,allocations.purchaseLineId))
     .innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,allocations.supplierId))
@@ -72,7 +92,7 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id='', sub
       lines:[...groups].map(([lineId,group])=>({id:lineId,sku:group[0]!.line.sku,name:group[0]!.line.name,unit:group[0]!.line.unit,
         // Supplier sees ONLY its quantities/statuses, never a cross-supplier line total.
         quantity:group.reduce((sum,d)=>sum+d.allocation.quantity,0),status:stateOf(group.map(d=>d.allocation.status)),
-        allocations:group.map(d=>({id:d.allocation.id,orderId:d.orderId,ticketNumber:d.ticketNumber,supplierId:d.allocation.supplierId,
+        allocations:group.map(d=>({id:d.allocation.id,orderId:d.orderId,ticketNumber:d.ticketNumber,supplierOrderNo:d.supplierOrderNo,supplierId:d.allocation.supplierId,
           supplierName:d.supplierName,quantity:d.allocation.quantity,due:d.due,status:d.allocation.status,
           respondedAt:d.allocation.respondedAt,responseNote:d.allocation.responseNote}))}))};
   });
@@ -90,16 +110,23 @@ async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanIn
   if(oldLines.length) await tx.delete(allocations).where(inArray(allocations.requestLineId,oldLines.map(l=>l.id)));
   await tx.delete(lines).where(eq(lines.requestId,id));
   for(const [i,want] of input.selected.entries()) {
-    const row=current.rows.find(r=>r.sku===want.sku),orders=row?.orders.filter(o=>orderIds.includes(o.id))||[];
-    const units=new Set(orders.map(o=>o.unit.trim())),available=orders.reduce((sum,o)=>sum+Math.floor(o.quantity),0);
-    if(!row || want.quantity>available) fail(409,`${want.sku}: chỉ còn ${available.toLocaleString('vi-VN')} đang về trong phạm vi đã chọn.`,'EARLY_QUANTITY_EXCEEDED');
-    if(units.size!==1) fail(409,`${want.sku}: đơn vị tính không thống nhất, cần kiểm tra lại đơn mua.`);
-    const lineId=crypto.randomUUID();await tx.insert(lines).values({id:lineId,requestId:id,lineNo:i+1,sku:row.sku,name:row.name,unit:[...units][0]!,quantity:want.quantity});
-    let left=want.quantity;
-    for(const order of orders) {
-      if(!left) break;const quantity=Math.min(left,Math.floor(order.quantity));if(!quantity) continue;
-      if(!order.supplierId) fail(409,`${want.sku}: đơn mua chưa có NCC.`);
-      await tx.insert(allocations).values({id:crypto.randomUUID(),requestLineId:lineId,purchaseLineId:order.lineId,supplierId:order.supplierId,quantity,status:'pending'});left-=quantity;
+    const row=current.rows.find(r=>r.sku===want.sku),allOrders=row?.orders.filter(o=>orderIds.includes(o.id))||[];
+    const groups=want.sourceOrders?.map(source=>({quantity:source.quantity,orders:allOrders.filter(o=>sourceKey(o.ticketNumber)===sourceKey(source.orderNo)&&(!source.supplierOrderNo||sourceKey(o.internalNo||'')===sourceKey(source.supplierOrderNo))),label:source.orderNo}))
+      ?? [{quantity:want.quantity,orders:allOrders,label:'phạm vi đã chọn'}];
+    const units=new Set(groups.flatMap(g=>g.orders.map(o=>o.unit.trim())));
+    if(units.size>1)fail(409,`${want.sku}: đơn vị tính không thống nhất, cần kiểm tra lại đơn mua.`);
+    for(const group of groups){
+      const available=group.orders.reduce((sum,o)=>sum+Math.floor(o.quantity),0);
+      if(!row||!group.orders.length||group.quantity>available)fail(409,`${want.sku}: chỉ còn ${available.toLocaleString('vi-VN')} đang về tại ${group.label}. Không chuyển sang đơn khác.`,'EARLY_QUANTITY_EXCEEDED');
+    }
+    const lineId=crypto.randomUUID();await tx.insert(lines).values({id:lineId,requestId:id,lineNo:i+1,sku:row!.sku,name:row!.name,unit:[...units][0]!,quantity:want.quantity});
+    for(const group of groups){
+      let left=group.quantity;
+      for(const order of group.orders){
+        if(!left)break;const quantity=Math.min(left,Math.floor(order.quantity));if(!quantity)continue;
+        if(!order.supplierId)fail(409,`${want.sku}: đơn mua chưa có NCC.`);
+        await tx.insert(allocations).values({id:crypto.randomUUID(),requestLineId:lineId,purchaseLineId:order.lineId,supplierId:order.supplierId,quantity,status:'pending'});left-=quantity;
+      }
     }
   }
 }
@@ -142,7 +169,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.post('/purchase-early-requests',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được gửi yêu cầu lấy trước.');
-    const input=cleanInput(await readJson(c.req,100000)),payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate}));
+    const input=cleanInput(await readJson(c.req,300000)),payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate}));
     const result=await c.env.db.transaction(async tx=>{
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-key:'+m.id+':'+input.clientKey}))`);
       const [old]=await tx.select().from(requests).where(and(eq(requests.createdBy,m.id),eq(requests.clientKey,input.clientKey))).limit(1);
@@ -157,15 +184,15 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.put('/purchase-early-requests/:id',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được sửa phiếu nháp.');
-    const body=await readJson(c.req,100000),id=c.params.id!;
+    const body=await readJson(c.req,300000),id=c.params.id!;
     await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
       if(!draft) fail(404,'Không tìm thấy phiếu nháp.');
       if(draft.status!=='draft') fail(409,'Phiếu đã gửi NCC, không sửa như phiếu nháp.');
       if(body.revision!==draft.revision) fail(409,'Phiếu đã được sửa bởi người khác. Vui lòng tải lại.');
-      const input=cleanInput({...body,clientKey:draft.clientKey,scope:JSON.parse(draft.scope)});
+      const input=cleanInput({...body,clientKey:draft.clientKey,scope:JSON.parse(draft.scope)},JSON.parse(JSON.parse(draft.scope).orderSources||'{}'));
       await replaceDraftLines(tx,id,input);
-      await tx.update(requests).set({pickupDate:input.pickupDate,updatedAt:new Date().toISOString(),revision:draft.revision+1}).where(eq(requests.id,id));
+      await tx.update(requests).set({pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:new Date().toISOString(),revision:draft.revision+1}).where(eq(requests.id,id));
       await audit(tx,m,id,'early-request-draft-update',{lines:input.selected,pickupDate:input.pickupDate,revision:draft.revision+1});
     });return json({request:(await earlyRequestList(c.env.db,null,id))[0]});
   },'business');
@@ -179,7 +206,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       if(body.revision!==draft.revision) fail(409,'Phiếu đã thay đổi. Vui lòng tải lại trước khi gửi.');
       if(!isIsoDate(draft.pickupDate)) fail(400,'Vui lòng nhập ngày lấy hợp lệ và lưu nháp trước khi gửi.');
       const saved=await tx.select().from(lines).where(eq(lines.requestId,id));
-      const input=cleanInput({clientKey:draft.clientKey,scope:JSON.parse(draft.scope),pickupDate:draft.pickupDate,lines:saved.map(l=>({sku:l.sku,quantity:l.quantity}))});
+      const input=cleanInput({clientKey:draft.clientKey,scope:JSON.parse(draft.scope),pickupDate:draft.pickupDate,lines:saved.map(l=>({sku:l.sku,quantity:l.quantity}))},JSON.parse(JSON.parse(draft.scope).orderSources||'{}'));
       await replaceDraftLines(tx,id,input);
       await tx.update(requests).set({status:'submitted',updatedAt:new Date().toISOString(),revision:draft.revision+1}).where(eq(requests.id,id));
       await audit(tx,m,id,'early-request-send',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
