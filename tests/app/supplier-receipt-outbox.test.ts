@@ -5,6 +5,16 @@ import {setup} from '../helpers/pos-fixture.ts';
 import {incomingShipments,incomingShipmentLines,suppliers,supplierReceipts,receiptJobs,supplierOrderEvents} from '../../src/modules/suppliers/schema.ts';
 import {stockMoves} from '../../src/modules/inventory/schema.ts';
 import {receiptResult,receiptLink,dispatchReceiptJob} from '../../src/modules/suppliers/api/receipt-outbox.ts';
+import {products} from '../../src/modules/catalog/schema.ts';
+import {sha256Hex} from '../../src/modules/staff/domain/session.ts';
+import {z} from 'zod';
+// Contract V1 documented in docs/integrations/SUPPLIER-RECEIPT-OUTBOX.md; validate the actual wire payload.
+const text=z.string().trim().min(1),percent=z.number().min(0).max(100);
+const receiptContractV1=z.object({schema_version:z.literal(1),action:z.enum(['create_purchase_receipt','reconcile_existing']),source:z.literal('crm_supplier_receipt'),idempotency_key:text,
+ crm_order:z.object({id:text,code:text,note:z.string()}),crm_receipt:z.object({id:text,code:text,received_date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),note:z.string()}),
+ supplier:z.object({id:text,name:text,tax_code:z.string()}),warehouse:z.object({name:text}),employee:z.object({id:text,name:text}),
+ items:z.array(z.object({crm_line_id:text,sku:text,name:text,unit:text,good_quantity:z.number().positive(),unit_price:z.number().nonnegative(),purchase_discount_percent:percent,vat_percent:percent,note:z.string()})).min(1),
+}).refine(p=>p.idempotency_key===p.crm_receipt.id);
 const order='ea306b3a-da8d-4e31-aa36-7a0f1a8112c1',legacyId='4986310e-4ab7-40b6-bd02-90ed7db14391';
 async function fixture(){
  const f=await setup(),now=new Date().toISOString(),calls:any[]=[];
@@ -118,4 +128,57 @@ test('Callback lỗi tới trước HTTP 2xx: giữ failed, dispatcher không đ
  await f.receive();assert.equal((await f.job(id)).status,'failed');assert.equal((await f.row(id)).sapoStatus,'failed');
  assert.equal((await f.job(id)).dispatchToken,null);
  await receiptResult(f.db,f.result(id));assert.equal((await f.job(id)).status,'done');
+});
+
+for(const [line,catalog,expected] of [['  ',' Bộ ','Bộ'],['','  ','Cái'],[' Hộp ','Bộ','Hộp']])test(`Contract V1: unit dòng ${JSON.stringify(line)}, catalog ${JSON.stringify(catalog)} → ${expected}`,async()=>{
+ const f=await fixture();await f.db.update(incomingShipmentLines).set({unit:line}).where(eq(incomingShipmentLines.id,'line'));
+ await f.db.update(products).set({unit:catalog}).where(eq(products.sku,'00123'));
+ await f.db.insert(products).values({sku:'00123-near',name:'Không được khớp gần',unit:'Sai',updatedAt:new Date().toISOString()});
+ const id=await f.receive(),payload=f.calls[0];
+ assert.equal(payload.items[0].unit,expected);receiptContractV1.parse(payload);
+ assert.equal(JSON.parse((await f.job(id)).payload).items[0].unit,expected);
+ const rec=await f.row(id),before=await f.db.select().from(stockMoves);
+ assert.equal((await f.call(`/supplier-receipts/${id}/reconcile-sapo`,f.mgr,'POST',{reason:'Đối chiếu phiếu đã có',expected:receiptLink(rec)})).status,200);
+ assert.equal(f.calls[1].action,'reconcile_existing');assert.equal(f.calls[1].items[0].unit,expected);receiptContractV1.parse(f.calls[1]);
+ assert.deepEqual(await f.db.select().from(stockMoves),before);
+});
+
+test('Retry snapshot cũ: chỉ sửa unit/hash, giữ nguyên key; Sapo đã có chỉ callback, không tạo hoặc cộng tồn lại',async()=>{
+ const f=await fixture(),original=await f.receive(),id='c9a0ef98-c742-42de-b00c-629702dab458',now=new Date().toISOString();
+ const base=await f.row(original),payload=structuredClone(f.calls[0]);payload.idempotency_key=id;payload.crm_receipt.id=id;payload.items[0].unit='';
+ await f.db.insert(supplierReceipts).values({...base,id,clientKey:'legacy-unit-mock',receiptNo:'PNH-UNIT-MOCK',sapoStatus:'failed'});
+ const snapshot=JSON.stringify(payload);
+ await f.db.insert(receiptJobs).values({receiptId:id,action:'create_purchase_receipt',status:'processing',payload:snapshot,payloadHash:sha256Hex(snapshot),leaseToken:'active-worker',leaseUntil:new Date(Date.now()+60_000).toISOString(),createdAt:now,updatedAt:now});
+ await f.db.update(products).set({unit:' Bộ '}).where(eq(products.sku,'00123'));
+ await f.db.update(incomingShipmentLines).set({price:1,purchaseDiscount:99,confirmedPurchaseDiscount:99,taxRate:0,quantity:99,unit:'Không dùng lại dòng đơn'}).where(eq(incomingShipmentLines.id,'line'));
+ assert.equal((await dispatchReceiptJob(f.env,id)).skipped,true);assert.equal((await f.job(id)).payload,snapshot,'không sửa snapshot worker đang dùng');
+ await f.db.update(receiptJobs).set({status:'failed',leaseToken:null,leaseUntil:null}).where(eq(receiptJobs.receiptId,id));
+ const before=await f.db.select().from(stockMoves),count=(await f.db.select().from(supplierReceipts)).length;
+ let lookups=0,created=0;const sapo=new Set([id]);
+ f.env.sapoWebhookFetch=(async(_url:any,init:any)=>{
+  const wire=JSON.parse(init.body);receiptContractV1.parse(wire);assert.equal(wire.idempotency_key,id);assert.equal(wire.crm_receipt.id,id);
+  assert.deepEqual(wire,{...payload,items:payload.items.map((i:any)=>({...i,unit:'Bộ'}))});
+  lookups++;if(!sapo.has(wire.idempotency_key)){created++;sapo.add(wire.idempotency_key);}
+  await receiptResult(f.db,f.result(id));return Response.json({ok:true});
+ }) as typeof fetch;
+ assert.equal((await f.call(`/supplier-receipts/${id}/retry-sapo`,f.mgr,'POST',{})).status,200);
+ assert.equal((await f.call(`/supplier-receipts/${id}/retry-sapo`,f.mgr,'POST',{})).status,409);
+ const job=await f.job(id);assert.equal(job.payloadHash,sha256Hex(job.payload));assert.equal(job.status,'done');
+ assert.equal(lookups,1);assert.equal(created,0);assert.equal((await f.db.select().from(supplierReceipts)).length,count);
+ assert.deepEqual(await f.db.select().from(stockMoves),before);
+});
+
+test('Claim snapshot cũ chuẩn hoá unit trước khi trao worker; key sai hoặc đã có liên kết Sapo không được tạo lại',async()=>{
+ const f=await fixture(),id=await f.receive(),payload=structuredClone(f.calls[0]);payload.items[0].unit='';
+ await f.db.update(products).set({unit:''}).where(eq(products.sku,'00123'));
+ await f.db.update(receiptJobs).set({payload:JSON.stringify(payload)}).where(eq(receiptJobs.receiptId,id));
+ const claim=()=>f.router.handle(new Request('https://trial.test/api/staff/integrations/sapo/goods-receipt-jobs/claim',{method:'POST',headers:{authorization:'Bearer '+'x'.repeat(32),'content-type':'application/json'},body:JSON.stringify({crm_receipt_id:id})}),{...f.env,sapoSyncToken:'x'.repeat(32)});
+ const before=await f.db.select().from(stockMoves),res=await claim();assert.equal(res.status,200);const body=await res.json() as any;
+ assert.equal(body.payload.items[0].unit,'Cái');receiptContractV1.parse(body.payload);assert.equal((await claim()).status,409);
+ const job=await f.job(id);assert.equal(job.payloadHash,sha256Hex(job.payload));
+ await f.db.update(receiptJobs).set({status:'failed',leaseToken:null,leaseUntil:null,payload:JSON.stringify({...payload,idempotency_key:'wrong'})}).where(eq(receiptJobs.receiptId,id));
+ await assert.rejects(()=>dispatchReceiptJob(f.env,id),(e:any)=>e.status===409&&e.code==='RECEIPT_NEEDS_REVIEW');
+ await f.db.update(supplierReceipts).set({sapoReceiptId:'58865407',sapoStatus:'failed'}).where(eq(supplierReceipts.id,id));
+ assert.equal((await f.call(`/supplier-receipts/${id}/retry-sapo`,f.mgr,'POST',{})).status,409);assert.equal((await dispatchReceiptJob(f.env,id)).skipped,true);assert.equal((await claim()).status,409);
+ assert.equal(f.calls.length,1);assert.deepEqual(await f.db.select().from(stockMoves),before);
 });

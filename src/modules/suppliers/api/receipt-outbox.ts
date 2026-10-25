@@ -1,14 +1,35 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
+import { products } from '../../catalog/schema.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
 import { receiptJobs, supplierReceipts, supplierOrderEvents, incomingShipments, incomingShipmentLines, supplierReceiptLines, suppliers } from '../schema.ts';
 
 type Receipt = typeof supplierReceipts.$inferSelect;
+/** Unit compatibility only: never rebuild SKU, quantity, prices or identity from live order data. */
+async function normalizeReceiptUnits(db: AnyDb, payload: Record<string, unknown>) {
+  if (!Array.isArray(payload.items) || payload.items.some(i => !i || typeof i.sku !== 'string'))
+    throw new AppError(409,'Danh sách hàng trong payload không hợp lệ. Cần đối soát trước khi gửi.','RECEIPT_NEEDS_REVIEW');
+  const items = payload.items as {sku: string;unit?: string | null}[];
+  const text = (unit: unknown) => typeof unit === 'string' ? unit.trim() : '';
+  const missing = [...new Set(items.filter(i => !text(i.unit)).map(i => i.sku))];
+  const catalog = missing.length ? await db.select({sku:products.sku,unit:products.unit}).from(products).where(inArray(products.sku,missing)) : [];
+  const units = new Map(catalog.map(p => [p.sku,text(p.unit)]));
+  return {...payload,items:items.map(i => ({...i,unit:text(i.unit) || units.get(i.sku) || 'Cái'}))};
+}
+async function prepareReceiptPayload(db: AnyDb, job: typeof receiptJobs.$inferSelect) {
+  const payload = JSON.parse(job.payload);
+  if (payload.idempotency_key !== job.receiptId || payload.crm_receipt?.id !== job.receiptId || (payload.crm_receipt_id !== undefined && payload.crm_receipt_id !== job.receiptId))
+    throw new AppError(409,'Mã phiếu trong payload không khớp job. Cần đối soát, không gửi lại.','RECEIPT_NEEDS_REVIEW');
+  const snapshot = JSON.stringify(await normalizeReceiptUnits(db,payload));
+  if (snapshot !== job.payload) await db.update(receiptJobs).set({payload:snapshot,payloadHash:sha256Hex(snapshot)}).where(eq(receiptJobs.receiptId,job.receiptId));
+  return snapshot;
+}
+const hasSapoLink = (r: Receipt) => !!(r.sapoVerifiedAt || r.sapoPurchaseOrderId || r.sapoReceiptId || r.sapoReceiptCode || r.sapoReceiptUrl);
 type ReceiptTx=Parameters<Parameters<AnyDb['transaction']>[0]>[0];
 /** Global supplier write order: purchase → receipt → outbox → ledger. */
 export async function lockReceiptForWrite(tx:ReceiptTx,id:string){
@@ -24,7 +45,7 @@ export function validReceiptLink(po: string, id: string, code: string, link: str
   try { const u = new URL(link); return u.origin === 'https://bachngankiengiang.mysapogo.com' && u.pathname === `/admin/purchase_orders/${po}` && !u.search && !u.hash && !u.username && !u.password; } catch { return false; }
 }
 export async function queueReceiptJob(db: AnyDb, receiptId: string, payload: Record<string, unknown>, error = '') {
-  const now = new Date().toISOString(), snapshot = JSON.stringify(payload);
+  const now = new Date().toISOString(), snapshot = JSON.stringify(await normalizeReceiptUnits(db,payload));
   await db.insert(receiptJobs).values({ receiptId, action: 'create_purchase_receipt', status: error ? 'needs_review' : 'queued', payload: snapshot, payloadHash: sha256Hex(snapshot), lastError: error, createdAt: now, updatedAt: now }).onConflictDoNothing();
 }
 const webhook = (env: StaffEnv) => {
@@ -39,9 +60,10 @@ export async function dispatchReceiptJob(env: StaffEnv, receiptId: string) {
     const r = await lockReceiptForWrite(tx,receiptId);
     const [j] = await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId, receiptId)).for('update');
     if (!r || !j || r.cancelledAt || !['queued','failed'].includes(j.status) || (j.dispatchUntil && j.dispatchUntil > now) || (j.leaseUntil && j.leaseUntil > now)) return null;
-    if (r.sapoStatus === 'done' && j.action !== 'reconcile_existing') return null;
+    if ((r.sapoStatus === 'done' || hasSapoLink(r)) && j.action !== 'reconcile_existing') return null;
+    const payload = await prepareReceiptPayload(tx,j);
     await tx.update(receiptJobs).set({ dispatchToken: token, dispatchUntil: new Date(Date.now()+60_000).toISOString(), attempts: j.attempts+1, updatedAt: now }).where(eq(receiptJobs.receiptId, receiptId));
-    return j;
+    return {...j,payload};
   });
   if (!job) return { sent: false, skipped: true };
   let error = '';
@@ -122,15 +144,16 @@ export function registerReceiptJobRoutes(router: Router<StaffEnv>) {
       const r=await lockReceiptForWrite(tx,id);
       const [j]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,id)).for('update');
       if(!r||!j)throw new AppError(404,'Không có job phiếu nhận.');
-      if(r.cancelledAt||['done','needs_review'].includes(j.status)||(r.sapoStatus==='done'&&j.action!=='reconcile_existing'))throw new AppError(409,'Job không cho phép thực thi; cần đối soát.');
+      if(r.cancelledAt||['done','needs_review'].includes(j.status)||((r.sapoStatus==='done'||hasSapoLink(r))&&j.action!=='reconcile_existing'))throw new AppError(409,'Job không cho phép thực thi; cần đối soát.');
       if(j.leaseUntil&&j.leaseUntil>now)throw new AppError(409,'Phiếu đang được execution khác xử lý.');
       if(j.status==='processing'){
         await tx.update(receiptJobs).set({status:'needs_review',lastError:'Lease hết hạn, chưa rõ Sapo đã tạo phiếu chưa. Chỉ đối soát, không tự tạo lại.',updatedAt:now}).where(eq(receiptJobs.receiptId,id));
         return null;
       }
       const token=crypto.randomUUID(),until=new Date(Date.now()+15*60_000).toISOString();
+      const payload=await prepareReceiptPayload(tx,j);
       await tx.update(receiptJobs).set({status:'processing',leaseToken:token,leaseUntil:until,updatedAt:now}).where(eq(receiptJobs.receiptId,id));
-      return {lease_token:token,lease_until:until,payload:JSON.parse(j.payload)};
+      return {lease_token:token,lease_until:until,payload:JSON.parse(payload)};
     });
     if(!out)throw new AppError(409,'Lease cũ hết hạn; job cần đối soát trước khi xử lý.');
     return json(out);
@@ -142,7 +165,7 @@ export function registerReceiptJobRoutes(router: Router<StaffEnv>) {
       const r=await lockReceiptForWrite(tx,id);
       const [j]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,id)).for('update');
       if(!r||!j)throw new AppError(404,'Không có job.');
-      if(r.cancelledAt||r.sapoStatus==='done'||!['failed','callback_pending'].includes(j.status)||j.leaseToken)throw new AppError(409,'Không thể gửi lại; cần đối soát hoặc đang xử lý.');
+      if(r.cancelledAt||r.sapoStatus==='done'||(hasSapoLink(r)&&j.action!=='reconcile_existing')||!['failed','callback_pending'].includes(j.status)||j.leaseToken)throw new AppError(409,'Không thể gửi lại; cần đối soát hoặc đang xử lý.');
       await tx.update(receiptJobs).set({status:'queued',updatedAt:new Date().toISOString()}).where(eq(receiptJobs.receiptId,id));
     });
     return json(await dispatchReceiptJob(c.env,id));
@@ -168,7 +191,7 @@ export function registerReceiptJobRoutes(router: Router<StaffEnv>) {
         crm_receipt:{id,code:r.receiptNo,received_date:r.receivedDate,note:r.note},
         supplier:{id:supplier?.id??'',name:supplier?.name??order?.supplierName??'',tax_code:supplier?.taxCode??''},warehouse:{name:r.warehouse},employee:{id:r.receivedBy,name:employee?.name??''},
         items:lines.filter(x=>x.received.goodQty>0).map(({received:l,source:s})=>({crm_line_id:l.lineId,sku:l.sku,name:s.name,unit:s.unit,good_quantity:l.goodQty,unit_price:s.price,purchase_discount_percent:s.confirmedPurchaseDiscount??s.purchaseDiscount,vat_percent:s.taxRate,note:l.note}))};
-      const payload=JSON.stringify({schema_version:1,action:'reconcile_existing',source:'crm_supplier_receipt',idempotency_key:id,crm_order_id:r.shipmentId,crm_receipt_id:id,crm_receipt_code:r.receiptNo,reconciliation_id:reconciliationId,expected,reason,...reference});
+      const payload=JSON.stringify(await normalizeReceiptUnits(tx,{schema_version:1,action:'reconcile_existing',source:'crm_supplier_receipt',idempotency_key:id,crm_order_id:r.shipmentId,crm_receipt_id:id,crm_receipt_code:r.receiptNo,reconciliation_id:reconciliationId,expected,reason,...reference}));
       const fields={action:'reconcile_existing' as const,status:'queued' as const,payload,payloadHash:sha256Hex(payload),expectedLink:JSON.stringify(expected),reconciliationId,lastError:'',leaseToken:null,leaseUntil:null,dispatchToken:null,dispatchUntil:null,updatedAt:now};
       await tx.insert(receiptJobs).values({receiptId:id,...fields,createdAt:now}).onConflictDoUpdate({target:receiptJobs.receiptId,set:fields});
       await tx.insert(supplierOrderEvents).values({id:crypto.randomUUID(),shipmentId:r.shipmentId,actorId:m.id,at:now,action:'sapo_reconcile_request',summary:`${r.receiptNo}: yêu cầu đối soát liên kết — ${reason}`,data:JSON.stringify({receiptId:id,before:expected,reconciliationId,reason})});
