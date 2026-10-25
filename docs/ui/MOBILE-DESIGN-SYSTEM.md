@@ -46,3 +46,11 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/testing/pos-mobile-
 Bộ lọc động được trả về vị trí gốc khi chuyển desktop; nguồn bị ẩn thì nút lọc tương ứng cũng ẩn. Form NCC một cột, footer lưu hiện ngoài menu; phân trang và chuyển chế độ danh sách/hàng đang về giữ trực tiếp.
 
 Chạy browser với `MOBILE_DESIGN_PHASE=2`: thêm dữ liệu NCC/đơn mua/chuyến giao/thu tiền vào PGlite mới; chụp các trang vận hành, thử sửa form NCC không lưu, chọn SL xin hàng trước rồi lọc vẫn giữ lựa chọn. Không có yêu cầu ghi nghiệp vụ trong các thao tác đọc/chọn/lọc. Mỗi ảnh kiểm tra không tràn ngang ở 390px/1280px.
+
+### P3 — quản trị và kho
+
+`mobile-profiles-p3.js` mở rộng sang dashboard, trang kho, đối chiếu tồn, sổ kho, điều chuyển, sản phẩm, nhân viên, bảng lương, phân quyền và sơ đồ. Trên điện thoại, đối chiếu giữ đủ Sổ kho/Sapo/Lệch; giao dịch kho giữ Nhập/Xuất/Tồn sau, gắn nhãn riêng cho từng số gốc. Danh sách sản phẩm giữ ảnh/tên/SKU, giá, tồn, ô chọn và menu. Không thay số liệu hoặc quyền sửa.
+
+Dashboard có bốn KPI chính; các KPI khác mở qua “Chỉ số khác”, desktop trả về bố cục đầy đủ. Bảng quyền và bảng lương chi tiết giữ bảng trong vùng cuộn riêng, không giấu ô quyền hoặc thành phần lương. Sơ đồ cuộn trong khung và chi tiết mở sheet trên mobile. Nút chốt tồn/điều chỉnh/đồng bộ để trong menu, giữ xác nhận và chặn nghiệp vụ cũ.
+
+`MOBILE_DESIGN_PHASE=3` chạy cả P1/P2 và mười trang P3 trên router/PGlite thật, kiểm tra không tràn ngang, không ghi nghiệp vụ khi xem; nhập/xuất/tồn đều hiện, bốn KPI chính và các KPI phụ mở được. Kiểm tra thêm thanh dưới cập nhật khi link nguồn bị ẩn theo quyền. Toàn bộ ảnh 390px/1280px xuất tại thư mục `MOBILE_SCREENSHOT_DIR` (mặc định `/workspace/scratch/crm-mobile-design`).
