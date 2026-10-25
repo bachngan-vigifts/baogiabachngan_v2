@@ -23,6 +23,7 @@ const scenarios=[
  'ghn-rejected','ghn-address-rejected','ghn-empty-message','empty-response','malformed-response','timeout-found','timeout-late',
  'persist-throw','persist-drop','persist-unreadable','post-status-fail','intent-fail','intent-drop','order-changed','concurrent','legacy-71','legacy-125',
  'relation-mismatch','invalid-metadata','lock-lost','lock-busy',
+ 'cancel-success','cancel-rejected','cancel-pending','cancel-concurrent','cancel-stale-code',
 ];
 for(const scenario of scenarios)test(`WordPress GHN mock: ${scenario}`,()=>{
   const image=process.env.GHN_TEST_PHP_DOCKER_IMAGE;

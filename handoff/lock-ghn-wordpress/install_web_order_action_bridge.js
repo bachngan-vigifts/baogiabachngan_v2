@@ -82,9 +82,7 @@ add_action('rest_api_init', function () {
         if(in_array($order->get_status(),array('pending','on-hold'),true)&&($x['status']??'')==='ready_to_pick') $order->update_status('processing','CRM Bán hàng: đã xác minh vận đơn GHN.');
       } catch(Throwable $e) { return lnl_crm_ghn_error('ghn_metadata_persist_failed','Đã có mã GHN; chưa cập nhật được trạng thái WooCommerce. Chỉ đối soát, không tạo mới.',502); }
     } elseif ($action==='cancel') {
-      if ($status==='completed') return new WP_Error('delivered','Đơn đã hoàn thành, không thể huỷ.',array('status'=>409));
-      if ($code && function_exists('lnl_ghn_api_request')) { try { $x=lnl_ghn_api_request('/v2/switch-status/cancel',array('order_codes'=>array($code)),true); if((int)($x['code']??0)!==200) return new WP_Error('ghn_cancel',sanitize_text_field($x['message']??'GHN chưa huỷ được vận đơn.'),array('status'=>409)); } catch(Exception $e){ return new WP_Error('ghn_cancel',$e->getMessage(),array('status'=>409)); } }
-      $order->update_meta_data('_lnl_ghn_last_status','cancel'); $order->update_status('cancelled','CRM Bán hàng: huỷ đơn'.($code?' và vận đơn GHN '.$code:'').'.'); $order->save();
+      $order=lnl_crm_ghn_cancel($order); if(is_wp_error($order)) return $order;
     } elseif ($action!=='refresh') return new WP_Error('bad_action','Thao tác không hợp lệ.',array('status'=>400));
     try { $order=$action==='confirm'?lnl_crm_ghn_reload($id):wc_get_order($id); }
     catch(Throwable $e) { return lnl_crm_ghn_error('ghn_metadata_persist_failed','Đã có vận đơn; chưa đọc lại được mã WooCommerce. Chỉ đối soát, không tạo mới.',502); }

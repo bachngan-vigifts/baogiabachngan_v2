@@ -36,6 +36,8 @@ The two snippets are preserved separately because their sanitized source hashes 
 6. Save the actual carrier code as `_lnl_ghn_order_code`, sort code, fee and status using Woo CRUD. Read back and compare before success. If save/readback fails, the next request only looks up and saves that existing shipment. WordPress status hooks run only after a verified save.
 7. The customer order-details page and Woo admin shipping-address section display the saved tracking number. No tracking URL is guessed.
 
+The existing cancel action also uses the REST-safe provider and the same order lock. It blocks an unresolved create intent, verifies the exact existing carrier link, and requires the matching per-order cancellation result before changing Woo status. A repeated cancel reconciles an already cancelled GHN shipment. This prevents the original bridge from silently skipping carrier cancellation when the legacy snippet API function is absent.
+
 The two new metadata keys use existing WooCommerce storage; there is no schema migration. Named locks require a compatible MySQL/MariaDB connection. Unsupported locking stops creation. Constant `LNL_GHN_TOKEN` / `LNL_GHN_SHOP_ID`, or environment variables with those names, must be supplied by the website's existing runtime configuration. Missing/redacted configuration returns `ghn_handler_unavailable`; no credentials are copied from this handoff.
 
 Error codes: `ghn_handler_unavailable`, `address_invalid`, `ghn_rejected`, `ghn_response_missing_order_code`, `ghn_reconcile_failed`, `ghn_metadata_persist_failed`. GHN errors preserve sanitized `code_message_value`/`message`. Logs contain only order ID, error code and handler-availability flags, never raw payloads or messages.
@@ -45,6 +47,7 @@ Error codes: `ghn_handler_unavailable`, `address_invalid`, `ghn_rejected`, `ghn_
 - [GHN lookup by client code](https://developer.ghn.vn/vi/docs/order/info-by-client-code): GET with `client_order_code`, Token and ShopId.
 - [GHN order details and not-found/error distinctions](https://developer.ghn.vn/vi/docs/order/info).
 - [Districts](https://developer.ghn.vn/vi/docs/master-data/get-district) and [wards](https://developer.ghn.vn/vi/docs/master-data/get-ward): GET, scoped by the parent ID. Minimal responses need not repeat that parent ID; membership in the scoped response is checked, and any parent ID present must match.
+- [Cancellation](https://developer.ghn.vn/vi/docs/order/cancel): a top-level HTTP/code 200 alone is insufficient; the exact order's `result` must be true.
 
 Only public documentation was fetched. No authenticated carrier request was made in development.
 

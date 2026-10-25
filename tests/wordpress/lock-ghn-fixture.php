@@ -104,13 +104,13 @@ class FakeWpdb {
         check(strpos($query[0],'RELEASE_LOCK')!==false,'only advisory lock SQL');$this->held=false;return 1;
     }
 }
-$wpdb=new FakeWpdb();$phase=0;$create_count=0;$lookups=0;$carrier=null;$wire=array();$nested=null;
+$wpdb=new FakeWpdb();$phase=0;$create_count=0;$cancel_count=0;$lookups=0;$carrier=null;$wire=array();$nested=null;
 function response($code,$body){return array('response'=>array('code'=>$code),'body'=>json_encode($body));}
 function wp_remote_retrieve_body($r){return $r['body'];}
 function wp_remote_retrieve_response_code($r){return $r['response']['code'];}
 function carrier(){return array('order_code'=>'GHN21496','client_order_code'=>'21496','shop_id'=>731337,'sort_code'=>'FIXTURE-SORT','total_fee'=>22000,'status'=>'ready_to_pick');}
 function wp_remote_request($url,$args){
-    global $scenario,$phase,$create_count,$lookups,$carrier,$wire,$nested,$db;
+    global $scenario,$phase,$create_count,$cancel_count,$lookups,$carrier,$wire,$nested,$db;
     check(strpos($url,'https://online-gateway.ghn.vn/shiip/public-api/')===0,'only fake GHN host');
     check($args['headers']['Token']==='fake-ghn-private-token','runtime token used');
     check($args['headers']['ShopId']==='731337','runtime shop used');
@@ -132,6 +132,11 @@ function wp_remote_request($url,$args){
     // The documented minimal response omits the parent ID; membership is scoped by the query.
     if(strpos($path,'/master-data/district')!==false){check(($query['province_id']??'')==='211','province-scoped district lookup');return response(200,array('code'=>200,'data'=>array(array('DistrictID'=>1929,'DistrictName'=>'Fixture district'))));}
     if(strpos($path,'/master-data/ward')!==false){check(($query['district_id']??'')==='1929','district-scoped ward lookup');$row=array('WardCode'=>$scenario==='address-invalid'?'OTHER':'490707','WardName'=>'Fixture ward');if($scenario==='relation-mismatch'){$row['DistrictID']=999;}return response(200,array('code'=>200,'data'=>array($row)));}
+    if(strpos($path,'/v2/switch-status/cancel')!==false){
+        check($args['method']==='POST'&&$body['order_codes']===array('GHN21496'),'cancel exact code');$cancel_count++;
+        $accepted=$scenario!=='cancel-rejected';if($accepted){$carrier['status']='cancel';}
+        return response(200,array('code'=>200,'data'=>array(array('order_code'=>'GHN21496','result'=>$accepted,'message'=>$accepted?'OK':'Cannot cancel'))));
+    }
     check(substr($path,-strlen('/v2/shipping-order/create'))==='/v2/shipping-order/create','no unexpected HTTP or real HTTP');
     check($args['method']==='POST','create uses POST');$create_count++;
     check($create_count===1,'at most one create');
@@ -143,6 +148,7 @@ function wp_remote_request($url,$args){
     check($body['weight']===2500&&$body['length']===33&&$body['width']===21&&$body['height']===10,'package formulas retained');
     check($body['items'][0]['code']==='TEST-EXACT-SKU'&&$body['items'][0]['quantity']===2&&$body['items'][0]['price']===300,'SKU quantity price retained');
     if($scenario==='concurrent'){$nested=call_bridge();check(is_wp_error($nested)&&$nested->get_error_code()==='ghn_reconcile_failed','concurrent call blocked');}
+    if($scenario==='cancel-concurrent'){$nested=call_bridge(array('action'=>'cancel'));check(is_wp_error($nested)&&$nested->get_error_code()==='ghn_reconcile_failed','cancel cannot race create');}
     if(in_array($scenario,array('ghn-rejected','ghn-address-rejected','ghn-empty-message'),true)){
         return response(400,array('code'=>400,'message'=>'<b>Rejected</b> Token=fake-ghn-private-token','code_message_value'=>$scenario==='ghn-empty-message'?' ':($scenario==='ghn-address-rejected'?'Phường không hợp lệ':'Dịch vụ không hỗ trợ; Token=fake-ghn-private-token')));
     }
@@ -160,6 +166,8 @@ try {
     if($scenario==='existing'){$db['meta']['_lnl_ghn_order_code']='GHN21496';$db['status']='completed';}
     if($scenario==='invalid-metadata'){$db['meta']['_lnl_ghn_order_code']=array('wrong-type');}
     if($scenario==='found'){$carrier=carrier();}
+    if(in_array($scenario,array('cancel-success','cancel-rejected','cancel-stale-code'),true)){$carrier=carrier();$db['meta']['_lnl_ghn_order_code']=$scenario==='cancel-stale-code'?'OTHER':'GHN21496';}
+    if($scenario==='cancel-pending'){$db['meta']['_lnl_crm_ghn_create_attempted']='21496';}
     if($scenario==='handler-missing'){
         require __DIR__.'/../../handoff/lock-ghn-wordpress/ghn-service.php';
         $result=lnl_crm_ghn_confirm(wc_get_order(21496));
@@ -175,12 +183,13 @@ try {
         $params=array();
         if($scenario==='selected-address'){$params=array('addressLine'=>'Chosen road','provinceId'=>211,'provinceName'=>'Chosen province','districtId'=>1929,'districtName'=>'Chosen district','wardCode'=>'490707','wardName'=>'Chosen ward');}
         if($scenario==='partial-address'){$params=array('addressLine'=>'Chosen road');}
+        if(strpos($scenario,'cancel-')===0&&$scenario!=='cancel-concurrent'){$params['action']='cancel';}
         $result=call_bridge($params);
         if($scenario==='partial-address'){check($db===$before,'invalid partial address is not saved');}
         if($scenario==='existing'){check($db===$before&&count($wire)===0,'existing code replay without writes or HTTP');}
     }
     $first_error=is_wp_error($result)?$result->get_error_code():'';
-    $expected=array('handler-missing'=>'ghn_handler_unavailable','config-missing'=>'ghn_handler_unavailable','address-invalid'=>'address_invalid','partial-address'=>'address_invalid','relation-mismatch'=>'address_invalid','invalid-metadata'=>'ghn_reconcile_failed','lock-lost'=>'ghn_reconcile_failed','lock-busy'=>'ghn_reconcile_failed',
+    $expected=array('handler-missing'=>'ghn_handler_unavailable','config-missing'=>'ghn_handler_unavailable','address-invalid'=>'address_invalid','partial-address'=>'address_invalid','relation-mismatch'=>'address_invalid','invalid-metadata'=>'ghn_reconcile_failed','lock-lost'=>'ghn_reconcile_failed','lock-busy'=>'ghn_reconcile_failed','cancel-rejected'=>'ghn_rejected','cancel-pending'=>'ghn_reconcile_failed','cancel-stale-code'=>'ghn_reconcile_failed',
         'lookup-unavailable'=>'ghn_reconcile_failed','lookup-ambiguous'=>'ghn_reconcile_failed','lookup-permission'=>'ghn_reconcile_failed','lookup-wrong-client'=>'ghn_reconcile_failed','lookup-wrong-shop'=>'ghn_reconcile_failed',
         'intent-fail'=>'ghn_metadata_persist_failed','intent-drop'=>'ghn_metadata_persist_failed','order-changed'=>'ghn_metadata_persist_failed',
         'persist-throw'=>'ghn_metadata_persist_failed','persist-drop'=>'ghn_metadata_persist_failed','persist-unreadable'=>'ghn_metadata_persist_failed','post-status-fail'=>'ghn_metadata_persist_failed','timeout-late'=>'ghn_reconcile_failed',
@@ -189,6 +198,7 @@ try {
         check(is_wp_error($result)&&$first_error===$expected[$scenario],'specific error code');
         check(strpos($result->get_error_message(),'fake-ghn-private-token')===false,'error secret sanitized');
         if($scenario==='ghn-empty-message'){check(strpos($result->get_error_message(),'Rejected')!==false,'empty code message falls back to message');}
+        if(strpos($scenario,'cancel-')===0){check($db===$before,'failed cancel cannot change Woo state');}
         if(in_array($scenario,array('empty-response','malformed-response'),true)){
             $phase=1;$again=call_bridge();check(is_wp_error($again)&&$again->get_error_code()==='ghn_reconcile_failed'&&$create_count===1,'uncertain response blocks another create');
         }
@@ -202,9 +212,10 @@ try {
         check(!is_wp_error($result)&&$result['ghnOrderCode']==='GHN21496','success returns saved carrier code');
         check(($db['meta']['_lnl_ghn_order_code']??'')==='GHN21496','Woo saved actual code');
         $count=$create_count;$again=call_bridge();check(!is_wp_error($again)&&$again['ghnOrderCode']==='GHN21496'&&$create_count===$count,'replay no second create');
+        if($scenario==='cancel-success'){$again=call_bridge(array('action'=>'cancel'));check(!is_wp_error($again)&&$db['status']==='cancelled'&&$cancel_count===1,'cancel replay reconciles without another cancel');}
         ob_start();lnl_crm_ghn_display_code(wc_get_order(21496));$html=ob_get_clean();check(strpos($html,'GHN21496')!==false,'website displays saved number');
     }
-    $no_create=array('handler-missing','config-missing','address-invalid','partial-address','relation-mismatch','invalid-metadata','lock-lost','lock-busy','existing','found','lookup-unavailable','lookup-ambiguous','lookup-permission','lookup-wrong-client','lookup-wrong-shop','intent-fail','intent-drop','order-changed');
+    $no_create=array('handler-missing','config-missing','address-invalid','partial-address','relation-mismatch','invalid-metadata','lock-lost','lock-busy','existing','found','lookup-unavailable','lookup-ambiguous','lookup-permission','lookup-wrong-client','lookup-wrong-shop','intent-fail','intent-drop','order-changed','cancel-success','cancel-rejected','cancel-pending','cancel-stale-code');
     if(in_array($scenario,$no_create,true)){check($create_count===0,'must not create');}
     check($wpdb->held===false,'lock always released');
     echo json_encode(array('ok'=>true,'checks'=>$checks,'creates'=>$create_count,'first_error'=>$first_error));

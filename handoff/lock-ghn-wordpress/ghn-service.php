@@ -123,6 +123,50 @@ function lnl_crm_ghn_confirm($order, $input = array()) {
         try { $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock)); } catch (Throwable $e) { /* Connection closure also releases the lock. */ }
     }
 }
+function lnl_crm_ghn_cancel($order) {
+    global $wpdb;
+    $id = $order->get_id(); $lock = 'lnl_crm_ghn_' . get_current_blog_id() . '_' . $id;
+    try { $locked = $wpdb && (int) $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 0)', $lock)) === 1; }
+    catch (Throwable $e) { $locked = false; }
+    if (!$locked) { return lnl_crm_ghn_error('ghn_reconcile_failed', 'Đơn đang được xử lý GHN. Chưa huỷ; cần đối soát.'); }
+    try {
+        $order = lnl_crm_ghn_reload($id);
+        if ($order->get_status() === 'completed') { return new WP_Error('delivered','Đơn đã hoàn thành, không thể huỷ.',array('status'=>409)); }
+        $code = $order->get_meta('_lnl_ghn_order_code');
+        if ($code === '' && $order->get_meta('_lnl_crm_ghn_create_attempted') !== '') {
+            return lnl_crm_ghn_error('ghn_reconcile_failed', 'Đã gửi tạo GHN nhưng chưa có mã đã xác minh. Đối soát trước khi huỷ.');
+        }
+        if ($code !== '') {
+            if (!lnl_crm_ghn_valid_code($code)) { return lnl_crm_ghn_error('ghn_reconcile_failed','Mã GHN đang lưu cần đối soát; chưa huỷ.'); }
+            $client = $order->get_meta('_lnl_crm_ghn_client_order_code');
+            if ($client === '') { $client = (string) $order->get_order_number(); }
+            if (!is_string($client)) { return lnl_crm_ghn_error('ghn_reconcile_failed','Mã đối soát không hợp lệ; chưa huỷ.'); }
+            $found = lnl_crm_ghn_lookup($client);
+            if (is_wp_error($found)) { return $found; }
+            if ($found === null || $found['order_code'] !== $code) { return lnl_crm_ghn_error('ghn_reconcile_failed','Chưa xác minh được đúng mã GHN cần huỷ.'); }
+            if (($found['status'] ?? '') !== 'cancel') {
+                $response = lnl_crm_ghn_http('/v2/switch-status/cancel',array('order_codes'=>array($code)),'POST');
+                if (is_wp_error($response)) { return $response; }
+                $body = $response['body']; $accepted = false;
+                if ($response['http'] === 200 && ($body['code'] ?? null) === 200 && is_array($body['data'] ?? null)) {
+                    foreach ($body['data'] as $row) {
+                        if (($row['order_code'] ?? '') === $code && ($row['result'] ?? null) === true) { $accepted = true; }
+                        elseif (($row['order_code'] ?? '') === $code && ($row['result'] ?? null) === false) { return lnl_crm_ghn_error('ghn_rejected',is_string($row['message']??null)?$row['message']:'GHN từ chối huỷ vận đơn.'); }
+                    }
+                }
+                if (!$accepted) { return lnl_crm_ghn_error('ghn_reconcile_failed','Chưa xác nhận GHN đã huỷ đúng mã vận đơn. WooCommerce chưa đổi trạng thái.',502); }
+            }
+        }
+        if ((int) $wpdb->get_var($wpdb->prepare('SELECT IS_USED_LOCK(%s) = CONNECTION_ID()', $lock)) !== 1) { return lnl_crm_ghn_error('ghn_reconcile_failed','Đã mất khóa đơn; đối soát trạng thái trước khi tiếp tục.'); }
+        $order->update_meta_data('_lnl_ghn_last_status','cancel');
+        $order->update_status('cancelled','CRM Bán hàng: đã xác minh huỷ đơn và vận đơn GHN.');
+        return lnl_crm_ghn_reload($id);
+    } catch (Throwable $e) {
+        return lnl_crm_ghn_error('ghn_metadata_persist_failed','Chưa lưu/xác minh được trạng thái huỷ WooCommerce. Đối soát trước khi gửi lại.',502);
+    } finally {
+        try { $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock)); } catch (Throwable $e) { /* Fail closed until connection release. */ }
+    }
+}
 add_action('woocommerce_order_details_after_order_table', 'lnl_crm_ghn_display_code');
 add_action('woocommerce_admin_order_data_after_shipping_address', 'lnl_crm_ghn_display_code');
 }
