@@ -16,6 +16,7 @@ export function initReceivingCalendar({ api, root, confirmBox = async () => fals
   for (const text of ['Ngày hẹn nhận', 'Loại phiếu / Chứng từ', 'Nhà cung cấp', 'Hàng chờ nhận / xin lấy']) th.append(el('th', '', text));
   const thead = el('thead'); thead.append(th); table.append(thead, body); wrap.append(table);
   const foot = el('div', 'row-gap'), prev = el('button', 'btn secondary small', '‹ Trước'), next = el('button', 'btn secondary small', 'Sau ›'), range = el('span', 'muted small');
+  foot.dataset.mobileActions = 'off'; // Pagination stays directly accessible on mobile.
   prev.type = next.type = 'button'; foot.append(prev, range, next); panel.append(bar, hint, summary, wrap, foot); page.append(head, panel); root.append(page);
   let offset = 0, request = 0, timer;
   const reset = () => { offset = 0; return load(); };
