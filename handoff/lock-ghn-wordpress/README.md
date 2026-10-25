@@ -57,6 +57,8 @@ Only public documentation was fetched. No authenticated carrier request was made
 
 The installer source retains its original CommonJS host context and must be kept with the two PHP files if copied back to OpenClaw after separate approval. Do not run it from the CRM ESM package. No installer, snippet activation, GHN staging/production create, real WordPress bootstrap, HPOS database integration or deployment was executed. Verify runtime configuration, MySQL lock support and Woo compatibility in an isolated staging environment before proposing a production deployment.
 
+This patch is scoped to LocknLock. Any separately approved future installer invocation must set `ONLY_LOCK=1`; the legacy default also targets Minh Long and is outside this change's deployment scope.
+
 ## Safety
 
 Do not run the installer, activate either snippet, deploy to WordPress production, invoke the order-action confirm endpoint, or create/retry a GHN waybill as part of reviewing this handoff.
