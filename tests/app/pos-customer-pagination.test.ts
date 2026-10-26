@@ -6,7 +6,7 @@ import {customers} from '../../src/modules/customers/schema.ts';
 import {employees} from '../../src/modules/staff/schema.ts';
 test('POS customer pages remain separate by segment, stable for tied names, and enforce retail permission',async()=>{
  const f=await setup();
- await f.db.insert(customers).values(Array.from({length:47},(_,i)=>({id:'page-'+String(i).padStart(3,'0'),name:'Khách phân trang',phone:'090'+String(i).padStart(7,'0'),contact:'',email:'',address:'',search:'',isRetail:i<43,sourceVersion:0,syncedAt:'',createdAt:'2026-10-26T00:00:00Z'})));
+ await f.db.insert(customers).values(Array.from({length:47},(_,i)=>({id:'page-'+String(i).padStart(3,'0'),name:'Khách phân trang',phone:'090'+String(i).padStart(7,'0'),contact:'',email:'',address:'',search:'',isRetail:i<43&&i!==5||i===46,taxCode:i>=43?'0312345'+i:i===0?' \t\n ':'',sourceVersion:0,syncedAt:'',createdAt:'2026-10-26T00:00:00Z'})));
  const page=async(kind:string,offset=0,cookie=f.mgr)=>(await f.call('/pos/customers?kind='+kind+'&q=phan%20trang&offset='+offset,cookie)).data;
  const first=await page('retail');assert.equal(first.customers.length,20);assert.equal(first.nextOffset,20);
  const second=await page('retail',20),last=await page('retail',40);
@@ -15,7 +15,7 @@ test('POS customer pages remain separate by segment, stable for tied names, and 
  const business=await page('business');assert.equal(business.customers.length,4);assert.ok(business.customers.every((c:{id:string})=>Number(c.id.slice(5))>=43));
  await f.db.update(employees).set({positionId:'sale'}).where(eq(employees.id,'emp'));
  assert.deepEqual((await page('retail',0,f.emp)).customers,[],'restricted retail query must not silently return B2B');
- assert.equal((await page('business',0,f.emp)).customers.length,4);
+ assert.equal((await page('business',0,f.emp)).customers.length,3,'customer tax segment does not expand existing restricted-record visibility');
  for(const query of ['offset=-1','offset=0.5','offset=no','kind=unknown'])assert.equal((await f.call('/pos/customers?'+query,f.mgr)).status,400);
  const exact=await f.call('/pos/customers?id=page-001&offset=20',f.mgr);assert.equal(exact.data.customers[0].id,'page-001');
 });

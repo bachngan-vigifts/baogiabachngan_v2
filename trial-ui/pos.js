@@ -90,6 +90,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     showMenu: false,
   };
   let paymentModal = null;
+  let customerPaymentRun = 0;
   let searchTimer,
     previewTimer,
     previewSeq = 0,
@@ -172,6 +173,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function invalidate() {
     st.qr = null;
     st.preview = null;
+    for (const line of lineTotals.values()) line.unit.textContent = 'Đang tính…';
     updateMobileDock();
     if (nodes.confirm) { nodes.confirm.checked = false; nodes.confirm.disabled = false; }
     if (nodes.transferLabel) nodes.transferLabel.textContent = 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản';
@@ -442,6 +444,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       button('Hủy đơn', 'btn secondary pos-cancel-order', cancelCurrentOrder),
       (nodes.pay = button('THANH TOÁN', 'btn primary pos-open-payment', openPayment)),
     );
+    nodes.pay.dataset.mobilePrimary = '';
     right.append(actions);
     layout.append(left, right);
     const mobileDock = el('div', 'pos-mobile-cart-dock'), mobileInfo = el('div', 'pos-mobile-cart-info');
@@ -753,15 +756,24 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function requireCustomer() {
     const issue = posCustomerIssue(st.customer);
     if (!issue) return true;
-    // Chọn / tạo khách xong thì tự mở lại Thanh toán (không phải bấm THANH TOÁN lần nữa) – trong 3 phút.
-    toast(issue, 'err'); st.resumePaymentAt = Date.now(); chooseCustomer(); return false;
+    toast(issue, 'err'); st.resumePaymentAt = Date.now(); ++customerPaymentRun; chooseCustomer(true); return false;
   }
   function resumePayment() {
     const at = st.resumePaymentAt; st.resumePaymentAt = 0;
-    if (!at || Date.now() - at > 180000) return;
-    setTimeout(() => run(async () => { if (!st.preview) await preview(); openPayment(); }), 0);
+    if (!at) return;
+    const version=customerPaymentRun,hash=window.location?.hash||'';
+    setTimeout(() => run(async () => {
+      // invalidate() schedules a second preview at 180ms. It used to supersede this awaited
+      // request, leaving preview null and silently preventing the payment form from opening.
+      clearTimeout(previewTimer);
+      if(version!==customerPaymentRun||(window.location?.hash||'')!==hash)return;
+      const expected=JSON.stringify(payload());
+      await preview();
+      if(version===customerPaymentRun&&(window.location?.hash||'')===hash&&JSON.stringify(payload())===expected&&!paymentModal)openPayment();
+    }), 0);
   }
   function openPayment() {
+    if(paymentModal?.dlg.open)return;
     if (!active() || !st.preview || !st.cart.length || st.pending || st.busy) return;
     if (!requireCustomer()) return;
     const m = modal('Thanh toán'); m.dlg.classList.add('pos-payment-modal');
@@ -855,7 +867,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       name.title = x.name + ' · ' + x.sku;
       if (!String(x.name).toLowerCase().includes(String(x.sku).toLowerCase())) name.append(el('small', 'pos-line-sku', ' · ' + x.sku));
       top.append(name, amount, remove);
-      lineTotals.set(x.sku, amount);
+      const unit = el('strong', 'pos-line-unit-value', 'Đang tính…');
+      lineTotals.set(x.sku, {amount,unit});
       row.append(top);
       const edit = el('div', 'pos-line-edit'),
         qtyBox = el('div', 'pos-qty'),
@@ -898,6 +911,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       disc.min = '0';
       disc.step = '1';
       disc.value = x.discountValue;
+      edit.dataset.discountType = x.discountType;
+      disc.placeholder = 'CK'; disc.title = 'Chiết khấu';
       disc.setAttribute('aria-label', 'Chiết khấu ' + x.name);
       disc.addEventListener('input', () => {
         x.discountValue = Number(disc.value);
@@ -913,11 +928,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       mode.setAttribute('aria-label', 'Loại chiết khấu ' + x.name);
       mode.addEventListener('change', () => {
         x.discountType = mode.value;
+        edit.dataset.discountType = mode.value;
         x.discountValue = 0;
         disc.value = '0';
         invalidate();
       });
-      edit.append(qtyBox, el('span', 'pos-note', 'Giảm'), disc, mode);
+      const afterPrice=el('div','pos-line-unit-after');
+      afterPrice.append(el('span','pos-note','Sau CK / SP'),unit);
+      edit.append(qtyBox, disc, mode, afterPrice);
       row.append(edit);
       nodes.lines.append(row);
     }
@@ -1019,7 +1037,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       row.append(el('span', '', label), el('strong', '', value));
       nodes.totals.append(row);
     }
-    for (const x of d?.lines || []) lineTotals.get(x.sku)?.replaceChildren(document.createTextNode(money(x.total)));
+    for (const x of d?.lines || []) {
+      const cell=lineTotals.get(x.sku);if(!cell)continue;
+      cell.amount.replaceChildren(document.createTextNode(money(x.total)));
+      // Same price basis as the price list; line CK only, before whole-order voucher.
+      const after=(x.listAmount-x.discountAmount+(x.voucherAmount||0))/x.qty;
+      cell.unit.textContent=Number.isFinite(after)?money(after):'—';
+    }
     updateMobileDock();
     if(st.exchangeAllocationId)nodes.totals.append(busyButton('Bỏ áp dụng tiền đổi hàng','btn secondary small','Đang bỏ áp dụng…',async()=>{await api('/pos/exchanges/'+encodeURIComponent(st.exchangeAllocationId)+'/cancel','POST',{});st.exchangeAllocationId='';invalidate();await preview();}));
     refreshPay();
@@ -1327,8 +1351,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       m.body.append(button('Nhập mã thủ công', 'btn secondary', () => { m.close(); nodes.search.focus(); }));
     }
   }
-  function chooseCustomer() {
+  function chooseCustomer(forPayment = false) {
     if (st.pending || st.busy) return;
+    if(forPayment!==true){st.resumePaymentAt=0;++customerPaymentRun;}
     run(async () => {
       const m = modal('Chọn khách hàng');
       m.dlg.classList.add('pos-customer-picker');
@@ -1357,20 +1382,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         input.setAttribute('aria-activedescendant', '');
         activeIndex = -1;
       }
-      function close() { clearTimeout(timer); ++seq; m.close(); }
+      let continuing=false;
+      function close(keepPayment=false) { continuing=keepPayment===true;clearTimeout(timer); ++seq; m.close(); }
       function pick(c) {
         const issue = posCustomerIssue(c); if (issue) return toast(issue, 'err');
         st.customer = c;
         nodes.customer.textContent = c ? c.name : 'Chọn khách hàng *';
         invalidate();
-        close(); if (c) resumePayment();
+        close(true); if (c) resumePayment();
       }
       function filter(value) {
         kind = value;
         for (const [b, v] of [[retail, 'retail'], [business, 'business']]) {
           b.setAttribute('aria-pressed', String(kind === v));
         }
-        input.placeholder = value === 'retail' ? 'Tìm khách lẻ theo tên, điện thoại…' : 'Tìm khách B2B theo tên, điện thoại…';
+        input.placeholder = value === 'retail' ? 'Tìm khách lẻ theo tên, điện thoại…' : 'Tìm khách B2B theo tên, điện thoại, MST…';
         clearTimeout(timer);
         ++seq;
         matches = [];
@@ -1380,7 +1406,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       }
       const retail = button('Khách lẻ', 'btn secondary', () => filter('retail')),
         business = button('Khách B2B', 'btn secondary', () => filter('business')),
-        create = button('+ Khách mới', 'btn primary', () => { close(); newCustomer(); });
+        create = button('+ Khách mới', 'btn primary', () => { close(true); newCustomer(); });
       retail.disabled = !canRetail;
       retail.title = canRetail ? 'Danh sách khách lẻ' : 'Tài khoản chưa được cấp quyền xem khách lẻ';
       retail.setAttribute('aria-pressed', String(kind === 'retail'));
@@ -1413,7 +1439,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
             option.id = listId + '-' + i;
             option.setAttribute('role', 'option');
             option.setAttribute('aria-selected', 'false');
-            option.append(el('strong', '', c.name), el('span', '', c.phone || 'Chưa có số điện thoại'));
+            option.append(el('strong', '', c.name), el('span', '', [c.phone || 'Chưa có số điện thoại',c.taxCode?.trim()?'MST: '+c.taxCode.trim():''].filter(Boolean).join(' · ')));
             return option;
           }));
           suggestions.hidden = !matches.length;
@@ -1444,7 +1470,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           suggestions.children[activeIndex].scrollIntoView?.({ block: 'nearest' });
         } else if (e.key === 'Enter' && activeIndex >= 0) { e.preventDefault(); pick(matches[activeIndex]); }
       });
-      m.dlg.addEventListener('close', () => { ++seq; clearTimeout(timer); });
+      const leave=()=>{st.resumePaymentAt=0;++customerPaymentRun;};window.addEventListener('hashchange',leave);
+      m.dlg.addEventListener('close', () => { ++seq; clearTimeout(timer);if(!continuing)leave();window.removeEventListener('hashchange',leave); });
       collapse();
       m.show();
       input.focus();
@@ -1454,11 +1481,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function newCustomer() {
     const m = formModal('Khách mới – dùng ngay');
     m.dlg.className += ' pos-customer-create';
+    let selected=false;
+    const leave=()=>{st.resumePaymentAt=0;++customerPaymentRun;};window.addEventListener('hashchange',leave);
+    m.dlg.addEventListener('close',()=>{if(!selected)leave();window.removeEventListener('hashchange',leave);});
     const fields = customerFormFields();
     fields.controls.phone.placeholder = 'Để trống = Bán người tiêu dùng';
     const error = el('p', 'error'); error.setAttribute('role', 'alert');
     const actions = el('div', 'pos-customer-form-actions');
     const save = el('button', 'btn primary', 'Lưu & chọn khách'); save.type = 'submit';
+    save.dataset.mobilePrimary = '';
     actions.className += ' pos-form-actions';
     actions.append(button('Huỷ', 'btn secondary', m.close), save);
     m.form.append(fields.root, error, actions);
@@ -1469,7 +1500,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           const existing=result.customers.find(x=>x.id===c.id);
           if(!existing){error.textContent='Khách chưa được duyệt hoặc chưa có quyền chọn. Nhờ Manager kiểm tra.';return;}
           const issue=posCustomerIssue(existing);if(issue){error.textContent=issue;return;}
-          st.customer=existing;nodes.customer.textContent=existing.name;invalidate();m.close();resumePayment();
+          st.customer=existing;nodes.customer.textContent=existing.name;invalidate();selected=true;m.close();resumePayment();
         }catch(ex){error.textContent=ex.message;}
       }});
     m.dlg.addEventListener('close', duplicateCheck.reset);
@@ -1489,7 +1520,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           toast('Không có SĐT: dùng khách chung "' + c.name + '", tên khách ghi vào ghi chú đơn.');
         }
         invalidate();
-        m.close(); resumePayment();
+        selected=true;m.close(); resumePayment();
       } catch (ex) { error.textContent = ex.message; }
       finally { save.disabled = false; }
     });

@@ -848,12 +848,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       posPermission(member(c));
       const q = posText(c.url.searchParams.get('q'), 100), focusedId = posText(c.url.searchParams.get('id'), 100);
       const kind = c.url.searchParams.get('kind') || '', offset = Number(c.url.searchParams.get('offset') || 0);
+      const canRetail = canListRetailCustomers(member(c));
+      const hasTaxCode = sql`regexp_replace(coalesce(${customers.taxCode},''),'[[:space:]]','','g') <> ''`;
       if (!['', 'retail', 'business'].includes(kind) || !Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) throw new AppError(400, 'Bộ lọc hoặc trang khách hàng không hợp lệ.');
       const list = await c.env.db
         .select({
           id: customers.id,
           name: customers.name,
           phone: customers.phone,
+          taxCode: customers.taxCode,
           address: customers.address,
         })
         .from(customers)
@@ -861,7 +864,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           and(
             eq(customers.approvalStatus, 'approved'),
             focusedId ? eq(customers.id, focusedId) : undefined,
-            kind === 'retail' ? (canListRetailCustomers(member(c)) ? eq(customers.isRetail, true) : sql`false`) : !canListRetailCustomers(member(c)) || kind === 'business' ? eq(customers.isRetail, false) : undefined,
+            // Tax-code presence defines POS tabs; retain the existing restricted-customer visibility gate.
+            !canRetail ? and(eq(customers.isRetail, false), hasTaxCode) : undefined,
+            kind === 'retail' ? (canRetail ? sql`not (${hasTaxCode})` : sql`false`) : kind === 'business' ? hasTaxCode : undefined,
             matchAllWords(foldSql(customers.name, customers.phone, customers.contact, customers.customerCode, customers.taxCode), q),
           ),
         )

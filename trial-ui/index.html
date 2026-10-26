@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="dashboard.css">
 <link rel="stylesheet" href="flow-map.css">
 <link rel="stylesheet" href="suppliers.css">
+<link rel="stylesheet" href="early-request-page.css">
 <link rel="stylesheet" href="typography.css">
 <link rel="stylesheet" href="mobile-actions.css">
 <link rel="stylesheet" href="mobile-design.css">
@@ -100,6 +101,7 @@
       </section>
       <section class="nav-group" aria-labelledby="nav-group-5">
         <h2 class="nav-label" id="nav-group-5">Mua hàng</h2>
+        <a class="nav" href="#/early-requests" data-nav="early-requests"><svg viewBox="0 0 24 24"><path d="M4 5h16v15H4z M8 2v6 M16 2v6 M4 10h16 M8 15h8"/></svg><span>Lấy hàng trước</span></a>
         <a class="nav" href="#/purchases" data-nav="purchases"><svg viewBox="0 0 24 24"><path d="M4 4h16v5H4z M6 9v11h12V9 M10 13h4"/></svg><span>Đơn mua NCC</span><b id="nav-purchase-count" class="badge danger" hidden>0</b></a>
         <a class="nav" href="#/suppliers" data-nav="suppliers" hidden><svg viewBox="0 0 24 24"><path d="M3 21h18 M5 21V9l7-5 7 5v12 M9 21v-6h6v6"/></svg><span>Nhà cung cấp</span></a>
       </section>
@@ -145,6 +147,7 @@
     <section class="view" id="view-flow" hidden></section>
     <section class="view" id="view-suppliers" hidden></section>
     <section class="view" id="view-purchases" hidden></section>
+    <section class="view" id="view-early-requests" hidden></section>
     <section class="view" id="view-inventory" hidden></section>
     <section class="view" id="view-transfers" hidden></section>
     <section class="view" id="view-stock-moves" hidden></section>

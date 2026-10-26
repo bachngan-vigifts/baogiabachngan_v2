@@ -4,11 +4,12 @@ const number=n=>Number(n||0).toLocaleString('vi-VN');
 const date=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'Chưa nhập';
 const time=d=>new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(d));
 const labels={draft:'Nháp — chưa gửi NCC',pending:'Chờ NCC xác nhận',accepted:'NCC đồng ý',rejected:'NCC từ chối',mixed:'NCC phản hồi khác nhau'};
-export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{}}) {
+export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{},requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id),currentRequest=()=>''}) {
   let requestNo=0,dialog=null;
   const title=el('h2','card-title',portal?'Yêu cầu xin lấy trước':'Phiếu xin lấy trước đã lưu'),list=el('div','early-request-list');
   host.append(title,list);
   async function load(id='') {
+    id ||= currentRequest();
     const n=++requestNo;
     try {const params=new URLSearchParams();if(id)params.set('id',id);if(supplierId&&!portal)params.set('supplierId',supplierId);
       const data=await api((portal?'/supplier-portal/early-requests':'/purchase-early-requests')+(params.size?'?'+params:''));if(n!==requestNo)return;
@@ -29,7 +30,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       }
       card.append(head,el('p','small','Ngày lấy: '+date(request.pickupDate)));
       if(!portal) {
-        const open=el('a','small','Mở phiếu');open.href='#/purchases?mode=incoming&request='+encodeURIComponent(request.id);card.append(open);
+        const open=el('a','small','Mở phiếu');open.href=requestHref(request.id);card.append(open);
         if(request.requestStatus==='draft'&&canWrite()) card.append(btn('Sửa phiếu nháp',()=>edit(request)));
         if(request.requestStatus==='submitted'&&canViewPortal){const link=el('a','small','Xem trên cổng NCC');link.href='supplier.html?request='+encodeURIComponent(request.id);link.target='_blank';link.rel='noopener';card.append(link);}
       }
