@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { earlyListFilter } from './early-list-filter.ts';
 import { AppError } from '../../../core/errors.ts';
 import { auditLogs } from '../../../core/db/schema.ts';
 import { json, readJson, type Router, type RouteContext } from '../../../core/http/router.ts';
@@ -77,9 +78,9 @@ function cleanInput(body:Record<string,unknown>,preserved:Record<string,OrderSou
 const stateOf = (statuses:readonly string[]) => statuses.every(s=>s==='accepted')?'accepted':statuses.every(s=>s==='rejected')?'rejected':statuses.some(s=>s==='pending')?'pending':'mixed';
 
 /** Header pagination precedes line loading, so a multi-line request is never truncated. NCC filtering happens in SQL. */
-export async function earlyRequestList(db:Db, supplierId:string|null, id='', submittedOnly=false) {
+export async function earlyRequestList(db:Db, supplierId:string|null, id='', submittedOnly=false, page?:{where?:SQL;limit:number;offset:number}) {
   const scope=supplierId?sql`exists(select 1 from ${lines} join ${allocations} on ${allocations.requestLineId}=${lines.id} where ${lines.requestId}=${requests.id} and ${allocations.supplierId}=${supplierId})`:undefined;
-  const headers=await db.select().from(requests).where(and(id?eq(requests.id,id):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(50);
+  const headers=await db.select().from(requests).where(and(id?eq(requests.id,id):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined,page?.where)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(page?.limit??50).offset(page?.offset??0);
   if(id && !headers.length) fail(404,'Không tìm thấy yêu cầu lấy trước.');
   if(!headers.length) return [];
   const details=await db.select({line:lines,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
@@ -158,11 +159,13 @@ async function respondEarlyLine(db:Db, actorId:string, id:string, supplierId:str
 
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests',async c=>{
-    guard(c);const requests=await earlyRequestList(c.env.db,c.url.searchParams.get('supplierId')||null,c.url.searchParams.get('id')||'');
+    guard(c);const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);
+    const requests=await earlyRequestList(c.env.db,supplierId,c.url.searchParams.get('id')||'',false,{...page,limit:page.limit+1});
+    const nextOffset=requests.length>page.limit?page.offset+page.limit:null;if(nextOffset!==null)requests.pop();
     const availability=await earlyReceiptAvailability(c.env.db,requests.map(r=>r.id));
     const byAllocation=new Map(availability.map(r=>[r.allocationId,r]));
     return json({requests:requests.map(r=>({...r,lines:r.lines.map(l=>({...l,allocations:l.allocations.map(a=>({...a,
-      remainingToReceive:byAllocation.get(a.id)?.remaining??0,receivedQty:byAllocation.get(a.id)?.receivedQty??0}))}))})),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
+      remainingToReceive:byAllocation.get(a.id)?.remaining??0,receivedQty:byAllocation.get(a.id)?.receivedQty??0}))}))})),nextOffset,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
   },'business');
   router.get('/purchase-early-requests/:id/receiving',async c=>{
     guard(c);if(!canReceive(me(c)))fail(403,'Bạn không có quyền nhận hàng NCC.');

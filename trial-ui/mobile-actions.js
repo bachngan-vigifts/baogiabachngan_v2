@@ -73,7 +73,9 @@ export function installMobileActions(){
    const action=e.target.closest('button,a[href],label.btn');
    if(!action)e.stopPropagation(); // Blank sheet space must not activate a clickable table row.
    // Existing download submenus continue to open inside the sheet.
-   if(action&&!action.disabled&&action!==dismiss&&!action.hasAttribute('aria-haspopup'))setTimeout(()=>close(r),0);
+   // An action often disables itself synchronously while saving. The originating
+   // user click must still close the menu so it cannot cover the next primary step.
+   if(action&&action!==dismiss&&!action.hasAttribute('aria-haspopup'))setTimeout(()=>close(r),0);
   });
   sync(r);
  }

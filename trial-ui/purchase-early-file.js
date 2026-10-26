@@ -82,7 +82,7 @@ export function earlyRequestTemplate(X) {
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
 const button=(text,fn,cls='btn secondary')=>{const b=el('button',cls,text);b.type='button';b.addEventListener('click',fn);return b;};
 const label=(text,node)=>{const n=el('label');n.append(el('span','',text),node);return n;};
-export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go}) {
+export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id)}) {
   const dialog=el('dialog','modal early-request-dialog early-file-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');
   let busy=false,parsed=null,resolvedLines=null,valid=false,saved=null,attempt=null,uncertain=false,sequence=0;
   const close=button('Đóng',()=>{if(!busy)dialog.close();});
@@ -108,7 +108,7 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go}) {
     try{
       const data=await api('/purchase-early-requests','POST',{...payload,clientKey:attempt.key});saved=data.request;uncertain=false;
       status.textContent='Đã lưu phiếu nháp. NCC chưa nhận được yêu cầu; mở phiếu để kiểm tra và Gửi NCC.';
-      const link=el('a','btn primary','Mở phiếu / Gửi NCC');link.href='#/purchases?mode=incoming&request='+encodeURIComponent(saved.id);
+      const link=el('a','btn primary','Mở phiếu / Gửi NCC');link.href=requestHref(saved.id);
       link.addEventListener('click',e=>{if(!e.ctrlKey&&!e.metaKey&&e.button===0){e.preventDefault();dialog.close();go(link.getAttribute('href'));}});foot.append(link);
     }catch(e){uncertain=!e.status||e.status>=500;error.textContent=(e.message||'Không lưu được phiếu.')+(uncertain?' Chưa rõ kết quả; bấm Thử lưu lại để kiểm tra đúng lần lưu này.':'');}
     finally{lock(false);}

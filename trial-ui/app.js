@@ -34,6 +34,8 @@ import { initDashboard } from './dashboard.js';
 import { initFlowMap } from './flow-map.js';
 import { initSuppliers } from './suppliers.js';
 import { initPurchases } from './purchases.js';
+import { initEarlyRequestPage } from './early-request-page.js';
+import { installSidebarGroups } from './sidebar-groups.js';
 // Bách Ngân · Báo giá – giao diện dùng thử v2 (JS thuần, không cần build).
 // Tính tiền dùng đúng hàm của máy chủ: quote-math.js được sinh từ src/modules/quotes/domain/quote-math.ts.
 import { hydrateSnapshot, matchRanges, searchProducts as searchCatalog } from './product-search.js';
@@ -73,6 +75,7 @@ const SESSION_KEY = 'bn-v2-session';
 // ---------------------------------------------------------------- tiện ích
 const $ = s => document.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+installSidebarGroups();
 const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const vnd = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
 const money = v => vnd.format(Math.round(Number(v) || 0));
@@ -344,7 +347,7 @@ const PAGE_PERM = {
   cash: 'page.cash', pos: 'pos.sell',
   quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
-  purchases: 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
+  purchases: 'page.purchases', 'early-requests': 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
@@ -698,6 +701,7 @@ window.addEventListener('hashchange', async () => {
 window.addEventListener('beforeunload', e => { if (editor.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 let lastRoutedHash = '';
+VIEWS['early-requests'] = 'Lấy hàng trước';
 function route() {
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
@@ -744,6 +748,7 @@ function route() {
   if (view === 'flow') flowView().load();
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); else if (id) suppliersView().open(decodeURIComponent(id)); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
+  if (view === 'early-requests') earlyRequestPage().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
   if (view === 'transfers') transfersView().load(id);
   if (view === 'stock-moves') stockMovesView().show(query);
@@ -3425,6 +3430,8 @@ function sellerConfigView() { if (!sellerConfigUi) { const box = document.create
 var permissionsUi = null;
 function permissionsView() { return permissionsUi ||= initPermissions({ api, root: $('#view-permissions'), toast, confirmBox }); }
 var purchasesUi = null;
+var earlyRequestUi = null;
+function earlyRequestPage() { return earlyRequestUi ||= initEarlyRequestPage({api,root:$('#view-early-requests'),go,today:todayIso,toast}); }
 function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso, kho: isWarehouse,
   compressPhoto: f => compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.') }); }
 // Sơ đồ quy trình: cấu hình ở flow-config.js; `openers` nối nút nhanh của khối với hộp thoại có sẵn của app.
@@ -3467,6 +3474,7 @@ async function refreshData() {
   else if (page === 'flow') jobs.push(flowView().load());
   else if (page === 'suppliers' && canEditSuppliers()) jobs.push(suppliersView().load());
   else if (page === 'purchases') jobs.push(purchasesView().load());
+  else if (page === 'early-requests') jobs.push(earlyRequestPage().refresh());
   else if (page === 'care') jobs.push(careView().load(id ? decodeURIComponent(id) : ''));
   else if (page === 'stock-requests') jobs.push(loadStockRequests(id));
   else if (page === 'packing') jobs.push(openPacking(id ? decodeURIComponent(id) : ''));
