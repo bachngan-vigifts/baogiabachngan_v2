@@ -7,7 +7,7 @@ export type AnyDb = PostgresJsDatabase<any>;
 
 /**
  * Kết nối qua Supabase transaction pooler. Mặc định 1 kết nối (mỗi request một client);
- * Edge Function dùng chung một client nhiều kết nối cho cả isolate (`max` > 1) để khỏi bắt tay TLS lại mỗi request.
+ * Edge Function dùng lifecycle theo request khi kết nối trực tiếp; chỉ giữ client ấm khi có transaction pooler.
  */
 export function createDb<S extends Record<string, unknown>>(databaseUrl: string, schema: S, opts: { max?: number; idleTimeout?: number } = {}) {
   if (!databaseUrl) throw new Error('Thiếu DATABASE_URL cho Supabase.');

@@ -1,4 +1,5 @@
 import { bindForgotPassword } from './forgot-password.js';
+import { apiFetch } from './api-transport.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
 import { openMobileQuoteCapture } from './mobile-quote-capture.js';
@@ -293,7 +294,7 @@ async function apiRequest(path, method = 'GET', body) {
   const requestToken = token;
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
-  try { res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  try { res = await apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
