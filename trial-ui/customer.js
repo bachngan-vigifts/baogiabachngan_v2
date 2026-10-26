@@ -1,4 +1,5 @@
 import { bindForgotPassword } from './forgot-password.js';
+import { apiFetch } from './api-transport.js';
 // Bách Ngân · Trang khách hàng: xem/tạo báo giá, đặt hàng, theo dõi đơn. Không có tồn kho, giá nhập.
 // Tính tiền dùng đúng hàm của máy chủ (quote-math.js sinh từ src/modules/quotes/domain/quote-math.ts).
 import { totals, after } from './quote-math.js';
@@ -42,7 +43,7 @@ async function apiRequest(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
   if (token) headers.authorization = 'Bearer ' + token;
   let res;
-  try { res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  try { res = await apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw Object.assign(new Error('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.'), { status: 0 }); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   if (data.sessionToken !== undefined) saveToken(data.sessionToken);

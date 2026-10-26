@@ -2,6 +2,8 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
+// @ts-ignore browser transport
+import { createApiTransport } from '../../trial-ui/api-transport.js';
 
 const source = readFileSync(new URL('../../trial-ui/app.js', import.meta.url), 'utf8');
 const apiSource = source.slice(source.indexOf('class ApiError'), source.indexOf('// CSP chỉ báo cáo'));
@@ -26,6 +28,7 @@ function harness() {
     setTimeout: (fn: () => void) => timers.push(fn),
     fetch: () => new Promise(resolve => pending.push(resolve)),
   };
+  ctx.apiFetch = createApiTransport({ fetcher: (...args: unknown[]) => ctx.fetch(...args) });
   ctx.saveToken = (value: string) => { ctx.token = value || ''; };
   runInNewContext(apiSource + '\n' + authSource + '\nthis.api = api; this.showAuth = showAuth;', ctx);
   const respond = (status: number, data = {}) => pending.shift()!({

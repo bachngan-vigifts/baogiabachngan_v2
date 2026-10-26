@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { createDb } from '../../../src/core/db/client.ts';
+import { createDb, closeDb } from '../../../src/core/db/client.ts';
+import { createDbLifecycle, createDbReadiness } from '../../../src/core/db/request-lifecycle.ts';
 import * as schema from '../../../src/db/schema.ts';
 import { createAppRouter } from '../../../src/app/router.ts';
 import { SYNC_PREFIX } from '../../../src/modules/staff/api/auth-routes.ts';
@@ -15,26 +16,20 @@ const files = FILES_URL && FILES_KEY ? supabaseFileStore({ url: FILES_URL, servi
 // (secret LEGACY_STAFF_EMAIL / LEGACY_STAFF_PASSWORD – Manager tự đặt trong Supabase → Edge Functions → Secrets).
 const productImages = FILES_URL && FILES_KEY ? supabaseFileStore({ url: FILES_URL, serviceKey: FILES_KEY, bucket: 'product-images', publicBucket: true }) : undefined;
 const legacySite = { base: 'https://baogia.minhlongonline.com', email: Deno.env.get('LEGACY_STAFF_EMAIL') || '', password: Deno.env.get('LEGACY_STAFF_PASSWORD') || '' };
-// Một client CSDL dùng chung cho cả isolate: các request sau dùng lại kết nối sẵn có (không bắt tay TLS lại mỗi lần).
-// CSDL chỉ có 60 kết nối và SUPABASE_DB_URL là kết nối trực tiếp (không qua pooler), mà Edge chạy nhiều isolate cùng lúc:
-// mỗi isolate giữ TỐI ĐA 1 kết nối và nhả sau 10 giây rảnh, để tổng số kết nối không vượt giới hạn.
-let sharedDb: ReturnType<typeof createDb> | null = null;
+// Direct Postgres: share only during active requests/background jobs, then close immediately.
+// Keeping one idle socket per Edge isolate exhausted this project's 60-connection database.
 // Có secret SUPABASE_POOLER_URL (chuỗi kết nối Supavisor, chế độ transaction, cổng 6543) thì dùng pooler: nhiều kết nối hơn an toàn.
 const POOLER_URL = Deno.env.get('SUPABASE_POOLER_URL') || '';
-const dbFor = (url: string) => (sharedDb ||= POOLER_URL ? createDb(POOLER_URL, schema, { max: 3, idleTimeout: 20 }) : createDb(url, schema, { max: 1, idleTimeout: 10 }));
+const dbPool = createDbLifecycle({
+  create:()=>createDb(POOLER_URL||Deno.env.get('SUPABASE_DB_URL')||'',schema,{max:POOLER_URL?3:1,idleTimeout:POOLER_URL?20:1}),
+  close:closeDb,keepWarm:!!POOLER_URL,onCloseError:()=>console.warn('API database client close failed'),
+});
 /**
  * Chắc chắn có kết nối trước khi xử lý: CSDL hết chỗ kết nối (lúc đông) thì chờ rồi thử lại vài lần thay vì báo lỗi ngay.
  * Kết nối vừa dùng (< 5 giây) thì bỏ qua bước kiểm tra.
  */
-let lastOk = 0;
 const isFull = (e: unknown) => /remaining connection slots|too many connections|53300|53400/i.test(String((e as { code?: string })?.code ?? '') + ' ' + String((e as Error)?.message ?? e) + ' ' + String((e as { cause?: Error })?.cause?.message ?? ''));
-async function ready(db: ReturnType<typeof createDb>) {
-  if (Date.now() - lastOk < 5_000) return;
-  for (let i = 0; ; i++) {
-    try { await db.execute(sql`select 1`); lastOk = Date.now(); return; }
-    catch (e) { if (i >= 4 || !isFull(e)) throw e; await new Promise(r => setTimeout(r, 250 * 2 ** i)); }
-  }
-}
+const ready=createDbReadiness<ReturnType<typeof createDb>>({probe:db=>db.execute(sql`select 1`),isTransient:isFull});
 // Việc chạy nền sau khi đã trả lời (vd gửi Web Push): Supabase Edge giữ isolate sống tới khi xong.
 // deno-lint-ignore no-explicit-any
 const waitUntil = (p: Promise<unknown>) => { const rt = (globalThis as any).EdgeRuntime; if (rt?.waitUntil) rt.waitUntil(p); else p.catch(() => {}); };
@@ -50,14 +45,16 @@ Deno.serve(async req => {
   const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store' };
   if (!ORIGINS.has(origin)) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
   if (req.method === 'OPTIONS') return new Response(null, {status:204,headers:cors});
-  const url = Deno.env.get('SUPABASE_DB_URL');
+  const url = POOLER_URL || Deno.env.get('SUPABASE_DB_URL');
   if (!url) return new Response(JSON.stringify({error:'Kết nối dữ liệu chưa sẵn sàng.'}), {status:503,headers:{...cors,'content-type':'application/json'}});
-  const db = dbFor(url);
+  let lease:ReturnType<typeof dbPool.acquire>|undefined;
   try {
+    const currentLease=dbPool.acquire();lease=currentLease;const db=currentLease.db;
+    const requestWaitUntil=(work:Promise<unknown>)=>waitUntil(currentLease.track(work));
     await ready(db);
     if (incoming.pathname.endsWith('/health')) {
       await db.select({id:schema.positions.id}).from(schema.positions).limit(1);
-      return new Response(JSON.stringify({ok:true}), {headers:{...cors,'content-type':'application/json'}});
+      return new Response(JSON.stringify({ok:true,databaseMode:POOLER_URL?'transaction-pooler':'direct-request-scoped'}), {headers:{...cors,'content-type':'application/json'}});
     }
     if (!path) return new Response('{}',{status:404,headers:cors});
     const headers = new Headers(req.headers); headers.delete('cookie');
@@ -67,8 +64,7 @@ Deno.serve(async req => {
       if(token) headers.set('cookie', '__Host-bn-session=' + token);
     }
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
-const response = await router.handle(forwarded,{db,adms:{url:Deno.env.get('ADMS_API_URL')||'',companyId:Number(Deno.env.get('ADMS_COMPANY_ID')||0),token:Deno.env.get('ADMS_API_TOKEN')||''},waitUntil,files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined,sapoOrderMode:'n8n',sapoOrderWebhookUrl:Deno.env.get('SAPO_ORDER_WEBHOOK_URL')||undefined,sapoHdktOrderWebhookUrl:Deno.env.get('SAPO_HDKT_ORDER_WEBHOOK_URL')||undefined,sapoPosOrderWebhookUrl:Deno.env.get('SAPO_POS_ORDER_WEBHOOK_URL')||undefined,sapoGoodsReceiptWebhookUrl:Deno.env.get('SAPO_GOODS_RECEIPT_WEBHOOK_URL')||'https://n8nthai.moarchvn.com/webhook/sapo-goods-receipt-from-quote-web',posShiftReportWebhook:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')&&Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')?{url:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')||'',token:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')||''}:undefined,ghnToken:Deno.env.get('GHN_API_TOKEN')||undefined,ghnMlToken:Deno.env.get('GHN_ML_API_TOKEN')||undefined,ghnMlShopId:Deno.env.get('GHN_ML_SHOP_ID')||undefined,ghnWebhookToken:Deno.env.get('GHN_WEBHOOK_TOKEN')||undefined,sepayPosApiKeyHash:Deno.env.get('SEPAY_POS_API_KEY_HASH')||undefined,wooLockTokenHash:Deno.env.get('WOO_LOCK_TOKEN_HASH')||undefined,wooMinhLongTokenHash:Deno.env.get('WOO_MINHLONG_TOKEN_HASH')||undefined,webOrderAction:Deno.env.get('WEB_ORDER_ACTION_TOKEN')?{token:Deno.env.get('WEB_ORDER_ACTION_TOKEN')||'',lockUrl:'https://locknlockonline.com/wp-json/vigifts/v1/order-action-v7',minhlongUrl:''}:undefined,mailer:Deno.env.get('RESEND_API_KEY')?{apiKey:Deno.env.get('RESEND_API_KEY')||'',from:Deno.env.get('MAIL_FROM')||'',alwaysCc:(Deno.env.get('MAIL_CC')||'').split(',').map(s=>s.trim()).filter(Boolean)}:undefined});
-    if (response.status < 500) lastOk = Date.now();
+const response = await router.handle(forwarded,{db,adms:{url:Deno.env.get('ADMS_API_URL')||'',companyId:Number(Deno.env.get('ADMS_COMPANY_ID')||0),token:Deno.env.get('ADMS_API_TOKEN')||''},waitUntil:requestWaitUntil,files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined,sapoOrderMode:'n8n',sapoOrderWebhookUrl:Deno.env.get('SAPO_ORDER_WEBHOOK_URL')||undefined,sapoHdktOrderWebhookUrl:Deno.env.get('SAPO_HDKT_ORDER_WEBHOOK_URL')||undefined,sapoPosOrderWebhookUrl:Deno.env.get('SAPO_POS_ORDER_WEBHOOK_URL')||undefined,sapoGoodsReceiptWebhookUrl:Deno.env.get('SAPO_GOODS_RECEIPT_WEBHOOK_URL')||'https://n8nthai.moarchvn.com/webhook/sapo-goods-receipt-from-quote-web',posShiftReportWebhook:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')&&Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')?{url:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')||'',token:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')||''}:undefined,ghnToken:Deno.env.get('GHN_API_TOKEN')||undefined,ghnMlToken:Deno.env.get('GHN_ML_API_TOKEN')||undefined,ghnMlShopId:Deno.env.get('GHN_ML_SHOP_ID')||undefined,ghnWebhookToken:Deno.env.get('GHN_WEBHOOK_TOKEN')||undefined,sepayPosApiKeyHash:Deno.env.get('SEPAY_POS_API_KEY_HASH')||undefined,wooLockTokenHash:Deno.env.get('WOO_LOCK_TOKEN_HASH')||undefined,wooMinhLongTokenHash:Deno.env.get('WOO_MINHLONG_TOKEN_HASH')||undefined,webOrderAction:Deno.env.get('WEB_ORDER_ACTION_TOKEN')?{token:Deno.env.get('WEB_ORDER_ACTION_TOKEN')||'',lockUrl:'https://locknlockonline.com/wp-json/vigifts/v1/order-action-v7',minhlongUrl:''}:undefined,mailer:Deno.env.get('RESEND_API_KEY')?{apiKey:Deno.env.get('RESEND_API_KEY')||'',from:Deno.env.get('MAIL_FROM')||'',alwaysCc:(Deno.env.get('MAIL_CC')||'').split(',').map(s=>s.trim()).filter(Boolean)}:undefined});
     const payload = await response.json();
     const cookie = response.headers.get('set-cookie');
     if(cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';
@@ -80,7 +76,10 @@ const response = await router.handle(forwarded,{db,adms:{url:Deno.env.get('ADMS_
     }
     return new Response(body,{status:response.status,headers:jsonHeaders});
   } catch(e) {
-    console.error('API request failed');
-    return new Response(JSON.stringify({error:'Không thể kết nối dữ liệu. Vui lòng thử lại.'}),{status:503,headers:{...cors,'content-type':'application/json'}});
+    const code=String((e as {code?:unknown})?.code||(e as {cause?:{code?:unknown}})?.cause?.code||'unknown').slice(0,40);
+    console.error('API database unavailable',JSON.stringify({code,phase:'request',pooled:!!POOLER_URL}));
+    return new Response(JSON.stringify({error:'Kết nối dữ liệu đang bận. Vui lòng thử lại sau ít giây.',code:'DB_CONNECTION_UNAVAILABLE'}),{status:503,headers:{...cors,'retry-after':'1','content-type':'application/json'}});
+  } finally {
+    await lease?.release();
   }
 });

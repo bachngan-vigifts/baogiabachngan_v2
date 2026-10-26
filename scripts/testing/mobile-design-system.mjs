@@ -20,12 +20,12 @@ ok(await f.call('/tasks',f.mgr,'POST',{title:'Gọi xác nhận đơn cho Anh Mi
 const cfg=ok(await f.call('/care/config',f.mgr));
 ok(await f.call('/care',f.mgr,'POST',{customerId,contactName:'Anh Minh',remindBefore:'1d',type:cfg.types[0].key,content:'Gửi lại báo giá bộ trà, hẹn khách xác nhận',result:cfg.results[0].key,nextAt:new Date(Date.now()+864e5).toISOString().slice(0,10)}),201);
 const user=ok(await f.call('/me',f.mgr)).user,token=f.mgr.split('=')[1];
-const writes=[],reads=[];let failOrders=false;
+const writes=[],reads=[];let failOrders=0;
 const server=createServer(async(req,res)=>{try{
  const u=new URL(req.url,'http://localhost'),path=u.pathname;
  if(path.startsWith('/api/staff/')){
   const route=u.pathname.slice('/api/staff'.length)+u.search;reads.push(route);
-  if(failOrders&&route.startsWith('/orders?')){failOrders=false;res.writeHead(503,{'content-type':'application/json'}).end(JSON.stringify({error:'Kết nối thử nghiệm bị gián đoạn'}));return;}
+  if(failOrders&&route.startsWith('/orders?')){failOrders--;res.writeHead(503,{'content-type':'application/json'}).end(JSON.stringify({error:'Kết nối thử nghiệm bị gián đoạn'}));return;}
   let body;const chunks=[];for await(const chunk of req)chunks.push(chunk);if(chunks.length)body=JSON.parse(Buffer.concat(chunks).toString());
   if(req.method!=='GET')writes.push({path:route,method:req.method,body});
   const auth=req.headers.authorization?.replace(/^Bearer /,'')||'',r=await f.call(route,auth?'__Host-bn-session='+auth:'',req.method,body);
@@ -76,7 +76,9 @@ try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'390,1280').split(',')
  await goto(page,'#/tasks');await page.locator('.task-row').first().waitFor();await settle(page);await shot(page,'tasks',width);
  await goto(page,'#/care');await page.locator('#view-care [data-list] tr').first().waitFor();await settle(page);await shot(page,'care',width);
  // Error/retry preserves list filters and never dispatches a business write.
- failOrders=true;await goto(page,'#/orders');await page.locator('#view-orders .crm-list-retry').waitFor({state:'visible'});const beforeRetry=writes.length;await page.locator('#view-orders .crm-list-retry').click();await page.locator('#orders-list tr.clickable').first().waitFor();assert.equal(writes.length,beforeRetry);
+ failOrders=1;const beforeAutoRetry=writes.length;await goto(page,'#/orders');await page.locator('#orders-list tr.clickable').first().waitFor();assert.equal(failOrders,0);assert.equal(writes.length,beforeAutoRetry,'transient read recovers automatically without writes');
+ await goto(page,'#/tasks');await page.locator('.task-row').first().waitFor();
+ failOrders=3;await goto(page,'#/orders');await page.locator('#view-orders .crm-list-retry').waitFor({state:'visible'});const beforeRetry=writes.length;await page.locator('#view-orders .crm-list-retry').click();await page.locator('#orders-list tr.clickable').first().waitFor();assert.equal(writes.length,beforeRetry);
  await shot(page,'orders-list',width);
  if(width<=850){
   assert.equal(await page.locator('.crm-mobile-nav a[href="#/contracts"]').count(),1);
