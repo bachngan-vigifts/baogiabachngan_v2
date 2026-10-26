@@ -364,8 +364,11 @@ const canEditSuppliers = () => can('suppliers.edit');
 const ghnCancelNote = r => !r?.ghnCancel ? '' : (r.ghnCancel.cancelled.length ? ` Đã huỷ vận đơn GHN ${r.ghnCancel.cancelled.join(', ')}.` : '')
   + (r.ghnCancel.errors.length ? ` Chưa huỷ được trên GHN: ${r.ghnCancel.errors.map(e => e.code + ' – ' + e.message).join('; ')}. Huỷ trên trang GHN.` : '');
 const KHO_HOME = '#/kho';
-/** Trang mở đầu: kho → Trang kho; có Báo giá → Báo giá; còn lại → Công việc. */
-const homeHash = () => isWarehouse() ? KHO_HOME : can('page.quotes') ? '#/quotes' : '#/tasks';
+/** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
+const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
+/** Trang mở đầu theo chức vụ và quyền hiện hành. */
+const homeHash = () => isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
+let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
 bindForgotPassword({button:$('#forgot-password'),api,email:()=>$('#email').value});
@@ -415,7 +418,9 @@ $('#login-form').addEventListener('submit', async e => {
 });
 
 async function enter() {
-  await sessionResume.resume({useCache:false});
+  loginToHome = true;
+  try { await sessionResume.resume({useCache:false}); }
+  finally { loginToHome = false; }
 }
 function applyWorkspaceUser(user) {
   if (user.role === 'supplier' || user.positionId === 'supplier') {
@@ -443,7 +448,7 @@ function applyWorkspaceUser(user) {
 }
 function openWorkspace(user) {
   if(!applyWorkspaceUser(user))return;
-  if (!/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
+  if ((loginToHome && isCounterSales()) || !/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
