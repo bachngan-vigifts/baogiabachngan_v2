@@ -13,9 +13,7 @@ export function installMobileDesign(profiles){
  const media=matchMedia('(max-width: 850px)'),wide=matchMedia('(min-width: 1280px)');
  const filters=new Map(),cardRows=new WeakSet(),documentSections=new Map();let frame=0,navSignature='',ignoreClose=0,lastContracts='#/contracts';
  const nav=make('nav','crm-mobile-nav');nav.setAttribute('aria-label','Điều hướng điện thoại');
- const more=make('dialog','crm-sheet crm-more-sheet'),moreHead=make('header','crm-sheet-head'),moreTitle=make('h2','','Thêm'),moreClose=make('button','icon-btn','×'),moreBody=make('div','crm-more-grid');
- moreClose.type='button';moreClose.setAttribute('aria-label','Đóng các trang');moreClose.onclick=()=>more.close();moreHead.append(moreTitle,moreClose);more.append(moreHead,moreBody);document.body.append(nav,more);
- moreBody.addEventListener('click',e=>{if(e.target.closest('a'))more.close();});
+ document.body.append(nav);
  const doc=make('dialog','crm-sheet crm-document-sheet'),docHead=make('header','crm-sheet-head'),docTitle=make('h2','','Chi tiết HĐKT'),docClose=make('button','icon-btn','×');
  docClose.type='button';docClose.setAttribute('aria-label','Đóng chi tiết HĐKT');docHead.append(docTitle,docClose);doc.append(docHead);document.body.append(doc);
  const order=document.querySelector('#view-order'),orderSlot=document.createComment('original document view');order?.before(orderSlot);
@@ -38,16 +36,23 @@ export function installMobileDesign(profiles){
  }
  function syncNav(){
   const sources=new Map();
-  for(const a of document.querySelectorAll('.sidebar [data-nav],.bottom-nav [data-nav]'))if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
-  const primary=['tasks','quotes','orders','customers'].filter(k=>sources.has(k));
-  if(primary.length<4)for(const k of ['kho','packing','purchases','deliveries','stock-lookup','cash','pos',...sources.keys()])if(primary.length<4&&sources.has(k)&&!primary.includes(k))primary.push(k);
-  const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0],extra=[...sources.keys()].filter(k=>!primary.includes(k));
-  const signature=JSON.stringify([...sources].map(([k,a])=>[k,a.getAttribute('href'),a.querySelector('span')?.textContent||a.textContent.trim()]))+key+primary.join();
-  if(signature===navSignature)return;navSignature=signature;nav.replaceChildren();moreBody.replaceChildren();
+  for(const a of [...document.querySelectorAll('.bottom-nav [data-nav]'),...document.querySelectorAll('.sidebar [data-nav]')])if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
+  // Keep the original footer order, followed by additional authorized sidebar pages.
+  const ordered=[...document.querySelectorAll('.bottom-nav [data-nav]'),...document.querySelectorAll('.sidebar [data-nav]')].map(a=>a.dataset.nav).filter((k,i,all)=>sources.has(k)&&all.indexOf(k)===i);
+  const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
+  const signature=JSON.stringify([...sources].map(([k,a])=>[k,a.getAttribute('href'),a.querySelector('span')?.textContent||a.textContent.trim()]))+key;
+  if(signature===navSignature)return;navSignature=signature;const scroll=nav.scrollLeft;nav.replaceChildren();
   const link=k=>{const source=sources.get(k),a=make('a','',k==='orders'?'Đơn hàng':source.querySelector('span')?.textContent||source.textContent.trim());a.href=source.getAttribute('href');a.dataset.mobileNav=k;const icon=source.querySelector('svg');if(icon)a.prepend(icon.cloneNode(true));if(k===key)a.setAttribute('aria-current','page');return a;};
-  for(const k of primary)nav.append(link(k));
-  const moreBtn=make('button','', 'Thêm');moreBtn.type='button';moreBtn.prepend(make('span','crm-more-icon','⋯'));moreBtn.setAttribute('aria-haspopup','dialog');if(!primary.includes(key))moreBtn.setAttribute('aria-current','page');moreBtn.onclick=()=>more.showModal();nav.append(moreBtn);
-  for(const k of extra)moreBody.append(link(k));
+  for(const k of ordered)nav.append(link(k));
+  nav.scrollLeft=scroll;
+ }
+ function homeLinks(){
+  const href=document.querySelector('#workspace').dataset.homeHref||'#/tasks';
+  for(const view of document.querySelectorAll('.view')){
+   let row=view.querySelector(':scope > .crm-home-row');
+   if(!row){row=make('div','crm-home-row');row.dataset.mobileActions='off';const a=make('a','btn ghost small crm-home-link','⌂ Trang chủ');a.dataset.mobileInline='';a.setAttribute('aria-label','Về trang chủ');row.append(a);view.prepend(row);}
+   const a=row.querySelector('a');if(a.getAttribute('href')!==href)a.setAttribute('href',href);
+  }
  }
  function createFilter(root,profile){
   const source=root.querySelector(profile.filters);if(!source||filters.has(source)||!('showPopover'in HTMLElement.prototype))return;
@@ -137,23 +142,23 @@ export function installMobileDesign(profiles){
  function scan(){
   frame=0;
   const ready=document.querySelector('#workspace')&&!document.querySelector('#workspace').hidden;
-  nav.hidden=!ready;if(!ready){if(more.open)more.close();closeDocument();return;}
+  nav.hidden=!ready;if(!ready){closeDocument();return;}
   for(const p of profiles){const root=document.querySelector(p.root);if(!root)continue;root.classList.add('crm-designed-page');if(p.filters)createFilter(root,p);if(p.card)annotateCards(root,p);
    for(const b of root.querySelectorAll(':scope > .chips .chip.active,#type-filter .chip.active')){if(root.dataset.resultCount===undefined)continue;let count=b.querySelector('.crm-chip-count');if(!count){count=make('span','crm-chip-count');b.append(count);}setText(count,' '+Number(root.dataset.resultCount).toLocaleString('vi-VN'));}
    if(root.dataset.loadState==='error'){let retry=root.querySelector('.crm-list-retry');if(!retry){retry=make('button','btn secondary crm-list-retry','Thử lại');retry.type='button';retry.onclick=()=>window.dispatchEvent(new CustomEvent('crm-reload-current',{detail:{view:root.id.replace('view-','')}}));(root.querySelector('.empty')||root).append(retry);}retry.hidden=false;}else{const retry=root.querySelector('.crm-list-retry');if(retry&&!retry.hidden)retry.hidden=true;}
   }
-  primaryControls();syncFilters();syncNav();syncDocument();kpis();quoteLines();formLabels();taskModes();
+  primaryControls();syncFilters();syncNav();syncDocument();homeLinks();kpis();quoteLines();formLabels();taskModes();
   document.body.classList.toggle('crm-form-mode',/^#\/quotes\//.test(location.hash));
  }
  const schedule=()=>{if(!frame)frame=requestAnimationFrame(scan);};
- new MutationObserver(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style','disabled','data-result-count']});
+ new MutationObserver(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style','disabled','data-result-count','data-home-href']});
  document.addEventListener('change',schedule);document.addEventListener('input',schedule);
  document.addEventListener('invalid',e=>fieldError(e.target,true),true);
  document.addEventListener('crm-field-validity',e=>fieldError(e.target,e.detail.invalid));
  document.addEventListener('input',e=>{if(e.target.matches('input,select,textarea')&&e.target.validity?.valid)fieldError(e.target,false);});
  document.addEventListener('focusin',e=>{if(e.target.matches('input:not([type=checkbox]):not([type=radio]),select,textarea'))document.body.classList.add('crm-keyboard-open');});
  document.addEventListener('focusout',()=>setTimeout(()=>{if(!document.activeElement?.matches('input,select,textarea'))document.body.classList.remove('crm-keyboard-open');},0));
- window.addEventListener('hashchange',()=>{if(/^#\/contracts(?:\?|$)/.test(location.hash))lastContracts=location.hash;for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();if(more.open)more.close();schedule();});
+ window.addEventListener('hashchange',()=>{if(/^#\/contracts(?:\?|$)/.test(location.hash))lastContracts=location.hash;for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();});
  const resize=()=>{if(doc.open){ignoreClose++;doc.close();}schedule();};media.addEventListener('change',resize);wide.addEventListener('change',resize);
  scan();return {refresh:schedule};
 }

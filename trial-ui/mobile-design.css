@@ -1,5 +1,5 @@
 /* Design reference: he-thong-giao-dien-crm.md + approved HĐKT / 4-screen mobile mockups. */
-.crm-mobile-nav,.crm-filter-trigger,.crm-filter-sheet,.crm-required { display:none; }
+.crm-mobile-nav,.crm-home-row,.crm-filter-trigger,.crm-filter-sheet,.crm-required { display:none; }
 .crm-document-sheet { padding:0; border:1px solid var(--line); color:var(--ink); }
 .crm-sheet-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 16px 12px; }
 .crm-sheet-head h2 { margin:0; font-size:18px; }
@@ -64,7 +64,11 @@
  .orders-filter-grid:has(> .crm-filter-sheet) { display:contents; }
  .crm-filter-foot { padding-bottom:calc(16px + env(safe-area-inset-bottom)); }
  .bottom-nav { display:none!important; }
- .crm-mobile-nav:not([hidden]) { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;inset:auto 0 0;z-index:45;padding:6px 4px calc(6px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff; }
+ .crm-mobile-nav:not([hidden]) { display:flex;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;position:fixed;inset:auto 0 0;z-index:45;padding:6px 4px calc(6px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff; }
+ .crm-mobile-nav:not([hidden]) a { flex:0 0 auto;min-width:84px;padding-inline:12px;white-space:nowrap; }
+ .crm-home-row { display:flex;position:sticky;top:40px;z-index:30;background:var(--bg);padding:4px 0;margin-bottom:8px; }
+ .crm-home-link { display:inline-flex!important;align-items:center;min-height:44px;color:var(--brand-navy); }
+ .crm-document-sheet .crm-home-row { position:static; }
  .crm-mobile-nav a,.crm-mobile-nav button { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:48px;min-width:0;border:0;background:transparent;color:var(--muted);font:500 11px/1.35 var(--font);padding:4px 0;text-decoration:none; }
  .crm-mobile-nav svg { width:20px;height:20px; }
  .crm-mobile-nav [aria-current] { color:var(--green);border-top:3px solid var(--green);padding-top:1px; }

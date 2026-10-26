@@ -50,7 +50,10 @@ try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'390,1280').split(',')
  await page.goto(origin+'/index.html#/contracts');await page.locator('#contracts-list tr.clickable').first().waitFor();await settle(page);
  assert.equal(await page.locator('#contracts-list .crm-list-card').count(),1);
  if(width<=850){
-  assert.equal(await page.locator('.crm-mobile-nav a').count(),4);assert.equal(await page.locator('.crm-mobile-nav button').textContent(),'⋯Thêm');
+  assert.ok(await page.locator('.crm-mobile-nav a').count()>5);assert.equal(await page.locator('.crm-mobile-nav button').count(),0);
+  assert.ok(await page.locator('.crm-mobile-nav').evaluate(n=>{n.scrollLeft=n.scrollWidth;return n.scrollLeft>0;}),'all footer pages can be reached by horizontal scrolling');
+  assert.ok(await page.locator('.crm-mobile-nav a').evaluateAll(items=>items.every(n=>n.scrollWidth<=n.clientWidth+1)),'long footer labels must not overlap neighboring pages');
+  assert.equal(await page.locator('#view-contracts .crm-home-link').isVisible(),true);
   assert.equal(await page.locator('#contracts-entity').isVisible(),false);await shot(page,'contracts-list',width);
   const before=writes.length;await page.getByRole('button',{name:'Lọc HĐKT',exact:true}).click();await page.locator('#contracts-entity').selectOption('BN');
   await page.waitForFunction(()=>document.querySelector('#contracts-entity').value==='BN');await settle(page);assert.equal(writes.length,before,'filtering never writes business data');
@@ -76,13 +79,24 @@ try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'390,1280').split(',')
  failOrders=true;await goto(page,'#/orders');await page.locator('#view-orders .crm-list-retry').waitFor({state:'visible'});const beforeRetry=writes.length;await page.locator('#view-orders .crm-list-retry').click();await page.locator('#orders-list tr.clickable').first().waitFor();assert.equal(writes.length,beforeRetry);
  await shot(page,'orders-list',width);
  if(width<=850){
-  await page.locator('.crm-mobile-nav button').click();await page.locator('.crm-more-sheet').waitFor({state:'visible'});assert.equal(await page.locator('.crm-more-sheet a[href="#/contracts"]').count(),1);await page.getByRole('button',{name:'Đóng các trang',exact:true}).click();
+  assert.equal(await page.locator('.crm-mobile-nav a[href="#/contracts"]').count(),1);
+  await page.evaluate(()=>document.querySelectorAll('.sidebar [data-nav=customers],.bottom-nav [data-nav=customers]').forEach(a=>a.hidden=true));
+  await page.waitForFunction(()=>!document.querySelector('.crm-mobile-nav [data-mobile-nav=customers]'));
+  await page.evaluate(()=>document.querySelectorAll('.sidebar [data-nav=customers],.bottom-nav [data-nav=customers]').forEach(a=>a.hidden=false));
+  await page.waitForFunction(()=>document.querySelector('.crm-mobile-nav [data-mobile-nav=customers]'));
   await goto(page,'#/quotes/new');
   const form=page.locator('#quote-form');await form.waitFor({state:'visible'});
   await form.locator('[name=customer]').fill('Bản nháp thiết bị của Anh Thái');await page.waitForTimeout(950);assert.equal(await page.locator('.crm-mobile-nav').isVisible(),false);
   await page.reload();await page.getByRole('button',{name:'Khôi phục nháp',exact:true}).click();assert.equal(await form.locator('[name=customer]').inputValue(),'Bản nháp thiết bị của Anh Thái');
   assert.equal(await form.locator('[data-quote-panel=info]').first().isVisible(),true);assert.equal(await form.locator('[data-quote-panel=products]').first().isVisible(),true);assert.equal(await form.locator('[data-quote-panel=review]').first().isVisible(),true);
   await shot(page,'quote-form',width);
+  const beforeHome=writes.length;await page.locator('#view-editor .crm-home-link').click();
+  await page.getByRole('button',{name:'Rời trang',exact:true}).click();await page.waitForFunction(()=>location.hash==='#/quotes');
+  await page.locator('.crm-mobile-nav').waitFor({state:'visible'});assert.equal(writes.length,beforeHome,'home uses the existing unsaved-change confirmation without writing a quote');
+  // Newly rendered views and role-specific home destinations are updated, not hard-coded.
+  await page.evaluate(()=>document.querySelector('#workspace').dataset.homeHref='#/tasks');
+  await page.waitForFunction(()=>document.querySelector('#view-quotes .crm-home-link').getAttribute('href')==='#/tasks');
+  await page.locator('#view-quotes .crm-home-link').click();await page.locator('.task-row').first().waitFor();
  }
  assert.deepEqual(errors,[]);console.log(JSON.stringify({width,screenshots:true,realRouter:true,filterQueries:true,documentOwnership:true,localDraft:width<=850,errors}));await context.close();
 }}finally{await browser.close();server.close();await f.client.close();}
