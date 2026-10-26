@@ -261,7 +261,8 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
       .where(
         and(
           eq(salesOrders.shiftId, s.id),
-          ne(salesOrders.status, 'cancelled'),
+          // Quick cancellations carry a compensating return: retain original gross, subtract the return once.
+          or(ne(salesOrders.status, 'cancelled'), sql`${salesOrders.posSnapshot}::jsonb->'quickCancellation' is not null`),
           sql`${salesOrders.createdAt} <= ${cutoff}`,
         ),
       ),
@@ -322,9 +323,9 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
     register: r,
     asOf: cutoff,
     returns: {
-      credit: Number((await db.select({n:sql<number>`coalesce(sum(${posReturns.total}),0)`}).from(posReturns).where(eq(posReturns.receivedShiftId,s.id)))[0]?.n||0),
-      refundedCash: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'cash'))))[0]?.n||0),
-      refundedTransfer: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'transfer'))))[0]?.n||0),
+      credit: Number((await db.select({n:sql<number>`coalesce(sum(${posReturns.total}),0)`}).from(posReturns).where(and(eq(posReturns.receivedShiftId,s.id),sql`${posReturns.creditEffectiveAt}<=${cutoff}`)))[0]?.n||0),
+      refundedCash: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'cash'),sql`${posRefunds.confirmedAt}<=${cutoff}`)))[0]?.n||0),
+      refundedTransfer: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'transfer'),sql`${posRefunds.confirmedAt}<=${cutoff}`)))[0]?.n||0),
       exchanged: payments.filter(p=>p.source==='pos_exchange_credit').reduce((n,p)=>n+p.total,0),
     },
     openingCount: counted?.count ? { scope: 'partial', count: counted.count } : null,
