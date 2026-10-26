@@ -278,11 +278,18 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   // ---------------------------------------------------------------- chi tiết
   let openingId = '';
   const markOpening = id => { openingId = id; for (const tr of tbody.children) tr.toggleAttribute('aria-busy', !!id && tr.dataset.id === id); };
+  async function confirmAndOpenReceiveForm(context = null) {
+    const confirmed = await confirmBox('Phiếu nhận này sẽ được lưu trên CRM và gửi qua n8n cho Claw tạo đơn nhập hàng trên Sapo ngay khi bấm Lưu phiếu nhận hàng. Tiếp tục?', {
+      title: 'Nhận hàng & tạo đơn nhập Sapo',
+      ok: 'Tiếp tục nhận hàng',
+    });
+    if (confirmed) receiveForm(context);
+  }
   async function openDetail(id, receive = false, earlyRequestId = '') {
     // Đang mở đúng đơn này: bỏ qua lần bấm / điều hướng trùng (dòng hiện đang tải).
     if (openingId === id) return;
     markOpening(id);
-    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) { const context=earlyRequestId?await api('/purchase-early-requests/'+encodeURIComponent(earlyRequestId)+'/receiving?orderId='+encodeURIComponent(id)):null; if(current?.id===id)receiveForm(context); } }
+    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) { const context=earlyRequestId?await api('/purchase-early-requests/'+encodeURIComponent(earlyRequestId)+'/receiving?orderId='+encodeURIComponent(id)):null; if(current?.id===id)await confirmAndOpenReceiveForm(context); } }
     catch (e) { toast(e.message || 'Không mở được đơn mua.', 'err'); close(); }
     finally { if (openingId === id) markOpening(''); }
   }
@@ -622,7 +629,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     approve: () => paymentForm('approve'),
     schedule: () => paymentForm('schedule'),
     confirm: () => confirmForm(),
-    receive: () => receiveForm(),
+    receive: () => confirmAndOpenReceiveForm(),
     pay: () => payForm(),
     pdf: () => exportDialog(),
     cancel: () => {
@@ -1003,17 +1010,13 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     sync();
     const ok = el('button', 'btn primary big-btn', '✅ Lưu phiếu nhận hàng'); ok.type = 'submit';
     f.append(g, el('p', 'muted small', 'Nhập số đạt và số hỏng của từng mã. Hàng hỏng không tính vào số đã nhận, NCC phải giao bù. Khi xác nhận, CRM sẽ gửi n8n để Claw tạo đơn nhập Sapo.'), btn('Đủ tất cả mã', 'btn secondary small', () => { ins.forEach(x => { x.good.value = String(x.l.missing); x.bad.value = ''; }); sync(); }), cards, ph, err, foot(ok));
-    f.addEventListener('submit', async e => {
+    f.addEventListener('submit', e => {
       e.preventDefault();
       const lines = ins.map(x => ({ lineId: x.l.id, goodQty: Number(x.good.value || 0), damagedQty: Number(x.bad.value || 0), note: x.nt.value })).filter(x => x.goodQty > 0 || x.damagedQty > 0);
       if (!lines.length) { err.textContent = 'Nhập số đạt hoặc số hỏng cho ít nhất một mã.'; return; }
       if (hasBad() && !photos.length) { err.textContent = 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.'; pick.focus(); return; }
       const over = ins.find(x => Number(x.good.value || 0) + Number(x.bad.value || 0) > x.l.missing);
       if (over) { err.textContent = `${over.l.sku}: đạt + hỏng vượt số cần nhận ${num(over.l.missing)}. Số đạt chỉ gồm hàng tốt.`; over.good.focus(); return; }
-      if (!await confirmBox('Xác nhận nhận hàng và tạo đơn nhập hàng trên Sapo?\n\nPhiếu nhận sẽ được lưu trên CRM và gửi qua n8n cho Claw tạo đơn nhập Sapo. Bấm Hủy để quay lại kiểm tra, chưa lưu hay gửi dữ liệu.', {
-        title: 'Tạo đơn nhập hàng Sapo',
-        ok: 'Nhận hàng & tạo đơn Sapo',
-      })) return;
       run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(earlyContext?{earlyRequestId:earlyContext.requestId}:{}), ...(photos.length ? { photos } : {}) }), 'Đã lưu phiếu nhận và gửi yêu cầu tạo đơn nhập Sapo.');
     });
     d.append(f);
