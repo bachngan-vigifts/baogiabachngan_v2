@@ -93,7 +93,7 @@ export function bindManualProductLookup({ api, sku, name, unit, host, add, activ
 const RECEIVABLE = new Set(['awaiting_confirmation', 'confirmed', 'partially_received']);
 
 export function initPurchases({ api, root, toast, confirmBox, money, go, today, kho = () => false, compressPhoto = null }) {
-  let rows = [], all = [], counts = {}, filter = '', req = 0, opts = null, current = null, canPrices = false;
+  let rows = [], all = [], counts = {}, filter = '', req = 0, opts = null, current = null, canPrices = false, activeEarlyContext = null;
   let disposeLookup = () => {};
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div');
@@ -254,7 +254,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
 
   // ---------------------------------------------------------------- ngăn kéo
-  const hide = () => { disposeLookup(); drawer.hidden = true; shade.hidden = true; current = null; };
+  const hide = () => { disposeLookup(); drawer.hidden = true; shade.hidden = true; current = null;activeEarlyContext=null; };
   const close = () => { hide(); if (/^#\/purchases\/./.test(location.hash)) history.replaceState(null, '', incomingMode ? '#/purchases?mode=incoming' : '#/purchases'); };
   function frame(eyebrow, title, onBack) {
     disposeLookup(); disposeLookup = () => {};
@@ -279,17 +279,22 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   let openingId = '';
   const markOpening = id => { openingId = id; for (const tr of tbody.children) tr.toggleAttribute('aria-busy', !!id && tr.dataset.id === id); };
   async function confirmAndOpenReceiveForm(context = null) {
-    const confirmed = await confirmBox('Phiếu nhận này sẽ được lưu trên CRM và gửi qua n8n cho Claw tạo đơn nhập hàng trên Sapo ngay khi bấm Lưu phiếu nhận hàng. Tiếp tục?', {
-      title: 'Nhận hàng & tạo đơn nhập Sapo',
-      ok: 'Tiếp tục nhận hàng',
+    const choice=await new Promise(resolve=>{
+      const modal=el('dialog','modal receipt-sapo-choice'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let settled=false;
+      modal.dataset.mobileActions='off';
+      const finish=value=>{if(settled)return;settled=true;modal.close();modal.remove();resolve(value);};
+      head.append(el('h2','','Có tạo đơn nhập Sapo không?'),btn('Đóng','btn secondary small',()=>finish(null)));
+      body.append(el('p','','Cả hai lựa chọn đều lưu phiếu và nhập hàng đạt vào kho CRM. Chọn Có mới gửi n8n/OpenClaw để tạo đơn nhập Sapo.'));
+      foot.append(btn('Không — chỉ nhập CRM','btn primary',()=>finish(false)),btn('Có — tạo đơn nhập Sapo','btn primary',()=>finish(true)));
+      modal.append(head,body,foot);document.body.append(modal);modal.addEventListener('cancel',e=>{e.preventDefault();finish(null);});modal.addEventListener('close',()=>finish(null));modal.showModal();
     });
-    if (confirmed) receiveForm(context);
+    if(choice!==null)receiveForm(context,choice);
   }
   async function openDetail(id, receive = false, earlyRequestId = '') {
     // Đang mở đúng đơn này: bỏ qua lần bấm / điều hướng trùng (dòng hiện đang tải).
     if (openingId === id) return;
-    markOpening(id);
-    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) { const context=earlyRequestId?await api('/purchase-early-requests/'+encodeURIComponent(earlyRequestId)+'/receiving?orderId='+encodeURIComponent(id)):null; if(current?.id===id)await confirmAndOpenReceiveForm(context); } }
+    markOpening(id);activeEarlyContext=null;
+    try { [current] = await Promise.all([api('/purchase-orders/' + encodeURIComponent(id)), options()]); renderDetail(); if (receive && current.actions.includes('receive')) { const context=earlyRequestId?await api('/purchase-early-requests/'+encodeURIComponent(earlyRequestId)+'/receiving?orderId='+encodeURIComponent(id)):null; if(current?.id===id){activeEarlyContext=context;await confirmAndOpenReceiveForm(context);} } }
     catch (e) { toast(e.message || 'Không mở được đơn mua.', 'err'); close(); }
     finally { if (openingId === id) markOpening(''); }
   }
@@ -387,6 +392,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const verified = !!r.sapoVerifiedAt && !!r.sapoReceiptId && !!r.sapoReceiptUrl;
     const top = el('div', 'pur-card-head'); const [lbl, cls] = r.sapoStatus === 'done' && !verified ? ['Đã ghi thủ công · cần đối soát', 'warn'] : SAPO_LABEL[r.sapoStatus] || [r.sapoStatus, ''];
     top.append(el('b', '', `${r.receiptNo} · ${dmy(r.receivedDate)}`), el('span', 'sup-pill ' + (r.cancelledAt ? '' : cls), r.cancelledAt ? 'Đã huỷ' : lbl + (r.sapoReceiptCode ? ' · ' + r.sapoReceiptCode : '')));
+    if(r.createSapo===false)card.append(el('p','muted small','Chỉ nhập kho CRM · không tạo đơn Sapo'));
     card.append(top, el('small', 'muted', `${r.by || ''}${r.warehouse ? ' · ' + r.warehouse : ''}${r.note ? ' · ' + r.note : ''}`));
     if (verified) {
       card.append(el('small','muted',`Đơn nhập Sapo #${r.sapoPurchaseOrderId} · Phiếu nhận #${r.sapoReceiptId}`));
@@ -415,7 +421,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         });
         retry.dataset.receiptRetry = r.id; tools.append(retry);
       }
-      tools.append(btn('Đối soát phiếu Sapo đã có','btn secondary small',()=>inlineForm(card,'Lý do đối soát (không tạo phiếu Sapo)','VD: mã nhập tay khác mã Sapo','Yêu cầu đối soát',b=>run(b.button,err,async()=>{
+      if(r.createSapo!==false)tools.append(btn('Đối soát phiếu Sapo đã có','btn secondary small',()=>inlineForm(card,'Lý do đối soát (không tạo phiếu Sapo)','VD: mã nhập tay khác mã Sapo','Yêu cầu đối soát',b=>run(b.button,err,async()=>{
         const expected={sapoPurchaseOrderId:r.sapoPurchaseOrderId||'',sapoReceiptId:r.sapoReceiptId||'',sapoReceiptCode:r.sapoReceiptCode||'',sapoReceiptUrl:r.sapoReceiptUrl||'',sapoVerifiedAt:r.sapoVerifiedAt||null,sapoStatus:r.sapoStatus,sapoUpdatedAt:r.sapoUpdatedAt||null};
         const sent=await api(`/supplier-receipts/${encodeURIComponent(r.id)}/reconcile-sapo`,'POST',{reason:b.value,expected});
         if(!sent.sent&&!sent.skipped)throw new Error('Chưa gửi được yêu cầu đối soát n8n. Kiểm tra execution trước khi thử lại.');
@@ -629,7 +635,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     approve: () => paymentForm('approve'),
     schedule: () => paymentForm('schedule'),
     confirm: () => confirmForm(),
-    receive: () => confirmAndOpenReceiveForm(),
+    receive: async () => {try{if(activeEarlyContext)activeEarlyContext=await api('/purchase-early-requests/'+encodeURIComponent(activeEarlyContext.requestId)+'/receiving?orderId='+encodeURIComponent(current.id));return await confirmAndOpenReceiveForm(activeEarlyContext);}catch(e){toast(e.message||'Không tải được phạm vi phiếu xin hàng.','err');}},
     pay: () => payForm(),
     pdf: () => exportDialog(),
     cancel: () => {
@@ -945,9 +951,9 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     d.append(f);
   }
 
-  function receiveForm(earlyContext = null) {
+  function receiveForm(earlyContext = null,createSapo = true) {
     const v = current, clientKey = key(); // một lần mở hộp nhận = một mã: bấm lặp / mạng chập chờn không tạo phiếu thứ hai
-    const d = frame('Nhận hàng', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
+    const d = frame(earlyContext?'Nhận theo phiếu xin hàng':'Nhận hàng', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     const date = input('date', today(), { max: today() }), note = input('text', '', { maxLength: 1000 });
     // Kho nhận chọn trong danh sách kho thật → hàng đạt tự cộng vào sổ kho đúng kho (giá trị gửi lên = tên kho).
     const wh = el('select'); wh.required = true; wh.append(Object.assign(el('option', '', '— Chọn kho nhận —'), { value: '' }));
@@ -1009,7 +1015,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     }
     sync();
     const ok = el('button', 'btn primary big-btn', '✅ Lưu phiếu nhận hàng'); ok.type = 'submit';
-    f.append(g, el('p', 'muted small', 'Nhập số đạt và số hỏng của từng mã. Hàng hỏng không tính vào số đã nhận, NCC phải giao bù. Khi xác nhận, CRM sẽ gửi n8n để Claw tạo đơn nhập Sapo.'), btn('Đủ tất cả mã', 'btn secondary small', () => { ins.forEach(x => { x.good.value = String(x.l.missing); x.bad.value = ''; }); sync(); }), cards, ph, err, foot(ok));
+    f.append(g, el('p', 'muted small', 'Nhập số đạt và số hỏng của từng mã. Hàng hỏng không tính vào số đã nhận, NCC phải giao bù. '+(createSapo?'Đã chọn tạo đơn nhập Sapo qua n8n/OpenClaw.':'Đã chọn chỉ nhập CRM, không gửi yêu cầu Sapo.')), btn('Đủ tất cả mã', 'btn secondary small', () => { ins.forEach(x => { x.good.value = String(x.l.missing); x.bad.value = ''; }); sync(); }), cards, ph, err, foot(ok));
     f.addEventListener('submit', e => {
       e.preventDefault();
       const lines = ins.map(x => ({ lineId: x.l.id, goodQty: Number(x.good.value || 0), damagedQty: Number(x.bad.value || 0), note: x.nt.value })).filter(x => x.goodQty > 0 || x.damagedQty > 0);
@@ -1017,7 +1023,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       if (hasBad() && !photos.length) { err.textContent = 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.'; pick.focus(); return; }
       const over = ins.find(x => Number(x.good.value || 0) + Number(x.bad.value || 0) > x.l.missing);
       if (over) { err.textContent = `${over.l.sku}: đạt + hỏng vượt số cần nhận ${num(over.l.missing)}. Số đạt chỉ gồm hàng tốt.`; over.good.focus(); return; }
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(earlyContext?{earlyRequestId:earlyContext.requestId}:{}), ...(photos.length ? { photos } : {}) }), 'Đã lưu phiếu nhận và gửi yêu cầu tạo đơn nhập Sapo.');
+      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey,createSapo, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(earlyContext?{earlyRequestId:earlyContext.requestId}:{}), ...(photos.length ? { photos } : {}) }), createSapo?'Đã lưu phiếu nhận và gửi yêu cầu tạo đơn nhập Sapo.':'Đã nhập kho CRM; không tạo đơn nhập Sapo.');
     });
     d.append(f);
   }

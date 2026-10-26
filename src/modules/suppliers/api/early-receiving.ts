@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../early-request-schema.ts';
 import { incomingShipments, incomingShipmentLines, supplierReceipts, supplierReceiptLines, supplierOrderEvents } from '../schema.ts';
@@ -15,7 +15,7 @@ export async function earlyReceiptAvailability(db: ReadDb, requestIds: string[])
     .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
     .innerJoin(incomingShipmentLines,eq(incomingShipmentLines.id,purchaseEarlyRequestAllocations.purchaseLineId))
     .innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId))
-    .where(inArray(purchaseEarlyRequests.id,requestIds));
+    .where(and(isNull(purchaseEarlyRequests.deletedAt),inArray(purchaseEarlyRequests.id,requestIds)));
   const orders=[...new Set(rows.map(r=>r.orderId))];
   if(!orders.length)return [];
   const [receipts,events]=await Promise.all([

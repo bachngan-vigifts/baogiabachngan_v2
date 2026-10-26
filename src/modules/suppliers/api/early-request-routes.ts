@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { earlyListFilter } from './early-list-filter.ts';
 import { AppError } from '../../../core/errors.ts';
 import { auditLogs } from '../../../core/db/schema.ts';
@@ -14,6 +14,7 @@ import { canUsePurchasing, canReceive, canSendEarlyRequest } from '../domain/pur
 import { incomingBySku } from './incoming-by-sku.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import {resolveEarlyOrderSources,EarlySourceError} from '../domain/early-order-sources.ts';
+import {deleteEarlyRequest,splitEarlyRequest,splitResult} from './early-request-lifecycle.ts';
 import {products} from '../../catalog/schema.ts';
 import type { Db, Member } from './purchase-store.ts';
 type Ctx = RouteContext<StaffEnv>;
@@ -79,9 +80,9 @@ function cleanInput(body:Record<string,unknown>,preserved:Record<string,OrderSou
 const stateOf = (statuses:readonly string[]) => statuses.every(s=>s==='accepted')?'accepted':statuses.every(s=>s==='rejected')?'rejected':statuses.some(s=>s==='pending')?'pending':'mixed';
 
 /** Header pagination precedes line loading, so a multi-line request is never truncated. NCC filtering happens in SQL. */
-export async function earlyRequestList(db:Db, supplierId:string|null, id='', submittedOnly=false, page?:{where?:SQL;limit:number;offset:number}) {
+export async function earlyRequestList(db:Db, supplierId:string|null, id:string|readonly string[]='', submittedOnly=false, page?:{where?:SQL;limit:number;offset:number}) {
   const scope=supplierId?sql`exists(select 1 from ${lines} join ${allocations} on ${allocations.requestLineId}=${lines.id} where ${lines.requestId}=${requests.id} and ${allocations.supplierId}=${supplierId})`:undefined;
-  const headers=await db.select().from(requests).where(and(id?eq(requests.id,id):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined,page?.where)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(page?.limit??50).offset(page?.offset??0);
+  const headers=await db.select().from(requests).where(and(isNull(requests.deletedAt),id?(typeof id==='string'?eq(requests.id,id):inArray(requests.id,[...id])):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined,page?.where)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(typeof id!=='string'?id.length:page?.limit??50).offset(page?.offset??0);
   if(id && !headers.length) fail(404,'Không tìm thấy yêu cầu lấy trước.');
   if(!headers.length) return [];
   const details=await db.select({line:lines,catalogName:products.name,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
@@ -143,8 +144,8 @@ async function respondEarlyLine(db:Db, actorId:string, id:string, supplierId:str
       await tx.select({id:lines.id}).from(lines).where(eq(lines.id,id)).for('update');
       const own=await tx.select().from(allocations).where(and(eq(allocations.requestLineId,id),eq(allocations.supplierId,supplierId)));
       if(!own.length) fail(404,'Không tìm thấy dòng yêu cầu của NCC này.');
-      const [parent]=await tx.select({status:requests.status}).from(lines).innerJoin(requests,eq(requests.id,lines.requestId)).where(eq(lines.id,id));
-      if(parent?.status!=='submitted') fail(404,'Không tìm thấy dòng yêu cầu đã gửi NCC.');
+      const [parent]=await tx.select({status:requests.status,deletedAt:requests.deletedAt}).from(lines).innerJoin(requests,eq(requests.id,lines.requestId)).where(eq(lines.id,id));
+      if(parent?.status!=='submitted'||parent.deletedAt) fail(404,'Không tìm thấy dòng yêu cầu đã gửi NCC.');
       const resolved=own.filter(a=>a.status!=='pending');
       if(resolved.length) {
         if(resolved.length===own.length&&resolved.every(a=>a.status===status&&a.responseNote===note)) return {replayed:true};
@@ -161,8 +162,10 @@ async function respondEarlyLine(db:Db, actorId:string, id:string, supplierId:str
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests',async c=>{
     guard(c);const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);
-    const requests=await earlyRequestList(c.env.db,supplierId,c.url.searchParams.get('id')||'',false,{...page,limit:page.limit+1});
-    const nextOffset=requests.length>page.limit?page.offset+page.limit:null;if(nextOffset!==null)requests.pop();
+    const id=c.url.searchParams.get('id')||'';
+    const replacements=id?await splitResult(c.env.db,id):null;
+    const requests=await earlyRequestList(c.env.db,supplierId,replacements||id,false,{...page,limit:page.limit+1});
+    const nextOffset=!id&&requests.length>page.limit?page.offset+page.limit:null;if(nextOffset!==null)requests.pop();
     const availability=await earlyReceiptAvailability(c.env.db,requests.map(r=>r.id));
     const byAllocation=new Map(availability.map(r=>[r.allocationId,r]));
     return json({requests:requests.map(r=>({...r,lines:r.lines.map(l=>({...l,allocations:l.allocations.map(a=>({...a,
@@ -174,18 +177,22 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.post('/purchase-early-requests',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được gửi yêu cầu lấy trước.');
-    const input=cleanInput(await readJson(c.req,300000)),payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate}));
+    const body=await readJson(c.req,300000),input=cleanInput(body),groupBySupplierOrder=body.groupBySupplierOrder===true;
+    if(body.groupBySupplierOrder!==undefined&&typeof body.groupBySupplierOrder!=='boolean')fail(400,'Tuỳ chọn gom phiếu không hợp lệ.');
+    const payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate,...(groupBySupplierOrder?{groupBySupplierOrder:true}:{})}));
     const result=await c.env.db.transaction(async tx=>{
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-key:'+m.id+':'+input.clientKey}))`);
       const [old]=await tx.select().from(requests).where(and(eq(requests.createdBy,m.id),eq(requests.clientKey,input.clientKey))).limit(1);
-      if(old) { if(old.payloadHash!==payloadHash) fail(409,'Khóa gửi đã được dùng cho nội dung khác.','IDEMPOTENCY_CONFLICT');return {id:old.id,replayed:true}; }
+      if(old) { if(old.payloadHash!==payloadHash) fail(409,'Khóa gửi đã được dùng cho nội dung khác.','IDEMPOTENCY_CONFLICT');if(old.deletedAt&&!await splitResult(tx,old.id))fail(409,'Phiếu đã xoá, không tạo lại bằng lần gửi cũ.');return {id:old.id,replayed:true,requestIds:await splitResult(tx,old.id)||[old.id]}; }
       const now=new Date().toISOString(),id=crypto.randomUUID();
       await tx.insert(requests).values({id,clientKey:input.clientKey,payloadHash,createdBy:m.id,createdAt:now,status:'draft',pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:now});
       await replaceDraftLines(tx,id,input);
       await audit(tx,m,id,'early-request-draft-create',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
-      return {id,replayed:false};
+      return {id,replayed:false,requestIds:groupBySupplierOrder?await splitEarlyRequest(tx,id,m.id):[id]};
     });
-    return json({...result,request:(await earlyRequestList(c.env.db,null,result.id))[0]},result.replayed?200:201);
+    const requestIds=result.requestIds;
+    const saved=await earlyRequestList(c.env.db,null,requestIds);
+    return json({...result,requests:saved,request:saved[0]},result.replayed?200:201);
   },'business');
   router.put('/purchase-early-requests/:id',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được sửa phiếu nháp.');
@@ -193,6 +200,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
       if(!draft) fail(404,'Không tìm thấy phiếu nháp.');
+      if(draft.deletedAt)fail(409,'Phiếu đã xoá.');
       if(draft.status!=='draft') fail(409,'Phiếu đã gửi NCC, không sửa như phiếu nháp.');
       if(body.revision!==draft.revision) fail(409,'Phiếu đã được sửa bởi người khác. Vui lòng tải lại.');
       const input=cleanInput({...body,clientKey:draft.clientKey,scope:JSON.parse(draft.scope)},JSON.parse(JSON.parse(draft.scope).orderSources||'{}'));
@@ -207,6 +215,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     const result=await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
       if(!draft) fail(404,'Không tìm thấy phiếu.');
+      if(draft.deletedAt)fail(409,'Phiếu đã xoá.');
       if(draft.status==='submitted') return {replayed:true};
       if(body.revision!==draft.revision) fail(409,'Phiếu đã thay đổi. Vui lòng tải lại trước khi gửi.');
       if(!isIsoDate(draft.pickupDate)) fail(400,'Vui lòng nhập ngày lấy hợp lệ và lưu nháp trước khi gửi.');
@@ -217,6 +226,15 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       await audit(tx,m,id,'early-request-send',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
       return {replayed:false};
     });return json({...result,request:(await earlyRequestList(c.env.db,null,id))[0]});
+  },'business');
+  router.delete('/purchase-early-requests/:id',async c=>{
+    guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được xoá phiếu xin hàng.');
+    return json({ok:true,...await c.env.db.transaction(tx=>deleteEarlyRequest(tx,c.params.id!,me(c).id))});
+  },'business');
+  router.post('/purchase-early-requests/:id/split',async c=>{
+    guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được tách phiếu đã lưu.');
+    const ids=await c.env.db.transaction(tx=>splitEarlyRequest(tx,c.params.id!,me(c).id));
+    return json({ok:true,requests:await earlyRequestList(c.env.db,null,ids)});
   },'business');
   router.post('/purchase-early-request-lines/:id/manager-confirm',async c=>{
     guard(c);if(me(c).role!=='manager') fail(403,'Chỉ Manager được xác nhận thay NCC.');
@@ -235,9 +253,9 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       if(selected.length!==ids.length)fail(404,'Một dòng phân bổ không còn tồn tại. Tải lại phiếu.');
       // Supplier replies and the single-line Manager route lock these same parent lines.
       await tx.select({id:lines.id}).from(lines).where(inArray(lines.id,[...new Set(selected.map(a=>a.lineId))])).orderBy(asc(lines.id)).for('update');
-      const rows=await tx.select({a:allocations,requestId:lines.requestId,requestStatus:requests.status}).from(allocations)
+      const rows=await tx.select({a:allocations,requestId:lines.requestId,requestStatus:requests.status,deletedAt:requests.deletedAt}).from(allocations)
         .innerJoin(lines,eq(lines.id,allocations.requestLineId)).innerJoin(requests,eq(requests.id,lines.requestId)).where(inArray(allocations.id,ids));
-      if(rows.length!==ids.length||rows.some(r=>r.requestStatus!=='submitted'))fail(409,'Chỉ xác nhận phiếu đã gửi NCC. Tải lại danh sách.');
+      if(rows.length!==ids.length||rows.some(r=>r.requestStatus!=='submitted'||r.deletedAt))fail(409,'Chỉ xác nhận phiếu đã gửi NCC. Tải lại danh sách.');
       if(rows.some(r=>r.a.status==='rejected'))fail(409,'Có phiếu NCC đã từ chối. Chưa xác nhận dòng nào trong lần này.');
       const pending=rows.filter(r=>r.a.status==='pending'),now=new Date().toISOString();
       if(pending.length){
@@ -251,7 +269,8 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.get('/supplier-portal/early-requests',async c=>{
     const supplierId=isSupplier(me(c))?await supplierFor(c):null;
-    return json({requests:await earlyRequestList(c.env.db,supplierId,c.url.searchParams.get('id')||'',true),canRespond:!!supplierId});
+    const id=c.url.searchParams.get('id')||'',replacements=id?await splitResult(c.env.db,id):null;
+    return json({requests:await earlyRequestList(c.env.db,supplierId,replacements||id,true),canRespond:!!supplierId});
   },'supplier-portal');
   router.post('/supplier-portal/early-requests/:id/respond',async c=>{
     const supplierId=await supplierFor(c),body=await readJson(c.req,8000),id=c.params.id!;

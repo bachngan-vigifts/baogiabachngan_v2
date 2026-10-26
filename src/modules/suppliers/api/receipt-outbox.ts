@@ -214,6 +214,7 @@ export function registerReceiptJobRoutes(router: Router<StaffEnv>) {
       const r=await lockReceiptForWrite(tx,id);
       if(!r)throw new AppError(404,'Không có phiếu nhận.');
       if(r.cancelledAt)throw new AppError(409,'Phiếu đã huỷ.');
+      if(!r.createSapo)throw new AppError(409,'Phiếu chỉ nhập CRM; không gửi qua Sapo.');
       const expected=receiptLink(r);
       if(typeof b.expected!=='object' || b.expected===null || Object.entries(expected).some(([k,v])=>(b.expected as Record<string,unknown>)[k]!==v))throw new AppError(409,'Liên kết CRM đã thay đổi; tải lại trước khi đối soát.');
       const [j]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,id)).for('update');

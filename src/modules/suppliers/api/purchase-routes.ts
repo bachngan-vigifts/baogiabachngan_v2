@@ -490,16 +490,18 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   router.post('/purchase-orders/:id/receipts', async c => {
     guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000 + WH_PHOTO_MAX * WH_PHOTO_MAX_CHARS), clientKey = str(body.clientKey, 80);
+    const createSapo=body.createSapo!==false;
+    if(body.createSapo!==undefined&&typeof body.createSapo!=='boolean')fail(400,'Lựa chọn tạo đơn Sapo không hợp lệ.');
     if (clientKey.length < 8) fail(400, 'Thiếu mã chống bấm lặp – tải lại trang rồi thử lại.');
-    const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
-    if (dup) { if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
+    const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
+    if (dup) { if(dup.createSapo!==createSapo)fail(409,'Phiếu đã lưu với lựa chọn Sapo khác. Không tạo lại.');if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
     const photos = parsePhotos(body.photos);
     let receiptId = '', duplicate = false;
     await db.transaction(async tx => {
       // Recheck replay after the parent lock: simultaneous retries must not create another receipt.
       await tx.select({id:incomingShipments.id}).from(incomingShipments).where(eq(incomingShipments.id,id)).for('update');
-      const [existing]=await tx.select({id:supplierReceipts.id,shipmentId:supplierReceipts.shipmentId}).from(supplierReceipts).where(eq(supplierReceipts.clientKey,clientKey)).limit(1);
-      if(existing){if(existing.shipmentId!==id)fail(409,'Mã chống bấm lặp đã dùng cho đơn khác.');receiptId=existing.id;duplicate=true;return;}
+      const [existing]=await tx.select({id:supplierReceipts.id,shipmentId:supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo}).from(supplierReceipts).where(eq(supplierReceipts.clientKey,clientKey)).limit(1);
+      if(existing){if(existing.createSapo!==createSapo)fail(409,'Phiếu đã lưu với lựa chọn Sapo khác. Không tạo lại.');if(existing.shipmentId!==id)fail(409,'Mã chống bấm lặp đã dùng cho đơn khác.');receiptId=existing.id;duplicate=true;return;}
       const p = await lockAndCheck(c, tx, id, 'receive');
       const v = validateReceipt(p.raw.progress, { receivedDate: body.receivedDate, lines: body.lines }, today());
       const earlyRequestId=typeof body.earlyRequestId==='string'?body.earlyRequestId:undefined;
@@ -520,7 +522,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await lockLedger(tx);
       await assertWarehousesOpened(tx, [whId]);
       await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: v.receivedDate, receivedBy: m.id, warehouse: whName,
-        note: str(body.note, 1000), clientKey, createdAt: nowIso() });
+        note: str(body.note, 1000), createSapo,clientKey, createdAt: nowIso() });
       await tx.insert(supplierReceiptLines).values(v.lines.map(l => ({ receiptId, lineId: l.lineId, sku: l.sku, goodQty: l.goodQty, damagedQty: l.damagedQty, note: l.note })));
       await savePhotos(tx as unknown as Db, c.env.files, m.id, 'supplier_receipt', receiptId, photos);
       // Sổ kho: hàng đạt cộng vào kho nhận (Sapo vẫn là nguồn chính – sổ kho chạy song song để đối chiếu).
@@ -537,7 +539,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
           status: l.damagedQty ? `Đạt ${l.goodQty} · hỏng ${l.damagedQty} (NCC giao bù)` : 'Đã nhận', note: l.note, occurredAt: nowIso() };
       }));
       // Keep provenance compact: the event size cap must never truncate the request/receipt link. Lines already live in supplier_receipt_lines.
-      await event(tx, id, m.id, 'receive', `Nhận hàng ${no}${earlyRequestId?' theo phiếu xin lấy trước':''}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId, ...(earlyRequestId?{earlyRequestId}:{lines:v.lines}) });
+      await event(tx, id, m.id, 'receive', `Nhận hàng ${no}${earlyRequestId?' theo phiếu xin lấy trước':''}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId,createSapo, ...(earlyRequestId?{earlyRequestId}:{lines:v.lines}) });
       const [supplier] = p.raw.order.supplierId ? await tx.select().from(suppliers).where(eq(suppliers.id,p.raw.order.supplierId)).limit(1) : [];
       const payload = {
         schema_version: 1, action: 'create_purchase_receipt', source: 'crm_supplier_receipt', idempotency_key: receiptId,
@@ -558,12 +560,12 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         if(!line.sku.trim())missing.push(`${line.crm_line_id}:sku`);
         for(const key of ['unit_price','purchase_discount_percent','vat_percent'] as const) if(line[key]===null || !Number.isFinite(line[key]) || line[key]!<0 || (key!=='unit_price'&&line[key]!>100))missing.push(`${line.sku}:${key}`);
       }
-      if(payload.items.length)await queueReceiptJob(tx,receiptId,payload,missing.length?'Thiếu dữ liệu: '+missing.join(', '):'');
-      else await tx.update(supplierReceipts).set({sapoStatus:'not_needed',sapoNote:'Không có hàng đạt để nhập Sapo.'}).where(eq(supplierReceipts.id,receiptId));
+      if(createSapo&&payload.items.length)await queueReceiptJob(tx,receiptId,payload,missing.length?'Thiếu dữ liệu: '+missing.join(', '):'');
+      else await tx.update(supplierReceipts).set({sapoStatus:'not_needed',sapoNote:createSapo?'Không có hàng đạt để nhập Sapo.':'Người nhận chọn chỉ nhập CRM, không tạo đơn Sapo.',sapoUpdatedAt:nowIso(),sapoUpdatedBy:m.id}).where(eq(supplierReceipts.id,receiptId));
     });
     if(duplicate)return json({...await viewOf(c,id),receiptId,duplicate:true});
-    const delivery = dispatchReceiptJob(c.env,receiptId).catch(() => ({sent:false,skipped:false}));
-    if(c.env.waitUntil)c.env.waitUntil(delivery);else await delivery;
+    if(createSapo){const delivery = dispatchReceiptJob(c.env,receiptId).catch(() => ({sent:false,skipped:false}));
+    if(c.env.waitUntil)c.env.waitUntil(delivery);else await delivery;}
     return json({ ...await viewOf(c, id), receiptId }, 201);
   }, 'business');
 

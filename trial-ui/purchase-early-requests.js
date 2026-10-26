@@ -21,13 +21,15 @@ function supplierSlips(request) {
   }
   return [...groups.values()];
 }
-export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{},requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id),currentRequest=()=>''}) {
+export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{},onDeleted=()=>{},requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id),currentRequest=()=>''}) {
   let requestNo=0,dialog=null,batchBusy=false,confirmDialog=null;const selected=new Map();
   const title=el('h2','card-title',portal?'Yêu cầu xin lấy trước':'Phiếu xin lấy trước đã lưu'),list=el('div','early-request-list');
+  const operations=el('div','early-request-operations');
+  operations.dataset.mobileActions='off';
   const bulk=el('div','row-gap early-request-bulk'),all=el('input');all.type='checkbox';all.setAttribute('aria-label','Chọn tất cả phiếu chờ xác nhận');
   const allLabel=el('label');allLabel.append(all,el('span','','Chọn tất cả'));
   const batch=btn('Xác nhận đã chọn (0)',()=>confirmSlips([...selected.values()]),'btn primary small');batch.disabled=true;
-  bulk.append(allLabel,batch);bulk.hidden=true;host.append(title,bulk,list);
+  bulk.append(allLabel,batch);bulk.hidden=true;host.append(title,operations,bulk,list);
   const syncBatch=()=>{batch.textContent='Xác nhận đã chọn ('+selected.size+')';batch.disabled=batchBusy||!selected.size;};
   all.addEventListener('change',()=>{for(const entry of selectable){entry.check.checked=all.checked;if(all.checked)selected.set(entry.request.groupKey,entry.request);else selected.delete(entry.request.groupKey);}syncBatch();});
   let selectable=[];
@@ -41,19 +43,25 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     } catch(e) {if(n===requestNo) list.replaceChildren(el('p','error',e.message||'Không tải được phiếu xin lấy trước.'));}
   }
   function render(requests,canRespond,canViewPortal,canReceive) {
-    list.replaceChildren();selected.clear();selectable=[];all.checked=false;syncBatch();bulk.hidden=portal||!canViewPortal;
+    list.replaceChildren();operations.replaceChildren();selected.clear();selectable=[];all.checked=false;syncBatch();bulk.hidden=portal||!canViewPortal;
     if(!requests.length) list.append(el('p','muted','Chưa có phiếu xin lấy trước.'));
+    if(!portal&&canViewPortal)for(const request of requests){
+      const groups=supplierSlips(request),bar=el('div','row-gap');bar.append(el('span','small','Phiếu '+request.id.slice(0,8).toUpperCase()));
+      if(groups.length>1)bar.append(btn('Tách thành '+groups.length+' phiếu NCC',()=>changeRequest(request,'split')));
+      bar.append(btn(groups.length>1?'Xoá toàn bộ phiếu gốc':'Xoá phiếu',()=>changeRequest(request,'delete'),'btn danger small'));operations.append(bar);
+    }
+
     for(const request of requests.flatMap(r=>!portal&&r.requestStatus==='submitted'?supplierSlips(r):[r])) {
-      const card=el('article','card early-request-card'),head=el('div','row-gap');card.dataset.requestId=request.id;
-      head.append(el('strong','',`${request.slipLabel||'Phiếu lấy trước'} · ${time(request.createdAt)}`),el('span','sup-pill '+(request.status==='pending'?'warn':''),labels[request.status]||request.status));
+      const card=el('article','card early-request-card'),head=el('div','row-gap early-request-head');card.dataset.requestId=request.id;
+      head.append(el('strong','',`${request.slipLabel||'Phiếu lấy trước'} · ${time(request.createdAt)}`),el('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
       if(!portal&&canViewPortal&&request.groupKey&&request.lines.some(l=>l.allocations.some(a=>a.status==='pending'))){
         const check=el('input');check.type='checkbox';check.setAttribute('aria-label','Chọn phiếu '+request.slipLabel+' · '+request.supplierName);
         check.addEventListener('change',()=>{if(check.checked)selected.set(request.groupKey,request);else selected.delete(request.groupKey);all.checked=selectable.length>0&&selectable.every(e=>e.check.checked);syncBatch();});
-        selectable.push({check,request});head.append(check,btn('Manager xác nhận thay NCC',()=>confirmSlips([request]),'btn primary small'));
+        selectable.push({check,request});head.replaceChildren(check,...head.children);head.append(btn('Manager xác nhận thay NCC',()=>confirmSlips([request]),'btn primary small'));
       }
       if(!portal&&canReceive&&request.requestStatus==='submitted'){
         const orders=new Map(request.lines.flatMap(l=>l.allocations).filter(a=>a.status==='accepted'&&a.remainingToReceive>0).map(a=>[a.orderId,a.ticketNumber]));
-        for(const [orderId,number] of orders){const receive=el('a','btn primary small','Nhận hàng · '+number);
+        for(const [orderId,number] of orders){const receive=el('a','btn primary small','Nhận theo phiếu · '+number);
           receive.href='#/purchases/'+encodeURIComponent(orderId)+'?receive=1&earlyRequestId='+encodeURIComponent(request.id);head.append(receive);}
       }
       card.append(head,el('p','small',(request.supplierName?request.supplierName+' · ':'')+'Ngày lấy: '+date(request.pickupDate)));if(request.groupKey)card.dataset.supplierSlip=request.groupKey;
@@ -91,6 +99,24 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       list.append(card);
     }
     bulk.hidden=portal||!canViewPortal||!selectable.length;
+  }
+  function changeRequest(request,action){
+    if(batchBusy||confirmDialog)return;
+    const remove=action==='delete',modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
+    const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
+    const groups=supplierSlips(request);
+    body.append(el('p','',remove?'Xoá toàn bộ phiếu '+request.id.slice(0,8).toUpperCase()+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
+    for(const group of groups)body.append(el('p','small',group.supplierName+' · '+group.slipLabel+' · '+group.lines.map(l=>l.sku+' × '+number(l.quantity)).join('; ')));
+    body.append(el('p','muted small','Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));
+    const error=el('p','error');error.setAttribute('role','alert');body.append(error);
+    const submit=btn(remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
+      if(busy)return;busy=batchBusy=true;close.disabled=submit.disabled=true;syncBatch();error.textContent='';
+      try{await api('/purchase-early-requests/'+encodeURIComponent(request.id)+(remove?'':'/split'),remove?'DELETE':'POST',{});modal.close();
+        if(remove){await onDeleted(request);if(!currentRequest())await load();else list.replaceChildren(el('p','muted','Đã xoá phiếu.'));}else{await load(currentRequest());await onSaved(request);}
+      }catch(e){error.textContent=e.message||'Không xử lý được phiếu. Tải lại để kiểm tra.';}
+      finally{busy=batchBusy=false;close.disabled=submit.disabled=false;syncBatch();}
+    },remove?'btn primary danger':'btn primary');foot.append(submit);modal.append(head,body,foot);document.body.append(modal);
+    modal.addEventListener('cancel',e=>{if(busy)e.preventDefault();});modal.addEventListener('close',()=>{confirmDialog=null;modal.remove();},{once:true});modal.showModal();
   }
   function confirmSlips(requests) {
     if(batchBusy||confirmDialog||!requests.length)return;

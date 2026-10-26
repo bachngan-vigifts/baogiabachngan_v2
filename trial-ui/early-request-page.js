@@ -35,7 +35,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  const list=node('div','early-page-list'),pager=node('div','early-page-pager');
  const prev=button('‹ Trang trước',()=>{offset=Math.max(0,offset-20);load();}),next=button('Trang tiếp ›',()=>{if(nextOffset!==null){offset=nextOffset;load();}}),refresh=button('Làm mới',()=>detailId?history.load(detailId):load());
  pager.append(prev,next);actions.append(refresh);section.append(search,filters,feedback,list,pager);root.append(header,back,error,section,detail);
- const history=initEarlyRequests({api,host:detail,canWrite:()=>canSend,requestHref,currentRequest:()=>detailId,onSaved:()=>toast('Đã cập nhật phiếu lấy hàng trước.')});
+ const history=initEarlyRequests({api,host:detail,canWrite:()=>canSend,requestHref,currentRequest:()=>detailId,onDeleted:()=>go('#/early-requests'),onSaved:()=>toast('Đã cập nhật phiếu lấy hàng trước.')});
  function params(){const p=new URLSearchParams();for(const [key,value] of [['q',search.value.trim()],['supplierId',supplier.value],['status',status.value],['dateBy',dateBy.value],['from',from.value],['to',to.value]])if(value)p.set(key,value);return p;}
  function fail(message=''){error.textContent=message;error.hidden=!message;}
  async function load(){
@@ -48,7 +48,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
    canSend=!!data.canSend;file.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();
    for(const request of data.requests){
     const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link','Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
-    head.append(open,node('span','sup-pill '+(request.status==='pending'?'warn':''),labels[request.status]||request.status));
+    head.append(open,node('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
     const allocations=request.lines.flatMap(l=>l.allocations),names=[...new Set(allocations.map(a=>a.supplierName))],orders=[...new Set(allocations.map(a=>a.ticketNumber+(a.supplierOrderNo?' · NCC: '+a.supplierOrderNo:'')))];
     const created=new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(request.createdAt));
     card.append(head,node('p','small muted','Lập '+created+' · Ngày lấy: '+(request.pickupDate?request.pickupDate.split('-').reverse().join('/'):'Chưa nhập')),

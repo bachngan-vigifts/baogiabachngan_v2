@@ -101,15 +101,19 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,requestHre
   const preview=el('div','table-wrap');
   const save=button('Lưu phiếu nháp',async()=>{
     if(busy||saved||!valid||!date.value)return;
-    const payload=uncertain?attempt.body:{lines:resolvedLines,pickupDate:date.value,scope:{supplierId:supplier.value,status:'all'}};
+    const payload=uncertain?attempt.body:{lines:resolvedLines,pickupDate:date.value,groupBySupplierOrder:true,scope:{supplierId:supplier.value,status:'all'}};
     const fingerprint=JSON.stringify(payload);
     if(attempt?.fingerprint!==fingerprint)attempt={fingerprint,key:crypto.randomUUID(),body:payload};
     lock(true);error.textContent='';
     try{
       const data=await api('/purchase-early-requests','POST',{...payload,clientKey:attempt.key});saved=data.request;uncertain=false;
       status.textContent='Đã lưu phiếu nháp. NCC chưa nhận được yêu cầu; mở phiếu để kiểm tra và Gửi NCC.';
-      const link=el('a','btn primary','Mở phiếu / Gửi NCC');link.href=requestHref(saved.id);
-      link.addEventListener('click',e=>{if(!e.ctrlKey&&!e.metaKey&&e.button===0){e.preventDefault();dialog.close();go(link.getAttribute('href'));}});foot.append(link);
+      const savedRequests=data.requests||[saved];
+      status.textContent='Đã lưu '+savedRequests.length+' phiếu nháp theo số đơn NCC. Kiểm tra từng phiếu trước khi gửi NCC.';
+      for(const request of savedRequests){
+      const ref=request.lines?.[0]?.allocations?.[0]?.supplierOrderNo||request.lines?.[0]?.allocations?.[0]?.ticketNumber||request.id.slice(0,8);
+      const link=el('a','btn primary',savedRequests.length>1?'Mở phiếu · '+ref:'Mở phiếu / Gửi NCC');link.href=requestHref(request.id);
+      link.addEventListener('click',e=>{if(!e.ctrlKey&&!e.metaKey&&e.button===0){e.preventDefault();dialog.close();go(link.getAttribute('href'));}});foot.append(link);}
     }catch(e){uncertain=!e.status||e.status>=500;error.textContent=(e.message||'Không lưu được phiếu.')+(uncertain?' Chưa rõ kết quả; bấm Thử lưu lại để kiểm tra đúng lần lưu này.':'');}
     finally{lock(false);}
   },'btn primary');
@@ -161,7 +165,7 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,requestHre
     if(parsed)await validate();
   });
   supplier.addEventListener('change',validate);date.addEventListener('input',sync);
-  body.append(el('p','muted','Nhập Mã hàng để app tự tìm tên sản phẩm. Hai cột số đơn có thể để trống. Chỉ nhập Số đơn của NCC: hệ thống tìm Số đơn mua CRM (DMH). Trống cả hai: tự phân bổ theo mã hàng/NCC đã chọn. Bảng xem trước hiện rõ đơn thực lấy; số đơn trùng hoặc không đủ hàng sẽ báo lỗi. Lưu nháp không gửi NCC, không nhận hàng hoặc cộng kho.'),
+  body.append(el('p','muted','Nhập Mã hàng để app tự tìm tên sản phẩm. Hai cột số đơn có thể để trống. Chỉ nhập Số đơn của NCC: hệ thống tìm Số đơn mua CRM (DMH). Trống cả hai: tự phân bổ theo mã hàng/NCC đã chọn. Bảng xem trước hiện rõ đơn thực lấy; số đơn trùng hoặc không đủ hàng sẽ báo lỗi. Mỗi số đơn NCC được lưu thành một phiếu riêng. Lưu nháp không gửi NCC, không nhận hàng hoặc cộng kho.'),
     label('Nhà cung cấp',supplier),label('Ngày lấy *',date),template,label('File Excel / CSV (tối đa 2 MB)',file),status,error,preview);
   foot.append(save);dialog.append(head,body,foot);document.body.append(dialog);
   dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{++sequence;dialog.remove();},{once:true});dialog.showModal();sync();
