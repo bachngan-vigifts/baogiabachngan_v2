@@ -1,5 +1,5 @@
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
-import { posCustomerIssue } from './pos-customer.js';
+import { posCustomerIssue, canListRetailCustomers } from './pos-customer.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { webOrderFinancialSummary } from './web-order-financials.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
@@ -1335,11 +1335,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const search = el('div', 'pos-customer-search'),
         input = el('input', 'pos-customer-input'),
         suggestions = el('div', 'pos-customer-suggestions'),
-        status = el('p', 'pos-customer-hint', 'Gõ tên hoặc số điện thoại để tìm khách.'),
+        status = el('p', 'pos-customer-hint', 'Đang tải khách hàng…'),
         actions = el('div', 'pos-customer-actions'),
         footer = el('div', 'pos-customer-footer');
       const listId = 'pos-customer-options-' + key();
-      let kind = '', seq = 0, timer, matches = [], activeIndex = -1, canRetail = false;
+      let canRetail = canListRetailCustomers(user()), kind = canRetail ? 'retail' : 'business', seq = 0, timer, matches = [], activeIndex = -1, nextOffset = null, loading = false;
       input.type = 'search';
       input.placeholder = 'Tìm tên hoặc số điện thoại…';
       input.autocomplete = 'off';
@@ -1381,28 +1381,34 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const retail = button('Khách lẻ', 'btn secondary', () => filter('retail')),
         business = button('Khách B2B', 'btn secondary', () => filter('business')),
         create = button('+ Khách mới', 'btn primary', () => { close(); newCustomer(); });
-      retail.hidden = true;
+      retail.disabled = !canRetail;
+      retail.title = canRetail ? 'Danh sách khách lẻ' : 'Tài khoản chưa được cấp quyền xem khách lẻ';
+      retail.setAttribute('aria-pressed', String(kind === 'retail'));
+      business.setAttribute('aria-pressed', String(kind === 'business'));
+      actions.dataset.mobileActions = 'off';
       actions.append(retail, business, create);
+      const more = button('Tải thêm khách', 'btn secondary', () => run(() => find(matches.length > 0 && nextOffset !== null)));
+      more.hidden = true;
       footer.append(el('span', 'pos-customer-hint', 'Bắt buộc chọn khách hàng cụ thể để lưu đơn.'), button('Đóng', 'btn secondary', close));
       search.append(input, suggestions);
-      m.body.append(el('p', 'pos-customer-subtitle', 'Tìm và chọn khách ngay trong ô bên dưới.'), actions, search, status, footer);
-      async function find() {
-        const n = ++seq, query = input.value.trim();
-        collapse();
-        matches = [];
-        if (!query) {
-          status.textContent = 'Gõ tên hoặc số điện thoại để tìm khách.';
-          return;
-        }
-        status.textContent = 'Đang tìm khách…';
+      m.body.append(el('p', 'pos-customer-subtitle', 'Chọn khách trong danh sách hoặc tìm theo tên, số điện thoại.'), actions, search, status, more, footer);
+      async function find(append = false) {
+        if (append && (loading || nextOffset === null)) return;
+        const n = append ? seq : ++seq, offset = append ? nextOffset : 0, query = input.value.trim();
+        if (!append) { collapse(); matches = []; nextOffset = null; suggestions.replaceChildren(); }
+        loading = true; more.disabled = true;
+        status.textContent = append ? 'Đang tải thêm khách…' : 'Đang tìm khách…';
         try {
-          const d = await api('/pos/customers?q=' + encodeURIComponent(query) + (kind ? '&kind=' + kind : ''));
+          const d = await api('/pos/customers?q=' + encodeURIComponent(query) + '&kind=' + kind + '&offset=' + offset);
           if (n !== seq || !m.dlg.open) return;
           canRetail = !!d.canListRetail;
-          retail.hidden = !canRetail;
-          if (!canRetail && kind === 'retail') kind = '';
-          matches = d.customers;
-          suggestions.replaceChildren(...matches.map((c, i) => {
+          retail.disabled = !canRetail;
+          if (!canRetail && kind === 'retail') { filter('business'); return; }
+          nextOffset = d.nextOffset ?? null;
+          const seen = new Set(matches.map(c => c.id)), added = d.customers.filter(c => !seen.has(c.id)), start = matches.length;
+          matches.push(...added);
+          suggestions.append(...added.map((c, index) => {
+            const i = start + index;
             const option = button('', 'pos-customer-option', () => pick(c));
             option.id = listId + '-' + i;
             option.setAttribute('role', 'option');
@@ -1412,19 +1418,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           }));
           suggestions.hidden = !matches.length;
           input.setAttribute('aria-expanded', String(!!matches.length));
-          status.textContent = matches.length ? 'Chọn khách trong gợi ý · ↑ ↓ để di chuyển, Enter để chọn.' : 'Không tìm thấy khách. Thử tên, số điện thoại khác hoặc tạo khách mới.';
+          more.hidden = nextOffset === null;
+          more.textContent = 'Tải thêm khách';
+          status.textContent = matches.length ? `Đang hiện ${matches.length} khách · cuộn danh sách để tải tiếp.` : 'Không tìm thấy khách. Thử tên, số điện thoại khác hoặc tạo khách mới.';
         } catch (e) {
-          if (n === seq && m.dlg.open) { collapse(); status.textContent = 'Không tải được khách. Vui lòng thử lại.'; }
-          throw e;
-        }
+          if (n === seq && m.dlg.open) { status.textContent = 'Không tải được khách. Bấm để thử lại.'; more.hidden = false; more.textContent = 'Thử lại'; }
+        } finally { if (n === seq) { loading = false; more.disabled = false; } }
       }
+      suggestions.addEventListener('scroll', () => { if (suggestions.scrollHeight - suggestions.scrollTop - suggestions.clientHeight < 60) run(() => find(true)); });
       input.addEventListener('input', () => {
         ++seq;
+        nextOffset = null; loading = false; more.hidden = true;
         collapse();
         clearTimeout(timer);
         timer = setTimeout(() => run(find), 200);
       });
-      input.addEventListener('focus', () => { if (input.value.trim()) run(find); });
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !suggestions.hidden) { e.preventDefault(); e.stopPropagation(); collapse(); return; }
         if (suggestions.hidden || !matches.length) return;
@@ -1440,9 +1448,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       collapse();
       m.show();
       input.focus();
-      // Load permissions without presenting an unfiltered customer directory.
-      const d = await api('/pos/customers?q=');
-      if (m.dlg.open) { canRetail = !!d.canListRetail; retail.hidden = !canRetail; }
+      await find();
     });
   }
   function newCustomer() {
@@ -1934,6 +1940,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       summary.append(check, identity);
       const total = el('div', 'pos-saved-total'); total.append(el('span', '', 'Tổng đơn hàng'), el('strong', '', money(d.total)));
       const actions = el('div', 'pos-saved-actions');
+      actions.dataset.mobileActions = 'off';
       actions.append(button('In lại bill', 'btn secondary', () => printPos(d)));
       if (body.fulfillmentMode === 'cod') actions.append(ghnPortalLink(d.ghnOrderCode || ''));
       // Vận đơn GHN tự tạo: hiện mã + phí, hoặc lỗi + nút tạo lại (đơn COD đã lưu dù GHN lỗi).

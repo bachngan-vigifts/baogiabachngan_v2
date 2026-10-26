@@ -508,8 +508,8 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     assert.deepEqual(actions.children.map(e => e.textContent), ['Khách lẻ', 'Khách B2B', '+ Khách mới']);
     const input = dialog.querySelectorAll('input')[0]!, list = dialog.querySelectorAll('div').find(e => e.className === 'pos-customer-suggestions')!;
     assert.equal(input.attributes.role, 'combobox');
-    assert.equal(list.hidden, true);
-    assert.equal(list.children.length, 0, 'Không hiện danh sách khách khi chưa tìm');
+    assert.equal(list.hidden, false);
+    assert.equal(list.children.length, 1, 'Hiện trang khách đầu ngay khi mở');
     assert.equal(dialog.querySelectorAll('input').length, 1, 'Không còn checkbox lọc rời');
     input.value = 'hồng';
     await input.fire('input');
@@ -530,7 +530,8 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     assert.equal(dialog.open, false);
     allowRetail = false;
     dialog = await open();
-    assert.equal(dialog.querySelectorAll('button').find(b => b.textContent === 'Khách lẻ')!.hidden, true);
+    assert.equal(dialog.querySelectorAll('button').find(b => b.textContent === 'Khách lẻ')!.hidden, false);
+    assert.equal(dialog.querySelectorAll('button').find(b => b.textContent === 'Khách lẻ')!.disabled, true);
     assert.equal(dialog.querySelectorAll('button').some(b => b.textContent.includes('Khách vãng lai')), false);
     await dialog.querySelectorAll('button').find(b => b.textContent === 'Đóng')!.fire('click');
     assert.ok(root.textContent.includes('<b>Cô Hồng</b>'));
@@ -893,6 +894,7 @@ test('lưu POS: lỗi giữ bảng thanh toán và giỏ; thành công đóng b�
     assert.ok(saved);assert.match(saved.textContent,/POS_<img onerror=x>/);assert.equal(saved.querySelectorAll('img').length,0);
     assert.ok(saved.textContent.includes('194.400 đ'));
     const actions=saved.querySelectorAll('div').find(e=>e.className==='pos-saved-actions')!;
+    assert.equal(actions.dataset.mobileActions,'off');
     assert.deepEqual(actions.children.map(b=>b.textContent),['In lại bill','Bán đơn tiếp']);
     await actions.children[1]!.fire('click');assert.equal(saved.open,false);assert.equal(checkouts,2);
   } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}

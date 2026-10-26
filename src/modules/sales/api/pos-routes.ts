@@ -847,6 +847,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       posPermission(member(c));
       const q = posText(c.url.searchParams.get('q'), 100), focusedId = posText(c.url.searchParams.get('id'), 100);
+      const kind = c.url.searchParams.get('kind') || '', offset = Number(c.url.searchParams.get('offset') || 0);
+      if (!['', 'retail', 'business'].includes(kind) || !Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) throw new AppError(400, 'Bộ lọc hoặc trang khách hàng không hợp lệ.');
       const list = await c.env.db
         .select({
           id: customers.id,
@@ -859,13 +861,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           and(
             eq(customers.approvalStatus, 'approved'),
             focusedId ? eq(customers.id, focusedId) : undefined,
-            !canListRetailCustomers(member(c)) ? eq(customers.isRetail, false) : c.url.searchParams.get('kind') === 'retail' ? eq(customers.isRetail, true) : c.url.searchParams.get('kind') === 'business' ? eq(customers.isRetail, false) : undefined,
+            kind === 'retail' ? (canListRetailCustomers(member(c)) ? eq(customers.isRetail, true) : sql`false`) : !canListRetailCustomers(member(c)) || kind === 'business' ? eq(customers.isRetail, false) : undefined,
             matchAllWords(foldSql(customers.name, customers.phone, customers.contact, customers.customerCode, customers.taxCode), q),
           ),
         )
-        .orderBy(...rankFirst(searchRank([customers.phone, customers.customerCode, customers.taxCode], customers.name, q)), desc(customers.createdAt), asc(customers.name))
-        .limit(20);
-      return json({ customers: list, canListRetail: canListRetailCustomers(member(c)) });
+        .orderBy(...rankFirst(searchRank([customers.phone, customers.customerCode, customers.taxCode], customers.name, q)), desc(customers.createdAt), asc(customers.name), asc(customers.id))
+        .offset(focusedId ? 0 : offset).limit(focusedId ? 1 : 21);
+      return json({ customers: list.slice(0,20), nextOffset: !focusedId && list.length > 20 ? offset + 20 : null, canListRetail: canListRetailCustomers(member(c)) });
     },
     'business',
   );

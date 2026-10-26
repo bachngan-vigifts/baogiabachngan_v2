@@ -1,4 +1,5 @@
 /** Shared POS customer requirement; previewing products does not require a selection. */
+export { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 export function posCustomerIssue(customer: { id?: unknown; name?: unknown } | null | undefined): string | null {
   if (!customer || typeof customer.id !== 'string' || !customer.id.trim() || typeof customer.name !== 'string' || !customer.name.trim())
     return 'Vui lòng chọn hoặc tạo khách hàng cụ thể trước khi thanh toán.';
