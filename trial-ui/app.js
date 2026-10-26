@@ -16,6 +16,7 @@ import { reviewPurchaseCosts } from './purchase-cost-review.js';
 import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
+import { openPosQuickCancel } from './pos-quick-cancel.js';
 import { openBarcodeImport } from './barcode-import.js';
 import { posOrderEditor, posCodReceipt, posPaymentText } from './pos-order-edit.js';
 import { renderOrderLineDetails } from './order-line-details.js';
@@ -3667,6 +3668,10 @@ async function openOrder(id) {
     }).catch(e => { if (box.isConnected) { box.textContent = e.message; box.className = 'error'; } });
   }
   if(o.channel==='pos' && can('pos.sell')){const b=document.createElement('button');b.className='btn secondary';b.textContent='Trả / Đổi / Hoàn tiền';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosReturns({api,toast,orderId:o.id,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
+  if(o.channel==='pos'&&isManager()&&o.status!=='cancelled'){
+    const b=document.createElement('button');b.type='button';b.className='btn danger-outline';b.textContent='Huỷ phiếu nhanh';
+    b.onclick=async()=>{if(b.disabled)return;b.disabled=true;try{await openPosQuickCancel({api,toast,orderId:o.id,money,onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}finally{b.disabled=false;}};$('#order-actions').append(b);
+  }
   if(o.channel==='pos'&&can('pos.sell')&&['deposit','prepaid'].includes(JSON.parse(o.posSnapshot||'{}').saleFlow)){const b=document.createElement('button');b.className='btn primary';b.textContent='Cọc / Thu nốt / Trả trước';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosOrderFlows({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:o.id,onChanged:()=>openOrder(o.id),onReturns:id=>openPosReturns({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:id,onChanged:()=>openOrder(o.id)})});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
   if (o.channel === 'pos' && o.canEdit && o.status !== 'cancelled' && !isK) $('#order-actions').append(posOrderEditor({ api, detail: d, onSaved: () => openOrder(o.id) }));
   const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
