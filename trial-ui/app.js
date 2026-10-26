@@ -419,6 +419,7 @@ function applyWorkspaceUser(user) {
   }
   if (user.role === 'customer' || user.positionId === 'customer') { location.replace('customer.html'); return; } // tài khoản khách: chỉ trang khách hàng
   state.user = user;
+  $('#workspace').dataset.homeHref = homeHash();
   $('#auth').hidden = true; $('#workspace').hidden = false;
   $('#user-name').textContent = $('#menu-name').textContent = user.name;
   $('#menu-email').textContent = user.email;
