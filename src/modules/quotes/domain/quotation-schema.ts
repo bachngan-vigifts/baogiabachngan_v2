@@ -119,6 +119,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
   result.rows = inp.rows.map((row: Obj) => {
     if (!row || typeof row !== 'object') throw bad('Dòng sản phẩm không hợp lệ.');
     const clean: Obj = { id: newId() };
+    if (row.manualLine === true) clean.manualLine = true;
     for (const key of ['sku', 'name', 'unit', 'brand', 'pattern', 'image']) clean[key] = text(row[key] ?? '', key === 'image' ? 250000 : 4000);
     if (clean.image && !/^https:\/\//i.test(clean.image) && !/^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(clean.image)) throw bad('Hình ảnh phải dùng HTTPS hoặc ảnh JPEG, PNG, WebP.');
     for (const key of ['qty', 'price', 'discount', 'printFee', 'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) clean[key] = number(row[key] ?? 0, key === 'discount' ? (row.discountType === 'amount' ? Number(row.price || 0) : 100) : 1e12);
