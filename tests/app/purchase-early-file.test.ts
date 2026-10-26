@@ -5,27 +5,28 @@ import {runInNewContext} from 'node:vm';
 // @ts-ignore browser module, pure parser/template exports are DOM independent
 import {parseEarlyRequestSheet, readEarlyRequestWorkbook, earlyRequestTemplate, earlyFileRequestLines, EARLY_FILE_HEADER} from '../../trial-ui/purchase-early-file.js';
 const context:any={};runInNewContext(readFileSync('trial-ui/xlsx.full.min.js','utf8'),context);const X=context.XLSX;
+const LEGACY_HEADER=['Mã hàng','Tên sản phẩm','Số lượng xin trước','Số đơn mua CRM (DMH)','Số đơn của NCC'];
 const wb=(rows:unknown[][])=>{const b=X.utils.book_new();X.utils.book_append_sheet(b,X.utils.aoa_to_sheet(rows),'Xin hàng trước');return b;};
 test('xin trước bằng file: giữ mã 0 đầu, không chấp nhận sai/trùng/thiếu số lượng hoặc file sai mẫu',()=>{
- const data=parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',5,'PO-a1',''],['01654020803','Ấm','7','PO-excel','']]);
+ const data=parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Ly',5,'PO-a1',''],['01654020803','Ấm','7','PO-excel','']]);
  assert.equal(data.errors.length,0);assert.deepEqual(data.lines.map((l:any)=>[l.sku,l.quantity]),[['031106000',5],['01654020803',7]]);
- for(const quantity of [0,-1,1.5,'1.000','1,000','abc','',Number.MAX_SAFE_INTEGER+1])assert.ok(parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',quantity,'PO-a1','']]).errors.length);
- assert.match(parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',5,'PO-a1',''],['031106000','Ly',7,'PO-a1','']]).errors.join(' '),/trùng dòng 2/);
+ for(const quantity of [0,-1,1.5,'1.000','1,000','abc','',Number.MAX_SAFE_INTEGER+1])assert.ok(parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Ly',quantity,'PO-a1','']]).errors.length);
+ assert.match(parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Ly',5,'PO-a1',''],['031106000','Ly',7,'PO-a1','']]).errors.join(' '),/trùng dòng 2/);
  assert.ok(parseEarlyRequestSheet([['Mã hàng','Đơn giá'],['001',5]]).errors.length);
  assert.ok(parseEarlyRequestSheet([EARLY_FILE_HEADER]).errors.length);
- assert.ok(parseEarlyRequestSheet([EARLY_FILE_HEADER,...Array.from({length:301},(_,i)=>['SKU'+i,'',1,'PO-a1',''])]).errors.length);
+ assert.ok(parseEarlyRequestSheet([LEGACY_HEADER,...Array.from({length:301},(_,i)=>['SKU'+i,'',1,'PO-a1',''])]).errors.length);
 });
 test('file Excel thật: mẫu tải về, mã Text, định dạng số, CSV, công thức và giới hạn',()=>{
  const template=earlyRequestTemplate(X),sheet=template.Sheets[template.SheetNames[0]];
  assert.equal(sheet.A2.z,'@');assert.equal(sheet.A2.t,'s');assert.equal(template.SheetNames.length,2);
- sheet.A2={t:'s',v:'031106000',z:'@'};sheet.B2={t:'s',v:'Ly'};sheet.C2={t:'n',v:1000,z:'#,##0'};sheet.D2={t:'s',v:'PO-a1',z:'@'};
+ sheet.A2={t:'s',v:'031106000',z:'@'};sheet.B2={t:'n',v:1000,z:'#,##0'};sheet.C2={t:'s',v:'PO-a1',z:'@'};
  const file=X.write(template,{type:'buffer',bookType:'xlsx'}),again=X.read(file,{type:'buffer'});
  const imported=readEarlyRequestWorkbook(X,again);assert.equal(imported.errors.length,0);assert.equal(imported.lines[0].sku,'031106000');assert.equal(imported.lines[0].quantity,1000);
  const csv=X.read('Mã hàng,Tên hàng,Số lượng xin trước,Lấy ở số đơn hàng nào,Số đơn NCC\n031106000,Ly,5,PO-a1,',{type:'string',raw:true});
  assert.equal(readEarlyRequestWorkbook(X,csv).lines[0].sku,'031106000');
- const bad=wb([EARLY_FILE_HEADER,['001','Ly',5,'PO-a1','']]);bad.Sheets['Xin hàng trước'].C2.f='1+4';
+ const bad=wb([LEGACY_HEADER,['001','Ly',5,'PO-a1','']]);bad.Sheets['Xin hàng trước'].C2.f='1+4';
  assert.throws(()=>readEarlyRequestWorkbook(X,bad),/công thức/);
- const long=wb([EARLY_FILE_HEADER,[1234567890123456,'Ly',5]]);assert.throws(()=>readEarlyRequestWorkbook(X,long),/quá dài/);
+ const long=wb([LEGACY_HEADER,[1234567890123456,'Ly',5]]);assert.throws(()=>readEarlyRequestWorkbook(X,long),/quá dài/);
  const large=wb([EARLY_FILE_HEADER]);large.Sheets['Xin hàng trước']['!ref']='A1:C304';assert.throws(()=>readEarlyRequestWorkbook(X,large),/quá lớn/);
 });
 
@@ -36,7 +37,7 @@ test('file → existing draft API: correct permissions, supplier scope, no early
   const options=await call('/purchase-options',c[role]);assert.equal(options.status,200);
   assert.equal(options.data.canRequestEarly,['mgr','sa'].includes(role),role);
  }
- const parsed=parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Wrong reference name',5,'PO-b1',''],['01654020803','',2,'PO-excel','']]);
+ const parsed=parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Wrong reference name',5,'PO-b1',''],['01654020803','',2,'PO-excel','']]);
  assert.equal(parsed.errors.length,0);
  const body={clientKey:'file-draft-integration',pickupDate:'2026-10-25',scope:{supplierId:'b',status:'all'},lines:earlyFileRequestLines(parsed.lines)};
  const first=await call('/purchase-early-requests',c.sa,'POST',body);assert.equal(first.status,201,JSON.stringify(first.data));
@@ -49,19 +50,20 @@ test('file → existing draft API: correct permissions, supplier scope, no early
 });
 
 test('file: clear headers, optional CRM/NCC references and old template compatibility',()=>{
- const parsed=parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'PO-a1','NCC-001'],['031106000','Ly',3,'PO-a2','']]);
+ const parsed=parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Ly',2,'PO-a1','NCC-001'],['031106000','Ly',3,'PO-a2','']]);
  assert.deepEqual(parsed.errors,[]);assert.deepEqual(earlyFileRequestLines(parsed.lines),[{sku:'031106000',quantity:5,sourceOrders:[{orderNo:'PO-a1',supplierOrderNo:'NCC-001',quantity:2},{orderNo:'PO-a2',supplierOrderNo:'',quantity:3}]}]);
- assert.deepEqual(parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'','']]).errors,[]);
+ assert.deepEqual(parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Ly',2,'','']]).errors,[]);
  assert.deepEqual(parseEarlyRequestSheet([['Mã hàng','Số lượng xin trước'],['031106000',2]]).errors,[]);
- const supplierOnly=parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'','000123'],['031106000','Ly',3,'','000124']]);
+ const supplierOnly=parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Ly',2,'','000123'],['031106000','Ly',3,'','000124']]);
  assert.deepEqual(supplierOnly.errors,[]);assert.equal(supplierOnly.lines[0].supplierOrderNo,'000123');
- assert.ok(parseEarlyRequestSheet([EARLY_FILE_HEADER,['031106000','Ly',2,'','000123'],['031106000','Ly',3,'','000123']]).errors.length);
+ assert.ok(parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Ly',2,'','000123'],['031106000','Ly',3,'','000123']]).errors.length);
  const old=parseEarlyRequestSheet([['Mã hàng','Tên hàng','Số lượng xin trước','Lấy ở số đơn hàng nào','Số đơn NCC (không bắt buộc)'],['031106000','Ly',2,'','000123']]);
  assert.deepEqual(old.errors,[]);assert.equal(old.lines[0].supplierOrderNo,'000123');
  const template=earlyRequestTemplate(X),sheet=template.Sheets[template.SheetNames[0]];
- assert.equal(sheet.D1.v,'Số đơn mua CRM (DMH)');assert.equal(sheet.E1.v,'Số đơn của NCC');
- assert.equal(sheet.D2.z,'@');assert.equal(sheet.E2.z,'@');
- sheet.A2={t:'s',v:'031106000',z:'@'};sheet.C2={t:'n',v:2};sheet.E2={t:'s',v:'000123',z:'@'};
+ assert.deepEqual(Array.from(X.utils.sheet_to_json(sheet,{header:1})[0]),EARLY_FILE_HEADER);
+ assert.equal(sheet.C1.v,'Số đơn mua CRM (DMH)');assert.equal(sheet.D1.v,'Số đơn của NCC');assert.equal(sheet.E1,undefined);
+ assert.equal(sheet.C2.z,'@');assert.equal(sheet.D2.z,'@');
+ sheet.A2={t:'s',v:'031106000',z:'@'};sheet.B2={t:'n',v:2};sheet.D2={t:'s',v:'000123',z:'@'};
  const roundtrip=readEarlyRequestWorkbook(X,X.read(X.write(template,{type:'buffer',bookType:'xlsx'}),{type:'buffer'}));
  assert.deepEqual(roundtrip.errors,[]);assert.equal(roundtrip.lines[0].orderNo,'');assert.equal(roundtrip.lines[0].supplierOrderNo,'000123');
 });

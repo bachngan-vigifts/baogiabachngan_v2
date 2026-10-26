@@ -16,13 +16,13 @@ window.ui=initPurchases({root:document.querySelector('#root'),api,toast:console.
 </script>`;
 const server=createServer(async(req,res)=>{try{res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':req.url.endsWith('.css')?'text/css':'text/html; charset=utf-8');res.end(req.url==='/trial-ui/test'?html:await readFile(repo+req.url));}catch{res.writeHead(404).end();}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
 const ctx={};runInNewContext(await readFile(repo+'/trial-ui/xlsx.full.min.js','utf8'),ctx);const X=ctx.XLSX;
-const buffer=(qty,crm='',supplier='NCC-001')=>{const b=X.utils.book_new();X.utils.book_append_sheet(b,X.utils.aoa_to_sheet([['Mã hàng','Tên sản phẩm','Số lượng xin trước','Số đơn mua CRM (DMH)','Số đơn của NCC'],['031106000','Tên tham khảo',qty,crm,supplier]]),'Xin hàng trước');return Buffer.from(new Uint8Array(X.write(b,{bookType:'xlsx',type:'array'})));};
+const buffer=(qty,crm='',supplier='NCC-001')=>{const b=X.utils.book_new();X.utils.book_append_sheet(b,X.utils.aoa_to_sheet([['Mã hàng','Số lượng xin trước','Số đơn mua CRM (DMH)','Số đơn của NCC'],['031106000',qty,crm,supplier]]),'Xin hàng trước');return Buffer.from(new Uint8Array(X.write(b,{bookType:'xlsx',type:'array'})));};
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
 try{for(const width of [390,1280]){const context=await browser.newContext({viewport:{width,height:844}});const origin='http://127.0.0.1:'+server.address().port;await context.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port+'/trial-ui/test');await page.waitForFunction(()=>window.ready);
  await page.getByRole('button',{name:'Xin hàng trước bằng file',exact:true}).click();assert.ok(await page.locator('.early-file-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth+1),'mobile dialog stays within viewport');
  const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'⬇ Tải file mẫu',exact:true}).click()]);assert.equal(download.suggestedFilename(),'mau-xin-hang-truoc.xlsx');
- const template=X.read(await readFile(await download.path()),{type:'buffer',cellNF:true});assert.equal(template.Sheets[template.SheetNames[0]].A2.z,'@');
+ const template=X.read(await readFile(await download.path()),{type:'buffer',cellNF:true});assert.equal(template.Sheets[template.SheetNames[0]].A2.z,'@');assert.deepEqual(Array.from(X.utils.sheet_to_json(template.Sheets[template.SheetNames[0]],{header:1})[0]),['Mã hàng','Số lượng xin trước','Số đơn mua CRM (DMH)','Số đơn của NCC']);
  await page.getByLabel('File xin hàng trước').setInputFiles({name:'xin.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:buffer(21)});
  await page.waitForFunction(()=>document.querySelector('.early-file-dialog').textContent.includes('Chỉ còn'));
  assert.equal(await page.getByRole('button',{name:'Lưu phiếu nháp',exact:true}).isDisabled(),true);assert.equal(await page.evaluate(()=>writes.length),0);
@@ -36,7 +36,7 @@ try{for(const width of [390,1280]){const context=await browser.newContext({viewp
  await page.evaluate(()=>window.ambiguous=false);
  await page.getByLabel('File xin hàng trước').setInputFiles({name:'xin.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:buffer(5)});
  await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Lưu phiếu nháp').disabled);
- assert.ok((await page.locator('.early-file-dialog').textContent()).includes('PO-a1 (5)'));
+ assert.ok((await page.locator('.early-file-dialog').textContent()).includes('PO-a1 (5)'));assert.ok((await page.locator('.early-file-dialog').textContent()).includes('Ly chuẩn theo đơn mua'));
  await page.getByRole('button',{name:'Lưu phiếu nháp',exact:true}).click();
  await page.getByRole('button',{name:'Thử lưu lại',exact:true}).click();
  await page.getByRole('link',{name:'Mở phiếu / Gửi NCC',exact:true}).waitFor();
