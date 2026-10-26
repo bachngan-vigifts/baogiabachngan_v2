@@ -42,7 +42,7 @@ test('CSS chỉ chuyển bố cục báo giá ở màn hình tối đa 850px và
 });
 
 test('dòng trống mobile giữ số lượng, đơn giá và thành tiền; nút thêm sản phẩm luôn hiện', () => {
-  assert.match(app, /const manual = !r\.sku && !r\.image/);
+  assert.match(app, /const manual = simpleManualLine\(r\)/);
   assert.match(app, /class="\$\{manual \? 'manual-line' : ''\}"/);
   assert.match(app, /Tên phụ phí \/ nội dung thêm/);
   assert.doesNotMatch(css, /#view-editor \[data-quote-panel='products'\] > \.card-title-row #pick-products \{ display: none; \}/);
