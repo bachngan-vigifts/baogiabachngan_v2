@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {and,eq} from 'drizzle-orm';
 import {setupEarly} from '../helpers/purchase-early-fixture.ts';
 import {products,warehouses} from '../../src/modules/catalog/schema.ts';
-import {incomingShipments,supplierReceipts} from '../../src/modules/suppliers/schema.ts';
+import {incomingShipments,incomingShipmentLines,supplierReceipts,receiptJobs} from '../../src/modules/suppliers/schema.ts';
 import {stockBalances,stockMoves} from '../../src/modules/inventory/schema.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
@@ -32,6 +32,8 @@ test('accepted early request receives partial quantities through existing receip
  const key=crypto.randomUUID(),first=ok(await f.receive(4,key),201);assert.equal(await f.balance(),5);
  const repeat=ok(await f.receive(4,key));assert.equal(repeat.receiptId,first.receiptId);assert.equal(await f.balance(),5);
  assert.equal(ok(await f.context()).lines[0].remaining,6);
+ ok(await f.call('/purchase-early-requests/'+f.id,f.cookies.mgr,'DELETE',{}),409);
+ ok(await f.call('/purchase-early-requests/'+f.id+'/split',f.cookies.mgr,'POST',{}),409);
  ok(await f.receive(7),409);assert.equal(await f.balance(),5);
  ok(await f.receive(6),201);assert.equal(await f.balance(),11);ok(await f.context(),409);
  const listed=ok(await f.call('/purchase-early-requests?id='+f.id,f.cookies.kho));assert.equal(listed.canReceive,true);
@@ -39,6 +41,25 @@ test('accepted early request receives partial quantities through existing receip
  const calendar=ok(await f.call('/purchase-receiving-calendar?type=early',f.cookies.kho));assert.equal(calendar.rows.some((r:any)=>r.requestId===f.id),false);
  assert.equal((await f.db.select().from(supplierReceipts)).length,2);
  assert.equal((await f.db.select().from(stockMoves).where(eq(stockMoves.refType,'supplier_receipt'))).length,2);
+});
+test('CRM-only receipt skips outbox, preserves inventory/provenance and caps receipt to requested SKUs/quantities',async()=>{
+ const f=await fixture();ok(await f.accept());const key=crypto.randomUUID();
+ const body={clientKey:key,earlyRequestId:f.id,receivedDate:'2026-10-24',warehouse:'KHO NHẬN',createSapo:false,lines:[{lineId:'line-a1',goodQty:4,damagedQty:0}]};
+ const first=ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',body),201);
+ assert.equal(await f.balance(),5);assert.equal((await f.db.select().from(receiptJobs)).length,0);
+ const row=(await f.db.select().from(supplierReceipts).where(eq(supplierReceipts.id,first.receiptId)))[0]!;
+ assert.equal(row.createSapo,false);assert.equal(row.sapoStatus,'not_needed');
+ assert.equal(first.receipts.find((r:any)=>r.id===row.id).createSapo,false);
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',body));assert.equal(await f.balance(),5);
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{...body,createSapo:true}),409);
+ assert.equal(ok(await f.context()).lines[0].remaining,6);
+ await f.db.insert(incomingShipmentLines).values({id:'outside-request',shipmentId:'a1',lineNo:2,sku:'OTHER',name:'Không xin',unit:'Cái',quantity:20});
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{...body,clientKey:crypto.randomUUID(),lines:[{lineId:'outside-request',goodQty:1,damagedQty:0}]}),409);
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{...body,clientKey:crypto.randomUUID(),lines:[{lineId:'line-a1',goodQty:7,damagedQty:0}]}),409);
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{...body,clientKey:crypto.randomUUID(),createSapo:'false'}),400);
+ const yes=ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{...body,clientKey:crypto.randomUUID(),createSapo:true,lines:[{lineId:'line-a1',goodQty:1,damagedQty:0}]}),201);
+ assert.equal((await f.db.select().from(receiptJobs).where(eq(receiptJobs.receiptId,yes.receiptId))).length,1);
+ assert.equal(await f.balance(),6);
 });
 test('server enforces receipt permission, accepted allocation, parent order state and membership',async()=>{
  const f=await fixture();ok(await f.accept());

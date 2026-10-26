@@ -34,7 +34,7 @@ async function setup({manager=true,portal=false,status='submitted',receive=false
     return{canViewPortal:manager,canReceive:receive,requests:[{id:'r1',createdAt:'2026-10-23T01:00:00Z',pickupDate:'2026-10-24',requestStatus:status,status:accepted?'accepted':'pending',lines:[{id:'l1',sku:'SKU1',name:'Ly',quantity:20,unit:'Cái',status:accepted?'accepted':'pending',allocations:[{id:'a1',supplierId:'s1',supplierName:'NCC A',quantity:20,remainingToReceive:accepted?remaining:0,status:accepted?'accepted':'pending',orderId:'o1',ticketNumber:'PO1'}]}]}]};
   };
   const ui=context.initEarlyRequests({api,host,portal,onSaved:async()=>saved++});await ui.load();
-  return{host,body,calls,get saved(){return saved;},fail:()=>fail=true,receiveLink:()=>all(host).find(n=>n.tag==='a'&&n.textContent.startsWith('Nhận hàng')),button:(text:string)=>all(body).concat(all(host)).find(n=>n.tag==='button'&&n.textContent===text)};
+  return{host,body,calls,get saved(){return saved;},fail:()=>fail=true,receiveLink:()=>all(host).find(n=>n.tag==='a'&&n.textContent.startsWith('Nhận theo phiếu')),button:(text:string)=>all(body).concat(all(host)).find(n=>n.tag==='button'&&n.textContent===text)};
 }
 test('Manager xác nhận từ cạnh trạng thái: đúng mã/NCC, tải lại và không gửi trùng',async()=>{
   const s=await setup();await s.button('Manager xác nhận thay NCC')!.click();

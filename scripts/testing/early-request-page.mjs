@@ -11,6 +11,7 @@ import {purchaseEarlyRequests,purchaseEarlyRequestLines,purchaseEarlyRequestAllo
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const f=await setupEarly(),root=fileURLToPath(new URL('../../trial-ui/',import.meta.url));
 const headers=[],lines=[],allocations=[];for(let i=0;i<22;i++){const id='browser-'+String(i).padStart(3,'0');headers.push({id,clientKey:id,payloadHash:'fixture',createdBy:'mgr',createdAt:'2026-10-26T00:00:00Z',pickupDate:'2026-10-26',status:i===0?'draft':'submitted'});lines.push({id:id+'-line',requestId:id,lineNo:1,sku:'031106000',name:'Ly kiểm thử',unit:'Cái',quantity:1});allocations.push({id:id+'-a',requestLineId:id+'-line',purchaseLineId:'line-a1',supplierId:'a',quantity:1,status:'pending'});}
+await f.db.insert(incomingShipmentLines).values({id:'unrequested',shipmentId:'a1',lineNo:99,sku:'OUTSIDE',name:'Không xin hàng',unit:'Cái',quantity:20});
 await f.db.insert(purchaseEarlyRequests).values(headers);await f.db.insert(purchaseEarlyRequestLines).values(lines);await f.db.insert(purchaseEarlyRequestAllocations).values(allocations);
 const users={};for(const role of ['mgr','emp'])users[role]=(await f.call('/me',f.cookies[role])).data.user;
 let failReads=0;const writes=[];
@@ -41,8 +42,15 @@ try{for(const width of [390,1280]){
  await page.waitForFunction(()=>!document.querySelector('dialog[open] button[title="Lưu nháp trước khi gửi"]'));
  const send=edit.getByRole('button',{name:'Gửi NCC',exact:true});await send.waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('dialog[open] button')].some(b=>b.textContent==='Gửi NCC'&&!b.disabled));await send.click();await edit.waitFor({state:'hidden'});
  await clickAction(page,'Manager xác nhận thay NCC');const confirm=page.locator('dialog.early-request-dialog[open]');await confirm.getByRole('button',{name:'Xác nhận 1 phiếu',exact:true}).click();await confirm.waitFor({state:'hidden'});
- const receive=page.locator('.early-page-detail a').filter({hasText:'Nhận hàng ·'}).first();await receive.waitFor({state:'attached'});assert.ok((await receive.getAttribute('href')).includes('earlyRequestId='+encodeURIComponent(requestId)));
+ const receive=page.locator('.early-page-detail a').filter({hasText:'Nhận theo phiếu ·'}).first();await receive.waitFor({state:'attached'});assert.ok((await receive.getAttribute('href')).includes('earlyRequestId='+encodeURIComponent(requestId)));
  assert.equal(await page.locator('.early-page-detail .early-request-card').count(),1,'saving/submitting/confirming remains scoped to the selected request');
+ const receiveHref=await receive.getAttribute('href');await page.goto(origin+'/'+receiveHref);
+ const choice=page.locator('dialog.receipt-sapo-choice[open]');await choice.waitFor();await choice.getByRole('button',{name:'Đóng',exact:true}).click();
+ const receiveAction=page.locator('.sup-drawer').getByRole('button',{name:'Nhận hàng',exact:true,includeHidden:true});await receiveAction.waitFor({state:'attached'});if(!await receiveAction.isVisible())await receiveAction.evaluate(n=>n.closest('[popover]')?.showPopover());await receiveAction.click();
+ await choice.waitFor();await choice.getByRole('button',{name:'Không — chỉ nhập CRM',exact:true}).click();
+ await page.locator('.recv-card').waitFor();assert.equal(await page.locator('.recv-card').count(),1);assert.equal(await page.locator('.recv-card input[type=number]').first().getAttribute('max'),'2');await page.locator('.recv-card').getByRole('button',{name:'Đủ 2',exact:true}).click();assert.equal(await page.locator('.recv-card input[type=number]').first().inputValue(),'2');assert.ok(!await page.locator('.recv-card').filter({hasText:'OUTSIDE'}).count());
+ await page.goto(origin+'/#/early-requests/'+requestId);await page.locator('.early-request-card').waitFor();
+
  await page.screenshot({path:screenshotDir+'/detail-'+width+'.png'});await page.locator('.early-page-back').click();await page.waitForFunction(()=>document.querySelectorAll('.early-page-card').length===1);assert.equal(await page.getByRole('searchbox').inputValue(),requestId);
  const before=writes.length,download=page.waitForEvent('download');await clickAction(page,'Tải file mẫu');assert.equal((await download).suggestedFilename(),'mau-xin-hang-truoc.xlsx');assert.equal(writes.length,before);
  await clickAction(page,'Xin hàng bằng file');await page.locator('.early-file-dialog').waitFor();await page.locator('.early-file-dialog').getByRole('button',{name:'Đóng',exact:true}).click();assert.equal(writes.length,before,'opening import never saves automatically');
@@ -64,12 +72,22 @@ try{for(const width of [390,1280]){
  assert.equal(await page.locator('.early-request-card').first().locator('.early-request-line').count(),2);
  const product=page.locator('.early-product-link').filter({hasText:fullName}).first();await product.click();
  await page.locator('dialog.product-card[open]').waitFor();await page.locator('dialog.product-card[open] .modal-foot button[data-x]').click();
+ assert.equal(await page.locator('.early-request-head').first().evaluate(n=>n.firstElementChild.tagName),'INPUT');
+ const pendingColor=await page.locator('.early-status-pending').first().evaluate(n=>getComputedStyle(n).backgroundColor);
  await page.getByRole('checkbox',{name:'Chọn tất cả phiếu chờ xác nhận',exact:true}).check();
  await clickAction(page,'Xác nhận đã chọn (2)');const batchDialog=page.locator('dialog.early-request-dialog[open]');
  await batchDialog.getByRole('button',{name:'Xác nhận 2 phiếu',exact:true}).click();await batchDialog.waitFor({state:'hidden'});
  await page.waitForFunction(()=>!document.querySelector('.early-request-card input[type=checkbox]'));
+ assert.notEqual(await page.locator('.early-status-accepted').first().evaluate(n=>getComputedStyle(n).backgroundColor),pendingColor);
  const actors=await f.client.query('select responded_by,status from purchase_early_request_allocations where id like $1',[groupedId+'-%']);assert.equal(actors.rows.length,4);assert.ok(actors.rows.every(r=>r.responded_by==='mgr'&&r.status==='accepted'));
+
  await page.screenshot({path:screenshotDir+'/grouped-'+width+'.png'});assert.deepEqual(errors,[]);
+ await clickAction(page,'Tách thành 2 phiếu NCC');const splitDialog=page.locator('dialog.early-request-dialog[open]');await splitDialog.getByRole('button',{name:'Xác nhận tách phiếu',exact:true}).click();await splitDialog.waitFor({state:'hidden'});
+ await page.waitForFunction(parent=>{const cards=[...document.querySelectorAll('.early-request-card')];return cards.length===2&&cards.every(c=>c.dataset.requestId!==parent);},groupedId);
+ const childId=await page.locator('.early-request-card').first().getAttribute('data-request-id');assert.notEqual(childId,groupedId);
+ const deleteButton=page.getByRole('button',{name:'Xoá phiếu',exact:true,includeHidden:true}).first();if(!await deleteButton.isVisible())await deleteButton.evaluate(n=>n.closest('[popover]')?.showPopover());await deleteButton.click();const deleteDialog=page.locator('dialog.early-request-dialog[open]');await deleteDialog.getByRole('button',{name:'Xác nhận xoá phiếu',exact:true}).click();await deleteDialog.waitFor({state:'hidden'});
+ await page.waitForFunction(()=>location.hash.split('?')[0]==='#/early-requests');assert.equal((await f.call('/purchase-early-requests?id='+childId,f.cookies.mgr)).status,404);
+
  await page.evaluate(({token,user})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{token:f.cookies.emp.split('=')[1],user:users.emp});await page.goto(origin+'/#/early-requests');await page.reload();await page.locator('.early-page-card').first().waitFor();assert.equal(await page.getByRole('button',{name:'Xin hàng bằng file',exact:true}).isVisible(),false);
  console.log(JSON.stringify({width,pagination:true,sidebarKeyboard:true,footerPreserved:true,draftSubmitConfirm:true,template:true,roleGuard:true,errors}));await context.close();
  }

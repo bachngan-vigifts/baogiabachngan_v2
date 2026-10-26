@@ -4,7 +4,7 @@ import { canUsePurchasing } from '../modules/suppliers/domain/purchasing.ts';
 import { cashReconciliations } from '../modules/sales/cash-schema.ts';
 import { posShifts } from '../modules/sales/pos-schema.ts';
 import { can } from '../modules/staff/domain/permissions.ts';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import type { SessionState, StaffEnv } from '../modules/staff/api/auth-routes.ts';
@@ -34,7 +34,7 @@ export function registerNavigationCounts(router: Router<StaffEnv>) {
     const early=incoming.length?await db.selectDistinct({id:purchaseEarlyRequests.id}).from(purchaseEarlyRequests)
       .innerJoin(purchaseEarlyRequestLines,eq(purchaseEarlyRequestLines.requestId,purchaseEarlyRequests.id))
       .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
-      .where(inArray(purchaseEarlyRequestAllocations.purchaseLineId,incoming.map(l=>l.lineId))):[];
+      .where(and(isNull(purchaseEarlyRequests.deletedAt),inArray(purchaseEarlyRequestAllocations.purchaseLineId,incoming.map(l=>l.lineId)))):[];
     return json({ receiving: new Set(incoming.map(l => l.orderId)).size+early.length, cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
       purchases: purchases.all - purchases.received - purchases.cancelled });
   }, 'business');

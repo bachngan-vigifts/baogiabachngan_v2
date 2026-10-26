@@ -323,6 +323,7 @@ export const supplierReceipts = pgTable('supplier_receipts', {
   /** Khoá chống bấm lặp do trình duyệt sinh cho mỗi lần mở hộp nhận hàng: gửi lại cùng khoá → trả phiếu đã ghi, không tạo thêm. */
   clientKey: text('client_key').notNull(),
   sapoStatus: text('sapo_status', { enum: SAPO_STATUSES }).notNull().default('pending'),
+  createSapo:boolean('create_sapo').notNull().default(true),
   sapoReceiptCode: text('sapo_receipt_code').notNull().default(''),
   sapoPurchaseOrderId: text('sapo_purchase_order_id').notNull().default(''),
   sapoReceiptId: text('sapo_receipt_id').notNull().default(''),

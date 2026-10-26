@@ -1,5 +1,5 @@
 import { earlyReceiptAvailability } from './early-receiving.ts';
-import { eq } from 'drizzle-orm';
+import { eq,isNull } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../early-request-schema.ts';
@@ -21,7 +21,7 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
   const early = type === 'purchase' ? [] : await db.select({request:purchaseEarlyRequests,line:purchaseEarlyRequestLines,allocation:purchaseEarlyRequestAllocations,supplierName:supplierTable.name})
     .from(purchaseEarlyRequests).innerJoin(purchaseEarlyRequestLines,eq(purchaseEarlyRequestLines.requestId,purchaseEarlyRequests.id))
     .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
-    .innerJoin(supplierTable,eq(supplierTable.id,purchaseEarlyRequestAllocations.supplierId));
+    .innerJoin(supplierTable,eq(supplierTable.id,purchaseEarlyRequestAllocations.supplierId)).where(isNull(purchaseEarlyRequests.deletedAt));
   const suppliers = [...new Map([...all.map(l => ({id:l.supplierId,name:l.supplierName})),...early.map(l=>({id:l.allocation.supplierId,name:l.supplierName}))].map(s=>[s.id,s])).values()]
     .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   type Line = {lineId:string;sku:string;name:string;unit:string;left:number;requestedQty?:number;status?:string;canConfirm?:boolean;receiptOptions?:{orderId:string;ticketNumber:string;remaining:number}[]};

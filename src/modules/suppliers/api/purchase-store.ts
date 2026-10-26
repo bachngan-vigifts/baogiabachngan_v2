@@ -109,7 +109,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
         hasAttachment: Boolean(p.attachmentKey), attachmentName: p.attachmentName, by, createdAt: p.createdAt, voidedAt: p.voidedAt, voidReason: p.voidReason })) : [],
       receipts: receipts.map(({ r, by }) => ({ id: r.id, shipmentId:r.shipmentId, receiptNo: r.receiptNo, receivedDate: r.receivedDate, by, warehouse: r.warehouse, note: r.note,
         historicalImport:r.clientKey.startsWith('import:'), sapoPurchaseOrderId:r.sapoPurchaseOrderId, sapoReceiptId:r.sapoReceiptId, sapoReceiptUrl:r.sapoReceiptUrl, sapoVerifiedAt:r.sapoVerifiedAt, sapoUpdatedAt:r.sapoUpdatedAt, job:jobs.find(j=>j.receiptId===r.id) ?? null,
-        sapoStatus: r.sapoStatus, sapoReceiptCode: r.sapoReceiptCode, sapoNote: r.sapoNote, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
+        createSapo:r.createSapo,sapoStatus: r.sapoStatus, sapoReceiptCode: r.sapoReceiptCode, sapoNote: r.sapoNote, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
         lines: receiptLines.filter(x => x.l.receiptId === r.id).map(x => ({ lineId: x.l.lineId, sku: x.l.sku, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty, note: x.l.note })) })),
       // Nội dung lịch sử có số tiền (duyệt, nhập file, giá nhập, lịch trả, trả / huỷ trả, sửa nháp): người không xem được giá chỉ thấy tên thao tác.
       events: events.map(({ e, by }) => ({ at: e.at, by, action: e.action, summary: prices || !MONEY_EVENTS.has(e.action) ? e.summary : MONEY_EVENT_LABEL[e.action] ?? 'Cập nhật đơn mua' })),
