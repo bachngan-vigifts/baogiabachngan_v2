@@ -8,6 +8,11 @@ on:
     branches: [main]
     paths: ['src/**', 'supabase/**', 'migrations/postgres/**', 'package-lock.json', '.github/workflows/deploy-api.yml']
   workflow_dispatch:
+    inputs:
+      backfill_legacy_addresses:
+        description: 'Bổ sung địa chỉ đơn Web Lock cũ (bảo trì riêng, có thể vượt timeout Edge)'
+        type: boolean
+        default: false
 concurrency: deploy-api
 jobs:
   deploy:
@@ -124,7 +129,9 @@ jobs:
             echo "::warning::Đồng bộ GHN chạy xong nhưng có mã vận đơn cần kiểm tra."
           fi
       - name: Bổ sung địa chỉ GHN cho đơn Web Lock cũ
-        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != '' && env.WEB_ORDER_ACTION_TOKEN != ''
+        # This optional data-maintenance task scans up to 1,000 orders and can exceed
+        # Edge's 150s idle limit. It must never block a normal, healthy API/UI release.
+        if: github.event_name == 'workflow_dispatch' && inputs.backfill_legacy_addresses == true && env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != '' && env.WEB_ORDER_ACTION_TOKEN != ''
         run: |
           curl --fail-with-body --silent --show-error --max-time 600 \
             -X POST "https://$PROJECT_REF.supabase.co/functions/v1/baogia-v2-api/api/staff/integrations/woocommerce/lock/backfill-addresses" \
