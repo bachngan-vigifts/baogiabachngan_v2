@@ -1,4 +1,6 @@
 import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
+import { canConfirmDelivery, deliveryConfirmations } from './delivery-confirmation.ts';
+import { auditLogs } from '../../../core/db/schema.ts';
 import { isGhnTracked } from '../domain/ghn-status.ts';
 import { assertCrmOrderCompletion } from './crm-stock-lifecycle.ts';
 import { ensurePackingSchedule } from './delivery-store.ts';
@@ -517,6 +519,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     ]);
     const [shipLines, shipPhotos] = ships.length ? await Promise.all([db.select().from(deliveryLines).where(inArray(deliveryLines.deliveryId, ships.map(s => s.id))),
       photoUrls(db, c.env.files, 'delivery', ships.filter(s => s.status === 'delivered').map(s => s.id))]) : [[], new Map<string, string[]>()];
+    const confirmations=await deliveryConfirmations(db,ships);
     // Cho bản in đơn đặt hàng: mã khách hàng, người phụ trách, người soạn.
     const [cust] = order.customerId ? await db.select({ code: customers.customerCode, email: customers.email }).from(customers).where(eq(customers.id, order.customerId)).limit(1) : [];
     const people = await db.select({ id: employees.id, name: employees.name, phone: employees.phone, role: employees.role }).from(employees)
@@ -536,7 +539,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
         sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: await canCreateSapoInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
-      deliveries: ships.map(s => ({ ...s, lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
+      deliveries: ships.map(s => ({ ...s,...confirmations.get(s.id),canConfirm:canConfirmDelivery(viewer(c),order),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),order),lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
       receivable: receivable(net.schedules, net.payments, vietnamDate().iso), canVoidPayment: canVoidPayment(viewer(c)),
@@ -1067,7 +1070,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const carrier = focusId ? '' : sp.get('carrier') || '', invoice = focusId ? '' : sp.get('invoice') || '';
     const scope = and(sql`${salesOrders.channel} <> 'pos'`, deliveryScope(c));
     const [rows, ownerOptions, carrierOptions] = await Promise.all([c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
-      contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address, ownerName: employees.name, invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
+      contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address, ownerId:salesOrders.ownerId,orderCreatedBy:salesOrders.createdBy,ownerName: employees.name, invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
       .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
       .where(and(scope, focusId ? eq(deliveries.id, focusId) : undefined, isDate(from) ? gte(deliveries.plannedDate, from!) : undefined, isDate(to) ? lte(deliveries.plannedDate, to!) : undefined,
@@ -1085,9 +1088,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
     // Liên hệ / địa chỉ của khách trên đơn: kho (không xem được danh bạ khách) vẫn có đủ thông tin để liên hệ giao hàng.
     const photos = await photoUrls(c.env.db, c.env.files, 'delivery', rows.filter(r => r.d.status === 'delivered').map(r => r.d.id));
+    const confirmations=await deliveryConfirmations(c.env.db,rows.map(r=>r.d));
     return json({ canCancel: !isWarehouseMember(viewer(c)), deliveries: rows.map(r => ({ ...r.d, shippingFee: isWarehouseMember(viewer(c)) ? null : r.d.shippingFee, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
       customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress, ownerName: r.ownerName ?? '', invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo,
-      photos: photos.get(r.d.id) ?? [] })),
+      ...confirmations.get(r.d.id),canConfirm:canConfirmDelivery(viewer(c),{ownerId:r.ownerId,createdBy:r.orderCreatedBy}),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),{ownerId:r.ownerId,createdBy:r.orderCreatedBy}),photos: photos.get(r.d.id) ?? [] })),
       filterOptions: { owners: ownerOptions, carriers: carrierOptions.map(x => x.carrier).filter(Boolean) } });
   }, 'business');
 
@@ -1126,9 +1130,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (!DELIVERY_STATUSES.includes(status)) throw new AppError(400, 'Trạng thái giao hàng không hợp lệ.');
     if (status === 'cancelled' && isWarehouseMember(me)) throw new AppError(403, 'Kho không huỷ được chuyến giao. Báo nhân viên phụ trách đơn hoặc Manager.');
     const photos = status === 'delivered' ? parsePhotos(body.photos, { min: isWarehouseMember(me) ? 1 : 0, required: 'Chụp 1–3 ảnh hàng đã giao hoặc biên bản ký nhận.' }) : [];
-    const [row] = await c.env.db.select({ d: deliveries, status: salesOrders.status }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+    const [row] = await c.env.db.select({ d: deliveries, status: salesOrders.status,ownerId:salesOrders.ownerId,orderCreatedBy:salesOrders.createdBy }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
       .where(and(eq(deliveries.id, c.params.id!), deliveryScope(c))).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy lịch giao.');
+    if(!canConfirmDelivery(me,{ownerId:row.ownerId,createdBy:row.orderCreatedBy}))throw new AppError(403,'Chỉ nhân viên phụ trách, Sale Admin, Kho hoặc Manager được xác nhận chuyến giao.');
     if (row.d.status === 'delivered') throw new AppError(409, 'Chuyến này đã giao xong, không đổi trạng thái được.');
     if (row.d.status === 'cancelled') throw new AppError(409, 'Chuyến đã huỷ. Lên lịch chuyến mới nếu cần giao lại.');
     if (row.status === 'cancelled' && status !== 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không giao được.');
@@ -1146,16 +1151,19 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         await tx.select({id:salesOrders.id}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
         await assertPlannedDispatch(tx,row.d.orderId,row.d.id);
       }
-      const [freshDeliveryOrder]=await tx.select({status:salesOrders.status}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
+      const [freshDeliveryOrder]=await tx.select({status:salesOrders.status,ownerId:salesOrders.ownerId,createdBy:salesOrders.createdBy}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
       if (!freshDeliveryOrder || (freshDeliveryOrder.status==='cancelled' && status!=='cancelled')) throw new AppError(409,'Đơn đã huỷ, không giao được.');
+      if(!canConfirmDelivery(me,freshDeliveryOrder))throw new AppError(403,'Quyền phụ trách chuyến giao vừa thay đổi.');
       const [carrierDelivery] = await tx.select().from(deliveries).where(eq(deliveries.id,row.d.id)).for('update');
       if (flowOrder?.channel === 'pos' && carrierDelivery && isGhnTracked(carrierDelivery) && status !== 'cancelled')
         throw new AppError(409,'Vận đơn GHN tự cập nhật theo hãng vận chuyển. Bấm Đồng bộ GHN để lấy trạng thái mới nhất; không đánh dấu giao hàng thủ công.','GHN_STATUS_MANAGED');
       if(status==='cancelled') await assertNotDispatched(tx,row.d.orderId,row.d.id);
       // Đổi có điều kiện trạng thái cũ (trong giao dịch): hai lần bấm "Đã giao" cùng lúc chỉ một lần cộng số đã giao.
-      const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: nowIso() })
+      const confirmedAt=nowIso();
+      const done = await tx.update(deliveries).set({ status, deliveredAt: deliveredOn, updatedAt: confirmedAt,confirmedBy:me.id,confirmedAt,confirmedStatus:status })
         .where(and(eq(deliveries.id, row.d.id), inArray(deliveries.status, [...from[status]!] as typeof DELIVERY_STATUSES[number][]))).returning({ id: deliveries.id });
       if (!done.length) throw new AppError(409, 'Chuyến giao vừa được người khác cập nhật. Tải lại trang.', 'DELIVERY_CHANGED');
+      await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:me.id,module:'sales',action:'delivery-status-confirm',entityType:'deliveries',entityId:row.d.id,data:JSON.stringify({orderId:row.d.orderId,from:carrierDelivery?.status,to:status,actorName:me.name,positionId:me.positionId}),createdAt:confirmedAt});
       if(['in_transit','delivered'].includes(status))await recordDispatch(tx,row.d.orderId,row.d.id,me.id,status);
       if(status==='in_transit'&&saleFlowOf(flowOrder?.posSnapshot)==='prepaid')await issuePosDelivery(tx,row.d.orderId,row.d.id,me.id,true);
       if (status !== 'delivered') return;

@@ -3173,7 +3173,7 @@ async function loadDeliveries() {
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
       <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small></td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
-      <td>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}</td>
+      <td>${pill(DELIVERY_STATUS, x.status)}${deliveryConfirmation(x)}${deliveryPhotos(x)}</td>
       <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
   } catch (e) { listError('deliveries', e); }
@@ -3185,8 +3185,9 @@ function deliveryReceiver(x) {
   return [esc(name), tel].filter(Boolean).join(' · ') || '<span class="muted">—</span>';
 }
 // Kho: nút "Đã giao" to, không có "Huỷ" (chỉ nhân viên phụ trách / Manager huỷ chuyến – máy chủ cũng chặn).
-const deliveryButtons = x => ['planned', 'in_transit'].includes(x.status)
-  ? `${x.status === 'planned' ? `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="in_transit">Đang giao</button>` : ''}<button class="btn ${isWarehouse() ? 'primary ship-done' : 'secondary small'}" data-ship="${esc(x.id)}" data-to="delivered">${isWarehouse() ? '✅ Đã giao' : 'Đã giao'}</button>${isWarehouse() ? '' : `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="cancelled">Huỷ</button>`}` : '';
+const deliveryButtons = x => x.canConfirm!==false&&['planned', 'in_transit'].includes(x.status)
+  ? `${x.status === 'planned' ? `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="in_transit">Đang giao</button>` : ''}<button class="btn ${isWarehouse() ? 'primary ship-done' : 'secondary small'}" data-ship="${esc(x.id)}" data-to="delivered">${isWarehouse() ? '✅ Đã giao' : 'Đã giao'}</button>${isWarehouse()||x.canCancel===false ? '' : `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="cancelled">Huỷ</button>`}` : '';
+const deliveryConfirmation=x=>x.confirmedBy&&x.confirmedAt?`<small class="ship-confirmation">Xác nhận ${esc(DELIVERY_STATUS[x.confirmedStatus]?.[0]||'giao hàng')} · ${esc(x.confirmedByName||x.confirmedBy)} · ${esc(new Date(x.confirmedAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}))}</small>`:'';
 /** Ảnh xác nhận đã giao (hàng đã giao / biên bản ký nhận) – bấm để xem lớn. */
 const deliveryPhotos = x => x.photos?.length ? `<span class="ship-photos">${x.photos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Ảnh giao hàng ${i + 1}" loading="lazy"></a>`).join('')}</span>` : '';
 // ----- công nợ
@@ -3724,7 +3725,7 @@ async function openOrder(id) {
   // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
   $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
       ${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { fmt: fmtDate }) : '<span class="muted">Chưa có</span>'}<small class="muted">Đổi ngày giao bằng nút "＋ Lên lịch giao".</small></div>`)
-    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · ${esc(x.deliveryNo)}<small>${[ghnTrackingText(x), x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${line?.name || ''}: ${fmtNum(l.qty)}`; }).join(' · ')].filter(Boolean).map(esc).join(' · ')}</small></span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
+    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · <a href="#/deliveries?deliveryId=${encodeURIComponent(x.id)}">${esc(x.deliveryNo)}</a><small>${[ghnTrackingText(x), x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${line?.name || ''}: ${fmtNum(l.qty)}`; }).join(' · ')].filter(Boolean).map(esc).join(' · ')}</small>${deliveryConfirmation(x)}</span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
   loadOrderPacking(o.id);
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
@@ -3753,26 +3754,55 @@ async function openOrder(id) {
  * Tiến trình sản phẩm (mọi người cùng theo dõi): Duyệt → Xuất kho → In mẫu → Sản xuất → Giao hàng (đơn không in thì bỏ In mẫu / Sản xuất).
  * Bước tự xong theo chứng từ / công việc; Manager bấm "Xong" ở một bước (xong luôn các bước trước) hoặc "Hoàn thành tất cả".
  */
+function progressDocuments(d,stage){
+  const order=d.order,refs=[],live=(d.packingMeta?.slips||[]).filter(s=>s.status!=='cancelled');
+  const link=(href,label)=>linkAllowed(href)?`<a href="${esc(href)}">${esc(label)}</a>`:esc(label);
+  if(stage==='approve')refs.push(link((d.contract?'#/contracts/':'#/orders/')+encodeURIComponent(order.id),d.contract?.contractNo||order.orderNo));
+  if(['approve','sample','production'].includes(stage)&&order.quoteId)refs.push(link('#/quotes/'+encodeURIComponent(order.quoteId),order.quoteNo||'Báo giá gốc'));
+  if(stage==='export')for(const slip of live)refs.push(link('#/packing/'+encodeURIComponent(slip.id),slip.slipNo));
+  if(stage==='delivered')for(const ship of d.deliveries.filter(s=>s.status!=='cancelled'))refs.push(link('#/deliveries?deliveryId='+encodeURIComponent(ship.id),ship.deliveryNo));
+  let actions='';
+  if((isManager()||state.user?.positionId==='sale-admin')&&order.status!=='cancelled'){
+    if(stage==='approve'&&order.status==='draft'){
+      const target=document.getElementById('order-confirm')||document.getElementById('order-submit');if(target)actions=`<button type="button" class="btn secondary small" data-progress-action="approve">${esc(target.textContent)}</button>`;
+    }
+    if(stage==='export'&&!['draft','delivered'].includes(order.status)){
+      const next=live.find(s=>s.status==='sent')||live.find(s=>s.status==='draft');
+      if(next)actions=`<a class="btn secondary small" href="#/packing/${encodeURIComponent(next.id)}">${next.status==='sent'?'Xác nhận xuất kho':'Kiểm tra / gửi kho'}</a>`;
+      else if(d.packingMeta?.canRequest)actions='<button type="button" class="btn secondary small" data-progress-action="packing">Lập phiếu xuất</button>';
+    }
+    if(stage==='delivered')actions=d.deliveries.filter(s=>s.status!=='cancelled').map(s=>{const buttons=deliveryButtons(s);return buttons?`<div class="progress-delivery-actions"><small>${esc(s.deliveryNo)}</small>${buttons}</div>`:'';}).join('');
+  }
+  return (refs.length?`<div class="progress-doc-links">${refs.join(' · ')}</div>`:'')+(actions?`<div class="progress-quick-actions">${actions}</div>`:'');
+}
 function renderProgress(d) {
   const box = $('#order-progress'), p = d.progress;
   box.hidden = !p; if (!p) return;
-  const cancelled = d.order.status === 'cancelled', canMark = isManager() && !cancelled;
+  const cancelled = d.order.status === 'cancelled', canMark = (isManager()||state.user?.positionId==='sale-admin') && !cancelled;
   const stockPending=p.physicalExportRequired&&p.stages.some(s=>s.key==='export'&&!s.done);
-  const by = s => s.by === 'auto' ? 'Tự động theo chứng từ' : s.by === 'task' ? `Hoàn thành việc${s.byName ? ' · ' + s.byName : ''}` : s.by === 'manual' ? `Manager đánh dấu${s.byName ? ' · ' + s.byName : ''}` : '';
+  const by = s => s.by === 'auto' ? 'Tự động theo chứng từ' : s.by === 'task' ? `Hoàn thành việc${s.byName ? ' · ' + s.byName : ''}` : s.by === 'manual' ? `Đánh dấu${s.byName ? ' · ' + s.byName : ''}` : '';
   box.innerHTML = `<div class="card-title-row"><h2 class="card-title">Tiến trình sản phẩm</h2>
       <span class="pill ${cancelled ? 'muted' : p.done ? 'ok' : 'info'}">${esc(p.label)}</span>
-      ${canMark && !p.done && !stockPending ? '<button type="button" class="btn secondary small" data-progress="all" title="Đánh dấu xong tất cả các bước (chỉ tiến trình – không đổi giao hàng, công nợ)">✓ Hoàn thành tất cả</button>' : ''}</div>
-    <ol class="progress-steps">${p.stages.map((s, i) => `<li class="${s.done ? 'done' : s.key === p.current ? 'current' : ''}">
+      ${canMark && isManager() && !p.done && !stockPending ? '<button type="button" class="btn secondary small" data-progress="all" title="Đánh dấu xong tất cả các bước (chỉ tiến trình – không đổi giao hàng, công nợ)">✓ Hoàn thành tất cả</button>' : ''}</div>
+    <ol class="progress-steps">${p.stages.map((s, i) => `<li data-progress-stage="${esc(s.key)}" class="${s.done ? 'done' : s.key === p.current ? 'current' : ''}">
       <span class="dot" aria-hidden="true">${s.done ? '✓' : i + 1}</span><b>${esc(s.label)}</b>
       <small>${s.done ? esc(by(s)) + (s.at ? ' · ' + fmtDate(s.at.slice(0, 10)) : '') : s.key === p.current ? 'Đang ở bước này' : 'Chưa tới'}</small>
-      ${canMark && !s.done && !(['approve','export'].includes(s.key) && p.physicalExportRequired) && !stockPending ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
-      ${canMark && s.by === 'manual' ? `<button type="button" class="link-btn muted" data-progress-undo="${esc(s.key)}" title="Bỏ đánh dấu tay ở bước này và các bước sau">Bỏ</button>` : ''}
+      ${canMark && (isManager()||['sample','production'].includes(s.key)) && !s.done && !(['approve','export'].includes(s.key) && p.physicalExportRequired) && !stockPending ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
+      ${canMark && (isManager()||['sample','production'].includes(s.key)) && s.by === 'manual' ? `<button type="button" class="link-btn muted" data-progress-undo="${esc(s.key)}" title="Bỏ đánh dấu tay ở bước này và các bước sau">Bỏ</button>` : ''}
+      ${progressDocuments(d,s.key)}
     </li>`).join('')}</ol>
     ${p.reconciliationRequired?'<p class="pill warn" role="alert">Đơn đã ghi nhận giao hàng nhưng chưa đủ chứng từ xuất kho. Cần đối soát phiếu xuất và sổ kho; không đánh dấu hoàn thành thay cho xuất hàng.</p>':''}
     ${p.physicalExportRequired?'<p class="muted small">Xuất kho chỉ hoàn thành theo phiếu xác nhận xuất đủ hàng đúng kho/nguồn; đánh dấu tiến trình không thay phiếu xuất.</p>':''}
     ${p.printing ? '' : '<p class="muted small">Đơn không có phí in nên không có bước In mẫu / Sản xuất.</p>'}`;
 }
 $('#order-progress').addEventListener('click', async e => {
+  const quick=e.target.closest('[data-progress-action]');
+  if(quick&&sales.order){
+    if(quick.disabled)return;quick.disabled=true;
+    try{if(quick.dataset.progressAction==='approve')(document.getElementById('order-confirm')||document.getElementById('order-submit'))?.click();
+      else{if($('#order-pack').disabled)await loadOrderPacking(sales.order.id);if(!$('#order-pack').disabled)$('#order-pack').click();else toast('Mọi dòng đã có phiếu hoặc đơn chưa cho phép lập phiếu.','err');}}
+    finally{if(quick.isConnected)quick.disabled=false;}return;
+  }
   const b = e.target.closest('[data-progress], [data-progress-undo]'); if (!b || !sales.order) return;
   const undo = b.dataset.progressUndo, stage = undo || b.dataset.progress;
   if (stage === 'all' && !await confirmBox('Đánh dấu xong tất cả các bước tiến trình? Chỉ là tiến trình theo dõi – không đổi lịch giao, công nợ, hoá đơn.', { title: 'Hoàn thành tất cả', ok: 'Hoàn thành' })) return;
@@ -3852,6 +3882,7 @@ async function loadOrderPacking(orderId) {
   let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
   if (sales.order?.id !== orderId) return;
   packing.lines = d.lines; packing.orderId = orderId;
+  if(sales.detail?.order?.id===orderId){sales.detail.packingMeta=d;renderProgress(sales.detail);}
   syncOrderPackingButton(d);
   const live = d.slips.filter(x => x.status !== 'cancelled'), drafts = live.filter(x => x.status === 'draft');
   if (!live.length) return;
@@ -3883,13 +3914,15 @@ $('#order-pack').addEventListener('click', async () => {
     // Đơn CRM đã trừ kho bán lúc duyệt: số dư kho bán đã trừ phần của chính đơn → cộng lại phần chưa đóng gói, chỉ tính kho bán.
     const soldWh = d.soldWarehouseId || '', ownLeft = new Map();
     for (const l of todo) if (l.sku) ownLeft.set(l.sku, (ownLeft.get(l.sku) || 0) + l.left);
-    const packAv = p => soldWh ? Math.max(0, (Number(p.stock?.[soldWh]) || 0) + (ownLeft.get(p.sku) || 0)) : Math.max(0, availableStock(p));
+    const scopedStock=new Map((d.stockAvailability||[]).map(s=>[s.sku,s]));
+    const packAv = p => soldWh ? Math.max(0, (Number(p.stock?.[soldWh]) || 0) + (ownLeft.get(p.sku) || 0))
+      : Math.max(0, availableStock(p)+(state.holds.get(p.sku)||[]).filter(h=>h.orderId===o.id).reduce((sum,h)=>sum+h.qty,0));
     $('#pack-lines').innerHTML = todo.map(l => {
-      const p = l.sku ? stock.get(l.sku) : null, av = p ? packAv(p) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock, incoming = p ? kindStock(p, 'incoming') : null;
+      const p = l.sku ? stock.get(l.sku) : null, scoped=scopedStock.get(l.sku),av = scoped?scoped.available:p ? packAv(p) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock, incoming = p ? kindStock(p, 'incoming') : null;
       return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}" data-incoming="${incoming ?? ''}">
         <div class="pack-head"><b>${esc(l.name)}</b><small>${esc(l.sku || 'Chưa có mã')} · ${esc(l.unit || '')} · đơn ${fmtNum(l.qty)}${l.packed ? ` · đã có phiếu ${fmtNum(l.packed)}` : ''}</small></div>
         <div class="pack-grid"><label>Cần đóng<input class="num-input" inputmode="decimal" data-need value="${fmtNum(l.left)}"></label>
-          <label>${soldWh ? `<span title="Tồn ${esc(o.warehouseName || 'kho bán')} + phần đơn này đã trừ lúc duyệt mà chưa đóng gói">Tồn kho bán</span>` : 'Tồn kho'}<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</span></label>
+          <label>${soldWh ? `<span title="Tồn ${esc(o.warehouseName || 'kho bán')} + phần đơn này đã trừ lúc duyệt mà chưa đóng gói">Tồn kho bán</span>` : scoped?`<span title="Tồn ${fmtNum(scoped.onHand)} − giữ cho đơn khác ${fmtNum(scoped.reservedOther)}; không trừ phần giữ của chính đơn này">Khả dụng · ${esc(o.warehouseName || 'kho bán')}</span>`:'Tồn kho'}<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</span></label>
           <label>Lấy từ kho<input class="num-input" inputmode="decimal" data-wh value="${fmtNum(fromStock)}"></label></div>
         <p class="pack-warn" ${short > 1e-9 ? '' : 'hidden'}>⚠️ Kho không đủ – nhập phần còn lại lấy từ đâu.</p>
         ${incoming > 0 ? `<p class="pack-incoming-hint" role="note"><b>Có hàng đang chờ về: ${fmtNum(incoming)} ${esc(p?.unit || l.unit || '')}</b><small>Tổng hàng chưa nhận từ các đơn mua NCC. Chọn “Hàng đang chờ về” rồi bấm “Xin giao trước” để lập phiếu nháp.</small></p>` : ''}

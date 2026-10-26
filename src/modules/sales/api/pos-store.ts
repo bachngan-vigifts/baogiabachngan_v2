@@ -204,9 +204,9 @@ async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[],
   for (const r of hereOrders) free.set(r.sku, (free.get(r.sku) ?? 0) + r.qty);
   return new Map(quotes.map(q => [q.sku, Math.max(0, q.qty - Math.max(0, free.get(q.sku) ?? 0))]));
 }
-export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: string) {
+export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: string, exceptOrderId?: string) {
   const now = posNow();
-  const [quotes, orders] = await Promise.all([
+  const [quotes, allOrders] = await Promise.all([
     db
       .select({ sku: stockHolds.sku, qty: sql<number>`sum(${stockHolds.qty})`.mapWith(Number) })
       .from(stockHolds)
@@ -214,6 +214,7 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
       .groupBy(stockHolds.sku),
     orderHolds(db, skus, warehouseId),
   ]);
+  const orders=exceptOrderId?allOrders.filter(order=>order.orderId!==exceptOrderId):allOrders;
   const out = new Map<string, number>();
   // Giữ hàng KHÔNG gắn kho – báo giá giữ hàng và đơn / HĐKT cũ chưa chọn kho bán – tính trên TỔNG tồn mọi kho. Kho quầy chỉ gánh
   // phần mà tồn trống ở các kho khác không đủ che: hàng giữ cho khách sỉ ở kho VIGIFTS không làm kho cửa hàng hiện "Hết hàng" (23/10/2026).

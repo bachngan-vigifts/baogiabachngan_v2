@@ -1,0 +1,35 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {and,eq} from 'drizzle-orm';
+import {setupWarehouseOps} from '../helpers/warehouse-approval-fixture.ts';
+import {inventoryAdjustments,stockBalances,stockMoves} from '../../src/modules/inventory/schema.ts';
+import {products} from '../../src/modules/catalog/schema.ts';
+import {auditLogs} from '../../src/core/db/schema.ts';
+test('employee submits immutable pending adjustments; only Manager posts once, including concurrent approval and replay',async()=>{
+ const f=await setupWarehouseOps(),body={clientKey:'adjustment-approval-001',warehouseId:'pos-wh',reason:'Kiểm kê lệch hai cái',lines:[{sku:'00123',qty:-2}],status:'approved',reviewedBy:'mgr'};
+ const balance=async()=>(await f.db.select().from(stockBalances).where(and(eq(stockBalances.sku,'00123'),eq(stockBalances.warehouseId,'pos-wh'))))[0]!.qty;
+ const r=await f.call('/inventory/adjustments',f.emp,'POST',body);assert.equal(r.status,201,JSON.stringify(r.data));assert.equal(r.data.status,'pending');assert.equal(await balance(),10);
+ const row=async()=>(await f.db.select().from(inventoryAdjustments).where(eq(inventoryAdjustments.id,r.data.id)))[0]!;
+ assert.equal((await row()).reviewedBy,null);assert.equal((await f.call('/inventory/adjustments?status=pending',f.mgr)).data.adjustments.length,1);
+ assert.equal((await f.call('/inventory/adjustments/'+r.data.id+'/review',f.emp,'POST',{decision:'approved'})).status,403);
+ const results=await Promise.all([1,2].map(()=>f.call('/inventory/adjustments/'+r.data.id+'/review',f.mgr,'POST',{decision:'approved',reviewedBy:'emp'})));assert.ok(results.every(r=>r.status===200));assert.equal(await balance(),8);
+ assert.equal((await row()).reviewedBy,'mgr');assert.ok((await row()).reviewedAt);
+ assert.equal((await f.db.select().from(stockMoves).where(eq(stockMoves.refId,r.data.id))).length,1);
+ assert.equal((await f.db.select().from(auditLogs).where(and(eq(auditLogs.entityId,r.data.id),eq(auditLogs.action,'adjustment-approved')))).length,1);
+ assert.equal((await f.call('/inventory/adjustments',f.emp,'POST',body)).status,200);assert.equal(await balance(),8);
+ assert.equal((await f.call('/inventory/adjustments',f.emp,'POST',{...body,reason:'Đổi nội dung'})).status,409);
+ const rejected=await f.call('/inventory/adjustments',f.emp,'POST',{...body,clientKey:'adjustment-reject-001'});assert.equal((await f.call('/inventory/adjustments/'+rejected.data.id+'/review',f.mgr,'POST',{decision:'rejected'})).status,400);
+ assert.equal((await f.call('/inventory/adjustments/'+rejected.data.id+'/review',f.mgr,'POST',{decision:'rejected',note:'Chưa có biên bản'})).status,200);assert.equal(await balance(),8);
+ assert.equal((await f.call('/inventory/adjustments/'+rejected.data.id+'/review',f.mgr,'POST',{decision:'approved'})).status,409);
+ const privacy=await f.call('/inventory/adjustments',f.other);assert.equal(privacy.status,200);assert.equal(privacy.data.adjustments.length,0,'other employee cannot read another requester');
+  await f.client.exec('create role anon;create role authenticated');
+ const access=await f.client.query("select relrowsecurity as rls,has_table_privilege('anon','inventory_adjustments','SELECT') as anon,has_table_privilege('authenticated','inventory_adjustments','INSERT') as authenticated from pg_class where relname='inventory_adjustments'");assert.deepEqual(access.rows[0],{rls:true,anon:false,authenticated:false});
+});
+test('insufficient stock at review rolls back every line and leaves request pending; Manager direct legacy form also rolls back',async()=>{
+ const f=await setupWarehouseOps();await f.db.insert(products).values({sku:'ZERO-OPS',name:'Không có tồn',updatedAt:'2026-10-26'});
+ const body={clientKey:'adjustment-atomic-001',warehouseId:'pos-wh',reason:'Kiểm thử giao dịch',lines:[{sku:'00123',qty:1},{sku:'ZERO-OPS',qty:-1}]};
+ const pending=await f.call('/inventory/adjustments',f.emp,'POST',body);assert.equal(pending.status,201);
+ const fail=await f.call('/inventory/adjustments/'+pending.data.id+'/review',f.mgr,'POST',{decision:'approved'});assert.equal(fail.status,409);assert.equal(fail.data.code,'STOCK_SHORT');
+ assert.equal((await f.db.select().from(inventoryAdjustments).where(eq(inventoryAdjustments.id,pending.data.id)))[0]!.status,'pending');assert.equal((await f.db.select().from(stockMoves).where(eq(stockMoves.refId,pending.data.id))).length,0);
+ const before=(await f.db.select().from(inventoryAdjustments)).length;assert.equal((await f.call('/inventory/adjustments',f.mgr,'POST',{...body,clientKey:'adjustment-direct-001'})).status,409);assert.equal((await f.db.select().from(inventoryAdjustments)).length,before);
+});
