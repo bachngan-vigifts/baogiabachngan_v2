@@ -136,7 +136,7 @@
  #quote-form #line-list .col-price { grid-column:2;grid-row:2; }
  #quote-form #line-list :is(.col-total,.line-total) { grid-column:3;grid-row:2;align-self:end;font-size:14px;text-align:right; }
  #quote-form #line-list :is(.col-act,.line-actions) { grid-column:1/-1;display:flex!important;justify-content:flex-end;gap:8px; }
- #quote-form #line-list tr:not([data-mobile-expanded=true]) :is(.col-unit,.col-disc,.col-print,.col-after,.col-pd,.col-cost,.sub-field,.product-meta) { display:none!important; }
+ #quote-form #line-list tr:not([data-mobile-expanded=true]) :is(.col-unit,.col-disc,.col-print,.col-after,.col-pd,.col-cost,.sub-field:not(.manual-note),.product-meta) { display:none!important; }
  #quote-form #line-list [data-mobile-line-toggle] { display:inline-flex;min-height:36px; }
  #quote-form #line-list input { max-width:100%;min-width:0; }
  #quote-form #line-list .name-input { font-size:15px!important; }

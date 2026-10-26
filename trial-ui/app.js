@@ -65,7 +65,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
-import { totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
+import { manualLineDescription, manualLineNote, totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
 installBusyButtons(); // nút gửi API ghi tự khoá + vòng xoay đang xử lý (busy-buttons.js)
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -1143,18 +1143,20 @@ function lineCell(r, i) {
   const costMode = costModeOf(r), costValue = costMode === 'manual' ? r.costPrice : r.purchaseDiscount;
   const hrc = editor.type === 'HRC';
   const meta = [r.brand, r.pattern, r.pricePolicy, Number.isFinite(r.taxRate) ? `VAT ${fmtNum(r.taxRate)}%` : ''].filter(Boolean).join(' · ');
-  const text = (k, label, ph) => `<label class="sub-field"><span>${label}</span><input data-k="${k}" value="${esc(r[k] ?? '')}" placeholder="${ph}" maxlength="2000"></label>`;
-  if (!hrc && r.packagingDescription === undefined) r.packagingDescription = PACKAGING_DEFAULT;
+  const text = (k, label, ph) => `<label class="sub-field${k === 'manualDescription' ? ' manual-note' : ''}"><span>${label}</span><input data-k="${k}" value="${esc(r[k] ?? '')}" placeholder="${ph}" maxlength="2000"></label>`;
+  const custom = manualLineDescription(r) !== null;
+  if(custom && r.manualDescription === undefined) r.manualDescription = manualLineNote(r);
+  if (!custom && !hrc && r.packagingDescription === undefined) r.packagingDescription = PACKAGING_DEFAULT;
   const manual = simpleManualLine(r);
   return `<tr data-i="${i}" class="${manual ? 'manual-line' : ''}">
     <td class="col-idx">${i + 1}</td>
     <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
     <td class="col-product" data-label="Sản phẩm">
       <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="${manual ? 'Tên phụ phí / nội dung thêm…' : 'Gõ tên hoặc mã để tìm sản phẩm…'}" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
-      <div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>
-      ${meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
-      ${hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
-      ${hrc ? '' : text('bundleContents', 'Bộ gồm', 'Ví dụ: 01 ly + 01 nắp') + text('printDescription', 'Mô tả in ấn', 'Ví dụ: in logo màu tại 01 vị trí') + text('packagingDescription', 'Đóng gói', PACKAGING_DEFAULT)}
+      ${custom ? '' : `<div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>`}
+      ${!custom && meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
+      ${!custom && hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
+      ${custom ? text('manualDescription', 'Mô tả phụ', 'Nội dung bổ sung (không bắt buộc)') : hrc ? '' : text('bundleContents', 'Bộ gồm', 'Ví dụ: 01 ly + 01 nắp') + text('printDescription', 'Mô tả in ấn', 'Ví dụ: in logo màu tại 01 vị trí') + text('packagingDescription', 'Đóng gói', PACKAGING_DEFAULT)}
     </td>
     <td class="col-unit" data-label="ĐVT"><input class="plain" data-k="unit" value="${esc(r.unit)}" placeholder="—" maxlength="40" aria-label="Đơn vị tính dòng ${i + 1}"></td>
     <td class="col-qty" data-label="Số lượng">${n('qty', 'Số lượng')}</td>
@@ -1435,7 +1437,7 @@ async function fillMissingImages() {
 
 function addLine() {
   if (editor.rows.length >= 300) return toast('Báo giá tối đa 300 dòng.', 'err');
-  editor.rows.push({ ...blankRow(), manualLine: true, discount: 0, printFee: 0 }); markDirty(); renderLines(editor.rows.length - 1);
+  editor.rows.push({ ...blankRow(), manualLine: true, manualDescription: '', packagingDescription: '', discount: 0, printFee: 0 }); markDirty(); renderLines(editor.rows.length - 1);
 }
 $('#add-line').addEventListener('click', addLine);
 
@@ -1973,7 +1975,7 @@ async function duplicateFromList(id) {
 // ----- PDF theo 3 mẫu của web cũ (HRC / B2B / VIGIFTS): hrc-pdf.js (bố cục) + editable-pdf.js (pdf-lib, chữ chọn được).
 // Thư viện PDF + font Times New Roman (~3,6 MB) chỉ tải khi bấm tải PDF.
 // Đổi phiên bản khi API của các bộ dựng PDF thay đổi để không dùng lại script cũ trong cache.
-const PDF_SCRIPTS = ['pdf-lib.min.js', 'fontkit.umd.min.js', 'hrc-pdf.js?v=hrc-rows-2', 'editable-pdf.js?v=hrc-rows-2'];
+const PDF_SCRIPTS = ['pdf-lib.min.js', 'fontkit.umd.min.js', 'hrc-pdf.js?v=manual-lines-3', 'editable-pdf.js?v=manual-lines-3'];
 let pdfReady = null;
 function loadPdfTools() {
   if (pdfReady) return pdfReady;
@@ -1989,7 +1991,7 @@ function loadPdfTools() {
     }
     // hrc-pdf.js thay globalThis.HrcPdf: giữ đọc số tiền bằng chữ của app (dùng chung cho HĐKT, Excel).
     globalThis.HrcPdf = { ...globalThis.HrcPdf, amountInWords: n => moneyWords(n) };
-    globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after };
+    globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after, manualLineDescription };
   }).catch(error => {
     pdfReady = null;
     throw error;
@@ -4786,7 +4788,7 @@ $('#submit-quote').addEventListener('click', async () => {
 });
 // Excel theo mẫu web cũ (excel-export.js): ảnh sản phẩm + letterhead, 2 sheet báo giá và phí vận chuyển.
 // excel-export.js (chép từ web cũ) gọi QuoteMath.totals và HrcPdf.amountInWords.
-globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after };
+globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after, manualLineDescription };
 globalThis.HrcPdf = { ...(globalThis.HrcPdf || {}), amountInWords: n => moneyWords(n) };
 function loadCanvasImage(src, timeoutMs = 15000) {
   return new Promise(resolve => {

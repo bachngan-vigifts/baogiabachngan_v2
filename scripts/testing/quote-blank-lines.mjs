@@ -1,7 +1,8 @@
 /** Local real CRM router/PGlite; never edits a production quote. */
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {createServer} from 'node:http';
-import {readFile,mkdir} from 'node:fs/promises';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {setup} from '../../tests/helpers/pos-fixture.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
@@ -31,8 +32,10 @@ try{for(const width of [390,1280]){
  await row.locator('[data-k=name]').fill('Túi giấy trắng');await row.locator('[data-k=qty]').fill('350');await row.locator('[data-k=price]').fill('14000');
  assert.equal(await row.locator('[data-k=discount],[data-k=printFee]').count(),0);
  assert.equal((await row.locator('.line-total').textContent()).replace(/\D/g,''),'4900000');
- // Adding a code and image must not restore the removed controls or lose manual-line identity after save.
- if(width>850){await row.locator('[data-k=sku]').fill('TUI-THU-CONG');
+ // A custom row has only a main text and one optional note; images preserve its identity.
+ assert.equal(await row.locator('[data-k=sku],[data-k=bundleContents],[data-k=printDescription],[data-k=packagingDescription]').count(),0);
+ await row.locator('[data-k=manualDescription]').fill('Dán logo hai mặt');
+ if(width>850){
  await row.locator('[data-image]').click();await page.locator('#image-url').fill('https://example.invalid/manual.png');await page.locator('#image-save').click();}
  row=page.locator('#line-list tr[data-i="2"]');assert.equal(await row.locator('[data-k=discount],[data-k=printFee]').count(),0);
  await page.locator('#edit-terms').evaluate(b=>b.click());const terms=page.getByRole('dialog').filter({has:page.getByRole('heading',{name:'Điều khoản thanh toán',exact:true})});
@@ -41,8 +44,20 @@ try{for(const width of [390,1280]){
  const before=writes,response=page.waitForResponse(r=>r.url().includes('/api/staff/quotes/'+q.data.id)&&r.request().method()==='PUT');await page.keyboard.press('Control+s');assert.equal((await response).status(),200);
  await page.waitForTimeout(350);assert.equal(writes,before+1);
  const saved=(await f.call('/quotes/'+q.data.id,f.mgr)).data.data.rows[2];
- assert.equal(saved.manualLine,true);assert.equal(saved.qty,350);assert.equal(saved.price,14000);assert.equal(saved.discount,0);assert.equal(saved.printFee,0);
+ assert.equal(saved.manualDescription,'Dán logo hai mặt');assert.equal(saved.manualLine,true);assert.equal(saved.qty,350);assert.equal(saved.price,14000);assert.equal(saved.discount,0);assert.equal(saved.printFee,0);
  await page.reload();await page.locator('#line-list tr[data-i="2"]').waitFor();assert.equal(await page.locator('#line-list tr[data-i="2"] [data-k=discount],#line-list tr[data-i="2"] [data-k=printFee]').count(),0);
+ if(width===1280){
+  for(const src of ['pdf-lib.min.js','fontkit.umd.min.js','hrc-pdf.js','editable-pdf.js'])await page.addScriptTag({url:origin+'/'+src});
+  for(const type of ['HRC','B2B','VIGIFTS']){
+   const bytes=await page.evaluate(async ({type})=>{
+    const banner=document.createElement('canvas');banner.width=400;banner.height=60;banner.getContext('2d').fillRect(0,0,400,60);
+    return [...await EditableQuotePdf.create({state:{type,quoteNo:'TEST',date:'2026-10-26',customer:'Khách thử',vat:8,rows:[{manualLine:true,name:'Túi giấy trắng',manualDescription:'Dán logo hai mặt',qty:1,price:100},{manualLine:true,name:'Dòng không mô tả',manualDescription:'   ',qty:1,price:200}]},images:[null,null],banner})];
+   },{type});
+   const path='/tmp/quote-manual-'+type+'.pdf';await writeFile(path,Buffer.from(bytes));const text=execFileSync('pdftotext',['-layout',path,'-'],{encoding:'utf8'});
+   assert.ok(text.includes('Dán logo hai mặt'),type+' PDF retains optional note');assert.ok(text.includes('Dòng không mô tả'));
+   assert.ok(!text.includes('theo tiêu chuẩn nhà sản xuất'));assert.ok(!text.includes('Chưa bao gồm chi phí in ấn logo'));
+  }
+ }
  assert.deepEqual(errors,[]);if(process.env.QUOTE_SCREENSHOT_DIR){await mkdir(process.env.QUOTE_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.QUOTE_SCREENSHOT_DIR+'/blank-'+width+'.png'});}
  console.log(JSON.stringify({width,total:4900000,persisted:true,legacyChargesPreserved:true,errors}));await context.close();
  }}finally{await browser.close();server.close();await f.client.close();}
