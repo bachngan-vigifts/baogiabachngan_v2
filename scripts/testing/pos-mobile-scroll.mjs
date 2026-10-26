@@ -17,11 +17,15 @@ const html = `<!doctype html><html class="app-shell" lang="vi"><meta charset="ut
 <div class="workspace"><main class="main"><header class="topbar">CRM thử nghiệm</header><section class="view" id="view-pos"></section></main></div>
 <script type="module">
 import {initPos} from '/trial-ui/pos.js';
-window.catalogCalls=[]; window.failNext=false;
+window.catalogCalls=[]; window.failNext=false;window.holdCustomer=false;
 const api=async(path)=>{
  if(path.startsWith('/pos/options'))return {registers:[{id:'r',name:'Quầy thử',pricePolicyId:'vat'}],current:{id:'s',registerId:'r',memberId:'emp'},policies:[],templates:[],shifts:[]};
  if(path.startsWith('/pos/orders'))return {orders:[],counts:{}};
- if(path.startsWith('/pos/customers'))return {canListRetail:true,customers:[{id:'customer',name:'Khách thử nghiệm',phone:'0901234567'}]};
+ if(path.startsWith('/pos/customers')){
+  while(window.holdCustomer)await new Promise(r=>setTimeout(r,20));
+  const p=new URL(path,location.origin).searchParams,offset=Number(p.get('offset')||0),kind=p.get('kind');
+  return {canListRetail:true,customers:Array.from({length:Math.min(20,45-offset)},(_,i)=>({id:kind+(offset+i),name:kind==='business'?'B2B thử nghiệm '+(offset+i):offset+i===0?'Khách thử nghiệm':'Khách thử '+(offset+i),phone:'0901234567'})),nextOffset:offset+20<45?offset+20:null};
+ }
  if(path.startsWith('/pos/catalog')){
   catalogCalls.push(path); if(window.failNext){window.failNext=false;throw Error('Lỗi mạng giả lập');}
   const p=new URL(path,location.origin).searchParams,o=Number(p.get('offset')),n=Number(p.get('limit'));
@@ -44,6 +48,12 @@ const server = createServer(async (req, res) => {
 await new Promise(r => server.once('listening', r));
 const origin = 'http://127.0.0.1:' + server.address().port;
 const browser = await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',args:['--no-sandbox']});
+async function checkSavedActions(page){
+ await page.evaluate(()=>{const d=document.createElement('dialog');d.id='saved-layout-test';d.className='pos-modal pos-saved-modal';d.innerHTML='<div class="pos-modal-content"><div class="pos-saved-actions" data-mobile-actions="off"><button class="btn secondary">In lại bill</button><button class="btn primary pos-saved-next">Bán đơn tiếp</button></div></div>';document.body.append(d);d.showModal();});
+ const boxes=await page.locator('#saved-layout-test button').evaluateAll(nodes=>nodes.map(n=>{const b=n.getBoundingClientRect();return {top:b.top,width:b.width};}));
+ assert.ok(Math.abs(boxes[0].top-boxes[1].top)<1,'saved actions share the same row');assert.ok(Math.abs(boxes[0].width-boxes[1].width)<1,'saved actions have equal widths');
+ await page.locator('#saved-layout-test').evaluate(d=>{d.close();d.remove();});
+}
 try {
   for (const [width,height] of [[375,667],[390,844],[768,1024],[844,390]]) {
     const context = await browser.newContext({viewport:{width,height},isMobile:true,hasTouch:true});
@@ -95,12 +105,24 @@ try {
     await page.locator('.pos-mobile-cart-open').tap();
     await page.waitForTimeout(500);
     assert.ok(await page.locator('.pos-customer-trigger').isVisible());
+    await page.evaluate(()=>window.holdCustomer=true);
     await page.locator('.pos-customer-trigger').tap();
+    for(const label of ['Khách lẻ','Khách B2B','+ Khách mới'])assert.equal(await page.getByRole('button',{name:label,exact:true}).isVisible(),true,'all three actions render before the API responds');
+    await page.evaluate(()=>window.holdCustomer=false);
+    await page.waitForFunction(()=>document.querySelectorAll('.pos-customer-option').length===20);
+    await page.locator('.pos-customer-suggestions').evaluate(e=>{e.scrollTop=e.scrollHeight;});
+    await page.waitForFunction(()=>document.querySelectorAll('.pos-customer-option').length===40);
+    await page.getByRole('button',{name:'Khách B2B',exact:true}).tap();
+    await page.waitForFunction(()=>document.querySelector('.pos-customer-option')?.textContent.startsWith('B2B'));
+    assert.equal(await page.locator('.pos-customer-option').count(),20);
+    await page.getByRole('button',{name:'Khách lẻ',exact:true}).tap();
+    await page.waitForFunction(()=>document.querySelector('.pos-customer-option')?.textContent.startsWith('Khách'));
     await page.getByRole('combobox',{name:'Tìm khách hàng',exact:true}).fill('Khách');
     await page.locator('.pos-customer-option').first().tap();
     await page.waitForFunction(()=>document.querySelector('.pos-customer-trigger').textContent==='Khách thử nghiệm');
     assert.equal(await page.locator('.pos-mobile-cart-info small').textContent(),'Khách thử nghiệm');
     assert.equal(await page.locator('.pos-customer-picker').count(),0);
+    await checkSavedActions(page);
     assert.deepEqual(errors,[]);
     if(process.env.POS_SCREENSHOT_DIR){await mkdir(process.env.POS_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.POS_SCREENSHOT_DIR,`pos-mobile-${width}x${height}.png`)});}
     console.log(JSON.stringify({width,height,...await metrics(),customerSelected:true,touchScroll:true}));
@@ -109,6 +131,7 @@ try {
   const desktop = await browser.newPage({viewport:{width:1280,height:800}});
   await desktop.route('**/*', route => route.request().url().startsWith(origin + '/') ? route.continue() : route.abort());
   await desktop.goto(origin); await desktop.waitForFunction(()=>window.ready);
+  await checkSavedActions(desktop);
   assert.equal(await desktop.locator('.pos-product-tile').count(),60);
   await desktop.getByRole('button',{name:'Xem thêm sản phẩm',exact:true}).click();
   await desktop.waitForFunction(()=>document.querySelectorAll('.pos-product-tile').length===120);
