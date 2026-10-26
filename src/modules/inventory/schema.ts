@@ -42,6 +42,18 @@ export const stockBalances = pgTable('stock_balances', {
   updatedAt: text('updated_at').notNull(),
 }, t => [primaryKey({ columns: [t.sku, t.warehouseId] }), index('idx_stock_balances_warehouse').on(t.warehouseId)]).enableRLS();
 
+export const inventoryAdjustments = pgTable('inventory_adjustments', {
+  id: text('id').primaryKey(), refNo: text('ref_no').notNull().unique(),
+  clientKey: text('client_key').notNull(), payloadHash: text('payload_hash').notNull(),
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  reason: text('reason').notNull(), lines: text('lines').notNull(),
+  status: text('status', {enum:['pending','approved','rejected']}).notNull().default('pending'),
+  createdBy: text('created_by').notNull().references(() => employees.id), createdAt: text('created_at').notNull(),
+  reviewedBy: text('reviewed_by').references(() => employees.id), reviewedAt: text('reviewed_at'), reviewNote: text('review_note').notNull().default(''),
+}, t => [uniqueIndex('inventory_adjustments_created_by_client_key_key').on(t.createdBy,t.clientKey),
+  index('idx_inventory_adjustments_pending').on(t.status,t.createdAt),index('idx_inventory_adjustments_warehouse').on(t.warehouseId,t.createdAt),
+  index('idx_inventory_adjustments_reviewer').on(t.reviewedBy),check('inventory_adjustments_status_check',sql`${t.status} in ('pending','approved','rejected')`)]).enableRLS();
+
 /** Ảnh nghiệp vụ kho: ảnh hàng hỏng khi nhận hàng NCC, ảnh xác nhận đã giao. Nội dung nằm ở kho file private (`file_key`). */
 export const warehousePhotos = pgTable('warehouse_photos', {
   id: text('id').primaryKey(),

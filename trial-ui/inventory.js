@@ -1,3 +1,4 @@
+import { initAdjustmentQueue } from './inventory-adjustments.js';
 /**
  * ĐỐI CHIẾU TỒN SAPO (#/inventory; trang giao dịch "Sổ kho" là #/stock-moves – stock-ops.js) – giai đoạn 1 chạy song song với Sapo (docs/SO-KHO.md).
  *  Đối chiếu tồn sổ kho ↔ tồn Sapo theo (mã, kho) · thẻ kho từng mã · Manager chốt tồn đầu kỳ / lập phiếu điều chỉnh.
@@ -32,11 +33,13 @@ export function initInventory({ api, root, toast, confirmBox }) {
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('thead'), tbody = el('tbody');
   const unopenedEl = el('div', 'inv-unopened');
   table.append(thead, tbody); wrap.append(table); panel.append(bar, unopenedEl, wrap);
-  page.append(head, info, panel);
+  const queueHost=el('section','panel inv-adjustments-panel');
+  page.append(head, info, queueHost, panel);
+  const adjustmentQueue=initAdjustmentQueue({api,host:queueHost,toast,onChanged:()=>load()});
   const shade = el('div', 'sup-shade'); shade.hidden = true;
   const drawer = el('aside', 'sup-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
   root.append(page, shade, drawer);
-  const close = () => { drawer.hidden = true; shade.hidden = true; };
+  const close = () => { if(drawer.dataset.busy)return;drawer.hidden = true; shade.hidden = true; };
   shade.addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !drawer.hidden) close(); });
   let timer = 0;
@@ -130,7 +133,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
     } catch (e) { if (id === req) { rows = []; renderRows(0); renderUnopened([]); toast(e.message || 'Không tải được sổ kho.', 'err'); } }
   }
   async function load() {
-    try { status = await api('/inventory/status'); renderStatus(); await loadRows(); }
+    try { status = await api('/inventory/status'); renderStatus(); await Promise.all([loadRows(),adjustmentQueue.load(status)]); }
     catch (e) { info.replaceChildren(el('p', 'error', e.message || 'Không tải được sổ kho.')); }
   }
 
@@ -173,16 +176,19 @@ export function initInventory({ api, root, toast, confirmBox }) {
       r.append(s, q, btn('×', 'icon-btn', () => r.remove())); list.append(r);
     };
     addLine(prefill.sku || '', prefill.qty ? String(prefill.qty) : '');
-    f.append(g, el('p', 'muted small', 'Số dương = tăng tồn, số âm = giảm tồn. Mỗi phiếu ghi vào sổ kho, không sửa / xoá được (lập phiếu khác nếu nhầm).'), list,
+    f.append(g, el('p', 'muted small', status.canApproveAdjustment?'Số dương = tăng tồn, số âm = giảm tồn. Manager ghi phiếu sẽ duyệt và cập nhật sổ kho ngay.':'Số dương = tăng tồn, số âm = giảm tồn. Phiếu sẽ gửi Manager duyệt; lúc gửi chưa thay đổi tồn kho.'), list,
       btn('+ Thêm mã', 'btn secondary small', () => addLine()), err);
-    const ok = el('button', 'btn primary', 'Ghi phiếu điều chỉnh'); ok.type = 'submit';
+    const ok = el('button', 'btn primary', status.canApproveAdjustment?'Ghi phiếu điều chỉnh':'Gửi Manager duyệt'); ok.type = 'submit';ok.dataset.mobilePrimary='';
+    const clientKey=crypto.randomUUID();let uncertain=null;
     const foot = el('div', 'sup-drawer-foot'); foot.append(ok); f.append(foot);
     f.addEventListener('submit', async e => {
       e.preventDefault(); err.textContent = '';
       const lines = [...list.children].map(r => { const [s, q] = r.querySelectorAll('input'); return { sku: s.value.trim(), qty: Number(q.value) }; }).filter(l => l.sku && l.qty);
-      ok.disabled = true;
-      try { const r = await api('/inventory/adjustments', 'POST', { warehouseId: w.value, reason: reason.value.trim(), lines }); toast(`Đã ghi phiếu ${r.refNo}.`); close(); load(); }
-      catch (ex) { err.textContent = ex.message || 'Không ghi được phiếu.'; ok.disabled = false; }
+      if(ok.disabled)return;ok.disabled = true;drawer.dataset.busy='1';
+      const body=uncertain||{ warehouseId: w.value, reason: reason.value.trim(), lines,clientKey };
+      try { const r = await api('/inventory/adjustments', 'POST', body);delete drawer.dataset.busy;toast(r.status==='pending'?`Đã gửi phiếu ${r.refNo}, chờ Manager duyệt. Chưa đổi tồn kho.`:`Đã ghi phiếu ${r.refNo}.`);close();await load(); }
+      catch (ex) {const unknown=!ex.status||ex.status>=500;uncertain=unknown?body:null;err.textContent = (ex.message || 'Không ghi được phiếu.')+(unknown?' Chưa rõ kết quả. Bấm kiểm tra lại lần gửi này, không lập phiếu khác.':'');for(const input of f.querySelectorAll('input,select,textarea'))input.disabled=unknown;ok.textContent=unknown?'Kiểm tra lại lần gửi':status.canApproveAdjustment?'Ghi phiếu điều chỉnh':'Gửi Manager duyệt';ok.disabled = false;}
+      finally{delete drawer.dataset.busy;}
     });
     d.append(f);
   }

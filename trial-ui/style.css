@@ -122,6 +122,10 @@ textarea { resize: vertical; }
 .is-open > .nav-label .nav-group-arrow { transform: rotate(90deg); }
 .nav-group-items { display: grid; gap: 2px; }
 .nav-group:not(.is-open) > .nav-group-items { display: none; }
+.inv-adjustments-panel { margin-bottom: 16px; }
+.inv-adjust-queue-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.inv-adjust-queue-row p { margin: 4px 0; overflow-wrap: anywhere; }
+@media(max-width:850px) { .inv-adjust-queue-row { align-items: start; flex-wrap: wrap; } }
 .nav { display: flex; align-items: center; gap: 11px; padding: 8px 12px; border-radius: 8px; color: #b7c3d4; font-weight: 500; font-size: var(--text-label); transition: background .15s, color .15s; }
 .nav:hover { background: var(--navy-700); color: #fff; }
 .nav.active { background: var(--navy-600); color: #fff; box-shadow: inset 3px 0 0 var(--red); }
@@ -1537,6 +1541,11 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .progress-steps li { position: relative; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px 10px 44px; background: var(--surface); min-height: 64px; }
 .progress-steps li .dot { position: absolute; left: 12px; top: 12px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: var(--text-caption); font-weight: 700; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line-strong); }
 .progress-steps li b { display: block; }
+.progress-doc-links { margin-top: 8px; font-size: var(--text-small); overflow-wrap: anywhere; }
+.progress-doc-links a { text-decoration: underline; }
+.progress-quick-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.progress-delivery-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ship-confirmation { display: block; font-size: var(--text-small); color: var(--muted); margin-top: 4px; }
 .progress-steps li small { display: block; color: var(--muted); margin-top: 2px; }
 .progress-steps li.done { border-color: #bfe3d2; background: var(--green-50); }
 .progress-steps li.done .dot { background: var(--green); color: #fff; border-color: var(--green); }

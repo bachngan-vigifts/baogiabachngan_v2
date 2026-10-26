@@ -12,6 +12,7 @@ import { STOCK_KIND_LABEL } from '../domain/kinds.ts';
 import { postMoves, guardInventoryOpening, type LedgerDb } from './ledger.ts';
 import { hiddenWarehouseIds } from './warehouse-access.ts';
 import { hiddenStockWarehouses, readCatalogStock } from '../../catalog/api/stock-source.ts';
+import { registerAdjustmentRoutes } from './adjustment-routes.ts';
 
 /**
  * SỔ KHO – giai đoạn 1, chạy song song với Sapo (docs/SO-KHO.md).
@@ -61,6 +62,7 @@ export interface IncomingLine { sku: string; orderId: string; ticketNumber: stri
 export const incomingLookup: { read?: (db: StaffEnv['db'], skus: readonly string[]) => Promise<IncomingLine[]> } = {};
 
 export function registerInventoryRoutes(router: Router<StaffEnv>) {
+  registerAdjustmentRoutes(router,ledgerWarehouses);
   router.get('/stock-warehouses', async c => {
     const hidden = await hiddenWarehouseIds(c.env.db, me(c));
     return json({ warehouses: (await stockWarehouses(c.env.db)).filter(w => !hidden.has(w.id)) });
@@ -115,7 +117,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     const allOpened = whs.length > 0 && whs.every(w => w.openedAt);
     return json({ warehouseId: one?.id ?? null, openedAt: one ? one.openedAt : allOpened ? latest?.openedAt ?? null : null, openedBy: one ? one.openedBy : allOpened ? latest?.openedBy ?? '' : '',
       moveCount: one ? one.moveCount : whs.reduce((t, w) => t + w.moveCount, 0), openedCount: whs.filter(w => w.openedAt).length,
-      canManage: canManage(me(c)), warehouses: whs, warehouseRestricted: restrictedLedger(c), defaultWarehouseId: restrictedLedger(c) ? whs[0]?.id ?? null : null });
+      canManage: canManage(me(c)), canApproveAdjustment:isManager(me(c)), warehouses: whs, warehouseRestricted: restrictedLedger(c), defaultWarehouseId: restrictedLedger(c) ? whs[0]?.id ?? null : null });
   }, 'business');
 
   router.get('/inventory/compare', async c => {
@@ -214,21 +216,4 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     return json({ ok: results.every(r => r.status !== 'failed'), refNo, lines: results.reduce((t, r) => t + r.lines, 0), results });
   }, 'business');
 
-  router.post('/inventory/adjustments', async c => {
-    const m = me(c);
-    if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền lập phiếu điều chỉnh kho.');
-    const db = c.env.db, body = await readJson(c.req, 100_000), reason = String(body.reason ?? '').trim().slice(0, 500), wh = String(body.warehouseId ?? '');
-    if (reason.length < 3) fail(400, 'Nhập lý do điều chỉnh.');
-    if (!(await stockWarehouses(db)).some(w => w.id === wh)) fail(400, 'Chọn kho điều chỉnh.');
-    await checkLedgerWarehouse(c, wh);
-    const lines = (Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).slice(0, 300)
-      .map(l => ({ sku: String(l.sku ?? '').trim(), qty: num(l.qty) })).filter(l => l.sku && Number.isFinite(l.qty) && l.qty !== 0);
-    if (!lines.length) fail(400, 'Nhập ít nhất một mã với số lượng tăng (+) hoặc giảm (−).');
-    const known = new Set((await db.select({ sku: products.sku }).from(products).where(inArray(products.sku, [...new Set(lines.map(l => l.sku))]))).map(p => p.sku));
-    const unknown = lines.filter(l => !known.has(l.sku)).map(l => l.sku);
-    if (unknown.length) fail(400, 'Mã không có trong danh mục: ' + [...new Set(unknown)].slice(0, 10).join(', '));
-    const refId = crypto.randomUUID(), refNo = 'ĐC-' + new Date().toISOString().slice(0, 10).replaceAll('-', '') + '-' + refId.slice(0, 4).toUpperCase();
-    const written = await db.transaction(tx => postMoves(tx, m.id, lines.map(l => ({ ...l, warehouseId: wh, kind: 'adjust' as const, refType: 'adjustment' as const, refId, refNo, note: reason }))));
-    return json({ ok: true, refNo, lines: written }, 201);
-  }, 'business');
 }

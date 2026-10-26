@@ -23,9 +23,11 @@ const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 
 export function registerProgressRoutes(router: Router<StaffEnv>) {
   router.post('/orders/:id/progress', async c => {
-    if (viewer(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager được đánh dấu nhanh tiến trình.');
+    const manager=viewer(c).role==='manager',saleAdmin=viewer(c).role==='employee'&&viewer(c).positionId==='sale-admin';
+    if (!manager&&!saleAdmin) throw new AppError(403, 'Chỉ Manager hoặc Sale Admin được thao tác nhanh tiến trình.');
     const body = await readJson(c.req, 1_024), stage = body.stage as ProgressStage | 'all';
     if (stage !== 'all' && !(PROGRESS_STAGES as readonly string[]).includes(stage)) throw new AppError(400, 'Bước tiến trình không hợp lệ.');
+    if(!manager&&!['sample','production'].includes(stage))throw new AppError(403,'Duyệt đơn, xuất kho và giao hàng phải thao tác trên chứng từ tương ứng.');
     const [order] = await c.env.db.select({ id: salesOrders.id, status: salesOrders.status }).from(salesOrders)
       .where(and(eq(salesOrders.id, c.params.id!), orderScopeFor(viewer(c)))).limit(1);
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
@@ -37,14 +39,14 @@ export function registerProgressRoutes(router: Router<StaffEnv>) {
       if (!fresh || fresh.status === 'cancelled') throw new AppError(409, 'Đơn / HĐKT đã huỷ hoặc vừa thay đổi.');
       if (body.done === false) {
         if (stage === 'all') throw new AppError(400, 'Chọn bước cần bỏ đánh dấu.');
-        await unmarkProgress(tx, order.id, list.slice(list.indexOf(stage)));
+        await unmarkProgress(tx, order.id, list.slice(list.indexOf(stage)).filter(s=>manager||['sample','production'].includes(s)));
       } else {
         if (stage === 'all' || stage === 'delivered') await assertCrmOrderCompletion(tx, order.id);
         const physical=(await crmStockFulfilment(tx,[order.id])).get(order.id);
         if(physical?.lines.length&&physical.status==='draft')throw new AppError(409,'Duyệt đơn bằng thao tác duyệt chứng từ, không đánh dấu tiến trình để thay bước duyệt.','ORDER_NOT_APPROVED');
         if(physical?.lines.length&&!physical.complete&&stagesUpTo(printing,stage).includes('export'))
           throw new AppError(409,'Chưa xuất đủ hàng. Xác nhận phiếu xuất đúng kho/nguồn trước; đánh dấu tiến trình không ghi xuất kho.','STOCK_NOT_PACKED');
-        await markProgress(tx, order.id, stagesUpTo(printing, stage), 'manual', viewer(c).id);
+        await markProgress(tx, order.id, stagesUpTo(printing, stage).filter(s=>manager||['sample','production'].includes(s)), 'manual', viewer(c).id);
         // Manager đánh dấu đã giao hàng → phiếu đóng gói còn treo tự hoàn tất.
         if (stage === 'all' || stage === 'delivered') {
           await closeSlipsOfDeliveredOrders(tx, [order.id]);

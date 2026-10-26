@@ -30,6 +30,8 @@ import { docRef } from '../domain/doc-ref.ts';
 import { orderScopeFor, setExpectedDeliveryDate } from './routes.ts';
 import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
 import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
+import { readCatalogStock, hiddenStockWarehouses } from '../../catalog/api/stock-source.ts';
+import { reservedBySku } from './pos-store.ts';
 
 /*
  * Phiếu đóng gói (xuất kho):
@@ -157,6 +159,18 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       lines.some(l => l.sku) ? db.select({ sku: products.sku, perCarton: products.perCarton, cartonWeight: products.cartonWeight, cartonLength: products.cartonLength,
         cartonWidth: products.cartonWidth, cartonHeight: products.cartonHeight }).from(products).where(inArray(products.sku, [...new Set(lines.map(l => l.sku).filter(Boolean))])) : [],
     ]);
+    // New CRM orders have not issued at approval. Use the selected physical warehouse
+    // and exclude this order's reservation, without consuming holds for other orders.
+    const soldAtApproval=order.channel==='crm'&&!!order.warehouseId&&await saleMovesPosted(db,order.id);
+    let stockAvailability:null|{sku:string;warehouseId:string;onHand:number;reservedOther:number;available:number}[]=null;
+    if(order.channel==='crm'&&order.warehouseId&&!soldAtApproval&&!(await hiddenStockWarehouses(db,viewer(c))).has(order.warehouseId)){
+      const skus=[...new Set(lines.map(l=>l.sku).filter(Boolean))];
+      const [stock,reserved]=await Promise.all([readCatalogStock(db,skus),reservedBySku(db,skus,order.warehouseId,order.id)]);
+      stockAvailability=skus.map(sku=>{
+        const onHand=stock.find(s=>s.sku===sku&&s.warehouseId===order.warehouseId)?.quantity??0,reservedOther=reserved.get(sku)??0;
+        return {sku,warehouseId:order.warehouseId!,onHand,reservedOther,available:Math.max(0,onHand-reservedOther)};
+      });
+    }
     return json({
       slips: slips.map(s => ({ ...s, sourceLabel: PACKING_SOURCE_LABEL[s.source], photoCount: Number(photos.find(p => p.slipId === s.id)?.n ?? 0),
         lines: slipLines.filter(l => l.slipId === s.id).map(l => ({ ...l, suggestion: packingSuggestion(l.qty, l.unit, { perCarton: l.perCarton, cartonWeight: l.cartonWeight }).text })) })),
@@ -167,7 +181,8 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       supplierChoices, schedules, scheduled: await hasDeliverySchedule(db, order.id),
       canRequest: !['cancelled', 'draft', 'delivered'].includes(order.status),
       // Đơn CRM đã trừ kho bán lúc duyệt: hộp yêu cầu đóng gói tính tồn = tồn kho bán + phần đơn này đã trừ mà chưa đóng (không báo thiếu giả).
-      soldWarehouseId: order.channel === 'crm' && order.warehouseId && await saleMovesPosted(db, order.id) ? order.warehouseId : null,
+      soldWarehouseId: soldAtApproval ? order.warehouseId : null,
+      stockAvailability,
       // Hộp "Yêu cầu đóng gói - Giao hàng": có phí in → mặc định giao về xưởng in; không thì giao thẳng cho khách.
       delivery: { hasPrintFee: await hasPrintFee(db, order.quoteId), customer: { name: order.customerName, address: order.address, ...orderRecipient(order), phone: orderRecipient(order).receiverPhone },
         workshops: await workshopList(db), carriers: await db.select({ name: shippingCarriers.name, phone: shippingCarriers.phone }).from(shippingCarriers).orderBy(asc(shippingCarriers.name)) },
