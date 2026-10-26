@@ -1,6 +1,6 @@
 /** File import creates only a draft through the existing, permission-checked early-request API. */
 import {resolveEarlyOrderSources} from './early-order-sources.js';
-export const EARLY_FILE_HEADER = ['Mã hàng', 'Tên sản phẩm', 'Số lượng xin trước', 'Số đơn mua CRM (DMH)', 'Số đơn của NCC'];
+export const EARLY_FILE_HEADER = ['Mã hàng', 'Số lượng xin trước', 'Số đơn mua CRM (DMH)', 'Số đơn của NCC'];
 const fold = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().replace(/\s+/g,' ').trim();
 const crmHeaders=['so don mua crm (dmh)','so don mua crm','lay o so don hang nao','so don hang','so don mua'];
 const supplierHeaders=['so don cua ncc','so don ncc','so don ncc (khong bat buoc)'];
@@ -63,12 +63,12 @@ export function readEarlyRequestWorkbook(X, workbook) {
 export function earlyRequestTemplate(X) {
   const workbook=X.utils.book_new(), sheet=X.utils.aoa_to_sheet([EARLY_FILE_HEADER]);
   // Text cells prevent Excel from dropping leading zeroes when entering SKUs.
-  for(let r=1;r<=300;r++)for(const c of [0,3,4])sheet[X.utils.encode_cell({r,c})]={t:'s',v:'',z:'@'};
-  sheet['!ref']='A1:E301';sheet['!cols']=[{wch:24},{wch:50},{wch:24},{wch:30},{wch:30}];
+  for(let r=1;r<=300;r++)for(const c of [0,2,3])sheet[X.utils.encode_cell({r,c})]={t:'s',v:'',z:'@'};
+  sheet['!ref']='A1:D301';sheet['!cols']=[{wch:24},{wch:24},{wch:30},{wch:30}];
   X.utils.book_append_sheet(workbook,sheet,'Xin hàng trước');
   X.utils.book_append_sheet(workbook,X.utils.aoa_to_sheet([
     ['Hướng dẫn'],['Điền tại sheet Xin hàng trước. Tối đa 300 dòng; cùng mã ở nhiều đơn được tách dòng, không lặp mã + số đơn.'],
-    ['Mã hàng: giữ dạng Text để không mất số 0 đầu. Tên hàng chỉ để tham khảo.'],
+    ['Mã hàng: giữ dạng Text để không mất số 0 đầu. App tự tìm tên sản phẩm theo mã hàng, không cần nhập tên.'],
     ['Số lượng xin trước: số nguyên dương, ví dụ 1000; không ghi 1.000 hoặc 1,000.'],
     ['Số đơn mua CRM (DMH): số Đơn mua NCC trên CRM, ví dụ DMH_20261016_059. Có thể để trống.'],
     ['Số đơn của NCC: số đơn do nhà cung cấp cấp. Nếu chỉ nhập số này, hệ thống tìm đơn mua CRM theo mã hàng và NCC đã chọn.'],
@@ -161,7 +161,7 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,requestHre
     if(parsed)await validate();
   });
   supplier.addEventListener('change',validate);date.addEventListener('input',sync);
-  body.append(el('p','muted','Hai cột số đơn có thể để trống. Chỉ nhập Số đơn của NCC: hệ thống tìm Số đơn mua CRM (DMH). Trống cả hai: tự phân bổ theo mã hàng/NCC đã chọn. Bảng xem trước hiện rõ đơn thực lấy; số đơn trùng hoặc không đủ hàng sẽ báo lỗi. Lưu nháp không gửi NCC, không nhận hàng hoặc cộng kho.'),
+  body.append(el('p','muted','Nhập Mã hàng để app tự tìm tên sản phẩm. Hai cột số đơn có thể để trống. Chỉ nhập Số đơn của NCC: hệ thống tìm Số đơn mua CRM (DMH). Trống cả hai: tự phân bổ theo mã hàng/NCC đã chọn. Bảng xem trước hiện rõ đơn thực lấy; số đơn trùng hoặc không đủ hàng sẽ báo lỗi. Lưu nháp không gửi NCC, không nhận hàng hoặc cộng kho.'),
     label('Nhà cung cấp',supplier),label('Ngày lấy *',date),template,label('File Excel / CSV (tối đa 2 MB)',file),status,error,preview);
   foot.append(save);dialog.append(head,body,foot);document.body.append(dialog);
   dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{++sequence;dialog.remove();},{once:true});dialog.showModal();sync();
