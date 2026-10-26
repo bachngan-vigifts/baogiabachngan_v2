@@ -14,6 +14,7 @@ import { canUsePurchasing, canReceive, canSendEarlyRequest } from '../domain/pur
 import { incomingBySku } from './incoming-by-sku.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import {resolveEarlyOrderSources,EarlySourceError} from '../domain/early-order-sources.ts';
+import {products} from '../../catalog/schema.ts';
 import type { Db, Member } from './purchase-store.ts';
 type Ctx = RouteContext<StaffEnv>;
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -83,17 +84,17 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id='', sub
   const headers=await db.select().from(requests).where(and(id?eq(requests.id,id):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined,page?.where)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(page?.limit??50).offset(page?.offset??0);
   if(id && !headers.length) fail(404,'Không tìm thấy yêu cầu lấy trước.');
   if(!headers.length) return [];
-  const details=await db.select({line:lines,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
+  const details=await db.select({line:lines,catalogName:products.name,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
     supplierName:suppliers.name,due:sql<string>`coalesce(nullif(${incomingShipmentLines.promisedDate},''),${incomingShipments.arrivalDate},'')`})
     .from(lines).innerJoin(allocations,eq(allocations.requestLineId,lines.id)).innerJoin(incomingShipmentLines,eq(incomingShipmentLines.id,allocations.purchaseLineId))
-    .innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,allocations.supplierId))
+    .innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,allocations.supplierId)).leftJoin(products,eq(products.sku,lines.sku))
     .where(and(inArray(lines.requestId,headers.map(r=>r.id)),supplierId?eq(allocations.supplierId,supplierId):undefined)).orderBy(asc(lines.lineNo),asc(allocations.id));
   return headers.map(h=>{
     const own=details.filter(d=>d.line.requestId===h.id),groups=new Map<string,typeof own>();
     for(const d of own) { const group=groups.get(d.line.id)||[];group.push(d);groups.set(d.line.id,group); }
     return {id:h.id,createdAt:h.createdAt,updatedAt:h.updatedAt||h.createdAt,pickupDate:h.pickupDate,revision:h.revision,requestStatus:h.status,
       ...(!supplierId?{createdBy:h.createdBy,scope:JSON.parse(h.scope)}:{}),status:h.status==='draft'?'draft':stateOf(own.map(d=>d.allocation.status)),
-      lines:[...groups].map(([lineId,group])=>({id:lineId,sku:group[0]!.line.sku,name:group[0]!.line.name,unit:group[0]!.line.unit,
+      lines:[...groups].map(([lineId,group])=>({id:lineId,sku:group[0]!.line.sku,name:group[0]!.catalogName?.trim()||group[0]!.line.name,unit:group[0]!.line.unit,
         // Supplier sees ONLY its quantities/statuses, never a cross-supplier line total.
         quantity:group.reduce((sum,d)=>sum+d.allocation.quantity,0),status:stateOf(group.map(d=>d.allocation.status)),
         allocations:group.map(d=>({id:d.allocation.id,orderId:d.orderId,ticketNumber:d.ticketNumber,supplierOrderNo:d.supplierOrderNo,supplierId:d.allocation.supplierId,
@@ -222,6 +223,31 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     const body=await readJson(c.req,8000),supplierId=typeof body.supplierId==='string'?body.supplierId.trim():'';
     if(!supplierId) fail(400,'Chọn đúng NCC cần xác nhận.');
     return json({ok:true,...await respondEarlyLine(c.env.db,me(c).id,c.params.id!,supplierId,'accepted','Manager xác nhận thay NCC','early-request-manager-confirm')});
+  },'business');
+  // Exact allocation IDs keep a supplier slip from confirming other sources of the same SKU.
+  router.post('/purchase-early-requests/manager-confirm-batch',async c=>{
+    guard(c);const m=me(c);if(m.role!=='manager')fail(403,'Chỉ Manager được xác nhận thay NCC.');
+    const body=await readJson(c.req,50000),raw=body.allocationIds;
+    if(!Array.isArray(raw)||!raw.length||raw.length>300||raw.some(id=>typeof id!=='string'||!id||id.length>100))fail(400,'Chọn từ 1 đến 300 dòng phân bổ.');
+    const ids=[...new Set(raw as string[])].sort();
+    const result=await c.env.db.transaction(async tx=>{
+      const selected=await tx.select({lineId:allocations.requestLineId}).from(allocations).where(inArray(allocations.id,ids));
+      if(selected.length!==ids.length)fail(404,'Một dòng phân bổ không còn tồn tại. Tải lại phiếu.');
+      // Supplier replies and the single-line Manager route lock these same parent lines.
+      await tx.select({id:lines.id}).from(lines).where(inArray(lines.id,[...new Set(selected.map(a=>a.lineId))])).orderBy(asc(lines.id)).for('update');
+      const rows=await tx.select({a:allocations,requestId:lines.requestId,requestStatus:requests.status}).from(allocations)
+        .innerJoin(lines,eq(lines.id,allocations.requestLineId)).innerJoin(requests,eq(requests.id,lines.requestId)).where(inArray(allocations.id,ids));
+      if(rows.length!==ids.length||rows.some(r=>r.requestStatus!=='submitted'))fail(409,'Chỉ xác nhận phiếu đã gửi NCC. Tải lại danh sách.');
+      if(rows.some(r=>r.a.status==='rejected'))fail(409,'Có phiếu NCC đã từ chối. Chưa xác nhận dòng nào trong lần này.');
+      const pending=rows.filter(r=>r.a.status==='pending'),now=new Date().toISOString();
+      if(pending.length){
+        await tx.update(allocations).set({status:'accepted',responseNote:'Manager xác nhận thay NCC',respondedAt:now,respondedBy:m.id}).where(inArray(allocations.id,pending.map(r=>r.a.id)));
+        for(const requestId of [...new Set(pending.map(r=>r.requestId))])await audit(tx,m,requestId,'early-request-manager-confirm-batch',{
+          status:'accepted',allocations:pending.filter(r=>r.requestId===requestId).map(r=>({id:r.a.id,supplierId:r.a.supplierId,quantity:r.a.quantity}))});
+      }
+      return {confirmed:pending.length,replayed:pending.length===0};
+    });
+    return json({ok:true,...result});
   },'business');
   router.get('/supplier-portal/early-requests',async c=>{
     const supplierId=isSupplier(me(c))?await supplierFor(c):null;

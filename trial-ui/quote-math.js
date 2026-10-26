@@ -1,5 +1,13 @@
 // TỰ SINH bởi `npm run ui:build` từ src/modules/quotes/domain/quote-math.ts – không sửa tay.
 // src/modules/quotes/domain/quote-math.ts
+function manualLineNote(row) {
+  if (row.manualDescription !== void 0) return String(row.manualDescription).trim();
+  return [row.bundleContents?.trim(), row.printDescription?.trim(), row.packagingDescription?.trim() && row.packagingDescription.trim() !== "theo ti\xEAu chu\u1EA9n nh\xE0 s\u1EA3n xu\u1EA5t" ? row.packagingDescription.trim() : ""].filter(Boolean).join(" \xB7 ");
+}
+function manualLineDescription(row) {
+  if (row.manualLine !== true && String(row.sku || "").trim()) return null;
+  return [String(row.name || "").trim(), manualLineNote(row)].filter(Boolean).join("\n");
+}
 var num = (v) => Number(v || 0);
 var printingWorkshops = ["X\u01B0\u1EDFng in Ti\u1EBFn ph\xE1t", "Th\u01B0\u01A1ng B\xE9 Ba", "Tr\u1ECDng T\xEDn", "X\u01B0\u1EDFng in H\u1EA1nh Nguy\xEAn (Anh Li\xEAm)", "Minh Long"];
 var normalize = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
@@ -121,6 +129,8 @@ export {
   defaultCostDiscount,
   defaultCostPrice,
   discounted,
+  manualLineDescription,
+  manualLineNote,
   netPrice,
   normalize,
   parsePurchaseCost,

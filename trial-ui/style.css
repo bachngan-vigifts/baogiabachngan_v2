@@ -433,7 +433,6 @@ table { width: 100%; border-collapse: collapse; }
   /* Dòng nhập tay đi cùng bảng; giữ các cột tên, số lượng, đơn giá và thành tiền. */
   #view-editor #line-list tr.manual-line .col-img,
   #view-editor #line-list tr.manual-line .sku-line,
-  #view-editor #line-list tr.manual-line .sub-field,
   #view-editor #line-list tr.manual-line .product-meta,
   #view-editor #line-list tr.manual-line .col-disc,
   #view-editor #line-list tr.manual-line .col-print,
@@ -1980,6 +1979,10 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .incoming-table td:nth-child(2)>a { display: block; margin-top: 4px; }
 .early-request-line { border-top: 1px solid #e1e8ed; padding: 12px 0; }
 .early-request-line .row-gap { margin-top: 8px; }
+.early-request-bulk { margin: 12px 0; flex-wrap: wrap; }
+.early-request-bulk label { display: flex; align-items: center; gap: 8px; }
+.early-request-bulk input[type=checkbox],.early-request-card input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 18px; }
+.early-product-link { white-space: normal; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
 .early-request-dialog { width: min(800px,calc(100vw - 24px)); max-height: 90dvh; padding: 0; }
 .early-request-dialog .modal-body { overflow: auto; max-height: 65dvh; }
 .early-request-dialog input[type="number"] { width: 120px; }

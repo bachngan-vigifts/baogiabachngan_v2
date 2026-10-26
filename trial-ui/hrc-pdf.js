@@ -146,9 +146,9 @@ globalThis.HrcPdf = (() => {
     }
     newPage(); tableHeader();
     state.rows.forEach((r, index) => {
-      const description = isVigifts?[r.name,`- Thương hiệu: ${r.brand||'Chưa ghi'}`,`- In ấn logo: ${r.printFee>0?(r.printDescription||'Có tính phí in ấn logo'):'Chưa bao gồm chi phí in ấn logo'}`,`- Mã hàng: ${r.sku}`,`- Đóng gói: ${r.packagingDescription||'theo tiêu chuẩn nhà sản xuất'}`].join('\n'):[r.name,'- Thương hiệu: Gốm sứ Minh Long I',`- Mã hàng: ${r.sku}`,r.bundleContents?`- Bộ gồm: ${r.bundleContents}`:'',`- In ấn logo: ${r.printFee>0?(r.printDescription||'Có tính phí in ấn logo'):'Chưa bao gồm chi phí in ấn logo'}`,`- Đóng gói: ${r.packagingDescription||'theo tiêu chuẩn nhà sản xuất'}`].filter(Boolean).join('\n');
+      const description = QuoteMath.manualLineDescription(r) ?? (isVigifts?[r.name,`- Thương hiệu: ${r.brand||'Chưa ghi'}`,`- In ấn logo: ${r.printFee>0?(r.printDescription||'Có tính phí in ấn logo'):'Chưa bao gồm chi phí in ấn logo'}`,`- Mã hàng: ${r.sku}`,`- Đóng gói: ${r.packagingDescription||'theo tiêu chuẩn nhà sản xuất'}`].join('\n'):[r.name,'- Thương hiệu: Gốm sứ Minh Long I',`- Mã hàng: ${r.sku}`,r.bundleContents?`- Bộ gồm: ${r.bundleContents}`:'',`- In ấn logo: ${r.printFee>0?(r.printDescription||'Có tính phí in ấn logo'):'Chưa bao gồm chi phí in ấn logo'}`,`- Đóng gói: ${r.packagingDescription||'theo tiêu chuẩn nhà sản xuất'}`].filter(Boolean).join('\n'));
       const discount = r.discountType === 'amount' ? `${unitAmount(r.discount)} đ` : Number(r.discount) ? `${Number(r.discount)}%` : '-';
-      const hrcProduct = [r.name, r.sku ? `Mã hàng: ${r.sku}` : ''].filter(Boolean).join('\n');
+      const hrcProduct = QuoteMath.manualLineDescription(r) ?? [r.name, r.sku ? `Mã hàng: ${r.sku}` : ''].filter(Boolean).join('\n');
       const values = isB2b
         ? (showB2bDiscountColumn
           ? [index+1,description,r.unit||'',r.qty,'',unitAmount(r.price),discount,r.printFee?unitAmount(r.printFee):'',unitAmount(after(r)),amount(after(r)*Number(r.qty))]

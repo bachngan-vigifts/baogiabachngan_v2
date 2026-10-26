@@ -7,6 +7,8 @@
 export type QuoteType = 'HRC' | 'B2B' | 'VIGIFTS';
 
 export interface QuoteRow {
+  manualLine?: boolean; manualDescription?: string;
+  bundleContents?: string; printDescription?: string; packagingDescription?: string;
   sku?: string; name?: string; brand?: string; pattern?: string;
   price?: number; qty?: number;
   discount?: number; discountType?: 'percent' | 'amount';
@@ -22,6 +24,16 @@ export interface QuoteRow {
    * đơn giá sau chiết khấu KHÔNG gồm phí in. `excluded`: dòng không tính CK (vd. bao bì).
    */
   commission?: { mode?: 'percent' | 'amount'; value?: number; excluded?: boolean };
+}
+
+/** One optional note for custom rows; retain meaningful descriptions from older quotes. */
+export function manualLineNote(row:QuoteRow):string {
+  if(row.manualDescription!==undefined)return String(row.manualDescription).trim();
+  return [row.bundleContents?.trim(),row.printDescription?.trim(),row.packagingDescription?.trim()&&row.packagingDescription.trim()!=='theo tiêu chuẩn nhà sản xuất'?row.packagingDescription.trim():''].filter(Boolean).join(' · ');
+}
+export function manualLineDescription(row:QuoteRow):string|null {
+  if(row.manualLine!==true&&String(row.sku||'').trim())return null;
+  return [String(row.name||'').trim(),manualLineNote(row)].filter(Boolean).join('\n');
 }
 
 export interface QuoteDoc {

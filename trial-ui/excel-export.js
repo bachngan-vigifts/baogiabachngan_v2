@@ -17,6 +17,7 @@ globalThis.QuoteExcel=(()=>{
  const fill=color=>({type:'pattern',pattern:'solid',fgColor:{argb:color}});
  const taxRate=(row,state)=>(Number.isFinite(Number(row.taxRate))?Number(row.taxRate):Number(state.vat||0))/100;
  const description=(row,state)=>{
+  const manual=QuoteMath.manualLineDescription(row);if(manual!==null)return manual;
   if(state.type==='HRC'){
    const packing=[Number(row.perCarton)>0?`${Number(row.perCarton).toLocaleString('vi-VN')} ${row.unit||'cái'}/thùng`:'',Number(row.cartonWeight)>0?`nặng ${Number(row.cartonWeight).toLocaleString('vi-VN')} kg/thùng`:''].filter(Boolean).join('; ');
    return [row.name,packing?`Đóng gói: ${packing}`:''].filter(Boolean).join('\n');
