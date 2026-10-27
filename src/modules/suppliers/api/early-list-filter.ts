@@ -22,7 +22,7 @@ export function earlyListFilter(params: URLSearchParams, supplierId: string | nu
       : and(hasStatus('accepted'), hasStatus('rejected'), sql`not (${hasStatus('pending')})`)) : undefined;
   // Parameters remain bound, and user %/_ characters are literal search text.
   const pattern = '%' + q.replace(/[\\%_]/g, '\\$&') + '%';
-  const search = q ? sql`(${requests.id} ilike ${pattern} or exists(
+  const search = q ? sql`(${requests.id} ilike ${pattern} or ${requests.ticketNumber} ilike ${pattern} or exists(
     select 1 from ${lines} l join ${allocations} a on a.request_line_id=l.id
     join ${incomingShipmentLines} p on p.id=a.purchase_line_id
     join ${incomingShipments} o on o.id=p.shipment_id

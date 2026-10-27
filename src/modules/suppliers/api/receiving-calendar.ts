@@ -54,10 +54,10 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
     if (!purchase || (supplier && allocation.supplierId !== supplier)) continue;
     const date = request.pickupDate || null;
     if (!matchesDate(date) || (sku && !fold(line.sku).includes(sku))) continue;
-    if (q && !fold(['Phiếu xin lấy trước',request.id,purchase.ticketNumber,supplierName,line.sku,line.name].join(' ')).includes(q)) continue;
+    if (q && !fold(['Phiếu xin lấy trước',request.id,request.ticketNumber,purchase.ticketNumber,supplierName,line.sku,line.name].join(' ')).includes(q)) continue;
     const key = 'early:'+request.id+':'+allocation.supplierId;
     let group=groups.get(key);
-    if(!group){group={type:'early',orderId:purchase.orderId,requestId:request.id,supplierId:allocation.supplierId,ticketNumber:'Phiếu xin lấy trước',supplierName,date,createdAt:request.createdAt,lines:[]};groups.set(key,group);}
+    if(!group){group={type:'early',orderId:purchase.orderId,requestId:request.id,supplierId:allocation.supplierId,ticketNumber:request.ticketNumber||'Phiếu xin lấy trước',supplierName,date,createdAt:request.createdAt,lines:[]};groups.set(key,group);}
     let saved=group.lines.find(l=>l.lineId===line.id);
     if(!saved){const own=ownLines.get(line.id+':'+allocation.supplierId)!;saved={lineId:line.id,sku:line.sku,name:line.name,unit:line.unit,left:0,requestedQty:own.quantity,
       status:request.status==='draft'?'draft':own.statuses.every(s=>s===own.statuses[0])?own.statuses[0]!:'mixed',

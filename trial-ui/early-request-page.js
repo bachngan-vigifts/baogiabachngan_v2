@@ -49,7 +49,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
   try{const data=await api('/purchase-early-requests?'+p);if(mine!==sequence)return;
    canSend=!!data.canSend;file.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();selection.reset(data.requests,data);
    for(const request of data.requests){
-    const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link','Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
+    const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link',request.ticketNumber||'Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
     const title=node('div','early-list-title'),check=selection.checkbox(request);if(check)title.append(check);title.append(open);head.append(title,node('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
     const allocations=request.lines.flatMap(l=>l.allocations),names=[...new Set(allocations.map(a=>a.supplierName))],orders=[...new Set(allocations.map(a=>a.ticketNumber+(a.supplierOrderNo?' · NCC: '+a.supplierOrderNo:'')))];
     const created=new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(request.createdAt));

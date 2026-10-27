@@ -111,7 +111,7 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,requestHre
       const savedRequests=data.requests||[saved];
       status.textContent='Đã lưu '+savedRequests.length+' phiếu nháp theo số đơn NCC. Kiểm tra từng phiếu trước khi gửi NCC.';
       for(const request of savedRequests){
-      const ref=request.lines?.[0]?.allocations?.[0]?.supplierOrderNo||request.lines?.[0]?.allocations?.[0]?.ticketNumber||request.id.slice(0,8);
+      const ref=request.ticketNumber||request.lines?.[0]?.allocations?.[0]?.supplierOrderNo||request.lines?.[0]?.allocations?.[0]?.ticketNumber||request.id.slice(0,8);
       const link=el('a','btn primary',savedRequests.length>1?'Mở phiếu · '+ref:'Mở phiếu / Gửi NCC');link.href=requestHref(request.id);
       link.addEventListener('click',e=>{if(!e.ctrlKey&&!e.metaKey&&e.button===0){e.preventDefault();dialog.close();go(link.getAttribute('href'));}});foot.append(link);}
     }catch(e){uncertain=!e.status||e.status>=500;error.textContent=(e.message||'Không lưu được phiếu.')+(uncertain?' Chưa rõ kết quả; bấm Thử lưu lại để kiểm tra đúng lần lưu này.':'');}

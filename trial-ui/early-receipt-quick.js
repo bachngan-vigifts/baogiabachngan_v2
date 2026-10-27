@@ -10,7 +10,7 @@ export async function openEarlyQuickReceipt({api,request,requests=request?[reque
  if(active?.isConnected){active.focus();return;}
  const modal=active=el('dialog','modal early-request-dialog early-quick-receipt'),head=el('div','modal-head'),form=el('form'),body=el('div','modal-body'),foot=el('div','modal-foot');
  modal.dataset.mobileActions='off';
- const title=el('div');title.append(el('h2','','Nhận hàng nhanh theo phiếu xin'),el('p','small muted',requests.map(r=>'Phiếu '+r.id.slice(0,8).toUpperCase()+(r.slipLabel?' · '+r.slipLabel:'')).join(' · ')));
+ const title=el('div');title.append(el('h2','','Nhận hàng nhanh theo phiếu xin'),el('p','small muted',requests.map(r=>'Phiếu '+(r.ticketNumber||r.id.slice(0,8).toUpperCase())+(r.slipLabel?' · '+r.slipLabel:'')).join(' · ')));
  const close=el('button','btn secondary','Đóng');close.type='button';close.dataset.noBusy='';head.append(title,close);
  const status=el('p','small muted','Đang tải các mã còn được nhận…'),error=el('p','error');error.setAttribute('role','alert');status.setAttribute('role','status');
  const today=new Date(Date.now()+7*3600000).toISOString().slice(0,10),date=Object.assign(el('input'),{type:'date',value:today,max:today,required:true});date.setAttribute('aria-label','Ngày nhận');
@@ -37,7 +37,7 @@ export async function openEarlyQuickReceipt({api,request,requests=request?[reque
    const limit=quantity(Math.min(line.remaining,allocs.reduce((s,a)=>s+Number(a.remainingToReceive||0),0)));if(!source||limit<=0)continue;
    const key=context.orderId+':'+line.lineId,budget=quantity(Math.min(...allocs.map(a=>Number(a.purchaseRemaining??line.remaining))));budgets.set(key,Math.min(budgets.get(key)??Infinity,budget));
    const card=el('section','recv-card'),input=Object.assign(el('input'),{type:'number',min:'0',step:'0.001',max:String(limit),value:String(limit),required:true});input.inputMode='decimal';input.setAttribute('aria-label','SL nhận '+line.sku+' · '+context.ticketNumber);input.dataset.earlyQuickQuantity=line.lineId;
-   card.append(el('b','',source.name.includes(line.sku)?source.name:source.name+' ('+line.sku+')'),el('p','small muted','Phiếu '+request.id.slice(0,8).toUpperCase()+' · '+context.ticketNumber+' · Còn được nhận '+num(limit)+' '+(source.unit||'')),field('Số lượng hàng đạt nhập kho',input));cards.append(card);rows.push({input,limit,context,line,request,key});controls.push(input);input.addEventListener('input',sync);
+   card.append(el('b','',source.name.includes(line.sku)?source.name:source.name+' ('+line.sku+')'),el('p','small muted','Phiếu '+(request.ticketNumber||request.id.slice(0,8).toUpperCase())+' · '+context.ticketNumber+' · Còn được nhận '+num(limit)+' '+(source.unit||'')),field('Số lượng hàng đạt nhập kho',input));cards.append(card);rows.push({input,limit,context,line,request,key});controls.push(input);input.addEventListener('input',sync);
   }
   if(!rows.length)throw Error('Phiếu không còn mã được nhận. Đóng và tải lại phiếu.');
   const assigned=new Map();for(const r of rows){const value=quantity(Math.max(0,Math.min(r.limit,budgets.get(r.key)-(assigned.get(r.key)||0))));r.input.value=String(value);assigned.set(r.key,(assigned.get(r.key)||0)+value);}

@@ -55,7 +55,7 @@ export function initPurchaseIncoming({ api, host, go }) {
   }
   const requestLabels={draft:'Nháp — chưa gửi NCC',pending:'Chờ NCC xác nhận',accepted:'NCC đồng ý',rejected:'NCC từ chối',mixed:'NCC phản hồi khác nhau'};
   function requestNode(request){
-    const row=el('div','incoming-order incoming-early-order'),link=el('a','data-link','Phiếu lấy trước · '+new Date(request.createdAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}));
+    const row=el('div','incoming-order incoming-early-order'),link=el('a','data-link',(request.ticketNumber||'Phiếu lấy trước')+' · '+new Date(request.createdAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}));
     link.href='#/purchases?mode=incoming&request='+encodeURIComponent(request.id);
     link.addEventListener('click',e=>{if(!e.ctrlKey&&!e.metaKey&&e.button===0){e.preventDefault();go(link.getAttribute('href'));}});
     row.append(link,el('span','',request.supplierName),el('span','',number(request.quantity)+' · '+requestLabels[request.status]),el('span','','Ngày lấy: '+date(request.pickupDate)));

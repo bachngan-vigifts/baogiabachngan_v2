@@ -39,3 +39,5 @@ test('rejects oversized confirmation and stale selected requests without writes'
 test('receiving passes freshly loaded selected headers in page order, not checkbox click order',async()=>{
  const s=setup(),checks=s.set([request('first','accepted'),request('second','accepted')]);check(checks[1]);check(checks[0]);await s.button('Nhận hàng nhanh').click();assert.equal(s.quick.length,1);assert.deepEqual(JSON.parse(JSON.stringify(s.quick[0].requests.map((r:any)=>r.id))),['first','second']);assert.equal(s.calls.length,0);
 });
+
+test('checkbox uses the persisted PXH number instead of the UUID fragment',()=>{const s=setup(),r:any=request('uuid');r.ticketNumber='PXH_001_27102026';assert.equal(s.set([r])[0].attrs['aria-label'],'Chọn phiếu PXH_001_27102026');});

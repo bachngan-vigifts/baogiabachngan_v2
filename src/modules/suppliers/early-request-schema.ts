@@ -4,12 +4,12 @@ import { employees } from '../staff/schema.ts';
 import { incomingShipmentLines, suppliers } from './schema.ts';
 
 export const purchaseEarlyRequests = pgTable('purchase_early_requests', {
-  id: text('id').primaryKey(), clientKey: text('client_key').notNull(), payloadHash: text('payload_hash').notNull(),
+  id: text('id').primaryKey(), ticketNumber:text('ticket_number').notNull().default(''), clientKey: text('client_key').notNull(), payloadHash: text('payload_hash').notNull(),
   createdBy: text('created_by').notNull().references(() => employees.id), createdAt: text('created_at').notNull(),
   status: text('status',{enum:['draft','submitted']}).notNull().default('submitted'), pickupDate: text('pickup_date').notNull().default(''),
   deletedAt:text('deleted_at'),deletedBy:text('deleted_by').references(()=>employees.id),
   scope: text('scope').notNull().default('{}'), updatedAt: text('updated_at').notNull().default(''), revision: bigint('revision',{mode:'number'}).notNull().default(1),
-}, t => [uniqueIndex('idx_purchase_early_requests_key').on(t.createdBy,t.clientKey), index('idx_purchase_early_requests_created').on(t.createdAt),
+}, t => [uniqueIndex('idx_purchase_early_requests_number').on(t.ticketNumber).where(sql`${t.ticketNumber}<>''`), uniqueIndex('idx_purchase_early_requests_key').on(t.createdBy,t.clientKey), index('idx_purchase_early_requests_created').on(t.createdAt),
   check('chk_purchase_early_request_status',sql`${t.status} in ('draft','submitted')`)]).enableRLS();
 export const purchaseEarlyRequestLines = pgTable('purchase_early_request_lines', {
   id: text('id').primaryKey(), requestId: text('request_id').notNull().references(() => purchaseEarlyRequests.id),
