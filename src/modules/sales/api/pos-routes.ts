@@ -1,3 +1,4 @@
+import { posCatalogFamily, MINH_LONG_CATALOG_PATTERN, LOCK_CATALOG_PATTERN } from '../domain/pos-catalog-brand.ts';
 import { nextPosOrderNo } from './pos-number.ts';
 import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrReference, posQrOrderNumbers } from '../domain/pos-qr-reference.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
@@ -785,6 +786,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(x => x.trim()).filter(Boolean))].slice(0, 60);
       const offset = skuList.length ? 0 : Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
       const limit = skuList.length ? skuList.length : Math.max(1, Math.min(60, Number(c.url.searchParams.get('limit')) || 60));
+      const catalogFamily=posCatalogFamily(r.name);
+      const brandScope=catalogFamily?sql`${foldSql(products.brand,products.name)} !~ ${catalogFamily==='lock'?MINH_LONG_CATALOG_PATTERN:LOCK_CATALOG_PATTERN}`:undefined;
       const rows = await c.env.db
         .select({
           sku: products.sku,
@@ -801,6 +804,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .where(
           and(
             eq(products.active, true),
+            brandScope,
             eq(products.approvalStatus, 'approved'),
             sql`${productPrices.price} is not null`,
             barcodeHit ? eq(products.sku, barcodeHit.sku) : undefined,
@@ -837,7 +841,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         })),
         nextOffset: rows.length === limit ? offset + limit : null,
         // Khớp chính xác mã vạch / SKU (không phân biệt hoa thường): quầy chỉ tự thêm vào giỏ khi có mã này (Enter / quét mã).
-        exactSku: q && !skuList.length ? barcodeHit?.sku ?? rows.find(p => p.sku.toLowerCase() === q.toLowerCase())?.sku ?? null : null,
+        exactSku: q && !skuList.length ? rows.find(p=>p.sku===(barcodeHit?.sku||'')||p.sku.toLowerCase()===q.toLowerCase())?.sku ?? null : null,
       });
     },
     'business',

@@ -1,3 +1,4 @@
+import { posCatalogProductVisible } from './pos-catalog-brand.js';
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
 import { posCustomerIssue, canListRetailCustomers } from './pos-customer.js';
 import { customerFormFields } from './customer-form-fields.js';
@@ -1099,12 +1100,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   /** Tồn / giá máy chủ của từng mã vừa xem (chỉ dùng khi đang gõ tìm, giữ 15 giây): gõ thêm / xoá chữ không phải hỏi lại. */
   const liveCache = new Map(), LIVE_MS = 15000;
-  const cachedLive = (sku) => { const hit = liveCache.get(st.policy + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
+  const cachedLive = (sku, registerId, policyId) => { const hit = liveCache.get(registerId + '|' + policyId + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
   async function search(addScanned = false, more = false, typed = false, previous = false) {
     if (!st.register) return;
     if (more && st.catalogLoading) return;
     if (more && (nodes.search?.value.trim() || '') !== st.query) return;
     if (previous && st.catalogPages.length < 2) return;
+    const registerId=st.register.id,registerName=st.register.name,policyId=st.policy;
     if (!typed && !more) liveCache.clear(); // bán xong, đổi bảng giá, mở ca…: lấy tồn mới
     st.catalogLoading = true;
     nodes.more.disabled = true;
@@ -1116,23 +1118,23 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       limit = mobile ? 20 : 60;
     try {
       // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
-      if (!more) st.localSkus = q && !addScanned ? localSearch(q, st.policy) : null;
+      if (!more) st.localSkus = q && !addScanned ? localSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p)) : null;
       const local = st.localSkus?.length ? st.localSkus : null; // [{sku, name, price…}] theo thứ tự xếp hạng
-      const base = `/pos/catalog?registerId=${encodeURIComponent(st.register.id)}&pricePolicyId=${encodeURIComponent(st.policy)}`;
+      const base = `/pos/catalog?registerId=${encodeURIComponent(registerId)}&pricePolicyId=${encodeURIComponent(policyId)}`;
       st.query = q;
       // Danh mục tải sẵn: hiện ngay (tồn "đang tải" với mã chưa có trong bộ nhớ tạm), chỉ hỏi máy chủ phần còn thiếu.
       const bySkus = async (previews) => {
         const page = previews.slice(offset, offset + limit), nextOffset = offset + limit < previews.length ? offset + limit : null;
-        const show = () => page.map(x => cachedLive(x.sku) || { ...x, onHand: 0, reserved: 0, available: 0, loading: true });
-        const missing = page.filter(x => !cachedLive(x.sku)).map(x => x.sku);
+        const show = () => page.map(x => cachedLive(x.sku,registerId,policyId) || { ...x, onHand: 0, reserved: 0, available: 0, loading: true });
+        const missing = page.filter(x => !cachedLive(x.sku,registerId,policyId)).map(x => x.sku);
         if (missing.length && seq === searchSeq && (!mobile || !more)) { st.products = append ? [...st.products, ...show()] : show(); renderProducts(); }
         if (missing.length) {
           const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set(), asked = new Set(missing);
           // Máy chủ chưa hiểu `skus=` (đang triển khai dở / bản cũ) thì trả danh sách khác: không xoá các ô, chuyển sang tìm theo từ khoá.
           if (fresh.products.some(p => !asked.has(p.sku))) return null;
-          for (const p of fresh.products) { liveCache.set(st.policy + '|' + p.sku, { p, at: now }); got.add(p.sku); }
+          for (const p of fresh.products) { liveCache.set(registerId + '|' + policyId + '|' + p.sku, { p, at: now }); got.add(p.sku); }
           // Mã không còn bán ở quầy (máy chủ không trả): bỏ khỏi danh sách.
-          return { products: show().filter(p => !p.loading || got.has(p.sku)).map(p => cachedLive(p.sku) || p), nextOffset };
+          return { products: show().filter(p => !p.loading || got.has(p.sku)).map(p => cachedLive(p.sku,registerId,policyId) || p), nextOffset };
         }
         return { products: show(), nextOffset };
       };
@@ -1143,7 +1145,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       // (ưu tiên danh sách lọc tại chỗ – cùng thứ tự với khi gõ), không tự thêm sản phẩm nào.
       const exact = addScanned && !more ? d.products.find(p => p.sku === d.exactSku) : null;
       if (addScanned && !more && !exact) {
-        const fallback = localSearch(q, st.policy);
+        const fallback = localSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p));
         if (fallback?.length) { const viaLocal = await bySkus(fallback); if (viaLocal) { st.localSkus = fallback; d = viaLocal; } }
       }
       if (seq !== searchSeq) return;

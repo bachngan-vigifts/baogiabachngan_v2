@@ -21,7 +21,7 @@ function supplierSlips(request) {
   }
   return [...groups.values()];
 }
-export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{},onDeleted=()=>{},requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id),currentRequest=()=>''}) {
+export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{},onDeleted=()=>{},requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id),currentRequest=()=>'',portalNavigation=null}) {
   let requestNo=0,dialog=null,batchBusy=false,confirmDialog=null;const selected=new Map();
   const title=el('h2','card-title',portal?'Yêu cầu xin lấy trước':'Phiếu xin lấy trước đã lưu'),list=el('div','early-request-list');
   const operations=el('div','early-request-operations');
@@ -53,7 +53,15 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
 
     for(const request of requests.flatMap(r=>!portal&&r.requestStatus==='submitted'?supplierSlips(r):[r])) {
       const card=el('article','card early-request-card'),head=el('div','row-gap early-request-head');card.dataset.requestId=request.id;
-      head.append(el('strong','',`${request.slipLabel||'Phiếu lấy trước'} · ${time(request.createdAt)}`),el('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
+      const browse=portal&&portalNavigation?.canBrowse(),heading=el('strong'),ordersForHeading=new Map(request.lines.flatMap(l=>l.allocations).map(a=>[a.orderId,a.ticketNumber]));
+      const titleText=request.slipLabel||'Phiếu lấy trước '+request.id.slice(0,8).toUpperCase();
+      if(!portal&&request.groupKey&&ordersForHeading.size===1){const a=el('a','early-order-link',titleText);a.href='#/purchases/'+encodeURIComponent(ordersForHeading.keys().next().value);heading.append(a);}
+      else if(browse){const a=el('a','early-order-link',titleText);a.href='/#/early-requests/'+encodeURIComponent(request.id);heading.append(a);}
+      else heading.append(el('span','',titleText));
+      heading.append(el('span','',` · ${time(request.createdAt)}`));
+      if(!portal&&request.groupKey&&ordersForHeading.size>1)for(const [id,no]of ordersForHeading){const a=el('a','early-order-choice',no);a.href='#/purchases/'+encodeURIComponent(id);heading.append(a);}
+      const status=el('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status);head.append(heading);
+      if(browse){const actions=el('div','early-request-status-actions'),details=btn('Xem chi tiết',()=>portalNavigation.onDetail(request));actions.dataset.mobileActions='off';details.dataset.mobileInline='';actions.append(status,details);head.append(actions);}else head.append(status);
       if(!portal&&canViewPortal&&request.groupKey&&request.lines.some(l=>l.allocations.some(a=>a.status==='pending'))){
         const check=el('input');check.type='checkbox';check.setAttribute('aria-label','Chọn phiếu '+request.slipLabel+' · '+request.supplierName);
         check.addEventListener('change',()=>{if(check.checked)selected.set(request.groupKey,request);else selected.delete(request.groupKey);all.checked=selectable.length>0&&selectable.every(e=>e.check.checked);syncBatch();});
@@ -73,15 +81,16 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       for(const line of request.lines) {
         const box=el('section','early-request-line');
         const productTitle=line.name.includes(line.sku)?line.name:`${line.name} (${line.sku})`;
-        const product=portal?el('b','',productTitle):btn(productTitle,()=>{},'link-btn early-product-link');
+        const product=portal?(browse?el('a','early-product-link',productTitle):el('b','',productTitle)):btn(productTitle,()=>{},'link-btn early-product-link');
+        if(browse)product.href='/#/products?sku='+encodeURIComponent(line.sku);
         if(!portal){product.dataset.productCard=line.sku;product.dataset.name=line.name;product.title='Xem tồn kho và lịch sử sản phẩm';}
         box.append(product,el('p','',`${number(line.quantity)} ${line.unit||''} · ${labels[line.status]||line.status}`));
         for(const a of line.allocations) {
           const p=el('p','muted small');
-          if(!portal) {const order=el('a','',a.ticketNumber);order.href='#/purchases/'+encodeURIComponent(a.orderId)+'?mode=incoming';p.append(order);}
+          if(!portal||browse) {const order=el('a','',a.ticketNumber);order.href=(portal?'/':'')+'#/purchases/'+encodeURIComponent(a.orderId)+'?mode=incoming';p.append(order);}
           else p.append(el('span','',a.ticketNumber));
           p.append(el('span','',` · ${a.supplierName} · ${number(a.quantity)} · Hẹn ${date(a.due)} · ${labels[a.status]}`));
-          if(a.supplierOrderNo)p.append(el('span','',' · Số đơn NCC: '+a.supplierOrderNo));
+          if(a.supplierOrderNo){p.append(el('span','',' · Số đơn NCC: '));if(!portal||browse){const link=el('a','',a.supplierOrderNo);link.href=(portal?'/':'')+'#/purchases/'+encodeURIComponent(a.orderId);p.append(link);}else p.append(el('span','',a.supplierOrderNo));}
           if(a.respondedAt)p.append(el('span','',` · ${time(a.respondedAt)}`));if(a.responseNote)p.append(el('span','',' · '+a.responseNote));box.append(p);
         }
         if(portal&&canRespond&&line.status==='pending') {

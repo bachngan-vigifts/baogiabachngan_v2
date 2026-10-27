@@ -1,0 +1,26 @@
+[
+  {
+    "width": 390,
+    "role": "mgr",
+    "linked": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "role": "ncc",
+    "linked": true,
+    "errors": []
+  },
+  {
+    "width": 1280,
+    "role": "mgr",
+    "linked": true,
+    "errors": []
+  },
+  {
+    "width": 1280,
+    "role": "ncc",
+    "linked": true,
+    "errors": []
+  }
+]
