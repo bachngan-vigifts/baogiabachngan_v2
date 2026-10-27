@@ -1,0 +1,14 @@
+Node 22.22.0: full test globs (PHP wrapper enabled locally)
+  ...
+1..1155
+# tests 1155
+# suites 0
+# pass 1124
+# fail 0
+# cancelled 0
+# skipped 31
+# todo 0
+# duration_ms 1362917.604132
+
+Focused rerun after final changes: typecheck, UI build, quote-device-draft 4/4, mobile-action-policy 2/2, quote-mobile-ui 6/6, trial-ui 5/5.
+Browser regression 5 widths passed; failed quote save regression separately passed at 390px.

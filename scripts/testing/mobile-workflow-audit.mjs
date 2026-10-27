@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {setup} from '../../tests/helpers/pos-fixture.ts';
 import {customers} from '../../src/modules/customers/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
-const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url));
+const root=process.env.UI_SOURCE||fileURLToPath(new URL('../../trial-ui/',import.meta.url));
 const f=await setup(),ok=(r,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 const customerId='design-customer';
 await f.db.insert(customers).values({id:customerId,name:'CÔNG TY PHƯỚC ĐỨC',contact:'Anh Minh',phone:'0903123218',email:'minh@example.invalid',address:'12 Nguyễn Huệ, Cần Thơ',taxCode:'0101234567',customerCode:'BN-CUZN04196',search:'phuoc duc anh minh',sourceVersion:0,syncedAt:''});
@@ -51,7 +51,7 @@ try{for(const width of (process.env.AUDIT_WIDTHS||'390,1280').split(',').map(Num
  await context.addInitScript(({token,user})=>{document.addEventListener('click',e=>{if(e.target.closest?.('a[href^="tel:"]'))e.preventDefault();});localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{token,user});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/index.html#/tasks');await page.locator('#workspace').waitFor({state:'visible'});
  for(const [name,hash] of routes){
-  await page.evaluate(h=>location.hash=h,hash);await page.waitForTimeout(650);
+  await page.evaluate(h=>location.hash=h,hash);await page.waitForTimeout(650);await page.waitForLoadState('networkidle');
   await page.screenshot({path:screenshotDir+'/'+name+'-'+width+'.png'});
   const facts=await page.evaluate(()=>{
    const shown=n=>!!n.getClientRects().length&&!n.closest('[hidden]');const view=[...document.querySelectorAll('main>.view')].find(shown);
@@ -70,6 +70,6 @@ try{for(const width of (process.env.AUDIT_WIDTHS||'390,1280').split(',').map(Num
  await task('call_customer','#/customers',[()=>click('#customer-list a[href^="tel:"]')]);
  await task('add_care','#/care',[()=>click('#view-care [data-care-new]')]);
  await task('export_excel','#/products',[()=>click('#product-export')]);
- await task('close_document','#/contracts/'+contract.orderId,[()=>click('[aria-label="Đóng chi tiết HĐKT"]')]);
+ await task('close_document','#/contracts/'+contract.orderId,[()=>click(width<=850?'#order-back':'[aria-label="Đóng chi tiết HĐKT"]')]);
  report.push({width,taps,errors});await context.close();
  }}finally{await writeFile(screenshotDir+'/audit.json',JSON.stringify(report,null,2));await browser.close();server.close();await f.client.close();}

@@ -1,0 +1,3417 @@
+[
+  {
+    "name": "quotes",
+    "width": 360,
+    "hash": "#/quotes",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "quote-new",
+    "width": 360,
+    "hash": "#/quotes/new",
+    "view": "view-editor",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contracts",
+    "width": 360,
+    "hash": "#/contracts",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contract-detail",
+    "width": 360,
+    "hash": "#/contracts/a35fafd9-caee-435d-ac3d-7c643faefddf",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "tasks",
+    "width": 360,
+    "hash": "#/tasks",
+    "view": "view-tasks",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "orders",
+    "width": 360,
+    "hash": "#/orders",
+    "view": "view-orders",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "order-detail",
+    "width": 360,
+    "hash": "#/orders/dfe6a9e7-042f-4889-922d-fbad8580815f",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customers",
+    "width": 360,
+    "hash": "#/customers",
+    "view": "view-customers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customer-detail",
+    "width": 360,
+    "hash": "#/customers/design-customer",
+    "view": "view-customer",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "care",
+    "width": 360,
+    "hash": "#/care",
+    "view": "view-care",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "pos",
+    "width": 360,
+    "hash": "#/pos",
+    "view": "view-pos",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "deliveries",
+    "width": 360,
+    "hash": "#/deliveries",
+    "view": "view-deliveries",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "packing",
+    "width": 360,
+    "hash": "#/packing",
+    "view": "view-packing",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "receivables",
+    "width": 360,
+    "hash": "#/receivables",
+    "view": "view-receivables",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cash",
+    "width": 360,
+    "hash": "#/cash",
+    "view": "view-cash",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cashbook",
+    "width": 360,
+    "hash": "#/cashbook",
+    "view": "view-cashbook",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "purchases",
+    "width": 360,
+    "hash": "#/purchases",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "receiving",
+    "width": 360,
+    "hash": "#/receiving",
+    "view": "view-receiving",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "suppliers",
+    "width": 360,
+    "hash": "#/suppliers",
+    "view": "view-suppliers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "incoming",
+    "width": 360,
+    "hash": "#/purchases?mode=incoming",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "kho",
+    "width": 360,
+    "hash": "#/kho",
+    "view": "view-kho",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "stock-moves",
+    "width": 360,
+    "hash": "#/stock-moves?from=2026-09-28&to=2026-10-27",
+    "view": "view-stock-moves",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "inventory",
+    "width": 360,
+    "hash": "#/inventory",
+    "view": "view-inventory",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "transfers",
+    "width": 360,
+    "hash": "#/transfers",
+    "view": "view-transfers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "products",
+    "width": 360,
+    "hash": "#/products",
+    "view": "view-products",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "staff",
+    "width": 360,
+    "hash": "#/members",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "payroll",
+    "width": 360,
+    "hash": "#/payroll",
+    "view": "view-payroll",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "permissions",
+    "width": 360,
+    "hash": "#/permissions",
+    "view": "view-permissions",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "flow",
+    "width": 360,
+    "hash": "#/flow",
+    "view": "view-flow",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "dashboard",
+    "width": 360,
+    "hash": "#/dashboard",
+    "view": "view-dashboard",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "width": 360,
+    "taps": [
+      {
+        "name": "create_quote",
+        "taps": 1
+      },
+      {
+        "name": "edit_line_qty",
+        "taps": 1
+      },
+      {
+        "name": "send_for_approval",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "contract_and_docs",
+        "taps": 2
+      },
+      {
+        "name": "complete_task",
+        "taps": 1
+      },
+      {
+        "name": "filter_results",
+        "taps": 2
+      },
+      {
+        "name": "call_customer",
+        "taps": 1
+      },
+      {
+        "name": "add_care",
+        "taps": 1
+      },
+      {
+        "name": "export_excel",
+        "taps": 1
+      },
+      {
+        "name": "close_document",
+        "taps": 1
+      }
+    ],
+    "errors": []
+  },
+  {
+    "name": "quotes",
+    "width": 390,
+    "hash": "#/quotes",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "quote-new",
+    "width": 390,
+    "hash": "#/quotes/new",
+    "view": "view-editor",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contracts",
+    "width": 390,
+    "hash": "#/contracts",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contract-detail",
+    "width": 390,
+    "hash": "#/contracts/a35fafd9-caee-435d-ac3d-7c643faefddf",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "tasks",
+    "width": 390,
+    "hash": "#/tasks",
+    "view": "view-tasks",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "orders",
+    "width": 390,
+    "hash": "#/orders",
+    "view": "view-orders",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "order-detail",
+    "width": 390,
+    "hash": "#/orders/dfe6a9e7-042f-4889-922d-fbad8580815f",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customers",
+    "width": 390,
+    "hash": "#/customers",
+    "view": "view-customers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customer-detail",
+    "width": 390,
+    "hash": "#/customers/design-customer",
+    "view": "view-customer",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "care",
+    "width": 390,
+    "hash": "#/care",
+    "view": "view-care",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "pos",
+    "width": 390,
+    "hash": "#/pos",
+    "view": "view-pos",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "deliveries",
+    "width": 390,
+    "hash": "#/deliveries",
+    "view": "view-deliveries",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "packing",
+    "width": 390,
+    "hash": "#/packing",
+    "view": "view-packing",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "receivables",
+    "width": 390,
+    "hash": "#/receivables",
+    "view": "view-receivables",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cash",
+    "width": 390,
+    "hash": "#/cash",
+    "view": "view-cash",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cashbook",
+    "width": 390,
+    "hash": "#/cashbook",
+    "view": "view-cashbook",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "purchases",
+    "width": 390,
+    "hash": "#/purchases",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "receiving",
+    "width": 390,
+    "hash": "#/receiving",
+    "view": "view-receiving",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "suppliers",
+    "width": 390,
+    "hash": "#/suppliers",
+    "view": "view-suppliers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "incoming",
+    "width": 390,
+    "hash": "#/purchases?mode=incoming",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "kho",
+    "width": 390,
+    "hash": "#/kho",
+    "view": "view-kho",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "stock-moves",
+    "width": 390,
+    "hash": "#/stock-moves?from=2026-09-28&to=2026-10-27",
+    "view": "view-stock-moves",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "inventory",
+    "width": 390,
+    "hash": "#/inventory",
+    "view": "view-inventory",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "transfers",
+    "width": 390,
+    "hash": "#/transfers",
+    "view": "view-transfers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "products",
+    "width": 390,
+    "hash": "#/products",
+    "view": "view-products",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "staff",
+    "width": 390,
+    "hash": "#/members",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "payroll",
+    "width": 390,
+    "hash": "#/payroll",
+    "view": "view-payroll",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "permissions",
+    "width": 390,
+    "hash": "#/permissions",
+    "view": "view-permissions",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "flow",
+    "width": 390,
+    "hash": "#/flow",
+    "view": "view-flow",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "dashboard",
+    "width": 390,
+    "hash": "#/dashboard",
+    "view": "view-dashboard",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "width": 390,
+    "taps": [
+      {
+        "name": "create_quote",
+        "taps": 1
+      },
+      {
+        "name": "edit_line_qty",
+        "taps": 1
+      },
+      {
+        "name": "send_for_approval",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "contract_and_docs",
+        "taps": 2
+      },
+      {
+        "name": "complete_task",
+        "taps": 1
+      },
+      {
+        "name": "filter_results",
+        "taps": 2
+      },
+      {
+        "name": "call_customer",
+        "taps": 1
+      },
+      {
+        "name": "add_care",
+        "taps": 1
+      },
+      {
+        "name": "export_excel",
+        "taps": 1
+      },
+      {
+        "name": "close_document",
+        "taps": 1
+      }
+    ],
+    "errors": []
+  },
+  {
+    "name": "quotes",
+    "width": 430,
+    "hash": "#/quotes",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "quote-new",
+    "width": 430,
+    "hash": "#/quotes/new",
+    "view": "view-editor",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contracts",
+    "width": 430,
+    "hash": "#/contracts",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contract-detail",
+    "width": 430,
+    "hash": "#/contracts/a35fafd9-caee-435d-ac3d-7c643faefddf",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "tasks",
+    "width": 430,
+    "hash": "#/tasks",
+    "view": "view-tasks",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "orders",
+    "width": 430,
+    "hash": "#/orders",
+    "view": "view-orders",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "order-detail",
+    "width": 430,
+    "hash": "#/orders/dfe6a9e7-042f-4889-922d-fbad8580815f",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customers",
+    "width": 430,
+    "hash": "#/customers",
+    "view": "view-customers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customer-detail",
+    "width": 430,
+    "hash": "#/customers/design-customer",
+    "view": "view-customer",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "care",
+    "width": 430,
+    "hash": "#/care",
+    "view": "view-care",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "pos",
+    "width": 430,
+    "hash": "#/pos",
+    "view": "view-pos",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "deliveries",
+    "width": 430,
+    "hash": "#/deliveries",
+    "view": "view-deliveries",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "packing",
+    "width": 430,
+    "hash": "#/packing",
+    "view": "view-packing",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "receivables",
+    "width": 430,
+    "hash": "#/receivables",
+    "view": "view-receivables",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cash",
+    "width": 430,
+    "hash": "#/cash",
+    "view": "view-cash",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cashbook",
+    "width": 430,
+    "hash": "#/cashbook",
+    "view": "view-cashbook",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "purchases",
+    "width": 430,
+    "hash": "#/purchases",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "receiving",
+    "width": 430,
+    "hash": "#/receiving",
+    "view": "view-receiving",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "suppliers",
+    "width": 430,
+    "hash": "#/suppliers",
+    "view": "view-suppliers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "incoming",
+    "width": 430,
+    "hash": "#/purchases?mode=incoming",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "kho",
+    "width": 430,
+    "hash": "#/kho",
+    "view": "view-kho",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "stock-moves",
+    "width": 430,
+    "hash": "#/stock-moves?from=2026-09-28&to=2026-10-27",
+    "view": "view-stock-moves",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "inventory",
+    "width": 430,
+    "hash": "#/inventory",
+    "view": "view-inventory",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "transfers",
+    "width": 430,
+    "hash": "#/transfers",
+    "view": "view-transfers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "products",
+    "width": 430,
+    "hash": "#/products",
+    "view": "view-products",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "staff",
+    "width": 430,
+    "hash": "#/members",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "payroll",
+    "width": 430,
+    "hash": "#/payroll",
+    "view": "view-payroll",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "permissions",
+    "width": 430,
+    "hash": "#/permissions",
+    "view": "view-permissions",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "flow",
+    "width": 430,
+    "hash": "#/flow",
+    "view": "view-flow",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "dashboard",
+    "width": 430,
+    "hash": "#/dashboard",
+    "view": "view-dashboard",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "width": 430,
+    "taps": [
+      {
+        "name": "create_quote",
+        "taps": 1
+      },
+      {
+        "name": "edit_line_qty",
+        "taps": 1
+      },
+      {
+        "name": "send_for_approval",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "contract_and_docs",
+        "taps": 2
+      },
+      {
+        "name": "complete_task",
+        "taps": 1
+      },
+      {
+        "name": "filter_results",
+        "taps": 2
+      },
+      {
+        "name": "call_customer",
+        "taps": 1
+      },
+      {
+        "name": "add_care",
+        "taps": 1
+      },
+      {
+        "name": "export_excel",
+        "taps": 1
+      },
+      {
+        "name": "close_document",
+        "taps": 1
+      }
+    ],
+    "errors": []
+  },
+  {
+    "name": "quotes",
+    "width": 768,
+    "hash": "#/quotes",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "quote-new",
+    "width": 768,
+    "hash": "#/quotes/new",
+    "view": "view-editor",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contracts",
+    "width": 768,
+    "hash": "#/contracts",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contract-detail",
+    "width": 768,
+    "hash": "#/contracts/a35fafd9-caee-435d-ac3d-7c643faefddf",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "tasks",
+    "width": 768,
+    "hash": "#/tasks",
+    "view": "view-tasks",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "orders",
+    "width": 768,
+    "hash": "#/orders",
+    "view": "view-orders",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "order-detail",
+    "width": 768,
+    "hash": "#/orders/dfe6a9e7-042f-4889-922d-fbad8580815f",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customers",
+    "width": 768,
+    "hash": "#/customers",
+    "view": "view-customers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customer-detail",
+    "width": 768,
+    "hash": "#/customers/design-customer",
+    "view": "view-customer",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "care",
+    "width": 768,
+    "hash": "#/care",
+    "view": "view-care",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "pos",
+    "width": 768,
+    "hash": "#/pos",
+    "view": "view-pos",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "deliveries",
+    "width": 768,
+    "hash": "#/deliveries",
+    "view": "view-deliveries",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "packing",
+    "width": 768,
+    "hash": "#/packing",
+    "view": "view-packing",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "receivables",
+    "width": 768,
+    "hash": "#/receivables",
+    "view": "view-receivables",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cash",
+    "width": 768,
+    "hash": "#/cash",
+    "view": "view-cash",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cashbook",
+    "width": 768,
+    "hash": "#/cashbook",
+    "view": "view-cashbook",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "purchases",
+    "width": 768,
+    "hash": "#/purchases",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "receiving",
+    "width": 768,
+    "hash": "#/receiving",
+    "view": "view-receiving",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "suppliers",
+    "width": 768,
+    "hash": "#/suppliers",
+    "view": "view-suppliers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "incoming",
+    "width": 768,
+    "hash": "#/purchases?mode=incoming",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "kho",
+    "width": 768,
+    "hash": "#/kho",
+    "view": "view-kho",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "stock-moves",
+    "width": 768,
+    "hash": "#/stock-moves?from=2026-09-28&to=2026-10-27",
+    "view": "view-stock-moves",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "inventory",
+    "width": 768,
+    "hash": "#/inventory",
+    "view": "view-inventory",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "transfers",
+    "width": 768,
+    "hash": "#/transfers",
+    "view": "view-transfers",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "products",
+    "width": 768,
+    "hash": "#/products",
+    "view": "view-products",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "staff",
+    "width": 768,
+    "hash": "#/members",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "payroll",
+    "width": 768,
+    "hash": "#/payroll",
+    "view": "view-payroll",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "permissions",
+    "width": 768,
+    "hash": "#/permissions",
+    "view": "view-permissions",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "flow",
+    "width": 768,
+    "hash": "#/flow",
+    "view": "view-flow",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "dashboard",
+    "width": 768,
+    "hash": "#/dashboard",
+    "view": "view-dashboard",
+    "overflow": false,
+    "nav": [
+      "Công việc",
+      "Báo giá",
+      "Đơn hàng",
+      "Khách hàng",
+      "Thêm"
+    ],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "width": 768,
+    "taps": [
+      {
+        "name": "create_quote",
+        "taps": 1
+      },
+      {
+        "name": "edit_line_qty",
+        "taps": 1
+      },
+      {
+        "name": "send_for_approval",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "contract_and_docs",
+        "taps": 2
+      },
+      {
+        "name": "complete_task",
+        "taps": 1
+      },
+      {
+        "name": "filter_results",
+        "taps": 2
+      },
+      {
+        "name": "call_customer",
+        "taps": 1
+      },
+      {
+        "name": "add_care",
+        "taps": 1
+      },
+      {
+        "name": "export_excel",
+        "taps": 1
+      },
+      {
+        "name": "close_document",
+        "taps": 1
+      }
+    ],
+    "errors": []
+  },
+  {
+    "name": "quotes",
+    "width": 1280,
+    "hash": "#/quotes",
+    "view": "view-quotes",
+    "overflow": true,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "quote-new",
+    "width": 1280,
+    "hash": "#/quotes/new",
+    "view": "view-editor",
+    "overflow": true,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contracts",
+    "width": 1280,
+    "hash": "#/contracts",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contract-detail",
+    "width": 1280,
+    "hash": "#/contracts/a35fafd9-caee-435d-ac3d-7c643faefddf",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "crm-sheet crm-document-sheet",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "tasks",
+    "width": 1280,
+    "hash": "#/tasks",
+    "view": "view-tasks",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "orders",
+    "width": 1280,
+    "hash": "#/orders",
+    "view": "view-orders",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "order-detail",
+    "width": 1280,
+    "hash": "#/orders/dfe6a9e7-042f-4889-922d-fbad8580815f",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customers",
+    "width": 1280,
+    "hash": "#/customers",
+    "view": "view-customers",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customer-detail",
+    "width": 1280,
+    "hash": "#/customers/design-customer",
+    "view": "view-customer",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "care",
+    "width": 1280,
+    "hash": "#/care",
+    "view": "view-care",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "pos",
+    "width": 1280,
+    "hash": "#/pos",
+    "view": "view-pos",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "deliveries",
+    "width": 1280,
+    "hash": "#/deliveries",
+    "view": "view-deliveries",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "packing",
+    "width": 1280,
+    "hash": "#/packing",
+    "view": "view-packing",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "receivables",
+    "width": 1280,
+    "hash": "#/receivables",
+    "view": "view-receivables",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cash",
+    "width": 1280,
+    "hash": "#/cash",
+    "view": "view-cash",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cashbook",
+    "width": 1280,
+    "hash": "#/cashbook",
+    "view": "view-cashbook",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "purchases",
+    "width": 1280,
+    "hash": "#/purchases",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "receiving",
+    "width": 1280,
+    "hash": "#/receiving",
+    "view": "view-receiving",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "suppliers",
+    "width": 1280,
+    "hash": "#/suppliers",
+    "view": "view-suppliers",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "incoming",
+    "width": 1280,
+    "hash": "#/purchases?mode=incoming",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "kho",
+    "width": 1280,
+    "hash": "#/kho",
+    "view": "view-kho",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "stock-moves",
+    "width": 1280,
+    "hash": "#/stock-moves?from=2026-09-28&to=2026-10-27",
+    "view": "view-stock-moves",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "inventory",
+    "width": 1280,
+    "hash": "#/inventory",
+    "view": "view-inventory",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "transfers",
+    "width": 1280,
+    "hash": "#/transfers",
+    "view": "view-transfers",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "products",
+    "width": 1280,
+    "hash": "#/products",
+    "view": "view-products",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "staff",
+    "width": 1280,
+    "hash": "#/members",
+    "view": "view-quotes",
+    "overflow": true,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "payroll",
+    "width": 1280,
+    "hash": "#/payroll",
+    "view": "view-payroll",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "permissions",
+    "width": 1280,
+    "hash": "#/permissions",
+    "view": "view-permissions",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "flow",
+    "width": 1280,
+    "hash": "#/flow",
+    "view": "view-flow",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "dashboard",
+    "width": 1280,
+    "hash": "#/dashboard",
+    "view": "view-dashboard",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": false,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "width": 1280,
+    "taps": [
+      {
+        "name": "create_quote",
+        "taps": 1
+      },
+      {
+        "name": "edit_line_qty",
+        "taps": 1
+      },
+      {
+        "name": "send_for_approval",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "contract_and_docs",
+        "taps": 2
+      },
+      {
+        "name": "complete_task",
+        "taps": 1
+      },
+      {
+        "name": "filter_results",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "call_customer",
+        "taps": 1
+      },
+      {
+        "name": "add_care",
+        "taps": 1
+      },
+      {
+        "name": "export_excel",
+        "taps": 1
+      },
+      {
+        "name": "close_document",
+        "taps": 1
+      }
+    ],
+    "errors": []
+  }
+]

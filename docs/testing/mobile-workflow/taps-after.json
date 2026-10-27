@@ -1,0 +1,152 @@
+[
+  {
+    "task": "send_approval_from_editor",
+    "workflow": 1,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#save-quote-m"
+      }
+    ]
+  },
+  {
+    "task": "create_quote_and_send",
+    "workflow": 2,
+    "data": 2,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "[data-new-quote]"
+      },
+      {
+        "kind": "data",
+        "action": "open actions"
+      },
+      {
+        "kind": "data",
+        "action": "#add-line"
+      },
+      {
+        "kind": "workflow",
+        "action": "#save-quote-m"
+      }
+    ]
+  },
+  {
+    "task": "edit_line_qty",
+    "workflow": 1,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#line-list tr:first-child .col-qty input"
+      }
+    ],
+    "verification": "field edited; saving is separate"
+  },
+  {
+    "task": "contract_and_download",
+    "workflow": 2,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#contracts-list [data-contract-docs-for]"
+      },
+      {
+        "kind": "workflow",
+        "action": "dialog[open] [data-zip]"
+      }
+    ],
+    "verification": "zip download emitted"
+  },
+  {
+    "task": "complete_task",
+    "workflow": 1,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": ".task-row:has-text(\"Việc đo số chạm\") [data-toggle]"
+      }
+    ],
+    "verification": "backend status done"
+  },
+  {
+    "task": "filter_results",
+    "workflow": 2,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#view-orders .crm-filter-trigger"
+      },
+      {
+        "kind": "workflow",
+        "action": "#view-orders .crm-filter-foot .primary"
+      }
+    ],
+    "verification": "apply clicked after source selection (data entry excluded)"
+  },
+  {
+    "task": "call_customer",
+    "workflow": 1,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#customer-list a[href^=\"tel:\"]"
+      }
+    ],
+    "verification": "tel link clicked; external phone app excluded"
+  },
+  {
+    "task": "add_care",
+    "workflow": 2,
+    "data": 1,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#view-care [data-care-new]"
+      },
+      {
+        "kind": "data",
+        "action": "dialog.care-dialog [data-suggest] button"
+      },
+      {
+        "kind": "workflow",
+        "action": "dialog.care-dialog [data-save]"
+      }
+    ],
+    "verification": "saved and dialog closed; input/selection excluded"
+  },
+  {
+    "task": "export_excel",
+    "workflow": 2,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#product-export"
+      },
+      {
+        "kind": "workflow",
+        "action": "dialog[open] [data-export]"
+      }
+    ],
+    "verification": "xlsx download emitted"
+  },
+  {
+    "task": "close_document",
+    "workflow": 1,
+    "data": 0,
+    "trace": [
+      {
+        "kind": "workflow",
+        "action": "#order-back"
+      }
+    ],
+    "verification": "returned to contracts list"
+  }
+]

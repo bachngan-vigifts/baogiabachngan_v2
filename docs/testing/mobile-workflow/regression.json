@@ -1,0 +1,53 @@
+[
+  {
+    "width": 360,
+    "filtersDeferred": true,
+    "focusStable": true,
+    "contractRefresh5": true,
+    "history": true,
+    "posExcluded": true,
+    "errors": [],
+    "mobileChecksApplicable": true
+  },
+  {
+    "width": 390,
+    "filtersDeferred": true,
+    "focusStable": true,
+    "contractRefresh5": true,
+    "history": true,
+    "posExcluded": true,
+    "errors": [],
+    "mobileChecksApplicable": true,
+    "failedSaveDoesNotSubmit": true
+  },
+  {
+    "width": 430,
+    "filtersDeferred": true,
+    "focusStable": true,
+    "contractRefresh5": true,
+    "history": true,
+    "posExcluded": true,
+    "errors": [],
+    "mobileChecksApplicable": true
+  },
+  {
+    "width": 768,
+    "filtersDeferred": true,
+    "focusStable": true,
+    "contractRefresh5": true,
+    "history": true,
+    "posExcluded": true,
+    "errors": [],
+    "mobileChecksApplicable": true
+  },
+  {
+    "width": 1280,
+    "filtersDeferred": false,
+    "focusStable": false,
+    "contractRefresh5": true,
+    "history": true,
+    "posExcluded": true,
+    "errors": [],
+    "mobileChecksApplicable": false
+  }
+]

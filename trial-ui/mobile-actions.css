@@ -2,6 +2,8 @@
 .mobile-action-trigger, .mobile-action-heading, .mobile-action-label { display: none; }
 .mobile-action-list { display: contents; }
 @media screen and (max-width: 850px) {
+  body #workspace .view .mobile-secondary-action:not(.mobile-action-list *),body #workspace .view .mobile-desktop-only,.mobile-secondary-action:not(.mobile-action-list *),.mobile-desktop-only { display:none!important; }
+  body.crm-mobile-stock-readonly #workspace .mobile-desktop-only,body.crm-mobile-stock-readonly dialog .mobile-desktop-only { display:none!important; }
   :root { --text-caption: 12px; --text-small: 13px; --text-label: 13px; --text-body: 14px; --text-heading: 19px; }
   body { font-size: 14px; line-height: 1.45; }
   h1, .page-head h1, .auth-card h1 { font-size: 19px; line-height: 1.35; }
