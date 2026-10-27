@@ -1,3 +1,4 @@
+import {openEarlyQuickReceipt} from './early-receipt-quick.js';
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
 const btn=(text,fn,cls='btn secondary small')=>{const b=el('button',cls,text);b.type='button';b.addEventListener('click',fn);return b;};
 const number=n=>Number(n||0).toLocaleString('vi-VN');
@@ -67,16 +68,15 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
         check.addEventListener('change',()=>{if(check.checked)selected.set(request.groupKey,request);else selected.delete(request.groupKey);all.checked=selectable.length>0&&selectable.every(e=>e.check.checked);syncBatch();});
         selectable.push({check,request});head.replaceChildren(check,...head.children);head.append(btn('Manager xác nhận thay NCC',()=>confirmSlips([request]),'btn primary small'));
       }
-      if(!portal&&canReceive&&request.requestStatus==='submitted'){
-        const orders=new Map(request.lines.flatMap(l=>l.allocations).filter(a=>a.status==='accepted'&&a.remainingToReceive>0).map(a=>[a.orderId,a.ticketNumber]));
-        for(const [orderId,number] of orders){const receive=el('a','btn primary small','Nhận theo phiếu · '+number);
-          receive.href='#/purchases/'+encodeURIComponent(orderId)+'?receive=1&earlyRequestId='+encodeURIComponent(request.id);head.append(receive);}
-      }
       card.append(head,el('p','small',(request.supplierName?request.supplierName+' · ':'')+'Ngày lấy: '+date(request.pickupDate)));if(request.groupKey)card.dataset.supplierSlip=request.groupKey;
       if(!portal&&canViewPortal){
         const actions=el('div','row-gap early-slip-actions');actions.dataset.mobileActions='off';
         if(request.lines.some(l=>l.allocations.some(a=>a.receivedQty>0)))actions.append(el('span','small muted','Đã nhận hàng · giữ phiếu để đối soát'));
         else actions.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-slip':'delete'),'btn primary danger-bg small'));card.append(actions);
+      }
+      if(!portal&&canReceive&&request.requestStatus==='submitted'&&request.lines.some(l=>l.allocations.some(a=>a.status==='accepted'&&a.remainingToReceive>0))){
+        const receive=el('div','row-gap early-slip-actions');receive.dataset.mobileActions='off';
+        receive.append(btn('Nhận hàng nhanh',()=>openEarlyQuickReceipt({api,request,onSaved:async()=>{await load(currentRequest());await onSaved(request);}}),'btn primary small'));card.append(receive);
       }
       if(!portal) {
         const open=el('a','small','Mở phiếu');open.href=requestHref(request.id);card.append(open);
