@@ -25,3 +25,11 @@
 .early-quick-receipt input,.early-quick-receipt select { max-width:100%;box-sizing:border-box; }
 .early-quick-receipt .recv-card { overflow-wrap:anywhere; }
 @media(max-width:850px){ .early-quick-fields { grid-template-columns:minmax(0,1fr); } .early-quick-receipt .modal-foot .btn { width:100%; } }
+
+.early-list-title,.early-list-select { display:flex;align-items:center;gap:10px;min-width:0; }
+.early-list-check,.early-list-select input { flex:0 0 auto;width:22px;height:22px;margin:0; }
+.early-list-bulk { display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px;margin:12px 0;background:#fff;border:1px solid var(--line);border-radius:10px; }
+.early-list-bulk[hidden] { display:none; }
+.early-list-bulk p { flex-basis:100%;margin:0; }
+.early-list-bulk .error:empty { display:none; }
+@media(max-width:850px){ .early-list-bulk>.btn.primary { flex:1 1 180px; } .early-list-title { min-height:36px; } }
