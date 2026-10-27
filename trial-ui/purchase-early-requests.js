@@ -75,7 +75,8 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       card.append(head,el('p','small',(request.supplierName?request.supplierName+' · ':'')+'Ngày lấy: '+date(request.pickupDate)));if(request.groupKey)card.dataset.supplierSlip=request.groupKey;
       if(!portal&&canViewPortal){
         const actions=el('div','row-gap early-slip-actions');actions.dataset.mobileActions='off';
-        actions.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-slip':'delete'),'btn primary danger-bg small'));card.append(actions);
+        if(request.lines.some(l=>l.allocations.some(a=>a.receivedQty>0)))actions.append(el('span','small muted','Đã nhận hàng · giữ phiếu để đối soát'));
+        else actions.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-slip':'delete'),'btn primary danger-bg small'));card.append(actions);
       }
       if(!portal) {
         const open=el('a','small','Mở phiếu');open.href=requestHref(request.id);card.append(open);
@@ -96,6 +97,10 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
           p.append(el('span','',` · ${a.supplierName} · ${number(a.quantity)} · Hẹn ${date(a.due)} · ${labels[a.status]}`));
           if(a.supplierOrderNo){p.append(el('span','',' · Số đơn NCC: '));if(!portal||browse){const link=el('a','',a.supplierOrderNo);link.href=(portal?'/':'')+'#/purchases/'+encodeURIComponent(a.orderId);p.append(link);}else p.append(el('span','',a.supplierOrderNo));}
           if(a.respondedAt)p.append(el('span','',` · ${time(a.respondedAt)}`));if(a.responseNote)p.append(el('span','',' · '+a.responseNote));box.append(p);
+          if(!portal&&a.status==='accepted'){
+            if(a.receivedQty>0)box.append(el('p','small muted',`Đã nhận ${number(a.receivedQty)}/${number(a.quantity)} theo phiếu này · Còn nhận ${number(a.remainingToReceive)}`));
+            if(a.receivedElsewhere>0&&a.purchaseRemaining===0)box.append(el('p','small muted',`${a.ticketNumber} đã nhận đủ qua phiếu nhận khác · Còn nhận 0. Mở đơn mua để đối soát phiếu nhận.`));
+          }
         }
         if(portal&&canRespond&&line.status==='pending') {
           const note=el('input');note.type='text';note.maxLength=1000;note.placeholder='Ghi chú phản hồi (tùy chọn)';note.setAttribute('aria-label','Ghi chú mã '+line.sku);
@@ -121,7 +126,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     body.append(el('p','',slip?'Huỷ và xoá '+request.slipLabel+', gồm '+request.lines.length+' mã hàng.':remove?(cancel?'Huỷ yêu cầu xin lấy trước và xoá toàn bộ phiếu ':'Xoá toàn bộ phiếu ')+request.id.slice(0,8).toUpperCase()+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
     if(slip)body.append(el('p','','Chỉ huỷ phiếu NCC này. Các phiếu NCC khác được giữ nguyên.'));
     for(const group of groups)body.append(el('p','small',group.supplierName+' · '+group.slipLabel+' · '+group.lines.map(l=>l.sku+' × '+number(l.quantity)).join('; ')));
-    body.append(el('p','muted small',cancel?'Sau xác nhận, phiếu không còn trên CRM và cổng NCC, không thể tiếp tục nhận theo phiếu này. Phiếu đã phát sinh nhận hàng sẽ bị chặn. Đơn mua NCC, tồn kho và nhật ký đối soát được giữ nguyên.':'Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));
+    body.append(el('p','muted small',cancel?'Sau xác nhận, phiếu không còn trên CRM và cổng NCC, không thể tiếp tục nhận theo phiếu này. Phiếu NCC đã phát sinh nhận hàng sẽ bị chặn. Phiếu NCC chưa nhận vẫn được huỷ riêng. Đơn mua NCC, tồn kho và nhật ký đối soát được giữ nguyên.':'Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));
     const error=el('p','error');error.setAttribute('role','alert');body.append(error);
     const submit=btn(cancel?'Xác nhận huỷ và xoá':remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
       if(busy)return;busy=batchBusy=true;close.disabled=submit.disabled=true;syncBatch();error.textContent='';

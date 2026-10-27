@@ -35,7 +35,7 @@ export async function earlyReceiptAvailability(db: ReadDb, requestIds: string[])
     const own=ownTotals.get(row.requestId+':'+row.purchaseLineId)??0;
     const remaining=row.requestStatus==='submitted'&&row.status==='accepted'&&row.approvalStatus==='approved'&&!row.cancelledAt
       ?Math.max(0,Math.min(row.quantity-own,row.ordered-total)):0;
-    return {...row,receivedQty:own,remaining};
+    return {...row,receivedQty:own,receivedElsewhere:Math.max(0,total-own),purchaseRemaining:Math.max(0,row.ordered-total),remaining};
   });
 }
 export async function earlyReceiptContext(db: ReadDb, requestId: string, orderId: string) {
