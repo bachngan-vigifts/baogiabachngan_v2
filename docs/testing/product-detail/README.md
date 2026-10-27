@@ -21,7 +21,7 @@ Manager only: **estimated average profit per unit from currently approved quotes
 
 ## Permissions and implementation
 
-Two new read-only endpoints live in `src/modules/product-hub`, parallel to `customer-hub`:
+Two new read-only endpoints live in `src/modules/product-hub`, parallel to `customer-hub`. Its declared dependency edges are staff/catalog/quotes/sales/suppliers; catalog stays independent of the sales/purchase aggregates:
 
 - `GET /products/:sku/overview` — metadata, visible stock/prices, full scoped counts/statistics and Manager-only profit estimate.
 - `GET /products/:sku/documents?kind=...&offset=...` — 25 source documents per page.
