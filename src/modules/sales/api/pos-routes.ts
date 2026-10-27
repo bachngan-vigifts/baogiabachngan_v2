@@ -18,7 +18,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql 
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
-import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
+import { fold, foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import { matchProductWords, productOrder } from '../../catalog/api/product-query.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
@@ -871,7 +871,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             // Tax-code presence defines POS tabs; retain the existing restricted-customer visibility gate.
             !canRetail ? and(eq(customers.isRetail, false), hasTaxCode) : undefined,
             kind === 'retail' ? (canRetail ? sql`not (${hasTaxCode})` : sql`false`) : kind === 'business' ? hasTaxCode : undefined,
-            matchAllWords(foldSql(customers.name, customers.phone, customers.contact, customers.customerCode, customers.taxCode), q),
+            // `search` is folded when the customer is written and has a trigram index. Avoid folding
+            // five columns for every row on every POS keystroke.
+            matchAllWords(sql`${customers.search}`, q),
           ),
         )
         .orderBy(...rankFirst(searchRank([customers.phone, customers.customerCode, customers.taxCode], customers.name, q)), desc(customers.createdAt), asc(customers.name), asc(customers.id))
@@ -915,7 +917,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         await tx.insert(customers).values({
           id,
           ...fields,...terms,
-          search: Object.values(fields).join(' '),
+          search: fold(Object.values(fields).join(' ')),
           sourceVersion: 0,
           syncedAt: now,
           createdAt: now,
