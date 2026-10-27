@@ -1,0 +1,80 @@
+[
+  {
+    "width": 360,
+    "fullPage": true,
+    "summary": true,
+    "paginationBeyond20": true,
+    "backForward": true,
+    "canonicalLinks": true,
+    "legacyDeepLink": true,
+    "listOpensDetail": true,
+    "fiveRefreshesNoDuplicates": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "fullPage": true,
+    "summary": true,
+    "paginationBeyond20": true,
+    "backForward": true,
+    "canonicalLinks": true,
+    "legacyDeepLink": true,
+    "listOpensDetail": true,
+    "fiveRefreshesNoDuplicates": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 430,
+    "fullPage": true,
+    "summary": true,
+    "paginationBeyond20": true,
+    "backForward": true,
+    "canonicalLinks": true,
+    "legacyDeepLink": true,
+    "listOpensDetail": true,
+    "fiveRefreshesNoDuplicates": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 768,
+    "fullPage": true,
+    "summary": true,
+    "paginationBeyond20": true,
+    "backForward": true,
+    "canonicalLinks": true,
+    "legacyDeepLink": true,
+    "listOpensDetail": true,
+    "fiveRefreshesNoDuplicates": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 1280,
+    "fullPage": true,
+    "summary": true,
+    "paginationBeyond20": true,
+    "backForward": true,
+    "canonicalLinks": true,
+    "legacyDeepLink": true,
+    "listOpensDetail": true,
+    "fiveRefreshesNoDuplicates": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "directEditHasPolicies": true,
+    "encodedSku": true,
+    "inlineRasterImage": true,
+    "emptyProduct": true,
+    "historyErrorRetry": true
+  },
+  {
+    "employeeScope": true,
+    "costAndProfitHidden": true,
+    "warehouseHasNoSalesPrices": true,
+    "noBusinessWrites": true
+  }
+]
