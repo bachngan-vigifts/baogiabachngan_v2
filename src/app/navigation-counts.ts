@@ -1,3 +1,4 @@
+import { transferWork } from '../modules/inventory/api/transfer-work.ts';
 import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../modules/suppliers/early-request-schema.ts';
 import { outstandingLines } from '../modules/suppliers/api/incoming-stock.ts';
 import { canUsePurchasing } from '../modules/suppliers/domain/purchasing.ts';
@@ -20,22 +21,23 @@ export function registerNavigationCounts(router: Router<StaffEnv>) {
     const db = c.env.db, m = (c.state.session as SessionState).member;
     const warehouse = isWarehouseStaff(asActor(m));
     const count = sql<number>`count(*)`.mapWith(Number);
-    const [[packing], [shipping], purchases, [cash], incoming] = await Promise.all([
+    const [[packing], [shipping], purchases, [cash], incoming, transfers] = await Promise.all([
       db.select({ count }).from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId))
         .where(and(m.role === 'manager' || warehouse ? undefined : orderScopeFor(m), eq(packingSlips.status, 'sent'),
-          sql`${salesOrders.status} <> 'delivered' and not exists (select 1 from ${orderProgressMarks}
+          sql`${salesOrders.status} not in ('delivered','cancelled') and not exists (select 1 from ${orderProgressMarks}
             where ${orderProgressMarks.orderId} = ${salesOrders.id} and ${orderProgressMarks.stage} = 'delivered')`)),
       db.select({ count }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
         .where(and(sql`${salesOrders.channel} <> 'pos'`, warehouse ? undefined : orderScopeFor(m), inArray(deliveries.status, ['planned', 'in_transit', 'failed']))),
       purchaseCounts(db, m, {}, vietnamDate().iso),
       db.select({count}).from(cashReconciliations).innerJoin(posShifts,eq(posShifts.id,cashReconciliations.shiftId)).where(and(can(m,'cash.view-all')?undefined:eq(posShifts.memberId,m.id),sql`${cashReconciliations.status}<>'closed'`)),
       can(m, 'page.purchases') && canUsePurchasing(asActor(m)) ? outstandingLines(db) : [],
+      transferWork(db, m, 0),
     ]);
     const early=incoming.length?await db.selectDistinct({id:purchaseEarlyRequests.id}).from(purchaseEarlyRequests)
       .innerJoin(purchaseEarlyRequestLines,eq(purchaseEarlyRequestLines.requestId,purchaseEarlyRequests.id))
       .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
       .where(and(isNull(purchaseEarlyRequests.deletedAt),inArray(purchaseEarlyRequestAllocations.purchaseLineId,incoming.map(l=>l.lineId)))):[];
-    return json({ receiving: new Set(incoming.map(l => l.orderId)).size+early.length, cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
+    return json({ transfers: transfers.count, receiving: new Set(incoming.map(l => l.orderId)).size+early.length, cash: cash?.count??0, packing: packing?.count ?? 0, deliveries: shipping?.count ?? 0,
       purchases: purchases.all - purchases.received - purchases.cancelled });
   }, 'business');
 }

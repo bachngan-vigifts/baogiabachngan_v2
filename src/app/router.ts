@@ -1,3 +1,5 @@
+import { registerWarehouseWork } from './warehouse-work.ts';
+import { transferTaskHooks } from '../modules/inventory/api/transfer-task-hooks.ts';
 import { registerStockIntegrityRoutes } from './stock-integrity-routes.ts';
 import { purchaseLinksForOrder } from '../modules/suppliers/api/purchase-store.ts';
 import { registerPosOrderFlowRoutes } from '../modules/sales/api/pos-order-flow-routes.ts';
@@ -30,7 +32,7 @@ import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes
 import { registerEarlyRequestRoutes } from '../modules/suppliers/api/early-request-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
-import { registerTaskRoutes, syncInvoiceTasks } from '../modules/tasks/api/routes.ts';
+import { registerTaskRoutes, syncInvoiceTasks, syncTransferTasks } from '../modules/tasks/api/routes.ts';
 import { cashTaskHooks, invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
 import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api/stock-ref-links.ts';
 import { supplierReceiptStockLinks } from '../modules/suppliers/api/stock-ref-links.ts';
@@ -56,6 +58,7 @@ import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
+  transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
   cashTaskHooks.afterCommit = syncCashTasks;
   // Sổ kho: link chứng từ của module khác (inventory không import sales / suppliers).
@@ -107,6 +110,7 @@ export function createAppRouter() {
   registerApprovalRoutes(router);
   registerPulseRoutes(router);
   registerNavigationCounts(router);
+  registerWarehouseWork(router);
   registerInventoryRoutes(router);
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);

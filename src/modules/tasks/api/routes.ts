@@ -1,3 +1,4 @@
+import { stockTransfers } from '../../inventory/schema.ts';
 import { receivingReminderTasks, RECEIVING_REMINDER_PREFIX } from './receiving-reminders.ts';
 import { registerAccountingTaskRoutes } from './accounting-routes.ts';
 import { accountingKind, canUseAccountingTasks, sourceManaged, sourceCompletionHelp } from '../domain/accounting.ts';
@@ -12,7 +13,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
-import { reconcileAutoTasks, reconcileTaskSet } from './auto-tasks.ts';
+import { reconcileAutoTasks, reconcileTaskSet, transferTasks } from './auto-tasks.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
@@ -60,6 +61,16 @@ export async function syncInvoiceTasks(env: StaffEnv, ref: InvoiceTaskRef, actor
   const wanted = await invoiceTasks(env.db, ref);
   const key = 'orderId' in ref ? `invoice:${ref.orderId}` : `invoice-web:${ref.webOrderId}`;
   const result = await reconcileTaskSet(env.db, new Map(wanted.map(t => [t.autoKey, t])), new Date(), eq(tasks.autoKey, key));
+  await notifyAutoTasks(env, result.fresh, actorId);
+}
+/** A transfer event only reconciles that document; no broad task scan or 15-second throttle. */
+export async function syncTransferTasks(env: StaffEnv, id: string, actorId: string) {
+  const result = await env.db.transaction(async tx => {
+    await tx.select({id:stockTransfers.id}).from(stockTransfers).where(eq(stockTransfers.id,id)).for('update');
+    const db=tx as unknown as StaffEnv['db'];
+    const wanted = await transferTasks(db, vietnamDate().iso, id);
+    return reconcileTaskSet(db, new Map(wanted.map(t => [t.autoKey, t])), new Date(), and(eq(tasks.source, 'transfer'), eq(tasks.sourceId, id)));
+  });
   await notifyAutoTasks(env, result.fresh, actorId);
 }
 async function notifyAutoTasks(env: StaffEnv, fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'], actorId: string | null) {
