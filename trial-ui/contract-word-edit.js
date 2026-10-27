@@ -58,5 +58,61 @@ globalThis.ContractWordEdit=(()=>{
    return {...edit,hash:await digest(serialize(current)),text:representativeText(text,details)};
   }));
  }
- return {apply,prepare,rebaseRepresentative,representativeText};
+ // Form fields remain authoritative even when a saved paragraph contains an older date/address.
+ const textOf=p=>Array.from(p.getElementsByTagNameNS(W,'t')).map(n=>n.textContent).join('');
+ const fieldKind=text=>/^\s*Hôm nay,\s*ngày/i.test(text)?'date':/^\s*5\.2\s*Địa điểm giao hàng\s*:/i.test(text)?'address':null;
+ async function rebaseFields(bytes,edits=[]){
+  if(!edits.length)return edits;
+  const {paragraphs}=open(bytes);
+  return Promise.all(edits.map(async edit=>{
+   const p=paragraphs[edit.index],kind=p&&fieldKind(textOf(p));
+   return kind&&kind===fieldKind(String(edit.text??''))?{...edit,hash:await digest(serialize(p)),text:textOf(p)}:edit;
+  }));
+ }
+ const goodsTable=xml=>Array.from(xml.getElementsByTagNameNS(W,'tbl')).find(t=>{
+  const row=t.getElementsByTagNameNS(W,'tr')[0],text=row?textOf(row):'';
+  return /STT/.test(text)&&/Thành\s*[Tt]iền/.test(text);
+ });
+ // Carry missing style definitions (including basedOn dependencies) with the copied table.
+ function copyTableStyles(target,source,table){
+  const path='word/styles.xml';if(!source.files[path]||!target.files[path])return;
+  const parse=bytes=>new DOMParser().parseFromString(globalThis.fflate.strFromU8(bytes),'application/xml');
+  const from=parse(source.files[path]),to=parse(target.files[path]),styles=Array.from(from.getElementsByTagNameNS(W,'style'));
+  const present=new Set(Array.from(to.getElementsByTagNameNS(W,'style')).map(n=>n.getAttributeNS(W,'styleId'))),visiting=new Set();
+  const add=id=>{
+   if(!id||present.has(id)||visiting.has(id))return;visiting.add(id);
+   const style=styles.find(n=>n.getAttributeNS(W,'styleId')===id);if(!style)throw Error('Thiếu định dạng bảng HĐKT: '+id);
+   for(const tag of ['basedOn','link','next'])for(const node of style.getElementsByTagNameNS(W,tag))add(node.getAttributeNS(W,'val'));
+   to.documentElement.appendChild(to.importNode(style,true));present.add(id);
+  };
+  for(const tag of ['tblStyle','pStyle','rStyle'])for(const node of table.getElementsByTagNameNS(W,tag))add(node.getAttributeNS(W,'val'));
+  target.files[path]=globalThis.fflate.strToU8(serialize(to));
+ }
+ async function copyContractTable(bytes,contractBytes,edits=[]){
+  const target=open(bytes),source=open(contractBytes),oldTable=goodsTable(target.xml),table=goodsTable(source.xml);
+  if(!oldTable||!table)throw Error('Không tìm thấy bảng sản phẩm HĐKT để lập biên bản.');
+  // These tables contain text and formatting only; external relationships cannot be copied safely.
+  if(table.getElementsByTagNameNS(W,'drawing').length||table.getElementsByTagNameNS(W,'hyperlink').length)throw Error('Bảng HĐKT có hình hoặc liên kết cần kiểm tra trước khi sao chép.');
+  const oldParagraphs=target.paragraphs,oldHashes=await Promise.all(oldParagraphs.map(p=>digest(serialize(p))));
+  const oldInside=oldParagraphs.map(p=>oldTable.contains(p));
+  copyTableStyles(target,source,table);
+  const copied=target.xml.importNode(table,true);oldTable.parentNode.replaceChild(copied,oldTable);
+  const paragraphs=Array.from(target.xml.getElementsByTagNameNS(W,'p')),hashes=await Promise.all(paragraphs.map(p=>digest(serialize(p))));
+  const locked=paragraphs.flatMap((p,i)=>copied.contains(p)?[i]:[]),normalized=[];
+  for(const edit of edits){
+   // Already migrated edits are accepted only at their matching paragraph/hash.
+   if(hashes[edit.index]===edit.hash){
+    if(oldHashes[edit.index]===edit.hash&&!oldInside[edit.index]&&paragraphs.indexOf(oldParagraphs[edit.index])!==edit.index)throw Error('Đoạn biên bản bị trùng vị trí sau đổi bảng. Cần dựng lại biên bản từ HĐKT.');
+    if(!locked.includes(edit.index))normalized.push(edit);continue;
+   }
+   if(oldHashes[edit.index]!==edit.hash)throw Error('Mẫu hoặc dữ liệu biên bản đã thay đổi. Cần dựng lại biên bản từ HĐKT.');
+   if(oldInside[edit.index])continue; // The HĐKT owns all product descriptions and money rows.
+   const index=paragraphs.indexOf(oldParagraphs[edit.index]);
+   if(index<0)throw Error('Không đối chiếu được đoạn biên bản đã sửa.');
+   normalized.push({...edit,index,hash:hashes[index]});
+  }
+  return {base:pack(target.files,target.xml),edits:normalized,locked};
+ }
+ const formFieldParagraphs=bytes=>open(bytes).paragraphs.flatMap((p,index)=>fieldKind(textOf(p))?[index]:[]);
+ return {apply,prepare,rebaseRepresentative,representativeText,rebaseFields,copyContractTable,formFieldParagraphs};
 })();

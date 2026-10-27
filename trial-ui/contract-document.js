@@ -205,8 +205,14 @@ globalThis.ContractDocument = (() => {
     result = result.replace('Hôm nay, ngày      tháng      năm 2025, chúng tôi gồm:', `Hôm nay, ngày ${date.day} tháng ${date.month} năm ${date.year}, chúng tôi gồm:`);
     result = result.replace('TP Cần Thơ, ngày 04 tháng 06 năm 2025', `TP Cần Thơ, ngày ${date.day} tháng ${date.month} năm ${date.year}`);
     result = result.replace('ký ngày  07  tháng 05  năm 2025', `ký ngày ${date.day} tháng ${date.month} năm ${date.year}`);
-    result = result.replace('5.2   Địa điểm giao hàng: Theo thoả thuận của từng khách hàng (bắt buộc sửa lại).', `5.2   Địa điểm giao hàng: ${deliveryPlace}`);
     result = result.replace('Phương thức thanh toán: Chuyển khoản.', () => xml(`Phương thức thanh toán: ${paymentMethod}`));
+    if(documentType==='HDKT')result=result.replace(/<w:p\b[\s\S]*?<\/w:p>/g, paragraph=>{
+      const text=[...paragraph.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(m=>m[1]).join('');
+      const value=/^\s*Hôm nay,\s*ngày/i.test(text)?`Hôm nay, ngày ${date.day} tháng ${date.month} năm ${date.year}, chúng tôi gồm:`
+        :/^\s*5\.2\s*Địa điểm giao hàng\s*:/i.test(text)?`5.2   Địa điểm giao hàng: ${deliveryPlace}`:null;
+      if(value===null)return paragraph;
+      let first=true;return paragraph.replace(/(<w:t\b[^>]*>)[^<]*(<\/w:t>)/g,(_,a,b)=>{const v=first?xml(value):'';first=false;return a+v+b;});
+    });
     return tidyDocumentTerms(removeLeftoverTokens(result), documentType);
   };
   // Work across Word runs without dropping paragraph/run formatting.
@@ -267,27 +273,43 @@ globalThis.ContractDocument = (() => {
     const types = strFromU8(files['[Content_Types].xml']);
     files['[Content_Types].xml'] = strToU8(types.replace('</Types>', '<Override PartName="/word/footerWebSource.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>'));
   }
-  async function build({quote, contractNumber, templateBytes, details, documentType = 'HDKT'}) {
+  async function prepareDocument({quote, contractNumber, templateBytes, details, documentType = 'HDKT', contractBytes}) {
     if (!unzipSync) throw new Error('Chưa tải được bộ tạo file HĐKT. Vui lòng tải lại trang.');
     if (!['HRC', 'B2B', 'VIGIFTS'].includes(quote.quote_type)) throw new Error('Loại báo giá không hỗ trợ tải HĐKT.');
     if (!contractNumber) throw new Error('Thiếu số HĐKT.');
     const files = unzipSync(new Uint8Array(templateBytes)), path = 'word/document.xml';
     if (!files[path]) throw new Error('Mẫu HĐKT không hợp lệ.');
-    const filledQuote = {...quote,...(documentType==='HDKT'&&details?.signedDate?{quote_date:details.signedDate}:{}), contractDetails: details || {}, customer: {...(quote.customer || {}), contact_name: details?.representativeName || quote.customer?.contact_name || quote.customer?.contact || ''}, contractTitle: details?.representativeTitle || ''};
+    const filledQuote = {...quote,...(details?.signedDate?{quote_date:details.signedDate}:{}), contractDetails: details || {}, customer: {...(quote.customer || {}), contact_name: details?.representativeName || quote.customer?.contact_name || quote.customer?.contact || ''}, contractTitle: details?.representativeTitle || ''};
     files[path] = strToU8(buildXml(strFromU8(files[path]), filledQuote, contractNumber, documentType));
     addWebSourceFooter(files, quote, documentType);
-    const output=zipSync(files, {level: 6});
-    const edits=documentType==='HDKT'?quote.contract_word_edits:quote.contract_document_edits?.[documentType];
-    if(edits?.length){
+    let base=zipSync(files, {level: 6});
+    let edits=(documentType==='HDKT'?quote.contract_word_edits:quote.contract_document_edits?.[documentType])||[],locked=[];
+    if(documentType==='BBNT'&&contractBytes){
       if(!globalThis.ContractWordEdit)throw new Error('Chưa tải công cụ chỉnh Word.');
-      const rebased=globalThis.ContractWordEdit.rebaseRepresentative?await globalThis.ContractWordEdit.rebaseRepresentative(output,edits,details||{}):edits;
-      return globalThis.ContractWordEdit.apply(output,rebased);
+      ({base,edits,locked}=await globalThis.ContractWordEdit.copyContractTable(base,contractBytes,edits));
     }
-    return output;
+    if(edits.length){
+      if(!globalThis.ContractWordEdit)throw new Error('Chưa tải công cụ chỉnh Word.');
+      edits=await globalThis.ContractWordEdit.rebaseRepresentative(base,edits,details||{});
+      if(documentType==='HDKT')edits=await globalThis.ContractWordEdit.rebaseFields(base,edits);
+    }
+    if(documentType==='HDKT'&&globalThis.ContractWordEdit?.formFieldParagraphs)locked=globalThis.ContractWordEdit.formFieldParagraphs(base);
+    return {base,edits,locked};
+  }
+  async function build(options){
+    const {base,edits}=await prepareDocument(options);
+    return edits.length?globalThis.ContractWordEdit.apply(base,edits):base;
   }
   async function buildPack({quote, contractNumber, details, templateFiles}) {
     const folder = archiveName(quote, contractNumber), files = {};
-    for (const template of templateFiles) files[`${template.file || template.name}.docx`] = await build({quote, contractNumber, details, templateBytes: template.templateBytes, documentType: template.file || (template.name.includes('BIEN_BAN') ? 'BBNT' : template.name.includes('TAM_UNG') ? 'TAM_UNG' : 'HDKT')});
+    const typeOf=t=>t.file||(t.name.includes('BIEN_BAN')?'BBNT':t.name.includes('TAM_UNG')?'TAM_UNG':'HDKT');
+    const hdkt=templateFiles.find(t=>typeOf(t)==='HDKT');
+    if(!hdkt)throw Error('Thiếu mẫu HĐKT để lập bộ hồ sơ.');
+    const contractBytes=await build({quote,contractNumber,details,templateBytes:hdkt.templateBytes});
+    for(const template of templateFiles){
+      const documentType=typeOf(template);
+      files[`${template.file||template.name}.docx`]=documentType==='HDKT'?contractBytes:await build({quote,contractNumber,details,templateBytes:template.templateBytes,documentType,contractBytes});
+    }
     return {bytes: zipSync(files, {level: 6}), folder};
   }
   async function download({quote, contractNumber, details}) {
@@ -301,5 +323,5 @@ globalThis.ContractDocument = (() => {
     link.href = URL.createObjectURL(blob); link.download = `${archive.folder}.zip`; link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-  return {build, buildPack, download, paymentDetails, contractUnitPrice, templatesFor, archiveName};
+  return {build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName};
 })();
