@@ -1,22 +1,21 @@
 /**
  * Trang dành cho tài khoản Kho (chức vụ "warehouse") – chữ to, nút to, ít lựa chọn.
- *  #/kho          Trang chủ kho: 3 thẻ lớn – Cần đóng gói · Hàng NCC về cần nhận · Giao hàng hôm nay / mai.
+ *  #/kho          Việc cần làm: đóng gói, nhận NCC, giao hàng, điều chuyển, lấy trước và chứng từ nhập Sapo.
  *  #/stock-lookup Tra tồn: gõ / quét mã → tồn từng kho (chỉ số lượng, không có giá).
  * DOM dựng bằng createElement / textContent.
  */
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
 const num = v => Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 const dmy = iso => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '';
-const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 /** Đơn mua NCC kho cần nhận: đã duyệt, chưa nhận đủ, chưa huỷ. */
 export const RECEIVABLE_STATES = new Set(['awaiting_confirmation', 'confirmed', 'partially_received']);
 
 export function initKhoHome({ api, root, today }) {
   const page = el('div', 'kho-page');
   const head = el('div', 'page-head'), titles = el('div');
-  const hello = el('h1', '', 'Việc của kho hôm nay');
+  const hello = el('h1', '', 'Việc cần làm');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), hello);
-  head.append(titles);
+  const reload=el('button','btn secondary','Làm mới');reload.type='button';reload.dataset.mobileInline='';reload.dataset.noBusy='';reload.onclick=()=>load();head.append(titles,reload);
   const cards = el('div', 'kho-cards'), lists = el('div', 'kho-lists');
   page.append(head, cards, lists);
   root.append(page);
@@ -45,29 +44,20 @@ export function initKhoHome({ api, root, today }) {
   };
 
   async function load() {
-    const my = ++req, t = today(), tomorrow = addDays(t, 1);
-    cards.replaceChildren(card('📦', 'Cần đóng gói', '#/packing', null, 'Đang tải…'), card('🚚', 'Hàng NCC về – cần nhận', '#/purchases', null, 'Đang tải…'), card('🛻', 'Giao hôm nay & trễ', '#/deliveries', null, 'Đang tải…'));
-    lists.replaceChildren();
-    const [packing, purchases, deliveries] = await Promise.all([
-      api('/packing?status=sent').then(r => r.slips).catch(() => null),
-      api('/purchase-orders').then(r => r.orders.filter(o => RECEIVABLE_STATES.has(o.state))).catch(() => null),
-      // Gồm cả chuyến trễ (lịch từ 7 ngày trước mà chưa giao) – không để chuyến quá hạn biến mất khỏi trang kho.
-      api(`/deliveries?from=${addDays(t, -7)}&to=${tomorrow}`).then(r => r.deliveries.filter(d => d.status === 'planned' || d.status === 'in_transit')).catch(() => null),
-    ]);
-    if (my !== req) return;
-    const todayShips = deliveries?.filter(d => d.plannedDate <= t) ?? null;
-    const dueIn = purchases?.filter(o => o.arrivalDate && o.arrivalDate <= tomorrow) ?? null;
-    cards.replaceChildren(
-      card('📦', 'Cần đóng gói', '#/packing', packing?.length ?? '–', packing ? (packing.length ? 'phiếu chờ đóng' : 'Không có phiếu chờ') : 'Chưa tải được', packing?.length ? 'warn' : ''),
-      card('🚚', 'Hàng NCC về – cần nhận', '#/purchases', purchases?.length ?? '–', purchases ? (dueIn?.length ? `${dueIn.length} đơn hẹn về đến mai` : 'đơn chờ nhận') : 'Chưa tải được', dueIn?.length ? 'warn' : ''),
-      card('🛻', 'Giao hôm nay & trễ', '#/deliveries', todayShips?.length ?? '–', deliveries ? `${deliveries.length - (todayShips?.length ?? 0)} chuyến ngày mai` : 'Chưa tải được', todayShips?.length ? 'warn' : ''),
-    );
-    if (packing) lists.append(section('📦 Phiếu chờ đóng gói', '#/packing', packing.map(x => ({ href: '#/packing/' + encodeURIComponent(x.id), title: `${x.slipNo} · ${x.customerName}`,
-      sub: [x.sourceLabel + (x.sourceNote ? ': ' + x.sourceNote : ''), x.expectedDeliveryDate ? 'giao ' + dmy(x.expectedDeliveryDate) : ''].filter(Boolean).join(' · ') })), 'Không có phiếu nào chờ đóng.'));
-    if (deliveries) lists.append(section('🛻 Giao hôm nay & ngày mai', '#/deliveries', deliveries.map(d => ({ href: '#/deliveries', title: `${d.plannedDate <= t ? 'Hôm nay' : 'Ngày mai'}${d.timeSlot ? ' ' + d.timeSlot : ''} · ${d.customerName}`,
-      sub: [d.deliveryNo, d.address || d.customerAddress].filter(Boolean).join(' · ') })), 'Không có chuyến giao nào.'));
-    if (purchases) lists.append(section('🚚 Hàng NCC sắp về', '#/purchases', [...purchases].sort((a, b) => (a.arrivalDate || '9') < (b.arrivalDate || '9') ? -1 : 1).map(o => ({ href: '#/purchases/' + encodeURIComponent(o.id), title: `${o.supplierName || 'NCC'} · ${o.ticketNumber}`,
-      sub: [o.arrivalDate ? (o.late ? 'Trễ hẹn – ' : 'Hẹn ') + dmy(o.arrivalDate) : 'Chưa có ngày hẹn', `${o.lineCount} mã`, o.good ? `còn thiếu ${num(o.missing)}` : `${num(o.ordered)} sp`].join(' · ') })), 'Không có hàng NCC nào chờ nhận.'));
+    const my=++req;reload.disabled=true;
+    cards.replaceChildren(card('📦','Việc đang chờ','#/kho',null,'Đang tải…'));lists.replaceChildren();
+    try {
+      const d=await api('/warehouse-work');if(my!==req)return;cards.replaceChildren();
+      const t=d.today;
+      if(d.packing){cards.append(card('📦','Cần đóng gói','#/packing',d.packing.count,'phiếu chờ đóng',d.packing.count?'warn':''));lists.append(section('📦 Phiếu chờ đóng gói','#/packing',d.packing.rows.map(x=>({href:'#/packing/'+encodeURIComponent(x.id),title:x.slipNo+' · '+x.customerName,sub:x.date?'Giao '+dmy(x.date):'Chưa hẹn giao'})),'Không có phiếu chờ đóng.'));}
+      if(d.incoming){cards.append(card('🚚','Hàng NCC về – cần nhận','#/receiving?type=purchase',d.incoming.count,'đơn còn hàng chờ nhận',d.incoming.count?'warn':''));lists.append(section('🚚 Hàng NCC chờ nhận','#/receiving?type=purchase',d.incoming.rows.map(x=>({href:'#/purchases/'+encodeURIComponent(x.orderId),title:x.ticketNumber+' · '+x.supplierName,sub:(x.date?(x.date<t?'Trễ hẹn · ':'Hẹn ')+dmy(x.date):'Chưa hẹn ngày')+' · '+x.lines.length+' mã còn thiếu'})),'Không có đơn mua chờ nhận.'));}
+      if(d.shipping){cards.append(card('🛻','Giao hôm nay & trễ','#/deliveries',d.shipping.due,d.shipping.tomorrow+' chuyến ngày mai · '+d.shipping.failed+' giao lỗi',d.shipping.due?'warn':''));lists.append(section('🛻 Giao hàng & giao lỗi cần xử lý','#/deliveries',d.shipping.rows.map(x=>({href:'#/deliveries?deliveryId='+encodeURIComponent(x.id),title:x.deliveryNo+' · '+x.customerName,sub:[x.status==='failed'?'Giao lỗi':x.plannedDate<t?'Trễ hẹn':x.plannedDate===t?'Hôm nay':'Ngày mai',dmy(x.plannedDate),x.address].filter(Boolean).join(' · ')})),'Không có chuyến giao chờ xử lý đến ngày mai.'));}
+      cards.append(card('⇄','Điều chuyển kho','#/transfers',d.transfers.count,d.transfers.pending+' chờ duyệt · '+d.transfers.approved+' chờ chuyển',d.transfers.count?'warn':''));
+      lists.append(section('⇄ Phiếu điều chuyển đang mở','#/transfers',d.transfers.rows.map(x=>({href:'#/transfers/'+encodeURIComponent(x.id),title:x.transferNo,sub:x.fromName+' → '+x.toName+' · '+(x.status==='approved'?'Đã duyệt – chờ kho chuyển':'Chờ duyệt')})),'Không có phiếu điều chuyển chờ xử lý.'));
+      if(d.early){cards.append(card('📝','Phiếu xin hàng trước','#/receiving?type=early&workOnly=1',d.early.count,'phiếu đã gửi, còn chờ NCC hoặc nhận hàng',d.early.count?'warn':''));lists.append(section('📝 Phiếu xin hàng trước cần theo dõi','#/receiving?type=early&workOnly=1',d.early.rows.map(x=>({href:'#/early-requests/'+encodeURIComponent(x.requestId),title:'Phiếu '+x.requestId.slice(0,8).toUpperCase()+' · '+x.supplierName,sub:[x.date?'Ngày lấy '+dmy(x.date):'Chưa hẹn ngày',x.lines.some(l=>l.receiptOptions?.length)?'NCC đồng ý – còn hàng chờ nhận':'Chờ NCC phản hồi',x.lines.length+' mã'].join(' · ')})),'Không có phiếu xin hàng trước chờ xử lý.'));}
+      if(d.sapo){cards.append(card('📥','Chờ nhập kho Sapo','#/purchases?state=sapo',d.sapo.count,'đơn có phiếu nhận chờ xử lý Sapo',d.sapo.count?'warn':''));lists.append(section('📥 Phiếu nhận chờ nhập Sapo','#/purchases?state=sapo',d.sapo.rows.map(x=>({href:'#/purchases/'+encodeURIComponent(x.id),title:x.ticketNumber+' · '+x.supplierName,sub:x.pending+' phiếu nhận chờ nhập Sapo hoặc cần kiểm tra lỗi'})),'Không có phiếu nhận chờ nhập Sapo.'));}
+    }catch(e){if(my===req){cards.replaceChildren();lists.replaceChildren(el('p','error card',e.message||'Không tải được việc cần làm. Bấm Làm mới để thử lại.'));}}
+    finally{if(my===req)reload.disabled=false;}
   }
   return { load };
 }

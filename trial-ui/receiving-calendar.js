@@ -18,17 +18,20 @@ export function initReceivingCalendar({ api, root, confirmBox = async () => fals
   const foot = el('div', 'row-gap'), prev = el('button', 'btn secondary small', '‹ Trước'), next = el('button', 'btn secondary small', 'Sau ›'), range = el('span', 'muted small');
   foot.dataset.mobileActions = 'off'; // Pagination stays directly accessible on mobile.
   prev.type = next.type = 'button'; foot.append(prev, range, next); panel.append(bar, hint, summary, wrap, foot); page.append(head, panel); root.append(page);
-  let offset = 0, request = 0, timer;
+  let offset = 0, request = 0, timer, routeQuery=null, workOnly=false;
   const reset = () => { offset = 0; return load(); };
   for (const control of [from, to, supplier, state, type]) control.addEventListener('change', reset);
   sku.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(reset, 250); });
   q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(reset, 250); }); reload.addEventListener('click', reset);
   prev.addEventListener('click', () => { offset = Math.max(0, offset - 50); load(); }); next.addEventListener('click', () => { offset += 50; load(); });
   async function load() {
+    const query=(location.hash.split('?')[1]||'');
+    if(query!==routeQuery){const p=new URLSearchParams(query);type.value=['early','purchase'].includes(p.get('type'))?p.get('type'):'';workOnly=p.get('workOnly')==='1';routeQuery=query;offset=0;}
+    hint.textContent=workOnly?'Chỉ phiếu đã gửi đang chờ NCC phản hồi hoặc còn hàng chưa nhận. Phiếu nháp, bị từ chối, đã xoá và đã nhận đủ không tính là việc chờ.':'Hàng chưa hẹn ngày vẫn hiển thị khi lọc khoảng ngày. Đơn mua hiển thị phần còn thiếu; phiếu xin hiển thị lượng xin lấy trước, theo đơn vị từng mã.';
     const id = ++request; prev.disabled = next.disabled = true; summary.textContent = 'Đang tải lịch nhận hàng…';
     body.replaceChildren();
     try {
-      const d = await api('/purchase-receiving-calendar?' + new URLSearchParams({ from: from.value, to: to.value, supplierId: supplier.value, state: state.value, type:type.value,sku:sku.value,q: q.value, offset: String(offset) }));
+      const d = await api('/purchase-receiving-calendar?' + new URLSearchParams({ from: from.value, to: to.value, supplierId: supplier.value, state: state.value, type:type.value,sku:sku.value,q: q.value, offset: String(offset),workOnly:workOnly?'1':'' }));
       if (id !== request) return;
       if (offset && !d.rows.length) { offset = 0; return load(); }
       const keep = supplier.value; supplier.replaceChildren(Object.assign(el('option', '', 'Tất cả NCC'), { value: '' }));

@@ -129,7 +129,7 @@ function purchaseListScope(m: Member, filter: PurchaseListFilter) {
 
 /** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
 export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
-  const rows = await db.select().from(incomingShipments).where(purchaseListScope(m, filter))
+  const rows = await db.select().from(incomingShipments).where(and(purchaseListScope(m, filter), filter.state==='sapo'?sql`exists(select 1 from ${supplierReceipts} where ${supplierReceipts.shipmentId}=${incomingShipments.id} and ${supplierReceipts.cancelledAt} is null and ${supplierReceipts.sapoStatus} in ('pending','failed'))`:undefined))
     .orderBy(...rankFirst(searchRank([incomingShipments.ticketNumber, incomingShipments.supplierInternalOrderNumber], incomingShipments.supplierName, filter.q)), desc(incomingShipments.createdAt))
     .limit(Math.min(filter.limit ?? 300, filter.openOnly ? 5000 : 500));
   const ids = rows.map(r => r.id);

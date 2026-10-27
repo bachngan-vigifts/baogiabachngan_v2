@@ -313,7 +313,7 @@ async function apiRequest(path, method = 'GET', body) {
   if (state.user && sameSession) {
     if (method !== 'GET' && /^\/(quotes|orders|contracts|purchase-orders|stock-transfers|customers|products|cash|pos)(\/|\?|$)/.test(path)) approvalUi?.scheduleRefresh();
     if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
-    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|packing|purchase-orders|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) dataRefresh.afterWrite(); // một lần làm mới (gồm số đếm menu) sau ~1 giây, không đọc lại 7–20 API nối đuôi
+    else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|stock-transfers|packing|purchase-orders|purchase-early-requests|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) dataRefresh.afterWrite(); // một lần làm mới (gồm số đếm menu) sau ~1 giây, không đọc lại 7–20 API nối đuôi
   }
   return data;
 }
@@ -532,7 +532,7 @@ async function loadNavigationBadges() {
   try {
     const counts = await api('/navigation-counts');
     if (request !== navigationBadgeRequest || user !== state.user) return;
-    for (const [name, id] of [['receiving', 'nav-receiving-count'], ['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count'], ['cash', 'nav-cash-count']]) {
+    for (const [name, id] of [['receiving', 'nav-receiving-count'], ['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count'], ['cash', 'nav-cash-count'], ['transfers', 'nav-transfer-count']]) {
       const badge = document.getElementById(id); if (!badge) continue;
       const count = Number(counts[name] || 0); badge.textContent = count.toLocaleString('vi-VN'); badge.hidden = count <= 0;
     }
@@ -692,7 +692,7 @@ const posLocalSearch = (q, policy) => {
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Trang kho', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -3489,6 +3489,8 @@ async function refreshData() {
   else if (page === 'contracts') jobs.push(id ? openOrder(id) : loadContracts());
   else if (page === 'cash') jobs.push(cashView().load());
   else if (page === 'pos') { if (!posUi?.dirty()) jobs.push(posView().load()); }
+  else if (page === 'kho') jobs.push(khoHome().load());
+  else if (page === 'transfers') jobs.push(transfersView().load(id));
   else if (page === 'receiving') jobs.push(receivingView().load());
   else if (page === 'deliveries') jobs.push(loadDeliveries());
   else if (page === 'receivables') jobs.push(loadReceivables());

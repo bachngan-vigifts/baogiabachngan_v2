@@ -1,3 +1,4 @@
+import { transferTasksChanged } from './transfer-task-hooks.ts';
 import { and, asc, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -178,6 +179,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await tx.insert(stockTransfers).values({ id, transferNo, fromWarehouseId: from, toWarehouseId: to, status: 'pending', reason, requestedBy: m.id, createdAt: now, updatedAt: now });
       await tx.insert(stockTransferLines).values(found.map(p => ({ id: crypto.randomUUID(), transferId: id, sku: p.sku, name: p.name, unit: p.unit, qty: want.get(p.sku)! })));
     });
+    await transferTasksChanged(c.env, id, m.id);
     if(replayed)return json({...await viewOf(c,id),replayed:true});
     const wName = (x: string) => whs.find(w => w.id === x)?.name ?? '';
     const pending = { eventType: 'transfer_pending', title: 'Phiếu xin hàng chờ duyệt', body: `${m.name}: ${transferNo} · ${wName(from)} → ${wName(to)} – ${reason}`,
@@ -202,6 +204,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await tx.delete(stockTransferLines).where(eq(stockTransferLines.transferId,id));
       await tx.insert(stockTransferLines).values(found.map(p=>({id:crypto.randomUUID(),transferId:id,sku:p.sku,name:p.name,unit:p.unit,qty:want.get(p.sku)!})));
     });
+    await transferTasksChanged(c.env, id, m.id);
     return json(await viewOf(c,id));
   },'business');
 
@@ -214,6 +217,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await tx.update(stockTransfers).set({ status: 'approved', approvedBy: m.id, approvedAt: now, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
       return t;
     });
+    await transferTasksChanged(c.env, id, m.id);
     const v = await viewOf(c, id);
     await background(c.env, notify(c.env, { eventType: 'transfer_approved', title: 'Điều chuyển kho đã được duyệt', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
     await background(c.env, Promise.all([moveTeam(c.env.db), warehouseStaff(c.env.db, t.fromWarehouseId)]).then(([team, staff]) => notifyMany(c.env, [...team, ...staff], { eventType: 'transfer_move', title: 'Kho: chuyển hàng giữa các kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName} · ${v.lines.length} mã`,
@@ -232,6 +236,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       return t;
     });
     await background(c.env, notify(c.env, { eventType: 'transfer_rejected', title: 'Điều chuyển kho bị từ chối', body: `${t.transferNo}: ${reason}. Chọn nguồn hàng khác (kho khác / đặt NCC) cho đơn.`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
+    await transferTasksChanged(c.env, id, m.id);
     return json(await viewOf(c, id));
   }, 'business');
 
@@ -244,6 +249,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       const now = nowIso();
       await tx.update(stockTransfers).set({ status: 'cancelled', cancelledBy: m.id, cancelledAt: now, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
     });
+    await transferTasksChanged(c.env, id, m.id);
     return json(await viewOf(c, id));
   }, 'business');
 
@@ -273,6 +279,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await tx.update(stockTransfers).set({ status: 'done', doneBy: m.id, doneAt: now, doneNote: str(body.note, 500), updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
       return t;
     });
+    await transferTasksChanged(c.env, id, m.id);
     const v = await viewOf(c, id);
     await background(c.env, notify(c.env, { eventType: 'transfer_done', title: 'Hàng đã chuyển kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
     return json(v);

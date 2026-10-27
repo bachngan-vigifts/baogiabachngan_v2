@@ -1,0 +1,52 @@
+[
+  {
+    "width": 360,
+    "cards": 6,
+    "transferCount": 4,
+    "transferLink": true,
+    "earlyFilter": true,
+    "sapoFilter": true,
+    "reload5": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "cards": 6,
+    "transferCount": 4,
+    "transferLink": true,
+    "earlyFilter": true,
+    "sapoFilter": true,
+    "reload5": true,
+    "errors": []
+  },
+  {
+    "width": 430,
+    "cards": 6,
+    "transferCount": 4,
+    "transferLink": true,
+    "earlyFilter": true,
+    "sapoFilter": true,
+    "reload5": true,
+    "errors": []
+  },
+  {
+    "width": 768,
+    "cards": 6,
+    "transferCount": 4,
+    "transferLink": true,
+    "earlyFilter": true,
+    "sapoFilter": true,
+    "reload5": true,
+    "errors": []
+  },
+  {
+    "width": 1280,
+    "cards": 6,
+    "transferCount": 4,
+    "transferLink": true,
+    "earlyFilter": true,
+    "sapoFilter": true,
+    "reload5": true,
+    "errors": []
+  }
+]

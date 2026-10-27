@@ -120,8 +120,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   const countEl = el('span', 'muted small');
   bar.append(label, countEl);
   const chips = el('div', 'chips pur-chips');
-  // Lọc trạng thái ngay trên danh sách đã tải (máy chủ trả mọi trạng thái một lần): bấm chip không gọi lại máy chủ, không bị bấm trùng.
-  const setFilter = v => { filter = v; chips.querySelectorAll('.chip').forEach(x => { const on = x.dataset.filter === v; x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); }); applyFilters(); };
+  // Lọc tại chỗ; riêng Sapo lọc trên máy chủ trước giới hạn để không bỏ sót phiếu cũ.
+  const setFilter = v => { const reload=(filter==='sapo')!==(v==='sapo');filter = v; chips.querySelectorAll('.chip').forEach(x => { const on = x.dataset.filter === v; x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); }); if(reload)load();else applyFilters(); };
   for (const [v, t] of FILTERS) { const c = btn(t, 'chip' + (v === '' ? ' active' : ''), () => setFilter(v)); c.dataset.filter = v; c.setAttribute('aria-pressed', String(v === '')); chips.append(c); }
   // Bộ lọc chi tiết (lọc tại chỗ): nhà cung cấp, người lập, ngày lập, hẹn giao.
   const pick = (label, first) => { const sel = el('select'); sel.append(Object.assign(el('option', '', first), { value: '' })); return { sel, box: field(label, sel) }; };
@@ -231,7 +231,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const id = ++req;
     busy(true);
     try {
-      const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim() }));
+      const d = await api('/purchase-orders?' + new URLSearchParams({ q: search.value.trim(),...(filter==='sapo'?{state:'sapo'}:{}) }));
       if (id !== req) return;
       all = d.orders || []; counts = d.counts || {}; canPrices = d.canSeePrices;
       fillPick(fSup, [...new Map(all.filter(r => r.supplierId).map(r => [r.supplierId, r.supplierName || r.supplierId]))].sort((a, b) => a[1].localeCompare(b[1], 'vi')));
@@ -244,6 +244,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   /** Router gọi: id = '' (danh sách) | 'new' (lập đơn, ?type=&id=) | id đơn. */
   async function show(id, query = '') {
     const params = new URLSearchParams(query);
+    if(!id&&FILTERS.some(([key])=>key&&key===params.get('state'))){filter=params.get('state');khoAll=true;chips.querySelectorAll('.chip').forEach(c=>{c.classList.toggle('active',c.dataset.filter===filter);c.setAttribute('aria-pressed',String(c.dataset.filter===filter));});}
     if (id === 'new' && params.get('mode') === 'restock') { showRestock(true); return; }
     if (!restockHost.hidden) showRestock(false);
     if (params.get('mode') === 'incoming') setMode(true,params.get('request')||'');
