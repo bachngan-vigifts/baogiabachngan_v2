@@ -8,8 +8,8 @@ import {customers} from '../../src/modules/customers/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const f=await setup();await f.open();const user=(await f.call('/me',f.emp)).data.user;
 await f.db.insert(customers).values([
- {id:'retail-tax-rule',name:'Khách không MST',phone:'0907777701',contact:'',email:'',address:'',taxCode:'',isRetail:false,search:'',sourceVersion:0,syncedAt:''},
- {id:'business-tax-rule',name:'Công ty có MST',phone:'0907777702',contact:'',email:'',address:'',taxCode:'0312345678',isRetail:true,search:'',sourceVersion:0,syncedAt:''},
+ {id:'retail-tax-rule',name:'Khách không MST',phone:'0907777701',contact:'',email:'',address:'',taxCode:'',isRetail:false,search:'khach khong mst 0907777701',sourceVersion:0,syncedAt:''},
+ {id:'business-tax-rule',name:'Công ty có MST',phone:'0907777702',contact:'',email:'',address:'',taxCode:'0312345678',isRetail:true,search:'cong ty co mst 0907777702 0312345678',sourceVersion:0,syncedAt:''},
 ]);
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),calls=[];
 const html=`<!doctype html><html class="app-shell"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/pos.css"><link rel="stylesheet" href="/typography.css"><link rel="stylesheet" href="/mobile-actions.css"><script type="module" src="/mobile-actions-init.js"></script><div class="workspace"><main class="main"><section id="view-pos"></section></main></div><script type="module">
@@ -23,7 +23,7 @@ const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://l
  const r=await f.call(path.slice(4)+u.search,f.emp,req.method,body);res.writeHead(r.status,{'content-type':'application/json'}).end(JSON.stringify(r.data));return;}
  res.setHeader('content-type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':path.endsWith('.ttf')?'font/ttf':'text/html');res.end(path==='/'?html:await readFile(root+path));
  }catch(e){res.writeHead(500).end(e.message);}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
-const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
+const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
 const shot=process.env.POS_SCREENSHOT_DIR||'/workspace/scratch/pos-customer-checkout';await mkdir(shot,{recursive:true});
 try{for(const width of [375,390,1280]){
  const context=await browser.newContext({viewport:{width,height:844}});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());

@@ -1403,8 +1403,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         ++seq;
         matches = [];
         collapse();
-        run(find);
+        const request = find();
         input.focus();
+        return request;
       }
       const retail = button('Khách lẻ', 'btn secondary', () => filter('retail')),
         business = button('Khách B2B', 'btn secondary', () => filter('business')),
@@ -1420,11 +1421,28 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       footer.append(el('span', 'pos-customer-hint', 'Bắt buộc chọn khách hàng cụ thể để lưu đơn.'), button('Đóng', 'btn secondary', close));
       search.append(input, suggestions);
       m.body.append(el('p', 'pos-customer-subtitle', 'Chọn khách trong danh sách hoặc tìm theo tên, số điện thoại.'), actions, search, status, more, footer);
+      function renderCustomers(rows, append) {
+        if (!append) { matches = []; suggestions.replaceChildren(); activeIndex = -1; }
+        const seen = new Set(matches.map(c => c.id)), added = rows.filter(c => !seen.has(c.id)), start = matches.length;
+        matches.push(...added);
+        suggestions.append(...added.map((c, index) => {
+          const i = start + index;
+          const option = button('', 'pos-customer-option', () => pick(c));
+          option.id = listId + '-' + i;
+          option.setAttribute('role', 'option');
+          option.setAttribute('aria-selected', 'false');
+          option.append(el('strong', '', c.name), el('span', '', [c.phone || 'Chưa có số điện thoại',c.taxCode?.trim()?'MST: '+c.taxCode.trim():''].filter(Boolean).join(' · ')));
+          return option;
+        }));
+        suggestions.hidden = !matches.length;
+        input.setAttribute('aria-expanded', String(!!matches.length));
+      }
       async function find(append = false) {
         if (append && (loading || nextOffset === null)) return;
         const n = append ? seq : ++seq, offset = append ? nextOffset : 0, query = input.value.trim();
-        if (!append) { collapse(); matches = []; nextOffset = null; suggestions.replaceChildren(); }
+        if (!append) { nextOffset = null; activeIndex = -1; input.setAttribute('aria-activedescendant', ''); }
         loading = true; more.disabled = true;
+        input.setAttribute('aria-busy', 'true');
         status.textContent = append ? 'Đang tải thêm khách…' : 'Đang tìm khách…';
         try {
           const d = await api('/pos/customers?q=' + encodeURIComponent(query) + '&kind=' + kind + '&offset=' + offset);
@@ -1433,33 +1451,20 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           retail.disabled = !canRetail;
           if (!canRetail && kind === 'retail') { filter('business'); return; }
           nextOffset = d.nextOffset ?? null;
-          const seen = new Set(matches.map(c => c.id)), added = d.customers.filter(c => !seen.has(c.id)), start = matches.length;
-          matches.push(...added);
-          suggestions.append(...added.map((c, index) => {
-            const i = start + index;
-            const option = button('', 'pos-customer-option', () => pick(c));
-            option.id = listId + '-' + i;
-            option.setAttribute('role', 'option');
-            option.setAttribute('aria-selected', 'false');
-            option.append(el('strong', '', c.name), el('span', '', [c.phone || 'Chưa có số điện thoại',c.taxCode?.trim()?'MST: '+c.taxCode.trim():''].filter(Boolean).join(' · ')));
-            return option;
-          }));
-          suggestions.hidden = !matches.length;
-          input.setAttribute('aria-expanded', String(!!matches.length));
+          renderCustomers(d.customers, append);
           more.hidden = nextOffset === null;
           more.textContent = 'Tải thêm khách';
           status.textContent = matches.length ? `Đang hiện ${matches.length} khách · cuộn danh sách để tải tiếp.` : 'Không tìm thấy khách. Thử tên, số điện thoại khác hoặc tạo khách mới.';
         } catch (e) {
           if (n === seq && m.dlg.open) { status.textContent = 'Không tải được khách. Bấm để thử lại.'; more.hidden = false; more.textContent = 'Thử lại'; }
-        } finally { if (n === seq) { loading = false; more.disabled = false; } }
+        } finally { if (n === seq) { loading = false; more.disabled = false; input.setAttribute('aria-busy', 'false'); } }
       }
       suggestions.addEventListener('scroll', () => { if (suggestions.scrollHeight - suggestions.scrollTop - suggestions.clientHeight < 60) run(() => find(true)); });
       input.addEventListener('input', () => {
         ++seq;
         nextOffset = null; loading = false; more.hidden = true;
-        collapse();
         clearTimeout(timer);
-        timer = setTimeout(() => run(find), 200);
+        timer = setTimeout(() => run(find), 100);
       });
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !suggestions.hidden) { e.preventDefault(); e.stopPropagation(); collapse(); return; }
