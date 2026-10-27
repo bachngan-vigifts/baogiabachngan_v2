@@ -57,3 +57,9 @@ Giữa hai lần có 4 bút toán adjustment từ thao tác khác trên hệ th�
 ### Trả hàng CRM — chưa triển khai, chờ duyệt mở phạm vi
 
 [Phương án cụ thể, điểm cần đổi API/schema và ví dụ đối trừ của DH_20261014_002](crm-return-proposal.md). Chưa tạo phiếu trả hoặc hoàn tiền thật. Đây là đề xuất để duyệt, không phải tính năng đã hoàn thành.
+
+### HĐKT mở toàn trang như Đơn hàng
+
+Theo yêu cầu mới, bỏ hẳn popup/drawer HĐKT cả desktop lẫn mobile. `#view-order` luôn ở nguyên trong `main`; không bọc các phần thông tin thành accordion, không giữ danh sách HĐKT làm nền. Giữ nút xem/tải hồ sơ, in phiếu và lịch sử hiện có. Không đổi dữ liệu hay API hợp đồng.
+
+Browser router thật ở 360/390/430/768/1280px: bấm danh sách mở toàn trang, quay lại danh sách/Back, đổi kích thước, 5 lần render lại không nhân đôi chi tiết/nút hồ sơ; không popup, tràn trang hoặc lỗi JS. [Kết quả](contracts-full-page-results.json) · [390px](contract-390.png) · [1280px](contract-1280.png).
