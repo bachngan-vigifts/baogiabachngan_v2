@@ -103,13 +103,14 @@ jobs:
       - name: Cập nhật mã webhook SePay / WooCommerce
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: supabase secrets set --project-ref "$PROJECT_REF" SEPAY_POS_API_KEY_HASH="$SEPAY_POS_API_KEY_HASH" WOO_LOCK_TOKEN_HASH="$WOO_LOCK_TOKEN_HASH" WOO_MINHLONG_TOKEN_HASH="$WOO_MINHLONG_TOKEN_HASH"
-      - name: Migration (GHN POS Lock, ngày tạo sản phẩm) và lịch đồng bộ GHN
+      - name: Migration trước khi triển khai API
         if: env.SUPABASE_ACCESS_TOKEN != ''
         shell: bash
         run: |
           query="$(<migrations/postgres/20261022030000_pos_delivery_ghn_tracking.sql)"$'\n'"$(<migrations/postgres/20261022204500_web_order_ghn_address.sql)"$'\n'"$(<migrations/postgres/20261023120000_product_created_at.sql)"$'\n'"$(<supabase/ghn-pos-lock-cron.sql)"
           query+=$'\n'"$(<migrations/postgres/20261026042035_inventory_adjustment_approval.sql)"
           query+=$'\n'"$(<migrations/postgres/20261026080503_early_request_delete_split.sql)"
+          query+=$'\n'"$(<migrations/postgres/20261027040000_crm_returns.sql)"
           payload=$(jq -n --arg query "$query" '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
