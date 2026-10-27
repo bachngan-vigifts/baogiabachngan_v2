@@ -93,7 +93,7 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id:string|
   return headers.map(h=>{
     const own=details.filter(d=>d.line.requestId===h.id),groups=new Map<string,typeof own>();
     for(const d of own) { const group=groups.get(d.line.id)||[];group.push(d);groups.set(d.line.id,group); }
-    return {id:h.id,createdAt:h.createdAt,updatedAt:h.updatedAt||h.createdAt,pickupDate:h.pickupDate,revision:h.revision,requestStatus:h.status,
+    return {id:h.id,ticketNumber:h.ticketNumber,createdAt:h.createdAt,updatedAt:h.updatedAt||h.createdAt,pickupDate:h.pickupDate,revision:h.revision,requestStatus:h.status,
       ...(!supplierId?{createdBy:h.createdBy,scope:JSON.parse(h.scope)}:{}),status:h.status==='draft'?'draft':stateOf(own.map(d=>d.allocation.status)),
       lines:[...groups].map(([lineId,group])=>({id:lineId,sku:group[0]!.line.sku,name:group[0]!.catalogName?.trim()||group[0]!.line.name,unit:group[0]!.line.unit,
         // Supplier sees ONLY its quantities/statuses, never a cross-supplier line total.

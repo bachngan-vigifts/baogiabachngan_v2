@@ -47,7 +47,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     list.replaceChildren();operations.replaceChildren();selected.clear();selectable=[];all.checked=false;syncBatch();bulk.hidden=portal||!canViewPortal;
     if(!requests.length) list.append(el('p','muted','Chưa có phiếu xin lấy trước.'));
     if(!portal&&canViewPortal)for(const request of requests){
-      const groups=supplierSlips(request),bar=el('div','row-gap');bar.append(el('span','small','Phiếu '+request.id.slice(0,8).toUpperCase()));
+      const groups=supplierSlips(request),bar=el('div','row-gap');bar.append(el('span','small','Phiếu '+(request.ticketNumber||request.id.slice(0,8).toUpperCase())));
       if(groups.length>1)bar.append(btn('Tách thành '+groups.length+' phiếu NCC',()=>changeRequest(request,'split')));
       operations.append(bar);
     }
@@ -55,7 +55,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     for(const request of requests.flatMap(r=>!portal&&r.requestStatus==='submitted'?supplierSlips(r):[r])) {
       const card=el('article','card early-request-card'),head=el('div','row-gap early-request-head');card.dataset.requestId=request.id;
       const browse=portal&&portalNavigation?.canBrowse(),heading=el('strong'),ordersForHeading=new Map(request.lines.flatMap(l=>l.allocations).map(a=>[a.orderId,a.ticketNumber]));
-      const titleText=request.slipLabel||'Phiếu lấy trước '+request.id.slice(0,8).toUpperCase();
+      const titleText=request.slipLabel||'Phiếu lấy trước '+(request.ticketNumber||request.id.slice(0,8).toUpperCase());
       if(!portal&&request.groupKey&&ordersForHeading.size===1){const a=el('a','early-order-link',titleText);a.href='#/purchases/'+encodeURIComponent(ordersForHeading.keys().next().value);heading.append(a);}
       else if(browse){const a=el('a','early-order-link',titleText);a.href='/#/early-requests/'+encodeURIComponent(request.id);heading.append(a);}
       else heading.append(el('span','',titleText));
@@ -123,7 +123,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const slip=action==='cancel-slip',remove=action==='delete'||action==='cancel-delete'||slip,cancel=action==='cancel-delete'||slip,modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
     const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',cancel?'Huỷ phiếu xin hàng và xoá':remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
     const groups=supplierSlips(request);
-    body.append(el('p','',slip?'Huỷ và xoá '+request.slipLabel+', gồm '+request.lines.length+' mã hàng.':remove?(cancel?'Huỷ yêu cầu xin lấy trước và xoá toàn bộ phiếu ':'Xoá toàn bộ phiếu ')+request.id.slice(0,8).toUpperCase()+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
+    body.append(el('p','',slip?'Huỷ và xoá '+request.slipLabel+', gồm '+request.lines.length+' mã hàng.':remove?(cancel?'Huỷ yêu cầu xin lấy trước và xoá toàn bộ phiếu ':'Xoá toàn bộ phiếu ')+(request.ticketNumber||request.id.slice(0,8).toUpperCase())+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
     if(slip)body.append(el('p','','Chỉ huỷ phiếu NCC này. Các phiếu NCC khác được giữ nguyên.'));
     for(const group of groups)body.append(el('p','small',group.supplierName+' · '+group.slipLabel+' · '+group.lines.map(l=>l.sku+' × '+number(l.quantity)).join('; ')));
     body.append(el('p','muted small',cancel?'Sau xác nhận, phiếu không còn trên CRM và cổng NCC, không thể tiếp tục nhận theo phiếu này. Phiếu NCC đã phát sinh nhận hàng sẽ bị chặn. Phiếu NCC chưa nhận vẫn được huỷ riêng. Đơn mua NCC, tồn kho và nhật ký đối soát được giữ nguyên.':'Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));

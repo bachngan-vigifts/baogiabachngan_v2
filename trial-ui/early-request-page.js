@@ -1,3 +1,4 @@
+import {earlyListBulk} from './early-list-bulk.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
 import { openEarlyRequestFile, earlyRequestTemplate } from './purchase-early-file.js';
 const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
@@ -34,21 +35,22 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  const feedback=node('p','muted small');feedback.setAttribute('role','status');
  const list=node('div','early-page-list'),pager=node('div','early-page-pager');
  const prev=button('‹ Trang trước',()=>{offset=Math.max(0,offset-20);load();}),next=button('Trang tiếp ›',()=>{if(nextOffset!==null){offset=nextOffset;load();}}),refresh=button('Làm mới',()=>detailId?history.load(detailId):load());
- pager.append(prev,next);actions.append(refresh);section.append(search,filters,feedback,list,pager);root.append(header,back,error,section,detail);
+ const selection=earlyListBulk({api,onSaved:async()=>{await load();toast('Đã cập nhật các phiếu đã chọn.');}});
+ pager.append(prev,next);actions.append(refresh);section.append(search,filters,feedback,selection.host,list,pager);root.append(header,back,error,section,detail);
  const history=initEarlyRequests({api,host:detail,canWrite:()=>canSend,requestHref,currentRequest:()=>detailId,onDeleted:()=>detailId?go('#/early-requests'):load(),onSaved:()=>toast('Đã cập nhật phiếu lấy hàng trước.')});
  function params(){const p=new URLSearchParams();for(const [key,value] of [['q',search.value.trim()],['supplierId',supplier.value],['status',status.value],['dateBy',dateBy.value],['from',from.value],['to',to.value]])if(value)p.set(key,value);return p;}
  function fail(message=''){error.textContent=message;error.hidden=!message;}
  async function load(){
-  const mine=++sequence;clearTimeout(timer);fail();prev.disabled=next.disabled=true;section.setAttribute('aria-busy','true');feedback.textContent='Đang tải phiếu…';
+  const mine=++sequence;clearTimeout(timer);selection.reset();fail();prev.disabled=next.disabled=true;section.setAttribute('aria-busy','true');feedback.textContent='Đang tải phiếu…';
   const p=params();p.set('limit','20');if(offset)p.set('offset',String(offset));
   // Persist filters in the URL so Back/share/reload preserve the current list.
   const saved=params();if(offset)saved.set('offset',String(offset));
   if(location.hash.split('?')[0]==='#/early-requests')historyReplace(saved);
   try{const data=await api('/purchase-early-requests?'+p);if(mine!==sequence)return;
-   canSend=!!data.canSend;file.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();
+   canSend=!!data.canSend;file.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();selection.reset(data.requests,data);
    for(const request of data.requests){
-    const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link','Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
-    head.append(open,node('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
+    const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link',request.ticketNumber||'Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
+    const title=node('div','early-list-title'),check=selection.checkbox(request);if(check)title.append(check);title.append(open);head.append(title,node('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
     const allocations=request.lines.flatMap(l=>l.allocations),names=[...new Set(allocations.map(a=>a.supplierName))],orders=[...new Set(allocations.map(a=>a.ticketNumber+(a.supplierOrderNo?' · NCC: '+a.supplierOrderNo:'')))];
     const created=new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(request.createdAt));
     card.append(head,node('p','small muted','Lập '+created+' · Ngày lấy: '+(request.pickupDate?request.pickupDate.split('-').reverse().join('/'):'Chưa nhập')),
@@ -64,9 +66,9 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  }
  function historyReplace(p){const href='#/early-requests'+(p.size?'?'+p:'');window.history.replaceState(null,'',href);back.href=href;}
  const changed=()=>{offset=0;load();};for(const input of [supplier,status,dateBy,from,to])input.addEventListener('change',changed);
- search.addEventListener('input',()=>{++sequence;clearTimeout(timer);timer=setTimeout(changed,250);});
+ search.addEventListener('input',()=>{++sequence;selection.reset();clearTimeout(timer);timer=setTimeout(changed,250);});
  return {async show(id='',query=''){
-  const mine=++sequence;clearTimeout(timer);detailId=id;back.hidden=!id;section.hidden=!!id;detail.hidden=!id;fail();
+  const mine=++sequence;clearTimeout(timer);detailId=id;selection.reset();back.hidden=!id;section.hidden=!!id;detail.hidden=!id;fail();
   try{const options=await api('/purchase-options');if(mine!==sequence)return;
    suppliers=options.suppliers||[];canSend=!!options.canRequestEarly;file.hidden=incoming.hidden=!canSend;
    const keep=supplier.value;supplier.replaceChildren(...select([['','Tất cả NCC'],...suppliers.map(s=>[s.id,s.name])]).children);supplier.value=keep;

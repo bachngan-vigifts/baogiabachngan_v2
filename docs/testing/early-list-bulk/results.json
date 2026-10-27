@@ -1,0 +1,55 @@
+[
+  {
+    "width": 360,
+    "twoRequestsConfirmed": true,
+    "twoScopedReceipts": true,
+    "selectionCleared": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "twoRequestsConfirmed": true,
+    "twoScopedReceipts": true,
+    "selectionCleared": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 430,
+    "twoRequestsConfirmed": true,
+    "twoScopedReceipts": true,
+    "selectionCleared": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 768,
+    "twoRequestsConfirmed": true,
+    "twoScopedReceipts": true,
+    "selectionCleared": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 1280,
+    "twoRequestsConfirmed": true,
+    "twoScopedReceipts": true,
+    "selectionCleared": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "sharedSourceCapped": true,
+    "overReceiveBlocked": true,
+    "committedTimeoutRetrySafe": true
+  },
+  {
+    "fractionalSharedDefaultsValid": true,
+    "pendingRequestExcluded": true,
+    "closeWithoutWriting": true
+  },
+  {
+    "unauthorizedSelectionHidden": true
+  }
+]

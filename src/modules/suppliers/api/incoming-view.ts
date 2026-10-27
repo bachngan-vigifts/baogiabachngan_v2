@@ -13,7 +13,7 @@ export async function incomingBySkuView(db: Db, query: URLSearchParams, today: s
   const saved = type==='purchase'||!sources.size ? [] : await db.select({request:requests,line:lines,allocation:allocations})
     .from(requests).innerJoin(lines,eq(lines.requestId,requests.id)).innerJoin(allocations,eq(allocations.requestLineId,lines.id))
     .where(and(isNull(requests.deletedAt),inArray(allocations.purchaseLineId,[...sources.keys()]))).orderBy(desc(requests.createdAt),desc(requests.id),asc(lines.lineNo),asc(allocations.id));
-  type Early = {id:string;lineId:string;createdAt:string;pickupDate:string;requestStatus:string;status:string;quantity:number;supplierId:string;supplierName:string;orders:{id:string;ticketNumber:string;quantity:number}[]};
+  type Early = {id:string;ticketNumber:string;lineId:string;createdAt:string;pickupDate:string;requestStatus:string;status:string;quantity:number;supplierId:string;supplierName:string;orders:{id:string;ticketNumber:string;quantity:number}[]};
   const bySku = new Map<string,Map<string,{value:Early;statuses:string[]}>>();
   for(const {request,line,allocation} of saved){
     const source=sources.get(allocation.purchaseLineId)!;
@@ -21,7 +21,7 @@ export async function incomingBySkuView(db: Db, query: URLSearchParams, today: s
     const grouped=bySku.get(line.sku)||new Map<string,{value:Early;statuses:string[]}>();bySku.set(line.sku,grouped);
     const key=request.id+':'+allocation.supplierId;
     let entry=grouped.get(key);
-    if(!entry){entry={value:{id:request.id,lineId:line.id,createdAt:request.createdAt,pickupDate:request.pickupDate,requestStatus:request.status,status:'',quantity:0,
+    if(!entry){entry={value:{id:request.id,ticketNumber:request.ticketNumber,lineId:line.id,createdAt:request.createdAt,pickupDate:request.pickupDate,requestStatus:request.status,status:'',quantity:0,
       supplierId:allocation.supplierId,supplierName:source.order.supplierName,orders:[]},statuses:[]};grouped.set(key,entry);}
     entry.value.quantity+=allocation.quantity;entry.statuses.push(allocation.status);
     entry.value.orders.push({id:source.order.id,ticketNumber:source.order.ticketNumber,quantity:allocation.quantity});

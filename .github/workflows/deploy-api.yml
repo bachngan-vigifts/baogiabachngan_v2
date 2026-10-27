@@ -111,6 +111,7 @@ jobs:
           query+=$'\n'"$(<migrations/postgres/20261026042035_inventory_adjustment_approval.sql)"
           query+=$'\n'"$(<migrations/postgres/20261026080503_early_request_delete_split.sql)"
           query+=$'\n'"$(<migrations/postgres/20261027040000_crm_returns.sql)"
+          query+=$'\n'"$(<migrations/postgres/20261027113713_early_request_numbers.sql)"
           payload=$(jq -n --arg query "$query" '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"

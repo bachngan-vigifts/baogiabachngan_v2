@@ -3,7 +3,7 @@ const number=n=>Number(n||0).toLocaleString('vi-VN');
 const link=(text,href)=>{const n=el('a','',text);n.href=href;return n;};
 const date=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'Chưa nhập';
 const stamp=d=>d&&!Number.isNaN(Date.parse(d))?new Date(d).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa có thời điểm';
-const requestName=r=>'Phiếu '+r.id.slice(0,8).toUpperCase();
+const requestName=r=>'Phiếu '+(r.ticketNumber||r.id.slice(0,8).toUpperCase());
 /** Existing staff endpoint: retain server authorization and follow every page before claiming completeness. */
 export async function loadEarlyRequestPages(api,params={},alive=()=>true){
  const rows=[],seen=new Set();let offset=0;
