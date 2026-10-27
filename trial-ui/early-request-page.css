@@ -20,3 +20,8 @@
  #view-early-requests .early-request-card .row-gap { flex-wrap: wrap; }
  #view-early-requests :is(.early-request-line,.early-request-card) { min-width: 0; overflow-wrap: anywhere; }
 }
+
+.early-quick-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0; }
+.early-quick-receipt input,.early-quick-receipt select { max-width:100%;box-sizing:border-box; }
+.early-quick-receipt .recv-card { overflow-wrap:anywhere; }
+@media(max-width:850px){ .early-quick-fields { grid-template-columns:minmax(0,1fr); } .early-quick-receipt .modal-foot .btn { width:100%; } }

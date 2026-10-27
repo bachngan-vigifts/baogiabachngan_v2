@@ -42,9 +42,10 @@ try{for(const width of [390,1280]){
  await page.waitForFunction(()=>!document.querySelector('dialog[open] button[title="Lưu nháp trước khi gửi"]'));
  const send=edit.getByRole('button',{name:'Gửi NCC',exact:true});await send.waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('dialog[open] button')].some(b=>b.textContent==='Gửi NCC'&&!b.disabled));await send.click();await edit.waitFor({state:'hidden'});
  await clickAction(page,'Manager xác nhận thay NCC');const confirm=page.locator('dialog.early-request-dialog[open]');await confirm.getByRole('button',{name:'Xác nhận 1 phiếu',exact:true}).click();await confirm.waitFor({state:'hidden'});
- const receive=page.locator('.early-page-detail a').filter({hasText:'Nhận theo phiếu ·'}).first();await receive.waitFor({state:'attached'});assert.ok((await receive.getAttribute('href')).includes('earlyRequestId='+encodeURIComponent(requestId)));
+ const receive=page.locator('.early-page-detail').getByRole('button',{name:'Nhận hàng nhanh',exact:true}).first();await receive.waitFor();const beforeReceive=page.url();await receive.click();await page.locator('.early-quick-receipt [data-early-quick-quantity]').first().waitFor();assert.equal(page.url(),beforeReceive);await page.locator('.early-quick-receipt').getByRole('button',{name:'Đóng',exact:true}).click();
  assert.equal(await page.locator('.early-page-detail .early-request-card').count(),1,'saving/submitting/confirming remains scoped to the selected request');
- const receiveHref=await receive.getAttribute('href');await page.goto(origin+'/'+receiveHref);
+ const saved=(await f.call('/purchase-early-requests?id='+requestId,f.cookies.mgr)).data.requests[0],orderId=saved.lines[0].allocations[0].orderId;
+ await page.goto(origin+'/#/purchases/'+orderId+'?receive=1&earlyRequestId='+requestId);
  const choice=page.locator('dialog.receipt-sapo-choice[open]');await choice.waitFor();await choice.getByRole('button',{name:'Đóng',exact:true}).click();
  const receiveAction=page.locator('.sup-drawer').getByRole('button',{name:'Nhận hàng',exact:true,includeHidden:true});await receiveAction.waitFor({state:'attached'});if(!await receiveAction.isVisible())await receiveAction.evaluate(n=>n.closest('[popover]')?.showPopover());await receiveAction.click();
  await choice.waitFor();await choice.getByRole('button',{name:'Không — chỉ nhập CRM',exact:true}).click();

@@ -1,0 +1,78 @@
+[
+  {
+    "width": 360,
+    "legacyRoute": false,
+    "scopedTo52": true,
+    "received": 7,
+    "remaining": 45,
+    "poRemainingReduced": true,
+    "crmOnly": true,
+    "doubleSubmitSafe": true,
+    "focusRetained": true,
+    "noNavigation": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "legacyRoute": false,
+    "scopedTo52": true,
+    "received": 7,
+    "remaining": 45,
+    "poRemainingReduced": true,
+    "crmOnly": true,
+    "doubleSubmitSafe": true,
+    "focusRetained": true,
+    "noNavigation": true,
+    "errors": []
+  },
+  {
+    "width": 430,
+    "legacyRoute": false,
+    "scopedTo52": true,
+    "received": 7,
+    "remaining": 45,
+    "poRemainingReduced": true,
+    "crmOnly": true,
+    "doubleSubmitSafe": true,
+    "focusRetained": true,
+    "noNavigation": true,
+    "errors": []
+  },
+  {
+    "width": 768,
+    "legacyRoute": false,
+    "scopedTo52": true,
+    "received": 7,
+    "remaining": 45,
+    "poRemainingReduced": true,
+    "crmOnly": true,
+    "doubleSubmitSafe": true,
+    "focusRetained": true,
+    "noNavigation": true,
+    "errors": []
+  },
+  {
+    "width": 1280,
+    "legacyRoute": true,
+    "scopedTo52": true,
+    "received": 7,
+    "remaining": 45,
+    "poRemainingReduced": true,
+    "crmOnly": true,
+    "doubleSubmitSafe": true,
+    "focusRetained": true,
+    "noNavigation": true,
+    "errors": []
+  },
+  {
+    "multiOrder": true,
+    "otherSupplierExcluded": true,
+    "committedTimeoutRetrySafe": true,
+    "received": 5,
+    "sapoChoice": true,
+    "errors": []
+  },
+  {
+    "nonReceivingRoleHidden": true
+  }
+]
