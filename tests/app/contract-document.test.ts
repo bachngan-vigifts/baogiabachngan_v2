@@ -61,3 +61,18 @@ test('HĐKT và biên bản giữ 2 số lẻ đơn giá trên file Word', async
     assert.match(xml, /255\.851,64/);
   }
 });
+
+test('both HĐKT templates use the form signing date and section 5.2 delivery address, including XML-sensitive text', async () => {
+  for (const set of ['bach-ngan', 'vigifts']) {
+    const out = await g.ContractDocument.build({
+      quote: { quote_type: set === 'vigifts' ? 'VIGIFTS' : 'B2B', quote_date: '2026-10-05', items: [], customer: {} },
+      contractNumber: 'TEST', templateBytes: readFileSync(join(ui, `mau-hop-dong-${set}-hdkt.docx`)),
+      details: { signedDate: '2026-10-20', deliveryAddress: 'Kho <A> & B', depositRate: 30, paymentDays: 7 },
+    });
+    const xml = g.fflate.strFromU8(g.fflate.unzipSync(out)['word/document.xml']!);
+    const paragraphs = (xml.match(/<w:p\b[\s\S]*?<\/w:p>/g) || []).map(p => [...p.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(m => m[1]).join(''));
+    assert.equal(paragraphs.find(p => /^Hôm nay/.test(p)), 'Hôm nay, ngày 20 tháng 10 năm 2026, chúng tôi gồm:');
+    assert.equal(paragraphs.find(p => /^5\.2\s*Địa điểm giao hàng/.test(p)), '5.2   Địa điểm giao hàng: Kho &lt;A&gt; &amp; B');
+    assert.doesNotMatch(xml, /bắt buộc sửa lại/);
+  }
+});

@@ -1,0 +1,32 @@
+[
+  {
+    "brand": "bach-ngan",
+    "date": true,
+    "address": true,
+    "exactTable": true,
+    "savedContractDescription": true,
+    "outsideEdits": true,
+    "zip": true,
+    "preview": true,
+    "staleEditsGuard": true,
+    "editor": true,
+    "formRefresh": true,
+    "singleDownload": true,
+    "earlyZip": true
+  },
+  {
+    "brand": "vigifts",
+    "date": true,
+    "address": true,
+    "exactTable": true,
+    "savedContractDescription": true,
+    "outsideEdits": true,
+    "zip": true,
+    "preview": true,
+    "staleEditsGuard": true,
+    "editor": true,
+    "formRefresh": true,
+    "singleDownload": true,
+    "earlyZip": true
+  }
+]
