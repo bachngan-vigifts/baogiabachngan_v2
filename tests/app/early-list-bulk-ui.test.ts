@@ -29,7 +29,7 @@ test('index checkbox eligibility follows existing confirmation/receipt rights an
  checks=s.set(rows,{canViewPortal:false,canReceive:false});assert.ok(checks.every((c:any)=>c===null));assert.equal(s.ui.host.hidden,true);
 });
 test('batch review includes only pending allocations; double submit sends one request and never receives stock',async()=>{
- const s=setup(),r=request('one');r.lines[0].allocations.push({...r.lines[0].allocations[0],id:'already',status:'accepted'});const checks=s.set([r,request('two')]);checks.forEach(check);await s.button('Xác nhận thay NCC').click();
+ const s=setup(),r=request('one');r.lines[0]!.allocations.push({...r.lines[0]!.allocations[0]!,id:'already',status:'accepted'});const checks=s.set([r,request('two')]);checks.forEach(check);await s.button('Xác nhận thay NCC').click();
  assert.match(s.body.textContent,/Không nhận hàng hay cộng tồn kho/);assert.equal(s.calls.length,0);s.block();const save=s.button('Xác nhận 2 phiếu'),pending=save.click();await save.click();assert.equal(s.calls.length,1);assert.deepEqual(JSON.parse(JSON.stringify(s.calls[0])),{path:'/purchase-early-requests/manager-confirm-batch',data:{allocationIds:['one-a0','two-a0']}});s.release();await pending;assert.equal(s.saved,1);assert.equal(s.quick.length,0);
 });
 test('rejects oversized confirmation and stale selected requests without writes',async()=>{
