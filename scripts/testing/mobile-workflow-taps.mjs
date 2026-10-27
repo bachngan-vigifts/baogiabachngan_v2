@@ -67,7 +67,7 @@ try{
  await page.waitForFunction(()=>document.querySelector('#submit-quote').textContent==='Đã gửi duyệt');assert.equal((await f.call('/quotes/'+seed.id,f.emp)).data.approvalStatus,'pending');
  results.push({task:'send_approval_from_editor',workflow,data,trace:[...trace]});workflow=data=0;trace.length=0;
  await arrive('#/quotes');await click('[data-new-quote]');await page.waitForTimeout(250);
- if(await page.locator('#new-quote-dialog').isVisible())await click('#nq-create');
+ await page.locator('#new-quote-dialog').waitFor({state:'visible'});await click('#nq-create');
  await page.locator('#quote-form').waitFor({state:'visible'});await page.locator('#quote-form [name=customer]').fill('Khách tạo mới bằng mobile');
  await click('#add-line','data');const row=page.locator('#line-list tr[data-i]').first();await row.locator('[data-k=name]').fill('Túi giấy');await row.locator('[data-k=qty]').fill('2');await row.locator('[data-k=price]').fill('10000');
  await click('#save-quote-m');await page.waitForFunction(()=>/^#\/quotes\/(?!new)/.test(location.hash));
@@ -75,6 +75,9 @@ try{
  await page.waitForFunction(()=>document.querySelector('#submit-quote').textContent==='Đã gửi duyệt');
  const id=await page.evaluate(()=>location.hash.slice('#/quotes/'.length));assert.equal((await f.call('/quotes/'+id,f.emp)).data.approvalStatus,'pending');
  results.push({task:'create_quote_and_send',workflow,data,trace:[...trace]});
+ await page.setViewportSize({width:1280,height:900});await arrive('#/quotes');await click('[data-new-quote]');
+ await page.locator('#new-quote-dialog').waitFor({state:'visible'});await click('#new-quote-dialog [data-close]');
+ results.push({task:'open_new_quote_dialog_desktop',workflow,data,trace:[...trace]});
  await context.close();context=await browser.newContext({viewport:{width:390,height:844},locale:'vi-VN'});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
  await context.addInitScript(({token,user})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));document.addEventListener('click',e=>{if(e.target.closest?.('a[href^="tel:"]'))e.preventDefault();});},{token,user});page=await context.newPage();page.on('dialog',d=>d.accept());
  function reset(){workflow=data=0;trace.length=0;}function record(task,verification){results.push({task,workflow,data,trace:[...trace],verification});}
