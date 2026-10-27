@@ -63,3 +63,11 @@ Giữa hai lần có 4 bút toán adjustment từ thao tác khác trên hệ th�
 Theo yêu cầu mới, bỏ hẳn popup/drawer HĐKT cả desktop lẫn mobile. `#view-order` luôn ở nguyên trong `main`; không bọc các phần thông tin thành accordion, không giữ danh sách HĐKT làm nền. Giữ nút xem/tải hồ sơ, in phiếu và lịch sử hiện có. Không đổi dữ liệu hay API hợp đồng.
 
 Browser router thật ở 360/390/430/768/1280px: bấm danh sách mở toàn trang, quay lại danh sách/Back, đổi kích thước, 5 lần render lại không nhân đôi chi tiết/nút hồ sơ; không popup, tràn trang hoặc lỗi JS. [Kết quả](contracts-full-page-results.json) · [390px](contract-390.png) · [1280px](contract-1280.png).
+
+### Huỷ phiếu lấy trước và xoá
+
+Phiếu đã gửi NCC có nút **Huỷ phiếu và xoá**, thay nhãn xoá cũ để rõ tác dụng; phiếu nháp giữ thao tác xoá. Xác nhận liệt kê toàn bộ nhóm nguồn/mã/lượng bị xoá; dùng một thao tác DELETE hiện có, có deletedBy/deletedAt và audit. Phiếu biến khỏi danh sách CRM/cổng NCC và không nhận tiếp theo phiếu đó; không xoá đơn mua hoặc chỉnh tồn. Vẫn chỉ Manager; server chặn phiếu đã phát sinh nhận hàng.
+
+4 test Manager UI, 2 test delete/split API đạt. Browser local desktop: phiếu đã được các NCC đồng ý, nhiều nhóm, chưa nhận; trước xác nhận vẫn còn phiếu, sau xác nhận quay về danh sách và phiếu không còn; không lỗi JS. [Ảnh xác nhận](early-cancel-confirm-1280.png). Không huỷ/xoá phiếu thật của chủ repo.
+
+Bộ test toàn repo cho phần trước đợt thay nhãn này: **1.135 đạt, 31 skip, 0 lỗi**. CI sẽ kiểm tra lại toàn bộ trên commit mới nhất.

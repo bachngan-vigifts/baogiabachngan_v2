@@ -48,7 +48,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     if(!portal&&canViewPortal)for(const request of requests){
       const groups=supplierSlips(request),bar=el('div','row-gap');bar.append(el('span','small','Phiếu '+request.id.slice(0,8).toUpperCase()));
       if(groups.length>1)bar.append(btn('Tách thành '+groups.length+' phiếu NCC',()=>changeRequest(request,'split')));
-      bar.append(btn(groups.length>1?'Xoá toàn bộ phiếu gốc':'Xoá phiếu',()=>changeRequest(request,'delete'),'btn danger small'));operations.append(bar);
+      bar.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':groups.length>1?'Xoá toàn bộ phiếu gốc':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-delete':'delete'),'btn danger small'));operations.append(bar);
     }
 
     for(const request of requests.flatMap(r=>!portal&&r.requestStatus==='submitted'?supplierSlips(r):[r])) {
@@ -111,14 +111,14 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
   }
   function changeRequest(request,action){
     if(batchBusy||confirmDialog)return;
-    const remove=action==='delete',modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
-    const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
+    const remove=action==='delete'||action==='cancel-delete',cancel=action==='cancel-delete',modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
+    const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',cancel?'Huỷ phiếu xin hàng và xoá':remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
     const groups=supplierSlips(request);
-    body.append(el('p','',remove?'Xoá toàn bộ phiếu '+request.id.slice(0,8).toUpperCase()+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
+    body.append(el('p','',remove?(cancel?'Huỷ yêu cầu xin lấy trước và xoá toàn bộ phiếu ':'Xoá toàn bộ phiếu ')+request.id.slice(0,8).toUpperCase()+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
     for(const group of groups)body.append(el('p','small',group.supplierName+' · '+group.slipLabel+' · '+group.lines.map(l=>l.sku+' × '+number(l.quantity)).join('; ')));
-    body.append(el('p','muted small','Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));
+    body.append(el('p','muted small',cancel?'Sau xác nhận, phiếu không còn trên CRM và cổng NCC, không thể tiếp tục nhận theo phiếu này. Phiếu đã phát sinh nhận hàng sẽ bị chặn. Đơn mua NCC, tồn kho và nhật ký đối soát được giữ nguyên.':'Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));
     const error=el('p','error');error.setAttribute('role','alert');body.append(error);
-    const submit=btn(remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
+    const submit=btn(cancel?'Xác nhận huỷ và xoá':remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
       if(busy)return;busy=batchBusy=true;close.disabled=submit.disabled=true;syncBatch();error.textContent='';
       try{await api('/purchase-early-requests/'+encodeURIComponent(request.id)+(remove?'':'/split'),remove?'DELETE':'POST',{});modal.close();
         if(remove){await onDeleted(request);if(!currentRequest())await load();else list.replaceChildren(el('p','muted','Đã xoá phiếu.'));}else{await load(currentRequest());await onSaved(request);}
