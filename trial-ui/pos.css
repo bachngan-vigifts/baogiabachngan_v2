@@ -540,9 +540,6 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   }
 }
 @media (min-width: 851px) {
-  body:has(#view-pos:not([hidden]) .pos-page:not(.pos-show-menu)) .topbar {
-    display: none;
-  }
   body:has(#view-pos:not([hidden])) .chat-launcher {
     left: 20px;
     right: auto;

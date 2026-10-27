@@ -2,7 +2,6 @@
 .crm-mobile-nav,.crm-home-row,.crm-filter-trigger,.crm-filter-sheet,.crm-required { display:none; }
 .crm-task-complete,.crm-dashboard-more,.crm-task-no-approval,[data-mobile-row-detail] { display:none; }
 .mobile-quote-owner { display:none; }
-.crm-document-sheet { padding:0; border:1px solid var(--line); color:var(--ink); }
 .crm-sheet-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 16px 12px; }
 .crm-sheet-head h2 { margin:0; font-size:18px; }
 .crm-sheet-head .icon-btn { width:44px; height:44px; flex:none; }
@@ -70,7 +69,6 @@
  .crm-mobile-nav:not([hidden]) a { flex:0 0 auto;min-width:84px;padding-inline:12px;white-space:nowrap; }
  .crm-home-row { display:flex;position:sticky;top:40px;z-index:30;background:var(--bg);padding:4px 0;margin-bottom:8px; }
  .crm-home-link { display:inline-flex!important;align-items:center;min-height:44px;color:var(--brand-navy); }
- .crm-document-sheet .crm-home-row { position:static; }
  .crm-mobile-nav a,.crm-mobile-nav button { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:48px;min-width:0;border:0;background:transparent;color:var(--muted);font:500 11px/1.35 var(--font);padding:4px 0;text-decoration:none; }
  .crm-mobile-nav svg { width:20px;height:20px; }
  .crm-mobile-nav [aria-current] { color:var(--green);border-top:3px solid var(--green);padding-top:1px; }
@@ -79,10 +77,6 @@
  .crm-sheet { position:fixed;inset:auto 0 0;margin:0 auto;width:100%;max-width:540px;max-height:88dvh;padding:0;border:0;border-radius:24px 24px 0 0;background:#fff;color:var(--ink);overflow:auto;overscroll-behavior:contain; }
  .crm-sheet[open] { display:block; }
  .crm-sheet-head { position:sticky;top:0;z-index:2;background:#fff; }
- .crm-document-sheet #view-order { padding:0 16px 24px; }
- .crm-document-sheet .editor-title > .back,.crm-document-sheet #order-back { display:none; }
- .crm-document-sheet .editor-head { padding:0; }
- .crm-document-sheet .editor-head h1 { font-size:18px;overflow-wrap:anywhere; }
  .crm-list-card { display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px!important;margin:0 0 8px;padding:12px!important;background:#fff;border:1px solid var(--line)!important;border-radius:12px;align-items:start!important; }
  .crm-list-card td { margin:0!important;padding:0!important;max-width:100%;min-width:0;flex:none!important;font-size:14px; }
  .crm-list-card td::before { display:none!important; }
@@ -147,19 +141,7 @@
  .cd-tabs { display:flex;overflow:auto;flex-wrap:nowrap; }
  .cd-tabs button { min-height:44px;white-space:nowrap; }
 }
-@media screen and (min-width:1280px){
- .crm-document-sheet { position:fixed;inset:0 0 0 auto;margin:0;width:min(680px,48vw);height:100dvh;max-height:100dvh;max-width:none;border-radius:0;z-index:50;overflow:auto;background:#fff;box-shadow:var(--shadow-lg); }
- .crm-document-sheet #view-order { padding:0 20px 30px; }
- .crm-document-sheet #view-order .editor-grid { grid-template-columns:1fr; }
- body:has(.crm-document-sheet[open]) #view-contracts { margin-right:min(680px,48vw); }
-}
 @media print{.crm-mobile-nav,.crm-filter-trigger,.crm-filter-sheet,.crm-sheet-head,.crm-required,.quote-device-draft,[data-mobile-line-toggle]{display:none!important;}}
-.crm-document-section { border:1px solid var(--line);border-radius:12px;background:#fff;margin-bottom:10px; }
-.crm-document-section > summary { min-height:44px;padding:12px 16px;cursor:pointer;font-weight:600;font-size:14px; }
-.crm-document-section > .card { border:0;box-shadow:none;margin:0; }
-.crm-document-finance { order:-1; }
-.crm-doc-customer { font-size:15px;font-weight:600;padding:0 0 12px; }
-.crm-document-sheet #order-actions [data-mobile-primary]:not([hidden]) { display:flex!important;background:var(--brand-navy);color:#fff;min-height:44px;justify-content:center; }
 .crm-field-error { display:block;font-size:12px;color:var(--red);font-weight:400; }
 @media screen and (max-width:850px){
  .crm-task-extra-tab { display:none!important; }
@@ -223,11 +205,6 @@
  #view-tasks .task-row .task-st { display:none; }
  #view-tasks .task-row .task-meta .tag.dashed { display:none; }
  #view-tasks .task-tab[aria-selected=true] { color:var(--brand-navy);border-color:var(--brand-navy); }
- .crm-document-sheet #view-order { display:flex;flex-direction:column; }
- .crm-document-sheet #view-order > .editor-grid { display:contents; }
- .crm-document-sheet #view-order > .editor-head { order:-4; }
- .crm-document-sheet #view-order > .crm-doc-customer { order:-3; }
- .crm-document-sheet .crm-document-finance { order:-2; }
 }
 @media screen and (max-width:850px){
  #view-editor #save-quote-m { background:var(--brand-navy);border-color:var(--brand-navy); }

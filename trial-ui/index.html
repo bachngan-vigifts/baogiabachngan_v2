@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="typography.css">
 <link rel="stylesheet" href="mobile-actions.css">
 <link rel="stylesheet" href="mobile-design.css">
+<link rel="stylesheet" href="supplier-portal.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -131,7 +132,7 @@
 
   <main class="main">
     <header class="topbar">
-      <div class="crumbs"><span class="muted">Bách Ngân</span><span class="slash">/</span><b id="breadcrumb">Báo giá</b></div>
+      <div class="crumbs"><button type="button" class="page-back" id="page-back" aria-label="Trở lại">‹ Trở lại</button><span class="muted">Bách Ngân</span><span class="slash">/</span><b id="breadcrumb">Báo giá</b></div>
       <div class="topbar-right">
         <span id="today" class="muted hide-sm"></span>
         <div class="bell-wrap" id="staff-bell"></div>
@@ -1140,7 +1141,7 @@
   <div class="modal-head"><h2 id="confirm-title">Xác nhận</h2></div>
   <div class="modal-body"><p id="confirm-text"></p>
     <label class="confirm-type" id="confirm-type" hidden><span>Gõ <b id="confirm-type-code"></b> vào ô dưới để xác nhận</span><input id="confirm-type-input" autocomplete="off" autocapitalize="characters" spellcheck="false"></label></div>
-  <div class="modal-foot"><button type="button" class="btn secondary" id="confirm-cancel">Huỷ</button><button type="button" class="btn primary" id="confirm-ok">Đồng ý</button></div>
+  <div class="modal-foot"><button type="button" class="btn secondary" id="confirm-cancel" data-mobile-inline>Huỷ</button><button type="button" class="btn primary" id="confirm-ok">Đồng ý</button></div>
 </dialog>
 
 <dialog id="print-preview" class="modal wide">

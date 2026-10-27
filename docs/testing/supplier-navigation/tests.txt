@@ -1,0 +1,13 @@
+POS UI: ℹ tests 27, ℹ pass 27, ℹ fail 0, ℹ skipped 0
+POS brand: ℹ tests 2, ℹ pass 2, ℹ fail 0, ℹ skipped 0
+Portal detail helpers: ℹ tests 3, ℹ pass 3, ℹ fail 0, ℹ skipped 0
+POS access: ℹ tests 3, ℹ pass 3, ℹ fail 0, ℹ skipped 0
+POS core: ℹ tests 19, ℹ pass 19, ℹ fail 0, ℹ skipped 0
+POS stock: ℹ tests 6, ℹ pass 6, ℹ fail 0, ℹ skipped 0
+Early request API: ℹ tests 6, ℹ pass 6, ℹ fail 0, ℹ skipped 0
+Early receiving API: ℹ tests 5, ℹ pass 5, ℹ fail 0, ℹ skipped 0
+Supplier slips: ℹ tests 2, ℹ pass 2, ℹ fail 0, ℹ skipped 0
+Early manager UI: ℹ tests 4, ℹ pass 4, ℹ fail 0, ℹ skipped 0
+Receiving form UI: ℹ tests 5, ℹ pass 5, ℹ fail 0, ℹ skipped 0
+UI/money parity: ℹ tests 5, ℹ pass 5, ℹ fail 0, ℹ skipped 0
+Typecheck + UI build + git diff --check: passed

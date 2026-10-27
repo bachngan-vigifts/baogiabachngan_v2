@@ -1100,3 +1100,17 @@ for (const mobile of [true, false]) test(`POS ${mobile ? 'mobile phân trang' : 
     await new Promise(r=>setTimeout(r,250)); // settle the cart preview before restoring the DOM
   } finally { Object.assign(globalThis,{document:prevDoc,window:prevWin}); }
 });
+
+test('POS typing previews hide the other store brand before live hydration completes',async()=>{
+ const prevDoc=globalThis.document,prevWin=globalThis.window;Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+ try{for(const [registerName,expected]of [['Quầy Lock','LOCK'],['Quầy Minh Long','ML']]){
+  const root=new Element('section'),calls:string[]=[],products=[{sku:'LOCK',name:'Bình Lock&Lock',brand:'Lock&Lock',price:100},{sku:'ML',name:'Bộ trà',brand:'LYS',price:100}];let release:(v:any)=>void=()=>{};
+  const gate=new Promise(resolve=>release=resolve);
+  const api=async(path:string)=>{calls.push(path);if(path.startsWith('/pos/options'))return{registers:[{id:'r',name:registerName,pricePolicyId:'vat'}],current:{id:'s',registerId:'r',memberId:'emp'},shifts:[],templates:[],policies:[]};if(path.startsWith('/pos/catalog'))return path.includes('&skus=')?gate:{products:[],nextOffset:null};throw Error(path);};
+  const ui=initPos({api,root,user:()=>({id:'emp',role:'manager'}),toast(){},go(){},confirmBox:async()=>true,localSearch:(q:string)=>q?products:[]});await ui.load();
+  const input=root.querySelectorAll('input').find(n=>n.attributes['aria-label']==='Tìm hoặc quét sản phẩm')!;input.value='b';await input.fire('input');await new Promise(r=>setTimeout(r,90));
+  assert.deepEqual(root.querySelectorAll('button').filter(n=>n.className==='pos-product').map(n=>n.dataset.sku),[expected]);
+  assert.ok(calls.some(p=>p.includes('&skus='+expected)));assert.ok(!calls.some(p=>p.includes('&skus='+(expected==='LOCK'?'ML':'LOCK'))));
+  release({products:products.filter(p=>p.sku===expected).map(p=>({...p,available:4})),nextOffset:null});await new Promise(r=>setTimeout(r,20));
+ }}finally{Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});

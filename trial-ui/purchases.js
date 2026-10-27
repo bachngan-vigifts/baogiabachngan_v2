@@ -1,3 +1,4 @@
+import { openReceivedEarlyRequests } from './supplier-request-details.js';
 import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } from './purchase-export-data.js';
 import { downloadExcel } from './sheet-export.js';
 import { initPurchaseIncoming } from './purchase-incoming.js';
@@ -328,7 +329,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     // Dòng hàng
     const sec = section('Hàng đặt', `Đã nhận đạt ${num(v.progress.good)}/${num(v.progress.ordered)}` + (v.progress.damaged ? ` · hỏng ${num(v.progress.damaged)}` : '') + (v.progress.missing ? ` · còn thiếu ${num(v.progress.missing)}` : ' · đủ'));
     const t = el('table', 'data-table pur-lines'), th = el('tr');
-    const cols = ['Mã / tên', 'SL', 'Hẹn giao', ...(v.priceHidden ? [] : ['Giá', 'CK %', 'Thành tiền'])];
+    const cols = ['Mã / tên', 'SL', 'Đã nhận', 'Hẹn giao', ...(v.priceHidden ? [] : ['Giá', 'CK %', 'Thành tiền'])];
     for (const c of cols) th.append(el('th', '', c));
     const tb = el('tbody');
     for (const l of v.lines) {
@@ -342,8 +343,9 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         row.append('↳ ', link, `${s.customerName ? ' · ' + s.customerName : ''}: ${num(s.quantity)}`); name.append(row);
       }
       if (l.supplierNote) name.append(el('small', 'muted sup-sub', 'NCC: ' + l.supplierNote));
-            // Đã nhận / hỏng / thiếu xem ở dòng tóm tắt phía trên và ở "Phiếu nhận hàng"; "Hẹn giao" = ngày NCC hẹn giao riêng mã này.
-      tr.append(name, el('td', 'num', num(l.quantity)), el('td', '', dmy(l.promisedDate)));
+            // Đã nhận đạt lấy từ tiến độ hiện có; phiếu xin hàng chỉ dùng để xem nguồn nhận, không tính lại số lượng.
+      const received=el('td','num'),receivedLink=el('button','link-btn',num(l.good));receivedLink.type='button';receivedLink.title='Đã nhận đạt · Bấm xem phiếu xin hàng';receivedLink.dataset.mobileInline='';receivedLink.setAttribute('aria-label','Xem phiếu xin hàng đã nhận của '+l.sku);receivedLink.onclick=()=>openReceivedEarlyRequests({api,order:v,line:l});received.append(receivedLink);
+      tr.append(name, el('td', 'num', num(l.quantity)),received, el('td', '', dmy(l.promisedDate)));
       if (!v.priceHidden) tr.append(el('td', 'num', l.price == null ? '—' : money(l.price)), el('td', 'num', l.purchaseDiscount ? num(l.purchaseDiscount) : '—'), el('td', 'num', money(l.lineTotal)));
       tb.append(tr);
     }

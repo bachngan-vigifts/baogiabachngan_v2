@@ -1,0 +1,37 @@
+[
+  {
+    "width": 360,
+    "fullPage": true,
+    "refresh5": true,
+    "back": true,
+    "resize": true
+  },
+  {
+    "width": 390,
+    "fullPage": true,
+    "refresh5": true,
+    "back": true,
+    "resize": true
+  },
+  {
+    "width": 430,
+    "fullPage": true,
+    "refresh5": true,
+    "back": true,
+    "resize": true
+  },
+  {
+    "width": 768,
+    "fullPage": true,
+    "refresh5": true,
+    "back": true,
+    "resize": true
+  },
+  {
+    "width": 1280,
+    "fullPage": true,
+    "refresh5": true,
+    "back": true,
+    "resize": true
+  }
+]

@@ -10,30 +10,19 @@ export function compactKpi(text){
  return scale?new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2}).format(amount/scale)+(scale===1e9?' tỷ':' triệu'):null;
 }
 export function installMobileDesign(profiles){
- const media=matchMedia('(max-width: 850px)'),wide=matchMedia('(min-width: 1280px)');
- const filters=new Map(),cardRows=new WeakSet(),documentSections=new Map();let frame=0,navSignature='',ignoreClose=0,lastContracts='#/contracts';
+ const media=matchMedia('(max-width: 850px)');
+ const filters=new Map(),cardRows=new WeakSet();let frame=0,navSignature='';
  const nav=make('nav','crm-mobile-nav');nav.setAttribute('aria-label','Điều hướng điện thoại');
  document.body.append(nav);
- const doc=make('dialog','crm-sheet crm-document-sheet'),docHead=make('header','crm-sheet-head'),docTitle=make('h2','','Chi tiết HĐKT'),docClose=make('button','icon-btn','×');
- docClose.type='button';docClose.setAttribute('aria-label','Đóng chi tiết HĐKT');docHead.append(docTitle,docClose);doc.append(docHead);document.body.append(doc);
  const more=make('dialog','crm-sheet crm-more-sheet'),moreHead=make('header','crm-sheet-head'),moreTitle=make('h2','','Thêm'),moreClose=make('button','icon-btn','×'),moreGrid=make('div','crm-more-grid');moreClose.type='button';moreClose.setAttribute('aria-label','Đóng Thêm');moreHead.append(moreTitle,moreClose);more.append(moreHead,moreGrid);document.body.append(more);moreClose.onclick=()=>more.close();
- const order=document.querySelector('#view-order'),orderSlot=document.createComment('original document view');order?.before(orderSlot);
- docClose.onclick=()=>doc.close();doc.addEventListener('close',()=>{if(ignoreClose){ignoreClose--;return;}if(/^#\/contracts\/[^?]+/.test(location.hash))location.hash=lastContracts;});
- function closeDocument(){if(doc.open){ignoreClose++;doc.close();}for(const [node,r]of documentSections){r.slot.after(node);r.slot.remove();r.details.remove();}documentSections.clear();order?.querySelector('.crm-doc-customer')?.remove();if(order&&order.parentElement===doc)orderSlot.after(order);document.querySelector('#view-contracts')?.removeAttribute('data-sheet-background');}
- function syncDocument(){
-  const workspace=document.querySelector('#workspace'),detail=/^#\/contracts\/[^?]+/.test(location.hash),appReady=workspace&&!workspace.hidden;
-  if(!appReady||!detail||!wide.matches||media.matches){closeDocument();if(media.matches&&detail){order.classList.add('crm-mobile-contract');const mainAction=order.querySelector('[data-contract-docs]');if(mainAction&&!mainAction.hasAttribute('data-mobile-primary'))mainAction.dataset.mobilePrimary='';for(const b of order.querySelectorAll('[data-pack-print-for],[data-ship-print-for],#order-history'))if(!b.hasAttribute('data-mobile-inline'))b.dataset.mobileInline='';}else order?.classList.remove('crm-mobile-contract');return;}
-  if(order.parentElement!==doc)doc.append(order);
-  let customer=order.querySelector('.crm-doc-customer');if(!customer){customer=make('p','crm-doc-customer');order.querySelector('.editor-head').after(customer);}setText(customer,order.querySelector('#order-customer dd')?.textContent||'');
-  const debt=order.querySelector('#order-debt')?.closest('.card');if(debt)debt.classList.add('crm-document-finance');
-  for(const node of order.querySelectorAll(':scope > .card,:scope > .editor-grid > .card,:scope > #order-flow')){
-   if(node===debt||documentSections.has(node))continue;
-   const slot=document.createComment('document section'),details=make('details','crm-document-section'),summary=make('summary','',node.querySelector('.card-title')?.textContent||(node.id==='order-flow'?'Tiến trình chứng từ':'Chứng từ liên quan'));node.before(slot,details);details.append(summary,node);documentSections.set(node,{slot,details});
-  }
-  for(const [node,r]of documentSections)if(r.details.hidden!==node.hidden)r.details.hidden=node.hidden;
-  const mainAction=order.querySelector('#order-actions [data-contract-docs]');if(mainAction&&!mainAction.hasAttribute('data-mobile-primary'))mainAction.dataset.mobilePrimary='';
-  const background=document.querySelector('#view-contracts');background.hidden=false;background.dataset.sheetBackground='';
-  if(!doc.open){if(media.matches)doc.showModal();else doc.show();}
+ // Contract detail uses the same permanent full-page view as an order at every viewport.
+ function contractControls(){
+  const order=document.querySelector('#view-order'),detail=/^#\/contracts\/[^?]+/.test(location.hash);
+  order?.classList.toggle('crm-mobile-contract',media.matches&&detail);
+  if(!detail)return;
+  const mainAction=order?.querySelector('[data-contract-docs]');
+  if(mainAction&&!mainAction.hasAttribute('data-mobile-primary'))mainAction.dataset.mobilePrimary='';
+  for(const b of order?.querySelectorAll('[data-pack-print-for],[data-ship-print-for],#order-history')||[])if(!b.hasAttribute('data-mobile-inline'))b.dataset.mobileInline='';
  }
  function syncNav(){
   const sources=new Map();
@@ -165,14 +154,14 @@ export function installMobileDesign(profiles){
  function scan(){
   frame=0;
   if(document.activeElement?.matches('input,select,textarea')){for(const p of profiles){const root=document.querySelector(p.root);if(root&&p.card)annotateCards(root,p);}return;}
-  if(location.hash.startsWith('#/pos')){if(!nav.hidden)nav.hidden=true;document.body.classList.remove('crm-form-mode');closeDocument();return;}
+  if(location.hash.startsWith('#/pos')){if(!nav.hidden)nav.hidden=true;document.body.classList.remove('crm-form-mode');return;}
   const ready=document.querySelector('#workspace')&&!document.querySelector('#workspace').hidden;
-  nav.hidden=!ready;if(!ready){closeDocument();return;}
+  nav.hidden=!ready;if(!ready){return;}
   for(const p of profiles){const root=document.querySelector(p.root);if(!root)continue;root.classList.add('crm-designed-page');if(p.filters)createFilter(root,p);if(p.card)annotateCards(root,p);
    for(const b of root.querySelectorAll(':scope > .chips .chip.active,#type-filter .chip.active')){if(root.dataset.resultCount===undefined)continue;let count=b.querySelector('.crm-chip-count');if(!count){count=make('span','crm-chip-count');b.append(count);}setText(count,' '+Number(root.dataset.resultCount).toLocaleString('vi-VN'));}
    if(root.dataset.loadState==='error'){let retry=root.querySelector('.crm-list-retry');if(!retry){retry=make('button','btn secondary crm-list-retry','Thử lại');retry.type='button';retry.onclick=()=>window.dispatchEvent(new CustomEvent('crm-reload-current',{detail:{view:root.id.replace('view-','')}}));(root.querySelector('.empty')||root).append(retry);}retry.hidden=false;}else{const retry=root.querySelector('.crm-list-retry');if(retry&&!retry.hidden)retry.hidden=true;}
   }
-  primaryControls();syncFilters();syncNav();syncDocument();homeLinks();kpis();quoteLines();formLabels();taskModes();workflowPages();
+  primaryControls();syncFilters();syncNav();contractControls();homeLinks();kpis();quoteLines();formLabels();taskModes();workflowPages();
   document.body.classList.toggle('crm-form-mode',/^#\/quotes\//.test(location.hash));
  }
  const schedule=()=>{if(!frame)frame=requestAnimationFrame(scan);};
@@ -183,8 +172,8 @@ export function installMobileDesign(profiles){
  document.addEventListener('input',e=>{if(e.target.matches('input,select,textarea')&&e.target.validity?.valid)fieldError(e.target,false);});
  document.addEventListener('focusin',e=>{if(location.hash.startsWith('#/pos'))return;if(e.target.matches('input:not([type=checkbox]):not([type=radio]),select,textarea'))document.body.classList.add('crm-keyboard-open');});
  document.addEventListener('focusout',()=>{if(location.hash.startsWith('#/pos'))return;setTimeout(()=>{if(!document.activeElement?.matches('input,select,textarea'))document.body.classList.remove('crm-keyboard-open');},0);});
- window.addEventListener('hashchange',()=>{if(/^#\/contracts(?:\?|$)/.test(location.hash))lastContracts=location.hash;if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();});
+ window.addEventListener('hashchange',()=>{if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();});
  window.addEventListener('click',e=>{if(media.matches&&e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.target.closest('[data-new-quote]')){e.preventDefault();e.stopImmediatePropagation();location.hash='#/quotes/new';}},true);
- const resize=()=>{if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();if(doc.open){ignoreClose++;doc.close();}schedule();};media.addEventListener('change',resize);wide.addEventListener('change',resize);
+ const resize=()=>{if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();};media.addEventListener('change',resize);
  scan();return {refresh:schedule};
 }

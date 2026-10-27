@@ -72,7 +72,7 @@ try{for(const width of (process.env.REGRESSION_WIDTHS||'360,390,430,768,1280').s
  }
  await arrive(page,'#/contracts/'+contract.orderId);await page.locator('#order-title').waitFor();await page.waitForTimeout(350);
  assert.equal(await page.locator('#view-order').count(),1);
- if(width<=850){assert.equal(await page.locator('#view-order').evaluate(n=>n.parentElement.tagName),'MAIN');assert.equal(await page.locator('.crm-document-sheet[open]').count(),0);assert.equal(await page.locator('#order-actions [data-contract-docs]').isVisible(),true);}
+ assert.equal(await page.locator('#view-order').evaluate(n=>n.parentElement.tagName),'MAIN');assert.equal(await page.locator('.crm-document-sheet').count(),0);assert.equal(await page.locator('#order-actions [data-contract-docs]').isVisible(),true);
  for(let i=0;i<5;i++){await page.evaluate(()=>dispatchEvent(new HashChangeEvent('hashchange')));await page.waitForTimeout(180);}
  assert.equal(await page.locator('#view-order').count(),1);assert.equal(await page.locator('#order-actions').count(),1);assert.equal(await page.locator('#order-actions [data-contract-docs]').count(),1);
  await arrive(page,'#/quotes/'+q.id);await page.locator('#line-list tr').first().waitFor();

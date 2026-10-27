@@ -2313,3 +2313,17 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
 .quote-capture-error:empty { display: none; }
 .quote-capture-error { color: #b42318; padding: 8px 16px; margin: 0; font-size: 13px; }
 .quote-capture-hint { color: #6b7280; font-size: 13px; padding: 10px 16px; margin: 0; flex: none; }
+
+/* A single previous-page action in the shared page header, including POS. */
+.topbar .crumbs { min-width:0;flex:1; }
+.topbar .page-back { flex:none;max-width:180px;min-height:34px;padding:4px 8px 4px 0;border:0;background:transparent;color:var(--ink);font:inherit;font-weight:600;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer; }
+.topbar .page-back:disabled { opacity:.45;cursor:default; }
+.topbar .page-back:focus-visible { outline:2px solid var(--brand-navy);outline-offset:2px; }
+.topbar #breadcrumb { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.topbar .topbar-right { flex:none; }
+@media(max-width:850px){ .topbar .crumbs>.muted,.topbar .crumbs>.slash { display:none; }.topbar .page-back { max-width:32vw;font-size:12px; }.topbar .crumbs { gap:6px; } }
+/* Keep navigation usable while a full-page drawer is open; reserve the header's space. */
+#workspace { --crm-page-header-height:56px; }
+#workspace>.main>.topbar { z-index:62; }
+#workspace .sup-drawer,#workspace .sup-shade { top:var(--crm-page-header-height); }
+@media(max-width:850px){ #workspace { --crm-page-header-height:40px; } }
