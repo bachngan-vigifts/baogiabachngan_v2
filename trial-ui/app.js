@@ -1,3 +1,4 @@
+import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
 import { bindForgotPassword } from './forgot-password.js';
 import { apiFetch } from './api-transport.js';
@@ -692,7 +693,7 @@ const posLocalSearch = (q, policy) => {
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -720,6 +721,7 @@ function route() {
   lastRoutedHash = location.hash;
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = 'quotes', id] = path.split('/');
+  if(page==='products'&&!id){const legacySku=new URLSearchParams(query).get('sku');if(legacySku){currentHash='#/products/'+encodeURIComponent(legacySku);history.replaceState(null,'',currentHash);return route();}}
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
   if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
@@ -731,8 +733,9 @@ function route() {
   // HĐKT là luồng riêng: #/contracts/<id> mở trang chi tiết HĐKT (dùng chung khung trang với đơn hàng, nội dung theo HĐKT).
   if (view === 'contracts' && id) view = 'order';
   if (view === 'customers' && id) view = 'customer';
+  if (view === 'products' && id) view = 'product';
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
-  const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'member' ? 'staff' : view;
+  const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : VIEWS[view];
   pageBack.record();
@@ -741,11 +744,10 @@ function route() {
   if (view === 'editor') openEditor(id);
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
   if (view === 'pos') posView().load();
+  if (view === 'product') productDetail().show(decodeURIComponent(id),query);
   if (view === 'products' && !state.products) loadProducts();
   if (view === 'products') {
     productAdmin().loadPending(); legacyImagesBox();
-    const sku = new URLSearchParams(query).get('sku');
-    if (sku) showProductCard(sku);
   }
   if (view === 'orders') loadOrders();
   if (view === 'contracts') loadContracts();
@@ -1320,7 +1322,7 @@ async function stockHtml(sku) {
   const at = p.stockUpdatedAt || d.observedAt;
   return { product: p, html: `<div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(at ? new Date(at).toLocaleString('vi-VN') : 'Chưa có thời điểm cập nhật')}</p>` };
 }
-document.addEventListener('click', e => { const b = e.target.closest('[data-product-card]'); if (b) showProductCard(b.dataset.productCard, b.dataset.name); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-product-card]'); if (b) { if(location.hash.startsWith('#/quotes/')||location.hash.startsWith('#/pos'))showProductCard(b.dataset.productCard,b.dataset.name);else go('#/products/'+encodeURIComponent(b.dataset.productCard)); } });
 /** Loại biến động trong lịch sử sản phẩm: nhãn, màu, chiều (+ nhập / − xuất). Cùng khoá với PRODUCT_MOVE_KINDS ở máy chủ. */
 const MOVE_UI = {
   sale: ['Bán', 'order', ''], delivery: ['Giao hàng', 'debt', '−'], purchase: ['Nhập hàng', 'stock', '+'], transfer: ['Điều chuyển', 'delivery', ''],
@@ -1330,13 +1332,15 @@ const MOVE_UI = {
  * Thẻ sản phẩm: tồn các kho + LỊCH SỬ SẢN PHẨM (20 giao dịch gần nhất: bán, xuất kho, nhập hàng, điều chuyển, cân bằng kho, trả hàng).
  * Mở khi bấm vào sản phẩm ở trang Sản phẩm, hoặc "Tồn kho · Lịch sử" ở dòng báo giá.
  */
+var productDetailUi=null;
+function productDetail(){return productDetailUi ||= initProductDetail({api,root:$('#product-detail'),go,esc,money,fmtDate,canEdit:canUpdateProducts,onEdit:(sku,d)=>{if(seesPrices())state.policies=d.prices.map(p=>({id:p.policyId,name:p.name}));productAdmin().openEdit(sku);},userId:()=>state.user?.id});}
 async function showProductCard(sku, name) {
   const dlg = document.createElement('dialog'); dlg.className = 'modal wide product-card';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Sản phẩm · ${esc(sku)}</span><h2>${esc(name || sku)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body"><h3 class="pc-title">Tồn kho hiện tại</h3><div data-stock-box><p class="muted">Đang tải tồn kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử nhập / xuất kho <small class="muted">· số lượng +/− và tồn trước → sau</small></h3><select class="pc-wh" data-ledger-wh aria-label="Lọc theo kho"><option value="">Tất cả kho</option></select></div><div data-ledger><p class="muted">Đang tải sổ kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử bán &amp; chứng từ <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
-    <div class="modal-foot">${canUpdateProducts() ? '<button type="button" class="btn primary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<button type="button" class="btn navy" data-x>Đóng</button></div>`;
+    <div class="modal-foot"><a class="btn primary" href="#/products/${encodeURIComponent(sku)}">Xem trang chi tiết</a>${canUpdateProducts() ? '<button type="button" class="btn secondary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<button type="button" class="btn navy" data-x>Đóng</button></div>`;
   document.body.append(dlg); dlg.showModal();
   const close = () => { dlg.close(); };
   dlg.querySelector('[data-update-product-card]')?.addEventListener('click', () => { close(); productAdmin().openEdit(sku); });
@@ -2290,7 +2294,7 @@ function sapoToast(s) {
   for (const w of s.warnings || []) toast(w, 'err');
 }
 function productAdmin() {
-  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, compress: compressImage, isManager, canApprove, canUpdate: canUpdateProducts, canSeePrices: seesPrices, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); } });
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, compress: compressImage, isManager, canApprove, canUpdate: canUpdateProducts, canSeePrices: seesPrices, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); if(location.hash.startsWith('#/products/'))productDetailUi?.refresh(); } });
 }
 $('#new-product').addEventListener('click', () => productAdmin().openCreate());
 var productActionsUi = null;
@@ -3495,7 +3499,7 @@ async function refreshData() {
   else if (page === 'deliveries') jobs.push(loadDeliveries());
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : loadCustomers());
-  else if (page === 'products') jobs.push(loadProducts(), productAdmin().loadPending(), loadCatalogSnapshot());
+  else if (page === 'products') { if(id)jobs.push(productDetail().refresh());else jobs.push(loadProducts(),productAdmin().loadPending(),loadCatalogSnapshot()); }
   else if (page === 'staff' && isManager()) jobs.push(loadMembers());
   else if (page === 'tasks') jobs.push(tasksView().load(id));
   else if (page === 'dashboard') jobs.push(dashboardView().load());

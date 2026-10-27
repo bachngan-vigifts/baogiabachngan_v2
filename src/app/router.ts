@@ -1,3 +1,4 @@
+import {registerProductDetailRoutes} from '../modules/product-hub/api/routes.ts';
 import { registerWarehouseWork } from './warehouse-work.ts';
 import { transferTaskHooks } from '../modules/inventory/api/transfer-task-hooks.ts';
 import { registerStockIntegrityRoutes } from './stock-integrity-routes.ts';
@@ -98,6 +99,7 @@ export function createAppRouter() {
   registerTaskRoutes(router);
   registerChatRoutes(router);
   registerCustomerHubRoutes(router);
+  registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router);
   registerHrRoutes(router, { revenueOf: memberRevenues }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
