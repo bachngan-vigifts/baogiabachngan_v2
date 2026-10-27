@@ -43,7 +43,7 @@ try{
   const stockBefore=(await f.client.query('select * from stock_moves order by id')).rows;
   for(const [request,label,confirm]of [[draft,'Xoá phiếu','Xác nhận xoá phiếu'],[pending,'Huỷ phiếu và xoá','Xác nhận huỷ và xoá']]){
    await page.goto(origin+'/#/early-requests?q='+request.id);
-   const remove=page.locator('[data-early-list-remove="'+request.id+'"]');await remove.waitFor();assert.equal(await remove.isVisible(),true);assert.equal(await remove.textContent(),label);
+   const remove=page.locator('[data-early-list-remove="'+request.id+'"]');await remove.waitFor();assert.equal(await remove.isVisible(),true);assert.equal(await remove.textContent(),label);assert.equal(await remove.evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(180, 35, 44)','destructive action has an explicit red button background');
    await page.screenshot({path:out+'/list-'+width+'-'+(request===draft?'draft':'submitted')+'.png'});
    const before=writes.length;await remove.click();await page.getByRole('button',{name:confirm,exact:true}).waitFor();assert.equal(writes.length,before,'opening confirmation cannot delete');
    await page.locator('.early-request-dialog').getByRole('button',{name:'Đóng',exact:true}).click();assert.equal(await remove.isVisible(),true);assert.equal(writes.length,before,'closing confirmation cannot delete');

@@ -1,4 +1,4 @@
-import {and,asc,desc,eq,inArray} from 'drizzle-orm';
+import {and,asc,desc,eq,inArray,isNull} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
 import {auditLogs} from '../../../core/db/schema.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
@@ -52,4 +52,27 @@ export async function splitEarlyRequest(tx:Tx,id:string,actorId:string){
  }
  await tx.update(requests).set({deletedAt:now,deletedBy:actorId}).where(eq(requests.id,id));
  await record(tx,id,actorId,'early-request-split',{childIds,snapshot:s});return childIds;
+}
+
+/** Cancel exactly one displayed supplier/reference slip, atomically preserving its siblings. */
+export async function cancelEarlySlip(tx:Tx,id:string,allocationIds:string[],actorId:string){
+ const original=await snapshot(tx,id);
+ if(original.request.status!=='submitted')throw new AppError(409,'Chỉ huỷ từng phiếu NCC sau khi đã gửi.');
+ const key=(d:typeof original.details[number])=>JSON.stringify([d.a.supplierId,d.order.supplierInternalOrderNumber?.trim()? 'ncc':'crm',d.order.supplierInternalOrderNumber?.trim().toLocaleLowerCase('vi')||d.order.id]);
+ const chosen=original.details.filter(d=>allocationIds.includes(d.a.id));
+ if(chosen.length!==allocationIds.length||new Set(chosen.map(key)).size!==1)throw new AppError(409,'Phiếu NCC đã thay đổi. Tải lại trước khi huỷ.');
+ const group=original.details.filter(d=>key(d)===key(chosen[0]!));
+ if(group.length!==chosen.length)throw new AppError(400,'Phải chọn toàn bộ mã thuộc một phiếu NCC.');
+ const ids=await splitEarlyRequest(tx,id,actorId);
+ let target=id;
+ if(ids.length>1){
+  const targets=await tx.select({id:lines.requestId}).from(lines).innerJoin(allocations,eq(allocations.requestLineId,lines.id))
+   .where(and(inArray(lines.requestId,ids),inArray(allocations.purchaseLineId,chosen.map(d=>d.a.purchaseLineId))));
+  const matches=[...new Set(targets.map(t=>t.id))];
+  if(matches.length!==1)throw new AppError(409,'Không đối chiếu được phiếu NCC cần huỷ.');target=matches[0]!;
+ }
+ const result=await deleteEarlyRequest(tx,target,actorId);
+ if(!result.replayed)await record(tx,id,actorId,'early-request-cancel-slip',{targetId:target,allocationIds,supplierId:chosen[0]!.a.supplierId});
+ const remaining=await tx.select({id:requests.id}).from(requests).where(and(inArray(requests.id,ids),isNull(requests.deletedAt)));
+ return {...result,cancelledRequestId:target,remainingRequestIds:remaining.map(r=>r.id)};
 }

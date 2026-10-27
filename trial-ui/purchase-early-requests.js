@@ -48,7 +48,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     if(!portal&&canViewPortal)for(const request of requests){
       const groups=supplierSlips(request),bar=el('div','row-gap');bar.append(el('span','small','Phiếu '+request.id.slice(0,8).toUpperCase()));
       if(groups.length>1)bar.append(btn('Tách thành '+groups.length+' phiếu NCC',()=>changeRequest(request,'split')));
-      bar.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':groups.length>1?'Xoá toàn bộ phiếu gốc':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-delete':'delete'),'btn danger small'));operations.append(bar);
+      operations.append(bar);
     }
 
     for(const request of requests.flatMap(r=>!portal&&r.requestStatus==='submitted'?supplierSlips(r):[r])) {
@@ -73,6 +73,10 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
           receive.href='#/purchases/'+encodeURIComponent(orderId)+'?receive=1&earlyRequestId='+encodeURIComponent(request.id);head.append(receive);}
       }
       card.append(head,el('p','small',(request.supplierName?request.supplierName+' · ':'')+'Ngày lấy: '+date(request.pickupDate)));if(request.groupKey)card.dataset.supplierSlip=request.groupKey;
+      if(!portal&&canViewPortal){
+        const actions=el('div','row-gap early-slip-actions');actions.dataset.mobileActions='off';
+        actions.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-slip':'delete'),'btn primary danger-bg small'));card.append(actions);
+      }
       if(!portal) {
         const open=el('a','small','Mở phiếu');open.href=requestHref(request.id);card.append(open);
         if(request.requestStatus==='draft'&&canWrite()) card.append(btn('Sửa phiếu nháp',()=>edit(request)));
@@ -111,20 +115,22 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
   }
   function changeRequest(request,action,reload=true){
     if(batchBusy||confirmDialog)return;
-    const remove=action==='delete'||action==='cancel-delete',cancel=action==='cancel-delete',modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
+    const slip=action==='cancel-slip',remove=action==='delete'||action==='cancel-delete'||slip,cancel=action==='cancel-delete'||slip,modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
     const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',cancel?'Huỷ phiếu xin hàng và xoá':remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
     const groups=supplierSlips(request);
-    body.append(el('p','',remove?(cancel?'Huỷ yêu cầu xin lấy trước và xoá toàn bộ phiếu ':'Xoá toàn bộ phiếu ')+request.id.slice(0,8).toUpperCase()+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
+    body.append(el('p','',slip?'Huỷ và xoá '+request.slipLabel+', gồm '+request.lines.length+' mã hàng.':remove?(cancel?'Huỷ yêu cầu xin lấy trước và xoá toàn bộ phiếu ':'Xoá toàn bộ phiếu ')+request.id.slice(0,8).toUpperCase()+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
+    if(slip)body.append(el('p','','Chỉ huỷ phiếu NCC này. Các phiếu NCC khác được giữ nguyên.'));
     for(const group of groups)body.append(el('p','small',group.supplierName+' · '+group.slipLabel+' · '+group.lines.map(l=>l.sku+' × '+number(l.quantity)).join('; ')));
     body.append(el('p','muted small',cancel?'Sau xác nhận, phiếu không còn trên CRM và cổng NCC, không thể tiếp tục nhận theo phiếu này. Phiếu đã phát sinh nhận hàng sẽ bị chặn. Đơn mua NCC, tồn kho và nhật ký đối soát được giữ nguyên.':'Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));
     const error=el('p','error');error.setAttribute('role','alert');body.append(error);
     const submit=btn(cancel?'Xác nhận huỷ và xoá':remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
       if(busy)return;busy=batchBusy=true;close.disabled=submit.disabled=true;syncBatch();error.textContent='';
-      try{await api('/purchase-early-requests/'+encodeURIComponent(request.id)+(remove?'':'/split'),remove?'DELETE':'POST',{});modal.close();
+      try{const result=await api('/purchase-early-requests/'+encodeURIComponent(request.id)+(slip?'/cancel-slip':remove?'':'/split'),remove&&!slip?'DELETE':'POST',slip?{allocationIds:request.lines.flatMap(l=>l.allocations.map(a=>a.id))}:{});modal.close();
+        if(slip&&(result.remainingRequestIds?.length||currentRequest()&&currentRequest()!==request.id)){const remaining=await load(currentRequest());if(remaining?.length){await onSaved(request);return;}}
         if(remove){await onDeleted(request);if(reload){if(!currentRequest())await load();else list.replaceChildren(el('p','muted','Đã xoá phiếu.'));}}else{await load(currentRequest());await onSaved(request);}
       }catch(e){error.textContent=e.message||'Không xử lý được phiếu. Tải lại để kiểm tra.';}
       finally{busy=batchBusy=false;close.disabled=submit.disabled=false;syncBatch();}
-    },remove?'btn primary danger':'btn primary');foot.append(submit);modal.append(head,body,foot);document.body.append(modal);
+    },remove?'btn primary danger-bg':'btn primary');foot.append(submit);modal.append(head,body,foot);document.body.append(modal);
     modal.addEventListener('cancel',e=>{if(busy)e.preventDefault();});modal.addEventListener('close',()=>{confirmDialog=null;modal.remove();},{once:true});modal.showModal();
   }
   function confirmSlips(requests) {
