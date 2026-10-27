@@ -169,7 +169,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     const availability=await earlyReceiptAvailability(c.env.db,requests.map(r=>r.id));
     const byAllocation=new Map(availability.map(r=>[r.allocationId,r]));
     return json({requests:requests.map(r=>({...r,lines:r.lines.map(l=>({...l,allocations:l.allocations.map(a=>({...a,
-      remainingToReceive:byAllocation.get(a.id)?.remaining??0,receivedQty:byAllocation.get(a.id)?.receivedQty??0}))}))})),nextOffset,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
+      remainingToReceive:byAllocation.get(a.id)?.remaining??0,receivedQty:byAllocation.get(a.id)?.receivedQty??0,receivedElsewhere:byAllocation.get(a.id)?.receivedElsewhere??0,purchaseRemaining:byAllocation.get(a.id)?.purchaseRemaining??0}))}))})),nextOffset,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
   },'business');
   router.get('/purchase-early-requests/:id/receiving',async c=>{
     guard(c);if(!canReceive(me(c)))fail(403,'Bạn không có quyền nhận hàng NCC.');

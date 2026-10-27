@@ -1,0 +1,11 @@
+{
+  "sharedPurchaseBalanceExplained": true,
+  "splitAfterReceipt": true,
+  "cancelUntouchedSiblings": true,
+  "originalReceivedIdPreserved": true,
+  "receivedQty": 8000,
+  "remainingQty": 0,
+  "stockUnchanged": true,
+  "noListCancel": true,
+  "errors": []
+}

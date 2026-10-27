@@ -54,12 +54,6 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
     card.append(head,node('p','small muted','Lập '+created+' · Ngày lấy: '+(request.pickupDate?request.pickupDate.split('-').reverse().join('/'):'Chưa nhập')),
       node('p','',names.join(' · ')),node('p','small',orders.join(' · ')),node('p','small muted',request.lines.map(l=>l.sku+' · '+l.name).join('; ')),
       node('p','small',`${request.lines.length} mã · SL xin ${number(request.lines.reduce((s,l)=>s+l.quantity,0))} · Đã nhận ${number(allocations.reduce((s,a)=>s+(a.receivedQty||0),0))}`));
-    if(data.canViewPortal){
-     const row=node('div','early-page-card-actions');row.dataset.mobileActions='off';
-     const remove=button(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>history.remove(request),'btn primary danger-bg small');
-     remove.dataset.earlyListRemove=request.id;remove.setAttribute('aria-label',remove.textContent+' '+request.id.slice(0,8).toUpperCase());
-     row.append(remove);card.append(row);
-    }
     list.append(card);
    }
    if(!data.requests.length)list.append(node('p','muted','Không có phiếu phù hợp bộ lọc.'));
