@@ -173,7 +173,6 @@ export function installMobileDesign(profiles){
  document.addEventListener('focusin',e=>{if(location.hash.startsWith('#/pos'))return;if(e.target.matches('input:not([type=checkbox]):not([type=radio]),select,textarea'))document.body.classList.add('crm-keyboard-open');});
  document.addEventListener('focusout',()=>{if(location.hash.startsWith('#/pos'))return;setTimeout(()=>{if(!document.activeElement?.matches('input,select,textarea'))document.body.classList.remove('crm-keyboard-open');},0);});
  window.addEventListener('hashchange',()=>{if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();});
- window.addEventListener('click',e=>{if(media.matches&&e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.target.closest('[data-new-quote]')){e.preventDefault();e.stopImmediatePropagation();location.hash='#/quotes/new';}},true);
  const resize=()=>{if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();};media.addEventListener('change',resize);
  scan();return {refresh:schedule};
 }
