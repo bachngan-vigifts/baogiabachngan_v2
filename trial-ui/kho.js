@@ -15,7 +15,7 @@ export function initKhoHome({ api, root, today }) {
   const head = el('div', 'page-head'), titles = el('div');
   const hello = el('h1', '', 'Việc cần làm');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), hello);
-  const reload=el('button','btn secondary','Làm mới');reload.type='button';reload.dataset.mobileInline='';reload.onclick=()=>load();head.append(titles,reload);
+  const reload=el('button','btn secondary','Làm mới');reload.type='button';reload.dataset.mobileInline='';reload.dataset.noBusy='';reload.onclick=()=>load();head.append(titles,reload);
   const cards = el('div', 'kho-cards'), lists = el('div', 'kho-lists');
   page.append(head, cards, lists);
   root.append(page);
