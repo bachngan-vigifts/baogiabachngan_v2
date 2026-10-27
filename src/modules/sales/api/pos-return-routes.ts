@@ -76,9 +76,9 @@ async function source(c: Ctx, db: CashDb, id: string) {
 }
 async function getReturn(c: Ctx, db: CashDb, id: string) {
   const [r] = await db.select().from(posReturns).where(eq(posReturns.id, id));
-  if (!r) throw new AppError(404, 'Không tìm thấy phiếu trả.');
+  if (!r || r.source !== 'pos' || !r.registerId || !r.createdShiftId) throw new AppError(404, 'Không tìm thấy phiếu trả POS.');
   await source(c, db, r.orderId);
-  return r;
+  return { ...r, registerId: r.registerId, createdShiftId: r.createdShiftId };
 }
 async function current(
   c: Ctx,
@@ -467,7 +467,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
         created = true;
         return r;
       });
-      if (created && result) {
+      if (created && result?.registerId) {
         const [reg] = await c.env.db.select({ drawerId: posRegisters.cashDrawerId }).from(posRegisters).where(eq(posRegisters.id, result.registerId));
         if (reg) await notifyPosReturnApproval(c.env, { id: result.id, returnNo: result.returnNo, orderId: result.orderId, drawerId: reg.drawerId, total: result.total, reason, createdBy: who(c).id })
           .catch(error => console.warn('pos return notification failed', error instanceof Error ? error.message : 'unknown error'));

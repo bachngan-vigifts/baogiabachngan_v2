@@ -1,0 +1,47 @@
+[
+  {
+    "width": 360,
+    "selectedSku": "22566",
+    "qty": 2,
+    "receivedBy": "emp",
+    "refund": 585241,
+    "refundedBy": "mgr",
+    "confirmedBeforeWrite": true
+  },
+  {
+    "width": 390,
+    "selectedSku": "22566",
+    "qty": 2,
+    "receivedBy": "emp",
+    "refund": 585241,
+    "refundedBy": "mgr",
+    "confirmedBeforeWrite": true
+  },
+  {
+    "width": 430,
+    "selectedSku": "22566",
+    "qty": 2,
+    "receivedBy": "emp",
+    "refund": 585241,
+    "refundedBy": "mgr",
+    "confirmedBeforeWrite": true
+  },
+  {
+    "width": 768,
+    "selectedSku": "22566",
+    "qty": 2,
+    "receivedBy": "emp",
+    "refund": 585241,
+    "refundedBy": "mgr",
+    "confirmedBeforeWrite": true
+  },
+  {
+    "width": 1280,
+    "selectedSku": "22566",
+    "qty": 2,
+    "receivedBy": "emp",
+    "refund": 585241,
+    "refundedBy": "mgr",
+    "confirmedBeforeWrite": true
+  }
+]

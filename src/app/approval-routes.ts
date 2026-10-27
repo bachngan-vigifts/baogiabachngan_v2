@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { orderScopeFor } from '../modules/sales/api/routes.ts';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
@@ -44,6 +45,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
     const store = cashOk ? await posStoreScopeFor(db, member) : undefined;
     const notMine = (col: typeof cashEntries.createdBy | typeof posReturns.createdBy) => member.role === 'manager' ? undefined : ne(col, member.id);
     const inStore = (col: typeof cashEntries.drawerId | typeof posReturns.registerId, ids: string[] | undefined) => ids ? (ids.length ? inArray(col, ids) : sql`false`) : undefined;
+    const returnScope = or(and(eq(posReturns.source,'pos'),cashOk?inStore(posReturns.registerId,store?.scope.registers):sql`false`),and(eq(posReturns.source,'crm'),orderScopeFor(member)));
     const pendingOrders = and(eq(salesOrders.status,'draft'),isNotNull(salesOrders.submittedAt));
     const hasContract = sql`exists(select 1 from ${salesContracts} where ${salesContracts.orderId}=${salesOrders.id})`;
     // Exact counts without transferring document details or inheriting the list's 200-row cap.
@@ -57,7 +59,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         db.select({n}).from(incomingShipments).where(and(eq(incomingShipments.source,'supplier-order'),ne(incomingShipments.approvalStatus,'approved'),isNull(incomingShipments.cancelledAt),isNotNull(incomingShipments.submittedAt))),
         db.select({n}).from(stockTransfers).where(eq(stockTransfers.status,'pending')),
         cashOk ? db.select({n}).from(cashEntries).where(and(eq(cashEntries.status,'pending'),notMine(cashEntries.createdBy),inStore(cashEntries.drawerId,store?.scope.drawers))) : [],
-        cashOk ? db.select({n}).from(posReturns).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(eq(posReturns.status,'pending'),notMine(posReturns.createdBy),inStore(posReturns.registerId,store?.scope.registers))) : [],
+        db.select({n}).from(posReturns).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(eq(posReturns.status,'pending'),notMine(posReturns.createdBy),returnScope)),
       ]);
       const counts = {quote:quote[0]?.n??0,order:orders[0]?.order??0,contract:orders[0]?.contract??0,customer:customer[0]?.n??0,product:product[0]?.n??0,purchase:purchase[0]?.n??0,transfer:transfer[0]?.n??0,cash:cash[0]?.n??0,return:returned[0]?.n??0};
       return {...counts,total:Object.values(counts).reduce((sum,n)=>sum+n,0)};
@@ -82,9 +84,9 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         .from(stockTransfers).leftJoin(employees, eq(employees.id, stockTransfers.requestedBy)).where(eq(stockTransfers.status, 'pending')).orderBy(desc(stockTransfers.createdAt)).limit(LIMIT),
       cashOk ? db.select({ e: cashEntries, by: employees.name }).from(cashEntries).leftJoin(employees, eq(employees.id, cashEntries.createdBy))
         .where(and(eq(cashEntries.status, 'pending'), notMine(cashEntries.createdBy), inStore(cashEntries.drawerId, store?.scope.drawers))).orderBy(desc(cashEntries.createdAt)).limit(LIMIT) : [],
-      cashOk ? db.select({ r: posReturns, by: employees.name, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName }).from(posReturns)
+      db.select({ r: posReturns, by: employees.name, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName }).from(posReturns)
         .innerJoin(salesOrders, eq(salesOrders.id, posReturns.orderId)).leftJoin(employees, eq(employees.id, posReturns.createdBy))
-        .where(and(eq(posReturns.status, 'pending'), notMine(posReturns.createdBy), inStore(posReturns.registerId, store?.scope.registers))).orderBy(desc(posReturns.createdAt)).limit(LIMIT) : [],
+        .where(and(eq(posReturns.status, 'pending'), notMine(posReturns.createdBy), returnScope)).orderBy(desc(posReturns.createdAt)).limit(LIMIT),
     ]);
     const contracts = os.length ? await db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo }).from(salesContracts)
       .where(and(inArray(salesContracts.orderId, os.map(o => o.id)))) : [];
@@ -104,7 +106,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         link: `#/cash?drawerId=${encodeURIComponent(e.drawerId)}&entryId=${encodeURIComponent(e.id)}` })),
       ...rets.map(({ r, by, orderNo, customerName }) => ({ kind: 'return' as const, id: r.id, title: `Yêu cầu ${r.kind === 'exchange' ? 'đổi' : 'trả'} hàng ${r.returnNo}`,
         sub: `${customerName} · bill ${orderNo} · ${r.reason.slice(0, 120)}`, by: by ?? '', at: r.createdAt, amount: r.total,
-        link: `#/cash?returnOrderId=${encodeURIComponent(r.orderId)}` })),
+        link: r.source==='crm'?`#/orders/${encodeURIComponent(r.orderId)}?returns=1`:`#/cash?returnOrderId=${encodeURIComponent(r.orderId)}` })),
       ...cs.map(k => ({ kind: 'customer' as const, id: k.id, title: `Khách hàng ${k.name}`, sub: [k.phone, k.taxCode && 'MST ' + k.taxCode].filter(Boolean).join(' · '),
         by: k.by ?? '', at: k.createdAt, amount: null, link: `#/customers/${encodeURIComponent(k.id)}` })),
       ...ps.map(p => ({ kind: 'product' as const, id: p.sku, title: `Sản phẩm ${p.name}`, sub: `Mã ${p.sku}`, by: p.by ?? '', at: p.updatedAt, amount: null, link: '#/products' })),
