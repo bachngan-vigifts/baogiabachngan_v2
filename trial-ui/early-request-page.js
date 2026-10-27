@@ -66,7 +66,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  }
  function historyReplace(p){const href='#/early-requests'+(p.size?'?'+p:'');window.history.replaceState(null,'',href);back.href=href;}
  const changed=()=>{offset=0;load();};for(const input of [supplier,status,dateBy,from,to])input.addEventListener('change',changed);
- search.addEventListener('input',()=>{++sequence;clearTimeout(timer);timer=setTimeout(changed,250);});
+ search.addEventListener('input',()=>{++sequence;selection.reset();clearTimeout(timer);timer=setTimeout(changed,250);});
  return {async show(id='',query=''){
   const mine=++sequence;clearTimeout(timer);detailId=id;selection.reset();back.hidden=!id;section.hidden=!!id;detail.hidden=!id;fail();
   try{const options=await api('/purchase-options');if(mine!==sequence)return;
