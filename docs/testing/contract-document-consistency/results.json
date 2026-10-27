@@ -11,7 +11,8 @@
     "staleEditsGuard": true,
     "editor": true,
     "formRefresh": true,
-    "singleDownload": true
+    "singleDownload": true,
+    "earlyZip": true
   },
   {
     "brand": "vigifts",
@@ -25,6 +26,7 @@
     "staleEditsGuard": true,
     "editor": true,
     "formRefresh": true,
-    "singleDownload": true
+    "singleDownload": true,
+    "earlyZip": true
   }
 ]

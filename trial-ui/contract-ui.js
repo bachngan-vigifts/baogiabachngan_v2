@@ -96,7 +96,8 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   document.body.append(dlg); dlg.showModal();
   const $d = s => dlg.querySelector(s), status = t => { $d('[data-status]').textContent = t; };
   const details = contractDetails(detail), edits = { HDKT: [], TAM_UNG: [], BBNT: [], ...(k.data?.edits || {}) };
-  let current = 'HDKT', dirty = false, quoteRows = null, renderSeq = 0;
+  let current = 'HDKT', dirty = false, quoteRows = null, quoteRowsPromise = null, renderSeq = 0;
+  const ensureQuoteRows = () => quoteRowsPromise ||= (detail.order.quoteId ? api('/quotes/' + encodeURIComponent(detail.order.quoteId)).catch(() => null) : Promise.resolve(null)).then(result => { quoteRows = result?.data?.rows || []; });
   for (const el of dlg.querySelectorAll('[data-d]')) {
     el.value = details[el.dataset.d] ?? '';
     if (!canEdit || (['depositRate', 'paymentDays'].includes(el.dataset.d) && !canEditFinancial)) { el.readOnly = true; if (el.tagName === 'SELECT') el.disabled = true; el.title = 'Theo HĐKT đã lập (khớp kỳ công nợ)'; continue; }
@@ -112,6 +113,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const currentDetails = () => canEdit ? readContractForm(dlg, details) : cleanDetails(details);
   const quote = () => legacyQuote(detail, quoteRows, edits);
   async function prepareDoc(type){
+    await ensureQuoteRows();
     const selectedDetails=currentDetails(),q=quote(),templates=await templatesFor(q);
     const hdkt=templates.find(t=>t.file==='HDKT'),t=templates.find(t=>t.file===type);
     const contractBytes=type==='BBNT'?await globalThis.ContractDocument.build({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:hdkt.templateBytes}):undefined;
@@ -125,7 +127,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     const seq = ++renderSeq; status('Đang dựng bản xem từ file Word…');
     try {
       await Promise.all([loadBuilder(), loadPreview()]);
-      if (!quoteRows) quoteRows = detail.order.quoteId ? (await api('/quotes/' + encodeURIComponent(detail.order.quoteId)).catch(() => null))?.data?.rows || [] : [];
+      await ensureQuoteRows();
       const type=current,{base,edits:normalized,locked}=await prepareDoc(type),prepared=await globalThis.ContractWordEdit.prepare(base,normalized);
       if (seq !== renderSeq) return;
       edits[type]=normalized;
@@ -179,7 +181,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   $d('[data-zip]').addEventListener('click', async e => {
     e.target.disabled = true;
     try {
-      const selectedDetails = currentDetails(); await loadBuilder(); const q = quote();
+      const selectedDetails = currentDetails(); await Promise.all([loadBuilder(), ensureQuoteRows()]); const q = quote();
       const pack = await globalThis.ContractDocument.buildPack({ quote: q, contractNumber: k.contractNo, details: selectedDetails, templateFiles: await templatesFor(q) });
       saveBlob(pack.bytes, `${pack.folder}.zip`, 'application/zip');
     } catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }

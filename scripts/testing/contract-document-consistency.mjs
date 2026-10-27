@@ -66,8 +66,11 @@ try{
    const detail={order:{quoteType:q.quote_type,quoteNo:q.quote_number,quoteId:'fixture',subtotal:q.subtotal,tax:q.vat_amount,total:q.total,customerName:q.customer.name,contact:q.customer.contact_name,address:q.customer.address},
     contract:{id:'fixture',revision:1,contractNo:'TEST/2026',legalEntity:brand==='vigifts'?'VG':'BN',canEdit:true,canEditFinancial:true,depositRate:30,paymentDays:7,signedDate:details.signedDate,data:{details}},
     lines:q.items.map(i=>({name:i.name,unit:i.unit,qty:i.quantity,unitPrice:i.price_after_discount,amount:i.line_total,taxRate:i.tax_percent}))};
-   await openContractDocs({detail,api:async()=>({data:{rows:q.items.map(i=>({name:i.name,qty:i.quantity,bundleContents:i.bundle_contents,printDescription:i.print_description,packagingDescription:i.packaging_description}))}}),toast:m=>{throw Error(m);}});
+   await openContractDocs({detail,api:async()=>{await new Promise(r=>setTimeout(r,300));return {data:{rows:q.items.map(i=>({name:i.name,qty:i.quantity,bundleContents:i.bundle_contents,printDescription:i.print_description,packagingDescription:i.packaging_description}))}};},toast:m=>{throw Error(m);}});
   },{brand});
+  const earlyZipEvent=page.waitForEvent('download');await page.locator('[data-zip]').click();const earlyZip=await earlyZipEvent;const earlyZipPath=dir+'/'+brand+'-early.zip';await earlyZip.saveAs(earlyZipPath);
+  const earlyBytes=await readFile(earlyZipPath);
+  assert.equal(await page.evaluate(bytes=>{const files=fflate.unzipSync(new Uint8Array(bytes)),xml=fflate.strFromU8(fflate.unzipSync(files['BBNT.docx'])['word/document.xml']);return xml.includes('Logo hai vị trí')&&xml.includes('01 ấm + 06 tách');},[...earlyBytes]),true);
   const frame=page.frameLocator('.cd-frame');
   await frame.locator('p').filter({hasText:'Hôm nay, ngày 20 tháng 10 năm 2026'}).waitFor();
   assert.equal(await frame.locator('p').filter({hasText:'Hôm nay, ngày 20 tháng 10 năm 2026'}).getAttribute('contenteditable'),null);
@@ -88,7 +91,7 @@ try{
   await page.screenshot({path:dir+'/'+brand+'-editor-1280.png',fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:dir+'/'+brand+'-editor-390.png',fullPage:true});
   page.once('dialog',d=>d.accept());await page.locator('.contract-docs .modal-foot [data-x]').click();await page.setViewportSize({width:1280,height:1000});
-  results.push({...result,editor:true,formRefresh:true,singleDownload:true});
+  results.push({...result,editor:true,formRefresh:true,singleDownload:true,earlyZip:true});
  }
  assert.deepEqual(errors,[]);console.log(JSON.stringify(results));
 }finally{await writeFile(dir+'/results.json',JSON.stringify(results,null,2));await browser.close();server.close();}

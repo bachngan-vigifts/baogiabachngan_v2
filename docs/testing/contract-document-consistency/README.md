@@ -25,6 +25,7 @@ Không thay API, schema, quyền, công thức tiền/thuế/chiết khấu, t�
 - `PLAYWRIGHT_MODULE=/tmp/pos-browser/node_modules/playwright/index.mjs node scripts/testing/contract-document-consistency.mjs`: đạt cả hai bộ mẫu thật.
 - Kiểm tra XML bảng biên bản giống nguyên bảng HĐKT đã áp mô tả Word; đủ các dòng tiền; chép style; giữ và chuyển vị trí đoạn ngoài bảng; mở lại đoạn đã chuyển; từ chối đoạn cũ không khớp.
 - Kiểm tra ZIP kể cả khi đảo thứ tự ba mẫu; dựng preview; dùng editor thật để đổi ngày/địa chỉ, sửa mô tả HĐKT, chuyển tab biên bản và tải Word riêng. Không lỗi JavaScript. Có ảnh editor 1280px và 390px.
+- Bấm tải ZIP khi bản xem đang nạp chậm: vẫn đợi đủ dữ liệu mô tả, không tạo file thiếu Bộ gồm/In ấn. Các lượt tải và preview chia sẻ một lần nạp dòng báo giá.
 - Toàn bộ bộ test chạy tiếp trên CI của PR.
 
 Các ảnh và `results.json` trong thư mục này lấy từ fixture cục bộ. File Word tải thử nằm trong `/workspace/scratch/contract-document-consistency`, không phải hồ sơ khách thật.
