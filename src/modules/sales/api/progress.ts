@@ -1,3 +1,4 @@
+import { legacyStockProgress } from './legacy-stock-progress.ts';
 import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -25,7 +26,7 @@ export async function progressOf(db: Db | Tx, orderIds: string[]): Promise<Map<s
   if (!ids.length) return new Map();
   const counterDelivered = and(inArray(salesOrders.id, ids), eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'counter'), eq(salesOrders.status, 'delivered'));
   const [orders, packed, printing, marks, counterLines, counterMoves, fulfilment] = await Promise.all([
-    db.select({ id: salesOrders.id, status: salesOrders.status }).from(salesOrders).where(inArray(salesOrders.id, ids)),
+    db.select({ id: salesOrders.id, status: salesOrders.status, channel: salesOrders.channel, createdAt: salesOrders.createdAt, holdsStock: salesOrders.holdsStock, warehouseId: salesOrders.warehouseId }).from(salesOrders).where(inArray(salesOrders.id, ids)),
     db.selectDistinct({ orderId: packingSlips.orderId }).from(packingSlips).where(and(inArray(packingSlips.orderId, ids), eq(packingSlips.status, 'packed'))),
     printingOrders(db, ids),
     db.select({ orderId: orderProgressMarks.orderId, stage: orderProgressMarks.stage, source: orderProgressMarks.source, at: orderProgressMarks.markedAt, byName: employees.name })
@@ -40,6 +41,7 @@ export async function progressOf(db: Db | Tx, orderIds: string[]): Promise<Map<s
       .where(and(counterDelivered, eq(stockMoves.refType, 'pos_order'))).groupBy(salesOrders.id, stockMoves.sku),
     crmStockFulfilment(db, ids),
   ]);
+  const historical = await legacyStockProgress(db, orders, marks);
   const packedSet = new Set(packed.map(p => p.orderId));
   const issued = new Map(counterMoves.map(r => [JSON.stringify([r.orderId, r.sku]), r.qty]));
   const expected = new Map<string, typeof counterLines>();
@@ -48,9 +50,9 @@ export async function progressOf(db: Db | Tx, orderIds: string[]): Promise<Map<s
   return new Map(orders.map(o => {
     const m: Partial<Record<ProgressStage, ProgressMark>> = {};
     for (const x of marks) if (x.orderId === o.id) m[x.stage] = { source: x.source, at: x.at, byName: x.byName };
-    const physical=fulfilment.get(o.id);
-    const required=!!physical?.lines.length;
-    return [o.id, orderProgress({ status: o.status, physicalExportRequired:required, packed: required?physical!.complete:packedSet.has(o.id), directExported: directExports.has(o.id), printing: printing.has(o.id), marks: m })];
+    const physical = fulfilment.get(o.id);
+    const required = !!physical?.lines.length && !historical.has(o.id);
+    return [o.id, orderProgress({ status: o.status, physicalExportRequired: required, packed: historical.has(o.id) ? false : required ? physical!.complete : packedSet.has(o.id), directExported: directExports.has(o.id), printing: printing.has(o.id), marks: m })];
   }));
 }
 

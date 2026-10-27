@@ -1,0 +1,27 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {sql} from 'drizzle-orm';
+import {createTestDb} from '../helpers/postgres.ts';
+import {seedStaff} from '../helpers/staff-fixture.ts';
+import {warehouses} from '../../src/modules/catalog/schema.ts';
+import {stockMoves} from '../../src/modules/inventory/schema.ts';
+import {salesOrders,salesOrderLines,deliveries,orderProgressMarks} from '../../src/modules/sales/schema.ts';
+import {auditLogs} from '../../src/core/db/schema.ts';
+import {progressOf} from '../../src/modules/sales/api/progress.ts';
+import {assertCrmOrderCompletion} from '../../src/modules/sales/api/crm-stock-lifecycle.ts';
+test('only explicitly audited, unchanged, closed pre-opening orders recognize owner-confirmed historical stock in display; live fulfilment guards stay strict',async()=>{
+ const {db,d1}=await createTestDb();await seedStaff(d1);const opening='2026-10-18T15:43:50.043Z',marked='2026-10-27T03:00:00.000Z',old='2026-10-17T04:00:00.000Z';
+ await db.insert(warehouses).values([{id:'w',name:'KHO VIGIFTS',kind:'stock'},{id:'other',name:'Khác',kind:'stock'}]);
+ await db.insert(stockMoves).values({id:'opening',sku:'LY1',warehouseId:'w',qty:100,kind:'opening',refType:'opening',refId:'opening',createdBy:'mgr',createdAt:opening});
+ const ids=['legacy','no-audit','modern','partial','late','reopened','wrong-wh','edited','wrong-mark','malformed'];
+ await db.insert(salesOrders).values(ids.map(id=>({id,orderNo:id,channel:'crm' as const,quoteType:'B2B' as const,status:id==='reopened'?'confirmed' as const:'delivered' as const,holdsStock:false,warehouseId:id==='wrong-wh'?'other':null,customerName:'Khách local',ownerId:'mgr',createdBy:'mgr',orderDate:'2026-10-17',createdAt:id==='modern'?'2026-10-20T00:00:00Z':old,updatedAt:old})));
+ await db.insert(salesOrderLines).values(ids.map(id=>({id:id+'-line',orderId:id,lineNo:1,sku:'LY1',name:'Ly',qty:id==='edited'?3:2,deliveredQty:id==='partial'?1:id==='edited'?3:2})));
+ await db.insert(deliveries).values(ids.map(id=>({id:'ship-'+id,deliveryNo:'GH-'+id,orderId:id,plannedDate:'2026-10-17',status:'delivered' as const,deliveredAt:id==='late'?'2026-10-20':'2026-10-17',createdBy:'mgr',createdAt:old,updatedAt:old})));
+ await db.insert(orderProgressMarks).values(ids.map(id=>({orderId:id,stage:'export' as const,source:'manual' as const,markedAt:id==='wrong-mark'?old:marked})));
+ await db.insert(auditLogs).values(ids.filter(id=>id!=='no-audit').map(id=>({id:'audit-'+id,module:'sales',action:'legacy_stock_progress_reconciled',entityType:'sales_order',entityId:id,createdAt:marked,data:JSON.stringify({version:1,kind:'legacy_preopening_owner_confirmation',orderId:id,warehouseId:'w',openingAt:opening,markedAt:marked,lines:id==='malformed'?[null]:[{lineId:id+'-line',sku:'LY1',qty:2}],confirmation:{source:'owner_chat',alreadyDeducted:true,warehouseId:'w',at:marked}})})));
+ const before=await db.select({count:sql<number>`count(*)`,qty:sql<number>`sum(${stockMoves.qty})`}).from(stockMoves);
+ const result=await progressOf(db,ids);assert.equal(result.get('legacy')!.done,true);assert.equal(result.get('legacy')!.stages.find(s=>s.key==='export')!.by,'manual');
+ for(const id of ids.filter(id=>id!=='legacy'))assert.equal(result.get(id)!.stages.find(s=>s.key==='export')!.done,false,id);
+ await assert.rejects(assertCrmOrderCompletion(db,'legacy'),/Chưa xác nhận xuất đủ/,'historical display reconciliation never allows a fresh dispatch without real stock proof');
+ assert.deepEqual(await db.select({count:sql<number>`count(*)`,qty:sql<number>`sum(${stockMoves.qty})`}).from(stockMoves),before);
+});
