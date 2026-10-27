@@ -18,6 +18,7 @@ import { reviewPurchaseCosts } from './purchase-cost-review.js';
 import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
+import { openCrmReturns } from './crm-returns.js';
 import { openPosQuickCancel } from './pos-quick-cancel.js';
 import { openBarcodeImport } from './barcode-import.js';
 import { posOrderEditor, posCodReceipt, posPaymentText } from './pos-order-edit.js';
@@ -3704,6 +3705,11 @@ async function openOrder(id) {
       };
       box.append(b);
     }).catch(e => { if (box.isConnected) { box.textContent = e.message; box.className = 'error'; } });
+  }
+  if(o.channel==='crm'&&d.lines.some(l=>l.deliveredQty>0)&&o.status!=='cancelled'){
+    const b=document.createElement('button');b.type='button';b.className='btn secondary';b.dataset.mobileInline='';b.dataset.crmReturns='';b.textContent='Trả hàng / Hoàn tiền';
+    b.onclick=()=>openCrmReturns({api,toast,orderId:o.id,onChanged:()=>openOrder(o.id)});$('#order-actions').append(b);
+    if(new URLSearchParams(location.hash.split('?')[1]||'').get('returns')==='1'&&!document.querySelector('.pos-return-modal[open]')){const [path,query='']=location.hash.split('?'),params=new URLSearchParams(query);params.delete('returns');history.replaceState(history.state,'',path+(params.size?'?'+params:''));b.click();}
   }
   if(o.channel==='pos' && can('pos.sell')){const b=document.createElement('button');b.className='btn secondary';b.textContent='Trả / Đổi / Hoàn tiền';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosReturns({api,toast,orderId:o.id,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
   if(o.channel==='pos'&&isManager()&&o.status!=='cancelled'){

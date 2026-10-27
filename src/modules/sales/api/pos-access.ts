@@ -69,7 +69,7 @@ export async function authorizePosStore(c: Ctx) {
   }
 }
 
-export async function posStoreScopeFor(db: StaffEnv['db'], m: { role: string; positionId?: string | null }) {
+export async function posStoreScopeFor(db: StaffEnv['db'] | Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0], m: { role: string; positionId?: string | null }) {
   if (m.role === 'manager') return;
   const [position] = await db.select().from(positions).where(eq(positions.id, m.positionId ?? '')).limit(1);
   const name = fold(position?.name);

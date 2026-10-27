@@ -347,7 +347,7 @@ export const RULES: Record<string, Rule> = {
       autoKey: `pos-return-approve:${r.id}`, source: 'cash' as const, sourceId: r.id,
       title: `Duyệt yêu cầu ${r.kind === 'exchange' ? 'đổi' : 'trả'} hàng ${r.returnNo} – ${customerName}`.slice(0, 200),
       description: `${by} lập cho bill ${orderNo}, ${vnd(r.total)}. Lý do: ${r.reason.slice(0, 300)}`,
-      link: `#/cash?returnOrderId=${encodeURIComponent(r.orderId)}`, assigneeId: null, priority: 'high' as const, dueDate: day(r.createdAt),
+      link: r.source==='crm'?`#/orders/${encodeURIComponent(r.orderId)}?returns=1`:`#/cash?returnOrderId=${encodeURIComponent(r.orderId)}`, assigneeId: null, priority: 'high' as const, dueDate: day(r.createdAt),
     }));
   },
   /**

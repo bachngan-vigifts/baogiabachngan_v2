@@ -17,17 +17,16 @@ export const posReturns = pgTable(
   {
     id: text('id').primaryKey(),
     returnNo: text('return_no').notNull(),
+    source: text('source', { enum: ['pos', 'crm'] }).notNull().default('pos'),
     orderId: text('order_id')
       .notNull()
       .references(() => salesOrders.id),
     registerId: text('register_id')
-      .notNull()
       .references(() => posRegisters.id),
     warehouseId: text('warehouse_id')
       .notNull()
       .references(() => warehouses.id),
     createdShiftId: text('created_shift_id')
-      .notNull()
       .references(() => posShifts.id),
     requestContext: text('request_context').notNull().default('after_delivery'),
     kind: text('kind').notNull(),
@@ -65,6 +64,7 @@ export const posReturns = pgTable(
   },
   (t) => [
     uniqueIndex('uq_pos_return_no').on(t.returnNo),
+    check('chk_return_source', sql`(${t.source}='pos' and ${t.registerId} is not null and ${t.createdShiftId} is not null) or (${t.source}='crm' and ${t.registerId} is null and ${t.createdShiftId} is null and ${t.kind}='return' and ${t.requestContext}='after_delivery')`),
     uniqueIndex('uq_pos_return_key').on(t.requestKey),
     check('chk_pos_return_context', sql`${t.requestContext} in ('before_fulfillment','after_issue','after_delivery')`),
     check('chk_pos_return_kind', sql`${t.kind} in ('return','exchange')`),
@@ -133,7 +133,6 @@ export const posRefunds = pgTable(
       .notNull()
       .references(() => posReturns.id),
     shiftId: text('shift_id')
-      .notNull()
       .references(() => posShifts.id),
     drawerId: text('drawer_id')
       .notNull()
@@ -152,6 +151,7 @@ export const posRefunds = pgTable(
   },
   (t) => [
     uniqueIndex('uq_pos_refund_no').on(t.refundNo),
+    check('chk_refund_cash_shift', sql`${t.shiftId} is not null or (${t.method}='transfer' and ${t.cashEntryId} is null)`),
     uniqueIndex('uq_pos_refund_key').on(t.requestKey),
     uniqueIndex('uq_pos_refund_cash').on(t.cashEntryId),
     check(

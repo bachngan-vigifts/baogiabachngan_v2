@@ -1,3 +1,4 @@
+import { registerCrmReturnRoutes } from './crm-return-routes.ts';
 import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
 import { canConfirmDelivery, deliveryConfirmations } from './delivery-confirmation.ts';
 import { auditLogs } from '../../../core/db/schema.ts';
@@ -394,6 +395,7 @@ quoteSaveHooks.beforeSave.push(async (tx, old, member) => {
 quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string }[]> } = {}) {
+  registerCrmReturnRoutes(router, loadOrder);
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
