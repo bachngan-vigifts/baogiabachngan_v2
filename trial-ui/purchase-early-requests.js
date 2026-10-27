@@ -48,7 +48,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     if(!portal&&canViewPortal)for(const request of requests){
       const groups=supplierSlips(request),bar=el('div','row-gap');bar.append(el('span','small','Phiếu '+request.id.slice(0,8).toUpperCase()));
       if(groups.length>1)bar.append(btn('Tách thành '+groups.length+' phiếu NCC',()=>changeRequest(request,'split')));
-      bar.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':groups.length>1?'Xoá toàn bộ phiếu gốc':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-delete':'delete'),'btn danger small'));operations.append(bar);
+      bar.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':groups.length>1?'Xoá toàn bộ phiếu gốc':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-delete':'delete'),'btn primary danger-bg small'));operations.append(bar);
     }
 
     for(const request of requests.flatMap(r=>!portal&&r.requestStatus==='submitted'?supplierSlips(r):[r])) {
@@ -124,7 +124,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
         if(remove){await onDeleted(request);if(reload){if(!currentRequest())await load();else list.replaceChildren(el('p','muted','Đã xoá phiếu.'));}}else{await load(currentRequest());await onSaved(request);}
       }catch(e){error.textContent=e.message||'Không xử lý được phiếu. Tải lại để kiểm tra.';}
       finally{busy=batchBusy=false;close.disabled=submit.disabled=false;syncBatch();}
-    },remove?'btn primary danger':'btn primary');foot.append(submit);modal.append(head,body,foot);document.body.append(modal);
+    },remove?'btn primary danger-bg':'btn primary');foot.append(submit);modal.append(head,body,foot);document.body.append(modal);
     modal.addEventListener('cancel',e=>{if(busy)e.preventDefault();});modal.addEventListener('close',()=>{confirmDialog=null;modal.remove();},{once:true});modal.showModal();
   }
   function confirmSlips(requests) {

@@ -56,7 +56,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
       node('p','small',`${request.lines.length} mã · SL xin ${number(request.lines.reduce((s,l)=>s+l.quantity,0))} · Đã nhận ${number(allocations.reduce((s,a)=>s+(a.receivedQty||0),0))}`));
     if(data.canViewPortal){
      const row=node('div','early-page-card-actions');row.dataset.mobileActions='off';
-     const remove=button(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>history.remove(request),'btn danger small');
+     const remove=button(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>history.remove(request),'btn primary danger-bg small');
      remove.dataset.earlyListRemove=request.id;remove.setAttribute('aria-label',remove.textContent+' '+request.id.slice(0,8).toUpperCase());
      row.append(remove);card.append(row);
     }
