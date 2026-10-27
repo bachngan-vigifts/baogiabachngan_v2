@@ -1,0 +1,2118 @@
+[
+  {
+    "name": "quotes",
+    "width": 390,
+    "hash": "#/quotes",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Xem đơn hàngDH_002_27102026"
+      ],
+      [
+        "×",
+        "Đặt hàng NCC cho HRC_BG_002_25102026",
+        "Nhân bản HRC_BG_002_25102026",
+        "Mở HRC_BG_002_25102026"
+      ],
+      [
+        "×",
+        "Xem HĐKT10-01/27102026/HĐKT/BN-BNCUZN04196"
+      ],
+      [
+        "×",
+        "Đặt hàng NCC cho HRC_BG_001_25102026",
+        "Nhân bản HRC_BG_001_25102026",
+        "Mở HRC_BG_001_25102026"
+      ],
+      [
+        "×",
+        "Đặt hàng NCC cho HRC_BG_DRAFT_25102026",
+        "Nhân bản HRC_BG_DRAFT_25102026",
+        "Mở HRC_BG_DRAFT_25102026"
+      ]
+    ]
+  },
+  {
+    "name": "quote-new",
+    "width": 390,
+    "hash": "#/quotes/new",
+    "view": "view-editor",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "⋯Thao tác báo giá"
+      ],
+      [
+        "×",
+        "Kiểm tồn",
+        "Giữ hàng 5 ngày",
+        "Gia hạn +5 ngày",
+        "Đặt hàng NCC",
+        "Sinh Đơn hàng / HĐKT",
+        "Tải báo giá ▾",
+        "PDF A4 theo mẫu",
+        "PDF A4 theo mẫu – ẩn cột CK",
+        "In nhanh (trình duyệt)",
+        "Excel (báo giá + phí vận chuyển)",
+        "Nhân bản",
+        "Lưu báo giá",
+        "Duyệt",
+        "Trả lại…",
+        "Lịch sử",
+        "Xoá báo giá",
+        "Đã gửi duyệt"
+      ],
+      [
+        "×",
+        "＋ Lưu vào danh bạ"
+      ],
+      [
+        "×",
+        "Ẩn mô tả",
+        "Dán từ Excel",
+        "＋ Thêm dòng trống",
+        "＋ Thêm sản phẩm",
+        "📷 Chụp báo giá"
+      ]
+    ]
+  },
+  {
+    "name": "contracts",
+    "width": 390,
+    "hash": "#/contracts",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Xem / Tải hồ sơ",
+        "Phiếu ĐG",
+        "Phiếu GH"
+      ]
+    ]
+  },
+  {
+    "name": "contract-detail",
+    "width": 390,
+    "hash": "#/contracts/2ed0551b-5762-4db5-9eb6-a1c099d99afe",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 2,
+    "taskSelect": true,
+    "orderParent": "crm-sheet crm-document-sheet",
+    "menus": [
+      [
+        "×",
+        "Xem / Tải hồ sơ",
+        "Phiếu ĐG",
+        "Phiếu GH"
+      ]
+    ]
+  },
+  {
+    "name": "tasks",
+    "width": 390,
+    "hash": "#/tasks",
+    "view": "view-tasks",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "orders",
+    "width": 390,
+    "hash": "#/orders",
+    "view": "view-orders",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "⬇ Xuất file"
+      ],
+      [
+        "×",
+        "In / Tải",
+        "Phiếu ĐG",
+        "Phiếu GH"
+      ]
+    ]
+  },
+  {
+    "name": "order-detail",
+    "width": 390,
+    "hash": "#/orders/7078d563-6d33-4e65-b948-5b3330f0825f",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "In / Tải đơn hàng",
+        "In phiếu đóng gói",
+        "In phiếu giao hàng",
+        "Huỷ đơn",
+        "Lịch sử",
+        "Tạo đơn Sapo",
+        "Đặt hàng NCC"
+      ],
+      [
+        "×",
+        "Lập phiếu xuất"
+      ],
+      [
+        "×",
+        "In / Tải đơn hàng"
+      ],
+      [
+        "×",
+        "📦 Lên lịch & đóng gói",
+        "Chỉ lên lịch giao"
+      ],
+      [
+        "×",
+        "Lưu số hoá đơn"
+      ],
+      [
+        "×",
+        "＋ Ghi nhận thanh toán"
+      ]
+    ]
+  },
+  {
+    "name": "customers",
+    "width": 390,
+    "hash": "#/customers",
+    "view": "view-customers",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "＋ Báo giá",
+        "Tài khoản",
+        "Sửa Nguyễn Khách kiểm thử"
+      ],
+      [
+        "×",
+        "＋ Báo giá",
+        "Tài khoản",
+        "Sửa CÔNG TY PHƯỚC ĐỨC"
+      ]
+    ]
+  },
+  {
+    "name": "customer-detail",
+    "width": 390,
+    "hash": "#/customers/design-customer",
+    "view": "view-customer",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Sửa thông tin",
+        "＋ Báo giá"
+      ],
+      [
+        "×",
+        "Phân công / chia sẻ"
+      ],
+      [
+        "×",
+        "Sửa"
+      ],
+      [
+        "×",
+        "＋ Thêm"
+      ],
+      [
+        "×",
+        "Thêm ghi chú"
+      ]
+    ]
+  },
+  {
+    "name": "care",
+    "width": 390,
+    "hash": "#/care",
+    "view": "view-care",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "✓ Xong",
+        "Sửa",
+        "×Xoá"
+      ]
+    ]
+  },
+  {
+    "name": "pos",
+    "width": 390,
+    "hash": "#/pos",
+    "view": "view-pos",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Mở ca"
+      ],
+      [
+        "×",
+        "Tìm tất cả SP"
+      ],
+      [
+        "×",
+        "Hủy đơn"
+      ]
+    ]
+  },
+  {
+    "name": "deliveries",
+    "width": 390,
+    "hash": "#/deliveries",
+    "view": "view-deliveries",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "packing",
+    "width": 390,
+    "hash": "#/packing",
+    "view": "view-packing",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "receivables",
+    "width": 390,
+    "hash": "#/receivables",
+    "view": "view-receivables",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "⬇ Excel"
+      ]
+    ]
+  },
+  {
+    "name": "cash",
+    "width": 390,
+    "hash": "#/cash",
+    "view": "view-cash",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Cấu hình két",
+        "+ Két riêng cho quầy",
+        "Duyệt đổi / trả hàng",
+        "Bán hàng nhanh"
+      ],
+      [
+        "×",
+        "+ Thu tiền",
+        "+ Chi tiền",
+        "Kết ca",
+        "Điều chỉnh két"
+      ],
+      [
+        "×",
+        "Xuất Excel bảng đang xem"
+      ]
+    ]
+  },
+  {
+    "name": "cashbook",
+    "width": 390,
+    "hash": "#/cashbook",
+    "view": "view-cashbook",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "⬇ Xuất file"
+      ]
+    ]
+  },
+  {
+    "name": "purchases",
+    "width": 390,
+    "hash": "#/purchases",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "💰 Công nợ NCC",
+        "Nhập từ file NCC",
+        "Xin hàng trước bằng file"
+      ],
+      [
+        "×",
+        "Danh sách đơn",
+        "Hàng đang về theo mã"
+      ],
+      [
+        "×",
+        "Xác nhận đã chọn (0)"
+      ]
+    ]
+  },
+  {
+    "name": "receiving",
+    "width": 390,
+    "hash": "#/receiving",
+    "view": "view-receiving",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Làm mới"
+      ]
+    ]
+  },
+  {
+    "name": "suppliers",
+    "width": 390,
+    "hash": "#/suppliers",
+    "view": "view-suppliers",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "incoming",
+    "width": 390,
+    "hash": "#/purchases?mode=incoming",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "💰 Công nợ NCC",
+        "Nhập từ file NCC",
+        "Xin hàng trước bằng file"
+      ],
+      [
+        "×",
+        "Danh sách đơn",
+        "Hàng đang về theo mã"
+      ],
+      [
+        "×",
+        "Xác nhận đã chọn (0)"
+      ]
+    ]
+  },
+  {
+    "name": "kho",
+    "width": 390,
+    "hash": "#/kho",
+    "view": "view-kho",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "stock-moves",
+    "width": 390,
+    "hash": "#/stock-moves?from=2026-09-27&to=2026-10-26",
+    "view": "view-stock-moves",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "⬇ Xuất file"
+      ]
+    ]
+  },
+  {
+    "name": "inventory",
+    "width": 390,
+    "hash": "#/inventory",
+    "view": "view-inventory",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Phiếu điều chỉnh"
+      ],
+      [
+        "×",
+        "Làm mới phiếu"
+      ],
+      [
+        "×",
+        "‹ Trang trước",
+        "Trang tiếp ›"
+      ]
+    ]
+  },
+  {
+    "name": "transfers",
+    "width": 390,
+    "hash": "#/transfers",
+    "view": "view-transfers",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "products",
+    "width": 390,
+    "hash": "#/products",
+    "view": "view-products",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "↓ Xuất Excel"
+      ],
+      [
+        "×",
+        "Cập nhật kho",
+        "Tồn từ file",
+        "Giá trị tồn kho",
+        "Kiểm tra dữ liệu",
+        "Quy cách Lock",
+        "Barcode"
+      ],
+      [
+        "×",
+        "Cập nhật",
+        "＋ Báo giá"
+      ]
+    ]
+  },
+  {
+    "name": "staff",
+    "width": 390,
+    "hash": "#/members",
+    "view": "view-quotes",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Xem đơn hàngDH_002_27102026"
+      ],
+      [
+        "×",
+        "Đặt hàng NCC cho HRC_BG_002_25102026",
+        "Nhân bản HRC_BG_002_25102026",
+        "Mở HRC_BG_002_25102026"
+      ],
+      [
+        "×",
+        "Xem HĐKT10-01/27102026/HĐKT/BN-BNCUZN04196"
+      ],
+      [
+        "×",
+        "Đặt hàng NCC cho HRC_BG_001_25102026",
+        "Nhân bản HRC_BG_001_25102026",
+        "Mở HRC_BG_001_25102026"
+      ],
+      [
+        "×",
+        "Đặt hàng NCC cho HRC_BG_DRAFT_25102026",
+        "Nhân bản HRC_BG_DRAFT_25102026",
+        "Mở HRC_BG_DRAFT_25102026"
+      ]
+    ]
+  },
+  {
+    "name": "payroll",
+    "width": 390,
+    "hash": "#/payroll",
+    "view": "view-payroll",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Đăng nhập SyncTime",
+        "Chấm công từ máy",
+        "Tham số",
+        "Xuất Excel"
+      ],
+      [
+        "×",
+        "Lưu số liệu chung"
+      ]
+    ]
+  },
+  {
+    "name": "permissions",
+    "width": 390,
+    "hash": "#/permissions",
+    "view": "view-permissions",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "flow",
+    "width": 390,
+    "hash": "#/flow",
+    "view": "view-flow",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×",
+        "Làm mới"
+      ]
+    ]
+  },
+  {
+    "name": "dashboard",
+    "width": 390,
+    "hash": "#/dashboard",
+    "view": "view-dashboard",
+    "overflow": false,
+    "nav": [
+      "Bán nhanh",
+      "Sổ quỹ",
+      "Đơn mua NCC",
+      "Tra tồn",
+      "Báo giá",
+      "Đơn hàng",
+      "HĐKT",
+      "Giao hàng",
+      "Công nợ",
+      "Công việc",
+      "Hỏi tồn",
+      "Khách hàng",
+      "Chăm sóc",
+      "Đóng gói",
+      "Sản phẩm",
+      "Nhân viên",
+      "Bảng lương",
+      "Tổng quan doanh số",
+      "Sơ đồ quy trình",
+      "Điều chuyển kho",
+      "Sổ kho",
+      "Đối chiếu tồn Sapo",
+      "Lịch nhận hàng",
+      "Sổ thu / chi",
+      "Lấy hàng trước",
+      "Nhà cung cấp",
+      "Phân quyền"
+    ],
+    "homeRows": 1,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "width": 390,
+    "taps": [
+      {
+        "name": "create_quote",
+        "taps": 1
+      },
+      {
+        "name": "edit_line_qty",
+        "taps": 1
+      },
+      {
+        "name": "send_for_approval",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "contract_and_docs",
+        "taps": 2
+      },
+      {
+        "name": "complete_task",
+        "taps": 1
+      },
+      {
+        "name": "filter_results",
+        "taps": 2
+      },
+      {
+        "name": "call_customer",
+        "taps": 1
+      },
+      {
+        "name": "add_care",
+        "taps": 1
+      },
+      {
+        "name": "export_excel",
+        "taps": 2
+      },
+      {
+        "name": "close_document",
+        "taps": 1
+      }
+    ],
+    "errors": []
+  },
+  {
+    "name": "quotes",
+    "width": 1280,
+    "hash": "#/quotes",
+    "view": "view-quotes",
+    "overflow": true,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "quote-new",
+    "width": 1280,
+    "hash": "#/quotes/new",
+    "view": "view-editor",
+    "overflow": true,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contracts",
+    "width": 1280,
+    "hash": "#/contracts",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "contract-detail",
+    "width": 1280,
+    "hash": "#/contracts/2ed0551b-5762-4db5-9eb6-a1c099d99afe",
+    "view": "view-contracts",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "crm-sheet crm-document-sheet",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "tasks",
+    "width": 1280,
+    "hash": "#/tasks",
+    "view": "view-tasks",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "orders",
+    "width": 1280,
+    "hash": "#/orders",
+    "view": "view-orders",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "order-detail",
+    "width": 1280,
+    "hash": "#/orders/7078d563-6d33-4e65-b948-5b3330f0825f",
+    "view": "view-order",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customers",
+    "width": 1280,
+    "hash": "#/customers",
+    "view": "view-customers",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "customer-detail",
+    "width": 1280,
+    "hash": "#/customers/design-customer",
+    "view": "view-customer",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "care",
+    "width": 1280,
+    "hash": "#/care",
+    "view": "view-care",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "pos",
+    "width": 1280,
+    "hash": "#/pos",
+    "view": "view-pos",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "deliveries",
+    "width": 1280,
+    "hash": "#/deliveries",
+    "view": "view-deliveries",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "packing",
+    "width": 1280,
+    "hash": "#/packing",
+    "view": "view-packing",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "receivables",
+    "width": 1280,
+    "hash": "#/receivables",
+    "view": "view-receivables",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cash",
+    "width": 1280,
+    "hash": "#/cash",
+    "view": "view-cash",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "cashbook",
+    "width": 1280,
+    "hash": "#/cashbook",
+    "view": "view-cashbook",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "purchases",
+    "width": 1280,
+    "hash": "#/purchases",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "receiving",
+    "width": 1280,
+    "hash": "#/receiving",
+    "view": "view-receiving",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "suppliers",
+    "width": 1280,
+    "hash": "#/suppliers",
+    "view": "view-suppliers",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "incoming",
+    "width": 1280,
+    "hash": "#/purchases?mode=incoming",
+    "view": "view-purchases",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "kho",
+    "width": 1280,
+    "hash": "#/kho",
+    "view": "view-kho",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "stock-moves",
+    "width": 1280,
+    "hash": "#/stock-moves?from=2026-09-27&to=2026-10-26",
+    "view": "view-stock-moves",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "inventory",
+    "width": 1280,
+    "hash": "#/inventory",
+    "view": "view-inventory",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "transfers",
+    "width": 1280,
+    "hash": "#/transfers",
+    "view": "view-transfers",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "products",
+    "width": 1280,
+    "hash": "#/products",
+    "view": "view-products",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "staff",
+    "width": 1280,
+    "hash": "#/members",
+    "view": "view-quotes",
+    "overflow": true,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "payroll",
+    "width": 1280,
+    "hash": "#/payroll",
+    "view": "view-payroll",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ],
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "permissions",
+    "width": 1280,
+    "hash": "#/permissions",
+    "view": "view-permissions",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "name": "flow",
+    "width": 1280,
+    "hash": "#/flow",
+    "view": "view-flow",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": [
+      [
+        "×"
+      ]
+    ]
+  },
+  {
+    "name": "dashboard",
+    "width": 1280,
+    "hash": "#/dashboard",
+    "view": "view-dashboard",
+    "overflow": false,
+    "nav": [],
+    "homeRows": 0,
+    "taskSelect": true,
+    "orderParent": "main",
+    "menus": []
+  },
+  {
+    "width": 1280,
+    "taps": [
+      {
+        "name": "create_quote",
+        "taps": 1
+      },
+      {
+        "name": "edit_line_qty",
+        "taps": 1
+      },
+      {
+        "name": "send_for_approval",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "contract_and_docs",
+        "taps": 2
+      },
+      {
+        "name": "complete_task",
+        "taps": 1
+      },
+      {
+        "name": "filter_results",
+        "taps": 0,
+        "blocked": "locator.click: Timeout 2000ms exceeded."
+      },
+      {
+        "name": "call_customer",
+        "taps": 1
+      },
+      {
+        "name": "add_care",
+        "taps": 1
+      },
+      {
+        "name": "export_excel",
+        "taps": 1
+      },
+      {
+        "name": "close_document",
+        "taps": 1
+      }
+    ],
+    "errors": []
+  }
+]

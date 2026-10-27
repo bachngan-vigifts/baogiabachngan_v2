@@ -8,19 +8,23 @@ export function createDeviceDraftStore({storage=()=>localStorage,now=()=>Date.no
   clearUser(user){try{const s=storage();for(let i=s.length-1;i>=0;i--){const k=s.key(i);if(k?.startsWith(prefix)){try{if(JSON.parse(s.getItem(k)).user===user)s.removeItem(k);}catch{}}}}catch{}},
  };
 }
-export function bindQuoteDeviceDraft({form,user,id,revision,dirty,readData,restore,store=createDeviceDraftStore()}){
+const offeredSessions=new Set();
+const sessionKey=user=>'bn-quote-offered:'+user;
+function sessionOffered(user){try{return sessionStorage.getItem(sessionKey(user))==='1'||offeredSessions.has(user);}catch{return offeredSessions.has(user);}}
+function markSession(user){offeredSessions.add(user);try{sessionStorage.setItem(sessionKey(user),'1');}catch{}}
+export function bindQuoteDeviceDraft({form,user,id,revision,dirty,readData,restore,store=createDeviceDraftStore(),isMobile=()=>globalThis.matchMedia?.('(max-width: 850px)')?.matches===true}){
  const banner=document.createElement('div');banner.className='quote-device-draft';banner.hidden=true;banner.setAttribute('role','status');form.prepend(banner);
- let timer=0,offered='';
+ let timer=0,offered='',dismissed=false;
  const identity=()=>JSON.stringify([user(),id(),revision()]);
- const message=text=>{banner.replaceChildren(document.createTextNode(text));banner.hidden=false;};
+ const message=text=>{if(isMobile()&&dismissed)return;banner.replaceChildren(document.createTextNode(text));const close=document.createElement('button');close.type='button';close.className='btn ghost small';close.textContent='Bỏ qua';close.onclick=()=>{dismissed=true;markSession(user());banner.hidden=true;};if(isMobile())banner.append(close);banner.hidden=false;};
  return {
   schedule(){clearTimeout(timer);if(!dirty()||!user())return;const expected=identity();timer=setTimeout(()=>{if(identity()!==expected||!dirty())return;const saved=store.save(user(),id(),revision(),readData());message(saved?'Đã lưu tạm trên thiết bị · chưa gửi CRM':'Chưa lưu tạm được trên thiết bị. Hãy bấm Lưu báo giá.');},700);},
-  offer(){const current=identity();if(current===offered)return;offered=current;banner.hidden=true;const value=store.read(user(),id(),revision());if(!value)return;
+  offer(){const current=identity();if(current===offered)return;offered=current;banner.hidden=true;const value=store.read(user(),id(),revision());if(!value||(isMobile()&&sessionOffered(user())))return;if(isMobile())markSession(user());
    message('Có bản nháp trên thiết bị chưa gửi CRM. ');
    const yes=document.createElement('button');yes.type='button';yes.className='btn secondary small';yes.textContent='Khôi phục nháp';yes.onclick=()=>{if(identity()!==current)return;restore(value.data);message('Đã khôi phục nháp thiết bị · bấm Lưu báo giá để gửi CRM.');};
-   const no=document.createElement('button');no.type='button';no.className='btn ghost small';no.textContent='Bỏ bản nháp';no.onclick=()=>{store.clear(user(),id());banner.hidden=true;};banner.append(yes,no);
+   banner.append(yes);if(!isMobile()){const no=document.createElement('button');no.type='button';no.className='btn ghost small';no.textContent='Bỏ bản nháp';no.onclick=()=>{store.clear(user(),id());banner.hidden=true;};banner.append(no);}
   },
-  saved(oldId){clearTimeout(timer);store.clear(user(),oldId);store.clear(user(),id());banner.hidden=true;offered='';},
-  logout(){clearTimeout(timer);store.clearUser(user());banner.hidden=true;offered='';},
+  saved(oldId){if(isMobile()){markSession(user());dismissed=true;}clearTimeout(timer);store.clear(user(),oldId);store.clear(user(),id());banner.hidden=true;offered='';},
+  logout(){offeredSessions.delete(user());try{sessionStorage.removeItem(sessionKey(user()));}catch{}dismissed=false;clearTimeout(timer);store.clearUser(user());banner.hidden=true;offered='';},
  };
 }

@@ -792,6 +792,16 @@ function quoteDocCell(q) {
   const label = k.contractNo ? 'Xem HĐKT' : 'Xem đơn hàng', no = k.contractNo || k.orderNo;
   return `<a class="btn ghost small quote-doc-btn" data-doc-link href="#/${k.contractNo ? 'contracts' : 'orders'}/${esc(encodeURIComponent(k.orderId))}" title="${esc((k.contractNo ? 'HĐKT ' : 'Đơn hàng ') + no)}">${label}<small>${esc(no)}</small></a>`;
 }
+const mobileQuoteOwners=new Map();let mobileOwnerObserver,ownerActive=0;const ownerQueue=[];
+function hydrateMobileQuoteOwners(){
+  if(!matchMedia('(max-width: 850px)').matches||!('IntersectionObserver' in window))return;
+  const pump=()=>{while(ownerActive<2&&ownerQueue.length){ownerActive++;const job=ownerQueue.shift();if(state.user?.id!==job.user){ownerActive--;job.resolve('Chưa xác minh');continue;}api('/quotes/'+encodeURIComponent(job.id)).then(r=>job.resolve(String(r.data?.owner||'').trim()||'Chưa ghi')).catch(()=>{mobileQuoteOwners.delete(job.key);job.resolve('Chưa xác minh');}).finally(()=>{ownerActive--;pump();});}};
+  mobileOwnerObserver ||= new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;const node=entry.target;mobileOwnerObserver.unobserve(node);const id=node.dataset.mobileQuoteId,user=state.user.id,key=user+':'+id+':'+node.dataset.mobileQuoteUpdated;
+    if(!mobileQuoteOwners.has(key)){mobileQuoteOwners.set(key,new Promise(resolve=>ownerQueue.push({id,user,key,resolve})));if(mobileQuoteOwners.size>200)mobileQuoteOwners.delete(mobileQuoteOwners.keys().next().value);pump();}
+    mobileQuoteOwners.get(key).then(name=>{if(node.isConnected&&state.user?.id===user)node.textContent='Phụ trách bản in: '+name;});
+  }},{rootMargin:'100px'});
+  for(const node of document.querySelectorAll('.mobile-quote-owner'))mobileOwnerObserver.observe(node);
+}
 function renderQuotes() {
   const tbody = $('#quote-list');
   if (!state.quotes) { tbody.innerHTML = skeleton(7); return; }
@@ -804,7 +814,7 @@ function renderQuotes() {
       <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : q.approvalStatus === 'draft' ? '<span class="pill">Nháp</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
       <td data-label="Khách">${esc(q.customer) || '<span class="muted">—</span>'}${q.contact || q.phone ? `<small>${esc([q.contact, q.phone].filter(Boolean).join(' · '))}</small>` : ''}</td>
       <td data-label="Đơn / HĐKT">${quoteDocCell(q)}</td>
-      <td data-label="Ngày">${fmtDate(q.quoteDate) || '—'}</td>
+      <td data-label="Ngày"><span class="quote-desktop-date">${fmtDate(q.quoteDate) || '—'}</span><span class="mobile-quote-owner" data-mobile-quote-id="${esc(q.id)}" data-mobile-quote-updated="${esc(q.updatedAt)}">Phụ trách: đang tải…</span></td>
       <td class="right num">${money(q.total)}</td>
       <td data-label="Cập nhật" title="${esc(new Date(q.updatedAt).toLocaleString('vi-VN'))}">${ago(q.updatedAt)}</td>
       <td class="actions-cell"><div class="row-actions">
@@ -819,6 +829,7 @@ function renderQuotes() {
   $('#quote-empty-text').textContent = none ? 'Tạo báo giá đầu tiên để bắt đầu làm việc.' : 'Thử từ khoá khác hoặc bỏ bớt bộ lọc.';
   $('#quote-empty-action').hidden = !none;
   $('#quote-table').hidden = list.length === 0;
+  hydrateMobileQuoteOwners();
 }
 $('#quote-list').addEventListener('click', e => {
   const dup = e.target.closest('[data-dup]');
@@ -1934,6 +1945,7 @@ async function saveQuote() {
     else if (saved.approvalStatus === 'draft') toast((wasNew ? 'Đã lưu nháp ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · bấm "Gửi duyệt" khi xong.');
     else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
     loadQuotes();
+    return true;
   } catch (e) {
     if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast(e.message, 'err'); return; }
     if (e.status === 409) {
@@ -1943,7 +1955,7 @@ async function saveQuote() {
   } finally { saving = false; updateQuoteActions(); }
 }
 qf.addEventListener('submit', e => { e.preventDefault(); saveQuote(); });
-$('#save-quote-m').addEventListener('click', e => { e.preventDefault(); saveQuote(); });
+$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const saved=await saveQuote(); if(saved===true&&!editor.dirty&&editor.id&&editor.approval?.status==='draft')await submitQuoteForApproval(); });
 $('#reload-quote').addEventListener('click', async () => {
   if (!await confirmBox('Tải bản mới nhất sẽ bỏ các thay đổi chưa lưu của anh/chị.', { ok: 'Tải lại', danger: true })) return;
   editor.dirty = false; openEditor(editor.id);
@@ -4534,6 +4546,7 @@ function updateQuoteActions() {
   // Nhân viên xoá được báo giá chưa duyệt của mình; "Gửi duyệt" chỉ hiện với báo giá nháp (Manager duyệt thẳng).
   $('#delete-quote').hidden = !saved || (!mgr && approved) || readOnly;
   // Nhân viên luôn thấy nút: nháp → "Gửi duyệt"; đã gửi (chờ duyệt) → "Đã gửi duyệt" (khoá). Báo giá khách gửi thì dùng nút xác nhận.
+  $('#save-quote-m').textContent=editor.approval?.status==='approved'?'Lưu thay đổi':editor.approval?.status==='pending'?'Lưu báo giá':'Lưu & gửi duyệt';
   const sb = $('#submit-quote');
   sb.hidden = !saved || mgr || approved || !!editor.approval?.fromCustomer || readOnly;
   sb.disabled = saving || !draft; sb.textContent = draft ? 'Gửi duyệt' : 'Đã gửi duyệt';
@@ -4775,7 +4788,7 @@ $('#delete-quote').addEventListener('click', async () => {
     editor.dirty = false; editor.id = null; toast('Đã xoá báo giá.'); go('#/quotes'); loadQuotes();
   } catch (ex) { toast(ex.message, 'err'); }
 });
-$('#submit-quote').addEventListener('click', async () => {
+async function submitQuoteForApproval() {
   if (!editor.id || editor.approval?.status !== 'draft') return;
   const btn = $('#submit-quote'); btn.disabled = true;
   try {
@@ -4785,7 +4798,8 @@ $('#submit-quote').addEventListener('click', async () => {
     toast('Đã gửi Manager duyệt báo giá.'); loadQuotes();
   } catch (ex) { toast(ex.message, 'err'); }
   finally { updateQuoteActions(); }
-});
+}
+$('#submit-quote').addEventListener('click', submitQuoteForApproval);
 // Excel theo mẫu web cũ (excel-export.js): ảnh sản phẩm + letterhead, 2 sheet báo giá và phí vận chuyển.
 // excel-export.js (chép từ web cũ) gọi QuoteMath.totals và HrcPdf.amountInWords.
 globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after, manualLineDescription };
