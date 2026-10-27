@@ -14,7 +14,7 @@ import { canUsePurchasing, canReceive, canSendEarlyRequest } from '../domain/pur
 import { incomingBySku } from './incoming-by-sku.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import {resolveEarlyOrderSources,EarlySourceError} from '../domain/early-order-sources.ts';
-import {deleteEarlyRequest,splitEarlyRequest,splitResult} from './early-request-lifecycle.ts';
+import {deleteEarlyRequest,splitEarlyRequest,splitResult,cancelEarlySlip} from './early-request-lifecycle.ts';
 import {products} from '../../catalog/schema.ts';
 import type { Db, Member } from './purchase-store.ts';
 type Ctx = RouteContext<StaffEnv>;
@@ -230,6 +230,12 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.delete('/purchase-early-requests/:id',async c=>{
     guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được xoá phiếu xin hàng.');
     return json({ok:true,...await c.env.db.transaction(tx=>deleteEarlyRequest(tx,c.params.id!,me(c).id))});
+  },'business');
+  router.post('/purchase-early-requests/:id/cancel-slip',async c=>{
+    guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được huỷ phiếu NCC.');
+    const body=await readJson(c.req,40000),ids=body.allocationIds;
+    if(!Array.isArray(ids)||!ids.length||ids.length>300||ids.some(id=>typeof id!=='string'||!id||id.length>200)||new Set(ids).size!==ids.length)fail(400,'Danh sách mã nguồn của phiếu không hợp lệ.');
+    return json({ok:true,...await c.env.db.transaction(tx=>cancelEarlySlip(tx,c.params.id!,ids as string[],me(c).id))});
   },'business');
   router.post('/purchase-early-requests/:id/split',async c=>{
     guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được tách phiếu đã lưu.');

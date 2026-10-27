@@ -47,3 +47,45 @@ test('split old submitted requests preserves responses; linked receipt blocks de
  await f.call('/purchase-early-requests/'+plain.data.id,c.mgr,'DELETE',{});
  assert.equal((await f.call('/purchase-early-requests',c.mgr,'POST',{clientKey:'delete-replay-test',lines:[{sku:'031106000',quantity:1}]})).status,409);
 });
+
+test('Manager cancels one accepted supplier slip atomically, preserving siblings and replaying safely',async()=>{
+ const f=await setupEarly(),c=f.cookies;
+ const made=await f.call('/purchase-early-requests',c.mgr,'POST',{...body,clientKey:'cancel-one-slip',groupBySupplierOrder:false});assert.equal(made.status,201);
+ const id=made.data.id;assert.equal((await f.call('/purchase-early-requests/'+id+'/submit',c.mgr,'POST',{revision:made.data.request.revision})).status,200);
+ const before=(await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests[0];
+ const target=before.lines.flatMap((l:any)=>l.allocations).filter((a:any)=>a.orderId==='a1');
+ for(const l of before.lines)if(l.allocations.some((a:any)=>a.supplierId==='a'))assert.equal((await f.call('/purchase-early-request-lines/'+l.id+'/manager-confirm',c.mgr,'POST',{supplierId:'a'})).status,200);
+ const path='/purchase-early-requests/'+id+'/cancel-slip',payload={allocationIds:target.map((a:any)=>a.id)};
+ for(const role of ['sa','kho','ncc'])assert.equal((await f.call(path,c[role],'POST',payload)).status,403);
+ assert.equal((await f.call(path,c.mgr,'POST',{allocationIds:[...payload.allocationIds,'unknown']})).status,409);
+ const result=await f.call(path,c.mgr,'POST',payload);assert.equal(result.status,200,JSON.stringify(result.data));assert.equal(result.data.remainingRequestIds.length,3);
+ const remaining=(await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests;
+ const parts=remaining.flatMap((r:any)=>r.lines.flatMap((l:any)=>l.allocations));assert.equal(parts.some((a:any)=>a.orderId==='a1'),false);assert.equal(parts.find((a:any)=>a.orderId==='a2').quantity,7000);assert.equal(parts.find((a:any)=>a.orderId==='a2').status,'accepted');
+ assert.equal((await f.call(path,c.mgr,'POST',payload)).data.replayed,true);
+ assert.equal((await f.client.query<any>('select count(*)::int n from stock_moves')).rows[0].n,0);
+});
+
+test('receipt provenance blocks per-slip cancellation without partially splitting the parent',async()=>{
+ const f=await setupEarly(),c=f.cookies;
+ const made=await f.call('/purchase-early-requests',c.mgr,'POST',{...body,clientKey:'cancel-received-slip',groupBySupplierOrder:false});const id=made.data.id;
+ await f.call('/purchase-early-requests/'+id+'/submit',c.mgr,'POST',{revision:made.data.request.revision});
+ const request=(await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests[0],a=request.lines[0].allocations[0];
+ await f.db.insert(supplierOrderEvents).values({id:'cancel-receipt',shipmentId:a.orderId,at:new Date().toISOString(),action:'receive',data:JSON.stringify({earlyRequestId:id})});
+ assert.equal((await f.call('/purchase-early-requests/'+id+'/cancel-slip',c.mgr,'POST',{allocationIds:[a.id]})).status,409);
+ assert.equal((await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests[0].id,id);
+ assert.equal((await f.client.query<any>("select count(*)::int n from audit_logs where action='early-request-split' and entity_id=$1",[id])).rows[0].n,0);
+});
+
+test('per-slip cancellation requires every allocation sharing the supplier reference',async()=>{
+ const f=await setupEarly(),c=f.cookies;
+ for(const id of ['a1','a2'])await f.db.update(incomingShipments).set({supplierInternalOrderNumber:'NCC-SAME'}).where(eq(incomingShipments.id,id));
+ const made=await f.call('/purchase-early-requests',c.mgr,'POST',{clientKey:'cancel-whole-supplier-slip',pickupDate:'2026-10-27',lines:[{sku:'031106000',quantity:16000}]});const id=made.data.id;
+ await f.call('/purchase-early-requests/'+id+'/submit',c.mgr,'POST',{revision:made.data.request.revision});
+ const parts=(await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests[0].lines[0].allocations,own=parts.filter((a:any)=>a.supplierId==='a');
+ assert.equal(own.length,2);
+ const path='/purchase-early-requests/'+id+'/cancel-slip';assert.equal((await f.call(path,c.mgr,'POST',{allocationIds:[own[0].id]})).status,400);
+ assert.equal((await f.call(path,c.mgr,'POST',{allocationIds:[own[0].id,parts.find((a:any)=>a.supplierId==='b').id]})).status,409);
+ assert.equal((await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests[0].id,id);
+ assert.equal((await f.call(path,c.mgr,'POST',{allocationIds:own.map((a:any)=>a.id)})).status,200);
+ const remaining=(await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests;assert.equal(remaining.length,1);assert.equal(remaining[0].lines[0].quantity,1000);assert.equal(remaining[0].lines[0].allocations[0].supplierId,'b');
+});
