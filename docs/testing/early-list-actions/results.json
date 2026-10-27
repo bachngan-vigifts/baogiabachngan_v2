@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "width": 390,
+      "draftDelete": true,
+      "submittedCancelDelete": true,
+      "confirmationBeforeWrite": true,
+      "filtersRetained": true,
+      "receiptGuard": true,
+      "stockUnchanged": true,
+      "errors": []
+    },
+    {
+      "width": 1280,
+      "draftDelete": true,
+      "submittedCancelDelete": true,
+      "confirmationBeforeWrite": true,
+      "filtersRetained": true,
+      "receiptGuard": true,
+      "stockUnchanged": true,
+      "errors": []
+    }
+  ],
+  "warehouseCannotDelete": true
+}
