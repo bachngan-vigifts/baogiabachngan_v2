@@ -109,7 +109,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     }
     bulk.hidden=portal||!canViewPortal||!selectable.length;
   }
-  function changeRequest(request,action){
+  function changeRequest(request,action,reload=true){
     if(batchBusy||confirmDialog)return;
     const remove=action==='delete'||action==='cancel-delete',cancel=action==='cancel-delete',modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
     const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',cancel?'Huỷ phiếu xin hàng và xoá':remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
@@ -121,7 +121,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const submit=btn(cancel?'Xác nhận huỷ và xoá':remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
       if(busy)return;busy=batchBusy=true;close.disabled=submit.disabled=true;syncBatch();error.textContent='';
       try{await api('/purchase-early-requests/'+encodeURIComponent(request.id)+(remove?'':'/split'),remove?'DELETE':'POST',{});modal.close();
-        if(remove){await onDeleted(request);if(!currentRequest())await load();else list.replaceChildren(el('p','muted','Đã xoá phiếu.'));}else{await load(currentRequest());await onSaved(request);}
+        if(remove){await onDeleted(request);if(reload){if(!currentRequest())await load();else list.replaceChildren(el('p','muted','Đã xoá phiếu.'));}}else{await load(currentRequest());await onSaved(request);}
       }catch(e){error.textContent=e.message||'Không xử lý được phiếu. Tải lại để kiểm tra.';}
       finally{busy=batchBusy=false;close.disabled=submit.disabled=false;syncBatch();}
     },remove?'btn primary danger':'btn primary');foot.append(submit);modal.append(head,body,foot);document.body.append(modal);
@@ -200,5 +200,5 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     }
     sync();dialog.showModal();
   }
-  return {load,newDraft:edit,async open(id){const requests=await load(id);if(requests?.[0]?.requestStatus==='draft'&&canWrite())edit(requests[0]);else list.querySelector('[data-request-id]')?.scrollIntoView({block:'nearest'});}};
+  return {load,newDraft:edit,remove(request){changeRequest(request,request.requestStatus==='submitted'?'cancel-delete':'delete',false);},async open(id){const requests=await load(id);if(requests?.[0]?.requestStatus==='draft'&&canWrite())edit(requests[0]);else list.querySelector('[data-request-id]')?.scrollIntoView({block:'nearest'});}};
 }
