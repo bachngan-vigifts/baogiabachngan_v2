@@ -138,6 +138,11 @@ async function transferInput(c: Ctx, body: Record<string, unknown>, db: ReadDb =
   return { from,to,reason,whs,want,found };
 }
 
+/** Kiểm hàng đang giữ ở kho đi trước khi "Đã chuyển" – lắp ráp ở app (sales/api/stock-free.ts). */
+export const stockHoldHooks: {
+  assertFree?: (tx: Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0], warehouseId: string, lines: readonly { sku: string; qty: number }[],
+    opts: { override?: unknown; actor: { id: string; role: string }; context: { module: string; entityType: string; entityId: string; refNo: string } }) => Promise<unknown>;
+} = {};
 export function registerTransferRoutes(router: Router<StaffEnv>) {
   router.get('/stock-transfers', async c => {
     const db = c.env.db, m = me(c), status = c.url.searchParams.get('status') || '', q = str(c.url.searchParams.get('q'), 80);
@@ -271,6 +276,9 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
         const short = lines.filter(l => (bal.find(b => b.sku === l.sku)?.qty ?? 0) < l.qty);
         if (short.length) fail(409, 'Tồn kho đi không đủ: ' + short.slice(0, 5).map(l => `${l.sku} (còn ${num(bal.find(b => b.sku === l.sku)?.qty ?? 0)}, cần ${l.qty})`).join('; '), 'TRANSFER_SHORT');
       }
+      // Không chuyển đi phần đang giữ cho đơn / báo giá ở kho đi (kiểm do module bán hàng gắn vào – inventory không import sales).
+      await stockHoldHooks.assertFree?.(tx, t.fromWarehouseId, lines, { override: body.overrideHolds, actor: m,
+        context: { module: 'inventory', entityType: 'stock_transfers', entityId: id, refNo: t.transferNo } });
       const note = `${t.transferNo}: ${t.reason}`.slice(0, 500);
       await postMoves(tx, m.id, lines.flatMap(l => [
         { sku: l.sku, warehouseId: t.fromWarehouseId, qty: -l.qty, kind: 'transfer_out' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note },

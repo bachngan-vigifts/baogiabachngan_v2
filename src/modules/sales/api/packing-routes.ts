@@ -30,6 +30,7 @@ import { docRef } from '../domain/doc-ref.ts';
 import { orderScopeFor, setExpectedDeliveryDate } from './routes.ts';
 import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
 import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
+import { assertFreeStock } from './stock-free.ts';
 import { readCatalogStock, hiddenStockWarehouses } from '../../catalog/api/stock-source.ts';
 import { reservedBySku } from './pos-store.ts';
 
@@ -359,8 +360,9 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     const now = nowIso();
     await c.env.db.transaction(async tx => {
       if(order.channel==='pos')await cashLock(tx);if(saleFlowOf(order.posSnapshot))await assertPosFlowFulfillable(tx,order.id);
+      // Mọi kênh: khoá giữ hàng trước khi kiểm phần đang giữ cho đơn khác (cùng thứ tự với POS checkout / điều chuyển).
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
       if (order.channel === 'pos') {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
         const [issued] = await tx.select({id:stockMoves.id}).from(stockMoves).innerJoin(deliveries,eq(deliveries.id,stockMoves.refId)).where(and(eq(stockMoves.refType,'pos_delivery'),eq(deliveries.orderId,order.id))).limit(1);
         if (issued) throw new AppError(409,'Đơn POS đã xuất kho khi giao hàng; không xác nhận thêm phiếu đóng gói.');
       }
@@ -382,7 +384,11 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
         const covered=new Map<string,number>();
         for(const l of afterLegacy?.lines??[])covered.set(l.sku,(covered.get(l.sku)??0)+l.issued-(beforeLegacy?.lines.find(b=>b.lineId===l.lineId)?.issued??0));
         const grouped=new Map<string,number>();for(const l of lines)grouped.set(l.sku,(grouped.get(l.sku)??0)+l.qty);
-        await postMoves(tx, m.id, [...grouped].map(([sku,qty]) => ({ sku, warehouseId: stockWarehouseId!, qty: -Math.max(0,qty-Math.max(0,covered.get(sku)??0)), kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` })), now);
+        const moves=[...grouped].map(([sku,qty]) => ({ sku, warehouseId: stockWarehouseId!, qty: -Math.max(0,qty-Math.max(0,covered.get(sku)??0)), kind: 'issue' as const, refType: 'packing_slip' as const, refId: slip.id, refNo: slip.slipNo, note: `${order.orderNo} · ${order.customerName}` }));
+        // Không xuất phần đang giữ cho đơn / báo giá khác (phần giữ của chính đơn này được dùng).
+        await assertFreeStock(tx, stockWarehouseId, moves.map(mv => ({ sku: mv.sku, qty: -mv.qty })), { exceptOrderId: order.id, override: body.overrideHolds, actor: m,
+          context: { module: 'sales', entityType: 'packing_slips', entityId: slip.id, refNo: slip.slipNo } });
+        await postMoves(tx, m.id, moves, now);
       }
     });
     const to = slip.sentBy ?? slip.createdBy;

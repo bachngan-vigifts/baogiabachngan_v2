@@ -3464,7 +3464,7 @@ function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
-function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go }); }
+function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager }); }
 function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast, createPager, linkAllowed }); }
 function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').after(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
 var permissionsUi = null;
@@ -4219,7 +4219,16 @@ document.addEventListener('click', async e => {
   const whSel = document.getElementById('slip-confirm-wh');
   if (whSel && !whSel.value) { toast('Chọn kho xuất hàng.', 'err'); whSel.focus(); e.target.disabled = false; return; }
   if (whSel) try { localStorage.setItem('bn-pack-wh', whSel.value); } catch { /* bỏ qua */ }
-  try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}) }); toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
+  const send = overrideHolds => api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}), ...(overrideHolds ? { overrideHolds } : {}) });
+  try {
+    // Hàng đang giữ cho đơn khác: Manager xuất vượt phải ghi lý do (máy chủ ghi nhật ký); người khác chỉ thấy lỗi.
+    try { await send(); } catch (ex) {
+      if (ex.code !== 'HELD_FOR_OTHER_ORDER' || !isManager()) throw ex;
+      const reason = prompt(ex.message + '\n\nVẫn xuất? Nhập lý do lấy hàng đang giữ cho đơn khác (ít nhất 5 ký tự):', '');
+      if (!reason) { e.target.disabled = false; return; }
+      await send({ reason });
+    }
+    toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
   catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
 });
 /** Kho dự kiến xuất của đơn CRM (chỉ trừ khi xác nhận xuất): nháp – người sửa được đơn đổi; đã duyệt – chỉ Manager (docs/SO-KHO.md). */
