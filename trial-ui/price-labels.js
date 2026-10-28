@@ -1,6 +1,6 @@
 import {loadBarcodeLibrary} from './barcode-camera.js';
 import {printSheet,resetPrintSheet} from './print-page.js';
-const templates={lock:{name:'LocknLock',width:70,height:35},minhlong:{name:'Minh Long',width:70,height:50}};
+const templates={lock:{name:'LocknLock',width:70,height:35},minhlong:{name:'Minh Long',width:70,height:35}};
 const fold=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().replace(/[^a-z0-9]/g,'');
 export const retailVatPolicies=policies=>policies.filter(p=>['giabanlevat','gialevat'].includes(fold(p.name)));
 export function labelLayout({width,height,margin=0}){
@@ -40,13 +40,15 @@ function qrImage(writer,value){
 }
 function label(row,template,qr){
  const item=el('article','price-tag price-tag-'+template);item.dataset.sku=row.sku;
- const brand=el('header','price-tag-brand',template==='lock'?'LocknLock':'Minh Long');
- if(template==='minhlong')brand.append(el('span','','ĐẠI LÝ CẦN THƠ'));
+ const brand=el('header','price-tag-brand');
+ const sku=el('span','price-tag-sku',row.sku);
+ brand.append(el('span','price-tag-brand-name',template==='lock'?'LocknLock':'Minh Long'),sku);
  const image=el('img','price-tag-qr');image.src=qr;image.alt='QR '+row.sku;image.width=image.height=240;
- const sku=el('div','price-tag-sku',row.sku),name=el('div','price-tag-name',row.name),price=el('div','price-tag-price');
- price.append(el('small','',template==='lock'?'':'Giá bán lẻ:'),el('strong','',money(row.price)),el('span','',template==='lock'?'VND':'đ'));
+ const name=el('div','price-tag-name',row.name),price=el('div','price-tag-price');
+ price.append(el('strong','',money(row.price)),el('span','','VND'));
  price.style.setProperty('--price-font',Math.max(11,Math.min(20,140/(money(row.price).length||1)))+'pt');
- item.append(brand,image,sku,name,price,el('div','price-tag-vat','Giá đã bao gồm VAT'));return item;
+ const footer=el('footer','price-tag-footer');footer.append(price,el('div','price-tag-vat','Giá đã bao gồm VAT'));
+ item.append(brand,image,name,footer);return item;
 }
 export function buildLabelPages(rows,template,layout,qrFor){
  if(!templates[template])throw Error('Chọn mẫu tem hợp lệ.');const pages=[];

@@ -35,6 +35,9 @@ try{
   await modal.getByLabel('Mẫu tem',{exact:true}).selectOption('lock');await modal.getByLabel('Số tem mỗi sản phẩm').fill('25');await modal.getByLabel('Số tem mỗi sản phẩm').blur();
   await page.waitForFunction(()=>document.querySelector('.price-label-summary').textContent.includes('2 tờ'));
   assert.equal(await modal.locator('.price-tag-price strong').first().textContent(),'108.000');
+  const geometry=await modal.locator('.price-tag').first().evaluate(tag=>{const box=s=>tag.querySelector(s).getBoundingClientRect(),brand=box('.price-tag-brand'),sku=box('.price-tag-sku'),price=box('.price-tag-price'),vat=box('.price-tag-vat');return {skuInHeader:sku.top>=brand.top&&sku.bottom<=brand.bottom,skuRight:sku.right>brand.left+brand.width/2,bottomDifference:Math.abs(price.bottom-vat.bottom),scale:tag.getBoundingClientRect().width/tag.offsetWidth};});
+  assert.ok(geometry.skuInHeader&&geometry.skuRight);assert.ok(geometry.bottomDifference<3*geometry.scale);
+
   await page.screenshot({path:out+'/lock-'+width+'.png'});
   const decoded=await page.evaluate(async()=>{const img=document.querySelector('.price-tag-qr'),canvas=document.createElement('canvas');canvas.width=canvas.height=240;canvas.getContext('2d').drawImage(img,0,0,240,240);return (await new ZXingBrowser.BrowserQRCodeReader().decodeFromCanvas(canvas)).getText();});assert.equal(decoded,'00123');
   if(width===390){
@@ -46,7 +49,7 @@ try{
   if(width===1280){await page.pdf({path:out+'/lock-a4.pdf',preferCSSPageSize:true,printBackground:true});}
   // Safari may leave the previous print session active. A second print must preserve new content.
   await print.click();await page.waitForFunction(()=>window.printCount===2);assert.equal(await page.locator('#print-sheet .price-tag').count(),25);
-  await modal.getByLabel('Mẫu tem',{exact:true}).selectOption('minhlong');await page.waitForFunction(()=>document.querySelector('.price-label-summary').textContent.includes('15 tem/A4'));
+  await modal.getByLabel('Mẫu tem',{exact:true}).selectOption('minhlong');await page.waitForFunction(()=>document.querySelector('.price-label-summary').textContent.includes('24 tem/A4'));
   await page.screenshot({path:out+'/minhlong-'+width+'.png'});await print.click();await page.waitForFunction(()=>window.printCount===3);assert.equal(await page.locator('#print-sheet .price-label-page').count(),2);
   if(width===1280)await page.pdf({path:out+'/minhlong-a4.pdf',preferCSSPageSize:true,printBackground:true});
   await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));await page.waitForFunction(()=>!document.querySelector('#print-sheet').children.length);
