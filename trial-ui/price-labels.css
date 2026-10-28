@@ -10,23 +10,17 @@
 .price-label-page,.price-label-page * { box-sizing:border-box; }
 .price-label-page { display:grid;grid-template-columns:repeat(var(--tag-columns),var(--tag-width));grid-auto-rows:var(--tag-height);align-content:start;width:210mm;height:296.9mm;padding:var(--tag-margin);margin:0;background:#fff;color:#000;break-after:page;break-inside:avoid;font-family:Arial,sans-serif; }
 .price-label-page:last-child { break-after:auto; }
-.price-tag { position:relative;display:grid;grid-template-columns:minmax(0,1fr) 19mm;grid-template-rows:6mm 5mm minmax(0,1fr) 9mm 3mm;gap:0 1mm;width:var(--tag-width);height:var(--tag-height);padding:1.5mm;border:0.2mm solid #222;overflow:hidden;line-height:1.15; }
-.price-tag-brand { grid-column:1/-1;grid-row:1;background:#172a43;color:#fff;font:bold 13pt/6mm Arial,sans-serif;padding-left:1mm;-webkit-print-color-adjust:exact;print-color-adjust:exact; }
-.price-tag-qr { grid-column:2;grid-row:2/5;width:19mm;height:19mm;align-self:center;background:#fff; }
-.price-tag-sku { grid-column:1;grid-row:2;align-self:center;white-space:nowrap;overflow:hidden; }
-.price-tag-name { grid-column:1;grid-row:3;overflow:hidden;overflow-wrap:anywhere;font-weight:600; }
-.price-tag-price { grid-column:1;grid-row:4;display:flex;align-items:center;gap:1mm;white-space:nowrap;font-weight:bold; }
+.price-tag { position:relative;display:grid;grid-template-columns:minmax(0,1fr) 19mm;grid-template-rows:5.5mm minmax(0,1fr) 7mm;gap:0 1mm;width:var(--tag-width);height:var(--tag-height);padding:1.5mm;border:0.2mm solid #222;overflow:hidden;line-height:1.15; }
+.price-tag-brand { grid-column:1/-1;grid-row:1;display:flex;align-items:center;justify-content:space-between;gap:2mm;background:#172a43;color:#fff;font:bold 13pt/1 Arial,sans-serif;padding:0 1mm;-webkit-print-color-adjust:exact;print-color-adjust:exact; }
+.price-tag-brand-name { flex-shrink:0;white-space:nowrap; }
+.price-tag-sku { min-width:0;text-align:right;white-space:nowrap;overflow:hidden;font-weight:500;line-height:1.15; }
+.price-tag-qr { grid-column:2;grid-row:2;width:19mm;height:19mm;align-self:center;background:#fff; }
+.price-tag-name { grid-column:1;grid-row:2;overflow:hidden;overflow-wrap:anywhere;font-weight:600;padding-top:1mm; }
+.price-tag-footer { grid-column:1/-1;grid-row:3;display:flex;align-items:flex-end;align-self:end;justify-content:space-between;gap:1mm; }
+.price-tag-price { min-width:0;display:flex;align-items:baseline;gap:1mm;white-space:nowrap;font-weight:bold; }
 .price-tag-price strong { font-size:var(--price-font);line-height:1; }
-.price-tag-price small { font-size:8pt; }
 .price-tag-price span { font-size:7pt;font-weight:normal; }
-.price-tag-vat { grid-column:1/-1;grid-row:5;font-size:6.5pt;text-align:right; }
-.price-tag-minhlong { font-family:"Times New Roman",serif;grid-template-columns:19mm minmax(0,1fr);grid-template-rows:18mm minmax(0,1fr) 5mm 9mm 3mm; }
-.price-tag-minhlong .price-tag-brand { grid-column:2;grid-row:1;background:#fff;color:#000;font:bold italic 19pt/7mm "Times New Roman",serif;text-align:center;padding:0; }
-.price-tag-minhlong .price-tag-brand span { display:block;font:bold 9pt/5mm Arial,sans-serif; }
-.price-tag-minhlong .price-tag-qr { grid-column:1;grid-row:1;width:18mm;height:18mm;align-self:start; }
-.price-tag-minhlong .price-tag-name { grid-column:1/-1;grid-row:2;text-align:center;display:flex;align-items:center;justify-content:center; }
-.price-tag-minhlong .price-tag-sku { grid-column:1/-1;grid-row:3;text-align:center; }
-.price-tag-minhlong .price-tag-price { grid-column:1/-1;grid-row:4;justify-content:space-between; }
+.price-tag-vat { flex-shrink:0;font-size:6.5pt;white-space:nowrap;text-align:right;line-height:1; }
 #print-sheet.price-label-measure { display:block!important;position:fixed;left:-10000px;top:0; }
 @media(max-width:850px){ #product-selection { flex-wrap:wrap;gap:8px; } #product-selection>span { flex-basis:100%; } }
 @media print { .price-labels-print { padding:0!important;margin:0!important; } .price-labels-print .price-label-page { margin:0!important; } }
