@@ -42,6 +42,33 @@
 - Không huỷ phiếu nhận khi đang gửi/chờ callback/đang có worker xử lý. Phải dừng và xác minh n8n/OpenClaw trước, tránh CRM hoàn tồn nhưng bên ngoài vẫn nhập. Các đường ghi khoá theo thứ tự đơn mua → phiếu nhận → job → sổ kho.
 - Phiếu lịch sử sinh khi nhập file NCC không phải thao tác nhận hàng mới. Thiếu kho phải đối chiếu tồn đầu kỳ; không tự ghi bù vì có thể đã nằm trong tồn mở sổ.
 
+### Chống ghi trùng, hàng đang giữ, trả hàng, giao thất bại (28/10/2026)
+
+- **Phiếu điều chỉnh bắt buộc mã chống gửi lặp** (`clientKey`), kể cả Manager.
+  - Thiếu mã → `409 ADJUSTMENT_KEY_REQUIRED`, kèm phiếu cùng nội dung vừa lập trong 2 phút (nếu có).
+  - Gửi lại cùng mã trả lại phiếu cũ; đổi nội dung cùng mã → `409`.
+- **Không lấy hàng đang giữ cho đơn khác** (`sales/api/stock-free.ts`):
+  - Áp dụng cho bước "Đã chuyển" điều chuyển (kho đi) và xác nhận xuất kho phiếu đóng gói.
+  - Lượng được lấy = tồn sổ kho − hàng giữ cho đơn / báo giá khác ở kho đó (cùng cách tính với POS). Phần giữ của chính đơn được dùng.
+  - Kiểm trong giao dịch, sau khoá `stock_holds`, khoá dòng tồn. Vượt → `409 HELD_FOR_OTHER_ORDER`, kèm số đơn đang giữ.
+  - Manager được lấy vượt khi ghi lý do (`overrideHolds.reason`); nhật ký `stock-hold-override` ghi các đơn bị ảnh hưởng.
+  - **Không tự xếp ưu tiên** giữa các đơn: hai đơn cùng giữ quá tồn thì bên nào xuất cũng cần Manager quyết.
+- **Trả hàng CRM chỉ nhập lại trong phạm vi đã thực xuất** (`sales/api/crm-return-stock.ts`):
+  - Mỗi dòng đơn: tổng nhập lại (mọi phiếu đã nhận + phiếu này) ≤ lượng xuất ròng có bút toán (phiếu xuất / trừ kiểu cũ).
+  - Phần vượt (đơn cũ giao khi chưa ghi xuất): Manager chọn căn cứ khi duyệt, hoặc bổ sung trước khi nhận (`POST …/returns/:id/stock-basis`):
+    - `pre_opening`: chuyến giao trước ngày chốt tồn đầu kỳ của kho nhận. Đơn cũ không có chuyến giao: đơn lập trước ngày chốt.
+    - `adjustment`: phiếu điều chỉnh đã duyệt đã trừ bù đúng mã. Mỗi phiếu chỉ dùng tối đa lượng đã trừ, cộng dồn mọi phiếu trả.
+  - Không có căn cứ → `409 RETURN_STOCK_UNPROVEN`. Từ chối phiếu và lập lại với tình trạng "Hàng hỏng" (không cộng tồn).
+  - Kiểm lại lúc nhận hàng. Căn cứ lưu trên phiếu (`source_snapshot.stockBasis`) và nhật ký `crm-return-stock-basis`.
+- **Huỷ đơn sau giao thất bại** (`POST /orders/:id/cancel-after-failed-delivery`, chỉ Manager):
+  - Dùng khi chuyến đã rời kho rồi giao không thành công và khách không nhận nữa (huỷ thường bị chặn `RETURN_REQUIRED`).
+  - Bắt buộc xác nhận kho đã nhận lại đủ hàng, lý do và mã chống gửi lặp.
+  - Điều kiện: chưa giao món nào, chưa thu tiền, không có phiếu trả; mọi chuyến từng rời kho đang "Giao thất bại".
+  - Huỷ đơn và đảo các phiếu xuất về đúng kho đã xuất, một giao dịch. Hàng hỏng lập phiếu điều chỉnh sau.
+  - Giao lại sau thất bại dùng luồng giao thường (không trừ lần hai).
+- **Kiểm thử đồng thời trên PostgreSQL thật:** `TEST_PG_URL=postgres://… npx tsx --test tests/app/<file>.test.ts`.
+  - Mỗi test một database mới, 20 kết nối. CI dùng PGlite (một kết nối nên không chứng minh được khoá).
+
 ### Đối soát chỉ đọc
 
 Manager gọi `GET /warehouse-workflow-audit?offset=0` để kiểm tra số dư so với sổ, phiếu nhận so với phát sinh đúng kho, và đơn đang/đã giao thiếu bằng chứng xuất. Mỗi trang 100 bản ghi, có tổng số và thông tin trang tiếp. Báo cáo không thay đổi dữ liệu; không coi việc thiếu chứng từ tự động là bằng chứng phải trừ bù. Cần xác minh kho, kỳ mở sổ và chứng từ thực tế trước khi sửa lịch sử.

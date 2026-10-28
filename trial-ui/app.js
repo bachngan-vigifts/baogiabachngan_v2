@@ -4438,7 +4438,15 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#order-cancel')) {
     const w = isContractDoc() ? 'HĐKT' : 'đơn';
     if (!await confirmBox(`Huỷ ${w} ${docNo()}? ${isContractDoc() ? 'HĐKT' : 'Đơn'} huỷ không còn tính công nợ; báo giá có thể lập lại.`, { title: 'Huỷ ' + w, ok: 'Huỷ ' + w, danger: true })) return;
-    try { const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.' + ghnCancelNote(r), r?.ghnCancel?.errors?.length ? 'err' : undefined); loadHolds(true); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
+    try { const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.' + ghnCancelNote(r), r?.ghnCancel?.errors?.length ? 'err' : undefined); loadHolds(true); openOrder(sales.order.id); }
+    catch (ex) {
+      // Chuyến đã rời kho rồi giao thất bại: Manager huỷ khi kho đã nhận lại đủ hàng – phiếu xuất được đảo về kho đã xuất (docs/SO-KHO.md).
+      if (ex.code !== 'RETURN_REQUIRED' || !isManager() || (sales.order.channel || 'crm') !== 'crm') { toast(ex.message, 'err'); return; }
+      if (!await confirmBox(`Chuyến giao của ${w} ${docNo()} đã rời kho. Chỉ huỷ khi mọi chuyến đang "Giao thất bại" và KHO ĐÃ NHẬN LẠI ĐỦ HÀNG. Hàng sẽ cộng lại đúng kho đã xuất; hàng hỏng lập phiếu điều chỉnh sau.`, { title: 'Huỷ sau giao thất bại', ok: 'Kho đã nhận lại đủ hàng', danger: true })) return;
+      const reason = prompt('Lý do huỷ (ít nhất 5 ký tự):', 'Khách không nhận hàng'); if (!reason) return;
+      try { await api(`/orders/${encodeURIComponent(sales.order.id)}/cancel-after-failed-delivery`, 'POST', { key: crypto.randomUUID(), reason, confirmedReceived: true }); toast('Đã huỷ ' + w + ', hàng đã cộng lại kho.'); loadHolds(true); openOrder(sales.order.id); }
+      catch (err) { toast(err.message, 'err'); }
+    }
   }
   if (e.target.closest('#order-delete')) {
     const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';
