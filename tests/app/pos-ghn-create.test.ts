@@ -161,3 +161,24 @@ test('Đã có vận đơn GHN: không cho sửa SL / giá / người nhận ở
   const addr = await f.call(path, f.mgr, 'PUT', { revision: d.order.revision, reason: 'Đổi địa chỉ', delivery: { address: 'Địa chỉ khác', receiverName: 'Chị Lan', receiverPhone: '+84 901 234 567' } });
   assert.equal(addr.status, 409); assert.equal(addr.data.code, 'GHN_SHIPMENT_EXISTS');
 });
+
+test('Ship COD: GHN đã tạo nhưng CRM mất phản hồi → bấm tạo lại tra theo mã đơn, gắn đúng vận đơn (không kẹt vì trùng mã)', async () => {
+  const f = await withGhn();
+  let created = false;
+  f.setReply(() => { throw new Error('unused'); });
+  f.env.ghnFetch = (async (input, init) => {
+    const url = String(input), body = init?.body ? JSON.parse(String(init.body)) : null;
+    f.calls.push({ url, headers: init?.headers as Record<string, string>, body });
+    if (url.endsWith('/create')) { if (!created) { created = true; throw new Error('timeout sau khi GHN đã tạo'); } return Response.json({ code: 400, message: 'client_order_code đã tồn tại' }, { status: 400 }); }
+    if (url.endsWith('/detail-by-client-code')) return created ? Response.json({ code: 200, data: { order_code: 'gabdup1', client_order_code: body.client_order_code, status: 'ready_to_pick' } }) : Response.json({ code: 400 }, { status: 400 });
+    return Response.json({ code: 200, data: [] });
+  }) as typeof fetch;
+  const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(f.shift.id, { fulfillmentMode: 'cod', delivery: ghnDelivery }));
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  assert.equal(made.data.ghnShipment.ok, true, 'tra theo mã đơn ngay trong lần tạo');
+  const [ship] = await f.db.select().from(deliveries);
+  assert.deepEqual([ship!.trackingCode, ship!.trackingStatus], ['GABDUP1', 'ready_to_pick']);
+  const again = await f.call('/pos/cod/' + ship!.id + '/ghn', f.emp, 'POST', {});
+  assert.deepEqual([again.data.orderCode, again.data.existing], ['GABDUP1', true]);
+  assert.equal(f.calls.filter(c => c.url.endsWith('/create')).length, 1, 'không gọi tạo lần hai');
+});

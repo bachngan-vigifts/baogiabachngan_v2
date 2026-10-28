@@ -130,3 +130,22 @@ test('GHN ưu tiên hơn website hoàn thành; không cho bấm hoàn thành tay
  assert.equal((await hook('delivered')).status,200);
  assert.equal((await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.id,o.id)))[0]!.status,'completed');
 });
+
+test('Web Minh Long: tạo vận đơn mất phản hồi / trùng mã đơn → tra GHN theo mã đơn và gắn lại đúng vận đơn, không tạo trùng', async () => {
+  const { order, ghn, respond, act } = await minhLong();
+  const o = await order(601);
+  // GHN đã tạo nhưng CRM không nhận được phản hồi (hết giờ) → tra theo client_order_code.
+  respond.next = (url, body) => {
+    if (url.endsWith('/create')) throw new Error('timeout sau khi GHN đã tạo');
+    if (url.endsWith('/detail-by-client-code')) return body.client_order_code === 'WEB-ML601' ? Response.json({ code: 200, data: { order_code: 'gmlx77', client_order_code: 'WEB-ML601', status: 'ready_to_pick', total_fee: 30000 } }) : Response.json({ code: 400, message: 'not found' }, { status: 400 });
+    return Response.json({ code: 200, data: {} });
+  };
+  const r = await act(o.id, { action: 'confirm', ...address, codAmount: 300000 });
+  assert.equal(r.status, 200, JSON.stringify(r.data)); assert.equal(r.data.ghnOrderCode, 'GMLX77');
+  assert.deepEqual(ghn.filter(x => /create|client-code/.test(x.url)).map(x => x.url.split('/').pop()), ['create', 'detail-by-client-code']);
+  // GHN thật sự chưa tạo (tra không thấy): báo lỗi như cũ, không gắn mã.
+  const o2 = await order(602);
+  respond.next = url => url.endsWith('/create') ? Response.json({ code: 400, code_message_value: 'Địa chỉ không hợp lệ' }, { status: 400 }) : Response.json({ code: 400, message: 'not found' }, { status: 400 });
+  const bad = await act(o2.id, { action: 'confirm', ...address, codAmount: 300000 });
+  assert.equal(bad.status, 502); assert.match(bad.data.error, /Địa chỉ không hợp lệ/);
+});

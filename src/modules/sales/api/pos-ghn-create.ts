@@ -4,6 +4,7 @@ import { json } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { deliveries, salesOrderLines, salesOrders } from '../schema.ts';
+import { findGhnByClientCode } from './ghn-client-code.ts';
 import { ghnCreateBody, type GhnShip } from '../domain/pos-ghn.ts';
 import { posPermission } from './pos-store.ts';
 import { posGhnAccount, posGhnKind } from './pos-ghn-account.ts';
@@ -39,20 +40,29 @@ export async function createGhnShipment(env: StaffEnv, deliveryId: string): Prom
       // Giá khai báo cho GHN: đơn giá đã gồm VAT (tiền khách trả cho từng món).
       lines: lines.map(l => ({ sku: l.sku, name: l.name, qty: l.qty, unitPrice: l.qty > 0 ? (l.amount * (1 + l.taxRate / 100)) / l.qty : 0 })),
     });
-    let response: Response;
+    const ghnFetch = env.ghnFetch ?? fetch;
+    let response: Response | null = null, result: Record<string, unknown> = {};
     try {
-      response = await (env.ghnFetch ?? fetch)(GHN_CREATE, {
+      response = await ghnFetch(GHN_CREATE, {
         method: 'POST', headers: { Token: account.token, ShopId: account.shopId, 'content-type': 'application/json' }, body: JSON.stringify(body),
         signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(20_000) : undefined,
       });
-    } catch { throw new AppError(504, 'Không kết nối được GHN. Đơn đã lưu – bấm "Tạo lại vận đơn GHN" sau.', 'GHN_TIMEOUT'); }
-    const raw = await response.text(); let result: Record<string, unknown> = {};
-    try { result = raw ? JSON.parse(raw) : {}; } catch { /* GHN có thể trả text khi lỗi */ }
+      const raw = await response.text();
+      try { result = raw ? JSON.parse(raw) : {}; } catch { /* GHN có thể trả text khi lỗi */ }
+    } catch { response = null; }
     const data = result.data && typeof result.data === 'object' ? result.data as Record<string, unknown> : {};
-    const orderCode = text(data.order_code, 50).toUpperCase();
-    if (!response.ok || !orderCode) throw new AppError(502, 'GHN: ' + (text(result.code_message_value) || text(result.message) || `lỗi ${response.status}`), 'GHN_CREATE_FAILED');
-    const now = new Date().toISOString(), fee = Number.isFinite(Number(data.total_fee)) ? Number(data.total_fee) : null, expectedDelivery = text(data.expected_delivery_time, 60);
-    await tx.update(deliveries).set({ trackingCode: orderCode, carrier: 'GHN', trackingStatus: 'ready_to_pick', trackingUpdatedAt: now, updatedAt: now }).where(eq(deliveries.id, deliveryId));
+    let orderCode = response?.ok ? text(data.order_code, 50).toUpperCase() : '', trackingStatus = 'ready_to_pick', fee = Number.isFinite(Number(data.total_fee)) ? Number(data.total_fee) : null;
+    if (!orderCode) {
+      // Mất phản hồi / GHN báo trùng mã đơn: vận đơn có thể đã tạo ở lần trước – gắn lại đúng vận đơn đó.
+      const existing = await findGhnByClientCode(ghnFetch, account, body.client_order_code);
+      if (!existing) {
+        if (!response) throw new AppError(504, 'Không kết nối được GHN. Đơn đã lưu – bấm "Tạo lại vận đơn GHN" sau.', 'GHN_TIMEOUT');
+        throw new AppError(502, 'GHN: ' + (text(result.code_message_value) || text(result.message) || `lỗi ${response.status}`), 'GHN_CREATE_FAILED');
+      }
+      ({ orderCode, status: trackingStatus, fee } = existing);
+    }
+    const now = new Date().toISOString(), expectedDelivery = text(data.expected_delivery_time, 60);
+    await tx.update(deliveries).set({ trackingCode: orderCode, carrier: 'GHN', trackingStatus, trackingUpdatedAt: now, updatedAt: now }).where(eq(deliveries.id, deliveryId));
     snapshot.ghn = { ...ship, orderCode, fee, expectedDelivery, sortCode: text(data.sort_code, 50), createdAt: now };
     await tx.update(salesOrders).set({ posSnapshot: JSON.stringify(snapshot) }).where(eq(salesOrders.id, row.order.id));
     return { orderCode, fee, expectedDelivery, existing: false };
