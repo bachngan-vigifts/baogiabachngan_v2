@@ -4,6 +4,7 @@ import { canConfirmDelivery, deliveryConfirmations } from './delivery-confirmati
 import { auditLogs } from '../../../core/db/schema.ts';
 import { isGhnTracked } from '../domain/ghn-status.ts';
 import { assertCrmOrderCompletion } from './crm-stock-lifecycle.ts';
+import { autoHoldExpiry, holdOrderStock, lockHolds, releaseOrderHolds, retimeAutoHolds } from './order-hold-store.ts';
 import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
@@ -41,7 +42,7 @@ import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { contractCounters } from '../../contracts/schema.ts';
-import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines, packingSlips, stockHolds } from '../schema.ts';
+import { customerPayments, deliveries, deliveryLines, paymentSchedules, salesContracts, salesOrderLines, salesOrders, packingSlipLines, packingSlips, stockHolds, orderStockHolds } from '../schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { docRef } from '../domain/doc-ref.ts';
 import { progressOf } from './progress.ts';
@@ -168,7 +169,15 @@ export async function recordSaleMovements(db: StaffEnv['db'] | Tx, orderId: stri
 /** Ngày giao dự kiến: đơn nháp hoặc Manager (đơn đã duyệt nhân viên lên lịch chuyến không đổi ngày đã chốt với khách). */
 export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.$inferSelect, date: string) {
   if (order.expectedDeliveryDate === date || (order.status !== 'draft' && viewer(c).role !== 'manager')) return;
-  await c.env.db.update(salesOrders).set({ expectedDeliveryDate: date, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+  await c.env.db.transaction(async tx => {
+    await lockHolds(tx);
+    await tx.update(salesOrders).set({ expectedDeliveryDate: date, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+    if (order.channel !== 'crm' || order.holdMode !== 'capped' || !['confirmed', 'delivering'].includes(order.status)) return;
+    // Phần giữ tự động theo hạn mới; đơn duyệt khi chưa có ngày giao (chưa giữ) thì giữ tự động từ lúc có ngày giao.
+    await retimeAutoHolds(tx, order.id, date);
+    if (order.warehouseId && !(await tx.select({ id: orderStockHolds.id }).from(orderStockHolds).where(eq(orderStockHolds.orderId, order.id)).limit(1)).length)
+      await holdOrderStock(tx, { ...order, expectedDeliveryDate: date }, viewer(c).id, { source: 'auto', expiresAt: autoHoldExpiry(date) });
+  });
   const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
   if (by?.role === 'customer') await notify(c.env, { eventType: 'order_delivery_date', targetMemberId: order.createdBy, actorId: viewer(c).id, title: 'Đổi ngày giao dự kiến',
     body: `${docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id)).Label}: giao dự kiến ${date.split('-').reverse().join('/')}`, url: '/customer.html#orders', data: { orderId: order.id, date } });
@@ -238,6 +247,7 @@ async function cancelDocumentChildren(tx:Tx,order:typeof salesOrders.$inferSelec
     .where(and(eq(packingSlips.orderId,order.id),inArray(packingSlips.status,['draft','sent','packed']))).returning({id:packingSlips.id,no:packingSlips.slipNo});
   for(const slip of slips)await reverseRef(tx,by,'packing_slip',slip.id,`Huỷ ${order.orderNo}: hàng chưa giao của phiếu ${slip.no} về lại kho`,now);
   await tx.update(deliveries).set({status:'cancelled',updatedAt:now}).where(and(eq(deliveries.orderId,order.id),inArray(deliveries.status,['planned','in_transit','failed'])));
+  await releaseOrderHolds(tx,order.id,by,now);
 }
 export async function contractNosOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   const ids = [...new Set(orderIds)];
@@ -280,8 +290,8 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
     const orderNo = o.orderNo || nextDocNo('DH', orderDate, used);
     const [duplicateNo] = await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.orderNo, orderNo)).limit(1);
     if (duplicateNo) throw new AppError(409, `Số đơn hàng ${orderNo} đã tồn tại. Vui lòng chọn số khác.`, 'ORDER_NO_EXISTS');
-    // Báo giá đang giữ hàng: lập đơn / HĐKT thì tự bỏ treo (hàng đi theo đơn).
-    await tx.update(stockHolds).set({ status: 'converted', closedAt: now, closedBy: o.createdBy }).where(and(eq(stockHolds.quoteId, quote.id), eq(stockHolds.status, 'active')));
+    // Báo giá đang giữ hàng: đơn mới (nháp) chưa giữ – phần giữ của báo giá còn hiệu lực tới khi đơn được duyệt
+    // (lúc duyệt chuyển thành phần giữ của đơn, order-hold-store.ts) hoặc hết hạn.
     await tx.insert(salesOrders).values({
       id, orderNo, quoteId: quote.id, quoteNo: quote.quoteNo, quoteType: quote.quoteType, customerId,
       receiverName: o.receiverName ?? '', receiverPhone: o.receiverPhone ?? '',
@@ -720,12 +730,15 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     // Duyệt chỉ giữ hàng, chưa trừ tồn (đơn CRM): người duyệt chọn / đổi kho được (trong kho người phụ trách được bán); đã bật phân kho bán thì bắt buộc có kho.
     let warehouseId = order.warehouseId;
     let ghnDeliveryIds: string[] = [];
+    const held: { lines?: Awaited<ReturnType<typeof holdOrderStock>>['lines'] } = {};
     if (status === 'confirmed' && order.channel === 'crm') {
       if (body.warehouseId !== undefined && body.warehouseId !== order.warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), body.warehouseId);
       if (!warehouseId) warehouseId = await pickSaleWarehouse(c.env.db, order.ownerId, viewer(c), undefined);
       if (!warehouseId && await sellersConfigured(c.env.db)) throw new AppError(409, 'Chọn kho dự kiến xuất hàng trước khi duyệt.', 'WAREHOUSE_REQUIRED');
     }
     await c.env.db.transaction(async tx => {
+      // Duyệt có thể giữ hàng tự động: khoá giữ hàng trước khoá đơn (cùng thứ tự với xác nhận xuất kho / POS).
+      if (status === 'confirmed' && order.channel === 'crm') await lockHolds(tx);
       // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
       const [locked] = await tx.select({ status: salesOrders.status, warehouseId:salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
@@ -745,6 +758,18 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       // Duyệt không ghi sổ kho; khi huỷ chỉ hoàn các dòng trừ kiểu cũ. Phiếu xuất được đảo ở cancelDocumentChildren.
       await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);
       if (status === 'confirmed') await ensurePackingSchedule(tx,order.id,viewer(c).id);
+      // Giữ hàng tự động lúc duyệt: chỉ khi có ngày giao dự kiến, tối đa có thể bán, hạn ngày giao + 3 ngày (order-hold-store.ts).
+      if (status === 'confirmed' && order.channel === 'crm' && order.holdMode === 'capped') {
+        // Phần giữ của báo giá gốc chuyển sang đơn: đóng trước rồi mới tính có thể bán (không đếm hai lần).
+        const quoteHolds = order.quoteId && warehouseId ? await tx.update(stockHolds).set({ status: 'converted', closedAt: nowIso(), closedBy: viewer(c).id })
+          .where(and(eq(stockHolds.quoteId, order.quoteId), eq(stockHolds.status, 'active'), sql`${stockHolds.expiresAt} > ${nowIso()}`)).returning({ expiresAt: stockHolds.expiresAt, sku: stockHolds.sku, qty: stockHolds.qty }) : [];
+        const quoteUntil = quoteHolds.map(h => h.expiresAt).sort().at(-1);
+        // Có ngày giao: giữ tự động tới ngày giao + 3 ngày. Không có ngày giao: chỉ giữ tiếp phần báo giá đã giữ, theo hạn của báo giá.
+        const expiresAt = order.expectedDeliveryDate ? autoHoldExpiry(order.expectedDeliveryDate) : quoteUntil;
+        if (expiresAt && warehouseId)
+          held.lines = (await holdOrderStock(tx, { ...order, status: 'confirmed', warehouseId }, viewer(c).id, { source: order.expectedDeliveryDate ? 'auto' : 'manual', expiresAt,
+            ...(order.expectedDeliveryDate ? {} : { limit: quoteHolds.reduce((m, h) => m.set(h.sku, (m.get(h.sku) ?? 0) + h.qty), new Map<string, number>()) }) })).lines;
+      }
       // Huỷ: dọn việc còn treo của đơn – phiếu đóng gói chưa đóng / chuyến giao chưa giao huỷ theo (việc kho / giao tự đóng);
       // phiếu kho đã đóng (đã ghi xuất sổ kho) thì ghi dòng đảo – hàng về lại kho – rồi huỷ phiếu.
       if (status === 'cancelled') {
@@ -771,7 +796,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       url: `/index.html${ref.link}`, actorId: viewer(c).id, data: { orderId: order.id } });
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
       title: status === 'confirmed' ? `${what} đã được xác nhận` : `${what} đã bị huỷ`, body: `${ref.no} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
-    return json({ ok: true, ...(ghnCancel ? { ghnCancel } : {}) });
+    return json({ ok: true, ...(ghnCancel ? { ghnCancel } : {}), ...(held.lines ? { hold: held.lines } : {}) });
   }, 'business');
 
   /**

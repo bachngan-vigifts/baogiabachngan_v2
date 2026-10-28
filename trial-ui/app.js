@@ -60,6 +60,7 @@ import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
 import { initTransfers, initStockMoves, initSellerConfig } from './stock-ops.js';
+import { showOrderHolds } from './order-holds.js';
 import { initPermissions } from './permissions.js';
 import { initKhoHome, initStockLookup } from './kho.js';
 import { initCustomerDetail } from './customer-detail.js';
@@ -2172,7 +2173,7 @@ function loadHolds(force = false) {
 const heldQty = (sku, exceptQuote = '') => (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote).reduce((t, h) => t + h.qty, 0);
 /** Ô "Đang treo": số + link báo giá / đơn / HĐKT đang giữ (bấm mở). */
 const holdLink = h => h.orderId
-  ? `<a href="${docHref(h.orderId, h.contractNo)}" title="${esc(h.customer)} · ${fmtNum(h.qty)} · giữ đến khi giao xong hoặc huỷ">${esc(h.contractNo ? 'HĐKT ' + h.contractNo : h.orderNo)}</a>`
+  ? `<a href="${docHref(h.orderId, h.contractNo)}" title="${esc(h.customer)} · ${fmtNum(h.qty)} · giữ theo đơn (tối đa có thể bán)">${esc(h.contractNo ? 'HĐKT ' + h.contractNo : h.orderNo)}</a>`
   : `<a href="#/quotes/${esc(h.quoteId)}" title="${esc(h.customer)} · ${fmtNum(h.qty)} · giữ đến ${esc(new Date(h.expiresAt).toLocaleString('vi-VN'))}">${esc(h.quoteNo)}</a>`;
 const heldCell = (sku, exceptQuote = '') => {
   const list = (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote);
@@ -3779,6 +3780,11 @@ async function openOrder(id) {
     + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · <a href="#/deliveries?deliveryId=${encodeURIComponent(x.id)}">${esc(x.deliveryNo)}</a><small>${[ghnTrackingText(x), x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${line?.name || ''}: ${fmtNum(l.qty)}`; }).join(' · ')].filter(Boolean).map(esc).join(' · ')}</small>${deliveryConfirmation(x)}</span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
   loadOrderPacking(o.id);
+  // Giữ hàng theo đơn CRM (order-holds.js): ≤ có thể bán, tự giữ khi duyệt có ngày giao, giữ thêm / huỷ / gia hạn.
+  if ((o.channel || 'crm') === 'crm' && ['confirmed', 'delivering'].includes(o.status)) {
+    const holdBox = document.createElement('div'); $('#order-deliveries').append(holdBox);
+    showOrderHolds({ api, toast, root: holdBox, orderId: o.id, isManager, onChanged: () => loadHolds(true) });
+  }
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
   $('#order-pack').disabled = true; $('#order-pack').title = 'Đang kiểm tra phiếu đóng gói…';
   $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';

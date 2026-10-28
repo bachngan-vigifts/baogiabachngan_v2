@@ -31,6 +31,7 @@ import { orderScopeFor, setExpectedDeliveryDate } from './routes.ts';
 import { closeSlipsOfDeliveredOrders } from './packing-close.ts';
 import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
 import { assertFreeStock } from './stock-free.ts';
+import { consumeOrderHolds } from './order-hold-store.ts';
 import { readCatalogStock, hiddenStockWarehouses } from '../../catalog/api/stock-source.ts';
 import { reservedBySku } from './pos-store.ts';
 
@@ -389,6 +390,8 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
         await assertFreeStock(tx, stockWarehouseId, moves.map(mv => ({ sku: mv.sku, qty: -mv.qty })), { exceptOrderId: order.id, override: body.overrideHolds, actor: m,
           context: { module: 'sales', entityType: 'packing_slips', entityId: slip.id, refNo: slip.slipNo } });
         await postMoves(tx, m.id, moves, now);
+        // Hàng đã ra khỏi kho: phần giữ của chính đơn chấm dứt đúng lượng đã xuất.
+        await consumeOrderHolds(tx, order.id, await tx.select({ orderLineId: packingSlipLines.orderLineId, qty: packingSlipLines.qty }).from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id)), now);
       }
     });
     const to = slip.sentBy ?? slip.createdBy;

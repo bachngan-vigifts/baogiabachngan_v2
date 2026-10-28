@@ -16,7 +16,7 @@ test('542 physical Vigifts units cover the own 300-unit hold; other warehouses/i
  const read=async()=>(await f.call('/orders/'+id+'/packing',f.emp)).data;
  let data=await read();assert.deepEqual(data.stockAvailability,[{sku,warehouseId:'vig',onHand:542,reservedOther:0,available:542}]);
  const [base]=await f.db.select().from(salesOrders).where(eq(salesOrders.id,id));const [line]=await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
- async function other(otherId:string,warehouseId:string){await f.db.insert(salesOrders).values({...base!,id:otherId,orderNo:'OPS_'+otherId,quoteId:null,warehouseId});await f.db.insert(salesOrderLines).values({...line!,id:otherId+'-line',orderId:otherId,qty:100});}
+ async function other(otherId:string,warehouseId:string){await f.db.insert(salesOrders).values({...base!,id:otherId,orderNo:'OPS_'+otherId,quoteId:null,warehouseId,holdMode:'legacy'});await f.db.insert(salesOrderLines).values({...line!,id:otherId+'-line',orderId:otherId,qty:100});}
  await other('other-store','store');assert.equal((await read()).stockAvailability[0].available,542,'other store reservations do not consume Vigifts');
  await other('other-vig','vig');data=await read();assert.equal(data.stockAvailability[0].reservedOther,100);assert.equal(data.stockAvailability[0].available,442,'other orders retain their holds');
  await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:-300,kind:'adjust',refType:'adjustment',refId:'ops-stock-change'}]);

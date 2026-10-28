@@ -33,5 +33,7 @@ export async function fixture(){
  const pack=async(index:number,source='warehouse')=>{
   const p=ok(await call(`/orders/${order.id}/packing`,f.cookies.emp,'POST',{allocations:[{orderLineId:lines[index]!.id,qty:lines[index]!.qty,source,sourceNote:source==='warehouse'?'':'NCC giao trực tiếp'}]}),201).slips[0];
   ok(await call('/packing/'+p.id+'/send',f.cookies.emp,'POST',{}));return p;};
- return {...f,call,order,lines,trip,balance,pack,outbound};
+ /** Giữ hàng / Giữ thêm trên đơn (≤ có thể bán, 5 ngày) – đơn duyệt khi chưa có hàng không tự giữ. */
+ const hold=async(orderId=order.id,cookie=f.cookies.emp)=>ok(await call(`/orders/${orderId}/holds`,cookie,'POST',{clientKey:crypto.randomUUID()}),201);
+ return {...f,call,order,lines,trip,balance,pack,hold,outbound};
 }

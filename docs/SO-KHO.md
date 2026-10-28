@@ -69,6 +69,35 @@
 - **Kiểm thử đồng thời trên PostgreSQL thật:** `TEST_PG_URL=postgres://… npx tsx --test tests/app/<file>.test.ts`.
   - Mỗi test một database mới, 20 kết nối. CI dùng PGlite (một kết nối nên không chứng minh được khoá).
 
+### Giữ hàng theo đơn (quyết định Anh Thái 28/10/2026)
+
+**Quy tắc:** mỗi mã chỉ được giữ tối đa = **có thể bán** = tồn − hàng đang giữ (đơn / báo giá / POS khác) tại kho bán.
+- Tồn đọc đúng nguồn chuẩn: kho đã chốt đầu kỳ dùng sổ kho, chưa chốt dùng tồn Sapo.
+- Giữ hàng chấm dứt khi:
+  - xuất kho / giao xong (tiêu hao đúng dòng đơn);
+  - hết hạn (tự nhả, báo người phụ trách một lần);
+  - bấm **Huỷ giữ** (người phụ trách / Manager, bắt buộc lý do);
+  - huỷ đơn.
+
+**Đơn hàng / HĐKT CRM** (bảng `order_stock_holds`, migration `20261028150000_order_stock_holds.sql`, code `sales/api/order-hold-store.ts`):
+
+| Lúc | Giữ bao nhiêu | Hạn |
+|---|---|---|
+| Đơn nháp | Không giữ. Báo giá đang giữ thì vẫn giữ tiếp theo báo giá | Theo báo giá |
+| Duyệt, có ngày giao dự kiến | Tự giữ phần chưa giao, tối đa có thể bán; phần thiếu chờ hàng về | Hết ngày giao + 3 ngày (giờ VN) |
+| Duyệt, không ngày giao | Không tự giữ. Riêng phần báo giá đã giữ: chuyển sang đơn đúng số đó | Hạn của báo giá |
+| Hàng về: bấm **Giữ hàng / Giữ thêm** | Phần còn thiếu, tối đa có thể bán (mã chống gửi lặp bắt buộc) | 5 ngày |
+| Manager **Gia hạn** | Không đổi lượng | +5 ngày |
+| Đổi ngày giao (Manager) | Giữ tự động theo hạn mới; đơn chưa giữ thì tự giữ từ lúc có ngày giao | Ngày giao mới + 3 ngày |
+
+- Lượng giữ hiệu lực = min(tổng dòng giữ còn hạn, phần chưa giao / chưa xuất).
+- Mọi thao tác giữ chạy trong giao dịch dưới khoá `stock_holds`. Thứ tự khoá chung: `stock_holds` → đơn → sổ kho.
+- Đơn POS giữ nguyên cơ chế hiện hành.
+- **Đơn cũ** (`sales_orders.hold_mode = 'legacy'`) vẫn giữ toàn bộ phần chưa giao cho tới khi Manager chuyển đổi:
+  - `GET /stock-holds/conversion`: xem trước, chạy trong giao dịch rồi huỷ, không ghi gì. Đơn trước giữ trước, chỉ đơn đã duyệt có kho bán và ngày giao còn hiệu lực mới giữ.
+  - `POST /stock-holds/conversion { planId, confirmed: true }`: chạy lại, chỉ ghi khi trùng mã kế hoạch. Dữ liệu đổi thì `409 HOLD_PLAN_CHANGED`; áp dụng lại không đổi gì.
+  - Giao diện: khối "Giữ hàng" trên chi tiết đơn cũ có nút "Kế hoạch chuyển đổi giữ hàng đơn cũ" (Manager).
+
 ### Đối soát chỉ đọc
 
 Manager gọi `GET /warehouse-workflow-audit?offset=0` để kiểm tra số dư so với sổ, phiếu nhận so với phát sinh đúng kho, và đơn đang/đã giao thiếu bằng chứng xuất. Mỗi trang 100 bản ghi, có tổng số và thông tin trang tiếp. Báo cáo không thay đổi dữ liệu; không coi việc thiếu chứng từ tự động là bằng chứng phải trừ bù. Cần xác minh kho, kỳ mở sổ và chứng từ thực tế trước khi sửa lịch sử.

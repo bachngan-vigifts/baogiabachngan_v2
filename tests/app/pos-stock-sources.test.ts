@@ -58,7 +58,7 @@ test('POS không trừ giữ hàng từ kho khác; giữ cùng kho vẫn chặn 
  await f.db.insert(warehouses).values({id:'vig-scope',name:'KHO VIGIFTS',kind:'stock'});
  await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'vig-scope',qty:139,kind:'opening',refType:'opening',refId:'vig-scope-opening'},{sku:'00123',warehouseId:'pos-wh',qty:-7,kind:'adjust',refType:'adjustment',refId:'scope-three-left'}]);
  const insert=async(id:string,warehouseId:string|null,qty:number)=>{
-  await f.db.insert(salesOrders).values({id,orderNo:id,quoteType:'HRC',customerName:'Khách giữ hàng',ownerId:'mgr',createdBy:'mgr',warehouseId,orderDate:now.slice(0,10),status:'confirmed',holdsStock:true,createdAt:now,updatedAt:now});
+  await f.db.insert(salesOrders).values({id,orderNo:id,quoteType:'HRC',customerName:'Khách giữ hàng',ownerId:'mgr',createdBy:'mgr',warehouseId,orderDate:now.slice(0,10),status:'confirmed',holdsStock:true,holdMode:'legacy',createdAt:now,updatedAt:now});
   await f.db.insert(salesOrderLines).values({id:id+'-line',orderId:id,lineNo:1,sku:'00123',name:'Ly sứ',unit:'cái',qty});
  };
  await insert('DH_OTHER_WAREHOUSE','vig-scope',50);
@@ -131,7 +131,7 @@ test('POS: còn 1 sau hai chuyến xuất không bị giữ thêm; phần chưa 
  await f.db.insert(warehouses).values({id:'other-dispatch',name:'Kho khác',kind:'stock'});
  await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'other-dispatch',qty:20,kind:'opening',refType:'opening',refId:'other-dispatch-open'}]);
  async function order(id:string,qty:number){
-  await f.db.insert(salesOrders).values({id,orderNo:id,channel:'pos',shiftId:s.id,quoteType:'HRC',customerName:'Khách COD',ownerId:'emp',createdBy:'emp',warehouseId:null,orderDate:now.slice(0,10),status:'delivering',holdsStock:true,createdAt:now,updatedAt:now});
+  await f.db.insert(salesOrders).values({id,orderNo:id,channel:'pos',shiftId:s.id,quoteType:'HRC',customerName:'Khách COD',ownerId:'emp',createdBy:'emp',warehouseId:null,orderDate:now.slice(0,10),status:'delivering',holdsStock:true,holdMode:'legacy',createdAt:now,updatedAt:now});
   await f.db.insert(salesOrderLines).values({id:id+'-line',orderId:id,lineNo:1,sku:'00123',name:'Ly',unit:'cái',qty,deliveredQty:0});
   await f.db.insert(deliveries).values({id:id+'-delivery',deliveryNo:id+'-GH',orderId:id,plannedDate:now.slice(0,10),status:'in_transit',createdBy:'emp',createdAt:now,updatedAt:now});
  }
@@ -154,7 +154,7 @@ test('CRM giữ hàng: packing + POS xuất từng phần, đã giao không bị
  const f=await setup(),now=new Date().toISOString();
  const {salesOrders,salesOrderLines,deliveries,packingSlips}=await import('../../src/modules/sales/schema.ts');
  const {orderHolds}=await import('../../src/modules/sales/api/hold-routes.ts');
- await f.db.insert(salesOrders).values({id:'PARTIAL-HOLD',orderNo:'PARTIAL-HOLD',quoteType:'HRC',warehouseId:'pos-wh',customerName:'Khách',ownerId:'mgr',createdBy:'mgr',orderDate:now.slice(0,10),status:'delivering',holdsStock:true,createdAt:now,updatedAt:now});
+ await f.db.insert(salesOrders).values({id:'PARTIAL-HOLD',orderNo:'PARTIAL-HOLD',quoteType:'HRC',warehouseId:'pos-wh',customerName:'Khách',ownerId:'mgr',createdBy:'mgr',orderDate:now.slice(0,10),status:'delivering',holdsStock:true,holdMode:'legacy',createdAt:now,updatedAt:now});
  await f.db.insert(salesOrderLines).values([{id:'PARTIAL-L1',orderId:'PARTIAL-HOLD',lineNo:1,sku:'00123',name:'Ly',qty:2,deliveredQty:2},{id:'PARTIAL-L2',orderId:'PARTIAL-HOLD',lineNo:2,sku:'00123',name:'Ly khác dòng',qty:3,deliveredQty:0}]);
  await f.db.insert(deliveries).values({id:'PARTIAL-GH',deliveryNo:'PARTIAL-GH',orderId:'PARTIAL-HOLD',plannedDate:now.slice(0,10),createdBy:'mgr',createdAt:now,updatedAt:now});
  await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'pos-wh',qty:-2,kind:'issue',refType:'pos_delivery',refId:'PARTIAL-GH'}]);

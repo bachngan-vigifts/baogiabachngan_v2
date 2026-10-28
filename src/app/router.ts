@@ -27,6 +27,7 @@ import { registerQuoteSourcingRoutes } from '../modules/sales/api/quote-sourcing
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
 import { registerHoldRoutes, catalogHeldQuantities } from '../modules/sales/api/hold-routes.ts';
+import { registerOrderHoldRoutes } from '../modules/sales/api/order-hold-routes.ts';
 import { registerProgressRoutes } from '../modules/sales/api/progress-routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
 import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modules/suppliers/api/directory-routes.ts';
@@ -92,6 +93,7 @@ export function createAppRouter() {
   registerCashRoutes(router);
   registerPackingRoutes(router, { supplierChoices: packingSupplierChoices });
   registerHoldRoutes(router);
+  registerOrderHoldRoutes(router);
   registerProgressRoutes(router);
   registerPrintingRoutes(router);
   registerSupplierDirectoryRoutes(router);
