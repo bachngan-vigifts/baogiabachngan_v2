@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {sql} from 'drizzle-orm';
+import {sql,eq} from 'drizzle-orm';
+import {supplierOrderSources} from '../../src/modules/suppliers/schema.ts';
+import {salesOrders} from '../../src/modules/sales/schema.ts';
 import {posReturns,posReturnLines} from '../../src/modules/sales/return-schema.ts';
 import {productDetailFixture} from '../helpers/product-detail-fixture.ts';
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
@@ -32,4 +34,17 @@ test('product histories preserve quote/order scope, purchase price masking, priv
 test('product detail endpoints reject invalid paging, unknown kinds and missing products',async()=>{
  const f=await productDetailFixture();for(const q of ['kind=bad','kind=orders&offset=-1','kind=orders&offset=NaN','kind=orders&offset=0.5'])assert.equal((await f.call('/products/'+f.sku+'/documents?'+q,f.cookies.mgr)).status,400);
  assert.equal((await f.call('/products/not-present/overview',f.cookies.mgr)).status,404);assert.equal((await f.call('/products/not-present/documents?kind=orders',f.cookies.mgr)).status,404);
+});
+
+test('purchase/receipt histories show purchase number and permission-filtered origin/converted contract links',async()=>{
+ const f=await productDetailFixture(),now='2026-10-28T00:00:00Z';
+ await f.db.update(salesOrders).set({quoteId:'quote-0'}).where(eq(salesOrders.id,'contract'));
+ await f.db.insert(supplierOrderSources).values([
+  {id:'source-visible',shipmentId:'a1',lineId:'line-a1',sourceType:'quote',sourceId:'quote-0',sourceNo:'BG-000',customerName:'Khách',sku:f.sku,quantity:2,createdAt:now},
+  {id:'source-secret',shipmentId:'a1',lineId:'line-a1',sourceType:'order',sourceId:'secret',sourceNo:'DH-secret',customerName:'Khách kín',sku:f.sku,quantity:1,createdAt:now}
+ ]);
+ const receipts=ok(await f.call('/products/'+f.sku+'/documents?kind=receipts',f.cookies.mgr)),receipt=receipts.rows.find((r:any)=>r.id==='receipt');
+ assert.ok(receipt.purchaseNumber);assert.equal(receipt.purchaseId,'a1');assert.ok(receipt.sources.some((s:any)=>s.href==='#/quotes/quote-0'));assert.ok(receipt.sources.some((s:any)=>s.href==='#/contracts/contract-id'));
+ const employee=ok(await f.call('/products/'+f.sku+'/documents?kind=purchases',f.cookies.emp));assert.ok(employee.rows.find((r:any)=>r.id==='a1').sources.some((s:any)=>s.href==='#/quotes/quote-0'));assert.ok(!JSON.stringify(employee).includes('DH-secret'));assert.ok(!JSON.stringify(employee).includes('HĐKT-fixture'));
+ const kho=ok(await f.call('/products/'+f.sku+'/documents?kind=receipts',f.cookies.kho));assert.ok(kho.rows.every((r:any)=>!r.sources.length),'warehouse role receives no sales/quote source links without page permission');
 });

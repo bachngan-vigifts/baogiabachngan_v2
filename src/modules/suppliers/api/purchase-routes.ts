@@ -27,7 +27,7 @@ import { computeOrderTotals } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { canEditSuppliers, defaultRecipients } from '../domain/directory.ts';
 import { canSendEarlyRequest, buildSchedules, canPay, canReceive, canSeePrices, canSeePurchasePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
-import { asActor, listPurchases, purchaseCounts, supplierPayables, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
+import { asActor, listPurchases, purchaseCounts, supplierPayables, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceFamilies, ensureReceiptSourceBudget, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
 
 /**
  * ĐƠN MUA HÀNG NCC (đợt 2) – khu vực 'business', quyền chi tiết kiểm trong domain/purchasing.ts.
@@ -122,17 +122,19 @@ async function checkSources(db: Db, m: Member, orders: LineIn[][], exceptShipmen
   for (const lines of orders) for (const l of lines) for (const s of l.sources) keys.set(s.type + ':' + s.id, { type: s.type, id: s.id });
   const needs = new Map<string, Awaited<ReturnType<typeof loadSourceNeed>>>();
   for (const [k, v] of keys) needs.set(k, await loadSourceNeed(db, m, v.type, v.id)); // 404 nếu không có quyền xem
-  const ordered = await orderedBySource(db, [...keys.values()], exceptShipmentId);
-  const want = new Map<string, number>();
+  const families=await sourceFamilies(db,[...keys.values()]);
+  const ordered = await orderedBySource(db, [...keys.values()], exceptShipmentId,families);
+  const want = new Map<string, {qty:number;sku:string;sourceKeys:Set<string>}>();
   for (const lines of orders) for (const l of lines) for (const s of l.sources) {
-    const k = s.type + ':' + s.id + ':' + l.sku.toLowerCase(); want.set(k, (want.get(k) ?? 0) + s.quantity);
+    const sourceKey=s.type+':'+s.id,sku=l.sku.toLowerCase(),k=(families.byKey.get(sourceKey)??sourceKey)+':'+sku;
+    const entry=want.get(k)??{qty:0,sku,sourceKeys:new Set<string>()};entry.qty+=s.quantity;entry.sourceKeys.add(sourceKey);want.set(k,entry);
   }
-  for (const [k, qty] of want) {
-    const [type, id, sku] = k.split(':') as [string, string, string], need = needs.get(type + ':' + id)!;
-    const needQty = need.lines.filter(x => x.sku.toLowerCase() === sku).reduce((t, x) => t + x.quantity, 0);
-    if (!needQty) fail(400, `Mã ${sku.toUpperCase()} không có trong ${need.no}.`);
-    const done = ordered.get(type + ':' + id)?.get(sku) ?? 0;
-    if (done + qty > needQty) fail(409, `${need.no} – ${sku.toUpperCase()}: cần ${needQty}, đã đặt ${done}, lần này ${qty} → vượt ${done + qty - needQty}. Tránh mua trùng: giảm số lượng hoặc bỏ liên kết chứng từ.`);
+  for (const {qty,sku,sourceKeys} of want.values()) {
+    const sourceKey=[...sourceKeys][0]!,need=needs.get(sourceKey)!;
+    const quantities=[...sourceKeys].map(key=>needs.get(key)!.lines.filter(x=>x.sku.toLowerCase()===sku).reduce((t,x)=>t+x.quantity,0));
+    if(quantities.some(n=>!n))fail(400,`Mã ${sku.toUpperCase()} không có trong chứng từ nguồn.`);
+    const needQty=Math.min(...quantities),done=ordered.get(sourceKey)?.get(sku)??0;
+    if (done + qty > needQty) fail(409, `${need.no} – ${sku.toUpperCase()}: cần ${needQty}, đã đặt ${done}, lần này ${qty} → vượt ${done + qty - needQty}. Báo giá và đơn hàng/HĐKT chuyển đổi dùng chung số đã đặt; kiểm tra đơn mua có sẵn.`);
   }
   return needs;
 }
@@ -498,12 +500,15 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const photos = parsePhotos(body.photos);
     let receiptId = '', duplicate = false;
     await db.transaction(async tx => {
+      // Same lock order as purchase editing: source budget first, then parent order.
+      await lockSources(tx);
       // Recheck replay after the parent lock: simultaneous retries must not create another receipt.
       await tx.select({id:incomingShipments.id}).from(incomingShipments).where(eq(incomingShipments.id,id)).for('update');
       const [existing]=await tx.select({id:supplierReceipts.id,shipmentId:supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo}).from(supplierReceipts).where(eq(supplierReceipts.clientKey,clientKey)).limit(1);
       if(existing){if(existing.createSapo!==createSapo)fail(409,'Phiếu đã lưu với lựa chọn Sapo khác. Không tạo lại.');if(existing.shipmentId!==id)fail(409,'Mã chống bấm lặp đã dùng cho đơn khác.');receiptId=existing.id;duplicate=true;return;}
       const p = await lockAndCheck(c, tx, id, 'receive');
       const v = validateReceipt(p.raw.progress, { receivedDate: body.receivedDate, lines: body.lines }, today());
+      await ensureReceiptSourceBudget(tx,id,v.lines.map(l=>l.sku));
       const earlyRequestId=typeof body.earlyRequestId==='string'?body.earlyRequestId:undefined;
       if(body.earlyRequestId!==undefined&&(!earlyRequestId?.trim()||earlyRequestId.length>100))fail(400,'Mã phiếu xin lấy trước không hợp lệ.');
       if(earlyRequestId!==undefined){

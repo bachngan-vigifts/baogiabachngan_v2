@@ -296,19 +296,54 @@ export async function loadSourceNeed(db: Db, m: Member, type: string, id: string
   throw new AppError(400, 'Loại chứng từ nguồn không hợp lệ.');
 }
 
-/** Đã đặt (đơn mua chưa huỷ) cho từng mã của các chứng từ nguồn: khoá `type:id` → (sku thường → số lượng). */
-export async function orderedBySource(db: Db, keys: { type: string; id: string }[], exceptShipmentId?: string) {
+/** A quote and its converted orders/contracts represent the same purchasing demand. */
+export async function sourceFamilies(db: Db, keys: { type: string; id: string }[]) {
+  const orderIds = keys.filter(k=>k.type==='order').map(k=>k.id);
+  const orders = orderIds.length ? await db.select({id:salesOrders.id,quoteId:salesOrders.quoteId}).from(salesOrders).where(inArray(salesOrders.id,orderIds)) : [];
+  const quotes = [...new Set([...keys.filter(k=>k.type==='quote').map(k=>k.id),...orders.map(o=>o.quoteId).filter((id):id is string=>!!id)])];
+  const related = quotes.length ? await db.select({id:salesOrders.id,quoteId:salesOrders.quoteId}).from(salesOrders).where(inArray(salesOrders.quoteId,quotes)) : [];
+  const byKey=new Map<string,string>(), aliases=new Map<string,{type:string;id:string}[]>();
+  for(const key of keys){const original=key.type+':'+key.id,quote=key.type==='quote'?key.id:key.type==='order'?orders.find(o=>o.id===key.id)?.quoteId:undefined;
+    const family=quote?'quote:'+quote:original;byKey.set(original,family);
+    if(!aliases.has(family))aliases.set(family,quote?[{type:'quote',id:quote},...related.filter(o=>o.quoteId===quote).map(o=>({type:'order',id:o.id}))]:[key]);
+  }
+  return {byKey,aliases};
+}
+/** All uncancelled purchase allocations across the source family, returned under each requested key. */
+export async function orderedBySource(db: Db, keys: { type: string; id: string }[], exceptShipmentId?: string, knownFamilies?: Awaited<ReturnType<typeof sourceFamilies>>) {
   const out = new Map<string, Map<string, number>>();
   if (!keys.length) return out;
+  const families=knownFamilies??await sourceFamilies(db,keys), aliasToFamily=new Map<string,string>();
+  for(const [family,members]of families.aliases)for(const k of members)aliasToFamily.set(k.type+':'+k.id,family);
+  const aliases=[...families.aliases.values()].flat();
   const rows = await db.select({ type: supplierOrderSources.sourceType, id: supplierOrderSources.sourceId, sku: supplierOrderSources.sku, qty: supplierOrderSources.quantity })
     .from(supplierOrderSources).innerJoin(incomingShipments, eq(incomingShipments.id, supplierOrderSources.shipmentId))
-    .where(and(isNull(incomingShipments.cancelledAt), or(...keys.map(k => and(eq(supplierOrderSources.sourceType, k.type as SourceType), eq(supplierOrderSources.sourceId, k.id)))),
+    .where(and(isNull(incomingShipments.cancelledAt), or(...aliases.map(k => and(eq(supplierOrderSources.sourceType, k.type as SourceType), eq(supplierOrderSources.sourceId, k.id)))),
       exceptShipmentId ? sql`${incomingShipments.id} <> ${exceptShipmentId}` : undefined));
+  const totals=new Map<string,Map<string,number>>();
   for (const r of rows) {
-    const k = r.type + ':' + r.id, m = out.get(k) ?? new Map<string, number>();
-    m.set(r.sku.toLowerCase(), (m.get(r.sku.toLowerCase()) ?? 0) + r.qty); out.set(k, m);
+    const k=aliasToFamily.get(r.type+':'+r.id)!,m=totals.get(k)??new Map<string,number>();
+    m.set(r.sku.toLowerCase(),(m.get(r.sku.toLowerCase())??0)+r.qty);totals.set(k,m);
   }
+  for(const [key,family]of families.byKey)out.set(key,totals.get(family)??new Map());
   return out;
+}
+
+/** Legacy duplicate purchase orders must be reviewed before receiving more against a converted demand. */
+export async function ensureReceiptSourceBudget(db: Db, shipmentId: string, skus: string[]) {
+  const sources=await db.select({type:supplierOrderSources.sourceType,id:supplierOrderSources.sourceId,sku:supplierOrderSources.sku}).from(supplierOrderSources)
+    .where(and(eq(supplierOrderSources.shipmentId,shipmentId),inArray(supplierOrderSources.sku,skus),inArray(supplierOrderSources.sourceType,['quote','order'])));
+  if(!sources.length)return;
+  const keys=[...new Map(sources.map(s=>[s.type+':'+s.id,{type:s.type,id:s.id}])).values()],families=await sourceFamilies(db,keys);
+  const quoteIds=[...families.aliases].filter(([family,aliases])=>family.startsWith('quote:')&&aliases.length>1).map(([family])=>family.slice(6));
+  if(!quoteIds.length)return;
+  const [ordered,lines]=await Promise.all([orderedBySource(db,keys,undefined,families),db.select({quoteId:quoteLines.quoteId,sku:quoteLines.sku,qty:quoteLines.qty}).from(quoteLines).where(inArray(quoteLines.quoteId,quoteIds))]);
+  for(const source of sources){const family=families.byKey.get(source.type+':'+source.id),quoteId=family?.startsWith('quote:')?family.slice(6):'';
+    if(!quoteIds.includes(quoteId))continue;
+    const sku=source.sku.toLowerCase(),need=lines.filter(l=>l.quoteId===quoteId&&l.sku.toLowerCase()===sku).reduce((sum,l)=>sum+l.qty,0);
+    if(need>0&&(ordered.get(source.type+':'+source.id)?.get(sku)??0)>need+0.0005)
+      throw new AppError(409,`${source.sku}: nhu cầu đang bị đặt trùng giữa báo giá và đơn hàng/HĐKT. Manager cần đối soát các đơn mua trước khi nhận thêm.`,'PURCHASE_SOURCE_DUPLICATE');
+  }
 }
 
 export async function sourceWithRemaining(db: Db, m: Member, type: string, id: string) {
