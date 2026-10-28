@@ -19,7 +19,7 @@ export function ghnCodeOf(value: unknown) {
 }
 
 /** Caller checks order access. Shared by standalone and combined scheduling; always inside the caller's transaction. */
-export async function createScheduledDelivery(tx: Tx, orderId: string, body: Record<string, unknown>, actorId: string) {
+export async function createScheduledDelivery(tx: Tx, orderId: string, body: Record<string, unknown>, actorId: string, request?: { clientKey: string; requestHash: string }) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1).for('update');
   if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
   if (saleFlowOf(order.posSnapshot)==='deposit') throw new AppError(409,'Đơn cọc nhận tại quầy, dùng Thu nốt và xuất hàng.');
@@ -58,7 +58,8 @@ export async function createScheduledDelivery(tx: Tx, orderId: string, body: Rec
     timeSlot: text(body.timeSlot, 100), address: text(body.address, 2000) || order.address,
     ...orderRecipient(order, { receiverName: text(body.receiverName, 500), receiverPhone: text(body.receiverPhone, 100) }),
     carrier: trackingCode ? 'GHN' : text(body.carrier, 200), trackingCode, shippingFee: Math.round(shippingFee), status: 'planned',
-    assigneeId: body.assigneeId ? text(body.assigneeId, 80) : null, note: text(body.note, 2000), createdBy: actorId, createdAt: now, updatedAt: now });
+    assigneeId: body.assigneeId ? text(body.assigneeId, 80) : null, note: text(body.note, 2000), clientKey: request?.clientKey ?? null, requestHash: request?.requestHash ?? null,
+    createdBy: actorId, createdAt: now, updatedAt: now });
   await tx.insert(deliveryLines).values([...quantities].map(([orderLineId, qty]) => ({ deliveryId: id, orderLineId, qty })));
   return { id, plannedDate: date };
 }

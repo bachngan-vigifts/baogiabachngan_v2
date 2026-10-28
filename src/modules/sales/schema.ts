@@ -184,6 +184,9 @@ export const deliveries = pgTable('deliveries', {
   confirmedBy: text('confirmed_by').references(() => employees.id),
   confirmedAt: text('confirmed_at'),
   confirmedStatus: text('confirmed_status'),
+  /** Mã chống gửi lặp + dấu nội dung khi lập lịch giao (migration 20261029120000). */
+  clientKey: text('client_key'),
+  requestHash: text('request_hash'),
   note: text('note').notNull().default(''),
   createdBy: text('created_by').notNull().references(() => employees.id),
   createdAt: text('created_at').notNull(),

@@ -4527,6 +4527,8 @@ $('#order-new-delivery').addEventListener('click', () => {
   const pending = id => d.deliveries.filter(x => ['planned', 'in_transit'].includes(x.status)).flatMap(x => x.lines).filter(l => l.orderLineId === id).reduce((s, l) => s + l.qty, 0);
   $('#delivery-lines').innerHTML = d.lines.map(l => { const left = Math.max(0, l.qty - l.deliveredQty - pending(l.id)); return `<tr><td>${esc(l.name)}<small>${esc(l.unit)}</small></td><td class="right">${fmtNum(left)}</td>
     <td class="right"><input class="num-input" inputmode="decimal" data-line="${esc(l.id)}" value="${left ? fmtNum(left) : ''}" ${left ? '' : 'disabled'} aria-label="Số lượng giao ${esc(l.name)}"></td></tr>`; }).join('');
+  // Mỗi lần mở form một mã chống gửi lặp: bấm lại / mạng gửi lại cùng nội dung trả chuyến đã tạo, không tạo trùng.
+  $('#delivery-form').dataset.clientKey = crypto.randomUUID();
   $('#delivery-dialog').showModal();
 });
 $('#delivery-form').addEventListener('submit', async e => {
@@ -4535,7 +4537,7 @@ $('#delivery-form').addEventListener('submit', async e => {
   if (!lines.length) { err.textContent = 'Nhập số lượng giao cho ít nhất một sản phẩm.'; return; }
   try {
     await api('/deliveries', 'POST', { orderId: sales.order.id, plannedDate: f.plannedDate.value, timeSlot: f.timeSlot.value, receiverName: f.receiverName.value, receiverPhone: f.receiverPhone.value,
-      address: f.address.value, carrier: f.carrier.value, shippingFee: parseNum(f.shippingFee.value) || 0, note: f.note.value, lines });
+      address: f.address.value, carrier: f.carrier.value, shippingFee: parseNum(f.shippingFee.value) || 0, note: f.note.value, lines, clientKey: f.dataset.clientKey });
     $('#delivery-dialog').close(); toast('Đã lên lịch giao.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; }
 });

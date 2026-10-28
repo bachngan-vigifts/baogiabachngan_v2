@@ -6,6 +6,7 @@ import { receivingCalendar } from './receiving-calendar.ts';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
+import { sha256Hex } from '../../staff/domain/session.ts';
 import { AppError } from '../../../core/errors.ts';
 import { sendMail } from '../../../core/mail/send-mail.ts';
 import { postMoves, assertWarehousesOpened, lockLedger, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
@@ -93,6 +94,13 @@ async function viewOf(c: Ctx, id: string) {
   const v = (await loadPurchase(c.env.db, me(c), id, today())).view;
   const urls = await photoUrls(c.env.db, c.env.files, 'supplier_receipt', v.receipts.map(r => r.id));
   return { ...v, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
+}
+/** Dấu nội dung yêu cầu nhận hàng (không gồm ảnh: gửi lại có thể nén ảnh khác). */
+function receiptRequestHash(body: Record<string, unknown>, createSapo: boolean) {
+  const lines = Array.isArray(body.lines) ? (body.lines as Record<string, unknown>[]).map(l => [String(l?.lineId ?? ''), Number(l?.goodQty ?? 0), Number(l?.damagedQty ?? 0), String(l?.note ?? '').trim()] as const)
+    .sort(([a], [b]) => a.localeCompare(b)) : [];
+  return sha256Hex(JSON.stringify([String(body.warehouse ?? '').trim().toLowerCase(), String(body.receivedDate ?? ''), createSapo, typeof body.earlyRequestId === 'string' ? body.earlyRequestId : null,
+    String(body.note ?? '').trim(), lines]));
 }
 const lockSources = (tx: Tx) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('supplier_order_sources'))`);
 
@@ -495,8 +503,15 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const createSapo=body.createSapo!==false;
     if(body.createSapo!==undefined&&typeof body.createSapo!=='boolean')fail(400,'Lựa chọn tạo đơn Sapo không hợp lệ.');
     if (clientKey.length < 8) fail(400, 'Thiếu mã chống bấm lặp – tải lại trang rồi thử lại.');
-    const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
-    if (dup) { if(dup.createSapo!==createSapo)fail(409,'Phiếu đã lưu với lựa chọn Sapo khác. Không tạo lại.');if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
+    // Dấu nội dung: gửi lại cùng mã chống bấm lặp phải đúng kho, ngày, dòng hàng, phiếu xin lấy trước; khác thì từ chối (không trả phiếu cũ).
+    const requestHash = receiptRequestHash(body, createSapo);
+    const sameRequest = (r: { shipmentId: string; createSapo: boolean; requestHash: string | null }) => {
+      if (r.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.');
+      if (r.createSapo !== createSapo) fail(409, 'Phiếu đã lưu với lựa chọn Sapo khác. Không tạo lại.');
+      if (r.requestHash && r.requestHash !== requestHash) throw new AppError(409, 'Mã chống bấm lặp đã dùng cho phiếu nhận khác (số lượng / kho / ngày / phiếu xin hàng). Tải lại trang rồi nhập lại.', 'IDEMPOTENCY_CONFLICT');
+    };
+    const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo, requestHash: supplierReceipts.requestHash }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
+    if (dup) { sameRequest(dup); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
     const photos = parsePhotos(body.photos);
     let receiptId = '', duplicate = false;
     // Ảnh tải lên kho file trước giao dịch: không giữ khoá nguồn hàng toàn hệ thống / sổ kho trong lúc tải.
@@ -506,8 +521,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await lockSources(tx);
       // Recheck replay after the parent lock: simultaneous retries must not create another receipt.
       await tx.select({id:incomingShipments.id}).from(incomingShipments).where(eq(incomingShipments.id,id)).for('update');
-      const [existing]=await tx.select({id:supplierReceipts.id,shipmentId:supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo}).from(supplierReceipts).where(eq(supplierReceipts.clientKey,clientKey)).limit(1);
-      if(existing){if(existing.createSapo!==createSapo)fail(409,'Phiếu đã lưu với lựa chọn Sapo khác. Không tạo lại.');if(existing.shipmentId!==id)fail(409,'Mã chống bấm lặp đã dùng cho đơn khác.');receiptId=existing.id;duplicate=true;return;}
+      const [existing]=await tx.select({id:supplierReceipts.id,shipmentId:supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo,requestHash:supplierReceipts.requestHash}).from(supplierReceipts).where(eq(supplierReceipts.clientKey,clientKey)).limit(1);
+      if(existing){sameRequest(existing);receiptId=existing.id;duplicate=true;return;}
       const p = await lockAndCheck(c, tx, id, 'receive');
       const v = validateReceipt(p.raw.progress, { receivedDate: body.receivedDate, lines: body.lines }, today());
       await ensureReceiptSourceBudget(tx,id,v.lines.map(l=>l.sku));
@@ -529,7 +544,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await lockLedger(tx);
       await assertWarehousesOpened(tx, [whId]);
       await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: v.receivedDate, receivedBy: m.id, warehouse: whName,
-        note: str(body.note, 1000), createSapo,clientKey, createdAt: nowIso() });
+        note: str(body.note, 1000), createSapo,clientKey, requestHash, createdAt: nowIso() });
       await tx.insert(supplierReceiptLines).values(v.lines.map(l => ({ receiptId, lineId: l.lineId, sku: l.sku, goodQty: l.goodQty, damagedQty: l.damagedQty, note: l.note })));
       await recordPhotos(tx as unknown as Db, uploaded);
       // Sổ kho: hàng đạt cộng vào kho nhận (Sapo vẫn là nguồn chính – sổ kho chạy song song để đối chiếu).

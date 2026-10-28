@@ -4,6 +4,7 @@ import { canConfirmDelivery, deliveryConfirmations } from './delivery-confirmati
 import { auditLogs } from '../../../core/db/schema.ts';
 import { isGhnTracked } from '../domain/ghn-status.ts';
 import { assertCrmOrderCompletion } from './crm-stock-lifecycle.ts';
+import { sha256Hex } from '../../staff/domain/session.ts';
 import { autoHoldExpiry, holdOrderStock, lockHolds, releaseOrderHolds, retimeAutoHolds } from './order-hold-store.ts';
 import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
@@ -181,6 +182,12 @@ export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.
   const [by] = await c.env.db.select({ role: employees.role }).from(employees).where(eq(employees.id, order.createdBy)).limit(1);
   if (by?.role === 'customer') await notify(c.env, { eventType: 'order_delivery_date', targetMemberId: order.createdBy, actorId: viewer(c).id, title: 'Đổi ngày giao dự kiến',
     body: `${docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id)).Label}: giao dự kiến ${date.split('-').reverse().join('/')}`, url: '/customer.html#orders', data: { orderId: order.id, date } });
+}
+/** Dấu nội dung yêu cầu lập lịch giao (các trường quyết định chuyến + dòng hàng sắp theo dòng đơn). */
+function deliveryRequestHash(body: Record<string, unknown>) {
+  const f = (k: string) => String(body[k] ?? '').trim();
+  const lines = Array.isArray(body.lines) ? (body.lines as Record<string, unknown>[]).map(l => [String(l?.orderLineId ?? ''), Number(l?.qty)] as const).sort(([a], [b]) => a.localeCompare(b)) : null;
+  return sha256Hex(JSON.stringify([f('plannedDate'), f('timeSlot'), f('address'), f('receiverName'), f('receiverPhone'), f('carrier'), f('ghnOrderCode'), Number(body.shippingFee ?? 0), f('assigneeId'), f('note'), lines]));
 }
 /** Lịch sử sản phẩm: chuyến "Đã giao" = giao hàng cho khách (khoá `delivery:<chuyến>:<dòng>`). Gọi trong giao dịch đánh dấu đã giao. */
 export async function recordDeliveryMovements(tx: Tx, d: { id: string; orderId: string; deliveryNo: string; address: string }) {
@@ -1207,11 +1214,26 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const order = await loadOrder(c, text(body.orderId, 80));
     if (order.status === 'cancelled') throw new AppError(409, 'Đơn đã huỷ.');
     if (order.status === 'draft') throw new AppError(409, 'Đơn chưa được Manager duyệt, chưa lên lịch giao được.', 'ORDER_NOT_APPROVED');
-    const made = await c.env.db.transaction(tx => createScheduledDelivery(tx, order.id, body, me.id));
-    const { id, plannedDate } = made;
+    // Mã chống gửi lặp (giao diện gửi một mã mỗi lần mở form): gửi lại cùng nội dung → trả chuyến cũ, khác nội dung → 409.
+    const clientKey = body.clientKey === undefined ? null : text(body.clientKey, 100);
+    if (clientKey !== null && !/^[a-zA-Z0-9_-]{8,100}$/.test(clientKey)) throw new AppError(400, 'Mã chống gửi lặp không hợp lệ – tải lại trang rồi thử lại.');
+    const requestHash = clientKey ? deliveryRequestHash(body) : null;
+    const made = await c.env.db.transaction(async tx => {
+      if (clientKey) {
+        await tx.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+        const [prior] = await tx.select({ id: deliveries.id, plannedDate: deliveries.plannedDate, hash: deliveries.requestHash }).from(deliveries)
+          .where(and(eq(deliveries.orderId, order.id), eq(deliveries.clientKey, clientKey))).limit(1);
+        if (prior) {
+          if (prior.hash !== requestHash) throw new AppError(409, 'Mã chống gửi lặp đã dùng cho lịch giao khác nội dung. Mở lại form để lập lịch mới.', 'IDEMPOTENCY_CONFLICT');
+          return { id: prior.id, plannedDate: prior.plannedDate, replayed: true };
+        }
+      }
+      return { ...await createScheduledDelivery(tx, order.id, body, me.id, clientKey ? { clientKey, requestHash: requestHash! } : undefined), replayed: false };
+    });
+    if (made.replayed) return json({ id: made.id, replayed: true });
     // Ngày lên lịch giao trở thành ngày giao dự kiến của đơn (đơn của khách cũng cập nhật theo).
-    await setExpectedDeliveryDate(c, order, plannedDate);
-    return json({ id }, 201);
+    await setExpectedDeliveryDate(c, order, made.plannedDate);
+    return json({ id: made.id }, 201);
   }, 'business');
 
   /**
