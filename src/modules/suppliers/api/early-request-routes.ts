@@ -70,6 +70,7 @@ function cleanInput(body:Record<string,unknown>,preserved:Record<string,OrderSou
     if(typeof value!=='string' || value.length>200) fail(400,'Bộ lọc gửi yêu cầu không hợp lệ.');
     scope[key]=value;
   }
+  if(raw.pxkNo!==undefined){if(typeof raw.pxkNo!=='string'||raw.pxkNo.length>200)fail(400,'Số PXK không hợp lệ.');scope.pxkNo=raw.pxkNo.trim();}
   scope.status ||= 'all';
   const pinned=Object.fromEntries(selected.filter(l=>l.sourceOrders).map(l=>[l.sku,l.sourceOrders]));
   if(Object.keys(pinned).length)scope.orderSources=JSON.stringify(pinned);
@@ -93,7 +94,7 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id:string|
   return headers.map(h=>{
     const own=details.filter(d=>d.line.requestId===h.id),groups=new Map<string,typeof own>();
     for(const d of own) { const group=groups.get(d.line.id)||[];group.push(d);groups.set(d.line.id,group); }
-    return {id:h.id,ticketNumber:h.ticketNumber,createdAt:h.createdAt,updatedAt:h.updatedAt||h.createdAt,pickupDate:h.pickupDate,revision:h.revision,requestStatus:h.status,
+    return {id:h.id,ticketNumber:h.ticketNumber,createdAt:h.createdAt,updatedAt:h.updatedAt||h.createdAt,pickupDate:h.pickupDate,revision:h.revision,requestStatus:h.status,pxkNo:JSON.parse(h.scope).pxkNo||'',
       ...(!supplierId?{createdBy:h.createdBy,scope:JSON.parse(h.scope)}:{}),status:h.status==='draft'?'draft':stateOf(own.map(d=>d.allocation.status)),
       lines:[...groups].map(([lineId,group])=>({id:lineId,sku:group[0]!.line.sku,name:group[0]!.catalogName?.trim()||group[0]!.line.name,unit:group[0]!.line.unit,
         // Supplier sees ONLY its quantities/statuses, never a cross-supplier line total.
@@ -104,7 +105,7 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id:string|
   });
 }
 
-async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanInput>) {
+async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanInput>,used?:Map<string,number>) {
   for(const l of input.selected) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-sku:'+l.sku}))`);
   const q=new URLSearchParams(input.scope);q.set('selected','1');for(const l of input.selected) q.append('sku',l.sku);
   const initial=await incomingBySku(asDb(tx),q,vietnamDate().iso,false);
@@ -117,13 +118,14 @@ async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanIn
   await tx.delete(lines).where(eq(lines.requestId,id));
   const resolvedSources:Record<string,OrderSource[]>={};
   for(const [i,want] of input.selected.entries()) {
-    const row=current.rows.find(r=>r.sku===want.sku),allOrders=row?.orders.filter(o=>orderIds.includes(o.id))||[];
+    const row=current.rows.find(r=>r.sku===want.sku),allOrders=(row?.orders.filter(o=>orderIds.includes(o.id))||[]).map(o=>({...o,quantity:Math.max(0,o.quantity-(used?.get(o.lineId)||0))}));
     let resolved;
     try{resolved=resolveEarlyOrderSources(allOrders,want.sourceOrders??[{orderNo:'',supplierOrderNo:'',quantity:want.quantity}]);}
     catch(e){if(e instanceof EarlySourceError)fail(409,`${want.sku}: ${e.message}`,e.code);throw e;}
     if(want.sourceOrders)resolvedSources[want.sku]=resolved.sources;
     const lineId=crypto.randomUUID();await tx.insert(lines).values({id:lineId,requestId:id,lineNo:i+1,sku:row!.sku,name:row!.name,unit:resolved.unit,quantity:want.quantity});
     for(const {order,quantity} of resolved.allocations){
+      if(used)used.set(order.lineId,(used.get(order.lineId)||0)+quantity);
       if(!order.supplierId)fail(409,`${want.sku}: đơn mua chưa có NCC.`);
       await tx.insert(allocations).values({id:crypto.randomUUID(),requestLineId:lineId,purchaseLineId:order.lineId,supplierId:order.supplierId,quantity,status:'pending'});
     }
@@ -174,6 +176,44 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests/:id/receiving',async c=>{
     guard(c);if(!canReceive(me(c)))fail(403,'Bạn không có quyền nhận hàng NCC.');
     return json(await earlyReceiptContext(c.env.db,c.params.id!,c.url.searchParams.get('orderId')||''));
+  },'business');
+  // One workbook is one transaction and one retry key; grouping never submits or receives stock.
+  router.post('/purchase-early-requests/file',async c=>{
+    guard(c);const m=me(c);if(!canSendEarlyRequest(m))fail(403,'Chỉ Manager và Sale Admin được xin hàng trước.');
+    const body=await readJson(c.req,300000);
+    if(!Array.isArray(body.groups)||!body.groups.length||body.groups.length>300)fail(400,'File cần từ 1 đến 300 nhóm PXK.');
+    const seen=new Set<string>();
+    const inputs=body.groups.map(raw=>{
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))fail(400,'Nhóm PXK không hợp lệ.');
+      const group=raw as Record<string,unknown>,pxkNo=group.pxkNo??'';
+      if(typeof pxkNo!=='string'||pxkNo.length>200||/[\r\n\u0000-\u001f]/.test(pxkNo))fail(400,'Số PXK tối đa 200 ký tự trên một dòng.');
+      const key=pxkNo.trim().normalize('NFC').toLocaleLowerCase('vi');if(seen.has(key))fail(400,'Số PXK bị lặp nhóm.');seen.add(key);
+      const input=cleanInput({...body,lines:group.lines});input.scope.pxkNo=pxkNo.trim();return input;
+    });
+    if(inputs.reduce((sum,input)=>sum+input.selected.reduce((n,line)=>n+(line.sourceOrders?.length||1),0),0)>300)fail(400,'File tối đa 300 dòng nguồn đơn mua.');
+    const batchId='early-file-'+sha256Hex(m.id+':'+inputs[0]!.clientKey),payloadHash=sha256Hex(JSON.stringify(inputs));
+    const result=await c.env.db.transaction(async tx=>{
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${batchId}))`);
+      const [prior]=await tx.select({data:auditLogs.data}).from(auditLogs).where(eq(auditLogs.id,batchId));
+      if(prior){const saved=JSON.parse(prior.data);if(saved.payloadHash!==payloadHash)fail(409,'Khóa gửi đã dùng cho file khác.','IDEMPOTENCY_CONFLICT');return {requestIds:saved.requestIds as string[],replayed:true};}
+      // Lock all SKU/order sources in a stable order before creating any group.
+      const skus=[...new Set(inputs.flatMap(input=>input.selected.map(l=>l.sku)))].sort();
+      for(const sku of skus)await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-sku:'+sku}))`);
+      const q=new URLSearchParams(inputs[0]!.scope);q.set('selected','1');for(const sku of skus)q.append('sku',sku);
+      const available=await incomingBySku(asDb(tx),q,vietnamDate().iso,false),orderIds=[...new Set(available.rows.flatMap(r=>r.orders.map(o=>o.id)))].sort();
+      if(orderIds.length)await tx.select({id:incomingShipments.id}).from(incomingShipments).where(inArray(incomingShipments.id,orderIds)).orderBy(asc(incomingShipments.id)).for('update');
+      const requestIds:string[]=[],used=new Map<string,number>(),now=new Date().toISOString();
+      for(const [i,input] of inputs.entries()){
+        const id=crypto.randomUUID();
+        await tx.insert(requests).values({id,clientKey:'file_'+sha256Hex(batchId+':'+i),payloadHash,createdBy:m.id,createdAt:now,status:'draft',pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:now});
+        await replaceDraftLines(tx,id,input,used);requestIds.push(id);
+        await audit(tx,m,id,'early-request-draft-create',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
+      }
+      await tx.insert(auditLogs).values({id:batchId,actorId:m.id,module:'suppliers',action:'early-request-file-create',entityType:'purchase-early-requests',entityId:requestIds[0]!,data:JSON.stringify({payloadHash,requestIds}),createdAt:now});
+      return {requestIds,replayed:false};
+    });
+    const saved=await earlyRequestList(c.env.db,null,result.requestIds);
+    return json({...result,id:result.requestIds[0],requests:saved,request:saved[0]},result.replayed?200:201);
   },'business');
   router.post('/purchase-early-requests',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được gửi yêu cầu lấy trước.');

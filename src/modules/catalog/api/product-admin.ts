@@ -28,7 +28,15 @@ function cleanProduct(body: Record<string, unknown>, existingSku?: string) {
     if (!Number.isFinite(n) || n < 0 || n > 1e12) throw new AppError(400, 'Giá sản phẩm không hợp lệ.');
     prices[String(policyId).slice(0, 80)] = Math.round(n);
   }
-  return { sku, name, brand: t('brand', 200), unit: t('unit', 50), pattern: t('pattern', 200), imageUrl, prices };
+  const packaging:Partial<Pick<typeof products.$inferInsert,'perCarton'|'cartonWeight'|'cartonLength'|'cartonWidth'|'cartonHeight'>>={};
+  for(const key of ['perCarton','cartonWeight','cartonLength','cartonWidth','cartonHeight'] as const){
+    if(!Object.hasOwn(body,key))continue;
+    const value=body[key];
+    if(value===null||value===''){packaging[key]=null;continue;}
+    if(typeof value!=='number'||!Number.isFinite(value)||value<=0||value>1e6||(key==='perCarton'&&!Number.isInteger(value)))throw new AppError(400,'Quy cách thùng phải là số dương; số SP/thùng là số nguyên.');
+    packaging[key]=value;
+  }
+  return { sku, name, packaging, brand: t('brand', 200), unit: t('unit', 50), pattern: t('pattern', 200), imageUrl, prices };
 }
 
 /**
@@ -54,7 +62,7 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
     const policies = new Set((await db.select({ id: pricePolicies.id }).from(pricePolicies).orderBy(asc(pricePolicies.sortOrder))).map(p => p.id));
     const priceRows = Object.entries(f.prices).filter(([id]) => policies.has(id)).map(([policyId, price]) => ({ sku: f.sku, policyId, price }));
     await db.transaction(async tx => {
-      await tx.insert(products).values({ sku: f.sku, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
+      await tx.insert(products).values({ sku: f.sku, ...f.packaging, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
         active: mgr, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null, updatedAt: now });
       if (priceRows.length) await tx.insert(productPrices).values(priceRows);
     });
@@ -99,11 +107,11 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
       const oldPrices = await tx.select().from(productPrices).where(eq(productPrices.sku, sku));
       const changedPrices = Object.entries(rawPrices).map(([policyId, value]) => ({ sku, policyId, price: value == null || value === '' ? null : f.prices[policyId]! }));
       const now = new Date(Math.max(Date.now(), Date.parse(before.updatedAt) + 1)).toISOString();
-      const fields = { name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl };
+      const fields = { name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl, ...f.packaging };
       await tx.update(products).set({ ...fields, updatedAt: now }).where(eq(products.sku, sku));
       for (const row of changedPrices) await tx.insert(productPrices).values(row).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price: row.price } });
       await tx.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: me.id, module: 'catalog', action: 'update', entityType: 'products', entityId: sku,
-        data: JSON.stringify({ before: { name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, prices: oldPrices }, after: { ...fields, prices: changedPrices } }), createdAt: now });
+        data: JSON.stringify({ before: { name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, perCarton:before.perCarton,cartonWeight:before.cartonWeight,cartonLength:before.cartonLength,cartonWidth:before.cartonWidth,cartonHeight:before.cartonHeight, prices: oldPrices }, after: { ...fields, prices: changedPrices } }), createdAt: now });
     });
     return json({ ok: true, sku });
   }, 'business');

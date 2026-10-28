@@ -63,3 +63,17 @@ test('Nhân viên các vị trí cập nhật danh mục; kho không ghi đè gi
  assert.equal((await f.call('/products/00123',f.emp,'PUT',{...latest,expectedUpdatedAt:latest.updatedAt,prices:{retail:120000}})).status,200);
  assert.equal((await f.call('/products/00123',f.mgr)).data.product.prices.find((p:any)=>p.policyId==='retail').price,120000);
 });
+
+test('carton dimensions/weight are editable and audited; omitted fields survive old clients, null clears, invalid quantities write nothing',async()=>{
+ const f=await setup(),current=(await f.call('/products/00123',f.emp)).data.product;
+ const body={...current,prices:{},expectedUpdatedAt:current.updatedAt,perCarton:12,cartonLength:40.8,cartonWidth:28.3,cartonHeight:23.6,cartonWeight:5.25};
+ const stock=await f.db.select().from(productStock);
+ for(const patch of [{perCarton:1.5},{cartonWeight:-1},{cartonLength:'abc'},{cartonHeight:1e9}])assert.equal((await f.call('/products/00123',f.emp,'PUT',{...body,...patch})).status,400);
+ assert.equal((await f.call('/products/00123',f.emp,'PUT',body)).status,200);
+ const next=(await f.call('/products/00123',f.emp)).data.product;
+ for(const k of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight'])assert.equal(next[k],(body as any)[k]);
+ assert.deepEqual(await f.db.select().from(productStock),stock);
+ const audit=await f.db.select().from(auditLogs).where(eq(auditLogs.entityId,'00123'));assert.ok(audit.some(a=>a.action==='update'&&JSON.parse(a.data).after.cartonWeight===5.25));
+ assert.equal((await f.call('/products/00123',f.emp,'PUT',{...next,prices:{},expectedUpdatedAt:next.updatedAt,cartonWeight:null})).status,200);
+ assert.equal((await f.call('/products/00123',f.emp)).data.product.cartonWeight,null);
+});

@@ -17,23 +17,15 @@ function harness(positionId:string,role='employee',perms=['pos.sell','page.quote
  return context;
 }
 
-test('NVBH ML/LOCK login goes directly to POS even with a previous route; resume preserves the document',()=>{
- for(const position of ['sales-ml','sales-lock']){
-  const app=harness(position);
-  assert.equal(app.homeHash(),'#/pos');
-  app.start(true);assert.equal(app.location.hash,'#/pos');
-  app.location.hash='#/orders/existing';app.start(false);
-  assert.equal(app.location.hash,'#/orders/existing');
-  app.location.hash='';app.start(false);assert.equal(app.location.hash,'#/pos');
+test('fresh employee login opens process flow when allowed; resume preserves the current document',()=>{
+ for(const position of ['sales-ml','sales-lock','sale','sale-admin','accounting','warehouse']){
+  const app=harness(position,'employee',['pos.sell','page.quotes','page.flow']);assert.equal(app.homeHash(),'#/flow');
+  app.start(true);assert.equal(app.location.hash,'#/flow');app.location.hash='#/orders/existing';app.start(false);assert.equal(app.location.hash,'#/orders/existing');
  }
 });
-
-test('POS home respects permission and does not change other roles',()=>{
- for(const position of ['sales-ml','sales-lock','sale','sale-admin','accounting']){
-  const app=harness(position,'employee',['page.quotes']);
-  assert.equal(app.homeHash(),'#/quotes');app.start(true);assert.equal(app.location.hash,'#/orders/existing');
- }
- assert.equal(harness('sales-ml','employee',[]).homeHash(),'#/tasks');
+test('home never grants process-flow permission and preserves Manager default',()=>{
+ assert.equal(harness('sales-lock').homeHash(),'#/pos');
+ assert.equal(harness('sale','employee',['page.quotes']).homeHash(),'#/quotes');
  assert.equal(harness('manager','manager').homeHash(),'#/quotes');
- assert.equal(harness('warehouse').homeHash(),'#/kho');
+ assert.equal(harness('warehouse','employee',[]).homeHash(),'#/kho');
 });

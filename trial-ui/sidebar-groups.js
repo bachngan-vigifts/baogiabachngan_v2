@@ -6,7 +6,8 @@ export function installSidebarGroups(root = document.querySelector('.sidebar')) 
     const toggle = document.createElement('button'), items = document.createElement('div');
     items.className = 'nav-group-items'; items.id = heading.id + '-items';
     toggle.type = 'button'; toggle.className = 'nav-group-toggle';
-    toggle.setAttribute('aria-controls', items.id); toggle.setAttribute('aria-expanded', 'false');
+    const expanded=['nav-group-0','nav-group-1'].includes(heading.id);
+    toggle.setAttribute('aria-controls', items.id); toggle.setAttribute('aria-expanded', String(expanded));group.classList.toggle('is-open',expanded);
     const title = document.createElement('span'), arrow = document.createElement('span');
     title.textContent = heading.textContent; arrow.className = 'nav-group-arrow'; arrow.textContent = '›'; arrow.setAttribute('aria-hidden', 'true');
     toggle.append(title, arrow); heading.replaceChildren(toggle);

@@ -5,7 +5,7 @@ const repo=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,'');
 const html=`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/trial-ui/style.css"><section id="root"></section><script type="module">
 import {initPurchases} from '/trial-ui/purchases.js';window.writes=[];window.saved=null;window.failFirst=true;window.reads=[];
 const api=async(path,method,body)=>{
- if(method){writes.push({path,body});if(path==='/purchase-early-requests'){saved ||= {id:'file-request',revision:1,status:'draft'};if(failFirst){failFirst=false;throw Error('Mất kết nối giả lập sau lưu');}return {request:saved};}throw Error('Unexpected write: '+path);}
+ if(method){writes.push({path,body});if(path==='/purchase-early-requests/file'){saved ||= {id:'file-request',revision:1,status:'draft'};if(failFirst){failFirst=false;throw Error('Mất kết nối giả lập sau lưu');}return {request:saved};}throw Error('Unexpected write: '+path);}
  reads.push(path);
  if(path==='/purchase-options')return {suppliers:[{id:'a',name:'NCC A'}],isManager:true,canRequestEarly:true};
  if(path.startsWith('/purchase-orders?'))return {orders:[],counts:{}};
@@ -22,7 +22,7 @@ try{for(const width of [390,1280]){const context=await browser.newContext({viewp
  await page.goto('http://127.0.0.1:'+server.address().port+'/trial-ui/test');await page.waitForFunction(()=>window.ready);
  await page.getByRole('button',{name:'Xin hàng trước bằng file',exact:true}).click();assert.ok(await page.locator('.early-file-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth+1),'mobile dialog stays within viewport');
  const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'⬇ Tải file mẫu',exact:true}).click()]);assert.equal(download.suggestedFilename(),'mau-xin-hang-truoc.xlsx');
- const template=X.read(await readFile(await download.path()),{type:'buffer',cellNF:true});assert.equal(template.Sheets[template.SheetNames[0]].A2.z,'@');assert.deepEqual(Array.from(X.utils.sheet_to_json(template.Sheets[template.SheetNames[0]],{header:1})[0]),['Mã hàng','Số lượng xin trước','Số đơn mua CRM (DMH)','Số đơn của NCC']);
+ const template=X.read(await readFile(await download.path()),{type:'buffer',cellNF:true});assert.equal(template.Sheets[template.SheetNames[0]].A2.z,'@');assert.deepEqual(Array.from(X.utils.sheet_to_json(template.Sheets[template.SheetNames[0]],{header:1})[0]),['Mã hàng','Số lượng xin trước','Số đơn mua CRM (DMH)','Số đơn của NCC','Số PXK']);
  await page.getByLabel('File xin hàng trước').setInputFiles({name:'xin.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:buffer(21)});
  await page.waitForFunction(()=>document.querySelector('.early-file-dialog').textContent.includes('Chỉ còn'));
  assert.equal(await page.getByRole('button',{name:'Lưu phiếu nháp',exact:true}).isDisabled(),true);assert.equal(await page.evaluate(()=>writes.length),0);
@@ -40,7 +40,7 @@ try{for(const width of [390,1280]){const context=await browser.newContext({viewp
  await page.getByRole('button',{name:'Lưu phiếu nháp',exact:true}).click();
  await page.getByRole('button',{name:'Thử lưu lại',exact:true}).click();
  await page.getByRole('link',{name:'Mở phiếu / Gửi NCC',exact:true}).waitFor();
- const writes=await page.evaluate(()=>window.writes);assert.equal(writes.length,2);assert.equal(writes[0].body.clientKey,writes[1].body.clientKey);assert.deepEqual(writes[0].body.lines,[{sku:'031106000',quantity:5,sourceOrders:[{orderNo:'PO-a1',supplierOrderNo:'NCC-001',quantity:5}]}]);assert.ok(writes.every(w=>w.path==='/purchase-early-requests'));
+ const writes=await page.evaluate(()=>window.writes);assert.equal(writes.length,2);assert.equal(writes[0].body.clientKey,writes[1].body.clientKey);assert.deepEqual(writes[0].body.groups,[{pxkNo:'',lines:[{sku:'031106000',quantity:5,sourceOrders:[{orderNo:'PO-a1',supplierOrderNo:'NCC-001',quantity:5}]}]}]);assert.ok(writes.every(w=>w.path==='/purchase-early-requests/file'));
  await page.getByRole('link',{name:'Mở phiếu / Gửi NCC',exact:true}).click();assert.equal(await page.evaluate(()=>window.dest),'#/purchases?mode=incoming&request=file-request');assert.deepEqual(errors,[]);
  // Editing a pinned draft must preserve per-order quantities in its PUT payload.
  await page.evaluate(async()=>{

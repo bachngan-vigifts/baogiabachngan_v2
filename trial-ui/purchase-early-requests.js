@@ -61,6 +61,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       else heading.append(el('span','',titleText));
       heading.append(el('span','',` · ${time(request.createdAt)}`));
       if(!portal&&request.groupKey&&ordersForHeading.size>1)for(const [id,no]of ordersForHeading){const a=el('a','early-order-choice',no);a.href='#/purchases/'+encodeURIComponent(id);heading.append(a);}
+      if(request.pxkNo)heading.append(el('small','',' · PXK: '+request.pxkNo));
       const status=el('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status);head.append(heading);
       if(browse){const actions=el('div','early-request-status-actions'),details=btn('Xem chi tiết',()=>portalNavigation.onDetail(request));actions.dataset.mobileActions='off';details.dataset.mobileInline='';actions.append(status,details);head.append(actions);}else head.append(status);
       if(!portal&&canViewPortal&&request.groupKey&&request.lines.some(l=>l.allocations.some(a=>a.status==='pending'))){

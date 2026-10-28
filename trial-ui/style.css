@@ -2327,3 +2327,15 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
 #workspace>.main>.topbar { z-index:62; }
 #workspace .sup-drawer,#workspace .sup-shade { top:var(--crm-page-header-height); }
 @media(max-width:850px){ #workspace { --crm-page-header-height:40px; } }
+
+/* Long carton forms retain an accessible save/cancel footer. */
+.product-admin-dialog { max-height:90dvh;overflow:hidden; }
+.product-admin-dialog>form { display:flex;flex-direction:column;max-height:90dvh; }
+.product-admin-dialog .modal-body { overflow-y:auto;min-height:0; }
+.product-admin-dialog .modal-head,.product-admin-dialog .modal-foot { flex-shrink:0; }
+.ghn-order-tracking { display:block;overflow-wrap:anywhere; }
+.ghn-order-tracking>span { display:block; }
+@media screen and (max-width:850px){
+ #orders-list .orders-shipping-cell.has-ghn-tracking { min-width:0; }
+ #orders-list .crm-list-card .orders-shipping-cell.has-ghn-tracking { display:block!important;grid-column:1/-1;grid-row:5; }
+}
