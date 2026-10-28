@@ -611,10 +611,19 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (!r) fail(404, 'Không tìm thấy phiếu nhận.');
       shipmentId = r!.shipmentId;
       if (r!.cancelledAt) return;
-      if (r!.sapoStatus === 'done') fail(409, 'Phiếu đã nhập Sapo – huỷ phiếu nhập trên Sapo và mở lại trạng thái trước.');
+      if (r!.sapoStatus === 'done' || r!.sapoVerifiedAt || r!.sapoReceiptId || r!.sapoPurchaseOrderId || r!.sapoReceiptCode || r!.sapoReceiptUrl)
+        fail(409, 'Phiếu đã có liên kết Sapo – hoàn tác trên Sapo và đối soát trước.');
       const [job]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,r!.id)).for('update');
-      if(job&&(job.dispatchToken||job.leaseToken||['processing','callback_pending'].includes(job.status)))
-        throw new AppError(409,'Phiếu đang/chờ xử lý nhập Sapo. Dừng và xác minh kết quả luồng n8n/OpenClaw trước khi huỷ để tránh lệch kho.','RECEIPT_SYNC_IN_PROGRESS');
+      const expected=body.expected as Record<string,unknown>|undefined;
+      if(expected && (expected.sapoUpdatedAt!==(r!.sapoUpdatedAt??null)||expected.jobUpdatedAt!==(job?.updatedAt??null)))
+        throw new AppError(409,'Phiếu hoặc tiến trình Sapo vừa thay đổi. Tải lại trước khi hoàn tác.','RECEIPT_CHANGED');
+      if(job&&(job.dispatchToken||job.leaseToken||['processing','callback_pending'].includes(job.status))){
+        const now=Date.now(),resolved=body.confirmNoSapo===true&&expected&&job.status==='needs_review'&&!job.dispatchToken&&
+          (!job.leaseUntil||Date.parse(job.leaseUntil)<=now)&&(!job.dispatchUntil||Date.parse(job.dispatchUntil)<=now);
+        if(!resolved)throw new AppError(409,'Phiếu đang/chờ xử lý nhập Sapo. Dừng và xác minh kết quả luồng n8n/OpenClaw trước khi huỷ để tránh lệch kho.','RECEIPT_SYNC_IN_PROGRESS');
+        await tx.update(receiptJobs).set({leaseToken:null,leaseUntil:null,dispatchToken:null,dispatchUntil:null,status:'needs_review',lastError:'Manager xác nhận chưa nhập Sapo; đã hoàn tác phiếu CRM. Không gửi lại.',updatedAt:nowIso()}).where(eq(receiptJobs.receiptId,r!.id));
+        await event(tx,shipmentId,m.id,'resolve_no_sapo_before_cancel',`Manager xác nhận chưa nhập Sapo trước khi hoàn tác ${r!.receiptNo}`,{receiptId:r!.id,reason,expected});
+      }
       await tx.update(supplierReceipts).set({ cancelledAt: nowIso(), cancelledBy: m.id, cancelReason: reason }).where(eq(supplierReceipts.id, r!.id));
       await reverseRef(tx as unknown as Db, m.id, 'supplier_receipt', r!.id, `Huỷ phiếu nhận ${r!.receiptNo}: ${reason}`);
       await removeMovements(tx, `receipt:${r!.id}:`);

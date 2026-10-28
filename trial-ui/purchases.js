@@ -430,7 +430,18 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         if(!sent.sent&&!sent.skipped)throw new Error('Chưa gửi được yêu cầu đối soát n8n. Kiểm tra execution trước khi thử lại.');
         return api(`/purchase-orders/${encodeURIComponent(r.shipmentId)}`);
       }),'data-receipt-reconcile')));
-      if(!verified && r.sapoStatus!=='done')tools.append(btn('Huỷ phiếu…','btn secondary small danger-text',()=>inlineForm(card,'Lý do huỷ phiếu nhận','VD: đếm nhầm','Huỷ phiếu',b=>run(b.button,err,()=>api(`/supplier-receipts/${encodeURIComponent(r.id)}/cancel`,'POST',{reason:b.value}),'Đã huỷ phiếu nhận.'))));
+      if(!verified && r.sapoStatus!=='done')tools.append(btn('Hoàn tác phiếu nhập…','btn secondary small danger-text',async()=>{
+        const detail=r.lines.map(l=>`${l.sku}: đạt ${num(l.goodQty)}${l.damagedQty?`, hỏng ${num(l.damagedQty)}`:''}`).join('\n');
+        if(!await confirmBox(`Hoàn tác TOÀN BỘ ${r.receiptNo}:\n${detail}\n\nTồn CRM giảm số lượng đạt của tất cả mã trên phiếu; phiếu được giữ lịch sử huỷ. Không dùng để trả riêng một mã.`,{title:'Kiểm tra phiếu nhập nhầm',ok:'Tiếp tục',danger:true,typeToConfirm:r.receiptNo}))return;
+        inlineForm(card,'Lý do hoàn tác phiếu nhập','VD: nhập trùng hoặc đếm nhầm','Hoàn tác',async b=>{
+          let confirmNoSapo=false;
+          if(r.job?.status==='needs_review'){
+            confirmNoSapo=await confirmBox('Chỉ xác nhận nếu đã kiểm tra và chắc chắn toàn bộ phiếu này CHƯA được nhập trên Sapo. Không chọn khi chưa rõ kết quả n8n/Claw.',{title:'Xác nhận kết quả Sapo',ok:'Đã kiểm tra, chưa nhập Sapo',danger:true});
+            if(!confirmNoSapo)return;
+          }
+          await run(b.button,err,()=>api(`/supplier-receipts/${encodeURIComponent(r.id)}/cancel`,'POST',{reason:b.value,confirmNoSapo,expected:{sapoUpdatedAt:r.sapoUpdatedAt||null,jobUpdatedAt:r.job?.updatedAt||null}}),'Đã hoàn tác phiếu nhập và ghi lại lịch sử.');
+        });
+      }));
     }
     card.append(tools, err);
     return card;

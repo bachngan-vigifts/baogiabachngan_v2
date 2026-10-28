@@ -74,7 +74,7 @@ async function purchaseSourceLinks(db:Db,m:Member,ids:string[],sku:string){
  for(const source of sources){
   if(source.type==='quote'){const quote=quotes.find(q=>q.id===source.id);if(quote)add(source.purchaseId,'Báo giá '+quote.no,'#/quotes/'+encodeURIComponent(quote.id));}
   for(const order of orders.filter(o=>source.type==='order'?o.id===source.id:source.type==='quote'&&o.quoteId===source.id)){
-   if(order.contractId&&can(m,'page.contracts'))add(source.purchaseId,'HĐKT '+order.contractNo,'#/contracts/'+encodeURIComponent(order.contractId));
+   if(order.contractId&&can(m,'page.contracts'))add(source.purchaseId,'HĐKT '+order.contractNo,'#/contracts/'+encodeURIComponent(order.id));
    else if(can(m,'page.orders'))add(source.purchaseId,'Đơn hàng '+order.no,'#/orders/'+encodeURIComponent(order.id));
   }
  }

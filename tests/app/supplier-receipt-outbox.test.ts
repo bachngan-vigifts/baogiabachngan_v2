@@ -243,3 +243,18 @@ test('Lỗi ghi outbox rollback toàn bộ phiếu/dòng/ledger; không gửi we
  assert.deepEqual(await f.db.select().from(receiptJobs),[]);assert.deepEqual(await f.db.select().from(stockMoves),before);
  assert.equal((await f.db.select().from(supplierOrderEvents)).filter(e=>e.action==='receive').length,0);
 });
+
+test('Manager undo requires explicit no-Sapo resolution, expired worker lease and unchanged snapshot; reverses once and rejects late callback',async()=>{
+ const f=await fixture(),id=await f.receive(),token=await f.claim(id);
+ await f.db.update(receiptJobs).set({status:'needs_review'}).where(eq(receiptJobs.receiptId,id));
+ const body=async()=>({reason:'Nhập trùng đã kiểm tra Sapo',confirmNoSapo:true,expected:{sapoUpdatedAt:(await f.row(id)).sapoUpdatedAt??null,jobUpdatedAt:(await f.job(id)).updatedAt}});
+ const cancel=(b:any)=>f.call('/supplier-receipts/'+id+'/cancel',f.mgr,'POST',b);
+ assert.equal((await cancel(await body())).status,409,'cannot override a still-live lease');
+ const stale=await body();await f.db.update(receiptJobs).set({leaseUntil:'2000-01-01T00:00:00Z',updatedAt:'2026-01-01T00:00:00Z'}).where(eq(receiptJobs.receiptId,id));
+ assert.equal((await cancel(stale)).status,409,'job changed since preview');
+ assert.equal((await cancel({...await body(),confirmNoSapo:false})).status,409,'no implicit operator attestation');
+ const before=await f.db.select().from(stockMoves),ok=await cancel(await body());assert.equal(ok.status,200,JSON.stringify(ok.data));assert.ok((await f.row(id)).cancelledAt);assert.equal((await f.job(id)).leaseToken,null);assert.equal((await f.job(id)).status,'needs_review');
+ assert.equal((await f.db.select().from(stockMoves)).length,before.length+1);assert.equal((await f.db.select().from(stockMoves)).filter(m=>m.refId===id&&m.kind==='reverse')[0]?.qty,-2);
+ assert.equal((await cancel(await body())).status,200);assert.equal((await f.db.select().from(stockMoves)).length,before.length+1);
+ await assert.rejects(receiptResult(f.db,f.result(id,{lease_token:token})),/đã huỷ/);
+});

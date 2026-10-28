@@ -44,7 +44,7 @@ test('purchase/receipt histories show purchase number and permission-filtered or
   {id:'source-secret',shipmentId:'a1',lineId:'line-a1',sourceType:'order',sourceId:'secret',sourceNo:'DH-secret',customerName:'Khách kín',sku:f.sku,quantity:1,createdAt:now}
  ]);
  const receipts=ok(await f.call('/products/'+f.sku+'/documents?kind=receipts',f.cookies.mgr)),receipt=receipts.rows.find((r:any)=>r.id==='receipt');
- assert.ok(receipt.purchaseNumber);assert.equal(receipt.purchaseId,'a1');assert.ok(receipt.sources.some((s:any)=>s.href==='#/quotes/quote-0'));assert.ok(receipt.sources.some((s:any)=>s.href==='#/contracts/contract-id'));
+ assert.ok(receipt.purchaseNumber);assert.equal(receipt.purchaseId,'a1');assert.ok(receipt.sources.some((s:any)=>s.href==='#/quotes/quote-0'));assert.ok(receipt.sources.some((s:any)=>s.href==='#/contracts/contract'));
  const employee=ok(await f.call('/products/'+f.sku+'/documents?kind=purchases',f.cookies.emp));assert.ok(employee.rows.find((r:any)=>r.id==='a1').sources.some((s:any)=>s.href==='#/quotes/quote-0'));assert.ok(!JSON.stringify(employee).includes('DH-secret'));assert.ok(!JSON.stringify(employee).includes('HĐKT-fixture'));
  const kho=ok(await f.call('/products/'+f.sku+'/documents?kind=receipts',f.cookies.kho));assert.ok(kho.rows.every((r:any)=>!r.sources.length),'warehouse role receives no sales/quote source links without page permission');
 });

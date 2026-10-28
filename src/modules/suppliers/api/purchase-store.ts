@@ -43,7 +43,7 @@ export function purchaseScope(m: Member) {
 
 /** Related drafts/orders are still filtered by purchasing visibility, even when reached through a sales order. */
 export async function purchaseLinksForOrder(db: Db, m: Member, order: { id: string; quoteId: string | null }) {
-  return db.selectDistinct({ id: incomingShipments.id, number: incomingShipments.ticketNumber })
+  return db.selectDistinct({ id: incomingShipments.id, number: incomingShipments.ticketNumber, internalNo: incomingShipments.supplierInternalOrderNumber, supplierName: incomingShipments.supplierName })
     .from(supplierOrderSources).innerJoin(incomingShipments, eq(incomingShipments.id, supplierOrderSources.shipmentId))
     .where(and(purchaseScope(m), isNull(incomingShipments.cancelledAt), or(
       and(eq(supplierOrderSources.sourceType, 'order'), eq(supplierOrderSources.sourceId, order.id)),
@@ -78,7 +78,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   const live = new Set(receipts.filter(x => !x.r.cancelledAt).map(x => x.r.id));
   const progress = receiptProgress(lines.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity })),
     receiptLines.filter(x => live.has(x.l.receiptId)).map(x => ({ lineId: x.l.lineId, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty })));
-  const jobs = receipts.length ? await db.select({receiptId:receiptJobs.receiptId,status:receiptJobs.status,action:receiptJobs.action,lastError:receiptJobs.lastError,attempts:receiptJobs.attempts}).from(receiptJobs).where(inArray(receiptJobs.receiptId,receipts.map(x=>x.r.id))) : [];
+  const jobs = receipts.length ? await db.select({receiptId:receiptJobs.receiptId,status:receiptJobs.status,action:receiptJobs.action,lastError:receiptJobs.lastError,attempts:receiptJobs.attempts,updatedAt:receiptJobs.updatedAt}).from(receiptJobs).where(inArray(receiptJobs.receiptId,receipts.map(x=>x.r.id))) : [];
   const totals = computeOrderTotals({ rows: lines, depositRate: o.depositRate, paidAmount: 0 });
   const debt = supplierDebt(totals.total, schedules, payments.map(x => x.p), today);
   const a = asActor(m), prices = canSeePurchasePrices(a, o);
