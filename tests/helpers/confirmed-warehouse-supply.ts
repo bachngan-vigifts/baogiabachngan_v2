@@ -15,7 +15,10 @@ export async function confirmWarehouseSupply(db:AnyDb,call:(path:string,cookie?:
  await postMoves(db,'mgr',pending.filter((l:any)=>l.sku).map((l:any)=>({sku:l.sku,warehouseId,qty:l.left,kind:'opening' as const,refType:'opening' as const,refId:orderId})));
  const made=await call(`/orders/${orderId}/packing`,manager,'POST',{allocations});assert.equal(made.status,201,JSON.stringify(made.data));
  for(const p of made.data.slips){const sent=await call(`/packing/${p.id}/send`,manager,'POST',{});assert.equal(sent.status,200,JSON.stringify(sent.data));
-  const confirmed=await call(`/packing/${p.id}/confirm`,manager,'POST',{warehouseId,photos:['data:image/jpeg;base64,'+'A'.repeat(200)]});assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));
+  const body={warehouseId,photos:['data:image/jpeg;base64,'+'A'.repeat(200)]};let confirmed=await call(`/packing/${p.id}/confirm`,manager,'POST',body);
+  // Đơn khác (chưa gắn kho) đang giữ cùng mã: như thực tế, Manager xuất vượt có lý do (sales/api/stock-free.ts) – fixture này không kiểm chính sách giữ hàng.
+  if(confirmed.data?.code==='HELD_FOR_OTHER_ORDER')confirmed=await call(`/packing/${p.id}/confirm`,manager,'POST',{...body,overrideHolds:{reason:'Fixture: xuất đơn đang kiểm thử'}});
+  assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));
   const moves=await db.select().from(stockMoves).where(and(eq(stockMoves.refType,'packing_slip'),eq(stockMoves.refId,p.id)));
   assert.ok(moves.length,'SKU goods require actual warehouse issue proof');}
  const balances=await db.select().from(stockBalances).where(eq(stockBalances.warehouseId,warehouseId));
