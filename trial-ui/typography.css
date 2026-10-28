@@ -36,6 +36,7 @@
 }
 @media screen and (max-width: 850px) {
   .toolbar .search { flex-basis: 100%; }
-  .toolbar select { flex: 1 1 150px; min-width: 0; }
+  /* Chỉ select nằm thẳng trong thanh lọc: select bọc trong nhãn xếp dọc (Sổ kho, Lịch nhận hàng) mà nhận flex-basis sẽ bị kéo cao 150px. */
+  .toolbar > select { flex: 1 1 150px; min-width: 0; }
   .bottom-nav { grid-auto-columns: minmax(84px, 1fr); }
 }

@@ -353,6 +353,8 @@ table { width: 100%; border-collapse: collapse; }
   .editor .editor-actions .btn.primary { display: none; }
   .mobile-savebar { display: flex; position: fixed; left: 0; right: 0; bottom: var(--nav-h, calc(62px + env(safe-area-inset-bottom))); background: var(--surface); border-top: 1px solid var(--line); padding: 10px 16px; justify-content: space-between; align-items: center; z-index: 35; box-shadow: 0 -4px 14px #0f1d3312; }
   /* Nút chat nổi: luôn nằm trên menu dưới; ở trang soạn báo giá thì nằm trên cả thanh "Tổng thanh toán / Lưu" */
+  /* Chừa chỗ cuối trang cho nút chat tròn: cuộn hết trang thì nút / thẻ cuối không bị nút chat che. */
+  body:has(.chat-launcher:not([hidden])) .main::after { content: ''; display: block; flex: none; height: 72px; }
   body .chat-launcher { right: 14px; bottom: calc(var(--nav-h, calc(62px + env(safe-area-inset-bottom))) + 12px); }
   body:has(#view-editor:not([hidden])) .chat-launcher { bottom: calc(var(--nav-h, calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h, 68px) + 12px); }
   /* POS có thêm dock "Xem đơn": nâng chat lên khỏi dock để hai nút không đè nhau. */
@@ -458,7 +460,7 @@ table { width: 100%; border-collapse: collapse; }
   .stat { padding: 10px 12px; }
   .stat strong { font-size: var(--text-heading); }
   .toolbar { padding: 12px; }
-  .toolbar select { flex: 1; }
+  .toolbar > select { flex: 1; }
   .chips { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; }
   .chip { flex: none; }
   .editor-actions { width: 100%; }
@@ -836,7 +838,7 @@ a.flow-step:hover { border-color: var(--blue); }
 .orders-table { min-width: 1200px; }
 .orders-table td small { display: block; margin-top: 4px; color: var(--muted); }
 .orders-table td:nth-child(8) { white-space: nowrap; }
-@media (max-width: 600px) { .delivery-range { grid-template-columns: 1fr 1fr; } .delivery-status { grid-column: 1 / -1; } .delivery-status .chips { min-height: 0; overflow: visible; } .delivery-status .chip { flex: 1 1 0; padding: 6px 4px; white-space: nowrap; text-align: center; } }
+@media (max-width: 600px) { .delivery-range { grid-template-columns: 1fr 1fr; } .delivery-status { grid-column: 1 / -1; } .delivery-status .chips { min-height: 0; overflow: visible; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } .delivery-status .chip { padding: 6px 8px; white-space: nowrap; text-align: center; } }
 @media (max-width: 850px) {
   .cashbook-head { align-items: stretch; }
   .cashbook-head .btn { width: 100%; min-height: 36px; }
@@ -1589,7 +1591,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .kho-count { font-size: var(--text-heading); line-height: 1.05; font-variant-numeric: tabular-nums; }
 .kho-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .kho-list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.kho-list-head .card-title { margin: 0; }
+.kho-list-head .card-title { margin: 0; min-width: 0; }
+.kho-list-head .btn { flex: none; white-space: nowrap; }
 .kho-items { list-style: none; margin: 0; padding: 0; }
 .kho-items li + li { border-top: 1px solid var(--line); }
 .kho-items a { display: flex; align-items: center; gap: 10px; padding: 11px 2px; color: var(--ink); text-decoration: none; min-height: 48px; }
@@ -1646,7 +1649,8 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 @media (max-width: 680px) {
   .kho-cards { grid-template-columns: 1fr; gap: 10px; }
   .kho-card { grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 12px; padding: 14px 16px; }
-  .kho-card .kho-icon { grid-row: span 2; }
+  .kho-card .kho-icon { grid-row: span 2; width: 32px; text-align: center; }
+  .kho-list-head .card-title { font-size: var(--text-body); }
   .kho-card .kho-count { grid-column: 3; grid-row: 1 / span 2; font-size: var(--text-heading); }
   .kho-card small { grid-column: 2; }
   .recv-row { grid-template-columns: 1fr 1fr; } .recv-full { grid-column: 1 / -1; }
@@ -2145,9 +2149,10 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
 }
 
 /* Sổ kho (#/stock-moves, trial-ui/stock-ops.js) – bảng giao dịch kiểu Sapo: tiêu đề nền đậm, dòng tổng, số canh phải. */
-.ledger-bar label { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-caption); color: var(--muted); }
+.ledger-bar label, .filter-bar > label { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-caption); color: var(--muted); }
 .ledger-bar .ledger-search { flex: 1 1 260px; }
-.ledger-bar input[type=date] { width: auto; padding: 7px 8px; }
+.ledger-bar input[type=date], .filter-bar input[type=date] { width: auto; padding: 7px 8px; }
+.panel > .filter-bar ~ p { padding-inline: 16px; }
 .ledger-chips { padding: 10px 16px 0; }
 .ledger-chips[hidden] { display: none; }
 .ledger-help { padding: 8px 16px; font-size: var(--text-small); }
@@ -2165,8 +2170,11 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
 .ledger-item .pill { margin-top: 4px; }
 @media (max-width: 640px) {
   .ledger-help dl { grid-template-columns: 1fr; }
-  .ledger-bar label { flex: 1 1 calc(50% - 10px); }
-  .ledger-bar select, .ledger-bar input[type=date] { width: 100%; }
+  .ledger-bar label, .filter-bar > label { flex: 1 1 calc(50% - 10px); min-width: 0; }
+  .ledger-bar select, .ledger-bar input, .filter-bar select, .filter-bar input { width: 100%; min-width: 0; }
+  .ledger-bar .ledger-search { flex-basis: 100%; }
+  /* Thanh lọc trong khung trắng: chừa lề trong để nhãn / ghi chú không dính mép khung. */
+  .panel > .ledger-bar, .panel > .filter-bar, .panel > .toolbar.chips { padding: 12px; }
   /* Thẻ giao dịch: ngày + chứng từ + sản phẩm, rồi Nhập · Xuất · Tồn sau, chi nhánh ở cuối. */
   .ledger-table td.ledger-no, .ledger-table td.ledger-empty { display: none; }
   .ledger-table tr > td.nowrap { flex-basis: auto; font-size: var(--text-small); }

@@ -214,7 +214,8 @@
 /* Workflow review: all overrides below are deliberately mobile-only. */
 @media screen and (max-width:850px){
  .crm-mobile-nav:not([hidden]) { flex-wrap:nowrap;overflow-y:hidden;touch-action:pan-x;scroll-padding-inline:4px; }
- .crm-mobile-nav:not([hidden]) a { flex:0 0 auto;min-width:84px;padding:4px 12px;white-space:nowrap;text-align:center; }
+ /* Nhiều mục (tài khoản kho ~10 mục): mỗi mục rộng ~1/4,5 màn hình, nhãn dài xuống 2 dòng thay vì bị cắt ở mép; mục thứ 5 lộ một nửa để biết còn vuốt được. Ít mục thì giãn đều. */
+ .crm-mobile-nav:not([hidden]) a { flex:1 0 calc((100vw - 8px) / 4.5);min-width:72px;padding:4px;white-space:normal;text-align:center; }
  .crm-nav-symbol { font:20px/20px system-ui; }
  .crm-home-row { display:none!important; }
  .crm-more-sheet { padding:0;border:0;border-radius:22px 22px 0 0;margin:auto auto 0;width:min(100%,540px);max-height:86dvh;overflow:auto; }
