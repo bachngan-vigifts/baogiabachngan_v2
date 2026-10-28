@@ -1,3 +1,4 @@
+import { rememberQuoteCustomer } from './quote-customer-memory.ts';
 import {registerProductDetailRoutes} from '../modules/product-hub/api/routes.ts';
 import { registerWarehouseWork } from './warehouse-work.ts';
 import { transferTaskHooks } from '../modules/inventory/api/transfer-task-hooks.ts';
@@ -73,7 +74,7 @@ export function createAppRouter() {
   catalogStockHooks.ledger = ledgerWarehouses;
   Object.assign(supplierRegistrationHooks, { boundSupplier, bindSupplier, supplierOf });
   const router = createStaffRouter({ authorizeSynctime, authorizeSession: authorizePosStore });
-  registerQuoteRoutes(router);
+  registerQuoteRoutes(router, { rememberCustomer: rememberQuoteCustomer });
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);
   registerCatalogRoutes(router);

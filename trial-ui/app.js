@@ -1031,7 +1031,7 @@ let editorLoadSequence = 0;
 async function openEditor(id) {
   const sequence = ++editorLoadSequence, requestedHash = location.hash;
   const current = () => sequence === editorLoadSequence && location.hash === requestedHash;
-  $('#quote-error').textContent = ''; $('#conflict-banner').hidden = true;
+  $('#quote-error').textContent = ''; $('#conflict-banner').hidden = true; $('#quote-customer-memory-status').hidden = true;
   if (id === 'new') {
     editor.loading = false; qf.inert = false;
     const pending = editor.pending; editor.pending = null;
@@ -1830,7 +1830,7 @@ function showSuggest() {
     suggestItems = items; suggestIndex = items.length ? 0 : -1;
     suggest.innerHTML = items.length
       ? items.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === suggestIndex}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · ') || c.address || '')}</small></li>`).join('')
-      : `<li class="none">${searchInput.value.trim() ? 'Không có trong danh bạ. Điền tiếp thông tin bên dưới, rồi bấm "Lưu vào danh bạ".' : 'Danh bạ đang trống.'}</li>`;
+      : `<li class="none">${searchInput.value.trim() ? 'Không có trong danh bạ. Điền tiếp thông tin bên dưới; khách được lưu khi lưu báo giá.' : 'Danh bạ đang trống.'}</li>`;
     suggest.hidden = false; searchInput.setAttribute('aria-expanded', 'true');
   }, 180);
 }
@@ -1944,19 +1944,22 @@ async function saveQuote() {
   const saveSequence = editorLoadSequence, saveHash = location.hash, wasNew = !editor.id, deviceDraftId=editor.id;
   saving = true; $('#save-quote').disabled = $('#save-quote-m').disabled = true;
   try {
+    const customerFields = ['customer','contact','phone','email','customerTaxCode','customerAddress'].filter(k => data[k] !== (editor.base?.[k] || ''));
     const saved = editor.id
-      ? await api('/quotes/' + encodeURIComponent(editor.id), 'PUT', { revision: editor.revision, data })
-      : await api('/quotes', 'POST', data);
+      ? await api('/quotes/' + encodeURIComponent(editor.id), 'PUT', { revision: editor.revision, data, rememberCustomer: true, customerFields })
+      : await api('/quotes', 'POST', { ...data, rememberCustomer: true, customerFields });
     if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast('Đã lưu ' + saved.data.quoteNo); loadQuotes(); return; }
     const keepApproval = !wasNew && saved.approvalStatus === 'approved' ? { approvedAt: editor.approval?.at, approvedByName: editor.approval?.by } : {};
     fillEditor(saved.id, saved.revision, saved.data, { ...keepApproval, approvalStatus: saved.approvalStatus });
+    $('#quote-customer-memory-status').textContent = saved.customerMemory?.message || '';
+    $('#quote-customer-memory-status').hidden = !saved.customerMemory?.message;
     quoteDeviceDraft.saved(deviceDraftId);
     if (wasNew) { suppressHash = true; location.hash = '#/quotes/' + encodeURIComponent(saved.id); currentHash = location.hash; }
     if (saved.approvalRevoked) toast('Đã lưu. Báo giá chuyển về "Nháp" – bấm "Gửi duyệt" để Manager duyệt lại.');
     else if (saved.approvalStatus === 'pending') toast((wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · đang đợi Manager duyệt.');
     else if (saved.approvalStatus === 'draft') toast((wasNew ? 'Đã lưu nháp ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · bấm "Gửi duyệt" khi xong.');
     else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
-    loadQuotes();
+    loadQuotes(); if (saved.customerMemory && saved.customerMemory.status !== 'skipped') loadCustomers();
     return true;
   } catch (e) {
     if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast(e.message, 'err'); return; }

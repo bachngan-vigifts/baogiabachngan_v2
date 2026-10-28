@@ -63,7 +63,9 @@ export async function assignQuoteNo(tx: Tx, quoteNo: string, exceptId?: string):
   return nextQuoteNoAfter(head, used);
 }
 
-export function registerQuoteRoutes(router: Router<StaffEnv>) {
+export type QuoteCustomerMemory = (tx: Tx, data: Record<string, any>, previous: Record<string, any> | null,
+  viewer: SessionState['member'], fields: string[]) => Promise<{ status: string; message?: string }>;
+export function registerQuoteRoutes(router: Router<StaffEnv>, options: { rememberCustomer?: QuoteCustomerMemory } = {}) {
   /**
    * Danh sách báo giá – lọc, sắp xếp, phân trang trên máy chủ (`?q=&type=&owner=mine|others&sort=created|updated|date|no|value&limit=&offset=`).
    * Kèm `total` (số báo giá khớp bộ lọc), `all` (tổng báo giá xem được), `value` (tổng giá trị khớp bộ lọc; null khi quá nhiều),
@@ -239,19 +241,22 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
     // Nhân viên không đặt giá vốn (Manager bổ sung sau).
     const raw = await readJson(c.req), data = cleanQuotation(isManager(viewer) ? raw : keepCosts(raw, null));
     const id = crypto.randomUUID(), now = new Date().toISOString(), approval = approvalOnCreate(viewer, now);
+    let customerMemory: Awaited<ReturnType<QuoteCustomerMemory>> | undefined;
     await c.env.db.transaction(async tx => {
       data.quoteNo = await assignQuoteNo(tx, data.quoteNo);
+      if (raw.rememberCustomer === true && options.rememberCustomer) customerMemory = await options.rememberCustomer(tx, data, null, viewer, Array.isArray(raw.customerFields) ? raw.customerFields.filter((k: unknown): k is string => typeof k === 'string') : []);
       await tx.insert(quotations).values({ id, creatorId: viewer.id, assigneeId: viewer.id, quoteNo: data.quoteNo, quoteType: data.type, customer: data.customer, ...quoteHeaderIndex(data), data: JSON.stringify(data), revision: 1, ...approval, createdAt: now, updatedAt: now });
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
     // Báo giá nhân viên tạo là nháp: Manager chỉ nhận thông báo khi nhân viên bấm "Gửi duyệt".
-    return json({ id, revision: 1, data: forViewer(viewer, data), approvalStatus: approval.approvalStatus }, 201);
+    return json({ id, revision: 1, data: forViewer(viewer, data), approvalStatus: approval.approvalStatus, ...(customerMemory ? {customerMemory} : {}) }, 201);
   }, 'business');
   router.put('/quotes/:id', async c => {
     const viewer = (c.state.session as SessionState).member;
     const body = await readJson(c.req);
     if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
     let data = cleanQuotation(body.data);
+    let customerMemory: Awaited<ReturnType<QuoteCustomerMemory>> | undefined;
     const now = new Date().toISOString();
     const saved = await c.env.db.transaction(async tx => {
       const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), quotationPredicate(viewer, true));
@@ -262,6 +267,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       if (!isManager(viewer)) data = cleanQuotation(keepCosts(body.data as Record<string, unknown>, JSON.parse(old.data)));
       for (const h of quoteSaveHooks.beforeSave) await h(tx, old, viewer);
       if (data.quoteNo !== old.quoteNo) data.quoteNo = await assignQuoteNo(tx, data.quoteNo, old.id);
+      if (body.rememberCustomer === true && options.rememberCustomer) customerMemory = await options.rememberCustomer(tx, data, JSON.parse(old.data), viewer, Array.isArray(body.customerFields) ? body.customerFields.filter((k: unknown): k is string => typeof k === 'string') : []);
       const next = old.revision + 1, encoded = JSON.stringify(data);
       // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, về nháp, phải bấm "Gửi duyệt" lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
       const changed = contentKey(data) !== contentKey(old.data);
@@ -283,7 +289,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>) {
       title: 'Báo giá chờ duyệt vừa được sửa',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || ''}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     if (saved.revoked) await runAfterCommit(c.env);
-    return json({ id: c.params.id, revision: saved.revision, data: forViewer(viewer, data), approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked });
+    return json({ id: c.params.id, revision: saved.revision, data: forViewer(viewer, data), approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked, ...(customerMemory ? {customerMemory} : {}) });
   }, 'business');
 }
 
