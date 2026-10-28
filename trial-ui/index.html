@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="suppliers.css">
 <link rel="stylesheet" href="early-request-page.css">
 <link rel="stylesheet" href="product-detail.css">
+<link rel="stylesheet" href="price-labels.css">
 <link rel="stylesheet" href="typography.css">
 <link rel="stylesheet" href="mobile-actions.css">
 <link rel="stylesheet" href="mobile-design.css">
@@ -401,6 +402,7 @@
           <datalist id="product-stock-levels"><option value="10"><option value="50"><option value="100"><option value="200"><option value="500"><option value="1000"></datalist>
           <select id="product-policy" aria-label="Bảng giá dùng khi lập báo giá"></select>
           <span class="muted small" id="product-count"></span>
+          <label class="product-select-page"><input type="checkbox" id="product-select-page"> Chọn tất cả sản phẩm trang này</label>
         </div>
         <div class="table-wrap">
           <table class="data-table" id="product-table">
@@ -417,6 +419,7 @@
       <div class="selection-bar" id="product-selection" hidden>
         <span id="product-selection-text"></span>
         <button class="btn ghost small" id="product-clear">Bỏ chọn</button>
+        <button type="button" class="btn secondary" id="product-print-labels" hidden>In tem giá</button>
         <button class="btn primary" id="product-to-quote">Tạo báo giá</button>
       </div>
     </section>

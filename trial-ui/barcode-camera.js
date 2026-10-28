@@ -53,3 +53,6 @@ export async function startBarcodeCamera(video, onCode, { mediaDevices = navigat
     return { stop };
   } catch (e) { stop(); throw e; }
 }
+
+// Label printing reuses the same local library; this does not request camera access.
+export { loadReader as loadBarcodeLibrary };

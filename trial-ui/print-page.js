@@ -9,6 +9,7 @@
  * `page` = { size: 'A4' | 'A4 landscape', margin: '14mm 12mm' }; `cls` = lớp thêm cho #print-sheet trong lúc in; `title` = tên file PDF gợi ý.
  */
 let cleanup = null;
+export function resetPrintSheet(){ cleanup?.(); }
 export function printSheet({ page = {}, cls = '', title = '', clear = false } = {}) {
   cleanup?.(); // lần in trước chưa dọn (vd. Safari không báo afterprint)
   const out = document.getElementById('print-sheet'), oldTitle = document.title;
