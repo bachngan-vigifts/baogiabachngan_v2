@@ -415,6 +415,7 @@ test('POS Enter: chữ thường chỉ hiện danh sách, không tự thêm vào
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
     const root = new Element('section'), calls: any[] = [], toasts: string[] = [];
+    let slowScans = false;
     const api = async (path: string, method = 'GET', body?: any) => {
       calls.push({ path, method, body });
       if (path.startsWith('/pos/options'))
@@ -422,7 +423,9 @@ test('POS Enter: chữ thường chỉ hiện danh sách, không tự thêm vào
           shifts: [], templates: [], policies: [{ id: 'vat', name: 'Giá bán lẻ (+ VAT)' }, { id: 'retail', name: 'Giá bán lẻ' }] };
       if (path.startsWith('/pos/catalog')) {
         const q = new URLSearchParams(path.split('?')[1]).get('q') || '';
-        return { products: [{ sku: '001', name: 'Ly sứ', unit: 'cái', price: 108000, available: 10 }], nextOffset: null, exactSku: q.toLowerCase() === '001' || q === '8930001' ? '001' : null };
+        if (slowScans && q) await new Promise(r=>setTimeout(r,q==='8930001'?90:20));
+        if(q==='ERR')throw Error('Mất kết nối');
+        return { products: [{ sku: '001', name: 'Ly sứ', unit: 'cái', price: 108000, available: q==='OUT'?0:10 }], nextOffset: null, exactSku: ['001','8930001','OUT'].includes(q) ? '001' : null };
       }
       if (path === '/pos/preview') return { ...sample, lines: [{ ...sample.lines[0], sku: '001' }], temporary: true };
       throw Error(path);
@@ -436,6 +439,18 @@ test('POS Enter: chữ thường chỉ hiện danh sách, không tự thêm vào
     assert.equal(toasts.at(-1), 'Chọn đúng sản phẩm trong danh sách.');
     input.value = '8930001'; await input.fire('keydown', { key: 'Enter' }); await new Promise(r => setTimeout(r, 0));
     assert.equal(inCart(), 'true', 'mã vạch khớp chính xác: tự thêm vào giỏ');
+    assert.equal(input.value,'','mã đã thêm không nằm lại trong ô quét');
+    slowScans=true;
+    // Scanner input events schedule a typed search. Enter must cancel it, and every scan must survive out-of-order replies.
+    input.value='8930001';await input.fire('input');await input.fire('keydown',{key:'Enter'});assert.equal(input.value,'');
+    input.value='001';await input.fire('input');await input.fire('keydown',{key:'Enter'});assert.equal(input.value,'');
+    await new Promise(r=>setTimeout(r,330));
+    assert.equal(calls.filter(c=>c.path==='/pos/preview').at(-1).body.rows[0].qty,3,'hai lần quét nhanh đều cộng số lượng');
+    input.value='8930001';await input.fire('keydown',{key:'Enter'});input.value='ly';await input.fire('input');
+    await new Promise(r=>setTimeout(r,330));assert.equal(input.value,'ly','phản hồi quét cũ không xoá nội dung đang gõ');
+    assert.equal(calls.filter(c=>c.path==='/pos/preview').at(-1).body.rows[0].qty,4);
+    input.value='OUT';await input.fire('keydown',{key:'Enter'});await new Promise(r=>setTimeout(r,30));assert.equal(input.value,'OUT');assert.match(toasts.at(-1)!,/hết hàng/);
+    input.value='ERR';await input.fire('keydown',{key:'Enter'});await new Promise(r=>setTimeout(r,30));assert.equal(input.value,'ERR');assert.equal(toasts.at(-1),'Mất kết nối');
   } finally {
     Object.assign(globalThis, { document: prevDoc, window: prevWin });
   }
