@@ -14,7 +14,6 @@ export function installMobileDesign(profiles){
  const filters=new Map(),cardRows=new WeakSet();let frame=0,navSignature='';
  const nav=make('nav','crm-mobile-nav');nav.setAttribute('aria-label','Điều hướng điện thoại');
  document.body.append(nav);
- const more=make('dialog','crm-sheet crm-more-sheet'),moreHead=make('header','crm-sheet-head'),moreTitle=make('h2','','Thêm'),moreClose=make('button','icon-btn','×'),moreGrid=make('div','crm-more-grid');moreClose.type='button';moreClose.setAttribute('aria-label','Đóng Thêm');moreHead.append(moreTitle,moreClose);more.append(moreHead,moreGrid);document.body.append(more);moreClose.onclick=()=>more.close();
  // Contract detail uses the same permanent full-page view as an order at every viewport.
  function contractControls(){
   const order=document.querySelector('#view-order'),detail=/^#\/contracts\/[^?]+/.test(location.hash);
@@ -24,23 +23,31 @@ export function installMobileDesign(profiles){
   if(mainAction&&!mainAction.hasAttribute('data-mobile-primary'))mainAction.dataset.mobilePrimary='';
   for(const b of order?.querySelectorAll('[data-pack-print-for],[data-ship-print-for],#order-history')||[])if(!b.hasAttribute('data-mobile-inline'))b.dataset.mobileInline='';
  }
+ // Use the same permission-filtered entries as the sidebar, in daily-work order.
+ const navOrder=['pos','quotes','orders','contracts','receivables','customers','care','tasks','kho','packing','receiving','deliveries','early-requests','purchases','suppliers','products','stock-lookup','stock-requests','transfers','stock-moves','inventory','cash','cashbook','dashboard','flow','staff','payroll','permissions'];
+ const navLabels={pos:'Bán hàng nhanh',quotes:'Báo giá',orders:'Đơn hàng',contracts:'HĐKT',receivables:'Công nợ'};
  function syncNav(){
   const sources=new Map();
-  for(const a of [...document.querySelectorAll('.bottom-nav [data-nav]'),...document.querySelectorAll('.sidebar [data-nav]')])if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
-  const primary=['tasks','quotes','orders','customers'],key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
-  const signature=JSON.stringify([...sources].map(([k,a])=>[k,a.getAttribute('href'),a.querySelector('span')?.textContent||a.textContent.trim()]))+key;
-  if(signature===navSignature)return;navSignature=signature;nav.replaceChildren();moreGrid.replaceChildren();
-  const link=k=>{const source=sources.get(k),a=make('a','',({tasks:'Công việc',quotes:'Báo giá',orders:'Đơn hàng',customers:'Khách hàng'})[k]||source.querySelector('span')?.textContent||source.textContent.trim());a.href=source.getAttribute('href');a.dataset.mobileNav=k;const icon=source.querySelector('svg');if(icon)a.prepend(icon.cloneNode(true));if(k===key)a.setAttribute('aria-current','page');return a;};
-  for(const k of primary)if(sources.has(k))nav.append(link(k));
-  const home=make('a','','Trang chủ');home.href=document.querySelector('#workspace').dataset.homeHref||'#/tasks';home.className='crm-home-link';home.onclick=()=>more.close();moreGrid.append(home);
-  for(const k of sources.keys())if(!primary.includes(k)){const a=link(k);a.onclick=()=>more.close();moreGrid.append(a);}
-  const button=make('button','','Thêm');button.type='button';button.dataset.mobileNav='more';button.setAttribute('aria-haspopup','dialog');if(!primary.includes(key))button.setAttribute('aria-current','page');button.onclick=()=>more.showModal();nav.append(button);
+  for(const a of document.querySelectorAll('.sidebar [data-nav]'))if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
+  const keys=[...navOrder.filter(k=>sources.has(k)),...[...sources.keys()].filter(k=>!navOrder.includes(k))];
+  const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
+  const label=(k,a)=>navLabels[k]||a.querySelector('span:last-of-type')?.textContent||a.textContent.trim();
+  const signature=JSON.stringify(keys.map(k=>{const a=sources.get(k);return [k,a.getAttribute('href'),label(k,a)];}))+key;
+  if(signature===navSignature)return;navSignature=signature;nav.replaceChildren();
+  for(const k of keys){
+   const source=sources.get(k),a=make('a','',label(k,source));a.href=source.getAttribute('href');a.dataset.mobileNav=k;
+   const icon=source.querySelector('svg');if(icon)a.prepend(icon.cloneNode(true));
+   else {const symbol=make('span','crm-nav-symbol',source.querySelector('span')?.textContent||'▣');symbol.setAttribute('aria-hidden','true');a.prepend(symbol);}
+   if(k===key)a.setAttribute('aria-current','page');nav.append(a);
+  }
+  // Keep the current page in view without changing the page's vertical position.
+  const active=nav.querySelector('[aria-current]');
+  if(media.matches&&active){const left=active.offsetLeft,right=left+active.offsetWidth;
+   if(left<nav.scrollLeft)nav.scrollLeft=left;
+   else if(right>nav.scrollLeft+nav.clientWidth)nav.scrollLeft=right-nav.clientWidth;
+  }
  }
- function homeLinks(){
-  for(const row of document.querySelectorAll('.crm-home-row'))row.remove();
-  const href=document.querySelector('#workspace').dataset.homeHref||'#/tasks';
-  const link=moreGrid.querySelector('.crm-home-link');if(link&&link.getAttribute('href')!==href)link.setAttribute('href',href);
- }
+ function homeLinks(){for(const row of document.querySelectorAll('.crm-home-row'))row.remove();}
  function createFilter(root,profile){
   const source=root.querySelector(profile.filters);if(!source||filters.has(source)||!('showPopover'in HTMLElement.prototype)||!media.matches||root.contains(document.activeElement))return;
   const parts=[...source.children].filter(n=>!n.matches(profile.keep||'.search,.search-box')&&!n.matches('.crm-filter-sheet,.crm-filter-trigger'));
@@ -136,7 +143,7 @@ export function installMobileDesign(profiles){
    if(!row.querySelector('[data-mobile-row-detail]')){const cell=row.lastElementChild,button=make('button','btn secondary small','Chi tiết');button.type='button';button.dataset.mobileRowDetail='';button.dataset.mobileInline='';button.setAttribute('aria-expanded','false');button.onclick=e=>{e.stopPropagation();const open=row.classList.toggle('crm-row-expanded');button.setAttribute('aria-expanded',String(open));};cell.classList.add('crm-simple-actions');cell.append(button);}
   }
   const dashboard=document.querySelector('#view-dashboard');if(dashboard&&!dashboard.querySelector('[data-mobile-dashboard-more]')){const button=make('button','btn secondary crm-dashboard-more','Xem thêm thống kê');button.type='button';button.dataset.mobileDashboardMore='';button.onclick=()=>{const open=dashboard.classList.toggle('crm-dashboard-expanded');button.textContent=open?'Thu gọn thống kê':'Xem thêm thống kê';};dashboard.querySelector('.dash-kpis')?.after(button);}
-  for(const row of document.querySelectorAll('#customer-list tr')){const tel=row.querySelector('a[href^="tel:"]');if(tel)tel.closest('td').classList.add('crm-customer-call');const quote=row.querySelector('[data-quote-for]');if(quote&&!quote.hasAttribute('data-mobile-inline'))quote.dataset.mobileInline='';}
+  for(const row of document.querySelectorAll('#customer-list tr')){const title=row.querySelector('.first a'),contact=row.querySelector('[data-label=\"Liên hệ\"]');if(title&&contact){const norm=n=>n.textContent.trim().replace(/\s+/g,' ').toLocaleLowerCase('vi-VN');contact.classList.toggle('crm-customer-duplicate-contact',norm(title)===norm(contact));}const tel=row.querySelector('a[href^="tel:"]');if(tel)tel.closest('td').classList.add('crm-customer-call');const quote=row.querySelector('[data-quote-for]');if(quote&&!quote.hasAttribute('data-mobile-inline'))quote.dataset.mobileInline='';}
   const quoteNav=document.querySelector('.sidebar [data-nav=quotes]');for(const n of document.querySelectorAll('.crm-customer-hero [data-act=quote]'))n.classList.toggle('crm-mobile-no-permission',!!quoteNav?.hidden);
   const tabRoot=document.querySelector('#tasks-view');if(tabRoot&&!tabRoot.querySelector('[data-v=approvals]')&&!tabRoot.querySelector('.crm-task-no-approval')){const tab=make('button','task-tab crm-task-no-approval','Cần duyệt');tab.type='button';tab.disabled=true;tab.title='Tài khoản chưa được cấp quyền duyệt';tabRoot.append(tab);}
   for(const done of document.querySelectorAll('[data-set-status="done"]')){
@@ -172,7 +179,7 @@ export function installMobileDesign(profiles){
  document.addEventListener('input',e=>{if(e.target.matches('input,select,textarea')&&e.target.validity?.valid)fieldError(e.target,false);});
  document.addEventListener('focusin',e=>{if(location.hash.startsWith('#/pos'))return;if(e.target.matches('input:not([type=checkbox]):not([type=radio]),select,textarea'))document.body.classList.add('crm-keyboard-open');});
  document.addEventListener('focusout',()=>{if(location.hash.startsWith('#/pos'))return;setTimeout(()=>{if(!document.activeElement?.matches('input,select,textarea'))document.body.classList.remove('crm-keyboard-open');},0);});
- window.addEventListener('hashchange',()=>{if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();});
- const resize=()=>{if(more.open)more.close();for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();};media.addEventListener('change',resize);
+ window.addEventListener('hashchange',()=>{for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();});
+ const resize=()=>{for(const r of filters.values())if(r.group.matches(':popover-open'))r.group.hidePopover();schedule();};media.addEventListener('change',resize);
  scan();return {refresh:schedule};
 }

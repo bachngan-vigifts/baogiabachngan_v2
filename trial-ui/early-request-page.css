@@ -33,3 +33,5 @@
 .early-list-bulk p { flex-basis:100%;margin:0; }
 .early-list-bulk .error:empty { display:none; }
 @media(max-width:850px){ .early-list-bulk>.btn.primary { flex:1 1 180px; } .early-list-title { min-height:36px; } }
+
+.early-page-card .early-received-summary { color:#166534;background:#dcfce7;white-space:normal;line-height:1.5; }

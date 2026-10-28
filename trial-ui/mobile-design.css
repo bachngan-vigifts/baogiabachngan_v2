@@ -213,8 +213,9 @@
 }
 /* Workflow review: all overrides below are deliberately mobile-only. */
 @media screen and (max-width:850px){
- .crm-mobile-nav:not([hidden]) { display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);overflow:visible; }
- .crm-mobile-nav:not([hidden]) a,.crm-mobile-nav:not([hidden]) button { min-width:0;padding:4px 2px;white-space:normal;text-align:center; }
+ .crm-mobile-nav:not([hidden]) { flex-wrap:nowrap;overflow-y:hidden;touch-action:pan-x;scroll-padding-inline:4px; }
+ .crm-mobile-nav:not([hidden]) a { flex:0 0 auto;min-width:84px;padding:4px 12px;white-space:nowrap;text-align:center; }
+ .crm-nav-symbol { font:20px/20px system-ui; }
  .crm-home-row { display:none!important; }
  .crm-more-sheet { padding:0;border:0;border-radius:22px 22px 0 0;margin:auto auto 0;width:min(100%,540px);max-height:86dvh;overflow:auto; }
  .crm-more-grid .crm-home-link { display:grid!important; }
@@ -257,6 +258,16 @@
  .crm-customer-call { display:block!important;grid-column:1;grid-row:3; }
  .crm-customer-call a::before { content:'Gọi · '; }
  #view-customers #customer-list tr.crm-list-card td::before { display:none!important; }
+ /* Customer content stays in the left column; actions share its top edge. */
+ #customer-list .crm-list-card { grid-template-columns:minmax(0,1fr) 104px;grid-template-rows:max-content max-content max-content minmax(min-content,1fr);gap:4px 10px!important; }
+ #customer-list .crm-card-title { grid-column:1;grid-row:1; }
+ #customer-list .crm-card-meta { grid-column:1;grid-row:2; }
+ #customer-list .crm-card-owner { grid-column:1;grid-row:4; }
+ #customer-list .crm-customer-duplicate-contact { display:none!important; }
+ #customer-list .crm-list-card .crm-card-actions { grid-column:2;grid-row:1/5;align-self:start;justify-self:stretch; }
+ #customer-list .crm-card-actions .row-actions { display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:100%; }
+ #customer-list .crm-card-actions [data-quote-for] { min-height:40px;padding:6px 8px;font-size:13px;white-space:nowrap; }
+
  .crm-mobile-no-permission { display:none!important; }
  #quote-list .quote-desktop-date { display:none; }
  #quote-list .mobile-quote-owner { display:inline;font-size:12px;color:var(--muted); }
