@@ -15,8 +15,8 @@
 .price-tag-brand-name { flex-shrink:0;white-space:nowrap; }
 .price-tag-sku { min-width:0;text-align:right;white-space:nowrap;overflow:hidden;font-weight:500;line-height:1.15; }
 .price-tag-qr { grid-column:2;grid-row:2;width:19mm;height:19mm;align-self:center;background:#fff; }
-.price-tag-name { grid-column:1;grid-row:2;overflow:hidden;overflow-wrap:anywhere;font-weight:600;padding-top:1mm; }
-.price-tag-footer { grid-column:1/-1;grid-row:3;display:flex;align-items:flex-end;align-self:end;justify-content:space-between;gap:1mm; }
+.price-tag-name { grid-column:1;grid-row:2;overflow:hidden;overflow-wrap:anywhere;font-weight:600;margin:2.5mm 0 2mm; }
+.price-tag-footer { grid-column:1/-1;grid-row:3;display:flex;align-items:flex-end;align-self:end;margin-bottom:1.5mm;justify-content:space-between;gap:1mm; }
 .price-tag-price { min-width:0;display:flex;align-items:baseline;gap:1mm;white-space:nowrap;font-weight:bold; }
 .price-tag-price strong { font-size:var(--price-font);line-height:1; }
 .price-tag-price span { font-size:7pt;font-weight:normal; }
