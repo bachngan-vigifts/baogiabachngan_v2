@@ -17,6 +17,7 @@ import { cashAccess, cashAudit, cashLock, type CashDb } from './cash-store.ts';
 import { posStoreScopeFor } from './pos-access.ts';
 import { posKey, posText } from './pos-store.ts';
 import { returnAccount } from './pos-return-credit.ts';
+import { basisCovers, basisSkus, describeUnproven, unprovenRestock, verifyStockBasis, type StockBasis } from './crm-return-stock.ts';
 import { returnPortion } from '../domain/pos-return-money.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { crmReturnAmounts } from '../domain/crm-return-money.ts';
@@ -66,6 +67,16 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     if (scope && !scope.rows.some(x => scope.scope.registers.includes(x.r.id) && x.r.warehouseId === id)) throw new AppError(403, 'Kho không thuộc cửa hàng của bạn.');
     await assertWarehousesOpened(db, [id]);
   }
+  /** Phần nhập lại vượt lượng đã xuất: bắt buộc Manager chọn căn cứ kiểm được (crm-return-stock.ts); lưu vào phiếu + nhật ký. */
+  async function withStockBasis(db: CashDb, o: Order, r: typeof posReturns.$inferSelect, raw: unknown, by: string, required = false) {
+    const snapshot = JSON.parse(r.sourceSnapshot), unproven = await unprovenRestock(db, o.id, r.id);
+    if (!unproven.length) { if (required) throw new AppError(409, 'Phiếu không có phần nhập lại vượt lượng đã xuất, không cần căn cứ.'); return r.sourceSnapshot; }
+    if (raw === undefined || raw === null) throw new AppError(409, 'Nhập lại vượt lượng đã xuất có chứng từ (' + describeUnproven(unproven) + '). Chọn căn cứ: giao trước ngày chốt tồn, hoặc phiếu điều chỉnh đã trừ bù; không có căn cứ thì từ chối phiếu và lập lại với tình trạng hàng hỏng (không nhập kho).', 'RETURN_STOCK_UNPROVEN');
+    if (by && (await db.select({ role: employees.role }).from(employees).where(eq(employees.id, by)))[0]?.role !== 'manager') throw new AppError(403, 'Chỉ Manager xác nhận căn cứ nhập lại kho.');
+    const basis = await verifyStockBasis(db, o, r, unproven, raw, by);
+    await cashAudit(db, by, 'crm-return-stock-basis', 'pos-returns', r.id, { orderId: o.id, basis, unproven });
+    return JSON.stringify({ ...snapshot, stockBasis: basis, stockBasisSkus: basisSkus(unproven) });
+  }
   const base = '/orders/:id/returns';
   router.get(base, async c => {
     const db = c.env.db, o = await source(c, db), account = await returnAccount(db, o.id), lines = await linesOf(db, o.id);
@@ -73,6 +84,8 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     const people = await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [...new Set(account.returns.flatMap(r => [r.createdBy, r.approvedBy, r.receivedBy].filter((x): x is string => !!x)) .concat(account.refunds.map(r => r.confirmedBy)))]));
     const names = new Map(people.map(x => [x.id, x.name]));
     const returns = await Promise.all(account.returns.map(async r => ({ ...r, createdByName: names.get(r.createdBy), approvedByName: names.get(r.approvedBy || ''), receivedByName: names.get(r.receivedBy || ''),
+      // Phần nhập lại vượt lượng đã thực xuất (đơn cũ) + căn cứ Manager đã chọn – giao diện hỏi căn cứ trước khi duyệt / nhận.
+      stockCheck: active(r.status) && !r.receivedAt ? { unproven: await unprovenRestock(db, o.id, r.id), basis: (JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis ?? null } : null,
       lines: await db.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id)), refunds: account.refunds.filter(x => x.returnId === r.id).map(x => ({ ...x, confirmedByName: names.get(x.confirmedBy) })) })));
     let canRefund = true; try { refundAccess(c); } catch { canRefund = false; }
     const whs = (await db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(eq(warehouses.kind, 'stock'))).filter(w => !scope || scope.rows.some(x => scope.scope.registers.includes(x.r.id) && x.r.warehouseId === w.id));
@@ -126,8 +139,22 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
       if (r.createdBy === who(c).id && who(c).role !== 'manager') throw new AppError(403, 'Người được chỉ định không tự duyệt phiếu của mình.');
       if (r.status !== 'pending') { if (r.approvedBy === who(c).id && r.approvalNote === note && active(r.status)) return { id: r.id, replayed: true }; throw new AppError(409, 'Phiếu không còn chờ duyệt.'); }
       await checkUnchanged(tx, o, r); const at = now();
-      await tx.update(posReturns).set({ status: 'approved', approvedBy: who(c).id, approvedAt: at, approvalNote: note, updatedAt: at }).where(eq(posReturns.id, r.id));
+      const snapshot = await withStockBasis(tx, o, r, b.stockBasis, who(c).id);
+      await tx.update(posReturns).set({ status: 'approved', approvedBy: who(c).id, approvedAt: at, approvalNote: note, updatedAt: at, sourceSnapshot: snapshot }).where(eq(posReturns.id, r.id));
       await cashAudit(tx, who(c).id, 'crm-approve-return', 'pos-returns', r.id, { orderId: o.id, note }); return { id: r.id };
+    }));
+  }, 'business');
+  /** Manager bổ sung / đổi căn cứ nhập lại kho cho phiếu đã duyệt, chưa nhận hàng. */
+  router.post(base + '/:returnId/stock-basis', async c => {
+    approver(c); if (who(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager xác nhận căn cứ nhập lại kho.');
+    const b = await readJson(c.req, 4000);
+    return json(await c.env.db.transaction(async tx => {
+      await cashLock(tx); const { o, r } = await request(c, tx);
+      if (r.status !== 'approved' || r.receivedAt) throw new AppError(409, 'Chỉ bổ sung căn cứ cho phiếu đã duyệt, chưa nhận hàng.');
+      await checkUnchanged(tx, o, r);
+      const snapshot = await withStockBasis(tx, o, r, b.stockBasis, who(c).id, true);
+      await tx.update(posReturns).set({ sourceSnapshot: snapshot, updatedAt: now() }).where(eq(posReturns.id, r.id));
+      return { id: r.id };
     }));
   }, 'business');
   router.post(base + '/:returnId/cancel', async c => {
@@ -148,6 +175,10 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
       if (r.receivedAt) return { id: r.id, replayed: true };
       if (r.status !== 'approved') throw new AppError(409, 'Phiếu chưa được duyệt.');
       await checkUnchanged(tx, o, r); await checkWarehouse(c, tx, r.warehouseId);
+      // Kiểm lại lúc nhập kho: phiếu xuất / phiếu trả khác có thể đổi sau khi duyệt.
+      const unproven = await unprovenRestock(tx, o.id, r.id);
+      if (unproven.length && !basisCovers((JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis, unproven))
+        throw new AppError(409, 'Nhập lại vượt lượng đã xuất có chứng từ (' + describeUnproven(unproven) + '). Manager cần chọn căn cứ trên phiếu trước khi nhận hàng.', 'RETURN_STOCK_UNPROVEN');
       const lines = await tx.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id)), at = now();
       await postMoves(tx, who(c).id, lines.filter(l => l.disposition === 'restock').map(l => ({ sku: l.sku, warehouseId: r.warehouseId, qty: l.requestedQty, kind: 'customer_return' as const, refType: 'pos_return' as const, refId: r.id, refNo: r.returnNo, note: r.reason })), at);
       await recordMovements(tx, lines.map(l => ({ refKey: `return:${r.id}:${l.id}`, sku: l.sku, name: l.name, qty: l.requestedQty, unit: l.unit, unitPrice: l.subtotal / l.requestedQty, kind: 'customer_return', partner: o.customerName, refCode: r.returnNo, link: '#/orders/' + o.id, status: l.disposition === 'restock' ? 'Đã nhập lại kho' : 'Hàng hỏng, không nhập tồn bán', occurredAt: at })));
