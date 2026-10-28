@@ -55,8 +55,10 @@ try{for(const width of (process.env.REGRESSION_WIDTHS||'360,390,430,768,1280').s
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await arrive(page,'#/orders');await page.locator('#orders-list tr.clickable').first().waitFor();
  if(width<=850){
-  assert.equal(await page.locator('.crm-mobile-nav > *').count(),5);assert.deepEqual(await page.locator('.crm-mobile-nav > *').allTextContents(),['Công việc','Báo giá','Đơn hàng','Khách hàng','Thêm']);
-  assert.equal(await page.locator('.crm-home-row').count(),0);await page.getByRole('button',{name:'Thêm',exact:true}).click();await page.locator('.crm-more-sheet[open]').waitFor();assert.ok(await page.locator('.crm-more-grid a').count()>5);await page.getByRole('button',{name:'Đóng Thêm',exact:true}).click();
+  const nav=page.locator('.crm-mobile-nav');
+  assert.deepEqual((await nav.locator('>a').evaluateAll(links=>links.map(a=>a.dataset.mobileNav))).slice(0,5),['pos','quotes','orders','contracts','receivables']);
+  assert.equal(await nav.locator('button').count(),0);assert.equal(await nav.evaluate(n=>n.scrollWidth>n.clientWidth),true);
+  assert.equal(await page.locator('.crm-home-row').count(),0);
   const before=reads.filter(p=>p.startsWith('/orders?')).length;
   await page.getByRole('button',{name:'Lọc đơn hàng',exact:true}).click();await page.locator('#orders-source').selectOption('pos');await page.waitForTimeout(250);
   assert.equal(reads.filter(p=>p.startsWith('/orders?')).length,before,'changing a filter must not query before Apply');

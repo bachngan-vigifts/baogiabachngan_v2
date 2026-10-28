@@ -50,12 +50,16 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
    canSend=!!data.canSend;file.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();selection.reset(data.requests,data);
    for(const request of data.requests){
     const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link',request.ticketNumber||'Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
-    const title=node('div','early-list-title'),check=selection.checkbox(request);if(check)title.append(check);title.append(open);head.append(title,node('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
+    const title=node('div','early-list-title'),check=selection.checkbox(request);if(check)title.append(check);title.append(open);head.append(title);
     const allocations=request.lines.flatMap(l=>l.allocations),names=[...new Set(allocations.map(a=>a.supplierName))],orders=[...new Set(allocations.map(a=>a.ticketNumber+(a.supplierOrderNo?' · NCC: '+a.supplierOrderNo:'')))];
+    const requested=request.lines.reduce((sum,line)=>sum+Number(line.quantity||0),0),received=allocations.reduce((sum,a)=>sum+Number(a.receivedQty||0),0);
+    const complete=requested>0&&received>=requested&&allocations.length>0&&allocations.every(a=>Number(a.receivedQty||0)>=Number(a.quantity));
+    const quantities=`SL xin ${number(requested)} · Đã nhận ${number(received)}`;
+    head.append(complete?node('span','sup-pill early-received-summary',quantities):node('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
     const created=new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(request.createdAt));
     card.append(head,node('p','small muted','Lập '+created+' · Ngày lấy: '+(request.pickupDate?request.pickupDate.split('-').reverse().join('/'):'Chưa nhập')),
       node('p','',names.join(' · ')),node('p','small',orders.join(' · ')),node('p','small muted',request.lines.map(l=>l.sku+' · '+l.name).join('; ')),
-      node('p','small',`${request.lines.length} mã · SL xin ${number(request.lines.reduce((s,l)=>s+l.quantity,0))} · Đã nhận ${number(allocations.reduce((s,a)=>s+(a.receivedQty||0),0))}`));
+      node('p','small',`${request.lines.length} mã${complete?'':' · '+quantities}`));
     list.append(card);
    }
    if(!data.requests.length)list.append(node('p','muted','Không có phiếu phù hợp bộ lọc.'));

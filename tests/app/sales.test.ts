@@ -44,7 +44,9 @@ test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòn
   assert.deepEqual(contractSchedules(1000, 30, '2026-10-06').map(s => [s.kind, s.amount, s.dueDate]), [['deposit', 300, '2026-10-06'], ['balance', 700, null]]);
 });
 
-test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch giao → công nợ, đúng quyền', async () => {
+test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch giao → công nợ, đúng quyền', async t => {
+  // Fixed delivery/payment fixtures end on 27/10. Keep Date stable; real async timers still run.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-27T16:59:59.000Z') });
   const { db, call, emp, mgr, ncc } = await setup();
   await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: 'Chị Lan', phone: '0901', email: '', address: '1 Lê Lợi', search: '', taxCode: '0101234567', customerCode: 'HL01', sourceVersion: 0, syncedAt: '' });
   const doc = { type: 'B2B', quoteNo: 'B2B_BG20261006_001', customer: 'Công ty Hoàng Long', customerId: '1001', contact: 'Chị Lan', phone: '0901', customerAddress: '1 Lê Lợi', vat: 8,
@@ -137,6 +139,17 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.equal((await call('/orders/' + o.data.id + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 409, 'Manager cũng không huỷ được đơn đã giao / thu tiền');
   assert.equal((await call('/orders?q=hoang long', emp)).data.orders[0].contract.contractNo, k.data.contractNo);
   assert.equal((await call('/orders', ncc)).status, 403);
+
+  // At midnight in Vietnam, the unpaid balance becomes overdue on both lists.
+  t.mock.timers.setTime(Date.parse('2026-10-27T17:00:00.000Z'));
+  for (const [path, key, match] of [
+    ['/orders', 'orders', (x: any) => x.id === o.data.id],
+    ['/contracts', 'contracts', (x: any) => x.orderId === o.data.id],
+  ] as const) {
+    const result = await call(path, emp); assert.equal(result.status, 200);
+    const row = result.data[key].find(match);
+    assert.deepEqual([row.receivable.payState, row.receivable.overdue, row.receivable.depositPaid], ['overdue', 17_388_000, 7_452_000]);
+  }
 });
 
 test('huỷ đơn chưa giao/chưa thu được; huỷ rồi tạo lại đơn từ cùng báo giá', async () => {
