@@ -77,6 +77,7 @@ for(const source of ['supplier','agent','store','other'])test(`${source}: bắt 
  ok(await f.call('/purchase-orders/a1/receipts',c.kho,'POST',{clientKey:crypto.randomUUID(),warehouse:'KHO VIGIFTS',lines:[{lineId:'line-a1',goodQty:5}]}),201);
  assert.equal(await f.balance(),5);
  const held=async()=>ok(await f.call('/stock-holds?warehouseId=vig',c.mgr)).holds.filter((h:any)=>h.orderId===f.order.id).reduce((n:number,h:any)=>n+h.qty,0);
+ assert.equal(await held(),0,'duyệt khi chưa có hàng: không giữ');await f.hold();
  assert.equal(await held(),5);
  ok(await f.call('/packing/'+first.id+'/confirm',c.kho,'POST',{warehouseId:'vig',photos:[photo]}));assert.equal(await f.balance(),3);assert.equal(await held(),3);
  assert.equal((await f.call(`/deliveries/${f.trip.id}/status`,c.emp,'PUT',{status:'in_transit'})).data.code,'STOCK_NOT_PACKED');
@@ -128,6 +129,8 @@ test('221 kho + 29 NCC nhập kho: 229 - 221 + 29 - 29 = 8, xác nhận lại kh
 
 test('phiếu NCC/đại lý cũ đã packed nhưng chưa có bút toán không được tính xuất hoặc bỏ giữ hàng',async()=>{
  const f=await fixture(),c=f.cookies,p=await f.pack(0,'supplier');
+ // Đơn cũ (trước giữ hàng theo bảng): giữ toàn bộ phần chưa xuất.
+ await f.db.update(salesOrders).set({holdMode:'legacy'}).where(eq(salesOrders.id,f.order.id));
  await f.db.update(packingSlips).set({status:'packed',packedBy:'mgr',packedAt:new Date().toISOString(),stockWarehouseId:'vig'}).where(eq(packingSlips.id,p.id));
  const state=(await crmStockFulfilment(f.db,[f.order.id])).get(f.order.id)!;assert.equal(state.lines[0]!.issued,0);assert.equal(state.complete,false);
  const holds=ok(await f.call('/stock-holds?warehouseId=vig',c.mgr)).holds.filter((h:any)=>h.orderId===f.order.id);

@@ -63,7 +63,12 @@ test('giữ hàng: chỉ báo giá đã duyệt; giữ phần khả dụng (khô
   assert.equal((await call('/stock-holds', emp)).data.holds.length, 1);
 });
 
-test('giữ hàng: lập đơn từ báo giá thì tự bỏ treo; quá hạn thì bỏ treo và báo nhân viên một lần', async () => {
+const approve = async (call: any, mgr: string, id: string, extra: object = {}) => {
+  const r = await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, warehouseId: 'k1', ...extra });
+  assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data;
+};
+
+test('giữ hàng: lập đơn (nháp) vẫn giữ theo báo giá; duyệt thì chuyển sang đơn đúng số đã giữ; quá hạn thì bỏ treo và báo nhân viên một lần', async () => {
   const { db, call, emp, mgr } = await setup();
   const a = await quote(call, emp, mgr, 'BG_D', [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 30, price: 1000 }]);
   const b = await quote(call, emp, mgr, 'BG_E', [{ name: 'Đĩa', sku: 'DIA1', unit: 'cái', qty: 5, price: 1000 }]);
@@ -71,6 +76,10 @@ test('giữ hàng: lập đơn từ báo giá thì tự bỏ treo; quá hạn th
   assert.equal((await call(`/quotes/${b}/hold`, emp, 'POST', {})).status, 201);
   const o = await call('/orders', emp, 'POST', { quoteId: a });
   assert.equal(o.status, 201, JSON.stringify(o.data));
+  const orderId = o.data.order?.id ?? o.data.id;
+  assert.deepEqual((await db.select({ status: stockHolds.status }).from(stockHolds).where(eq(stockHolds.quoteId, a))).map(r => r.status), ['active'], 'đơn nháp chưa giữ: báo giá vẫn giữ');
+  const held = await approve(call, mgr, orderId);
+  assert.deepEqual(held.hold.map((l: any) => [l.sku, l.qty]), [['LY1', 30]], 'không ngày giao: giữ tiếp đúng số báo giá đã giữ');
   assert.deepEqual((await db.select({ status: stockHolds.status }).from(stockHolds).where(eq(stockHolds.quoteId, a))).map(r => r.status), ['converted']);
   // Cho hold của BG_E quá hạn → nhịp /pulse bỏ treo + gửi thông báo cho nhân viên.
   await db.update(stockHolds).set({ expiresAt: '2026-01-01T00:00:00.000Z' }).where(eq(stockHolds.quoteId, b));
@@ -83,17 +92,21 @@ test('giữ hàng: lập đơn từ báo giá thì tự bỏ treo; quá hạn th
   assert.equal((await call('/notifications', emp)).data.notifications.filter((n: any) => n.title === 'Hết hạn giữ hàng').length, 1, 'chỉ báo một lần');
 });
 
-test('đơn / HĐKT tự giữ hàng: lập là giữ (kể cả nháp), giao bớt thì giữ phần còn lại, huỷ thì bỏ; đã đẩy Sapo thì thôi giữ khi tồn Sapo cập nhật sau lúc đẩy', async () => {
+test('đơn / HĐKT giữ theo đơn: duyệt có ngày giao thì giữ ≤ có thể bán; giao bớt giữ phần còn lại; huỷ thì bỏ; đã đẩy Sapo thì thôi giữ khi tồn Sapo cập nhật sau lúc đẩy', async () => {
   const { db, call, emp, mgr } = await setup();
   const a = await quote(call, emp, mgr, 'BG_F', [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 30, price: 1000 }, { name: 'Hộp', qty: 3, price: 5 }]);
   assert.equal((await call(`/quotes/${a}/hold`, emp, 'POST', {})).status, 201);
-  const o = await call('/orders', emp, 'POST', { quoteId: a });
+  const o = await call('/orders', emp, 'POST', { quoteId: a, deliveryDate: '2026-11-05' });
   assert.equal(o.status, 201, JSON.stringify(o.data));
   const orderId = o.data.order?.id ?? o.data.id;
   const holds = async () => (await call('/stock-holds', emp)).data.holds.map((h: any) => [h.sku, h.qty, h.orderId ? 'đơn' : h.quoteNo]);
+  assert.deepEqual(await holds(), [['LY1', 30, 'BG_F']], 'nháp: báo giá vẫn giữ');
+  await approve(call, mgr, orderId);
   assert.deepEqual(await holds(), [['LY1', 30, 'đơn']], 'treo của báo giá chuyển sang đơn; dòng không mã bỏ qua');
   const row = (await call('/stock-holds', emp)).data.holds[0];
   assert.deepEqual([row.orderId, row.quoteId, row.customer, row.expiresAt], [orderId, a, 'Khách BG_F', null]);
+  const view = (await call(`/orders/${orderId}/holds`, emp)).data;
+  assert.deepEqual(view.holds.map((h: any) => [h.sku, h.qty, h.source, h.expiresAt]), [['LY1', 30, 'auto', '2026-11-08T16:59:59.000Z']], 'hạn = hết ngày giao + 3 ngày (giờ VN)');
   // Báo giá khác giữ: khả dụng = 100 − 30 (đơn) → giữ được 70 / 80.
   const b = await quote(call, emp, mgr, 'BG_G', [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 80, price: 1000 }]);
   const hb = (await call(`/quotes/${b}/hold`, emp, 'POST', {})).data;
@@ -110,13 +123,24 @@ test('đơn / HĐKT tự giữ hàng: lập là giữ (kể cả nháp), giao b�
   assert.deepEqual(await holds(), [], 'tồn Sapo đã trừ → web thôi giữ, không trừ hai lần');
   // Chưa đẩy Sapo: huỷ thì bỏ giữ.
   const c = await quote(call, emp, mgr, 'BG_H', [{ name: 'Đĩa', sku: 'DIA1', unit: 'cái', qty: 4, price: 1000 }]);
-  const oc = await call('/orders', emp, 'POST', { quoteId: c }), cid = oc.data.order?.id ?? oc.data.id;
+  const oc = await call('/orders', emp, 'POST', { quoteId: c, deliveryDate: '2026-11-05' }), cid = oc.data.order?.id ?? oc.data.id;
+  assert.deepEqual(await holds(), [], 'đơn nháp không giữ');
+  await approve(call, mgr, cid);
   assert.deepEqual(await holds(), [['DIA1', 4, 'đơn']]);
   assert.equal((await call(`/orders/${cid}/status`, mgr, 'PUT', { status: 'cancelled' })).status, 200);
   assert.deepEqual(await holds(), [], 'huỷ đơn / HĐKT thì tự bỏ giữ');
-  // Đơn có từ trước khi có tính năng (holds_stock = false) không giữ.
+  // Đơn tắt giữ hàng (holds_stock = false) không giữ.
   const d = await quote(call, emp, mgr, 'BG_I', [{ name: 'Đĩa', sku: 'DIA1', unit: 'cái', qty: 2, price: 1000 }]);
-  const od = await call('/orders', emp, 'POST', { quoteId: d });
-  await db.update(salesOrders).set({ holdsStock: false }).where(eq(salesOrders.id, od.data.order?.id ?? od.data.id));
+  const od = await call('/orders', emp, 'POST', { quoteId: d, deliveryDate: '2026-11-05' }), did = od.data.order?.id ?? od.data.id;
+  await approve(call, mgr, did);
+  await db.update(salesOrders).set({ holdsStock: false }).where(eq(salesOrders.id, did));
   assert.deepEqual(await holds(), []);
+});
+
+test('đơn cũ (hold_mode legacy) vẫn giữ toàn bộ phần chưa giao kể cả nháp cho tới khi chuyển đổi', async () => {
+  const { db, call, emp, mgr } = await setup();
+  const a = await quote(call, emp, mgr, 'BG_L', [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 500, price: 1000 }]);
+  const o = await call('/orders', emp, 'POST', { quoteId: a }), id = o.data.order?.id ?? o.data.id;
+  await db.update(salesOrders).set({ holdMode: 'legacy' }).where(eq(salesOrders.id, id));
+  assert.deepEqual((await call('/stock-holds', emp)).data.holds.map((h: any) => [h.sku, h.qty]), [['LY1', 500]], 'kiểu cũ: giữ vượt tồn 100 – chờ kế hoạch chuyển đổi');
 });

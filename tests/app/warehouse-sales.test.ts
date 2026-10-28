@@ -439,7 +439,8 @@ test('tồn đầu 0 + nhập 5: duyệt đơn không trừ; xuất 2 rồi 3 v�
   await postMoves(s.db, 'mgr', [{sku:'LY1',warehouseId:'vig',qty:-50,kind:'adjust',refType:'adjustment',refId:'reset-fixture'}]);
   assert.equal(await bal(s,'vig'),0);
   await postMoves(s.db, 'mgr', [{sku:'LY1',warehouseId:'vig',qty:5,kind:'receipt',refType:'supplier_receipt',refId:'receipt-five'}]);
-  const q = await quote(s,'BG_ZERO_FIVE',5), made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig'}), id=made.data.id;
+  // Có ngày giao: duyệt là tự giữ (≤ có thể bán = 5), hạn ngày giao + 3 ngày.
+  const q = await quote(s,'BG_ZERO_FIVE',5), made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-11-05'}), id=made.data.id;
   const approved=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   assert.equal(approved.status,200,JSON.stringify(approved.data)); assert.equal(await bal(s,'vig'),5);
   assert.equal((await s.db.select().from(stockMoves).where(eq(stockMoves.refType,'sales_order'))).length,0);

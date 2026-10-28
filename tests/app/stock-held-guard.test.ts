@@ -15,16 +15,18 @@ import {auditLogs} from '../../src/core/db/schema.ts';
 async function setup(){
  const f=await fixture(),c=f.cookies;
  ok(await f.call('/purchase-orders/a1/receipts',c.kho,'POST',{clientKey:crypto.randomUUID(),warehouse:'KHO VIGIFTS',createSapo:false,lines:[{lineId:'line-a1',goodQty:5}]}),201);
+ await f.hold(); // hàng về: đơn A bấm Giữ hàng
  const transfer=async(qty:number)=>{let t=ok(await f.call('/stock-transfers',c.mgr,'POST',{fromWarehouseId:'vig',toWarehouseId:'other',reason:'Chuyển bổ sung kho khác',lines:[{sku,qty}]}),201);
   if(t.status==='pending')t=ok(await f.call(`/stock-transfers/${t.id}/approve`,c.mgr,'POST',{revision:t.revision}));return t;};
  const done=(t:any,cookie=c.mgr,overrideHolds?:unknown)=>f.call(`/stock-transfers/${t.id}/done`,cookie,'POST',{revision:t.revision,...(overrideHolds?{overrideHolds}:{})});
  /** Đơn B cùng mã, duyệt sau đơn A của fixture, có lịch giao + phiếu xuất đã gửi kho. */
- const orderB=async(qty:number)=>{
+ const orderB=async(qty:number,holdIt=false)=>{
   const q=ok(await f.call('/quotes',c.emp,'POST',{type:'B2B',quoteNo:'B-'+crypto.randomUUID(),customer:'Khách B',vat:8,rows:[{sku,name:'Bộ trà',unit:'Bộ',qty,price:2000}]}),201);
   ok(await f.call('/quotes/'+q.id+'/approve',c.mgr,'POST',{revision:1}));const o=ok(await f.call('/orders',c.emp,'POST',{quoteId:q.id,warehouseId:'vig'}),201);
   ok(await f.call(`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
   const lines=await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,o.id));
   ok(await f.call('/deliveries',c.emp,'POST',{orderId:o.id,plannedDate:'2026-10-24',lines:lines.map(l=>({orderLineId:l.id,qty:l.qty}))}),201);
+  if(holdIt)await f.hold(o.id);
   const slip=ok(await f.call(`/orders/${o.id}/packing`,c.emp,'POST',{allocations:[{orderLineId:lines[0]!.id,qty,source:'warehouse'}]}),201).slips[0];
   ok(await f.call('/packing/'+slip.id+'/send',c.emp,'POST',{}));return {order:o,slip};};
  const confirm=(slipId:string,cookie=c.kho,overrideHolds?:unknown)=>f.call('/packing/'+slipId+'/confirm',cookie,'POST',{warehouseId:'vig',photos:[photo],...(overrideHolds?{overrideHolds}:{})});
@@ -67,7 +69,7 @@ test('đủ hàng cho cả hai đơn: A và B xác nhận xuất cùng lúc đ�
 test('đồng thời: điều chuyển phần trống và đơn B lấy hàng giữ của A – không bên nào ăn vào phần giữ, tồn không âm',async()=>{
  const f=await setup();
  await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:2,kind:'adjust',refType:'adjustment',refId:'stock-7'}]);
- const t=await f.transfer(2),b=await f.orderB(2);
+ const t=await f.transfer(2),b=await f.orderB(2,true);
  const [moved,packed]=await Promise.all([f.done(t),f.confirm(b.slip.id)]);
  // Tồn 7, A giữ 5, B giữ 2 → phần trống cho điều chuyển = 0; B được dùng phần giữ của chính B.
  assert.equal(moved.data.code,'HELD_FOR_OTHER_ORDER',JSON.stringify(moved.data));assert.equal(packed.status,200,JSON.stringify(packed.data));

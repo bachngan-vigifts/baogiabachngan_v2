@@ -68,6 +68,8 @@ export const salesOrders = pgTable('sales_orders', {
   sapoPushedAt: text('sapo_pushed_at'),
   /** Đơn / HĐKT tự giữ hàng từ lúc lập đến khi huỷ / giao xong / tồn Sapo đã trừ (docs/BAN-HANG.md "Giữ hàng"). Đơn có trước migration 0068 = false. */
   holdsStock: boolean('holds_stock').notNull().default(true),
+  /** 'capped': giữ theo order_stock_holds (≤ có thể bán); 'legacy': đơn trước 28/10/2026 giữ toàn bộ phần chưa giao tới khi áp dụng kế hoạch chuyển đổi. */
+  holdMode: text('hold_mode', { enum: ['legacy', 'capped'] }).notNull().default('capped'),
   /** Xuất hoá đơn: yêu cầu (tự động khi giao xong / nhân viên bấm) → việc cho nhóm Kế toán → kế toán nhập số hoá đơn. */
   invoiceStatus: text('invoice_status', { enum: INVOICE_STATUSES }).notNull().default('none'),
   invoiceRequestedAt: text('invoice_requested_at'),
@@ -372,3 +374,29 @@ export const stockHolds = pgTable('stock_holds', {
   enumCheck('chk_stock_holds_status', t.status, HOLD_STATUSES),
   check('chk_stock_holds_qty', sql`${t.qty} > 0`),
 ]).enableRLS();
+
+/** Giữ hàng theo dòng đơn CRM (migration 20261028150000): mỗi lần giữ ≤ có thể bán tại kho bán; hết hạn / huỷ / xuất kho thì chấm dứt. */
+const ORDER_HOLD_SOURCES = ['auto', 'manual', 'conversion'] as const;
+const ORDER_HOLD_STATUSES = ['active', 'released', 'expired', 'consumed'] as const;
+export const orderStockHolds = pgTable('order_stock_holds', {
+  id: text('id').primaryKey(),
+  orderId: text('order_id').notNull().references(() => salesOrders.id, { onDelete: 'cascade' }),
+  orderLineId: text('order_line_id').notNull().references(() => salesOrderLines.id, { onDelete: 'cascade' }),
+  sku: text('sku').notNull(),
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  qty: doublePrecision('qty').notNull(),
+  source: text('source', { enum: ORDER_HOLD_SOURCES }).notNull(),
+  status: text('status', { enum: ORDER_HOLD_STATUSES }).notNull().default('active'),
+  expiresAt: text('expires_at').notNull(),
+  clientKey: text('client_key'),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+  closedBy: text('closed_by').references(() => employees.id),
+  closedAt: text('closed_at'),
+  notifiedAt: text('notified_at'),
+}, t => [
+  index('idx_order_stock_holds_sku').on(t.sku, t.warehouseId, t.status, t.expiresAt),
+  index('idx_order_stock_holds_order').on(t.orderId, t.status),
+  index('idx_order_stock_holds_line').on(t.orderLineId),
+  index('idx_order_stock_holds_expiry').on(t.status, t.expiresAt),
+]);

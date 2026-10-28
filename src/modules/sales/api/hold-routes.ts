@@ -16,6 +16,7 @@ import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { notify } from '../../notifications/api/routes.ts';
 import { salesContracts, salesOrderLines, salesOrders, stockHolds, packingSlips, deliveries } from '../schema.ts';
 import { HOLD_DAYS } from '../domain/statuses.ts';
+import { cappedOrderHolds, expireOrderHolds } from './order-hold-store.ts';
 
 /**
  * GIỮ HÀNG CHO BÁO GIÁ (treo tồn 5 ngày) – docs/BAN-HANG.md mục "Giữ hàng".
@@ -40,6 +41,13 @@ const dmy = (iso: string) => new Date(iso).toLocaleString('vi-VN', { timeZone: '
 /** Dòng giữ hàng đã quá hạn → "expired" và báo người giữ + người phụ trách báo giá (mỗi báo giá một thông báo, chỉ một lần). */
 export async function expireHolds(env: StaffEnv): Promise<number> {
   const now = nowIso();
+  // Giữ hàng theo đơn quá hạn: nhả + báo người phụ trách đơn (một lần mỗi lượt hết hạn).
+  const expiredOrders = await expireOrderHolds(env.db, now);
+  if (expiredOrders.length) {
+    const rows = await env.db.select({ id: salesOrders.id, no: salesOrders.orderNo, owner: salesOrders.ownerId, customer: salesOrders.customerName }).from(salesOrders).where(inArray(salesOrders.id, expiredOrders));
+    for (const o of rows) await notify(env, { eventType: 'stock_hold_expired', title: 'Hết hạn giữ hàng', targetMemberId: o.owner,
+      body: `${o.no} · ${o.customer}: đã nhả hàng giữ. Bấm "Giữ hàng" trên đơn nếu khách vẫn cần.`, url: `/index.html#/orders/${o.id}` }).catch(() => {});
+  }
   const done = await env.db.update(stockHolds).set({ status: 'expired', closedAt: now, notifiedAt: now })
     .where(and(eq(stockHolds.status, 'active'), lte(stockHolds.expiresAt, now))).returning({ quoteId: stockHolds.quoteId, by: stockHolds.createdBy, sku: stockHolds.sku });
   if (!done.length) return 0;
@@ -83,6 +91,8 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
     .where(and(storeScope,
       // Unknown non-POS warehouse still retains its conservative global hold.
       warehouseId ? sql`(${sellingWarehouse}=${warehouseId} or ${sellingWarehouse} is null)` : undefined,
+      // Đơn CRM giữ theo bảng order_stock_holds (≤ có thể bán) – chỉ đơn cũ chưa chuyển đổi và đơn POS dùng cách tính dưới.
+      or(ne(salesOrders.channel, 'crm'), eq(salesOrders.holdMode, 'legacy')),
       eq(salesOrders.holdsStock, true), inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']), ne(salesOrderLines.sku, ''),
       skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`, sql`NOT (${ledgerCounted})`))
     .groupBy(salesOrderLines.sku, salesOrders.id).having(sql`${legacyRemaining}>0`).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(5000);
@@ -91,7 +101,8 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
     .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId)).innerJoin(salesOrderLines, eq(salesOrderLines.id, posOrderReservations.orderLineId))
     .where(and(storeScope,eq(posOrderReservations.status, 'active'), gt(posOrderReservations.expiresAt, nowIso()), inArray(salesOrders.status, ['draft','confirmed','delivering']), skus ? inArray(salesOrderLines.sku, skus) : undefined, warehouseId ? eq(posOrderReservations.warehouseId, warehouseId) : undefined))
     .groupBy(salesOrderLines.sku, salesOrders.id).limit(5000);
-  return [...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true,unassigned:false}))];
+  const capped = await cappedOrderHolds(db, skus, warehouseId);
+  return [...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true,unassigned:false})), ...capped.map(r=>({...r,timed:false}))];
 }
 
 /** Báo giá đã lập đơn / HĐKT còn hiệu lực: hàng do đơn giữ – không giữ thêm theo báo giá (tránh giữ trùng). */
