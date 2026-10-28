@@ -48,7 +48,7 @@ const photo='data:image/jpeg;base64,'+'A'.repeat(200);
 
 test('postMoves: mọi loại ngoài opening bị chặn trước chốt, kể cả batch có opening hoặc kho đã mở',async()=>{
   const f=await fixture(false),before=await f.snapshot();
-  const adjusted=await f.call('/inventory/adjustments',f.mgr,'POST',{warehouseId:'a',reason:'Kiểm kê',lines:[{sku:'X',qty:1}]});
+  const adjusted=await f.call('/inventory/adjustments',f.mgr,'POST',{ clientKey: crypto.randomUUID(), warehouseId:'a',reason:'Kiểm kê',lines:[{sku:'X',qty:1}]});
   assert.equal(adjusted.status,409);assert.equal(adjusted.data.code,'WAREHOUSE_NOT_OPENED');assert.deepEqual(await f.snapshot(),before);
   for(const [kind,refType] of [['receipt','supplier_receipt'],['issue','packing_slip'],['adjust','adjustment'],['transfer_in','stock_transfer'],['sale','sales_order'],['customer_return','pos_return'],['reverse','supplier_receipt']] as const) {
     await assert.rejects(postMoves(f.db,'mgr',[move(1,{kind,refType})]),rejectsCode('WAREHOUSE_NOT_OPENED'));
@@ -63,7 +63,7 @@ test('postMoves: mọi loại ngoài opening bị chặn trước chốt, kể c
 
 test('điều chỉnh âm: kiểm tổng delta cùng mã, rollback cả dòng dương và số dư mới',async()=>{
   const f=await fixture(),before=await f.snapshot();
-  const r=await f.call('/inventory/adjustments',f.mgr,'POST',{warehouseId:'a',reason:'Kiểm kê',lines:[{sku:'Y',qty:5},{sku:'X',qty:-6},{sku:'X',qty:-5}]});
+  const r=await f.call('/inventory/adjustments',f.mgr,'POST',{ clientKey: crypto.randomUUID(), warehouseId:'a',reason:'Kiểm kê',lines:[{sku:'Y',qty:5},{sku:'X',qty:-6},{sku:'X',qty:-5}]});
   assert.equal(r.status,409);assert.equal(r.data.code,'STOCK_SHORT');assert.match(r.data.error,/X.*còn 10.*cần 11/);
   assert.deepEqual(await f.snapshot(),before);
   await postMoves(f.db,'mgr',[move(-12),move(2)]);
@@ -112,7 +112,7 @@ test('đóng gói CRM đủ tồn: ghi đúng một lần; điều chỉnh dươ
   assert.equal((await f.call('/packing/p/confirm',f.mgr,'POST',{warehouseId:'a',photos:[photo]})).status,200);
   assert.equal((await f.db.select().from(stockBalances).where(eq(stockBalances.warehouseId,'a')))[0]!.qty,7);
   assert.equal((await f.db.select().from(packingSlipPhotos)).length,1);
-  assert.equal((await f.call('/inventory/adjustments',f.mgr,'POST',{warehouseId:'a',reason:'Kiểm kê',lines:[{sku:'X',qty:1}]})).status,201);
+  assert.equal((await f.call('/inventory/adjustments',f.mgr,'POST',{ clientKey: crypto.randomUUID(), warehouseId:'a',reason:'Kiểm kê',lines:[{sku:'X',qty:1}]})).status,201);
 });
 
 for(const opened of [false,true]) test(`duyệt đơn CRM: ${opened?'chưa đủ hàng':'chưa chốt'} chỉ giữ hàng, không ghi xuất`,async()=>{

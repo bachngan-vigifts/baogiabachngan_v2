@@ -84,11 +84,11 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 10);
 
   // Phiếu điều chỉnh: chỉ Manager, bắt buộc lý do, mã phải có trong danh mục (giữ số 0 đầu).
-  assert.equal((await call('/inventory/adjustments', kho, 'POST', { warehouseId: 'vg', reason: 'Kiểm kê', lines: [{ sku: '031106000', qty: -2 }] })).status, 403);
-  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'vg', reason: '', lines: [{ sku: '031106000', qty: -2 }] })).status, 400);
-  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'ncc', reason: 'Kiểm kê', lines: [{ sku: '031106000', qty: -2 }] })).status, 400, 'không điều chỉnh kho NCC');
-  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'vg', reason: 'Kiểm kê', lines: [{ sku: 'KHONG-CO', qty: 1 }] })).status, 400);
-  const adj = await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'vg', reason: 'Kiểm kê lệch', lines: [{ sku: '031106000', qty: -2 }, { sku: '031106000', qty: -1 }] });
+  assert.equal((await call('/inventory/adjustments', kho, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'vg', reason: 'Kiểm kê', lines: [{ sku: '031106000', qty: -2 }] })).status, 403);
+  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'vg', reason: '', lines: [{ sku: '031106000', qty: -2 }] })).status, 400);
+  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'ncc', reason: 'Kiểm kê', lines: [{ sku: '031106000', qty: -2 }] })).status, 400, 'không điều chỉnh kho NCC');
+  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'vg', reason: 'Kiểm kê', lines: [{ sku: 'KHONG-CO', qty: 1 }] })).status, 400);
+  const adj = await call('/inventory/adjustments', mgr, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'vg', reason: 'Kiểm kê lệch', lines: [{ sku: '031106000', qty: -2 }, { sku: '031106000', qty: -1 }] });
   assert.equal(adj.status, 201, JSON.stringify(adj.data)); assert.equal(adj.data.lines, 1, 'gộp 2 dòng cùng mã');
   card = (await call('/inventory/card?sku=031106000&warehouseId=vg', mgr)).data;
   assert.deepEqual([card.balance, card.sapo, card.lines[0].qty, card.lines[0].note], [2, 5, -3, 'Kiểm kê lệch']);
@@ -106,7 +106,7 @@ test('tra tồn: mọi nhân viên tra theo mã / tên, số lượng từng kho
   assert.deepEqual(r.products.map((p: any) => [p.sku, p.name, p.total]), [['031106000', 'Chén cơm', 5]], 'quét đúng mã (giữ số 0 đầu)');
   assert.equal((await call('/inventory/lookup?q=chen com', emp)).data.products[0].sku, '031106000', 'tìm không dấu');
   await call('/inventory/opening', mgr, 'POST', { confirm: true });
-  await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'ct', reason: 'Kiểm kê', lines: [{ sku: 'LY1', qty: -4 }] });
+  await call('/inventory/adjustments', mgr, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'ct', reason: 'Kiểm kê', lines: [{ sku: 'LY1', qty: -4 }] });
   r = (await call('/inventory/lookup?q=LY1', emp)).data;
   assert.equal(r.source, 'ledger'); assert.equal(r.products[0].total, 6);
 });
@@ -121,7 +121,7 @@ test('sổ kho: tài khoản Kho chỉ có Vigifts; không thể sửa query đ�
   assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.unopened.map((r: any) => r.warehouseId), ['vg'], 'chưa chốt: chỉ báo Vigifts chưa đối chiếu được');
   assert.equal((await call('/inventory/compare?warehouseId=ct', kho)).status, 403);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).status, 403);
-  assert.equal((await call('/inventory/adjustments', kho, 'POST', { warehouseId: 'ct', reason: 'Kiểm kê', lines: [{sku:'LY1',qty:1}] })).status, 403);
+  assert.equal((await call('/inventory/adjustments', kho, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'ct', reason: 'Kiểm kê', lines: [{sku:'LY1',qty:1}] })).status, 403);
   assert.equal((await call('/inventory/opening', kho, 'POST', {confirm:true})).data.lines, 1, 'nếu được cấp chốt tồn, vẫn chỉ chốt Vigifts');
   assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows.map((r: any) => r.warehouseId), ['vg']);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 0, 'không ghi vào kho ngoài phạm vi');
@@ -160,7 +160,7 @@ test('chốt lần đầu có phát sinh cũ và chốt lại sau điều chỉn
   let r=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});assert.equal(r.status,409);assert.match(r.data.error,/chưa chốt.*adjustment/);
   assert.equal((await db.select().from(stockMoves)).length,1);
   await db.delete(stockMoves);assert.equal((await call('/inventory/opening',mgr,'POST',{confirm:true})).status,200);
-  assert.equal((await call('/inventory/adjustments',mgr,'POST',{warehouseId:'ct',reason:'Kiểm kê',lines:[{sku:'LY1',qty:1}]})).status,201);
+  assert.equal((await call('/inventory/adjustments',mgr,'POST',{ clientKey: crypto.randomUUID(), warehouseId:'ct',reason:'Kiểm kê',lines:[{sku:'LY1',qty:1}]})).status,201);
   const before=await db.select().from(stockMoves);r=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});
   assert.equal(r.status,409);assert.match(r.data.error,/Dùng phiếu điều chỉnh để sửa lệch/);assert.deepEqual(await db.select().from(stockMoves),before);
 });
@@ -178,7 +178,7 @@ test('thẻ kho lấy đủ hơn 1005 dòng, mới nhất và luỹ kế khớp 
 test('chốt kho được chọn: mở kho mới không reset kho khác đã có phát sinh; phạm vi vẫn được kiểm tra',async()=>{
   const {db,call,mgr,kho}=await setup();
   assert.equal((await call('/inventory/opening',mgr,'POST',{confirm:true})).status,200);
-  assert.equal((await call('/inventory/adjustments',mgr,'POST',{warehouseId:'ct',reason:'Kiểm kê',lines:[{sku:'LY1',qty:1}]})).status,201);
+  assert.equal((await call('/inventory/adjustments',mgr,'POST',{ clientKey: crypto.randomUUID(), warehouseId:'ct',reason:'Kiểm kê',lines:[{sku:'LY1',qty:1}]})).status,201);
   await db.insert(warehouses).values({id:'new',name:'Kho mới',kind:'stock'});
   await db.insert(productStock).values({sku:'LY1',warehouseId:'new',quantity:8,updatedAt:now});
   const opening=await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'new'});
