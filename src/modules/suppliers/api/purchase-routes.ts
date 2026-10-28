@@ -9,7 +9,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { sendMail } from '../../../core/mail/send-mail.ts';
 import { postMoves, assertWarehousesOpened, lockLedger, reverseRef, stockWarehouseByName } from '../../inventory/api/ledger.ts';
-import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
+import { discardPhotos, parsePhotos, photoUrls, recordPhotos, uploadPhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { outstandingLines, syncIncomingStock } from './incoming-stock.ts';
 import { purchaseProducts } from './purchase-products.ts';
 import { can } from '../../staff/domain/permissions.ts';
@@ -499,7 +499,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (dup) { if(dup.createSapo!==createSapo)fail(409,'Phiếu đã lưu với lựa chọn Sapo khác. Không tạo lại.');if (dup.shipmentId !== id) fail(409, 'Mã chống bấm lặp đã dùng cho đơn khác.'); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
     const photos = parsePhotos(body.photos);
     let receiptId = '', duplicate = false;
-    await db.transaction(async tx => {
+    // Ảnh tải lên kho file trước giao dịch: không giữ khoá nguồn hàng toàn hệ thống / sổ kho trong lúc tải.
+    const plannedId = crypto.randomUUID(), uploaded = await uploadPhotos(c.env.files, m.id, 'supplier_receipt', plannedId, photos);
+    try { await db.transaction(async tx => {
       // Same lock order as purchase editing: source budget first, then parent order.
       await lockSources(tx);
       // Recheck replay after the parent lock: simultaneous retries must not create another receipt.
@@ -519,7 +521,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       }
       // Có hàng hỏng: bắt buộc 1–3 ảnh làm bằng chứng đòi NCC bù (Manager xem trên đơn mua).
       if (!photos.length && v.lines.some(l => l.damagedQty > 0)) fail(400, 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.');
-      receiptId = crypto.randomUUID();
+      receiptId = plannedId;
       const no = await nextNumber(tx as unknown as Db, 'PNH', today());
       const whName = str(body.warehouse, 120);
       const whId = await stockWarehouseByName(tx as unknown as Db, whName);
@@ -529,7 +531,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await tx.insert(supplierReceipts).values({ id: receiptId, receiptNo: no, shipmentId: id, receivedDate: v.receivedDate, receivedBy: m.id, warehouse: whName,
         note: str(body.note, 1000), createSapo,clientKey, createdAt: nowIso() });
       await tx.insert(supplierReceiptLines).values(v.lines.map(l => ({ receiptId, lineId: l.lineId, sku: l.sku, goodQty: l.goodQty, damagedQty: l.damagedQty, note: l.note })));
-      await savePhotos(tx as unknown as Db, c.env.files, m.id, 'supplier_receipt', receiptId, photos);
+      await recordPhotos(tx as unknown as Db, uploaded);
       // Sổ kho: hàng đạt cộng vào kho nhận (Sapo vẫn là nguồn chính – sổ kho chạy song song để đối chiếu).
       await postMoves(tx as unknown as Db, m.id, v.lines.map(l => ({ sku: l.sku, warehouseId: whId, qty: l.goodQty, kind: 'receipt' as const, refType: 'supplier_receipt' as const, refId: receiptId, refNo: no, note: `${p.raw.order.ticketNumber} · ${p.raw.order.supplierName ?? ''}` })));
 
@@ -567,8 +569,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       }
       if(createSapo&&payload.items.length)await queueReceiptJob(tx,receiptId,payload,missing.length?'Thiếu dữ liệu: '+missing.join(', '):'');
       else await tx.update(supplierReceipts).set({sapoStatus:'not_needed',sapoNote:createSapo?'Không có hàng đạt để nhập Sapo.':'Người nhận chọn chỉ nhập CRM, không tạo đơn Sapo.',sapoUpdatedAt:nowIso(),sapoUpdatedBy:m.id}).where(eq(supplierReceipts.id,receiptId));
-    });
-    if(duplicate)return json({...await viewOf(c,id),receiptId,duplicate:true});
+    }); } catch (e) { await discardPhotos(c.env.files, uploaded); throw e; }
+    if(duplicate){await discardPhotos(c.env.files, uploaded);return json({...await viewOf(c,id),receiptId,duplicate:true});}
     if(createSapo){const delivery = dispatchReceiptJob(c.env,receiptId).catch(() => ({sent:false,skipped:false}));
     if(c.env.waitUntil)c.env.waitUntil(delivery);else await delivery;}
     return json({ ...await viewOf(c, id), receiptId }, 201);

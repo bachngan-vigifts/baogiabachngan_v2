@@ -25,7 +25,7 @@ async function setup(extraEnv: Record<string, unknown> = {}) {
   }
   const files = new Map<string, Uint8Array>();
   const env = { db, passwordIterations: 1000, sapoOrderPush: 'off' as const,
-    files: { put: async (k: string, b: Uint8Array) => { files.set(k, b); }, signedUrls: async (keys: string[]) => new Map(keys.map(k => [k, 'https://files.test/' + k])) }, ...extraEnv };
+    files: { put: async (k: string, b: Uint8Array) => { files.set(k, b); }, remove: async (keys: string[]) => { for (const k of keys) files.delete(k); }, signedUrls: async (keys: string[]) => new Map(keys.map(k => [k, 'https://files.test/' + k])) }, ...extraEnv };
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env as never);
@@ -135,12 +135,14 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal(r1.data.receipts[0].photos.length, 1); assert.match(r1.data.receipts[0].photos[0], /^https:\/\/files\.test\/warehouse-photos\/supplier_receipt\//);
   const again = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000001', warehouse: 'Kho nhận kiểm thử', lines: lines1, photos: [photo] });
   assert.equal(again.data.duplicate, true); assert.equal(again.data.receipts.length, 1);
+  assert.equal(files.size, 1, 'gửi lặp: ảnh tải lại được dọn, không để file rác');
   v = again.data; assert.equal(v.state, 'partially_received');
   assert.deepEqual(v.lines.map((l: any) => [l.good, l.damaged, l.missing]), [[6, 1, 4], [0, 0, 5]]);
   assert.equal(v.receipts[0].sapoStatus, 'failed', 'chưa cấu hình webhook: giữ phiếu, báo lỗi giao job; không coi là đã nhập Sapo');
   assert.equal((await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000002', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 5 }] })).status, 400, 'vượt số thiếu');
   const overBad = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'rcv-000012', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: [photo] });
   assert.equal(overBad.status, 400, 'còn thiếu 4: đạt 4 + hỏng 1 → không ghi nhận đủ'); assert.equal(overBad.data.code, 'RECEIPT_OVER');
+  assert.equal(files.size, 1, 'phiếu bị từ chối trong giao dịch: ảnh đã tải được dọn');
   const hist = (await call('/products/' + encodeURIComponent(v.lines[0].sku) + '/history', mgr)).data.history;
   assert.deepEqual(hist.map((h: any) => [h.kind, h.qty, h.status]), [['purchase', 6, 'Đạt 6 · hỏng 1 (NCC giao bù)']], 'phiếu nhận ghi vào lịch sử sản phẩm');
   assert.match(hist[0].refCode, /^PNH_/); assert.equal(hist[0].link, `#/purchases/${id}`);
