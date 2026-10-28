@@ -79,6 +79,18 @@ function dates(c: Ctx) {
   };
 }
 export function registerCashRoutes(router: Router<StaffEnv>) {
+  router.get('/cash/entry-names', async c => {
+    cashAccess(who(c));
+    const direction=c.url.searchParams.get('direction');
+    if(direction!=='in'&&direction!=='out')throw new AppError(400,'Chọn phiếu thu hoặc chi.');
+    const drawerId=await selectedDrawer(c);
+    if(!allowedDrawer(c,drawerId))throw new AppError(403,'Bạn không có quyền xem két này.');
+    const title=sql<string>`substring(${cashEntries.reason} from ${String.raw`^Tên phiếu: ([^\r\n]{1,120})\n\n`})`;
+    const rows=await c.env.db.selectDistinct({name:title.as('name')}).from(cashEntries).innerJoin(posShifts,eq(posShifts.id,cashEntries.shiftId))
+      .where(and(eq(cashEntries.drawerId,drawerId),eq(cashEntries.direction,direction),entryScope(c),sql`${title} is not null`)).orderBy(sql`name`).limit(100);
+    return json({names:rows.map(r=>r.name)});
+  },'business');
+
   router.post('/cash/drawers', async (c) => {
     manager(c);
     const b = await readJson(c.req, 4000),

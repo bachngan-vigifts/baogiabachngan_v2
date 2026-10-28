@@ -36,7 +36,7 @@ export function initProductAdmin(deps) {
   function openForm(product = null) {
     const editing = !!product;
     const policies = editing && deps.canSeePrices && !deps.canSeePrices() ? [] : deps.policies();
-    const dlg = document.createElement('dialog'); dlg.className = 'modal';
+    const dlg = document.createElement('dialog'); dlg.className = 'modal product-admin-dialog';
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body form-grid cols-2">
         <label>Mã sản phẩm (SKU)<input name="sku" required maxlength="64" placeholder="VD: ML-BT-001" autocapitalize="characters"></label>
@@ -51,6 +51,7 @@ export function initProductAdmin(deps) {
           <small class="muted" data-image-status>Chọn ảnh từ máy hoặc điện thoại. Ảnh được lưu khi bấm Lưu.</small>
           <div data-image-preview hidden></div>
         </div>
+        ${editing?`<p class="muted small span-2">Quy cách thùng đóng gói (cm, kg)</p>${[['perCarton','Số sản phẩm / thùng'],['cartonLength','Dài thùng (cm)'],['cartonWidth','Rộng thùng (cm)'],['cartonHeight','Cao thùng (cm)'],['cartonWeight','Cân nặng thùng (kg)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="1000000" step="${key==='perCarton'?'1':'any'}" inputmode="decimal" placeholder="Chưa có"></label>`).join('')}`:''}
         ${policies.map(p => `<label>Giá: ${esc(p.name)}<input name="price:${esc(p.id)}" inputmode="numeric" placeholder="0"></label>`).join('')}
         <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
         <p class="error span-2" data-err role="alert"></p>
@@ -59,6 +60,7 @@ export function initProductAdmin(deps) {
       <datalist id="pa-brands">${[...document.querySelectorAll('#product-brand option')].map(o => o.value).filter(Boolean).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
     if (editing) {
       for (const key of ['sku','unit','name','brand','pattern','imageUrl']) dlg.querySelector('form').elements.namedItem(key).value = product[key] || '';
+      for(const key of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight'])dlg.querySelector('form').elements.namedItem(key).value=product[key]??'';
       dlg.querySelector('[name="sku"]').readOnly = true;
       for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; dlg.querySelector('form').elements.namedItem('price:' + policy.id).value = price == null ? '' : String(price); }
     }
@@ -97,6 +99,10 @@ export function initProductAdmin(deps) {
       const prices = {};
       for (const p of policies) { const raw = v('price:' + p.id).replace(/[\s.,]/g, ''); if (raw && !/^\d+$/.test(raw)) { err.textContent = 'Giá phải là số nguyên VNĐ từ 0 trở lên.'; return; } if (raw) prices[p.id] = Number(raw); else if (editing) prices[p.id] = null; }
       const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
+      if(editing)for(const key of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight']){
+        const raw=v(key);if(raw===String(product[key]??''))continue;const value=raw===''?null:Number(raw.replace(',','.'));
+        if(value!==null&&(!Number.isFinite(value)||value<=0||value>1e6||(key==='perCarton'&&!Number.isInteger(value)))){err.textContent='Nhập quy cách thùng là số dương; số SP/thùng là số nguyên.';return;}body[key]=value;
+      }
       if (!body.sku || !body.name) { err.textContent = 'Nhập mã SKU và tên sản phẩm.'; return; }
       const submit = dlg.querySelector('button[type=submit]'), imageControls = [imageInput,clearImage,dlg.querySelector('[data-image-choose]')]; saving = true; if (submit) submit.disabled = true; imageControls.forEach(el => el.disabled = true); err.textContent = '';
       try {

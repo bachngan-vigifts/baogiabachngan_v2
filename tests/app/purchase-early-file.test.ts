@@ -61,7 +61,7 @@ test('file: clear headers, optional CRM/NCC references and old template compatib
  assert.deepEqual(old.errors,[]);assert.equal(old.lines[0].supplierOrderNo,'000123');
  const template=earlyRequestTemplate(X),sheet=template.Sheets[template.SheetNames[0]];
  assert.deepEqual(Array.from(X.utils.sheet_to_json(sheet,{header:1})[0]),EARLY_FILE_HEADER);
- assert.equal(sheet.C1.v,'Số đơn mua CRM (DMH)');assert.equal(sheet.D1.v,'Số đơn của NCC');assert.equal(sheet.E1,undefined);
+ assert.equal(sheet.C1.v,'Số đơn mua CRM (DMH)');assert.equal(sheet.D1.v,'Số đơn của NCC');assert.equal(sheet.E1.v,'Số PXK');assert.equal(sheet.E2.z,'@');
  assert.equal(sheet.C2.z,'@');assert.equal(sheet.D2.z,'@');
  sheet.A2={t:'s',v:'031106000',z:'@'};sheet.B2={t:'n',v:2};sheet.D2={t:'s',v:'000123',z:'@'};
  const roundtrip=readEarlyRequestWorkbook(X,X.read(X.write(template,{type:'buffer',bookType:'xlsx'}),{type:'buffer'}));

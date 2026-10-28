@@ -1,3 +1,4 @@
+import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
 import { bindForgotPassword } from './forgot-password.js';
@@ -370,7 +371,7 @@ const KHO_HOME = '#/kho';
 /** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
 /** Trang mở đầu theo chức vụ và quyền hiện hành. */
-const homeHash = () => isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
+const homeHash = () => state.user?.role==='employee'&&can('page.flow') ? '#/flow' : isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
 let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
@@ -451,7 +452,7 @@ function applyWorkspaceUser(user) {
 }
 function openWorkspace(user) {
   if(!applyWorkspaceUser(user))return;
-  if ((loginToHome && isCounterSales()) || !/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
+  if ((loginToHome && state.user?.role==='employee') || !/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
@@ -3138,7 +3139,7 @@ async function loadOrders() {
       <td><span class="pill ${o.orderSource === 'ghn' ? 'warn' : o.orderSource === 'pos' ? 'ok' : 'blue'}">${esc(ORDER_SOURCE[o.orderSource] || o.orderSource)}</span><small>${esc(o.branchName || '—')}</small></td>
       <td>${esc(o.ownerName || '—')}</td>
       <td>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
-      <td>${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small></td>
+      <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${ghnOrderSummary(o.ghnShipments,esc)}</td>
       <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
       <td class="right num"><b>${money(o.total)}</b><small>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
       <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}</td></tr>`),

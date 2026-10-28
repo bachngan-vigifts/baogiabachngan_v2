@@ -38,3 +38,14 @@ test('pending cash notifies eligible delegated approvers once and opens the exac
  assert.equal((await f.call('/cash/entries/'+saved.data.id+'/approve',f.other,'POST',{})).status,403);
  assert.equal((await f.db.select().from(cashEntries)).length,2);
 });
+
+test('saved manual titles become direction-specific suggestions in the permitted drawer without creating a cash movement',async()=>{
+ const f=await setup();await f.open();
+ const saved=await f.call('/cash/entries',f.emp,'POST',{key:crypto.randomUUID(),kind:'petty_expense',entryName:'Phí gửi xe',reason:'Gửi xe giao hàng',amount:100});assert.equal(saved.status,201);
+ const out=await f.call('/cash/entry-names?direction=out',f.emp);assert.equal(out.status,200,JSON.stringify(out.data));assert.ok(out.data.names.includes('Phí gửi xe'),JSON.stringify(out.data));
+ assert.deepEqual((await f.call('/cash/entry-names?direction=in',f.emp)).data.names,[]);
+ assert.equal((await f.call('/cash/entry-names?direction=out',f.ncc)).status,403);
+ assert.equal((await f.call('/cash/entry-names?direction=bad',f.emp)).status,400);
+ assert.equal((await f.call('/cash/entry-names?direction=out&drawerId=other-store',f.emp)).status,403);
+ assert.equal((await f.db.select().from(cashEntries)).length,1);
+});

@@ -1,6 +1,6 @@
 import {earlyListBulk} from './early-list-bulk.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
-import { openEarlyRequestFile, earlyRequestTemplate } from './purchase-early-file.js';
+import { openEarlyRequestFile } from './purchase-early-file.js';
 const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
 const button=(text,fn,cls='btn secondary')=>{const n=node('button',cls,text);n.type='button';n.onclick=fn;return n;};
 const label=(text,input)=>{const n=node('label','early-page-field');n.append(node('span','small muted',text),input);return n;};
@@ -19,9 +19,8 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  const header=node('div','page-head'),intro=node('div');intro.append(node('span','eyebrow','Mua hàng'),node('h1','','Lấy hàng trước'),node('p','muted','Quản lý phiếu xin hàng, phản hồi NCC và nhận hàng theo phiếu.'));
  const actions=node('div','head-actions row-gap');
  const file=button('Xin bằng file',()=>openEarlyRequestFile({api,loadXlsx,suppliers,today:today(),go,requestHref}),'btn primary');file.hidden=true;file.setAttribute('aria-label','Xin hàng bằng file');
- const template=button('Tải file mẫu',async()=>{template.disabled=true;try{const X=await loadXlsx();X.writeFile(earlyRequestTemplate(X),'mau-xin-hang-truoc.xlsx');}catch(e){toast(e.message,'err');}finally{template.disabled=false;}});
  const incoming=node('a','btn secondary','Chọn hàng đang về');incoming.href='#/purchases?mode=incoming';incoming.hidden=true;
- actions.append(file,template,incoming);header.append(intro,actions);
+ actions.append(file,incoming);header.append(intro,actions);
  const back=node('a','btn secondary early-page-back','‹ Danh sách lấy hàng trước');back.href='#/early-requests';back.hidden=true;
  const section=node('section','early-page-index'),detail=node('section','early-page-detail');detail.hidden=true;
  const search=node('input');search.type='search';search.placeholder='Tìm phiếu, mã hàng, tên hàng, NCC, số đơn CRM/NCC';search.setAttribute('aria-label','Tìm phiếu lấy hàng trước');
@@ -60,6 +59,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
     card.append(head,node('p','small muted','Lập '+created+' · Ngày lấy: '+(request.pickupDate?request.pickupDate.split('-').reverse().join('/'):'Chưa nhập')),
       node('p','',names.join(' · ')),node('p','small',orders.join(' · ')),node('p','small muted',request.lines.map(l=>l.sku+' · '+l.name).join('; ')),
       node('p','small',`${request.lines.length} mã${complete?'':' · '+quantities}`));
+    if(request.pxkNo)card.append(node('p','small','Số PXK: '+request.pxkNo));
     list.append(card);
    }
    if(!data.requests.length)list.append(node('p','muted','Không có phiếu phù hợp bộ lọc.'));

@@ -444,7 +444,10 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       kind.type = 'text'; kind.value = kinds[allowed[0]]; kind.required = true; kind.maxLength = 120;
       kind.placeholder = 'Nhập tên phiếu, ví dụ: Chi sửa xe';
       const suggestions = el('datalist'); suggestions.id = 'cash-entry-names-' + key;
-      for (const code of allowed) { const o = el('option'); o.value = kinds[code]; suggestions.append(o); }
+      const presets=direction==='in'?['Nộp quỹ','Thu công nợ','Hoàn tạm ứng','Thu phí khác']:['Nộp quỹ','Tạm ứng lương','Phí GHN','Phí vận chuyển','Phí khác'];
+      const seen=new Set();const add=name=>{const key=name.trim().toLocaleLowerCase('vi-VN');if(!key||seen.has(key))return;seen.add(key);const o=el('option');o.value=name;suggestions.append(o);};
+      [...allowed.map(code=>kinds[code]),...presets].forEach(add);
+      request('/cash/entry-names?direction='+direction).then(data=>{if(m.d.open)data.names.forEach(add);}).catch(()=>{});
       kind.setAttribute('list', suggestions.id); m.body.append(suggestions);
     }
     // Tên / chiều + số tiền trên một hàng (máy tính), nội dung, ảnh; ghi chú ngắn thay cho khối cảnh báo dài.
@@ -467,13 +470,14 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       el('p', 'cash-hint', adjustment
         ? 'Điều chỉnh chỉ sửa số dư theo sổ (kiểm kê lệch), không ghi thêm thu/chi tiền thật.'
         : `Từ ${money(summary.drawer.approvalThreshold)} phiếu chờ duyệt, chưa tính vào két. Manager được tự duyệt phiếu của mình.`));
+    if(!adjustment)m.body.append(el('p','cash-hint','Chọn tên gợi ý hoặc nhập tên mới. Sau khi lưu phiếu thành công, tên mới được gợi ý lại từ các phiếu bạn được quyền xem trong két này.'));
     if (recId) m.body.append(el('p', '', 'Phiếu tham chiếu tra soát đang xem.'));
     submitForm(m, 'Lưu phiếu', async () => {
       let img;
       if (photo.input.files?.[0]) img = await compress(photo.input.files[0]);
       await api('/cash/entries', 'POST', {
         key,
-        kind: adjustment ? 'adjustment' : allowed.find(k => kinds[k] === kind.value.trim()) || allowed[0],
+        kind: adjustment ? 'adjustment' : allowed.find(k => kinds[k] === kind.value.trim()) || (direction==='out'&&kind.value.trim()==='Tạm ứng lương'?'advance':direction==='out'&&kind.value.trim()==='Nộp quỹ'?'cash_out':allowed[0]),
         ...(!adjustment && !allowed.some(k => kinds[k] === kind.value.trim()) ? { entryName: kind.value.trim() } : {}),
         direction: dir.value,
         amount: Number(amount.input.value),

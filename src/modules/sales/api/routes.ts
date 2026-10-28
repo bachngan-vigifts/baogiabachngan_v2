@@ -461,14 +461,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const revenue = Number(sum?.revenue ?? 0), paid = Number(paidRow?.paid ?? 0);
     const summary = { count: Number(sum?.n ?? 0), cancelled: Number(total) - Number(sum?.n ?? 0), revenue, deposit: Number(sum?.deposit ?? 0), paid, remaining: Math.max(0, revenue - paid) };
     const ids = rows.map(r => r.order.id);
-    const [debts, contracts] = await Promise.all([
+    const [debts, contracts, ghnShipments] = await Promise.all([
       receivableOf(c.env.db, ids),
       ids.length ? c.env.db.select({ orderId: salesContracts.orderId, id: salesContracts.id, contractNo: salesContracts.contractNo, status: salesContracts.status }).from(salesContracts).where(inArray(salesContracts.orderId, ids)) : [],
+      ids.length ? c.env.db.select({orderId:deliveries.orderId,id:deliveries.id,trackingCode:deliveries.trackingCode,trackingStatus:deliveries.trackingStatus,trackingUpdatedAt:deliveries.trackingUpdatedAt,status:deliveries.status}).from(deliveries)
+        .where(and(inArray(deliveries.orderId,ids),sql`lower(trim(${deliveries.carrier}))='ghn'`,sql`trim(${deliveries.trackingCode})<>''`)).orderBy(desc(deliveries.updatedAt),desc(deliveries.createdAt),asc(deliveries.id)) : [],
     ]);
     return json({ orders: rows.map(({ order: r, ownerName, branchName, deliveryStatus, deliveryCarrier }) => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
       // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
       const orderSource = r.channel !== 'pos' ? 'crm' : r.fulfillmentMode === 'cod' || /ghn/i.test(deliveryCarrier) ? 'ghn' : 'pos';
-      return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }),
+      return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, ghnShipments:ghnShipments.filter(s=>s.orderId===r.id), receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }),
       total: Number(total), limit, offset, invoicePending: Number(invoicePending), summary, filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...branchOptions] } });
   }, 'business');
 
