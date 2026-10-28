@@ -9,6 +9,7 @@ import { cashLock } from './cash-store.ts';
 import { assertNoStockRecovery } from './pos-order-flow-guards.ts';
 import { recordDispatch } from './cancellation-guards.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
+import { reconcileWebOrderStock, syncWebOrderStock } from './web-order-stock.ts';
 import { refreshOrderStatus } from './routes.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { vietnamDate } from '../domain/sales.ts';
@@ -97,6 +98,12 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
 
 /** Trạng thái GHN của đơn web (Lock qua cầu nối, Minh Long do CRM tạo vận đơn): giao xong → hoàn thành, hoàn / huỷ → huỷ. */
 async function applyWebGhnStatus(env: StaffEnv, row: { id: string; status: string; ghnStatus: string }, status: string, observedAt: string) {
+  const changed = await saveWebGhnStatus(env, row, status, observedAt);
+  // Sổ kho theo trạng thái GHN (đã lấy hàng → trừ, đã hoàn → cộng lại); gọi cả khi trạng thái không đổi để lần lỗi trước được làm lại.
+  await syncWebOrderStock(env, row.id);
+  return changed;
+}
+async function saveWebGhnStatus(env: StaffEnv, row: { id: string; status: string; ghnStatus: string }, status: string, observedAt: string) {
   if (row.ghnStatus.toLowerCase() === 'delivered' && status !== 'delivered') return false;
   const orderStatus = webGhnOrderStatus(status, row.status);
   if (row.ghnStatus.toLowerCase() === status && row.status === orderStatus) return false;
@@ -134,6 +141,9 @@ export async function syncPosLockGhn(env: StaffEnv) {
   } catch (error) {
     errors.push({ code: row.code, orderNo: row.orderNo, message: error instanceof Error ? error.message : 'Lỗi GHN' });
   }
+  // Lưới an toàn sổ kho đơn web: đã lấy hàng mà chưa trừ / bị chặn, đã hoàn mà chưa cộng lại (kể cả đơn Lock báo qua website).
+  try { updated += await reconcileWebOrderStock(env); }
+  catch (error) { errors.push({ code: '', orderNo: 'Sổ kho đơn web', message: error instanceof Error ? error.message : 'Lỗi ghi sổ kho đơn web' }); }
   return { ok: errors.length === 0, checked: rows.length + web.length, updated, errors };
 }
 

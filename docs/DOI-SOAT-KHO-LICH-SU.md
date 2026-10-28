@@ -24,7 +24,7 @@ Hồ sơ gồm:
 | Mục | Nội dung |
 |---|---|
 | A. Đơn CRM thiếu bằng chứng xuất | Đơn đang / đã giao có SKU mà `crmStockFulfilment` chưa thấy đủ phiếu xuất / trừ kiểu cũ. Mỗi đơn: chuyến giao, kho bán, phiếu điều chỉnh nhắc số đơn / số chuyến, từng dòng thiếu |
-| B. Đơn web | Đơn website đã hoàn thành sau ngày chốt tồn của kho quầy, chưa có liên kết xuất kho CRM |
+| B. Đơn web | Đơn website chưa có bút toán sổ kho: đơn cũ (`legacy`) đã hoàn thành sau ngày chốt tồn của kho quầy, và đơn bị chặn (`blocked`) do mã / tồn |
 | C. Tồn âm | Cặp mã × kho có số dư âm |
 
 ## 2. Phân loại từng dòng thiếu (mục A)
@@ -47,7 +47,7 @@ Phiếu điều chỉnh không được coi là bằng chứng xuất của đơ
 |---|---|
 | Đồng ý "không bù" | Không làm gì với tồn. Ghi chú đối soát vào đơn (Ghi chú đơn) để lần sau không rà lại |
 | Cần bù xuất thiếu | Manager lập phiếu điều chỉnh (Sổ kho → Phiếu điều chỉnh): đúng kho thực xuất, số âm, lý do ghi số đơn + số chuyến, rồi duyệt |
-| Đơn web | Chờ phiếu xuất đơn web (việc 6). Nếu cần sửa ngay sau kiểm kê: phiếu điều chỉnh ghi số đơn web |
+| Đơn web | Đơn mới tự trừ theo GHN. Đơn `legacy`: sau kiểm kê, phiếu điều chỉnh ghi số đơn web. Đơn `blocked`: sửa mã / nhập hàng rồi đồng bộ GHN để tự trừ |
 | Tồn âm | Kiểm kê thực tế, tìm chứng từ nguồn; phiếu điều chỉnh có duyệt. Không nâng về 0 khi chưa kiểm |
 
 Mọi phiếu điều chỉnh đều qua `postMoves`: một giao dịch, chống gửi lặp bằng mã bắt buộc, có nhật ký.
