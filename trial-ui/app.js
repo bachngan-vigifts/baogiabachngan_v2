@@ -1,3 +1,4 @@
+import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
@@ -2411,6 +2412,8 @@ function renderProducts() {
 }
 function renderSelection() {
   const n = state.selected.size;
+  $('#product-print-labels').hidden=!seesPrices();
+  const page=state.products||[],all=$('#product-select-page'),count=page.filter(p=>state.selected.has(p.sku)).length;all.checked=!!page.length&&count===page.length;all.indeterminate=count>0&&count<page.length;all.disabled=!page.length;
   $('#product-selection').hidden = n === 0;
   $('#product-selection-text').textContent = `Đã chọn ${n} sản phẩm`;
 }
@@ -2454,6 +2457,7 @@ $('#product-policy').addEventListener('change', e => { preferredPolicy = e.targe
 $('#product-list').addEventListener('change', e => {
   const box = e.target.closest('[data-select]'); if (!box) return;
   const p = state.products.find(x => x.sku === box.dataset.select);
+  if(!p)return;
   if (box.checked) state.selected.set(p.sku, p); else state.selected.delete(p.sku);
   renderSelection();
 });
@@ -2465,6 +2469,8 @@ $('#product-list').addEventListener('click', e => {
   if (!rows.length) return;
   editor.pending = newQuoteData({ rows }); go('#/quotes/new');
 });
+$('#product-select-page').addEventListener('change',e=>{for(const p of state.products||[]){if(e.target.checked)state.selected.set(p.sku,p);else state.selected.delete(p.sku);}renderProducts();});
+$('#product-print-labels').addEventListener('click',async e=>{const b=e.currentTarget;if(!seesPrices())return; b.disabled=true;try{await openPriceLabels({api,skus:[...state.selected.keys()]});}catch(error){toast(error.message,'err');}finally{b.disabled=false;}});
 $('#product-clear').addEventListener('click', () => { state.selected.clear(); renderProducts(); });
 $('#product-to-quote').addEventListener('click', () => {
   const rows = rowsFromProducts([...state.selected.values()]);
