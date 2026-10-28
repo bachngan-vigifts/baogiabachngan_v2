@@ -182,6 +182,15 @@ export async function setExpectedDeliveryDate(c: Ctx, order: typeof salesOrders.
   if (by?.role === 'customer') await notify(c.env, { eventType: 'order_delivery_date', targetMemberId: order.createdBy, actorId: viewer(c).id, title: 'Đổi ngày giao dự kiến',
     body: `${docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id)).Label}: giao dự kiến ${date.split('-').reverse().join('/')}`, url: '/customer.html#orders', data: { orderId: order.id, date } });
 }
+/** Lịch sử sản phẩm: chuyến "Đã giao" = giao hàng cho khách (khoá `delivery:<chuyến>:<dòng>`). Gọi trong giao dịch đánh dấu đã giao. */
+export async function recordDeliveryMovements(tx: Tx, d: { id: string; orderId: string; deliveryNo: string; address: string }) {
+  const [o] = await tx.select().from(salesOrders).where(eq(salesOrders.id, d.orderId)).limit(1);
+  const lines = await tx.select({ id: deliveryLines.orderLineId, qty: deliveryLines.qty, sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit, unitPrice: salesOrderLines.unitPrice })
+    .from(deliveryLines).innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId)).where(eq(deliveryLines.deliveryId, d.id));
+  const ref = docRef(d.orderId, o?.orderNo ?? '', (await contractNosOf(tx, [d.orderId])).get(d.orderId));
+  await recordMovements(tx, lines.map(l => ({ refKey: `delivery:${d.id}:${l.id}`, sku: l.sku, kind: 'delivery' as const, name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
+    partner: o?.customerName ?? '', location: d.address, refCode: `${d.deliveryNo} · ${ref.no}`, link: ref.link, status: 'Đã giao', occurredAt: nowIso() })));
+}
 /** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán. */
 export async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1).for('update');
@@ -1256,17 +1265,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         await tx.update(salesOrderLines).set({ deliveredQty: sql`LEAST(${salesOrderLines.qty}, ${salesOrderLines.deliveredQty} + ${l.qty})` }).where(eq(salesOrderLines.id, l.orderLineId));
       if (status === 'delivered') await issuePosDelivery(tx, row.d.orderId, row.d.id, me.id);
       await refreshOrderStatus(tx, row.d.orderId, deliveredOn);
+      // Lịch sử sản phẩm ghi CÙNG giao dịch với "Đã giao": không có chuyến đã giao mà thiếu dòng lịch sử.
+      await recordDeliveryMovements(tx, row.d);
     });
     if (status === 'delivered') await invoiceTasksChanged(c.env, { orderId: row.d.orderId }, me.id);
-    // Lịch sử sản phẩm: chuyến "Đã giao" = xuất kho cho khách.
-    if (status === 'delivered') {
-      const [o] = await c.env.db.select().from(salesOrders).where(eq(salesOrders.id, row.d.orderId)).limit(1);
-      const lines = await c.env.db.select({ id: deliveryLines.orderLineId, qty: deliveryLines.qty, sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit, unitPrice: salesOrderLines.unitPrice })
-        .from(deliveryLines).innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId)).where(eq(deliveryLines.deliveryId, row.d.id));
-      const ref = docRef(row.d.orderId, o?.orderNo ?? '', (await contractNosOf(c.env.db, [row.d.orderId])).get(row.d.orderId));
-      await recordMovements(c.env.db, lines.map(l => ({ refKey: `delivery:${row.d.id}:${l.id}`, sku: l.sku, kind: 'delivery', name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
-        partner: o?.customerName ?? '', location: row.d.address, refCode: `${row.d.deliveryNo} · ${ref.no}`, link: ref.link, status: 'Đã giao', occurredAt: nowIso() })));
-    }
     // Giao xong / giao thất bại: báo nhân viên phụ trách đơn (giao lại, đòi tiền, xuất hoá đơn).
     if (status === 'delivered' || status === 'failed') {
       const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, ownerId: salesOrders.ownerId, customerName: salesOrders.customerName }).from(salesOrders).where(eq(salesOrders.id, row.d.orderId)).limit(1);

@@ -10,7 +10,7 @@ import { assertNoStockRecovery } from './pos-order-flow-guards.ts';
 import { recordDispatch } from './cancellation-guards.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
 import { reconcileWebOrderStock, syncWebOrderStock } from './web-order-stock.ts';
-import { refreshOrderStatus } from './routes.ts';
+import { recordDeliveryMovements, refreshOrderStatus } from './routes.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { posPermission } from './pos-store.ts';
@@ -75,6 +75,7 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
       await tx.update(salesOrderLines).set({ deliveredQty: sql`least(${salesOrderLines.qty}, ${salesOrderLines.deliveredQty} + ${line.qty})` }).where(eq(salesOrderLines.id, line.orderLineId));
     await issuePosDelivery(tx, row.order.id, row.delivery.id, row.order.createdBy);
     await refreshOrderStatus(tx, row.order.id, deliveredOn);
+    await recordDeliveryMovements(tx, row.delivery);
 
     if (row.delivery.codAmount > 0) {
       const requestKey = `ghn-cod:${row.delivery.id}`;
