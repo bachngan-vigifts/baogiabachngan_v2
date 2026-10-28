@@ -600,7 +600,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     m.dlg.classList.add('pos-web-order-modal');
     // Nút chính (tạo vận đơn khi chờ xử lý, hoàn thành khi đang giao) chiếm cả dòng; Hoàn thành / Huỷ / Đóng chia đều dòng dưới.
     const actions = el('div', 'pos-actions pos-web-actions'), open = o.actionsAvailable && !['completed', 'cancelled'].includes(o.bucket), ghn = open && o.bucket === 'pending';
-    if(o.warehouseReconciliationRequired)m.body.append(el('p','pos-note','Kho: cần đối soát chứng từ nhập/xuất. Trạng thái GHN chỉ xác nhận tình trạng giao hàng.'));
+    // Sổ kho đơn web theo GHN (web-order-stock.ts): đã lấy hàng → tự trừ kho quầy; đã hoàn về shop → tự cộng lại.
+    const stockText={none:'Kho: chưa trừ – tự trừ kho quầy khi GHN báo đã lấy hàng.',issued:'Kho: đã trừ kho quầy (GHN đã lấy hàng).',returned:'Kho: đã cộng lại kho quầy (GHN đã hoàn về shop).',
+      blocked:'Kho: chưa trừ được – cần đối soát. '+(o.stockNote||''),legacy:'Kho: đơn trước khi ghi sổ kho đơn web – đối soát theo hồ sơ.'}[o.stockStatus];
+    if(stockText)m.body.append(el('p',o.stockStatus==='blocked'?'pos-note danger-text':'pos-note',stockText));
+    else if(o.warehouseReconciliationRequired)m.body.append(el('p','pos-note','Kho: cần đối soát chứng từ nhập/xuất. Trạng thái GHN chỉ xác nhận tình trạng giao hàng.'));
     if (ghn) actions.append(button('Chọn địa chỉ & tạo vận đơn GHN', 'btn primary pos-web-main', () => { m.close(); showGhnAddress(o); }));
     if (open) {
       if(!o.warehouseReconciliationRequired)actions.append(busyButton('Hoàn thành', ghn ? 'btn secondary' : 'btn primary pos-web-main', 'Đang hoàn thành…', async () => {

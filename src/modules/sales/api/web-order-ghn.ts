@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { webStoreOrders } from '../pos-schema.ts';
+import { findGhnByClientCode } from './ghn-client-code.ts';
 import { ghnCreateBody, parseGhnShip } from '../domain/pos-ghn.ts';
 import { readWebOrderFinancials } from '../domain/web-order-financials.ts';
 import { posGhnAccount } from './pos-ghn-account.ts';
@@ -61,13 +62,24 @@ export async function createWebOrderGhn(env: StaffEnv, orderId: string, address:
       address: [address.addressLine, address.wardName, address.districtName, address.provinceName].filter(Boolean).join(', '), codAmount: cod, ship,
       lines: lines.map(l => ({ sku: text(l.sku, 100), name: text(l.name, 200) || 'Sản phẩm', qty: Number(l.quantity) || 1, unitPrice: (Number(l.total) || 0) / Math.max(1, Number(l.quantity) || 1) })),
     });
-    const { response, result } = await ghnPost(env, GHN_CREATE, body);
+    let response: Response | null = null, result: Record<string, unknown> = {};
+    try { ({ response, result } = await ghnPost(env, GHN_CREATE, body)); }
+    catch (e) { if (!(e instanceof AppError && e.code === 'GHN_TIMEOUT')) throw e; }
     const data = result.data && typeof result.data === 'object' ? result.data as Record<string, unknown> : {};
-    const code = text(data.order_code, 50).toUpperCase();
-    if (!response.ok || !code) throw new AppError(502, 'GHN: ' + (text(result.code_message_value) || text(result.message) || `lỗi ${response.status}`), 'GHN_CREATE_FAILED');
+    let code = response?.ok ? text(data.order_code, 50).toUpperCase() : '', ghnStatus = 'ready_to_pick', fee = Math.max(0, Number(data.total_fee) || 0);
+    if (!code) {
+      // Mất phản hồi / GHN báo trùng mã đơn: vận đơn có thể đã tạo ở lần trước – gắn lại đúng vận đơn đó (ghn-client-code.ts).
+      const account = await posGhnAccount(env, MINH_LONG);
+      const existing = account?.token ? await findGhnByClientCode(env.ghnFetch ?? fetch, account, body.client_order_code) : null;
+      if (!existing) {
+        if (!response) throw new AppError(504, 'Không kết nối được GHN. Thử lại sau.', 'GHN_TIMEOUT');
+        throw new AppError(502, 'GHN: ' + (text(result.code_message_value) || text(result.message) || `lỗi ${response.status}`), 'GHN_CREATE_FAILED');
+      }
+      code = existing.orderCode; ghnStatus = existing.status; fee = Math.max(0, existing.fee ?? 0);
+    }
     const now = new Date().toISOString();
-    const fields = { status: 'processing', ghnOrderCode: code, ghnStatus: 'ready_to_pick', ghnSortCode: text(data.sort_code, 100),
-      ghnFee: Math.max(0, Number(data.total_fee) || 0), updatedAt: now,
+    const fields = { status: 'processing', ghnOrderCode: code, ghnStatus, ghnSortCode: text(data.sort_code, 100),
+      ghnFee: fee, updatedAt: now,
       address: [address.addressLine, address.wardName, address.districtName, address.provinceName].filter(Boolean).join(', '), ghnAddressSnapshot: JSON.stringify(address) };
     await tx.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
     return { order: { ...order, ...fields }, existing: false };

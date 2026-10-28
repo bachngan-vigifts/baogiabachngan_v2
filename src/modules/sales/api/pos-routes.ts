@@ -37,6 +37,7 @@ import { customerPhoneKeys, identityKeys } from '../../customers/domain/identity
 const CONSUMER_NAME = 'Bán người tiêu dùng', CONSUMER_CODE = 'BAN-NGUOI-TIEU-DUNG';
 import { customerPayments, salesOrders, salesOrderLines, deliveries, packingSlips } from '../schema.ts';
 import { posRegisters, posShifts, posShiftTemplates, posPaymentRequests, webStoreOrders } from '../pos-schema.ts';
+import { syncWebOrderStock } from './web-order-stock.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { writeAudit } from '../../../core/audit.ts';
@@ -160,6 +161,7 @@ async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof
   } else fields = {};
   if (Object.keys(fields).length && action !== 'confirm') await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
   const next = { ...order, ...fields };
+  await syncWebOrderStock(c.env, order.id, m.id);
   await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
   await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
     data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, direct: true, ...(reason ? { reason } : {}) } });
@@ -267,6 +269,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
       .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
+    // Website Lock báo trạng thái GHN qua cầu nối: ghi sổ kho quầy theo trạng thái (web-order-stock.ts).
+    await syncWebOrderStock(c.env, saved!.id);
     return json({ ok: true, source, externalId, registerId: register.id });
   }, 'web-order-sync');
   /** Proxy master-data GHN riêng cho checkout Minh Long; token tài khoản GHN không bao giờ đưa ra trình duyệt/WordPress. */
@@ -367,7 +371,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           const paid = payment ? (payment.paidAt ? o.total : 0) : null;
           return ({ ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
-          packingStatus: '', warehouseReconciliationRequired:true, deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
+          packingStatus: '', warehouseReconciliationRequired:true, stockStatus: o.stockStatus, stockNote: o.stockNote, deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && (!!c.env.webOrderAction?.minhlongUrl || !!c.env.ghnMlToken),
@@ -531,6 +535,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (order.ghnStatus === 'delivered' && fields.ghnOrderCode === order.ghnOrderCode) fields.ghnStatus = 'delivered';
     fields.status = webGhnOrderStatus(fields.ghnStatus, fields.status);
     await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
+    await syncWebOrderStock(c.env, order.id, m.id);
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
     await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
       data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}) } });

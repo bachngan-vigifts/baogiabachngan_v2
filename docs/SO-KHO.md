@@ -98,6 +98,27 @@
   - `POST /stock-holds/conversion { planId, confirmed: true }`: chạy lại, chỉ ghi khi trùng mã kế hoạch. Dữ liệu đổi thì `409 HOLD_PLAN_CHANGED`; áp dụng lại không đổi gì.
   - Giao diện: khối "Giữ hàng" trên chi tiết đơn cũ có nút "Kế hoạch chuyển đổi giữ hàng đơn cũ" (Manager).
 
+### Đơn web (Lock, Minh Long) – sổ kho theo GHN (quyết định Anh Thái 28/10/2026)
+
+Code `sales/api/web-order-stock.ts`, migration `20261029090000_web_order_stock.sql`.
+
+| GHN báo | Sổ kho kho quầy của đơn web (chứng từ `web_order`) |
+|---|---|
+| Chờ lấy / đang lấy / huỷ trước khi lấy | Không ghi |
+| Đã lấy hàng (picked) hoặc bất kỳ trạng thái sau đó (đang giao, đã giao, đang hoàn…) | **Tự trừ** theo dòng hàng website, một lần |
+| Đã hoàn về shop (`returned`) | **Tự cộng lại** đúng số đã trừ (dòng đảo), một lần |
+| Thất lạc / hư hỏng / hoàn thất bại | Không cộng lại (hàng không về) |
+
+- Trạng thái kho của đơn web (`web_store_orders.stock_status`): `none`, `issued`, `returned`, `blocked` (không trừ được), `legacy`.
+- **Không trừ được:** mã website không có trong danh mục, kho thiếu, kho chưa chốt đầu kỳ.
+  - Không chặn đồng bộ GHN: đơn chuyển `blocked`, hiện lý do trên POS, báo Manager một lần.
+  - Sửa mã / nhập hàng xong thì lượt đồng bộ GHN sau tự trừ (lưới an toàn `reconcileWebOrderStock`).
+- Gọi ở mọi chỗ ghi trạng thái GHN: webhook GHN, lượt hỏi GHN của Minh Long, webhook website Lock, thao tác trên đơn web.
+  - Khoá dòng đơn web; gửi lặp / đồng thời không ghi hai lần.
+  - Người ghi sổ khi tự động: tài khoản Manager lập sớm nhất, dòng sổ có ghi chú "Tự động theo GHN".
+- **Đơn cũ:** đã lấy hàng / kết thúc trước migration thì đánh `legacy`, không tự trừ bù. Đối soát qua hồ sơ (docs/DOI-SOAT-KHO-LICH-SU.md, mục B).
+- **Tạo vận đơn GHN mất phản hồi** (POS COD, web Minh Long): trước khi báo lỗi, tra GHN theo `client_order_code` và gắn lại đúng vận đơn (`sales/api/ghn-client-code.ts`), không tạo trùng.
+
 ### Đối soát chỉ đọc
 
 Manager gọi `GET /warehouse-workflow-audit?offset=0` để kiểm tra số dư so với sổ, phiếu nhận so với phát sinh đúng kho, và đơn đang/đã giao thiếu bằng chứng xuất. Mỗi trang 100 bản ghi, có tổng số và thông tin trang tiếp. Báo cáo không thay đổi dữ liệu; không coi việc thiếu chứng từ tự động là bằng chứng phải trừ bù. Cần xác minh kho, kỳ mở sổ và chứng từ thực tế trước khi sửa lịch sử.
@@ -229,6 +250,8 @@ Mỗi dòng là **một giao dịch** trong `stock_moves`, mới nhất trước
 | Khách trả hàng (nhập lại kho) | customer_return | pos_return | Khách trả hàng – nhập lại kho | Đơn gốc |
 | Điều chuyển "Đã chuyển" | transfer_out / transfer_in | stock_transfer | Chuyển hàng sang kho khác / Nhận hàng chuyển kho | Phiếu `#/transfers/<id>` |
 | Phiếu điều chỉnh (Manager) | adjust | adjustment | Điều chỉnh tồn kho | – |
+| Đơn website: GHN đã lấy hàng | issue | web_order | Xuất kho đơn website (GHN đã lấy hàng) | – |
+| Đơn website: GHN đã hoàn về shop | reverse | web_order | Đơn website GHN hoàn về – nhập lại kho | – |
 
 ### Thêm loại chứng từ mới (để không rối về sau)
 1. Thêm giá trị vào `STOCK_MOVE_KINDS` / `STOCK_REF_TYPES` (`src/modules/inventory/domain/kinds.ts`) + migration cập nhật check constraint.

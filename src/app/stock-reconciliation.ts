@@ -86,9 +86,11 @@ export async function buildReconciliationDossier(db: AnyDb, now = new Date().toI
   }
 
   const web = (await db.select({ w: webStoreOrders, warehouseId: posRegisters.warehouseId }).from(webStoreOrders)
-    .innerJoin(posRegisters, eq(posRegisters.id, webStoreOrders.registerId)).where(eq(webStoreOrders.status, 'completed')).orderBy(asc(webStoreOrders.orderNo)))
-    .filter(r => { const opened = openedOn.get(r.warehouseId); return !!opened && (vnDate(r.w.updatedAt) ?? '') >= opened; })
-    .map(r => ({ source: r.w.source, orderNo: r.w.orderNo, status: r.w.status, ghnStatus: r.w.ghnStatus, warehouse: whName(r.warehouseId)!, updatedAt: r.w.updatedAt,
+    .innerJoin(posRegisters, eq(posRegisters.id, webStoreOrders.registerId))
+    // Đơn web chưa có bút toán sổ kho: đơn trước khi ghi sổ kho đơn web (legacy) đã hoàn thành / đã lấy hàng, và đơn bị chặn (mã / tồn).
+    .where(sql`${webStoreOrders.stockStatus} = 'blocked' OR (${webStoreOrders.stockStatus} = 'legacy' AND ${webStoreOrders.status} = 'completed')`).orderBy(asc(webStoreOrders.orderNo)))
+    .filter(r => { const opened = openedOn.get(r.warehouseId); return r.w.stockStatus === 'blocked' || (!!opened && (vnDate(r.w.updatedAt) ?? '') >= opened); })
+    .map(r => ({ source: r.w.source, orderNo: r.w.orderNo, status: r.w.stockStatus === 'blocked' ? 'chặn: ' + r.w.stockNote : r.w.status, ghnStatus: r.w.ghnStatus, warehouse: whName(r.warehouseId)!, updatedAt: r.w.updatedAt,
       lines: (() => { try { return (JSON.parse(r.w.lines) as { sku?: string; name?: string; quantity?: number }[]).map(l => ({ sku: String(l.sku ?? ''), name: String(l.name ?? ''), qty: Number(l.quantity) || 0 })); } catch { return []; } })() }));
 
   const negative = (await db.select().from(stockBalances).where(sql`${stockBalances.qty} < -0.0005`).orderBy(asc(stockBalances.warehouseId), asc(stockBalances.sku)))
@@ -112,7 +114,7 @@ export function renderDossierMarkdown(d: Dossier) {
     '## Tóm tắt', '', '| Nhóm | Số lượng |', '|---|---|',
     `| Đơn CRM thiếu bằng chứng xuất | ${d.orders.length} |`, `| – có dòng đã bù bằng điều chỉnh | ${counts('adjusted')} |`,
     `| – có dòng giao trước chốt tồn | ${counts('pre_opening')} |`, `| – có dòng cần xác minh | ${counts('needs_review')} |`,
-    `| Đơn web hoàn thành sau chốt tồn chưa có xuất kho | ${d.web.length} |`, `| Cặp mã × kho tồn âm | ${d.negative.length} |`, '',
+    `| Đơn web chưa có bút toán sổ kho | ${d.web.length} |`, `| Cặp mã × kho tồn âm | ${d.negative.length} |`, '',
     'Mốc chốt tồn đầu kỳ: ' + (d.openings.map(o => `${o.warehouse} ${o.openedAt}`).join('; ') || 'chưa có'), '');
   out.push('## A. Đơn CRM thiếu bằng chứng xuất', '');
   d.orders.forEach((o, i) => {
@@ -124,10 +126,10 @@ export function renderDossierMarkdown(d: Dossier) {
       ...o.lines.map(l => `| ${cell(l.sku)} | ${cell(l.name)} | ${l.qty} | ${l.delivered} | ${round(l.issued)} | ${round(l.missing)} | ${LABEL[l.cls]} | ${cell(l.evidence)} | ${PROPOSAL[l.cls]} |`), '',
       '**Duyệt:** ☐ Đồng ý đề xuất · ☐ Xử lý khác: ____________ · Người duyệt / ngày: ____________', '');
   });
-  out.push('## B. Đơn web hoàn thành sau chốt tồn, chưa có xuất kho CRM', '',
-    'Đề xuất chung: chờ phiếu xuất cho đơn web (việc 6). Trước đó, đối chiếu kiểm kê tại kho quầy; nếu xác nhận hàng đã ra khỏi kho, Manager lập phiếu điều chỉnh ghi rõ số đơn web và duyệt. Không tự trừ.', '',
-    '| Nguồn | Đơn web | GHN | Kho | Cập nhật | Mã × SL | Duyệt |', '|---|---|---|---|---|---|---|',
-    ...d.web.map(w => `| ${cell(w.source)} | ${cell(w.orderNo)} | ${cell(w.ghnStatus || '—')} | ${cell(w.warehouse)} | ${vnDate(w.updatedAt)} | ${w.lines.map(l => cell(l.sku) + ' × ' + l.qty).join(', ')} | ☐ |`), '');
+  out.push('## B. Đơn web chưa có bút toán sổ kho (đơn cũ đã hoàn thành sau chốt tồn, đơn bị chặn)', '',
+    'Đề xuất: đơn "legacy" – đối chiếu kiểm kê tại kho quầy; nếu xác nhận hàng đã ra khỏi kho, Manager lập phiếu điều chỉnh ghi rõ số đơn web và duyệt. Đơn bị chặn – sửa mã / nhập hàng rồi đồng bộ GHN để tự trừ. Không tự trừ bù.', '',
+    '| Nguồn | Đơn web | Trạng thái | GHN | Kho | Cập nhật | Mã × SL | Duyệt |', '|---|---|---|---|---|---|---|---|',
+    ...d.web.map(w => `| ${cell(w.source)} | ${cell(w.orderNo)} | ${cell(w.status)} | ${cell(w.ghnStatus || '—')} | ${cell(w.warehouse)} | ${vnDate(w.updatedAt)} | ${w.lines.map(l => cell(l.sku) + ' × ' + l.qty).join(', ')} | ☐ |`), '');
   out.push('## C. Tồn âm', '', 'Sổ kho và số dư khớp nhưng âm: cần kiểm kê thực tế và chứng từ nguồn. Không tự nâng về 0.', '',
     '| Kho | Mã | Tồn | Duyệt |', '|---|---|---|---|', ...d.negative.map(n => `| ${cell(n.warehouse)} | ${cell(n.sku)} | ${n.qty} | ☐ |`), '');
   return out.join('\n');

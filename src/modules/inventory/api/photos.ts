@@ -25,6 +25,31 @@ export function parsePhotos(raw: unknown, { min = 0, required = 'Chụp ít nh�
 }
 export type ParsedPhoto = ReturnType<typeof parsePhotos>[number];
 
+/**
+ * Tải ảnh lên kho file TRƯỚC khi mở giao dịch (I/O chậm không giữ khoá sổ kho / khoá chứng từ); trả các dòng để ghi trong giao dịch.
+ * Giao dịch lỗi / gửi lặp: gọi `discardPhotos` để dọn file vừa tải.
+ */
+export async function uploadPhotos(files: FileStore | undefined, by: string, refType: WarehousePhotoRef, refId: string, photos: readonly ParsedPhoto[], now = new Date().toISOString()) {
+  if (!photos.length) return [];
+  if (!files) throw new AppError(503, 'Chưa cấu hình kho file, tạm thời chưa lưu được ảnh.');
+  const rows: (typeof warehousePhotos.$inferInsert)[] = [];
+  try {
+    for (const p of photos) {
+      const id = crypto.randomUUID(), fileKey = `warehouse-photos/${refType}/${refId}/${id}.${p.ext}`;
+      await files.put(fileKey, p.bytes, p.mime);
+      rows.push({ id, refType, refId, fileKey, bytes: p.bytes.length, createdBy: by, createdAt: now });
+    }
+  } catch (e) { await discardPhotos(files, rows); throw e; }
+  return rows;
+}
+/** Ghi khoá ảnh đã tải (trong giao dịch của chứng từ). */
+export async function recordPhotos(db: LedgerDb, rows: readonly (typeof warehousePhotos.$inferInsert)[]) {
+  if (rows.length) await db.insert(warehousePhotos).values([...rows]);
+}
+export async function discardPhotos(files: FileStore | undefined, rows: readonly { fileKey: string }[]) {
+  if (!files || !rows.length) return;
+  try { await files.remove(rows.map(r => r.fileKey)); } catch { console.warn('warehouse photo cleanup skipped'); }
+}
 /** Lưu ảnh lên kho file + ghi bảng. Gọi trong giao dịch của chứng từ (lỗi kho file → huỷ cả chứng từ). */
 export async function savePhotos(db: LedgerDb, files: FileStore | undefined, by: string, refType: WarehousePhotoRef, refId: string, photos: readonly ParsedPhoto[], now = new Date().toISOString()) {
   if (!photos.length) return;
