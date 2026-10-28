@@ -54,7 +54,8 @@ import { registerApprovalRoutes } from './approval-routes.ts';
 import { registerNavigationCounts } from './navigation-counts.ts';
 import { registerPulseRoutes } from './pulse-routes.ts';
 import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
-import { registerTransferRoutes } from '../modules/inventory/api/transfer-routes.ts';
+import { registerTransferRoutes, stockHoldHooks } from '../modules/inventory/api/transfer-routes.ts';
+import { assertFreeStock } from '../modules/sales/api/stock-free.ts';
 import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
@@ -72,6 +73,7 @@ export function createAppRouter() {
   catalogStockHooks.stamp = posStockStamp;
   catalogStockHooks.hidden = hiddenWarehouseIds;
   catalogStockHooks.ledger = ledgerWarehouses;
+  stockHoldHooks.assertFree = assertFreeStock;
   Object.assign(supplierRegistrationHooks, { boundSupplier, bindSupplier, supplierOf });
   const router = createStaffRouter({ authorizeSynctime, authorizeSession: authorizePosStore });
   registerQuoteRoutes(router, { rememberCustomer: rememberQuoteCustomer });

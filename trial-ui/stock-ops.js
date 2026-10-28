@@ -33,7 +33,7 @@ function ask(title, placeholder) {
   });
 }
 
-export function initTransfers({ api, root, toast, go }) {
+export function initTransfers({ api, root, toast, go, isManager = () => false }) {
   let data = null, filter = 'open', listRun = 0, detailRun = 0, showing = '', rendered = '', inFlight = null, formOpen = false, posting = false, openedAt = 0;
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Điều chuyển kho'),
@@ -105,7 +105,16 @@ export function initTransfers({ api, root, toast, go }) {
       acts.dataset.busy = '1';
       const all = [...acts.querySelectorAll('button')], label = b.textContent;
       all.forEach(x => { x.disabled = true; }); b.textContent = busyText; b.className += ' is-busy'; b.setAttribute('aria-busy', 'true');
-      try { await api(`/stock-transfers/${t.id}/${path}`, 'POST', { revision: t.revision, ...body }); toast(msg); if(showing===t.id)await load(t.id);else if(!showing)await load(); }
+      try {
+        try { await api(`/stock-transfers/${t.id}/${path}`, 'POST', { revision: t.revision, ...body }); }
+        catch (e) {
+          // Kho đi có hàng đang giữ cho đơn khác: Manager chuyển vượt phải ghi lý do; người khác thấy lỗi kèm đơn đang giữ.
+          if (path !== 'done' || e.code !== 'HELD_FOR_OTHER_ORDER' || !isManager()) throw e;
+          const reason = await ask('Lấy hàng đang giữ cho đơn khác', e.message + ' – nhập lý do (ít nhất 5 ký tự)');
+          if (!reason) return;
+          await api(`/stock-transfers/${t.id}/${path}`, 'POST', { revision: t.revision, ...body, overrideHolds: { reason } });
+        }
+        toast(msg); if(showing===t.id)await load(t.id);else if(!showing)await load(); }
       catch (e) { toast(e.message, 'err'); }
       finally { delete acts.dataset.busy; all.forEach(x => { x.disabled = false; }); b.textContent = label; b.className = b.className.replace(' is-busy', ''); b.removeAttribute('aria-busy'); }
     };

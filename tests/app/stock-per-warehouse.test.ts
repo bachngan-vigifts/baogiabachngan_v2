@@ -88,7 +88,7 @@ test('B có tồn Sapo âm: chỉ B thất bại (liệt kê mã), A vẫn chố
   // Sửa B rồi chốt B; sau đó điều chỉnh A và thử chốt lại A.
   await db.update(productStock).set({ quantity: 3 }).where(eq(productStock.warehouseId, 'b'));
   assert.equal((await call('/inventory/opening', mgr, 'POST', { confirm: true, warehouseId: 'b' })).data.lines, 2);
-  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { warehouseId: 'a', reason: 'Kiểm kê', lines: [{ sku: 'S1', qty: -1 }] })).status, 201);
+  assert.equal((await call('/inventory/adjustments', mgr, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'a', reason: 'Kiểm kê', lines: [{ sku: 'S1', qty: -1 }] })).status, 201);
   await db.update(productStock).set({ quantity: 100 }).where(eq(productStock.warehouseId, 'b'));
   const moves = await db.select().from(stockMoves), bals = await db.select().from(stockBalances);
   const reopen = await call('/inventory/opening', mgr, 'POST', { confirm: true, warehouseId: 'a' });

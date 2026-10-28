@@ -1,6 +1,8 @@
 /* PostgreSQL thật (WASM), chạy migration và Drizzle PostgreSQL trong test, không cần mật khẩu server. */
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
+import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,7 +11,7 @@ import type { AnyDb } from '../../src/core/db/client.ts';
 import * as schema from '../../src/db/schema.ts';
 
 export const migrationsDir = join(import.meta.dirname, '../../migrations/postgres');
-const open: PGlite[] = [];
+const open: { close(): Promise<unknown> }[] = [];
 afterEach(async () => { for (const client of open.splice(0)) await client.close(); });
 
 const boolColumns = new Map(Object.values(schema).map(t => {
@@ -53,8 +55,35 @@ export class PgFixture {
   async exec(sql: string) { const q = this.convert(sql, []); await this.client.exec(q.sql); }
 }
 
+/**
+ * TEST_PG_URL=postgres://user@host:port/postgres – chạy cùng bộ test trên PostgreSQL thật, mỗi test một database mới, nhiều kết nối:
+ * dùng để kiểm tra thao tác đồng thời (PGlite chỉ có một kết nối nên mọi giao dịch chạy lần lượt). CI giữ PGlite.
+ */
+class RealPgClient {
+  readonly waitReady = Promise.resolve();
+  constructor(readonly sql: postgres.Sql, private readonly drop: () => Promise<void>) {}
+  async query<T>(text: string, params: unknown[] = []) {
+    const rows = await this.sql.unsafe(text, params as never[]);
+    return { rows: [...rows] as T[], affectedRows: rows.count };
+  }
+  async exec(text: string) { await this.sql.unsafe(text).simple(); return []; }
+  async close() { await this.sql.end({ timeout: 5 }); await this.drop(); }
+}
+async function createRealDb(url: string) {
+  const name = 't_' + crypto.randomUUID().replaceAll('-', '');
+  const admin = postgres(url, { max: 1, onnotice: () => {} });
+  await admin.unsafe(`create database ${name}`);
+  const target = new URL(url); target.pathname = '/' + name;
+  const sql = postgres(target.toString(), { max: 20, onnotice: () => {} });
+  const client = new RealPgClient(sql, async () => { await admin.unsafe(`drop database if exists ${name} with (force)`); await admin.end({ timeout: 5 }); });
+  open.push(client);
+  return { client, db: drizzlePostgres(sql, { schema }) as unknown as AnyDb };
+}
+
 export async function createTestDb() {
-  const client = new PGlite(); open.push(client);
+  const real = process.env.TEST_PG_URL ? await createRealDb(process.env.TEST_PG_URL) : null;
+  const client = real ? real.client : new PGlite();
+  if (!real) open.push(client);
   await client.waitReady;
   for (const file of readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort()) {
     // RLS/GRANT trên Supabase có kiểm tra riêng với role thật; PGlite không có các role platform.
@@ -62,6 +91,7 @@ export async function createTestDb() {
     for (const stmt of readFileSync(join(migrationsDir, file), 'utf8').split('--> statement-breakpoint'))
       if (stmt.trim()) await client.exec(stmt);
   }
-  const fixture = new PgFixture(client);
-  return { client, d1: { sqlite: fixture }, db: drizzle(client, { schema }) as unknown as AnyDb };
+  const pglite = client as PGlite;
+  const fixture = new PgFixture(pglite);
+  return { client: pglite, d1: { sqlite: fixture }, db: real ? real.db : drizzle(pglite, { schema }) as unknown as AnyDb };
 }

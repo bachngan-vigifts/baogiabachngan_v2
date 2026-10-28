@@ -59,10 +59,16 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
   if(!(await allowed(c)).some(w=>w.id===warehouseId))fail(403,'Kho không thuộc phạm vi sổ kho của bạn.');
   const lines=cleanLines(body.lines),known=new Set((await c.env.db.select({sku:products.sku}).from(products).where(inArray(products.sku,lines.map(l=>l.sku)))).map(p=>p.sku));
   if(lines.some(l=>!known.has(l.sku)))fail(400,'Mã không có trong danh mục.');
-  // Older Manager clients can still post once; all new forms send a stable retry key.
-  const clientKey=body.clientKey??(approve(c)?crypto.randomUUID():'');
-  if(typeof clientKey!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(clientKey))fail(400,'Khoá gửi phiếu không hợp lệ.');
   const hash=sha256Hex(JSON.stringify({warehouseId,reason,lines}));
+  // Khoá gửi bắt buộc với mọi người (kể cả Manager): server tự sinh khoá thì bấm lặp / mạng gửi lại thành hai phiếu, ghi tồn hai lần.
+  const clientKey=body.clientKey;
+  if(clientKey===undefined||clientKey===null||clientKey===''){
+   const since=new Date(Date.now()-2*60_000).toISOString();
+   const [recent]=await c.env.db.select({refNo:adjustments.refNo}).from(adjustments)
+    .where(and(eq(adjustments.createdBy,m.id),eq(adjustments.payloadHash,hash),sql`${adjustments.createdAt}>=${since}`)).orderBy(desc(adjustments.createdAt)).limit(1);
+   throw new AppError(409,(recent?`Vừa có phiếu ${recent.refNo} cùng nội dung. Kiểm tra danh sách phiếu trước khi gửi lại. `:'')+'Tải lại trang rồi lập phiếu (thiếu mã chống gửi lặp).','ADJUSTMENT_KEY_REQUIRED');
+  }
+  if(typeof clientKey!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(clientKey))fail(400,'Khoá gửi phiếu không hợp lệ.');
   const result=await c.env.db.transaction(async tx=>{
    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'adjustment:'+m.id+':'+clientKey}))`);
    const [old]=await tx.select().from(adjustments).where(and(eq(adjustments.createdBy,m.id),eq(adjustments.clientKey,clientKey))).limit(1);

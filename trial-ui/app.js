@@ -3464,7 +3464,7 @@ function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
-function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go }); }
+function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager }); }
 function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast, createPager, linkAllowed }); }
 function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').after(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
 var permissionsUi = null;
@@ -4219,7 +4219,16 @@ document.addEventListener('click', async e => {
   const whSel = document.getElementById('slip-confirm-wh');
   if (whSel && !whSel.value) { toast('Chọn kho xuất hàng.', 'err'); whSel.focus(); e.target.disabled = false; return; }
   if (whSel) try { localStorage.setItem('bn-pack-wh', whSel.value); } catch { /* bỏ qua */ }
-  try { await api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}) }); toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
+  const send = overrideHolds => api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}), ...(overrideHolds ? { overrideHolds } : {}) });
+  try {
+    // Hàng đang giữ cho đơn khác: Manager xuất vượt phải ghi lý do (máy chủ ghi nhật ký); người khác chỉ thấy lỗi.
+    try { await send(); } catch (ex) {
+      if (ex.code !== 'HELD_FOR_OTHER_ORDER' || !isManager()) throw ex;
+      const reason = prompt(ex.message + '\n\nVẫn xuất? Nhập lý do lấy hàng đang giữ cho đơn khác (ít nhất 5 ký tự):', '');
+      if (!reason) { e.target.disabled = false; return; }
+      await send({ reason });
+    }
+    toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
   catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
 });
 /** Kho dự kiến xuất của đơn CRM (chỉ trừ khi xác nhận xuất): nháp – người sửa được đơn đổi; đã duyệt – chỉ Manager (docs/SO-KHO.md). */
@@ -4429,7 +4438,15 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#order-cancel')) {
     const w = isContractDoc() ? 'HĐKT' : 'đơn';
     if (!await confirmBox(`Huỷ ${w} ${docNo()}? ${isContractDoc() ? 'HĐKT' : 'Đơn'} huỷ không còn tính công nợ; báo giá có thể lập lại.`, { title: 'Huỷ ' + w, ok: 'Huỷ ' + w, danger: true })) return;
-    try { const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.' + ghnCancelNote(r), r?.ghnCancel?.errors?.length ? 'err' : undefined); loadHolds(true); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); }
+    try { const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/status`, 'PUT', { status: 'cancelled' }); toast('Đã huỷ ' + w + '.' + ghnCancelNote(r), r?.ghnCancel?.errors?.length ? 'err' : undefined); loadHolds(true); openOrder(sales.order.id); }
+    catch (ex) {
+      // Chuyến đã rời kho rồi giao thất bại: Manager huỷ khi kho đã nhận lại đủ hàng – phiếu xuất được đảo về kho đã xuất (docs/SO-KHO.md).
+      if (ex.code !== 'RETURN_REQUIRED' || !isManager() || (sales.order.channel || 'crm') !== 'crm') { toast(ex.message, 'err'); return; }
+      if (!await confirmBox(`Chuyến giao của ${w} ${docNo()} đã rời kho. Chỉ huỷ khi mọi chuyến đang "Giao thất bại" và KHO ĐÃ NHẬN LẠI ĐỦ HÀNG. Hàng sẽ cộng lại đúng kho đã xuất; hàng hỏng lập phiếu điều chỉnh sau.`, { title: 'Huỷ sau giao thất bại', ok: 'Kho đã nhận lại đủ hàng', danger: true })) return;
+      const reason = prompt('Lý do huỷ (ít nhất 5 ký tự):', 'Khách không nhận hàng'); if (!reason) return;
+      try { await api(`/orders/${encodeURIComponent(sales.order.id)}/cancel-after-failed-delivery`, 'POST', { key: crypto.randomUUID(), reason, confirmedReceived: true }); toast('Đã huỷ ' + w + ', hàng đã cộng lại kho.'); loadHolds(true); openOrder(sales.order.id); }
+      catch (err) { toast(err.message, 'err'); }
+    }
   }
   if (e.target.closest('#order-delete')) {
     const k = isContractDoc(), w = k ? 'HĐKT' : 'đơn hàng';

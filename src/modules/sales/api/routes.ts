@@ -775,6 +775,61 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   }, 'business');
 
   /**
+   * HUỶ ĐƠN SAU GIAO THẤT BẠI (CRM, docs/SO-KHO.md › Giao thất bại): hàng đã xuất kho, chuyến đã rời kho rồi giao không thành công,
+   * khách không nhận nữa. Huỷ thường bị chặn (RETURN_REQUIRED) vì chuyến đã rời kho; ở đây Manager xác nhận KHO ĐÃ NHẬN LẠI ĐỦ HÀNG
+   * tại kho đã xuất → huỷ đơn và đảo đúng các phiếu xuất (hàng về kho đã xuất), cùng một giao dịch.
+   * Điều kiện: chưa giao được món nào, chưa thu tiền, không có phiếu trả; mọi chuyến từng rời kho đều đang "Giao thất bại".
+   * Hàng về bị hỏng: sau khi huỷ lập phiếu điều chỉnh hàng hỏng (có duyệt) – không tự trừ ở đây. Giao lại thì dùng luồng giao bình thường.
+   */
+  router.post('/orders/:id/cancel-after-failed-delivery', async c => {
+    if (viewer(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager huỷ đơn sau giao thất bại.');
+    const body = await readJson(c.req, 4_000), reason = text(body.reason, 1000), key = text(body.key, 100);
+    if (body.confirmedReceived !== true) throw new AppError(400, 'Chỉ huỷ khi kho đã nhận lại đủ hàng của các chuyến giao thất bại.');
+    if (reason.length < 5) throw new AppError(400, 'Nhập lý do huỷ (ít nhất 5 ký tự).');
+    if (!/^[a-zA-Z0-9_-]{8,100}$/.test(key)) throw new AppError(400, 'Thiếu mã chống gửi lặp – tải lại trang rồi thử lại.');
+    const order = await loadOrder(c, c.params.id!);
+    if (order.channel !== 'crm' || saleFlowOf(order.posSnapshot)) throw new AppError(409, 'Chỉ áp dụng đơn hàng / HĐKT CRM.');
+    const replay = async (db: StaffEnv['db'] | Tx) => (await db.select({ id: auditLogs.id }).from(auditLogs)
+      .where(and(eq(auditLogs.entityId, order.id), eq(auditLogs.action, 'cancel-after-failed-delivery'), sql`${auditLogs.data} like ${'%"key":"' + key + '"%'}`)).limit(1)).length > 0;
+    let replayed = false;
+    await c.env.db.transaction(async tx => {
+      await cashLock(tx);
+      const [locked] = await tx.select().from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      if (!locked) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
+      if (locked.status === 'cancelled') { if (await replay(tx)) { replayed = true; return; } throw new AppError(409, 'Đơn đã huỷ.'); }
+      if (locked.status === 'draft') throw new AppError(409, 'Đơn chưa duyệt: dùng Huỷ thường.');
+      await assertNoReturnActivity(tx, order.id);
+      const [[paid], shipped, trips] = await Promise.all([
+        tx.select({ n: count() }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt))),
+        tx.select({ id: salesOrderLines.id }).from(salesOrderLines).where(and(eq(salesOrderLines.orderId, order.id), sql`${salesOrderLines.deliveredQty}>0`)).limit(1),
+        tx.select({ id: deliveries.id, no: deliveries.deliveryNo, status: deliveries.status }).from(deliveries).where(eq(deliveries.orderId, order.id)).for('update'),
+      ]);
+      if (Number(paid?.n) > 0 || shipped.length) throw new AppError(409, 'Đơn đã giao hoặc đã thu tiền: dùng Trả hàng để nhận hàng về kho.', 'ORDER_DELIVERED_OR_PAID');
+      const moving = trips.filter(t => ['in_transit', 'delivered'].includes(t.status));
+      if (moving.length) throw new AppError(409, `Chuyến ${moving.map(t => t.no).join(', ')} đang giao: chờ kết quả, đánh dấu "Giao thất bại" khi hàng quay về rồi mới huỷ.`, 'DELIVERY_IN_PROGRESS');
+      const dispatched = (await tx.select({ id: auditLogs.entityId }).from(auditLogs).where(and(eq(auditLogs.entityType, 'deliveries'), eq(auditLogs.action, 'dispatch'),
+        inArray(auditLogs.entityId, trips.length ? trips.map(t => t.id) : ['']))));
+      const out = trips.filter(t => dispatched.some(d => d.id === t.id));
+      if (!out.length) throw new AppError(409, 'Đơn chưa có chuyến rời kho: dùng Huỷ thường.', 'NOT_DISPATCHED');
+      const notFailed = out.filter(t => t.status !== 'failed');
+      if (notFailed.length) throw new AppError(409, `Chuyến ${notFailed.map(t => t.no).join(', ')} đã rời kho nhưng chưa ở trạng thái "Giao thất bại".`, 'DELIVERY_NOT_FAILED');
+      const now = nowIso();
+      await tx.update(salesOrders).set({ status: 'cancelled', updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+      await syncOrderStock(tx, viewer(c).id, order.id, `Huỷ ${order.orderNo} sau giao thất bại – hàng về lại kho`);
+      await cancelDocumentChildren(tx, locked, viewer(c).id);
+      await tx.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: viewer(c).id, module: 'sales', action: 'cancel-after-failed-delivery', entityType: 'sales_orders', entityId: order.id,
+        data: JSON.stringify({ key, reason, deliveries: out.map(t => t.no), confirmedReceived: true }), createdAt: now });
+    });
+    if (!replayed) {
+      await removeMovements(c.env.db, `sale:${order.id}:`);
+      const ref = docRef(order.id, order.orderNo, (await contractNosOf(c.env.db, [order.id])).get(order.id));
+      await notifyMany(c.env, [order.ownerId, order.createdBy], { eventType: 'order_cancelled', title: (ref.kind === 'contract' ? 'HĐKT' : 'Đơn hàng') + ' đã bị huỷ (giao thất bại)',
+        body: `${ref.no} – ${order.customerName} · ${reason}`, url: `/index.html${ref.link}`, actorId: viewer(c).id, data: { orderId: order.id } });
+    }
+    return json({ ok: true, replayed });
+  }, 'business');
+
+  /**
    * XOÁ HẲN đơn hàng / HĐKT ĐÃ HUỶ (chỉ Manager) – dọn danh sách. Không xoá được nếu đã thu tiền hoặc đã giao hàng
    * (chứng từ có tiền / hàng phải giữ). Xoá kèm dòng hàng, HĐKT, lịch thanh toán, chuyến giao, phiếu đóng gói, tiến trình.
    * Nhật ký thay đổi vẫn giữ (ai huỷ / xoá, lúc nào); báo giá gốc lập đơn / HĐKT lại được. Đơn nháp trên Sapo (nếu có) không bị xoá.
