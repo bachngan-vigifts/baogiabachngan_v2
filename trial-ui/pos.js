@@ -96,6 +96,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     previewTimer,
     previewSeq = 0,
     searchSeq = 0,
+    searchInputVersion = 0,
     pendingUser = '',
     nodes = {},
     lineTotals = new Map();
@@ -364,6 +365,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     input.setAttribute('aria-label', 'Tìm hoặc quét sản phẩm');
     nodes.search = input;
     input.addEventListener('input', () => {
+      ++searchInputVersion;
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => run(() => search(false, false, true)), localSearch('', '') === null ? 220 : 40);
     });
@@ -1103,6 +1105,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   const cachedLive = (sku, registerId, policyId) => { const hit = liveCache.get(registerId + '|' + policyId + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
   async function search(addScanned = false, more = false, typed = false, previous = false) {
     if (!st.register) return;
+    if (addScanned && (!active() || st.pending || st.busy)) { if (!active()) toast('Mở ca trước khi thêm hàng.', 'err'); return; }
     if (more && st.catalogLoading) return;
     if (more && (nodes.search?.value.trim() || '') !== st.query) return;
     if (previous && st.catalogPages.length < 2) return;
@@ -1116,6 +1119,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       offset = previous ? st.catalogPages.at(-2) : more ? st.offset : 0,
       mobile = mobileCatalog(), append = more && !mobile,
       limit = mobile ? 20 : 60;
+    const scanned = addScanned && !more && !!q, inputVersion = scanned ? ++searchInputVersion : searchInputVersion,
+      scanCart = st.cart, scanShift = st.shift?.id;
+    const restoreScan = () => {
+      if (scanned && inputVersion === searchInputVersion && !nodes.search.value) { nodes.search.value = q; nodes.search.focus(); nodes.search.select(); }
+    };
+    if (scanned) {
+      // Consume the scanner's Enter immediately: the next scan must start with an empty field.
+      clearTimeout(searchTimer); nodes.search.value = ''; nodes.search.focus();
+    }
     try {
       // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
       if (!more) st.localSkus = q && !addScanned ? localSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p)) : null;
@@ -1148,6 +1160,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         const fallback = localSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p));
         if (fallback?.length) { const viaLocal = await bySkus(fallback); if (viaLocal) { st.localSkus = fallback; d = viaLocal; } }
       }
+      if (scanned && exact && exact.available > 0) {
+        if (st.register?.id !== registerId || st.policy !== policyId || st.shift?.id !== scanShift || st.cart !== scanCart || !active() || st.pending || st.busy) {
+          restoreScan(); toast('Đơn hoặc quầy đã thay đổi. Quét lại mã ' + q + '.', 'err'); return;
+        }
+        // A later typed search/scan may supersede catalog rendering, but must not discard this scan.
+        add(exact, false);
+        if (seq === searchSeq && inputVersion === searchInputVersion) { nodes.search.focus(); await search(false, false, true); }
+        return;
+      }
+      if (scanned) restoreScan();
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
       st.products = append ? [...st.products, ...d.products] : d.products;
@@ -1163,6 +1185,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         if (exact && exact.available > 0) add(exact, true);
         else toast(exact ? 'Mã ' + exact.sku + ' đã hết hàng ở quầy.' : d.products.length ? 'Chọn đúng sản phẩm trong danh sách.' : 'Không tìm thấy sản phẩm.');
       }
+    } catch (e) {
+      restoreScan(); throw e;
     } finally {
       // Chỉ request mới nhất mới mở khoá (request cũ kết thúc muộn không làm nút "Xem thêm" chạy trùng).
       if (seq === searchSeq) {
