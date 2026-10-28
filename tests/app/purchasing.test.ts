@@ -11,7 +11,7 @@ import { quotations, quoteLines } from '../../src/modules/quotes/schema.ts';
 import { salesOrders, salesOrderLines, salesContracts } from '../../src/modules/sales/schema.ts';
 import { vietnamDate } from '../../src/modules/sales/domain/sales.ts';
 import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
-import { incomingShipmentLines } from '../../src/modules/suppliers/schema.ts';
+import { incomingShipmentLines, incomingShipments, supplierOrderSources } from '../../src/modules/suppliers/schema.ts';
 
 /** ĐƠN MUA NCC (đợt 2): lập từ chứng từ nguồn, chống mua trùng, chia NCC, duyệt, xác nhận thay NCC, nhận hàng từng đợt, Sapo, thanh toán, huỷ. */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
@@ -546,4 +546,39 @@ test('Sale Admin thiếu purchases.prices: đủ nút trên đơn đã duyệt, 
   const receivedId=await make();await approve(receivedId);const ready=(await s.call('/purchase-orders/'+receivedId,s.sa)).data;
   const received=await s.call(`/purchase-orders/${receivedId}/receipts`,s.sa,'POST',{clientKey:crypto.randomUUID(),warehouse:'Kho nhận kiểm thử',lines:[{lineId:ready.lines[0].id,goodQty:1}]});assert.equal(received.status,201,JSON.stringify(received.data));
   assert.equal((await s.call(`/purchase-orders/${receivedId}/cancel`,s.sa,'POST',{reason:'Không được huỷ đơn đã nhận'})).status,409);
+});
+
+test('quote converted to order/HĐKT shares one purchasing budget in both directions and across a batch',async()=>{
+ const {db,call,emp,a,b}=await setup();
+ await db.update(salesOrders).set({quoteId:'q1'}).where(eq(salesOrders.id,'o1'));
+ await db.update(salesOrderLines).set({qty:10}).where(eq(salesOrderLines.id,'ol1'));
+ const order=(supplierId:string,type:string,quantity:number)=>({supplierId,warehouse:'Kho nhận kiểm thử',lines:[{sku:'LY1',quantity,sources:[{type,id:type==='quote'?'q1':'o1',quantity}]}]});
+ const create=(orders:object[])=>call('/purchase-orders',emp,'POST',{orders});
+ const first=await create([order(a,'quote',10)]);assert.equal(first.status,201,JSON.stringify(first.data));
+ let source=(await call('/purchase-sources/order/o1',emp)).data;assert.equal(source.lines.find((l:any)=>l.sku==='LY1').ordered,10);assert.equal(source.lines.find((l:any)=>l.sku==='LY1').remaining,0);
+ assert.equal((await create([order(b,'order',1)])).status,409,'cannot buy again from the converted order');
+ await call('/purchase-orders/'+first.data.ids[0]+'/cancel',emp,'POST',{reason:'Huỷ kiểm thử'});
+ const second=await create([order(a,'order',10)]);assert.equal(second.status,201);
+ source=(await call('/purchase-sources/quote/q1',emp)).data;assert.equal(source.lines.find((l:any)=>l.sku==='LY1').ordered,10);
+ assert.equal((await create([order(b,'quote',1)])).status,409,'reverse direction shares the same budget');
+ await call('/purchase-orders/'+second.data.ids[0]+'/cancel',emp,'POST',{reason:'Huỷ kiểm thử'});
+ const tooMany=await create([order(a,'quote',6),order(b,'order',5)]);assert.equal(tooMany.status,409,'cannot split a duplicate across sources within one request');
+ source=(await call('/purchase-sources/quote/q1',emp)).data;assert.equal(source.lines.find((l:any)=>l.sku==='LY1').ordered,0,'failed batch writes nothing');
+ const split=await create([order(a,'quote',6),order(b,'order',4)]);assert.equal(split.status,201);
+ source=(await call('/purchase-sources/order/o1',emp)).data;assert.equal(source.lines.find((l:any)=>l.sku==='LY1').ordered,10);
+ assert.equal((await create([order(a,'order',1)])).status,409);
+});
+
+test('warehouse cannot receive more against legacy duplicate quote/order purchases; valid partial receiving stays available',async()=>{
+ const {db,call,kho,a}=await setup();await db.update(salesOrders).set({quoteId:'q1'}).where(eq(salesOrders.id,'o1'));
+ for(const [id,type,sourceId]of [['legacy-q','quote','q1'],['legacy-o','order','o1']]as const){
+  await db.insert(incomingShipments).values({id,ticketNumber:id,source:'supplier-order',supplierId:a,supplierName:'NCC fixture',supplierStatus:'confirmed',approvalStatus:'approved',warehouse:'Kho nhận kiểm thử',createdBy:'mgr',createdAt:now,updatedAt:now});
+  await db.insert(incomingShipmentLines).values({id:id+'-line',shipmentId:id,lineNo:1,sku:'LY1',name:'Ly sứ',unit:'cái',quantity:10});
+  await db.insert(supplierOrderSources).values({id:id+'-source',shipmentId:id,lineId:id+'-line',sourceType:type,sourceId,sku:'LY1',quantity:10,createdAt:now});
+ }
+ const receive=()=>call('/purchase-orders/legacy-q/receipts',kho,'POST',{clientKey:'legacy-duplicate-receipt',warehouse:'Kho nhận kiểm thử',createSapo:false,lines:[{lineId:'legacy-q-line',goodQty:1}]});
+ const blocked=await receive();assert.equal(blocked.status,409,JSON.stringify(blocked.data));assert.equal(blocked.data.code,'PURCHASE_SOURCE_DUPLICATE');
+ await db.update(incomingShipments).set({cancelledAt:now}).where(eq(incomingShipments.id,'legacy-o'));
+ const allowed=await receive();assert.equal(allowed.status,201,JSON.stringify(allowed.data));
+ const replay=await receive();assert.equal(replay.status,200);assert.equal(replay.data.duplicate,true);
 });

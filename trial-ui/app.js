@@ -3736,11 +3736,16 @@ async function openOrder(id) {
   if (o.channel === 'pos' && o.canEdit && o.status !== 'cancelled' && !isK) $('#order-actions').append(posOrderEditor({ api, detail: d, onSaved: () => openOrder(o.id) }));
   const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
   if (sapoAction) $('#order-actions').append(sapoAction);
-  if (o.status !== 'cancelled' && !isWarehouse()) {
+  if (o.status !== 'cancelled' && !isWarehouse() && can('page.purchases') && !d.purchases?.length) {
     const buy = document.createElement('button'); buy.type = 'button'; buy.className = 'btn secondary'; buy.textContent = 'Đặt hàng NCC';
     buy.title = 'Lập đơn mua NCC từ các mã của ' + what + ' (hiện số còn cần đặt để tránh mua trùng)';
     buy.addEventListener('click', () => go('#/purchases/new?type=order&id=' + encodeURIComponent(o.id)));
     $('#order-actions').append(buy);
+  }
+  $('#order-purchases').replaceChildren(); $('#order-purchases').hidden=!d.purchases?.length;
+  if (d.purchases?.length) {
+    const links=$('#order-purchases');links.append(Object.assign(document.createElement('span'),{className:'muted small',textContent:'Đã đặt NCC:'}));
+    for(const p of d.purchases){const a=document.createElement('a');a.className='btn secondary';a.dataset.mobileInline='';a.href='#/purchases/'+encodeURIComponent(p.id);a.textContent=p.number+(p.internalNo?' · NCC: '+p.internalNo:'');a.title=p.supplierName||'Mở đơn mua đã đặt';links.append(a);}
   }
   const shipDone = o.status === 'delivered' || o.status === 'cancelled';
   $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], [isK ? 'Ngày lập' : 'Ngày đặt', fmtDate(o.orderDate)]]

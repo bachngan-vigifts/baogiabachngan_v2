@@ -69,3 +69,10 @@ test('run: không phục hồi nút đã rời DOM; lỗi vẫn hiện toast n�
  await f.ctx.runAction(button,err,async()=>{button.isConnected=false;err.isConnected=false;throw Error('Backend không phản hồi');});
  assert.equal(writes,1);assert.equal(err.textContent,'Backend không phản hồi');assert.deepEqual(f.messages,['Backend không phản hồi']);
 });
+
+test('undo preview names every SKU and quantity before any cancellation is sent',async()=>{
+ const calls:any[]=[],f=fixture(async(...args:any[])=>{calls.push(args);return {}}),previews:string[]=[];
+ f.ctx.confirmBox=async(message:string)=>{previews.push(message);return false;};
+ const card:Node=f.ctx.render({id:'receipt-multi',shipmentId:'po',receiptNo:'PNH-MULTI',receivedDate:'2026-10-28',sapoStatus:'not_needed',createSapo:false,lines:[{sku:'SKU-A',goodQty:50,damagedQty:0},{sku:'SKU-B',goodQty:30,damagedQty:0}]});
+ const button=all(card).find(n=>n.textContent==='Hoàn tác phiếu nhập…')!;assert.ok(button);await button.events.click!();assert.match(previews[0]!,/SKU-A: đạt 50/);assert.match(previews[0]!,/SKU-B: đạt 30/);assert.match(previews[0]!,/TOÀN BỘ/);assert.equal(calls.length,0);
+});

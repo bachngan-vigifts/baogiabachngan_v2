@@ -394,7 +394,7 @@ quoteSaveHooks.beforeSave.push(async (tx, old, member) => {
 });
 quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
-export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string }[]> } = {}) {
+export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
   registerCrmReturnRoutes(router, loadOrder);
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {

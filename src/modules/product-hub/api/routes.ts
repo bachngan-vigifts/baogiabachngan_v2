@@ -1,6 +1,6 @@
 import {employees} from '../../staff/schema.ts';
 import {productQuoteProfit} from '../domain/product-profit.ts';
-import {and,asc,eq,inArray,sql,type SQL} from 'drizzle-orm';
+import {and,asc,eq,inArray,ne,or,sql,type SQL} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
 import {json,type Router} from '../../../core/http/router.ts';
 import type {SessionState,StaffEnv} from '../../staff/api/auth-routes.ts';
@@ -13,7 +13,7 @@ import {totals,type QuoteDoc} from '../../quotes/domain/quote-math.ts';
 import {salesOrders as o,salesOrderLines as ol,salesContracts as k} from '../../sales/schema.ts';
 import {orderScopeFor} from '../../sales/api/routes.ts';
 import {posReturns as r,posReturnLines as rl} from '../../sales/return-schema.ts';
-import {incomingShipments as p,incomingShipmentLines as pl,supplierReceipts as rec,supplierReceiptLines as recl} from '../../suppliers/schema.ts';
+import {incomingShipments as p,incomingShipmentLines as pl,supplierReceipts as rec,supplierReceiptLines as recl,supplierOrderSources as ps} from '../../suppliers/schema.ts';
 import {purchaseEarlyRequests as er,purchaseEarlyRequestLines as el,purchaseEarlyRequestAllocations as ea} from '../../suppliers/early-request-schema.ts';
 import {purchaseScope} from '../../suppliers/api/purchase-store.ts';
 import {canSeePurchasePrices} from '../../suppliers/domain/purchasing.ts';
@@ -47,7 +47,7 @@ function source(sku:string,m:Member,kind:ProductDocumentKind):SQL{
   from ${pl} join ${p} on ${p.id}=${pl.shipmentId} where ${and(eq(pl.sku,sku),purchaseScope(m),scope)} group by ${p.id}`;
  if(kind==='receipts')return sql`select ${rec.id} id,${rec.receiptNo} number,${rec.receivedDate} date,
   case when ${rec.cancelledAt} is null then 'received' else 'cancelled' end status,${p.supplierName} partner,
-  sum(${recl.goodQty}) quantity,string_agg(distinct ${pl.unit},' / ') unit,sum(${recl.damagedQty}) damaged,${p.id} "purchaseId",${rec.warehouse} warehouse
+  sum(${recl.goodQty}) quantity,string_agg(distinct ${pl.unit},' / ') unit,sum(${recl.damagedQty}) damaged,${p.id} "purchaseId",${p.ticketNumber} "purchaseNumber",${rec.warehouse} warehouse
   from ${recl} join ${rec} on ${rec.id}=${recl.receiptId} join ${p} on ${p.id}=${rec.shipmentId} join ${pl} on ${pl.id}=${recl.lineId}
   where ${and(eq(recl.sku,sku),eq(pl.sku,sku),purchaseScope(m),scope)} group by ${rec.id},${p.id}`;
  if(kind==='returns')return sql`select ${r.id} id,${r.returnNo} number,${r.createdAt} date,${r.status} status,${o.customerName} partner,
@@ -61,17 +61,37 @@ function source(sku:string,m:Member,kind:ProductDocumentKind):SQL{
   join ${pl} on ${pl.id}=${ea.purchaseLineId} join ${p} on ${p.id}=${pl.shipmentId}
   where ${and(eq(el.sku,sku),eq(pl.sku,sku),sql`${er.deletedAt} is null`,scope)} group by ${er.id}`;
 }
-interface DocumentRow{ id:string;number:string;date:string;status:string;partner:string;quantity:number;unit?:string;amount?:number|null;orderId?:string;contractId?:string;purchaseId?:string;quoteType?:QuoteDoc['type'];quoteRows?:QuoteDoc['rows'];purchaseRows?:TotalsRow[];approvalStatus?:string }
+/** Batch source links for these visible purchase rows; source-document permissions still apply. */
+async function purchaseSourceLinks(db:Db,m:Member,ids:string[],sku:string){
+ const out=new Map<string,{label:string;href:string}[]>();if(!ids.length)return out;
+ const sources=await db.select({purchaseId:ps.shipmentId,type:ps.sourceType,id:ps.sourceId}).from(ps).where(and(inArray(ps.shipmentId,ids),eq(ps.sku,sku)));
+ const quoteIds=[...new Set(sources.filter(s=>s.type==='quote').map(s=>s.id))],orderIds=[...new Set(sources.filter(s=>s.type==='order').map(s=>s.id))];
+ const [quotes,orders]=await Promise.all([
+  can(m,'page.quotes')&&quoteIds.length?db.select({id:q.id,no:q.quoteNo}).from(q).where(and(inArray(q.id,quoteIds),quotationPredicate(m))):[],
+  (can(m,'page.orders')||can(m,'page.contracts'))&&(quoteIds.length||orderIds.length)?db.select({id:o.id,no:o.orderNo,quoteId:o.quoteId,contractId:k.id,contractNo:k.contractNo}).from(o).leftJoin(k,eq(k.orderId,o.id)).where(and(or(inArray(o.id,orderIds),and(inArray(o.quoteId,quoteIds),ne(o.status,'cancelled'))),orderScopeFor(m))):[]
+ ]);
+ const add=(purchaseId:string,label:string,href:string)=>{const list=out.get(purchaseId)??[];if(!list.some(x=>x.href===href))list.push({label,href});out.set(purchaseId,list);};
+ for(const source of sources){
+  if(source.type==='quote'){const quote=quotes.find(q=>q.id===source.id);if(quote)add(source.purchaseId,'Báo giá '+quote.no,'#/quotes/'+encodeURIComponent(quote.id));}
+  for(const order of orders.filter(o=>source.type==='order'?o.id===source.id:source.type==='quote'&&o.quoteId===source.id)){
+   if(order.contractId&&can(m,'page.contracts'))add(source.purchaseId,'HĐKT '+order.contractNo,'#/contracts/'+encodeURIComponent(order.id));
+   else if(can(m,'page.orders'))add(source.purchaseId,'Đơn hàng '+order.no,'#/orders/'+encodeURIComponent(order.id));
+  }
+ }
+ return out;
+}
+interface DocumentRow{ id:string;number:string;date:string;status:string;partner:string;quantity:number;unit?:string;amount?:number|null;orderId?:string;contractId?:string;purchaseId?:string;purchaseNumber?:string;quoteType?:QuoteDoc['type'];quoteRows?:QuoteDoc['rows'];purchaseRows?:TotalsRow[];approvalStatus?:string }
 export async function productDocuments(db:Db,sku:string,m:Member,kind:ProductDocumentKind,offset:number){
  if(!allowed(m,kind))throw new AppError(403,'Bạn chưa được cấp quyền xem nhóm chứng từ này.');
  const base=source(sku,m,kind),limit=25;
  const [rows,[total]]=await Promise.all([read<DocumentRow>(db,sql`select * from (${base}) docs order by date desc,id desc limit ${limit} offset ${offset}`),read<{n:number}>(db,sql`select count(*)::int n from (${base}) docs`)]);
+ const links=['purchases','receipts'].includes(kind)?await purchaseSourceLinks(db,m,rows.map(r=>r.purchaseId||r.id),sku):new Map<string,{label:string;href:string}[]>();
  return{kind,total:total?.n||0,offset,limit,rows:rows.map(row=>{
   const {quoteRows,purchaseRows,quoteType,approvalStatus,...shown}=row;
   if(quoteRows)shown.amount=totals({type:quoteType!,rows:quoteRows}).subtotal;
   if(purchaseRows)shown.amount=canSeePurchasePrices(m,{approvalStatus:approvalStatus!})&&purchaseRows.every(r=>r.price!==null)?computeOrderTotals({rows:purchaseRows,depositRate:0,paidAmount:0}).subtotal:null;
   const route=kind==='quotes'?'quotes':kind==='early'?'early-requests':kind==='purchases'||kind==='receipts'?'purchases':kind==='contracts'||row.contractId?'contracts':'orders';
-  return{...shown,quantity:Number(row.quantity),href:'#/'+route+'/'+encodeURIComponent(row.purchaseId||row.orderId||row.id)};
+  return{...shown,...(['purchases','receipts'].includes(kind)?{sources:links.get(row.purchaseId||row.id)||[]}:{}),quantity:Number(row.quantity),href:'#/'+route+'/'+encodeURIComponent(row.purchaseId||row.orderId||row.id)};
  })};
 }
 export function registerProductDetailRoutes(router:Router<StaffEnv>){
