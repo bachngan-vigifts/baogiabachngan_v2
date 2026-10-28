@@ -47,3 +47,9 @@ Menu dùng các link sidebar đã được lọc quyền, không cấp thêm quy
 ![Thanh menu ở vị trí đầu, 390px](after-navigation-390.png)
 
 Số đo: [trước](before-results.json), [sau](after-results.json). Ảnh và số liệu là fixture, không phản ánh khách/phiếu production.
+
+## Sửa lỗi CI ngày 28/10
+
+Run đầu có shard 1/2 qua; shard 2/2 có đúng một test lỗi tại `tests/app/sales.test.ts:133`. Fixture giao xong 12/10, hạn còn lại 27/10/2026 nhưng dùng đồng hồ thật: sang 28/10 API trả đúng `overdue`, test vẫn chờ `deposit_paid`. Check tổng đỏ do shard này.
+
+Đã tái hiện local cùng lỗi, rồi cố định **Date riêng trong test** lúc 23:59:59 ngày 27/10 theo giờ Việt Nam (giữ timer bất đồng bộ chạy thật, tự khôi phục mock khi test kết thúc). Giữ các kiểm tra “đã cọc”, thêm mốc 00:00 ngày 28/10 để kiểm tra cả danh sách Đơn hàng và HĐKT trả `overdue`, đúng số dư chưa thu và không đổi tiền cọc đã nhận. Không sửa công thức hoặc mã chạy production. Sau sửa: cả 9 test trong file và typecheck qua; bộ tổng GitHub chạy lại trên commit sửa.
