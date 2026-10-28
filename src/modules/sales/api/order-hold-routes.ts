@@ -7,6 +7,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { orderStockHolds, salesOrders } from '../schema.ts';
 import { orderScopeFor } from './routes.ts';
 import { holdOrderStock, lockHolds, manualHoldExpiry, MANUAL_HOLD_DAYS, orderHoldLines, releaseOrderHolds } from './order-hold-store.ts';
+import { applyHoldConversion, previewHoldConversion } from './order-hold-conversion.ts';
 
 /** Giữ hàng trên chi tiết đơn CRM (order-hold-store.ts): xem, Giữ hàng / Giữ thêm (5 ngày), huỷ giữ, Manager gia hạn. */
 type Ctx = RouteContext<StaffEnv>;
@@ -23,6 +24,18 @@ export function registerOrderHoldRoutes(router: Router<StaffEnv>) {
   }
   const audit = (db: Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0], c: Ctx, orderId: string, action: string, data: unknown) =>
     db.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: viewer(c).id, module: 'sales', action, entityType: 'sales_orders', entityId: orderId, data: JSON.stringify(data), createdAt: nowIso() });
+
+  /** Kế hoạch chuyển đổi đơn cũ sang giữ có giới hạn – chỉ Manager. Xem trước không ghi; áp dụng phải trùng mã kế hoạch. */
+  router.get('/stock-holds/conversion', async c => {
+    if (viewer(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager xem kế hoạch chuyển đổi giữ hàng.');
+    return json(await previewHoldConversion(c.env.db as never, viewer(c).id));
+  }, 'business');
+  router.post('/stock-holds/conversion', async c => {
+    if (viewer(c).role !== 'manager') throw new AppError(403, 'Chỉ Manager áp dụng kế hoạch chuyển đổi giữ hàng.');
+    const b = await readJson(c.req, 1_000);
+    if (b.confirmed !== true || typeof b.planId !== 'string' || !b.planId) throw new AppError(400, 'Xem kế hoạch và xác nhận đúng mã kế hoạch trước khi áp dụng.');
+    return json(await applyHoldConversion(c.env.db as never, viewer(c).id, b.planId));
+  }, 'business');
 
   router.get('/orders/:id/holds', async c => {
     const o = await load(c, c.env.db), now = nowIso(), m = viewer(c);
