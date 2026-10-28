@@ -1369,6 +1369,13 @@ async function showProductCard(sku, name) {
   let filter = '';
   const qtyCell = h => { const m = MOVE_UI[h.kind] || ['', '', '']; const sign = m[2] === '±' ? (h.qty > 0 ? '+' : h.qty < 0 ? '−' : '') : m[2]; const tone = sign === '+' ? 'paid-text' : sign === '−' ? 'danger-text' : '';
     return `<b class="${tone}">${sign}${fmtNum(Math.abs(h.qty))}</b>${h.unit ? ' ' + esc(h.unit) : ''}`; };
+  // Lịch sử đầy đủ: trang đầu 20 dòng, "Xem thêm" nạp phát sinh cũ hơn (GET …/history?before=).
+  let loadingMore = false;
+  const more = async () => {
+    if (loadingMore || !d.nextCursor) return; loadingMore = true;
+    try { const n = await api('/products/' + encodeURIComponent(sku) + '/history?before=' + encodeURIComponent(d.nextCursor)); d.history.push(...n.history); d.nextCursor = n.nextCursor; render(); }
+    catch (ex) { toast(ex.message, 'err'); } finally { loadingMore = false; }
+  };
   const render = () => {
     const rows = d.history.filter(h => !filter || h.kind === filter);
     box.innerHTML = (d.sales ? `<div class="stats sh-stats">${[['Giá bán gần nhất', d.sales.last], ['Thấp nhất', d.sales.min], ['Cao nhất', d.sales.max], ['Trung bình', d.sales.avg]].map(([k, v]) => `<article class="stat"><small>${k}</small><strong>${money(v)}</strong></article>`).join('')}</div>` : '')
@@ -1379,6 +1386,7 @@ async function showProductCard(sku, name) {
         <td>${esc(h.partner) || '<span class="muted">—</span>'}${h.location ? `<small>${esc(h.location)}</small>` : ''}${h.note ? `<small>${esc(h.note)}</small>` : ''}</td>
         <td class="right">${qtyCell(h)}</td><td class="right num">${h.unitPrice === null || h.unitPrice === undefined ? '—' : money(h.unitPrice)}</td></tr>`).join('')}</tbody></table></div>
       <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Giao hàng: chuyến giao "Đã giao" (chưa phải bút toán xuất kho; xem Lịch sử nhập / xuất kho bên trên) · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
+    if (d.nextCursor) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost small'; b.textContent = 'Xem thêm phát sinh cũ'; b.addEventListener('click', more); box.append(b); }
     box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
   };
   const chipsBox = dlg.querySelector('[data-filter]');

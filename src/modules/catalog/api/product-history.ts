@@ -1,4 +1,5 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { productMovements } from '../schema.ts';
 import { PRODUCT_HISTORY_LIMIT, type ProductMoveKind } from '../domain/product-history.ts';
@@ -25,23 +26,29 @@ export async function recordMovements(db: Db, rows: MovementInput[]) {
       qty: sql`excluded.qty`, unitPrice: sql`excluded.unit_price`, partner: sql`excluded.partner`, location: sql`excluded.location`, status: sql`excluded.status`,
       note: sql`excluded.note`, occurredAt: sql`excluded.occurred_at`, name: sql`excluded.name` } });
   }
-  await trimHistory(db, [...new Set(clean.map(r => r.sku))]);
 }
 /** Bỏ biến động theo tiền tố khoá (vd. đơn huỷ: `sale:<orderId>:`). */
 export async function removeMovements(db: Db, refKeyPrefix: string) {
   await db.delete(productMovements).where(sql`${productMovements.refKey} LIKE ${refKeyPrefix.replace(/[%_\\]/g, '\\$&') + '%'}`);
 }
-/** Mỗi mã chỉ giữ PRODUCT_HISTORY_LIMIT giao dịch mới nhất. */
-export async function trimHistory(db: Db, skus: string[]) {
-  // Một lệnh cho cả lô mã (trước: một lệnh DELETE mỗi mã – đơn 20 dòng = 20 lượt gọi DB).
-  for (let i = 0; i < skus.length; i += 500) {
-    const part = skus.slice(i, i + 500);
-    await db.execute(sql`DELETE FROM ${productMovements} WHERE ${productMovements.id} IN (
-      SELECT id FROM (SELECT ${productMovements.id} AS id, row_number() OVER (PARTITION BY ${productMovements.sku} ORDER BY ${productMovements.occurredAt} DESC, ${productMovements.recordedAt} DESC) AS rn
-        FROM ${productMovements} WHERE ${inArray(productMovements.sku, part)}) ranked WHERE rn > ${PRODUCT_HISTORY_LIMIT})`);
-  }
+/**
+ * Lịch sử của mã, mới nhất trước – giữ ĐỦ mọi phát sinh (không xoá bớt). Mỗi lần một trang PRODUCT_HISTORY_LIMIT dòng;
+ * `before` = con trỏ của dòng cuối trang trước ("Xem thêm" phát sinh cũ hơn).
+ */
+export async function historyOf(db: Db, sku: string, before?: string | null) {
+  const cursor = parseHistoryCursor(before);
+  const rows = await db.select().from(productMovements).where(and(eq(productMovements.sku, sku), cursor
+    ? sql`(${productMovements.occurredAt}, ${productMovements.recordedAt}, ${productMovements.id}) < (${cursor.occurredAt}, ${cursor.recordedAt}, ${cursor.id})` : undefined))
+    .orderBy(sql`${productMovements.occurredAt} DESC, ${productMovements.recordedAt} DESC, ${productMovements.id} DESC`).limit(PRODUCT_HISTORY_LIMIT + 1);
+  const more = rows.length > PRODUCT_HISTORY_LIMIT, page = rows.slice(0, PRODUCT_HISTORY_LIMIT), last = page.at(-1);
+  return { rows: page, nextCursor: more && last ? historyCursor(last) : null };
 }
-export async function historyOf(db: Db, sku: string) {
-  return db.select().from(productMovements).where(eq(productMovements.sku, sku))
-    .orderBy(sql`${productMovements.occurredAt} DESC, ${productMovements.recordedAt} DESC`).limit(PRODUCT_HISTORY_LIMIT);
+const historyCursor = (r: { occurredAt: string; recordedAt: string; id: string }) => Buffer.from(JSON.stringify([r.occurredAt, r.recordedAt, r.id])).toString('base64url');
+function parseHistoryCursor(raw?: string | null) {
+  if (!raw) return null;
+  try {
+    const [occurredAt, recordedAt, id] = JSON.parse(Buffer.from(raw.slice(0, 400), 'base64url').toString('utf8'));
+    if ([occurredAt, recordedAt, id].every(v => typeof v === 'string' && v.length <= 100)) return { occurredAt, recordedAt, id };
+  } catch { /* con trỏ hỏng: coi như trang đầu không được – báo lỗi bên dưới */ }
+  throw new AppError(400, 'Con trỏ lịch sử không hợp lệ. Tải lại thẻ sản phẩm.');
 }

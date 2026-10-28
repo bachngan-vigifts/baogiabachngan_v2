@@ -261,18 +261,20 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   /**
-   * Lịch sử sản phẩm: 20 biến động gần nhất của mã (bán, xuất kho giao hàng, nhập hàng, điều chuyển, cân bằng kho, trả hàng)
-   * + giá bán gần nhất / thấp / cao / trung bình từ các lần bán.
+   * Lịch sử sản phẩm: mọi biến động của mã (bán, xuất kho giao hàng, nhập hàng, điều chuyển, cân bằng kho, trả hàng), mới nhất trước,
+   * mỗi trang 20 dòng – `?before=<nextCursor>` lấy trang cũ hơn. Trang đầu kèm giá bán gần nhất / thấp / cao / trung bình của trang.
    */
   router.get('/products/:sku/history', async c => {
     const sku = c.params.sku!.trim().slice(0, 500); // router đã giải mã tham số đường dẫn
-    const rows = await historyOf(c.env.db, sku), priced = seesSalePrices(viewerOf(c));
-    const prices = priced ? rows.filter(r => r.kind === 'sale' && r.unitPrice !== null).map(r => r.unitPrice!) : [];
+    const before = c.url.searchParams.get('before');
+    const { rows, nextCursor } = await historyOf(c.env.db, sku, before), priced = seesSalePrices(viewerOf(c));
+    // Thống kê giá chỉ ở trang đầu (các lần bán gần nhất); trang cũ hơn chỉ thêm dòng.
+    const prices = priced && !before ? rows.filter(r => r.kind === 'sale' && r.unitPrice !== null).map(r => r.unitPrice!) : [];
     // Giá nhập (giá vốn) và tên nhà cung cấp chỉ Manager xem: nhân viên chỉ thấy giá ở dòng bán / giao / khách trả.
     const mgr = (c.state.session as SessionState).member.role === 'manager';
     const COST_KINDS = new Set(['purchase', 'supplier_return', 'transfer', 'adjustment']), SUPPLIER_KINDS = new Set(['purchase', 'supplier_return']);
     const shown = (r: typeof rows[number]) => mgr ? r : { ...r, unitPrice: !priced || COST_KINDS.has(r.kind) ? null : r.unitPrice, partner: SUPPLIER_KINDS.has(r.kind) ? '' : r.partner };
-    return json({ sku, limit: PRODUCT_HISTORY_LIMIT, history: rows.map(shown).map(({ id, refKey, recordedAt, ...r }) => r),
+    return json({ sku, limit: PRODUCT_HISTORY_LIMIT, nextCursor, history: rows.map(shown).map(({ id, refKey, recordedAt, ...r }) => r),
       sales: prices.length ? { count: prices.length, last: prices[0], min: Math.min(...prices), max: Math.max(...prices), avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) } : null });
   }, 'business');
 
