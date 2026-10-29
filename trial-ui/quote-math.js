@@ -1,5 +1,8 @@
 // TỰ SINH bởi `npm run ui:build` từ src/modules/quotes/domain/quote-math.ts – không sửa tay.
 // src/modules/quotes/domain/quote-math.ts
+function quoteStockSku(row) {
+  return row.manualLine === true ? "" : String(row.sku || "").trim();
+}
 function manualLineNote(row) {
   if (row.manualDescription !== void 0) return String(row.manualDescription).trim();
   return [row.bundleContents?.trim(), row.printDescription?.trim(), row.packagingDescription?.trim() && row.packagingDescription.trim() !== "theo ti\xEAu chu\u1EA9n nh\xE0 s\u1EA3n xu\u1EA5t" ? row.packagingDescription.trim() : ""].filter(Boolean).join(" \xB7 ");
@@ -138,6 +141,7 @@ export {
   printingWorkshops,
   profit,
   purchasePrice,
+  quoteStockSku,
   rate,
   syncPurchaseCost,
   totals

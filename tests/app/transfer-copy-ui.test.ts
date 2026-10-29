@@ -19,13 +19,14 @@ class Node {
   async click(){if(!this.disabled)await this.events.click?.();}
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
-async function setup(status='cancelled',missing=false){
+async function setup(status='cancelled',missing=false,lookup?: (path:string)=>Promise<any>){
  const root=new Node(),posts:any[]=[],nav:string[]=[],messages:string[]=[];
  const source={id:'old',transferNo:'PCK-OLD',status,statusLabel:'Đã huỷ',fromWarehouseId:'a',toWarehouseId:'b',reason:'Bổ sung kho',lines:[{sku:'X',name:'Ly',qty:12,unit:'cái',fromStock:20,toStock:0},{sku:'Y',name:'Bát',qty:3,unit:'cái',fromStock:30,toStock:0}],revision:1,actions:status==='pending'?{edit:true}:{}};
- const context:any={crypto:{randomUUID:()=> '5a828b25-34cf-4145-bbab-43a53a5c465b'},document:{createElement:(tag:string)=>new Node(tag),createTextNode:(s:string)=>{const n=new Node('text');n.textContent=s;return n;}},location:{hash:'#/transfers/old'},history:{replaceState(){}}};
+ const context:any={setTimeout,clearTimeout,crypto:{randomUUID:()=> '5a828b25-34cf-4145-bbab-43a53a5c465b'},document:{createElement:(tag:string)=>new Node(tag),createTextNode:(s:string)=>{const n=new Node('text');n.textContent=s;return n;}},location:{hash:'#/transfers/old'},history:{replaceState(){}}};
  const code=readFileSync(new URL('../../trial-ui/stock-ops.js',import.meta.url),'utf8').replace(/^import .*;\n/m,'').replace('export function initTransfers','globalThis.initTransfers = function').split('const GROUPS =')[0]!;
  runInNewContext(code,context);
  const ui=context.initTransfers({root,toast:(s:string)=>messages.push(s),go:(s:string)=>nav.push(s),api:async(path:string,method?:string,body?:any)=>{
+   if(path.startsWith('/inventory/lookup'))return lookup?.(path) ?? {products:[]};
    if(method){posts.push({path,body});return{id:'new',transferNo:'PCK-NEW'};}
    return path==='/stock-transfers/old'?source:{transfers:[],warehouses:[...(!missing?[{id:'a',name:'Kho đi'}]:[]),{id:'b',name:'Kho đến'}]};
  }});
@@ -62,4 +63,27 @@ test('phiếu chờ duyệt: chỉnh sửa giữ số phiếu/ID, PUT revision v
 test('mở lại cùng phiếu không dựng lại drawer, giữ nguyên nút thao tác',async()=>{
  const s=await setup();const first=s.button('Sao chép phiếu');
  await Promise.all([s.ui.show('old'),s.ui.show('old')]);assert.equal(s.button('Sao chép phiếu'),first);
+});
+
+test('tìm sản phẩm: bấm kết quả thêm tên và gửi SKU; chọn lại không tạo dòng trùng',async()=>{
+ const s=await setup('cancelled',false,async()=>({products:[{sku:'Z123',name:'Bình giữ nhiệt',unit:'cái',stock:[{warehouse:'Kho đi',qty:10}]}]}));
+ await s.button('Sao chép phiếu')!.click();
+ const find=all(s.root).find(n=>n.type==='search')!; find.value='Bình';
+ await s.button('Tìm')!.click();
+ const result=all(s.root).find(n=>n.className==='transfer-search-result')!;
+ assert.match(result.textContent,/Bình giữ nhiệt.*Z123/);await result.click();
+ assert.equal(find.value,'');assert.equal(all(s.root).find(n=>n.type==='text'&&n.value==='Bình giữ nhiệt')!==undefined,true);
+ find.value='Z123';await s.button('Tìm')!.click();await all(s.root).find(n=>n.className==='transfer-search-result')!.click();
+ assert.equal(all(s.root).filter(n=>n.type==='number').length,3);
+ await s.button('Gửi duyệt')!.click();assert.deepEqual(JSON.parse(JSON.stringify(s.posts[0].body.lines)),[{sku:'X',qty:12},{sku:'Y',qty:3},{sku:'Z123',qty:1}]);
+});
+test('kết quả tìm cũ bị bỏ qua khi đổi từ khoá hoặc đóng form; lỗi tìm có thể thử lại',async()=>{
+ let finish!:(v:any)=>void;let fail=false;
+ const s=await setup('cancelled',false,async()=>{if(fail)throw Error('Mất kết nối');return new Promise(r=>finish=r);});
+ await s.button('Sao chép phiếu')!.click();const find=all(s.root).find(n=>n.type==='search')!;find.value='cũ';
+ const pending=s.button('Tìm')!.click();find.value='mới';finish({products:[{sku:'OLD',name:'Kết quả cũ'}]});await pending;
+ assert.equal(all(s.root).some(n=>n.className==='transfer-search-result'),false);
+ fail=true;await s.button('Tìm')!.click();assert.match(s.root.textContent,/Mất kết nối.*thử lại/);
+ fail=false;const closed=s.button('Tìm')!.click();await s.button('Huỷ')!.click();finish({products:[{sku:'OLD',name:'Kết quả cũ'}]});await closed;
+ assert.equal(all(s.root).some(n=>n.className==='transfer-search-result'),false);
 });

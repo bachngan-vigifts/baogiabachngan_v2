@@ -73,7 +73,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
-import { manualLineDescription, manualLineNote, totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
+import { quoteStockSku, manualLineDescription, manualLineNote, totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
 installBusyButtons(); // nút gửi API ghi tự khoá + vòng xoay đang xử lý (busy-buttons.js)
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -1216,6 +1216,7 @@ function lineCell(r, i) {
       ${custom ? '' : `<div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>`}
       ${!custom && meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
       ${!custom && hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
+      ${custom ? '<small class="muted">Phụ phí · Không kiểm tồn / xuất kho</small>' : ''}
       ${custom ? text('manualDescription', 'Mô tả phụ', 'Nội dung bổ sung (không bắt buộc)') : hrc ? '' : text('bundleContents', 'Bộ gồm', 'Ví dụ: 01 ly + 01 nắp') + text('printDescription', 'Mô tả in ấn', 'Ví dụ: in logo màu tại 01 vị trí') + text('packagingDescription', 'Đóng gói', PACKAGING_DEFAULT)}
     </td>
     <td class="col-unit" data-label="ĐVT"><input class="plain" data-k="unit" value="${esc(r.unit)}" placeholder="—" maxlength="40" aria-label="Đơn vị tính dòng ${i + 1}"></td>
@@ -4802,7 +4803,7 @@ $('#quote-purchase').addEventListener('click', () => {
 });
 $('#quote-stock').addEventListener('click', async () => {
   const d = collectQuote(), need = new Map();
-  for (const r of d.rows) if (r.name || r.sku) { const k = (r.sku || '').trim() || '#' + need.size; const x = need.get(k) || { sku: (r.sku || '').trim(), name: r.name, unit: r.unit, qty: 0 }; x.qty += Number(r.qty) || 0; need.set(k, x); }
+  for (const r of d.rows) { const sku = quoteStockSku(r); if (!sku || !(Number(r.qty) > 0)) continue; const x = need.get(sku) || { sku, name: r.name, unit: r.unit, qty: 0 }; x.qty += Number(r.qty); need.set(sku, x); }
   if (!need.size) return toast('Báo giá chưa có sản phẩm để kiểm tồn.', 'err');
   $('#stock-check-title').textContent = `${d.quoteNo || 'Báo giá'}${d.customer ? ' · ' + d.customer : ''}`;
   $('#stock-check-body').innerHTML = '<p class="muted">Đang kiểm tồn…</p>'; $('#stock-check-note').textContent = ''; $('#stock-check-dialog').showModal();

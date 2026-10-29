@@ -6,6 +6,7 @@ import { can } from '../../staff/domain/permissions.ts';
 import { employees } from '../../staff/schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
+import { quoteStockSku } from '../../quotes/domain/quote-math.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { hiddenWarehouseIds, sellableWarehouses, sellersConfigured } from '../../inventory/api/warehouse-access.ts';
@@ -22,7 +23,7 @@ export function registerQuoteSourcingRoutes(router: Router<StaffEnv>) {
     const [quote]=await db.select().from(quotations).where(and(eq(quotations.id,c.params.id!),quotationPredicate(member))).limit(1);
     if(!quote) throw new AppError(404,'Không tìm thấy báo giá.');
     const data=JSON.parse(quote.data), needs=new Map<string,{sku:string;name:string;unit:string;qty:number}>();
-    for(const row of data.rows||[]) {const sku=String(row.sku||'').trim(),qty=Number(row.qty);if(!sku||!(qty>0))continue;
+    for(const row of data.rows||[]) {const sku=quoteStockSku(row),qty=Number(row.qty);if(!sku||!(qty>0))continue;
       const prior=needs.get(sku);needs.set(sku,{sku,name:String(row.name||sku),unit:String(row.unit||''),qty:(prior?.qty||0)+qty});}
     const hidden=await hiddenWarehouseIds(db,member),configured=await sellersConfigured(db);
     const [owner]=await db.select({role:employees.role,positionId:employees.positionId}).from(employees).where(eq(employees.id,quote.assigneeId??quote.creatorId));

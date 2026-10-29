@@ -127,7 +127,7 @@
 .sup-form .pur-catalog-product { display: flex; }
 /* Ô nhập trong biểu mẫu đơn mua / NCC cao bằng chuẩn chung. */
 .sup-form input:not([type=checkbox]):not([type=radio]):not([type=file]), .sup-form select { min-height: var(--field-h, 42px); box-sizing: border-box; }
-/* Xin điều chuyển kho: mỗi dòng Mã hàng | SL | ✕ trên một hàng. */
+/* Xin điều chuyển kho: mỗi dòng Tên sản phẩm | SL | ✕ trên một hàng. */
 .transfer-lines { display: grid; gap: 8px; }
 .transfer-lines > .row-gap { display: grid; grid-template-columns: minmax(0, 1fr) 90px 40px; gap: 8px; align-items: center; }
 .sup-drawer-foot-sticky { position: sticky; bottom: -18px; margin: 0 -20px -18px; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; }
@@ -202,3 +202,17 @@
 .panel.is-busy .pur-chips::after { content: 'Đang tải…'; align-self: center; margin-left: 6px; color: var(--muted); font-size: var(--text-caption); }
 #view-purchases tr[aria-busy] { cursor: progress; }
 @media (max-width: 850px) { .pur-filter-grid { grid-template-columns: 1fr 1fr; } }
+
+/* Bộ chọn sản phẩm điều chuyển: kết quả bấm trực tiếp, giữ tên và SKU riêng. */
+.transfer-search-box { display: flex; gap: 8px; }
+.transfer-search-box input { flex: 1; min-width: 0; }
+.transfer-search-box button { flex: 0 0 auto; }
+.transfer-search-results { display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.transfer-search-result { display: grid; gap: 4px; width: 100%; padding: 10px; text-align: left; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; overflow-wrap: anywhere; }
+.transfer-search-result:hover, .transfer-search-result:focus-visible { border-color: var(--primary, #17365b); background: var(--bg); }
+.transfer-line-product { min-width: 0; }
+.transfer-line-product input { width: 100%; text-overflow: ellipsis; cursor: pointer; }
+.transfer-line-product small { display: block; padding-top: 3px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .transfer-lines > .row-gap { grid-template-columns: minmax(0, 1fr) 65px 32px; gap: 5px; }
+}

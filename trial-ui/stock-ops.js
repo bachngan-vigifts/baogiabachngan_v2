@@ -139,41 +139,83 @@ export function initTransfers({ api, root, toast, go, isManager = () => false })
     const from = select(opts, whs.some(w => w.id === source?.fromWarehouseId) ? source.fromWarehouseId : '', 'Kho đi'), to = select(opts, whs.some(w => w.id === source?.toWarehouseId) ? source.toWarehouseId : '', 'Kho đến');
     const reason = input('text', source ? (editing?source.reason:('Sao chép từ ' + source.transferNo + ' · ' + source.reason).slice(0, 500)) : '', { placeholder: 'VD: đơn của khách Kim Trần Gia cần hàng ở kho VIGIFTS', maxLength: 500 });
     const lines = el('div', 'transfer-lines');
-    const lineRow = (sku = '', qty = '') => {
-      const r = el('div', 'row-gap'), s = input('text', sku, { placeholder: 'Mã hàng' }), q = input('number', qty, { placeholder: 'SL', min: '0', step: 'any' });
-      s.setAttribute('list', 'transfer-sku-list'); r.append(s, q, btn('✕', 'icon-btn', () => r.remove())); lines.append(r);
+    const find = input('search', '', { placeholder: 'Tìm mã / tên sản phẩm…' });
+    find.setAttribute('aria-label', 'Tìm sản phẩm');
+    const results = el('div', 'transfer-search-results');
+    const status = el('p', 'muted small'); status.setAttribute('role', 'status');
+    let timer = 0, searchRun = 0;
+    const active = () => formOpen && drawer.children[0] === h;
+    const setProduct = (row, product) => {
+      row.dataset.sku = product.sku;
+      row.querySelector('input[type=text]').value = product.name || product.sku;
+      row.querySelector('input[type=text]').title = product.name || product.sku;
+      row.children[0].children[1].textContent = product.sku + (product.unit ? ' · ' + product.unit : '');
     };
-    const list = el('datalist'); list.id = 'transfer-sku-list';
-    const find = input('search', '', { placeholder: 'Tìm mã / tên hàng để thêm…' });
-    let timer = 0;
-    find.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(async () => {
-      if (find.value.trim().length < 2) return;
-      try { const r = await api('/inventory/lookup?q=' + encodeURIComponent(find.value.trim())); list.replaceChildren(...r.products.map(p => { const o = el('option'); o.value = p.sku; o.label = `${p.name} · ${p.stock.map(s => s.warehouse + ' ' + num(s.qty)).join(' · ')}`; return o; })); }
-      catch { /* bỏ qua */ }
-    }, 250); });
-    find.setAttribute('list', 'transfer-sku-list');
-    // Chọn mã ở ô Tìm hàng là tự thêm vào dòng trống (không phải gõ lại mã ở dòng dưới); con trỏ nhảy sang ô SL.
-    find.addEventListener('change', () => {
-      const sku = find.value.trim(); if (![...list.options].some(o => o.value === sku)) return;
-      let row = [...lines.children].find(r => !r.querySelector('input[type=text]').value.trim());
-      if (!row) { lineRow(); row = lines.lastElementChild; }
-      row.querySelector('input[type=text]').value = sku; find.value = ''; row.querySelector('input[type=number]').focus();
+    const lineRow = (sku = '', qty = '', name = '', unit = '') => {
+      const row = el('div', 'row-gap'), product = el('div', 'transfer-line-product');
+      const nameInput = input('text', '', { placeholder: 'Chọn tên sản phẩm ở ô tìm phía trên', readOnly: true });
+      nameInput.setAttribute('aria-label', 'Tên sản phẩm');
+      nameInput.addEventListener('click', () => find.focus());
+      product.append(nameInput, el('small', 'muted'));
+      const quantity = input('number', qty, { placeholder: 'SL', min: '0', step: 'any' });
+      quantity.setAttribute('aria-label', 'Số lượng chuyển');
+      row.append(product, quantity, btn('✕', 'icon-btn', () => row.remove())); lines.append(row);
+      setProduct(row, { sku, name, unit }); return row;
+    };
+    const choose = product => {
+      if (!active() || posting) return;
+      let row = [...lines.children].find(r => r.dataset.sku === product.sku);
+      if (!row) {
+        row = [...lines.children].find(r => !r.dataset.sku) || lineRow();
+        setProduct(row, product);
+        const quantity = row.querySelector('input[type=number]'); if (!quantity.value) quantity.value = '1';
+      }
+      searchRun++; clearTimeout(timer); find.value = ''; results.replaceChildren(); status.textContent = '';
+      row.querySelector('input[type=number]').focus();
+    };
+    const search = async () => {
+      if (!active()) return;
+      clearTimeout(timer);
+      const query = find.value.trim(), run = ++searchRun;
+      results.replaceChildren();
+      if (query.length < 2) { status.textContent = 'Nhập ít nhất 2 ký tự để tìm sản phẩm.'; return; }
+      status.textContent = 'Đang tìm sản phẩm…';
+      try {
+        const response = await api('/inventory/lookup?q=' + encodeURIComponent(query));
+        if (!active() || run !== searchRun || find.value.trim() !== query) return;
+        const products = response.products || [];
+        results.replaceChildren(...products.map(product => {
+          const result = btn('', 'transfer-search-result', () => choose(product));
+          result.append(el('strong', '', product.name || product.sku), el('small', 'muted', product.sku + ' · ' + (product.stock || []).map(s => s.warehouse + ': ' + num(s.qty)).join(' · ')));
+          return result;
+        }));
+        status.textContent = products.length ? products.length + ' sản phẩm · Bấm để thêm vào danh sách chuyển.' : 'Không tìm thấy sản phẩm.';
+      } catch (error) {
+        if (active() && run === searchRun) status.textContent = 'Không tìm được sản phẩm: ' + error.message + '. Bấm Tìm để thử lại.';
+      }
+    };
+    find.addEventListener('input', () => {
+      clearTimeout(timer); searchRun++; results.replaceChildren(); status.textContent = '';
+      if (find.value.trim().length >= 2) timer = setTimeout(search, 250);
     });
-    if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty); else lineRow();
+    find.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); search(); } });
+    const searchBox = el('div', 'transfer-search-box'); searchBox.append(find, btn('Tìm', 'btn secondary', search));
+    const picker = el('div', 'transfer-picker'); picker.append(searchBox, status, results);
+    if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty, line.name, line.unit); else lineRow();
     const clientKey=crypto.randomUUID();
     const send = btn(editing?'Lưu thay đổi':'Gửi duyệt', 'btn primary', async () => {
       if(posting)return;posting=true;
       const body = { ...(editing?{revision:source.revision}:{clientKey}),fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
-        lines: [...lines.children].map(r => ({ sku: r.querySelector('input[type=text]').value.trim(), qty: Number(r.querySelector('input[type=number]').value) })).filter(l => l.sku) };
+        lines: [...lines.children].map(r => ({ sku: r.dataset.sku, qty: Number(r.querySelector('input[type=number]').value) })).filter(l => l.sku) };
       send.disabled = true;
       try { const t = await api(editing?'/stock-transfers/'+encodeURIComponent(source.id):'/stock-transfers', editing?'PUT':'POST', body); toast((editing?'Đã cập nhật phiếu ':'Đã gửi phiếu ') + t.transferNo + ' – chờ duyệt.'); formOpen=false;filter = 'open'; go('#/transfers/' + t.id); }
       catch (e) { toast(e.message, 'err'); } finally { posting=false;send.disabled = false; }
     });
     const form = el('div', 'form-grid');
-    form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('Tìm hàng', find, 'wide'));
+    form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('Tìm sản phẩm', picker, 'wide'));
     const foot = el('div', 'sup-drawer-foot-sticky'); foot.append(btn('Huỷ', 'btn secondary', close), send);
     if (source) drawer.append(h, el('p', 'muted small', editing?'Chỉ sửa phiếu chờ duyệt. Lưu thay đổi không ghi sổ kho; phiếu vẫn cần duyệt.':'Phiếu gốc giữ trạng thái đã huỷ. Kiểm tra kho, mã và số lượng rồi bấm Gửi duyệt để tạo phiếu mới; chưa có phát sinh sổ kho.')); else drawer.append(h);
-    drawer.append(form, list, el('h3', '', 'Mã hàng cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => lineRow()), foot);
+    drawer.append(form, el('h3', '', 'Sản phẩm cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => { lineRow(); find.focus(); }), foot);
     drawer.hidden = false; shade.hidden = false;openedAt=Date.now();
   }
 

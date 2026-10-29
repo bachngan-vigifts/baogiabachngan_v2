@@ -26,6 +26,11 @@ export interface QuoteRow {
   commission?: { mode?: 'percent' | 'amount'; value?: number; excluded?: boolean };
 }
 
+/** Custom fee rows have no inventory identity, even if an older quote retained a SKU. */
+export function quoteStockSku(row: { sku?: unknown; manualLine?: boolean }): string {
+  return row.manualLine === true ? '' : String(row.sku || '').trim();
+}
+
 /** One optional note for custom rows; retain meaningful descriptions from older quotes. */
 export function manualLineNote(row:QuoteRow):string {
   if(row.manualDescription!==undefined)return String(row.manualDescription).trim();
