@@ -6,12 +6,16 @@ import { can } from '../../staff/domain/permissions.ts';
 import { positions } from '../../staff/schema.ts';
 import { defaultPosRegister } from '../domain/pos-register.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
+import { warehouseSellers } from '../../inventory/schema.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
 
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 
+/** Chức vụ bán POS theo KHO BÁN (Phân quyền › Kho bán) thay vì theo cửa hàng: Sale Admin chỉ bán ở quầy thuộc kho bán của mình (KHO VIGIFTS). */
+const WAREHOUSE_REGISTER_POSITIONS = new Set(['sale-admin']);
 /**
  * Quầy nhân viên được bán. Manager / người cấu hình POS: mọi quầy. NVBH / CHT Lock, Minh Long: quầy của cửa hàng mình.
+ * Sale Admin: các quầy có kho thuộc kho bán của chức vụ (mặc định KHO VIGIFTS).
  * Nhân viên khác: quầy đang mở ca của chính mình, hoặc quầy mặc định theo chức vụ; không có thì không bán được quầy nào.
  */
 export async function allowedPosRegisters(c: RouteContext<StaffEnv>, db: Pick<StaffEnv['db'], 'select'> = c.env.db) {
@@ -19,6 +23,11 @@ export async function allowedPosRegisters(c: RouteContext<StaffEnv>, db: Pick<St
   const regs = (await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
   if (posScope(c)) return { regs, ids: new Set(regs.map(r => r.id)), all: false };
   if (m.role === 'manager' || can(m, 'pos.configure')) return { regs, ids: new Set(regs.map(r => r.id)), all: true };
+  if (m.positionId && WAREHOUSE_REGISTER_POSITIONS.has(m.positionId)) {
+    const mine = new Set((await db.select({ id: warehouseSellers.warehouseId }).from(warehouseSellers).where(eq(warehouseSellers.positionId, m.positionId))).map(r => r.id));
+    const own = regs.filter(r => mine.has(r.warehouseId));
+    return { regs: own, ids: new Set(own.map(r => r.id)), all: false };
+  }
   const [[current], [position]] = await Promise.all([
     db.select({ registerId: posShifts.registerId }).from(posShifts).where(and(eq(posShifts.memberId, m.id), isNull(posShifts.closedAt))).limit(1),
     m.positionId ? db.select({ name: positions.name }).from(positions).where(eq(positions.id, m.positionId)).limit(1) : Promise.resolve([]),
