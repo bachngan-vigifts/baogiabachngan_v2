@@ -19,8 +19,9 @@ const productImages = FILES_URL && FILES_KEY ? supabaseFileStore({ url: FILES_UR
 const legacySite = { base: 'https://baogia.minhlongonline.com', email: Deno.env.get('LEGACY_STAFF_EMAIL') || '', password: Deno.env.get('LEGACY_STAFF_PASSWORD') || '' };
 // Direct Postgres: share only during active requests/background jobs, then close immediately.
 // Keeping one idle socket per Edge isolate exhausted this project's 60-connection database.
-// Có secret SUPABASE_POOLER_URL (chuỗi kết nối Supavisor, chế độ transaction, cổng 6543) thì dùng pooler: nhiều kết nối hơn an toàn.
-const POOLER_URL = Deno.env.get('SUPABASE_POOLER_URL') || '';
+// Supabase reserves SUPABASE_* names. GitHub SUPABASE_POOLER_URL is deployed as DB_POOLER_URL.
+// Supavisor transaction pooler (port 6543) allows safe connection reuse.
+const POOLER_URL = Deno.env.get('DB_POOLER_URL') || Deno.env.get('SUPABASE_POOLER_URL') || '';
 // ĐO TỐC ĐỘ: mỗi phản hồi có header Server-Timing (db = chờ kết nối CSDL, app = xử lý + số truy vấn, total, vùng chạy Edge).
 // Trình duyệt đọc được (expose) để trang "Đo tốc độ" tách thời gian mạng / máy chủ / CSDL. Không chứa SQL, tham số hay dữ liệu.
 const timing = new AsyncLocalStorage<{ queries: number }>();

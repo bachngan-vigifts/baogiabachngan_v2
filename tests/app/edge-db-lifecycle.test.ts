@@ -7,18 +7,20 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createDbLifecycle, createDbReadiness } from '../../src/core/db/request-lifecycle.js';
 
 // Execute the real Edge handler, replacing only infrastructure imports (no network/database).
-async function harness({ pooled = false, broken = false, region = '', handler = async (_req: Request, _env: any) => Response.json({ ok: true }) } = {}) {
+async function harness({ pooled = false, legacyPooler = false, broken = false, region = '', handler = async (_req: Request, _env: any) => Response.json({ ok: true }) } = {}) {
   const source = readFileSync('supabase/functions/baogia-v2-api/index.ts', 'utf8').replace(/^import .*;\n/gm, '');
   const { code } = await transform(source, { loader: 'ts', format: 'iife' });
   const stats = { created: 0, closed: 0, probes: 0, routed: 0 };
   let serve: (req: Request) => Promise<Response> = null!;
   const background: Promise<unknown>[] = [];
-  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { SUPABASE_POOLER_URL: 'postgres://pool.fake.test/db' } : {}), ...(region ? { SB_REGION: region } : {}) };
+  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { DB_POOLER_URL: 'postgres://pool.fake.test/db' } : {}), ...(legacyPooler ? { SUPABASE_POOLER_URL: 'postgres://legacy.pool.fake.test/db' } : {}), ...(region ? { SB_REGION: region } : {}) };
+  const connections: {url:string;max?:number}[] = [];
   const hooks: { onQuery?: () => void } = {};
   runInNewContext(code, {
     Deno: { env: { get: (key: string) => env[key] }, serve: (fn: typeof serve) => { serve = fn; } },
     createDbLifecycle, createDbReadiness, sql: () => 'select 1', schema: { positions: { id: 'id' } },
-    createDb: (_url: string, _schema: unknown, opts: { onQuery?: () => void }) => {
+    createDb: (_url: string, _schema: unknown, opts: { onQuery?: () => void; max?: number }) => {
+      connections.push({url:_url,max:opts.max});
       stats.created++; hooks.onQuery = opts.onQuery;
       return {
         execute: async () => { stats.probes++; if (broken) throw Object.assign(new Error('unavailable'), { code: '08006' }); },
@@ -34,7 +36,7 @@ async function harness({ pooled = false, broken = false, region = '', handler = 
   const request = (method = 'GET', path = '/api/staff/tasks', extra: Record<string, string> = {}) => serve(new Request('https://edge.test' + path, {
     method, headers: { origin: 'https://crm.minhlongonline.com', ...extra }, ...(method === 'POST' ? { body: '{}' } : {}),
   }));
-  return { stats, request, background, query: () => hooks.onQuery?.() };
+  return { stats, request, background, connections, query: () => hooks.onQuery?.() };
 }
 test('Edge requests release direct clients after success/error; preflight failure never dispatches a write', async () => {
   const h = await harness();
@@ -91,4 +93,19 @@ test('Edge nén gzip cả phản hồi vừa (> 4 KB) khi trình duyệt hỗ tr
   assert.deepEqual(JSON.parse(gunzipSync(bytes).toString()), big);
   const small = await (await harness()).request('GET', '/api/staff/tasks', { 'accept-encoding': 'gzip' });
   assert.equal(small.headers.get('content-encoding'), null, 'phản hồi nhỏ không nén');
+});
+
+test('pooler deployment uses a permitted Supabase secret name and the existing GitHub secret', () => {
+  const workflow = readFileSync('.github/workflows/deploy-api.yml','utf8');
+  assert.match(workflow, /DB_POOLER_URL="\$SUPABASE_POOLER_URL"/);
+  assert.doesNotMatch(workflow, /supabase secrets set[^\n]*\sSUPABASE_POOLER_URL=/);
+});
+test('new pooler secret enables warm max-3 client; legacy setting still works and new setting takes precedence', async () => {
+  for (const options of [{pooled:true},{legacyPooler:true},{pooled:true,legacyPooler:true}]) {
+    const h=await harness(options);
+    assert.equal((await (await h.request('GET','/health')).json()).databaseMode,'transaction-pooler');
+    await h.request();
+    assert.deepEqual(h.connections,[{url:options.pooled?'postgres://pool.fake.test/db':'postgres://legacy.pool.fake.test/db',max:3}]);
+    assert.equal(h.stats.closed,0);assert.equal(h.stats.created,1);
+  }
 });
