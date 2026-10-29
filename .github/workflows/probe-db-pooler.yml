@@ -1,0 +1,62 @@
+# Read-only probe: inspect only booleans and SELECT 1, never expose credentials or change production configuration.
+name: Kiểm tra kết nối pooler chỉ đọc
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Kiểm tra định dạng và kết nối bằng SELECT 1
+        env:
+          POOLER_CONNECTION: ${{ secrets.SUPABASE_POOLER_URL }}
+        shell: python
+        run: |
+          import os, re, subprocess, sys
+          from urllib.parse import urlsplit, unquote
+          value = os.environ.get('POOLER_CONNECTION', '')
+          def finish(code):
+              print('POOLER_CHECK=' + code)
+              sys.exit(0 if code == 'CONNECTED_SELECT_1' else 1)
+          if not value:
+              finish('MISSING_GITHUB_SECRET')
+          try:
+              uri = urlsplit(value)
+              password = unquote(uri.password or '')
+              port = uri.port
+          except Exception:
+              finish('INVALID_URI_FORMAT')
+          if uri.scheme not in ('postgres', 'postgresql'):
+              finish('INVALID_URI_SCHEME')
+          if uri.username != 'postgres.taceqfnsorewelsbdckg':
+              finish('INCORRECT_PROJECT_USERNAME')
+          if uri.hostname != 'aws-0-ap-northeast-2.pooler.supabase.com' or port != 6543:
+              finish('INCORRECT_TRANSACTION_POOLER_HOST_OR_PORT')
+          if not password:
+              finish('MISSING_DATABASE_PASSWORD')
+          if 'YOUR-PASSWORD' in password.upper() or 'YOUR_PASSWORD' in password.upper():
+              finish('PASSWORD_STILL_PLACEHOLDER')
+          if uri.fragment or re.search(r'%(?![0-9a-fA-F]{2})', uri.netloc):
+              finish('PASSWORD_URL_ENCODING_REQUIRED')
+          try:
+              result = subprocess.run(['psql', '-X', '-w', value, '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT 1'],
+                  capture_output=True, text=True, timeout=20,
+                  env={**os.environ, 'PGCONNECT_TIMEOUT':'10', 'PGSSLMODE':'require', 'PGOPTIONS':'-c default_transaction_read_only=on -c statement_timeout=5000'})
+          except subprocess.TimeoutExpired:
+              finish('CONNECTION_TIMEOUT')
+          except FileNotFoundError:
+              finish('PSQL_CLIENT_UNAVAILABLE')
+          error = result.stderr.lower()
+          if result.returncode == 0 and result.stdout.strip() == '1':
+              finish('CONNECTED_SELECT_1')
+          if 'password authentication failed' in error or 'authentication failed' in error:
+              finish('DATABASE_AUTHENTICATION_FAILED')
+          if 'tenant or user not found' in error:
+              finish('POOLER_TENANT_OR_USER_NOT_FOUND')
+          if 'percent-encoded' in error or 'invalid uri' in error:
+              finish('PASSWORD_URL_ENCODING_REQUIRED')
+          if 'could not translate host' in error or 'timeout' in error:
+              finish('POOLER_NETWORK_OR_DNS_FAILURE')
+          finish('CONNECTION_FAILED_REVIEW_PRIVATELY')
