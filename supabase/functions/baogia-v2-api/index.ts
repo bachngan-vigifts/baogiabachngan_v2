@@ -26,6 +26,10 @@ const POOLER_URL = Deno.env.get('SUPABASE_POOLER_URL') || '';
 const timing = new AsyncLocalStorage<{ queries: number }>();
 const REGION = (Deno.env.get('SB_REGION') || '').replace(/[^\w-]/g, '').slice(0, 40);
 const SLOW_MS = 1500;
+// Vùng của CSDL, đọc từ tên máy pooler (aws-0-us-east-1.pooler.supabase.com) hoặc secret DB_REGION. Giao diện dùng nó để
+// yêu cầu Edge chạy CÙNG vùng với CSDL (?forceFunctionRegion=…): mỗi truy vấn khỏi phải đi xa (đo thật: ~150–200 ms/truy vấn
+// khi Edge ở ap-southeast-1 còn CSDL ở vùng khác).
+const DB_REGION = (/@aws-\d+-([a-z]{2}-[a-z]+-\d)\.pooler\.supabase\.com/.exec(POOLER_URL)?.[1] || Deno.env.get('DB_REGION') || '').replace(/[^\w-]/g, '').slice(0, 40);
 const dbPool = createDbLifecycle({
   create:()=>createDb(POOLER_URL||Deno.env.get('SUPABASE_DB_URL')||'',schema,{max:POOLER_URL?3:1,idleTimeout:POOLER_URL?20:1,onQuery:()=>{const t=timing.getStore();if(t)t.queries++;}}),
   close:closeDb,keepWarm:!!POOLER_URL,onCloseError:()=>console.warn('API database client close failed'),
@@ -71,6 +75,7 @@ Deno.serve(async req => {
       headers.delete('authorization');
       if(token) headers.set('cookie', '__Host-bn-session=' + token);
     }
+    incoming.searchParams.delete('forceFunctionRegion'); // chỉ để chọn vùng chạy Edge, không phải tham số nghiệp vụ
     const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
 const stats = { queries: 0 };
 const response = await timing.run(stats, () => router.handle(forwarded,{db,adms:{url:Deno.env.get('ADMS_API_URL')||'',companyId:Number(Deno.env.get('ADMS_COMPANY_ID')||0),token:Deno.env.get('ADMS_API_TOKEN')||''},waitUntil:requestWaitUntil,files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined,sapoOrderMode:'n8n',sapoOrderWebhookUrl:Deno.env.get('SAPO_ORDER_WEBHOOK_URL')||undefined,sapoHdktOrderWebhookUrl:Deno.env.get('SAPO_HDKT_ORDER_WEBHOOK_URL')||undefined,sapoPosOrderWebhookUrl:Deno.env.get('SAPO_POS_ORDER_WEBHOOK_URL')||undefined,sapoGoodsReceiptWebhookUrl:Deno.env.get('SAPO_GOODS_RECEIPT_WEBHOOK_URL')||'https://n8nthai.moarchvn.com/webhook/sapo-goods-receipt-from-quote-web',posShiftReportWebhook:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')&&Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')?{url:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')||'',token:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')||''}:undefined,ghnToken:Deno.env.get('GHN_API_TOKEN')||undefined,ghnMlToken:Deno.env.get('GHN_ML_API_TOKEN')||undefined,ghnMlShopId:Deno.env.get('GHN_ML_SHOP_ID')||undefined,ghnWebhookToken:Deno.env.get('GHN_WEBHOOK_TOKEN')||undefined,sepayPosApiKeyHash:Deno.env.get('SEPAY_POS_API_KEY_HASH')||undefined,wooLockTokenHash:Deno.env.get('WOO_LOCK_TOKEN_HASH')||undefined,wooMinhLongTokenHash:Deno.env.get('WOO_MINHLONG_TOKEN_HASH')||undefined,webOrderAction:Deno.env.get('WEB_ORDER_ACTION_TOKEN')?{token:Deno.env.get('WEB_ORDER_ACTION_TOKEN')||'',lockUrl:'https://locknlockonline.com/wp-json/vigifts/v1/order-action-v7',minhlongUrl:''}:undefined,mailer:Deno.env.get('RESEND_API_KEY')?{apiKey:Deno.env.get('RESEND_API_KEY')||'',from:Deno.env.get('MAIL_FROM')||'',alwaysCc:(Deno.env.get('MAIL_CC')||'').split(',').map(s=>s.trim()).filter(Boolean)}:undefined}));
@@ -81,7 +86,7 @@ const response = await timing.run(stats, () => router.handle(forwarded,{db,adms:
     let body = await response.text();
     if (cookie) { const payload = JSON.parse(body); payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || ''; body = JSON.stringify(payload); }
     const total = performance.now() - started, ms = (n: number) => Math.round(n * 10) / 10;
-    const serverTiming = `db;dur=${ms(dbReady - started)}, app;dur=${ms(handled - dbReady)};desc="${stats.queries} queries", total;dur=${ms(total)}` + (REGION ? `, region;desc="${REGION}"` : '');
+    const serverTiming = `db;dur=${ms(dbReady - started)}, app;dur=${ms(handled - dbReady)};desc="${stats.queries} queries", total;dur=${ms(total)}` + (REGION ? `, region;desc="${REGION}"` : '') + (DB_REGION ? `, dbregion;desc="${DB_REGION}"` : '');
     // Yêu cầu chậm: ghi log (đường dẫn đã bỏ mã / query string) để xem ở Supabase → Edge Functions → Logs.
     if (total > SLOW_MS) console.warn('API slow', JSON.stringify({ method: req.method, route: path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_-]{20,}/g, ':id'), status: response.status, ms: Math.round(total), dbMs: Math.round(dbReady - started), queries: stats.queries, pooled: !!POOLER_URL }));
     const jsonHeaders = {...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff','server-timing':serverTiming};
@@ -94,7 +99,7 @@ const response = await timing.run(stats, () => router.handle(forwarded,{db,adms:
   } catch(e) {
     const code=String((e as {code?:unknown})?.code||(e as {cause?:{code?:unknown}})?.cause?.code||'unknown').slice(0,40);
     console.error('API database unavailable',JSON.stringify({code,phase:'request',pooled:!!POOLER_URL}));
-    return new Response(JSON.stringify({error:'Kết nối dữ liệu đang bận. Vui lòng thử lại sau ít giây.',code:'DB_CONNECTION_UNAVAILABLE'}),{status:503,headers:{...cors,'retry-after':'1','content-type':'application/json'}});
+    return new Response(JSON.stringify({error:'Kết nối dữ liệu đang bận. Vui lòng thử lại sau ít giây.',code:'DB_CONNECTION_UNAVAILABLE'}),{status:503,headers:{...cors,'retry-after':'1','content-type':'application/json','server-timing':`total;dur=${Math.round(performance.now()-started)}`+(REGION?`, region;desc="${REGION}"`:'')+(DB_REGION?`, dbregion;desc="${DB_REGION}"`:'')}});
   } finally {
     await lease?.release();
   }

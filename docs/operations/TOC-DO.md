@@ -31,3 +31,17 @@ Pooler (Supavisor, chế độ transaction) giữ kết nối sẵn. Mỗi bản
 - **Máy chủ** cao, **số truy vấn** lớn ở một API: API đó cần gộp truy vấn hoặc thêm chỉ mục. Gửi bảng cho người hỗ trợ.
 - **Mạng** cao, máy chủ thấp: do đường truyền / vị trí. Xem cột vùng (`region`). Nếu Edge chạy ở vùng xa CSDL, có thể buộc Edge chạy cùng vùng CSDL (đợt sau).
 - Log chậm: Supabase → Edge Functions → `baogia-v2-api` → Logs, tìm `API slow`.
+
+## Đợt 2 – số đo thật (30/10/2026, trước khi pooler có hiệu lực)
+
+Máy anh, 26 lượt gọi: trung vị 2,98 s / lượt. Trong đó máy chủ 1,8 s (chờ kết nối CSDL ~0,85 s, mỗi API 3–16 truy vấn) và mạng ~1 s.
+
+- **Chờ CSDL ~850 ms ở mọi API:** mỗi lần gọi mở kết nối Postgres mới. Pooler (đã đặt secret) sẽ bỏ được phần này.
+- **Phần xử lý (máy chủ − chờ CSDL) ≈ 150–200 ms mỗi truy vấn.** Edge chạy ở `ap-southeast-1` (Singapore) nhưng CSDL ở vùng khác: mỗi truy vấn là một chuyến đi xa. Ví dụ `/orders` có 16 truy vấn, phần xử lý mất ~2,2 s.
+
+**Cách sửa:** cho Edge chạy cùng vùng với CSDL (`trial-ui/api-region.js`).
+- Edge báo vùng CSDL trong Server-Timing (`dbregion`). Vùng này đọc từ tên máy pooler `aws-0-<vùng>.pooler.supabase.com`, hoặc từ secret `DB_REGION` nếu có.
+- Các lượt gọi sau, giao diện thêm `?forceFunctionRegion=<vùng>`. Mỗi lượt chỉ còn một chặng trình duyệt → máy chủ đi xa, thay cho mỗi truy vấn một chặng.
+- Ép vùng lỗi (không tới được máy chủ của mình) thì tự bỏ ép vùng.
+
+Kiểm tra sau triển khai: vào **Đo tốc độ**, dòng đầu phải có "vùng máy chủ" trùng "vùng CSDL", và cột "Máy chủ" giảm xuống còn vài chục đến vài trăm ms.

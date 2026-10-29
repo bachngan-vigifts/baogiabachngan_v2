@@ -14,7 +14,7 @@ export function parseServerTiming(header) {
     for (const p of params) {
       const [k, v = ''] = p.split('=');
       if (k === 'dur') out[name] = Number(v);
-      if (k === 'desc') { const d = v.replace(/^"|"$/g, ''); if (name === 'app') out.queries = Number.parseInt(d, 10) || 0; else if (name === 'region') out.region = d; }
+      if (k === 'desc') { const d = v.replace(/^"|"$/g, ''); if (name === 'app') out.queries = Number.parseInt(d, 10) || 0; else if (name === 'region') out.region = d; else if (name === 'dbregion') out.dbRegion = d; }
     }
   }
   return out;
@@ -25,7 +25,7 @@ export const routeOf = path => String(path || '').split('?')[0].replace(/\/[0-9a
 
 export function recordApi({ path, method = 'GET', ms, status = 0, serverTiming = '', at = Date.now() }) {
   const t = parseServerTiming(serverTiming);
-  entries.push({ route: method + ' ' + routeOf(path), ms: Math.round(ms), status, at, server: t.total, db: t.db, app: t.app, queries: t.queries, region: t.region });
+  entries.push({ route: method + ' ' + routeOf(path), ms: Math.round(ms), status, at, server: t.total, db: t.db, app: t.app, queries: t.queries, region: t.region, dbRegion: t.dbRegion });
   if (entries.length > MAX) entries.splice(0, entries.length - MAX);
 }
 export const speedEntries = () => entries.slice();
@@ -40,14 +40,14 @@ export function summarize(list = entries) {
   const groups = new Map();
   for (const e of list) { if (!groups.has(e.route)) groups.set(e.route, []); groups.get(e.route).push(e); }
   const routes = [...groups].map(([route, xs]) => ({ route, ...stat(xs) })).sort((a, b) => b.median * b.count - a.median * a.count);
-  return { all: stat(list), routes, region: [...list].reverse().find(x => x.region)?.region || '' };
+  return { all: stat(list), routes, region: [...list].reverse().find(x => x.region)?.region || '', dbRegion: [...list].reverse().find(x => x.dbRegion)?.dbRegion || '' };
 }
 
 const fmt = n => Number.isFinite(n) ? Math.round(n).toLocaleString('vi-VN') + ' ms' : '–';
 /** Văn bản gửi hỗ trợ kỹ thuật. */
 export function speedReport(list = entries, nav = globalThis.navigator) {
   const s = summarize(list), conn = nav?.connection;
-  const lines = [`Đo tốc độ CRM – ${new Date().toLocaleString('vi-VN')}`, `Số lượt: ${s.all.count} · vùng máy chủ: ${s.region || 'chưa rõ'}` + (conn?.effectiveType ? ` · mạng: ${conn.effectiveType}${conn.rtt ? ` (rtt ${conn.rtt} ms)` : ''}` : ''),
+  const lines = [`Đo tốc độ CRM – ${new Date().toLocaleString('vi-VN')}`, `Số lượt: ${s.all.count} · vùng máy chủ: ${s.region || 'chưa rõ'} · vùng CSDL: ${s.dbRegion || 'chưa rõ'}` + (conn?.effectiveType ? ` · mạng: ${conn.effectiveType}${conn.rtt ? ` (rtt ${conn.rtt} ms)` : ''}` : ''),
     `Toàn bộ: trung vị ${fmt(s.all.median)}, p90 ${fmt(s.all.p90)} · máy chủ ${fmt(s.all.server)} (chờ CSDL ${fmt(s.all.db)}, ${Number.isFinite(s.all.queries) ? s.all.queries : '–'} truy vấn) · mạng ${fmt(s.all.network)}`, ''];
   for (const r of s.routes.slice(0, 15)) lines.push(`${r.route} ×${r.count}: ${fmt(r.median)} (p90 ${fmt(r.p90)}) · máy chủ ${fmt(r.server)} · CSDL chờ ${fmt(r.db)} · ${Number.isFinite(r.queries) ? r.queries : '–'} truy vấn · mạng ${fmt(r.network)}`);
   return lines.join('\n');
@@ -60,7 +60,7 @@ export function openSpeedDialog({ doc = document, toast = () => {} } = {}) {
   const head = el('div', 'speed-head'), close = el('button', 'btn secondary', 'Đóng'); close.type = 'button'; close.onclick = () => dlg.close();
   head.append(el('h2', '', 'Đo tốc độ'), close);
   const note = el('p', 'muted', s.all.count
-    ? `${s.all.count} lượt gọi gần nhất trên máy này. Trung vị ${fmt(s.all.median)} (p90 ${fmt(s.all.p90)}) – máy chủ ${fmt(s.all.server)}, trong đó chờ kết nối CSDL ${fmt(s.all.db)}; mạng ${fmt(s.all.network)}. Vùng máy chủ: ${s.region || 'chưa rõ'}.`
+    ? `${s.all.count} lượt gọi gần nhất trên máy này. Trung vị ${fmt(s.all.median)} (p90 ${fmt(s.all.p90)}) – máy chủ ${fmt(s.all.server)}, trong đó chờ kết nối CSDL ${fmt(s.all.db)}; mạng ${fmt(s.all.network)}. Vùng máy chủ: ${s.region || 'chưa rõ'}, vùng CSDL: ${s.dbRegion || 'chưa rõ'}.`
     : 'Chưa có số liệu. Dùng app vài phút (mở các trang hay dùng) rồi mở lại mục này.');
   const table = el('table', 'data-table speed-table'), thead = el('thead'), tr = el('tr');
   for (const h of ['API', 'Lượt', 'Trung vị', 'p90', 'Máy chủ', 'Chờ CSDL', 'Truy vấn', 'Mạng']) tr.append(el('th', '', h));
