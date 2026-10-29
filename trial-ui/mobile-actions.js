@@ -8,6 +8,8 @@ const containers=[
 ].join(',');
 const controls='button.btn,button.icon-btn,a.btn,.btn-add,label.btn,.menu-wrap,button[data-mobile-action]';
 const skip='#view-pos,.pos-modal,.pos-shell,.mobile-action-list,.mobile-action-trigger,.mobile-action-heading,.auth,#supplier-auth,nav,.pager,.chips,[role="tablist"],[role="radiogroup"],.pos-qty,.pos-cash-quick,.quote-mobile-steps,.mobile-savebar,.chat-compose,[data-mobile-actions="off"]';
+/** Số thao tác tối thiểu mới gom vào nút ⋮. */
+export const GROUP_MIN=3;
 const shown=n=>!n.hidden&&n.style.display!=='none';
 let installed=false;
 export function installMobileActions(){
@@ -25,6 +27,20 @@ export function installMobileActions(){
  function restore(r){
   for(const item of r.items){const slot=r.slots.get(item);if(slot?.isConnected&&item.parentElement===r.list)slot.after(item);}
  }
+ /** Nút hoặc khung chứa tràn ngang khỏi màn hình (đo khi các nút đang nằm tại chỗ). */
+ function overflows(r){
+  // Ẩn tạm nút ⋮ bằng style (không đổi thuộc tính hidden: MutationObserver sẽ quét lại liên tục).
+  const before=r.trigger.style.display;r.trigger.style.display='none';
+  try{
+   if(r.parent.scrollWidth>r.parent.clientWidth+1)return true;
+   if(r.items.some(n=>{if(!shown(n))return false;const b=n.getBoundingClientRect();return b.width>0&&(b.right>innerWidth+1||b.left<-1);}))return true;
+   // Tiêu đề cùng hàng bị co thành "T…" (vd. đầu trang báo giá) cũng tính là không vừa.
+   const row=r.parent.parentElement;
+   for(const c of row?.children||[])if(c!==r.parent)for(const t of [c,...c.querySelectorAll('h1,h2,h3')])
+    if(getComputedStyle(t).textOverflow==='ellipsis'&&t.scrollWidth>t.clientWidth+1)return true;
+   return false;
+  }finally{r.trigger.style.display=before;}
+ }
  function sync(r){
   r.items=r.items.filter(n=>n.isConnected);
   for(const item of [...r.items])if(actionKind(item)!=='secondary'){
@@ -32,7 +48,14 @@ export function installMobileActions(){
    const slot=r.slots.get(item);
    item.classList.remove('mobile-secondary-action');r.items=r.items.filter(n=>n!==item);slot?.remove();r.slots.delete(item);
   }
-  const available=r.items.some(shown),hidden=!media.matches||!available;
+  // Gom khi có từ 3 thao tác hiện được trở lên. 1 nút luôn nằm tại chỗ; 2 nút nằm tại chỗ nếu vừa màn hình, tràn thì mới gom
+  // (gom vào ⋮ thêm một lần bấm, chỉ đáng khi tiết kiệm được chỗ).
+  const visible=r.items.filter(shown).length,open=r.list.matches(':popover-open');
+  let grouped=visible>=GROUP_MIN||(open&&visible>1);
+  if(!grouped&&visible>1&&media.matches){for(const item of r.items)item.classList.remove('mobile-secondary-action');grouped=overflows(r);}
+  if(!grouped&&r.list.matches(':popover-open')){close(r);restore(r);}
+  for(const item of r.items)item.classList.toggle('mobile-secondary-action',grouped);
+  const available=grouped,hidden=!media.matches||!available;
   if(r.trigger.hidden!==hidden)r.trigger.hidden=hidden;
   if(!media.matches){close(r);restore(r);if(r.list.hasAttribute('popover'))r.list.removeAttribute('popover');}
   else if(!r.list.hasAttribute('popover'))r.list.setAttribute('popover','auto');

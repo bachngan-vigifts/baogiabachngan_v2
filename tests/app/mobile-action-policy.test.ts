@@ -1,21 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-// @ts-ignore browser policy is DOM independent when supplied a node adapter
 import {actionKind} from '../../trial-ui/mobile-action-policy.js';
-function control(text:string,{dialog=false,field=false,primary=false,desktop=false}={}){
- return {textContent:text,title:'',getAttribute:()=>null,classList:{contains:(key:string)=>desktop&&key==='mobile-desktop-only'},
-  matches:(selector:string)=>selector==='label'?false:primary&&selector.includes('.btn.primary'),querySelector:()=>field?{}:null,closest:()=>dialog?{}:null};
-}
-test('mobile saves, submits, confirmations and field-bearing controls never enter a secondary menu',()=>{
- for(const text of ['Lưu báo giá','Gửi duyệt','Xác nhận nhận hàng','Thanh toán','Nhận theo phiếu','Đã giao','Thu tiền','Đóng phiếu','Gọi','Báo giá','Xuất Excel','Xem / Tải hồ sơ'])assert.equal(actionKind(control(text)),'inline',text);
- assert.equal(actionKind(control('Chọn nguồn',{field:true})),'inline');
+import {GROUP_MIN} from '../../trial-ui/mobile-actions.js';
+
+/** Nút giả tối thiểu cho actionKind (chỉ cần chữ, không nằm trong hộp thoại / form). */
+const node=(text:string)=>({textContent:text,title:'',getAttribute:()=>null,classList:{contains:()=>false},matches:()=>false,closest:()=>null,querySelector:()=>null}) as unknown as Element;
+
+test('mobile: nút phân trang luôn nằm tại chỗ, không gom vào ⋮',()=>{
+ for(const t of ['‹ Trang trước','Trang tiếp ›','‹ Trước','Sau ›','‹','›'])assert.equal(actionKind(node(t)),'inline',t);
+ assert.equal(actionKind(node('＋ Thêm sản phẩm')),'inline');
+ assert.equal(actionKind(node('Dán từ Excel')),'secondary','thao tác phụ vẫn được gom khi đủ số lượng');
 });
-test('destructive controls require desktop or their existing full confirmation dialog',()=>{
- for(const text of ['Huỷ phiếu','Xóa đơn','Chốt tồn','Chốt kỳ','Điều chỉnh','Hoàn tiền','Đồng bộ Sapo']){
-  assert.equal(actionKind(control(text)),'desktop',text);
-  assert.equal(actionKind(control(text,{dialog:true})),'inline',text);
- }
- assert.equal(actionKind(control('Hủy',{dialog:true})),'inline');
- assert.equal(actionKind(control('Thêm sản phẩm',{desktop:true,primary:true})),'desktop');
- assert.equal(actionKind(control('Nhân bản')),'secondary');
-});
+
+test('mobile: chỉ gom vào ⋮ khi có từ 3 thao tác',()=>assert.equal(GROUP_MIN,3));

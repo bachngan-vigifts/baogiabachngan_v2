@@ -1307,7 +1307,7 @@ label.check { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 900px) { .md-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .md-pay-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) {
   .md-grid { grid-template-columns: 1fr; } .md-grid .card:first-child { grid-column: auto; }
-  .md-head .editor-actions { width: 100%; } .md-month { flex: 1; } .md-month input { flex: 1; width: auto; }
+  .md-head .editor-actions { width: 100%; flex-wrap: wrap; } .md-month { flex: 1 1 220px; } .md-month input { flex: 1; width: auto; }
   .md-kpis .stat strong { font-size: var(--text-heading); } .md-trend { height: 140px; gap: 6px; }
   .att-grid { gap: 4px; } .att-day { border-radius: 7px; } .att-day b { font-size: var(--text-caption); } }
 
