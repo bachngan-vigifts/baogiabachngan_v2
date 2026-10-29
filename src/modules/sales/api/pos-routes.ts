@@ -802,6 +802,16 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           brand: products.brand,
           price: productPrices.price,
           onHand: stockBalances.qty,
+          // Preload only unambiguous exact codes. Browser scans can reuse this page's
+          // price/availability; checkout still checks live stock under its locks.
+          scanCodes: sql<string[]>`ARRAY(
+            SELECT codes.code FROM (
+              SELECT ${products.sku} AS code
+              UNION SELECT b.barcode FROM product_barcodes b WHERE b.sku=${products.sku}
+            ) codes
+            WHERE NOT EXISTS (SELECT 1 FROM product_barcodes b WHERE b.barcode=codes.code AND b.sku<>${products.sku})
+              AND NOT EXISTS (SELECT 1 FROM products other WHERE other.sku=codes.code AND other.sku<>${products.sku})
+          )`,
         })
         .from(products)
         .innerJoin(productPrices, and(eq(productPrices.sku, products.sku), eq(productPrices.policyId, policy)))
@@ -835,7 +845,11 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             r.warehouseId,
           )
         : new Map<string, number>();
-      const sources = await posStockSources(c.env.db, member(c), r.warehouseId, rows.map(p => p.sku));
+      const exactSku = q && !skuList.length ? rows.find(p=>p.sku===(barcodeHit?.sku||'')||p.sku.toLowerCase()===q.toLowerCase())?.sku ?? null : null;
+      // A scan only needs the selling warehouse's live availability, not every
+      // other warehouse/incoming purchase. Those details stay on catalog pages.
+      const sources = c.url.searchParams.get('scan') === '1' && exactSku
+        ? new Map() : await posStockSources(c.env.db, member(c), r.warehouseId, rows.map(p => p.sku));
       return json({
         products: rows.map((p) => ({
           ...p,
@@ -846,7 +860,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         })),
         nextOffset: rows.length === limit ? offset + limit : null,
         // Khớp chính xác mã vạch / SKU (không phân biệt hoa thường): quầy chỉ tự thêm vào giỏ khi có mã này (Enter / quét mã).
-        exactSku: q && !skuList.length ? rows.find(p=>p.sku===(barcodeHit?.sku||'')||p.sku.toLowerCase()===q.toLowerCase())?.sku ?? null : null,
+        exactSku,
       });
     },
     'business',
