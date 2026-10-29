@@ -5,7 +5,7 @@
  */
 export const PRODUCT_MOVE_KINDS = ['sale', 'delivery', 'purchase', 'transfer', 'adjustment', 'customer_return', 'supplier_return'] as const;
 export type ProductMoveKind = typeof PRODUCT_MOVE_KINDS[number];
-/** Số giao dịch gần nhất giữ lại cho mỗi mã. */
+/** Số dòng mỗi trang lịch sử (lịch sử nhanh); mọi phát sinh đều được giữ, "Xem thêm" nạp trang cũ hơn. */
 export const PRODUCT_HISTORY_LIMIT = 20;
 /** Chiều của số lượng: in = cộng kho, out = trừ kho, none = không đổi tổng (bán chưa xuất, điều chuyển giữa kho), signed = theo dấu (cân bằng kho). */
 export const MOVE_DIRECTION: Record<ProductMoveKind, 'in' | 'out' | 'none' | 'signed'> = {

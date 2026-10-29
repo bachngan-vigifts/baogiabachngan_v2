@@ -5,7 +5,9 @@
 //  - Gõ phím trong ô nhập sau khi bấm → bỏ ghi nhớ (tránh tự lưu nháp khoá nhầm nút cũ).
 //  - Nút .btn gọi API đọc ngay khi bấm (Xuất Excel, Tải lại…) cũng hiện đang xử lý; chip / tab lọc thì không.
 //  - Nút tự quản lý trạng thái riêng hoặc không muốn khoá: đặt data-no-busy.
-const WINDOW_MS = 30_000, READ_WINDOW_MS = 400;
+// Link / dòng / bộ lọc / thanh tiến trình đầu trang: loading-feedback.js (cài cùng lúc ở đây).
+import { installLoadingFeedback, trackRequest, trackWrite } from './loading-feedback.js';
+const WINDOW_MS = 30_000, READ_WINDOW_MS = 1000;
 /** POST chỉ để tính / tra / đánh dấu đã đọc, chạy tự động khi đổi giỏ hàng, gõ… → không khoá nút (vd. +/− số lượng ở quầy). */
 const PASSIVE = /\/(preview|csp-report|read|locations|typing|presence)(\?|$)/;
 let recent = []; // nút vừa bấm gần nhất trước (tối đa 2: nút trong hộp xác nhận + nút gốc mở hộp)
@@ -32,9 +34,10 @@ export function installBusyButtons(doc = document) {
     if (actionable(el)) remember(el);
   }, true);
   doc.addEventListener('input', () => { recent = []; }, true);
+  if (doc === globalThis.document) installLoadingFeedback(doc);
 }
 
-/** Nút .btn vừa bấm (≤ 400 ms) cho lời gọi API đọc – không xoá ghi nhớ (lời gọi ghi sau đó vẫn tìm được nút). */
+/** Nút .btn vừa bấm (≤ 1 giây) cho lời gọi API đọc – không xoá ghi nhớ (lời gọi ghi sau đó vẫn tìm được nút). */
 function readTarget() {
   const r = recent[0];
   return r && Date.now() - r.at < READ_WINDOW_MS && r.el.isConnected && r.el.classList?.contains('btn') ? r.el : null;
@@ -48,6 +51,8 @@ function target() {
 
 /** Bọc một lời gọi API: ghi (khác GET) thì khoá nút vừa bấm tới khi xong. Trả lại đúng promise kết quả. */
 export function withBusy(method, promise, path = '') {
+  trackRequest(path, promise);
+  if (method && method !== 'GET' && !PASSIVE.test(path.split('#')[0])) trackWrite(promise);
   if (PASSIVE.test(path.split('#')[0])) return promise;
   const el = !method || method === 'GET' ? readTarget() : target();
   if (!el) return promise;

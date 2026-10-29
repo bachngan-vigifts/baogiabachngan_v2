@@ -317,6 +317,8 @@ export const supplierReceipts = pgTable('supplier_receipts', {
   shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id),
   /** Ngày nhận thực tế YYYY-MM-DD. */
   receivedDate: text('received_date').notNull(),
+  /** Dấu nội dung yêu cầu nhận (kho, ngày, dòng, phiếu xin hàng) – gửi lại cùng mã khác nội dung thì từ chối. */
+  requestHash: text('request_hash'),
   receivedBy: text('received_by').notNull().references(() => employees.id),
   warehouse: text('warehouse').notNull().default(''),
   note: text('note').notNull().default(''),

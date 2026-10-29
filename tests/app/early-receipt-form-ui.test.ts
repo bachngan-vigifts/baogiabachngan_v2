@@ -20,7 +20,7 @@ async function fixture(early=true,createSapo=true){
  const fn=source.slice(source.indexOf('  function receiveForm('),source.indexOf('  function payForm('));
  const ctx:any={current:{id:'po',ticketNumber:'PO',lines:[{id:'a',sku:'ACCEPTED',name:'Ly đã đồng ý',missing:100},{id:'b',sku:'PENDING',name:'Chưa đồng ý',missing:50}]},
   el,input,btn,qtyInput:(value:any,max:any)=>input('number',value,{max}),field:(label:string,n:Node)=>{const l=el('label','',label);l.append(n);return l;},
-  frame:()=>root,back(){},errorBox:()=>el('p','error'),foot:(n:Node)=>n,today:()=> '2026-10-24',key:()=> 'stable-receipt-key',num:String,toast(){},
+  frame:()=>root,back(){},errorBox:()=>el('p','error'),foot:(n:Node)=>n,today:()=> '2026-10-24',key:()=> 'stable-receipt-key',sendOnce:(_scope:string,_content:unknown,send:Function)=>send('stable-receipt-key'),num:String,toast(){},
   api:async(path:string,method?:string,body?:any)=>{if(method){posts.push({path,body});return{};}return{warehouses:[{id:'w',name:'Kho nhận'}]};},
   localStorage:{getItem(){return null;}},run:async(_b:any,_e:any,fn:Function)=>fn()};
  vm.createContext(ctx);vm.runInContext(fn,ctx);

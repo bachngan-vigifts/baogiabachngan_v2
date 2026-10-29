@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-ignore browser transport
-import {createApiTransport} from '../../trial-ui/api-transport.js';
+import {createApiTransport,writeFailureMessage} from '../../trial-ui/api-transport.js';
 test('Read retries tolerate transient network/503 failures, honor bounded backoff and return only the successful response',async()=>{
  let calls=0;const waits:number[]=[];
  const request=createApiTransport({fetcher:async()=>{calls++;if(calls===1)throw Error('network');return calls===2?new Response('{}',{status:503,headers:{'retry-after':'1'}}):Response.json({ok:true});},delay:async(ms:number)=>{waits.push(ms);}});
@@ -22,4 +22,15 @@ test('Auth, validation and permanent errors do not retry; reads have bounded att
 test('A stalled read times out and retries at most twice',async()=>{
  let calls=0;const request=createApiTransport({timeoutMs:5,delay:async()=>{},fetcher:async(_url:unknown,init:any)=>{calls++;return new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new Error('timeout'))));}});
  await assert.rejects(request('/tasks'));assert.equal(calls,3);
+});
+test('Each read retry is announced so the screen can say the network is slow; writes never announce',async()=>{
+ let retries=0,calls=0;const request=createApiTransport({delay:async()=>{},onRetry:()=>{retries++;},fetcher:async()=>{calls++;return calls<3?new Response('{}',{status:503}):Response.json({ok:true});}});
+ await request('/tasks');assert.equal(retries,2);
+ await createApiTransport({onRetry:()=>{retries++;},fetcher:async()=>new Response('{}',{status:503})})('/orders',{method:'POST'});assert.equal(retries,2);
+});
+test('A write that hangs is abandoned after its time limit (never resent) and the message says the outcome is unknown',async()=>{
+ let calls=0;const request=createApiTransport({writeTimeoutMs:5,fetcher:async(_url:unknown,init:any)=>{calls++;return new Promise((_r,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason)));}});
+ await assert.rejects(request('/payments',{method:'POST',body:'{}'}),(e:any)=>e.name==='TimeoutError');assert.equal(calls,1);
+ assert.match(writeFailureMessage({key:'abcdefgh-1234'}),/an toàn, hệ thống không ghi trùng/);
+ assert.match(writeFailureMessage({title:'x'}),/kiểm tra trước khi gửi lại/);
 });

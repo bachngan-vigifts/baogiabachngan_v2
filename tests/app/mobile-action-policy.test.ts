@@ -2,6 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-ignore browser policy is DOM independent when supplied a node adapter
 import {actionKind} from '../../trial-ui/mobile-action-policy.js';
+// @ts-ignore browser module; only the grouping threshold is read here
+import {GROUP_MIN} from '../../trial-ui/mobile-actions.js';
 function control(text:string,{dialog=false,field=false,primary=false,desktop=false}={}){
  return {textContent:text,title:'',getAttribute:()=>null,classList:{contains:(key:string)=>desktop&&key==='mobile-desktop-only'},
   matches:(selector:string)=>selector==='label'?false:primary&&selector.includes('.btn.primary'),querySelector:()=>field?{}:null,closest:()=>dialog?{}:null};
@@ -18,4 +20,9 @@ test('destructive controls require desktop or their existing full confirmation d
  assert.equal(actionKind(control('Hủy',{dialog:true})),'inline');
  assert.equal(actionKind(control('Thêm sản phẩm',{desktop:true,primary:true})),'desktop');
  assert.equal(actionKind(control('Nhân bản')),'secondary');
+});
+test('pagination and adding a product stay inline; only four or more secondary actions are grouped (2–3 only when they overflow)',()=>{
+ for(const text of ['‹ Trang trước','Trang tiếp ›','‹ Trước','Sau ›','‹','›','＋ Thêm sản phẩm'])assert.equal(actionKind(control(text)),'inline',text);
+ assert.equal(actionKind(control('Dán từ Excel')),'secondary');
+ assert.equal(GROUP_MIN,4);
 });

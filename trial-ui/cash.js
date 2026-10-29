@@ -1,3 +1,4 @@
+import { sendOnce } from './request-keys.js';
 import { openPosReturns } from './pos-returns.js';
 import { downloadExcel } from './sheet-export.js';
 import { printPos } from './pos-print.js';
@@ -475,7 +476,9 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     submitForm(m, 'Lưu phiếu', async () => {
       let img;
       if (photo.input.files?.[0]) img = await compress(photo.input.files[0]);
-      await api('/cash/entries', 'POST', {
+      // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, mở lại nhập y hệt → không ghi phiếu két lần hai.
+      const content = { drawerId, adjustment, kind: kind.value.trim(), direction: dir.value, amount: Number(amount.input.value), reason: reason.input.value, recId: recId || null, photo: img ? img.length + ':' + img.slice(-32) : null };
+      await sendOnce('cash-entry', content, key => api('/cash/entries', 'POST', {
         key,
         kind: adjustment ? 'adjustment' : allowed.find(k => kinds[k] === kind.value.trim()) || (direction==='out'&&kind.value.trim()==='Tạm ứng lương'?'advance':direction==='out'&&kind.value.trim()==='Nộp quỹ'?'cash_out':allowed[0]),
         ...(!adjustment && !allowed.some(k => kinds[k] === kind.value.trim()) ? { entryName: kind.value.trim() } : {}),
@@ -484,7 +487,7 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         reason: reason.input.value,
         photo: img,
         reconciliationId: recId,
-      });
+      }));
       m.close();
       await load(); onChanged();
     });

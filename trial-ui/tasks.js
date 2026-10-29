@@ -65,7 +65,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
  * Gắn bảng công việc vào #view-tasks. `api(path, method, body)`, `toast(msg, kind)`, `go(hash)`, `isManager()`, `userId()`.
  * Trả về { load(id?), badge() }.
  */
-export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '', approvalFeed }) {
+export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '', approvalFeed, sendOnce = (_scope, _content, send) => send(crypto.randomUUID()) }) {
   /**
    * Lưu sẵn danh sách theo bộ lọc (trong bộ nhớ trang, không lưu ổ đĩa): mở lại trang Công việc hiện ngay bản trước rồi tải bản mới ở nền.
    * Mọi thao tác ghi (giao việc, sửa, xoá, bình luận…) xoá bản lưu để lần tải sau lấy dữ liệu mới.
@@ -244,7 +244,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
       }
       if (accountingMode === undefined) accountingMode = positionId() === 'accounting';
       if (accountingMode && st.tab !== 'approvals') {
-        if (!accountingBoard) { const { initAccountingTasks } = await import('./accounting-tasks.js'); accountingBoard = initAccountingTasks({ root, api, toast, userId, back: () => { accountingMode = false; accountingBoard.hide(); load(); } }); }
+        if (!accountingBoard) { const { initAccountingTasks } = await import('./accounting-tasks.js'); accountingBoard = initAccountingTasks({ root, api, toast, userId, sendOnce, back: () => { accountingMode = false; accountingBoard.hide(); load(); } }); }
         if (request !== loadSequence) return;
         await accountingBoard.load(focusId); return;
       }
@@ -441,7 +441,9 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     const f = e.target, title = f.title.value.trim(); if (!title) return f.title.focus();
     const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
     try {
-      await api('/tasks', 'POST', { title, assigneeId: f.assigneeId.value, priority: f.priority.value, dueDate: f.dueDate.value || undefined });
+      // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, bấm gửi lại không sinh việc thứ hai.
+      const content = { title, assigneeId: f.assigneeId.value, priority: f.priority.value, dueDate: f.dueDate.value || undefined };
+      await sendOnce('task', content, clientKey => api('/tasks', 'POST', { ...content, clientKey }));
       f.title.value = ''; toast('Đã giao việc.'); await load(); f.title.focus();
     } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
   });

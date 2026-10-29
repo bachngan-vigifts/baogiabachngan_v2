@@ -281,3 +281,22 @@ test('danh sách công việc: việc sinh sau (mới tạo) lên trên cùng, k
   const titles = (await call('/tasks?view=created', mgr)).data.tasks.map((t: any) => t.title).filter((t: string) => t.startsWith('Việc '));
   assert.deepEqual(titles, ['Việc 3 hạn xa', 'Việc 2 không hạn', 'Việc 1 hạn gần']);
 });
+
+test('mạng rớt sau khi đã lưu: tạo việc gửi lại cùng mã không sinh việc thứ hai (cả khi gửi đồng thời); cập nhật gửi lại báo thành công', async () => {
+  const { call, mgr, emp } = await setup();
+  const body = { title: 'Gọi lại khách An Phát', assigneeId: 'emp', priority: 'high', clientKey: 'task-key-0001' };
+  const first = await call('/tasks', mgr, 'POST', body); assert.equal(first.status, 201, JSON.stringify(first.data));
+  const again = await call('/tasks', mgr, 'POST', body); assert.equal(again.status, 200); assert.deepEqual([again.data.id, again.data.replayed], [first.data.id, true]);
+  assert.equal((await call('/tasks', mgr, 'POST', { ...body, title: 'Việc khác' })).status, 409, 'cùng mã khác nội dung');
+  const race = await Promise.all([1, 2, 3].map(() => call('/tasks', mgr, 'POST', { ...body, title: 'Việc đồng thời', clientKey: 'task-key-race' })));
+  assert.ok(race.every(r => r.status === 200 || r.status === 201), JSON.stringify(race.map(r => r.data)));
+  assert.equal(new Set(race.map(r => r.data.id)).size, 1);
+  const mine = (await call('/tasks?view=created', mgr)).data.tasks.filter((t: any) => ['Gọi lại khách An Phát', 'Việc đồng thời'].includes(t.title));
+  assert.equal(mine.length, 2, 'mỗi việc một bản');
+  // "Bắt đầu làm" gửi lại với phiên bản cũ (lần trước đã lưu): trạng thái đã đúng → thành công, không báo "người khác cập nhật".
+  const t = (await call('/tasks?view=mine', emp)).data.tasks.find((x: any) => x.id === first.data.id);
+  assert.equal((await call(`/tasks/${t.id}`, emp, 'PUT', { status: 'in_progress', revision: t.revision })).status, 200);
+  const retried = await call(`/tasks/${t.id}`, emp, 'PUT', { status: 'in_progress', revision: t.revision });
+  assert.equal(retried.status, 200); assert.equal(retried.data.alreadyApplied, true);
+  assert.equal((await call(`/tasks/${t.id}`, emp, 'PUT', { status: 'done', revision: t.revision })).status, 409, 'phiên bản cũ mà đổi khác thì vẫn báo xung đột');
+});

@@ -1,5 +1,5 @@
 import { bindForgotPassword } from './forgot-password.js';
-import { apiFetch } from './api-transport.js';
+import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
 import { openSupplierRequestDetails } from './supplier-request-details.js';
 import { installBusyButtons, withBusy } from './busy-buttons.js';
@@ -11,7 +11,7 @@ installBusyButtons();
 function api(path,method='GET',body){return withBusy(method,apiRequest(path,method,body),path);}
 async function apiRequest(path,method='GET',body) {
   const headers={'content-type':'application/json'};if(token)headers.authorization='Bearer '+token;
-  let r;try{r=await apiFetch(API+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});}catch{throw Error('Không kết nối được máy chủ. Vui lòng thử lại.');}
+  let r;try{r=await apiFetch(API+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});}catch{throw method==='GET'?Error('Không kết nối được máy chủ. Vui lòng thử lại.'):Object.assign(Error(writeFailureMessage(body)),{status:0,code:UNKNOWN_OUTCOME});}
   const d=await r.json();if(d.sessionToken!==undefined)saveToken(d.sessionToken);
   if(!r.ok){if(r.status===401&&!path.startsWith('/login')){document.querySelectorAll('.supplier-detail-dialog').forEach(d=>d.close());$('supplier-auth').hidden=false;$('supplier-requests').hidden=true;}
     throw Object.assign(Error(d.error||'Không thực hiện được.'),{status:r.status});}return d;

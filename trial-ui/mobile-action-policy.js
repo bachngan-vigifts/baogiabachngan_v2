@@ -5,9 +5,11 @@ export function actionKind(node){
  if(node.classList.contains('mobile-desktop-only'))return 'desktop';
  const text=(node.getAttribute('aria-label')||node.textContent||node.title||'').trim();
  if(node.matches('label')||node.querySelector('input,select,textarea'))return 'inline';
+ // Phân trang luôn nằm tại chỗ: gom vào ⋮ thì mỗi lần sang trang phải bấm hai lần.
+ if(/^(‹\s*)?(trang )?(trước|tiếp|sau)(\s*›)?$/i.test(text)||/^[‹›«»]$/.test(text))return 'inline';
  if(node.closest('dialog')&&/^(huỷ|hủy|đóng|quay lại)$/i.test(text))return 'inline';
  if(mobileRisk(text))return node.closest('dialog,#view-order,.sup-drawer,[data-mobile-confirmation-page]')?'inline':'desktop';
  if(mobileCommit(text)||node.matches('[data-mobile-primary],[data-mobile-inline],.btn-add,.btn.primary'))return 'inline';
- if(/gọi|báo giá|hồ sơ|đóng|quay lại|xuất (excel|file)|tải file mẫu/i.test(text))return 'inline';
+ if(/gọi|báo giá|hồ sơ|đóng|quay lại|xuất (excel|file)|tải file mẫu|thêm sản phẩm/i.test(text))return 'inline';
  return 'secondary';
 }

@@ -67,7 +67,11 @@ test('huỷ phiếu thu trước có lý do trả khoản đó về COD còn ph�
   const [receipt] = await f.db.select().from(customerPayments), [ship] = await f.db.select().from(deliveries);
   assert.equal((await f.call('/payments/' + receipt!.id + '/void', f.mgr, 'POST', { reason: 'Ghi nhầm tiền cọc' })).status, 200);
   assert.equal((await f.db.select().from(deliveries).where(eq(deliveries.id, ship!.id)))[0]!.codAmount, 194400);
-  assert.equal((await f.call('/payments/' + receipt!.id + '/void', f.mgr, 'POST', { reason: 'Ghi nhầm tiền cọc' })).status, 409);
+  // Gửi lại y hệt sau khi mạng rớt: báo đã huỷ (không lỗi) và không trả COD lần hai; lý do khác vẫn bị chặn.
+  const again = await f.call('/payments/' + receipt!.id + '/void', f.mgr, 'POST', { reason: 'Ghi nhầm tiền cọc' });
+  assert.equal(again.status, 200); assert.equal(again.data.alreadyApplied, true);
+  assert.equal((await f.db.select().from(deliveries).where(eq(deliveries.id, ship!.id)))[0]!.codAmount, 194400);
+  assert.equal((await f.call('/payments/' + receipt!.id + '/void', f.mgr, 'POST', { reason: 'Lý do khác' })).status, 409);
   assert.equal((await f.call('/pos/shifts/' + shift.id, f.emp)).data.cash, 0);
   assert.equal((await f.db.select().from(stockBalances))[0]!.qty, 10);
 });

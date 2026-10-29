@@ -28,7 +28,7 @@ export function accountingKpis(data) {
   for (const [kind, title, value, sub] of rows) { const card = node('article', 'acct-kpi ' + kind); card.append(node('small', '', title), node('strong', '', value), node('span', 'muted', sub)); box.append(card); }
   return box;
 }
-export function accountingTable(data, open, claim, mobile = false) {
+export function accountingTable(data, open, claim, mobile = false, quick = () => null) {
   const wrap = node('div', mobile ? 'table-wrap acct-mobile' : 'table-wrap acct-desktop'), table = node('table', mobile ? 'data-table task-table' : 'data-table acct-table');
   const head = node('thead'), h = node('tr');
   for (const label of mobile ? ['', 'Công việc', 'Ưu tiên', 'Giao / nhận', 'Hạn', 'Trạng thái', ''] : ['Việc', 'Loại', 'Số tiền', 'Hạn', 'Phụ trách', 'Hành động']) h.append(node('th', label === 'Số tiền' ? 'right' : '', label));
@@ -44,6 +44,7 @@ export function accountingTable(data, open, claim, mobile = false) {
       const who = node('td', 'task-people'); who.dataset.label = 'Phụ trách'; who.append(node('b', '', t.assigneeName || 'Nhóm Kế toán'), node('small', 'muted', t.assigneeName ? STATUS[t.status] : 'Chưa ai nhận'));
       const actions = node('td', 'task-go');
       if (t.canClaim && ['todo', 'in_progress'].includes(t.status)) actions.append(button('Nhận việc', 'btn secondary small', () => claim(t)));
+      const q = quick(t); if (q) actions.append(q);
       const a = link(t.sourceData); if (a) actions.append(a); else { actions.append(node('span', 'pill warn', 'Không có link đơn')); if (t.sourceData?.ghnCode) actions.append(node('small', 'muted', t.sourceData.ghnCode)); }
       if (mobile) { const prio = node('td'); prio.dataset.label = 'Ưu tiên'; prio.append(node('span', 'pill prio ' + t.priority, PRIORITY[t.priority])); const state = node('td', '', STATUS[t.status]); state.dataset.label = 'Trạng thái'; const check = node('td', 'task-check', '—'); tr.append(check, main, prio, who, due, state, actions); }
       else { const amount = node('td', 'right num', money(t.sourceData?.amount, t.sourceData?.currency)); amount.dataset.label = 'Số tiền'; tr.append(main, node('td', '', TYPE[t.sourceData?.kind] || 'Công việc'), amount, due, who, actions); }
@@ -88,10 +89,84 @@ export function accountingSourceWarnings(data) {
   }
   return box;
 }
-export function initAccountingTasks({ root, api, toast, userId, back }) {
+/** Làm ngay trên dòng việc (không phải mở chứng từ tìm nút): việc nào có thao tác tương ứng thì có nút. */
+const QUICK = { invoice: 'Ghi số HĐ', debt: 'Ghi thu', purchase: 'Ghi trả NCC' };
+export function quickActionFor(t) {
+  const s = t.sourceData;
+  if (!s?.available || !s.targetId || t.viewOnly || !['todo', 'in_progress'].includes(t.status) || !QUICK[s.kind]) return null;
+  return QUICK[s.kind];
+}
+const todayIso = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+/** Hộp nhập nhỏ: các ô + nút Lưu. Lỗi (kể cả mạng) hiện trong hộp, giữ nguyên số đã nhập để gửi lại. */
+function quickDialog(title, note, fields, submit) {
+  const dlg = node('dialog', 'acct-quick'), form = node('form'), err = node('p', 'error'), inputs = {};
+  dlg.setAttribute('aria-label', title); form.append(node('h2', '', title)); if (note) form.append(node('p', 'muted pre', note));
+  for (const f of fields) {
+    const label = node('label', '', f.label), input = node(f.options ? 'select' : 'input');
+    if (f.options) for (const [v, t] of f.options) { const o = node('option', '', t); o.value = v; input.append(o); }
+    else { input.type = f.type || 'text'; if (f.min != null) input.min = String(f.min); if (f.max != null) input.max = String(f.max); }
+    input.value = f.value ?? (f.options ? f.options[0][0] : ''); input.required = !!f.required; input.name = f.name; label.append(input); form.append(label); inputs[f.name] = input;
+  }
+  const save = node('button', 'btn primary', 'Lưu'); save.type = 'submit';
+  const cancel = node('button', 'btn secondary', 'Huỷ'); cancel.type = 'button'; cancel.addEventListener('click', () => dlg.close());
+  const foot = node('div', 'acct-quick-foot'); foot.append(cancel, save); form.append(err, foot); dlg.append(form);
+  form.addEventListener('submit', async e => {
+    e.preventDefault(); if (save.disabled) return; err.textContent = ''; save.disabled = true;
+    const values = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]));
+    try { await submit(values); dlg.close(); } catch (ex) { err.textContent = ex.message; } finally { save.disabled = false; }
+  });
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); Object.values(inputs)[0]?.focus();
+  return dlg;
+}
+const METHODS = [['transfer', 'Chuyển khoản'], ['cash', 'Tiền mặt'], ['other', 'Khác']];
+/** Kiểm tra trước khi xuất hoá đơn (gợi ý, không chặn): MST, đơn đã giao xong chưa, khách muốn xem bản nháp. */
+export function invoiceChecks(s) {
+  const out = [], mst = String(s.taxCode || '').replace(/\s/g, '');
+  if (!mst) out.push('Chưa có MST – hoá đơn cho công ty cần mã số thuế.');
+  else if (!/^(\d{10}(-\d{3})?|\d{12})$/.test(mst)) out.push(`MST "${s.taxCode}" không đúng dạng (10 số, 10-3 số chi nhánh, hoặc 12 số CCCD).`);
+  if (s.orderStatus && s.orderStatus !== 'delivered') out.push('Đơn chưa giao xong – kiểm tra hàng đã giao đủ trước khi phát hành.');
+  if (s.invoiceMode === 'draft') out.push('Khách muốn xem bản nháp trước khi phát hành chính thức.');
+  return out;
+}
+/** Dòng "Tóm tắt hôm nay" (cùng số liệu tin tóm tắt cuối ngày gửi Manager – GET /tasks/accounting/daily). */
+export function dailySummaryBox(d) {
+  if (!d?.customerReceipts) return null;
+  const box = node('section', 'acct-daily'); box.setAttribute('aria-label', 'Tóm tắt hôm nay');
+  box.append(node('strong', '', 'Hôm nay'));
+  for (const [label, value] of [['Thu khách', money(d.customerReceipts.amount)], ['Trả NCC', money(d.supplierPayments.amount)], ['Két vào / ra', `${money(d.cash.in)} / ${money(d.cash.out)}`],
+    ['HĐ đã xuất', String(d.invoices.issuedToday)], ['HĐ chờ xuất', String(d.invoices.pending)]]) { const item = node('span'); item.append(node('small', 'muted', label + ' '), node('b', '', value)); box.append(item); }
+  return box;
+}
+const STATUS_LABEL = { duplicatePayments: 'Thu trùng', staleInvoices: 'Yêu cầu xuất HĐ chờ lâu', cashWithoutPhoto: 'Phiếu chi lớn chưa có ảnh' };
+/** Khung "Cần kiểm tra" (chỉ đọc, gợi ý): ẩn khi không có gì. */
+export function accountingChecksBox(d) {
+  if (!d) return null;
+  const groups = [
+    ['duplicatePayments', (d.duplicatePayments || []).map(r => [`${r.docNo} · ${r.customerName}`, `${r.count} phiếu thu cùng ${money(r.amount)} ngày ${date(r.paidAt)} – kiểm tra có ghi trùng không`, r.link])],
+    ['staleInvoices', (d.staleInvoices || []).map(r => [`${r.docNo} · ${r.customerName}`, `Yêu cầu xuất HĐ đã ${r.days} ngày, chưa nhập số hoá đơn`, r.link])],
+    ['cashWithoutPhoto', (d.cashWithoutPhoto || []).map(r => [`${r.entryNo} · ${money(r.amount)}`, `${r.reason} – chưa có ảnh hoá đơn`, '#/cash'])],
+  ].filter(([, rows]) => rows.length);
+  if (!groups.length) return null;
+  const box = node('section', 'acct-source-diagnostics acct-checks'); box.setAttribute('aria-label', 'Cần kiểm tra');
+  for (const [key, rows] of groups) {
+    const card = node('details', 'acct-source-card'), summary = node('summary');
+    summary.append(node('strong', '', 'Cần kiểm tra · ' + STATUS_LABEL[key]), node('span', '', rows.length + ' mục')); card.append(summary);
+    const list = node('div', 'acct-source-list');
+    for (const [title, note, href] of rows) {
+      const row = node('div', 'acct-source-row'), info = node('div'); info.append(node('strong', '', title), node('small', 'muted', note)); row.append(info);
+      if (href && /^#\/(orders|contracts)\/[\w-]+$|^#\/cash$/.test(href)) { const a = node('a', 'btn secondary small', 'Mở'); a.href = href; row.append(a); }
+      list.append(row);
+    }
+    card.append(list); box.append(card);
+  }
+  return box;
+}
+
+export function initAccountingTasks({ root, api, toast, userId, back, sendOnce = (_scope, _content, send) => send(crypto.randomUUID()) }) {
   const box = node('section', 'accounting-tasks'), saved = new Map(), st = { view: 'team', kind: '', q: '', limit: 0 }, title = node('div', 'acct-head');
   let sequence = 0, searchTimer, drawer = null, detailId = null, returnFocus = null;
-  const heading = node('div'); heading.append(node('h1', '', 'Công việc'), node('p', 'muted', 'Hàng đợi Kế toán · Việc của bạn, việc nhóm và việc đồng nghiệp chỉ xem.'));
+  const heading = node('div'); heading.append(node('h1', '', 'Việc kế toán'), node('p', 'muted', 'Việc của bạn, việc nhóm và việc đồng nghiệp (chỉ xem). Bấm nút trên dòng để làm ngay: ghi số HĐ, ghi thu, ghi trả NCC.'));
   const search = node('input'); search.type = 'search'; search.placeholder = 'Tìm mã đơn, NCC, khách…'; search.setAttribute('aria-label', 'Tìm công việc kế toán');
   search.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { st.q = search.value; st.limit = 0; load(); }, 200); });
   title.append(heading, search, button('Công việc khác / Thêm việc', 'btn secondary', back)); box.append(title);
@@ -99,11 +174,33 @@ export function initAccountingTasks({ root, api, toast, userId, back }) {
   function show() { for (const child of root.children) if (child !== box) { if (!saved.has(child)) saved.set(child, child.hidden); child.hidden = true; } box.hidden = false; }
   function hide() { closeDetail(); clearTimeout(searchTimer); box.hidden = true; for (const [child, hidden] of saved) child.hidden = hidden; saved.clear(); }
   async function claim(t) { try { await api('/tasks/' + encodeURIComponent(t.id), 'PUT', { revision: t.revision, assigneeId: userId(), status: 'in_progress' }); toast('Đã nhận việc.'); await load(); if (detailId) await openDetail({ id: detailId }); } catch (e) { toast(e.message, 'err'); await load(); } }
+  /** Mở hộp làm ngay cho việc t; xong thì tải lại (việc tự hoàn thành theo chứng từ). */
+  function quickAct(t) {
+    const s = t.sourceData, id = encodeURIComponent(s.targetId), done = async msg => { toast(msg); await load(); if (detailId) closeDetail(); };
+    if (s.kind === 'invoice') return quickDialog(`Ghi số hoá đơn · ${s.docNo}`, [`${s.taxCode ? 'MST ' + s.taxCode : 'Chưa có MST'} · giá trị ${money(s.total)}`, ...invoiceChecks(s).map(w => '⚠ ' + w)].join('\n'),
+      [{ name: 'invoiceNo', label: 'Số hoá đơn', required: true }, { name: 'invoiceDate', label: 'Ngày hoá đơn', type: 'date', value: todayIso(), max: todayIso(), required: true }],
+      async v => { await api(`/orders/${id}/invoice`, 'PUT', { invoiceNo: v.invoiceNo.trim(), invoiceDate: v.invoiceDate }); await done('Đã ghi số hoá đơn.'); });
+    if (s.kind === 'debt') return quickDialog(`Ghi thu · ${s.docNo}`, `Quá hạn ${money(s.overdue)} · còn phải thu ${money(s.balance)}`,
+      [{ name: 'amount', label: 'Số tiền', type: 'number', min: 1, max: s.balance, value: s.overdue || s.balance, required: true }, { name: 'paidAt', label: 'Ngày thu', type: 'date', value: todayIso(), max: todayIso(), required: true },
+       { name: 'method', label: 'Hình thức', options: METHODS }, { name: 'reference', label: 'Số chứng từ / nội dung CK' }],
+      async v => { const content = { orderId: s.targetId, amount: Number(v.amount), paidAt: v.paidAt, method: v.method, reference: v.reference };
+        await sendOnce('payment', content, key => api('/payments', 'POST', { key, ...content })); await done('Đã ghi nhận thanh toán.'); });
+    if (s.kind === 'purchase') return quickDialog(`Ghi trả NCC · ${s.docNo}`, `Kỳ hạn ${date(s.dueDate)}: ${money(s.periodAmount)} · còn nợ ${money(s.balance)}. Cần đính kèm chứng từ: mở đơn mua.`,
+      [{ name: 'amount', label: 'Số tiền', type: 'number', min: 1, max: s.balance, value: s.periodAmount || s.balance, required: true }, { name: 'paidDate', label: 'Ngày trả', type: 'date', value: todayIso(), max: todayIso(), required: true },
+       { name: 'method', label: 'Hình thức', options: METHODS }, { name: 'reference', label: 'Số UNC / phiếu chi' }],
+      async v => { const content = { id: s.targetId, amount: Number(v.amount), paidDate: v.paidDate, method: v.method, reference: v.reference, note: '', file: null };
+        await sendOnce('supplier-payment', content, clientKey => api(`/purchase-orders/${id}/payments`, 'POST', { clientKey, amount: content.amount, paidDate: content.paidDate, method: content.method, reference: content.reference, note: '' }));
+        await done('Đã ghi khoản trả NCC.'); });
+    return null;
+  }
+  const quick = t => { const label = quickActionFor(t); return label ? button(label, 'btn primary small', () => quickAct(t)) : null; };
   function render(data) {
     content.replaceChildren();
     const warning = accountingWarning(data.warnings); if (warning) content.append(warning);
     const sourceWarnings = accountingSourceWarnings(data.sourceWarnings); if (sourceWarnings) content.append(sourceWarnings);
+    const checks = accountingChecksBox(data.checks); if (checks) content.append(checks);
     content.append(accountingKpis(data));
+    const daily = dailySummaryBox(data.daily); if (daily) content.append(daily);
     if (data.kpis.unavailableAmounts) content.append(node('p', 'muted small', 'Một số số tiền không hiển thị do quyền xem chứng từ. Tổng tiền chỉ gồm số liệu được phép xem.'));
     const filters = node('div', 'acct-filters'), tabs = node('div', 'acct-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Nhóm công việc kế toán');
     for (const [key, label] of [['team', 'Nhóm Kế toán'], ['mine', 'Của tôi'], ['colleagues', 'Đồng nghiệp'], ['closed_today', 'Đã đóng hôm nay']]) {
@@ -113,7 +210,7 @@ export function initAccountingTasks({ root, api, toast, userId, back }) {
     const kinds = node('div', 'chips'); kinds.setAttribute('role', 'group'); kinds.setAttribute('aria-label', 'Loại công việc kế toán');
     for (const [key, label] of [['', 'Tất cả'], ...Object.entries(TYPE)]) { const b = button(label, 'chip', () => { st.kind = key; st.limit = 0; load(); }); b.setAttribute('aria-pressed', String(st.kind === key)); kinds.append(b); }
     filters.append(tabs, kinds); content.append(filters);
-    content.append(accountingTable(data, openDetail, claim), accountingTable(data, openDetail, claim, true));
+    content.append(accountingTable(data, openDetail, claim, false, quick), accountingTable(data, openDetail, claim, true, quick));
     if (!data.tasks.length) content.append(node('p', 'empty', 'Không có công việc phù hợp với bộ lọc.'));
     if (data.nextOffset != null) content.append(button('Xem thêm công việc', 'btn secondary', () => { st.limit += 100; load(); }));
   }
@@ -121,7 +218,8 @@ export function initAccountingTasks({ root, api, toast, userId, back }) {
     const request = ++sequence; show();
     try {
       const params = new URLSearchParams({ view: st.view, kind: st.kind, q: st.q });
-      const first = await api('/tasks/accounting?' + params); let data = first;
+      // "Cần kiểm tra" tải song song, lỗi thì bỏ qua (không chặn hàng đợi việc).
+      const [first, checks, daily] = await Promise.all([api('/tasks/accounting?' + params), api('/tasks/accounting/checks').catch(() => null), api('/tasks/accounting/daily').catch(() => null)]); let data = { ...first, checks, daily };
       for (let offset = 100; offset <= st.limit && data.nextOffset != null; offset += 100) { const next = await api('/tasks/accounting?' + params + '&offset=' + offset); data = { ...data, tasks: [...data.tasks, ...next.tasks], nextOffset: next.nextOffset }; }
       if (request !== sequence) return;
       render(data); if (focusId) await openDetail({ id: focusId });
@@ -145,6 +243,7 @@ export function initAccountingTasks({ root, api, toast, userId, back }) {
       else { amountRow(amounts, 'Giá trị đơn', money(s.total, s.currency)); amountRow(amounts, 'Mã số thuế', s.taxCode || 'Chưa có MST'); amountRow(amounts, 'Cách xuất', s.kind === 'web' ? 'Chưa có trạng thái xuất HĐ trên đơn web' : s.invoiceMode === 'draft' ? 'Bản nháp' : 'Chính thức'); }
       body.append(amounts, node('h3', '', 'Cần làm'), node('p', 'pre', t.description || ''), node('p', 'muted', t.completionHelp));
       const actions = node('div', 'acct-detail-actions'); if (t.canClaim && ['todo', 'in_progress'].includes(t.status)) actions.append(button('Nhận việc', 'btn primary', () => claim(t)));
+      const q = quick(t); if (q) actions.append(q);
       if(s?.kind==='web'&&s.available)body.append(webOrderFinancialSummary(s.webFinancials,s.currency));
       const sourceLink = link(s); if (sourceLink) actions.append(sourceLink); else { actions.append(node('span', 'pill warn', 'Không có link đơn')); if (s?.ghnCode) actions.append(node('span', 'muted', s.ghnCode)); }
       const complete = button(t.completionFromSource ? 'Hoàn thành (tự động)' : 'Hoàn thành bằng tay', 'btn secondary', async () => { try { await api('/tasks/' + encodeURIComponent(t.id), 'PUT', { revision: t.revision, status: 'done' }); toast('Đã hoàn thành việc đơn web.'); closeDetail(); await load(); } catch (e) { toast(e.message, 'err'); } });

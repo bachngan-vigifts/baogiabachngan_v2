@@ -47,6 +47,12 @@
 - **Phiếu điều chỉnh bắt buộc mã chống gửi lặp** (`clientKey`), kể cả Manager.
   - Thiếu mã → `409 ADJUSTMENT_KEY_REQUIRED`, kèm phiếu cùng nội dung vừa lập trong 2 phút (nếu có).
   - Gửi lại cùng mã trả lại phiếu cũ; đổi nội dung cùng mã → `409`.
+- **Lịch giao và phiếu nhận NCC kiểm cả nội dung khoá chống lặp** (migration `20261029120000_request_keys.sql`):
+  - Lịch giao: form gửi một mã mỗi lần mở. Gửi lại cùng mã và cùng nội dung → trả chuyến cũ (200, `replayed`). Cùng mã khác ngày / địa chỉ / dòng hàng → `409 IDEMPOTENCY_CONFLICT`.
+  - Phiếu nhận NCC: cùng mã nhưng khác số lượng / kho / ngày / phiếu xin lấy trước → `409 IDEMPOTENCY_CONFLICT`, không trả phiếu cũ. Phiếu lập trước migration (không có dấu nội dung) giữ cách cũ.
+- **Lịch sử sản phẩm:**
+  - Giữ đủ mọi phát sinh (không còn xoá bớt). Lịch sử nhanh 20 dòng, "Xem thêm phát sinh cũ" nạp trang cũ hơn (`?before=`).
+  - Dòng "Giao hàng" ghi cùng giao dịch với "Đã giao", kể cả chuyến POS do GHN báo đã giao.
 - **Không lấy hàng đang giữ cho đơn khác** (`sales/api/stock-free.ts`):
   - Áp dụng cho bước "Đã chuyển" điều chuyển (kho đi) và xác nhận xuất kho phiếu đóng gói.
   - Lượng được lấy = tồn sổ kho − hàng giữ cho đơn / báo giá khác ở kho đó (cùng cách tính với POS). Phần giữ của chính đơn được dùng.

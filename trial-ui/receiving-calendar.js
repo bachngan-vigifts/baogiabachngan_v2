@@ -3,7 +3,7 @@ export function initReceivingCalendar({ api, root, confirmBox = async () => fals
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), title = el('div');
   title.append(el('span', 'eyebrow', 'Kho & giao hàng'), el('h1', '', 'Lịch nhận hàng'), el('p', 'muted', 'Đơn mua và phiếu xin lấy trước còn hàng chờ nhận. Phiếu mới tạo nằm trên cùng.'));
   const reload = el('button', 'btn secondary', 'Làm mới'); reload.type = 'button'; head.append(title, reload);
-  const panel = el('div', 'panel'), bar = el('div', 'toolbar'), summary = el('p', 'muted');
+  const panel = el('div', 'panel'), bar = el('div', 'toolbar filter-bar'), summary = el('p', 'muted');
   const from = el('input'), to = el('input'), q = el('input'), supplier = el('select'), state = el('select'), type = el('select'), sku = el('input');
   from.type = to.type = 'date'; sku.type = 'search'; sku.placeholder = 'Nhập mã SKU…'; q.type = 'search'; q.placeholder = 'Số đơn, NCC, mã / tên hàng…';
   const field = (name, control) => { const label = el('label', '', name); label.append(control); return label; };

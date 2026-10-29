@@ -5,6 +5,7 @@ import { initPurchaseIncoming } from './purchase-incoming.js';
 import { choosePurchaseMode, createRestockPicker } from './purchase-create-mode.js';
 import { openEarlyRequestFile } from './purchase-early-file.js';
 import { initRestockPage } from './purchase-restock.js';
+import { sendOnce } from './request-keys.js';
 /**
  * ĐƠN MUA HÀNG NCC (#/purchases) – xem docs/NCC-PAGE.md mục "Đơn mua hàng".
  *  #/purchases                 danh sách + lọc trạng thái
@@ -19,7 +20,6 @@ const input = (type, value = '', attrs = {}) => { const i = el('input'); i.type 
 const field = (label, control, cls = '') => { const l = el('label', cls); l.append(document.createTextNode(label), control); return l; };
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—';
 const num = v => Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
-const key = () => (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
 const SOURCE_LABEL = { quote: 'Báo giá', order: 'Đơn / HĐKT', stock_request: 'Khách hỏi tồn' };
 const STATE_PILL = { draft: 'warn', awaiting_confirmation: 'warn', confirmed: 'info', partially_received: 'warn', received: 'ok', cancelled: '' };
 const SAPO_LABEL = { pending: ['Chờ nhập Sapo', 'warn'], done: ['Đã nhập Sapo', 'ok'], failed: ['Nhập Sapo lỗi', 'danger'], not_needed: ['Không cần nhập Sapo', ''] };
@@ -966,7 +966,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   }
 
   function receiveForm(earlyContext = null,createSapo = true) {
-    const v = current, clientKey = key(); // một lần mở hộp nhận = một mã: bấm lặp / mạng chập chờn không tạo phiếu thứ hai
+    const v = current; // mã chống lặp theo nội dung lúc gửi (request-keys.js)
     const d = frame(earlyContext?'Nhận theo phiếu xin hàng':'Nhận hàng', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     const date = input('date', today(), { max: today() }), note = input('text', '', { maxLength: 1000 });
     // Kho nhận chọn trong danh sách kho thật → hàng đạt tự cộng vào sổ kho đúng kho (giá trị gửi lên = tên kho).
@@ -1037,13 +1037,15 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       if (hasBad() && !photos.length) { err.textContent = 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.'; pick.focus(); return; }
       const over = ins.find(x => Number(x.good.value || 0) + Number(x.bad.value || 0) > x.l.missing);
       if (over) { err.textContent = `${over.l.sku}: đạt + hỏng vượt số cần nhận ${num(over.l.missing)}. Số đạt chỉ gồm hàng tốt.`; over.good.focus(); return; }
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey,createSapo, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(earlyContext?{earlyRequestId:earlyContext.requestId}:{}), ...(photos.length ? { photos } : {}) }), createSapo?'Đã lưu phiếu nhận và gửi yêu cầu tạo đơn nhập Sapo.':'Đã nhập kho CRM; không tạo đơn nhập Sapo.');
+      // Mã theo nội dung (request-keys.js): mở lại hộp nhận đúng số lượng / kho / ngày sau khi mạng rớt → không cộng kho lần hai.
+      const content = { id: v.id, createSapo, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, early: earlyContext?.requestId || null, photos: photos.map(u => String(u).length + ':' + String(u).slice(-32)) };
+      run(ok, err, () => sendOnce('supplier-receipt', content, clientKey => api(`/purchase-orders/${encodeURIComponent(v.id)}/receipts`, 'POST', { clientKey,createSapo, receivedDate: date.value, warehouse: wh.value, note: note.value, lines, ...(earlyContext?{earlyRequestId:earlyContext.requestId}:{}), ...(photos.length ? { photos } : {}) })), createSapo?'Đã lưu phiếu nhận và gửi yêu cầu tạo đơn nhập Sapo.':'Đã nhập kho CRM; không tạo đơn nhập Sapo.');
     });
     d.append(f);
   }
 
   function payForm() {
-    const v = current, clientKey = key();
+    const v = current;
     const d = frame('Ghi trả NCC', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     const amount = input('number', v.debt?.nextDueAmount || v.debt?.balance || '', { min: '1', step: '1', required: true });
     const date = input('date', today(), { max: today() }), method = el('select');
@@ -1063,7 +1065,9 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
           const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('Không đọc được file.')); r.readAsDataURL(fl); });
           attachment = { name: fl.name, mime: fl.type, data };
         }
-        return api(`/purchase-orders/${encodeURIComponent(v.id)}/payments`, 'POST', { clientKey, amount: Number(amount.value), paidDate: date.value, method: method.value, reference: ref.value, note: note.value, attachment });
+        // Mã theo nội dung (request-keys.js): đóng hộp mở lại nhập y hệt sau khi mạng rớt → không ghi trả NCC lần hai.
+        const content = { id: v.id, amount: Number(amount.value), paidDate: date.value, method: method.value, reference: ref.value, note: note.value, file: fl ? [fl.name, fl.size] : null };
+        return sendOnce('supplier-payment', content, clientKey => api(`/purchase-orders/${encodeURIComponent(v.id)}/payments`, 'POST', { clientKey, amount: content.amount, paidDate: content.paidDate, method: content.method, reference: content.reference, note: content.note, attachment }));
       }, 'Đã ghi khoản trả NCC.');
     });
     d.append(f); amount.focus();

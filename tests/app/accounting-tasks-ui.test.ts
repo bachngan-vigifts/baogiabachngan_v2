@@ -53,3 +53,45 @@ test('cảnh báo dữ liệu nguồn: số thật, link NCC, trạng thái web,
   assert.equal(nodes(box).filter(e => e.tagName === 'details').length, 2);
   assert.equal(nodes(box).some(e => ['img', 'script'].includes(e.tagName)), false); assert.match(box.textContent, /<script>x<\/script>/);
 });
+
+test('làm ngay trên dòng việc: Ghi thu / Ghi số HĐ / Ghi trả NCC mở hộp nhỏ điền sẵn, gửi đúng API với mã chống lặp; việc chỉ xem / đã xong không có nút', async () => {
+  const c = fixture();
+  const debt = { id: 't1', title: 'Thu nợ', due: 'overdue', dueDate: '2026-10-20', status: 'todo', priority: 'high', revision: 1, canClaim: false,
+    sourceData: { kind: 'debt', available: true, targetId: 'order-1', docNo: 'DH_001', overdue: 300000, balance: 500000, link: '#/orders/order-1', linkLabel: 'Mở đơn' } };
+  assert.equal(c.quickActionFor(debt), 'Ghi thu');
+  assert.equal(c.quickActionFor({ ...debt, sourceData: { ...debt.sourceData, kind: 'invoice' } }), 'Ghi số HĐ');
+  assert.equal(c.quickActionFor({ ...debt, sourceData: { ...debt.sourceData, kind: 'purchase' } }), 'Ghi trả NCC');
+  assert.equal(c.quickActionFor({ ...debt, viewOnly: true }), null, 'việc đồng nghiệp chỉ xem');
+  assert.equal(c.quickActionFor({ ...debt, status: 'done' }), null);
+  assert.equal(c.quickActionFor({ ...debt, sourceData: { ...debt.sourceData, kind: 'web' } }), null, 'đơn web chưa có thao tác');
+  // Dựng trang thật với DOM giả: bấm "Ghi thu" → hộp điền sẵn số quá hạn → Lưu gửi /payments kèm mã.
+  const body = new Element('body'); Object.assign(c.document, { body, activeElement: null });
+  for (const k of ['showModal', 'close', 'remove', 'focus']) (Element.prototype as any)[k] ||= function (this: any) { if (k === 'close') this.events.close?.(); };
+  (Element.prototype as any).replaceChildren ||= function (this: any, ...n: Element[]) { this.children = n; };
+  const calls: any[] = [], root = new Element('div');
+  const api = async (path: string, method?: string, b?: any) => { calls.push({ path, method, b }); return path.startsWith('/tasks/accounting') ? { today: '2026-10-29', tasks: [debt], tabs: { team: 1, mine: 0, colleagues: 0, closed_today: 0 }, kpis: { invoices: { count: 0, overdue: 0 }, purchases: { count: 0, amount: 0, overdue: 0 }, debts: { count: 1, amount: 300000 }, unclaimed: 0 }, warnings: [] } : { id: 'p1' }; };
+  const board = c.initAccountingTasks({ root, api, toast() {}, userId: () => 'kt', back() {}, sendOnce: (_s: string, content: any, send: Function) => send('key-' + content.amount) });
+  await board.load();
+  const go = nodes(root).find(e => e.tagName === 'button' && e.textContent === 'Ghi thu')!; assert.ok(go, 'dòng nợ có nút Ghi thu');
+  go.events.click!({ stopPropagation() {} });
+  const dlg = body.children.find(e => e.tagName === 'dialog')!; assert.ok(dlg);
+  const field = (name: string) => nodes(dlg).find(e => (e as any).name === name) as any;
+  assert.equal(String(field('amount').value), '300000', 'điền sẵn số quá hạn');
+  await nodes(dlg).find(e => e.tagName === 'form')!.events.submit!({ preventDefault() {} });
+  const pay = calls.find(x => x.path === '/payments')!; assert.equal(pay.method, 'POST');
+  assert.deepEqual([pay.b.key, pay.b.orderId, pay.b.amount, pay.b.method], ['key-300000', 'order-1', 300000, 'transfer']);
+});
+
+test('kiểm tra trước khi xuất HĐ và khung "Cần kiểm tra": cảnh báo đúng, chỉ dùng text, link chỉ tới chứng từ / sổ quỹ', () => {
+  const c = fixture();
+  assert.equal(c.invoiceChecks({ taxCode: '0312345678', orderStatus: 'delivered', invoiceMode: 'issue' }).length, 0);
+  assert.equal(c.invoiceChecks({ taxCode: '0312345678-001', orderStatus: 'delivered' }).length, 0, 'MST chi nhánh hợp lệ');
+  const w = c.invoiceChecks({ taxCode: '12AB', orderStatus: 'confirmed', invoiceMode: 'draft' }).join(' | ');
+  assert.match(w, /không đúng dạng/); assert.match(w, /chưa giao xong/); assert.match(w, /bản nháp/);
+  assert.match(c.invoiceChecks({ taxCode: '', orderStatus: 'delivered' })[0], /Chưa có MST/);
+  assert.equal(c.accountingChecksBox({ duplicatePayments: [], staleInvoices: [], cashWithoutPhoto: null }), null, 'không có gì thì ẩn');
+  const box: Element = c.accountingChecksBox({ duplicatePayments: [{ docNo: 'DH_1', customerName: '<b>x</b>', count: 2, amount: 1000, paidAt: '2026-10-28', link: '#/orders/o1' }],
+    staleInvoices: [{ docNo: 'HĐKT_1', customerName: 'A', days: 9, link: 'javascript:alert(1)' }], cashWithoutPhoto: [{ entryNo: 'PC1', amount: 2000000, reason: 'Sửa xe' }] });
+  assert.match(box.textContent, /Thu trùng/); assert.match(box.textContent, /9 ngày/); assert.match(box.textContent, /chưa có ảnh/); assert.match(box.textContent, /<b>x<\/b>/);
+  assert.equal(nodes(box).filter(e => e.tagName === 'a').map(e => e.href).join(','), '#/orders/o1,#/cash', 'link lạ không được gắn');
+});

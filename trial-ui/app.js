@@ -3,7 +3,8 @@ import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
 import { bindForgotPassword } from './forgot-password.js';
-import { apiFetch } from './api-transport.js';
+import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
+import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
 import { openMobileQuoteCapture } from './mobile-quote-capture.js';
@@ -30,7 +31,8 @@ import { initCash } from './cash.js';
 import { initPos } from './pos.js';
 import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
 import { bindStockCheckFilter } from './stock-check-filter.js';
-import { downloadExcel } from './sheet-export.js';
+import { downloadExcel, readSheet } from './sheet-export.js';
+import { TEMPLATE_HEADER, TEMPLATE_SAMPLE, parseStatement, matchStatement, bankKey, bankReference } from './bank-statement.js';
 import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
 import { initQuoteSourcing } from './quote-sourcing.js';
@@ -305,7 +307,7 @@ async function apiRequest(path, method = 'GET', body) {
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   try { res = await apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
-  catch { throw new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0); }
+  catch { throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
@@ -370,10 +372,31 @@ const canEditSuppliers = () => can('suppliers.edit');
 const ghnCancelNote = r => !r?.ghnCancel ? '' : (r.ghnCancel.cancelled.length ? ` Đã huỷ vận đơn GHN ${r.ghnCancel.cancelled.join(', ')}.` : '')
   + (r.ghnCancel.errors.length ? ` Chưa huỷ được trên GHN: ${r.ghnCancel.errors.map(e => e.code + ' – ' + e.message).join('; ')}. Huỷ trên trang GHN.` : '');
 const KHO_HOME = '#/kho';
+/** Kế toán: chức vụ "accounting". */
+const isAccountant = () => state.user?.role === 'employee' && state.user?.positionId === 'accounting';
+/**
+ * Menu gọn của Kế toán: chỉ giữ việc hằng ngày, đổi tên theo đúng việc (Đơn mua NCC → Trả NCC lọc sẵn "Còn nợ NCC",
+ * Sổ thu / chi → Thu chi; Sổ quỹ vào bằng tab trong trang Thu chi). CHỈ ẩn khỏi menu – quyền vẫn theo trang Phân quyền,
+ * đơn / HĐKT / phiếu giao… vẫn mở được bằng link từ việc, công nợ. Người khác: trả lại nhãn / link gốc.
+ */
+const ACCOUNTING_MENU = { tasks: ['Việc kế toán'], receivables: ['Công nợ'], purchases: ['Trả NCC', '#/purchases?state=debt'], cashbook: ['Thu chi'], cash: ['Thu chi'], customers: ['Khách hàng'], suppliers: ['Nhà cung cấp'] };
+function accountingMenu() {
+  const on = isAccountant();
+  // Thu chi: trang Sổ thu / chi; chức vụ chưa được cấp Sổ thu / chi mà có Sổ quỹ thì mục Thu chi mở Sổ quỹ.
+  const thuChi = can('page.cashbook') ? 'cashbook' : 'cash';
+  for (const el of $$('.sidebar [data-nav], .bottom-nav [data-nav]')) {
+    const k = el.dataset.nav, label = [...el.querySelectorAll('span')].pop();
+    if (el.dataset.menuHref === undefined) { el.dataset.menuHref = el.getAttribute('href') || ''; el.dataset.menuLabel = label?.textContent || ''; }
+    const item = on && ACCOUNTING_MENU[k] && !((k === 'cash' || k === 'cashbook') && k !== thuChi) ? ACCOUNTING_MENU[k] : null;
+    if (on && !item) el.hidden = true;
+    if (label) label.textContent = item ? item[0] : el.dataset.menuLabel;
+    el.setAttribute('href', item?.[1] || el.dataset.menuHref);
+  }
+}
 /** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
 /** Trang mở đầu theo chức vụ và quyền hiện hành. */
-const homeHash = () => state.user?.role==='employee'&&can('page.flow') ? '#/flow' : isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
+const homeHash = () => isAccountant() ? '#/tasks' : state.user?.role==='employee'&&can('page.flow') ? '#/flow' : isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
 let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
@@ -449,7 +472,9 @@ function applyWorkspaceUser(user) {
   $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
   $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   $$('[data-nav=tasks]').forEach(el => { if (isWarehouse()) el.hidden = true; });
+  accountingMenu();
   document.body.classList.toggle('role-warehouse', isWarehouse());
+  document.body.classList.toggle('role-accounting', isAccountant());
   return true;
 }
 function openWorkspace(user) {
@@ -716,6 +741,18 @@ window.addEventListener('beforeunload', e => { if (editor.dirty) { e.preventDefa
 
 let lastRoutedHash = '';
 VIEWS['early-requests'] = 'Lấy hàng trước';
+/** Thu chi = Sổ thu / chi (tất cả) + Sổ quỹ (két cửa hàng): hai tab ở đầu hai trang cho người được vào cả hai. */
+function thuChiTabs(view) {
+  for (const n of $$('.thu-chi-tabs')) n.remove();
+  if (!['cash', 'cashbook'].includes(view) || !can('page.cash') || !can('page.cashbook')) return;
+  const nav = document.createElement('nav'); nav.className = 'chips thu-chi-tabs'; nav.setAttribute('aria-label', 'Thu chi');
+  for (const [k, text] of [['cashbook', 'Tất cả thu chi'], ['cash', 'Két cửa hàng (Sổ quỹ)']]) {
+    const a = document.createElement('a'); a.className = 'chip' + (k === view ? ' active' : ''); a.href = '#/' + k; a.textContent = text;
+    if (k === view) a.setAttribute('aria-current', 'page');
+    nav.append(a);
+  }
+  $('#view-' + view).before(nav);
+}
 function route() {
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
@@ -740,11 +777,12 @@ function route() {
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
-  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : VIEWS[view];
+  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : isAccountant() && ACCOUNTING_MENU[view] ? ACCOUNTING_MENU[view][0] : VIEWS[view];
   pageBack.record();
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
+  thuChiTabs(view);
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
   if (view === 'pos') posView().load();
   if (view === 'product') productDetail().show(decodeURIComponent(id),query);
@@ -1369,6 +1407,13 @@ async function showProductCard(sku, name) {
   let filter = '';
   const qtyCell = h => { const m = MOVE_UI[h.kind] || ['', '', '']; const sign = m[2] === '±' ? (h.qty > 0 ? '+' : h.qty < 0 ? '−' : '') : m[2]; const tone = sign === '+' ? 'paid-text' : sign === '−' ? 'danger-text' : '';
     return `<b class="${tone}">${sign}${fmtNum(Math.abs(h.qty))}</b>${h.unit ? ' ' + esc(h.unit) : ''}`; };
+  // Lịch sử đầy đủ: trang đầu 20 dòng, "Xem thêm" nạp phát sinh cũ hơn (GET …/history?before=).
+  let loadingMore = false;
+  const more = async () => {
+    if (loadingMore || !d.nextCursor) return; loadingMore = true;
+    try { const n = await api('/products/' + encodeURIComponent(sku) + '/history?before=' + encodeURIComponent(d.nextCursor)); d.history.push(...n.history); d.nextCursor = n.nextCursor; render(); }
+    catch (ex) { toast(ex.message, 'err'); } finally { loadingMore = false; }
+  };
   const render = () => {
     const rows = d.history.filter(h => !filter || h.kind === filter);
     box.innerHTML = (d.sales ? `<div class="stats sh-stats">${[['Giá bán gần nhất', d.sales.last], ['Thấp nhất', d.sales.min], ['Cao nhất', d.sales.max], ['Trung bình', d.sales.avg]].map(([k, v]) => `<article class="stat"><small>${k}</small><strong>${money(v)}</strong></article>`).join('')}</div>` : '')
@@ -1379,6 +1424,7 @@ async function showProductCard(sku, name) {
         <td>${esc(h.partner) || '<span class="muted">—</span>'}${h.location ? `<small>${esc(h.location)}</small>` : ''}${h.note ? `<small>${esc(h.note)}</small>` : ''}</td>
         <td class="right">${qtyCell(h)}</td><td class="right num">${h.unitPrice === null || h.unitPrice === undefined ? '—' : money(h.unitPrice)}</td></tr>`).join('')}</tbody></table></div>
       <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Giao hàng: chuyến giao "Đã giao" (chưa phải bút toán xuất kho; xem Lịch sử nhập / xuất kho bên trên) · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
+    if (d.nextCursor) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost small'; b.textContent = 'Xem thêm phát sinh cũ'; b.addEventListener('click', more); box.append(b); }
     box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
   };
   const chipsBox = dlg.querySelector('[data-filter]');
@@ -3249,7 +3295,7 @@ async function loadReceivables() {
     $('#receivable-stats').innerHTML = [['Phải thu', d.totals.due, ''], ['Đã thu', d.totals.paid, ''], ['Còn lại', d.totals.balance, ''], ['Quá hạn', d.totals.overdue, d.totals.overdue > 0 ? 'danger-text' : '']]
       .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('')
       // Tuổi nợ quá hạn: 1–30 / 31–60 / trên 60 ngày.
-      + (d.totals.overdue > 0 ? `<article class="stat aging-stat"><small>Tuổi nợ quá hạn</small><span><b>1–30 ngày</b> ${money(a.d30)}</span><span><b>31–60 ngày</b> ${money(a.d60)}</span><span class="${a.over60 ? 'danger-text' : ''}"><b>Trên 60 ngày</b> ${money(a.over60)}</span></article>` : '');
+      + (d.totals.overdue > 0 ? `<article class="stat aging-stat"><small>Tuổi nợ quá hạn</small><span><b>1–30 ngày</b> ${money(a.d30)}</span><span><b>31–60 ngày</b> ${money(a.d60)}</span>` + (a.d90 === undefined ? `<span class="${a.over60 ? 'danger-text' : ''}"><b>Trên 60 ngày</b> ${money(a.over60)}</span>` : `<span class="${a.d90 ? 'danger-text' : ''}"><b>61–90 ngày</b> ${money(a.d90)}</span><span class="${a.over90 ? 'danger-text' : ''}"><b>Trên 90 ngày</b> ${money(a.over90)}</span>`) + '</article>' : '');
     state.receivables = d.receivables;
     fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
       <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}${r.ownerName ? ' · ' + esc(r.ownerName) : ''}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
@@ -3257,11 +3303,108 @@ async function loadReceivables() {
       <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : r.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td>
       <td>${r.deliveryStatus ? pill(DELIVERY_STATUS, r.deliveryStatus) : '<span class="muted">—</span>'}<small>${esc(r.deliveryCarrier || '')}</small></td>
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
-      <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) : '—'}</td></tr>`),
+      <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) + `<button type="button" class="btn ghost small remind-btn" data-remind="${esc(r.orderId)}">Nhắc nợ</button>` : '—'}</td></tr>`),
       status === 'paid' ? 'Chưa có đơn nào đã thu đủ.' : status === 'overdue' ? 'Không có công nợ quá hạn.' : 'Không còn công nợ phải thu. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
   } catch (e) { listError('receivables', e); }
 }
 for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).addEventListener('change', loadReceivables);
+/**
+ * ĐỐI CHIẾU SAO KÊ (bank-statement.js): tải file → tự ghép với công nợ → người dùng tick từng dòng → ghi thu (Chuyển khoản).
+ * Dòng ghép theo số đơn / HĐKT được chọn sẵn; dòng chỉ trùng số tiền là gợi ý, phải tự tick. Mã chống lặp theo giao dịch ngân hàng.
+ */
+$('#bank-statement-open').addEventListener('click', () => {
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const dlg = el('dialog', 'acct-quick bank-dialog'), box = el('div', 'bank-body'), head = el('div', 'bank-head');
+  const title = el('h2', '', 'Đối chiếu sao kê ngân hàng'), close = el('button', 'icon-btn', '×'); close.type = 'button'; close.setAttribute('aria-label', 'Đóng'); close.addEventListener('click', () => dlg.close());
+  head.append(title, close);
+  const intro = el('p', 'muted small', 'Xuất sao kê từ ngân hàng (hoặc điền theo file mẫu) rồi chọn file. Dòng có số đơn / HĐKT trong nội dung được chọn sẵn; dòng chỉ trùng số tiền là gợi ý, kiểm tra người chuyển rồi mới tick. Chỉ ghi thu khi bấm nút bên dưới.');
+  const sample = el('button', 'btn secondary', 'Tải file mẫu'); sample.type = 'button';
+  sample.addEventListener('click', () => downloadExcel('mau-sao-ke', [
+    { name: 'Sao kê', header: TEMPLATE_HEADER, rows: TEMPLATE_SAMPLE, widths: [16, 20, 48, 22, 28] },
+    { name: 'Hướng dẫn', header: ['Cột', 'Cách điền'], widths: [26, 90], rows: [
+      ['Ngày giao dịch', 'dd/mm/yyyy (vd. 28/10/2026). Ngày tiền vào tài khoản.'],
+      ['Số tiền ghi có (VND)', 'Chỉ tiền VÀO. Dòng tiền ra để trống cột này (hệ thống bỏ qua).'],
+      ['Nội dung chuyển khoản', 'Chép nguyên nội dung ngân hàng. Có số đơn (DH_...) hoặc số HĐKT thì tự ghép chắc chắn.'],
+      ['Mã giao dịch ngân hàng', 'Số tham chiếu / mã GD (FT...). Dùng để chống ghi trùng khi tải lại cùng file.'],
+      ['Tên người chuyển', 'Không bắt buộc – giúp kiểm tra dòng gợi ý theo số tiền.'],
+      ['Ghi chú', 'Có thể dùng thẳng file Excel ngân hàng xuất nếu có các cột Ngày / Ghi có / Diễn giải (Mô tả) / Số tham chiếu.'],
+    ] }]).catch(e => toast(e.message, 'err')));
+  const file = el('input'); file.type = 'file'; file.accept = '.xlsx,.xls,.csv'; file.setAttribute('aria-label', 'Chọn file sao kê');
+  const tools = el('div', 'bank-tools'); tools.append(sample, file);
+  const status = el('p', 'muted small'), wrap = el('div', 'table-wrap'), foot = el('div', 'acct-quick-foot'), save = el('button', 'btn primary', 'Ghi thu các dòng đã chọn'); save.type = 'button'; save.disabled = true;
+  foot.append(save); box.append(head, intro, tools, status, wrap, foot); dlg.append(box);
+  let items = [];
+  const money0 = n => Number(n).toLocaleString('vi-VN') + ' đ';
+  function render() {
+    const table = el('table', 'data-table bank-table'), thead = el('thead'), hr = el('tr'), body = el('tbody');
+    for (const h of ['', 'Ngày', 'Số tiền', 'Nội dung chuyển khoản', 'Ghép với', 'Ghi chú']) hr.append(el('th', h === 'Số tiền' ? 'right' : '', h));
+    thead.append(hr); table.append(thead, body);
+    for (const it of items) {
+      const tr = el('tr', 'bank-' + (it.result ? (it.result.ok ? 'done' : 'error') : it.kind)), pick = el('td'), cb = el('input');
+      cb.type = 'checkbox'; cb.checked = it.selected; cb.disabled = !it.selectable || !!it.result?.ok; cb.setAttribute('aria-label', 'Chọn dòng ' + it.row.line);
+      cb.addEventListener('change', () => { it.selected = cb.checked; sync(); }); pick.append(cb);
+      const doc = el('td'); if (it.match) { doc.append(el('b', '', it.match.contractNo || it.match.orderNo), el('small', '', ' · ' + it.match.customerName + ' · còn nợ ' + money0(it.match.balance))); } else doc.textContent = '—';
+      const content = el('td', '', it.row.content); if (it.row.payer) content.append(el('small', 'muted', ' · ' + it.row.payer));
+      tr.append(pick, el('td', '', fmtDate(it.row.date)), el('td', 'right num', money0(it.row.amount)), content, doc, el('td', it.result && !it.result.ok ? 'danger-text' : 'muted', it.result ? it.result.text : it.note));
+      for (const [td, label] of [[tr.children[1], 'Ngày'], [tr.children[2], 'Số tiền'], [tr.children[3], 'Nội dung'], [tr.children[4], 'Ghép với'], [tr.children[5], 'Ghi chú']]) td.dataset.label = label;
+      body.append(tr);
+    }
+    wrap.replaceChildren(table); sync();
+  }
+  function sync() {
+    const chosen = items.filter(i => i.selected && i.selectable && !i.result?.ok);
+    save.disabled = !chosen.length; save.textContent = chosen.length ? `Ghi thu ${chosen.length} dòng đã chọn (${money0(chosen.reduce((s, i) => s + i.row.amount, 0))})` : 'Ghi thu các dòng đã chọn';
+  }
+  file.addEventListener('change', async () => {
+    const f = file.files?.[0]; if (!f) return; status.textContent = 'Đang đọc file và công nợ…'; wrap.replaceChildren(); items = [];
+    try {
+      const [rows, d] = await Promise.all([readSheet(f).then(parseStatement), api('/receivables')]);
+      items = matchStatement(rows, d.receivables);
+      const n = k => items.filter(i => i.kind === k && i.selectable).length;
+      status.textContent = `${rows.length} dòng tiền vào · ${n('doc')} ghép theo số chứng từ · ${n('amount')} gợi ý theo số tiền · ${items.filter(i => !i.selectable).length} cần xử lý tay.`;
+      render();
+    } catch (e) { status.textContent = ''; toast(e.message, 'err'); }
+  });
+  save.addEventListener('click', async () => {
+    if (save.dataset.running) return; save.dataset.running = '1'; save.disabled = true;
+    let ok = 0;
+    try {
+      for (const it of items.filter(i => i.selected && i.selectable && !i.result?.ok)) {
+        try {
+          await api('/payments', 'POST', { key: await bankKey(it.row, it.match.orderId), orderId: it.match.orderId, amount: it.row.amount, paidAt: it.row.date, method: 'transfer', reference: bankReference(it.row) });
+          it.result = { ok: true, text: 'Đã ghi thu' }; ok++;
+        } catch (e) { it.result = { ok: false, text: e.message }; }
+        render();
+      }
+    } finally { delete save.dataset.running; sync(); }
+    if (ok) { toast(`Đã ghi ${ok} khoản thu từ sao kê.`); loadReceivables(); }
+  });
+  dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal();
+});
+/** Nội dung nhắc nợ soạn sẵn từ dòng công nợ (người dùng tự gửi – không tự động gửi cho khách). */
+function debtReminderText(r) {
+  const doc = r.contractNo || r.orderNo, late = r.aging?.oldestDue ? `đã quá hạn ${r.aging.overdueDays} ngày (hạn ${fmtDate(r.aging.oldestDue)})` : 'đã đến hạn';
+  return `Kính gửi ${r.customerName},\nKhoản thanh toán của ${r.contractNo ? 'hợp đồng' : 'đơn hàng'} ${doc} ${late}.\n`
+    + `Số tiền quá hạn: ${money(r.overdue)}. Tổng còn phải thanh toán: ${money(r.balance)}.\n`
+    + 'Quý khách vui lòng thanh toán hoặc phản hồi giúp nếu đã chuyển khoản. Xin cảm ơn!';
+}
+$('#receivables-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-remind]'); if (!b) return;
+  const r = state.receivables?.find(x => x.orderId === b.dataset.remind); if (!r) return;
+  const dlg = document.createElement('dialog'); dlg.className = 'acct-quick';
+  const form = document.createElement('form'), title = document.createElement('h2'), text = document.createElement('textarea'), foot = document.createElement('div'), hint = document.createElement('p');
+  form.method = 'dialog'; title.textContent = 'Nhắc nợ · ' + r.customerName; text.value = debtReminderText(r); text.rows = 7; text.setAttribute('aria-label', 'Nội dung nhắc nợ');
+  hint.className = 'muted small'; hint.textContent = 'Sửa nội dung nếu cần rồi chép gửi qua Zalo / email. Hệ thống không tự gửi cho khách.';
+  foot.className = 'acct-quick-foot';
+  const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'btn primary'; copy.textContent = 'Chép nội dung';
+  copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(text.value); toast('Đã chép nội dung nhắc nợ.'); } catch { text.select(); toast('Trình duyệt chặn chép tự động – bấm giữ để chép.', 'err'); } });
+  const close = document.createElement('button'); close.type = 'submit'; close.className = 'btn secondary'; close.textContent = 'Đóng';
+  foot.append(close);
+  const phone = String(r.phone || '').replace(/\D/g, '');
+  if (phone.length >= 9) { const zalo = document.createElement('a'); zalo.className = 'btn secondary'; zalo.href = 'https://zalo.me/' + phone; zalo.target = '_blank'; zalo.rel = 'noopener'; zalo.textContent = 'Mở Zalo ' + phone; foot.append(zalo); }
+  foot.append(copy); form.append(title, hint, text, foot); dlg.append(form);
+  dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal(); text.focus();
+});
 $('#receivables-clear').addEventListener('click', () => { for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).value = ''; $('#receivables-search').value = ''; loadReceivables(); });
 /** Số trên nút "Chờ xuất hoá đơn" (ẩn khi 0). */
 function invoiceCount(key, n) { const c = $(`#${key}-filters [data-invoice-count]`); if (c) c.textContent = n ? String(n) : ''; }
@@ -3485,7 +3628,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
+function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId, sendOnce }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 var approvalFeed = null;
@@ -4519,6 +4662,8 @@ $('#order-new-delivery').addEventListener('click', () => {
   const pending = id => d.deliveries.filter(x => ['planned', 'in_transit'].includes(x.status)).flatMap(x => x.lines).filter(l => l.orderLineId === id).reduce((s, l) => s + l.qty, 0);
   $('#delivery-lines').innerHTML = d.lines.map(l => { const left = Math.max(0, l.qty - l.deliveredQty - pending(l.id)); return `<tr><td>${esc(l.name)}<small>${esc(l.unit)}</small></td><td class="right">${fmtNum(left)}</td>
     <td class="right"><input class="num-input" inputmode="decimal" data-line="${esc(l.id)}" value="${left ? fmtNum(left) : ''}" ${left ? '' : 'disabled'} aria-label="Số lượng giao ${esc(l.name)}"></td></tr>`; }).join('');
+  // Mỗi lần mở form một mã chống gửi lặp: bấm lại / mạng gửi lại cùng nội dung trả chuyến đã tạo, không tạo trùng.
+  $('#delivery-form').dataset.clientKey = crypto.randomUUID();
   $('#delivery-dialog').showModal();
 });
 $('#delivery-form').addEventListener('submit', async e => {
@@ -4527,12 +4672,12 @@ $('#delivery-form').addEventListener('submit', async e => {
   if (!lines.length) { err.textContent = 'Nhập số lượng giao cho ít nhất một sản phẩm.'; return; }
   try {
     await api('/deliveries', 'POST', { orderId: sales.order.id, plannedDate: f.plannedDate.value, timeSlot: f.timeSlot.value, receiverName: f.receiverName.value, receiverPhone: f.receiverPhone.value,
-      address: f.address.value, carrier: f.carrier.value, shippingFee: parseNum(f.shippingFee.value) || 0, note: f.note.value, lines });
+      address: f.address.value, carrier: f.carrier.value, shippingFee: parseNum(f.shippingFee.value) || 0, note: f.note.value, lines, clientKey: f.dataset.clientKey });
     $('#delivery-dialog').close(); toast('Đã lên lịch giao.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; }
 });
 $('#order-new-payment').addEventListener('click', () => {
-  const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); f.dataset.requestKey=crypto.randomUUID(); $('#payment-pos-confirm').hidden=sales.order.channel!=='pos'; f.confirmed.required=sales.order.channel==='pos'; f.method.querySelector('option[value=other]').disabled=sales.order.channel==='pos'; $('#payment-error').textContent = '';
+  const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); $('#payment-pos-confirm').hidden=sales.order.channel!=='pos'; f.confirmed.required=sales.order.channel==='pos'; f.method.querySelector('option[value=other]').disabled=sales.order.channel==='pos'; $('#payment-error').textContent = '';
   $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
   $('#payment-dialog').showModal();
 });
@@ -4541,7 +4686,9 @@ $('#payment-form').addEventListener('submit', async e => {
   if (btn?.disabled) return;
   if (btn) btn.disabled = true; // chống bấm hai lần ghi trùng phiếu thu
   try {
-    await api('/payments', 'POST', { key:f.dataset.requestKey, confirmed:f.confirmed.checked, orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value });
+    // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, đóng hộp mở lại nhập y hệt → không ghi thu lần hai.
+    const content = { orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value };
+    await sendOnce('payment', content, key => api('/payments', 'POST', { key, confirmed:f.confirmed.checked, ...content }));
     $('#payment-dialog').close(); toast('Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; } finally { if (btn) btn.disabled = false; }
 });

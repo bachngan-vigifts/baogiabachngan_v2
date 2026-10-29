@@ -8,6 +8,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positionPermissions } from '../../staff/schema.ts';
+import { sha256Hex } from '../../staff/domain/session.ts';
 import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
@@ -202,6 +203,18 @@ const statusPatch = (status: TaskStatus, by: string, t?: Task) => ({
   ...(status === 'done' ? { completedAt: nowIso(), completedBy: by } : { completedAt: null, completedBy: null }),
 });
 
+/** Mọi trường gửi lên đã trùng với việc hiện tại (dùng khi gửi lại sau mất phản hồi). */
+function alreadyApplied(b: Record<string, unknown>, t: typeof tasks.$inferSelect): boolean {
+  const same = (k: 'status' | 'priority' | 'dueDate' | 'dueTime' | 'title' | 'description' | 'link' | 'assigneeId') => b[k] === undefined || (b[k] || null) === (t[k] || null);
+  return (['status', 'priority', 'dueDate', 'dueTime', 'title', 'description', 'link', 'assigneeId'] as const).every(same);
+}
+
+/** Id việc theo người tạo + mã chống lặp (dạng UUID để giống id thường). */
+function keyedTaskId(memberId: string, clientKey: string): string {
+  const h = sha256Hex('task:' + memberId + ':' + clientKey);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
 export function registerTaskRoutes(router: Router<StaffEnv>) {
   // Server-only cron endpoint: existing integrations token guard, never a staff cookie or public client key.
   router.post('/integrations/tasks/receiving-reminders', async c => {
@@ -286,9 +299,17 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const { assigneeId, assigneePosition } = b.assigneeId === undefined ? { assigneeId: m.id, assigneePosition: null } : parseAssignee(b.assigneeId);
     if (!assigneeId && !assigneePosition && m.role !== 'manager') throw new AppError(400, 'Chọn người hoặc nhóm nhận việc.');
     await assertAssignee(c, assigneeId);
-    const id = crypto.randomUUID(), now = nowIso();
-    await c.env.db.insert(tasks).values({ id, title: f.title, description: f.description ?? '', priority: f.priority ?? 'normal', status: 'todo', source: 'manual', link: f.link ?? '',
-      assigneeId, assigneePosition, createdBy: m.id, dueDate: f.dueDate ?? null, dueTime: f.dueTime ?? null, createdAt: now, updatedAt: now });
+    // Mã chống lặp (tuỳ chọn): id việc suy ra từ người tạo + mã → mạng rớt sau khi đã lưu, gửi lại không sinh việc thứ hai.
+    // Không cần cột mới: khoá chính đã bảo đảm duy nhất (cả khi hai lần gửi chạy đồng thời).
+    const clientKey = typeof b.clientKey === 'string' && /^[\w-]{8,100}$/.test(b.clientKey) ? b.clientKey : null;
+    const id = clientKey ? keyedTaskId(m.id, clientKey) : crypto.randomUUID(), now = nowIso();
+    const inserted = await c.env.db.insert(tasks).values({ id, title: f.title, description: f.description ?? '', priority: f.priority ?? 'normal', status: 'todo', source: 'manual', link: f.link ?? '',
+      assigneeId, assigneePosition, createdBy: m.id, dueDate: f.dueDate ?? null, dueTime: f.dueTime ?? null, createdAt: now, updatedAt: now }).onConflictDoNothing().returning({ id: tasks.id });
+    if (!inserted.length) {
+      const [prior] = await c.env.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+      if (!prior || prior.createdBy !== m.id || prior.title !== f.title) throw new AppError(409, 'Mã chống lặp đã dùng cho việc khác. Tải lại trang rồi thử lại.', 'IDEMPOTENCY_CONFLICT');
+      return json({ id, replayed: true });
+    }
     if (assigneeId && assigneeId !== m.id) await notify(c.env, { eventType: 'task_assigned', title: 'Bạn được giao việc mới', body: `${m.name}: ${f.title}`, url: `/index.html#/tasks/${id}`,
       targetMemberId: assigneeId, actorId: m.id, data: { taskId: id } });
     if (assigneePosition) await notifyTeam(c.env, assigneePosition, { eventType: 'task_assigned', title: `Việc mới cho nhóm ${teamName(assigneePosition)}`, body: `${m.name}: ${f.title}`, url: `/index.html#/tasks/${id}`, actorId: m.id, data: { taskId: id } });
@@ -301,7 +322,11 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
    */
   router.put('/tasks/:id', async c => {
     const m = me(c), b = await readJson(c.req, 20_000), t = await loadOwnTask(c, c.params.id!, 'Việc của đồng nghiệp cùng chức vụ – chỉ xem, không sửa được.');
-    if (b.revision !== undefined && Number(b.revision) !== t.revision) throw new AppError(409, 'Công việc vừa được người khác cập nhật. Tải lại để xem bản mới.', 'REVISION_CONFLICT');
+    if (b.revision !== undefined && Number(b.revision) !== t.revision) {
+      // Gửi lại sau khi mạng rớt (lần trước đã lưu nên phiên bản đã tăng): việc đã đúng như yêu cầu → báo thành công, không báo nhầm "người khác cập nhật".
+      if (alreadyApplied(b, t)) return json({ ok: true, alreadyApplied: true });
+      throw new AppError(409, 'Công việc vừa được người khác cập nhật. Tải lại để xem bản mới.', 'REVISION_CONFLICT');
+    }
     // Người trong nhóm được giao (chưa ai nhận) làm như người nhận: bấm "Nhận việc" hoặc đổi trạng thái là nhận luôn.
     const manage = canManage(c, t), isAssignee = t.assigneeId === m.id || inMyTeam(c, t), f = readFields(b);
     if (t.autoKey) { delete f.title; delete f.description; delete f.link; }

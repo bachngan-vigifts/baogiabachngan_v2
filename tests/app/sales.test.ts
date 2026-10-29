@@ -166,7 +166,7 @@ test('huỷ đơn chưa giao/chưa thu được; huỷ rồi tạo lại đơn t
   assert.equal((await call('/orders', emp, 'POST', { quoteId: quote.data.id })).status, 201);
 });
 
-test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sapo; giữ 20 giao dịch gần nhất mỗi mã; huỷ đơn thì bỏ', async () => {
+test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sapo; lịch sử nhanh 20 dòng, xem thêm đủ phát sinh cũ; huỷ đơn thì bỏ', async () => {
   const { db, call, emp, mgr } = await setup();
   await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: '', phone: '', email: '', address: '1 Lê Lợi', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' });
   const order = async (i: number) => {
@@ -205,17 +205,29 @@ test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sa
   // Trả đủ đơn đã giao trước khi tạo thêm đơn cho cùng khách (không còn nợ quá hạn).
   const firstTotal = (await call(`/orders/${first}`, mgr)).data.order.total;
   assert.equal((await call('/payments', mgr, 'POST', {orderId:first,amount:firstTotal,method:'transfer'})).status,201);
-  // Nhiều đơn: chỉ giữ 20 giao dịch gần nhất; đơn huỷ bị bỏ khỏi lịch sử.
+  // Nhiều đơn: lịch sử nhanh 20 dòng mới nhất, KHÔNG xoá phát sinh cũ – "Xem thêm" (before=) ra đủ; đơn huỷ bị bỏ khỏi lịch sử.
   const ids: string[] = [];
   for (let i = 2; i <= 20; i++) ids.push(await order(i));
   h = (await call('/products/ML-TRA/history', emp)).data;
   assert.equal(h.history.length, 20);
   assert.equal(h.history[0].unitPrice, 120000, 'mới nhất đứng đầu');
-  assert.equal(h.history.some((x: any) => x.kind === 'purchase'), false, 'giao dịch cũ nhất bị bỏ');
+  assert.equal(h.history.some((x: any) => x.kind === 'purchase'), false, 'trang đầu chỉ 20 dòng mới nhất');
+  assert.ok(h.nextCursor, 'còn phát sinh cũ hơn');
+  const older = (await call('/products/ML-TRA/history?before=' + encodeURIComponent(h.nextCursor), emp)).data;
+  assert.equal(older.history.some((x: any) => x.kind === 'purchase'), true, 'phát sinh cũ vẫn còn, xem được');
+  assert.equal(older.sales, null, 'thống kê giá chỉ ở trang đầu');
+  let all = [...h.history], cursor = h.nextCursor;
+  while (cursor) { const page = (await call('/products/ML-TRA/history?before=' + encodeURIComponent(cursor), emp)).data; all.push(...page.history); cursor = page.nextCursor; }
+  assert.equal(new Set(all.map((x: any) => x.kind + x.refCode + x.occurredAt)).size, all.length, 'không trùng dòng giữa các trang');
+  assert.ok(all.length > 20);
+  assert.equal((await call('/products/ML-TRA/history?before=khong-hop-le', emp)).status, 400);
   assert.equal((await call('/products/' + encodeURIComponent('Không mã') + '/history', emp)).data.history.length, 0);
   assert.equal((await call('/orders/' + ids.at(-1) + '/status', mgr, 'PUT', { status: 'cancelled' })).status, 200);
   h = (await call('/products/ML-TRA/history', emp)).data;
-  assert.deepEqual([h.history.length, h.history[0].unitPrice], [19, 119000]);
+  assert.deepEqual([h.history.length, h.history[0].unitPrice], [20, 119000]);
+  all = [...h.history]; cursor = h.nextCursor;
+  while (cursor) { const page = (await call('/products/ML-TRA/history?before=' + encodeURIComponent(cursor), emp)).data; all.push(...page.history); cursor = page.nextCursor; }
+  assert.equal(all.filter((x: any) => x.unitPrice === 120000).length, 0, 'đơn huỷ bỏ khỏi toàn bộ lịch sử');
 });
 
 test('xuất hoá đơn: giao xong tự yêu cầu / nhân viên bấm yêu cầu → việc cho nhóm Kế toán; kế toán nhập số hoá đơn thì việc xong', async () => {
