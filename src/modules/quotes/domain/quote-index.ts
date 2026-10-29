@@ -3,6 +3,8 @@
  * `data` (JSON) vẫn là bản chụp đầy đủ của tài liệu; các cột này chỉ phục vụ lọc/tìm/báo cáo và LUÔN được ghi cùng
  * lúc với `data` (cùng một lô D1) nên không bao giờ lệch. Hàm thuần.
  */
+import { quoteStockSku } from './quote-math.ts';
+
 type Obj = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** Bỏ dấu, đ→d, hạ chữ – cách bản cũ chuẩn hoá để tìm kiếm (không phân biệt dấu/hoa thường). */
@@ -32,7 +34,7 @@ export interface QuoteLineRow {
 /** Dòng hàng chuẩn hoá cho bảng `quote_lines` (đánh số từ 1 theo thứ tự trên báo giá). Mọi trường liên quan đến tiền đều được giữ. */
 export function quoteLineRows(quoteId: string, data: Obj): QuoteLineRow[] {
   return (data.rows as Obj[]).map((r, i) => ({
-    id: r.id, quoteId, lineNo: i + 1, sku: r.sku ?? '', name: r.name ?? '', brand: r.brand ?? '', unit: r.unit ?? '',
+    id: r.id, quoteId, lineNo: i + 1, sku: quoteStockSku(r), name: r.name ?? '', brand: r.brand ?? '', unit: r.unit ?? '',
     qty: r.qty ?? 0, price: r.price ?? 0, discount: r.discount ?? 0, discountType: r.discountType === 'amount' ? 'amount' : 'percent',
     taxRate: typeof r.taxRate === 'number' ? r.taxRate : null, printFee: r.printFee ?? 0, costPrice: r.costPrice ?? 0,
     deliveryDate: r.deliveryDate || r.delivery_date || null,

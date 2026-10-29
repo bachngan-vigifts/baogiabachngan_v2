@@ -504,3 +504,28 @@ test('thiếu tồn không cản duyệt nhưng chặn xác nhận xuất và ro
   const [slip]=await s.db.select().from(packingSlips).where(eq(packingSlips.id,'short-issue'));assert.equal(slip!.status,'sent');
   const {packingSlipPhotos}=await import('../../src/modules/sales/schema.ts');assert.equal((await s.db.select().from(packingSlipPhotos).where(eq(packingSlipPhotos.slipId,'short-issue'))).length,0);
 });
+
+test('phụ phí nhập tay giữ nguyên tiền, bỏ kiểm tồn và kế hoạch xuất khi sinh đơn/HĐKT', async () => {
+  const s=await setup();
+  for (const contract of [false,true]) {
+    const q=await s.call('/quotes',s.emp,'POST',{type:'B2B',quoteNo:'FEE_'+contract,customer:'Khách phụ phí',customerTaxCode:'0312345678',vat:8,rows:[
+      {sku:'LY1',name:'Ly sứ',unit:'cái',qty:10,price:1000},
+      {manualLine:true,sku:'LY1',name:'Thiệp cảm ơn',qty:50,price:12000},
+      {manualLine:true,name:'Phí thiết kế',qty:1,price:200000},
+    ]});
+    assert.equal(q.status,201,JSON.stringify(q.data));
+    assert.equal((await s.call(`/quotes/${q.data.id}/approve`,s.mgr,'POST',{revision:1})).status,200);
+    const needs=await s.call(`/quotes/${q.data.id}/stock-plan`,s.emp);
+    assert.deepEqual(needs.data.lines.map((l:any)=>[l.sku,l.qty]),[['LY1',10]],'phụ phí có SKU cũ cũng không tăng nhu cầu kho');
+    const fields={quoteId:q.data.id,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:10,type:'stock',note:'KHO VIGIFTS'}]};
+    const created=await s.call(contract?'/contracts':'/orders',s.emp,'POST',contract?{...fields,legalEntity:'BN',customerCode:'FEE',depositRate:30}:fields);
+    assert.equal(created.status,201,JSON.stringify(created.data));
+    const orderId=contract?created.data.orderId:created.data.id;
+    const detail=await s.call(`/orders/${orderId}`,s.emp);
+    assert.equal(detail.data.order.subtotal,810000);assert.equal(detail.data.order.total,874800);
+    assert.deepEqual(detail.data.lines.map((l:any)=>l.sku),['LY1','','']);
+    const slips=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,orderId));
+    assert.equal(slips.length,1);assert.equal(slips[0]!.totalQty,10);
+    assert.equal(await bal(s,'vig'),50,'sinh chứng từ không tự ghi kho');
+  }
+});
