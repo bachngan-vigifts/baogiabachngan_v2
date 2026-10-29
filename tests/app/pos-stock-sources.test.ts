@@ -165,3 +165,19 @@ test('CRM giữ hàng: packing + POS xuất từng phần, đã giao không bị
  assert.equal(await qty(),2,'three issued including two delivered: only two still need stock');
  const p=(await f.call(`/pos/catalog?registerId=${f.registerId}&q=00123`,f.emp)).data.products[0];assert.deepEqual([p.onHand,p.reserved,p.available],[7,2,5],'no extra POS-side subtraction of packing');
 });
+
+test('POS preloads safe scan codes and lightweight exact scans retain live availability',async()=>{
+ const f=await setup(),now=new Date().toISOString();
+ const {products,productBarcodes}=await import('../../src/modules/catalog/schema.ts');
+ await f.db.insert(productBarcodes).values([{sku:'00123',barcode:'893000123'},{sku:'00123',barcode:'CONFLICT'}]);
+ await f.db.insert(products).values({sku:'CONFLICT',name:'Another SKU',unit:'cái',updatedAt:now});
+ const path=`/pos/catalog?registerId=${f.registerId}`;
+ const page=await f.call(path,f.emp);assert.equal(page.status,200,JSON.stringify(page.data));
+ const p=page.data.products.find((p:any)=>p.sku==='00123');assert.ok(p.scanCodes.includes('00123'));assert.ok(p.scanCodes.includes('893000123'));assert.ok(!p.scanCodes.includes('CONFLICT'));assert.ok(p.stockSources);
+ const scan=await f.call(path+'&q=893000123&scan=1',f.emp);assert.equal(scan.status,200,JSON.stringify(scan.data));assert.equal(scan.data.exactSku,'00123');
+ assert.deepEqual([scan.data.products[0].price,scan.data.products[0].onHand,scan.data.products[0].reserved,scan.data.products[0].available],[p.price,p.onHand,p.reserved,p.available]);assert.equal(scan.data.products[0].stockSources,undefined);
+ const blocked=await f.call(path+'&q=CONFLICT&scan=1',f.emp);assert.equal(blocked.status,409,'cached scan must never bypass SKU/barcode conflicts');
+ await f.db.insert(products).values({sku:'OTHER',name:'Other',unit:'cái',updatedAt:now});
+ await f.db.insert(productBarcodes).values({sku:'OTHER',barcode:'00123'});
+ const refreshed=await f.call(path,f.emp);assert.equal(refreshed.status,200);assert.ok(!refreshed.data.products.find((p:any)=>p.sku==='00123').scanCodes.includes('00123'),'SKU itself is unsafe when it is another product barcode');
+});

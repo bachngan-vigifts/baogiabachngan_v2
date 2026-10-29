@@ -1129,3 +1129,52 @@ test('POS typing previews hide the other store brand before live hydration compl
   release({products:products.filter(p=>p.sku===expected).map(p=>({...p,available:4})),nextOffset:null});await new Promise(r=>setTimeout(r,20));
  }}finally{Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
+
+// Deferred API replies exercise scanner races without a production session.
+async function scanFixture(catalog: (path: string) => any) {
+ const root=new Element('section'),calls:any[]=[],toasts:string[]=[];
+ const api=async(path:string,method='GET',body?:any)=>{calls.push({path,method,body});
+  if(path.startsWith('/pos/options'))return {registers:[{id:'r',name:'Quầy 1',pricePolicyId:'vat',secondPricePolicyId:'retail'}],current:{id:'s',registerId:'r',memberId:'emp'},shifts:[],templates:[],policies:[]};
+  if(path.startsWith('/pos/catalog'))return catalog(path);
+  if(path==='/pos/preview')return {...sample,lines:[{...sample.lines[0],sku:'001'}]};
+  throw Error(path);
+ };
+ const ui=initPos({api,root,toast:(s:string)=>toasts.push(s),user:()=>({id:'emp',name:'NV',perms:['pos.sell']}),confirmBox:async()=>true,go(){}});await ui.load();
+ const input=root.querySelectorAll('input').find(i=>i.attributes['aria-label']==='Tìm hoặc quét sản phẩm')!;
+ const scanButton=root.querySelectorAll('button').find(b=>b.textContent==='Quét mã')!;
+ const status=root.querySelectorAll('p').find(p=>p.className==='pos-scan-status')!;
+ return {root,calls,toasts,input,scanButton,status};
+}
+const scanProduct={sku:'001',name:'Ly',unit:'cái',price:108000,available:10,scanCodes:['001','8930001']};
+test('POS cached scan adds immediately, allows a deliberate repeat, and does not reload the catalog',async()=>{
+ const prevDoc=globalThis.document,prevWin=globalThis.window;Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+ try{
+  const f=await scanFixture(()=>({products:[scanProduct],nextOffset:null}));const before=f.calls.filter(c=>c.path.startsWith('/pos/catalog')).length;
+  f.input.value='8930001';await f.input.fire('keydown',{key:'Enter'});
+  assert.equal(f.input.value,'');assert.match(f.root.textContent,/1 món/);await new Promise(r=>setTimeout(r,0));assert.match(f.status.textContent,/Đã thêm 001/);
+  f.input.value='8930001';await f.input.fire('keydown',{key:'Enter'});await new Promise(r=>setTimeout(r,230));
+  assert.equal(f.calls.filter(c=>c.path.startsWith('/pos/catalog')).length,before,'preloaded price/availability avoids a scan request and full catalog reload');
+  assert.equal(f.calls.filter(c=>c.path==='/pos/preview').at(-1).body.rows[0].qty,2);
+  assert.equal(f.scanButton.disabled,false);assert.equal(f.input.attributes['aria-busy'],'false');
+ }finally{Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});
+test('POS pending scan shows progress, ignores the same code until done, and unlocks after errors',async()=>{
+ const prevDoc=globalThis.document,prevWin=globalThis.window;Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+ try{
+  let resolve:any,reject:any;
+  const f=await scanFixture(path=>new URLSearchParams(path.split('?')[1]).get('q')?new Promise((a,b)=>{resolve=a;reject=b;}):{products:[],nextOffset:null});
+  f.input.value='8930001';await f.input.fire('keydown',{key:'Enter'});assert.match(f.status.textContent,/Đang xử lý mã 8930001/);assert.equal(f.scanButton.disabled,true);assert.equal(f.input.attributes['aria-busy'],'true');
+  f.input.value='8930001';await f.input.fire('keydown',{key:'Enter'});assert.equal(f.calls.filter(c=>c.path.includes('q=8930001')).length,1);
+  resolve({products:[scanProduct],exactSku:'001',nextOffset:null});await new Promise(r=>setTimeout(r,230));assert.equal(f.calls.filter(c=>c.path==='/pos/preview').at(-1).body.rows[0].qty,1);assert.equal(f.scanButton.disabled,false);
+  f.input.value='ERROR';await f.input.fire('keydown',{key:'Enter'});reject(Error('Mất kết nối'));await new Promise(r=>setTimeout(r,0));assert.equal(f.scanButton.disabled,false);assert.equal(f.input.attributes['aria-busy'],'false');assert.equal(f.input.value,'ERROR');assert.equal(f.toasts.at(-1),'Mất kết nối');
+ }finally{Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});
+test('POS stale scan snapshots require a new exact lookup; fresh zero stock is never added',async()=>{
+ const prevDoc=globalThis.document,prevWin=globalThis.window,originalNow=Date.now;Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+ try{
+  let now=originalNow();Date.now=()=>now;
+  const f=await scanFixture(path=>{const q=new URLSearchParams(path.split('?')[1]).get('q');return {products:[{...scanProduct,available:q?0:10}],exactSku:q?'001':null,nextOffset:null};});
+  now+=15001;f.input.value='8930001';await f.input.fire('keydown',{key:'Enter'});await new Promise(r=>setTimeout(r,0));
+  assert.ok(f.calls.some(c=>c.path.includes('q=8930001')&&c.path.includes('scan=1')));assert.match(f.toasts.at(-1)!,/hết hàng/);assert.ok(!f.calls.some(c=>c.path==='/pos/preview'));assert.equal(f.input.value,'8930001');
+ }finally{Date.now=originalNow;Object.assign(globalThis,{document:prevDoc,window:prevWin});}
+});

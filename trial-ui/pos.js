@@ -102,6 +102,38 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     lineTotals = new Map();
   const catalogMedia = window.matchMedia?.('(max-width: 850px)');
   const mobileCatalog = () => catalogMedia?.matches === true;
+  const pendingScans = new Map();
+  let cameraOpen = false, lastScanMessage = '';
+  function updateScanStatus() {
+    const busy = pendingScans.size > 0;
+    if (nodes.scanStatus) {
+      nodes.scanStatus.textContent = busy ? pendingScans.size === 1 ? `Đang xử lý mã ${pendingScans.values().next().value}…` : `Đang xử lý ${pendingScans.size} mã…` : lastScanMessage;
+      nodes.scanStatus.hidden = !busy && !lastScanMessage;
+    }
+    nodes.search?.setAttribute('aria-busy', String(busy));
+    if (nodes.scanButton) { nodes.scanButton.disabled = busy || cameraOpen; nodes.scanButton.textContent = busy ? 'Đang xử lý…' : 'Quét mã'; }
+  }
+  async function submitScan() {
+    const code = nodes.search?.value.trim();
+    if (!code || !st.register || !active() || st.pending || st.busy) {
+      if (code && !active()) toast('Mở ca trước khi thêm hàng.', 'err');
+      return;
+    }
+    const id = st.register.id + '|' + st.policy + '|' + code;
+    clearTimeout(searchTimer);
+    if (pendingScans.has(id)) {
+      nodes.search.value = ''; ++searchInputVersion; updateScanStatus();
+      return; // Same code is already being added; a deliberate rescan works once it finishes.
+    }
+    pendingScans.set(id, code); updateScanStatus();
+    try {
+      const sku = await search(true);
+      lastScanMessage = sku ? `Đã thêm ${sku}. Sẵn sàng quét mã tiếp theo.` : `Chưa thêm mã ${code}. Kiểm tra thông báo và thử lại.`;
+    } catch (e) {
+      lastScanMessage = `Chưa thêm mã ${code}. Thử quét lại.`;
+      throw e;
+    } finally { pendingScans.delete(id); updateScanStatus(); }
+  }
   const run = async (fn) => {
     try {
       return await fn();
@@ -372,13 +404,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        run(() => search(true));
+        run(submitScan);
       }
     });
-    searchBox.append(
-      input,
-      button('Quét mã', 'btn secondary', () => run(scan)),
-    );
+    nodes.scanButton = button('Quét mã', 'btn secondary', () => run(scan));
+    nodes.scanStatus = el('p', 'pos-scan-status');
+    nodes.scanStatus.setAttribute('role', 'status');
+    nodes.scanStatus.setAttribute('aria-live', 'polite');
+    searchBox.append(input, nodes.scanButton);
+    updateScanStatus();
     const policies = st.options.policies || [];
     const price = select(
       [
@@ -414,7 +448,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     });
     filterToggle.setAttribute('aria-expanded', 'false');
     const controls = el('div', 'pos-catalog-controls');
-    controls.append(searchBox, catalogTools, filterToggle, filters);
+    controls.append(searchBox, catalogTools, nodes.scanStatus, filterToggle, filters);
     left.append(controls);
     const grid = el('div', 'pos-grid');
     nodes.grid = grid;
@@ -1104,9 +1138,25 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       toast(e.message, 'err');
     }
   }
-  /** Tồn / giá máy chủ của từng mã vừa xem (chỉ dùng khi đang gõ tìm, giữ 15 giây): gõ thêm / xoá chữ không phải hỏi lại. */
-  const liveCache = new Map(), LIVE_MS = 15000;
+  /** Short-lived, register/price-policy scoped snapshots; never used as checkout authority. */
+  const liveCache = new Map(), scanLookup = new Map(), LIVE_MS = 15000;
+  let readyCatalog = null;
   const cachedLive = (sku, registerId, policyId) => { const hit = liveCache.get(registerId + '|' + policyId + '|' + sku); return hit && Date.now() - hit.at < LIVE_MS ? hit.p : null; };
+  const cacheProducts = (products, registerId, policyId) => {
+    const at = Date.now(), prefix = registerId + '|' + policyId + '|';
+    for (const p of products) {
+      liveCache.set(prefix + p.sku, { p, at });
+      for (const code of p.scanCodes || []) scanLookup.set(prefix + code, p.sku);
+    }
+  };
+  function restoreReadyCatalog(registerId, policyId) {
+    st.query = ''; st.localSkus = null; st.catalogPages = [0];
+    const ready = readyCatalog?.registerId === registerId && readyCatalog.policyId === policyId ? readyCatalog : null;
+    if (ready) st.products = ready.products.map(p => cachedLive(p.sku, registerId, policyId) || p);
+    st.offset = ready?.nextOffset ?? null;
+    renderProducts(); nodes.previous.hidden = true; nodes.more.hidden = st.offset == null;
+    nodes.more.textContent = mobileCatalog() ? 'Trang tiếp ›' : 'Xem thêm sản phẩm';
+  }
   async function search(addScanned = false, more = false, typed = false, previous = false) {
     if (!st.register) return;
     if (addScanned && (!active() || st.pending || st.busy)) { if (!active()) toast('Mở ca trước khi thêm hàng.', 'err'); return; }
@@ -1114,7 +1164,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (more && (nodes.search?.value.trim() || '') !== st.query) return;
     if (previous && st.catalogPages.length < 2) return;
     const registerId=st.register.id,registerName=st.register.name,policyId=st.policy;
-    if (!typed && !more) liveCache.clear(); // bán xong, đổi bảng giá, mở ca…: lấy tồn mới
+    if (addScanned && !more) {
+      const code = nodes.search?.value.trim();
+      if (!code) return;
+      const sku = scanLookup.get(registerId + '|' + policyId + '|' + code);
+      const cached = sku && cachedLive(sku, registerId, policyId);
+      if (cached && cached.scanCodes?.includes(code) && cached.available > 0) {
+        clearTimeout(searchTimer); ++searchInputVersion; ++searchSeq;
+        nodes.search.value = ''; nodes.search.focus();
+        st.catalogLoading = false; nodes.more.disabled = false; nodes.previous.disabled = false;
+        add(cached, false);
+        restoreReadyCatalog(registerId, policyId);
+        return cached.sku;
+      }
+    }
+    if (!typed && !more && !addScanned) { liveCache.clear(); scanLookup.clear(); } // bán xong, đổi bảng giá, mở ca…: lấy tồn mới
     st.catalogLoading = true;
     nodes.more.disabled = true;
     nodes.previous.disabled = true;
@@ -1133,7 +1197,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       clearTimeout(searchTimer); nodes.search.value = ''; nodes.search.focus();
     }
     try {
-      // Quét mã vạch / Enter: hỏi thẳng máy chủ (khớp đúng mã vạch). Gõ tìm: lọc tại chỗ, không thấy thì hỏi máy chủ như trước.
+      // Cache misses ask the server to resolve exact codes. Typed searches still rank locally.
       if (!more) st.localSkus = q && !addScanned ? localSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p)) : null;
       const local = st.localSkus?.length ? st.localSkus : null; // [{sku, name, price…}] theo thứ tự xếp hạng
       const base = `/pos/catalog?registerId=${encodeURIComponent(registerId)}&pricePolicyId=${encodeURIComponent(policyId)}`;
@@ -1145,16 +1209,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         const missing = page.filter(x => !cachedLive(x.sku,registerId,policyId)).map(x => x.sku);
         if (missing.length && seq === searchSeq && (!mobile || !more)) { st.products = append ? [...st.products, ...show()] : show(); renderProducts(); }
         if (missing.length) {
-          const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), now = Date.now(), got = new Set(), asked = new Set(missing);
+          const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), got = new Set(), asked = new Set(missing);
           // Máy chủ chưa hiểu `skus=` (đang triển khai dở / bản cũ) thì trả danh sách khác: không xoá các ô, chuyển sang tìm theo từ khoá.
           if (fresh.products.some(p => !asked.has(p.sku))) return null;
-          for (const p of fresh.products) { liveCache.set(registerId + '|' + policyId + '|' + p.sku, { p, at: now }); got.add(p.sku); }
+          if (st.register?.id === registerId && st.policy === policyId && st.cart === scanCart && st.shift?.id === scanShift) cacheProducts(fresh.products, registerId, policyId);
+          for (const p of fresh.products) got.add(p.sku);
           // Mã không còn bán ở quầy (máy chủ không trả): bỏ khỏi danh sách.
           return { products: show().filter(p => !p.loading || got.has(p.sku)).map(p => cachedLive(p.sku,registerId,policyId) || p), nextOffset };
         }
         return { products: show(), nextOffset };
       };
-      const byQuery = () => api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`);
+      const byQuery = async () => {
+        const fresh = await api(`${base}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}${scanned ? '&scan=1' : ''}`);
+        if (st.register?.id === registerId && st.policy === policyId && st.cart === scanCart && st.shift?.id === scanShift) cacheProducts(fresh.products, registerId, policyId);
+        return fresh;
+      };
       let d = local ? await bySkus(local) : null;
       if (!d) { if (local) st.localSkus = null; d = await byQuery(); } // trang tiếp theo cũng tìm theo từ khoá
       // Enter / quét mã: chỉ tự thêm vào giỏ khi máy chủ báo khớp CHÍNH XÁC mã vạch / SKU. Chữ thường (tìm theo tên): chỉ hiện danh sách
@@ -1170,13 +1239,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         }
         // A later typed search/scan may supersede catalog rendering, but must not discard this scan.
         add(exact, false);
-        if (seq === searchSeq && inputVersion === searchInputVersion) { nodes.search.focus(); await search(false, false, true); }
-        return;
+        if (seq === searchSeq && inputVersion === searchInputVersion) { nodes.search.focus(); restoreReadyCatalog(registerId, policyId); }
+        return exact.sku; // Keep the existing catalog; do not refetch 60 products after every scan.
       }
       if (scanned) restoreScan();
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
       st.products = append ? [...st.products, ...d.products] : d.products;
+      if (!q && !more && !addScanned) readyCatalog = { registerId, policyId, products: d.products, nextOffset: d.nextOffset };
       if (!more) st.catalogPages = [0];
       else if (previous) st.catalogPages.pop();
       else if (mobile) st.catalogPages.push(offset);
@@ -1353,6 +1423,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     m.show(); await mode();
   }
   async function scan() {
+    if (cameraOpen || pendingScans.size) return;
+    cameraOpen = true; updateScanStatus();
     const m = modal('Quét mã bằng camera'), video = el('video', 'pos-camera'),
       hint = el('p', 'pos-note', 'Cho phép camera, đưa mã vạch vào giữa khung và giữ máy ổn định.');
     video.style.width = '100%';
@@ -1361,14 +1433,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const controller = new AbortController();
     const leave = () => m.close();
     window.addEventListener('hashchange', leave);
-    m.dlg.addEventListener('close', () => { closed = true; window.removeEventListener('hashchange', leave); controller.abort(); handle?.stop(); });
+    m.dlg.addEventListener('close', () => { closed = true; cameraOpen = false; updateScanStatus(); window.removeEventListener('hashchange', leave); controller.abort(); handle?.stop(); });
     m.show();
     try {
       handle = await startBarcodeCamera(video, code => {
         if (closed) return;
         nodes.search.value = code;
         m.close();
-        run(() => search(true));
+        run(submitScan);
       }, { signal: controller.signal });
       if (closed) handle.stop();
     } catch (e) {
