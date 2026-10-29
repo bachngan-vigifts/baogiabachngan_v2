@@ -43,11 +43,14 @@ async function confirmedOrder(s: Awaited<ReturnType<typeof setup>>, no: string) 
 test('trang theo chức vụ: Kế toán bỏ Báo giá / Chăm sóc / Khách hỏi tồn; có Sổ thu chi, Huỷ phiếu thu, Doanh số toàn công ty', async () => {
   const s = await setup();
   const perms = (await s.call('/me', s.kt)).data.user.perms as string[];
-  for (const k of ['page.quotes', 'page.care', 'page.stock-requests']) assert.ok(!perms.includes(k), k);
+  // Kế toán vào mọi trang trừ Bảng lương / Phân quyền (migration 20261029160000); không có quyền thao tác kho / quầy.
+  for (const k of ['page.quotes', 'page.care', 'page.stock-requests', 'page.packing', 'page.stock-lookup', 'inventory.view']) assert.ok(perms.includes(k), k);
+  for (const k of ['perm.manage', 'pos.sell', 'pos.configure', 'inventory.manage', 'purchases.receive', 'stock.transfer']) assert.ok(!perms.includes(k), k);
   for (const k of ['page.cashbook', 'payments.void', 'dashboard.all', 'page.receivables', 'page.orders']) assert.ok(perms.includes(k), k);
   const sa = (await s.call('/me', s.sa)).data.user.perms as string[];
   assert.ok(sa.includes('purchases.pay') && !sa.includes('page.cashbook') && !sa.includes('dashboard.all'), 'Sale Admin: quyền Kế toán nhưng không xem toàn công ty ngoài báo giá / khách / đơn / HĐKT');
-  assert.equal((await s.call('/quotes', s.kt)).status, 403);
+  assert.equal((await s.call('/quotes', s.kt)).status, 200, 'Kế toán xem được Báo giá');
+  assert.equal((await s.call('/hr/payroll/2026-10', s.kt)).status, 403, 'Bảng lương: chỉ Manager');
   assert.deepEqual(routePermission('GET', '/api/staff/cashbook', new URLSearchParams()), ['page.cashbook']);
   assert.equal(can({ role: 'employee', positionId: 'sale' }, 'page.cashbook'), false);
   const dash = await s.call('/dashboard/revenue', s.kt);

@@ -374,25 +374,6 @@ const ghnCancelNote = r => !r?.ghnCancel ? '' : (r.ghnCancel.cancelled.length ? 
 const KHO_HOME = '#/kho';
 /** Kế toán: chức vụ "accounting". */
 const isAccountant = () => state.user?.role === 'employee' && state.user?.positionId === 'accounting';
-/**
- * Menu gọn của Kế toán: chỉ giữ việc hằng ngày, đổi tên theo đúng việc (Đơn mua NCC → Trả NCC lọc sẵn "Còn nợ NCC",
- * Sổ thu / chi → Thu chi; Sổ quỹ vào bằng tab trong trang Thu chi). CHỈ ẩn khỏi menu – quyền vẫn theo trang Phân quyền,
- * đơn / HĐKT / phiếu giao… vẫn mở được bằng link từ việc, công nợ. Người khác: trả lại nhãn / link gốc.
- */
-const ACCOUNTING_MENU = { tasks: ['Việc kế toán'], receivables: ['Công nợ'], purchases: ['Trả NCC', '#/purchases?state=debt'], cashbook: ['Thu chi'], cash: ['Thu chi'], customers: ['Khách hàng'], suppliers: ['Nhà cung cấp'] };
-function accountingMenu() {
-  const on = isAccountant();
-  // Thu chi: trang Sổ thu / chi; chức vụ chưa được cấp Sổ thu / chi mà có Sổ quỹ thì mục Thu chi mở Sổ quỹ.
-  const thuChi = can('page.cashbook') ? 'cashbook' : 'cash';
-  for (const el of $$('.sidebar [data-nav], .bottom-nav [data-nav]')) {
-    const k = el.dataset.nav, label = [...el.querySelectorAll('span')].pop();
-    if (el.dataset.menuHref === undefined) { el.dataset.menuHref = el.getAttribute('href') || ''; el.dataset.menuLabel = label?.textContent || ''; }
-    const item = on && ACCOUNTING_MENU[k] && !((k === 'cash' || k === 'cashbook') && k !== thuChi) ? ACCOUNTING_MENU[k] : null;
-    if (on && !item) el.hidden = true;
-    if (label) label.textContent = item ? item[0] : el.dataset.menuLabel;
-    el.setAttribute('href', item?.[1] || el.dataset.menuHref);
-  }
-}
 /** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
 /** Trang mở đầu theo chức vụ và quyền hiện hành. */
@@ -472,7 +453,6 @@ function applyWorkspaceUser(user) {
   $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
   $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   $$('[data-nav=tasks]').forEach(el => { if (isWarehouse()) el.hidden = true; });
-  accountingMenu();
   document.body.classList.toggle('role-warehouse', isWarehouse());
   document.body.classList.toggle('role-accounting', isAccountant());
   return true;
@@ -777,7 +757,7 @@ function route() {
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
-  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : isAccountant() && ACCOUNTING_MENU[view] ? ACCOUNTING_MENU[view][0] : VIEWS[view];
+  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : VIEWS[view];
   pageBack.record();
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
