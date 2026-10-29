@@ -94,7 +94,8 @@ export function installMobileDesign(profiles){
    row.classList.add('crm-list-card');
    cells.forEach(n=>n.classList.add('crm-card-extra'));
    for(const [kind,index]of Object.entries(p.card||{})){const n=cells[index];if(n){n.classList.remove('crm-card-extra');n.classList.add('crm-card-'+kind);}}
-   for(const action of cells.filter(n=>n.matches('.row-actions,.actions-cell')||n.querySelector('button,a.btn'))){action.classList.remove('crm-card-extra');action.classList.add('crm-card-actions');}
+   // Ô đã có vai trò trong thẻ (vd. nút "Xem đơn hàng" ở ô trạng thái báo giá) giữ chỗ của nó, không dồn vào cột thao tác.
+   for(const action of cells.filter(n=>n.matches('.row-actions,.actions-cell')||(n.classList.contains('crm-card-extra')&&n.querySelector('button,a.btn')))){action.classList.remove('crm-card-extra');action.classList.add('crm-card-actions');}
    cardRows.add(row);
   }
  }
