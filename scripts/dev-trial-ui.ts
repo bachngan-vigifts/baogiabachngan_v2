@@ -4,6 +4,7 @@
  * Chạy: `npm run ui:dev` rồi mở http://localhost:8787 – đăng nhập mgr@x.vn / mat-khau-12345 (Manager) hoặc emp@x.vn (nhân viên).
  */
 import { createServer } from 'node:http';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join, normalize as normalizePath } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
@@ -59,7 +60,9 @@ await client.exec(`
     ('dev-op3', 'ML-LY-02', 'hd', 5, 'opening', 'opening', 'dev-op', 'ĐK-DEV', 'Dữ liệu thử', 'mgr', now()::text);
   INSERT INTO stock_balances (sku, warehouse_id, qty, updated_at) VALUES ('ML-LY-02', 'vig', 40, now()::text), ('ML-LY-02', 'mll', 12, now()::text), ('ML-LY-02', 'hd', 5, now()::text);
 `);
-const db = drizzle(client, { schema }) as unknown as AnyDb;
+// DEV_QUERY_LOG=1: đếm số truy vấn SQL của từng yêu cầu API (mỗi truy vấn trên máy chủ thật là một vòng mạng tới CSDL).
+const queryLog = new AsyncLocalStorage<{ n: number }>();
+const db = drizzle(client, { schema, logger: { logQuery: () => { const s = queryLog.getStore(); if (s) s.n++; } } }) as unknown as AnyDb;
 const router = createAppRouter();
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
 
@@ -73,14 +76,18 @@ createServer(async (req, res) => {
     const bearer = /^Bearer ([a-f0-9]{64})$/.exec(headers.get('authorization') || '')?.[1];
     headers.delete('authorization');
     if (bearer) headers.set('cookie', '__Host-bn-session=' + bearer);
-    const response = await router.handle(new Request(ORIGIN + url.pathname + url.search, {
+    const counter = { n: 0 }, started = performance.now();
+    const response = await queryLog.run(counter, () => router.handle(new Request(ORIGIN + url.pathname + url.search, {
       method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method || 'GET') ? undefined : Buffer.concat(chunks),
     // DEV_SAPO_PUSH=off: thử luồng sinh đơn / HĐKT trên máy dev không có Sapo (máy chủ thật luôn bắt buộc đẩy Sapo).
-    }), { db, files: devFiles, passwordIterations: 1000, ...(process.env.DEV_SAPO_PUSH === 'off' ? { sapoOrderPush: 'off' as const } : {}) });
+    }), { db, files: devFiles, passwordIterations: 1000, ...(process.env.DEV_SAPO_PUSH === 'off' ? { sapoOrderPush: 'off' as const } : {}) }));
+    if (process.env.DEV_QUERY_LOG) console.log(`[sql] ${String(counter.n).padStart(3)} truy vấn ${String(Math.round(performance.now() - started)).padStart(5)} ms ${req.method} ${url.pathname.replace('/api/staff', '')}${url.search.slice(0, 60)}`);
     const payload = await response.json() as Record<string, unknown>;
     const cookie = response.headers.get('set-cookie');
     if (cookie) payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || '';
-    res.writeHead(response.status, { 'content-type': 'application/json; charset=utf-8' });
+    const ms = Math.round((performance.now() - started) * 10) / 10;
+    // Giống Edge Function (trang "Đo tốc độ"): máy dev không có bước chờ kết nối CSDL.
+    res.writeHead(response.status, { 'content-type': 'application/json; charset=utf-8', 'server-timing': `db;dur=0, app;dur=${ms};desc="${counter.n} queries", total;dur=${ms}, region;desc="dev"` });
     res.end(JSON.stringify(payload));
     return;
   }

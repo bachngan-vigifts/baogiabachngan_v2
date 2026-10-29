@@ -151,7 +151,7 @@ export function readEdits(root, p) {
 
 const loadExcelJs = () => new Promise((resolve, reject) => {
   if (globalThis.ExcelJS) return resolve();
-  const s = document.createElement('script'); s.src = 'exceljs.min.js?v=4.4.0'; s.onload = resolve; s.onerror = () => reject(Error('Không tải được bộ tạo Excel. Vui lòng tải lại trang.')); document.head.append(s);
+  const s = document.createElement('script'); s.src = 'exceljs.min.js'; s.onload = resolve; s.onerror = () => reject(Error('Không tải được bộ tạo Excel. Vui lòng tải lại trang.')); document.head.append(s);
 });
 
 /** Tải Excel đơn đặt hàng theo đúng bố cục bản in. */

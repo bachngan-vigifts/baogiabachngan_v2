@@ -146,7 +146,7 @@ export function initPayroll(deps) {
   async function exportExcel() {
     await new Promise((resolve, reject) => {
       if (globalThis.ExcelJS) return resolve();
-      const s = Object.assign(document.createElement('script'), { src: 'exceljs.min.js?v=4.4.0', onload: resolve, onerror: () => reject(new Error('Không tải được bộ tạo Excel.')) });
+      const s = Object.assign(document.createElement('script'), { src: 'exceljs.min.js', onload: resolve, onerror: () => reject(new Error('Không tải được bộ tạo Excel.')) });
       document.head.append(s);
     });
     const d = st.d, cols = d.columns, wb = new globalThis.ExcelJS.Workbook(), NAVY = 'FF102A56', m = Number(d.month.slice(5));

@@ -8,12 +8,19 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const LOCAL = String.raw`(?:\.\/)?[\w.-]+\.(?:js|css)`;
+/** Đường dẫn trong thư mục con (./vendor/x.min.js) – chỉ ở các chỗ nạp script động bên dưới. */
+const LOCAL_NESTED = String.raw`(?:\.\/)?(?:[\w-]+\/)*[\w.-]+\.(?:js|css)`;
 /** Chỉ đụng tới file cùng thư mục (./x.js, x.css); bỏ qua link ngoài và đường đã có `?`. */
 export function stampVersion(text: string, v: string, kind: 'html' | 'js'): string {
   if (!/^[\w.-]{1,40}$/.test(v)) throw new Error('Phiên bản không hợp lệ.');
   // Classic scripts loaded by contract-ui's script() helper must follow the same
   // release as ES modules; otherwise a new UI may call methods missing in cache.
-  if (kind === 'js') return text.replace(new RegExp(String.raw`((?:\bfrom|\bimport\(|\bscript\()\s*)(['"])(${LOCAL})\2`, 'g'), `$1$2$3?v=${v}$2`);
+  // Nạp script động (thư viện PDF / Excel / quét mã vạch): `el.src = 'x.js'`, `{ src: 'x.js' }`, `new URL('./x.js', import.meta.url)`,
+  // `loadScript('./x.js')`, `scriptAsset('x.js')`. Nhờ vậy MỌI file JS / CSS đều có URL theo phiên bản → _headers cho trình duyệt
+  // giữ JS / CSS lâu dài (không phải hỏi lại máy chủ từng file mỗi lần mở app). push-sw.js giữ nguyên (service worker).
+  if (kind === 'js') return text
+    .replace(new RegExp(String.raw`((?:\bfrom|\bimport\(|\bscript\()\s*)(['"])(${LOCAL})\2`, 'g'), `$1$2$3?v=${v}$2`)
+    .replace(new RegExp(String.raw`((?:\.src\s*=|\bsrc:|\bnew URL\(|\bloadScript\(|\bscriptAsset\()\s*)(['"])(${LOCAL_NESTED})\2`, 'g'), `$1$2$3?v=${v}$2`);
   return text.replace(new RegExp(String.raw`(<(?:script|link)\b[^>]*\b(?:src|href)=")(${LOCAL})"`, 'g'), `$1$2?v=${v}"`);
 }
 

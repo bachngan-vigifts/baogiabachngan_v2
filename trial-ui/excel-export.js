@@ -6,7 +6,7 @@ globalThis.QuoteExcel=(()=>{
   if(globalThis.ExcelJS)return resolve();
   const existing=document.querySelector('script[data-exceljs]');
   if(existing){existing.addEventListener('load',resolve,{once:true});existing.addEventListener('error',()=>reject(Error('Không tải được bộ tạo Excel.')),{once:true});return;}
-  const script=document.createElement('script');script.dataset.exceljs='';script.src='exceljs.min.js?v=4.4.0';script.onload=resolve;script.onerror=()=>reject(Error('Không tải được bộ tạo Excel. Vui lòng tải lại trang.'));document.head.append(script);
+  const script=document.createElement('script');script.dataset.exceljs='';script.src='exceljs.min.js';script.onload=resolve;script.onerror=()=>reject(Error('Không tải được bộ tạo Excel. Vui lòng tải lại trang.'));document.head.append(script);
  });
  const cleanFile=value=>String(value||'Bao-gia').replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').trim();
  const date=value=>String(value||'').split('-').reverse().join('/');
