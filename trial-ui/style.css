@@ -2132,6 +2132,8 @@ button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10p
 /* Đang tải (loading-feedback.js): thanh mảnh đầu màn hình, link / dòng vừa bấm, vùng kết quả khi đổi bộ lọc. */
 .net-progress { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; height: 4px; pointer-events: none; background: linear-gradient(90deg, var(--blue), var(--green)) no-repeat, #dbe5f5; background-size: 35% 100%, 100% 100%; animation: net-progress 1s ease-in-out infinite; }
 .net-progress[hidden] { display: none; }
+.net-offline { position: fixed; top: 0; left: 0; right: 0; z-index: 1001; padding: 8px 16px; background: var(--red); color: #fff; font-size: var(--text-small); font-weight: 600; text-align: center; box-shadow: 0 4px 14px #0f1d3333; }
+.net-offline[hidden] { display: none; }
 .net-progress-label:not(:empty) { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); padding: 5px 12px; border-radius: 999px; background: var(--navy); color: #fff; font-size: var(--text-caption); font-weight: 600; white-space: nowrap; box-shadow: 0 6px 18px #0f1d3333; }
 @keyframes net-progress { from { background-position: -45% 0, 0 0; } to { background-position: 145% 0, 0 0; } }
 /* Chỉ mờ sau 150 ms: thao tác nhanh không nháy. Bộ lọc giữ nguyên, vẫn đổi tiếp được. */

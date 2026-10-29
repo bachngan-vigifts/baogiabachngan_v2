@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // Module trình duyệt (JS thuần) – nạp qua URL để TypeScript không đòi khai báo kiểu.
-const { installLoadingFeedback, trackRequest }: any = await import(new URL('../../trial-ui/loading-feedback.js', import.meta.url).href);
+const { installLoadingFeedback, trackRequest, trackWrite }: any = await import(new URL('../../trial-ui/loading-feedback.js', import.meta.url).href);
 
 /**
  * DOM giả tối thiểu: mỗi phần tử có "kinds" (bộ chọn đơn giản nó khớp: 'a[href]', '.chip', '.panel'…),
@@ -23,12 +23,13 @@ const body = el(['body']);
 const bar: any = { hidden: true, children: [] as any[], setAttribute() {}, append(c: any) { bar.children.push(c); } };
 const handlers: Record<string, Function> = {}, winHandlers: Record<string, Function> = {};
 let created = 0;
+const made: any[] = [];
 const doc: any = {
   body: Object.assign(body, { append() {} }),
-  createElement: () => (created++ === 0 ? bar : { textContent: '', setAttribute() {}, className: '' }),
+  createElement: () => { const n = created++ === 0 ? bar : { textContent: '', setAttribute() {}, className: '', hidden: false }; made.push(n); return n; },
   addEventListener: (k: string, fn: Function) => { handlers[k] = fn; },
 };
-const win: any = { addEventListener: (k: string, fn: Function) => { winHandlers[k] = fn; }, getComputedStyle: (n: any) => ({ cursor: n.cursor }) };
+const win: any = { navigator: { onLine: true }, addEventListener: (k: string, fn: Function) => { winHandlers[k] = fn; }, getComputedStyle: (n: any) => ({ cursor: n.cursor }) };
 installLoadingFeedback(doc, win);
 const label = () => bar.children[0].textContent;
 const fire = (type: string, target: any) => { const e = { target, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; } }; handlers[type]!(e); return e; };
@@ -83,4 +84,15 @@ test('mạng chậm: quá 1,2 giây hiện "Đang tải…"; đang thử lại l
   await wait(1300); assert.equal(label(), 'Đang tải…');
   winHandlers['api-retry']!(); assert.equal(label(), 'Mạng chậm, đang thử lại…');
   d.resolve(); await wait(200); assert.equal(label(), ''); assert.equal(bar.hidden, true);
+});
+
+test('mất mạng: hiện dải "Mất kết nối" tới khi có mạng lại; đang gửi lệnh ghi mà đóng tab thì trình duyệt hỏi lại', async () => {
+  const banner = made.find(n => n.className === 'net-offline');
+  assert.equal(banner.hidden, true);
+  win.navigator.onLine = false; winHandlers.offline!(); assert.equal(banner.hidden, false); assert.match(banner.textContent, /Mất kết nối/);
+  win.navigator.onLine = true; winHandlers.online!(); assert.equal(banner.hidden, true);
+  const leave = () => { const e: any = { prevented: false, preventDefault() { this.prevented = true; } }; winHandlers.beforeunload!(e); return e.prevented; };
+  assert.equal(leave(), false, 'không có lệnh đang gửi: đóng tab bình thường');
+  const d = deferred(); trackWrite(d.promise); assert.equal(leave(), true, 'đang gửi: hỏi lại');
+  d.resolve(); await wait(10); assert.equal(leave(), false);
 });

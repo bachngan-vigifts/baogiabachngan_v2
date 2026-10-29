@@ -7,6 +7,8 @@
 //  - Link / dòng vừa bấm: mờ đi + vòng xoay, bấm lại vào chính nó trong lúc chờ bị bỏ qua (chống bấm trùng).
 //  - Bộ lọc: chip vừa bấm có vòng xoay, vùng kết quả mờ đi (kết quả cũ vẫn thấy); bộ lọc KHÔNG khoá – đổi tiếp được.
 //  - Mạng chậm, đang thử lại lệnh đọc (api-transport.js phát sự kiện 'api-retry'): thanh hiện chữ báo.
+//  - Mất mạng (sự kiện offline): dải đỏ "Mất kết nối" ở đầu màn hình tới khi có mạng lại.
+//  - Đang gửi lệnh ghi mà đóng tab / tải lại: trình duyệt hỏi lại (tránh mất dữ liệu mà không biết đã lưu chưa).
 //  - Phần tử không muốn hiệu ứng: đặt data-no-busy.
 const SHOW_AFTER_MS = 300, LABEL_AFTER_MS = 1200, CLICK_WINDOW_MS = 350, TYPE_WINDOW_MS = 1000, GRACE_MS = 150, MAX_MS = 20_000;
 /** Lời gọi tính / đánh dấu đã đọc / gõ… chạy theo thao tác nhưng không phải "tải" (như PASSIVE của busy-buttons.js). */
@@ -15,6 +17,7 @@ const FILTERS = '.toolbar,.filter-bar,.ledger-bar,.chips,[role=tablist],[role=ra
 const REGIONS = '.panel,.sup-page,.view,main';
 const SKIP = '[data-no-busy],#view-pos,.pos-modal,.pos-shell,dialog[open] form';
 
+let pendingWrites = 0, offline = null;
 let doc = null, win = null, bar = null, label = null, active = null, showTimer = 0, labelTimer = 0, slow = false, retrying = false;
 
 /** Phần tử bấm được dẫn tới tải dữ liệu: link trong app, dòng / thẻ có con trỏ bàn tay. Nút do busy-buttons.js lo. */
@@ -89,6 +92,15 @@ export function trackRequest(path, promise) {
   return promise;
 }
 
+/** Lệnh ghi đang chạy (đóng tab lúc này thì hỏi lại). Gọi từ withBusy cho mọi lệnh khác GET. */
+export function trackWrite(promise) {
+  pendingWrites++;
+  const done = () => { pendingWrites--; };
+  promise.then(done, done);
+  return promise;
+}
+export const pendingWriteCount = () => pendingWrites;
+
 export function installLoadingFeedback(d = globalThis.document, w = globalThis.window) {
   if (doc || !d?.addEventListener || !w) return;
   doc = d; win = w;
@@ -120,4 +132,10 @@ export function installLoadingFeedback(d = globalThis.document, w = globalThis.w
   // Back / Forward / link do code đổi hash: lượt chờ không gắn phần tử (chỉ thanh tiến trình).
   w.addEventListener('hashchange', () => { if (!active) begin({}); });
   w.addEventListener('api-retry', () => { if (active) { retrying = true; updateBar(); } });
+  offline = d.createElement('div'); offline.className = 'net-offline'; offline.setAttribute('role', 'status'); offline.hidden = true;
+  offline.textContent = 'Mất kết nối mạng – thao tác chưa gửi được. Thông tin đang nhập vẫn giữ nguyên, có mạng lại thì bấm gửi.';
+  d.body.append(offline);
+  const net = () => { offline.hidden = w.navigator?.onLine !== false; };
+  w.addEventListener('offline', net); w.addEventListener('online', net); net();
+  w.addEventListener('beforeunload', e => { if (pendingWrites > 0) { e.preventDefault(); e.returnValue = ''; } });
 }

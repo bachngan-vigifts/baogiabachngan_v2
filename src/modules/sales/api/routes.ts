@@ -1421,9 +1421,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const me = viewer(c), body = await readJson(c.req, 2_000), reason = text(body.reason, 500);
     if (!canVoidPayment(me)) throw new AppError(403, 'Chỉ Manager hoặc người có quyền "Huỷ phiếu thu" huỷ được phiếu thu.');
     if (reason.length < 3) throw new AppError(400, 'Ghi lý do huỷ phiếu thu.');
-    const [p] = await c.env.db.select({ id: customerPayments.id, orderId: customerPayments.orderId, voidedAt: customerPayments.voidedAt, shiftId: customerPayments.shiftId, paymentSource: customerPayments.paymentSource, amount: customerPayments.amount }).from(customerPayments)
+    const [p] = await c.env.db.select({ id: customerPayments.id, orderId: customerPayments.orderId, voidedAt: customerPayments.voidedAt, voidedBy: customerPayments.voidedBy, voidReason: customerPayments.voidReason, shiftId: customerPayments.shiftId, paymentSource: customerPayments.paymentSource, amount: customerPayments.amount }).from(customerPayments)
       .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId)).where(and(eq(customerPayments.id, c.params.id!), orderScope(c))).limit(1);
     if (!p) throw new AppError(404, 'Không tìm thấy phiếu thu.');
+    // Gửi lại sau khi mạng rớt (lần trước đã huỷ xong): cùng người, cùng lý do → báo thành công thay vì báo lỗi.
+    if (p.voidedAt && p.voidedBy === me.id && p.voidReason === reason) return json({ ok: true, orderId: p.orderId, alreadyApplied: true });
     if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
     await c.env.db.transaction(async tx=>{
     await cashLock(tx);

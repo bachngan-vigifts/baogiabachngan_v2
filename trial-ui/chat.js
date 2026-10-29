@@ -1,3 +1,4 @@
+import { sendOnce } from './request-keys.js';
 // TIN NHẮN nội bộ giữa nhân viên: nút chat nổi góc dưới phải mở khung chat (danh sách hội thoại 1-1 + nhóm bên trái, khung chat bên phải).
 // Cập nhật: khung đang mở hỏi tin mới mỗi 3 giây; danh sách mỗi 10 giây; huy hiệu menu mỗi 20 giây (+ Web Push khi có tin).
 import { ding, setBadgePart } from './alert.js';
@@ -388,7 +389,7 @@ export function initChat({ api, toast, userId, isManager, compress }) {
     dlg.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault(); const f = e.target, btn = f.querySelector('.btn.primary'); btn.disabled = true;
       try {
-        const title = f.title.value.trim(), r = await api('/tasks', 'POST', { title, description: f.note.value, assigneeId: f.who.value, dueDate: f.due.value || null, priority: 'normal' });
+        const title = f.title.value.trim(), content = { title, description: f.note.value, assigneeId: f.who.value, dueDate: f.due.value || null, priority: 'normal' }, r = await sendOnce('task', content, clientKey => api('/tasks', 'POST', { ...content, clientKey }));
         close(); if (q('#chat-input').value.trim() === title) { q('#chat-input').value = ''; autosize(); }
         send({ type: 'task', id: r.id, label: `Việc: ${title}${f.who.value !== me ? ' → ' + (people.find(x => x.id === f.who.value)?.name || '') : ''}` });
       } catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }

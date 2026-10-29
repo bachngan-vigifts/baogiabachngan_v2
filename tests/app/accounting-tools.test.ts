@@ -62,7 +62,9 @@ test('huỷ phiếu thu: chỉ Manager / quyền Huỷ phiếu thu, bắt buộc
   assert.equal((await s.call(`/payments/${pay.data.id}/void`, s.emp, 'POST', { reason: 'nhầm' })).status, 403, 'nhân viên Sale không huỷ được');
   assert.equal((await s.call(`/payments/${pay.data.id}/void`, s.kt, 'POST', { reason: '' })).status, 400, 'bắt buộc lý do');
   assert.equal((await s.call(`/payments/${pay.data.id}/void`, s.kt, 'POST', { reason: 'Ghi nhầm số tiền' })).status, 200);
-  assert.equal((await s.call(`/payments/${pay.data.id}/void`, s.kt, 'POST', { reason: 'Ghi nhầm số tiền' })).status, 409, 'không huỷ hai lần');
+  const again = await s.call(`/payments/${pay.data.id}/void`, s.kt, 'POST', { reason: 'Ghi nhầm số tiền' });
+  assert.equal(again.status, 200, 'gửi lại y hệt sau khi mạng rớt: báo đã huỷ, không báo lỗi'); assert.equal(again.data.alreadyApplied, true);
+  assert.equal((await s.call(`/payments/${pay.data.id}/void`, s.kt, 'POST', { reason: 'Lý do khác' })).status, 409, 'không huỷ hai lần');
   const d = (await s.call(`/orders/${orderId}`, s.kt)).data;
   assert.equal(d.receivable.paid, 0, 'phiếu huỷ không tính vào đã thu');
   assert.equal(d.payments[0].voidReason, 'Ghi nhầm số tiền'); assert.equal(d.payments[0].voidedByName, 'Tên ketoan'); assert.equal(d.canVoidPayment, true);

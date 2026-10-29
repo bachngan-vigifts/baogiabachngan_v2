@@ -3,7 +3,8 @@ import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
 import { bindForgotPassword } from './forgot-password.js';
-import { apiFetch } from './api-transport.js';
+import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
+import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
 import { openMobileQuoteCapture } from './mobile-quote-capture.js';
@@ -305,7 +306,7 @@ async function apiRequest(path, method = 'GET', body) {
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   try { res = await apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
-  catch { throw new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0); }
+  catch { throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
@@ -3493,7 +3494,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId }); }
+function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId, sendOnce }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 var approvalFeed = null;
@@ -4542,7 +4543,7 @@ $('#delivery-form').addEventListener('submit', async e => {
   } catch (ex) { err.textContent = ex.message; }
 });
 $('#order-new-payment').addEventListener('click', () => {
-  const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); f.dataset.requestKey=crypto.randomUUID(); $('#payment-pos-confirm').hidden=sales.order.channel!=='pos'; f.confirmed.required=sales.order.channel==='pos'; f.method.querySelector('option[value=other]').disabled=sales.order.channel==='pos'; $('#payment-error').textContent = '';
+  const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); $('#payment-pos-confirm').hidden=sales.order.channel!=='pos'; f.confirmed.required=sales.order.channel==='pos'; f.method.querySelector('option[value=other]').disabled=sales.order.channel==='pos'; $('#payment-error').textContent = '';
   $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
   $('#payment-dialog').showModal();
 });
@@ -4551,7 +4552,9 @@ $('#payment-form').addEventListener('submit', async e => {
   if (btn?.disabled) return;
   if (btn) btn.disabled = true; // chống bấm hai lần ghi trùng phiếu thu
   try {
-    await api('/payments', 'POST', { key:f.dataset.requestKey, confirmed:f.confirmed.checked, orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value });
+    // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, đóng hộp mở lại nhập y hệt → không ghi thu lần hai.
+    const content = { orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value };
+    await sendOnce('payment', content, key => api('/payments', 'POST', { key, confirmed:f.confirmed.checked, ...content }));
     $('#payment-dialog').close(); toast('Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; } finally { if (btn) btn.disabled = false; }
 });

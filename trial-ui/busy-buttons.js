@@ -6,7 +6,7 @@
 //  - Nút .btn gọi API đọc ngay khi bấm (Xuất Excel, Tải lại…) cũng hiện đang xử lý; chip / tab lọc thì không.
 //  - Nút tự quản lý trạng thái riêng hoặc không muốn khoá: đặt data-no-busy.
 // Link / dòng / bộ lọc / thanh tiến trình đầu trang: loading-feedback.js (cài cùng lúc ở đây).
-import { installLoadingFeedback, trackRequest } from './loading-feedback.js';
+import { installLoadingFeedback, trackRequest, trackWrite } from './loading-feedback.js';
 const WINDOW_MS = 30_000, READ_WINDOW_MS = 1000;
 /** POST chỉ để tính / tra / đánh dấu đã đọc, chạy tự động khi đổi giỏ hàng, gõ… → không khoá nút (vd. +/− số lượng ở quầy). */
 const PASSIVE = /\/(preview|csp-report|read|locations|typing|presence)(\?|$)/;
@@ -52,6 +52,7 @@ function target() {
 /** Bọc một lời gọi API: ghi (khác GET) thì khoá nút vừa bấm tới khi xong. Trả lại đúng promise kết quả. */
 export function withBusy(method, promise, path = '') {
   trackRequest(path, promise);
+  if (method && method !== 'GET' && !PASSIVE.test(path.split('#')[0])) trackWrite(promise);
   if (PASSIVE.test(path.split('#')[0])) return promise;
   const el = !method || method === 'GET' ? readTarget() : target();
   if (!el) return promise;
