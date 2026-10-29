@@ -193,3 +193,40 @@ test('UI hoàn tiền: cần xác nhận thực trả, giữ cùng key để ret
     (globalThis as any).document = old;
   }
 });
+test('UI trả hàng: mở từ trang đơn (ca của quầy khác) vẫn lập được yêu cầu mới sau khi yêu cầu cũ bị từ chối', async () => {
+  const old = (globalThis as any).document;
+  (globalThis as any).document = doc;
+  try {
+    const d = (current: any) => ({
+      order: { id: 'o', orderNo: 'POS_1', customerName: 'Anh Khánh', total: 100000 },
+      registerId: 'r', registerName: 'Quầy 1',
+      lines: [{ id: 'l', name: 'Ly sứ', deliveredQty: 1 }],
+      returns: [{ id: 'old', returnNo: 'TH_1', status: 'rejected', reason: 'Nhập sai tiền', createdBy: 'emp', lines: [{ orderLineId: 'l', requestedQty: 1 }], refunds: [], allocations: [] }],
+      account: { credit: 0, refunded: 0, exchanged: 0, balance: 100000, available: 0 },
+      viewerId: 'emp', current,
+    });
+    const open = async (current: any) => {
+      doc.body = new El('body');
+      const asked: string[] = [];
+      await openPosReturns({
+        api: async (path: string) => {
+          asked.push(path);
+          if (path.startsWith('/pos/options')) return { current };
+          return d(current);
+        },
+        toast: () => {}, orderId: 'o',
+        shift: { id: 'other', registerId: 'r2' }, register: { id: 'r2' },
+      });
+      return { dialog: doc.body.children[0]!, asked };
+    };
+    const ok = await open({ id: 's', registerId: 'r' });
+    assert.ok(ok.asked.includes('/pos/options?registerId=r'), 'hỏi ca theo quầy của bill');
+    assert.ok(button(ok.dialog, 'Gửi yêu cầu duyệt'), 'yêu cầu bị từ chối không chặn lập yêu cầu mới');
+    assert.ok(input(ok.dialog, 'Ly sứ · Còn được trả 1'), 'số lượng của yêu cầu bị từ chối được trả lại');
+    const none = await open(null);
+    assert.equal(button(none.dialog, 'Gửi yêu cầu duyệt'), undefined);
+    assert.match(none.dialog.textContent, /Chưa có ca đang mở ở quầy của bill này \(Quầy 1\)/);
+  } finally {
+    (globalThis as any).document = old;
+  }
+});

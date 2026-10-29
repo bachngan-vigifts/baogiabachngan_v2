@@ -133,8 +133,21 @@ export async function openPosReturns({
       list.append(el('p', 'pos-note', 'Chưa có yêu cầu trả hàng.'));
     content.append(list);
   }
+  // Ca đang mở của quầy bill: trang đơn hàng chỉ biết ca của quầy mặc định, nên khi khác quầy thì hỏi đúng quầy của bill
+  // (máy chủ vẫn kiểm tra ca khi gửi). Không có ca / không được dùng quầy đó → giữ nguyên, form lập yêu cầu ẩn kèm lời nhắc.
+  const billShifts = new Map();
+  async function shiftOf(registerId) {
+    if (shift?.registerId === registerId) return shift;
+    if (!billShifts.has(registerId))
+      billShifts.set(registerId, await api('/pos/options?registerId=' + encodeURIComponent(registerId))
+        .then((o) => (o.current?.registerId === registerId && !o.current.closedAt ? o.current : null))
+        .catch(() => null));
+    return billShifts.get(registerId) || shift;
+  }
   async function show(id) {
     const d = await api('/pos/returns?orderId=' + encodeURIComponent(id));
+    if (!dlg.open) return;
+    if (d.registerId) shift = await shiftOf(d.registerId);
     if (!dlg.open) return;
     content.replaceChildren();
     content.append(
@@ -460,7 +473,10 @@ export async function openPosReturns({
         el(
           'p',
           'pos-note',
-          'Mở ca tại quầy của bill để lập yêu cầu, nhận hàng hoặc xác nhận hoàn tiền.',
+          d.order.status === 'cancelled'
+            ? 'Bill đã huỷ – không lập được yêu cầu mới.'
+            : 'Chưa có ca đang mở ở quầy của bill này' + (d.registerName ? ' (' + d.registerName + ')' : '') +
+              '. Mở ca tại quầy đó (Bán hàng nhanh) rồi bấm "Trả / Đổi / Hoàn tiền" lại để lập yêu cầu mới, nhận hàng hoặc xác nhận hoàn tiền.',
         ),
       );
   }

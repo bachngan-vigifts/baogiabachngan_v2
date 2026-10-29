@@ -118,9 +118,11 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
     issued.some((i) => i.qty > 0);
   const { returns: unused, ...summary } = account;
   const reserved = await activeReservations(db, account.allocations);
+  const [register] = await db.select({ name: posRegisters.name }).from(posRegisters).where(eq(posRegisters.id, s.registerId));
   return {
     order: o,
     registerId: s.registerId,
+    registerName: register?.name ?? '',
     lines: lines.map((l) => ({
       ...l,
       returnableQty: recoveringIssued
