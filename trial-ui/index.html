@@ -1065,6 +1065,10 @@
       <label>Ngày ký<input name="signedDate" type="date"></label>
       <label>Hình thức thanh toán<input name="paymentMethod" value="Chuyển khoản"></label>
       <label class="span-2">Địa chỉ giao hàng<input name="deliveryAddress"></label>
+      <fieldset class="span-2 sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>
+        <label class="check"><input type="radio" name="pushSapo" value="no"> Không – chỉ lập HĐKT trên web</label>
+        <label class="check"><input type="radio" name="pushSapo" value="yes" checked> Có – tạo thêm đơn nháp trên Sapo</label>
+      </fieldset>
       <p class="muted small span-2">Số HĐKT tự sinh: tháng-số thứ tự/ngày/HĐKT/pháp nhân-mã khách; giữ nguyên thì lúc lập máy chủ cấp số kế tiếp, sửa thì dùng đúng số đã sửa. Kỳ phải thu được lập lại = cọc + phần còn lại.</p>
       <section id="contract-sourcing" class="span-2"></section>
       <p class="error span-2" id="contract-error" role="alert"></p>
