@@ -1,6 +1,8 @@
 import { defaultCostDiscount, costModeOf, parsePurchaseCost, purchasePrice } from './quote-math.js';
 const el = (tag, cls, text) => { const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n; };
 const money = n => new Intl.NumberFormat('vi-VN').format(n) + ' đ';
+/** Approval only needs costs for active product lines; explicit zero is a valid cost. */
+export const missingPurchaseCost = row => !!(row.name || row.sku) && Number(row.qty) > 0 && !Number.isFinite(row.costPrice);
 
 /** Existing CK is always preserved, including a manually entered percentage. No new stored flag needed. */
 export function purchaseCostReviewRows(rows, products = []) {
@@ -16,10 +18,10 @@ export function purchaseCostReviewRows(rows, products = []) {
 }
 
 /** Returns validated edits only after explicit Apply. Cancelling never mutates the quote. */
-export function reviewPurchaseCosts(rows, products = []) {
-  const entries=purchaseCostReviewRows(rows,products),dlg=el('dialog','modal purchase-cost-dialog'),form=el('form');
-  const head=el('div','modal-head'),heading=el('div');heading.append(el('span','eyebrow','GIÁ MUA · CHỈ MANAGER'),el('h2','','Kiểm tra CK mua vào từng mã'));head.append(heading);
-  const body=el('div','modal-body');body.append(el('p','muted','Giữ nguyên CK và giá anh đã nhập. Dòng chưa có giá mua dùng CK gợi ý; bấm “Dùng gợi ý” nếu muốn đổi dòng đã có.'));
+export function reviewPurchaseCosts(rows, products = [], { onlyMissing = false, approval = false } = {}) {
+  const entries=purchaseCostReviewRows(rows,products).filter(entry=>!onlyMissing||missingPurchaseCost(entry.row)),dlg=el('dialog','modal purchase-cost-dialog'),form=el('form');
+  const head=el('div','modal-head'),heading=el('div');heading.append(el('span','eyebrow','GIÁ MUA · CHỈ MANAGER'),el('h2','',onlyMissing?'Bổ sung giá mua còn thiếu':'Kiểm tra CK mua vào từng mã'));head.append(heading);
+  const body=el('div','modal-body');body.append(el('p','muted',onlyMissing?'Chỉ bổ sung các dòng chưa có giá mua. Các dòng đã đủ giá và CK được giữ nguyên.':'Giữ nguyên CK và giá anh đã nhập. Dòng chưa có giá mua dùng CK gợi ý; bấm “Dùng gợi ý” nếu muốn đổi dòng đã có.'));
   const wrap=el('div','purchase-cost-table-wrap'),table=el('table','purchase-cost-table'),thead=el('thead'),labels=el('tr');
   for(const label of ['Mã / sản phẩm','Chế độ','CK / giá nhập','Giá nhập mỗi SP','CK gợi ý'])labels.append(el('th','',label));thead.append(labels);table.append(thead);
   const tbody=el('tbody'),controls=[];
@@ -35,7 +37,7 @@ export function reviewPurchaseCosts(rows, products = []) {
     controls.push({entry,input,mode,sync});tr.append(name,modeCell,inputCell,amount,suggestion);tbody.append(tr);
   }
   table.append(tbody);wrap.append(table);body.append(wrap);
-  const foot=el('div','modal-foot'),cancel=el('button','btn secondary','Huỷ'),apply=el('button','btn primary','Áp dụng & lưu báo giá');cancel.type='button';apply.type='submit';foot.append(cancel,apply);form.append(head,body,foot);dlg.append(form);document.body.append(dlg);
+  const foot=el('div','modal-foot'),cancel=el('button','btn secondary','Huỷ'),apply=el('button','btn primary',approval?'Lưu giá mua & duyệt':'Áp dụng & lưu báo giá');cancel.type='button';apply.type='submit';foot.append(cancel,apply);form.append(head,body,foot);dlg.append(form);document.body.append(dlg);
   return new Promise(resolve=>{
     let settled=false;const done=value=>{if(settled)return;settled=true;dlg.close();dlg.remove();resolve(value);};
     cancel.addEventListener('click',()=>done(null));dlg.addEventListener('cancel',e=>{e.preventDefault();done(null);});dlg.addEventListener('close',()=>done(null));
