@@ -19,7 +19,21 @@ export function initSapoPush({ api, esc, $ }) {
    * (`pushSapo` false → không tạo đơn Sapo, `locationId` null).
    * Trả kết quả của `run`, hoặc null khi đóng popup. Đơn đã có trên Sapo (lập HĐKT cho đơn đã đẩy) → chạy luôn, không hỏi kho.
    */
-  async function choose(ref, { title, action, run, existingDocument = false }) {
+  async function choose(ref, { title, action, run, existingDocument = false, pushSapo, isCurrent = () => true }) {
+    // Creation forms already own the yes/no choice. n8n needs no warehouse
+    // selection, so submit that choice directly without opening another dialog.
+    let selectedPreview;
+    if (!isCurrent()) return null;
+    if (pushSapo === false) return run(null, false);
+    if (pushSapo === true) {
+      selectedPreview = await api('/sapo/preview?' + new URLSearchParams(ref));
+      if (!isCurrent()) return null;
+      if (selectedPreview.pushed || selectedPreview.required === false) return run(null, false);
+      if (selectedPreview.problems?.length) throw new Error(selectedPreview.problems.join('\n'));
+      if (!selectedPreview.connected && !selectedPreview.viaClaw) throw new Error(selectedPreview.message || 'Chưa kết nối Sapo. Chọn không tạo đơn Sapo trên form hoặc thử lại.');
+      if (selectedPreview.viaClaw) return run(null, true);
+      if (!selectedPreview.locations?.length) throw new Error('Sapo chưa trả danh sách kho. Chọn không tạo đơn Sapo trên form hoặc thử lại.');
+    }
     current?.resolve(null);
     const me = current = { run, resolve: () => {}, busy: false, title, existingDocument };
     const result = new Promise(resolve => { me.resolve = resolve; });
@@ -28,7 +42,7 @@ export function initSapoPush({ api, esc, $ }) {
     if (!dialog.open) dialog.showModal();
     let d;
     // Xem trước lỗi (mạng / Sapo) vẫn cho chọn "Không – chỉ sinh trên web".
-    try { d = await api('/sapo/preview?' + new URLSearchParams(ref)); } catch (e) { d = { connected: false, message: e.message, code: '', owner: '', account: null, locations: [], problems: [] }; }
+    try { d = selectedPreview || await api('/sapo/preview?' + new URLSearchParams(ref)); } catch (e) { d = { connected: false, message: e.message, code: '', owner: '', account: null, locations: [], problems: [] }; }
     if (current !== me) return result;
     if (d.pushed || d.required === false) { // đã có trên Sapo / máy chủ tắt đẩy Sapo: không cần chọn kho
       current = null; dialog.close();
@@ -39,7 +53,7 @@ export function initSapoPush({ api, esc, $ }) {
     // khoá "Có", chọn sẵn "Không" để vẫn sinh được đơn / HĐKT trên web.
     const viaClaw = d.viaClaw === true;
     const sapoOk = viaClaw || (d.connected && d.locations.length > 0);
-    const choice = `<fieldset class="sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>
+    const choice = pushSapo === true ? '' : `<fieldset class="sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>
       <label class="check"><input type="radio" name="sapo-push-mode" value="yes"${sapoOk ? ' checked' : ' disabled'}> Có – tạo đơn nháp trên Sapo${sapoOk ? ` <span class="pill ok">${viaClaw ? 'Qua Claw' : 'Sapo đã kết nối'}</span>` : ''}</label>
       <label class="check"><input type="radio" name="sapo-push-mode" value="no"${sapoOk ? '' : ' checked'}> ${existingDocument ? 'Không – giữ chứng từ trên web' : 'Không – chỉ sinh trên web'}</label>
       ${sapoOk ? '' : `<p class="error small">Không kết nối được Sapo: ${esc(d.message || (d.connected ? 'Sapo chưa trả danh sách kho.' : 'Chưa kết nối Sapo.'))} ${existingDocument ? 'Chứng từ trên CRM được giữ nguyên.' : 'Đơn / HĐKT sẽ chỉ sinh trên web.'} Manager kết nối lại Sapo ở trang Nhân viên → Đồng bộ Sapo.</p>`}</fieldset>`;
@@ -58,7 +72,8 @@ export function initSapoPush({ api, esc, $ }) {
     const sel = viaClaw ? null : $('#sapo-push-location');
     me.location = sel;
     me.canPush = sapoOk && !d.problems.length;
-    me.push = () => body.querySelector('input[name="sapo-push-mode"]:checked')?.value !== 'no';
+    me.push = () => pushSapo === true || body.querySelector('input[name="sapo-push-mode"]:checked')?.value !== 'no';
+    me.choiceOnForm = pushSapo === true;
     me.sync = () => {
       const push = me.push();
       $('#sapo-push-detail').hidden = !push;
@@ -83,7 +98,7 @@ export function initSapoPush({ api, esc, $ }) {
       const err = $('#sapo-push-error');
       err.textContent = ex.message + (me.existingDocument ? ' Chứng từ trên CRM được giữ nguyên.' : ' Chưa sinh đơn / HĐKT nào.');
       // Lỗi lúc đẩy Sapo: cho sinh luôn trên web (không qua Sapo) thay vì kẹt lại.
-      if (push) {
+      if (push && !me.choiceOnForm) {
         const alt = document.createElement('button');
         alt.type = 'button'; alt.className = 'btn secondary small'; alt.textContent = me.existingDocument ? 'Giữ chứng từ trên web' : `${me.title} không qua Sapo`;
         alt.addEventListener('click', () => { const no = body.querySelector('input[name="sapo-push-mode"][value="no"]'); if (no) { no.checked = true; me.sync?.(); dialog.querySelector('#sapo-push-form').requestSubmit(); } });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-function setup(code = '', existingDocument = false, connected = true, viaClaw = false) {
+function setup(code = '', existingDocument = false, connected = true, viaClaw = false, preview: any = {}) {
   const events = new Map<string, Function>(), closeEvents = new Map<string, Function>();
   const radio = { value: 'yes', checked: true, addEventListener() {} };
   const no = { value: 'no', checked: !connected, addEventListener() {} };
@@ -15,8 +15,9 @@ function setup(code = '', existingDocument = false, connected = true, viaClaw = 
   const context: any = { URLSearchParams, localStorage: { getItem: () => '', setItem() {} }, document: { createElement: () => ({ addEventListener() {} }) } };
   const source = readFileSync(new URL('../../trial-ui/sapo-push.js', import.meta.url), 'utf8');
   runInNewContext(source.replace('export function initSapoPush', 'globalThis.init = function'), context);
-  const ui = context.init({ api: async () => ({ connected, viaClaw, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: connected && !viaClaw ? [{ id: 7, name: 'Kho' }] : [], problems: [] }), esc: (s: string) => s, $: (id: string) => nodes[id] });
-  return { ui, no, existingDocument, dialog, body, submit, label, error, send: () => events.get('submit')!({ preventDefault() {} }) };
+  let previews = 0;
+  const ui = context.init({ api: async () => { previews++; return typeof preview === 'function' ? preview() : { connected, viaClaw, required: true, code, owner: 'NV', account: { name: 'NV' }, locations: connected && !viaClaw ? [{ id: 7, name: 'Kho' }] : [], problems: [], ...preview }; }, esc: (s: string) => s, $: (id: string) => nodes[id] });
+  return { ui, no, existingDocument, dialog, body, submit, label, error, previews: () => previews, send: () => events.get('submit')!({ preventDefault() {} }) };
 }
 
 test('popup production dùng n8n/Claw, không bắt chọn kho Sapo', async () => {
@@ -77,4 +78,32 @@ test('phiên Sapo hỏng trên đơn đã có: nút giữ chứng từ, không b
   s.no.checked = false;
   await s.send(); assert.equal(called, 0);
   s.dialog.close(); await pending;
+});
+
+for(const title of ['Sinh đơn hàng','Lập HĐKT'])test(`${title}: lựa chọn có trên form gửi n8n một lần, không mở popup hỏi lại`,async()=>{
+ const s=setup('',false,true,true);const posts:any[]=[];
+ const r=await s.ui.choose({quoteId:'q'},{title,action:title,pushSapo:true,run:async(...args:any[])=>{posts.push(args);return {id:'created'};}});
+ assert.equal(r.id,'created');assert.equal(s.dialog.open,false);assert.equal(s.body.innerHTML,'');assert.equal(s.previews(),1);assert.deepEqual(posts,[[null,true]]);
+});
+test('form chọn không: không xem trước hay kết nối Sapo; callback nhận false',async()=>{
+ const s=setup('',false,false);const posts:any[]=[];
+ await s.ui.choose({quoteId:'q'},{title:'Lập HĐKT',action:'Lập',pushSapo:false,run:async(...args:any[])=>{posts.push(args);return {};}});
+ assert.equal(s.previews(),0);assert.equal(s.dialog.open,false);assert.deepEqual(posts,[[null,false]]);
+});
+test('form đã chọn có: lỗi kiểm tra không tự đổi sang không hoặc tạo chứng từ',async()=>{
+ const s=setup('',false,false);let posts=0;
+ await assert.rejects(()=>s.ui.choose({quoteId:'q'},{title:'Sinh đơn hàng',action:'Sinh',pushSapo:true,run:async()=>{posts++;}}),/Chưa kết nối Sapo/);
+ assert.equal(posts,0);assert.equal(s.dialog.open,false);
+ const bad=setup('',false,true,true,{problems:['Thiếu mã sản phẩm']});
+ await assert.rejects(()=>bad.ui.choose({quoteId:'q'},{title:'Sinh đơn hàng',action:'Sinh',pushSapo:true,run:async()=>{posts++;}}),/Thiếu mã sản phẩm/);assert.equal(posts,0);
+});
+test('đóng form khi kiểm tra n8n đang chờ không sinh chứng từ sau đó',async()=>{
+ let resolve:any,current=true,posts=0;const s=setup('',false,true,true,()=>new Promise(r=>{resolve=r;}));
+ const pending=s.ui.choose({quoteId:'q'},{title:'Sinh đơn hàng',action:'Sinh',pushSapo:true,isCurrent:()=>current,run:async()=>{posts++;}});
+ current=false;resolve({connected:true,viaClaw:true,required:true,problems:[],locations:[]});assert.equal(await pending,null);assert.equal(posts,0);assert.equal(s.dialog.open,false);
+});
+test('Sapo trực tiếp vẫn chọn kho nhưng không hỏi lại có tạo đơn Sapo',async()=>{
+ const s=setup();const posts:any[]=[];
+ const pending=s.ui.choose({quoteId:'q'},{title:'Sinh đơn hàng',action:'Sinh',pushSapo:true,run:async(...args:any[])=>{posts.push(args);return {};}});await new Promise(r=>setImmediate(r));
+ assert.equal(s.dialog.open,true);assert.doesNotMatch(s.body.innerHTML,/Tạo đơn trên Sapo\?/);assert.match(s.body.innerHTML,/Kho xuất hàng trên Sapo/);await s.send();await pending;assert.deepEqual(posts,[[7,true]]);assert.equal(s.previews(),1);
 });
