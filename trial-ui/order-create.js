@@ -28,9 +28,10 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, crea
       form.elements.deliveryAddress.value = orderDeliveryAddress(q.data);
       form.elements.note.value = orderNotesFromQuote(q.data);
       me.source = q.data;
-      if (createSourcing) me.sourcing = await createSourcing({host:$('#order-create-sourcing'),quoteId:ref.quoteId,isCurrent:()=>current===me});
+      // Nguồn hàng và số đơn tải song song (trước đây nối tiếp: thêm một lượt chờ mới bấm được Sinh đơn hàng).
+      const [sourcing] = await Promise.all([createSourcing ? createSourcing({host:$('#order-create-sourcing'),quoteId:ref.quoteId,isCurrent:()=>current===me}) : null, previewOrderNo(me)]);
+      if (sourcing) me.sourcing = sourcing;
       if(current!==me)return result;
-      await previewOrderNo(me);
       me.ready = true; submit.disabled = false; status.textContent = '';
     } catch (e) { if (current === me) { error.textContent = e.message; status.textContent = ''; } }
     return result;
