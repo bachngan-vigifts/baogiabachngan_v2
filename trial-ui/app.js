@@ -5,6 +5,8 @@ import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
 import { bindForgotPassword } from './forgot-password.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
+import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
+import { recordApi, openSpeedDialog } from './speed-log.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
@@ -298,6 +300,7 @@ try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSIO
 const saveToken = t => { const next=t||'';if(next!==token||!next)sessionResume.clear();token=next;try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
 const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>token,verify:()=>api('/me'),open:openWorkspace,refresh:refreshWorkspaceUser});
 
+const requestPriority = createRequestPriority();
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
 function api(path, method = 'GET', body) { return withBusy(method, apiRequest(path, method, body), path); }
@@ -307,9 +310,12 @@ async function apiRequest(path, method = 'GET', body) {
   const requestToken = token;
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
-  try { res = await apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
+  let sentAt = 0;
+  try { res = await requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }); }
   catch { throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
+  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
   if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
@@ -464,7 +470,9 @@ function openWorkspace(user) {
   currentHash = location.hash;
   route();
   loadAll();
-  notifier.start(); dataRefresh.start(); dataRefresh.tick(); pulse.start();
+  notifier.start(); dataRefresh.start(); pulse.start();
+  // Mốc so sánh thay đổi: chụp sau khi trang đang mở tải xong (không tranh kết nối với dữ liệu của trang).
+  requestPriority.idle().then(() => { if (state.user) dataRefresh.tick({ baseline: true }); });
 }
 function refreshWorkspaceUser(user) {
   const access=u=>JSON.stringify([u?.role,u?.positionId,u?.perms,u?.approver,u?.dataScope,u?.departmentId]);
@@ -481,6 +489,7 @@ function toggleAccountMenu(force) {
 $('#account-button').addEventListener('click', e => { e.stopPropagation(); toggleAccountMenu(); });
 $('#account-button-m').addEventListener('click', e => { e.stopPropagation(); toggleAccountMenu(); });
 document.addEventListener('click', e => { if (!e.target.closest('#account-menu')) toggleAccountMenu(false); });
+$('#speed-check').addEventListener('click', () => { toggleAccountMenu(false); openSpeedDialog({ toast }); });
 $('#logout').addEventListener('click', async () => {
   toggleAccountMenu(false);
   if (editor.dirty && !await confirmBox('Báo giá đang sửa chưa được lưu. Vẫn đăng xuất?', { ok: 'Đăng xuất' })) return;
@@ -551,8 +560,11 @@ async function loadNavigationBadges() {
 async function loadAll() {
   $('#global-error').hidden = true;
   // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
-  const jobs = [can('page.quotes') && loadQuotes(), can('page.customers') && loadCustomers()].filter(Boolean);
-  if (isManager()) jobs.push(loadMembers(), loadSapoSync());
+  // Danh sách báo giá / khách / nhân viên dùng ở nhiều chỗ nên luôn tải, nhưng nếu đang mở trang khác thì chờ trang đó tải xong.
+  const page = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'quotes';
+  const later = (home, load) => home.includes(page) ? load() : requestPriority.idle().then(() => state.user ? load() : undefined);
+  const jobs = [can('page.quotes') && later(['quotes'], loadQuotes), can('page.customers') && later(['customers'], loadCustomers)].filter(Boolean);
+  if (isManager()) jobs.push(later(['staff', 'members'], loadMembers), loadSapoSync());
   loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (can('page.care')) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false; approvalView().start();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
@@ -2033,8 +2045,9 @@ async function duplicateFromList(id) {
 
 // ----- PDF theo 3 mẫu của web cũ (HRC / B2B / VIGIFTS): hrc-pdf.js (bố cục) + editable-pdf.js (pdf-lib, chữ chọn được).
 // Thư viện PDF + font Times New Roman (~3,6 MB) chỉ tải khi bấm tải PDF.
-// Đổi phiên bản khi API của các bộ dựng PDF thay đổi để không dùng lại script cũ trong cache.
-const PDF_SCRIPTS = ['pdf-lib.min.js', 'fontkit.umd.min.js', 'hrc-pdf.js?v=manual-lines-3', 'editable-pdf.js?v=manual-lines-3'];
+// scriptAsset(): đánh dấu để bước triển khai gắn số phiên bản (scripts/stamp-ui-version.ts) – bản mới không dùng lại script cũ trong cache.
+const scriptAsset = src => src;
+const PDF_SCRIPTS = [scriptAsset('pdf-lib.min.js'), scriptAsset('fontkit.umd.min.js'), scriptAsset('hrc-pdf.js'), scriptAsset('editable-pdf.js')];
 let pdfReady = null;
 function loadPdfTools() {
   if (pdfReady) return pdfReady;

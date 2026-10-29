@@ -39,11 +39,16 @@ export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, pr
    */
   let afterWriteTimer;
   function afterWrite(delay = 1200) { saved(); clearTimeout(afterWriteTimer); afterWriteTimer = setTimeout(() => { flush(); }, delay); }
-  async function tick() {
+  /**
+   * `baseline`: chỉ chụp mốc để lần sau so sánh (lúc mở app) – bỏ qua đường dẫn trang vừa tải xong (đã có mốc qua observe),
+   * không đọc lại danh sách của trang đang mở.
+   */
+  async function tick({ baseline = false } = {}) {
     if (busy || !enabled() || doc.hidden) return;
     syncRoute();
     busy = true;
-    const requestGeneration = generation, requestKey = key, paths = [...new Set([...primaryPaths(), ...[...records.keys()].reverse()])].slice(0, 20);
+    const requestGeneration = generation, requestKey = key, paths = [...new Set([...primaryPaths(), ...[...records.keys()].reverse()])]
+      .filter(path => !baseline || !records.has(normalize(path))).slice(0, 20);
     try {
       // Đọc song song tối đa 4 đường dẫn một lúc (trước đây tuần tự: 7–20 lượt gọi nối đuôi nhau sau mỗi lần lưu).
       const queue = [...paths];

@@ -1,5 +1,6 @@
 # Cloudflare Pages: header bảo mật cho giao diện.
-# Cache-Control no-cache: trình duyệt luôn hỏi lại máy chủ (304 nếu chưa đổi) nên bản giao diện mới lên là dùng ngay, không giữ JS/CSS cũ.
+# Cache-Control: không đặt cho /* – Cloudflare Pages mặc định "public, max-age=0, must-revalidate" (trình duyệt luôn hỏi lại, 304 nếu chưa đổi)
+#   cho index.html, ảnh, mẫu hợp đồng… JS / CSS có quy tắc riêng ở cuối file (giữ lâu, URL theo phiên bản).
 # Strict-Transport-Security: HTTPS bắt buộc 1 năm, CHỈ cho tên miền này (không includeSubDomains để không ảnh hưởng tên miền con khác).
 # camera=(self): chỉ trang của mình được mở camera (quét mã vạch ở trang Tra tồn).
 # (font-src có data: vì bản xem trước HĐKT – docx-preview – nhúng font của file Word dạng data:.)
@@ -10,6 +11,17 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: camera=(self), microphone=(), geolocation=()
-  Cache-Control: no-cache
   Strict-Transport-Security: max-age=31536000
   Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://taceqfnsorewelsbdckg.supabase.co; worker-src 'self'; manifest-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+
+# JS / CSS: mọi tham chiếu đều có ?v=<commit> sau bước triển khai (scripts/stamp-ui-version.ts; test chặn file lọt),
+# nên mỗi bản mới là URL mới → trình duyệt giữ một năm, mở app không phải hỏi lại máy chủ từng module (hàng chục lượt nối đuôi).
+# index.html và các file khác dùng mặc định (luôn hỏi lại) nên bản mới lên là dùng ngay.
+# (Quy tắc riêng chỉ thêm header, không ghép với /* vì /* không đặt Cache-Control.) push-sw.js: bỏ header này, dùng mặc định
+# luôn hỏi lại – service worker cần URL cố định.
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+/push-sw.js
+  ! Cache-Control
