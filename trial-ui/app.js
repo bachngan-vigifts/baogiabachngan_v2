@@ -1,3 +1,4 @@
+import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters } from './customer-list-filters.js';
 import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
@@ -583,14 +584,15 @@ async function loadCustomers() {
   const req = ++customerReq;
   customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
-    const d = await api(`/customers?limit=${customerPager.limit}&offset=${customerPager.offset}&q=${encodeURIComponent(state.customerQuery)}${$('#customer-mine').checked ? '&mine=1' : ''}${$('#customer-pending').checked ? '&status=pending' : ''}${$('#customer-retail').checked ? '&kind=retail' : ''}`);
+    const d = await api('/customers?' + customerListQuery($, {limit:customerPager.limit,offset:customerPager.offset,query:state.customerQuery}));
     if (req !== customerReq) return;
     $('#customer-retail-chip').hidden = !d.canListRetail;
     if (!d.canListRetail) $('#customer-retail').checked = false;
+    fillCustomerOwners($('#customer-owner'), d.filterOptions?.owners);
     state.customers = d.customers; state.customerQuoteCounts = null;
     state.customerTotal = d.total ?? d.customers.length;
     loadCustomerQuoteCounts(req);
-    if (!state.customerQuery && !$('#customer-mine').checked && !$('#customer-pending').checked && !$('#customer-retail').checked) state.customerGrandTotal = state.customerTotal;
+    if (!state.customerQuery && !hasCustomerListFilters($)) state.customerGrandTotal = state.customerTotal;
     $('#customer-pending-count').textContent = d.pendingCount || 0; $('#customer-pending-chip').hidden = !d.pendingCount && !$('#customer-pending').checked;
   } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
   renderCustomers(); renderStats(); loadCustomerDuplicates();
@@ -2839,10 +2841,10 @@ function renderCustomers() {
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
       </div></td>
     </tr>`).join('');
-  const none = !state.customerQuery && list.length === 0;
+  const none = !state.customerQuery && !hasCustomerListFilters($) && list.length === 0;
   $('#customer-empty').hidden = list.length > 0;
   $('#customer-empty-title').textContent = none ? 'Chưa có khách hàng' : 'Không tìm thấy khách hàng';
-  $('#customer-empty-text').textContent = none ? 'Thêm khách hàng để chọn nhanh khi lập báo giá.' : 'Thử từ khoá khác.';
+  $('#customer-empty-text').textContent = none ? 'Thêm khách hàng để chọn nhanh khi lập báo giá.' : 'Thử từ khoá khác hoặc xóa bộ lọc.';
   $('#customer-table').hidden = list.length === 0;
 }
 let customerTimer;
@@ -2866,6 +2868,7 @@ $('#customer-list').addEventListener('click', e => {
 $('#customer-retail').addEventListener('change', reloadCustomers);
 $('#customer-mine').addEventListener('change', reloadCustomers);
 $('#customer-pending').addEventListener('change', reloadCustomers);
+bindCustomerListFilters($, reloadCustomers);
 /** Manager duyệt khách mới; từ chối (hoặc người tạo xoá) khách đang chờ duyệt. */
 async function reviewCustomer(id, approve) {
   const c = state.customers?.find(x => x.id === id);

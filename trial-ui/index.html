@@ -440,6 +440,12 @@
           <label class="chip-check" id="customer-pending-chip" hidden><input type="checkbox" id="customer-pending"> Chờ duyệt <b id="customer-pending-count">0</b></label>
           <button type="button" class="chip-check dup-chip" id="customer-dup-chip" hidden>Trùng MST <b id="customer-dup-count">0</b></button>
           <span class="muted small" id="customer-count"></span>
+          <div class="orders-filter-grid customer-filter-grid" id="customer-filter-grid" role="group" aria-label="Bộ lọc khách hàng">
+            <label>Người phụ trách<select id="customer-owner"><option value="">Tất cả người phụ trách</option><option value="unassigned">Chưa có người phụ trách</option></select></label>
+            <label>Sắp xếp<select id="customer-sort"><option value="newest">Mới tạo</option><option value="oldest">Cũ nhất</option><option value="name-asc">Tên A–Z</option><option value="name-desc">Tên Z–A</option></select></label>
+            <label>Tạo từ ngày<input type="date" id="customer-from"></label><label>Tạo đến ngày<input type="date" id="customer-to"></label>
+            <button type="button" class="btn ghost small" id="customer-clear">Xóa bộ lọc</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table class="data-table" id="customer-table">
