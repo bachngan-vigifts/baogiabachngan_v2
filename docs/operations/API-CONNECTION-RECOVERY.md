@@ -13,7 +13,7 @@ Code cũ giữ một direct Postgres client trên mỗi Edge isolate, idle 10 gi
 ## Thay đổi
 
 - Direct mode: chia sẻ client giữa các request đang chạy, đóng ngay khi request và các công việc `waitUntil` cuối cùng kết thúc. Client đang đóng được tách khỏi request mới. Không đóng client khi công việc nền còn dùng DB.
-- Pooler mode: tiếp tục dùng Supavisor transaction pooler nếu secret `SUPABASE_POOLER_URL` có sẵn; `prepare:false`, max 3. Workflow deploy truyền secret tùy chọn từ GitHub sang Supabase, không đoán URL/mật khẩu, không xóa cấu hình hiện có khi GitHub chưa có secret.
+- Pooler mode: tiếp tục dùng Supavisor transaction pooler nếu secret Supabase `DB_POOLER_URL` có sẵn (GitHub giữ tên `SUPABASE_POOLER_URL`, workflow ánh xạ sang tên không có tiền tố dành riêng); `prepare:false`, max 3. Workflow deploy truyền secret tùy chọn từ GitHub sang Supabase, không đoán URL/mật khẩu, không xóa cấu hình hiện có khi GitHub chưa có secret.
 - Probe DB có single flight trên từng client, cache thành công 5 giây; chỉ retry lỗi hết kết nối với backoff hữu hạn trước khi dispatch nghiệp vụ.
 - Giao diện nhân viên/NCC/khách hàng thử lại GET/HEAD tối đa 2 lần khi lỗi mạng hoặc HTTP 502/503/504; timeout từng lần đọc 15 giây, backoff tối đa 2 giây. Không retry 401/403 hoặc lỗi nghiệp vụ.
 - POST/PUT/PATCH/DELETE luôn gửi một lần. Không tự lặp thu tiền, xuất kho, lưu đơn khi không rõ kết quả.

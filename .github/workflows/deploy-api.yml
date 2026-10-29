@@ -76,7 +76,8 @@ jobs:
         run: supabase secrets set --project-ref "$PROJECT_REF" ALLOWED_ORIGINS="${{ vars.APP_ORIGINS }}"
       - name: Cấu hình transaction pooler khi repository đã có secret
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL != ''
-        run: supabase secrets set --project-ref "$PROJECT_REF" SUPABASE_POOLER_URL="$SUPABASE_POOLER_URL"
+        # SUPABASE_* names are reserved inside Edge Functions; keep the GitHub secret name unchanged.
+        run: supabase secrets set --project-ref "$PROJECT_REF" DB_POOLER_URL="$SUPABASE_POOLER_URL"
       - name: Cập nhật mã bí mật đồng bộ Sapo
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != ''
         # Truyền qua biến môi trường để mã không xuất hiện trong lệnh/log.

@@ -11,7 +11,7 @@
 
 ## Việc anh cần làm: bật transaction pooler (quan trọng nhất phía máy chủ)
 
-Hiện GitHub **chưa có** secret `SUPABASE_POOLER_URL`: bước "Cấu hình transaction pooler" trong *Triển khai API* luôn bị bỏ qua. Nếu trên Supabase cũng chưa đặt secret này, mỗi lần gọi API, Edge phải:
+Nếu GitHub **chưa có** secret `SUPABASE_POOLER_URL`: bước "Cấu hình transaction pooler" trong *Triển khai API* luôn bị bỏ qua. Nếu trên Supabase cũng chưa đặt secret `DB_POOLER_URL`, mỗi lần gọi API, Edge phải:
 - mở kết nối Postgres mới (TCP + TLS + xác thực);
 - chạy thêm `select 1`;
 - đóng kết nối ngay sau đó.
@@ -22,8 +22,10 @@ Pooler (Supavisor, chế độ transaction) giữ kết nối sẵn. Mỗi bản
 
 1. Supabase → project → nút **Connect** → tab **Connection string** → chọn **Transaction pooler** (cổng **6543**). Copy chuỗi `postgresql://postgres.<ref>:[YOUR-PASSWORD]@aws-…pooler.supabase.com:6543/postgres`, thay `[YOUR-PASSWORD]` bằng mật khẩu CSDL.
 2. GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**: tên `SUPABASE_POOLER_URL`, giá trị là chuỗi trên. Không dán chuỗi này vào chat.
+**Tên ở hai nơi khác nhau:** GitHub vẫn là `SUPABASE_POOLER_URL`; workflow chuyển giá trị sang secret **`DB_POOLER_URL`** trên Supabase. Supabase cấm tự tạo tên bắt đầu bằng `SUPABASE_`; dùng tên cũ phía Supabase sẽ bị lỗi `Env name cannot start with SUPABASE_`. Không cần đổi tên hoặc nhập lại secret GitHub đã lưu.
+
 3. Actions → **Triển khai API** → *Run workflow*. Bước "Cấu hình transaction pooler" phải chạy (không còn *skipped*).
-4. Kiểm tra: menu → **Đo tốc độ**, cột "Chờ CSDL" phải giảm rõ, thường còn vài ms sau lượt đầu.
+4. Kiểm tra `/health` trả `databaseMode: "transaction-pooler"`, sau đó menu → **Đo tốc độ**, cột "Chờ CSDL" phải giảm rõ, thường còn vài ms sau lượt đầu.
 
 ## Đọc số đo
 
