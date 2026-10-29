@@ -109,3 +109,12 @@ test('new pooler secret enables warm max-3 client; legacy setting still works an
     assert.equal(h.stats.closed,0);assert.equal(h.stats.created,1);
   }
 });
+
+test('deployment rejects a broken pooler connection before changing production secrets or deploying', () => {
+ const workflow=readFileSync('.github/workflows/deploy-api.yml','utf8');
+ const probe=workflow.indexOf('psql -X -w');
+ assert.ok(probe>=0 && probe<workflow.indexOf('supabase secrets set'));
+ assert.match(workflow,/default_transaction_read_only=on/);
+ assert.match(workflow,/statement_timeout=5000/);
+ assert.match(workflow,/SELECT 1' 2>\/dev\/null/);
+});

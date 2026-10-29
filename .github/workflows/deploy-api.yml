@@ -37,6 +37,20 @@ jobs:
         with:
           node-version: 22.22.0
           cache: npm
+      # Reject an invalid URL before setting Edge secrets or replacing a working deployment.
+      - name: Kiểm tra pooler chỉ đọc trước khi đổi cấu hình
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL != ''
+        env:
+          PGCONNECT_TIMEOUT: '10'
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=5000'
+        shell: bash
+        run: |
+          if ! result=$(psql -X -w "$SUPABASE_POOLER_URL" -At -v ON_ERROR_STOP=1 -c 'SELECT 1' 2>/dev/null); then
+            echo '::error::Pooler chưa kết nối được. Chưa đổi secret Supabase và chưa triển khai API; kiểm tra lại SUPABASE_POOLER_URL bằng workflow chỉ đọc.'
+            exit 1
+          fi
+          test "$result" = '1'
       - name: Kiểm tra trước khi triển khai
         # Bộ test staff/admin cũ còn snapshot lệch với schema hiện hành và có thể treo runner.
         # API deploy vẫn bắt buộc typecheck và các test trực tiếp của luồng Sapo/Claw.
