@@ -13,7 +13,7 @@ async function harness({ pooled = false, broken = false, region = '', poolerUrl 
   const stats = { created: 0, closed: 0, probes: 0, routed: 0 };
   let serve: (req: Request) => Promise<Response> = null!;
   const background: Promise<unknown>[] = [];
-  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { SUPABASE_POOLER_URL: poolerUrl } : {}), ...(region ? { SB_REGION: region } : {}) };
+  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { DB_POOLER_URL: poolerUrl } : {}), ...(region ? { SB_REGION: region } : {}) };
   const hooks: { onQuery?: () => void } = {};
   runInNewContext(code, {
     Deno: { env: { get: (key: string) => env[key] }, serve: (fn: typeof serve) => { serve = fn; } },

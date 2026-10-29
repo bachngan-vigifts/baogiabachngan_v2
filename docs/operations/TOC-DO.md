@@ -22,7 +22,7 @@ Pooler (Supavisor, chế độ transaction) giữ kết nối sẵn. Mỗi bản
 
 1. Supabase → project → nút **Connect** → tab **Connection string** → chọn **Transaction pooler** (cổng **6543**). Copy chuỗi `postgresql://postgres.<ref>:[YOUR-PASSWORD]@aws-…pooler.supabase.com:6543/postgres`, thay `[YOUR-PASSWORD]` bằng mật khẩu CSDL.
 2. GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**: tên `SUPABASE_POOLER_URL`, giá trị là chuỗi trên. Không dán chuỗi này vào chat.
-3. Actions → **Triển khai API** → *Run workflow*. Bước "Cấu hình transaction pooler" phải chạy (không còn *skipped*).
+3. Actions → **Triển khai API** → *Run workflow*. Workflow đặt secret này sang Supabase dưới tên `DB_POOLER_URL` (Supabase cấm tên bắt đầu bằng `SUPABASE_`; lần chạy 29/10 hỏng vì lý do này). Bước "Cấu hình transaction pooler" phải chạy (không còn *skipped*).
 4. Kiểm tra: menu → **Đo tốc độ**, cột "Chờ CSDL" phải giảm rõ, thường còn vài ms sau lượt đầu.
 
 ## Đọc số đo
