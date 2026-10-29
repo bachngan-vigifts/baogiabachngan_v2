@@ -4,7 +4,7 @@ import { departmentOwner } from '../../staff/api/department.ts';
 import { customerInput } from '../domain/customer-input.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
 import { canApprove } from '../../staff/domain/permissions.ts';
-import { and, asc, count, desc, eq, exists, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, inArray, isNull, ne, not, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -134,15 +134,30 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const approval = status === 'pending' || status === 'approved' ? eq(customers.approvalStatus, status) : usable ? eq(customers.approvalStatus, 'approved') : undefined;
     const retailVisible = canListRetailCustomers(me), kind = c.url.searchParams.get('kind');
     const segment = !retailVisible ? eq(customers.isRetail, false) : kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined;
-    const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval);
-    const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}]] = await Promise.all([
+    const owner = c.url.searchParams.get('owner') || '', from = c.url.searchParams.get('from') || '', to = c.url.searchParams.get('to') || '';
+    const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0,10) === value;
+    if ((from && !validDate(from)) || (to && !validDate(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày tạo không hợp lệ.');
+    const hasOwner = (id?: string) => exists(c.env.db.select({ x: sql`1` }).from(customerStaff).innerJoin(employees, eq(employees.id, customerStaff.memberId))
+      .where(and(eq(customerStaff.customerId, customers.id), eq(customerStaff.role, 'owner'), isNull(employees.deletedAt), id ? eq(customerStaff.memberId, id) : undefined)));
+    const assigned = owner === 'unassigned' ? not(hasOwner()) : owner ? hasOwner(owner) : undefined;
+    // ISO UTC timestamps: use Vietnam midnight boundaries; imported undated customers remain visible without a date filter.
+    const start = from ? new Date(from + 'T00:00:00+07:00').toISOString() : '', end = to ? new Date(Date.parse(to + 'T00:00:00+07:00') + 86400000).toISOString() : '';
+    const created = start || end ? and(ne(customers.createdAt, ''), start ? sql`${customers.createdAt} >= ${start}` : undefined, end ? sql`${customers.createdAt} < ${end}` : undefined) : undefined;
+    const sort = c.url.searchParams.get('sort') || 'newest';
+    if (!['newest','oldest','name-asc','name-desc'].includes(sort)) throw new AppError(400, 'Cách sắp xếp khách hàng không hợp lệ.');
+    const order = sort === 'oldest' ? [asc(customers.createdAt)] : sort === 'name-asc' ? [asc(foldSql(customers.name)), asc(customers.name)] : sort === 'name-desc' ? [desc(foldSql(customers.name)), desc(customers.name)] : [desc(customers.createdAt)];
+    const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval, assigned, created);
+    const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}], owners] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
-      c.env.db.select().from(customers).where(where).orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, c.url.searchParams.get('q'))), desc(customers.createdAt), asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
+      c.env.db.select().from(customers).where(where).orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, c.url.searchParams.get('q'))), ...order, asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
       c.env.db.select({ pending: count() }).from(customers).where(and(eq(customers.approvalStatus, 'pending'), segment)),
+      c.url.searchParams.get('filters') === '1' ? c.env.db.selectDistinct({id:employees.id,name:employees.name}).from(customerStaff)
+        .innerJoin(employees,eq(employees.id,customerStaff.memberId)).innerJoin(customers,eq(customers.id,customerStaff.customerId))
+        .where(and(segment,eq(customerStaff.role,'owner'),isNull(employees.deletedAt))).orderBy(asc(employees.name),asc(employees.id)) : Promise.resolve(undefined),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));
     return json({ customers: rows.map(r => ({ ...r, owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
-      canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
+      filterOptions: owners ? {owners} : undefined, canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
 
   router.get('/customers/duplicates/check', async c => {

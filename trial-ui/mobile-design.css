@@ -295,3 +295,8 @@
  #view-order.crm-mobile-contract #order-actions>:is([data-pack-print-for],[data-ship-print-for],#order-history) { display:flex!important;min-width:0;white-space:normal;padding:8px 3px;font-size:11px;justify-content:center;text-align:center; }
  body:has(#view-order.crm-mobile-contract:not([hidden])) .chat-launcher { display:none!important; }
 }
+@media (max-width:850px) { .crm-filter-fields #customer-clear { display:none; } }
+@media (max-width:850px) {
+ #view-customers .crm-filter-fields .chip-check { display:flex;align-items:center;justify-content:flex-start;gap:8px; }
+ #view-customers .crm-filter-fields .chip-check input { width:auto; }
+}

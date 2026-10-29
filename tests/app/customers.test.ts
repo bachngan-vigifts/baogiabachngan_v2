@@ -149,3 +149,32 @@ test('tìm khách hàng dùng thuật toán chung: SĐT / mã gõ có hoặc kh�
   assert.deepEqual(await ids('minh long'), ['c-start', 'c-new', 'c-old'], 'tên bắt đầu bằng cụm gõ lên đầu, rồi mới tạo trước');
   assert.deepEqual(await ids(''), ['c-new', 'c-start', 'c-old'], 'không tìm: mới tạo lên trên cùng');
 });
+
+test('bộ lọc khách: phụ trách, chưa phân công, ngày VN, sắp xếp và phân trang chạy trên toàn danh sách', async () => {
+ const {db,call,mgr,emp}=await setup();
+ const {customers,customerStaff}=await import('../../src/modules/customers/schema.ts');
+ const row=(id:string,name:string,createdAt:string)=>({id,name,createdAt,contact:'',phone:'',email:'',address:'',search:'',sourceVersion:0,syncedAt:''});
+ await db.insert(customers).values([
+  row('filter-a','Lọc An','2026-10-28T17:00:00.000Z'), // 00:00 29/10 VN
+  {...row('filter-b','Lọc Bình','2026-10-29T16:59:59.999Z'),approvalStatus:'pending' as const},
+  row('filter-c','Lọc Cường','2026-10-29T17:00:00.000Z'), // 30/10 VN
+  row('filter-d','Lọc Dũng',''),
+ ]);
+ await db.insert(customerStaff).values([
+  {customerId:'filter-a',memberId:'emp',role:'owner',createdBy:'mgr',createdAt:'2026-10-29T00:00:00Z'},
+  {customerId:'filter-b',memberId:'new',role:'owner',createdBy:'mgr',createdAt:'2026-10-29T00:00:00Z'},
+  {customerId:'filter-c',memberId:'emp',role:'shared',createdBy:'mgr',createdAt:'2026-10-29T00:00:00Z'},
+ ]);
+ const get=async(q:string,cookie=mgr)=>{const r=await call('/customers?q=lọc&'+q,cookie);assert.equal(r.status,200,JSON.stringify(r.data));return r.data;};
+ const ids=(d:any)=>d.customers.map((c:any)=>c.id);
+ assert.deepEqual(ids(await get('owner=emp')),['filter-a']);
+ assert.deepEqual(ids(await get('owner=unassigned&sort=name-asc')),['filter-c','filter-d'],'được chia sẻ không phải người phụ trách');
+ assert.deepEqual(ids(await get('from=2026-10-29&to=2026-10-29&sort=oldest')),['filter-a','filter-b'],'mốc ngày theo giờ VN, không tính khách chưa có ngày');
+ assert.deepEqual(ids(await get('owner=new&status=pending&from=2026-10-29&to=2026-10-29')),['filter-b']);
+ assert.deepEqual(ids(await get('owner=unassigned&mine=1',emp)),['filter-c'],'phối hợp với Khách của tôi vẫn giữ điều kiện phụ trách');
+ const page=await get('sort=name-desc&limit=1&offset=1&filters=1');
+ assert.equal(page.total,4);assert.deepEqual(ids(page),['filter-c']);assert.equal(page.nextOffset,2);
+ assert.ok(page.filterOptions.owners.some((o:any)=>o.id==='new'));
+ assert.ok((await get('owner=emp&filters=1')).filterOptions.owners.some((o:any)=>o.id==='new'),'đổi người phụ trách không làm mất các lựa chọn khác');
+ for(const bad of ['from=2026-02-30','from=2026-10-30&to=2026-10-29','to=bad','sort=unknown'])assert.equal((await call('/customers?'+bad,mgr)).status,400,bad);
+});
