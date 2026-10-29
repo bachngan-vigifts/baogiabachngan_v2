@@ -65,8 +65,10 @@ test('Manager sửa bảng quyền → có hiệu lực ngay; cấp "Quản lý 
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal((await call('/quotes', emp)).status, 403);
   assert.equal((await call('/me', emp)).data.user.perms.includes('page.quotes'), false);
-  // Cấp Sổ kho cho Kế toán: vượt qua cả kiểm tra bên trong route sổ kho.
+  // Sổ kho của Kế toán: bỏ quyền → bị chặn cả bên trong route sổ kho; cấp lại → vào được (Kế toán mặc định có Sổ kho – xem).
   const acc = view.positions.find((p: any) => p.id === 'accounting');
+  assert.ok(acc.perms.includes('inventory.view'), 'Kế toán mặc định xem được Sổ kho');
+  await call('/permissions/positions/accounting', mgr, 'PUT', { perms: acc.perms.filter((k: string) => k !== 'inventory.view') });
   assert.equal((await call('/inventory/status', ketoan)).status, 403);
   await call('/permissions/positions/accounting', mgr, 'PUT', { perms: [...acc.perms, 'inventory.view', 'perm.manage'] });
   assert.equal((await call('/inventory/status', ketoan)).status, 200);
