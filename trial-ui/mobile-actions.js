@@ -9,7 +9,7 @@ const containers=[
 const controls='button.btn,button.icon-btn,a.btn,.btn-add,label.btn,.menu-wrap,button[data-mobile-action]';
 const skip='#view-pos,.pos-modal,.pos-shell,.mobile-action-list,.mobile-action-trigger,.mobile-action-heading,.auth,#supplier-auth,nav,.pager,.chips,[role="tablist"],[role="radiogroup"],.pos-qty,.pos-cash-quick,.quote-mobile-steps,.mobile-savebar,.chat-compose,[data-mobile-actions="off"]';
 /** Số thao tác tối thiểu mới gom vào nút ⋮. */
-export const GROUP_MIN=3;
+export const GROUP_MIN=4;
 const shown=n=>!n.hidden&&n.style.display!=='none';
 let installed=false;
 export function installMobileActions(){
@@ -33,7 +33,8 @@ export function installMobileActions(){
   const before=r.trigger.style.display;r.trigger.style.display='none';
   try{
    if(r.parent.scrollWidth>r.parent.clientWidth+1)return true;
-   if(r.items.some(n=>{if(!shown(n))return false;const b=n.getBoundingClientRect();return b.width>0&&(b.right>innerWidth+1||b.left<-1);}))return true;
+   // Cả nút chính / nút khác cùng hàng (vd. "+ Lập đơn mua" bị đẩy ra ngoài màn hình) cũng tính.
+   if([...r.items,...r.parent.children].some(n=>{if(!shown(n)||n===r.trigger||n===r.list)return false;const b=n.getBoundingClientRect();return b.width>0&&(b.right>innerWidth+1||b.left<-1);}))return true;
    // Tiêu đề cùng hàng bị co thành "T…" (vd. đầu trang báo giá) cũng tính là không vừa.
    const row=r.parent.parentElement;
    for(const c of row?.children||[])if(c!==r.parent)for(const t of [c,...c.querySelectorAll('h1,h2,h3')])
@@ -48,8 +49,8 @@ export function installMobileActions(){
    const slot=r.slots.get(item);
    item.classList.remove('mobile-secondary-action');r.items=r.items.filter(n=>n!==item);slot?.remove();r.slots.delete(item);
   }
-  // Gom khi có từ 3 thao tác hiện được trở lên. 1 nút luôn nằm tại chỗ; 2 nút nằm tại chỗ nếu vừa màn hình, tràn thì mới gom
-  // (gom vào ⋮ thêm một lần bấm, chỉ đáng khi tiết kiệm được chỗ).
+  // Gom khi có từ 4 thao tác hiện được trở lên. 1 nút luôn nằm tại chỗ; 2–3 nút nằm tại chỗ nếu vừa màn hình, khu vực bị rối
+  // (tràn ngang hoặc làm tiêu đề cùng hàng bị co) thì mới gom – gom vào ⋮ thêm một lần bấm, chỉ đáng khi tiết kiệm được chỗ.
   const visible=r.items.filter(shown).length,open=r.list.matches(':popover-open');
   let grouped=visible>=GROUP_MIN||(open&&visible>1);
   if(!grouped&&visible>1&&media.matches){for(const item of r.items)item.classList.remove('mobile-secondary-action');grouped=overflows(r);}

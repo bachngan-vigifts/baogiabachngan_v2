@@ -21,8 +21,8 @@ test('destructive controls require desktop or their existing full confirmation d
  assert.equal(actionKind(control('Thêm sản phẩm',{desktop:true,primary:true})),'desktop');
  assert.equal(actionKind(control('Nhân bản')),'secondary');
 });
-test('pagination and adding a product stay inline; only three or more secondary actions are grouped',()=>{
+test('pagination and adding a product stay inline; only four or more secondary actions are grouped (2–3 only when they overflow)',()=>{
  for(const text of ['‹ Trang trước','Trang tiếp ›','‹ Trước','Sau ›','‹','›','＋ Thêm sản phẩm'])assert.equal(actionKind(control(text)),'inline',text);
  assert.equal(actionKind(control('Dán từ Excel')),'secondary');
- assert.equal(GROUP_MIN,3);
+ assert.equal(GROUP_MIN,4);
 });
