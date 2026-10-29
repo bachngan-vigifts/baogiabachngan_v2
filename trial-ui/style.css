@@ -112,6 +112,9 @@ textarea { resize: vertical; }
 .sidebar .brand { padding: 0 8px 16px; flex-shrink: 0; }
 .side-nav { display: grid; gap: 10px; align-content: start; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #526581 transparent; padding-bottom: 12px; }
 .nav-group { display: grid; gap: 2px; }
+.thu-chi-tabs { max-width: var(--app-content-max); width: 100%; margin: 0 auto; padding: 22px 28px 0; }
+.thu-chi-tabs .chip { text-decoration: none; }
+@media (max-width: 850px) { .thu-chi-tabs { padding: 12px 16px 0; } }
 .nav-group:not(:has(.nav:not([hidden]))) { display: none; }
 .nav-label { margin: 0; font-weight: 600; font-size: var(--text-caption); text-transform: uppercase; letter-spacing: .12em; color: #7f8ea6; padding: 8px 12px 4px; }
 .nav-label:has(.nav-group-toggle) { padding: 0; }
@@ -1885,6 +1888,15 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .acct-table .task-go small, .acct-due small, .acct-table .task-people small { display: block; margin-top: 3px; }
 .acct-table .task-people { min-width: 120px; font-size: var(--text-caption); } .acct-table .task-go .pill { white-space: normal; }
 .acct-mobile { display: none; }
+.acct-quick { width: min(440px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 14px; background: var(--surface); color: var(--ink); box-shadow: 0 18px 48px #13233633; }
+.acct-quick::backdrop { background: #10182866; }
+.acct-quick form { display: grid; gap: 12px; padding: 20px; }
+.acct-quick h2 { margin: 0; font-size: var(--text-heading); }
+.acct-quick p { margin: 0; }
+.acct-quick label { display: grid; gap: 4px; font-size: var(--text-small); color: var(--muted); }
+.acct-quick input, .acct-quick select { width: 100%; }
+.acct-quick-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.acct-quick .error:empty { display: none; }
 .acct-drawer { position: fixed; inset: 0 0 0 auto; width: min(560px, 100%); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; background: var(--surface); box-shadow: -10px 0 40px #13233629; overflow-y: auto; color: var(--ink); }
 .acct-drawer::backdrop { background: #172b2852; } .acct-detail-head { padding: 24px 24px 12px; position: relative; }
 .acct-detail-head h2 { font-size: var(--text-heading); margin: 8px 32px 12px 0; } .acct-close { position: absolute; right: 18px; top: 18px; }

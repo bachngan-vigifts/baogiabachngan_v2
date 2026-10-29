@@ -29,7 +29,9 @@ export function installMobileDesign(profiles){
  function syncNav(){
   const sources=new Map();
   for(const a of document.querySelectorAll('.sidebar [data-nav]'))if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
-  const keys=[...navOrder.filter(k=>sources.has(k)),...[...sources.keys()].filter(k=>!navOrder.includes(k))];
+  // Kế toán (app.js accountingMenu): việc hằng ngày đứng trước.
+  const order=document.body.classList.contains('role-accounting')?['tasks','receivables','purchases','cashbook','cash','customers','suppliers']:navOrder;
+  const keys=[...order.filter(k=>sources.has(k)),...[...sources.keys()].filter(k=>!order.includes(k))];
   const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
   const label=(k,a)=>navLabels[k]||a.querySelector('span:last-of-type')?.textContent||a.textContent.trim();
   const signature=JSON.stringify(keys.map(k=>{const a=sources.get(k);return [k,a.getAttribute('href'),label(k,a)];}))+key;

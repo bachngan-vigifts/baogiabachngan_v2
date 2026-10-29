@@ -244,7 +244,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
       }
       if (accountingMode === undefined) accountingMode = positionId() === 'accounting';
       if (accountingMode && st.tab !== 'approvals') {
-        if (!accountingBoard) { const { initAccountingTasks } = await import('./accounting-tasks.js'); accountingBoard = initAccountingTasks({ root, api, toast, userId, back: () => { accountingMode = false; accountingBoard.hide(); load(); } }); }
+        if (!accountingBoard) { const { initAccountingTasks } = await import('./accounting-tasks.js'); accountingBoard = initAccountingTasks({ root, api, toast, userId, sendOnce, back: () => { accountingMode = false; accountingBoard.hide(); load(); } }); }
         if (request !== loadSequence) return;
         await accountingBoard.load(focusId); return;
       }

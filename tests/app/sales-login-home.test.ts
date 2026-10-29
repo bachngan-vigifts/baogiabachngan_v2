@@ -18,7 +18,7 @@ function harness(positionId:string,role='employee',perms=['pos.sell','page.quote
 }
 
 test('fresh employee login opens process flow when allowed; resume preserves the current document',()=>{
- for(const position of ['sales-ml','sales-lock','sale','sale-admin','accounting','warehouse']){
+ for(const position of ['sales-ml','sales-lock','sale','sale-admin','warehouse']){
   const app=harness(position,'employee',['pos.sell','page.quotes','page.flow']);assert.equal(app.homeHash(),'#/flow');
   app.start(true);assert.equal(app.location.hash,'#/flow');app.location.hash='#/orders/existing';app.start(false);assert.equal(app.location.hash,'#/orders/existing');
  }
@@ -28,4 +28,6 @@ test('home never grants process-flow permission and preserves Manager default',(
  assert.equal(harness('sale','employee',['page.quotes']).homeHash(),'#/quotes');
  assert.equal(harness('manager','manager').homeHash(),'#/quotes');
  assert.equal(harness('warehouse','employee',[]).homeHash(),'#/kho');
+ // Kế toán mở thẳng hàng đợi Việc kế toán (kể cả khi có quyền Sơ đồ quy trình).
+ assert.equal(harness('accounting','employee',['page.flow','page.cashbook']).homeHash(),'#/tasks');
 });
