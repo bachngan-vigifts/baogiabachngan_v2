@@ -4845,7 +4845,7 @@ function chooseFlow(label) {
  * `q`: { quoteId, quoteNo, quoteType, customer, address }. Trả true khi đã sinh / đã mở hộp lập HĐKT.
  */
 async function makeFromQuote(flow, q, done) {
-  const review = await api('/quotes/' + encodeURIComponent(q.quoteId) + '/approval-preflight');
+  const review = await (q.preflight || api('/quotes/' + encodeURIComponent(q.quoteId) + '/approval-preflight'));
   const debtWarningAccepted=review.debt.total > 0 ? await confirmApprovalDebt(review,flow==='contract'?'Vẫn tạo HĐKT':'Vẫn tạo đơn') : false;
   if(review.debt.total > 0 && !debtWarningAccepted)return false;
   if (flow === 'contract') { openContractForm({ ...q, done, debtWarningAccepted }); return true; }
@@ -4896,14 +4896,20 @@ $('#quote-hold-extend').addEventListener('click', async e => {
   catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; drawQuoteHold(); }
 });
 /** Đọc lại khi mở/lưu báo giá và trước khi sinh, tránh dùng liên kết cũ hoặc sinh trùng. */
-async function refreshQuoteDocument(id) {
+function refreshQuoteDocument(id) {
   const request = editor.documentRequest = (editor.documentRequest || 0) + 1;
+  return editor.documentPromise = loadQuoteDocument(id, request);
+}
+async function loadQuoteDocument(id, request) {
   editor.document = null; editor.documentError = false; editor.documentLoading = !!id;
   if (!id) return null;
   updateQuoteActions();
   try {
     const { order } = await api('/orders/by-quote/' + encodeURIComponent(id));
-    if (editor.id !== id || editor.documentRequest !== request) return undefined;
+    if (editor.id !== id) return undefined;
+    // Trang vừa tự tải lại báo giá (sau khi duyệt / lưu / có dữ liệu mới) và gửi lượt kiểm tra mới: chờ lượt mới nhất thay vì
+    // trả "bỏ qua" – trước đây cú bấm "Sinh Đơn hàng / HĐKT" rơi vào lúc này bị nuốt im lặng, phải bấm lại 2–3 lần.
+    if (editor.documentRequest !== request) return editor.documentPromise;
     editor.document = order;
     return order;
   } catch (ex) {
@@ -4915,17 +4921,21 @@ async function refreshQuoteDocument(id) {
     }
   }
 }
+$('#quote-make').dataset.noBusy = ''; // tự quản lý trạng thái bận (busy-buttons.js không mở khoá nút giữa chừng)
 $('#quote-make').addEventListener('click', async () => {
   const id = editor.id; if (!id) return toast('Lưu báo giá trước.', 'err');
+  // Kiểm tra công nợ khách (cần cho cả 2 luồng) chạy song song với kiểm tra đơn đã có – bớt một lượt chờ sau khi chọn luồng.
+  const preflight = api('/quotes/' + encodeURIComponent(id) + '/approval-preflight'); preflight.catch(() => {});
   const linked = await refreshQuoteDocument(id);
   if (editor.id !== id || linked === undefined) return;
   if (editor.documentError) return toast('Chưa kiểm tra được Đơn hàng / HĐKT. Vui lòng thử lại.', 'err');
   if (linked) return go('#/' + (linked.contractNo ? 'contracts/' : 'orders/') + encodeURIComponent(linked.id));
   const block = approvalBlock(); if (block) return toast(block, 'err');
   const flow = await chooseFlow(`${field('quoteNo').value} · ${field('customer').value || ''}`); if (!flow || editor.id !== id) return;
-  const btn = $('#quote-make'); btn.disabled = true;
-  try { await makeFromQuote(flow, { quoteId: editor.id, quoteNo: field('quoteNo').value, quoteType: editor.type, customer: field('customer').value, address: field('customerAddress').value }); }
-  catch (ex) { toast(ex.message, 'err'); } finally { updateQuoteActions(); }
+  // Từ lúc chọn luồng tới khi form mở: nút báo đang mở (trước đây màn hình đứng im ~1 giây, người dùng bấm lại).
+  const btn = $('#quote-make'); btn.disabled = true; btn.textContent = 'Đang mở form…'; btn.classList.add('is-busy'); btn.setAttribute('aria-busy', 'true');
+  try { await makeFromQuote(flow, { quoteId: editor.id, quoteNo: field('quoteNo').value, quoteType: editor.type, customer: field('customer').value, address: field('customerAddress').value, preflight }); }
+  catch (ex) { toast(ex.message, 'err'); } finally { btn.classList.remove('is-busy'); btn.removeAttribute('aria-busy'); updateQuoteActions(); }
 });
 
 // ＋ ở trang Đơn hàng / HĐKT: chọn một báo giá đã duyệt (chưa có đơn) → tạo đơn / lập HĐKT.
