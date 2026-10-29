@@ -81,3 +81,17 @@ test('làm ngay trên dòng việc: Ghi thu / Ghi số HĐ / Ghi trả NCC mở 
   const pay = calls.find(x => x.path === '/payments')!; assert.equal(pay.method, 'POST');
   assert.deepEqual([pay.b.key, pay.b.orderId, pay.b.amount, pay.b.method], ['key-300000', 'order-1', 300000, 'transfer']);
 });
+
+test('kiểm tra trước khi xuất HĐ và khung "Cần kiểm tra": cảnh báo đúng, chỉ dùng text, link chỉ tới chứng từ / sổ quỹ', () => {
+  const c = fixture();
+  assert.equal(c.invoiceChecks({ taxCode: '0312345678', orderStatus: 'delivered', invoiceMode: 'issue' }).length, 0);
+  assert.equal(c.invoiceChecks({ taxCode: '0312345678-001', orderStatus: 'delivered' }).length, 0, 'MST chi nhánh hợp lệ');
+  const w = c.invoiceChecks({ taxCode: '12AB', orderStatus: 'confirmed', invoiceMode: 'draft' }).join(' | ');
+  assert.match(w, /không đúng dạng/); assert.match(w, /chưa giao xong/); assert.match(w, /bản nháp/);
+  assert.match(c.invoiceChecks({ taxCode: '', orderStatus: 'delivered' })[0], /Chưa có MST/);
+  assert.equal(c.accountingChecksBox({ duplicatePayments: [], staleInvoices: [], cashWithoutPhoto: null }), null, 'không có gì thì ẩn');
+  const box: Element = c.accountingChecksBox({ duplicatePayments: [{ docNo: 'DH_1', customerName: '<b>x</b>', count: 2, amount: 1000, paidAt: '2026-10-28', link: '#/orders/o1' }],
+    staleInvoices: [{ docNo: 'HĐKT_1', customerName: 'A', days: 9, link: 'javascript:alert(1)' }], cashWithoutPhoto: [{ entryNo: 'PC1', amount: 2000000, reason: 'Sửa xe' }] });
+  assert.match(box.textContent, /Thu trùng/); assert.match(box.textContent, /9 ngày/); assert.match(box.textContent, /chưa có ảnh/); assert.match(box.textContent, /<b>x<\/b>/);
+  assert.equal(nodes(box).filter(e => e.tagName === 'a').map(e => e.href).join(','), '#/orders/o1,#/cash', 'link lạ không được gắn');
+});

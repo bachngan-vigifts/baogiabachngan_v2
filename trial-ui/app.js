@@ -3294,7 +3294,7 @@ async function loadReceivables() {
     $('#receivable-stats').innerHTML = [['Phải thu', d.totals.due, ''], ['Đã thu', d.totals.paid, ''], ['Còn lại', d.totals.balance, ''], ['Quá hạn', d.totals.overdue, d.totals.overdue > 0 ? 'danger-text' : '']]
       .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('')
       // Tuổi nợ quá hạn: 1–30 / 31–60 / trên 60 ngày.
-      + (d.totals.overdue > 0 ? `<article class="stat aging-stat"><small>Tuổi nợ quá hạn</small><span><b>1–30 ngày</b> ${money(a.d30)}</span><span><b>31–60 ngày</b> ${money(a.d60)}</span><span class="${a.over60 ? 'danger-text' : ''}"><b>Trên 60 ngày</b> ${money(a.over60)}</span></article>` : '');
+      + (d.totals.overdue > 0 ? `<article class="stat aging-stat"><small>Tuổi nợ quá hạn</small><span><b>1–30 ngày</b> ${money(a.d30)}</span><span><b>31–60 ngày</b> ${money(a.d60)}</span>` + (a.d90 === undefined ? `<span class="${a.over60 ? 'danger-text' : ''}"><b>Trên 60 ngày</b> ${money(a.over60)}</span>` : `<span class="${a.d90 ? 'danger-text' : ''}"><b>61–90 ngày</b> ${money(a.d90)}</span><span class="${a.over90 ? 'danger-text' : ''}"><b>Trên 90 ngày</b> ${money(a.over90)}</span>`) + '</article>' : '');
     state.receivables = d.receivables;
     fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
       <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}${r.ownerName ? ' · ' + esc(r.ownerName) : ''}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
@@ -3302,11 +3302,35 @@ async function loadReceivables() {
       <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : r.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td>
       <td>${r.deliveryStatus ? pill(DELIVERY_STATUS, r.deliveryStatus) : '<span class="muted">—</span>'}<small>${esc(r.deliveryCarrier || '')}</small></td>
       <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
-      <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) : '—'}</td></tr>`),
+      <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) + `<button type="button" class="btn ghost small remind-btn" data-remind="${esc(r.orderId)}">Nhắc nợ</button>` : '—'}</td></tr>`),
       status === 'paid' ? 'Chưa có đơn nào đã thu đủ.' : status === 'overdue' ? 'Không có công nợ quá hạn.' : 'Không còn công nợ phải thu. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
   } catch (e) { listError('receivables', e); }
 }
 for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).addEventListener('change', loadReceivables);
+/** Nội dung nhắc nợ soạn sẵn từ dòng công nợ (người dùng tự gửi – không tự động gửi cho khách). */
+function debtReminderText(r) {
+  const doc = r.contractNo || r.orderNo, late = r.aging?.oldestDue ? `đã quá hạn ${r.aging.overdueDays} ngày (hạn ${fmtDate(r.aging.oldestDue)})` : 'đã đến hạn';
+  return `Kính gửi ${r.customerName},\nKhoản thanh toán của ${r.contractNo ? 'hợp đồng' : 'đơn hàng'} ${doc} ${late}.\n`
+    + `Số tiền quá hạn: ${money(r.overdue)}. Tổng còn phải thanh toán: ${money(r.balance)}.\n`
+    + 'Quý khách vui lòng thanh toán hoặc phản hồi giúp nếu đã chuyển khoản. Xin cảm ơn!';
+}
+$('#receivables-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-remind]'); if (!b) return;
+  const r = state.receivables?.find(x => x.orderId === b.dataset.remind); if (!r) return;
+  const dlg = document.createElement('dialog'); dlg.className = 'acct-quick';
+  const form = document.createElement('form'), title = document.createElement('h2'), text = document.createElement('textarea'), foot = document.createElement('div'), hint = document.createElement('p');
+  form.method = 'dialog'; title.textContent = 'Nhắc nợ · ' + r.customerName; text.value = debtReminderText(r); text.rows = 7; text.setAttribute('aria-label', 'Nội dung nhắc nợ');
+  hint.className = 'muted small'; hint.textContent = 'Sửa nội dung nếu cần rồi chép gửi qua Zalo / email. Hệ thống không tự gửi cho khách.';
+  foot.className = 'acct-quick-foot';
+  const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'btn primary'; copy.textContent = 'Chép nội dung';
+  copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(text.value); toast('Đã chép nội dung nhắc nợ.'); } catch { text.select(); toast('Trình duyệt chặn chép tự động – bấm giữ để chép.', 'err'); } });
+  const close = document.createElement('button'); close.type = 'submit'; close.className = 'btn secondary'; close.textContent = 'Đóng';
+  foot.append(close);
+  const phone = String(r.phone || '').replace(/\D/g, '');
+  if (phone.length >= 9) { const zalo = document.createElement('a'); zalo.className = 'btn secondary'; zalo.href = 'https://zalo.me/' + phone; zalo.target = '_blank'; zalo.rel = 'noopener'; zalo.textContent = 'Mở Zalo ' + phone; foot.append(zalo); }
+  foot.append(copy); form.append(title, hint, text, foot); dlg.append(form);
+  dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal(); text.focus();
+});
 $('#receivables-clear').addEventListener('click', () => { for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).value = ''; $('#receivables-search').value = ''; loadReceivables(); });
 /** Số trên nút "Chờ xuất hoá đơn" (ẩn khi 0). */
 function invoiceCount(key, n) { const c = $(`#${key}-filters [data-invoice-count]`); if (c) c.textContent = n ? String(n) : ''; }

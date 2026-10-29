@@ -112,9 +112,9 @@ textarea { resize: vertical; }
 .sidebar .brand { padding: 0 8px 16px; flex-shrink: 0; }
 .side-nav { display: grid; gap: 10px; align-content: start; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #526581 transparent; padding-bottom: 12px; }
 .nav-group { display: grid; gap: 2px; }
-.thu-chi-tabs { max-width: var(--app-content-max); width: 100%; margin: 0 auto; padding: 22px 28px 0; }
+.thu-chi-tabs { flex: none; max-width: var(--app-content-max); width: 100%; margin: 0 auto; padding: 22px 28px 0; }
 .thu-chi-tabs .chip { text-decoration: none; }
-@media (max-width: 850px) { .thu-chi-tabs { padding: 12px 16px 0; } }
+@media (max-width: 850px) { .main > .thu-chi-tabs { padding: 12px 16px 0; } }
 .nav-group:not(:has(.nav:not([hidden]))) { display: none; }
 .nav-label { margin: 0; font-weight: 600; font-size: var(--text-caption); text-transform: uppercase; letter-spacing: .12em; color: #7f8ea6; padding: 8px 12px 4px; }
 .nav-label:has(.nav-group-toggle) { padding: 0; }

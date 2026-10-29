@@ -11,6 +11,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { addDaysIso } from '../domain/task-config.ts';
 import { accountingSources } from './accounting-sources.ts';
 import { accountingDiagnostics } from './accounting-diagnostics.ts';
+import { accountingChecks } from './accounting-checks.ts';
 type Ctx = RouteContext<StaffEnv>;
 type Task = typeof tasks.$inferSelect;
 export interface AccountingAccess {
@@ -61,6 +62,11 @@ export function registerAccountingTaskRoutes(router: Router<StaffEnv>, access: A
         debts: { count: new Set(debts.map(t => t.sourceId)).size, amount: sum(debts) }, unclaimed: open.filter(team).length,
         unavailableAmounts: open.filter(t => !sources.get(t.id)?.available).length }, warnings,
       tasks: list, total: result.length, nextOffset: offset + 100 < result.length ? offset + 100 : null });
+  }, 'business');
+  /** "Cần kiểm tra": thu trùng, yêu cầu xuất HĐ quá hạn, phiếu chi lớn chưa ảnh – chỉ đọc (accounting-checks.ts). */
+  router.get('/tasks/accounting/checks', async c => {
+    check(c);
+    return json(await accountingChecks(c.env.db, me(c), vietnamDate().iso));
   }, 'business');
   router.get('/tasks/accounting/:id', async c => {
     check(c); const t = await access.loadTask(c, c.params.id!);

@@ -100,7 +100,7 @@ const todayIso = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0
 /** Hộp nhập nhỏ: các ô + nút Lưu. Lỗi (kể cả mạng) hiện trong hộp, giữ nguyên số đã nhập để gửi lại. */
 function quickDialog(title, note, fields, submit) {
   const dlg = node('dialog', 'acct-quick'), form = node('form'), err = node('p', 'error'), inputs = {};
-  dlg.setAttribute('aria-label', title); form.append(node('h2', '', title)); if (note) form.append(node('p', 'muted', note));
+  dlg.setAttribute('aria-label', title); form.append(node('h2', '', title)); if (note) form.append(node('p', 'muted pre', note));
   for (const f of fields) {
     const label = node('label', '', f.label), input = node(f.options ? 'select' : 'input');
     if (f.options) for (const [v, t] of f.options) { const o = node('option', '', t); o.value = v; input.append(o); }
@@ -120,6 +120,39 @@ function quickDialog(title, note, fields, submit) {
   return dlg;
 }
 const METHODS = [['transfer', 'Chuyển khoản'], ['cash', 'Tiền mặt'], ['other', 'Khác']];
+/** Kiểm tra trước khi xuất hoá đơn (gợi ý, không chặn): MST, đơn đã giao xong chưa, khách muốn xem bản nháp. */
+export function invoiceChecks(s) {
+  const out = [], mst = String(s.taxCode || '').replace(/\s/g, '');
+  if (!mst) out.push('Chưa có MST – hoá đơn cho công ty cần mã số thuế.');
+  else if (!/^(\d{10}(-\d{3})?|\d{12})$/.test(mst)) out.push(`MST "${s.taxCode}" không đúng dạng (10 số, 10-3 số chi nhánh, hoặc 12 số CCCD).`);
+  if (s.orderStatus && s.orderStatus !== 'delivered') out.push('Đơn chưa giao xong – kiểm tra hàng đã giao đủ trước khi phát hành.');
+  if (s.invoiceMode === 'draft') out.push('Khách muốn xem bản nháp trước khi phát hành chính thức.');
+  return out;
+}
+const STATUS_LABEL = { duplicatePayments: 'Thu trùng', staleInvoices: 'Yêu cầu xuất HĐ chờ lâu', cashWithoutPhoto: 'Phiếu chi lớn chưa có ảnh' };
+/** Khung "Cần kiểm tra" (chỉ đọc, gợi ý): ẩn khi không có gì. */
+export function accountingChecksBox(d) {
+  if (!d) return null;
+  const groups = [
+    ['duplicatePayments', (d.duplicatePayments || []).map(r => [`${r.docNo} · ${r.customerName}`, `${r.count} phiếu thu cùng ${money(r.amount)} ngày ${date(r.paidAt)} – kiểm tra có ghi trùng không`, r.link])],
+    ['staleInvoices', (d.staleInvoices || []).map(r => [`${r.docNo} · ${r.customerName}`, `Yêu cầu xuất HĐ đã ${r.days} ngày, chưa nhập số hoá đơn`, r.link])],
+    ['cashWithoutPhoto', (d.cashWithoutPhoto || []).map(r => [`${r.entryNo} · ${money(r.amount)}`, `${r.reason} – chưa có ảnh hoá đơn`, '#/cash'])],
+  ].filter(([, rows]) => rows.length);
+  if (!groups.length) return null;
+  const box = node('section', 'acct-source-diagnostics acct-checks'); box.setAttribute('aria-label', 'Cần kiểm tra');
+  for (const [key, rows] of groups) {
+    const card = node('details', 'acct-source-card'), summary = node('summary');
+    summary.append(node('strong', '', 'Cần kiểm tra · ' + STATUS_LABEL[key]), node('span', '', rows.length + ' mục')); card.append(summary);
+    const list = node('div', 'acct-source-list');
+    for (const [title, note, href] of rows) {
+      const row = node('div', 'acct-source-row'), info = node('div'); info.append(node('strong', '', title), node('small', 'muted', note)); row.append(info);
+      if (href && /^#\/(orders|contracts)\/[\w-]+$|^#\/cash$/.test(href)) { const a = node('a', 'btn secondary small', 'Mở'); a.href = href; row.append(a); }
+      list.append(row);
+    }
+    card.append(list); box.append(card);
+  }
+  return box;
+}
 
 export function initAccountingTasks({ root, api, toast, userId, back, sendOnce = (_scope, _content, send) => send(crypto.randomUUID()) }) {
   const box = node('section', 'accounting-tasks'), saved = new Map(), st = { view: 'team', kind: '', q: '', limit: 0 }, title = node('div', 'acct-head');
@@ -135,7 +168,7 @@ export function initAccountingTasks({ root, api, toast, userId, back, sendOnce =
   /** Mở hộp làm ngay cho việc t; xong thì tải lại (việc tự hoàn thành theo chứng từ). */
   function quickAct(t) {
     const s = t.sourceData, id = encodeURIComponent(s.targetId), done = async msg => { toast(msg); await load(); if (detailId) closeDetail(); };
-    if (s.kind === 'invoice') return quickDialog(`Ghi số hoá đơn · ${s.docNo}`, `${s.taxCode ? 'MST ' + s.taxCode : 'Chưa có MST'} · giá trị ${money(s.total)}`,
+    if (s.kind === 'invoice') return quickDialog(`Ghi số hoá đơn · ${s.docNo}`, [`${s.taxCode ? 'MST ' + s.taxCode : 'Chưa có MST'} · giá trị ${money(s.total)}`, ...invoiceChecks(s).map(w => '⚠ ' + w)].join('\n'),
       [{ name: 'invoiceNo', label: 'Số hoá đơn', required: true }, { name: 'invoiceDate', label: 'Ngày hoá đơn', type: 'date', value: todayIso(), max: todayIso(), required: true }],
       async v => { await api(`/orders/${id}/invoice`, 'PUT', { invoiceNo: v.invoiceNo.trim(), invoiceDate: v.invoiceDate }); await done('Đã ghi số hoá đơn.'); });
     if (s.kind === 'debt') return quickDialog(`Ghi thu · ${s.docNo}`, `Quá hạn ${money(s.overdue)} · còn phải thu ${money(s.balance)}`,
@@ -156,6 +189,7 @@ export function initAccountingTasks({ root, api, toast, userId, back, sendOnce =
     content.replaceChildren();
     const warning = accountingWarning(data.warnings); if (warning) content.append(warning);
     const sourceWarnings = accountingSourceWarnings(data.sourceWarnings); if (sourceWarnings) content.append(sourceWarnings);
+    const checks = accountingChecksBox(data.checks); if (checks) content.append(checks);
     content.append(accountingKpis(data));
     if (data.kpis.unavailableAmounts) content.append(node('p', 'muted small', 'Một số số tiền không hiển thị do quyền xem chứng từ. Tổng tiền chỉ gồm số liệu được phép xem.'));
     const filters = node('div', 'acct-filters'), tabs = node('div', 'acct-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Nhóm công việc kế toán');
@@ -174,7 +208,8 @@ export function initAccountingTasks({ root, api, toast, userId, back, sendOnce =
     const request = ++sequence; show();
     try {
       const params = new URLSearchParams({ view: st.view, kind: st.kind, q: st.q });
-      const first = await api('/tasks/accounting?' + params); let data = first;
+      // "Cần kiểm tra" tải song song, lỗi thì bỏ qua (không chặn hàng đợi việc).
+      const [first, checks] = await Promise.all([api('/tasks/accounting?' + params), api('/tasks/accounting/checks').catch(() => null)]); let data = { ...first, checks };
       for (let offset = 100; offset <= st.limit && data.nextOffset != null; offset += 100) { const next = await api('/tasks/accounting?' + params + '&offset=' + offset); data = { ...data, tasks: [...data.tasks, ...next.tasks], nextOffset: next.nextOffset }; }
       if (request !== sequence) return;
       render(data); if (focusId) await openDetail({ id: focusId });

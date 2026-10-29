@@ -1360,8 +1360,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     })
       .filter(r => r.status !== 'none' && (!want || r.status === want || (want === 'open' && r.status === 'overdue')));
     const sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => list.reduce((s, r) => s + r[k], 0);
-    const aged = (k: 'd30' | 'd60' | 'over60') => list.reduce((s, r) => s + r.aging.buckets[k], 0);
-    return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue'), aging: { d30: aged('d30'), d60: aged('d60'), over60: aged('over60') } },
+    const aged = (k: 'd30' | 'd60' | 'over60' | 'd90' | 'over90') => list.reduce((s, r) => s + r.aging.buckets[k], 0);
+    return json({ receivables: list, totals: { due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue'), aging: { d30: aged('d30'), d60: aged('d60'), over60: aged('over60'), d90: aged('d90'), over90: aged('over90') } },
       filterOptions: { owners: ownerOptions, branches: [{ id: 'crm', name: 'VIGIFTS / CRM' }, ...branchOptions] } });
   }, 'business');
 

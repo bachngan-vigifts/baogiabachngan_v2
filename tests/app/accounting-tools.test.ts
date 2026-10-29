@@ -73,7 +73,7 @@ test('huỷ phiếu thu: chỉ Manager / quyền Huỷ phiếu thu, bắt buộc
 
 test('công nợ: tuổi nợ quá hạn theo khoảng ngày, hạn thu, người phụ trách', async () => {
   assert.deepEqual(debtAging([{ amount: 100, dueDate: '2026-09-01' }, { amount: 50, dueDate: '2026-10-10' }, { amount: 30, dueDate: '2026-12-01' }], [{ amount: 40 }], '2026-10-20'),
-    { oldestDue: '2026-09-01', overdueDays: 49, buckets: { d30: 50, d60: 60, over60: 0 } });
+    { oldestDue: '2026-09-01', overdueDays: 49, buckets: { d30: 50, d60: 60, over60: 0, d90: 0, over90: 0 } });
   const s = await setup(), orderId = await confirmedOrder(s, 'BG_AGE');
   await s.db.update(paymentSchedules).set({ dueDate: '2020-01-01' }).where(eq(paymentSchedules.orderId, orderId));
   const r = (await s.call('/receivables', s.kt)).data;
@@ -81,6 +81,8 @@ test('công nợ: tuổi nợ quá hạn theo khoảng ngày, hạn thu, ngườ
   assert.equal(r.receivables[0].ownerName, 'Tên emp');
   assert.ok(r.receivables[0].aging.overdueDays > 60);
   assert.equal(r.totals.aging.over60, r.receivables[0].overdue);
+  assert.equal(r.totals.aging.over90, r.receivables[0].overdue, 'hạn từ 2020: trên 90 ngày'); assert.equal(r.totals.aging.d90, 0);
+  assert.deepEqual(debtAging([{ amount: 70, dueDate: '2026-08-10' }, { amount: 20, dueDate: '2026-06-01' }], [], '2026-10-20').buckets, { d30: 0, d60: 0, over60: 90, d90: 70, over90: 20 }, '71 ngày → 61–90; 141 ngày → trên 90');
 });
 
 test('hoá đơn chờ xuất: lọc ?invoice=requested và đếm trên Đơn hàng / HĐKT', async () => {
@@ -125,4 +127,18 @@ test('nhóm nhận việc theo quyền: Sale Admin (có quyền ghi trả NCC) t
   const auto = await s.db.select({ key: tasks.autoKey, pos: tasks.assigneePosition, who: tasks.assigneeId }).from(tasks).where(eq(tasks.sourceId, orderId));
   assert.ok(auto.some(t => t.key === `debt-overdue-acc:${orderId}` && t.pos === 'accounting'), JSON.stringify(auto));
   assert.ok(auto.some(t => t.key === `debt-overdue:${orderId}` && t.who === 'emp'));
+});
+
+test('Cần kiểm tra (chỉ đọc): thu trùng cùng đơn / số tiền / ngày, yêu cầu xuất HĐ quá 7 ngày; người ngoài Kế toán không xem được', async () => {
+  const s = await setup(), orderId = await confirmedOrder(s, 'BG_CHECK');
+  for (const key of ['dup-check-key-0001', 'dup-check-key-0002']) assert.equal((await s.call('/payments', s.kt, 'POST', { orderId, amount: 1000, key })).status, 201);
+  assert.equal((await s.call('/payments', s.kt, 'POST', { orderId, amount: 2000, key: 'dup-check-key-0003' })).status, 201, 'số tiền khác: không tính trùng');
+  const { salesOrders } = await import('../../src/modules/sales/schema.ts');
+  await s.db.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: '2020-01-01T00:00:00.000Z' }).where(eq(salesOrders.id, orderId));
+  const r = await s.call('/tasks/accounting/checks', s.kt); assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.duplicatePayments.length, 1); assert.deepEqual([r.data.duplicatePayments[0].amount, r.data.duplicatePayments[0].count], [1000, 2]);
+  assert.match(r.data.duplicatePayments[0].link, new RegExp(orderId));
+  assert.equal(r.data.staleInvoices.length, 1); assert.ok(r.data.staleInvoices[0].days > 7);
+  assert.ok(Array.isArray(r.data.cashWithoutPhoto), 'Kế toán xem được phiếu két');
+  assert.equal((await s.call('/tasks/accounting/checks', s.emp)).status, 403);
 });

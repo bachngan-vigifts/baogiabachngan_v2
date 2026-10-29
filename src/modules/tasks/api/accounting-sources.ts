@@ -25,6 +25,8 @@ export interface AccountingSource {
   webFinancials?: WebOrderFinancials | null; taxCode?: string; invoiceMode?: string; ghnCode?: string; outstanding: boolean | null; available: boolean;
   /** Id chứng từ để làm ngay trên dòng việc: đơn / HĐKT (ghi số HĐ, ghi thu) hoặc đơn mua NCC (ghi trả). */
   targetId?: string;
+  /** Trạng thái đơn (kiểm tra trước khi xuất hoá đơn: đơn chưa giao xong). */
+  orderStatus?: string;
 }
 async function purchaseData(db: Db, ids?: string[]) {
   const orders = await db.select().from(incomingShipments).where(and(eq(incomingShipments.source, 'supplier-order'), ids ? inArray(incomingShipments.id, ids) : and(eq(incomingShipments.approvalStatus, 'approved'), isNull(incomingShipments.cancelledAt))));
@@ -84,7 +86,7 @@ export async function accountingSources(db: Db, member: Member, rows: Task[], to
       const r = net.get(o.id)!;
       const valid = debtCounts(o.status, k?.status);
       Object.assign(source, { available: true, amount: kind === 'debt' ? r.overdue : o.total, total: o.total, paid: r.paid, balance: r.balance, overdue: r.overdue,
-        docNo: ref.no, link: ref.link, linkLabel: k ? 'Mở HĐKT' : 'Mở đơn', taxCode: o.taxCode, invoiceMode: o.invoiceMode, targetId: o.id,
+        docNo: ref.no, link: ref.link, linkLabel: k ? 'Mở HĐKT' : 'Mở đơn', taxCode: o.taxCode, invoiceMode: o.invoiceMode, targetId: o.id, orderStatus: o.status,
         outstanding: kind === 'debt' ? valid && r.overdue > 0 : o.invoiceStatus === 'requested' && !['draft', 'cancelled'].includes(o.status) });
     } else if (kind === 'purchase' && buy && visibleBuys.has(buy.order.id)) {
       const date = t.autoKey!.slice(`po-pay:${buy.order.id}:`.length), debt = supplierDebt(buy.total, buy.schedules, buy.payments, today);
