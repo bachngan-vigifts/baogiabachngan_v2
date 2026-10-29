@@ -315,7 +315,7 @@ async function apiRequest(path, method = 'GET', body) {
   try { res = await requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }); }
   catch { throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME); }
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers.get('server-timing') }); // menu → Đo tốc độ
+  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
   if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
