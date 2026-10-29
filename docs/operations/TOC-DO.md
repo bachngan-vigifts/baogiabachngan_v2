@@ -33,3 +33,9 @@ Pooler (Supavisor, chế độ transaction) giữ kết nối sẵn. Mỗi bản
 - **Máy chủ** cao, **số truy vấn** lớn ở một API: API đó cần gộp truy vấn hoặc thêm chỉ mục. Gửi bảng cho người hỗ trợ.
 - **Mạng** cao, máy chủ thấp: do đường truyền / vị trí. Xem cột vùng (`region`). Nếu Edge chạy ở vùng xa CSDL, có thể buộc Edge chạy cùng vùng CSDL (đợt sau).
 - Log chậm: Supabase → Edge Functions → `baogia-v2-api` → Logs, tìm `API slow`.
+
+## Kiểm tra URL trước khi bật
+
+Chạy workflow **Kiểm tra kết nối pooler chỉ đọc** trước khi thử triển khai. Workflow chỉ in mã phân loại và hostname pooler công khai từ Supabase, không in URI/mật khẩu/token. Kết quả thành công là `POOLER_CHECK=CONNECTED_SELECT_1`.
+
+Workflow **Triển khai API** cũng chạy `SELECT 1` ở chế độ chỉ đọc trước khi đổi secret hoặc deploy. URL chưa kết nối được sẽ dừng sớm, giữ nguyên cấu hình/API đang hoạt động. Không thử bật lại một URL chưa qua kiểm tra. Nếu cấu hình đã gây 503, workflow **Khôi phục kết nối CSDL trực tiếp** gỡ `DB_POOLER_URL` rồi xác minh health để phục hồi, không chạy migration hoặc đồng bộ hãng vận chuyển.
