@@ -11,7 +11,7 @@
 
 ## Việc anh cần làm: bật transaction pooler (quan trọng nhất phía máy chủ)
 
-Hiện GitHub **chưa có** secret `SUPABASE_POOLER_URL`: bước "Cấu hình transaction pooler" trong *Triển khai API* luôn bị bỏ qua. Nếu trên Supabase cũng chưa đặt secret này, mỗi lần gọi API, Edge phải:
+Nếu GitHub **chưa có** secret `SUPABASE_POOLER_URL`: bước "Cấu hình transaction pooler" trong *Triển khai API* luôn bị bỏ qua. Nếu trên Supabase cũng chưa đặt secret `DB_POOLER_URL`, mỗi lần gọi API, Edge phải:
 - mở kết nối Postgres mới (TCP + TLS + xác thực);
 - chạy thêm `select 1`;
 - đóng kết nối ngay sau đó.
@@ -22,8 +22,10 @@ Pooler (Supavisor, chế độ transaction) giữ kết nối sẵn. Mỗi bản
 
 1. Supabase → project → nút **Connect** → tab **Connection string** → chọn **Transaction pooler** (cổng **6543**). Copy chuỗi `postgresql://postgres.<ref>:[YOUR-PASSWORD]@aws-…pooler.supabase.com:6543/postgres`, thay `[YOUR-PASSWORD]` bằng mật khẩu CSDL.
 2. GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**: tên `SUPABASE_POOLER_URL`, giá trị là chuỗi trên. Không dán chuỗi này vào chat.
-3. Actions → **Triển khai API** → *Run workflow*. Workflow đặt secret này sang Supabase dưới tên `DB_POOLER_URL` (Supabase cấm tên bắt đầu bằng `SUPABASE_`; lần chạy 29/10 hỏng vì lý do này). Bước "Cấu hình transaction pooler" phải chạy (không còn *skipped*).
-4. Kiểm tra: menu → **Đo tốc độ**, cột "Chờ CSDL" phải giảm rõ, thường còn vài ms sau lượt đầu.
+**Tên ở hai nơi khác nhau:** GitHub vẫn là `SUPABASE_POOLER_URL`; workflow chuyển giá trị sang secret **`DB_POOLER_URL`** trên Supabase. Supabase cấm tự tạo tên bắt đầu bằng `SUPABASE_`; dùng tên cũ phía Supabase sẽ bị lỗi `Env name cannot start with SUPABASE_`. Không cần đổi tên hoặc nhập lại secret GitHub đã lưu.
+
+3. Actions → **Triển khai API** → *Run workflow*. Bước "Cấu hình transaction pooler" phải chạy (không còn *skipped*).
+4. Kiểm tra `/health` trả `databaseMode: "transaction-pooler"`, sau đó menu → **Đo tốc độ**, cột "Chờ CSDL" phải giảm rõ, thường còn vài ms sau lượt đầu.
 
 ## Đọc số đo
 
@@ -45,3 +47,9 @@ Máy anh, 26 lượt gọi: trung vị 2,98 s / lượt. Trong đó máy chủ 1
 - Ép vùng lỗi (không tới được máy chủ của mình) thì tự bỏ ép vùng.
 
 Kiểm tra sau triển khai: vào **Đo tốc độ**, dòng đầu phải có "vùng máy chủ" trùng "vùng CSDL", và cột "Máy chủ" giảm xuống còn vài chục đến vài trăm ms.
+
+## Kiểm tra URL trước khi bật
+
+Chạy workflow **Kiểm tra kết nối pooler chỉ đọc** trước khi thử triển khai. Workflow chỉ in mã phân loại và hostname pooler công khai từ Supabase, không in URI/mật khẩu/token. Kết quả thành công là `POOLER_CHECK=CONNECTED_SELECT_1`.
+
+Workflow **Triển khai API** cũng chạy `SELECT 1` ở chế độ chỉ đọc trước khi đổi secret hoặc deploy. URL chưa kết nối được sẽ dừng sớm, giữ nguyên cấu hình/API đang hoạt động. Không thử bật lại một URL chưa qua kiểm tra. Nếu cấu hình đã gây 503, workflow **Khôi phục kết nối CSDL trực tiếp** gỡ `DB_POOLER_URL` rồi xác minh health để phục hồi, không chạy migration hoặc đồng bộ hãng vận chuyển.

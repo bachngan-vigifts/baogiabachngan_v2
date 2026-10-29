@@ -1,0 +1,26 @@
+# Emergency configuration rollback only; no schema/data changes or carrier sync.
+name: Khôi phục kết nối CSDL trực tiếp
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: disable-db-pooler
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: taceqfnsorewelsbdckg
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.120.0
+      - name: Gỡ cấu hình pooler lỗi để dùng lại kết nối trực tiếp
+        run: supabase secrets unset DB_POOLER_URL --project-ref "$PROJECT_REF" --yes
+      - name: Xác minh API đã phục hồi
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 25 --retry 3 --retry-delay 2 --retry-all-errors \
+            "https://$PROJECT_REF.supabase.co/functions/v1/baogia-v2-api/health" \
+            -H 'Origin: https://crm.minhlongonline.com' -H 'x-region: ap-northeast-2' \
+            | jq -e '.ok == true and .databaseMode == "direct-request-scoped"'
