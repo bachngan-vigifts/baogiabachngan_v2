@@ -129,6 +129,15 @@ export function invoiceChecks(s) {
   if (s.invoiceMode === 'draft') out.push('Khách muốn xem bản nháp trước khi phát hành chính thức.');
   return out;
 }
+/** Dòng "Tóm tắt hôm nay" (cùng số liệu tin tóm tắt cuối ngày gửi Manager – GET /tasks/accounting/daily). */
+export function dailySummaryBox(d) {
+  if (!d?.customerReceipts) return null;
+  const box = node('section', 'acct-daily'); box.setAttribute('aria-label', 'Tóm tắt hôm nay');
+  box.append(node('strong', '', 'Hôm nay'));
+  for (const [label, value] of [['Thu khách', money(d.customerReceipts.amount)], ['Trả NCC', money(d.supplierPayments.amount)], ['Két vào / ra', `${money(d.cash.in)} / ${money(d.cash.out)}`],
+    ['HĐ đã xuất', String(d.invoices.issuedToday)], ['HĐ chờ xuất', String(d.invoices.pending)]]) { const item = node('span'); item.append(node('small', 'muted', label + ' '), node('b', '', value)); box.append(item); }
+  return box;
+}
 const STATUS_LABEL = { duplicatePayments: 'Thu trùng', staleInvoices: 'Yêu cầu xuất HĐ chờ lâu', cashWithoutPhoto: 'Phiếu chi lớn chưa có ảnh' };
 /** Khung "Cần kiểm tra" (chỉ đọc, gợi ý): ẩn khi không có gì. */
 export function accountingChecksBox(d) {
@@ -191,6 +200,7 @@ export function initAccountingTasks({ root, api, toast, userId, back, sendOnce =
     const sourceWarnings = accountingSourceWarnings(data.sourceWarnings); if (sourceWarnings) content.append(sourceWarnings);
     const checks = accountingChecksBox(data.checks); if (checks) content.append(checks);
     content.append(accountingKpis(data));
+    const daily = dailySummaryBox(data.daily); if (daily) content.append(daily);
     if (data.kpis.unavailableAmounts) content.append(node('p', 'muted small', 'Một số số tiền không hiển thị do quyền xem chứng từ. Tổng tiền chỉ gồm số liệu được phép xem.'));
     const filters = node('div', 'acct-filters'), tabs = node('div', 'acct-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Nhóm công việc kế toán');
     for (const [key, label] of [['team', 'Nhóm Kế toán'], ['mine', 'Của tôi'], ['colleagues', 'Đồng nghiệp'], ['closed_today', 'Đã đóng hôm nay']]) {
@@ -209,7 +219,7 @@ export function initAccountingTasks({ root, api, toast, userId, back, sendOnce =
     try {
       const params = new URLSearchParams({ view: st.view, kind: st.kind, q: st.q });
       // "Cần kiểm tra" tải song song, lỗi thì bỏ qua (không chặn hàng đợi việc).
-      const [first, checks] = await Promise.all([api('/tasks/accounting?' + params), api('/tasks/accounting/checks').catch(() => null)]); let data = { ...first, checks };
+      const [first, checks, daily] = await Promise.all([api('/tasks/accounting?' + params), api('/tasks/accounting/checks').catch(() => null), api('/tasks/accounting/daily').catch(() => null)]); let data = { ...first, checks, daily };
       for (let offset = 100; offset <= st.limit && data.nextOffset != null; offset += 100) { const next = await api('/tasks/accounting?' + params + '&offset=' + offset); data = { ...data, tasks: [...data.tasks, ...next.tasks], nextOffset: next.nextOffset }; }
       if (request !== sequence) return;
       render(data); if (focusId) await openDetail({ id: focusId });

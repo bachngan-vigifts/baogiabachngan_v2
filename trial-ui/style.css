@@ -1888,6 +1888,16 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .acct-table .task-go small, .acct-due small, .acct-table .task-people small { display: block; margin-top: 3px; }
 .acct-table .task-people { min-width: 120px; font-size: var(--text-caption); } .acct-table .task-go .pill { white-space: normal; }
 .acct-mobile { display: none; }
+.acct-quick.bank-dialog { width: min(1100px, calc(100vw - 24px)); max-height: 92dvh; overflow: auto; }
+.bank-body { display: grid; gap: 12px; padding: 20px; }
+.bank-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.bank-head h2 { margin: 0; }
+.bank-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.bank-table td small { display: block; }
+.bank-table tr.bank-done td { background: #e8f6ee; }
+.bank-table tr.bank-error td { background: #fdecec; }
+.bank-table tr.bank-none td, .bank-table tr.bank-amount td:last-child { color: var(--muted); }
+.acct-daily { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: var(--text-small); }
 .acct-quick { width: min(440px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 14px; background: var(--surface); color: var(--ink); box-shadow: 0 18px 48px #13233633; }
 .acct-quick::backdrop { background: #10182866; }
 .acct-quick form { display: grid; gap: 12px; padding: 20px; }

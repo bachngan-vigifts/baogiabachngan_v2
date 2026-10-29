@@ -28,3 +28,9 @@ async function buildExcel(filename, sheets) {
   }
   X.writeFile(wb, `${filename}_${new Date().toLocaleDateString('sv-SE')}.xlsx`);
 }
+/** Đọc trang tính đầu tiên của file Excel / CSV người dùng chọn → mảng các dòng (ô giữ giá trị gốc: số là số). */
+export async function readSheet(file) {
+  const X = await excel(), wb = X.read(await file.arrayBuffer(), { type: 'array', codepage: 65001, raw: true });
+  const ws = wb.Sheets[wb.SheetNames[0]]; if (!ws) throw new Error('File không có trang tính nào.');
+  return X.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+}

@@ -31,7 +31,8 @@ import { initCash } from './cash.js';
 import { initPos } from './pos.js';
 import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
 import { bindStockCheckFilter } from './stock-check-filter.js';
-import { downloadExcel } from './sheet-export.js';
+import { downloadExcel, readSheet } from './sheet-export.js';
+import { TEMPLATE_HEADER, TEMPLATE_SAMPLE, parseStatement, matchStatement, bankKey, bankReference } from './bank-statement.js';
 import { orderSapoAction } from './order-sapo.js';
 import { initOrderPrintForm } from './order-print-form.js';
 import { initQuoteSourcing } from './quote-sourcing.js';
@@ -3307,6 +3308,79 @@ async function loadReceivables() {
   } catch (e) { listError('receivables', e); }
 }
 for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).addEventListener('change', loadReceivables);
+/**
+ * ĐỐI CHIẾU SAO KÊ (bank-statement.js): tải file → tự ghép với công nợ → người dùng tick từng dòng → ghi thu (Chuyển khoản).
+ * Dòng ghép theo số đơn / HĐKT được chọn sẵn; dòng chỉ trùng số tiền là gợi ý, phải tự tick. Mã chống lặp theo giao dịch ngân hàng.
+ */
+$('#bank-statement-open').addEventListener('click', () => {
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const dlg = el('dialog', 'acct-quick bank-dialog'), box = el('div', 'bank-body'), head = el('div', 'bank-head');
+  const title = el('h2', '', 'Đối chiếu sao kê ngân hàng'), close = el('button', 'icon-btn', '×'); close.type = 'button'; close.setAttribute('aria-label', 'Đóng'); close.addEventListener('click', () => dlg.close());
+  head.append(title, close);
+  const intro = el('p', 'muted small', 'Xuất sao kê từ ngân hàng (hoặc điền theo file mẫu) rồi chọn file. Dòng có số đơn / HĐKT trong nội dung được chọn sẵn; dòng chỉ trùng số tiền là gợi ý, kiểm tra người chuyển rồi mới tick. Chỉ ghi thu khi bấm nút bên dưới.');
+  const sample = el('button', 'btn secondary', 'Tải file mẫu'); sample.type = 'button';
+  sample.addEventListener('click', () => downloadExcel('mau-sao-ke', [
+    { name: 'Sao kê', header: TEMPLATE_HEADER, rows: TEMPLATE_SAMPLE, widths: [16, 20, 48, 22, 28] },
+    { name: 'Hướng dẫn', header: ['Cột', 'Cách điền'], widths: [26, 90], rows: [
+      ['Ngày giao dịch', 'dd/mm/yyyy (vd. 28/10/2026). Ngày tiền vào tài khoản.'],
+      ['Số tiền ghi có (VND)', 'Chỉ tiền VÀO. Dòng tiền ra để trống cột này (hệ thống bỏ qua).'],
+      ['Nội dung chuyển khoản', 'Chép nguyên nội dung ngân hàng. Có số đơn (DH_...) hoặc số HĐKT thì tự ghép chắc chắn.'],
+      ['Mã giao dịch ngân hàng', 'Số tham chiếu / mã GD (FT...). Dùng để chống ghi trùng khi tải lại cùng file.'],
+      ['Tên người chuyển', 'Không bắt buộc – giúp kiểm tra dòng gợi ý theo số tiền.'],
+      ['Ghi chú', 'Có thể dùng thẳng file Excel ngân hàng xuất nếu có các cột Ngày / Ghi có / Diễn giải (Mô tả) / Số tham chiếu.'],
+    ] }]).catch(e => toast(e.message, 'err')));
+  const file = el('input'); file.type = 'file'; file.accept = '.xlsx,.xls,.csv'; file.setAttribute('aria-label', 'Chọn file sao kê');
+  const tools = el('div', 'bank-tools'); tools.append(sample, file);
+  const status = el('p', 'muted small'), wrap = el('div', 'table-wrap'), foot = el('div', 'acct-quick-foot'), save = el('button', 'btn primary', 'Ghi thu các dòng đã chọn'); save.type = 'button'; save.disabled = true;
+  foot.append(save); box.append(head, intro, tools, status, wrap, foot); dlg.append(box);
+  let items = [];
+  const money0 = n => Number(n).toLocaleString('vi-VN') + ' đ';
+  function render() {
+    const table = el('table', 'data-table bank-table'), thead = el('thead'), hr = el('tr'), body = el('tbody');
+    for (const h of ['', 'Ngày', 'Số tiền', 'Nội dung chuyển khoản', 'Ghép với', 'Ghi chú']) hr.append(el('th', h === 'Số tiền' ? 'right' : '', h));
+    thead.append(hr); table.append(thead, body);
+    for (const it of items) {
+      const tr = el('tr', 'bank-' + (it.result ? (it.result.ok ? 'done' : 'error') : it.kind)), pick = el('td'), cb = el('input');
+      cb.type = 'checkbox'; cb.checked = it.selected; cb.disabled = !it.selectable || !!it.result?.ok; cb.setAttribute('aria-label', 'Chọn dòng ' + it.row.line);
+      cb.addEventListener('change', () => { it.selected = cb.checked; sync(); }); pick.append(cb);
+      const doc = el('td'); if (it.match) { doc.append(el('b', '', it.match.contractNo || it.match.orderNo), el('small', '', ' · ' + it.match.customerName + ' · còn nợ ' + money0(it.match.balance))); } else doc.textContent = '—';
+      const content = el('td', '', it.row.content); if (it.row.payer) content.append(el('small', 'muted', ' · ' + it.row.payer));
+      tr.append(pick, el('td', '', fmtDate(it.row.date)), el('td', 'right num', money0(it.row.amount)), content, doc, el('td', it.result && !it.result.ok ? 'danger-text' : 'muted', it.result ? it.result.text : it.note));
+      for (const [td, label] of [[tr.children[1], 'Ngày'], [tr.children[2], 'Số tiền'], [tr.children[3], 'Nội dung'], [tr.children[4], 'Ghép với'], [tr.children[5], 'Ghi chú']]) td.dataset.label = label;
+      body.append(tr);
+    }
+    wrap.replaceChildren(table); sync();
+  }
+  function sync() {
+    const chosen = items.filter(i => i.selected && i.selectable && !i.result?.ok);
+    save.disabled = !chosen.length; save.textContent = chosen.length ? `Ghi thu ${chosen.length} dòng đã chọn (${money0(chosen.reduce((s, i) => s + i.row.amount, 0))})` : 'Ghi thu các dòng đã chọn';
+  }
+  file.addEventListener('change', async () => {
+    const f = file.files?.[0]; if (!f) return; status.textContent = 'Đang đọc file và công nợ…'; wrap.replaceChildren(); items = [];
+    try {
+      const [rows, d] = await Promise.all([readSheet(f).then(parseStatement), api('/receivables')]);
+      items = matchStatement(rows, d.receivables);
+      const n = k => items.filter(i => i.kind === k && i.selectable).length;
+      status.textContent = `${rows.length} dòng tiền vào · ${n('doc')} ghép theo số chứng từ · ${n('amount')} gợi ý theo số tiền · ${items.filter(i => !i.selectable).length} cần xử lý tay.`;
+      render();
+    } catch (e) { status.textContent = ''; toast(e.message, 'err'); }
+  });
+  save.addEventListener('click', async () => {
+    if (save.dataset.running) return; save.dataset.running = '1'; save.disabled = true;
+    let ok = 0;
+    try {
+      for (const it of items.filter(i => i.selected && i.selectable && !i.result?.ok)) {
+        try {
+          await api('/payments', 'POST', { key: await bankKey(it.row, it.match.orderId), orderId: it.match.orderId, amount: it.row.amount, paidAt: it.row.date, method: 'transfer', reference: bankReference(it.row) });
+          it.result = { ok: true, text: 'Đã ghi thu' }; ok++;
+        } catch (e) { it.result = { ok: false, text: e.message }; }
+        render();
+      }
+    } finally { delete save.dataset.running; sync(); }
+    if (ok) { toast(`Đã ghi ${ok} khoản thu từ sao kê.`); loadReceivables(); }
+  });
+  dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal();
+});
 /** Nội dung nhắc nợ soạn sẵn từ dòng công nợ (người dùng tự gửi – không tự động gửi cho khách). */
 function debtReminderText(r) {
   const doc = r.contractNo || r.orderNo, late = r.aging?.oldestDue ? `đã quá hạn ${r.aging.overdueDays} ngày (hạn ${fmtDate(r.aging.oldestDue)})` : 'đã đến hạn';

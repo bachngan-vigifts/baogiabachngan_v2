@@ -142,3 +142,23 @@ test('Cần kiểm tra (chỉ đọc): thu trùng cùng đơn / số tiền / ng
   assert.ok(Array.isArray(r.data.cashWithoutPhoto), 'Kế toán xem được phiếu két');
   assert.equal((await s.call('/tasks/accounting/checks', s.emp)).status, 403);
 });
+
+test('tóm tắt cuối ngày: số thu theo hình thức, xem trên trang; lịch chạy chỉ nhận token máy chủ, gửi Manager một lần mỗi ngày', async () => {
+  const s = await setup(), orderId = await confirmedOrder(s, 'BG_DAILY');
+  const { vietnamDate } = await import('../../src/modules/sales/domain/sales.ts'), today = vietnamDate().iso;
+  assert.equal((await s.call('/payments', s.kt, 'POST', { orderId, amount: 3000, method: 'transfer', key: 'daily-key-000001' })).status, 201);
+  assert.equal((await s.call('/payments', s.kt, 'POST', { orderId, amount: 2000, method: 'other', key: 'daily-key-000002' })).status, 201);
+  const d = await s.call('/tasks/accounting/daily', s.kt); assert.equal(d.status, 200, JSON.stringify(d.data));
+  assert.deepEqual([d.data.date, d.data.customerReceipts.amount, d.data.customerReceipts.count, d.data.customerReceipts.byMethod.transfer.amount], [today, 5000, 2, 3000]);
+  assert.equal((await s.call('/tasks/accounting/daily?date=2999-01-01', s.kt)).status, 400, 'ngày tương lai');
+  assert.equal((await s.call('/tasks/accounting/daily', s.emp)).status, 403);
+  const router = createAppRouter(), token = 'test-daily-summary-server-token-000000000';
+  const cron = async (headers: Record<string, string>) => router.handle(new Request(origin + '/api/staff/integrations/accounting/daily-summary', { method: 'POST', headers }), { db: s.db, sapoSyncToken: token } as never);
+  assert.equal((await cron({ cookie: s.mgr })).status, 401, 'cookie Manager không thay được token');
+  const first = await (await cron({ authorization: 'Bearer ' + token })).json() as any;
+  assert.equal(first.sent, true); assert.ok(first.recipients >= 1);
+  const again = await (await cron({ authorization: 'Bearer ' + token })).json() as any;
+  assert.equal(again.sent, false, 'chạy lại cùng ngày không gửi lần hai');
+  const notes = (await s.call('/notifications', s.mgr)).data.notifications.filter((n: any) => n.eventType === 'accounting_daily_summary');
+  assert.equal(notes.length, 1); assert.match(notes[0].body, /Thu khách 5\.000 đ \(CK 3\.000 đ · khác 2\.000 đ\)/);
+});
