@@ -12,10 +12,13 @@ jobs:
       - name: Kiểm tra định dạng và kết nối bằng SELECT 1
         env:
           POOLER_CONNECTION: ${{ secrets.SUPABASE_POOLER_URL }}
+          SUPABASE_MANAGEMENT_ACCESS: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         shell: python
         run: |
           import os, re, subprocess, sys
           from urllib.parse import urlsplit, unquote
+          from urllib.request import Request, urlopen
+          import json
           value = os.environ.get('POOLER_CONNECTION', '')
           def finish(code):
               print('POOLER_CHECK=' + code)
@@ -32,7 +35,34 @@ jobs:
               finish('INVALID_URI_SCHEME')
           if uri.username != 'postgres.taceqfnsorewelsbdckg':
               finish('INCORRECT_PROJECT_USERNAME')
-          if uri.hostname != 'aws-0-ap-northeast-2.pooler.supabase.com' or port != 6543:
+          # Read provider metadata without outputting connection strings or authentication values.
+          try:
+              request = Request('https://api.supabase.com/v1/projects/taceqfnsorewelsbdckg/config/database/pooler',
+                  headers={'Authorization':'Bearer ' + os.environ.get('SUPABASE_MANAGEMENT_ACCESS','')})
+              with urlopen(request, timeout=15) as response:
+                  metadata = json.load(response)
+              hosts = set()
+              def collect(node):
+                  if isinstance(node, dict):
+                      for key, value in node.items():
+                          if key in ('db_host','host') and isinstance(value,str) and value.endswith('.pooler.supabase.com'):
+                              hosts.add(value)
+                          elif key == 'connection_string' and isinstance(value,str):
+                              host = urlsplit(value).hostname
+                              if host and host.endswith('.pooler.supabase.com'):
+                                  hosts.add(host)
+                          elif isinstance(value,(dict,list)):
+                              collect(value)
+                  elif isinstance(node,list):
+                      for value in node:
+                          collect(value)
+              collect(metadata)
+              print('PROJECT_POOLER_HOSTS=' + ','.join(sorted(hosts)))
+              if hosts and uri.hostname not in hosts:
+                  finish('POOLER_HOST_DIFFERS_FROM_PROJECT')
+          except Exception:
+              print('PROJECT_POOLER_METADATA_UNAVAILABLE')
+          if not uri.hostname or not uri.hostname.endswith('.pooler.supabase.com') or port != 6543:
               finish('INCORRECT_TRANSACTION_POOLER_HOST_OR_PORT')
           if not password:
               finish('MISSING_DATABASE_PASSWORD')
@@ -57,6 +87,8 @@ jobs:
               finish('POOLER_TENANT_OR_USER_NOT_FOUND')
           if 'percent-encoded' in error or 'invalid uri' in error:
               finish('PASSWORD_URL_ENCODING_REQUIRED')
-          if 'could not translate host' in error or 'timeout' in error:
-              finish('POOLER_NETWORK_OR_DNS_FAILURE')
+          if 'could not translate host' in error:
+              finish('POOLER_DNS_FAILURE')
+          if 'timeout' in error or 'timed out' in error:
+              finish('CONNECTION_TIMEOUT')
           finish('CONNECTION_FAILED_REVIEW_PRIVATELY')
