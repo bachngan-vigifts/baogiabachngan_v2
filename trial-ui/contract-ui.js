@@ -4,10 +4,30 @@
 // Xem trước: docx-preview (+ jszip) chạy trong khung iframe cùng nguồn. Thông tin điền mẫu và các đoạn đã sửa lưu vào HĐKT (`data`).
 const esc = v => String(v ?? '').normalize('NFC').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const loaded = new Map();
-const script = src => loaded.get(src) || loaded.set(src, new Promise((resolve, reject) => {
-  const s = document.createElement('script'); s.src = src; s.onload = resolve; s.onerror = () => { loaded.delete(src); reject(Error('Không tải được ' + src + '. Vui lòng tải lại trang.')); }; document.head.append(s);
-})).get(src);
-const loadBuilder = async () => { await script('fflate.min.js'); await script('contract-word-edit.js'); await script('contract-document.js'); };
+const script = (src, refresh = false) => {
+  if (!refresh && loaded.has(src)) return loaded.get(src);
+  const task = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src + (refresh ? (src.includes('?') ? '&' : '?') + '_reload=' + Date.now() : '');
+    s.onload = resolve;
+    s.onerror = () => { if (loaded.get(src) === task) loaded.delete(src); s.remove(); reject(Error('Không tải được ' + src + '. Vui lòng thử Cập nhật bản xem.')); };
+    document.head.append(s);
+  });
+  loaded.set(src, task); return task;
+};
+const builderReady = () => typeof globalThis.fflate?.unzipSync === 'function'
+  && ['prepare', 'apply'].every(k => typeof globalThis.ContractWordEdit?.[k] === 'function')
+  && ['prepareDocument', 'build', 'buildPack', 'templatesFor'].every(k => typeof globalThis.ContractDocument?.[k] === 'function');
+let builderTask;
+const loadBuilder = () => builderTask ||= (async () => {
+  await script('fflate.min.js'); await script('contract-word-edit.js'); await script('contract-document.js');
+  if (!builderReady()) {
+    // One bounded recovery for a stale cached global. All preview/download paths
+    // share this promise so switching tabs cannot trigger duplicate reloads.
+    await script('fflate.min.js', true); await script('contract-word-edit.js', true); await script('contract-document.js', true);
+    if (!builderReady()) throw Error('Bộ dựng hồ sơ HĐKT chưa cập nhật đầy đủ. Vui lòng tải lại trang rồi mở hồ sơ.');
+  }
+})().catch(e => { builderTask = null; throw e; });
 const loadPreview = async () => { await script('jszip.min.js'); await script('docx-preview.min.js'); };
 
 export const DOCS = [['HDKT', 'Hợp đồng kinh tế'], ['TAM_UNG', 'Đề nghị tạm ứng'], ['BBNT', 'Biên bản bàn giao & nghiệm thu']];

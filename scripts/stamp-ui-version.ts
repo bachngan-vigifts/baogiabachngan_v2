@@ -7,11 +7,13 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const LOCAL = String.raw`(?:\.\/)?[\w-]+\.(?:js|css)`;
+const LOCAL = String.raw`(?:\.\/)?[\w.-]+\.(?:js|css)`;
 /** Chỉ đụng tới file cùng thư mục (./x.js, x.css); bỏ qua link ngoài và đường đã có `?`. */
 export function stampVersion(text: string, v: string, kind: 'html' | 'js'): string {
   if (!/^[\w.-]{1,40}$/.test(v)) throw new Error('Phiên bản không hợp lệ.');
-  if (kind === 'js') return text.replace(new RegExp(String.raw`((?:\bfrom|\bimport\()\s*)(['"])(${LOCAL})\2`, 'g'), `$1$2$3?v=${v}$2`);
+  // Classic scripts loaded by contract-ui's script() helper must follow the same
+  // release as ES modules; otherwise a new UI may call methods missing in cache.
+  if (kind === 'js') return text.replace(new RegExp(String.raw`((?:\bfrom|\bimport\(|\bscript\()\s*)(['"])(${LOCAL})\2`, 'g'), `$1$2$3?v=${v}$2`);
   return text.replace(new RegExp(String.raw`(<(?:script|link)\b[^>]*\b(?:src|href)=")(${LOCAL})"`, 'g'), `$1$2?v=${v}"`);
 }
 
