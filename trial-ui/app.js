@@ -4607,7 +4607,7 @@ document.addEventListener('click', async e => {
 });
 /**
  * Lập HĐKT THẲNG TỪ BÁO GIÁ (luồng độc lập với Đơn hàng – không sinh đơn hàng trước): điền pháp nhân, cọc, hạn thanh toán…
- * → chọn kho Sapo → máy chủ lập HĐKT + đơn nháp Sapo cùng lúc (POST /contracts { quoteId }).
+ * → dùng lựa chọn tạo đơn Sapo trên form, không hỏi lại trong luồng n8n (POST /contracts { quoteId }).
  */
 let contractTarget = null;
 async function openContractForm(t) {
@@ -4646,9 +4646,10 @@ $('#contract-form').addEventListener('submit', async e => {
     Object.assign(body,target.sourcing.read());target.busy=true;f.querySelector('.modal-foot .btn.primary').disabled=true;
     Object.assign(body,await target.sourcing.prepare());
     if(contractTarget!==target)return;
-    // Lập HĐKT: chọn có tạo đơn trên Sapo (chọn kho; Sapo lỗi → không lập HĐKT) hay chỉ lập trên web.
+    // Use the form's choice once; only a direct Sapo connection may still need a warehouse.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
-      run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), ...(push === false ? { pushSapo: false } : {}) }) });
+      pushSapo: f.elements.pushSapo.value === 'yes', isCurrent: () => contractTarget === target,
+      run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), pushSapo: push === true }) });
     if (!r) return;
     $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); loadHolds(true); // HĐKT giữ hàng thay báo giá
     target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));

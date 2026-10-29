@@ -65,8 +65,8 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, crea
       if(me.sourcing?.prepare)sourcing=await me.sourcing.prepare();
       if(current!==me)return;
       Object.assign(fields,sourcing,{note:[fields.note,sourcing.note].filter(Boolean).join('\n\n')});
-      const push = form.elements.pushSapo.value === 'yes'; submit.textContent = push ? 'Tiếp tục chọn kho Sapo…' : 'Đang sinh đơn hàng…';
-      const r = push ? await chooseSapo({ quoteId: me.ref.quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', run: (loc, enabled) => me.run(fields, loc, enabled) })
+      const push = form.elements.pushSapo.value === 'yes'; submit.textContent = push ? 'Đang sinh đơn hàng + đơn Sapo…' : 'Đang sinh đơn hàng…';
+      const r = push ? await chooseSapo({ quoteId: me.ref.quoteId }, { title: 'Sinh đơn hàng', action: 'Sinh đơn hàng + đơn Sapo', pushSapo: true, isCurrent: () => current === me, run: (loc, enabled) => me.run(fields, loc, enabled) })
         : await me.run(fields, null, false);
       if (current !== me || !r) return;
       current = null; dialog.close(); me.resolve(r);

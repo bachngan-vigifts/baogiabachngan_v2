@@ -1129,6 +1129,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-catalog { display: flex; flex-direction: column; align-self: start; }
 .pos-catalog-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 12px; min-width: 0; flex: none; }
 .pos-catalog-controls .pos-search { height: auto; min-height: 44px; margin: 0; }
+.pos-catalog-controls .pos-scan-status { grid-column: 1 / -1; margin: 0; font-size: var(--text-small); color: #126b4b; overflow-wrap: anywhere; }
+.pos-catalog-controls .pos-search [aria-busy="true"] { background: #f0f8f4; }
 .pos-catalog-controls .pos-catalog-tools { flex-wrap: wrap; margin: 0; }
 .pos-catalog-controls .pos-policy { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 160px; gap: 4px; padding: 0; border: 0; }
 .pos-catalog-controls .pos-policy select { width: 100%; max-width: none; min-width: 0; }
