@@ -35,7 +35,7 @@ test('Cập nhật CK mua vào giữ giá trực tiếp và CK đã nhập', asy
     reviewPurchaseCosts: async () => rows.map((r,index)=>({index,mode:costModeOf(r),value:costModeOf(r)==='manual'?r.costPrice:r.purchaseDiscount})),
     $: () => ({ addEventListener: (_: string, fn: any) => { handler = fn; } }), isManager: () => true,
     api: async () => ({ products: [] }), markDirty() {}, renderLines() {}, refreshCostToggle() {}, saveQuote: async () => {}, toast() {} };
-  const start = source.indexOf('async function refreshPurchaseCosts()');
+  const start = source.indexOf('async function refreshPurchaseCosts(');
   runInNewContext(source.slice(start, source.indexOf('// ----- hộp "Tạo báo giá mới"', start)), context);
   assert.equal(await handler(), true, 'chỉ tiếp tục duyệt khi cập nhật và lưu được giá mua');
   assert.equal(rows[0].costPrice, 160000); assert.equal(rows[0].purchaseDiscount, undefined);

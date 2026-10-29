@@ -18,7 +18,7 @@ import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
 import { initPackingEarlyRequest } from './packing-early-request.js';
-import { reviewPurchaseCosts } from './purchase-cost-review.js';
+import { reviewPurchaseCosts, missingPurchaseCost } from './purchase-cost-review.js';
 import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
@@ -1665,17 +1665,19 @@ $$('input[name="profitShippingPayer"]').forEach(i => i.addEventListener('change'
   markDirty(); renderProfit();
 }));
 /** Review each SKU before saving; preserve existing percentages and manual unit costs. */
-async function refreshPurchaseCosts() {
+async function refreshPurchaseCosts({ onlyMissing = false, approval = false } = {}) {
   const btn = $('#refresh-profit-costs'); if (!isManager() || btn.disabled) return;
   const targetId=editor.id, targetRevision=editor.revision, sourceRows=editor.rows;
   btn.disabled = true; btn.textContent = 'Đang tải CK…';
   try {
-    const skus=[...new Set(sourceRows.map(r=>(r.sku||'').trim()).filter(Boolean))],found=[];
+    const selectedRows=onlyMissing?sourceRows.filter(missingPurchaseCost):sourceRows;
+    if(!selectedRows.length)return true;
+    const skus=[...new Set(selectedRows.map(r=>(r.sku||'').trim()).filter(Boolean))],found=[];
     try { for(let i=0;i<skus.length;i+=200)found.push(...(await api('/products?skus='+encodeURIComponent(skus.slice(i,i+200).join(',')))).products); }
     catch { /* Review can use the product information already saved on each row. */ }
     if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)return false;
     btn.textContent='Đang kiểm tra CK…';
-    const edits=await reviewPurchaseCosts(sourceRows,found);
+    const edits=await reviewPurchaseCosts(sourceRows,found,{onlyMissing,approval});
     if(!edits)return false;
     if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)throw new Error('Báo giá đang xem đã thay đổi. Vui lòng kiểm tra CK lại.');
     for(const entry of edits)applyPurchaseCost(sourceRows[entry.index],entry);
@@ -4968,14 +4970,19 @@ $('#quote-pick-list').addEventListener('click', async e => {
 });
 $('#approve-quote').addEventListener('click', async () => {
   if (!(isManager() || editor.approval?.canApprove) || !editor.id) return;
-  const btn = $('#approve-quote'); btn.disabled = true;
+  const btn = $('#approve-quote'), targetId = editor.id; btn.disabled = true;
   try {
-    const preflight = await api('/quotes/' + encodeURIComponent(editor.id) + '/approval-preflight');
+    const preflight = await api('/quotes/' + encodeURIComponent(targetId) + '/approval-preflight');
+    if(editor.id!==targetId)return;
     if (!isManager() && !preflight.purchaseCostsReady) { toast('Vui lòng nhờ Manager cập nhật giá mua trước khi duyệt báo giá.', 'err'); return; }
-    if (!await confirmBox('Vui lòng kiểm tra bảng CK / giá mua từng mã trước khi duyệt. CK và giá anh đã nhập được giữ nguyên; anh có thể chọn CK gợi ý cho từng dòng.', {title:'Kiểm tra giá mua',ok:isManager()?'Cập nhật giá mua & duyệt':'Đã kiểm tra giá mua'})) return;
-    if (isManager() && !await refreshPurchaseCosts()) return;
+    if (isManager() && editor.rows.some(missingPurchaseCost)) {
+      if (!await refreshPurchaseCosts({onlyMissing:true,approval:true})) return;
+    } else if (!await confirmBox('Duyệt báo giá này?', {title:'Duyệt báo giá',ok:'Duyệt báo giá'})) return;
+    if(editor.id!==targetId)return;
     if (editor.dirty) { await saveQuote(); if (editor.dirty) return; }
-    const r = await api('/quotes/' + encodeURIComponent(editor.id) + '/approve', 'POST', { revision: editor.revision });
+    if(editor.id!==targetId)return;
+    const r = await api('/quotes/' + encodeURIComponent(targetId) + '/approve', 'POST', { revision: editor.revision });
+    if(editor.id!==targetId)return;
     editor.approval = { ...editor.approval, status: 'approved', at: r.approvedAt, by: r.approvedByName };
     toast('Đã duyệt báo giá. Có thể tải file, tạo đơn hàng, sinh HĐKT.'); loadQuotes(); refreshQuoteHold(editor.id);
   } catch (ex) { toast(ex.message, 'err'); }

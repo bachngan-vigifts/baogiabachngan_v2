@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {defaultCostDiscount} from '../../src/modules/quotes/domain/quote-math.ts';
 // @ts-expect-error Native browser module.
-import {purchaseCostReviewRows} from '../../trial-ui/purchase-cost-review.js';
+import {purchaseCostReviewRows,missingPurchaseCost} from '../../trial-ui/purchase-cost-review.js';
 
 test('Hoàng Cung / Đài Các mặc định 27%, nhận tên có/không dấu và pattern; các nhóm cũ giữ nguyên',()=>{
   for(const p of [{brand:'MINH LONG',name:'Bộ trà Hoàng Cung'},{brand:'MINH LONG',name:'Bộ trà 1.3 L Đài các T.tri hoa'},{name:'DAI CAC'},{pattern:'HOANG CUNG'},{name:'Đài Các - Trắng'}])assert.equal(defaultCostDiscount(p),27,JSON.stringify(p));
@@ -24,4 +24,9 @@ test('Thông tin SKU mới vẫn giữ CK của dòng cũ; SKU lặp được ch
   const rows=[{sku:'A',name:'Bộ trà Đài Các',purchaseDiscount:28},{sku:'A',name:'Bộ trà Đài Các',purchaseDiscount:30}];
   const review=purchaseCostReviewRows(rows,[{sku:'A',brand:'MINH LONG',name:'Bộ trà Đài Các'}]);
   assert.deepEqual(review.map((r:any)=>[r.index,r.value,r.suggested]),[[0,28,27],[1,30,27]]);
+});
+
+test('approval only requests missing active costs, preserving explicit zero and unused rows',()=>{
+ const rows=[{name:'Missing',qty:2},{name:'Zero',qty:1,costPrice:0},{name:'Ready',qty:4,costPrice:150000},{name:'Unused',qty:0},{name:'Negative qty',qty:-1},{qty:1},{name:'Legacy',qty:1,costPrice:1000}];
+ assert.deepEqual(rows.map(missingPurchaseCost),[true,false,false,false,false,false,false]);
 });
