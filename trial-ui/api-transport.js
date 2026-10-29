@@ -1,5 +1,7 @@
 /** Retry transient reads only. Never repeat a payment, stock change, or any other write. */
-export function createApiTransport({fetcher=(...args)=>fetch(...args),delay=ms=>new Promise(r=>setTimeout(r,ms)),timeoutMs=15000}={}){
+/** Báo giao diện đang thử lại (loading-feedback.js hiện "Mạng chậm, đang thử lại…"). */
+const announceRetry=()=>{try{globalThis.dispatchEvent?.(new Event('api-retry'));}catch{/* không có window */}};
+export function createApiTransport({fetcher=(...args)=>fetch(...args),delay=ms=>new Promise(r=>setTimeout(r,ms)),timeoutMs=15000,onRetry=announceRetry}={}){
  return async function request(url,init={}){
   const read=['GET','HEAD'].includes((init.method||'GET').toUpperCase());
   if(!read)return fetcher(url,init);
@@ -14,6 +16,7 @@ export function createApiTransport({fetcher=(...args)=>fetch(...args),delay=ms=>
    }catch(error){if(attempt>=2||init.signal?.aborted)throw error;}
    finally{clearTimeout(timer);init.signal?.removeEventListener('abort',abort);}
    await response?.body?.cancel().catch(()=>{});
+   onRetry();
    const serverDelay=Number(response?.headers?.get('retry-after'))||0;
    await delay(Math.min(2000,Math.max(250*2**attempt,serverDelay*1000)));
   }

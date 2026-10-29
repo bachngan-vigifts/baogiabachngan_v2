@@ -23,3 +23,8 @@ test('A stalled read times out and retries at most twice',async()=>{
  let calls=0;const request=createApiTransport({timeoutMs:5,delay:async()=>{},fetcher:async(_url:unknown,init:any)=>{calls++;return new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new Error('timeout'))));}});
  await assert.rejects(request('/tasks'));assert.equal(calls,3);
 });
+test('Each read retry is announced so the screen can say the network is slow; writes never announce',async()=>{
+ let retries=0,calls=0;const request=createApiTransport({delay:async()=>{},onRetry:()=>{retries++;},fetcher:async()=>{calls++;return calls<3?new Response('{}',{status:503}):Response.json({ok:true});}});
+ await request('/tasks');assert.equal(retries,2);
+ await createApiTransport({onRetry:()=>{retries++;},fetcher:async()=>new Response('{}',{status:503})})('/orders',{method:'POST'});assert.equal(retries,2);
+});

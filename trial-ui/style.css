@@ -2129,6 +2129,18 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 /* busy-buttons.js: nút không có lớp .btn (icon, chip, nút trong bảng…) đang gửi – mờ nhẹ + con trỏ chờ. */
 [aria-busy="true"]:not(.btn) { cursor: progress; opacity: .6; pointer-events: none; }
 button.is-busy:not(.btn)::after { content: ''; display: inline-block; width: 10px; height: 10px; margin-left: 6px; vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+/* Đang tải (loading-feedback.js): thanh mảnh đầu màn hình, link / dòng vừa bấm, vùng kết quả khi đổi bộ lọc. */
+.net-progress { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; height: 4px; pointer-events: none; background: linear-gradient(90deg, var(--blue), var(--green)) no-repeat, #dbe5f5; background-size: 35% 100%, 100% 100%; animation: net-progress 1s ease-in-out infinite; }
+.net-progress[hidden] { display: none; }
+.net-progress-label:not(:empty) { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); padding: 5px 12px; border-radius: 999px; background: var(--navy); color: #fff; font-size: var(--text-caption); font-weight: 600; white-space: nowrap; box-shadow: 0 6px 18px #0f1d3333; }
+@keyframes net-progress { from { background-position: -45% 0, 0 0; } to { background-position: 145% 0, 0 0; } }
+/* Chỉ mờ sau 150 ms: thao tác nhanh không nháy. Bộ lọc giữ nguyên, vẫn đổi tiếp được. */
+.is-refreshing { cursor: progress; }
+.is-refreshing > :not(.toolbar, .filter-bar, .ledger-bar, .chips, [role=tablist], .search, .search-box, .page-head, .orders-filter-grid, .task-filterbar, [data-filter], .crm-filter-trigger, .net-progress) { opacity: .5; transition: opacity .15s .15s; }
+.is-opening { cursor: progress; }
+tr.is-opening > td, .is-opening:not(tr) { opacity: .6; transition: opacity .1s .12s; }
+a.is-opening::after, tr.is-opening > td:last-child::after, li.is-opening::after, article.is-opening::after, .crm-list-card.is-opening::after, [role=button].is-opening::after, [data-href].is-opening::after { content: ''; display: inline-block; width: 10px; height: 10px; margin-left: 6px; vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .net-progress { animation: none; background: var(--blue); } }
 
 /* Customer and product links in order/contract details remain visibly actionable. */
 #order-customer a,
