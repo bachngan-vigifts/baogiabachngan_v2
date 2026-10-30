@@ -40,7 +40,7 @@ test('bộ tìm khách trên máy: nhớ kết quả, lọc ngay khi gõ thêm n
   for (const s of ['Đồng Tiến', 'CÔNG TY TNHH Hòa Bình', 'Ưu đãi  Lý']) assert.equal(fold(s), serverFold(s));
   const calls: string[] = [];
   const all = [{ name: 'Công ty Hoa Mai', phone: '0901 234 567' }, { name: 'Hoa Sen Group' }];
-  const api = async (path: string) => { calls.push(path); const q = decodeURIComponent(path.split('q=')[1]); return { customers: all.filter(c => matchesCustomer(c, q)) }; };
+  const api = async (path: string) => { calls.push(path); const q = decodeURIComponent(path.split('q=')[1] ?? ''); return { customers: all.filter(c => matchesCustomer(c, q)) }; };
   const s = createCustomerSearch({ api, limit: 8 });
   assert.equal(s.local('ho'), null, 'chưa có gì: phải hỏi máy chủ');
   assert.equal((await s.remote('ho')).length, 2);
