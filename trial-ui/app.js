@@ -306,7 +306,7 @@ const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>
 
 const requestPriority = createRequestPriority();
 createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
-const regionCanary = createRegionCanary({ onDisabled: () => toast('Đã tắt thử máy chủ cạnh CSDL (có lỗi kết nối). App dùng lại máy chủ mặc định.', 'err') });
+const regionCanary = createRegionCanary({ onDisabled: () => toast('Máy chủ nhanh lỗi kết nối trên máy này – đã chuyển về máy chủ dự phòng.', 'err') });
 const pageCache = createPageCache(); // trang mở lại hiện ngay (page-cache.js)
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
@@ -336,14 +336,14 @@ async function apiRequest(path, method = 'GET', body) {
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
-  // Thử máy chủ cạnh CSDL (chỉ máy đã bật trong "Đo tốc độ"): thêm header x-region; lỗi là tự tắt (api-region.js).
+  // Máy chủ cạnh CSDL (mặc định bật, api-region.js): thêm header x-region; lỗi là tắt và giữ tắt trên máy này.
   let sentAt = 0, canary = regionCanary.headers();
   const send = () => requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(API + path, { method, headers: { ...headers, ...canary }, body: body === undefined ? undefined : JSON.stringify(body) }); });
   try { res = await send(); }
   catch {
     const tried = !!canary['x-region'];
     regionCanary.failed(tried);
-    // Lệnh đọc lỗi mạng khi đang thử: thử lại một lần theo máy chủ mặc định (lệnh ghi không bao giờ tự gửi lại).
+    // Lệnh đọc lỗi mạng khi dùng máy chủ cạnh CSDL: thử lại một lần theo máy chủ mặc định (lệnh ghi không bao giờ tự gửi lại).
     if (tried && method === 'GET') { canary = {}; try { res = await send(); } catch { /* báo lỗi bên dưới */ } }
     if (!res) throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }

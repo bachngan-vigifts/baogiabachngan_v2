@@ -59,3 +59,23 @@ Workflow **Triển khai API** cũng chạy `SELECT 1` ở chế độ chỉ đ�
 Sau khi bật pooler (00:57 UTC), nhiều lời gọi API treo quá 15 giây; nhân viên thấy "Chưa kết nối được máy chủ". Đã chạy **Khôi phục kết nối CSDL trực tiếp** (02:19 UTC); API trở lại bình thường. Ép vùng chạy Edge cũng đã tắt (`REGION_PINNING = false` trong `trial-ui/api-region.js`).
 
 Pooler giờ **chỉ bật khi có biến repository `ENABLE_DB_POOLER = true`**. Secret `SUPABASE_POOLER_URL` vẫn được giữ trên GitHub. Không có biến này thì mỗi lần **Triển khai API** gỡ `DB_POOLER_URL` trên Supabase và dùng kết nối trực tiếp. Chỉ bật lại ngoài giờ làm, khi đã tìm ra nguyên nhân treo và có người theo dõi ngay sau khi bật.
+
+## Máy chủ cạnh CSDL – bật cho mọi máy (30/10/2026)
+
+Thử trên một máy (Manager bật trong **Đo tốc độ**, header `x-region: ap-northeast-2`), 27 lượt gọi, 4G:
+
+| | Trước (Edge ở ap-southeast-1) | Máy chủ cạnh CSDL (ap-northeast-2) |
+|---|---|---|
+| Trung vị toàn bộ | 2,81 s | **0,83 s** |
+| Máy chủ | ~1,98 s | **0,19 s** |
+| Chờ CSDL | ~0,85 s | 0,11 s |
+| Mạng | ~0,83 s | 0,64 s |
+
+Không lượt nào lỗi → bật mặc định cho mọi máy (`REGION_DEFAULT_ON = true` trong `trial-ui/api-region.js`). Chốt an toàn:
+
+- Vùng cố định, **không tự học** (khác cơ chế `forceFunctionRegion` gây sự cố sáng 30/10).
+- Lượt gọi lỗi mạng hoặc phản hồi thiếu Server-Timing → máy đó chuyển về máy chủ mặc định và **giữ tắt** (`localStorage` `bn-api-region-off`), báo "Máy chủ nhanh lỗi kết nối trên máy này". Lệnh đọc tự gửi lại một lần theo máy chủ mặc định; lệnh ghi không tự gửi lại.
+- Manager bật lại / tắt trên máy mình trong **Đo tốc độ**.
+- **Tắt cho tất cả:** đổi `REGION_DEFAULT_ON` thành `false` rồi deploy giao diện. Mọi máy về máy chủ mặc định, vùng / cờ đã lưu bị xoá.
+
+Sau khi deploy: nhờ vài nhân viên mở app, báo ngay nếu thấy "Chưa kết nối được máy chủ" hoặc "Máy chủ nhanh lỗi kết nối". Nhiều máy cùng báo → tắt cho tất cả như trên.
