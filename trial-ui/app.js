@@ -2251,10 +2251,11 @@ const productPrice = p => priceOf(p, currentPolicy());
  *  và [{ qty, quoteId, orderId, orderNo, contractNo, customer }] của đơn / HĐKT giữ đến khi giao / huỷ. Tải lại tối đa 30 giây/lần. */
 let holdsAt = 0, holdsReq = null;
 state.holds = new Map();
+state.holdsLoaded = false;
 function loadHolds(force = false) {
   if (!force && Date.now() - holdsAt < 30000) return holdsReq || Promise.resolve();
   holdsAt = Date.now();
-  return holdsReq = api('/stock-holds').then(r => { const m = new Map(); for (const h of r.holds) (m.get(h.sku) ?? m.set(h.sku, []).get(h.sku)).push(h); state.holds = m; })
+  return holdsReq = api('/stock-holds').then(r => { const m = new Map(); for (const h of r.holds) (m.get(h.sku) ?? m.set(h.sku, []).get(h.sku)).push(h); state.holds = m; state.holdsLoaded = true; })
     .catch(() => { holdsAt = 0; }).finally(() => { holdsReq = null; });
 }
 /** Số đang treo của một mã (bỏ phần treo cho chính báo giá `exceptQuote`). */
@@ -2476,15 +2477,16 @@ const markWords = (text, q) => {
 };
 function renderProducts() {
   const tbody = $('#product-list');
-  if (!state.products) { tbody.innerHTML = skeleton(7); $('#product-empty').hidden = true; return; }
+  if (!state.products) { tbody.innerHTML = skeleton(10); $('#product-empty').hidden = true; return; }
   const list = state.products, filtered = state.productQuery || state.productBrand || state.productMinStock !== '';
   const warehouse = state.warehouses.find(w => w.id === state.productWarehouse);
   $('#product-stock-head').textContent = warehouse ? `Tồn · ${warehouse.name}` : 'Tồn kho';
+  $('#product-stock-head').title = warehouse ? 'Tồn của kho đang chọn' : 'Tồn khả dụng: tổng kho thực trừ số đang tạm giữ';
   $('#product-count').textContent = state.productTotal ? `${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
   tbody.innerHTML = list.map(p => {
     const price = productPrice(p), stock = state.productMinStock !== '' && p.filteredStock !== undefined ? Number(p.filteredStock) : warehouse ? (Number(p.stock?.[warehouse.id]) || 0) : availableStock(p), sel = state.selected.has(p.sku);
     // Giữ báo giá hiện chưa gắn theo kho: không trừ toàn bộ số treo vào từng kho riêng.
-    const held = warehouse ? 0 : heldQty(p.sku);
+    const held = state.holdsLoaded ? heldQty(p.sku) : null;
     const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
     return `<tr>
       <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
@@ -2492,7 +2494,10 @@ function renderProducts() {
       <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
       <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
       <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
-      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}${held ? ` · đang treo ${fmtNum(held)}` : ''}">${fmtNum(stock)}${held ? `<small>treo ${fmtNum(held)}</small>` : ''}</td>
+      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}">${fmtNum(stock)}</td>
+      <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
+      <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
+      <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
       <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
