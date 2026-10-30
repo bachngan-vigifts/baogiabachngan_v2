@@ -11,6 +11,7 @@ import { createRequestPriority, isBackgroundRequest } from './request-priority.j
 import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion, createRegionCanary } from './api-region.js';
 import { createPageCache, isCacheable } from './page-cache.js';
+import { createCustomerSearch } from './customer-search.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
@@ -309,6 +310,8 @@ const requestPriority = createRequestPriority();
 createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
 const regionCanary = createRegionCanary({ onDisabled: () => toast('Máy chủ nhanh lỗi kết nối trên máy này – đã chuyển về máy chủ dự phòng.', 'err') });
 const pageCache = createPageCache(); // trang mở lại hiện ngay (page-cache.js)
+// Tìm khách ở hai ô chọn khách: kết quả đã có / lọc được trên máy thì hiện ngay, còn lại mới hỏi máy chủ (customer-search.js).
+const customerSearch = createCustomerSearch({ api });
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
 function api(path, method = 'GET', body, { fresh = false } = {}) {
@@ -320,7 +323,7 @@ function api(path, method = 'GET', body, { fresh = false } = {}) {
   }
   const request = withBusy(method, apiRequest(path, method, body), path);
   // Mọi lệnh ghi (kể cả lỗi – có thể máy chủ đã lưu) làm bản đệm cũ đi: lần mở sau lấy dữ liệu mới.
-  if (method !== 'GET') request.then(() => pageCache.clear(), () => pageCache.clear());
+  if (method !== 'GET') { const stale = () => { pageCache.clear(); customerSearch.clear(); }; request.then(stale, stale); }
   return request;
 }
 /** Tải bản mới của trang đang hiện từ bản đệm; khác bản đệm và vẫn đang ở trang đó thì làm mới trang. */
@@ -1813,20 +1816,26 @@ const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy
   const reset = nq.resetCustomerSearch = () => {
     clearTimeout(timer); req++; items = []; list.replaceChildren(); hide(); comboBusy(input, false);
   };
+  const draw = found => {
+    items = found;
+    list.innerHTML = found.length ? found.map((c, i) => `<li role="option" data-i="${i}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · '))}</small></li>`).join('')
+      : `<li class="none">Không có trong danh bạ – vẫn tạo được, điền thông tin khách trong báo giá.</li>`;
+    list.hidden = false; input.setAttribute('aria-expanded', 'true');
+  };
   input.addEventListener('input', () => {
-    nq.customer = null; reset(); comboBusy(input, true); nq.onCustomerChange?.();
+    nq.customer = null; reset(); nq.onCustomerChange?.();
     const ticket = req, query = input.value;
+    const ready = query.trim() ? customerSearch.local(query) : null;
+    if (ready) { draw(ready); return; } // đã có trên máy: hiện ngay, không gọi máy chủ
+    comboBusy(input, true);
     timer = setTimeout(async () => {
       let found = [];
-      try { found = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(query)}`)).customers; } catch { /* để trống */ }
+      try { found = query.trim() ? await customerSearch.remote(query) : (await api(`/customers?limit=8&usable=1&q=`)).customers; } catch { /* để trống */ }
       if (ticket !== req || query !== input.value || !$('#new-quote-dialog').open) return;
       comboBusy(input, false);
       if (document.activeElement !== input) return;
-      items = found;
-      list.innerHTML = found.length ? found.map((c, i) => `<li role="option" data-i="${i}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · '))}</small></li>`).join('')
-        : `<li class="none">Không có trong danh bạ – vẫn tạo được, điền thông tin khách trong báo giá.</li>`;
-      list.hidden = false; input.setAttribute('aria-expanded', 'true');
-    }, 180);
+      draw(found);
+    }, query.trim() ? 120 : 180);
   });
   input.addEventListener('blur', () => { clearTimeout(timer); req++; comboBusy(input, false); setTimeout(hide, 150); });
   list.addEventListener('mousedown', e => { if (e.target.closest('li[data-i]')) e.preventDefault(); });
@@ -1927,19 +1936,25 @@ let suggestIndex = -1, suggestItems = [];
 let suggestTimer, suggestReq = 0;
 function showSuggest() {
   clearTimeout(suggestTimer); const req = ++suggestReq, query = searchInput.value;
-  suggestItems = []; suggestIndex = -1; suggest.replaceChildren(); hideSuggest(); comboBusy(searchInput, true);
+  suggestItems = []; suggestIndex = -1; suggest.replaceChildren(); hideSuggest();
+  const ready = query.trim() ? customerSearch.local(query) : null;
+  if (ready) { drawSuggest(ready); return; } // đã có trên máy: hiện ngay
+  comboBusy(searchInput, true);
   suggestTimer = setTimeout(async () => {
     let items = [];
-    try { items = (await api(`/customers?limit=8&usable=1&q=${encodeURIComponent(query)}`)).customers; } catch { /* hiện thông báo trống */ }
+    try { items = query.trim() ? await customerSearch.remote(query) : (await api(`/customers?limit=8&usable=1&q=`)).customers; } catch { /* hiện thông báo trống */ }
     if (req !== suggestReq || query !== searchInput.value) return;
     comboBusy(searchInput, false);
     if (document.activeElement !== searchInput) return;
+    drawSuggest(items);
+  }, query.trim() ? 120 : 180);
+}
+function drawSuggest(items) {
     suggestItems = items; suggestIndex = items.length ? 0 : -1;
     suggest.innerHTML = items.length
       ? items.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === suggestIndex}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · ') || c.address || '')}</small></li>`).join('')
       : `<li class="none">${searchInput.value.trim() ? 'Không có trong danh bạ. Điền tiếp thông tin bên dưới; khách được lưu khi lưu báo giá.' : 'Danh bạ đang trống.'}</li>`;
     suggest.hidden = false; searchInput.setAttribute('aria-expanded', 'true');
-  }, 180);
 }
 function hideSuggest() { suggest.hidden = true; searchInput.setAttribute('aria-expanded', 'false'); }
 function pickCustomer(c) {

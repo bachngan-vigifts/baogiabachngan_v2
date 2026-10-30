@@ -8,7 +8,8 @@
 const TTL_MS = 10 * 60_000, RECENT_MS = 3000, MAX_ENTRIES = 60;
 const LIST = /^\/(orders|contracts|customers|tasks|purchase-orders|purchase-early-requests|purchase-options|suppliers|stock-moves|stock-transfers|stock-holds|stock-requests|deliveries|packing|receivables|payables|cashbook|care|quote-docs|inventory\/(status|compare|adjustments)|dashboard\/[\w-]+|flow)(\?|$)/;
 const DETAIL = /^\/(orders|contracts|customers|tasks|purchase-orders|suppliers|stock-transfers|packing)\/[^/?]+(\?|$)/;
-const NEVER = /^\/tasks\/(summary)(\?|$)|preflight|[?&]refresh=1/;
+// Ô chọn khách (`usable=1`) có bộ nhớ riêng (customer-search.js): không chiếm chỗ của các trang danh sách.
+const NEVER = /^\/tasks\/(summary)(\?|$)|preflight|[?&]refresh=1|^\/customers\?(?:.*&)?usable=1/;
 
 export const isCacheable = (path, method = 'GET') =>
   String(method).toUpperCase() === 'GET' && !NEVER.test(path) && (LIST.test(path) || DETAIL.test(path));
