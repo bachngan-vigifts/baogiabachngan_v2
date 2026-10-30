@@ -1,0 +1,38 @@
+[
+  {
+    "width": 2021,
+    "pinnedOrder": "PO-a2",
+    "quotePinned": true,
+    "twoSkusOneDraft": true,
+    "repeatDoesNotCreate": true,
+    "lostReplyRecovered": true,
+    "sapoDefaultYes": true,
+    "sapoCanDisable": true,
+    "summaryBesideCustomer": true,
+    "deliveryBesideDebt": true
+  },
+  {
+    "width": 1280,
+    "pinnedOrder": "PO-a2",
+    "quotePinned": true,
+    "twoSkusOneDraft": true,
+    "repeatDoesNotCreate": true,
+    "lostReplyRecovered": false,
+    "sapoDefaultYes": true,
+    "sapoCanDisable": true,
+    "summaryBesideCustomer": true,
+    "deliveryBesideDebt": true
+  },
+  {
+    "width": 390,
+    "pinnedOrder": "PO-a2",
+    "quotePinned": true,
+    "twoSkusOneDraft": true,
+    "repeatDoesNotCreate": true,
+    "lostReplyRecovered": false,
+    "sapoDefaultYes": true,
+    "sapoCanDisable": true,
+    "summaryBesideCustomer": true,
+    "deliveryBesideDebt": true
+  }
+]
