@@ -12,7 +12,12 @@
     "editor": true,
     "formRefresh": true,
     "singleDownload": true,
-    "earlyZip": true
+    "earlyZip": true,
+    "sharedTemplate": true,
+    "timesNewRoman": true,
+    "sourceTerms": true,
+    "reverseSave": true,
+    "legacyFontEdit": true
   },
   {
     "brand": "vigifts",
@@ -27,6 +32,11 @@
     "editor": true,
     "formRefresh": true,
     "singleDownload": true,
-    "earlyZip": true
+    "earlyZip": true,
+    "sharedTemplate": true,
+    "timesNewRoman": true,
+    "sourceTerms": true,
+    "reverseSave": true,
+    "legacyFontEdit": true
   }
 ]

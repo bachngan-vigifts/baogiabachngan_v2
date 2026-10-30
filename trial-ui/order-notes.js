@@ -2,7 +2,7 @@
 // src/modules/sales/domain/order-notes.ts
 var text = (v) => typeof v === "string" ? v.trim() : "";
 var fold = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
-function terms(notes) {
+function quoteNoteTerms(notes) {
   const parts = { time: [], address: [], payment: [], method: [] };
   let active = null;
   for (const raw of text(notes).split(/\r?\n/)) {
@@ -24,7 +24,7 @@ function day(date) {
   return s.split("-").reverse().join("/");
 }
 function orderDeliveryAddress(source) {
-  const address = terms(source.notes).address;
+  const address = quoteNoteTerms(source.notes).address;
   return address && !/^theo thoa thuan[.]?$/.test(fold(address)) ? address : text(source.customerAddress) || address;
 }
 function render(t) {
@@ -32,7 +32,7 @@ function render(t) {
   return ["- Th\u1EDDi gian giao h\xE0ng: " + t.time, "- \u0110\u1ECBa ch\u1EC9 giao h\xE0ng: " + t.address, "- Thanh to\xE1n: " + payment].join("\n");
 }
 function orderNotesFromQuote(source) {
-  const t = terms(source.notes), date = day(source.deliveryDate);
+  const t = quoteNoteTerms(source.notes), date = day(source.deliveryDate);
   if (date) t.time = "Giao h\xE0ng ng\xE0y " + date + ".";
   t.address = orderDeliveryAddress(source);
   return render(t);
@@ -51,7 +51,7 @@ function syncOrderDeliveryNotes(notes, changes, source) {
   };
   if (changes.deliveryDate !== void 0) {
     const date = day(changes.deliveryDate);
-    setLine("time", "Th\u1EDDi gian giao h\xE0ng", date ? "Giao h\xE0ng ng\xE0y " + date + "." : terms(source.notes).time);
+    setLine("time", "Th\u1EDDi gian giao h\xE0ng", date ? "Giao h\xE0ng ng\xE0y " + date + "." : quoteNoteTerms(source.notes).time);
   }
   if (changes.deliveryAddress !== void 0) setLine("address", "\u0110\u1ECBa ch\u1EC9 giao h\xE0ng", changes.deliveryAddress.replace(/\s+/g, " ").trim());
   return lines.join("\n").replace(/\s+$/, "");
@@ -64,5 +64,6 @@ export {
   orderDeliveryAddress,
   orderNotesFromQuote,
   orderRecipient,
+  quoteNoteTerms,
   syncOrderDeliveryNotes
 };
