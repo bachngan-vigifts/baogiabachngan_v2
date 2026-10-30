@@ -2394,3 +2394,6 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
 .speed-dialog .table-wrap { max-height: 60vh; overflow: auto; margin: 8px 0 12px; }
 .speed-dialog .speed-table td:first-child { white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; }
 .speed-dialog .speed-table td:not(:first-child) { text-align: right; white-space: nowrap; }
+.speed-dialog .speed-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.speed-dialog .speed-canary { margin: 8px 0; padding: 10px 12px; border: 1px dashed var(--line, #dfe5ee); border-radius: 10px; display: grid; gap: 8px; justify-items: start; }
+.speed-dialog .speed-canary p { margin: 0; }

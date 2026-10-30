@@ -54,7 +54,13 @@ export function speedReport(list = entries, nav = globalThis.navigator) {
 }
 
 /** Hộp "Đo tốc độ": bảng tổng hợp + nút sao chép. Dựng bằng textContent (không chèn HTML). */
-export function openSpeedDialog({ doc = document, toast = () => {} } = {}) {
+/** Xoá số đo trên máy (trước khi thử một thay đổi, để so trước / sau). */
+export function clearSpeedEntries() { entries.length = 0; }
+/**
+ * `canary` (Manager): nút thử máy chủ cạnh CSDL chỉ trên máy này (api-region.js → createRegionCanary). Bật / tắt đều xoá số đo
+ * cũ để bảng chỉ còn số của chế độ mới; ghi chế độ vào báo cáo sao chép.
+ */
+export function openSpeedDialog({ doc = document, toast = () => {}, canary = null } = {}) {
   const el = (tag, cls, text) => { const n = doc.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
   const dlg = el('dialog', 'speed-dialog'), s = summarize();
   const head = el('div', 'speed-head'), close = el('button', 'btn secondary', 'Đóng'); close.type = 'button'; close.onclick = () => dlg.close();
@@ -75,7 +81,27 @@ export function openSpeedDialog({ doc = document, toast = () => {} } = {}) {
   const wrap = el('div', 'table-wrap'); wrap.append(table);
   const copy = el('button', 'btn primary', 'Sao chép để gửi hỗ trợ'); copy.type = 'button';
   copy.onclick = async () => { try { await globalThis.navigator.clipboard.writeText(speedReport()); toast('Đã sao chép số liệu đo tốc độ.'); } catch { toast('Không sao chép được – chụp màn hình bảng này để gửi.', 'err'); } };
-  dlg.append(head, note, wrap, copy);
+  const actions = el('div', 'speed-actions'); actions.append(copy);
+  const reset = el('button', 'btn secondary', 'Xoá số đo'); reset.type = 'button';
+  reset.onclick = () => { clearSpeedEntries(); dlg.close(); openSpeedDialog({ doc, toast, canary }); };
+  actions.append(reset);
+  let canaryBox = null;
+  if (canary) {
+    canaryBox = el('div', 'speed-canary');
+    const on = canary.enabled();
+    canaryBox.append(el('p', '', on
+      ? `Đang THỬ máy chủ cạnh CSDL (vùng ${canary.current()}) – chỉ trên máy này. Dùng app vài phút rồi so bảng trên với số đo trước đó.`
+      : 'Thử máy chủ cạnh CSDL: chỉ máy này gửi yêu cầu chạy máy chủ ở vùng của CSDL. Có lỗi kết nối là tự tắt. Nhân viên khác không bị ảnh hưởng.'));
+    const toggle = el('button', on ? 'btn secondary' : 'btn primary', on ? 'Tắt thử, về máy chủ mặc định' : 'Bật thử máy chủ cạnh CSDL (chỉ máy này)'); toggle.type = 'button';
+    toggle.onclick = () => {
+      if (on) canary.disable(); else canary.enable();
+      clearSpeedEntries();
+      toast(on ? 'Đã tắt thử. Số đo đã xoá – dùng app vài phút rồi mở lại để xem.' : 'Đã bật thử máy chủ cạnh CSDL trên máy này. Số đo đã xoá – dùng app vài phút rồi mở lại để so.');
+      dlg.close();
+    };
+    canaryBox.append(toggle);
+  }
+  dlg.append(head, ...(canaryBox ? [canaryBox] : []), note, wrap, actions);
   doc.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove(), { once: true });
   dlg.showModal();
