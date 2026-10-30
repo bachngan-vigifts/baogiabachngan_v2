@@ -24,4 +24,6 @@ Tài liệu chính thức: [Update order](https://developer.ghn.vn/en/docs/order
 - `scripts/testing/pos-edit-ghn.mjs`: trình duyệt thật 1280px và 390px, tài khoản quầy Minh Long mô phỏng; backend integration dùng quầy Lock mô phỏng. Không gọi GHN hoặc sửa đơn thật.
 - [Kết quả trình duyệt](results.json), [form điện thoại](edit-390.png), [trạng thái chờ sau tải lại](pending-reload.png).
 
-Typecheck và ca integration mới chạy riêng đã qua. Sáu tệp hồi quy (`contract-amendments`, `pos-order-edit-ui`, `pos-order-edit`, `pos-order-products`, `pos-ghn-sync`, `trial-ui`) đã qua. Chạy gộp có lỗi native V8/WASM (`UnregisterWasmAllocation`) ở Node 24.19.0; không phải assertion ứng dụng. Test cũ `pos-ghn-create` cũng bị tiến trình kết thúc trên worktree này, trong khi chạy baseline qua; cần CI kiểm tra lại trên runtime chuẩn trước khi merge. Không ghi nhận toàn bộ suite đã qua.
+Typecheck và ca integration mới chạy riêng đã qua. Sáu tệp hồi quy (`contract-amendments`, `pos-order-edit-ui`, `pos-order-edit`, `pos-order-products`, `pos-ghn-sync`, `trial-ui`) đã qua. Test `pos-ghn-create` được cập nhật kỳ vọng cho luồng sửa mới: thiếu request key thì không đổi hàng; đổi địa chỉ riêng vẫn bị chặn.
+
+Môi trường Node 24.19.0 có lỗi native V8/WASM (`UnregisterWasmAllocation`) khi dùng test worker. Chạy hai tệp GHN với `--test-isolation=none --test-reporter=spec` để nhận kết quả assertion đầy đủ. Không thay runtime ứng dụng hoặc cấu hình test chung của repository.

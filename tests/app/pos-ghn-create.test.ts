@@ -150,14 +150,15 @@ test('Huỷ đơn / huỷ chuyến Ship COD quầy Lock: huỷ luôn vận đơn
   assert.equal((await f.db.select().from(deliveries).where(eq(deliveries.id, shipB!.id)))[0]!.status, 'cancelled', 'CRM vẫn huỷ chuyến');
 });
 
-test('Đã có vận đơn GHN: không cho sửa SL / giá / người nhận ở CRM (GHN vẫn giữ số cũ)', async () => {
+test('Đã có vận đơn GHN: sửa hàng cần request key đồng bộ; không sửa riêng người nhận ở CRM', async () => {
   const f = await withGhn();
   const made = await f.call('/pos/checkout', f.emp, 'POST', f.cart(f.shift.id, { fulfillmentMode: 'cod', delivery: ghnDelivery }));
   assert.equal(made.data.ghnShipment.ok, true);
   const d = (await f.call('/orders/' + made.data.id, f.mgr)).data, path = '/orders/' + made.data.id + '/pos';
   const lines = d.lines.map((l: any) => ({ id: l.id, qty: 3, price: 108000, discountType: 'percent', discountValue: 0 }));
   const edit = await f.call(path, f.mgr, 'PUT', { revision: d.order.revision, reason: 'Khách lấy thêm', lines });
-  assert.equal(edit.status, 409); assert.equal(edit.data.code, 'GHN_SHIPMENT_EXISTS');
+  assert.equal(edit.status, 409); assert.equal(edit.data.code, 'GHN_EDIT_KEY_REQUIRED');
+  assert.equal((await f.call('/orders/' + made.data.id, f.mgr)).data.lines[0].qty, d.lines[0].qty, 'thiếu request key thì không đổi hàng CRM');
   const addr = await f.call(path, f.mgr, 'PUT', { revision: d.order.revision, reason: 'Đổi địa chỉ', delivery: { address: 'Địa chỉ khác', receiverName: 'Chị Lan', receiverPhone: '+84 901 234 567' } });
   assert.equal(addr.status, 409); assert.equal(addr.data.code, 'GHN_SHIPMENT_EXISTS');
 });
