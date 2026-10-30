@@ -7,6 +7,7 @@ import { bindForgotPassword } from './forgot-password.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
+import { createApiRegion } from './api-region.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
@@ -301,6 +302,7 @@ const saveToken = t => { const next=t||'';if(next!==token||!next)sessionResume.c
 const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>token,verify:()=>api('/me'),open:openWorkspace,refresh:refreshWorkspaceUser});
 
 const requestPriority = createRequestPriority();
+const apiRegion = createApiRegion(); // Edge chạy cùng vùng CSDL (api-region.js)
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
 function api(path, method = 'GET', body) { return withBusy(method, apiRequest(path, method, body), path); }
@@ -311,9 +313,16 @@ async function apiRequest(path, method = 'GET', body) {
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
-  let sentAt = 0;
-  try { res = await requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }); }
-  catch { throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME); }
+  let sentAt = 0, target = apiRegion.url(API + path);
+  const send = () => requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(target.url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); });
+  try { res = await send(); }
+  catch {
+    apiRegion.failed(target.forced);
+    // Lệnh đọc ép vùng lỗi mạng: thử lại một lần theo đường thường (lệnh ghi không bao giờ tự gửi lại).
+    if (target.forced && method === 'GET') { target = apiRegion.url(API + path); try { res = await send(); } catch { /* báo lỗi bên dưới */ } }
+    if (!res) throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
+  }
+  apiRegion.observe(res.headers?.get('server-timing'), target.forced);
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.

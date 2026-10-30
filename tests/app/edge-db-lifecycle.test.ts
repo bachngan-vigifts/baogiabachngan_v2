@@ -7,13 +7,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createDbLifecycle, createDbReadiness } from '../../src/core/db/request-lifecycle.js';
 
 // Execute the real Edge handler, replacing only infrastructure imports (no network/database).
-async function harness({ pooled = false, legacyPooler = false, broken = false, region = '', handler = async (_req: Request, _env: any) => Response.json({ ok: true }) } = {}) {
+async function harness({ pooled = false, legacyPooler = false, broken = false, region = '', poolerUrl = 'postgres://pool.fake.test/db', handler = async (_req: Request, _env: any) => Response.json({ ok: true }) } = {}) {
   const source = readFileSync('supabase/functions/baogia-v2-api/index.ts', 'utf8').replace(/^import .*;\n/gm, '');
   const { code } = await transform(source, { loader: 'ts', format: 'iife' });
   const stats = { created: 0, closed: 0, probes: 0, routed: 0 };
   let serve: (req: Request) => Promise<Response> = null!;
   const background: Promise<unknown>[] = [];
-  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { DB_POOLER_URL: 'postgres://pool.fake.test/db' } : {}), ...(legacyPooler ? { SUPABASE_POOLER_URL: 'postgres://legacy.pool.fake.test/db' } : {}), ...(region ? { SB_REGION: region } : {}) };
+  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { DB_POOLER_URL: poolerUrl } : {}), ...(legacyPooler ? { SUPABASE_POOLER_URL: 'postgres://legacy.pool.fake.test/db' } : {}), ...(region ? { SB_REGION: region } : {}) };
   const connections: {url:string;max?:number}[] = [];
   const hooks: { onQuery?: () => void } = {};
   runInNewContext(code, {
@@ -93,6 +93,19 @@ test('Edge nén gzip cả phản hồi vừa (> 4 KB) khi trình duyệt hỗ tr
   assert.deepEqual(JSON.parse(gunzipSync(bytes).toString()), big);
   const small = await (await harness()).request('GET', '/api/staff/tasks', { 'accept-encoding': 'gzip' });
   assert.equal(small.headers.get('content-encoding'), null, 'phản hồi nhỏ không nén');
+});
+
+test('Edge báo vùng CSDL (đọc từ tên máy pooler) và bỏ tham số chọn vùng trước khi tới router', async () => {
+  let seen = '';
+  const h = await harness({ pooled: true, region: 'ap-southeast-1', poolerUrl: 'postgresql://postgres.ref:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres',
+    handler: async req => { seen = req.url; return Response.json({ ok: true }); } });
+  const res = await h.request('GET', '/api/staff/orders?q=a&forceFunctionRegion=us-east-1');
+  assert.match(res.headers.get('server-timing') || '', /region;desc="ap-southeast-1", dbregion;desc="us-east-1"$/);
+  assert.equal(new URL(seen).search, '?q=a');
+  const down = await harness({ pooled: true, broken: true, poolerUrl: 'postgresql://x:y@aws-1-eu-central-1.pooler.supabase.com:6543/postgres' });
+  const failed = await down.request();
+  assert.equal(failed.status, 503);
+  assert.match(failed.headers.get('server-timing') || '', /dbregion;desc="eu-central-1"/, 'lỗi 503 của mình vẫn có Server-Timing (giao diện không tưởng là vùng hỏng)');
 });
 
 test('pooler deployment uses a permitted Supabase secret name and the existing GitHub secret', () => {
