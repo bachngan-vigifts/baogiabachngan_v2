@@ -8,6 +8,7 @@ import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion } from './api-region.js';
+import { createPageCache, isCacheable } from './page-cache.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
@@ -303,9 +304,28 @@ const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>
 
 const requestPriority = createRequestPriority();
 const apiRegion = createApiRegion(); // Edge chạy cùng vùng CSDL (api-region.js)
+const pageCache = createPageCache(); // trang mở lại hiện ngay (page-cache.js)
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
-function api(path, method = 'GET', body) { return withBusy(method, apiRequest(path, method, body), path); }
+function api(path, method = 'GET', body, { fresh = false } = {}) {
+  // Trang đã mở gần đây: hiện ngay bản đệm, tải bản mới ở nền, khác thì vẽ lại (page-cache.js).
+  if (isCacheable(path, method)) {
+    const session = token, hit = !fresh && pageCache.get(path, session);
+    if (hit) { if (!hit.recent) revalidate(path, session, location.hash); return Promise.resolve(hit.data); }
+    return withBusy(method, apiRequest(path, method, body), path).then(data => { if (session === token) pageCache.set(path, session, data); return data; });
+  }
+  const request = withBusy(method, apiRequest(path, method, body), path);
+  // Mọi lệnh ghi (kể cả lỗi – có thể máy chủ đã lưu) làm bản đệm cũ đi: lần mở sau lấy dữ liệu mới.
+  if (method !== 'GET') request.then(() => pageCache.clear(), () => pageCache.clear());
+  return request;
+}
+/** Tải bản mới của trang đang hiện từ bản đệm; khác bản đệm và vẫn đang ở trang đó thì làm mới trang. */
+function revalidate(path, session, hash) {
+  apiRequest(path).then(data => {
+    if (session !== token) return;
+    if (pageCache.set(path, session, data) && location.hash === hash) dataRefresh.changed();
+  }).catch(() => { /* mạng lỗi: giữ bản đang hiện, lần sau thử lại */ });
+}
 async function apiRequest(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
   const requestRoute = location.hash;
@@ -3582,7 +3602,7 @@ document.addEventListener('click', async e => {
 const sales = { order: null, detail: null };
 // ----- Thông báo (Web Push như web cũ) + trang TỰ LÀM MỚI khi khách gửi báo giá / đặt hàng / hỏi tồn
 var dataRefresh = setupDataRefresh({
-  read: path => api(path), refresh: () => refreshData(),
+  read: path => api(path, 'GET', undefined, { fresh: true }), refresh: () => refreshData(),
   enabled: () => !!state.user,
   blocked: () => (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
