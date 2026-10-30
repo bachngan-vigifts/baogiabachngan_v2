@@ -39,6 +39,8 @@ function pickerSetup() {
     $:(id:string)=>id==='#nq-customer'?input:id==='#nq-suggest'?list:{open:true},
     setTimeout:(f:Function)=>{timers.set(++seq,f);return seq;},clearTimeout:(id:number)=>timers.delete(id),
     api:()=>{const d=deferred();queries.push(d);return d.promise;} };
+  // Bộ tìm khách (customer-search.js): chưa có kết quả trên máy → hỏi máy chủ qua api giả ở trên.
+  ctx.customerSearch={local:()=>null,remote:async()=>(await ctx.api()).customers};
   const start=source.indexOf("{\n  const input = $('#nq-customer')"), end=source.indexOf("$('#new-quote-form').addEventListener",start);
   runInNewContext(source.slice(start,end),ctx);
   return {ctx,input,list,queries,events,search(value:string){input.value=value;events['input:input']!();const task=[...timers.values()].pop()!;timers.clear();return task();},pick(){events['list:click']!({preventDefault(){},target:{closest:()=>({dataset:{i:'0'}})}});} };
