@@ -17,8 +17,8 @@ export function initInventory({ api, root, toast, confirmBox }) {
   let status = null, rows = [], req = 0, onlyDiff = true;
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div');
-  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Đối chiếu tồn Sapo'),
-    el('p', 'muted', 'Sổ kho tự ghi khi nhận hàng NCC và khi kho xác nhận đã đóng hàng. Đang chạy song song: Sapo vẫn là nguồn tồn chính – trang này so tồn sổ kho với tồn Sapo để tìm chỗ lệch.'));
+  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Cân bằng kho'),
+    el('p', 'muted', 'Đối chiếu tồn sổ kho với tồn Sapo để tìm chênh lệch và lập phiếu cân bằng kho. Nhân viên gửi phiếu chờ duyệt; chỉ Manager được duyệt hoàn thành và cập nhật tồn.'));
   const tools = el('div', 'row-gap');
   head.append(titles, tools);
   const info = el('div', 'panel inv-status');
@@ -89,8 +89,8 @@ export function initInventory({ api, root, toast, confirmBox }) {
     const unopened = s.warehouses.filter(w => !w.openedAt);
     // "Chốt lại" chỉ cho đúng một kho đã chốt đang được chọn; "Tất cả kho" chỉ chốt các kho chưa chốt.
     if (s.canManage && s.warehouses.length) {
-      tools.append(btn('Phiếu điều chỉnh', 'btn secondary', () => adjustForm()));
-      if (sel || unopened.length) tools.append(btn(sel?.openedAt ? 'Chốt lại tồn đầu kỳ' : 'Chốt tồn đầu kỳ', sel?.openedAt ? 'btn ghost' : 'btn primary', async () => {
+      tools.append(btn('Lập phiếu cân bằng kho', 'btn secondary', () => adjustForm()));
+      if (s.canApproveAdjustment && (sel || unopened.length)) tools.append(btn(sel?.openedAt ? 'Chốt lại tồn đầu kỳ' : 'Chốt tồn đầu kỳ', sel?.openedAt ? 'btn ghost' : 'btn primary', async () => {
         const msg = sel ? `Chốt tồn cho ${sel.name}. ` + (sel.openedAt ? 'Chỉ chốt lại được khi kho chưa có phát sinh ngoài tồn đầu kỳ. Kho đã nhập, xuất hoặc điều chỉnh phải dùng phiếu điều chỉnh để sửa lệch. Tiếp tục?'
           : 'Lấy tồn Sapo hiện tại làm tồn đầu kỳ cho kho này?')
           : `Chốt tồn đầu kỳ cho ${unopened.length} kho chưa chốt (${unopened.map(w => w.name).join(', ')}). Mỗi kho chốt riêng: kho lỗi không ảnh hưởng kho khác. Tiếp tục?`;
@@ -164,7 +164,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
 
   // ---------------------------------------------------------------- phiếu điều chỉnh (Manager)
   function adjustForm(prefill = {}) {
-    const d = frame('Phiếu điều chỉnh kho', 'Điều chỉnh tồn'), f = el('form', 'sup-form'), err = el('p', 'error');
+    const d = frame('Phiếu cân bằng kho', 'Điều chỉnh tồn'), f = el('form', 'sup-form'), err = el('p', 'error');
     const w = el('select'); w.required = true;
     for (const x of status.warehouses) w.append(Object.assign(el('option', '', x.name), { value: x.id }));
     if (prefill.warehouseId) w.value = prefill.warehouseId;

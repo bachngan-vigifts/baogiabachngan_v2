@@ -66,6 +66,7 @@ import { initCare } from './care.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
+import { initStocktake } from './stocktake.js';
 import { initTransfers, initStockMoves, initSellerConfig } from './stock-ops.js';
 import { showOrderHolds } from './order-holds.js';
 import { initPermissions } from './permissions.js';
@@ -391,7 +392,7 @@ const PAGE_PERM = {
   cash: 'page.cash', pos: 'pos.sell',
   quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
-  purchases: 'page.purchases', 'early-requests': 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
+  purchases: 'page.purchases', 'early-requests': 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
@@ -758,7 +759,7 @@ const posLocalSearch = (q, policy) => {
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Đối chiếu tồn Sapo', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
+const VIEWS = { receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Chăm sóc khách hàng' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -842,6 +843,7 @@ function route() {
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'early-requests') earlyRequestPage().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
+  if (view === 'stocktake') stocktakeView().load();
   if (view === 'transfers') transfersView().load(id);
   if (view === 'stock-moves') stockMovesView().show(query);
   if (view === 'permissions') { permissionsView().load(); sellerConfigView().load(); }
@@ -3655,6 +3657,8 @@ var inventoryUi = null;
 let khoHomeUi = null, stockLookupUi = null;
 function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'), today: todayIso }); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
+let stocktakeUi;
+function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
 function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager }); }

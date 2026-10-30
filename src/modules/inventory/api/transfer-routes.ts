@@ -1,5 +1,5 @@
 import { transferTasksChanged } from './transfer-task-hooks.ts';
-import { and, asc, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, ilike, gte, lt, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -146,17 +146,37 @@ export const stockHoldHooks: {
 export function registerTransferRoutes(router: Router<StaffEnv>) {
   router.get('/stock-transfers', async c => {
     const db = c.env.db, m = me(c), status = c.url.searchParams.get('status') || '', q = str(c.url.searchParams.get('q'), 80);
+    if (status && status !== 'open' && !Object.hasOwn(TRANSFER_STATUS_LABEL, status)) fail(400, 'Trạng thái điều chuyển không hợp lệ.');
+    const fromWarehouseId = str(c.url.searchParams.get('fromWarehouseId'), 80), toWarehouseId = str(c.url.searchParams.get('toWarehouseId'), 80), requestedBy = str(c.url.searchParams.get('requestedBy'), 80);
+    // Date inputs represent Vietnam calendar days; the upper bound is the next midnight.
+    const day = (key: string) => {
+      const value = c.url.searchParams.get(key) || '';
+      if (!value) return null;
+      const time = Date.parse(value + 'T00:00:00+07:00');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(time) || new Date(time + 7 * 3600000).toISOString().slice(0, 10) !== value) fail(400, 'Ngày lọc không hợp lệ.');
+      return time;
+    };
+    const from = day('from'), to = day('to');
+    if (from !== null && to !== null && from > to) fail(400, 'Từ ngày phải trước hoặc bằng đến ngày.');
     const whs = await visibleWarehouses(c), ids = whs.map(w => w.id);
-    if (!ids.length) return json({ transfers: [], warehouses: [] });
+    if (!ids.length) return json({ transfers: [], warehouses: [], filterOptions: { requesters: [] } });
+    const visible = and(inArray(stockTransfers.fromWarehouseId, ids), inArray(stockTransfers.toWarehouseId, ids));
+    const requesters = await db.selectDistinct({ id: stockTransfers.requestedBy, name: employees.name }).from(stockTransfers)
+      .leftJoin(employees, eq(employees.id, stockTransfers.requestedBy)).where(visible).orderBy(asc(employees.name), asc(stockTransfers.requestedBy));
     const rows = await db.select({ t: stockTransfers, by: employees.name }).from(stockTransfers).leftJoin(employees, eq(employees.id, stockTransfers.requestedBy))
-      .where(and(inArray(stockTransfers.fromWarehouseId, ids), inArray(stockTransfers.toWarehouseId, ids),
+      .where(and(visible,
+        fromWarehouseId ? eq(stockTransfers.fromWarehouseId, fromWarehouseId) : undefined,
+        toWarehouseId ? eq(stockTransfers.toWarehouseId, toWarehouseId) : undefined,
+        requestedBy ? eq(stockTransfers.requestedBy, requestedBy) : undefined,
+        from !== null ? gte(stockTransfers.createdAt, new Date(from).toISOString()) : undefined,
+        to !== null ? lt(stockTransfers.createdAt, new Date(to + 86400000).toISOString()) : undefined,
         status === 'open' ? inArray(stockTransfers.status, ['pending', 'approved']) : status ? eq(stockTransfers.status, status as TransferStatus) : undefined,
-        q ? or(like(stockTransfers.transferNo, `%${q.replace(/[\\%_]/g, '')}%`), sql`EXISTS (SELECT 1 FROM ${stockTransferLines} WHERE ${stockTransferLines.transferId} = ${stockTransfers.id} AND ${stockTransferLines.sku} ILIKE ${'%' + q.replace(/[\\%_]/g, '') + '%'})`) : undefined))
+        q ? or(ilike(stockTransfers.transferNo, `%${q.replace(/[\\%_]/g, '')}%`), sql`EXISTS (SELECT 1 FROM ${stockTransferLines} WHERE ${stockTransferLines.transferId} = ${stockTransfers.id} AND ${stockTransferLines.sku} ILIKE ${'%' + q.replace(/[\\%_]/g, '') + '%'})`) : undefined))
       .orderBy(desc(stockTransfers.createdAt)).limit(300);
     const counts = rows.length ? await db.select({ id: stockTransferLines.transferId, n: sql<number>`count(*)`.mapWith(Number), qty: sql<number>`sum(${stockTransferLines.qty})`.mapWith(Number) })
       .from(stockTransferLines).where(inArray(stockTransferLines.transferId, rows.map(r => r.t.id))).groupBy(stockTransferLines.transferId) : [];
     const wName = (id: string) => whs.find(w => w.id === id)?.name ?? '';
-    return json({ warehouses: whs, canApprove: canApprove(m), canMove: canMove(m), transfers: rows.map(({ t, by }) => ({ id: t.id, transferNo: t.transferNo, status: t.status,
+    return json({ warehouses: whs, filterOptions: { requesters: requesters.map(r => ({ id: r.id, name: r.name || r.id })) }, canApprove: canApprove(m), canMove: canMove(m), transfers: rows.map(({ t, by }) => ({ id: t.id, transferNo: t.transferNo, status: t.status,
       statusLabel: TRANSFER_STATUS_LABEL[t.status as TransferStatus], fromName: wName(t.fromWarehouseId), toName: wName(t.toWarehouseId), reason: t.reason,
       requestedByName: by ?? '', createdAt: t.createdAt, doneAt: t.doneAt, lineCount: counts.find(x => x.id === t.id)?.n ?? 0, qty: num(counts.find(x => x.id === t.id)?.qty ?? 0) })) });
   }, 'business');
