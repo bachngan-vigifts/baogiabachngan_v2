@@ -60,13 +60,25 @@ globalThis.ContractWordEdit=(()=>{
  }
  // Form fields remain authoritative even when a saved paragraph contains an older date/address.
  const textOf=p=>Array.from(p.getElementsByTagNameNS(W,'t')).map(n=>n.textContent).join('');
- const fieldKind=text=>/^\s*Hôm nay,\s*ngày/i.test(text)?'date':/^\s*5\.2\s*Địa điểm giao hàng\s*:/i.test(text)?'address':null;
+ const fieldKind=text=>/^\s*Hôm nay,\s*ngày/i.test(text)?'date':/^\s*5\.2\s*Địa điểm giao hàng\s*:/i.test(text)?'address':/^\s*5\.1\s*Thời gian giao hàng\s*:/i.test(text)?'deliveryTime':/^\s*(?:-\s*Thời hạn thanh toán\s*:|Bên A thanh toán)/i.test(text)?'payment':null;
  async function rebaseFields(bytes,edits=[]){
   if(!edits.length)return edits;
   const {paragraphs}=open(bytes);
   return Promise.all(edits.map(async edit=>{
    const p=paragraphs[edit.index],kind=p&&fieldKind(textOf(p));
    return kind&&kind===fieldKind(String(edit.text??''))?{...edit,hash:await digest(serialize(p)),text:textOf(p)}:edit;
+  }));
+ }
+ // A font-only update must not invalidate saved edits in unchanged source paragraphs.
+ async function rebaseTypography(oldBytes,newBytes,edits=[]){
+  if(!edits.length)return edits;
+  const old=open(oldBytes),next=open(newBytes);
+  if(old.paragraphs.length!==next.paragraphs.length)throw Error('Số đoạn Word đã thay đổi khi cập nhật phông chữ.');
+  return Promise.all(edits.map(async edit=>{
+   const from=old.paragraphs[edit.index],to=next.paragraphs[edit.index];
+   if(!from||!to||await digest(serialize(from))!==edit.hash)return edit;
+   if(textOf(from)!==textOf(to))throw Error('Nội dung Word đã thay đổi khi cập nhật phông chữ.');
+   return {...edit,hash:await digest(serialize(to))};
   }));
  }
  const goodsTable=xml=>Array.from(xml.getElementsByTagNameNS(W,'tbl')).find(t=>{
@@ -114,5 +126,5 @@ globalThis.ContractWordEdit=(()=>{
   return {base:pack(target.files,target.xml),edits:normalized,locked};
  }
  const formFieldParagraphs=bytes=>open(bytes).paragraphs.flatMap((p,index)=>fieldKind(textOf(p))?[index]:[]);
- return {apply,prepare,rebaseRepresentative,representativeText,rebaseFields,copyContractTable,formFieldParagraphs};
+ return {apply,prepare,rebaseTypography,rebaseRepresentative,representativeText,rebaseFields,copyContractTable,formFieldParagraphs};
 })();

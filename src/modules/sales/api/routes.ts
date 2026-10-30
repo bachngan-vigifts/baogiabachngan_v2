@@ -1,3 +1,5 @@
+import { syncContractQuoteTerms } from './contract-quote-terms.ts';
+import { contractTermsFromQuote } from '../domain/contract-quote-terms.ts';
 import { registerCrmReturnRoutes } from './crm-return-routes.ts';
 import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
 import { canConfirmDelivery, deliveryConfirmations } from './delivery-confirmation.ts';
@@ -379,6 +381,8 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
     taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
     ...(isDate(data.deliveryDate) ? { expectedDeliveryDate: data.deliveryDate } : {}), updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
   const [k] = await tx.select().from(salesContracts).where(and(eq(salesContracts.orderId, order.id), ne(salesContracts.status, 'cancelled'))).limit(1).for('update');
+  const linkedTerms = contractTermsFromQuote(data);
+  const financialTerms = { ...(linkedTerms.depositRate !== undefined ? { depositRate: linkedTerms.depositRate } : {}), ...(linkedTerms.paymentDays !== undefined ? { paymentDays: linkedTerms.paymentDays } : {}) };
   if (k) {
     // Các đoạn Word đã sửa dựa trên hàng / tổng cũ không được che dữ liệu báo giá mới.
     const doc = JSON.parse(k.data);
@@ -386,9 +390,10 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
       doc.editHistory = [...(Array.isArray(doc.editHistory) ? doc.editHistory : []), { quoteRevision: quote.revision, savedAt: now, edits: doc.edits }].slice(-10);
       delete doc.edits;
     }
-    await tx.update(salesContracts).set({ value: t.total, depositAmount: Math.round(t.total * k.depositRate / 100), data: JSON.stringify(doc), updatedAt: now, revision: sql`${salesContracts.revision} + 1` }).where(eq(salesContracts.id, k.id));
+    doc.details = { ...(doc.details || {}), ...Object.fromEntries(Object.entries(linkedTerms).filter(([, v]) => v !== undefined)) };
+    await tx.update(salesContracts).set({ ...financialTerms, ...(linkedTerms.deliveryAddress !== undefined ? { deliveryAddress: linkedTerms.deliveryAddress } : {}), value: t.total, depositAmount: Math.round(t.total * (linkedTerms.depositRate ?? k.depositRate) / 100), data: JSON.stringify(doc), updatedAt: now, revision: sql`${salesContracts.revision} + 1` }).where(eq(salesContracts.id, k.id));
   }
-  await syncPaymentSchedules(tx, { ...order, ...t, status: orderStatusFromLines(order.status, plan.updates) }, k);
+  await syncPaymentSchedules(tx, { ...order, ...t, status: orderStatusFromLines(order.status, plan.updates) }, k ? { ...k, ...financialTerms } : undefined);
   if (order.status !== 'draft') {
     await refreshOrderStatus(tx, order.id, null);
     // Sửa chứng từ không xuất kho; chỉ hoàn các dòng trừ kiểu cũ nếu chứng từ đã huỷ.
@@ -542,7 +547,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const db = c.env.db, order = await loadOrder(c, c.params.id!);
     const [lines, contract, ships, schedules, payments] = await Promise.all([
       db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id)).orderBy(asc(salesOrderLines.lineNo)),
-      db.select().from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1),
+      db.select({ contract: salesContracts, quoteData: quotations.data, quoteRevision: quotations.revision }).from(salesContracts)
+        .leftJoin(quotations, eq(quotations.id, sql`coalesce(${salesContracts.quoteId}, ${order.quoteId})`))
+        .where(eq(salesContracts.orderId, order.id)).limit(1)
+        .then(rows => rows.map(({ contract, quoteData, quoteRevision }) => ({ ...contract, quoteRevision, sourceTerms: quoteData ? contractTermsFromQuote(JSON.parse(quoteData)) : undefined }))),
       db.select().from(deliveries).where(eq(deliveries.orderId, order.id)).orderBy(asc(deliveries.plannedDate)),
       db.select().from(paymentSchedules).where(eq(paymentSchedules.orderId, order.id)).orderBy(asc(paymentSchedules.dueDate)),
       db.select().from(customerPayments).where(eq(customerPayments.orderId, order.id)).orderBy(asc(customerPayments.paidAt)),
@@ -1048,7 +1056,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới lập được HĐKT.', 'QUOTE_NOT_APPROVED');
     const entity = legalCode(body.legalEntity);
     if (!entity) throw new AppError(400, 'Chọn pháp nhân bên bán: Bách Ngân (BN), Vigifts (VG) hoặc QTV.');
-    const depositRate = Number(body.depositRate ?? 0), paymentDays = Number(body.paymentDays ?? 0);
+    const sourceTerms = contractTermsFromQuote(JSON.parse(quote.data));
+    const depositRate = Number(body.depositRate ?? sourceTerms.depositRate ?? 0), paymentDays = Number(body.paymentDays ?? sourceTerms.paymentDays ?? 0);
     if (!(depositRate >= 0 && depositRate <= 100)) throw new AppError(400, 'Tỷ lệ đặt cọc phải từ 0 đến 100%.');
     if (!Number.isInteger(paymentDays) || paymentDays < 0 || paymentDays > 3650) throw new AppError(400, 'Số ngày thanh toán không hợp lệ.');
     const signedDate = body.signedDate ? String(body.signedDate) : vietnamDate().iso;
@@ -1084,7 +1093,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         await tx.insert(salesContracts).values({
           id, contractNo, orderId: oid, quoteId: quote.id, customerId: order!.customerId, legalEntity: entity, status: 'draft', signedDate: null,
           value: order!.total, depositRate, depositAmount: Math.round(order!.total * depositRate / 100), paymentDays,
-          paymentMethod: text(body.paymentMethod, 1000), deliveryAddress: text(body.deliveryAddress, 2000) || order!.address,
+          paymentMethod: text(body.paymentMethod, 1000), deliveryAddress: text(body.deliveryAddress, 2000) || sourceTerms.deliveryAddress || order!.address,
           data: JSON.stringify(body.details && typeof body.details === 'object' ? body.details : {}), createdBy: me.id, createdAt: now, updatedAt: now,
         });
         // Kỳ phải thu theo HĐKT (cọc + phần còn lại) thay cho kỳ "thanh toán khi giao" mặc định.
@@ -1110,6 +1119,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
 
   router.put('/contracts/:id', async c => {
     const body = await readJson(c.req, 600_000), me = viewer(c);
+    let quoteRevision: number | null = null;
     await c.env.db.transaction(async tx => {
       const [found] = await tx.select({ order: salesOrders }).from(salesOrders).innerJoin(salesContracts, eq(salesOrders.id, salesContracts.orderId))
         .where(and(eq(salesContracts.id, c.params.id!), orderScope(c))).limit(1).for('update', { of: salesOrders });
@@ -1148,6 +1158,21 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       if (body.paymentMethod !== undefined) set.paymentMethod = text(body.paymentMethod, 1000);
       if (body.deliveryAddress !== undefined) set.deliveryAddress = text(body.deliveryAddress, 2000);
       if (body.details !== undefined) set.data = JSON.stringify(body.details && typeof body.details === 'object' ? body.details : {});
+      if (body.syncQuoteTerms === true) {
+        if (contract.status === 'cancelled') throw new AppError(409, 'HĐKT đã huỷ, không cập nhật báo giá nguồn.');
+        const deliveryTime = body.deliveryTime === undefined ? undefined : text(body.deliveryTime, 2000);
+        if (deliveryTime !== undefined) {
+          const doc = JSON.parse(set.data ?? contract.data);
+          doc.details = { ...(doc.details || {}), deliveryTime };
+          set.data = JSON.stringify(doc);
+        }
+        quoteRevision = await syncContractQuoteTerms(tx, contract.quoteId ?? found.order.quoteId, contract.id, body.quoteRevision, {
+          ...(set.depositRate !== undefined || set.paymentDays !== undefined ? { depositRate: set.depositRate ?? contract.depositRate } : {}),
+          ...(set.paymentDays !== undefined ? { paymentDays: set.paymentDays } : {}),
+          ...(set.deliveryAddress !== undefined ? { deliveryAddress: set.deliveryAddress } : {}),
+          ...(deliveryTime !== undefined ? { deliveryTime } : {}),
+        }, me);
+      }
       if (body.status === 'cancelled') {
         await assertCanCancelDocument(tx,found.order.id);
         await tx.update(salesOrders).set({status:'cancelled',updatedAt:nowIso(),revision:sql`${salesOrders.revision}+1`}).where(eq(salesOrders.id,found.order.id));
@@ -1158,7 +1183,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       const [saved] = await tx.update(salesContracts).set({ ...set, revision: contract.revision + 1 }).where(eq(salesContracts.id, contract.id)).returning();
       if (financial || body.signedDate !== undefined) await syncPaymentSchedules(tx, found.order, saved);
     });
-    return json({ ok: true });
+    return json({ ok: true, quoteRevision });
   }, 'business');
 
   // ================= LỊCH GIAO HÀNG =================
