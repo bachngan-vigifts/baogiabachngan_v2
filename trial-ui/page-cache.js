@@ -9,7 +9,12 @@ const TTL_MS = 10 * 60_000, RECENT_MS = 3000, MAX_ENTRIES = 60;
 const LIST = /^\/(orders|contracts|customers|tasks|purchase-orders|purchase-early-requests|purchase-options|suppliers|stock-moves|stock-transfers|stock-holds|stock-requests|deliveries|packing|receivables|payables|cashbook|care|quote-docs|inventory\/(status|compare|adjustments)|dashboard\/[\w-]+|flow)(\?|$)/;
 const DETAIL = /^\/(orders|contracts|customers|tasks|purchase-orders|suppliers|stock-transfers|packing)\/[^/?]+(\?|$)/;
 // Ô chọn khách (`usable=1`) có bộ nhớ riêng (customer-search.js): không chiếm chỗ của các trang danh sách.
-const NEVER = /^\/tasks\/(summary)(\?|$)|preflight|[?&]refresh=1|^\/customers\?(?:.*&)?usable=1/;
+// Số chứng từ kế tiếp (`next-no`) luôn lấy mới: người khác vừa tạo đơn / HĐKT thì số cũ sẽ bị máy chủ báo trùng.
+const NEVER = /^\/tasks\/(summary)(\?|$)|preflight|[?&]refresh=1|^\/customers\?(?:.*&)?usable=1|\/next-no(\?|$)/;
+// Lệnh POST chỉ tính / tra / đánh dấu đã đọc (cùng nhóm với busy-buttons.js): không đổi dữ liệu trang nên KHÔNG xoá bộ đệm.
+// Chat tự đánh dấu đã đọc mỗi khi có tin mới – nếu xoá thì bộ đệm gần như luôn trống khi mở khung chat.
+const PASSIVE = /\/(preview|csp-report|read|locations|typing|presence|count-stock|count-candidates)(\?|$)/;
+export const isPassiveWrite = path => PASSIVE.test(String(path).split('#')[0]);
 
 export const isCacheable = (path, method = 'GET') =>
   String(method).toUpperCase() === 'GET' && !NEVER.test(path) && (LIST.test(path) || DETAIL.test(path));
@@ -33,6 +38,8 @@ export function createPageCache({ now = () => Date.now(), ttl = TTL_MS, recent =
       return !!prev && prev.session === session && prev.signature !== signature;
     },
     clear() { entries.clear(); },
+    /** Bỏ một trang (tải nền gặp 401 / 403 / 404: mất quyền hoặc bản ghi đã xoá – không hiện bản cũ nữa). */
+    drop(path) { entries.delete(path); },
     size: () => entries.size,
   };
 }

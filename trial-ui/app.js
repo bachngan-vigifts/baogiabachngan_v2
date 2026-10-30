@@ -10,7 +10,7 @@ import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion, createRegionCanary } from './api-region.js';
-import { createPageCache, isCacheable } from './page-cache.js';
+import { createPageCache, isCacheable, isPassiveWrite } from './page-cache.js';
 import { createCustomerSearch } from './customer-search.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
@@ -323,7 +323,7 @@ function api(path, method = 'GET', body, { fresh = false } = {}) {
   }
   const request = withBusy(method, apiRequest(path, method, body), path);
   // Mọi lệnh ghi (kể cả lỗi – có thể máy chủ đã lưu) làm bản đệm cũ đi: lần mở sau lấy dữ liệu mới.
-  if (method !== 'GET') { const stale = () => { pageCache.clear(); customerSearch.clear(); }; request.then(stale, stale); }
+  if (method !== 'GET' && !isPassiveWrite(path)) { const stale = () => { pageCache.clear(); customerSearch.clear(); }; request.then(stale, stale); }
   return request;
 }
 /** Tải bản mới của trang đang hiện từ bản đệm; khác bản đệm và vẫn đang ở trang đó thì làm mới trang. */
@@ -331,7 +331,12 @@ function revalidate(path, session, hash) {
   apiRequest(path).then(data => {
     if (session !== token) return;
     if (pageCache.set(path, session, data) && location.hash === hash) dataRefresh.changed();
-  }).catch(() => { /* mạng lỗi: giữ bản đang hiện, lần sau thử lại */ });
+  }).catch(e => {
+    // Mất quyền / bản ghi đã xoá: bỏ bản đệm và vẽ lại trang (trang tự báo lỗi hoặc chuyển đi) thay vì giữ dữ liệu cũ.
+    // Phiên hết hạn (401): bỏ bản đệm; màn hình đăng nhập đã được apiRequest mở.
+    if (session === token && [401, 403, 404, 410].includes(e?.status)) { pageCache.drop(path); if (e.status !== 401 && location.hash === hash) dataRefresh.changed(); }
+    /* mạng lỗi / 5xx: giữ bản đang hiện, lần sau thử lại */
+  });
 }
 async function apiRequest(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
