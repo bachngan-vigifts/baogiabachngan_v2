@@ -7,7 +7,7 @@ import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes, orde
 function setup(pushResult: 'create' | 'cancel' = 'create', configReady = true, confirm = true, sourcing: any = false) {
   const listeners = new Map<string, Function>(), dialogEvents = new Map<string, Function>();
   const fields: Record<string, { value: string; dataset: Record<string, string>; addEventListener: (event: string, fn: Function) => void; change: () => void }> = Object.fromEntries(['orderNo', 'customerName', 'orderDate', 'deliveryDate', 'deliveryAddress', 'receiverName', 'receiverPhone', 'note', 'pushSapo'].map(k => [k, (() => { const events = new Map<string, Function>(); return { value: '', dataset: {}, addEventListener: (event: string, fn: Function) => events.set(event, fn), change: () => events.get('change')?.() }; })()]));
-  const form = { elements: fields, reset: () => { for (const f of Object.values(fields)) f.value = ''; fields.pushSapo!.value = 'no'; }, reportValidity: () => true, addEventListener: (key: string, f: Function) => listeners.set(key, f) };
+  const form = { elements: fields, reset: () => { for (const f of Object.values(fields)) f.value = ''; fields.pushSapo!.value = 'yes'; }, reportValidity: () => true, addEventListener: (key: string, f: Function) => listeners.set(key, f) };
   const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; dialogEvents.get('close')?.(); }, addEventListener: (key: string, f: Function) => dialogEvents.set(key, f) };
   const elements: Record<string, any> = { '#order-create-dialog': dialog, '#order-create-form': form, '#order-create-submit': {}, '#order-create-status': {}, '#order-create-error': {}, '#order-create-quote': {} };
   const calls: string[] = [], posts: any[] = [], confirmations: any[] = [];
@@ -31,6 +31,7 @@ test('sinh đơn UI: form mở ngay và chép ghi chú; chọn chỉ trên web k
   assert.equal(s.fields.orderNo!.value, 'DH_20261012_001'); assert.equal(s.fields.customerName!.value, 'Khách');
   assert.equal(s.fields.receiverName!.value, 'Người mua'); assert.equal(s.fields.receiverPhone!.value, '0901000001');
   s.fields.receiverName!.value = 'Người nhận riêng'; s.fields.receiverPhone!.value = '0902000002';
+  assert.equal(s.fields.pushSapo!.value, 'yes'); s.fields.pushSapo!.value = 'no';
   s.fields.note!.value = 'Ghi chú đã sửa'; await s.submit();
   assert.equal((await pending).id, 'order-1'); assert.equal(s.confirmations.length, 1); assert.match(s.confirmations[0].message, /DH_20261012_001[\s\S]*Khách/);
   assert.equal(s.posts[0].body.orderNo, 'DH_20261012_001'); assert.equal(s.posts[0].body.note, 'Ghi chú đã sửa'); assert.equal(s.posts[0].push, false);
@@ -85,7 +86,7 @@ test('form chỉ trên web → callback app → POST gửi boolean false, kể c
   runInNewContext(source + '\nglobalThis.create = createOrderForQuote;', context);
   const pending = context.create('q1', 'BG_001');
   await new Promise(resolve => setImmediate(resolve));
-  await s.submit(); assert.equal(await pending, 'draft');
+  s.fields.pushSapo!.value = 'no'; await s.submit(); assert.equal(await pending, 'draft');
   assert.equal(requests.length, 1); assert.equal(requests[0].body.pushSapo, false);
   assert.equal(requests[0].path, '/orders'); assert.ok(!s.calls.includes('sapo'));
 });
