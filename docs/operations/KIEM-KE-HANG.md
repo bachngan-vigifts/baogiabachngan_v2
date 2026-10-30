@@ -35,3 +35,15 @@ Bộ lọc điều chuyển gồm số phiếu/SKU, kho đi, kho đến, ngườ
 - Test giao diện điều chuyển: chống gửi trùng, ẩn nút khác, giữ khoá trong lúc tải trạng thái, phục hồi sau lỗi; giữ nguyên sao chép/sửa/tìm sản phẩm.
 - Test kiểm kê: quyền Manager, gửi/duyệt lặp, số 0, dòng không lệch, chặn tồn đối chiếu cũ, giữ phiếu chờ nếu duyệt thất bại.
 - Kiểm tra Chromium với API giả lập: tìm từ danh mục, tồn theo lô, nháp khôi phục sau reload, lỗi gửi không rõ kết quả và retry cùng key, giao diện desktop/mobile không lỗi JavaScript.
+
+## Danh sách phiếu và kiểm tra trùng mã
+
+Trang Kiểm kê mở ở danh sách phiếu; nút dấu + góc phải tạo phiếu mới. Có thể quay lại danh sách rồi tiếp tục nội dung chưa gửi. Tồn và phiếu chờ duyệt tự lấy theo lô khi thêm mã, mở lại phiếu đang nhập hoặc nối mạng/quay lại cửa sổ; không có nút Lấy lại tồn các mã.
+
+Cột Phiếu kiểm kê chờ duyệt hiển thị các số phiếu theo đúng mã và kho. Bấm mở popup xem nhanh (và Manager có thể duyệt) ngay trên trang hiện tại, không cần lưu hoặc rời phiếu đang nhập. Phản hồi cập nhật tồn chỉ thay ô hiển thị liên quan, không dựng lại ô thực đếm đang gõ.
+
+Nhân viên được xem phiếu kiểm kê của đồng nghiệp trong phạm vi kho được phép; quyền xem phiếu điều chỉnh thường của đồng nghiệp vẫn giữ nguyên. API riêng `/inventory/stocktakes/:id` chỉ trả phiếu kiểm kê trong phạm vi kho, không trả phiếu điều chỉnh thường hoặc kho riêng bị ẩn.
+
+Khi có phiếu kiểm kê chờ duyệt cho cùng (kho, SKU), không gửi phiếu thứ hai. Máy chủ kiểm tra dưới khoá sổ kho độc quyền để hai người gửi đồng thời chỉ tạo được một phiếu; gửi lại cùng client key vẫn trả đúng phiếu cũ. Phiếu đã duyệt/từ chối và các phiếu thuộc kho khác không chặn nhau. Các phiếu điều chỉnh thường chờ duyệt không bị coi là kiểm kê trùng.
+
+Nếu số thực đếm đã nhập mà tồn đối chiếu thay đổi khi cập nhật nền, giữ nguyên số đang nhập và đánh dấu Cần kiểm đếm lại. Nhân viên phải kiểm tra, nhập lại số thực tế để dùng mốc tồn mới; không tự đổi mốc tồn rồi gửi số đếm cũ. Dữ liệu phiếu chờ duyệt chưa tải được thì chưa cho gửi; lỗi tạm thời có một lần thử lại tự động.

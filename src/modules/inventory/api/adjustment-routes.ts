@@ -50,7 +50,7 @@ async function assertCountSnapshot(tx:Tx,warehouseId:string,lines:Line[]){
 async function audit(tx:Tx,actorId:string,id:string,action:string,data:unknown){await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId,module:'inventory',action,entityType:'inventory_adjustments',entityId:id,data:JSON.stringify(data),createdAt:new Date().toISOString()});}
 export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)=>Promise<{id:string;name:string}[]>){
  const guard=(c:Ctx)=>{if(!can(me(c),'inventory.view'))fail(403,'Bạn chưa được cấp quyền xem sổ kho.');};
- const scope=async(c:Ctx)=>{const ids=(await allowed(c)).map(w=>w.id);return and(ids.length?inArray(adjustments.warehouseId,ids):sql`false`,approve(c)?undefined:eq(adjustments.createdBy,me(c).id));};
+ const scope=async(c:Ctx,stocktakesOnly=false)=>{const ids=(await allowed(c)).map(w=>w.id);return and(ids.length?inArray(adjustments.warehouseId,ids):sql`false`,approve(c)||stocktakesOnly?undefined:eq(adjustments.createdBy,me(c).id));};
  async function load(c:Ctx,id:string){guard(c);const [row]=await c.env.db.select().from(adjustments).where(and(eq(adjustments.id,id),await scope(c))).limit(1);if(!row)fail(404,'Không tìm thấy phiếu điều chỉnh.');return row;}
  async function present(c:Ctx,rows:(typeof adjustments.$inferSelect)[]){
   const ids=[...new Set(rows.flatMap(r=>[r.createdBy,...(r.reviewedBy?[r.reviewedBy]:[])]))];
@@ -58,19 +58,41 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
   const whs=await allowed(c),names=new Map(people.map(p=>[p.id,p.name]));
   return rows.map(({clientKey:_key,payloadHash:_hash,...r})=>({...r,lines:JSON.parse(r.lines) as Line[],warehouseName:whs.find(w=>w.id===r.warehouseId)?.name||'',createdByName:names.get(r.createdBy)||'',reviewedByName:r.reviewedBy?names.get(r.reviewedBy)||'':''}));
  }
+ // Shared stocktake references are visible only inside the reader's warehouse scope.
+ // Normal adjustments retain their creator-only scope for non-Managers.
+ const countKind=sql`${adjustments.lines}::jsonb @> '[{"source":"stocktake"}]'::jsonb`;
+ async function pendingCounts(db:Db|Tx,warehouseId:string,skus:string[]){
+  const rows=await db.select({id:adjustments.id,refNo:adjustments.refNo,createdAt:adjustments.createdAt,by:employees.name,lines:adjustments.lines})
+   .from(adjustments).leftJoin(employees,eq(employees.id,adjustments.createdBy))
+   .where(and(eq(adjustments.warehouseId,warehouseId),eq(adjustments.status,'pending'),countKind,
+    sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${adjustments.lines}::jsonb) line WHERE line->>'sku' IN (${sql.join(skus.map(sku=>sql`${sku}`),sql`, `)}))`));
+  const wanted=new Set(skus),result:Record<string,{id:string;refNo:string;createdAt:string;createdByName:string}[]>={};
+  for(const row of rows)for(const line of JSON.parse(row.lines) as Line[])if(line.source==='stocktake'&&wanted.has(line.sku))
+   (result[line.sku]||=[]).push({id:row.id,refNo:row.refNo,createdAt:row.createdAt,createdByName:row.by||''});
+  return result;
+ }
+ router.get('/inventory/stocktakes/:id',async c=>{
+  guard(c);const [row]=await c.env.db.select().from(adjustments).where(and(eq(adjustments.id,c.params.id!),await scope(c,true),countKind)).limit(1);
+  if(!row)fail(404,'Không tìm thấy phiếu kiểm kê.');
+  const balances=await c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,row.warehouseId),inArray(stockBalances.sku,(JSON.parse(row.lines) as Line[]).map(l=>l.sku))));
+  return json({adjustment:(await present(c,[row]))[0],balances:Object.fromEntries(balances.map(b=>[b.sku,b.qty])),canApprove:approve(c)});
+ },'business');
  router.post('/inventory/count-stock',async c=>{
   guard(c);const body=await readJson(c.req,250000),warehouseId=String(body.warehouseId||''),skus=body.skus;
   if(!(await allowed(c)).some(w=>w.id===warehouseId))fail(403,'Kho không thuộc phạm vi sổ kho của bạn.');
   if(!Array.isArray(skus)||!skus.length||skus.length>1000||skus.some(x=>typeof x!=='string'||!x||x.length>200))fail(400,'Chọn từ 1 đến 1.000 sản phẩm.');
   await assertWarehousesOpened(c.env.db,[warehouseId]);
-  const rows=await c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,warehouseId),inArray(stockBalances.sku,skus)));
+  const [rows,pendingBySku]=await Promise.all([
+   c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,warehouseId),inArray(stockBalances.sku,skus))),
+   pendingCounts(c.env.db,warehouseId,skus),
+  ]);
   const at=new Date().toISOString(),m=new Map(rows.map(r=>[r.sku,r.qty]));
-  return json({warehouseId,observedAt:at,stock:Object.fromEntries(skus.map(sku=>[sku,m.get(sku)||0]))});
+  return json({warehouseId,observedAt:at,pendingBySku,stock:Object.fromEntries(skus.map(sku=>[sku,m.get(sku)||0]))});
  },'business');
  router.get('/inventory/adjustments',async c=>{
   guard(c);const state=c.url.searchParams.get('status')||'',wh=c.url.searchParams.get('warehouseId')||'',offset=Number(c.url.searchParams.get('offset')||0);
   if(!['','pending','approved','rejected'].includes(state)||!Number.isSafeInteger(offset)||offset<0||offset>1e6)fail(400,'Bộ lọc phiếu điều chỉnh không hợp lệ.');
-  const rows=await c.env.db.select().from(adjustments).where(and(await scope(c),state?eq(adjustments.status,state as 'pending'):undefined,wh?eq(adjustments.warehouseId,wh):undefined,c.url.searchParams.get('kind')==='stocktake'?sql`${adjustments.lines}::jsonb @> '[{"source":"stocktake"}]'::jsonb`:undefined))
+  const rows=await c.env.db.select().from(adjustments).where(and(await scope(c,c.url.searchParams.get('kind')==='stocktake'),state?eq(adjustments.status,state as 'pending'):undefined,wh?eq(adjustments.warehouseId,wh):undefined,c.url.searchParams.get('kind')==='stocktake'?sql`${adjustments.lines}::jsonb @> '[{"source":"stocktake"}]'::jsonb`:undefined))
    .orderBy(desc(adjustments.createdAt),desc(adjustments.id)).limit(21).offset(offset);
   const nextOffset=rows.length>20?offset+20:null;if(nextOffset!==null)rows.pop();
   return json({adjustments:await present(c,rows),nextOffset,canApprove:approve(c)});
@@ -104,6 +126,7 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
    if(old){if(old.payloadHash!==hash)fail(409,'Khoá gửi đã dùng cho nội dung khác.');return {id:old.id,refNo:old.refNo,status:old.status,replayed:true,lines:0};}
    await assertWarehousesOpened(tx,[warehouseId]);
    await assertCountSnapshot(tx,warehouseId,lines);
+   if(stocktake){const overlaps=await pendingCounts(tx,warehouseId,lines.map(l=>l.sku));if(Object.keys(overlaps).length)throw new AppError(409,'Mã '+Object.keys(overlaps).slice(0,5).join(', ')+' đang có phiếu kiểm kê chờ duyệt. Mở phiếu để đối chiếu hoặc bỏ các mã này trước khi gửi.','STOCKTAKE_PENDING');}
    const id=crypto.randomUUID(),now=new Date().toISOString(),date=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date());
    const used=stocktake?await tx.select({no:adjustments.refNo}).from(adjustments).where(sql`${adjustments.refNo} LIKE ${documentNumberPatterns('KK',date)[0]}`):[];
    const refNo=stocktake?nextDocumentNumber('KK',date,used.map(r=>r.no)):'ĐC-'+date.replaceAll('-','')+'-'+id.slice(0,8).toUpperCase();

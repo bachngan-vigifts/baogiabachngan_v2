@@ -232,3 +232,6 @@
 .stocktake-controls .data-table input { width: 110px; }
 .stocktake-summary { font-weight: 600; }
 @media (max-width: 680px) { .stocktake-controls { grid-template-columns: 1fr; } .stocktake-panel { padding: 12px; } }
+.stocktake-panel[hidden], .stocktake-results:empty { display: none; }
+.stocktake-pending .link-btn { display: block; text-align: left; margin: 3px 0; }
+.stocktake-panel > .card-title-row { margin-bottom: 14px; }
