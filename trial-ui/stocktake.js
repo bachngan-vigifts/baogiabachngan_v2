@@ -15,22 +15,24 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
  const resume=button('Tiếp tục phiếu đang nhập',()=>showEditor());resume.hidden=true;actions.append(resume,create);head.append(titles,actions);
  const panel=el('section','panel stocktake-panel'),controls=el('fieldset','stocktake-controls');
  const warehouse=el('select');warehouse.setAttribute('aria-label','Kho kiểm kê');
- const search=el('input');search.type='search';search.placeholder='Tìm tên, mã SKU hoặc quét mã rồi Enter…';search.setAttribute('aria-label','Tìm sản phẩm kiểm kê');
+ const search=el('input');search.type='search';search.placeholder='Nhập tên, mã SKU, barcode';search.autocomplete='off';search.setAttribute('aria-label','Tìm sản phẩm kiểm kê');
  const reason=el('input');reason.placeholder='Lý do / ghi chú kiểm kê';reason.maxLength=500;reason.setAttribute('aria-label','Lý do kiểm kê');
  const results=el('div','stocktake-results'),hint=el('p','small muted'),feedback=el('p','error');feedback.setAttribute('role','alert');
  const draftInfo=el('p','small muted','Xem nhanh phiếu khác không làm mất số thực đếm đang nhập.');
  // Quét mã vạch: mỗi lần quét cộng 1 vào thực đếm (mã chưa có trong phiếu thì tự thêm).
- const tools=el('div','stocktake-tools'),scan=el('input'),scanInfo=el('span','small muted');scan.type='text';scan.autocomplete='off';scan.placeholder='Mã vạch (+1 mỗi lần quét)';scan.setAttribute('aria-label','Quét mã vạch đếm');
+ // Ô TÌM / QUÉT gộp một (kiểu ô tìm của app bán hàng): kính lúp · ô nhập · nút mã vạch mở camera.
+ // Quét bằng máy cầm tay hoặc gõ đúng mã SKU / barcode rồi Enter: +1 vào thực đếm (mã chưa có thì tự thêm), ô tự xoá để quét tiếp.
+ // Gõ tên rồi chọn trong danh sách: chỉ thêm dòng, chưa đếm.
+ const tools=el('div','stocktake-tools'),scanInfo=el('p','small muted stocktake-scan-info');scanInfo.setAttribute('role','status');
  // Điện thoại: nút mở camera quét liên tục (mã vạch / QR), mỗi mã đọc được +1 như máy quét cầm tay.
- const camBtn=button('📷 Quét bằng camera',()=>openCamera(),'btn secondary');camBtn.dataset.mobileInline='';camBtn.setAttribute('aria-label','Mở camera quét mã');
- const scanRow=el('div','stocktake-scan-row');scanRow.append(scan,camBtn);
- const scanBox=el('div','stocktake-scan');scanBox.append(scanRow,scanInfo);
+ const camBtn=button('Quét mã bằng camera',()=>openCamera(),'scan-field-btn');camBtn.dataset.mobileInline='';camBtn.title='Quét mã bằng camera';
+ const searchField=el('div','scan-field stocktake-search');searchField.append(search,camBtn);
  // Tạo nhanh: thêm cả loạt mã theo thương hiệu / mã còn tồn / mã lệch Sapo nhiều nhất.
  const quickMode=el('select'),brandSel=el('select');quickMode.setAttribute('aria-label','Tạo nhanh danh sách mã');brandSel.setAttribute('aria-label','Thương hiệu');brandSel.hidden=true;
  for(const [v,t] of [['','Tạo nhanh danh sách mã…'],['brand','Theo thương hiệu'],['instock','Mọi mã còn tồn trong kho'],['sapo','50 mã lệch Sapo nhiều nhất']])quickMode.append(Object.assign(el('option','',t),{value:v}));
  const quickBtn=button('Thêm vào phiếu',()=>quickAdd());
  const printBtn=button('In phiếu đếm',()=>printCountSheet({title:'PHIẾU ĐẾM KIỂM KÊ',warehouse:config?.warehouses?.find(w=>w.id===warehouseId)?.name||'',reason:reason.value.trim(),lines:lines.map(l=>({sku:l.sku,name:l.name,unit:l.unit,expected:l.expectedQty,counted:l.countedQty}))}));
- tools.append(scanBox,quickMode,brandSel,quickBtn,printBtn);
+ tools.append(quickMode,brandSel,quickBtn,printBtn);
  const wrap=el('div','table-wrap'),table=el('table','data-table'),thead=el('thead'),hr=el('tr'),tbody=el('tbody');
  for(const label of ['Sản phẩm','ĐVT','Tồn đối chiếu','Thực đếm','Chênh lệch','Phiếu kiểm kê chờ duyệt',''])hr.append(el('th','',label));
  thead.append(hr);table.append(thead,tbody);wrap.append(table);
@@ -39,7 +41,7 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
  const formHead=el('div','card-title-row');formHead.append(el('h2','card-title','Phiếu kiểm kê mới'),back);
  const clear=button('Bỏ bản nháp',async()=>{if(!busy&&!pending&&await confirmBox('Bỏ các dòng kiểm kê chưa gửi?',{title:'Bỏ bản nháp',ok:'Bỏ bản nháp'})){stockRun++;lines=[];reason.value='';save();render();}});
  const send=button('Gửi Manager duyệt',()=>submit(),'btn primary');
- controls.append(warehouse,reason,search,results,hint,tools,clear,wrap);
+ controls.append(warehouse,reason,searchField,scanInfo,results,hint,tools,clear,wrap);
  panel.append(formHead,controls,summary,feedback,draftInfo,send);
  const history=el('section','panel inv-adjustments-panel');page.append(head,panel,history);root.append(page);
  const queue=initAdjustmentQueue({api,host:history,toast,kind:'stocktake',userId,onChanged:async()=>{await queue.load(config);if(editing)await refreshStock();}});
@@ -107,21 +109,23 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
  }
  const sameCode=(p,code)=>String(p.sku).toLowerCase()===code.toLowerCase()||(p.barcodes||[]).includes(code);
  let scanQueue=Promise.resolve();
- async function scanCode(code){
-  if(!code||busy||pending)return;
-  if(!warehouseId){feedback.textContent='Chọn kho trước khi quét mã.';return;}
+ /** Mã đúng SKU / barcode → +1 (thêm dòng nếu chưa có), trả true. Không khớp mã nào → false (`quiet`: không báo, để Enter chuyển sang tìm theo tên). */
+ async function scanCode(code,{quiet=false}={}){
+  if(!code||busy||pending)return false;
+  if(!warehouseId){feedback.textContent='Chọn kho trước khi quét mã.';return false;}
   let line=lines.find(l=>sameCode(l,code));
   if(!line){
    let product=(findProducts(code)||[]).find(p=>sameCode(p,code));
-   if(!product){try{product=(await api('/products?limit=5&q='+encodeURIComponent(code))).products.find(p=>sameCode(p,code));}catch(e){feedback.textContent=e.message;return;}}
-   if(!product){scanInfo.textContent='Không tìm thấy mã '+code;scanInfo.className='small error';return;}
+   if(!product){try{product=(await api('/products?limit=5&q='+encodeURIComponent(code))).products.find(p=>sameCode(p,code));}catch(e){feedback.textContent=e.message;return false;}}
+   if(!product){if(!quiet){scanInfo.textContent='Không tìm thấy mã '+code;scanInfo.className='small error stocktake-scan-info';}return false;}
    if(!lines.some(l=>l.sku===product.sku))add(product,{focus:false});
-   line=lines.find(l=>l.sku===product.sku);if(!line)return;
+   line=lines.find(l=>l.sku===product.sku);if(!line)return false;
   }
   if(line.stockChanged&&Number.isFinite(line.latestStock)&&line.countedQty===null){line.expectedQty=line.latestStock;line.stockChanged=false;}
   line.countedQty=Math.round(((line.countedQty||0)+1)*1000)/1000;
   const view=rowViews.get(line.sku);if(view){view.count.value=String(line.countedQty);updateLine(line);view.row.classList.remove('stocktake-scanned');void view.row.offsetWidth;view.row.classList.add('stocktake-scanned');view.row.scrollIntoView?.({block:'nearest'});}
-  scanInfo.className='small muted';scanInfo.textContent=`${line.sku} · ${line.name}: đếm ${number(line.countedQty)}`;totals();save();
+  scanInfo.className='small muted stocktake-scan-info';scanInfo.textContent=`${line.sku} · ${line.name}: đếm ${number(line.countedQty)}`;totals();save();
+  return true;
  }
  const cameraError=e=>e?.name==='NotAllowedError'?'Chưa được cấp quyền camera. Bật quyền Camera cho trang CRM trong cài đặt trình duyệt rồi thử lại.'
   :e?.name==='NotFoundError'?'Không tìm thấy camera trên thiết bị này.'
@@ -152,7 +156,7 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
   };
   start();
  }
- scan.addEventListener('keydown',event=>{if(event.key!=='Enter')return;event.preventDefault();const code=scan.value.trim();scan.value='';scanQueue=scanQueue.then(()=>scanCode(code)).catch(()=>{});});
+
  let brandsLoaded=false;
  quickMode.addEventListener('change',async()=>{brandSel.hidden=quickMode.value!=='brand';if(quickMode.value!=='brand'||brandsLoaded)return;
   try{const data=await api('/product-brands');brandSel.replaceChildren(Object.assign(el('option','','Chọn thương hiệu'),{value:''}),...data.brands.filter(b=>b.name).map(b=>Object.assign(el('option','',`${b.name} (${b.count})`),{value:b.name})));brandsLoaded=true;}catch(e){feedback.textContent=e.message;}});
@@ -173,7 +177,13 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
   finally{quickBtn.disabled=false;}
  }
  search.addEventListener('input',()=>{clearTimeout(timer);searchRun++;timer=setTimeout(find,180);});
- search.addEventListener('keydown',async event=>{if(event.key!=='Enter')return;event.preventDefault();await find();const found=findProducts(search.value.trim());const exact=found?.find(p=>String(p.sku).toLowerCase()===search.value.trim().toLowerCase());if(exact)add(exact);});
+ // Enter (máy quét cầm tay gửi mã + Enter): đúng mã → +1 và xoá ô để quét tiếp; không phải mã → hiện kết quả tìm theo tên.
+ search.addEventListener('keydown',event=>{
+  if(event.key!=='Enter')return;event.preventDefault();
+  const code=search.value.trim();if(!code)return;
+  clearTimeout(timer);searchRun++;search.value='';results.replaceChildren();
+  return scanQueue=scanQueue.then(async()=>{const ok=await scanCode(code,{quiet:true});if(!ok&&!search.value){search.value=code;await find();}}).catch(()=>{});
+ });
  reason.addEventListener('input',save);
  warehouse.addEventListener('change',async()=>{const next=warehouse.value;if(lines.length&&!await confirmBox('Đổi kho sẽ bỏ các dòng kiểm kê hiện tại. Tiếp tục?',{title:'Đổi kho kiểm kê',ok:'Đổi kho'})){warehouse.value=warehouseId;return;}stockRun++;searchRun++;warehouseId=next;lines=[];results.replaceChildren();save();render();});
  globalThis.addEventListener?.('online',()=>{if(editing)refreshStock();});

@@ -2445,3 +2445,20 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 
 .quote-incoming-batch { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--blue-50); display: grid; gap: 8px; }
 .quote-incoming-batch .btn { justify-self: start; }
+
+/* Ô TÌM / QUÉT kiểu app bán hàng: kính lúp · ô nhập · vạch ngăn · nút mã vạch (mở camera). Dùng ở Kiểm kê và Bán hàng nhanh.
+   Nút giữ chữ (đọc màn hình / test) nhưng chỉ hiện biểu tượng. */
+.scan-field { position: relative; display: flex; align-items: center; min-height: 48px; padding: 0 6px 0 44px; border-radius: 999px; background: #eceef2; border: 1px solid transparent; grid-column: 1 / -1; }
+.scan-field:focus-within { background: #fff; border-color: #19844e; box-shadow: 0 0 0 3px #19844e22; }
+.scan-field::before { content: ''; position: absolute; left: 16px; top: 50%; width: 20px; height: 20px; transform: translateY(-50%); background: #8a8f98;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 21 21'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 21 21'/%3E%3C/svg%3E") center / contain no-repeat; }
+.scan-field input { flex: 1 1 auto; min-width: 0; height: 46px; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: none; padding: 0 8px 0 0 !important; font-size: 16px; }
+.scan-field input::-webkit-search-cancel-button { display: none; }
+.scan-field-btn { flex: none; position: relative; width: 52px; height: 36px; margin-left: 4px; border: 0; border-left: 1.5px solid #9aa0a8; background: transparent; cursor: pointer; font-size: 0 !important; color: transparent !important; }
+.scan-field-btn::after { content: ''; position: absolute; inset: 0 0 0 10px; margin: auto; width: 28px; height: 24px; background: #4b5058;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Cpath d='M1 6V1h5M22 1h5v5M27 18v5h-5M6 23H1v-5'/%3E%3Cpath d='M6 5v14M9 5v14M12.5 5v14M16 5v14M18.5 5v14M22 5v14' stroke-width='1.6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Cpath d='M1 6V1h5M22 1h5v5M27 18v5h-5M6 23H1v-5'/%3E%3Cpath d='M6 5v14M9 5v14M12.5 5v14M16 5v14M18.5 5v14M22 5v14' stroke-width='1.6'/%3E%3C/svg%3E") center / contain no-repeat; }
+.scan-field-btn:hover::after, .scan-field-btn:focus-visible::after { background: #19844e; }
+.scan-field-btn:disabled { cursor: wait; opacity: .45; }
+.stocktake-scan-info { margin: 0; grid-column: 1 / -1; }

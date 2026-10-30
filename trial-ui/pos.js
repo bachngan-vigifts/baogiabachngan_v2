@@ -390,10 +390,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const layout = el('div', 'pos-layout'),
       left = el('section', 'pos-card pos-catalog'),
       right = el('section', 'pos-card pos-checkout'),
-      searchBox = el('div', 'pos-search');
+      searchBox = el('div', 'pos-search scan-field');
     const input = el('input');
     input.type = 'search';
-    input.placeholder = 'Tìm tên, mã hàng hoặc quét mã vạch…';
+    input.placeholder = 'Nhập tên, mã SKU, barcode';
+    input.autocomplete = 'off';
     input.setAttribute('aria-label', 'Tìm hoặc quét sản phẩm');
     nodes.search = input;
     input.addEventListener('input', () => {
@@ -407,7 +408,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         run(submitScan);
       }
     });
-    nodes.scanButton = button('Quét mã', 'btn secondary', () => run(scan));
+    // Nút mã vạch ở cuối ô tìm (scan-field): mở camera; quét xong tự thêm vào giỏ và xoá ô để quét tiếp.
+    nodes.scanButton = button('Quét mã', 'scan-field-btn', () => run(scan)); nodes.scanButton.title = 'Quét mã bằng camera';
     nodes.scanStatus = el('p', 'pos-scan-status');
     nodes.scanStatus.setAttribute('role', 'status');
     nodes.scanStatus.setAttribute('aria-live', 'polite');

@@ -1265,3 +1265,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-order-edit-modal .pos-edit-lines td input,.pos-order-edit-modal .pos-edit-lines td select { width:100%;min-width:0; }
   .pos-order-edit-modal .pos-edit-lines td:last-child:not(:first-child) { position:absolute;top:6px;right:6px;width:auto; }
 }
+
+/* Ô tìm / quét kiểu app bán hàng (style.css .scan-field) thay ô viền xanh + nút "Quét mã" xanh. */
+.pos-search.scan-field { height: auto; min-height: 56px; gap: 0; margin-bottom: 14px; }
+.pos-search.scan-field input { font-size: var(--text-body) !important; height: 54px; }
+@media (max-width: 850px) { .pos-search.scan-field { min-height: 48px; margin-bottom: 9px; } .pos-search.scan-field input { height: 46px; } }
