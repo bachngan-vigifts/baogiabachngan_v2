@@ -19,6 +19,7 @@ class E {
   all(): E[] { return this.children.flatMap(n => [n, ...n.all()]); }
   cloneNode() { return new E(this.tag); }
   reportValidity() { return true; }
+  querySelectorAll(selector: string) { return this.all().filter(n => selector.split(',').includes(n.tag)); }
   showModal() { this.open = true; }
   close() { this.open = false; }
   remove() {}
@@ -95,5 +96,40 @@ test('Manager can remove an old SKU, search within the original register/policy,
     const request = calls.find(c => c[1] === 'PUT');
     assert.equal(request[2].lines.length, 1); assert.equal(request[2].lines[0].sku, 'B'); assert.equal(request[2].lines[0].id, undefined);
     assert.equal(Number(request[2].lines[0].qty), 2); assert.equal(Number(request[2].lines[0].price), 216000);
+  } finally { Object.assign(globalThis, { document: previous }); }
+});
+
+test('GHN picking opens product controls and retries a durable pending edit without submitting different rows', async () => {
+  const previous = globalThis.document, doc = { createElement: (tag: string) => new E(tag), body: new E('body') };
+  Object.assign(globalThis, { document: doc });
+  try {
+    let key = '', saves = 0, completed = 0;
+    const calls: any[] = [];
+    const snapshot = { register: { id: 'r', name: 'Lock', taxRate: 8 }, pricePolicyId: 'p', vatEnabled: true };
+    const detail = { order: { id: 'o', orderNo: 'POS', revision: 1, fulfillmentMode: 'cod', customerName: 'A', posSnapshot: JSON.stringify(snapshot) },
+      lines: [{ id: 'a', sku: 'A', name: 'A', qty: 1, listUnitPrice: 108000, discountType: 'percent', discountValue: 0, taxRate: 8, deliveredQty: 0 }],
+      deliveries: [{ id: 'd', carrier: 'GHN', trackingCode: 'CODE', trackingStatus: 'picking', status: 'planned' }], schedules: [], payments: [] };
+    const action = posOrderEditor({ detail, onSaved() { completed++; }, api: async (...args: any[]) => {
+      calls.push(args);
+      if (args[1] === 'PUT') { saves++; if (saves === 1) { key = args[2].requestKey; throw Error('Mất phản hồi GHN'); } return {}; }
+      return { order: { posSnapshot: JSON.stringify({ ...snapshot, ghnAmendment: { version: 1, key } }) } };
+    } });
+    await action.emit('click');
+    const number = doc.body.all().find(n => n.tag === 'input' && n.type === 'number')!;
+    assert.equal(number.disabled, false); assert.ok(doc.body.all().some(n => n.type === 'search'));
+    number.value = '2'; doc.body.all().find(n => n.tag === 'label' && n.text.startsWith('Lý do'))!.children[0]!.value = 'Đổi SL';
+    const form = doc.body.all().find(n => n.tag === 'form')!;
+    await form.emit('submit'); assert.equal(number.disabled, true); assert.ok(key);
+    await form.emit('submit');
+    assert.deepEqual(calls.filter(c => c[1] === 'PUT')[1][2], { requestKey: key, resumeGhnEdit: true }); assert.equal(completed, 1);
+  } finally { Object.assign(globalThis, { document: previous }); }
+});
+test('GHN picked still locks financial fields', async () => {
+  const previous = globalThis.document, doc = { createElement: (tag: string) => new E(tag), body: new E('body') };
+  Object.assign(globalThis, { document: doc });
+  try {
+    const action = posOrderEditor({ api: async () => ({}), onSaved() {}, detail: { order: { id: 'o', fulfillmentMode: 'cod' },
+      lines: [{ id: 'a', name: 'A', qty: 1, unitPrice: 100, taxRate: 0 }], deliveries: [{ status: 'planned', carrier: 'GHN', trackingCode: 'C', trackingStatus: 'picked' }], payments: [], schedules: [] } });
+    await action.emit('click'); assert.equal(doc.body.all().find(n => n.type === 'number')!.disabled, true);
   } finally { Object.assign(globalThis, { document: previous }); }
 });

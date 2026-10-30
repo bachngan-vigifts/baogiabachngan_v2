@@ -1,3 +1,4 @@
+import { pendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import type { PermissionMember } from '../../staff/domain/permissions.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
@@ -101,8 +102,10 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
     .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId)).innerJoin(salesOrderLines, eq(salesOrderLines.id, posOrderReservations.orderLineId))
     .where(and(storeScope,eq(posOrderReservations.status, 'active'), gt(posOrderReservations.expiresAt, nowIso()), inArray(salesOrders.status, ['draft','confirmed','delivering']), skus ? inArray(salesOrderLines.sku, skus) : undefined, warehouseId ? eq(posOrderReservations.warehouseId, warehouseId) : undefined))
     .groupBy(salesOrderLines.sku, salesOrders.id).limit(5000);
-  const capped = await cappedOrderHolds(db, skus, warehouseId);
-  return [...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true,unassigned:false})), ...capped.map(r=>({...r,timed:false}))];
+  const [pending, capped] = await Promise.all([db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, snapshot: salesOrders.posSnapshot }).from(salesOrders)
+    .where(and(storeScope, eq(salesOrders.channel, 'pos'), inArray(salesOrders.status, ['draft','confirmed','delivering']), sql`${salesOrders.posSnapshot}::jsonb ? 'ghnAmendment'`, warehouseId ? sql`${sellingWarehouse}=${warehouseId}` : undefined)).limit(5000), cappedOrderHolds(db, skus, warehouseId)]);
+  const extras = pending.flatMap(o => (pendingGhnEdit(o.snapshot)?.reserve || []).filter(r => r.qty > 0 && (!skus || skus.includes(r.sku))).map(r => ({ ...r, orderId: o.id, orderNo: o.orderNo, quoteId: o.quoteId, customer: o.customer, contractNo: null, unassigned: false, timed: false })));
+  return [...extras, ...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true,unassigned:false})), ...capped.map(r=>({...r,timed:false}))];
 }
 
 /** Báo giá đã lập đơn / HĐKT còn hiệu lực: hàng do đơn giữ – không giữ thêm theo báo giá (tránh giữ trùng). */

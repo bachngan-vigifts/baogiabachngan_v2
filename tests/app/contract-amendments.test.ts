@@ -1,3 +1,4 @@
+import { pendingGhnEdit, assertNoPendingGhnEdit } from '../../src/modules/sales/domain/pos-ghn-edit.ts';
 import { posOrderStoreScope } from '../../src/modules/sales/api/pos-access.ts';
 import assert from 'node:assert/strict';
 import { seesAllAsSaleAdmin } from '../../src/modules/staff/domain/roles.ts';
@@ -76,7 +77,7 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   const table = new Proxy({}, { get: (_, key) => String(key) });
   const ctx: any = {
     // This VM isolates contract handlers; the separate CRM return API has real-router integration tests.
-    registerCrmReturnRoutes: () => {},
+    registerCrmReturnRoutes: () => {}, pendingGhnEdit, assertNoPendingGhnEdit,
     departmentOwner, quotationPredicate, seesAllAsSaleAdmin, canApprove, can, posOrderStoreScope, isNotNull: () => null, isNull: () => null, quoteSaveHooks: { beforeSave: [], afterSave: [] },
     customerStaff: table, salesOrders: table, salesContracts: table, paymentSchedules: table, customerPayments: table, deliveries: table,
     or: () => null, eq: () => null, and: () => null, desc: () => null, sql: () => null,

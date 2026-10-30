@@ -1,3 +1,4 @@
+import { assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { orderRecipient } from '../domain/order-notes.ts';
 import { posOrderStoreScope } from './pos-access.ts';
@@ -231,6 +232,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     await c.env.db.transaction(async tx => {
       if(order.channel==='pos')await cashLock(tx);if(saleFlowOf(order.posSnapshot))await assertPosFlowFulfillable(tx,order.id);
       const [locked] = await tx.select().from(salesOrders).where(eq(salesOrders.id, order.id)).limit(1).for('update');
+      if (locked) assertNoPendingGhnEdit(locked.posSnapshot);
       if (!locked || ['draft', 'cancelled', 'delivered'].includes(locked.status)) throw new AppError(409, 'Đơn chưa xác nhận, đã huỷ hoặc đã giao xong.');
       const allocatedNow = await allocatedByLine(tx, order.id);
       const freshLines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));

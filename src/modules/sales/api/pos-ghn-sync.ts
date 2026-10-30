@@ -1,3 +1,4 @@
+import { pendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -44,6 +45,7 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
     const [row] = await tx.select({ delivery: deliveries, order: salesOrders }).from(deliveries)
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, deliveryId)).limit(1).for('update');
     if (!row || row.order.channel !== 'pos' || row.order.fulfillmentMode !== 'cod') return { changed: false, delivered: false, orderId: '' };
+    if (pendingGhnEdit(row.order.posSnapshot)) return { changed: false, delivered: false, orderId: row.order.id, pendingAmendment: true };
     // Callback GHN có thể retry/đến lệch thứ tự: trạng thái sau khi giao thành công không được lùi lại.
     if (row.delivery.status === 'delivered' && status !== 'delivered') return { changed: false, delivered: false, orderId: row.order.id };
     const now = new Date().toISOString();

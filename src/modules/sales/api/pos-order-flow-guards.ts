@@ -1,3 +1,4 @@
+import { assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 import { posReturns } from '../return-schema.ts';
 import { posOrderReservations } from '../pos-order-flow-schema.ts';
@@ -21,6 +22,7 @@ export async function assertPosFlowFulfillable(
     .from(salesOrders)
     .where(eq(salesOrders.id, orderId));
   if (!o) throw new AppError(404, 'Không tìm thấy đơn.');
+  assertNoPendingGhnEdit(o.posSnapshot);
   const flow = saleFlowOf(o.posSnapshot);
   await assertNoStockRecovery(db,orderId);
   if (!flow) return;
