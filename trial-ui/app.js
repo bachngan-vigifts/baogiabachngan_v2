@@ -532,11 +532,15 @@ $('#account-button-m').addEventListener('click', e => { e.stopPropagation(); tog
 document.addEventListener('click', e => { if (!e.target.closest('#account-menu')) toggleAccountMenu(false); });
 $('#speed-check').addEventListener('click', () => { toggleAccountMenu(false); openSpeedDialog({ toast, canary: isManager() ? regionCanary : null }); });
 $('#logout').addEventListener('click', async () => {
+  const session = token, user = state.user;
   toggleAccountMenu(false);
   if (editor.dirty && !await confirmBox('Báo giá đang sửa chưa được lưu. Vẫn đăng xuất?', { ok: 'Đăng xuất' })) return;
+  if (session !== token || user !== state.user) return;
   editor.dirty = false;
   quoteDeviceDraft.logout();
-  try { await api('/logout', 'POST', {}); } catch { /* vẫn thoát */ }
+  try { await api('/logout', 'POST', {}); } catch (e) { if (e.code === 'STALE_SESSION') return; /* vẫn thoát phiên hiện tại khi mất mạng */ }
+  // /logout có thể đã xoá token của chính phiên này; không xoá phiên mới đăng nhập.
+  if (user !== state.user || (token && token !== session)) return;
   state.quotes = state.customers = state.members = state.products = null;
   showAuth(); $('#auth-note').textContent = 'Đã đăng xuất.';
 });

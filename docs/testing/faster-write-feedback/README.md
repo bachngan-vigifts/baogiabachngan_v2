@@ -31,6 +31,7 @@ Các dữ liệu trả thêm được bật bằng `returnDetail`, `returnTask`,
 Kiểm thử dùng router thật với Postgres WASM/PGlite và dữ liệu giả. Không kết nối CSDL ngoài. Test trình duyệt chặn mọi origin ngoài máy chủ local.
 
 - API: cùng mã gửi đồng thời/gửi lại; khác nội dung; trả đúng chi tiết đơn sau huỷ và khi replay; quyền NCC bị từ chối; trả đủ số liệu phân bổ sau xác nhận lô.
+- Phiên đăng nhập/đăng xuất: test cũ được cập nhật để chờ `STALE_SESSION`; nút Đăng xuất không xoá phiên/dữ liệu tài khoản vừa đăng nhập nếu phản hồi hoặc hộp xác nhận cũ kết thúc muộn. Đăng xuất phiên hiện tại vẫn hoạt động khi API thành công hoặc lỗi máy chủ.
 - CAS: ghi chú cùng người/khác người; lịch hẹn đổi ngày hoặc revision, replay không tăng phiên bản.
 - UI: trao đổi không tải lại chi tiết, không dùng HTML từ server, giữ nội dung gõ mới; bộ lọc/cache công việc, phiên đăng nhập, transport không tự gửi lại lệnh ghi, kiểm kê/duyệt kho.
 - Chromium 1280px và 390px: giả lập mất phản hồi **sau khi API đã commit**, gửi lại cùng mã chỉ có một việc; lần tạo hợp lệ tiếp theo có mã khác. Desktop tải lại tab rồi khôi phục mã; mobile đóng/mở form. Huỷ phiếu thu cập nhật từ phản hồi ghi, **0 GET đơn bổ sung**, không có lỗi JS.
