@@ -1,3 +1,4 @@
+import { createTaskWriteIntent } from './task-write-intent.js';
 // Bảng CÔNG VIỆC: việc tự sinh (báo giá, check tồn, đơn hàng, giao hàng, HĐKT, công nợ, nhập hàng, sổ quỹ) + việc giao thủ công.
 // Cấu hình nhãn / màu ở TASK_UI (cùng khoá với src/modules/tasks/domain/task-config.ts). Bố cục:
 //  - Tab chế độ xem có số đếm (Của tôi · Tôi giao · Việc nhóm · Đồng nghiệp · Chưa giao · Tất cả · Cần duyệt).
@@ -273,6 +274,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   }
 
   async function load(focusId) {
+    resetQuickOwner();
     const request = ++loadSequence;
     if (focusId === 'approvals') { focusId = undefined; st.tab = 'approvals'; }
     if (st.tab === 'approvals' && canApprove()) {
@@ -313,8 +315,16 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   }
 
   async function update(id, body, msg) {
-    try { await api('/tasks/' + encodeURIComponent(id), 'PUT', body); if (msg) toast(msg); await load(); return true; }
-    catch (e) { toast(e.message, 'err'); await load(); return false; }
+    const owner=userId(),view=JSON.stringify([st.view,st.status,st.priority,st.source,st.assignee,st.search,st.due,st.tab]);
+    loadSequence++;
+    try {
+      const result=await api('/tasks/' + encodeURIComponent(id), 'PUT', {...body,returnTask:true});
+      if(owner!==userId())return false;if(msg)toast(msg);
+      if(view!==JSON.stringify([st.view,st.status,st.priority,st.source,st.assignee,st.search,st.due,st.tab]))return true;
+      if(result.task){st.list=st.list.map(t=>t.id===id?result.task:t).filter(t=>t.id!==id||!st.status||st.status==='all'||(st.status==='open'?!isClosed(t):t.status===st.status));renderList();q('#tasks-sync').textContent='Đã lưu thay đổi · đang cập nhật số đếm…';void load();}
+      else await load();
+      return true;
+    } catch(e){if(owner===userId()){toast(e.message,'err');void load();}return false;}
   }
 
   // ----- Chi tiết việc: khung bên phải (màn hình rộng) hoặc hộp thoại. Tab Chi tiết · Trao đổi · Lịch sử.
@@ -433,19 +443,29 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   }
 
   // ----- Sự kiện
-  const quick = q('#tasks-quick');
-  const toggleQuick = (show = quick.hidden) => { quick.hidden = !show; if (show) quick.querySelector('[name=title]').focus?.(); };
+  const quick = q('#tasks-quick'),taskIntent=createTaskWriteIntent({owner:userId,scope:'tasks'});
+  let quickOwner=userId();
+  function resetQuickOwner(){if(quickOwner!==userId()){quickOwner=userId();quick.reset?.();quick.hidden=true;}}
+  // Lần giao việc chưa rõ kết quả: nút "Bỏ lần giao việc này" để không bị kẹt khi gửi lại bị từ chối (mất quyền, người nhận nghỉ…).
+  const discardBtn=quick.querySelector('[data-discard]');
+  const syncPendingUi=()=>{const pending=!!taskIntent.pending();quick.querySelector('button[type=submit]').textContent=pending?'Gửi lại lần giao việc trước':'Giao việc';if(discardBtn)discardBtn.hidden=!pending;};
+  discardBtn?.addEventListener?.('click',async()=>{
+    if(!await confirmBox('Bỏ lần giao việc chưa rõ kết quả trên máy này? Việc có thể ĐÃ được tạo – kiểm tra danh sách việc trước khi giao lại.',{title:'Bỏ lần giao việc',ok:'Bỏ lần giao việc'}))return;
+    if(taskIntent.discard()){quick.reset?.();syncPendingUi();toast('Đã bỏ. Kiểm tra danh sách việc xem việc đã được tạo chưa.');void load();}
+  });
+  const toggleQuick = (show = quick.hidden) => { resetQuickOwner();quick.hidden = !show; if(show){const pending=taskIntent.pending();syncPendingUi();if(pending){for(const key of ['title','assigneeId','priority','dueDate'])quick.elements[key].value=pending.content[key]||'';toast('Có lần giao việc chưa rõ kết quả. Nội dung đã được khôi phục để gửi lại đúng mã.');}quick.querySelector('[name=title]').focus?.();} };
   q('#tasks-new').addEventListener('click', () => toggleQuick());
   quick.addEventListener('submit', async e => {
     e.preventDefault();
     const f = e.target, title = f.title.value.trim(); if (!title) return f.title.focus();
-    const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
+    const btn = f.querySelector('button[type=submit]'),owner=userId(); btn.disabled = true;
     try {
-      // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, bấm gửi lại không sinh việc thứ hai.
+
       const content = { title, assigneeId: f.assigneeId.value, priority: f.priority.value, dueDate: f.dueDate.value || undefined };
-      await sendOnce('task', content, clientKey => api('/tasks', 'POST', { ...content, clientKey }));
-      f.title.value = ''; toast('Đã giao việc.'); await load(); f.title.focus();
-    } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+      await taskIntent.send(content,(clientKey,content)=>api('/tasks','POST',{...content,clientKey}));
+      if(owner!==userId())return;
+      f.title.value = ''; syncPendingUi(); toast('Đã giao việc.'); await load(); f.title.focus();
+    } catch (ex) { if(owner===userId())toast(ex.message+(taskIntent.pending()&&ex.status>=400&&ex.status<500?' Có thể bấm "Bỏ lần giao việc này".':''), 'err'); } finally { if(owner===userId()){btn.disabled = false;syncPendingUi();} }
   });
   quick.querySelector('[data-cancel]')?.addEventListener('click', () => toggleQuick(false));
   quick.querySelectorAll('[data-due]').forEach(b => b.addEventListener('click', () => { quick.dueDate.value = b.dataset.due === '' ? '' : addDays(todayIso(), Number(b.dataset.due)); }));

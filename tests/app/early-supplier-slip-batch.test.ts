@@ -34,8 +34,10 @@ test('batch confirms exact allocations atomically, records Manager and never rec
  const rows=request.lines.flatMap((l:any)=>l.allocations),one=rows.find((a:any)=>a.orderId==='a1'),other=rows.find((a:any)=>a.orderId==='a2');
  for(const actor of ['sa','emp','ncc'])assert.equal((await f.call('/purchase-early-requests/manager-confirm-batch',c[actor],'POST',{allocationIds:[one.id]})).status,403);
  assert.equal((await f.call('/purchase-early-requests/manager-confirm-batch',c.mgr,'POST',{allocationIds:[one.id,'missing']})).status,404);
- const replies=await Promise.all([1,2].map(()=>f.call('/purchase-early-requests/manager-confirm-batch',c.mgr,'POST',{allocationIds:[one.id]})));
+ const replies=await Promise.all([1,2].map(()=>f.call('/purchase-early-requests/manager-confirm-batch',c.mgr,'POST',{allocationIds:[one.id],returnRequests:true})));
  assert.ok(replies.every(r=>r.status===200));assert.equal(replies.reduce((n,r)=>n+r.data.confirmed,0),1);
+ const confirmed=(await f.call('/purchase-early-requests?id='+id,c.mgr)).data.requests;
+ for(const reply of replies)assert.deepEqual(reply.data.requests,confirmed,'confirmed rows returned without a second browser GET');
  const proof=(await f.client.query<any>('select * from purchase_early_request_allocations where id=$1',[one.id])).rows[0];
  assert.equal(proof.responded_by,'mgr');assert.ok(proof.responded_at);
  assert.equal((await f.client.query<any>('select status from purchase_early_request_allocations where id=$1',[other.id])).rows[0].status,'pending');

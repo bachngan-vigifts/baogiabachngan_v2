@@ -577,7 +577,7 @@
             <select name="assigneeId" id="tasks-quick-assignee" aria-label="Người nhận"></select>
             <select name="priority" aria-label="Ưu tiên"><option value="normal">Bình thường</option><option value="high">Cao</option><option value="urgent">Khẩn</option><option value="low">Thấp</option></select>
             <span class="task-due-quick"><input type="date" name="dueDate" aria-label="Hạn"><button type="button" class="chip" data-due="0">Hôm nay</button><button type="button" class="chip" data-due="1">Mai</button><button type="button" class="chip" data-due="7">+7 ngày</button></span>
-            <span class="task-quick-btns"><button type="submit" class="btn primary">Giao việc</button><button type="button" class="btn ghost" data-cancel>Đóng</button></span>
+            <span class="task-quick-btns"><button type="submit" class="btn primary">Giao việc</button><button type="button" class="btn ghost" data-discard data-no-busy hidden>Bỏ lần giao việc này</button><button type="button" class="btn ghost" data-cancel>Đóng</button></span>
           </form>
           <div class="task-due-cards" id="tasks-stats"></div>
           <div class="task-filterbar">

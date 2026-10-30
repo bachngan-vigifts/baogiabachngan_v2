@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-const source = readFileSync(new URL('../../trial-ui/tasks.js', import.meta.url), 'utf8').replace(/export /g, '');
+// @ts-ignore browser module
+import {createTaskWriteIntent} from '../../trial-ui/task-write-intent.js';
+const source = readFileSync(new URL('../../trial-ui/tasks.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm,'').replace(/export /g, '');
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
 /** DOM giả tối thiểu: mỗi selector là một node; ghi lại mọi lời gọi API. */
@@ -17,7 +19,7 @@ function fixture(manager = false, custom?: object[]) {
   function chip(v: string) { const n = node(`status-${v}`); n.dataset.v = v; return n; }
   const data = (due: string) => ({ today: '2026-10-22', syncedAt: '2026-10-22T08:20:00.000Z', dueCounts: { overdue: 33, today: 1, week: 4, upcoming: 9, none: 2, total: 45 },
     tasks: custom ?? [{ id: due || 'mine', title: due ? `Only ${due}` : 'My open tasks', status: 'todo', priority: 'normal', source: 'manual', due: due === 'week' ? 'upcoming' : due || 'none', dueDate: null }], canViewColleagues: false });
-  const ctx: any = { document: { getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
+  const ctx: any = { createTaskWriteIntent, document: { getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
   vm.createContext(ctx); vm.runInContext(source, ctx);
   const app = ctx.initTasks({ isManager: () => manager, userId: () => 'emp', toast() {}, go() {}, api: async (path: string) => {
     calls.push(path);
@@ -81,7 +83,7 @@ test('bấm nhanh các thẻ: response cũ không ghi đè kết quả mới; ta
 });
 
 test('dòng việc: việc tự hoàn thành theo chứng từ không có ô tick; việc tay có ô tick và nút Cần làm ↔ Đang làm', async () => {
-  const ctx: any = { document: { getElementById() {}, addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
+  const ctx: any = { createTaskWriteIntent, document: { getElementById() {}, addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
   vm.createContext(ctx); vm.runInContext(source, ctx);
   const t = (id: string, source: string, due: string, extra = {}) => ({ id, source, due, priority: 'normal', status: 'todo', ...extra });
   // Trong nhóm: việc mở trước, rồi việc sinh sau (mới tạo) lên trên cùng – không còn xếp theo hạn / ưu tiên.

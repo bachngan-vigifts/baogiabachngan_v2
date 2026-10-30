@@ -89,7 +89,8 @@ test('bảng công việc: việc tự sinh từ báo giá / đơn / HĐKT tự 
   assert.equal((await call('/tasks/' + t.data.id, ncc)).status, 403, 'NCC không vào khu nghiệp vụ');
   assert.equal((await call('/tasks/' + t.data.id, emp, 'PUT', { status: 'in_progress' })).status, 200);
   // Trao đổi → người giao nhận thông báo.
-  assert.equal((await call('/tasks/' + t.data.id + '/comments', emp, 'POST', { body: 'Khách hẹn chiều mai' })).status, 201);
+  const comment=await call('/tasks/' + t.data.id + '/comments', emp, 'POST', { body: 'Khách hẹn chiều mai' });assert.equal(comment.status,201);
+  assert.equal(comment.data.comment.id,comment.data.id);assert.equal(comment.data.comment.body,'Khách hẹn chiều mai');assert.equal(comment.data.comment.memberId,empId);assert.ok(comment.data.comment.name&&comment.data.comment.createdAt);
   assert.equal((await call('/tasks/' + t.data.id + '/comments', mgr)).data.comments[0].body, 'Khách hẹn chiều mai');
   assert.equal((await call('/notifications', mgr)).data.notifications.some((n: any) => n.eventType === 'task_comment'), true);
   assert.equal((await call('/tasks/' + t.data.id, emp, 'PUT', { status: 'done', revision: 99 })).data.code, 'REVISION_CONFLICT');
@@ -288,6 +289,14 @@ test('mạng rớt sau khi đã lưu: tạo việc gửi lại cùng mã không 
   const first = await call('/tasks', mgr, 'POST', body); assert.equal(first.status, 201, JSON.stringify(first.data));
   const again = await call('/tasks', mgr, 'POST', body); assert.equal(again.status, 200); assert.deepEqual([again.data.id, again.data.replayed], [first.data.id, true]);
   assert.equal((await call('/tasks', mgr, 'POST', { ...body, title: 'Việc khác' })).status, 409, 'cùng mã khác nội dung');
+  for (const changed of [{description:'Nội dung khác'},{priority:'normal'},{assigneeId:'mgr'},{dueDate:'2026-12-01'},{link:'#/care/other'}])
+    assert.equal((await call('/tasks',mgr,'POST',{...body,...changed})).status,409,'same key must compare all create fields');
+  // Việc đã được sửa sau khi tạo (người nhận đổi ưu tiên): gửi lại đúng lần giao đó vẫn báo đã tạo, không kẹt ở 409; người khác dùng mã thì không.
+  const edited = (await call('/tasks?view=mine', emp)).data.tasks.find((x: any) => x.id === first.data.id);
+  assert.equal((await call(`/tasks/${edited.id}`, emp, 'PUT', { priority: 'low', revision: edited.revision })).status, 200);
+  const afterEdit = await call('/tasks', mgr, 'POST', body);
+  assert.deepEqual([afterEdit.status, afterEdit.data.id, afterEdit.data.replayed, afterEdit.data.changedSince], [200, first.data.id, true, true]);
+  assert.equal((await call('/tasks', emp, 'POST', body)).data.id !== first.data.id, true, 'mã của người khác không trỏ tới việc này');
   const race = await Promise.all([1, 2, 3].map(() => call('/tasks', mgr, 'POST', { ...body, title: 'Việc đồng thời', clientKey: 'task-key-race' })));
   assert.ok(race.every(r => r.status === 200 || r.status === 201), JSON.stringify(race.map(r => r.data)));
   assert.equal(new Set(race.map(r => r.data.id)).size, 1);
@@ -296,7 +305,8 @@ test('mạng rớt sau khi đã lưu: tạo việc gửi lại cùng mã không 
   // "Bắt đầu làm" gửi lại với phiên bản cũ (lần trước đã lưu): trạng thái đã đúng → thành công, không báo "người khác cập nhật".
   const t = (await call('/tasks?view=mine', emp)).data.tasks.find((x: any) => x.id === first.data.id);
   assert.equal((await call(`/tasks/${t.id}`, emp, 'PUT', { status: 'in_progress', revision: t.revision })).status, 200);
-  const retried = await call(`/tasks/${t.id}`, emp, 'PUT', { status: 'in_progress', revision: t.revision });
+  const retried = await call(`/tasks/${t.id}`, emp, 'PUT', { status: 'in_progress', revision: t.revision, returnTask:true });
+  assert.equal(retried.data.task.id,t.id);assert.equal(retried.data.task.status,'in_progress');assert.equal(typeof retried.data.task.canManage,'boolean');
   assert.equal(retried.status, 200); assert.equal(retried.data.alreadyApplied, true);
   assert.equal((await call(`/tasks/${t.id}`, emp, 'PUT', { status: 'done', revision: t.revision })).status, 409, 'phiên bản cũ mà đổi khác thì vẫn báo xung đột');
 });
