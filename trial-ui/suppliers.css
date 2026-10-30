@@ -272,3 +272,10 @@ tr.stocktake-scanned td { animation: stocktake-flash 1.2s ease-out; }
 
 .transfer-detail-table th { white-space: normal; line-height: 1.35; overflow-wrap: break-word; }
 .transfer-detail-table th:not(:first-child) { text-align: right; }
+
+.stocktake-scan-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.stocktake-scan-row input { flex: 1 1 auto; min-width: 0; }
+.stocktake-scan-row .btn { flex: none; white-space: nowrap; }
+dialog.stocktake-camera { width: min(520px, 96vw); }
+.stocktake-video { display: block; width: 100%; max-height: 60vh; background: #000; border-radius: 8px; object-fit: cover; }
+.stocktake-camera-last { font-weight: 700; margin: 10px 0 4px; }

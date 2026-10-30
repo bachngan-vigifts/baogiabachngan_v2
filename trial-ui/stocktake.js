@@ -1,4 +1,5 @@
 import { initAdjustmentQueue, openCountHistory, printCountSheet } from './inventory-adjustments.js';
+import { startBarcodeCamera } from './barcode-camera.js';
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=String(text);return n;};
 const button=(text,fn,cls='btn secondary')=>{const b=el('button',cls,text);b.type='button';b.addEventListener('click',fn);return b;};
 const number=n=>n===null||n===undefined?'—':Number(n).toLocaleString('vi-VN',{maximumFractionDigits:3});
@@ -19,8 +20,11 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
  const results=el('div','stocktake-results'),hint=el('p','small muted'),feedback=el('p','error');feedback.setAttribute('role','alert');
  const draftInfo=el('p','small muted','Xem nhanh phiếu khác không làm mất số thực đếm đang nhập.');
  // Quét mã vạch: mỗi lần quét cộng 1 vào thực đếm (mã chưa có trong phiếu thì tự thêm).
- const tools=el('div','stocktake-tools'),scan=el('input'),scanInfo=el('span','small muted');scan.type='text';scan.autocomplete='off';scan.placeholder='Quét mã vạch: mỗi lần quét +1';scan.setAttribute('aria-label','Quét mã vạch đếm');
- const scanBox=el('label','stocktake-scan');scanBox.append(scan,scanInfo);
+ const tools=el('div','stocktake-tools'),scan=el('input'),scanInfo=el('span','small muted');scan.type='text';scan.autocomplete='off';scan.placeholder='Mã vạch (+1 mỗi lần quét)';scan.setAttribute('aria-label','Quét mã vạch đếm');
+ // Điện thoại: nút mở camera quét liên tục (mã vạch / QR), mỗi mã đọc được +1 như máy quét cầm tay.
+ const camBtn=button('📷 Quét bằng camera',()=>openCamera(),'btn secondary');camBtn.dataset.mobileInline='';camBtn.setAttribute('aria-label','Mở camera quét mã');
+ const scanRow=el('div','stocktake-scan-row');scanRow.append(scan,camBtn);
+ const scanBox=el('div','stocktake-scan');scanBox.append(scanRow,scanInfo);
  // Tạo nhanh: thêm cả loạt mã theo thương hiệu / mã còn tồn / mã lệch Sapo nhiều nhất.
  const quickMode=el('select'),brandSel=el('select');quickMode.setAttribute('aria-label','Tạo nhanh danh sách mã');brandSel.setAttribute('aria-label','Thương hiệu');brandSel.hidden=true;
  for(const [v,t] of [['','Tạo nhanh danh sách mã…'],['brand','Theo thương hiệu'],['instock','Mọi mã còn tồn trong kho'],['sapo','50 mã lệch Sapo nhiều nhất']])quickMode.append(Object.assign(el('option','',t),{value:v}));
@@ -118,6 +122,35 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
   line.countedQty=Math.round(((line.countedQty||0)+1)*1000)/1000;
   const view=rowViews.get(line.sku);if(view){view.count.value=String(line.countedQty);updateLine(line);view.row.classList.remove('stocktake-scanned');void view.row.offsetWidth;view.row.classList.add('stocktake-scanned');view.row.scrollIntoView?.({block:'nearest'});}
   scanInfo.className='small muted';scanInfo.textContent=`${line.sku} · ${line.name}: đếm ${number(line.countedQty)}`;totals();save();
+ }
+ const cameraError=e=>e?.name==='NotAllowedError'?'Chưa được cấp quyền camera. Bật quyền Camera cho trang CRM trong cài đặt trình duyệt rồi thử lại.'
+  :e?.name==='NotFoundError'?'Không tìm thấy camera trên thiết bị này.'
+  :e?.name==='NotReadableError'?'Camera đang được ứng dụng khác sử dụng. Đóng ứng dụng đó rồi thử lại.':(e?.message||'Không mở được camera.');
+ /** Quét liên tục: đọc được mã → +1 (cùng hàng đợi với máy quét cầm tay), nghỉ 1,2 giây để không đếm trùng một lần đưa mã, rồi quét tiếp. */
+ function openCamera(){
+  if(busy||pending)return;
+  if(!warehouseId){feedback.textContent='Chọn kho trước khi quét mã.';return;}
+  const dlg=el('dialog','modal stocktake-camera'),head=el('div','modal-head'),body=el('div','modal-body'),video=el('video','stocktake-video');
+  const last=el('p','stocktake-camera-last','Đưa mã vạch / QR vào giữa khung.'),hint=el('p','small muted','Mỗi lần đọc được mã là +1 vào thực đếm. Chờ báo số mới rồi đưa mã tiếp; bấm Xong khi đếm xong.');
+  let closed=false,handle=null,timer=0,read=0;const controller=new AbortController();
+  const close=()=>{if(dlg.open)dlg.close();};
+  head.append(el('h2','','Quét mã bằng camera'),button('Xong',close,'btn primary'));
+  body.append(video,last,hint);dlg.append(head,body);document.body.append(dlg);
+  globalThis.addEventListener?.('hashchange',close);
+  dlg.addEventListener('close',()=>{closed=true;clearTimeout(timer);controller.abort();handle?.stop();globalThis.removeEventListener?.('hashchange',close);dlg.remove();if(read)toast(`Đã quét ${read} lần bằng camera.`);},{once:true});
+  dlg.showModal();
+  const start=async()=>{
+   if(closed)return;
+   try{
+    handle=await startBarcodeCamera(video,code=>{
+     if(closed)return;read++;globalThis.navigator?.vibrate?.(60);last.textContent='Đang ghi '+code+'…';
+     scanQueue=scanQueue.then(()=>scanCode(code)).catch(()=>{}).then(()=>{if(!closed)last.textContent=scanInfo.textContent||code;});
+     timer=setTimeout(start,1200);
+    },{signal:controller.signal});
+    if(closed)handle.stop();
+   }catch(e){if(closed)return;video.hidden=true;last.textContent=cameraError(e);hint.textContent='Có thể gõ mã hoặc dùng máy quét cầm tay ở ô "Quét mã vạch".';}
+  };
+  start();
  }
  scan.addEventListener('keydown',event=>{if(event.key!=='Enter')return;event.preventDefault();const code=scan.value.trim();scan.value='';scanQueue=scanQueue.then(()=>scanCode(code)).catch(()=>{});});
  let brandsLoaded=false;

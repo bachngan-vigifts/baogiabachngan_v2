@@ -20,7 +20,7 @@ async function harness(){
  const product={sku:'SKU1',name:'Bộ trà',unit:'Bộ',stock:{wh:10}};
  const ctx:any={document:{createElement:(tag:string)=>new Node(tag)},localStorage:{getItem:(key:string)=>drafts.get(key)||null,setItem:(key:string,value:string)=>drafts.set(key,value)},setTimeout:(fn:Function)=>{timers.set(++tick,fn);return tick;},clearTimeout:(id:number)=>timers.delete(id),crypto:{randomUUID:()=> 'stocktake-key-001'},
  initAdjustmentQueue:()=>({load:async()=>{},open:async(id:string)=>opened.push(id)})};
- const source=readFileSync(new URL('../../trial-ui/stocktake.js',import.meta.url),'utf8').replace(/^import .*;\n/,'').replace('export function initStocktake','globalThis.initStocktake=function');runInNewContext(source,ctx);
+ const source=readFileSync(new URL('../../trial-ui/stocktake.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export function initStocktake','globalThis.initStocktake=function');runInNewContext(source,ctx);
  const ui=ctx.initStocktake({root,toast(){},confirmBox:async()=>true,userId:()=> 'employee',ensureCatalog:async()=>[],findProducts:()=>[product],api:async(path:string,method?:string,body?:any)=>{
   reads.push(path);if(path==='/inventory/status')return {canManage:true,warehouses:[{id:'wh',name:'Kho',openedAt:'2026-10-01'}]};
   if(path==='/inventory/count-stock')return {stock:{SKU1:state.stock},pendingBySku:state.pending,observedAt:'2026-10-30T01:00:00Z'};
