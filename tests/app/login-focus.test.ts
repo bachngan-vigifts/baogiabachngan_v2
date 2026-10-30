@@ -22,6 +22,7 @@ function harness() {
     withBusy: (_method: string, promise: Promise<unknown>) => promise,
     requestPriority: { run: (_bg: boolean, work: () => unknown) => work() }, isBackgroundRequest: () => false, recordApi() {}, performance,
     apiRegion: { url: (url: string) => ({ url, forced: '' }), observe() {}, failed() {} },
+    isCacheable: () => false, pageCache: { clear() {} },
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, approvalUi: null, API: '/api',
     location: { hash: '#/quotes' },
     dataRefresh: { stop() {}, observe() {}, saved() {}, tick() {} },

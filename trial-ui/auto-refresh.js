@@ -87,5 +87,7 @@ export function setupDataRefresh({ read, refresh, enabled, blocked, routeKey, pr
   win.addEventListener('hashchange', syncRoute);
   function start() { draft = false; if (!timer) timer = schedule(tick, interval); }
   function stop() { generation++; cancel(timer); timer = undefined; records.clear(); pending = false; draft = false; warned = false; }
-  return { observe, request, saved, afterWrite, tick, start, stop };
+  /** Dữ liệu trang vừa đổi (bộ nhớ đệm trang thấy bản mới): làm mới một lần, chờ nếu đang có bản nháp / hộp thoại mở. */
+  function changed() { syncRoute(); pending = true; return flush(); }
+  return { observe, request, saved, afterWrite, tick, start, stop, changed };
 }
