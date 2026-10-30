@@ -33,11 +33,15 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
   const warehouse=select([['','Chọn kho bán / kho xuất'],...selling.map(w=>[w.id,w.name+(w.opened?'':' · Chưa chốt đầu kỳ')])],'Kho bán / kho xuất');
   if(selling.length===1)warehouse.value=selling[0].id;
   const heading=el('h3','','Lấy hàng từ đâu?'),label=el('label','','Kho bán / kho xuất');label.append(warehouse);
-  const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT: phần xin hàng từ kho khác tự lập phiếu điều chuyển chờ duyệt; phần đặt NCC bạn chọn tạo đơn mua nháp ngay hoặc đặt sau. Các nút tạo riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
+  const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT: phần xin hàng từ kho khác tự lập phiếu điều chuyển chờ duyệt; phần đặt NCC bạn chọn tạo đơn mua nháp ngay hoặc đặt sau. Các mã xin giao trước được gom vào một phiếu nháp khi sinh đơn/HĐKT, chưa gửi NCC. Các nút xin kho / đặt NCC riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
   const summary=el('p','quote-source-summary',`${data.lines.length} mã sản phẩm · Rà số lượng và nguồn cho từng mã`);
   const toolbar=el('div','quote-source-toolbar');toolbar.append(heading,summary,label,hint);
   const list=el('div','quote-source-list'),error=el('p','error');error.setAttribute('role','alert');host.replaceChildren(toolbar,list,error);
-  let busy=false,suppliers=null;const cards=[],incomingCache=new Map();
+  let busy=false,suppliers=null,incomingAttempt=null;const cards=[],incomingCache=new Map();
+  const incomingBatch=el('div','quote-incoming-batch'),incomingSummary=el('p','muted small'),incomingResult=el('div','small');incomingResult.setAttribute('role','status');
+  const retryIncoming=button('Tiếp tục lưu phiếu xin giao trước',()=>createPendingIncoming().catch(e=>{error.textContent=e.message;}));retryIncoming.hidden=true;incomingBatch.append(incomingSummary,incomingResult,retryIncoming);host.append(incomingBatch);
+  const pendingIncoming=()=>cards.flatMap(card=>card.sources.filter(entry=>entry.type.value==='incoming'&&!entry.saved&&Number(entry.amount.value)>0).map(entry=>({card,entry,quantity:Number(entry.amount.value)})));
+  function syncIncomingSummary(){const pending=pendingIncoming(),count=new Set(pending.map(p=>p.card.line.sku)).size;incomingBatch.hidden=!count&&!incomingAttempt;incomingSummary.textContent=incomingAttempt?.saved?'Các mã xin giao trước đã gom vào một phiếu nháp, chưa gửi NCC.':`${count} mã xin giao trước · sẽ gom vào 1 phiếu nháp khi sinh đơn/HĐKT. Dòng SL 0 không được đưa vào phiếu.`;retryIncoming.hidden=!incomingAttempt?.uncertain;retryIncoming.disabled=busy;}
   const due=iso=>iso?iso.slice(0,10).split('-').reverse().join('/'):'Chưa hẹn';
   async function incomingOrders(sku){
     if(!incomingCache.has(sku))incomingCache.set(sku,(async()=>{
@@ -48,20 +52,19 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     return incomingCache.get(sku);
   }
   const requireWarehouse=()=>{if(!warehouse.value)throw Error('Chọn kho bán / kho xuất trước.');return data.warehouses.find(w=>w.id===warehouse.value);};
-  const markBusy=value=>{busy=value;warehouse.disabled=value||cards.some(c=>c.sources.some(s=>s.saved||s.uncertain));for(const c of cards){c.from.disabled=value;for(const s of c.sources){for(const i of [s.type,s.location,s.supplier,s.order,s.amount,s.remove])i.disabled=value||!!s.saved||!!s.uncertain||i===s.order&&s.loading;s.action.disabled=value||!!s.saved||!!s.uncertain||(s.type.value==='incoming'&&(!data.canRequestEarly||s.loading||!s.order.value))||(s.type.value==='purchase'&&!data.canPurchase);}}};
+  const markBusy=value=>{busy=value;warehouse.disabled=value||cards.some(c=>c.sources.some(s=>s.saved||s.uncertain));for(const c of cards){c.from.disabled=value;for(const s of c.sources){for(const i of [s.type,s.location,s.supplier,s.order,s.amount,s.remove])i.disabled=value||!!s.saved||!!s.uncertain||i===s.order&&s.loading;s.action.disabled=value||!!s.saved||!!s.uncertain||(s.type.value==='incoming'&&(!data.canRequestEarly||s.loading||!s.order.value))||(s.type.value==='purchase'&&!data.canPurchase);}}syncIncomingSummary();};
   function source(card,initial) {
     const row=el('div','quote-source-row'),type=select([['transfer','Xin hàng từ kho khác'],['purchase','Đặt hàng NCC'],['incoming','Hàng đang chờ về · Xin giao trước']],'Nguồn hàng '+card.line.sku);
     const location=select([['','Chọn kho xin hàng'],...data.warehouses.filter(w=>w.id!==warehouse.value).map(w=>[w.id,w.name])],'Kho xin hàng '+card.line.sku);
     const supplier=select([['','Chọn NCC'],...(suppliers||[]).map(p=>[p.id,p.name])],'Nhà cung cấp '+card.line.sku);supplier.hidden=true;
     const order=select([['','Chọn đơn mua NCC · ngày hẹn']],'Đơn mua lấy hàng '+card.line.sku);order.hidden=true;order.className='quote-source-order';type.className='quote-source-type';
     const amount=qty(initial,'Số lượng nguồn hàng '+card.line.sku),result=el('div','small');result.setAttribute('role','status');
-    const action=button('Xin hàng',()=>save()),remove=button('×',()=>{if(!busy&&!entry.saved&&!entry.uncertain){card.sources.splice(card.sources.indexOf(entry),1);row.remove();}});
+    const action=button('Xin hàng',()=>save()),remove=button('×',()=>{if(!busy&&!entry.saved&&!entry.uncertain){card.sources.splice(card.sources.indexOf(entry),1);row.remove();syncIncomingSummary();}});
     remove.setAttribute('aria-label','Bỏ nguồn hàng '+card.line.sku);
     const entry={type,location,supplier,order,amount,result,action,row,remove,saved:null,loading:false,orders:null};card.sources.push(entry);
-    const selectedOrder=()=>entry.orders?.find(o=>o.id===order.value);
     order.addEventListener('change',()=>{result.textContent=order.value?order.selectedOptions[0]?.textContent||'':'';order.title=result.textContent;markBusy(busy);});
     async function sync(){row.className='quote-source-row'+(type.value==='incoming'?' quote-source-incoming':'');location.hidden=type.value!=='transfer';supplier.hidden=type.value!=='purchase';order.hidden=type.value!=='incoming';
-      action.textContent=type.value==='transfer'?'Xin hàng':type.value==='purchase'?'Lập đơn mua nháp':'Xin giao trước';
+      action.textContent=type.value==='transfer'?'Xin hàng':type.value==='purchase'?'Lập đơn mua nháp':'Xin giao trước';action.hidden=type.value==='incoming';
       markBusy(busy);
       if(type.value==='incoming'&&entry.orders===null&&!entry.loading){entry.loading=true;order.replaceChildren(...[el('option','','Đang tải đơn mua…')]);order.children[0].value='';markBusy(busy);
         try{entry.orders=await incomingOrders(card.line.sku);order.replaceChildren(...[['',entry.orders.length?'Chọn đơn mua NCC · ngày hẹn':'Không còn đơn mua phù hợp'],...entry.orders.map(o=>[o.id,`${o.ticketNumber} · ${o.supplierName} · ${due(o.due)} · còn ${num(o.quantity)}`])].map(([v,t])=>{const option=el('option','',t);option.value=v;return option;}));}
@@ -70,22 +73,17 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
       }
       if(type.value==='purchase'&&suppliers===null){try{suppliers=(await api('/purchase-options')).suppliers;for(const c of cards)for(const s of c.sources){const chosen=s.supplier.value;s.supplier.replaceChildren(...[['','Chọn NCC'],...suppliers.map(p=>[p.id,p.name])].map(([v,t])=>{const o=el('option','',t);o.value=v;return o;}));s.supplier.value=chosen;}}catch(e){suppliers=null;error.textContent=e.message;}}
     }
-    type.addEventListener('change',sync);
-    async function save(){if(busy||entry.saved||entry.uncertain||!isCurrent())return;error.textContent='';
+    type.addEventListener('change',sync);amount.addEventListener('input',syncIncomingSummary);
+    async function save(){if(type.value==='incoming')return;if(busy||entry.saved||entry.uncertain||!isCurrent())return;error.textContent='';
       try {
         const destination=requireWarehouse(),quantity=Number(amount.value),fromStock=Number(card.from.value),other=card.sources.filter(s=>s!==entry).reduce((n,s)=>n+Number(s.amount.value),0);
         if(!Number.isFinite(quantity)||quantity<=0||!Number.isFinite(other)||!Number.isFinite(fromStock)||fromStock<0||quantity+other+fromStock>card.line.qty+0.0005)throw Error('Số lượng nguồn hàng không hợp lệ hoặc vượt số lượng báo giá.');
         if(type.value==='transfer'&&(!location.value||location.value===destination.id))throw Error('Chọn kho xin hàng khác kho bán.');
         if(type.value==='purchase'&&!supplier.value)throw Error('Chọn nhà cung cấp để lập đơn mua nháp.');
-        if(type.value==='incoming'&&(!Number.isSafeInteger(quantity)||quantity>card.line.incoming))throw Error('Số lượng xin lấy trước phải nguyên dương và không vượt tổng hàng đang về.');
-        const purchase=type.value==='incoming'?selectedOrder():null;
-        if(type.value==='incoming'&&(!purchase||entry.loading))throw Error('Chọn đơn mua NCC cần lấy hàng trước.');
-        if(purchase&&quantity>purchase.quantity)throw Error(`${purchase.ticketNumber}: chỉ còn ${num(purchase.quantity)} đang về. Không chuyển sang đơn khác.`);
-        if(!await confirmBox(`Lưu ${action.textContent.toLowerCase()} cho ${data.quoteNo}: ${card.line.sku} · ${num(quantity)} ${card.line.unit}${purchase?' · '+purchase.ticketNumber+' · hẹn '+due(purchase.due):''}?`,{title:action.textContent,ok:'Lưu yêu cầu'}))return;
+        if(!await confirmBox(`Lưu ${action.textContent.toLowerCase()} cho ${data.quoteNo}: ${card.line.sku} · ${num(quantity)} ${card.line.unit}?`,{title:action.textContent,ok:'Lưu yêu cầu'}))return;
         markBusy(true);let response,href,text;
         if(type.value==='transfer') {response=await api('/stock-transfers','POST',{fromWarehouseId:location.value,toWarehouseId:destination.id,reason:`Báo giá ${data.quoteNo} · ${data.customerName}`.slice(0,500),lines:[{sku:card.line.sku,qty:quantity}]});href='#/transfers/'+encodeURIComponent(response.id);text='Phiếu xin hàng · Chờ duyệt';}
         else if(type.value==='purchase') {response=await api('/purchase-orders','POST',{orders:[{supplierId:supplier.value,warehouse:destination.name,note:'Nguồn hàng cho báo giá '+data.quoteNo,lines:[{sku:card.line.sku,name:card.line.name,unit:card.line.unit,quantity,sources:[{type:'quote',id:quoteId,quantity}]}]}]});href='#/purchases/'+encodeURIComponent(response.ids[0]);text='Đơn mua NCC · Nháp';}
-        else {entry.key ||= crypto.randomUUID();response=await api('/purchase-early-requests','POST',{clientKey:entry.key,lines:[{sku:card.line.sku,quantity,sourceOrders:[{orderNo:purchase.ticketNumber,supplierOrderNo:purchase.internalNo||'',quantity}]}],scope:{status:'all'}});href='#/purchases?mode=incoming&request='+encodeURIComponent(response.request.id);text='Phiếu xin lấy trước · Nháp';}
         entry.saved={quantity,type:type.value,from:type.value==='transfer'?location.selectedOptions[0]?.textContent:type.value==='purchase'?supplier.selectedOptions[0]?.textContent:order.selectedOptions[0]?.textContent,href,text};
         for(const input of[type,location,supplier,order,amount,remove])input.disabled=true;warehouse.disabled=true;
         const link=el('a','',text);link.href=href;link.target='_blank';link.rel='noopener';result.replaceChildren(link);
@@ -106,8 +104,44 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     allocation.append(stockBlock,requests);box.append(head,allocation);list.append(box);
     const amount=warehouse.value?Math.max(0,Number(line.stock[warehouse.value]||0)):0;stock.textContent=warehouse.value?num(amount):'Chọn kho';from.value=Math.min(line.qty,amount);
     if(Number(from.value)<line.qty)source(card,line.qty-Number(from.value));
-  }}
+  }syncIncomingSummary();}
   warehouse.addEventListener('change',()=>{error.textContent='';draw();});draw();
+  /** One immutable request groups every positive incoming allocation, retaining exact purchase sources. */
+  async function createPendingIncoming(){
+    if(busy)return;
+    const pending=pendingIncoming();
+    if(!pending.length&&!incomingAttempt?.uncertain)return;
+    if(!isCurrent())throw Error('Form đã đóng. Mở lại trước khi sinh đơn.');
+    if(!data.canRequestEarly)throw Error('Bạn không có quyền lập phiếu xin giao trước.');
+    if(incomingAttempt?.saved)throw Error('Phiếu xin giao trước chung đã lưu. Kiểm tra phiếu đã có trước khi bổ sung nguồn mới; chưa tạo thêm phiếu.');
+    if(!incomingAttempt){
+      requireWarehouse();const lines=new Map();
+      for(const {card,entry,quantity} of pending){
+        const order=entry.orders?.find(o=>o.id===entry.order.value);
+        if(!order||entry.loading)throw Error(`${card.line.sku}: chọn đơn mua cần lấy hàng.`);
+        if(!Number.isSafeInteger(quantity)||quantity<=0)throw Error(`${card.line.sku}: số lượng xin phải nguyên dương.`);
+        const line=lines.get(card.line.sku)||{sku:card.line.sku,quantity:0,sourceOrders:[]};
+        const source=line.sourceOrders.find(s=>s.orderNo===order.ticketNumber);
+        if(source)source.quantity+=quantity;else line.sourceOrders.push({orderNo:order.ticketNumber,supplierOrderNo:order.internalNo||'',quantity});
+        if(line.sourceOrders.find(s=>s.orderNo===order.ticketNumber).quantity>order.quantity)throw Error(`${order.ticketNumber}: tổng xin mã ${card.line.sku} vượt số còn về ${num(order.quantity)}.`);
+        line.quantity+=quantity;lines.set(card.line.sku,line);
+      }
+      incomingAttempt={body:{clientKey:crypto.randomUUID(),lines:[...lines.values()],scope:{status:'all'}},pending};
+    }
+    const attempt=incomingAttempt;markBusy(true);error.textContent='';incomingResult.textContent='Đang lưu một phiếu xin giao trước cho các mã đã chọn…';
+    try{
+      const response=await api('/purchase-early-requests','POST',attempt.body);
+      if(!response.request?.id)throw Error('Máy chủ chưa trả mã phiếu xin giao trước.');
+      const href='#/purchases?mode=incoming&request='+encodeURIComponent(response.request.id),text='Phiếu xin giao trước chung · Nháp';
+      for(const {entry,quantity} of attempt.pending){entry.uncertain=false;entry.saved={quantity,type:'incoming',from:entry.order.selectedOptions[0]?.textContent,href,text};const link=el('a','',text);link.href=href;link.target='_blank';link.rel='noopener';entry.result.replaceChildren(link);}
+      attempt.saved=response.request;attempt.uncertain=false;
+      const link=el('a','',text+' · Mở phiếu');link.href=href;link.target='_blank';link.rel='noopener';incomingResult.replaceChildren(link);
+    }catch(e){
+      if(attempt.uncertain||!e.status||e.status>=500){attempt.uncertain=true;for(const {entry} of attempt.pending)entry.uncertain=true;incomingResult.textContent='Chưa nhận được kết quả lưu. Bấm Tiếp tục lưu phiếu xin giao trước để kiểm tra bằng cùng mã yêu cầu, tránh tạo trùng.';}
+      else{incomingAttempt=null;incomingResult.textContent='';}
+      throw e;
+    }finally{markBusy(false);}
+  }
   /** Xin hàng từ kho khác chưa bấm "Xin hàng": khi sinh đơn tự lập phiếu điều chuyển (gộp theo kho xin), không để kế hoạch chỉ nằm trên giấy. */
   async function createPendingTransfers(){
     const pending=cards.flatMap(card=>card.sources.filter(entry=>entry.type.value==='transfer'&&!entry.saved&&!entry.uncertain&&Number(entry.amount.value)>0).map(entry=>({card,entry,quantity:Number(entry.amount.value)})));
@@ -154,6 +188,8 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
   },async prepare(){
     if(!isCurrent())throw Error('Form đã đóng. Mở lại trước khi sinh đơn.');
     planner.read(); // Validate every allocation before creating any request.
+    await createPendingIncoming();
+    if(!isCurrent())throw Error('Form đã đóng. Phiếu xin giao trước đã lưu được giữ trong danh sách.');
     await createPendingTransfers();
     const pending=cards.flatMap(card=>card.sources.filter(entry=>entry.type.value==='purchase'&&!entry.saved&&Number(entry.amount.value)>0).map(entry=>({card,entry,quantity:Number(entry.amount.value)})));
     if(!pending.length)return planner.read();
