@@ -251,3 +251,24 @@
 .stocktake-tools select { flex: 0 1 240px; min-width: 0; }
 @keyframes stocktake-flash { from { background: #d9f5e8; } to { background: transparent; } }
 tr.stocktake-scanned td { animation: stocktake-flash 1.2s ease-out; }
+
+/* Phiếu điều chuyển: tách trạng thái, tuyến kho và thông tin người xin để đọc nhanh. */
+.transfer-detail-head .pill { display: inline-block; margin-top: 8px; }
+.transfer-summary { display: grid; gap: 12px; }
+.transfer-route { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.transfer-route-stop { display: grid; gap: 5px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); min-width: 0; }
+.transfer-route-stop b { overflow-wrap: anywhere; }
+.transfer-summary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 16px; }
+.transfer-summary-grid > div, .transfer-summary-reason { display: grid; gap: 3px; }
+.transfer-summary-reason p, .transfer-approval-note { margin: 0; overflow-wrap: anywhere; }
+.transfer-detail-table { width: 100%; table-layout: fixed; }
+.transfer-detail-table th:first-child { width: 49%; }
+.transfer-detail-table td:first-child { white-space: normal; overflow-wrap: anywhere; }
+.transfer-detail-table td:first-child small { display: block; margin-top: 4px; }
+.transfer-detail-table .num { white-space: nowrap; text-align: right; }
+@media (max-width: 480px) { .transfer-detail-table { table-layout: auto; } }
+@media (max-width: 350px) { .transfer-route, .transfer-summary-grid { grid-template-columns: 1fr; } }
+.transfer-detail-table th:not(:first-child), .transfer-detail-table td:not(:first-child) { padding-left: 8px; padding-right: 8px; }
+
+.transfer-detail-table th { white-space: normal; line-height: 1.35; overflow-wrap: break-word; }
+.transfer-detail-table th:not(:first-child) { text-align: right; }

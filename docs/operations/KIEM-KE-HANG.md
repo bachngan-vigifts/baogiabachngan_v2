@@ -55,3 +55,17 @@ Nếu số thực đếm đã nhập mà tồn đối chiếu thay đổi khi c�
 - **In phiếu đếm** (A4): mã, tên, ĐVT, tồn sổ kho, ô thực đếm trống (hoặc số đã đếm), chữ ký người đếm / Manager. Màn xem phiếu cũng có nút In phiếu.
 - **Lịch sử kiểm kê theo mã** (`GET /inventory/stocktake-history?sku=&warehouseId=`): bấm SKU trong phiếu để xem các lần đếm, tồn lúc đếm, chênh lệch, trạng thái (trong phạm vi kho được xem).
 - **Giá trị chênh lệch**: theo giá nhập gần nhất trong lịch sử sản phẩm (dòng Nhập hàng); chỉ Manager thấy (cột Giá trị lệch ở danh sách, cột Giá nhập / Giá trị lệch và tổng ở màn xem phiếu, file Excel). Mã chưa có giá nhập được đếm riêng, không tính vào tổng.
+
+## Người được Cho / Từ chối phiếu điều chuyển
+
+| Chức vụ người xin | Người được Cho / Từ chối |
+| --- | --- |
+| Sale Admin | NVBH Lock hoặc NVBH Minh Long; Manager được duyệt thay |
+| NVBH Lock / NVBH Minh Long | Sale Admin; Manager được duyệt thay |
+| Chức vụ khác, nhân viên xin đã ngừng hoạt động | Manager |
+
+Manager là ngoại lệ duy nhất. Nhân viên không tự duyệt phiếu mình xin; cờ Được duyệt chung không vượt qua quy tắc đối ứng này. Quy tắc áp dụng cho cả nút thao tác và API. Kho riêng vẫn theo quyền xem kho hiện có.
+
+Công việc tự sinh, thông báo tạo phiếu, nhắc sau một giờ và mục điều chuyển trong hộp Cần duyệt dùng cùng quy tắc. Không có người đối ứng được xem phiếu thì giao việc chờ Manager; không gửi thông tin kho riêng cho người không thấy kho đó. Chức vụ NVBH không có cờ duyệt chung vẫn xử lý qua phiếu/công việc/thông báo; hộp Cần duyệt chung giữ quyền truy cập hiện có cho các loại chứng từ khác.
+
+Quyền xác nhận Đã chuyển và cách ghi sổ kho không thay đổi. Phần đầu phiếu tách trạng thái, kho đi/kho đến, người/ngày xin, lý do; chỉ hiện người duyệt/người chuyển khi có dữ liệu. Cột sản phẩm gộp tên và mã để tránh tên bị ép quá hẹp.
