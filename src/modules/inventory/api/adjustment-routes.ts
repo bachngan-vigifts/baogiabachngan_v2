@@ -47,6 +47,12 @@ async function assertCountSnapshot(tx:Tx,warehouseId:string,lines:Line[]){
  const balances=new Map(rows.map(r=>[r.sku,r.qty]));
  if(lines.some(l=>l.source!=='stocktake'||Math.abs((balances.get(l.sku)||0)-Number(l.expectedQty))>0.000001))throw new AppError(409,'Tồn kho đã thay đổi sau khi lấy số kiểm kê. Tải lại tồn và kiểm đếm lại trước khi gửi hoặc duyệt.','STOCKTAKE_STOCK_CHANGED');
 }
+/** Tên + ĐVT sản phẩm cho màn xem phiếu / file Excel (phiếu chỉ lưu mã). */
+async function productNames(db:Db,skus:string[]){
+ if(!skus.length)return {};
+ const rows=await db.select({sku:products.sku,name:products.name,unit:products.unit}).from(products).where(inArray(products.sku,skus));
+ return Object.fromEntries(rows.map(r=>[r.sku,{name:r.name,unit:r.unit||''}]));
+}
 async function audit(tx:Tx,actorId:string,id:string,action:string,data:unknown){await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId,module:'inventory',action,entityType:'inventory_adjustments',entityId:id,data:JSON.stringify(data),createdAt:new Date().toISOString()});}
 export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)=>Promise<{id:string;name:string}[]>){
  const guard=(c:Ctx)=>{if(!can(me(c),'inventory.view'))fail(403,'Bạn chưa được cấp quyền xem sổ kho.');};
@@ -74,8 +80,9 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
  router.get('/inventory/stocktakes/:id',async c=>{
   guard(c);const [row]=await c.env.db.select().from(adjustments).where(and(eq(adjustments.id,c.params.id!),await scope(c,true),countKind)).limit(1);
   if(!row)fail(404,'Không tìm thấy phiếu kiểm kê.');
-  const balances=await c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,row.warehouseId),inArray(stockBalances.sku,(JSON.parse(row.lines) as Line[]).map(l=>l.sku))));
-  return json({adjustment:(await present(c,[row]))[0],balances:Object.fromEntries(balances.map(b=>[b.sku,b.qty])),canApprove:approve(c)});
+  const skus=(JSON.parse(row.lines) as Line[]).map(l=>l.sku);
+  const [balances,names]=await Promise.all([c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,row.warehouseId),inArray(stockBalances.sku,skus))),productNames(c.env.db,skus)]);
+  return json({adjustment:(await present(c,[row]))[0],balances:Object.fromEntries(balances.map(b=>[b.sku,b.qty])),names,canApprove:approve(c)});
  },'business');
  router.post('/inventory/count-stock',async c=>{
   guard(c);const body=await readJson(c.req,250000),warehouseId=String(body.warehouseId||''),skus=body.skus;
@@ -90,17 +97,27 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
   return json({warehouseId,observedAt:at,pendingBySku,stock:Object.fromEntries(skus.map(sku=>[sku,m.get(sku)||0]))});
  },'business');
  router.get('/inventory/adjustments',async c=>{
-  guard(c);const state=c.url.searchParams.get('status')||'',wh=c.url.searchParams.get('warehouseId')||'',offset=Number(c.url.searchParams.get('offset')||0);
-  if(!['','pending','approved','rejected'].includes(state)||!Number.isSafeInteger(offset)||offset<0||offset>1e6)fail(400,'Bộ lọc phiếu điều chỉnh không hợp lệ.');
-  const rows=await c.env.db.select().from(adjustments).where(and(await scope(c,c.url.searchParams.get('kind')==='stocktake'),state?eq(adjustments.status,state as 'pending'):undefined,wh?eq(adjustments.warehouseId,wh):undefined,c.url.searchParams.get('kind')==='stocktake'?sql`${adjustments.lines}::jsonb @> '[{"source":"stocktake"}]'::jsonb`:undefined))
-   .orderBy(desc(adjustments.createdAt),desc(adjustments.id)).limit(21).offset(offset);
+  guard(c);const p=c.url.searchParams,state=p.get('status')||'',wh=p.get('warehouseId')||'',offset=Number(p.get('offset')||0);
+  // Bộ lọc như trang Điều chuyển kho: số phiếu / mã hàng, người lập, khoảng ngày lập (giờ Việt Nam).
+  const q=(p.get('q')||'').trim().slice(0,80),creator=(p.get('createdBy')||'').slice(0,80),from=p.get('from')||'',to=p.get('to')||'',day=/^\d{4}-\d{2}-\d{2}$/;
+  if(!['','pending','approved','rejected'].includes(state)||!Number.isSafeInteger(offset)||offset<0||offset>1e6||(from&&!day.test(from))||(to&&!day.test(to))||(from&&to&&from>to))fail(400,'Bộ lọc phiếu điều chỉnh không hợp lệ.');
+  const vnStart=(d:string)=>new Date(d+'T00:00:00+07:00').toISOString(),vnEnd=(d:string)=>new Date(new Date(d+'T00:00:00+07:00').getTime()+864e5).toISOString();
+  const like='%'+q.replace(/[\\%_]/g,m=>'\\'+m)+'%';
+  const base=and(await scope(c,p.get('kind')==='stocktake'),p.get('kind')==='stocktake'?countKind:undefined);
+  const where=and(base,state?eq(adjustments.status,state as 'pending'):undefined,wh?eq(adjustments.warehouseId,wh):undefined,creator?eq(adjustments.createdBy,creator):undefined,
+   from?sql`${adjustments.createdAt}>=${vnStart(from)}`:undefined,to?sql`${adjustments.createdAt}<${vnEnd(to)}`:undefined,
+   q?sql`(${adjustments.refNo} ILIKE ${like} OR ${adjustments.reason} ILIKE ${like} OR EXISTS (SELECT 1 FROM jsonb_array_elements(${adjustments.lines}::jsonb) line WHERE line->>'sku' ILIKE ${like}))`:undefined);
+  const [rows,creators]=await Promise.all([
+   c.env.db.select().from(adjustments).where(where).orderBy(desc(adjustments.createdAt),desc(adjustments.id)).limit(21).offset(offset),
+   c.env.db.selectDistinct({id:employees.id,name:employees.name}).from(adjustments).innerJoin(employees,eq(employees.id,adjustments.createdBy)).where(base),
+  ]);
   const nextOffset=rows.length>20?offset+20:null;if(nextOffset!==null)rows.pop();
-  return json({adjustments:await present(c,rows),nextOffset,canApprove:approve(c)});
+  return json({adjustments:await present(c,rows),nextOffset,canApprove:approve(c),filterOptions:{creators:creators.sort((a,b)=>a.name.localeCompare(b.name,'vi'))}});
  },'business');
  router.get('/inventory/adjustments/:id',async c=>{
-  const row=await load(c,c.params.id!),lines=JSON.parse(row.lines) as Line[];
-  const balances=await c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,row.warehouseId),inArray(stockBalances.sku,lines.map(l=>l.sku))));
-  return json({adjustment:(await present(c,[row]))[0],balances:Object.fromEntries(balances.map(b=>[b.sku,b.qty])),canApprove:approve(c)});
+  const row=await load(c,c.params.id!),lines=JSON.parse(row.lines) as Line[],skus=lines.map(l=>l.sku);
+  const [balances,names]=await Promise.all([c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,row.warehouseId),inArray(stockBalances.sku,skus))),productNames(c.env.db,skus)]);
+  return json({adjustment:(await present(c,[row]))[0],balances:Object.fromEntries(balances.map(b=>[b.sku,b.qty])),names,canApprove:approve(c)});
  },'business');
  router.post('/inventory/adjustments',async c=>{
   guard(c);const m=me(c);if(!can(m,'inventory.manage'))fail(403,'Bạn chưa được cấp quyền lập phiếu điều chỉnh.');
