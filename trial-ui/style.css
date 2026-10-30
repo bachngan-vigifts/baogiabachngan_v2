@@ -2397,6 +2397,28 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
 .speed-dialog .speed-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .speed-dialog .speed-canary { margin: 8px 0; padding: 10px 12px; border: 1px dashed var(--line, #dfe5ee); border-radius: 10px; display: grid; gap: 8px; justify-items: start; }
 .speed-dialog .speed-canary p { margin: 0; }
+
+/* Quote quantities/prices: reserve actual space for CK label + its unit selector. */
+@media screen and (min-width: 851px) {
+  #quote-form #line-table { min-width: 1160px; }
+  #quote-form:not(.type-hrc) #line-table { min-width: 1280px; }
+  #quote-form #line-table:has(.col-pd) { min-width: 1540px; }
+  #quote-form .lines-wrap { position: relative; min-width: 0; max-width: 100%; overflow-x: auto; }
+  #quote-form #line-head .col-img { font-size: 11px; letter-spacing: 0; }
+  #quote-form #line-head th { padding: 9px 10px; font-size: 12px; letter-spacing: .02em; }
+  #quote-form #line-table .col-qty { width: 88px; }
+  #quote-form #line-table .col-price { width: 128px; }
+  #quote-form #line-table .col-disc { width: 148px; }
+  #quote-form #line-table .col-after { width: 128px; }
+  #quote-form #line-table .col-total { width: 128px; }
+  #quote-form .disc-head { display: flex; gap: 6px; white-space: nowrap; }
+  #quote-form .disc-head select { flex: 0 0 auto; min-width: 56px; max-width: 76px; }
+}
+#quote-form .sku-line { display: flex; align-items: center; flex-wrap: wrap; column-gap: 8px; }
+#quote-form .sku-line .sku-input { min-width: 0; max-width: 100%; }
+#quote-form .quote-stock-warning { display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #fff0d6; color: #b45309; border: 1px solid #ed9b30; font-size: 14px; font-weight: 800; cursor: help; }
+#quote-form .quote-stock-warning[hidden] { display: none; }
+
 /* Kiểm kê / cân bằng kho: hộp xem phiếu đủ rộng cho 5 cột (mã, sản phẩm, tồn, chênh, thực đếm). */
 dialog.inv-adjust-review { width: min(880px, 96vw); }
 .inv-adjust-table .actions-cell { text-align: right; white-space: nowrap; }

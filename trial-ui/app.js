@@ -1,3 +1,4 @@
+import { initQuoteStockWarnings } from './quote-stock-warning.js';
 import { parseSkuQuantities, pasteRows } from './quote-paste.js';
 import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters } from './customer-list-filters.js';
 import {openPriceLabels} from './price-labels.js';
@@ -1257,7 +1258,7 @@ function lineCell(r, i) {
     <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
     <td class="col-product" data-label="Sản phẩm">
       <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="${manual ? 'Tên phụ phí / nội dung thêm…' : 'Gõ tên hoặc mã để tìm sản phẩm…'}" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
-      ${custom ? '' : `<div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}">${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>`}
+      ${custom ? '' : `<div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}"><span class="quote-stock-warning" data-stock-warning hidden role="img" aria-label="">!</span>${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>`}
       ${!custom && meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
       ${!custom && hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
       ${custom ? '<small class="muted">Phụ phí · Không kiểm tồn / xuất kho</small>' : ''}
@@ -1559,7 +1560,19 @@ $('#add-line').addEventListener('click', addLine);
 function currentDoc() {
   return { type: editor.type, vat: parseNum(field('vat').value) || 0, rows: editor.rows, shipping: editor.base.shipping, printing: editor.base.printing };
 }
+let quoteStockWarnings;
+function refreshQuoteStockWarnings() {
+  if (!quoteStockWarnings) quoteStockWarnings = initQuoteStockWarnings({
+    root: $('#line-list'), getRows: () => editor.rows, skuOf: quoteStockSku,
+    ensureHolds: () => loadHolds(),
+    fetchProducts: async skus => { const data = await api('/products?skus=' + encodeURIComponent(skus.join(','))); applyCatalogMeta(data); return data.products; },
+    available: product => state.holdsLoaded && state.warehouses.some(w => w.kind === 'stock' && product.stock?.[w.id] != null && Number.isFinite(Number(product.stock[w.id]))) ? availableStock(product, editor.id || '') : null,
+    format: fmtNum,
+  });
+  quoteStockWarnings.refresh();
+}
 function calculate() {
+  refreshQuoteStockWarnings();
   const doc = currentDoc(), t = totals(doc);
   syncPaymentNotes(t.total);
   editor.rows.forEach((r, i) => {
