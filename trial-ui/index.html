@@ -839,8 +839,8 @@
   <form id="paste-form" novalidate>
     <div class="modal-head"><h2>Dán sản phẩm từ Excel</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body">
-      <p class="muted">Sao chép các cột theo thứ tự: <b>Tên sản phẩm · Mã SKU · ĐVT · Số lượng · Đơn giá</b> (có thể thiếu cột cuối). Mỗi dòng Excel là một sản phẩm.</p>
-      <textarea id="paste-text" rows="8" placeholder="Bình giữ nhiệt 500ml&#9;LYS-500&#9;cái&#9;100&#9;185000"></textarea>
+      <p class="muted">Chỉ dán 2 cột: <b>Mã hàng (SKU) · Số lượng</b>. Hệ thống tự điền tên, ĐVT, hình ảnh, thuế và thông số sản phẩm; giá và chiết khấu theo chính sách đang chọn. Ô chưa có dữ liệu để nhập tay.</p>
+      <textarea id="paste-text" rows="8" placeholder="LHC3249BEG&#9;10&#10;01654034503&#9;5" aria-label="Mã hàng và số lượng từ Excel"></textarea>
       <p class="muted small" id="paste-preview"></p>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="paste-apply">Thêm vào báo giá</button></div>

@@ -113,7 +113,7 @@ function brandDiscountKey(brand) {
   const n = normalize(brand), words = n.split(/[^a-z0-9&]+/).filter(Boolean);
   if (words.includes("lys")) return "lys";
   if (/lock\s*(&|n|and)?\s*lock/.test(n) || words.includes("lock")) return "lock";
-  if (/minh long|healthy cook|su duong sinh/.test(n)) return "minhLong";
+  if (/minh\s*long|healthy cook|su duong sinh/.test(n)) return "minhLong";
   return null;
 }
 function customerDiscount(brand, discounts = {}, mode = "percent", price = 0) {

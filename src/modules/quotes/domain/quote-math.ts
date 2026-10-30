@@ -184,7 +184,7 @@ export function brandDiscountKey(brand: unknown): 'lys' | 'minhLong' | 'lock' | 
   const n = normalize(brand), words = n.split(/[^a-z0-9&]+/).filter(Boolean);
   if (words.includes('lys')) return 'lys';
   if (/lock\s*(&|n|and)?\s*lock/.test(n) || words.includes('lock')) return 'lock';
-  if (/minh long|healthy cook|su duong sinh/.test(n)) return 'minhLong';
+  if (/minh\s*long|healthy cook|su duong sinh/.test(n)) return 'minhLong';
   return null;
 }
 /** Chiết khấu của khách cho một thương hiệu (dạng % hoặc số tiền trên `price`). Giá trị ngoài 0..100 bị bỏ qua. */
