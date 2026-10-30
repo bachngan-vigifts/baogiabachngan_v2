@@ -1239,3 +1239,29 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   #view-pos .pos-order-count > span { min-width: 0; font-size: 12px; line-height: 1.25; }
   #view-pos .pos-order-count .pos-web-badge { min-width: 24px; height: 24px; padding: 0 5px; box-sizing: border-box; }
 }
+
+/* Persisted POS order: product replacement stays within the amendment dialog. */
+.pos-order-edit-modal .pos-edit-product-search { display:flex;gap:8px;margin:10px 0; }
+.pos-order-edit-modal .pos-edit-product-search input { flex:1;min-width:0; }
+.pos-order-edit-modal .pos-edit-product-results { display:grid;gap:6px;max-height:240px;overflow:auto;margin-bottom:12px; }
+.pos-order-edit-modal .pos-edit-product-choice { display:grid;gap:4px;text-align:left;border:1px solid var(--line);border-radius:8px;background:var(--surface,#fff);padding:10px;cursor:pointer;color:inherit; }
+.pos-order-edit-modal .pos-edit-product-choice:hover { background:var(--surface-2,#f3f6fa); }
+.pos-order-edit-modal small { display:block;font-size:12px;color:var(--muted); }
+.pos-order-edit-modal .pos-edit-lines { overflow-x:auto;max-width:100%;margin-bottom:12px; }
+.pos-order-edit-modal table { min-width:720px; }
+.pos-order-edit-modal th,.pos-order-edit-modal td { padding:6px;vertical-align:top; }
+.pos-order-edit-modal th:first-child { width:36%; }
+.pos-order-edit-modal td input { width:100%;min-width:80px; }
+.pos-order-edit-modal td select { min-width:92px; }
+.pos-order-edit-modal td:last-child { width:40px; }
+
+@media screen and (max-width:600px) {
+  .pos-order-edit-modal .pos-edit-lines table,.pos-order-edit-modal .pos-edit-lines tbody { display:block;min-width:0;width:100%; }
+  .pos-order-edit-modal .pos-edit-lines thead { display:none; }
+  .pos-order-edit-modal .pos-edit-lines tr { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;position:relative;border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0; }
+  .pos-order-edit-modal .pos-edit-lines td { display:block;min-width:0;padding:0; }
+  .pos-order-edit-modal .pos-edit-lines td:first-child { grid-column:1/-1;padding-right:36px;overflow-wrap:anywhere; }
+  .pos-order-edit-modal .pos-edit-lines td[data-label]::before { content:attr(data-label);display:block;font-size:12px;color:var(--muted);margin-bottom:4px; }
+  .pos-order-edit-modal .pos-edit-lines td input,.pos-order-edit-modal .pos-edit-lines td select { width:100%;min-width:0; }
+  .pos-order-edit-modal .pos-edit-lines td:last-child:not(:first-child) { position:absolute;top:6px;right:6px;width:auto; }
+}

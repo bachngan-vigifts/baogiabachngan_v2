@@ -11,7 +11,9 @@ class E {
   set innerHTML(_: string) { throw new Error('Unsafe HTML'); }
   append(...nodes: E[]) { this.children.push(...nodes); }
   replaceChildren(...nodes: E[]) { this.children = nodes; }
-  setAttribute() {}
+  attributes: Record<string,string> = {};
+  setAttribute(key: string, value: string) { this.attributes[key] = value; }
+  focus() {}
   addEventListener(name: string, fn: Function) { this.listeners.set(name, [...(this.listeners.get(name) || []), fn]); }
   async emit(name: string) { for (const fn of this.listeners.get(name) || []) await fn({ preventDefault() {} }); }
   all(): E[] { return this.children.flatMap(n => [n, ...n.all()]); }
@@ -69,4 +71,29 @@ test('Nhãn thanh toán POS phân biệt điều kiện và tiền thực thu, b
   assert.equal(posPaymentText(detail), 'Thu COD sau khi giao hàng · Chưa thu');
   detail.payments = [{ method: 'transfer', voidedAt: '' }];
   assert.equal(posPaymentText(detail), 'Thu COD sau khi giao hàng · Đã thu bằng chuyển khoản');
+});
+
+test('Manager can remove an old SKU, search within the original register/policy, merge additions and submit new SKU safely', async () => {
+  const previous = globalThis.document, doc = { createElement: (tag: string) => new E(tag), body: new E('body') };
+  Object.assign(globalThis, { document: doc });
+  try {
+    const calls: any[] = [], hostile = '<img src=x onerror=alert(1)>';
+    const detail = { order: { id: 'o', orderNo: 'POS', revision: 1, fulfillmentMode: 'cod', customerName: 'A', posSnapshot: JSON.stringify({ register: { id: 'old-register', taxRate: 8 }, pricePolicyId: 'old-policy', vatEnabled: true }) },
+      lines: [{ id: 'l', sku: 'A', name: 'Old', qty: 2, listUnitPrice: 108000, discountType: 'percent', discountValue: 0, taxRate: 8, deliveredQty: 0 }], deliveries: [], schedules: [], payments: [] };
+    const action = posOrderEditor({ detail, onSaved() {}, api: async (...args: any[]) => { calls.push(args); return { products: [{ sku: 'B', name: hostile, price: 216000, unit: 'Bộ', onHand: 5, reserved: 0 }] }; } });
+    await action.emit('click');
+    await doc.body.all().find(n => n.tag === 'button' && n.text === '×')!.emit('click');
+    const search = doc.body.all().find(n => n.type === 'search')!; search.value = 'B';
+    const find = doc.body.all().find(n => n.tag === 'button' && n.text === 'Tìm')!;
+    await find.emit('click');
+    assert.match(calls[0][0], /registerId=old-register/); assert.match(calls[0][0], /pricePolicyId=old-policy/);
+    await doc.body.all().find(n => n.tag === 'button' && n.textContent.includes(hostile))!.emit('click');
+    search.value = 'B'; await find.emit('click'); await doc.body.all().find(n => n.tag === 'button' && n.textContent.includes(hostile))!.emit('click');
+    doc.body.all().find(n => n.tag === 'label' && n.text.startsWith('Lý do'))!.children[0]!.value = 'Đổi mã';
+    assert.equal(doc.body.all().some(n => n.tag === 'img'), false);
+    await doc.body.all().find(n => n.tag === 'form')!.emit('submit');
+    const request = calls.find(c => c[1] === 'PUT');
+    assert.equal(request[2].lines.length, 1); assert.equal(request[2].lines[0].sku, 'B'); assert.equal(request[2].lines[0].id, undefined);
+    assert.equal(Number(request[2].lines[0].qty), 2); assert.equal(Number(request[2].lines[0].price), 216000);
+  } finally { Object.assign(globalThis, { document: previous }); }
 });

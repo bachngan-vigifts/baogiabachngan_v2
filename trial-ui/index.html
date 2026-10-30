@@ -679,16 +679,16 @@
       <div class="flow-steps" id="order-flow"></div>
       <div class="card progress-card" id="order-progress" hidden></div>
       <div class="editor-grid">
-        <div class="card"><h2 class="card-title">Khách hàng</h2><dl class="kv" id="order-customer"></dl></div>
-        <div class="card"><h2 class="card-title">Công nợ</h2><div id="order-debt"></div></div>
+        <div class="card" id="order-customer-card"><h2 class="card-title">Khách hàng</h2><dl class="kv" id="order-customer"></dl></div>
+        <div class="card" id="order-summary-card"><div class="card-title-row"><h2 class="card-title" id="order-contract-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
       </div>
       <div class="card"><div class="card-title-row"><h2 class="card-title" id="order-lines-title">Hàng trong đơn</h2></div>
         <div class="table-wrap"><table class="data-table"><thead><tr id="order-lines-head"><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đã giao</th><th class="right">Đơn giá</th><th class="right">VAT</th><th class="right">Thành tiền</th></tr></thead><tbody id="order-lines"></tbody></table></div>
         <div id="order-line-details"></div>
       </div>
       <div class="editor-grid">
-        <div class="card"><div class="card-title-row"><h2 class="card-title" id="order-contract-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
-        <div class="card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><span class="row-gap"><button class="btn secondary small" id="order-pack" title="Lập phiếu đóng gói theo nguồn hàng (kho / cửa hàng / NCC / đại lý), chọn giao cho khách hay về xưởng in, gửi xe nào">📦 Lên lịch & đóng gói</button><button class="btn secondary small" id="order-new-delivery">Chỉ lên lịch giao</button></span></div><div id="order-deliveries"></div><div id="order-packing"></div></div>
+        <div class="card" id="order-delivery-card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><span class="row-gap"><button class="btn secondary small" id="order-pack" title="Lập phiếu đóng gói theo nguồn hàng (kho / cửa hàng / NCC / đại lý), chọn giao cho khách hay về xưởng in, gửi xe nào">📦 Lên lịch & đóng gói</button><button class="btn secondary small" id="order-new-delivery">Chỉ lên lịch giao</button></span></div><div id="order-deliveries"></div><div id="order-packing"></div></div>
+        <div class="card" id="order-debt-card"><h2 class="card-title">Công nợ</h2><div id="order-debt"></div></div>
       </div>
       <div class="editor-grid">
         <div class="card"><div class="card-title-row"><h2 class="card-title">Hoá đơn</h2><span id="order-invoice-pill"></span></div><div id="order-invoice"></div></div>

@@ -1,0 +1,52 @@
+[
+  {
+    "width": 1280,
+    "positions": {
+      "customer": {
+        "top": 621.59375,
+        "left": 268
+      },
+      "summary": {
+        "top": 621.59375,
+        "left": 768
+      },
+      "delivery": {
+        "top": 1273.78125,
+        "left": 268
+      },
+      "debt": {
+        "top": 1273.78125,
+        "left": 768
+      }
+    },
+    "addRemove": true,
+    "repeatedSkuMerged": true,
+    "saveOnce": true,
+    "serverTotals": true
+  },
+  {
+    "width": 390,
+    "positions": {
+      "customer": {
+        "top": 1011.1875,
+        "left": 16
+      },
+      "summary": {
+        "top": 1181.671875,
+        "left": 16
+      },
+      "delivery": {
+        "top": 1908.578125,
+        "left": 16
+      },
+      "debt": {
+        "top": 2182.34375,
+        "left": 16
+      }
+    },
+    "addRemove": true,
+    "repeatedSkuMerged": true,
+    "saveOnce": true,
+    "serverTotals": true
+  }
+]
