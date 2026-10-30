@@ -251,9 +251,18 @@ export function initAccountingTasks({ root, api, toast, userId, back, sendOnce =
       if (t.history?.length) { body.append(node('h3', '', 'Lịch sử')); const list = node('ul', 'acct-history'); for (const h of t.history) { const time = stamp(h.at); if (time) list.append(node('li', '', `${time} · ${h.label}`)); } if (list.children.length) body.append(list); }
       if (t.canComment) {
         body.append(node('h3', '', 'Trao đổi · chỉ người nhận và Manager')); const comments = node('div', 'acct-comments'); body.append(comments);
+        const seenComments=new Set();
+        const appendComment=c=>{if(seenComments.has(c.id))return;seenComments.add(c.id);const item=node('article');item.append(node('strong','',c.name),node('small','muted',stamp(c.createdAt)),node('p','pre',c.body));comments.append(item);};
         const input = node('textarea'); input.placeholder = 'Viết trao đổi…'; input.maxLength = 2000; input.setAttribute('aria-label', 'Trao đổi trong công việc'); body.append(input);
-        body.append(button('Gửi trao đổi', 'btn secondary', async () => { try { await api('/tasks/' + encodeURIComponent(id) + '/comments', 'POST', { body: input.value }); await openDetail({ id }); } catch (e) { toast(e.message, 'err'); } }));
-        try { const result = await api('/tasks/' + encodeURIComponent(id) + '/comments'); if (detailId === id) for (const c of result.comments) { const item = node('article'); item.append(node('strong', '', c.name), node('small', 'muted', stamp(c.createdAt)), node('p', 'pre', c.body)); comments.append(item); } } catch (e) { comments.append(node('p', 'muted', e.message)); }
+        body.append(button('Gửi trao đổi', 'btn secondary', async () => {
+          const sent=input.value,owner=userId();
+          try { const result=await api('/tasks/' + encodeURIComponent(id) + '/comments', 'POST', { body: sent });
+            if(owner!==userId()||detailId!==id||!comments.isConnected)return;
+            if(!result.comment){await openDetail({id});return;}
+            appendComment(result.comment);if(input.value===sent)input.value='';
+          } catch(e){if(owner===userId()&&detailId===id)toast(e.message,'err');}
+        }));
+        try { const result = await api('/tasks/' + encodeURIComponent(id) + '/comments'); if (detailId === id) for (const c of result.comments) appendComment(c); } catch (e) { comments.append(node('p', 'muted', e.message)); }
       } else body.append(node('p', 'muted', t.viewOnly ? 'Việc đồng nghiệp: chỉ xem, không được đọc hoặc gửi trao đổi.' : 'Nhận việc để đọc và gửi trao đổi.'));
       body.append(node('p', 'acct-warning', 'Việc này do hệ thống tạo, không xoá được')); drawer.append(body);
     } catch (e) { toast(e.message, 'err'); }

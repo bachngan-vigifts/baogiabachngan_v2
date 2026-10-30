@@ -132,8 +132,17 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
   router.post('/care/:id/done', async c => {
     const me = viewer(c), body = await readJson(c.req, 1000), { a: old } = await loadOne(c, c.params.id!, true);
     if (!old.nextAt) throw new AppError(409, 'Lần chăm sóc này không có lịch hẹn.');
+    if(body.done!==undefined&&typeof body.done!=='boolean')throw new AppError(400,'Trạng thái chăm sóc không hợp lệ.');
+    if(body.revision!==undefined&&(!Number.isSafeInteger(body.revision)||body.nextAt!==old.nextAt))throw new AppError(409,'Lịch hẹn đã đổi. Tải lại trước khi đánh dấu.','CARE_REVISION_CONFLICT');
+    if(body.revision!==undefined&&body.revision!==old.revision){
+      const same=old.revision===Number(body.revision)+1&&body.nextAt===old.nextAt&&(body.done===false?!old.nextDoneAt:!!old.nextDoneAt);
+      if(same)return json({activity:present(await loadOne(c,old.id),me,vnToday()),stateMatches:true});
+      throw new AppError(409,'Lịch hẹn vừa được cập nhật. Tải lại trước khi đánh dấu.','CARE_REVISION_CONFLICT');
+    }
     const now = new Date().toISOString();
-    await c.env.db.update(customerActivities).set({ nextDoneAt: body.done === false ? null : now, revision: old.revision + 1, updatedAt: now }).where(eq(customerActivities.id, old.id));
+    const changed=await c.env.db.update(customerActivities).set({ nextDoneAt: body.done === false ? null : now, revision: old.revision + 1, updatedAt: now })
+      .where(and(eq(customerActivities.id,old.id),eq(customerActivities.revision,old.revision),eq(customerActivities.nextAt,old.nextAt))).returning({id:customerActivities.id});
+    if(!changed.length)throw new AppError(409,'Lịch hẹn vừa được cập nhật. Tải lại trước khi đánh dấu.','CARE_REVISION_CONFLICT');
     return json({ activity: present(await loadOne(c, old.id), me, vnToday()) });
   }, 'business');
 

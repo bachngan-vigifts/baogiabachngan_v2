@@ -1,4 +1,4 @@
-import { sendOnce } from './request-keys.js';
+import { createTaskWriteIntent } from './task-write-intent.js';
 // TIN NHẮN nội bộ giữa nhân viên: nút chat nổi góc dưới phải mở khung chat (danh sách hội thoại 1-1 + nhóm bên trái, khung chat bên phải).
 // Cập nhật: khung đang mở hỏi tin mới mỗi 3 giây; danh sách mỗi 10 giây; huy hiệu menu mỗi 20 giây (+ Web Push khi có tin).
 import { ding, setBadgePart } from './alert.js';
@@ -374,6 +374,7 @@ export function initChat({ api, toast, userId, isManager, compress }) {
     load();
   }
   /** Giao việc ngay trong chat: người nhận = người đang nhắn (1-1) hoặc chọn trong nhóm; gửi kèm liên kết việc. */
+  const taskIntent=createTaskWriteIntent({owner:userId,scope:'chat'});
   function quickTask() {
     const c = st.active, me = userId(), people = c.members.filter(x => x.id !== me);
     const dlg = document.createElement('dialog'); dlg.className = 'modal narrow chat-pick';
@@ -384,15 +385,17 @@ export function initChat({ api, toast, userId, isManager, compress }) {
         <label class="chat-field"><span>Ghi chú</span><textarea name="note" rows="2" maxlength="2000"></textarea></label></div>
       <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Giao việc</button></div></form>`;
     document.body.append(dlg); dlg.showModal();
+    const pending=taskIntent.pending();if(pending){dlg.querySelector('.btn.primary').textContent='Gửi lại lần giao việc trước';const f=dlg.querySelector('form');f.title.value=pending.content.title;f.note.value=pending.content.description||'';f.who.value=pending.content.assigneeId;f.due.value=pending.content.dueDate||'';toast('Khôi phục lần giao việc chưa rõ kết quả để gửi lại đúng mã.');}
     const close = () => { dlg.close(); dlg.remove(); };
     dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
     dlg.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault(); const f = e.target, btn = f.querySelector('.btn.primary'); btn.disabled = true;
       try {
-        const title = f.title.value.trim(), content = { title, description: f.note.value, assigneeId: f.who.value, dueDate: f.due.value || null, priority: 'normal' }, r = await sendOnce('task', content, clientKey => api('/tasks', 'POST', { ...content, clientKey }));
+        const title = f.title.value.trim(), content = { title, description: f.note.value, assigneeId: f.who.value, dueDate: f.due.value || null, priority: 'normal' }, r = await taskIntent.send(content,(clientKey,content)=>api('/tasks','POST',{...content,clientKey}));
+        if(userId()!==me||st.active?.id!==c.id){close();return;}
         close(); if (q('#chat-input').value.trim() === title) { q('#chat-input').value = ''; autosize(); }
         send({ type: 'task', id: r.id, label: `Việc: ${title}${f.who.value !== me ? ' → ' + (people.find(x => x.id === f.who.value)?.name || '') : ''}` });
-      } catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
+      } catch (ex) { if(userId()===me){toast(ex.message, 'err');btn.disabled=false;btn.textContent=taskIntent.pending()?'Gửi lại lần giao việc trước':'Giao việc';} }
     });
   }
   q('#chat-quick-menu').addEventListener('click', e => {

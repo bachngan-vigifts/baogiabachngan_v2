@@ -1,0 +1,20 @@
+[
+  {
+    "width": 1280,
+    "lostReplySameKey": true,
+    "recoveredAfterReload": true,
+    "distinctConfirmedIntents": true,
+    "taskRows": 2,
+    "extraOrderGets": 0,
+    "pageErrors": []
+  },
+  {
+    "width": 390,
+    "lostReplySameKey": true,
+    "recoveredAfterReload": false,
+    "distinctConfirmedIntents": true,
+    "taskRows": 2,
+    "extraOrderGets": 0,
+    "pageErrors": []
+  }
+]

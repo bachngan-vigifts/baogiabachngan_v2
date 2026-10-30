@@ -23,7 +23,7 @@ function supplierSlips(request) {
   return [...groups.values()];
 }
 export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{},onDeleted=()=>{},requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id),currentRequest=()=>'',portalNavigation=null}) {
-  let requestNo=0,dialog=null,batchBusy=false,confirmDialog=null;const selected=new Map();
+  let requestNo=0,dialog=null,batchBusy=false,confirmDialog=null,renderedRequests=[],renderedMeta={};const selected=new Map();
   const title=el('h2','card-title',portal?'Yêu cầu xin lấy trước':'Phiếu xin lấy trước đã lưu'),list=el('div','early-request-list');
   const operations=el('div','early-request-operations');
   operations.dataset.mobileActions='off';
@@ -44,6 +44,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     } catch(e) {if(n===requestNo) list.replaceChildren(el('p','error',e.message||'Không tải được phiếu xin lấy trước.'));}
   }
   function render(requests,canRespond,canViewPortal,canReceive) {
+    renderedRequests=requests;renderedMeta={canRespond,canViewPortal,canReceive};
     list.replaceChildren();operations.replaceChildren();selected.clear();selectable=[];all.checked=false;syncBatch();bulk.hidden=portal||!canViewPortal;
     if(!requests.length) list.append(el('p','muted','Chưa có phiếu xin lấy trước.'));
     if(!portal&&canViewPortal)for(const request of requests){
@@ -149,7 +150,10 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const error=el('p','error');error.setAttribute('role','alert');body.append(error);
     const confirm=btn('Xác nhận '+requests.length+' phiếu',async()=>{
       if(busy)return;busy=batchBusy=true;close.disabled=confirm.disabled=true;syncBatch();error.textContent='';
-      try{await api('/purchase-early-requests/manager-confirm-batch','POST',{allocationIds});modal.close();await load(currentRequest());await onSaved(requests[0]);}
+      const view=requestNo;
+      try{const result=await api('/purchase-early-requests/manager-confirm-batch','POST',{allocationIds,returnRequests:true});modal.close();if(view!==requestNo)return;
+        if(result.requests){const changes=new Map(result.requests.map(r=>[r.id,r]));render(renderedRequests.map(r=>changes.get(r.id)||r),renderedMeta.canRespond,renderedMeta.canViewPortal,renderedMeta.canReceive);}else await load(currentRequest());
+        void Promise.resolve().then(()=>onSaved(requests[0])).catch(()=>{});}
       catch(e){error.textContent=e.message||'Không xác nhận được. Tải lại phiếu để kiểm tra.';}
       finally{busy=batchBusy=false;close.disabled=confirm.disabled=false;syncBatch();}
     },'btn primary');

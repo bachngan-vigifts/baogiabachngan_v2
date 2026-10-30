@@ -117,7 +117,12 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const changed = revision === 0
       ? await db.insert(customerNotes).values({ customerId: id, ...values }).onConflictDoNothing().returning({ id: customerNotes.customerId })
       : await db.update(customerNotes).set(values).where(and(eq(customerNotes.customerId, id), eq(customerNotes.revision, revision))).returning({ id: customerNotes.customerId });
-    if (!changed.length) throw new AppError(409, 'Ghi chú đã được người khác cập nhật. Tải lại ghi chú trước khi lưu.', 'CUSTOMER_NOTE_CONFLICT');
+    if (!changed.length) {
+      const [current]=await db.select().from(customerNotes).where(eq(customerNotes.customerId,id)).limit(1);
+      // Desired state matches one immediate write by this user; this is not a general command receipt.
+      if(current&&current.revision===revision+1&&current.updatedBy===me.id&&current.text===values.text)return json({text:current.text,revision:current.revision,updatedAt:current.updatedAt,updatedBy:me.name,stateMatches:true});
+      throw new AppError(409, 'Ghi chú đã được cập nhật. Tải lại ghi chú trước khi lưu.', 'CUSTOMER_NOTE_CONFLICT');
+    }
     return json({ ...values, updatedBy: me.name });
   }, 'business');
 

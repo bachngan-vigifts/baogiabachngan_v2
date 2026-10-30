@@ -353,6 +353,7 @@ async function apiRequest(path, method = 'GET', body) {
   recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
+  if (!sameSession) throw new ApiError('Phiên đăng nhập đã thay đổi; kết quả thuộc phiên trước.', 0, 'STALE_SESSION');
   if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
   if (!res.ok) {
     if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
@@ -3892,11 +3893,14 @@ $('#discount-form').addEventListener('submit', async e => {
 });
 $('#account-link-copy').addEventListener('click', () => { $('#account-link-url').select(); navigator.clipboard?.writeText($('#account-link-url').value).then(() => toast('Đã chép link.')).catch(() => document.execCommand('copy')); });
 
-async function openOrder(id) {
+let orderLoadRun = 0;
+async function openOrder(id, confirmed = null) {
+  const run = ++orderLoadRun, session = token, route = location.hash;
   const onContracts = location.hash.startsWith('#/contracts/');
   $('#order-title').textContent = onContracts ? 'Đang tải HĐKT…' : 'Đang tải đơn…';
   let d;
-  try { d = await api('/orders/' + encodeURIComponent(id)); } catch (e) { toast(e.message, 'err'); if (e.status !== 401) go(onContracts ? '#/contracts' : '#/orders'); return; }
+  try { d = confirmed || await api('/orders/' + encodeURIComponent(id)); } catch (e) { if(run!==orderLoadRun||session!==token||route!==location.hash)return;toast(e.message, 'err'); if (e.status !== 401) go(onContracts ? '#/contracts' : '#/orders'); return; }
+  if(run !== orderLoadRun || session !== token || route !== location.hash)return;
   sales.order = d.order; sales.detail = d;
   // HĐKT luôn ở #/contracts/<id>, đơn hàng ở #/orders/<id> (link cũ / thông báo cũ tự chuyển đúng trang).
   const want = docHref(id, d.contract?.contractNo);
@@ -4728,7 +4732,7 @@ document.addEventListener('click', async e => {
     try { await api(`/orders/${encodeURIComponent(sales.order.id)}`, 'DELETE'); toast('Đã xoá ' + w + '.'); go(k ? '#/contracts' : '#/orders'); } catch (ex) { toast(ex.message, 'err'); }
   }
   const sign = e.target.closest('[data-contract-sign]');
-  if (sign) { try { await api('/contracts/' + encodeURIComponent(sign.dataset.contractSign), 'PUT', { status: 'signed', signedDate: todayIso() }); openOrder(sales.order.id); } catch (ex) { toast(ex.message, 'err'); } }
+  if (sign) { const id=sales.order.id,session=token,route=location.hash;try { const result=await api('/contracts/' + encodeURIComponent(sign.dataset.contractSign), 'PUT', { status: 'signed', signedDate: todayIso(), returnDetail:true }); if(session===token&&route===location.hash)openOrder(id,result.detail); } catch (ex) { if(session===token&&route===location.hash)toast(ex.message, 'err'); } }
 });
 /**
  * Lập HĐKT THẲNG TỪ BÁO GIÁ (luồng độc lập với Đơn hàng – không sinh đơn hàng trước): điền pháp nhân, cọc, hạn thanh toán…
@@ -4827,7 +4831,8 @@ document.addEventListener('click', async e => {
   f.querySelector('[data-void-cancel]').addEventListener('click', () => f.remove());
   f.addEventListener('submit', async ev => {
     ev.preventDefault(); const ok = f.querySelector('.danger-outline'); ok.disabled = true;
-    try { await api(`/payments/${encodeURIComponent(b.dataset.voidPayment)}/void`, 'POST', { reason: f.reason.value }); toast('Đã huỷ phiếu thu.'); openOrder(sales.order.id); }
+    const id=sales.order.id,session=token,route=location.hash;
+    try { const result=await api(`/payments/${encodeURIComponent(b.dataset.voidPayment)}/void`, 'POST', { reason: f.reason.value, returnDetail:true }); if(session!==token||route!==location.hash)return;toast('Đã huỷ phiếu thu.'); openOrder(id,result.detail); }
     catch (ex) { f.querySelector('small').textContent = ex.message; ok.disabled = false; }
   });
 });
