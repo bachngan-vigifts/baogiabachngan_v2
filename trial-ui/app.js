@@ -1,3 +1,4 @@
+import { parseSkuQuantities, pasteRows } from './quote-paste.js';
 import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters } from './customer-list-filters.js';
 import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
@@ -1242,7 +1243,7 @@ function packingSpec(r) {
   return parts.join('; ');
 }
 function lineCell(r, i) {
-  const n = (k, label, extra = '') => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${fmtNum(Number(r[k] || 0), NUM_FIELDS[k])}" aria-label="${label} dòng ${i + 1}" ${extra}>`;
+  const n = (k, label, extra = '') => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${r[k] === '' ? '' : fmtNum(Number(r[k] || 0), NUM_FIELDS[k])}" aria-label="${label} dòng ${i + 1}" ${extra}>`;
   const costMode = costModeOf(r), costValue = costMode === 'manual' ? r.costPrice : r.purchaseDiscount;
   const hrc = editor.type === 'HRC';
   const meta = [r.brand, r.pattern, r.pricePolicy, Number.isFinite(r.taxRate) ? `VAT ${fmtNum(r.taxRate)}%` : ''].filter(Boolean).join(' · ');
@@ -1344,7 +1345,7 @@ $('#line-list').addEventListener('input', e => {
   if (k === 'purchaseCost') { if (!isManager()) return; costInput(input, r); }
   else if (k in NUM_FIELDS) {
     const v = validateRowInput(input, r);
-    r[k] = v ?? 0;
+    r[k] = input.value.trim() === '' && ['price','qty','discount'].includes(k) ? '' : v ?? 0;
     if (k === 'price') { const d = input.closest('tr').querySelector('[data-k="discount"]'); if (d) validateRowInput(d, r); }
     syncCost(r);
   } else r[k] = input.value;
@@ -1358,7 +1359,7 @@ $('#line-list').addEventListener('focusout', e => {
   }
   const input = e.target.closest('[data-k]'); if (!input || !(input.dataset.k in NUM_FIELDS) || input.classList.contains('invalid')) return;
   const r = editor.rows[input.closest('tr').dataset.i], k = input.dataset.k;
-  input.value = fmtNum(Number(r[k] || 0), NUM_FIELDS[k]);
+  input.value = r[k] === '' ? '' : fmtNum(Number(r[k] || 0), NUM_FIELDS[k]);
 });
 let selectedLine = 0;
 $('#line-list').addEventListener('focusin', e => {
@@ -1965,28 +1966,40 @@ $('#save-to-contacts').addEventListener('click', async () => {
   finally { btn.disabled = false; }
 });
 
-// ----- dán từ Excel
-function parsePaste(text) {
-  return text.split(/\r?\n/).map(l => l.split('\t').map(s => s.trim())).filter(c => c.some(Boolean)).map(c => {
-    const [name = '', sku = '', unit = '', qty = '1', price = '0'] = c;
-    const q = parseNum(qty), p = parseNum(price);
-    return { ...blankRow(), name, sku, unit, qty: q >= 0 ? q : 1, price: p >= 0 ? p : 0 };
-  });
-}
-$('#paste-lines').addEventListener('click', () => { $('#paste-text').value = ''; $('#paste-preview').textContent = ''; $('#paste-dialog').showModal(); });
-$('#paste-text').addEventListener('input', e => {
-  const rows = parsePaste(e.target.value);
-  $('#paste-preview').textContent = rows.length ? `Nhận được ${rows.length} dòng · tổng ${money(rows.reduce((s, r) => s + r.qty * r.price, 0))} (trước chiết khấu).` : '';
+// ----- dán từ Excel: SKU + số lượng, thông tin và chính sách lấy từ dữ liệu CRM.
+const parsePaste = text => parseSkuQuantities(text, parseNum);
+let pasteBusy = false;
+$('#paste-lines').addEventListener('click', () => {
+  if(pasteBusy)return;
+  $('#paste-text').value = ''; $('#paste-preview').textContent = ''; $('#paste-dialog').showModal();
 });
-$('#paste-form').addEventListener('submit', e => {
-  e.preventDefault();
-  const rows = parsePaste($('#paste-text').value);
-  if (!rows.length) { $('#paste-preview').textContent = 'Chưa có dòng nào. Hãy dán dữ liệu sao chép từ Excel.'; return; }
-  const keep = editor.rows.filter(r => r.name || Number(r.price));
-  if (keep.length + rows.length > 300) { $('#paste-preview').textContent = 'Báo giá tối đa 300 dòng.'; return; }
-  editor.rows = [...keep, ...rows];
-  $('#paste-dialog').close(); markDirty(); renderLines();
-  toast(`Đã thêm ${rows.length} sản phẩm.`);
+$('#paste-text').addEventListener('input', e => {
+  try { const rows=parsePaste(e.target.value);$('#paste-preview').textContent=rows.length?`Nhận được ${rows.length} dòng. Giá và chiết khấu theo chính sách hiện tại; ô thiếu để nhập tay.`:''; }
+  catch(error){$('#paste-preview').textContent=error.message;}
+});
+$('#paste-form').addEventListener('submit', async e => {
+  e.preventDefault();if(pasteBusy)return;
+  const preview=$('#paste-preview'),button=$('#paste-apply'),text=$('#paste-text'),dialog=$('#paste-dialog');
+  let items;
+  try{items=parsePaste(text.value);}catch(error){preview.textContent=error.message;return;}
+  if(!items.length){preview.textContent='Dán cột Mã hàng và Số lượng từ Excel.';return;}
+  if(items.length>300){preview.textContent='Báo giá tối đa 300 dòng.';return;}
+  const context={sequence:editorLoadSequence,id:editor.id,customerId:editor.customerId,policy:preferredPolicy,discount:editor.defaultDiscount,mode:editor.discountMode};
+  const current=()=>dialog.open&&context.sequence===editorLoadSequence&&context.id===editor.id&&context.customerId===editor.customerId&&context.policy===preferredPolicy&&context.discount===editor.defaultDiscount&&context.mode===editor.discountMode;
+  pasteBusy=true;button.disabled=true;text.disabled=true;button.textContent='Đang tìm mã hàng…';preview.textContent='Đang lấy thông tin sản phẩm và chính sách…';
+  try{
+    const wanted=new Set(items.map(item=>item.sku).filter(Boolean));
+    const products=(catalog.items||[]).filter(product=>wanted.has(product.sku));
+    const found=new Set(products.map(product=>product.sku)),missing=[...wanted].filter(sku=>!found.has(sku));
+    const lookup=missing.length?api('/products?skus='+encodeURIComponent(missing.join(','))):Promise.resolve(null);
+    const [data]=await Promise.all([lookup,loadBrandDiscounts({strict:true})]);
+    if(!current()){if(dialog.open)preview.textContent='Báo giá, khách hàng hoặc chính sách đã đổi. Bấm thêm lại để áp đúng chính sách.';return;}
+    if(data){products.push(...data.products);if(!state.policies.length&&data.policies)state.policies=data.policies;}
+    const {rows,warnings}=pasteRows(items,products,{blankRow,rowFromProduct});
+    if(!addRowsToQuote(rows)){preview.textContent='Báo giá tối đa 300 dòng.';return;}
+    dialog.close();toast(`Đã thêm ${rows.length} dòng.${warnings.length?' Có '+warnings.length+' dòng cần nhập tay thông tin/giá.':''}`);
+  }catch(error){if(current())preview.textContent=error.message;}
+  finally{pasteBusy=false;button.disabled=false;text.disabled=false;button.textContent='Thêm vào báo giá';}
 });
 
 // ----- lưu
@@ -2021,6 +2034,8 @@ function validateQuote(data) {
   if ($$('#line-list input.invalid').length) return 'Có số liệu sản phẩm chưa hợp lệ (ô đỏ). Chiết khấu % tối đa 100, chiết khấu tiền không vượt đơn giá.';
   const unnamed = data.rows.findIndex(r => !r.name);
   if (unnamed >= 0) return `Dòng sản phẩm số ${editor.rows.indexOf(editor.rows.find(r => r.id === data.rows[unnamed].id)) + 1} chưa có tên.`;
+  const incomplete = data.rows.findIndex(r => r.price === '' || r.qty === '' || r.discount === '');
+  if (incomplete >= 0) return `Dòng ${incomplete + 1}: nhập tay số lượng, đơn giá và chiết khấu còn trống (nhập 0 nếu không chiết khấu).`;
   return '';
 }
 let saving = false;
@@ -2521,11 +2536,11 @@ function renderSelection() {
   $('#product-selection-text').textContent = `Đã chọn ${n} sản phẩm`;
 }
 /** Chiết khấu theo thương hiệu của khách đang chọn trên báo giá (trang chi tiết khách hàng) – điền sẵn CK khi thêm sản phẩm. */
-async function loadBrandDiscounts() {
+async function loadBrandDiscounts({ strict = false } = {}) {
   const id = editor.customerId;
   editor.brandDiscounts = null;
   if (!id) return;
-  try { const { discounts } = await api(`/customers/${encodeURIComponent(id)}/discounts`); if (editor.customerId === id) editor.brandDiscounts = discounts; } catch { /* không có CK riêng */ }
+  try { const { discounts } = await api(`/customers/${encodeURIComponent(id)}/discounts`); if (editor.customerId === id) editor.brandDiscounts = discounts; } catch(error) { if(strict)throw Error('Chưa lấy được chiết khấu của khách hàng. Thử lại trước khi thêm sản phẩm.'); }
 }
 /**
  * Dòng báo giá từ sản phẩm trong danh mục – port `catalogChoice`/`addProduct` của bản cũ:
@@ -2533,18 +2548,21 @@ async function loadBrandDiscounts() {
  * thì quy về giá chưa thuế; Manager được điền sẵn giá vốn theo chiết khấu mua vào mặc định của thương hiệu.
  * Trả null (kèm thông báo) nếu bảng giá chưa có giá hoặc sản phẩm chịu thuế mà chưa có thuế đầu ra.
  */
-function rowFromProduct(p) {
+function rowFromProduct(p, { allowMissingPrice = false } = {}) {
   const policy = state.policies.find(x => x.id === currentPolicy()), raw = priceOf(p, currentPolicy());
-  if (raw === null) { toast(`${p.sku}: bảng giá "${policy?.name || ''}" chưa có giá. Chọn bảng giá khác.`, 'err'); return null; }
+  if (raw === null && !allowMissingPrice) { toast(`${p.sku}: bảng giá "${policy?.name || ''}" chưa có giá. Chọn bảng giá khác.`, 'err'); return null; }
   if (p.taxable && !Number.isFinite(p.taxOut)) { toast(`${p.sku}: chưa có thuế đầu ra. Cập nhật thuế trên Sapo trước.`, 'err'); return null; }
   const tax = p.taxable ? p.taxOut : 0;
   const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
-  const price = netPrice(raw, tax, included);
+  const price = raw === null ? '' : netPrice(raw, tax, included);
   const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '', packagingDescription: PACKAGING_DEFAULT };
   // CK theo thương hiệu của khách (Minh Long / Lys / Lock) – thay CK mặc định của dòng khi khách có thiết lập.
-  const brandDisc = editor.brandDiscounts ? customerDiscount(row.brand, editor.brandDiscounts, row.discountType === 'amount' ? 'amount' : 'percent', price) : 0;
-  if (brandDisc > 0) row.discount = row.discountType === 'amount' ? Math.round(brandDisc) : brandDisc;
-  if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; row.costPrice = purchasePrice(price, d); } }
+  const brandKey = brandDiscountKey(row.brand), configured = brandKey && editor.brandDiscounts?.[brandKey];
+  if(typeof configured === 'number' && Number.isFinite(configured) && configured>=0 && configured<=100){
+    const brandDisc = customerDiscount(row.brand,editor.brandDiscounts,row.discountType==='amount'?'amount':'percent',price===''?0:price);
+    row.discount = row.discountType==='amount'&&price===''&&configured>0?'':row.discountType==='amount'?Math.round(brandDisc):brandDisc;
+  }
+  if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; if(price!=='')row.costPrice = purchasePrice(price, d); } }
   if (savableImage(p.imageUrl)) row.image = p.imageUrl;
   for (const k of ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) if (Number(p[k]) > 0) row[k] = Number(p[k]);
   return row;
