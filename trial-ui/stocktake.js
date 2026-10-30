@@ -4,7 +4,7 @@ const button=(text,fn,cls='btn secondary')=>{const b=el('button',cls,text);b.typ
 const number=n=>n===null||n===undefined?'—':Number(n).toLocaleString('vi-VN',{maximumFractionDigits:3});
 
 export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,findProducts}){
- let owner='',config=null,lines=[],warehouseId='',pending=null,busy=false,stockRun=0,searchRun=0,timer=0,stockTimer=0;
+ let owner='',config=null,lines=[],warehouseId='',pending=null,busy=false,stockRun=0,searchRun=0,sendRun=0,timer=0,stockTimer=0;
  const page=el('div','sup-page'),head=el('div','page-head'),titles=el('div');
  titles.append(el('span','eyebrow','Kho hàng'),el('h1','','Kiểm kê hàng'),el('p','muted','Chọn kho, thêm sản phẩm và nhập số thực đếm. Gửi phiếu chờ Manager duyệt hoàn thành; chưa duyệt thì chưa thay đổi tồn.'));
  head.append(titles);
@@ -78,14 +78,14 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
    if(lines.some(l=>l.countedQty===null||!Number.isFinite(l.countedQty)||l.countedQty<0||l.expectedQty===null)){feedback.textContent='Nhập số thực đếm cho mọi dòng (kể cả 0) và lấy lại tồn nếu chưa có số đối chiếu.';return;}
    pending={source:'stocktake',clientKey:crypto.randomUUID(),warehouseId,reason:reason.value.trim(),lines:lines.map(({sku,expectedQty,countedQty})=>({sku,expectedQty,countedQty}))};save();
   }
-  const id=owner;busy=true;feedback.textContent='';freeze();
+  const id=owner,run=++sendRun;busy=true;feedback.textContent='';freeze();
   try{const result=await api('/inventory/adjustments','POST',pending);if(id!==userId())return;pending=null;lines=[];reason.value='';save();render();toast('Đã gửi phiếu '+result.refNo+' chờ Manager duyệt.');await queue.load(config);}
   catch(e){if(id!==userId())return;const unknown=!e.status||e.status>=500;if(!unknown)pending=null;feedback.textContent=e.message+(unknown?' Chưa rõ kết quả; bấm kiểm tra lại lần gửi, không lập phiếu khác.':'');save();}
-  finally{busy=false;if(id===userId()){freeze();}}
+  finally{if(run===sendRun){busy=false;if(id===userId())freeze();}}
  }
  async function load(){
   const id=userId();if(!id)return;
-  if(owner!==id){owner=id;stockRun++;searchRun++;pending=null;lines=[];warehouseId='';reason.value='';try{const draft=JSON.parse(localStorage.getItem(key())||'null');if(draft&&Array.isArray(draft.lines)&&draft.lines.length<=1000){lines=draft.lines;warehouseId=draft.warehouseId||'';reason.value=draft.reason||'';pending=draft.pending||null;}}catch{}render();}
+  if(owner!==id){owner=id;stockRun++;searchRun++;sendRun++;busy=false;config=null;pending=null;lines=[];warehouseId='';reason.value='';try{const draft=JSON.parse(localStorage.getItem(key())||'null');if(draft&&Array.isArray(draft.lines)&&draft.lines.length<=1000){lines=draft.lines;warehouseId=draft.warehouseId||'';reason.value=draft.reason||'';pending=draft.pending||null;}}catch{}render();}
   try{const next=await api('/inventory/status');if(id!==userId())return;config=next;const placeholder=el('option','','Chọn kho kiểm kê');placeholder.value='';warehouse.replaceChildren(placeholder);
    for(const wh of config.warehouses){const option=el('option','',wh.name+(wh.openedAt?'':' · Chưa chốt đầu kỳ'));option.value=wh.id;option.disabled=!wh.openedAt;warehouse.append(option);}
    warehouse.value=warehouseId;if(warehouseId&&!config.warehouses.some(w=>w.id===warehouseId&&w.openedAt))feedback.textContent='Kho của bản nháp không còn sẵn sàng kiểm kê. Chọn lại kho trước khi gửi.';if(!config.canManage)feedback.textContent='Bạn có quyền xem; cần quyền lập đề nghị điều chỉnh để gửi kiểm kê.';freeze();await queue.load(config);
