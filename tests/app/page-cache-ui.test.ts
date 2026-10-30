@@ -42,3 +42,11 @@ test('không đệm số chứng từ kế tiếp; lệnh chỉ đọc / đánh 
   c.drop('/orders/o1');
   assert.equal(c.get('/orders/o1', 's1'), null); assert.notEqual(c.get('/orders', 's1'), null, 'chỉ bỏ đúng trang đó');
 });
+
+test('đệm thêm các trang chỉ để xem: hàng sắp về, lịch nhận NCC, công nợ NCC, nguồn mua, thẻ kho, kho, việc kế toán, khách trùng, trang kho', () => {
+  for (const p of ['/purchase-incoming?q=&page=1', '/purchase-receiving-calendar?from=2026-10-01&to=2026-10-31', '/supplier-payables', '/purchase-sources?q=ly',
+    '/inventory/card?sku=A&warehouseId=w', '/stock-warehouses', '/tasks/accounting/daily', '/customer-duplicates', '/warehouse-work'])
+    assert.equal(isCacheable(p), true, p);
+  for (const p of ['/tasks/accounting/checks', '/supplier-payments/x']) assert.equal(isCacheable(p), false, p);
+  assert.equal(isCacheable('/purchase-incoming', 'POST'), false, 'lệnh ghi không đệm');
+});

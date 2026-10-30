@@ -6,7 +6,9 @@
 //  - Gắn với phiên đăng nhập: đổi tài khoản / đăng xuất không thấy dữ liệu của phiên trước.
 //  - Trả bản sao (trang có thể sửa đối tượng nhận được mà không làm hỏng bản đệm).
 const TTL_MS = 10 * 60_000, RECENT_MS = 3000, MAX_ENTRIES = 60;
-const LIST = /^\/(orders|contracts|customers|tasks|purchase-orders|purchase-early-requests|purchase-options|suppliers|stock-moves|stock-transfers|stock-holds|stock-requests|deliveries|packing|receivables|payables|cashbook|care|quote-docs|inventory\/(status|compare|adjustments)|dashboard\/[\w-]+|flow)(\?|$)/;
+// Thêm (31/10): Hàng sắp về, Lịch nhận hàng NCC, Công nợ NCC, Nguồn mua, thẻ kho, danh sách kho, Việc kế toán trong ngày,
+// Khách trùng, Trang kho – đều chỉ để xem; tiền / quầy / chat / thông báo / phân quyền / lương vẫn không đệm.
+const LIST = /^\/(orders|contracts|customers|tasks|purchase-orders|purchase-early-requests|purchase-options|suppliers|stock-moves|stock-transfers|stock-holds|stock-requests|deliveries|packing|receivables|payables|cashbook|care|quote-docs|inventory\/(status|compare|adjustments|card)|dashboard\/[\w-]+|flow|purchase-incoming|purchase-receiving-calendar|supplier-payables|purchase-sources|stock-warehouses|tasks\/accounting\/daily|customer-duplicates|warehouse-work)(\?|$)/;
 const DETAIL = /^\/(orders|contracts|customers|tasks|purchase-orders|suppliers|stock-transfers|packing)\/[^/?]+(\?|$)/;
 // Ô chọn khách (`usable=1`) có bộ nhớ riêng (customer-search.js): không chiếm chỗ của các trang danh sách.
 // Số chứng từ kế tiếp (`next-no`) luôn lấy mới: người khác vừa tạo đơn / HĐKT thì số cũ sẽ bị máy chủ báo trùng.
