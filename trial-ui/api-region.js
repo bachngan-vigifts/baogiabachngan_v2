@@ -7,8 +7,16 @@
 const KEY = 'bn-api-region', VALID = /^[a-z]{2}-[a-z]+-\d$/;
 const dbRegionOf = header => /(?:^|,)\s*dbregion;desc="([^"]*)"/.exec(String(header || ''))?.[1] || '';
 
-export function createApiRegion({ storage = () => globalThis.localStorage } = {}) {
+// TẠM TẮT (30/10/2026): nhân viên báo không truy cập được sau khi bật. Lượt ép vùng lỗi thì bỏ ép vùng, nhưng phản hồi
+// kế tiếp lại có `dbregion` nên giao diện học lại và ép tiếp → cứ một lượt lại lỗi một lượt. Mặc định tắt và xoá vùng đã lưu;
+// chỉ bật lại (enabled: true) sau khi kiểm chứng tham số chọn vùng với Supabase và chặn được việc học lại sau khi lỗi.
+export const REGION_PINNING = false;
+export function createApiRegion({ storage = () => globalThis.localStorage, enabled = REGION_PINNING } = {}) {
   let region = '';
+  if (!enabled) {
+    try { storage()?.removeItem(KEY); } catch { /* bỏ qua */ }
+    return { url: url => ({ url, forced: '' }), observe() {}, failed() {}, current: () => '' };
+  }
   try { region = storage()?.getItem(KEY) || ''; } catch { /* chế độ riêng tư */ }
   if (!VALID.test(region)) region = '';
   const save = next => { region = next; try { if (next) storage()?.setItem(KEY, next); else storage()?.removeItem(KEY); } catch { /* bỏ qua */ } };
