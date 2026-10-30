@@ -307,7 +307,7 @@ const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>
 
 const requestPriority = createRequestPriority();
 createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
-const regionCanary = createRegionCanary({ onDisabled: () => toast('Đã tắt thử máy chủ cạnh CSDL (có lỗi kết nối). App dùng lại máy chủ mặc định.', 'err') });
+const regionCanary = createRegionCanary({ onDisabled: () => toast('Máy chủ nhanh lỗi kết nối trên máy này – đã chuyển về máy chủ dự phòng.', 'err') });
 const pageCache = createPageCache(); // trang mở lại hiện ngay (page-cache.js)
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
@@ -337,14 +337,14 @@ async function apiRequest(path, method = 'GET', body) {
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
-  // Thử máy chủ cạnh CSDL (chỉ máy đã bật trong "Đo tốc độ"): thêm header x-region; lỗi là tự tắt (api-region.js).
+  // Máy chủ cạnh CSDL (mặc định bật, api-region.js): thêm header x-region; lỗi là tắt và giữ tắt trên máy này.
   let sentAt = 0, canary = regionCanary.headers();
   const send = () => requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(API + path, { method, headers: { ...headers, ...canary }, body: body === undefined ? undefined : JSON.stringify(body) }); });
   try { res = await send(); }
   catch {
     const tried = !!canary['x-region'];
     regionCanary.failed(tried);
-    // Lệnh đọc lỗi mạng khi đang thử: thử lại một lần theo máy chủ mặc định (lệnh ghi không bao giờ tự gửi lại).
+    // Lệnh đọc lỗi mạng khi dùng máy chủ cạnh CSDL: thử lại một lần theo máy chủ mặc định (lệnh ghi không bao giờ tự gửi lại).
     if (tried && method === 'GET') { canary = {}; try { res = await send(); } catch { /* báo lỗi bên dưới */ } }
     if (!res) throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
@@ -4330,32 +4330,69 @@ document.addEventListener('click', async e => {
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
 });
 const PACKING_FILTER_KEY = 'packingFilter';
-const packingFilter = () => { try { return localStorage.getItem(PACKING_FILTER_KEY) === 'packed' ? 'packed' : 'sent'; } catch { return 'sent'; } };
+const PACKING_FILTERS = [['sent', 'Chưa đóng'], ['packed', 'Đã đóng'], ['all', 'Tất cả']];
+const packingFilter = () => { try { const v = localStorage.getItem(PACKING_FILTER_KEY); return PACKING_FILTERS.some(([k]) => k === v) ? v : 'sent'; } catch { return 'sent'; } };
+/** Bộ lọc danh sách phiếu đóng gói (giữ trong phiên): tìm số phiếu / đơn / khách, nguồn hàng, khoảng ngày giao dự kiến. */
+const packingQuery = { q: '', source: '', from: '', to: '' };
 $('#packing-body').addEventListener('click', e => {
-  const b = e.target.closest('[data-packing-filter]'); if (!b) return;
-  try { localStorage.setItem(PACKING_FILTER_KEY, b.dataset.packingFilter); } catch { /* bỏ qua */ }
-  openPacking(null);
+  const b = e.target.closest('[data-packing-filter]');
+  if (b) { try { localStorage.setItem(PACKING_FILTER_KEY, b.dataset.packingFilter); } catch { /* bỏ qua */ } openPacking(null); return; }
+  if (e.target.closest('[data-packing-reset]')) { Object.assign(packingQuery, { q: '', source: '', from: '', to: '' }); openPacking(null); return; }
+  if (e.target.closest('[data-packing-refresh]')) { openPacking(null); return; }
+  const row = e.target.closest('[data-packing-open]');
+  if (row && !e.target.closest('a,button')) location.hash = '#/packing/' + encodeURIComponent(row.dataset.packingOpen);
+});
+$('#packing-body').addEventListener('keydown', e => { const row = e.target.closest('[data-packing-open]'); if (row && e.key === 'Enter' && e.target === row) location.hash = '#/packing/' + encodeURIComponent(row.dataset.packingOpen); });
+$('#packing-body').addEventListener('submit', e => {
+  const f = e.target.closest('#packing-filter-form'); if (!f) return; e.preventDefault();
+  const v = Object.fromEntries(new FormData(f));
+  if (v.from && v.to && v.from > v.to) { toast('Từ ngày phải trước hoặc bằng đến ngày.', 'err'); return; }
+  Object.assign(packingQuery, { q: String(v.q || '').trim(), source: v.source || '', from: v.from || '', to: v.to || '' }); openPacking(null);
 });
 /** Trang phiếu đóng gói (#/packing/<id>): kho xem hàng cần đóng, quy cách gợi ý, cân nặng; xác nhận kèm 1–3 ảnh. Không id: danh sách phiếu chờ đóng. */
 const slipPhotos = [];
 let packingView = null; // phiếu đang mở ở #/packing/<id> (cho nút in)
 async function openPacking(id) {
   const body = $('#packing-body'); body.innerHTML = '<p class="muted card">Đang tải…</p>'; $('#packing-actions').innerHTML = ''; $('#packing-status').innerHTML = '';
+  $('#view-packing .editor-head').hidden = !id;
   if (!id) {
-    // Bộ lọc: Chưa đóng (đã gửi kho, chờ đóng) · Đã đóng. Nhớ lựa chọn trên máy.
-    const filter = packingFilter();
-    $('#packing-title').textContent = filter === 'packed' ? 'Phiếu đã đóng gói' : 'Phiếu chờ đóng gói'; $('#packing-back').href = isWarehouse() ? KHO_HOME : '#/tasks'; $('#packing-back').textContent = isWarehouse() ? '‹ Trang kho' : '‹ Công việc';
-    const chips = `<div class="chips packing-filter" role="tablist">${[['sent', 'Chưa đóng'], ['packed', 'Đã đóng']].map(([k, t]) =>
-      `<button type="button" class="chip ${k === filter ? 'active' : ''}" data-packing-filter="${k}" aria-selected="${k === filter}">${t}</button>`).join('')}</div>`;
-    body.innerHTML = chips + '<p class="muted card">Đang tải…</p>';
+    // BỐ CỤC TOÀN TRANG như các trang danh sách khác: đầu trang · chip trạng thái + khung lọc · bảng phiếu bấm được từng dòng.
+    const filter = packingFilter(), q = packingQuery, mine = Symbol();
+    openPacking.run = mine;
+    $('#breadcrumb').textContent = 'Phiếu đóng gói'; document.title = 'Phiếu đóng gói · Bách Ngân';
+    const back = isWarehouse() ? [KHO_HOME, '‹ Trang kho'] : ['#/tasks', '‹ Công việc'];
+    const sources = Object.entries({ warehouse: 'Kho', store: 'Điều chuyển từ cửa hàng', supplier: 'Nhập từ NCC', agent: 'Lấy từ đại lý', other: 'Nguồn khác' });
+    const top = `<div class="page-head"><div><span class="eyebrow">Kho hàng</span><h1>Phiếu đóng gói</h1><p class="muted">Phiếu Sale gửi kho để lấy hàng, đóng gói và xuất kho. Bấm một dòng để mở phiếu, tick hàng và xác nhận đã đóng.</p></div>
+      <div class="head-actions row-gap"><a class="btn ghost small" href="${esc(back[0])}">${esc(back[1])}</a><button type="button" class="btn secondary small" data-packing-refresh>Làm mới</button></div></div>
+      <section class="panel packing-list-panel"><div class="toolbar chips packing-filter" role="tablist">${PACKING_FILTERS.map(([k, t]) =>
+        `<button type="button" class="chip ${k === filter ? 'active' : ''}" role="tab" data-packing-filter="${k}" aria-selected="${k === filter}">${t}</button>`).join('')}</div>
+      <form class="transfer-filter-grid" id="packing-filter-form">
+        <label>Tìm phiếu<input type="search" name="q" maxlength="80" value="${esc(q.q)}" placeholder="Số phiếu, số đơn / HĐKT hoặc khách…" aria-label="Tìm phiếu đóng gói"></label>
+        <label>Nguồn hàng<select name="source" aria-label="Lọc nguồn hàng"><option value="">Tất cả nguồn</option>${sources.map(([k, t]) => `<option value="${k}"${k === q.source ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label>Giao từ ngày<input type="date" name="from" value="${esc(q.from)}" aria-label="Giao từ ngày"></label>
+        <label>Giao đến ngày<input type="date" name="to" value="${esc(q.to)}" aria-label="Giao đến ngày"></label>
+        <button type="submit" class="btn primary small">Lọc</button><button type="button" class="btn secondary small" data-packing-reset>Xoá bộ lọc</button>
+      </form>`;
+    body.innerHTML = top + '<p class="muted transfer-filter-note">Đang tải phiếu…</p></section>';
     try {
-      const { slips } = await api('/packing?status=' + filter);
-      if (packingFilter() !== filter) return;
-      body.innerHTML = chips + (slips.length ? `<div class="card"><ul class="plain-list">${slips.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)} · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}${x.expectedDeliveryDate ? ' · giao ' + fmtDate(x.expectedDeliveryDate) : ''}${filter === 'packed' && x.packedAt ? ' · đóng ' + new Date(x.packedAt).toLocaleDateString('vi-VN') : ''}${x.packedNote ? ' · ' + esc(x.packedNote) : ''}</small></span>${kg(x.totalWeight)}</li>`).join('')}</ul></div>`
-        : `<p class="muted card">${filter === 'packed' ? 'Chưa có phiếu nào đã đóng.' : 'Không có phiếu nào chờ đóng gói.'}</p>`);
-    } catch (e) { body.innerHTML = chips + `<p class="error card">${esc(e.message)}</p>`; }
+      const p = new URLSearchParams({ status: filter }); for (const k of ['q', 'source', 'from', 'to']) if (q[k]) p.set(k, q[k]);
+      const { slips } = await api('/packing?' + p);
+      if (openPacking.run !== mine) return;
+      const filtered = q.q || q.source || q.from || q.to;
+      const rows = slips.map(x => `<tr class="clickable" tabindex="0" data-packing-open="${esc(x.id)}" title="${esc(x.sourceNote || '')}">
+        <td class="first"><b>${esc(x.slipNo)}</b><small>${new Date(x.createdAt).toLocaleDateString('vi-VN')}</small></td>
+        <td data-label="Khách hàng">${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)}</small></td>
+        <td data-label="Nguồn hàng">${esc(x.sourceLabel)}${x.sourceNote ? `<small>${esc(x.sourceNote)}</small>` : ''}</td>
+        <td data-label="Giao dự kiến">${x.expectedDeliveryDate ? duePill(x.expectedDeliveryDate, { done: x.status === 'packed', fmt: fmtDate }) : '—'}</td>
+        <td data-label="Cân nặng" class="num">${x.totalWeight ? kg(x.totalWeight) : '—'}</td>
+        <td data-label="Trạng thái">${pill(PACK_STATUS, x.status)}${x.packedAt ? `<small>đóng ${new Date(x.packedAt).toLocaleDateString('vi-VN')}</small>` : ''}</td>
+        <td class="actions-cell"><div class="row-actions"><a class="btn ${x.status === 'sent' ? 'primary' : 'secondary'} small" href="#/packing/${esc(x.id)}">${x.status === 'sent' ? 'Đóng gói' : 'Xem phiếu'}</a></div></td></tr>`).join('');
+      body.innerHTML = top + `<p class="muted transfer-filter-note" role="status">${slips.length ? `${fmtNum(slips.length)} phiếu${slips.length >= 200 ? ' · hiện 200 phiếu mới nhất' : ''}` : filtered ? 'Không có phiếu khớp bộ lọc.' : filter === 'packed' ? 'Chưa có phiếu nào đã đóng.' : 'Không có phiếu nào chờ đóng gói.'}</p>`
+        + (slips.length ? `<div class="table-wrap"><table class="data-table packing-table"><thead><tr><th>Số phiếu</th><th>Khách hàng</th><th>Nguồn hàng</th><th>Giao dự kiến</th><th class="num">Cân nặng</th><th>Trạng thái</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '') + '</section>';
+    } catch (e) { if (openPacking.run === mine) body.innerHTML = top + `<p class="error transfer-filter-note">${esc(e.message)}</p></section>`; }
     return;
   }
+  openPacking.run = null;
   let d; try { d = await api('/packing/' + encodeURIComponent(id)); } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; return; }
   const k = d.slip, o = d.order, needsWarehouse = d.requiresWarehouseIssue ?? (k.source === 'warehouse' || d.lines.some(l => String(l.sku || '').trim())); slipPhotos.length = 0;
   $('#packing-title').textContent = k.slipNo; $('#breadcrumb').textContent = k.slipNo; document.title = k.slipNo + ' · Bách Ngân';

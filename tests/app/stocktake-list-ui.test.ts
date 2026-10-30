@@ -41,8 +41,13 @@ test('list-first layout, plus opens new sheet, automatic stock/pending lookup an
  const saved=h.drafts.get('bn-stocktake-draft:employee');await h.button('KK_001_30102026').click();assert.deepEqual(h.opened,['p1']);assert.equal(h.label('Thực đếm SKU1'),count);assert.equal(h.label('Lý do kiểm kê').value,'Kiểm tra kho');assert.equal(h.drafts.get('bn-stocktake-draft:employee'),saved,'opening a quick view requires no save');
  assert.equal(h.panel().hidden,false);await h.button('‹ Danh sách phiếu').click();assert.equal(h.panel().hidden,true);await h.button('Tiếp tục phiếu đang nhập').click();assert.equal(h.label('Thực đếm SKU1').value,'7');
 });
-test('stock drift preserves the typed count and requires a recount; after correction submission returns to the list',async()=>{
+test('stock drift preserves the typed count; re-typing the count uses current stock, sending as-is applies the counted difference',async()=>{
  const h=await harness();h.state.pending={};await h.start();const count=h.label('Thực đếm SKU1');count.value='7';count.events.input!();h.state.stock=11;await h.flush();
- assert.equal(count.value,'7');assert.match(h.panel().textContent,/Cần kiểm đếm lại/);assert.equal(h.button('Gửi Manager duyệt').disabled,true);
- count.value='6';count.events.input!();assert.equal(h.button('Gửi Manager duyệt').disabled,false);await h.button('Gửi Manager duyệt').click();assert.equal(h.writes.length,1);assert.equal(h.writes[0].lines[0].expectedQty,11);assert.equal(h.writes[0].lines[0].countedQty,6);assert.equal(h.panel().hidden,true);
+ assert.equal(count.value,'7');assert.match(h.panel().textContent,/tồn đổi sau lúc đếm/);assert.equal(h.button('Gửi Manager duyệt').disabled,false);
+ count.value='6';count.events.input!();assert.equal(h.button('Gửi Manager duyệt').disabled,false);await h.button('Gửi Manager duyệt').click();assert.equal(h.writes.length,1);assert.equal(h.writes[0].lines[0].expectedQty,11);assert.equal(h.writes[0].lines[0].countedQty,6);assert.equal(h.writes[0].applyDelta,undefined);assert.equal(h.panel().hidden,true);
+});
+
+test('stock drift sent without recount asks once and submits by difference (applyDelta)',async()=>{
+ const h=await harness();h.state.pending={};await h.start();const count=h.label('Thực đếm SKU1');count.value='7';count.events.input!();h.state.stock=11;await h.flush();
+ await h.button('Gửi Manager duyệt').click();assert.equal(h.writes.length,1);assert.equal(h.writes[0].lines[0].expectedQty,10);assert.equal(h.writes[0].lines[0].countedQty,7);assert.equal(h.writes[0].applyDelta,true);
 });

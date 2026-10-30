@@ -29,3 +29,16 @@ Không thay API, schema, quyền, công thức tiền/thuế/chiết khấu, t�
 - Toàn bộ bộ test chạy tiếp trên CI của PR.
 
 Các ảnh và `results.json` trong thư mục này lấy từ fixture cục bộ. File Word tải thử nằm trong `/workspace/scratch/contract-document-consistency`, không phải hồ sơ khách thật.
+
+## Liên kết điều khoản và mẫu chung (30/10/2026)
+
+- Chi tiết HĐKT nhận tỷ lệ cọc, hạn thanh toán theo số ngày, thời gian và địa chỉ giao hàng từ báo giá nguồn. Dữ liệu được nối vào truy vấn HĐKT hiện có, không thêm request hay truy vấn riêng khi mở đơn.
+- Khi lưu hồ sơ, API cập nhật đúng các điều khoản đã thay đổi vào JSON báo giá, giữ nguyên sản phẩm, giá, VAT, địa chỉ pháp lý khách hàng và các ghi chú khác. Báo giá có bản lưu `quote_revisions` và audit chỉ rõ HĐKT nguồn.
+- Kiểm tra cả phiên bản HĐKT và báo giá; báo giá vừa đổi thì trả 409, toàn bộ giao dịch HĐKT/báo giá/lịch phải thu được hoàn tác. Giữ quyền Manager đối với tỷ lệ cọc, số ngày thanh toán và báo giá đã duyệt.
+- Lưu báo giá theo luồng hiện có cũng cập nhật các điều khoản tương ứng vào HĐKT và lịch phải thu. Nội dung hạn thanh toán dạng chữ được giữ khi chỉ sửa trường khác, không tự đổi thành 0 ngày. Không đổi các chuyến giao hàng thực tế.
+- Hai pháp nhân dùng chung `trial-ui/mau-bien-ban-ban-giao-nghiem-thu.docx`, điền riêng tên công ty, địa chỉ, MST và người đại diện. Cả bộ hồ sơ dùng Times New Roman, kể cả bảng sao chép, bản xem và Word/ZIP.
+- Các đoạn ngày ký, thời gian/địa chỉ giao hàng và điều khoản thanh toán trong HĐKT theo ô điền mẫu. Các sửa chữ trước khi đổi font được đối chiếu hash của đoạn cũ trước khi chuyển sang font mới; không bỏ kiểm tra hash.
+- Biên bản cũ có sửa văn bản trực tiếp dựa trên mẫu riêng từng pháp nhân có thể cần **Dựng lại hồ sơ này** nếu không đối chiếu được đoạn với mẫu chung. Không tự xoá sửa chữ đã lưu hoặc áp sang đoạn khác; các file mẫu cũ vẫn được giữ trong repo.
+- Không cần migration. Kiểm tra bằng `tests/app/contract-quote-terms.test.ts`, các test HĐKT hiện có và `scripts/testing/contract-document-consistency.mjs` (Chromium cục bộ, dữ liệu giả).
+
+Ảnh bản xem mới: [Bách Ngân](shared-bbnt-bach-ngan.png) · [VIGIFTS](shared-bbnt-vigifts.png). Nội dung trong ảnh là dữ liệu giả để kiểm thử.

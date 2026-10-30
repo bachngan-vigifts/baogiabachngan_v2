@@ -6,7 +6,7 @@ import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { cashLock } from './cash-store.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery, ensurePackingSchedule } from './delivery-store.ts';
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -289,17 +289,23 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
 
   /**
    * Danh sách phiếu: nhóm Kho / Manager thấy mọi phiếu (mặc định phiếu chờ đóng); nhân viên khác thấy phiếu của đơn mình xem được
-   * (dùng cho nút gửi phiếu trong tin nhắn). `status=all` = mọi trạng thái; `q` tìm số phiếu / số đơn / khách.
+   * (dùng cho nút gửi phiếu trong tin nhắn). `status=all` = mọi trạng thái; `q` tìm số phiếu / số đơn / khách;
+   * `source` lọc nguồn hàng; `from` / `to` (YYYY-MM-DD) lọc ngày giao dự kiến của đơn.
    */
   router.get('/packing', async c => {
     const m = viewer(c), all = isPacker(m), p = c.url.searchParams;
     const status = p.get('status') || (all ? 'sent' : 'all');
+    const source = p.get('source') || '', from = p.get('from') || '', to = p.get('to') || '', DAY = /^\d{4}-\d{2}-\d{2}$/;
+    if (source && !(PACKING_SOURCES as readonly string[]).includes(source)) throw new AppError(400, 'Nguồn hàng không hợp lệ.');
+    if ((from && !DAY.test(from)) || (to && !DAY.test(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày giao không hợp lệ.');
     // Dọn phiếu còn treo của đơn đã giao (kể cả dữ liệu cũ trước khi có tự hoàn tất).
     if (all) await closeSlipsOfDeliveredOrders(c.env.db);
     const rows = await c.env.db.select({ slip: packingSlips, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, expectedDeliveryDate: salesOrders.expectedDeliveryDate })
       .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, packingSlips.orderId))
       .where(and(posOrderStoreScope(m),all ? undefined : orderScopeFor(m),
         (PACKING_STATUSES as readonly string[]).includes(status) ? eq(packingSlips.status, status as typeof PACKING_STATUSES[number]) : undefined,
+        source ? eq(packingSlips.source, source as PackingSource) : undefined,
+        from ? gte(salesOrders.expectedDeliveryDate, from) : undefined, to ? lte(salesOrders.expectedDeliveryDate, to) : undefined,
         matchAllWords(foldSql(packingSlips.slipNo, salesOrders.orderNo, salesContracts.contractNo, salesOrders.customerName), p.get('q'))))
       .orderBy(...rankFirst(searchRank([packingSlips.slipNo, salesOrders.orderNo, salesContracts.contractNo], salesOrders.customerName, p.get('q'))), desc(packingSlips.createdAt), desc(packingSlips.id)).limit(200);
     return json({ slips: rows.map(r => ({ ...r.slip, sourceLabel: PACKING_SOURCE_LABEL[r.slip.source], orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName, expectedDeliveryDate: r.expectedDeliveryDate })) });

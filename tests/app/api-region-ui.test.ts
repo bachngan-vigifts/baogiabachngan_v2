@@ -38,18 +38,29 @@ test('mặc định TẮT ép vùng (sự cố 30/10): không thêm tham số, x
 });
 
 const { createRegionCanary }: any = await import(new URL('../../trial-ui/api-region.js', import.meta.url).href);
-test('thử máy chủ cạnh CSDL: chỉ bật khi người dùng bấm, gửi header x-region; lỗi là tự tắt hẳn, không tự bật lại', () => {
+test('máy chủ cạnh CSDL bật mặc định cho mọi máy; lỗi là tắt và GIỮ TẮT trên máy đó, không tự bật lại', () => {
   const store = memory(); let off = 0;
   const c = createRegionCanary({ storage: () => store, onDisabled: () => off++ });
-  assert.deepEqual(c.headers(), {}, 'mặc định không gửi gì');
-  c.observe('total;dur=1, dbregion;desc="ap-northeast-2"', false); assert.deepEqual(c.headers(), {}, 'không tự học vùng');
-  c.enable();
-  assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' });
-  assert.equal(createRegionCanary({ storage: () => store }).enabled(), true, 'nhớ qua lần mở app (chỉ máy này)');
+  assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' }, 'mặc định gửi vùng của CSDL');
+  assert.equal(c.byDefault(), true);
+  assert.equal(store.getItem('bn-api-region-canary'), null, 'mặc định không lưu gì trên máy');
   c.observe('total;dur=1, region;desc="ap-northeast-2"', true); assert.equal(c.enabled(), true, 'phản hồi của máy chủ mình: giữ');
   c.observe(null, true); assert.equal(c.enabled(), false, 'thiếu Server-Timing: tắt'); assert.equal(off, 1);
-  c.observe('total;dur=1, dbregion;desc="ap-northeast-2"', false); assert.equal(c.enabled(), false, 'không tự bật lại');
-  c.enable(); c.failed(true); assert.equal(c.enabled(), false); assert.equal(off, 2);
-  assert.equal(store.getItem('bn-api-region-canary'), null);
+  c.observe('total;dur=1, dbregion;desc="ap-northeast-2"', false); assert.equal(c.enabled(), false, 'không tự học / bật lại');
+  assert.equal(createRegionCanary({ storage: () => store }).enabled(), false, 'mở app lần sau vẫn tắt trên máy này');
+  c.enable(); assert.equal(c.enabled(), true, 'Manager bật lại');
+  assert.equal(createRegionCanary({ storage: () => store }).enabled(), true, 'bật lại được nhớ');
+  c.failed(true); assert.equal(c.enabled(), false); assert.equal(off, 2);
+  assert.equal(createRegionCanary({ storage: () => store }).enabled(), false);
   c.enable('bad"value'); assert.equal(c.enabled(), false, 'vùng sai định dạng bị bỏ qua');
+  c.failed(false); c.observe(null, false); assert.equal(off, 2, 'lượt không gửi header không tính');
+});
+
+test('công tắc tắt cho tất cả (REGION_DEFAULT_ON = false): mọi máy về máy chủ mặc định, xoá vùng / cờ đã lưu', () => {
+  const store = memory(); store.setItem('bn-api-region-canary', 'ap-northeast-2'); store.setItem('bn-api-region-off', '1');
+  const c = createRegionCanary({ storage: () => store, defaultOn: false });
+  assert.deepEqual(c.headers(), {}); assert.equal(store.getItem('bn-api-region-canary'), null); assert.equal(store.getItem('bn-api-region-off'), null);
+  c.enable(); assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' }, 'Manager vẫn bật thử được trên máy mình');
+  assert.equal(createRegionCanary({ storage: () => store, defaultOn: false }).enabled(), false, 'đến lần mở app sau');
+  assert.doesNotThrow(() => createRegionCanary({ storage: () => { throw Error('blocked'); } }).failed(true));
 });

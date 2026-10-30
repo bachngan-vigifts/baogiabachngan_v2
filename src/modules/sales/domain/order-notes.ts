@@ -3,7 +3,7 @@ export interface QuoteNotesSource { notes?: unknown; deliveryDate?: unknown; cus
 type Kind = 'time' | 'address' | 'payment' | 'method';
 const text = (v: unknown) => typeof v === 'string' ? v.trim() : '';
 const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
-function terms(notes: unknown) {
+export function quoteNoteTerms(notes: unknown) {
   const parts: Record<Kind, string[]> = { time: [], address: [], payment: [], method: [] };
   let active: Kind | null = null;
   for (const raw of text(notes).split(/\r?\n/)) {
@@ -27,15 +27,15 @@ function day(date: unknown) {
   return s.split('-').reverse().join('/');
 }
 export function orderDeliveryAddress(source: QuoteNotesSource) {
-  const address = terms(source.notes).address;
+  const address = quoteNoteTerms(source.notes).address;
   return address && !/^theo thoa thuan[.]?$/.test(fold(address)) ? address : text(source.customerAddress) || address;
 }
-function render(t: ReturnType<typeof terms>) {
+function render(t: ReturnType<typeof quoteNoteTerms>) {
   const payment = [t.payment, t.method ? 'Phương thức: ' + t.method : ''].filter(Boolean).join(' ');
   return ['- Thời gian giao hàng: ' + t.time, '- Địa chỉ giao hàng: ' + t.address, '- Thanh toán: ' + payment].join('\n');
 }
 export function orderNotesFromQuote(source: QuoteNotesSource) {
-  const t = terms(source.notes), date = day(source.deliveryDate);
+  const t = quoteNoteTerms(source.notes), date = day(source.deliveryDate);
   if (date) t.time = 'Giao hàng ngày ' + date + '.';
   t.address = orderDeliveryAddress(source);
   return render(t);
@@ -53,7 +53,7 @@ export function syncOrderDeliveryNotes(notes: string, changes: { deliveryDate?: 
     if (at < 0) { lines.splice(kind === 'time' ? 0 : Math.max(0, lines.findIndex(raw => KEY.time.test(fold(raw.trim().replace(/^[-+–•]\s*/, '')))) + 1), 0, line); return; }
     lines[at] = line;
   };
-  if (changes.deliveryDate !== undefined) { const date = day(changes.deliveryDate); setLine('time', 'Thời gian giao hàng', date ? 'Giao hàng ngày ' + date + '.' : terms(source.notes).time); }
+  if (changes.deliveryDate !== undefined) { const date = day(changes.deliveryDate); setLine('time', 'Thời gian giao hàng', date ? 'Giao hàng ngày ' + date + '.' : quoteNoteTerms(source.notes).time); }
   if (changes.deliveryAddress !== undefined) setLine('address', 'Địa chỉ giao hàng', changes.deliveryAddress.replace(/\s+/g, ' ').trim());
   return lines.join('\n').replace(/\s+$/, '');
 }

@@ -53,8 +53,9 @@ export function contractDetails(detail) {
     representativeName: o.contact || '', representativeTitle: '', signedDate: k?.signedDate || todayIso(), depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
     deliveryTime: o.expectedDeliveryDate ? 'Giao hàng ngày ' + dmy(o.expectedDeliveryDate) : 'Theo thỏa thuận của hai bên.', deliveryAddress: k?.deliveryAddress || o.address || '',
     paymentMethod: k?.paymentMethod || 'Chuyển khoản.', ...saved,
-    // Tỉ lệ cọc và số ngày thanh toán phần còn lại luôn theo HĐKT đã lập (khớp kỳ công nợ), không lấy bản lưu cũ.
+    // Báo giá nguồn ưu tiên; HĐKT là giá trị dự phòng cho hồ sơ cũ không có điều khoản nguồn.
     depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
+    ...Object.fromEntries(Object.entries(k?.sourceTerms || {}).filter(([, value]) => value !== undefined)),
   });
 }
 
@@ -104,7 +105,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const dlg = document.createElement('dialog'); dlg.className = 'modal xwide contract-docs';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">HĐKT ${esc(k.contractNo)}</span><h2>${canEdit ? 'Xem, chỉnh sửa và tải hồ sơ HĐKT' : 'Xem và tải hồ sơ HĐKT'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body cd-body">
-      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. ${canEditFinancial ? 'Manager được sửa tỷ lệ cọc và số ngày thanh toán; khi lưu, kỳ công nợ sẽ cập nhật theo.' : 'Tỷ lệ cọc và số ngày thanh toán lấy theo HĐKT đã lập.'} Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Ngày ký và địa điểm giao hàng luôn theo các ô bên dưới. Bảng biên bản lấy từ HĐKT. Với các đoạn khác đã sửa trực tiếp, cần <b>Dựng lại</b> hồ sơ đó để nhận dữ liệu mới.</p>
+      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. ${canEditFinancial ? 'Manager được sửa tỷ lệ cọc và số ngày thanh toán; khi lưu, kỳ công nợ sẽ cập nhật theo.' : 'Tỷ lệ cọc và số ngày thanh toán theo báo giá nguồn.'} Bốn điều khoản tạm ứng, hạn thanh toán, thời gian và địa chỉ giao hàng lấy từ báo giá nguồn; <b>Lưu chỉnh sửa</b> sẽ cập nhật ngược về báo giá. Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Ngày ký và địa điểm giao hàng luôn theo các ô bên dưới. Bảng biên bản lấy từ HĐKT. Với các đoạn khác đã sửa trực tiếp, cần <b>Dựng lại</b> hồ sơ đó để nhận dữ liệu mới.</p>
         ${FIELDS.map(([f, label, type]) => `<label><span>${label}</span>${type === 'honorific' ? `<select data-d="${f}"><option value="">Chọn danh xưng</option><option value="Ông">Ông</option><option value="Bà">Bà</option></select>` : type === 'area' ? `<textarea rows="2" data-d="${f}"></textarea>` : `<input data-d="${f}" type="${type || 'text'}" ${type === 'number' ? 'min="0"' : ''}>`}</label>`).join('')}
         <button type="button" class="btn secondary small" data-refresh>Cập nhật bản xem</button></aside>
       <section class="cd-preview"><div class="cd-tabs chips" role="tablist">${DOCS.map(([t, label], i) => `<button type="button" class="chip" role="tab" data-doc="${t}" aria-selected="${i === 0}">${label}</button>`).join('')}</div>
@@ -189,7 +190,23 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   $d('[data-save]').addEventListener('click', async e => {
     if (!canEdit) return;
     e.target.disabled = true;
-    try { const selectedDetails = currentDetails(); await api('/contracts/' + encodeURIComponent(k.id), 'PUT', { revision: k.revision, signedDate: selectedDetails.signedDate, paymentMethod: selectedDetails.paymentMethod, deliveryAddress: selectedDetails.deliveryAddress, ...(canEditFinancial ? { depositRate: selectedDetails.depositRate, paymentDays: selectedDetails.paymentDays } : {}), details: { ...(k.data || {}), details: selectedDetails, edits } }); k.revision += 1; dirty = false; $d('[data-dirty]').textContent = 'Đã lưu'; toast('Đã lưu hồ sơ HĐKT.'); onSaved?.(); }
+    try {
+      const selectedDetails = currentDetails();
+      const saved = await api('/contracts/' + encodeURIComponent(k.id), 'PUT', {
+        revision: k.revision, syncQuoteTerms: !!detail.order.quoteId, quoteRevision: k.quoteRevision,
+        deliveryTime: selectedDetails.deliveryTime, signedDate: selectedDetails.signedDate,
+        paymentMethod: selectedDetails.paymentMethod, deliveryAddress: selectedDetails.deliveryAddress,
+        // Do not convert a quotation's free-text deadline to zero days when editing another field.
+        ...(canEditFinancial && selectedDetails.depositRate !== k.depositRate ? { depositRate: selectedDetails.depositRate } : {}),
+        ...(canEditFinancial && selectedDetails.paymentDays !== k.paymentDays ? { paymentDays: selectedDetails.paymentDays } : {}),
+        details: { ...(k.data || {}), details: selectedDetails, edits },
+      });
+      k.revision += 1;
+      if (saved.quoteRevision != null) k.quoteRevision = saved.quoteRevision;
+      k.data = { ...(k.data || {}), details: selectedDetails, edits };
+      k.depositRate = selectedDetails.depositRate; k.paymentDays = selectedDetails.paymentDays;
+      dirty = false; $d('[data-dirty]').textContent = 'Đã lưu'; toast('Đã lưu hồ sơ HĐKT.'); onSaved?.();
+    }
     catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
   });
   const wordName = type => `${type}_${String(k.contractNo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[^a-zA-Z0-9]+/g, '-')}.docx`;

@@ -5,12 +5,12 @@ globalThis.ContractDocument = (() => {
   const {unzipSync, zipSync, strFromU8, strToU8} = globalThis.fflate || {};
   const bachNganTemplates = [
     {path: 'mau-hop-dong-bach-ngan-hdkt.docx?v=20260922', name: 'HOP_DONG_KINH_TE', file: 'HDKT'},
-    {path: 'mau-hop-dong-bach-ngan-bien-ban.docx?v=20260922', name: 'BIEN_BAN_BAN_GIAO_VA_NGHIEM_THU_SAN_PHAM', file: 'BBNT'},
+    {path: 'mau-bien-ban-ban-giao-nghiem-thu.docx?v=20261030', name: 'BIEN_BAN_BAN_GIAO_VA_NGHIEM_THU_SAN_PHAM', file: 'BBNT'},
     {path: 'mau-hop-dong-bach-ngan-tam-ung.docx?v=20260922', name: 'DE_NGHI_TAM_UNG', file: 'TAM_UNG'}
   ];
   const vigiftsTemplates = [
     {path: 'mau-hop-dong-vigifts-hdkt.docx', name: 'HOP_DONG_KINH_TE_VIGIFTS', file: 'HDKT'},
-    {path: 'mau-hop-dong-vigifts-bien-ban.docx', name: 'BIEN_BAN_BAN_GIAO_VA_NGHIEM_THU_SAN_PHAM_VIGIFTS', file: 'BBNT'},
+    {path: 'mau-bien-ban-ban-giao-nghiem-thu.docx?v=20261030', name: 'BIEN_BAN_BAN_GIAO_VA_NGHIEM_THU_SAN_PHAM_VIGIFTS', file: 'BBNT'},
     {path: 'mau-hop-dong-vigifts-tam-ung.docx', name: 'DE_NGHI_TAM_UNG_VIGIFTS', file: 'TAM_UNG'}
   ];
   const templatesFor = quote => quote.quote_type === 'VIGIFTS'
@@ -197,7 +197,8 @@ globalThis.ContractDocument = (() => {
       if (hasHonorific) return before + paragraph.slice(at);
       return replaceToken(paragraph, '[Bên A]', [honorific, partyAName].filter(Boolean).join(' '));
     });
-    const values = {'[Số HĐ]': contractNumber, '[dấu thời gian]': `${date.day}/${date.month}/${date.year}`, '[Ngày ký]': `${date.day}/${date.month}/${date.year}`, '[KH_NDP].[TênKH]': customer.name || '', '[KH_NDP].[dia chi]': customer.address || '', '[KH_NDP].[Dia Chi]': customer.address || '', '[KH_NDP].[Ma So Thue]': customer.tax_code || '', '[Bên A]': partyAName, '[Bên A ký tên]': upper(partyAName), '[Chức vụ]': quote.contractTitle || '', '[Thời gian giao hàng]': deliveryTime, '[Địa điểm giao hàng]': deliveryPlace, '[Phương thức thanh toán]': paymentMethod, '[Thời hạn thanh toán]': paymentText, '[hình thức thanh toán]': paymentText, '[Tỉ lệ cọc]': money(payment.depositRate), '[số tiền tạm ứng]': money(payment.deposit), '[bằng chữ tạm ứng]': amountInWords(payment.deposit), '[Thành Tiền (-Thuế)]': money(quote.subtotal), '[Tiền thuế]': money(quote.vat_amount), '[Thành tiền (+thuế)]': money(quote.total), '[Số tiền bằng chữ]': amountInWords(quote.total), '[Nhãn VAT]': vatLabel(quote.items || [])};
+    const seller = quote.quote_type === 'VIGIFTS' ? { name: 'CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS', address: 'Số W36, Đường số 9, Khu dân cư công ty 8, Khu vực 2, Phường Cái Răng, TP Cần Thơ, Việt Nam.', taxCode: '1801291722', representative: 'Bà Huỳnh Châu Yến' } : { name: 'CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN', address: '102B đường 3/2, Phường Tân An, Thành phố Cần Thơ, Việt Nam.', taxCode: '1801686576', representative: 'Ông Lê Minh Thái' };
+    const values = {'[Bên giao tên]': seller.name, '[Bên giao địa chỉ]': seller.address, '[Bên giao MST]': seller.taxCode, '[Bên giao đại diện]': seller.representative, '[Số HĐ]': contractNumber, '[dấu thời gian]': `${date.day}/${date.month}/${date.year}`, '[Ngày ký]': `${date.day}/${date.month}/${date.year}`, '[KH_NDP].[TênKH]': customer.name || '', '[KH_NDP].[dia chi]': customer.address || '', '[KH_NDP].[Dia Chi]': customer.address || '', '[KH_NDP].[Ma So Thue]': customer.tax_code || '', '[Bên A]': partyAName, '[Bên A ký tên]': upper(partyAName), '[Chức vụ]': quote.contractTitle || '', '[Thời gian giao hàng]': deliveryTime, '[Địa điểm giao hàng]': deliveryPlace, '[Phương thức thanh toán]': paymentMethod, '[Thời hạn thanh toán]': paymentText, '[hình thức thanh toán]': paymentText, '[Tỉ lệ cọc]': money(payment.depositRate), '[số tiền tạm ứng]': money(payment.deposit), '[bằng chữ tạm ứng]': amountInWords(payment.deposit), '[Thành Tiền (-Thuế)]': money(quote.subtotal), '[Tiền thuế]': money(quote.vat_amount), '[Thành tiền (+thuế)]': money(quote.total), '[Số tiền bằng chữ]': amountInWords(quote.total), '[Nhãn VAT]': vatLabel(quote.items || [])};
     // Cột "Đóng gói" (mẫu biên bản Vigifts) có đoạn trống phía trên chỗ điền → chữ bị đẩy xuống: bỏ đoạn trống trong ô đó.
     source = source.replace(/<w:tc>(?:(?!<w:tc>)[\s\S])*?<\/w:tc>/g, cell => !cell.includes(token('[Đóng gói]')) ? cell
       : cell.replace(/<w:p\b(?:(?!<w:p\b)[\s\S])*?<\/w:p>/g, p => /<w:t\b/.test(p) ? p : ''));
@@ -273,17 +274,39 @@ globalThis.ContractDocument = (() => {
     const types = strFromU8(files['[Content_Types].xml']);
     files['[Content_Types].xml'] = strToU8(types.replace('</Types>', '<Override PartName="/word/footerWebSource.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>'));
   }
+  // Explicit fonts defeat inherited Calibri / theme fonts in Word and docx-preview alike.
+  // Apply before table copying so the BBNT table remains byte-for-byte identical to the HĐKT.
+  function normalizeFonts(files) {
+    const fonts = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="Times New Roman" w:cs="Times New Roman"/>';
+    for (const path of Object.keys(files).filter(p => /^word\/(?:document|styles|header[^/]*|footer[^/]*)\.xml$/.test(p))) {
+      let source = strFromU8(files[path]).replace(/<w:rFonts\b[^>]*\/>/g, fonts);
+      source = source.replace(/<w:r\b([^>]*)>([\s\S]*?)<\/w:r>/g, (_, attrs, body) => {
+        if (/^<w:rPr>/.test(body)) body = body.replace(/^<w:rPr>([\s\S]*?)<\/w:rPr>/, (_, props) => '<w:rPr>' + fonts + props.replace(/<w:rFonts\b[^>]*\/>/g, '') + '</w:rPr>');
+        else if (/^<w:rPr\s*\/>/.test(body)) body = body.replace(/^<w:rPr\s*\/>/, '<w:rPr>' + fonts + '</w:rPr>');
+        else body = '<w:rPr>' + fonts + '</w:rPr>' + body;
+        return '<w:r' + attrs + '>' + body + '</w:r>';
+      });
+      files[path] = strToU8(source);
+    }
+  }
   async function prepareDocument({quote, contractNumber, templateBytes, details, documentType = 'HDKT', contractBytes}) {
     if (!unzipSync) throw new Error('Chưa tải được bộ tạo file HĐKT. Vui lòng tải lại trang.');
     if (!['HRC', 'B2B', 'VIGIFTS'].includes(quote.quote_type)) throw new Error('Loại báo giá không hỗ trợ tải HĐKT.');
     if (!contractNumber) throw new Error('Thiếu số HĐKT.');
     const files = unzipSync(new Uint8Array(templateBytes)), path = 'word/document.xml';
+    if (documentType === 'BBNT' && quote.quote_type === 'VIGIFTS' && files['word/media/logo-vigifts.png']) {
+      files['word/media/image1.png'] = files['word/media/logo-vigifts.png'];
+      files[path] = strToU8(strFromU8(files[path]).replace(/<w:drawing\b[\s\S]*?<\/w:drawing>/g, drawing => !drawing.includes('r:embed="rId4"') ? drawing : drawing.replace(/<(wp:extent|a:ext) cx="(\d+)" cy="\d+"\/>/g, (_, tag, width) => '<' + tag + ' cx="' + width + '" cy="' + Math.round(Number(width) * 1420 / 2048) + '"/>')));
+    }
     if (!files[path]) throw new Error('Mẫu HĐKT không hợp lệ.');
     const filledQuote = {...quote,...(details?.signedDate?{quote_date:details.signedDate}:{}), contractDetails: details || {}, customer: {...(quote.customer || {}), contact_name: details?.representativeName || quote.customer?.contact_name || quote.customer?.contact || ''}, contractTitle: details?.representativeTitle || ''};
     files[path] = strToU8(buildXml(strFromU8(files[path]), filledQuote, contractNumber, documentType));
     addWebSourceFooter(files, quote, documentType);
+    const oldTypography = zipSync(files, {level: 6});
+    normalizeFonts(files);
     let base=zipSync(files, {level: 6});
     let edits=(documentType==='HDKT'?quote.contract_word_edits:quote.contract_document_edits?.[documentType])||[],locked=[];
+    if(edits.length && globalThis.ContractWordEdit?.rebaseTypography) edits=await globalThis.ContractWordEdit.rebaseTypography(oldTypography,base,edits);
     if(documentType==='BBNT'&&contractBytes){
       if(!globalThis.ContractWordEdit)throw new Error('Chưa tải công cụ chỉnh Word.');
       ({base,edits,locked}=await globalThis.ContractWordEdit.copyContractTable(base,contractBytes,edits));
