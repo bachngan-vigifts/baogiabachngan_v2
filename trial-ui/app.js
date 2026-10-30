@@ -356,7 +356,9 @@ async function apiRequest(path, method = 'GET', body) {
   recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
-  if (!sameSession) throw new ApiError('Phiên đăng nhập đã thay đổi; kết quả thuộc phiên trước.', 0, 'STALE_SESSION');
+  // Phản hồi thuộc phiên trước (vừa đổi tài khoản): không trả dữ liệu cho phiên mới. Mã 409 (không phải 0) để màn hình không coi là
+  // "chưa rõ đã lưu" rồi gửi lại lệnh của người trước bằng tài khoản mới.
+  if (!sameSession) throw new ApiError('Phiên đăng nhập đã thay đổi; kết quả thuộc phiên trước.', 409, 'STALE_SESSION');
   if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
   if (!res.ok) {
     if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }

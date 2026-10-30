@@ -30,3 +30,17 @@ test('definitive validation can be corrected; storage failure still keeps the re
  await assert.rejects(validated.send({title:''},async()=>{throw Object.assign(Error('invalid'),{status:400});}));assert.equal(validated.pending(),null);
  await validated.send({title:'Đã sửa'},async()=>({id:'ok'}));assert.equal(validated.pending(),null);
 });
+
+test('a rejected retry can be discarded so the user is never stuck; discarding is refused while sending',async()=>{
+ const store=storage(),id=crypto.randomUUID(),intent=createTaskWriteIntent({owner:()=>id,scope:'stuck',storage:()=>store}),body={title:'Việc A'};
+ await assert.rejects(intent.send(body,async()=>{throw Error('response lost');}));
+ await assert.rejects(intent.send(body,async()=>{throw Object.assign(Error('forbidden'),{status:403});}));
+ assert.deepEqual(intent.pending().content,body,'still pending after the rejected retry');
+ await assert.rejects(intent.send({title:'Việc B'},()=>assert.fail('blocked until resolved')));
+ let release:Function=()=>{};const sending=intent.send(body,()=>new Promise(r=>{release=()=>r({id:'x'});}));
+ await new Promise(r=>setImmediate(r));
+ assert.equal(intent.discard(),false,'cannot discard while in flight');release();await sending;
+ await assert.rejects(intent.send(body,async()=>{throw Error('lost again');}));
+ assert.equal(intent.discard(),true);assert.equal(intent.pending(),null);
+ assert.deepEqual(await intent.send({title:'Việc B'},async()=>({id:'b'})),{id:'b'},'new tasks allowed after discarding');
+});

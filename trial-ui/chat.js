@@ -383,9 +383,11 @@ export function initChat({ api, toast, userId, isManager, compress }) {
         <label class="chat-field"><span>Người nhận</span><select name="who">${people.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}<option value="${esc(me)}">Tôi</option></select></label>
         <label class="chat-field"><span>Hạn</span><input type="date" name="due"></label>
         <label class="chat-field"><span>Ghi chú</span><textarea name="note" rows="2" maxlength="2000"></textarea></label></div>
-      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Giao việc</button></div></form>`;
+      <div class="modal-foot"><button type="button" class="btn ghost" data-discard hidden data-no-busy>Bỏ lần giao việc này</button><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Giao việc</button></div></form>`;
     document.body.append(dlg); dlg.showModal();
-    const pending=taskIntent.pending();if(pending){dlg.querySelector('.btn.primary').textContent='Gửi lại lần giao việc trước';const f=dlg.querySelector('form');f.title.value=pending.content.title;f.note.value=pending.content.description||'';f.who.value=pending.content.assigneeId;f.due.value=pending.content.dueDate||'';toast('Khôi phục lần giao việc chưa rõ kết quả để gửi lại đúng mã.');}
+    const discard=dlg.querySelector('[data-discard]');
+    discard.addEventListener('click',()=>{if(!confirm('Bỏ lần giao việc chưa rõ kết quả trên máy này? Việc có thể ĐÃ được tạo – kiểm tra danh sách việc trước khi giao lại.'))return;if(taskIntent.discard()){discard.hidden=true;dlg.querySelector('.btn.primary').textContent='Giao việc';dlg.querySelector('form').reset();toast('Đã bỏ. Kiểm tra danh sách việc xem việc đã được tạo chưa.');}});
+    const pending=taskIntent.pending();discard.hidden=!pending;if(pending){dlg.querySelector('.btn.primary').textContent='Gửi lại lần giao việc trước';const f=dlg.querySelector('form');f.title.value=pending.content.title;f.note.value=pending.content.description||'';f.who.value=pending.content.assigneeId;f.due.value=pending.content.dueDate||'';toast('Khôi phục lần giao việc chưa rõ kết quả để gửi lại đúng mã.');}
     const close = () => { dlg.close(); dlg.remove(); };
     dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
     dlg.querySelector('form').addEventListener('submit', async e => {
@@ -395,7 +397,7 @@ export function initChat({ api, toast, userId, isManager, compress }) {
         if(userId()!==me||st.active?.id!==c.id){close();return;}
         close(); if (q('#chat-input').value.trim() === title) { q('#chat-input').value = ''; autosize(); }
         send({ type: 'task', id: r.id, label: `Việc: ${title}${f.who.value !== me ? ' → ' + (people.find(x => x.id === f.who.value)?.name || '') : ''}` });
-      } catch (ex) { if(userId()===me){toast(ex.message, 'err');btn.disabled=false;btn.textContent=taskIntent.pending()?'Gửi lại lần giao việc trước':'Giao việc';} }
+      } catch (ex) { if(userId()===me){toast(ex.message, 'err');btn.disabled=false;const still=!!taskIntent.pending();btn.textContent=still?'Gửi lại lần giao việc trước':'Giao việc';dlg.querySelector('[data-discard]').hidden=!still;} }
     });
   }
   q('#chat-quick-menu').addEventListener('click', e => {

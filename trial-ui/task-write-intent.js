@@ -7,6 +7,11 @@ export function createTaskWriteIntent({owner,scope,storage=()=>globalThis.sessio
  const write=(key,value)=>{memory.set(key,value);try{if(value)storage()?.setItem(key,JSON.stringify(value));else storage()?.removeItem(key);}catch{/* Keep the same identity in this page if storage is unavailable. */}};
  return {
   pending(){return read(slot());},
+  /**
+   * Người dùng chủ động bỏ lần giao việc chưa rõ kết quả (vd. gửi lại bị từ chối vì mất quyền): chỉ xoá mã trên máy này,
+   * KHÔNG huỷ việc nếu máy chủ đã tạo – giao diện phải nhắc kiểm tra danh sách việc. Không bỏ được khi đang gửi.
+   */
+  discard(){const key=slot();if(active.has(key))return false;write(key,null);return true;},
   async send(content,send){
    const key=slot(),copy=JSON.parse(JSON.stringify(content)),old=read(key);
    if(old&&fingerprint(old.content)!==fingerprint(copy))throw Error('Lần giao việc trước chưa rõ kết quả. Gửi lại đúng nội dung trước khi tạo việc khác.');

@@ -446,7 +446,14 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   const quick = q('#tasks-quick'),taskIntent=createTaskWriteIntent({owner:userId,scope:'tasks'});
   let quickOwner=userId();
   function resetQuickOwner(){if(quickOwner!==userId()){quickOwner=userId();quick.reset?.();quick.hidden=true;}}
-  const toggleQuick = (show = quick.hidden) => { resetQuickOwner();quick.hidden = !show; if(show){const pending=taskIntent.pending();quick.querySelector('button[type=submit]').textContent=pending?'Gửi lại lần giao việc trước':'Giao việc';if(pending){for(const key of ['title','assigneeId','priority','dueDate'])quick.elements[key].value=pending.content[key]||'';toast('Có lần giao việc chưa rõ kết quả. Nội dung đã được khôi phục để gửi lại đúng mã.');}quick.querySelector('[name=title]').focus?.();} };
+  // Lần giao việc chưa rõ kết quả: nút "Bỏ lần giao việc này" để không bị kẹt khi gửi lại bị từ chối (mất quyền, người nhận nghỉ…).
+  const discardBtn=quick.querySelector('[data-discard]');
+  const syncPendingUi=()=>{const pending=!!taskIntent.pending();quick.querySelector('button[type=submit]').textContent=pending?'Gửi lại lần giao việc trước':'Giao việc';if(discardBtn)discardBtn.hidden=!pending;};
+  discardBtn?.addEventListener?.('click',async()=>{
+    if(!await confirmBox('Bỏ lần giao việc chưa rõ kết quả trên máy này? Việc có thể ĐÃ được tạo – kiểm tra danh sách việc trước khi giao lại.',{title:'Bỏ lần giao việc',ok:'Bỏ lần giao việc'}))return;
+    if(taskIntent.discard()){quick.reset?.();syncPendingUi();toast('Đã bỏ. Kiểm tra danh sách việc xem việc đã được tạo chưa.');void load();}
+  });
+  const toggleQuick = (show = quick.hidden) => { resetQuickOwner();quick.hidden = !show; if(show){const pending=taskIntent.pending();syncPendingUi();if(pending){for(const key of ['title','assigneeId','priority','dueDate'])quick.elements[key].value=pending.content[key]||'';toast('Có lần giao việc chưa rõ kết quả. Nội dung đã được khôi phục để gửi lại đúng mã.');}quick.querySelector('[name=title]').focus?.();} };
   q('#tasks-new').addEventListener('click', () => toggleQuick());
   quick.addEventListener('submit', async e => {
     e.preventDefault();
@@ -457,8 +464,8 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
       const content = { title, assigneeId: f.assigneeId.value, priority: f.priority.value, dueDate: f.dueDate.value || undefined };
       await taskIntent.send(content,(clientKey,content)=>api('/tasks','POST',{...content,clientKey}));
       if(owner!==userId())return;
-      f.title.value = ''; toast('Đã giao việc.'); await load(); f.title.focus();
-    } catch (ex) { if(owner===userId())toast(ex.message, 'err'); } finally { if(owner===userId()){btn.disabled = false;btn.textContent=taskIntent.pending()?'Gửi lại lần giao việc trước':'Giao việc';} }
+      f.title.value = ''; syncPendingUi(); toast('Đã giao việc.'); await load(); f.title.focus();
+    } catch (ex) { if(owner===userId())toast(ex.message+(taskIntent.pending()&&ex.status>=400&&ex.status<500?' Có thể bấm "Bỏ lần giao việc này".':''), 'err'); } finally { if(owner===userId()){btn.disabled = false;syncPendingUi();} }
   });
   quick.querySelector('[data-cancel]')?.addEventListener('click', () => toggleQuick(false));
   quick.querySelectorAll('[data-due]').forEach(b => b.addEventListener('click', () => { quick.dueDate.value = b.dataset.due === '' ? '' : addDays(todayIso(), Number(b.dataset.due)); }));

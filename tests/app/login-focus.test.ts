@@ -109,7 +109,9 @@ test('delayed logout response cannot clear a new session', async () => {
   const result = h.ctx.api('/logout', 'POST', {});
   h.ctx.token = 'new-session';
   h.respond(200, { sessionToken: '' });
-  await result;
+  // Phản hồi của phiên cũ: báo STALE_SESSION (mã 409 – không bị coi là "chưa rõ đã lưu" để gửi lại), không xoá phiên mới.
+  const error = await result.then(() => null, (e: any) => e);
+  assert.equal(error?.code, 'STALE_SESSION'); assert.equal(error?.status, 409);
   assert.equal(h.ctx.token, 'new-session');
 });
 

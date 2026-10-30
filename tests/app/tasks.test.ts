@@ -291,6 +291,12 @@ test('mạng rớt sau khi đã lưu: tạo việc gửi lại cùng mã không 
   assert.equal((await call('/tasks', mgr, 'POST', { ...body, title: 'Việc khác' })).status, 409, 'cùng mã khác nội dung');
   for (const changed of [{description:'Nội dung khác'},{priority:'normal'},{assigneeId:'mgr'},{dueDate:'2026-12-01'},{link:'#/care/other'}])
     assert.equal((await call('/tasks',mgr,'POST',{...body,...changed})).status,409,'same key must compare all create fields');
+  // Việc đã được sửa sau khi tạo (người nhận đổi ưu tiên): gửi lại đúng lần giao đó vẫn báo đã tạo, không kẹt ở 409; người khác dùng mã thì không.
+  const edited = (await call('/tasks?view=mine', emp)).data.tasks.find((x: any) => x.id === first.data.id);
+  assert.equal((await call(`/tasks/${edited.id}`, emp, 'PUT', { priority: 'low', revision: edited.revision })).status, 200);
+  const afterEdit = await call('/tasks', mgr, 'POST', body);
+  assert.deepEqual([afterEdit.status, afterEdit.data.id, afterEdit.data.replayed, afterEdit.data.changedSince], [200, first.data.id, true, true]);
+  assert.equal((await call('/tasks', emp, 'POST', body)).data.id !== first.data.id, true, 'mã của người khác không trỏ tới việc này');
   const race = await Promise.all([1, 2, 3].map(() => call('/tasks', mgr, 'POST', { ...body, title: 'Việc đồng thời', clientKey: 'task-key-race' })));
   assert.ok(race.every(r => r.status === 200 || r.status === 201), JSON.stringify(race.map(r => r.data)));
   assert.equal(new Set(race.map(r => r.data.id)).size, 1);

@@ -319,6 +319,9 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       assigneeId, assigneePosition, createdBy: m.id, dueDate: f.dueDate ?? null, dueTime: f.dueTime ?? null, createdAt: now, updatedAt: now }).onConflictDoNothing().returning({ id: tasks.id });
     if (!inserted.length) {
       const [prior] = await c.env.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+      // Mã sinh ngẫu nhiên theo từng lần giao việc của chính người này: việc đã được sửa sau khi tạo (người nhận đổi hạn, nhận việc…)
+      // vẫn là đúng lần giao đó → báo đã tạo, không bắt người giao kẹt ở lỗi 409. Việc chưa sửa thì so đủ nội dung như trước.
+      if (prior && prior.createdBy === m.id && prior.updatedAt !== prior.createdAt) return json({ id, replayed: true, changedSince: true });
       if (!prior || prior.createdBy !== m.id || prior.title !== f.title || prior.description !== (f.description ?? '') || prior.priority !== (f.priority ?? 'normal') || prior.assigneeId !== assigneeId || prior.assigneePosition !== assigneePosition || prior.dueDate !== (f.dueDate ?? null) || prior.dueTime !== (f.dueTime ?? null) || prior.link !== (f.link ?? '')) throw new AppError(409, 'Mã chống lặp đã dùng cho việc khác. Tải lại trang rồi thử lại.', 'IDEMPOTENCY_CONFLICT');
       return json({ id, replayed: true });
     }
