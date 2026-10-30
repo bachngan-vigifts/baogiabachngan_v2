@@ -3,24 +3,30 @@ const number=n=>Number(n||0).toLocaleString('vi-VN',{maximumFractionDigits:3});
 const when=s=>s?new Date(s).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'—';
 const states={pending:'Chờ Manager duyệt',approved:'Đã duyệt · đã ghi kho',rejected:'Đã từ chối'};
 const btn=(text,fn,cls='btn secondary small')=>{const b=el('button',cls,text);b.type='button';b.onclick=fn;return b;};
-export function initAdjustmentQueue({api,host,toast,onChanged,kind}){
- let config=null,sequence=0,offset=0,next=null,deepOpened='';
+export function initAdjustmentQueue({api,host,toast,onChanged,kind,userId}){
+ let config=null,sequence=0,offset=0,next=null,deepOpened='',opening=null;
  const head=el('div','card-title-row'),filter=el('select'),list=el('div','inv-adjust-queue'),feedback=el('p','small muted'),error=el('p','error');
  filter.setAttribute('aria-label','Trạng thái phiếu điều chỉnh');for(const [value,text] of [['pending','Chờ duyệt'],['approved','Đã duyệt'],['rejected','Từ chối'],['','Tất cả phiếu']])filter.append(Object.assign(el('option','',text),{value}));
  head.append(el('h2','card-title',kind==='stocktake'?'Phiếu kiểm kê đã gửi':'Phiếu cân bằng kho'),filter,btn('Làm mới phiếu',()=>load(config)));
  const pager=el('div','row-gap'),prev=btn('‹ Trang trước',()=>{offset=Math.max(0,offset-20);load(config);}),more=btn('Trang tiếp ›',()=>{if(next!==null){offset=next;load(config);}});pager.append(prev,more);host.append(head,feedback,error,list,pager);
  filter.onchange=()=>{offset=0;load(config);};
  async function load(value){
-  if(!value)return;config=value;const mine=++sequence;error.textContent='';prev.disabled=more.disabled=true;feedback.textContent='Đang tải phiếu điều chỉnh…';
-  try{const p=new URLSearchParams({status:filter.value,offset:String(offset)});if(kind)p.set('kind',kind);const data=await api('/inventory/adjustments?'+p);if(mine!==sequence)return;
+  if(!value)return;config=value;const mine=++sequence,owner=userId?.();error.textContent='';prev.disabled=more.disabled=true;feedback.textContent='Đang tải phiếu điều chỉnh…';
+  try{const p=new URLSearchParams({status:filter.value,offset:String(offset)});if(kind)p.set('kind',kind);const data=await api('/inventory/adjustments?'+p);if(mine!==sequence||owner!==userId?.())return;
    next=data.nextOffset;list.replaceChildren();
    for(const r of data.adjustments){const row=el('article','inv-adjust-queue-row'),text=el('div');text.append(el('b','',r.refNo+' · '+states[r.status]),el('p','small muted',`${r.warehouseName} · ${r.createdByName} · ${when(r.createdAt)} · ${r.lines.length} mã`),el('p','small',r.reason));row.append(text,btn('Xem phiếu '+r.refNo,()=>open(r.id)));list.append(row);}
    feedback.textContent=data.adjustments.length?`Phiếu ${offset+1}–${offset+data.adjustments.length}`:'Không có phiếu trong trạng thái này.';prev.disabled=!offset;more.disabled=next===null;
    const id=new URLSearchParams(location.hash.split('?')[1]||'').get('adjustment');if(id&&id!==deepOpened){deepOpened=id;await open(id);}
-  }catch(e){if(mine===sequence){error.textContent=e.message;feedback.textContent='Chưa tải được danh sách phiếu.';}}
+  }catch(e){if(mine===sequence&&owner===userId?.()){error.textContent=e.message;feedback.textContent='Chưa tải được danh sách phiếu.';}}
  }
- async function open(id){
-  let data;try{data=await api('/inventory/adjustments/'+encodeURIComponent(id));}catch(e){toast(e.message,'err');return;}
+ function open(id){
+  if(opening)return opening;
+  const next=draw(id).finally(()=>{if(opening===next)opening=null;});opening=next;return next;
+ }
+ async function draw(id){
+  const owner=userId?.();
+  let data;try{data=await api((kind==='stocktake'?'/inventory/stocktakes/':'/inventory/adjustments/')+encodeURIComponent(id));}catch(e){if(owner===userId?.())toast(e.message,'err');return;}
+  if(owner!==userId?.())return;
   const r=data.adjustment,dialog=el('dialog','modal inv-adjust-review'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');
   let busy=false;const close=()=>{if(!busy)dialog.close();};head.append(el('h2','',r.refNo),btn('Đóng',close));
   body.append(el('p','',states[r.status]),el('p','muted small',`${r.warehouseName} · Người lập: ${r.createdByName} · ${when(r.createdAt)}`),el('p','',r.reason));
