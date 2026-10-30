@@ -8,6 +8,7 @@ import { registerPosOrderFlowRoutes } from '../modules/sales/api/pos-order-flow-
 import { supplierRegistrationHooks } from '../modules/portal/api/registration.ts';
 import { bindSupplier, boundSupplier, supplierOf } from '../modules/suppliers/api/registration-hooks.ts';
 import { registerPosReturnRoutes } from '../modules/sales/api/pos-return-routes.ts';
+import { registerPosGhnQuickCancel } from '../modules/sales/api/pos-ghn-quick-cancel.ts';
 import { authorizePosStore } from '../modules/sales/api/pos-access.ts';
 import { registerCashRoutes } from './cash-routes.ts';
 import { catalogStockHooks } from '../modules/catalog/api/stock-source.ts';
@@ -89,6 +90,7 @@ export function createAppRouter() {
   registerPosGhnSyncRoutes(router);
   registerPosGhnCreateRoutes(router);
   registerPosReturnRoutes(router);
+  registerPosGhnQuickCancel(router);
   registerPosOrderFlowRoutes(router);
   registerCashRoutes(router);
   registerPackingRoutes(router, { supplierChoices: packingSupplierChoices });
