@@ -14,38 +14,62 @@ const dt = iso => iso ? new Date(iso).toLocaleString('vi-VN', { day: '2-digit', 
 const REF_LINK = { supplier_receipt: null, packing_slip: id => '#/packing/' + encodeURIComponent(id) };
 
 export function initInventory({ api, root, toast, confirmBox }) {
-  let status = null, rows = [], req = 0, onlyDiff = true;
+  let status = null, rows = [], req = 0, onlyDiff = true, editing = false, busy = false;
+  // BỐ CỤC TOÀN TRANG như Kiểm kê hàng: đầu trang (tiêu đề + nút) · tab Phiếu cân bằng / Đối chiếu Sapo · nút ＋ mở trang lập phiếu.
   const page = el('div', 'sup-page');
-  const head = el('div', 'page-head'), titles = el('div');
-  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Cân bằng kho'),
-    el('p', 'muted', 'Đối chiếu tồn sổ kho với tồn Sapo để tìm chênh lệch và lập phiếu cân bằng kho. Nhân viên gửi phiếu chờ duyệt; chỉ Manager được duyệt hoàn thành và cập nhật tồn.'));
-  const tools = el('div', 'row-gap');
+  const head = el('div', 'page-head'), titles = el('div'), description = el('p', 'muted');
+  titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Cân bằng kho'), description);
+  const tools = el('div', 'head-actions row-gap');
+  const create = btn('', 'btn-add', () => adjustForm()); create.title = 'Tạo phiếu cân bằng kho'; create.setAttribute('aria-label', 'Tạo phiếu cân bằng kho'); create.hidden = true;
+  create.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  const openingTools = el('span', 'row-gap');
+  tools.append(openingTools, create);
   head.append(titles, tools);
+  const TABS = [['adjustments', 'Phiếu cân bằng kho'], ['compare', 'Đối chiếu tồn Sapo']];
+  let tab = (() => { try { return localStorage.getItem('inventoryTab') === 'compare' ? 'compare' : 'adjustments'; } catch { return 'adjustments'; } })();
+  const tabBar = el('div', 'toolbar chips inv-tabs'); tabBar.setAttribute('role', 'tablist');
+  const tabButtons = TABS.map(([id, text]) => { const b = btn(text, 'chip', () => { tab = id; try { localStorage.setItem('inventoryTab', id); } catch {} updatePage(); }); b.dataset.tab = id; b.setAttribute('role', 'tab'); tabBar.append(b); return b; });
   const info = el('div', 'panel inv-status');
-  const panel = el('div', 'panel'), bar = el('div', 'toolbar');
+  const panel = el('section', 'panel inv-compare-panel'), panelHead = el('div', 'card-title-row');
+  panelHead.append(el('h2', 'card-title', 'Đối chiếu tồn sổ kho ↔ Sapo'));
+  const bar = el('form', 'transfer-filter-grid inv-compare-filter');
   const wh = el('select'); wh.setAttribute('aria-label', 'Kho');
-  const search = input('search', '', { placeholder: 'Tìm mã / tên hàng…' }); search.setAttribute('aria-label', 'Tìm mã hàng');
-  const label = el('label', 'search'); label.append(search);
+  const search = input('search', '', { placeholder: 'Mã hoặc tên hàng…', maxLength: 80 }); search.setAttribute('aria-label', 'Tìm mã hàng');
   const diffBox = input('checkbox'); diffBox.checked = true;
   const diffLabel = el('label', 'inv-check'); diffLabel.append(diffBox, document.createTextNode(' Chỉ dòng lệch'));
-  const countEl = el('span', 'muted small');
-  bar.append(wh, label, diffLabel, countEl);
+  const resetCompare = btn('Xoá bộ lọc', 'btn secondary small', () => { search.value = ''; diffBox.checked = onlyDiff = true; loadRows(); });
+  bar.append(field('Tìm mã hàng', search), field('Kho', wh), diffLabel, resetCompare);
+  bar.addEventListener('submit', e => { e.preventDefault(); loadRows(); });
+  const countEl = el('p', 'muted transfer-filter-note');
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('thead'), tbody = el('tbody');
   const unopenedEl = el('div', 'inv-unopened');
-  table.append(thead, tbody); wrap.append(table); panel.append(bar, unopenedEl, wrap);
-  const queueHost=el('section','panel inv-adjustments-panel');
-  page.append(head, info, queueHost, panel);
-  const adjustmentQueue=initAdjustmentQueue({api,host:queueHost,toast,onChanged:()=>load()});
+  table.append(thead, tbody); wrap.append(table); panel.append(panelHead, bar, countEl, unopenedEl, wrap);
+  const queueHost = el('section', 'panel inv-adjustments-panel');
+  const editor = el('section', 'panel inv-adjust-editor'); editor.hidden = true;
+  page.append(head, tabBar, queueHost, info, panel, editor);
+  const adjustmentQueue = initAdjustmentQueue({ api, host: queueHost, toast, onChanged: () => load() });
   const shade = el('div', 'sup-shade'); shade.hidden = true;
   const drawer = el('aside', 'sup-drawer'); drawer.hidden = true; drawer.setAttribute('role', 'dialog');
   root.append(page, shade, drawer);
-  const close = () => { if(drawer.dataset.busy)return;drawer.hidden = true; shade.hidden = true; };
+  const close = () => { drawer.hidden = true; shade.hidden = true; };
   shade.addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !drawer.hidden) close(); });
   let timer = 0;
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(loadRows, 250); });
   wh.addEventListener('change', () => { if (status) renderStatus(); loadRows(); });
   diffBox.addEventListener('change', () => { onlyDiff = diffBox.checked; loadRows(); });
+  function updatePage() {
+    for (const b of tabButtons) { const on = b.dataset.tab === tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); }
+    tabBar.hidden = editing; editor.hidden = !editing;
+    queueHost.hidden = editing || tab !== 'adjustments';
+    info.hidden = panel.hidden = editing || tab !== 'compare';
+    openingTools.hidden = editing;
+    create.hidden = editing || !status?.canManage || !status?.warehouses?.length;
+    description.textContent = editing ? 'Nhập mã hàng và số tăng / giảm. Nhân viên gửi phiếu chờ duyệt; chỉ Manager được duyệt và cập nhật tồn.'
+      : tab === 'compare' ? 'Đối chiếu tồn sổ kho với tồn Sapo để tìm chênh lệch. Bấm một dòng để xem thẻ kho và điều chỉnh mã đó.'
+        : 'Quản lý phiếu cân bằng kho. Bấm + để lập phiếu mới; chỉ Manager được duyệt hoàn thành và cập nhật tồn.';
+  }
+  updatePage();
 
   function frame(eyebrow, title) {
     const top = el('div', 'sup-drawer-head'), t = el('div'); t.append(el('span', 'eyebrow', eyebrow), el('h2', '', title));
@@ -69,7 +93,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
   }
 
   function renderStatus() {
-    info.replaceChildren(); tools.replaceChildren();
+    info.replaceChildren(); openingTools.replaceChildren();
     const s = status, keep = wh.value;
     wh.replaceChildren();
     if (!s.warehouseRestricted) wh.append(Object.assign(el('option', '', 'Tất cả kho'), { value: '' }));
@@ -89,8 +113,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
     const unopened = s.warehouses.filter(w => !w.openedAt);
     // "Chốt lại" chỉ cho đúng một kho đã chốt đang được chọn; "Tất cả kho" chỉ chốt các kho chưa chốt.
     if (s.canManage && s.warehouses.length) {
-      tools.append(btn('Lập phiếu cân bằng kho', 'btn secondary', () => adjustForm()));
-      if (s.canApproveAdjustment && (sel || unopened.length)) tools.append(btn(sel?.openedAt ? 'Chốt lại tồn đầu kỳ' : 'Chốt tồn đầu kỳ', sel?.openedAt ? 'btn ghost' : 'btn primary', async () => {
+      if (s.canApproveAdjustment && (sel || unopened.length)) openingTools.append(btn(sel?.openedAt ? 'Chốt lại tồn đầu kỳ' : 'Chốt tồn đầu kỳ', sel?.openedAt ? 'btn ghost' : 'btn secondary', async () => {
         const msg = sel ? `Chốt tồn cho ${sel.name}. ` + (sel.openedAt ? 'Chỉ chốt lại được khi kho chưa có phát sinh ngoài tồn đầu kỳ. Kho đã nhập, xuất hoặc điều chỉnh phải dùng phiếu điều chỉnh để sửa lệch. Tiếp tục?'
           : 'Lấy tồn Sapo hiện tại làm tồn đầu kỳ cho kho này?')
           : `Chốt tồn đầu kỳ cho ${unopened.length} kho chưa chốt (${unopened.map(w => w.name).join(', ')}). Mỗi kho chốt riêng: kho lỗi không ảnh hưởng kho khác. Tiếp tục?`;
@@ -103,13 +126,14 @@ export function initInventory({ api, root, toast, confirmBox }) {
       }));
     }
     if (s.warehouseRestricted) info.append(el('p', 'muted small', 'Sổ kho của nhân viên Kho chỉ hiển thị KHO VIGIFTS.'));
+    updatePage();
   }
 
   function renderRows(diffCount) {
     thead.replaceChildren(); tbody.replaceChildren();
     const hr = el('tr'); for (const [h, c] of [['Mã / tên', ''], ['Kho', ''], ['Sổ kho', 'num'], ['Sapo', 'num'], ['Lệch', 'num']]) hr.append(el('th', c, h));
     thead.append(hr);
-    countEl.textContent = `${num(diffCount)} dòng lệch` + (rows.length >= 500 ? ' · hiện 500 dòng đầu' : '');
+    countEl.textContent = `${num(rows.length)} dòng · ${num(diffCount)} dòng lệch` + (rows.length >= 500 ? ' · hiện 500 dòng đầu' : '');
     if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', onlyDiff ? 'Không có dòng nào lệch với Sapo.' : 'Chưa có dữ liệu tồn.'); td.colSpan = 5; tr.append(td); tbody.append(tr); return; }
     for (const r of rows) {
       const tr = el('tr', 'clickable'); tr.tabIndex = 0;
@@ -158,39 +182,45 @@ export function initInventory({ api, root, toast, confirmBox }) {
         tb.append(tr);
       }
       const tw = el('div', 'table-wrap'); tw.append(t); d.append(tw);
-      if (status?.canManage) d.append(btn('Điều chỉnh mã này…', 'btn secondary small', () => adjustForm({ warehouseId, sku, qty: c.sapo - c.balance })));
+      if (status?.canManage) d.append(btn('Điều chỉnh mã này…', 'btn secondary small', () => { close(); adjustForm({ warehouseId, sku, qty: c.sapo - c.balance }); }));
     } catch (e) { d.append(el('p', 'error', e.message || 'Không tải được thẻ kho.')); }
   }
 
-  // ---------------------------------------------------------------- phiếu điều chỉnh (Manager)
+  // ---------------------------------------------------------------- phiếu cân bằng kho: trang lập phiếu toàn trang (thay ngăn kéo cũ)
   function adjustForm(prefill = {}) {
-    const d = frame('Phiếu cân bằng kho', 'Điều chỉnh tồn'), f = el('form', 'sup-form'), err = el('p', 'error');
+    if (busy || !status) return;
+    editing = true; editor.replaceChildren(); updatePage();
+    const back = btn('‹ Danh sách phiếu', 'btn ghost small', () => { if (busy) return; editing = false; editor.replaceChildren(); updatePage(); });
+    const top = el('div', 'card-title-row'); top.append(el('h2', 'card-title', 'Lập phiếu cân bằng kho'), back);
+    const f = el('form', 'sup-form inv-adjust-form'), err = el('p', 'error');
     const w = el('select'); w.required = true;
     for (const x of status.warehouses) w.append(Object.assign(el('option', '', x.name), { value: x.id }));
-    if (prefill.warehouseId) w.value = prefill.warehouseId;
+    if (prefill.warehouseId) w.value = prefill.warehouseId; else if (wh.value) w.value = wh.value;
     const reason = input('text', '', { maxLength: 500, required: true, placeholder: 'VD: kiểm kê lệch, hàng vỡ, xuất mẫu…' });
     const g = el('div', 'form-grid two'); g.append(field('Kho', w), field('Lý do *', reason));
     const list = el('div', 'inv-adjust-lines');
     const addLine = (sku = '', qty = '') => {
       const r = el('div', 'pur-inline'), s = input('text', sku, { placeholder: 'Mã hàng (SKU)', maxLength: 200 }), q = input('number', qty, { step: 'any', placeholder: '+ tăng / − giảm', className: 'pur-qty' });
+      s.setAttribute('aria-label', 'Mã hàng'); q.setAttribute('aria-label', 'Số tăng / giảm');
       r.append(s, q, btn('×', 'icon-btn', () => r.remove())); list.append(r);
     };
     addLine(prefill.sku || '', prefill.qty ? String(prefill.qty) : '');
     f.append(g, el('p', 'muted small', status.canApproveAdjustment?'Số dương = tăng tồn, số âm = giảm tồn. Manager ghi phiếu sẽ duyệt và cập nhật sổ kho ngay.':'Số dương = tăng tồn, số âm = giảm tồn. Phiếu sẽ gửi Manager duyệt; lúc gửi chưa thay đổi tồn kho.'), list,
       btn('+ Thêm mã', 'btn secondary small', () => addLine()), err);
-    const ok = el('button', 'btn primary', status.canApproveAdjustment?'Ghi phiếu điều chỉnh':'Gửi Manager duyệt'); ok.type = 'submit';ok.dataset.mobilePrimary='';
+    const ok = el('button', 'btn primary', status.canApproveAdjustment?'Ghi phiếu điều chỉnh':'Gửi Manager duyệt'); ok.type = 'submit';
     const clientKey=crypto.randomUUID();let uncertain=null;
-    const foot = el('div', 'sup-drawer-foot'); foot.append(ok); f.append(foot);
+    const foot = el('div', 'row-gap inv-adjust-foot'); foot.append(ok, btn('Huỷ', 'btn secondary', () => back.click())); f.append(foot);
     f.addEventListener('submit', async e => {
       e.preventDefault(); err.textContent = '';
       const lines = [...list.children].map(r => { const [s, q] = r.querySelectorAll('input'); return { sku: s.value.trim(), qty: Number(q.value) }; }).filter(l => l.sku && l.qty);
-      if(ok.disabled)return;ok.disabled = true;drawer.dataset.busy='1';
+      if(ok.disabled)return;ok.disabled = true;busy=true;
       const body=uncertain||{ warehouseId: w.value, reason: reason.value.trim(), lines,clientKey };
-      try { const r = await api('/inventory/adjustments', 'POST', body);delete drawer.dataset.busy;toast(r.status==='pending'?`Đã gửi phiếu ${r.refNo}, chờ Manager duyệt. Chưa đổi tồn kho.`:`Đã ghi phiếu ${r.refNo}.`);close();await load(); }
+      try { const r = await api('/inventory/adjustments', 'POST', body);busy=false;toast(r.status==='pending'?`Đã gửi phiếu ${r.refNo}, chờ Manager duyệt. Chưa đổi tồn kho.`:`Đã ghi phiếu ${r.refNo}.`);editing=false;editor.replaceChildren();tab='adjustments';updatePage();await load(); }
       catch (ex) {const unknown=!ex.status||ex.status>=500;uncertain=unknown?body:null;err.textContent = (ex.message || 'Không ghi được phiếu.')+(unknown?' Chưa rõ kết quả. Bấm kiểm tra lại lần gửi này, không lập phiếu khác.':'');for(const input of f.querySelectorAll('input,select,textarea'))input.disabled=unknown;ok.textContent=unknown?'Kiểm tra lại lần gửi':status.canApproveAdjustment?'Ghi phiếu điều chỉnh':'Gửi Manager duyệt';ok.disabled = false;}
-      finally{delete drawer.dataset.busy;}
+      finally{busy=false;}
     });
-    d.append(f);
+    editor.append(top, f);
+    window.scrollTo?.(0, 0); (prefill.sku ? reason : w).focus?.();
   }
 
   return { load };

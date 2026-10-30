@@ -57,7 +57,7 @@ export function speedReport(list = entries, nav = globalThis.navigator) {
 /** Xoá số đo trên máy (trước khi thử một thay đổi, để so trước / sau). */
 export function clearSpeedEntries() { entries.length = 0; }
 /**
- * `canary` (Manager): nút thử máy chủ cạnh CSDL chỉ trên máy này (api-region.js → createRegionCanary). Bật / tắt đều xoá số đo
+ * `canary` (Manager): bật / tắt máy chủ cạnh CSDL trên máy này (api-region.js → createRegionCanary). Bật / tắt đều xoá số đo
  * cũ để bảng chỉ còn số của chế độ mới; ghi chế độ vào báo cáo sao chép.
  */
 export function openSpeedDialog({ doc = document, toast = () => {}, canary = null } = {}) {
@@ -90,13 +90,13 @@ export function openSpeedDialog({ doc = document, toast = () => {}, canary = nul
     canaryBox = el('div', 'speed-canary');
     const on = canary.enabled();
     canaryBox.append(el('p', '', on
-      ? `Đang THỬ máy chủ cạnh CSDL (vùng ${canary.current()}) – chỉ trên máy này. Dùng app vài phút rồi so bảng trên với số đo trước đó.`
-      : 'Thử máy chủ cạnh CSDL: chỉ máy này gửi yêu cầu chạy máy chủ ở vùng của CSDL. Có lỗi kết nối là tự tắt. Nhân viên khác không bị ảnh hưởng.'));
-    const toggle = el('button', on ? 'btn secondary' : 'btn primary', on ? 'Tắt thử, về máy chủ mặc định' : 'Bật thử máy chủ cạnh CSDL (chỉ máy này)'); toggle.type = 'button';
+      ? `Máy này đang dùng máy chủ cạnh CSDL (vùng ${canary.current()})${canary.byDefault?.() ? ' – mặc định cho mọi máy' : ' – chỉ máy này'}. Có lỗi kết nối là tự chuyển về máy chủ dự phòng.`
+      : 'Máy này đang dùng máy chủ dự phòng (đã tắt do lỗi kết nối hoặc tắt tay). Bật lại để dùng máy chủ cạnh CSDL, nhanh hơn.'));
+    const toggle = el('button', on ? 'btn secondary' : 'btn primary', on ? 'Tắt trên máy này, dùng máy chủ dự phòng' : 'Bật lại máy chủ cạnh CSDL trên máy này'); toggle.type = 'button';
     toggle.onclick = () => {
       if (on) canary.disable(); else canary.enable();
       clearSpeedEntries();
-      toast(on ? 'Đã tắt thử. Số đo đã xoá – dùng app vài phút rồi mở lại để xem.' : 'Đã bật thử máy chủ cạnh CSDL trên máy này. Số đo đã xoá – dùng app vài phút rồi mở lại để so.');
+      toast(on ? 'Đã chuyển máy này về máy chủ dự phòng. Số đo đã xoá.' : 'Đã bật lại máy chủ cạnh CSDL trên máy này. Số đo đã xoá.');
       dlg.close();
     };
     canaryBox.append(toggle);
