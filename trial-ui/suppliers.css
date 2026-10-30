@@ -216,3 +216,19 @@
 @media (max-width: 600px) {
   .transfer-lines > .row-gap { grid-template-columns: minmax(0, 1fr) 65px 32px; gap: 5px; }
 }
+
+/* Điều chuyển kho: bộ lọc gọn, xếp lại theo chiều rộng điện thoại. */
+.transfer-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px; border-top: 1px solid var(--line); }
+.transfer-filter-grid label { display: grid; gap: 6px; min-width: 0; font-size: var(--text-label); }
+.transfer-filter-grid input, .transfer-filter-grid select { width: 100%; min-width: 0; }
+.transfer-filter-grid > button { align-self: end; }
+.transfer-filter-note { margin: 0; padding: 0 16px 12px; }
+@media (max-width: 680px) { .transfer-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; } .transfer-filter-grid label:first-child { grid-column: 1 / -1; } }
+
+.stocktake-panel { padding: 16px; }
+.stocktake-controls { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 12px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.stocktake-controls > input[type=search], .stocktake-results, .stocktake-controls > p, .stocktake-controls > .table-wrap { grid-column: 1 / -1; }
+.stocktake-results { display: grid; gap: 4px; max-height: 280px; overflow-y: auto; }
+.stocktake-controls .data-table input { width: 110px; }
+.stocktake-summary { font-weight: 600; }
+@media (max-width: 680px) { .stocktake-controls { grid-template-columns: 1fr; } .stocktake-panel { padding: 12px; } }

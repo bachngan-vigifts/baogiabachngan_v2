@@ -122,7 +122,9 @@ test('sổ kho: tài khoản Kho chỉ có Vigifts; không thể sửa query đ�
   assert.equal((await call('/inventory/compare?warehouseId=ct', kho)).status, 403);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', kho)).status, 403);
   assert.equal((await call('/inventory/adjustments', kho, 'POST', { clientKey: crypto.randomUUID(), warehouseId: 'ct', reason: 'Kiểm kê', lines: [{sku:'LY1',qty:1}] })).status, 403);
-  assert.equal((await call('/inventory/opening', kho, 'POST', {confirm:true})).data.lines, 1, 'nếu được cấp chốt tồn, vẫn chỉ chốt Vigifts');
+  assert.equal(st.canApproveAdjustment, false);
+  assert.equal((await call('/inventory/opening', kho, 'POST', {confirm:true})).status, 403, 'quyền lập phiếu không cho nhân viên chốt tồn trực tiếp');
+  assert.equal((await call('/inventory/opening', mgr, 'POST', {confirm:true,warehouseId:'vg'})).data.lines, 1);
   assert.deepEqual((await call('/inventory/compare?diff=0', kho)).data.rows.map((r: any) => r.warehouseId), ['vg']);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 0, 'không ghi vào kho ngoài phạm vi');
   assert.deepEqual((await call('/inventory/status', mgr)).data.warehouses.map((w: any) => w.id), ['ct','vg']);

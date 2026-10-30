@@ -1,0 +1,37 @@
+# Kiểm kê hàng và cân bằng kho
+
+Menu Kho & Giao hàng có hai trang:
+
+- **Kiểm kê hàng** (`#/stocktake`): nhập số thực đếm theo kho, lưu nháp trên thiết bị, gửi phiếu chờ Manager duyệt.
+- **Cân bằng kho** (`#/inventory`): đối chiếu CRM/Sapo và xem, xét duyệt phiếu cân bằng; thay tên Đối chiếu tồn Sapo.
+
+## Quyền và thời điểm ghi kho
+
+`inventory.view` cho phép xem; `inventory.manage` cho phép lập đề nghị. Chỉ tài khoản có vai trò Manager được duyệt/từ chối và chốt tồn đầu kỳ; cấp quyền lập đề nghị cho nhân viên không cho phép tự ghi tồn.
+
+Phiếu kiểm kê luôn ở trạng thái chờ duyệt lúc gửi, kể cả Manager lập. Chỉ khi Manager duyệt hoàn thành, chênh lệch thực đếm trừ tồn đối chiếu mới được ghi vào sổ kho. Số 0 là một kết quả kiểm đếm hợp lệ; ô chưa đếm phải được nhập, không tự coi là 0. Dòng không lệch vẫn lưu trong phiếu nhưng không sinh bút toán 0.
+
+Sử dụng bảng phiếu điều chỉnh và JSON dòng hiện có, không thêm bảng hoặc migration. Phiếu kiểm kê lưu `source: stocktake`, số tồn đối chiếu, số thực đếm và chênh lệch. Số phiếu theo `KK_NNN_DDMMYYYY`; lịch sử đã gửi lọc riêng phiếu kiểm kê. Audit và bút toán dùng luồng điều chỉnh hiện có.
+
+## Chống ghi nhầm, ghi lặp
+
+- Cần chốt tồn đầu kỳ cho kho trước khi kiểm kê.
+- Khi gửi và khi duyệt, máy chủ so tồn hiện tại với số đối chiếu. Khác nhau trả `STOCKTAKE_STOCK_CHANGED`; phiếu đang chờ vẫn chưa ghi tồn. Manager có thể từ chối để nhân viên kiểm đếm lại và gửi phiếu mới.
+- So sánh số đối chiếu và ghi kho trong transaction, dùng khoá sổ kho độc quyền để không chen giữa bút toán khác, kể cả SKU chưa có dòng số dư.
+- Mỗi lần gửi có client key cố định. Mạng lỗi hoặc 5xx giữ nguyên nội dung và key, khoá chỉnh sửa, cho kiểm tra lại đúng lần gửi. Gửi/duyệt lặp không ghi thêm tồn.
+- Điều chuyển kho: khoá toàn bộ thao tác trong drawer, ẩn nút khác, hiện tiến trình và chặn đóng/mở/refresh thay drawer đến khi ghi và tải trạng thái xong; lỗi khôi phục điều khiển. Áp dụng cả gửi mới và lưu chỉnh sửa.
+
+## Tốc độ và giới hạn
+
+Tìm sản phẩm từ danh mục đã tải và cache hiện có; chỉ fallback sang tìm API khi chưa có danh mục. Không tải toàn bộ danh mục lại theo mỗi phím gõ. Chọn sản phẩm hiện ngay tồn có sẵn, rồi lấy lại tồn tất cả dòng bằng một request theo lô, gộp các lượt thêm gần nhau. Mỗi phiếu tối đa 1.000 mã. Không gọi giá hoặc tồn theo từng dòng trong vòng lặp.
+
+Nháp kiểm kê tự lưu trong localStorage theo tài khoản, chỉ trên thiết bị/trình duyệt đang dùng; chưa có phiếu nháp trên máy chủ. Không nhập đè số thực đếm khi lấy lại tồn; sau phát sinh kho phải kiểm tra lại số thực tế.
+
+Bộ lọc điều chuyển gồm số phiếu/SKU, kho đi, kho đến, người xin, trạng thái và khoảng ngày lập theo giờ Việt Nam. Lọc phía máy chủ trước giới hạn 300 phiếu; danh sách người xin chỉ lấy từ các phiếu người dùng được thấy. Chỉ khi bấm Lọc hoặc Enter mới gửi request; có nút xoá về bộ lọc Đang mở.
+
+## Xác minh
+
+- Test API: bộ lọc trước giới hạn 300, ranh giới ngày Việt Nam, kho riêng và danh sách người xin.
+- Test giao diện điều chuyển: chống gửi trùng, ẩn nút khác, giữ khoá trong lúc tải trạng thái, phục hồi sau lỗi; giữ nguyên sao chép/sửa/tìm sản phẩm.
+- Test kiểm kê: quyền Manager, gửi/duyệt lặp, số 0, dòng không lệch, chặn tồn đối chiếu cũ, giữ phiếu chờ nếu duyệt thất bại.
+- Kiểm tra Chromium với API giả lập: tìm từ danh mục, tồn theo lô, nháp khôi phục sau reload, lỗi gửi không rõ kết quả và retry cùng key, giao diện desktop/mobile không lỗi JavaScript.

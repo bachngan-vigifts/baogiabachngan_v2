@@ -172,7 +172,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
   // (kho đã chốt → skipped, muốn chốt lại phải chọn đúng kho), luôn 200 kèm `results` [{ warehouseId, name, status: opened|skipped|failed, lines, message, code }].
   router.post('/inventory/opening', async c => {
     const m = me(c);
-    if (!canManage(m)) fail(403, 'Chức vụ của bạn chưa được cấp quyền chốt tồn đầu kỳ.');
+    if (!isManager(m)) fail(403, 'Chỉ Manager được chốt tồn đầu kỳ.');
     const body = await readJson(c.req, 2_000);
     if (body.confirm !== true) fail(400, 'Xác nhận chốt tồn đầu kỳ.');
     if (body.warehouseId !== undefined && typeof body.warehouseId !== 'string') fail(400,'Chọn kho chốt tồn hợp lệ.');
