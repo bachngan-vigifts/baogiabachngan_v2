@@ -1,5 +1,5 @@
 import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes, orderRecipient } from './order-notes.js';
-/** Open the business form first. Sapo is contacted only after submitting with explicit opt-in. */
+/** Open the business form first. Sapo is contacted only after submitting with its creation option enabled. */
 export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, createSourcing }) {
   const dialog = $('#order-create-dialog'), form = $('#order-create-form'), submit = $('#order-create-submit');
   const status = $('#order-create-status'), error = $('#order-create-error');

@@ -678,6 +678,7 @@
       <div class="row-gap" id="order-purchases" data-mobile-actions="off" style="margin-bottom:12px" hidden></div>
       <div class="flow-steps" id="order-flow"></div>
       <div class="card progress-card" id="order-progress" hidden></div>
+      <p class="approval-box" id="order-pos-ghn-edit" role="status" hidden></p>
       <div class="editor-grid">
         <div class="card" id="order-customer-card"><h2 class="card-title">Khách hàng</h2><dl class="kv" id="order-customer"></dl></div>
         <div class="card" id="order-summary-card"><div class="card-title-row"><h2 class="card-title" id="order-contract-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
@@ -1049,8 +1050,8 @@
       <label class="span-2">Địa chỉ giao hàng<textarea name="deliveryAddress" rows="2" maxlength="2000"></textarea></label>
       <label class="span-2">Ghi chú đơn hàng <small class="muted">Lấy từ báo giá, có thể chỉnh riêng cho đơn hàng.</small><textarea name="note" rows="4" maxlength="20000"></textarea></label>
       <fieldset class="span-2 sapo-push-choice"><legend>Tạo đơn trên Sapo?</legend>
-        <label class="check"><input type="radio" name="pushSapo" value="no" checked> Không – chỉ sinh trên web</label>
-        <label class="check"><input type="radio" name="pushSapo" value="yes"> Có – tạo thêm đơn nháp trên Sapo</label>
+        <label class="check"><input type="radio" name="pushSapo" value="no"> Không – chỉ sinh trên web</label>
+        <label class="check"><input type="radio" name="pushSapo" value="yes" checked> Có – tạo thêm đơn nháp trên Sapo</label>
       </fieldset>
       <p class="muted small span-2">Số đơn tự sinh theo ngày đặt và có thể sửa. Hệ thống dùng đúng số đã xác nhận; nếu số vừa được người khác dùng, cần lấy số mới rồi xác nhận lại.</p>
       </section>

@@ -48,12 +48,16 @@ export function posOrderEditor({ api, detail, onSaved }) {
     body.append(el('h3', 'Hàng trong đơn'));
     let snapshot = {}; try { snapshot = typeof o.posSnapshot === 'string' ? JSON.parse(o.posSnapshot) : o.posSnapshot || {}; } catch { /* API will reject incomplete historical configuration. */ }
     const activeShips = deliveries.filter(d => d.status !== 'cancelled');
-    const financial = o.fulfillmentMode === 'cod' && !['deposit', 'prepaid'].includes(snapshot.saleFlow) && !payments.some(p => !p.voidedAt) && !lines.some(l => l.deliveredQty > 0)
-      && activeShips.every(d => d.status === 'planned' && !d.trackingCode) && activeShips.length <= 1;
-    const lockedMessage = activeShips.some(d => d.trackingCode)
-      ? 'Đơn đã có vận đơn GHN: nếu cần thay mã, xử lý huỷ chuyến/vận đơn chưa xuất và lập lại đơn theo luồng hiện có. Nếu hàng đã rời kho, dùng luồng thu hồi/đổi trả; không đổi riêng mã và tiền COD trên CRM.'
-      : 'Chỉ thêm/xoá hàng ở đơn COD chưa thu tiền, chưa xuất/giao và không phải đơn cọc/trả trước. Đơn đã xử lý hàng/tiền cần dùng luồng huỷ/đổi trả.';
-    body.append(el('p', financial ? 'Tìm sản phẩm theo quầy và chính sách giá của đơn gốc. Có thể thêm hoặc xoá mã; tổng tiền, voucher và chuyến chờ giao được tính lại khi lưu.' : lockedMessage, 'muted small'));
+    const tracked = activeShips.some(d => d.trackingCode && String(d.carrier).trim().toLowerCase() === 'ghn');
+    let retryKey = snapshot.ghnAmendment?.version === 1 ? snapshot.ghnAmendment.key : null;
+    const requestKey = retryKey || crypto.randomUUID();
+    let canAbandon = !snapshot.ghnAmendment?.carrierWriteStarted;
+    const financial = !retryKey && o.fulfillmentMode === 'cod' && !['deposit', 'prepaid'].includes(snapshot.saleFlow) && !payments.some(p => !p.voidedAt) && !lines.some(l => l.deliveredQty > 0)
+      && activeShips.every(d => d.status === 'planned' && (!d.trackingCode || (String(d.carrier).trim().toLowerCase() === 'ghn' && (!d.trackingStatus || ['ready_to_pick', 'picking'].includes(d.trackingStatus))))) && activeShips.length <= 1;
+    const lockedMessage = 'Đơn đã thu tiền, có cọc/trả trước hoặc hàng đã rời kho: dùng luồng thu hồi/đổi trả. Chỉ sửa hàng COD còn chờ lấy hàng.';
+    body.append(el('p', retryKey ? 'Lần sửa trước đang chờ đối chiếu GHN. Chưa đổi hàng trên CRM và chưa được xuất/giao. Bấm Tiếp tục cập nhật GHN để hoàn tất.' : financial ? tracked
+      ? 'Có thể thêm/xoá hàng khi GHN chưa lấy hàng. Khi lưu, CRM kiểm tra trạng thái và cập nhật hàng cùng tiền COD lên GHN trước khi hoàn tất đơn.'
+      : 'Tìm sản phẩm theo quầy và chính sách giá của đơn gốc. Có thể thêm hoặc xoá mã; tổng tiền, voucher và chuyến chờ giao được tính lại khi lưu.' : lockedMessage, 'muted small'));
     const productControls = el('div', '', 'pos-edit-product-search'), productSearch = el('input'), find = el('button', 'Tìm', 'btn secondary');
     productSearch.type = 'search'; productSearch.placeholder = 'Tìm tên, mã hàng hoặc quét mã vạch…'; productSearch.setAttribute('aria-label', 'Tìm sản phẩm thêm vào đơn POS');
     productSearch.disabled = find.disabled = !financial; find.type = 'button';
@@ -83,7 +87,7 @@ export function posOrderEditor({ api, detail, onSaved }) {
       remove.addEventListener('click', () => { if (!busy) { rows = rows.filter(r => r !== row); renderRows(); } });
       rows.push(row); renderRows(); return row;
     };
-    lines.forEach(addRow);
+    if (!retryKey) lines.forEach(addRow);
     const scroll = el('div', '', 'pos-edit-lines'); scroll.append(table); body.append(scroll);
     const searchProducts = async () => {
       clearTimeout(productTimer); const seq = ++productSeq, term = productSearch.value.trim(); productResults.replaceChildren();
@@ -122,27 +126,47 @@ export function posOrderEditor({ api, detail, onSaved }) {
     field(body, 'paymentNote', 'Điều kiện / ghi chú thanh toán (không ghi nhận đã thu)', schedules[0]?.note || '');
     field(body, 'reason', 'Lý do sửa đơn *', '').required = true;
     body.append(error);
-    const foot = el('div', '', 'modal-foot'), cancel = el('button', 'Huỷ', 'btn secondary'), save = el('button', 'Lưu thay đổi', 'btn primary');
-    cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => { if (!busy) dialog.close(); }); foot.append(cancel, save);
+    const foot = el('div', '', 'modal-foot'), cancel = el('button', 'Đóng', 'btn secondary'), save = el('button', retryKey ? 'Tiếp tục cập nhật GHN' : tracked ? 'Lưu và cập nhật GHN' : 'Lưu thay đổi', 'btn primary'), abandon = el('button', 'Bỏ lần sửa', 'btn secondary');
+    abandon.type = 'button'; abandon.hidden = !retryKey;
+    cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => { if (!busy) dialog.close(); }); foot.append(cancel, abandon, save);
     form.append(head, body, foot); dialog.append(form); document.body.append(dialog);
     let busy = false;
+    const freezePending = (key, carrierWriteStarted = false, stored) => {
+      if (Array.isArray(stored?.lines)) { rows = []; stored.lines.forEach(l => addRow({ ...l, listUnitPrice: l.price })); }
+      for (const [name, value] of Object.entries(stored?.request || {})) if (controls[name] && value !== undefined && typeof value !== 'object') controls[name].value = value;
+      canAbandon = !carrierWriteStarted; abandon.disabled = !canAbandon;
+      retryKey = key; productSeq++; searchSeq++; choices.replaceChildren(); clearTimeout(productTimer); productResults.replaceChildren();
+      for (const control of body.querySelectorAll('input,select,textarea,button')) control.disabled = true;
+      save.textContent = 'Tiếp tục cập nhật GHN'; abandon.hidden = false;
+    };
+    if (retryKey) { freezePending(retryKey, !!snapshot.ghnAmendment.carrierWriteStarted, snapshot.ghnAmendment); error.textContent = snapshot.ghnAmendment.error || ''; }
+    abandon.addEventListener('click', async () => {
+      if (busy || !retryKey || !canAbandon) return; busy = true; form.inert = true;
+      try { await api('/orders/' + encodeURIComponent(o.id) + '/pos', 'PUT', { requestKey: retryKey, cancelGhnEdit: true }); dialog.close(); await onSaved(); }
+      catch (ex) { error.textContent = ex.message; } finally { busy = false; form.inert = false; }
+    });
     dialog.addEventListener('close', () => { productSeq++; clearTimeout(productTimer); dialog.remove(); }, { once: true });
     dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
     dialog.showModal();
     form.addEventListener('submit', async e => {
-      e.preventDefault(); if (busy || !form.reportValidity()) return;
-      if (financial && !rows.length) { error.textContent = 'Thêm ít nhất một sản phẩm trước khi lưu đơn.'; return; }
-      busy = true; form.inert = true; save.disabled = cancel.disabled = true; error.textContent = '';
+      e.preventDefault(); if (busy || (!retryKey && !form.reportValidity())) return;
+      if (!retryKey && financial && !rows.length) { error.textContent = 'Thêm ít nhất một sản phẩm trước khi lưu đơn.'; return; }
+      busy = true; form.inert = true; save.disabled = cancel.disabled = abandon.disabled = true; error.textContent = '';
+      if (tracked || retryKey) save.textContent = 'Đang cập nhật GHN…';
       try {
         const data = Object.fromEntries(['customerName', 'contact', 'phone', 'email', 'taxCode', 'address', 'paymentNote', 'reason'].map(k => [k, controls[k].value]));
-        await api('/orders/' + encodeURIComponent(o.id) + '/pos', 'PUT', {
-          ...data, customerId, revision: o.revision,
+        await api('/orders/' + encodeURIComponent(o.id) + '/pos', 'PUT', retryKey ? { requestKey: retryKey, resumeGhnEdit: true } : {
+          ...data, customerId, revision: o.revision, requestKey,
           ...(financial ? { lines: rows.map(r => ({ ...(r.id ? { id: r.id } : { sku: r.sku }), qty: r.qty.value, price: r.price.value, discountValue: Number(r.discount.value), discountType: r.mode.value })) } : {}),
           ...(ship ? { delivery: { address: controls.shipAddress.value, receiverName: controls.receiverName.value, receiverPhone: controls.receiverPhone.value } } : {}),
         });
         dialog.close(); await onSaved();
-      } catch (e) { error.textContent = e.message; }
-      finally { busy = false; form.inert = false; save.disabled = cancel.disabled = false; }
+      } catch (e) {
+        error.textContent = e.message;
+        if (tracked || retryKey) {
+          try { const fresh = await api('/orders/' + encodeURIComponent(o.id)); const snap = typeof fresh.order?.posSnapshot === 'string' ? JSON.parse(fresh.order.posSnapshot) : fresh.order?.posSnapshot; if (snap?.lastGhnAmendment?.key === requestKey && !snap.lastGhnAmendment.result?.cancelledGhnEdit) { dialog.close(); await onSaved(); return; } if (snap?.ghnAmendment?.key) freezePending(snap.ghnAmendment.key, !!snap.ghnAmendment.carrierWriteStarted, snap.ghnAmendment); } catch { /* Keep the request key for a safe retry after reconnecting. */ }
+        }
+      } finally { busy = false; form.inert = false; save.disabled = cancel.disabled = false; abandon.disabled = !canAbandon; save.textContent = retryKey ? 'Tiếp tục cập nhật GHN' : tracked ? 'Lưu và cập nhật GHN' : 'Lưu thay đổi'; }
     });
   });
   return button;
@@ -182,4 +206,11 @@ export function posPaymentText(detail) {
   const terms = detail.schedules.map(s => s.note).filter(n => n && !['POS', 'Ship COD'].includes(n)).join(' · ') || (detail.order.fulfillmentMode === 'cod' ? 'Thu COD sau khi giao hàng' : 'Thanh toán tại quầy');
   const methods = [...new Set(detail.payments.filter(p => !p.voidedAt).map(p => p.paymentSource==='pos_exchange_credit'?'tiền đổi hàng':p.method === 'cash' ? 'tiền mặt' : p.method === 'transfer' ? 'chuyển khoản' : 'khác'))];
   return terms + ' · ' + (methods.length ? 'Đã thu bằng ' + methods.join(', ') : 'Chưa thu');
+}
+
+export function posGhnEditNotice(detail) {
+  try {
+    const snapshot = typeof detail.order.posSnapshot === 'string' ? JSON.parse(detail.order.posSnapshot) : detail.order.posSnapshot;
+    return snapshot?.ghnAmendment ? 'Đơn đang chờ hoàn tất cập nhật GHN. Hàng và công nợ trên CRM vẫn giữ nguyên; chưa được đóng gói, xuất/giao hay thu tiền. Bấm Sửa đơn POS để tiếp tục. ' + (snapshot.ghnAmendment.error || '') : '';
+  } catch { return ''; }
 }

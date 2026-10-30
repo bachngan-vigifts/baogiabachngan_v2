@@ -1,3 +1,4 @@
+import { pendingGhnEdit, type GhnEditPreviewLine } from '../domain/pos-ghn-edit.ts';
 import { assertNotDispatched } from './cancellation-guards.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { assertNoReturnActivity } from './pos-return-credit.ts';
@@ -15,7 +16,8 @@ import { stockBalances } from '../../inventory/schema.ts';
 import { salesOrders, salesOrderLines, salesContracts, customerPayments, paymentSchedules, deliveries, deliveryLines, packingSlips, packingSlipLines } from '../schema.ts';
 
 /** Manager amendments never rewrite a posted receipt or reverse an inventory issue. */
-export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSelect, actor: PosMember, b: Record<string, unknown>) {
+export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSelect, actor: PosMember, b: Record<string, unknown>, options: { allowGhn?: boolean; allowPending?: boolean; preview?: boolean } = {}) {
+  if (pendingGhnEdit(order.posSnapshot) && !options.allowPending) throw new AppError(409, 'Đơn đang chờ hoàn tất sửa GHN. Tiếp tục lần sửa trước.', 'GHN_EDIT_PENDING');
   if (actor.role !== 'manager') throw new AppError(403, 'Đơn POS đã duyệt: chỉ Manager được sửa.');
   if (order.channel !== 'pos' || order.status === 'cancelled') throw new AppError(409, 'Chỉ sửa đơn POS còn hiệu lực.');
   if (b.revision !== order.revision) throw new AppError(409, 'Đơn vừa được cập nhật. Tải lại trước khi sửa.');
@@ -74,8 +76,8 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
       await assertNoReturnActivity(db,order.id);
       await assertNotDispatched(db, order.id);
       const active = ships.filter(s => s.status !== 'cancelled');
-      // Đã có vận đơn GHN: GHN giữ tiền thu hộ cũ → không đổi SL / giá ở CRM (thu sai tiền). Huỷ chuyến (huỷ luôn vận đơn) rồi tạo lại.
-      if (active.some(s => s.trackingCode)) throw new AppError(409, 'Đơn đã có vận đơn GHN: không đổi số lượng / giá (GHN vẫn thu hộ số cũ). Huỷ chuyến giao (huỷ luôn vận đơn GHN) rồi lập đơn mới, hoặc sửa tiền thu hộ trên GHN.', 'GHN_SHIPMENT_EXISTS');
+      // Carrier edits enter through the durable GHN workflow; ordinary edits cannot bypass its readback and reservation checks.
+      if (!options.allowGhn && active.some(s => s.trackingCode)) throw new AppError(409, 'Đơn có vận đơn GHN: mở form Sửa đơn POS để cập nhật đồng thời hàng và COD, không sửa riêng dữ liệu CRM.', 'GHN_SHIPMENT_EXISTS');
       if (order.fulfillmentMode !== 'cod' || receipts.length || oldLines.some(l => l.deliveredQty > 0) || packs.length || contracts.length || active.some(s => s.status !== 'planned') || active.length > 1)
         throw new AppError(409, 'Chỉ đổi số lượng/giá khi COD chưa xuất hàng, chưa thu và có tối đa một chuyến chờ giao. Phiếu đã đóng gói cần xử lý trước.');
       if (active.length) {
@@ -125,17 +127,37 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
       const warehouseId = snapshot.register?.warehouseId;
       if (typeof warehouseId !== 'string' || !warehouseId) throw new AppError(409, 'Thiếu kho gốc của đơn POS.');
       const balances = await db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId, warehouseId), inArray(stockBalances.sku, skus))).for('update');
-      const reserved = await reservedBySku(db, skus, warehouseId);
+      const reserved = await reservedBySku(db, skus, warehouseId, order.id);
       for (const sku of skus) {
-        const own = oldLines.filter(l => l.sku === sku).reduce((n, l) => n + (order.holdsStock ? l.qty : 0), 0);
         const wanted = plan.reduce((n, l, i) => n + (l.sku === sku ? computed![i]!.qty : 0), 0);
-        const available = (balances.find(r => r.sku === sku)?.qty ?? 0) - (reserved.get(sku) ?? 0) + own;
+        const available = (balances.find(r => r.sku === sku)?.qty ?? 0) - (reserved.get(sku) ?? 0);
         if (wanted > 0 && wanted > available + 1e-9) throw new AppError(409, `${sku}: chỉ còn khả dụng ${Math.max(0, available)}.`, 'POS_STOCK_SHORT');
       }
       const fees = snapshotPosFees(snapshot);
       totals = { subtotal: posMoney(computed.reduce((n, l) => n + l.subtotal, 0) + fees.subtotal), tax: posMoney(computed.reduce((n, l) => n + l.tax, 0) + fees.tax), total: posMoney(computed.reduce((n, l) => n + l.total, 0) + fees.total) };
       if (schedules.length !== 1) throw new AppError(409, 'Đơn có lịch thanh toán riêng, cần xử lý lịch thu trước khi đổi giá trị.');
     }
+  }
+  const paymentNote = b.paymentNote === undefined ? undefined : posText(b.paymentNote, 2000);
+  let deliveryPatch: { address: string; receiverName: string; receiverPhone: string } | undefined;
+  if (b.delivery !== undefined) {
+    if (!b.delivery || typeof b.delivery !== 'object' || Array.isArray(b.delivery)) throw new AppError(400, 'Thông tin giao không hợp lệ.');
+    const d = b.delivery as Record<string, unknown>;
+    const address = posText(d.address, 2000), receiverName = posText(d.receiverName, 500), receiverPhone = posText(d.receiverPhone, 100);
+    if (order.fulfillmentMode === 'cod' && !address) throw new AppError(400, 'Nhập địa chỉ giao hàng.');
+    const editable = ships.filter(s => ['planned', 'in_transit'].includes(s.status));
+    if (!editable.length && ships.some(s => s.status === 'delivered' && (s.address !== address || s.receiverName !== receiverName || s.receiverPhone !== receiverPhone)))
+      throw new AppError(409, 'Chuyến đã giao: không sửa thông tin giao hàng lịch sử.');
+    // Đã có vận đơn GHN: đổi người nhận / địa chỉ ở CRM không đổi trên GHN → shipper giao theo thông tin cũ. Sửa trên GHN trước.
+    if (editable.some(s => s.trackingCode && (s.address !== address || s.receiverName !== receiverName || s.receiverPhone !== receiverPhone)))
+      throw new AppError(409, 'Đơn đã có vận đơn GHN: sửa người nhận / địa chỉ trên trang GHN (CRM không tự đổi vận đơn), hoặc huỷ chuyến giao rồi tạo lại.', 'GHN_SHIPMENT_EXISTS');
+    deliveryPatch = { address, receiverName, receiverPhone };
+  }
+  if (options.preview) {
+    const prepared: GhnEditPreviewLine[] = computed ? plan.map((meta, i) => ({ ...(meta.existing ? { id: meta.id } : {}), sku: meta.sku, name: meta.name, unit: meta.unit,
+      qty: computed![i]!.qty, price: computed![i]!.listUnitPrice, taxRate: meta.taxRate, discountType: computed![i]!.discountType, discountValue: computed![i]!.discountValue, gross: computed![i]!.total }))
+      : oldLines.map(l => ({ id: l.id, sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, price: l.listUnitPrice ?? l.unitPrice, taxRate: l.taxRate, discountType: l.discountType, discountValue: l.discountValue, gross: Math.round(l.amount * (1 + l.taxRate / 100)) }));
+    return { id: order.id, revision: order.revision, ...totals, preview: { changed: !!computed, lines: prepared } };
   }
   const now = new Date().toISOString();
   if (computed) {
@@ -163,24 +185,11 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
     snapshot.discount = computed.reduce((n, l) => n + l.discountAmount, 0);
     Object.assign(snapshot, totals, { tendered: totals.total });
   }
-  const paymentNote = b.paymentNote === undefined ? undefined : posText(b.paymentNote, 2000);
   if (paymentNote !== undefined) await db.update(paymentSchedules).set({ note: paymentNote }).where(eq(paymentSchedules.orderId, order.id));
-  if (b.delivery !== undefined) {
-    if (!b.delivery || typeof b.delivery !== 'object' || Array.isArray(b.delivery)) throw new AppError(400, 'Thông tin giao không hợp lệ.');
-    const d = b.delivery as Record<string, unknown>;
-    const address = posText(d.address, 2000), receiverName = posText(d.receiverName, 500), receiverPhone = posText(d.receiverPhone, 100);
-    if (order.fulfillmentMode === 'cod' && !address) throw new AppError(400, 'Nhập địa chỉ giao hàng.');
-    const editable = ships.filter(s => ['planned', 'in_transit'].includes(s.status));
-    if (!editable.length && ships.some(s => s.status === 'delivered' && (s.address !== address || s.receiverName !== receiverName || s.receiverPhone !== receiverPhone)))
-      throw new AppError(409, 'Chuyến đã giao: không sửa thông tin giao hàng lịch sử.');
-    // Đã có vận đơn GHN: đổi người nhận / địa chỉ ở CRM không đổi trên GHN → shipper giao theo thông tin cũ. Sửa trên GHN trước.
-    if (editable.some(s => s.trackingCode && (s.address !== address || s.receiverName !== receiverName || s.receiverPhone !== receiverPhone)))
-      throw new AppError(409, 'Đơn đã có vận đơn GHN: sửa người nhận / địa chỉ trên trang GHN (CRM không tự đổi vận đơn), hoặc huỷ chuyến giao rồi tạo lại.', 'GHN_SHIPMENT_EXISTS');
-    await db.update(deliveries).set({ address, receiverName, receiverPhone, updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
-  }
+  if (deliveryPatch) await db.update(deliveries).set({ ...deliveryPatch, updatedAt: now }).where(and(eq(deliveries.orderId, order.id), inArray(deliveries.status, ['planned', 'in_transit'])));
   snapshot.customer = fields.customerName;
   snapshot.note = fields.note;
   await db.update(salesOrders).set({ ...fields, ...totals, posSnapshot: JSON.stringify(snapshot), revision: order.revision + 1, updatedAt: now }).where(eq(salesOrders.id, order.id));
   await cashAudit(db, actor.id, 'amend-pos-order', 'orders', order.id, { reason, before: { ...order, lines: oldLines }, after: { ...fields, ...totals, lines: computed ? plan.map((l, i) => ({ id: l.id, sku: l.sku, name: l.name, ...computed![i]! })) : null, delivery: b.delivery, paymentNote }, revision: order.revision + 1 });
-  return { id: order.id, revision: order.revision + 1, ...totals };
+  return { id: order.id, revision: order.revision + 1, ...totals, preview: undefined };
 }

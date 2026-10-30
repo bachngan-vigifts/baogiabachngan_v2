@@ -1,3 +1,5 @@
+import { editPosOrderWithGhn } from './pos-ghn-edit.ts';
+import { pendingGhnEdit, assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { syncContractQuoteTerms } from './contract-quote-terms.ts';
 import { contractTermsFromQuote } from '../domain/contract-quote-terms.ts';
 import { registerCrmReturnRoutes } from './crm-return-routes.ts';
@@ -124,6 +126,7 @@ const deliveryScope = (c: Ctx): SQL | undefined => { const m = viewer(c); return
 async function loadOrder(c: Ctx, id: string, db: StaffEnv['db'] | Tx = c.env.db) {
   const [order] = await db.select().from(salesOrders).where(and(eq(salesOrders.id, id), orderScope(c))).limit(1);
   if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
+  if (pendingGhnEdit(order.posSnapshot) && c.req.method !== 'GET' && !c.url.pathname.endsWith('/pos')) assertNoPendingGhnEdit(order.posSnapshot);
   return order;
 }
 /** Integration writes obey the existing approved-document lock. Shared viewers cannot push. */
@@ -530,6 +533,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
 
   router.put('/orders/:id/pos', async c => {
     const b = await readJson(c.req, 100000);
+    const checked = await loadOrder(c, c.params.id!);
+    await assertCanEditOrder(c, checked, 'đơn POS');
+    const tracked = await c.env.db.select({ id: deliveries.id }).from(deliveries).where(and(eq(deliveries.orderId, checked.id), ne(deliveries.status, 'cancelled'), ne(deliveries.trackingCode, ''))).limit(1);
+    if (pendingGhnEdit(checked.posSnapshot) || b.resumeGhnEdit || b.cancelGhnEdit || (tracked.length && b.lines !== undefined)) {
+      return json(await editPosOrderWithGhn(c.env, checked.id, viewer(c), b, async (tx, id) => { await removeMovements(tx, `sale:${id}:`); await recordSaleMovements(tx, id); }));
+    }
     return json(await c.env.db.transaction(async tx => {
       await cashLock(tx);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
@@ -1291,8 +1300,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         await tx.select({id:salesOrders.id}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
         await assertPlannedDispatch(tx,row.d.orderId,row.d.id);
       }
-      const [freshDeliveryOrder]=await tx.select({status:salesOrders.status,ownerId:salesOrders.ownerId,createdBy:salesOrders.createdBy}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
+      const [freshDeliveryOrder]=await tx.select({status:salesOrders.status,ownerId:salesOrders.ownerId,createdBy:salesOrders.createdBy,posSnapshot:salesOrders.posSnapshot}).from(salesOrders).where(eq(salesOrders.id,row.d.orderId)).for('update');
       if (!freshDeliveryOrder || (freshDeliveryOrder.status==='cancelled' && status!=='cancelled')) throw new AppError(409,'Đơn đã huỷ, không giao được.');
+      assertNoPendingGhnEdit(freshDeliveryOrder.posSnapshot);
       if(!canConfirmDelivery(me,freshDeliveryOrder))throw new AppError(403,'Quyền phụ trách chuyến giao vừa thay đổi.');
       const [carrierDelivery] = await tx.select().from(deliveries).where(eq(deliveries.id,row.d.id)).for('update');
       if (flowOrder?.channel === 'pos' && carrierDelivery && isGhnTracked(carrierDelivery) && status !== 'cancelled')
@@ -1430,8 +1440,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         if (paidAt !== vietnamDate().iso) throw new AppError(400, 'Tiền vào két ghi nhận ngày thực thu hôm nay.');
         cashShiftId = cashShift.id;
       }
-      const [fresh] = await tx.select({ status: salesOrders.status, channel: salesOrders.channel }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      const [fresh] = await tx.select({ status: salesOrders.status, channel: salesOrders.channel, posSnapshot: salesOrders.posSnapshot }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (!fresh || fresh.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không ghi thu được.');
+      assertNoPendingGhnEdit(fresh.posSnapshot);
       if (fresh.status === 'draft' && fresh.channel !== 'crm') throw new AppError(409, 'Đơn POS chưa được duyệt, chưa ghi thu được.', 'ORDER_NOT_APPROVED');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);

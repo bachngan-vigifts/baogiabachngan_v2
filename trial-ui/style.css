@@ -1979,6 +1979,12 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .incoming-table td:nth-child(3) { min-width: 170px; }
 .incoming-table td:nth-child(5) { max-width: 310px; }
 .incoming-table td:nth-child(5) small { overflow-wrap: anywhere; }
+.incoming-source { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 4px 8px; margin-top: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.incoming-source-choice { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--text-small); cursor: pointer; }
+.incoming-source-choice input { flex: 0 0 16px; }
+.incoming-source>input { width: 85px; min-width: 0; text-align: right; }
+.incoming-source>.error { grid-column: 1 / -1; }
+.incoming-table input[readonly] { background: #f2f5f8; }
 .incoming-table td:last-child input { width: 110px; min-width: 0; text-align: right; }
 .incoming-table input[type="checkbox"] { width: 16px; height: 16px; accent-color: #128653; }
 
@@ -2426,3 +2432,13 @@ dialog.inv-adjust-review { width: min(880px, 96vw); }
 dialog.inv-adjust-review tr.inv-stock-changed td { background: #fff7e0; }
 dialog.inv-adjust-review tr.inv-total-row td { font-weight: 700; border-top: 2px solid var(--line); }
 dialog.inv-count-history { width: min(820px, 96vw); }
+
+/* Chọn đơn mua nguồn cạnh loại nguồn, tự xuống hàng trên khung hẹp. */
+.quote-source-incoming { display: grid; grid-template-columns: minmax(0,1fr) auto auto; }
+.quote-source-incoming .quote-source-type, .quote-source-incoming .quote-source-order { grid-column: 1 / -1; width: 100%; font-size: var(--text-small); }
+.quote-source-incoming [role="status"] { grid-column: 1 / -1; }
+.order-compose .quote-source-incoming input { width: 80px; min-width: 0; }
+@media (min-width: 1500px) {
+  .order-compose .quote-source-incoming { grid-template-columns: minmax(140px,.85fr) minmax(200px,1.5fr) 80px auto 30px; }
+  .order-compose .quote-source-incoming .quote-source-type, .order-compose .quote-source-incoming .quote-source-order { grid-column: auto; }
+}

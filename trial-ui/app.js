@@ -32,7 +32,7 @@ import { openPosReturns } from './pos-returns.js';
 import { openCrmReturns } from './crm-returns.js';
 import { openPosQuickCancel } from './pos-quick-cancel.js';
 import { openBarcodeImport } from './barcode-import.js';
-import { posOrderEditor, posCodReceipt, posPaymentText } from './pos-order-edit.js';
+import { posOrderEditor, posCodReceipt, posPaymentText, posGhnEditNotice } from './pos-order-edit.js';
 import { renderOrderLineDetails } from './order-line-details.js';
 import { initCash } from './cash.js';
 import { initPos } from './pos.js';
@@ -3902,6 +3902,7 @@ async function openOrder(id) {
   const want = docHref(id, d.contract?.contractNo);
   if (location.hash.split('?')[0] !== want) { history.replaceState(null, '', want); lastRoutedHash = want; currentHash = want; }
   const o = d.order, r = d.receivable, isK = !!d.contract, what = isK ? 'HĐKT' : 'đơn';
+  const ghnEditNotice = $('#order-pos-ghn-edit'); ghnEditNotice.textContent = posGhnEditNotice(d); ghnEditNotice.hidden = !ghnEditNotice.textContent;
   const ref = orderReference(o, d.contract);
   $('#order-title').textContent = ref.number; $('#breadcrumb').textContent = ref.number; document.title = ref.number + ' · Bách Ngân';
   // Đơn hàng và HĐKT là 2 luồng: đơn có HĐKT quay về trang HĐKT.

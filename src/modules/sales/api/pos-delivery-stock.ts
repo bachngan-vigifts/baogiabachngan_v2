@@ -1,3 +1,5 @@
+import { pendingGhnEdit } from '../domain/pos-ghn-edit.ts';
+import { AppError } from '../../../core/errors.ts';
 import { and, eq, sql } from 'drizzle-orm';
 import { stockMoves } from '../../inventory/schema.ts';
 import { postMoves, lockLedger, assertWarehousesOpened, type LedgerDb } from '../../inventory/api/ledger.ts';
@@ -26,6 +28,7 @@ export async function issuePosDelivery(
     .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
     .where(and(eq(salesOrders.id, orderId), eq(salesOrders.channel, 'pos')));
   if (!row) return;
+  if (pendingGhnEdit(row.o.posSnapshot)) throw new AppError(409, 'Đơn đang chờ hoàn tất sửa GHN; chưa xuất kho.', 'GHN_EDIT_PENDING');
   await assertWarehousesOpened(tx, [row.warehouseId]);
   const lines = await tx
     .select()

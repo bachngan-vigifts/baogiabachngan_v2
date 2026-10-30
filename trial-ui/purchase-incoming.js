@@ -33,7 +33,8 @@ export function initPurchaseIncoming({ api, host, go }) {
   const footer = el('div', 'incoming-selection'), summary = el('div'), clear = button('Bỏ chọn', 'btn secondary', () => { selected.clear(); render(); if (mode === 'selected') load(); });
   const save = button('Lưu và gửi NCC', 'btn primary', () => {
     if(documentType.value==='early'||!selectionSummary())return;
-    history.newDraft({lines:[...selected].map(([sku,r])=>({sku,quantity:r.quantity,name:r.name,unit:r.unit})),scope:{supplierId:supplier.value,from:from.value,to:to.value,status:mode==='selected'?'all':mode}});
+    const orderSources=Object.fromEntries([...selected].filter(([,r])=>r.sourceOrders?.length).map(([sku,r])=>[sku,r.sourceOrders.map(({orderNo,supplierOrderNo,quantity})=>({orderNo,supplierOrderNo,quantity}))]));
+    history.newDraft({lines:[...selected].map(([sku,r])=>({sku,quantity:r.quantity,name:r.name,unit:r.unit})),scope:{supplierId:supplier.value,from:from.value,to:to.value,status:mode==='selected'?'all':mode,...(Object.keys(orderSources).length?{orderSources:JSON.stringify(orderSources)}:{})}});
   }); save.disabled = true;
   const note = el('p', 'muted small', 'Các lựa chọn chưa được lưu hoặc gửi NCC.');
   note.setAttribute('role', 'alert');
@@ -44,12 +45,16 @@ export function initPurchaseIncoming({ api, host, go }) {
   for (const node of [supplier, from, to]) node.addEventListener('change', () => { offset = 0; load(); });
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { offset = 0; load(); }, 200); });
   function fail(message) { error.textContent = message; error.hidden = !message; }
+  function invalidSelection(r) {
+    return !Number.isSafeInteger(r.quantity) || r.quantity <= 0 || r.quantity > r.max || !!r.sourceOrders?.some(s=>!Number.isSafeInteger(s.quantity)||s.quantity<=0||s.quantity>s.max)
+      || !!r.sourceOrders?.length && r.sourceOrders.reduce((sum,s)=>sum+s.quantity,0)!==r.quantity;
+  }
   function selectionSummary() {
-    const values = [...selected.values()], invalid = values.some(r => !Number.isSafeInteger(r.quantity) || r.quantity <= 0 || r.quantity > r.max);
+    const values = [...selected.values()], invalid = values.some(invalidSelection);
     summary.textContent = `Đã chọn ${number(values.length)} mã · Tổng SL cần lấy trước ${number(values.reduce((sum,r) => sum + (Number(r.quantity) || 0), 0))}`;
-    const problems = [...selected].filter(([,r]) => !Number.isSafeInteger(r.quantity) || r.quantity <= 0 || r.quantity > r.max);
+    const problems = [...selected].filter(([,r]) => invalidSelection(r));
     note.classList.toggle('incoming-validation', problems.length > 0);
-    note.textContent = problems.length ? 'Chưa thể lưu: ' + problems.slice(0,3).map(([sku,r]) => `${sku}: ${r.quantity > r.max ? 'SL vượt số còn về '+number(r.max) : 'SL phải là số nguyên dương'}`).join('; ') : 'Các lựa chọn chưa được lưu hoặc gửi NCC.';
+    note.textContent = problems.length ? 'Chưa thể lưu: ' + problems.slice(0,3).map(([sku,r]) => `${sku}: kiểm tra SL và số còn về của từng đơn đã chọn.`).join('; ') : 'Các lựa chọn chưa được lưu hoặc gửi NCC. Đã chọn đơn mua thì chỉ lấy hàng từ đúng các đơn đó; không tự chuyển sang đơn khác.';
     clear.disabled = !values.length; save.disabled = documentType.value==='early' || !canRequest || !data?.canSend || invalid || !values.length;
     return !invalid && values.length > 0;
   }
@@ -85,7 +90,7 @@ export function initPurchaseIncoming({ api, host, go }) {
       if (row.importedMissingSource) name.append(el('small', 'sup-pill warn', 'Nhập Excel, thiếu chứng từ'));
       if (row.unitConflict) name.append(el('small', 'sup-pill warn', 'ĐVT không thống nhất; chưa thể xin lấy trước'));
       const orders = el('td');
-      if(data.documentType!=='early')orders.append(el('span', '', `${number(row.orderCount)} đơn mua · ${row.supplierNames.join(', ')}`), el('small', 'muted sup-sub', row.orders.map(o => `${o.ticketNumber} · ${number(o.quantity)}`).join(' · ')));
+      if(data.documentType!=='early')orders.append(el('span', '', `${number(row.orderCount)} đơn mua · ${row.supplierNames.join(', ')}`));
       const saved=row.earlyRequests||[];
       if(saved.length){orders.append(el('b','small',`${number(new Set(saved.map(r=>r.id)).size)} phiếu lấy trước · SL đã xin ${number(row.earlyQuantity)}`));for(const r of saved.slice(0,3))orders.append(requestNode(r));
         if(saved.length>3)orders.append(button(`Xem đủ ${number(saved.length)} phần phiếu lấy trước`,'btn ghost small',()=>{expanded.add(row.sku);render();}));}
@@ -100,6 +105,36 @@ export function initPurchaseIncoming({ api, host, go }) {
         quantityError.textContent = valid || amount === null ? '' : amount > row.quantity ? `SL ${number(amount)} vượt số còn về ${number(row.quantity)}.` : `Nhập số nguyên từ 1 đến ${number(Math.floor(row.quantity))}.`;
         quantityError.hidden = !quantityError.textContent; qty.setCustomValidity(quantityError.textContent); qty.setAttribute('aria-invalid',String(!!quantityError.textContent));
       };
+      if(data.documentType!=='early') {
+        // A purchase may contain multiple lines of the same SKU; select the order once.
+        const sources=new Map();
+        for(const order of row.orders){const source=sources.get(order.id);if(source)source.quantity+=order.quantity;else sources.set(order.id,{...order});}
+        if(chosen?.sourceOrders)for(const source of chosen.sourceOrders)source.max=sources.get(source.orderId)?.quantity||0;
+        for(const order of sources.values()) {
+          const sourceLine=el('div','incoming-source'),label=el('label','incoming-source-choice'),pick=el('input');pick.type='checkbox';
+          const pinned=chosen?.sourceOrders?.find(s=>s.orderId===order.id);
+          pick.checked=!!pinned;pick.disabled=check.disabled;pick.setAttribute('aria-label',`Lấy mã ${row.sku} từ ${order.ticketNumber}`);
+          label.append(pick,el('span','',`${order.ticketNumber} · còn ${number(order.quantity)} · hẹn ${date(order.due)}`));sourceLine.append(label);
+          pick.addEventListener('change',()=>{
+            const current=selected.get(row.sku),list=[...(current?.sourceOrders||[])].filter(s=>s.orderId!==order.id);
+            if(pick.checked)list.push({orderId:order.id,orderNo:order.ticketNumber,supplierOrderNo:order.internalNo||'',quantity:Math.min(order.quantity,current?.sourceOrders?.length?1:current?.quantity||1),max:order.quantity});
+            if(list.length)selected.set(row.sku,{quantity:list.reduce((sum,s)=>sum+s.quantity,0),max:row.quantity,name:row.name,unit:row.unit,sourceOrders:list});else selected.delete(row.sku);
+            render();
+          });
+          if(pinned) {
+            const sourceQty=el('input');sourceQty.type='number';sourceQty.min='1';sourceQty.max=String(Math.floor(order.quantity));sourceQty.step='1';sourceQty.value=pinned.quantity;sourceQty.disabled=pick.disabled;
+            sourceQty.setAttribute('aria-label',`SL mã ${row.sku} lấy từ ${order.ticketNumber}`);
+            const message=el('small','error sup-sub');message.setAttribute('role','alert');
+            const validate=()=>{const valid=Number.isSafeInteger(pinned.quantity)&&pinned.quantity>0&&pinned.quantity<=order.quantity;message.textContent=valid?'':`Nhập số nguyên từ 1 đến ${number(Math.floor(order.quantity))}.`;message.hidden=valid;sourceQty.setCustomValidity(message.textContent);sourceQty.setAttribute('aria-invalid',String(!valid));};
+            sourceQty.addEventListener('input',()=>{pinned.quantity=sourceQty.value===''?0:Number(sourceQty.value);const current=selected.get(row.sku);current.quantity=current.sourceOrders.reduce((sum,s)=>sum+s.quantity,0);qty.value=current.quantity;validate();validateQuantity(current.quantity);selectionSummary();});
+            validate();sourceLine.append(sourceQty,message);
+          }
+          orders.append(sourceLine);
+        }
+        qty.readOnly=!!chosen?.sourceOrders?.length;
+        if(qty.readOnly)qtyCell.append(el('small','muted sup-sub','Tổng SL từ các đơn đã chọn'));
+        else orders.append(el('small','muted sup-sub','Chọn đơn để lấy đúng nguồn; chưa chọn sẽ tự phân bổ.'));
+      }
       const update = () => {
         const amount = qty.value === '' ? null : Number(qty.value);
         if (!selected.has(row.sku) && selected.size >= 300 && amount !== null) { fail('Mỗi phiếu chọn tối đa 300 mã hàng.'); qty.value = ''; return; }

@@ -19,10 +19,11 @@ class Node {
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
 async function setup(fail=false,overrides:any={},confirm=true,choice:string|null='create'){
   const host=new Node(),posts:any[]=[];let current=true;
-  const ctx:any={document:{createElement:(tag:string)=>new Node(tag)},crypto:{randomUUID:()=> 'safe-client-key'}};
+  const ctx:any={URLSearchParams,document:{createElement:(tag:string)=>new Node(tag)},crypto:{randomUUID:()=> 'safe-client-key'}};
   runInNewContext(readFileSync(new URL('../../trial-ui/quote-sourcing.js',import.meta.url),'utf8').replace('export function chooseSourcePurchase','function chooseSourcePurchase').replace('export async function initQuoteSourcing','globalThis.initQuoteSourcing = async function'),ctx);
   const api=async(path:string,method?:string,body?:any)=>{
     if(method){posts.push({path,body});if(fail)throw Error('Mất kết nối');if(path==='/stock-transfers')return{id:'t1'};if(path==='/purchase-orders')return{ids:body.orders.map((_:any,i:number)=>'p'+(i+1))};return{request:{id:'e1'}};}
+    if(path.startsWith('/purchase-incoming?'))return {rows:[{sku:'X',orders:[{id:'p1',ticketNumber:'DMH_001',supplierName:'NCC Một',quantity:1,due:'2026-11-01'},{id:'p2',ticketNumber:'DMH_002',supplierName:'NCC Hai',internalNo:'00042',quantity:2,due:'2026-11-03'}]}]};
     if(path==='/purchase-options')return{suppliers:[{id:'s1',name:'NCC Một'}]};
     return{quoteNo:'BG1',customerName:'Khách',canPurchase:true,canRequestEarly:true,warehouses:[{id:'a',name:'Kho bán',opened:true,canSell:true},{id:'b',name:'Kho xin',opened:true,canSell:false}],lines:[{sku:'X',name:'Sản phẩm',unit:'cái',qty:3,stock:{a:2,b:1},incoming:1}],...overrides};
   };
@@ -44,8 +45,8 @@ test('nguồn hàng UI: đặt NCC nháp đúng nguồn báo giá; xin giao trư
   const s=await setup(),type=s.label('Nguồn hàng X');type.value='purchase';await type.fire('change');
   s.label('Nhà cung cấp X').value='s1';await s.button('Lập đơn mua nháp').fire();
   assert.equal(s.posts[0].path,'/purchase-orders');assert.equal(s.posts[0].body.orders[0].lines[0].sources[0].id,'q');assert.match(s.ui.read().note,/NCC Một/);
-  const e=await setup();e.label('Nguồn hàng X').value='incoming';await e.label('Nguồn hàng X').fire('change');await e.button('Xin giao trước').fire();
-  assert.equal(e.posts[0].path,'/purchase-early-requests');assert.equal(e.posts[0].body.clientKey,'safe-client-key');assert.match(e.ui.read().note,/#\/purchases/);
+  const e=await setup();e.label('Nguồn hàng X').value='incoming';await e.label('Nguồn hàng X').fire('change');assert.equal(e.button('Xin giao trước').disabled,true);e.label('Đơn mua lấy hàng X').value='p2';await e.label('Đơn mua lấy hàng X').fire('change');await e.button('Xin giao trước').fire();
+  assert.equal(e.posts[0].path,'/purchase-early-requests');assert.equal(e.posts[0].body.clientKey,'safe-client-key');assert.deepEqual(JSON.parse(JSON.stringify(e.posts[0].body.lines)),[{sku:'X',quantity:1,sourceOrders:[{orderNo:'DMH_002',supplierOrderNo:'00042',quantity:1}]}]);assert.match(e.ui.read().note,/DMH_002.*03\/11\/2026/);assert.match(e.ui.read().note,/#\/purchases/);
 });
 test('nguồn hàng UI: mất kết nối sau gửi không cho bấm lặp mù; đóng form không tạo yêu cầu',async()=>{
   const s=await setup(true);s.label('Kho xin hàng X').value='b';await s.button('Xin hàng').fire();await s.button('Xin hàng').fire();
@@ -114,4 +115,13 @@ test('hộp chọn mua NCC: tạo ngay, đặt sau và Escape trả kết quả 
     assert.equal(await promise,choice);assert.equal(body.children.length,0);
   }
   assert.equal(shown,3);
+});
+
+test('xin giao trước: chọn đơn và ngày hẹn, chặn vượt nguồn; đổi loại nguồn không mất đơn đã chọn',async()=>{
+  const s=await setup(false,{lines:[{sku:'X',name:'Sản phẩm',unit:'cái',qty:3,stock:{a:0},incoming:3}]}),type=s.label('Nguồn hàng X');
+  type.value='incoming';await type.fire('change');assert.throws(()=>s.ui.read(),/chọn đơn mua NCC/);
+  const order=s.label('Đơn mua lấy hàng X');assert.match(order.textContent,/DMH_002.*03\/11\/2026/);order.value='p2';await order.fire('change');
+  assert.throws(()=>s.ui.read(),/DMH_002.*tối đa 2/);await s.button('Xin giao trước').fire();assert.equal(s.posts.length,0);
+  type.value='transfer';await type.fire('change');assert.equal(order.hidden,true);
+  type.value='incoming';await type.fire('change');assert.equal(order.value,'p2');assert.equal(order.hidden,false);
 });
