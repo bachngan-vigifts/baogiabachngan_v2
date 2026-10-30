@@ -7,7 +7,7 @@ import { bindForgotPassword } from './forgot-password.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
-import { createApiRegion } from './api-region.js';
+import { createApiRegion, createRegionCanary } from './api-region.js';
 import { createPageCache, isCacheable } from './page-cache.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
@@ -303,7 +303,8 @@ const saveToken = t => { const next=t||'';if(next!==token||!next)sessionResume.c
 const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>token,verify:()=>api('/me'),open:openWorkspace,refresh:refreshWorkspaceUser});
 
 const requestPriority = createRequestPriority();
-const apiRegion = createApiRegion(); // Edge chạy cùng vùng CSDL (api-region.js)
+createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
+const regionCanary = createRegionCanary({ onDisabled: () => toast('Đã tắt thử máy chủ cạnh CSDL (có lỗi kết nối). App dùng lại máy chủ mặc định.', 'err') });
 const pageCache = createPageCache(); // trang mở lại hiện ngay (page-cache.js)
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }
 /** Gọi API; lời gọi ghi khoá nút vừa bấm tới khi xong (busy-buttons.js – chống bấm trùng, có vòng xoay đang xử lý). */
@@ -333,16 +334,18 @@ async function apiRequest(path, method = 'GET', body) {
   if (requestToken) headers.authorization = 'Bearer ' + requestToken;
   let res;
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
-  let sentAt = 0, target = apiRegion.url(API + path);
-  const send = () => requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(target.url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); });
+  // Thử máy chủ cạnh CSDL (chỉ máy đã bật trong "Đo tốc độ"): thêm header x-region; lỗi là tự tắt (api-region.js).
+  let sentAt = 0, canary = regionCanary.headers();
+  const send = () => requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(API + path, { method, headers: { ...headers, ...canary }, body: body === undefined ? undefined : JSON.stringify(body) }); });
   try { res = await send(); }
   catch {
-    apiRegion.failed(target.forced);
-    // Lệnh đọc ép vùng lỗi mạng: thử lại một lần theo đường thường (lệnh ghi không bao giờ tự gửi lại).
-    if (target.forced && method === 'GET') { target = apiRegion.url(API + path); try { res = await send(); } catch { /* báo lỗi bên dưới */ } }
+    const tried = !!canary['x-region'];
+    regionCanary.failed(tried);
+    // Lệnh đọc lỗi mạng khi đang thử: thử lại một lần theo máy chủ mặc định (lệnh ghi không bao giờ tự gửi lại).
+    if (tried && method === 'GET') { canary = {}; try { res = await send(); } catch { /* báo lỗi bên dưới */ } }
     if (!res) throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
-  apiRegion.observe(res.headers?.get('server-timing'), target.forced);
+  regionCanary.observe(res.headers?.get('server-timing'), !!canary['x-region']);
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
@@ -518,7 +521,7 @@ function toggleAccountMenu(force) {
 $('#account-button').addEventListener('click', e => { e.stopPropagation(); toggleAccountMenu(); });
 $('#account-button-m').addEventListener('click', e => { e.stopPropagation(); toggleAccountMenu(); });
 document.addEventListener('click', e => { if (!e.target.closest('#account-menu')) toggleAccountMenu(false); });
-$('#speed-check').addEventListener('click', () => { toggleAccountMenu(false); openSpeedDialog({ toast }); });
+$('#speed-check').addEventListener('click', () => { toggleAccountMenu(false); openSpeedDialog({ toast, canary: isManager() ? regionCanary : null }); });
 $('#logout').addEventListener('click', async () => {
   toggleAccountMenu(false);
   if (editor.dirty && !await confirmBox('Báo giá đang sửa chưa được lưu. Vẫn đăng xuất?', { ok: 'Đăng xuất' })) return;

@@ -137,3 +137,9 @@ test('pooler chỉ bật khi biến ENABLE_DB_POOLER = true; mặc định tri�
   assert.match(workflow, /SUPABASE_POOLER_URL: \$\{\{ vars\.ENABLE_DB_POOLER == 'true' && secrets\.SUPABASE_POOLER_URL \|\| '' \}\}/);
   assert.match(workflow, /env\.SUPABASE_POOLER_URL == ''\n[^\n]*\n\s*run: supabase secrets unset DB_POOLER_URL/);
 });
+
+test('CORS cho phép header x-region (thử máy chủ cạnh CSDL từ trình duyệt)', async () => {
+  const h = await harness();
+  const res = await h.request('OPTIONS');
+  assert.match(res.headers.get('access-control-allow-headers') || '', /x-region/);
+});

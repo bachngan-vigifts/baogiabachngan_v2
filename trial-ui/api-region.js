@@ -34,3 +34,28 @@ export function createApiRegion({ storage = () => globalThis.localStorage, enabl
     current: () => region,
   };
 }
+
+// THỬ MÁY CHỦ CẠNH CSDL (canary – chỉ máy đang bật, nút trong hộp "Đo tốc độ" của Manager).
+// Gửi header `x-region: <vùng>` để Supabase chạy Edge ở vùng của CSDL. Khác cơ chế cũ ở trên: KHÔNG tự học vùng, chỉ bật khi
+// người dùng bấm; bất kỳ lượt nào không tới được máy chủ của mình (lỗi mạng, phản hồi thiếu Server-Timing) → tự tắt hẳn,
+// không tự bật lại. So số đo "Đo tốc độ" trước / sau để quyết định có bật cho mọi người hay không.
+const CANARY_KEY = 'bn-api-region-canary';
+export const CANARY_REGION = 'ap-northeast-2';
+export function createRegionCanary({ storage = () => globalThis.localStorage, onDisabled = () => {} } = {}) {
+  let region = '';
+  try { region = storage()?.getItem(CANARY_KEY) || ''; } catch { /* chế độ riêng tư */ }
+  if (!VALID.test(region)) region = '';
+  const save = next => { region = next; try { if (next) storage()?.setItem(CANARY_KEY, next); else storage()?.removeItem(CANARY_KEY); } catch { /* bỏ qua */ } };
+  return {
+    /** Header thêm vào lời gọi API (rỗng khi chưa bật). */
+    headers: () => (region ? { 'x-region': region } : {}),
+    enabled: () => !!region,
+    current: () => region,
+    enable(next = CANARY_REGION) { if (VALID.test(next)) save(next); },
+    disable() { save(''); },
+    /** Sau mỗi phản hồi: lượt có header mà không thấy Server-Timing (không tới máy chủ của mình) → tắt. */
+    observe(serverTiming, sent) { if (sent && region && !serverTiming) { save(''); onDisabled(); } },
+    /** Lỗi mạng ở lượt có header → tắt. */
+    failed(sent) { if (sent && region) { save(''); onDisabled(); } },
+  };
+}
