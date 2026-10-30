@@ -113,7 +113,14 @@ test('giao dịch chăm sóc: ghi / sửa / xoá, chỉ thấy của mình, Mana
   assert.equal(t1.length, 1, 'chỉ hẹn ngày mai (nhắc trước 1 ngày) – hẹn 20 ngày nữa nhắc trước 1 tuần thì chưa');
   assert.match(t1[0].title, /^Chăm sóc lại Công ty Hoàng Long – Anh Long/); assert.equal(t1[0].link, `#/care/${id1}`); assert.equal(t1[0].dueDate, addDays(today, 1));
   assert.equal((await careTasks(emp2)).length, 1, 'việc về nhân viên được Manager giao phụ trách');
-  assert.equal((await call(`/care/${id1}/done`, emp, 'POST', {})).data.activity.followUp, 'done');
+  const doneBody={revision:ed.data.activity.revision,nextAt:ed.data.activity.nextAt};
+  assert.equal((await call(`/care/${id1}/done`,emp,'POST',{...doneBody,nextAt:today})).status,409,'stale appointment date');
+  const completed=await call(`/care/${id1}/done`,emp,'POST',doneBody);
+  assert.equal(completed.data.activity.followUp,'done');
+  const retried=await call(`/care/${id1}/done`,emp,'POST',doneBody);
+  assert.equal(retried.status,200);assert.equal(retried.data.stateMatches,true);
+  assert.equal(retried.data.activity.revision,completed.data.activity.revision);
+  assert.equal((await call(`/care/${id1}/done`,emp,'POST',{...doneBody,done:false})).status,409,'stale different state must not overwrite');
   await reconcileAutoTasks(db);
   t1 = await careTasks(emp); assert.equal(t1.filter((t: any) => t.status !== 'done').length, 0, 'xong hẹn → việc tự hoàn thành');
   assert.equal((await call(`/care/${id1}/done`, emp, 'POST', { done: false })).data.activity.followUp, 'upcoming', 'mở lại hẹn');

@@ -59,7 +59,7 @@ export function adjustmentSummary(lines){
  return {count:lines.length,changed:changed.length,up:Math.round(up*1000)/1000,down:Math.round(down*1000)/1000};
 }
 export function initAdjustmentQueue({api,host,toast,onChanged,kind,userId}){
- let config=null,sequence=0,offset=0,next=null,deepOpened='',opening=null,canApprove=false;
+ let config=null,sequence=0,offset=0,next=null,deepOpened='',opening=null,canApprove=false,listed=[];
  const stocktake=kind==='stocktake',noun=stocktake?'phiếu kiểm kê':'phiếu cân bằng';
  // BỘ LỌC như trang Điều chuyển kho: chip trạng thái + khung lọc (tìm số phiếu / mã hàng, kho, người lập, trạng thái, khoảng ngày).
  const head=el('div','card-title-row'),bar=el('div','toolbar chips'),list=el('div','table-wrap'),feedback=el('p','muted transfer-filter-note'),error=el('p','error');
@@ -107,6 +107,7 @@ export function initAdjustmentQueue({api,host,toast,onChanged,kind,userId}){
    for(const [key,control] of [['q',search],['warehouseId',warehouse],['createdBy',creator],['from',from],['to',to]])if(control.value.trim())p.set(key,control.value.trim());
    const data=await api('/inventory/adjustments?'+p);if(mine!==sequence||owner!==userId?.())return;
    next=data.nextOffset;canApprove=!!data.canApprove;table.classList.toggle('show-value',data.adjustments.some(r=>r.valueDelta));fill(creator,(data.filterOptions?.creators||[]).map(m=>[m.id,m.name]),'Tất cả người lập');
+   listed=data.adjustments;
    tbody.replaceChildren(...(data.adjustments.length?data.adjustments.map(row):[(()=>{const tr=el('tr'),td=el('td','muted','Không có '+noun+' phù hợp bộ lọc.');td.colSpan=8;tr.append(td);return tr;})()]));
    const waiting=data.adjustments.filter(r=>r.status==='pending').length;
    feedback.textContent=data.adjustments.length?`${noun[0].toUpperCase()+noun.slice(1)} ${offset+1}–${offset+data.adjustments.length}`+(canApprove&&waiting?` · ${waiting} phiếu chờ Manager duyệt`:''):'Không có '+noun+' phù hợp bộ lọc.';
@@ -154,7 +155,11 @@ export function initAdjustmentQueue({api,host,toast,onChanged,kind,userId}){
    let applyDelta=changedStock.length>0;
    const approveText=()=>applyDelta?'Duyệt theo chênh lệch và ghi kho':'Duyệt hoàn thành và ghi kho';
    const review=async decision=>{if(busy)return;if(decision==='rejected'&&note.value.trim().length<3){error.textContent='Nhập lý do từ chối.';return;}busy=true;error.textContent='';approve.disabled=reject.disabled=true;
-    try{await api('/inventory/adjustments/'+encodeURIComponent(id)+'/review','POST',{decision,note:note.value.trim(),...(decision==='approved'&&applyDelta?{applyDelta:true}:{})});busy=false;dialog.close();toast(decision==='approved'?'Đã duyệt và ghi tồn kho.':'Đã từ chối phiếu, không đổi tồn.');await onChanged();}
+    try{const result=await api('/inventory/adjustments/'+encodeURIComponent(id)+'/review','POST',{decision,note:note.value.trim(),...(decision==='approved'&&applyDelta?{applyDelta:true}:{})});busy=false;dialog.close();if(owner!==userId?.())return;
+      toast(result.status==='approved'?'Đã duyệt và ghi tồn kho.':'Đã từ chối phiếu, không đổi tồn.');
+      if(result.id===id&&['approved','rejected'].includes(result.status)){listed=listed.map(r=>r.id===id?{...r,status:result.status}:r).filter(r=>!filter.value||r.status===filter.value);tbody.replaceChildren(...listed.map(row));feedback.textContent='Đã xử lý phiếu · đang cập nhật danh sách và tồn kho…';prev.disabled=more.disabled=true;}
+      void Promise.resolve().then(()=>onChanged()).catch(()=>toast('Phiếu đã xử lý; chưa tải lại được dữ liệu. Bấm Làm mới phiếu.','err'));
+    }
     catch(e){error.textContent=e.message+(e.code==='STOCKTAKE_STOCK_CHANGED'?' Bấm lại nút duyệt để áp chênh lệch vào tồn hiện tại.':'');if(e.code==='STOCKTAKE_STOCK_CHANGED'){applyDelta=true;approve.textContent=approveText();}busy=false;approve.disabled=reject.disabled=false;}
    };
    const approve=btn(approveText(),()=>review('approved'),'btn primary'),reject=btn('Từ chối phiếu',()=>review('rejected'));approve.dataset.mobilePrimary='';foot.append(reject,approve);

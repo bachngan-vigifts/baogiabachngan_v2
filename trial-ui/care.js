@@ -95,7 +95,7 @@ export function initCare(deps) {
     if (t.closest('[data-care-new]')) return openForm({}, refresh);
     const ed = t.closest('[data-care-edit]'); if (ed) return openForm({ activity: st.rows.find(a => a.id === ed.dataset.careEdit) }, refresh);
     const done = t.closest('[data-care-done]');
-    if (done) { try { await api(`/care/${encodeURIComponent(done.dataset.careDone)}/done`, 'POST', {}); toast('Đã đánh dấu chăm sóc xong.'); refresh(); } catch (ex) { toast(ex.message, 'err'); } return; }
+    if (done) { const a=st.rows.find(a=>a.id===done.dataset.careDone);if(!a)return;try { await api(`/care/${encodeURIComponent(done.dataset.careDone)}/done`, 'POST', {revision:a.revision,nextAt:a.nextAt}); toast('Đã đánh dấu chăm sóc xong.'); refresh(); } catch (ex) { toast(ex.message, 'err'); } return; }
     const del = t.closest('[data-care-del]');
     if (del) {
       if (!await confirmBox('Xoá lần chăm sóc này?', { ok: 'Xoá', danger: true })) return;

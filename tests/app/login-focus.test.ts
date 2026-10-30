@@ -7,6 +7,7 @@ import { createApiTransport } from '../../trial-ui/api-transport.js';
 
 const source = readFileSync(new URL('../../trial-ui/app.js', import.meta.url), 'utf8');
 const apiSource = source.slice(source.indexOf('class ApiError'), source.indexOf('// CSP chỉ báo cáo'));
+const logoutSource = source.slice(source.indexOf("$('#logout').addEventListener('click'"), source.indexOf('function showOwnAvatar('));
 const authSource = source.slice(source.indexOf('function showAuth('), source.indexOf('function setupActivationForm('));
 
 function harness() {
@@ -14,15 +15,17 @@ function harness() {
   const pending: Array<(response: unknown) => void> = [];
   const document = { activeElement: null as unknown };
   const elements: Record<string, any> = {};
-  for (const id of ['auth', 'workspace', 'chat-launcher', 'auth-error', 'auth-title', 'email', 'password']) {
+  for (const id of ['auth', 'workspace', 'chat-launcher', 'auth-error', 'auth-title', 'email', 'password', 'logout', 'auth-note']) {
     elements['#' + id] = { hidden: true, value: '', textContent: '', focus() { document.activeElement = this; } };
   }
+  elements['#logout'].addEventListener = (_event: string, fn: Function) => elements['#logout'].click = fn;
   elements['#auth'].contains = (el: unknown) => el === elements['#email'] || el === elements['#password'];
   const ctx: any = {
     withBusy: (_method: string, promise: Promise<unknown>) => promise,
     requestPriority: { run: (_bg: boolean, work: () => unknown) => work() }, isBackgroundRequest: () => false, recordApi() {}, performance,
     regionCanary: { headers: () => ({}), observe() {}, failed() {} },
     isCacheable: () => false, isPassiveWrite: () => false, pageCache: { clear() {} }, customerSearch: { clear() {} },
+    toggleAccountMenu() {}, editor: { dirty: false }, quoteDeviceDraft: { logout() {} },
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, approvalUi: null, API: '/api',
     location: { hash: '#/quotes' },
     dataRefresh: { stop() {}, observe() {}, saved() {}, tick() {} },
@@ -33,7 +36,7 @@ function harness() {
   };
   ctx.apiFetch = createApiTransport({ fetcher: (...args: unknown[]) => ctx.fetch(...args) });
   ctx.saveToken = (value: string) => { ctx.token = value || ''; };
-  runInNewContext(apiSource + '\n' + authSource + '\nthis.api = api; this.showAuth = showAuth;', ctx);
+  runInNewContext(apiSource + '\n' + authSource + '\n' + logoutSource + '\nthis.api = api; this.showAuth = showAuth;', ctx);
   const respond = (status: number, data = {}) => pending.shift()!({
     status, ok: status < 400, json: async () => data,
   });
@@ -109,7 +112,9 @@ test('delayed logout response cannot clear a new session', async () => {
   const result = h.ctx.api('/logout', 'POST', {});
   h.ctx.token = 'new-session';
   h.respond(200, { sessionToken: '' });
-  await result;
+  // Phản hồi của phiên cũ: báo STALE_SESSION (mã 409 – không bị coi là "chưa rõ đã lưu" để gửi lại), không xoá phiên mới.
+  const error = await result.then(() => null, (e: any) => e);
+  assert.equal(error?.code, 'STALE_SESSION'); assert.equal(error?.status, 409);
   assert.equal(h.ctx.token, 'new-session');
 });
 
@@ -130,4 +135,34 @@ test('successful login stores the new session token', async () => {
   h.respond(200, { sessionToken: 'new-session' });
   await result;
   assert.equal(h.ctx.token, 'new-session');
+});
+
+
+test('logout button ignores an old response after another account logs in', async () => {
+  for (const status of [200, 401]) {
+    const h = harness(), pending = h.elements['#logout'].click();
+    const currentUser = { id: 'new-user' }, quotes = [{ id: 'new-account-quote' }];
+    h.ctx.token = 'new-session'; h.ctx.state.user = currentUser; h.ctx.state.quotes = quotes;
+    h.respond(status, { sessionToken: '' }); await pending;
+    assert.equal(h.ctx.token, 'new-session'); assert.equal(h.ctx.state.user, currentUser);
+    assert.equal(h.ctx.state.quotes, quotes); assert.equal(h.elements['#auth'].hidden, true);
+    assert.equal(h.elements['#auth-note'].textContent, '');
+  }
+});
+
+test('logout button still signs out the current account on success or a server error', async () => {
+  for (const status of [200, 503]) {
+    const h = harness(), pending = h.elements['#logout'].click();
+    h.respond(status, status === 200 ? { sessionToken: '' } : { error: 'Temporarily unavailable' }); await pending;
+    assert.equal(h.ctx.token, ''); assert.equal(h.ctx.state.user, null);
+    assert.equal(h.elements['#auth'].hidden, false); assert.equal(h.elements['#auth-note'].textContent, 'Đã đăng xuất.');
+  }
+});
+
+test('changing account while the logout confirmation is open does not send logout for the new account', async () => {
+  const h = harness(); let confirm!: (yes: boolean) => void;
+  h.ctx.editor.dirty = true; h.ctx.confirmBox = () => new Promise(resolve => { confirm = resolve; });
+  const pending = h.elements['#logout'].click(); h.ctx.token = 'new-session'; h.ctx.state.user = { id: 'new-user' };
+  confirm(true); await pending;
+  assert.equal(h.ctx.token, 'new-session'); assert.equal(h.ctx.editor.dirty, true); assert.equal(h.elements['#auth'].hidden, true);
 });

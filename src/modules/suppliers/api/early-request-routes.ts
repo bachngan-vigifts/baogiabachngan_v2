@@ -161,6 +161,11 @@ async function respondEarlyLine(db:Db, actorId:string, id:string, supplierId:str
   });
 }
 
+async function withReceiptAvailability(db:Db, rows:Awaited<ReturnType<typeof earlyRequestList>>) {
+  const availability=await earlyReceiptAvailability(db,rows.map(r=>r.id)),byAllocation=new Map(availability.map(r=>[r.allocationId,r]));
+  return rows.map(r=>({...r,lines:r.lines.map(l=>({...l,allocations:l.allocations.map(a=>({...a,remainingToReceive:byAllocation.get(a.id)?.remaining??0,receivedQty:byAllocation.get(a.id)?.receivedQty??0,receivedElsewhere:byAllocation.get(a.id)?.receivedElsewhere??0,purchaseRemaining:byAllocation.get(a.id)?.purchaseRemaining??0}))}))}));
+}
+
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests',async c=>{
     guard(c);const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);
@@ -168,10 +173,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     const replacements=id?await splitResult(c.env.db,id):null;
     const requests=await earlyRequestList(c.env.db,supplierId,replacements||id,false,{...page,limit:page.limit+1});
     const nextOffset=!id&&requests.length>page.limit?page.offset+page.limit:null;if(nextOffset!==null)requests.pop();
-    const availability=await earlyReceiptAvailability(c.env.db,requests.map(r=>r.id));
-    const byAllocation=new Map(availability.map(r=>[r.allocationId,r]));
-    return json({requests:requests.map(r=>({...r,lines:r.lines.map(l=>({...l,allocations:l.allocations.map(a=>({...a,
-      remainingToReceive:byAllocation.get(a.id)?.remaining??0,receivedQty:byAllocation.get(a.id)?.receivedQty??0,receivedElsewhere:byAllocation.get(a.id)?.receivedElsewhere??0,purchaseRemaining:byAllocation.get(a.id)?.purchaseRemaining??0}))}))})),nextOffset,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
+    return json({requests:await withReceiptAvailability(c.env.db,requests),nextOffset,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
   },'business');
   router.get('/purchase-early-requests/:id/receiving',async c=>{
     guard(c);if(!canReceive(me(c)))fail(403,'Bạn không có quyền nhận hàng NCC.');
@@ -309,9 +311,11 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
         for(const requestId of [...new Set(pending.map(r=>r.requestId))])await audit(tx,m,requestId,'early-request-manager-confirm-batch',{
           status:'accepted',allocations:pending.filter(r=>r.requestId===requestId).map(r=>({id:r.a.id,supplierId:r.a.supplierId,quantity:r.a.quantity}))});
       }
-      return {confirmed:pending.length,replayed:pending.length===0};
+      return {confirmed:pending.length,replayed:pending.length===0,requestIds:[...new Set(rows.map(r=>r.requestId))]};
     });
-    return json({ok:true,...result});
+    let confirmedRequests:Awaited<ReturnType<typeof withReceiptAvailability>>|undefined;
+    if(body.returnRequests===true){try{confirmedRequests=await withReceiptAvailability(c.env.db,await earlyRequestList(c.env.db,null,result.requestIds));}catch{/* The confirmed write must not become a read failure. */}}
+    const {requestIds:_ids,...confirmed}=result;return json({ok:true,...confirmed,...(confirmedRequests?{requests:confirmedRequests}:{})});
   },'business');
   router.get('/supplier-portal/early-requests',async c=>{
     const supplierId=isSupplier(me(c))?await supplierFor(c):null;

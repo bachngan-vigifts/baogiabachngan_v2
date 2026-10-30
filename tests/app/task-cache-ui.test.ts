@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-const source = readFileSync(new URL('../../trial-ui/tasks.js', import.meta.url), 'utf8').replace(/export /g, '');
+// @ts-ignore browser module
+import {createTaskWriteIntent} from '../../trial-ui/task-write-intent.js';
+const source = readFileSync(new URL('../../trial-ui/tasks.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm,'').replace(/export /g, '');
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
 /** Trang Công việc: mở lại hiện ngay bản lưu sẵn, "Cần duyệt" không chặn danh sách, tải sẵn lúc rảnh. */
@@ -15,7 +17,7 @@ function fixture(options: { blockPeople?: boolean; blockSummary?: boolean; feed?
       querySelector: (s: string) => node(key + ' ' + s), querySelectorAll: () => [] });
     return nodes.get(key);
   }
-  const ctx: any = { document: { getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
+  const ctx: any = { createTaskWriteIntent, document: { getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
   vm.createContext(ctx); vm.runInContext(source, ctx);
   const app = ctx.initTasks({ approvalFeed: options.feed, isManager: () => true, canApprove: () => true, userId: () => 'mgr', toast() {}, go() {}, api: async (path: string, method = 'GET') => {
     calls.push(method + ' ' + path);

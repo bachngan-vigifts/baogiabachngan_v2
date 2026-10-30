@@ -48,6 +48,11 @@ test('customer notes: stale initial/create and update requests conflict; validat
   for (const body of [{ text: 7, revision: 0 }, { text: 'x'.repeat(5001), revision: 0 }, { text: 'x' }, { text: 'x', revision: -1 }, { text: 'x', revision: 1.5 }])
     assert.equal((await s.call(path, s.owner, 'PUT', body)).status, 400);
   assert.equal((await s.call(path, s.owner, 'PUT', { text: '  Ghi chú đầu  ', revision: 0 })).status, 200);
+  const beforeReplay=(await s.call(path,s.owner)).data;
+  const replay=await s.call(path,s.owner,'PUT',{text:'Ghi chú đầu',revision:0});
+  assert.equal(replay.status,200);assert.equal(replay.data.stateMatches,true);
+  assert.deepEqual((await s.call(path,s.owner)).data,beforeReplay,'retry must not change revision or timestamp');
+  assert.equal((await s.call(path,s.mgr,'PUT',{text:'Ghi chú đầu',revision:0})).status,409,'another actor is not a replay');
   assert.equal((await s.call(path, s.mgr, 'PUT', { text: 'stale', revision: 0 })).status, 409);
   assert.equal((await s.call(path, s.mgr, 'PUT', { text: 'Bản mới', revision: 1 })).status, 200);
   assert.equal((await s.call(path, s.owner, 'PUT', { text: 'stale', revision: 1 })).status, 409);

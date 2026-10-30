@@ -552,8 +552,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     }));
   }, 'business');
 
-  router.get('/orders/:id', async c => {
-    const db = c.env.db, order = await loadOrder(c, c.params.id!);
+  async function orderDetail(c: Ctx, id: string) {
+    const db = c.env.db, order = await loadOrder(c, id);
     const [lines, contract, ships, schedules, payments] = await Promise.all([
       db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id)).orderBy(asc(salesOrderLines.lineNo)),
       db.select({ contract: salesContracts, quoteData: quotations.data, quoteRevision: quotations.revision }).from(salesContracts)
@@ -575,7 +575,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const purchases = can(viewer(c), 'page.purchases') && options.purchaseLinks ? await options.purchaseLinks(db, viewer(c), order) : [];
     const adjustment=(await returnAdjustments(db,[order.id])).get(order.id);
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
-    return json({
+    return {
       purchases,
       returnAdjustment: adjustment || null,
       effectiveSchedules: net.schedules,
@@ -591,8 +591,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
       receivable: receivable(net.schedules, net.payments, vietnamDate().iso), canVoidPayment: canVoidPayment(viewer(c)),
       progress: (await progressOf(db, [order.id])).get(order.id),
-    });
-  }, 'business');
+    };
+  }
+  // A successful write remains successful if its optional read projection fails.
+  async function confirmedDetail(c: Ctx, id: string) { try { return await orderDetail(c,id); } catch { return undefined; } }
+  router.get('/orders/:id', async c => json(await orderDetail(c,c.params.id!)), 'business');
 
   /**
    * Xem trước đẩy Sapo cho popup chọn kho: `?quoteId=` (trước khi sinh đơn) hoặc `?orderId=` (trước khi lập HĐKT).
@@ -1128,11 +1131,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
 
   router.put('/contracts/:id', async c => {
     const body = await readJson(c.req, 600_000), me = viewer(c);
-    let quoteRevision: number | null = null;
+    let quoteRevision: number | null = null, changedOrderId = "";
     await c.env.db.transaction(async tx => {
       const [found] = await tx.select({ order: salesOrders }).from(salesOrders).innerJoin(salesContracts, eq(salesOrders.id, salesContracts.orderId))
         .where(and(eq(salesContracts.id, c.params.id!), orderScope(c))).limit(1).for('update', { of: salesOrders });
       if (!found) throw new AppError(404, 'Không tìm thấy HĐKT.');
+      changedOrderId = found.order.id;
       if (found.order.status !== 'draft' && me.role !== 'manager') throw new AppError(403, 'HĐKT đã duyệt. Chỉ Manager được chỉnh sửa hoặc huỷ.', 'CONTRACT_APPROVED');
       await assertCanEditOrder(c, found.order, 'HĐKT', tx);
       const [contract] = await tx.select().from(salesContracts).where(eq(salesContracts.id, c.params.id!)).limit(1).for('update');
@@ -1192,7 +1196,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       const [saved] = await tx.update(salesContracts).set({ ...set, revision: contract.revision + 1 }).where(eq(salesContracts.id, contract.id)).returning();
       if (financial || body.signedDate !== undefined) await syncPaymentSchedules(tx, found.order, saved);
     });
-    return json({ ok: true, quoteRevision });
+    return json({ ok: true, quoteRevision, ...(body.returnDetail === true ? { detail: await confirmedDetail(c,changedOrderId) } : {}) });
   }, 'business');
 
   // ================= LỊCH GIAO HÀNG =================
@@ -1461,7 +1465,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId)).where(and(eq(customerPayments.id, c.params.id!), orderScope(c))).limit(1);
     if (!p) throw new AppError(404, 'Không tìm thấy phiếu thu.');
     // Gửi lại sau khi mạng rớt (lần trước đã huỷ xong): cùng người, cùng lý do → báo thành công thay vì báo lỗi.
-    if (p.voidedAt && p.voidedBy === me.id && p.voidReason === reason) return json({ ok: true, orderId: p.orderId, alreadyApplied: true });
+    if (p.voidedAt && p.voidedBy === me.id && p.voidReason === reason) return json({ ok: true, orderId: p.orderId, alreadyApplied: true, ...(body.returnDetail === true ? { detail: await confirmedDetail(c,p.orderId) } : {}) });
     if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
     await c.env.db.transaction(async tx=>{
     await cashLock(tx);
@@ -1485,6 +1489,6 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if(p.shiftId) await voidClosedCashEffect(tx,p.shiftId,me.id,`Huỷ phiếu thu ${p.id}: ${reason}`);
     await cashAudit(tx,me.id,'void','payments',p.id,{reason,shiftId:p.shiftId});
     });
-    return json({ ok: true, orderId: p.orderId });
+    return json({ ok: true, orderId: p.orderId, ...(body.returnDetail === true ? { detail: await confirmedDetail(c,p.orderId) } : {}) });
   }, 'business');
 }

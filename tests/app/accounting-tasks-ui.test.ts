@@ -95,3 +95,23 @@ test('kiểm tra trước khi xuất HĐ và khung "Cần kiểm tra": cảnh b�
   assert.match(box.textContent, /Thu trùng/); assert.match(box.textContent, /9 ngày/); assert.match(box.textContent, /chưa có ảnh/); assert.match(box.textContent, /<b>x<\/b>/);
   assert.equal(nodes(box).filter(e => e.tagName === 'a').map(e => e.href).join(','), '#/orders/o1,#/cash', 'link lạ không được gắn');
 });
+
+test('comment confirmation appends canonical text without refetching detail or losing newer typing',async()=>{
+ const c=fixture(),body=new Element('body'),root=new Element('main'),calls:any[]=[];
+ Object.assign(c.document,{body,activeElement:null});
+ const task={id:'comment-task',title:'Trao đổi',status:'in_progress',priority:'normal',due:'none',canComment:true,viewOnly:false,sourceData:{available:false}};
+ let finish!:Function;
+ const api=async(path:string,method?:string,b?:any)=>{
+  calls.push({path,method,b});
+  if(method==='POST'){await new Promise(resolve=>{finish=resolve;});return{id:'c1',comment:{id:'c1',name:'Tên kế toán',body:'<img src=x onerror=alert(1)>',createdAt:'2026-10-30T01:00:00Z'}};}
+  if(path==='/tasks/accounting/comment-task')return{task,today:'2026-10-30'};
+  if(path.endsWith('/comments'))return{comments:[]};
+  return{tasks:[task],tabs:{},kpis:{invoices:{count:0,overdue:0},purchases:{count:0,overdue:0,amount:0},debts:{count:0,amount:0},unclaimed:0},warnings:[]};
+ };
+ const errors:string[]=[];const board=c.initAccountingTasks({root,api,toast:(s:string)=>errors.push(s),userId:()=> 'kt',back(){}});await board.load(task.id);assert.deepEqual(errors,[]);
+ const input:any=nodes(body).find(n=>n.tagName==='textarea'),comments:any=nodes(body).find(n=>n.className==='acct-comments');comments.isConnected=true;
+ input.value='<img src=x onerror=alert(1)>';
+ const start=calls.length;nodes(body).find(n=>n.tagName==='button'&&n.textContent==='Gửi trao đổi')!.events.click!({stopPropagation(){}});
+ await Promise.resolve();input.value='Nội dung gõ tiếp';finish();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(calls.length,start+1);assert.equal(calls[start].method,'POST');assert.equal(comments.children.length,1);assert.match(comments.textContent,/<img src=x onerror=alert\(1\)>/);assert.equal(nodes(comments).some(n=>n.tagName==='img'),false);assert.equal(input.value,'Nội dung gõ tiếp');
+});
