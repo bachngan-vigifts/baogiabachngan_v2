@@ -131,3 +131,9 @@ test('deployment rejects a broken pooler connection before changing production s
  assert.match(workflow,/statement_timeout=5000/);
  assert.match(workflow,/SELECT 1' 2>\/dev\/null/);
 });
+
+test('pooler chỉ bật khi biến ENABLE_DB_POOLER = true; mặc định triển khai giữ tắt (gỡ DB_POOLER_URL)', () => {
+  const workflow = readFileSync('.github/workflows/deploy-api.yml', 'utf8');
+  assert.match(workflow, /SUPABASE_POOLER_URL: \$\{\{ vars\.ENABLE_DB_POOLER == 'true' && secrets\.SUPABASE_POOLER_URL \|\| '' \}\}/);
+  assert.match(workflow, /env\.SUPABASE_POOLER_URL == ''\n[^\n]*\n\s*run: supabase secrets unset DB_POOLER_URL/);
+});

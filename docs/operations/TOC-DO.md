@@ -53,3 +53,9 @@ Kiểm tra sau triển khai: vào **Đo tốc độ**, dòng đầu phải có "
 Chạy workflow **Kiểm tra kết nối pooler chỉ đọc** trước khi thử triển khai. Workflow chỉ in mã phân loại và hostname pooler công khai từ Supabase, không in URI/mật khẩu/token. Kết quả thành công là `POOLER_CHECK=CONNECTED_SELECT_1`.
 
 Workflow **Triển khai API** cũng chạy `SELECT 1` ở chế độ chỉ đọc trước khi đổi secret hoặc deploy. URL chưa kết nối được sẽ dừng sớm, giữ nguyên cấu hình/API đang hoạt động. Không thử bật lại một URL chưa qua kiểm tra. Nếu cấu hình đã gây 503, workflow **Khôi phục kết nối CSDL trực tiếp** gỡ `DB_POOLER_URL` rồi xác minh health để phục hồi, không chạy migration hoặc đồng bộ hãng vận chuyển.
+
+## Sự cố 30/10/2026 – pooler tạm tắt
+
+Sau khi bật pooler (00:57 UTC), nhiều lời gọi API treo quá 15 giây; nhân viên thấy "Chưa kết nối được máy chủ". Đã chạy **Khôi phục kết nối CSDL trực tiếp** (02:19 UTC); API trở lại bình thường. Ép vùng chạy Edge cũng đã tắt (`REGION_PINNING = false` trong `trial-ui/api-region.js`).
+
+Pooler giờ **chỉ bật khi có biến repository `ENABLE_DB_POOLER = true`**. Secret `SUPABASE_POOLER_URL` vẫn được giữ trên GitHub. Không có biến này thì mỗi lần **Triển khai API** gỡ `DB_POOLER_URL` trên Supabase và dùng kết nối trực tiếp. Chỉ bật lại ngoài giờ làm, khi đã tìm ra nguyên nhân treo và có người theo dõi ngay sau khi bật.
