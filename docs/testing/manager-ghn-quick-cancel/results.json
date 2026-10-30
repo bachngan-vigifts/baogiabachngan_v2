@@ -1,0 +1,18 @@
+[
+  {
+    "width": 1280,
+    "carrierStatus": "cancel",
+    "managerOneAction": true,
+    "refund": 0,
+    "stock": 10,
+    "lostReplyReplay": true
+  },
+  {
+    "width": 390,
+    "carrierStatus": "returned",
+    "managerOneAction": true,
+    "refund": 50000,
+    "stock": 10,
+    "lostReplyReplay": false
+  }
+]

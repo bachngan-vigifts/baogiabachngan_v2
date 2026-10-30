@@ -140,6 +140,15 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const retailVisible = canListRetailCustomers(me), kind = c.url.searchParams.get('kind');
     const segment = !retailVisible ? eq(customers.isRetail, false) : kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined;
     const owner = c.url.searchParams.get('owner') || '', from = c.url.searchParams.get('from') || '', to = c.url.searchParams.get('to') || '';
+    // Ô chọn khách (lập báo giá / đơn): `usable=1&limit≤8&q=…` chỉ cần vài khách khớp nhất. Một truy vấn trên cột `search`
+    // (đã bỏ dấu sẵn khi lưu) thay cho bỏ dấu 6 cột từng dòng + đếm tổng + đếm khách chờ duyệt + người phụ trách.
+    const q = c.url.searchParams.get('q') || '';
+    if (usable && !status && limit <= 8 && offset === 0 && q.trim() && !mine && !owner && !from && !to && !kind && c.url.searchParams.get('filters') !== '1') {
+      const rows = await c.env.db.select().from(customers)
+        .where(and(segment, eq(customers.approvalStatus, 'approved'), matchAllWords(sql`${customers.search}`, q)))
+        .orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, q)), desc(customers.createdAt), asc(customers.name), asc(customers.id)).limit(limit);
+      return json({ customers: rows.map(({ search: _s, sourceVersion: _v, ...r }) => r), picker: true, limit, offset: 0, nextOffset: null });
+    }
     const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0,10) === value;
     if ((from && !validDate(from)) || (to && !validDate(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày tạo không hợp lệ.');
     const hasOwner = (id?: string) => exists(c.env.db.select({ x: sql`1` }).from(customerStaff).innerJoin(employees, eq(employees.id, customerStaff.memberId))
