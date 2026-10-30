@@ -47,3 +47,17 @@ Nhân viên được xem phiếu kiểm kê của đồng nghiệp trong phạm 
 Khi có phiếu kiểm kê chờ duyệt cho cùng (kho, SKU), không gửi phiếu thứ hai. Máy chủ kiểm tra dưới khoá sổ kho độc quyền để hai người gửi đồng thời chỉ tạo được một phiếu; gửi lại cùng client key vẫn trả đúng phiếu cũ. Phiếu đã duyệt/từ chối và các phiếu thuộc kho khác không chặn nhau. Các phiếu điều chỉnh thường chờ duyệt không bị coi là kiểm kê trùng.
 
 Nếu số thực đếm đã nhập mà tồn đối chiếu thay đổi khi cập nhật nền, giữ nguyên số đang nhập và đánh dấu Cần kiểm đếm lại. Nhân viên phải kiểm tra, nhập lại số thực tế để dùng mốc tồn mới; không tự đổi mốc tồn rồi gửi số đếm cũ. Dữ liệu phiếu chờ duyệt chưa tải được thì chưa cho gửi; lỗi tạm thời có một lần thử lại tự động.
+
+## Người được Cho / Từ chối phiếu điều chuyển
+
+| Chức vụ người xin | Người được Cho / Từ chối |
+| --- | --- |
+| Sale Admin | NVBH Lock hoặc NVBH Minh Long; Manager được duyệt thay |
+| NVBH Lock / NVBH Minh Long | Sale Admin; Manager được duyệt thay |
+| Chức vụ khác, nhân viên xin đã ngừng hoạt động | Manager |
+
+Manager là ngoại lệ duy nhất. Nhân viên không tự duyệt phiếu mình xin; cờ Được duyệt chung không vượt qua quy tắc đối ứng này. Quy tắc áp dụng cho cả nút thao tác và API. Kho riêng vẫn theo quyền xem kho hiện có.
+
+Công việc tự sinh, thông báo tạo phiếu, nhắc sau một giờ và mục điều chuyển trong hộp Cần duyệt dùng cùng quy tắc. Không có người đối ứng được xem phiếu thì giao việc chờ Manager; không gửi thông tin kho riêng cho người không thấy kho đó. Chức vụ NVBH không có cờ duyệt chung vẫn xử lý qua phiếu/công việc/thông báo; hộp Cần duyệt chung giữ quyền truy cập hiện có cho các loại chứng từ khác.
+
+Quyền xác nhận Đã chuyển và cách ghi sổ kho không thay đổi. Phần đầu phiếu tách trạng thái, kho đi/kho đến, người/ngày xin, lý do; chỉ hiện người duyệt/người chuyển khi có dữ liệu. Cột sản phẩm gộp tên và mã để tránh tên bị ép quá hẹp.

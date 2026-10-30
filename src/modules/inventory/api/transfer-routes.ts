@@ -1,3 +1,5 @@
+import { loadTransferApprovalDirectory } from './transfer-approvers.ts';
+import { transferCanApprove, transferApprovalLabel } from '../domain/transfer-approval.ts';
 import { transferTasksChanged } from './transfer-task-hooks.ts';
 import { and, asc, desc, eq, inArray, like, ilike, gte, lt, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -5,7 +7,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positionPermissions } from '../../staff/schema.ts';
-import { can, canApprove } from '../../staff/domain/permissions.ts';
+import { can } from '../../staff/domain/permissions.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
@@ -18,7 +20,7 @@ import { hiddenWarehouseIds } from './warehouse-access.ts';
 /**
  * ĐIỀU CHUYỂN KHO (docs/SO-KHO.md "Điều chuyển kho"): nhân viên bán kho này thiếu hàng → xin chuyển từ kho khác.
  *  POST /stock-transfers                 mọi nhân viên: kho đi, kho đến, lý do, các mã + số lượng → Chờ duyệt (báo nhân viên kho được xin + người duyệt)
- *  POST /stock-transfers/:id/approve      nhân viên KHO ĐƯỢC XIN (chức vụ bán kho đi, không phải người xin) hoặc Manager / người được chỉ định
+ *  POST /stock-transfers/:id/approve      chức vụ đối ứng của người xin (Sale Admin ↔ NVBH Lock/Minh Long), hoặc Manager
  *                                          → Đã duyệt (báo người xin + nhóm Kho + nhân viên kho được xin)
  *  POST /stock-transfers/:id/reject       như duyệt, bắt buộc lý do
  *  Chờ duyệt quá 1 giờ: nhắc lại mỗi giờ (remindPendingTransfers, chạy theo nhịp GET /pulse).
@@ -47,11 +49,11 @@ export async function warehouseStaff(db: ReadDb, warehouseId: string) {
   return positions.length ? (await db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true),
     sql`${employees.deletedAt} IS NULL`, inArray(employees.positionId, positions)))).map(r => r.id) : [];
 }
-/** Người được Cho / Từ chối phiếu: Manager / người được chỉ định duyệt, hoặc nhân viên kho được xin (không tự duyệt phiếu mình xin). */
-async function canDecide(db: ReadDb, m: Member, t: { fromWarehouseId: string; requestedBy: string }) {
-  if (canApprove(m)) return true;
-  const pos = (m as { positionId?: string | null }).positionId;
-  return m.role === 'employee' && !!pos && t.requestedBy !== m.id && (await sellerPositions(db, t.fromWarehouseId)).includes(pos);
+/** Manager bypasses the position matrix; a generic approval flag does not. */
+async function canDecide(db: ReadDb, m: Member, t: { requestedBy: string }) {
+  if(m.role==='manager')return true;
+  const [requester]=await db.select({id:employees.id,role:employees.role,positionId:employees.positionId,active:employees.active,deletedAt:employees.deletedAt}).from(employees).where(eq(employees.id,t.requestedBy)).limit(1);
+  return transferCanApprove(m,requester);
 }
 /** Kho được xin tự chuyển hàng (cửa hàng không có nhóm Kho riêng). */
 async function canShip(db: ReadDb, m: Member, t: { fromWarehouseId: string }) {
@@ -75,15 +77,16 @@ async function viewOf(c: Ctx, id: string) {
   const [lines, whs, people] = await Promise.all([
     db.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id)).orderBy(asc(stockTransferLines.sku)),
     db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(inArray(warehouses.id, [t!.fromWarehouseId, t!.toWarehouseId])),
-    db.select({ id: employees.id, name: employees.name }).from(employees)
+    db.select({ id: employees.id, name: employees.name,role:employees.role,positionId:employees.positionId,active:employees.active,deletedAt:employees.deletedAt }).from(employees)
       .where(inArray(employees.id, [t!.requestedBy, t!.approvedBy, t!.doneBy, t!.cancelledBy].filter((x): x is string => !!x))),
   ]);
-  const [stock, decide, ship] = await Promise.all([readCatalogStock(db, lines.map(l => l.sku)), canDecide(db, m, t!), canShip(db, m, t!)]);
+  const requester=people.find(p=>p.id===t!.requestedBy),decide=transferCanApprove(m,requester);
+  const [stock, ship] = await Promise.all([readCatalogStock(db, lines.map(l => l.sku)), canShip(db, m, t!)]);
   const at = (sku: string, wh: string) => num(stock.find(s => s.sku === sku && s.warehouseId === wh)?.quantity ?? 0);
   const name = (id: string | null) => id ? people.find(p => p.id === id)?.name ?? '' : '';
   const status = t!.status as TransferStatus;
   return {
-    ...t!, statusLabel: TRANSFER_STATUS_LABEL[status],
+    ...t!, statusLabel: TRANSFER_STATUS_LABEL[status], approvalBy:transferApprovalLabel(requester?.role==='employee'&&requester.active&&!requester.deletedAt?requester.positionId:null),
     fromName: whs.find(w => w.id === t!.fromWarehouseId)?.name ?? '', toName: whs.find(w => w.id === t!.toWarehouseId)?.name ?? '',
     requestedByName: name(t!.requestedBy), approvedByName: name(t!.approvedBy), doneByName: name(t!.doneBy), cancelledByName: name(t!.cancelledBy),
     lines: lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, fromStock: at(l.sku, t!.fromWarehouseId), toStock: at(l.sku, t!.toWarehouseId) })),
@@ -176,7 +179,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
     const counts = rows.length ? await db.select({ id: stockTransferLines.transferId, n: sql<number>`count(*)`.mapWith(Number), qty: sql<number>`sum(${stockTransferLines.qty})`.mapWith(Number) })
       .from(stockTransferLines).where(inArray(stockTransferLines.transferId, rows.map(r => r.t.id))).groupBy(stockTransferLines.transferId) : [];
     const wName = (id: string) => whs.find(w => w.id === id)?.name ?? '';
-    return json({ warehouses: whs, filterOptions: { requesters: requesters.map(r => ({ id: r.id, name: r.name || r.id })) }, canApprove: canApprove(m), canMove: canMove(m), transfers: rows.map(({ t, by }) => ({ id: t.id, transferNo: t.transferNo, status: t.status,
+    return json({ warehouses: whs, filterOptions: { requesters: requesters.map(r => ({ id: r.id, name: r.name || r.id })) }, canApprove: m.role==='manager'||(m.role==='employee'&&['sale-admin','sales-lock','sales-ml'].includes(m.positionId||'')), canMove: canMove(m), transfers: rows.map(({ t, by }) => ({ id: t.id, transferNo: t.transferNo, status: t.status,
       statusLabel: TRANSFER_STATUS_LABEL[t.status as TransferStatus], fromName: wName(t.fromWarehouseId), toName: wName(t.toWarehouseId), reason: t.reason,
       requestedByName: by ?? '', createdAt: t.createdAt, doneAt: t.doneAt, lineCount: counts.find(x => x.id === t.id)?.n ?? 0, qty: num(counts.find(x => x.id === t.id)?.qty ?? 0) })) });
   }, 'business');
@@ -209,11 +212,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
     const wName = (x: string) => whs.find(w => w.id === x)?.name ?? '';
     const pending = { eventType: 'transfer_pending', title: 'Phiếu xin hàng chờ duyệt', body: `${m.name}: ${transferNo} · ${wName(from)} → ${wName(to)} – ${reason}`,
       url: `/index.html#/transfers/${id}`, actorId: m.id, data: { transferId: id } };
-    // Nhân viên kho được xin quyết Cho / Từ chối; Manager / người được chỉ định vẫn nhận để duyệt thay.
-    await background(c.env, warehouseStaff(db, from).then(async staff => {
-      await notifyMany(c.env, staff, { ...pending, title: `Kho ${wName(from)}: có phiếu xin hàng`, body: `${pending.body}. Bấm Cho hoặc Từ chối trên phiếu.` });
-      await notifyMany(c.env, 'approvers', pending, staff);
-    }));
+    await background(c.env, loadTransferApprovalDirectory(db).then(directory => notifyMany(c.env,directory({requestedBy:m.id,fromWarehouseId:from,toWarehouseId:to},true).filter(memberId=>memberId!==m.id),pending)));
     return json(await viewOf(c, id), 201);
   }, 'business');
 
@@ -238,7 +237,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
     await viewOf(c, id);
     const t = await c.env.db.transaction(async tx => {
       const t = await lock(tx, id, ['pending'], body.revision), now = nowIso();
-      if (!await canDecide(tx, m, t)) fail(403, 'Chỉ nhân viên kho được xin, Manager hoặc người được chỉ định duyệt phiếu xin hàng (không tự duyệt phiếu mình xin).', 'APPROVER_ONLY');
+      if (!await canDecide(tx, m, t)) fail(403, 'Sale Admin xin: chỉ NVBH Lock/Minh Long hoặc Manager duyệt; NVBH xin: chỉ Sale Admin hoặc Manager duyệt. Không tự duyệt phiếu mình xin.', 'APPROVER_ONLY');
       await tx.update(stockTransfers).set({ status: 'approved', approvedBy: m.id, approvedAt: now, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
       return t;
     });
@@ -256,7 +255,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
     await viewOf(c, id);
     const t = await c.env.db.transaction(async tx => {
       const t = await lock(tx, id, ['pending'], body.revision), now = nowIso();
-      if (!await canDecide(tx, m, t)) fail(403, 'Chỉ nhân viên kho được xin, Manager hoặc người được chỉ định từ chối phiếu xin hàng.', 'APPROVER_ONLY');
+      if (!await canDecide(tx, m, t)) fail(403, 'Chỉ chức vụ đối ứng được cho hàng hoặc Manager được từ chối phiếu này.', 'APPROVER_ONLY');
       await tx.update(stockTransfers).set({ status: 'rejected', approvedBy: m.id, approvedAt: now, rejectReason: reason, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
       return t;
     });
@@ -317,7 +316,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
 const REMIND_MS = 60 * 60 * 1000;
 let lastRemindCheck = 0;
 /**
- * NHẮC PHIẾU XIN HÀNG CHỜ DUYỆT QUÁ 1 GIỜ: báo lại nhân viên kho được xin + Manager / người được chỉ định, sau đó mỗi giờ một lần
+ * NHẮC PHIẾU XIN HÀNG CHỜ DUYỆT QUÁ 1 GIỜ: báo lại chức vụ đối ứng được cho hàng + Manager, sau đó mỗi giờ một lần
  * tới khi Cho / Từ chối / huỷ. Chạy theo nhịp GET /pulse (khi có người đang dùng hệ thống, tối đa mỗi phút một lần);
  * khoá tư vấn + thông báo nhắc gần nhất trong bảng thông báo giữ mỗi phiếu chỉ được nhắc một lần mỗi giờ dù nhiều máy chủ chạy song song.
  */
@@ -339,13 +338,12 @@ export async function remindPendingTransfers(env: StaffEnv, now = new Date()) {
       url: `/index.html#/transfers/${t.id}`, targetRole: 'system', targetMemberId: null, dataJson: JSON.stringify({ transferId: t.id }), createdAt: now.toISOString() });
     return list;
   });
+  const directory=due.length?await loadTransferApprovalDirectory(env.db):null;
   for (const { t, from } of due) {
     const hours = Math.max(1, Math.floor((now.getTime() - Date.parse(t.createdAt)) / REMIND_MS));
     const n = { eventType: 'transfer_pending_reminder', title: `Phiếu xin hàng chờ duyệt ${hours} giờ`, body: `${t.transferNo} · kho ${from}: ${t.reason}. Bấm Cho hoặc Từ chối.`,
       url: `/index.html#/transfers/${t.id}`, data: { transferId: t.id } };
-    const staff = await warehouseStaff(env.db, t.fromWarehouseId).catch(() => [] as string[]);
-    await notifyMany(env, staff.filter(id => id !== t.requestedBy), n).catch(() => 0);
-    await notifyMany(env, 'approvers', n, staff).catch(() => 0);
+    await notifyMany(env,directory!(t,true).filter(id=>id!==t.requestedBy),n).catch(()=>0);
   }
   return due.length;
 }
