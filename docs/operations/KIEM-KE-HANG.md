@@ -16,7 +16,7 @@ Sử dụng bảng phiếu điều chỉnh và JSON dòng hiện có, không th�
 ## Chống ghi nhầm, ghi lặp
 
 - Cần chốt tồn đầu kỳ cho kho trước khi kiểm kê.
-- Khi gửi và khi duyệt, máy chủ so tồn hiện tại với số đối chiếu. Khác nhau trả `STOCKTAKE_STOCK_CHANGED`; phiếu đang chờ vẫn chưa ghi tồn. Manager có thể từ chối để nhân viên kiểm đếm lại và gửi phiếu mới.
+- Khi gửi và khi duyệt, máy chủ so tồn hiện tại với số đối chiếu. Khác nhau (bán / nhập sau lúc đếm) mặc định trả `STOCKTAKE_STOCK_CHANGED`, phiếu đang chờ chưa ghi tồn. Gửi kèm `applyDelta: true` thì duyệt **theo chênh lệch**: ghi đúng (thực đếm − tồn lúc đếm) vào tồn hiện tại, giữ nguyên phát sinh sau lúc đếm; audit ghi `appliedDelta` và danh sách mã đổi tồn. Màn duyệt hiện Tồn hiện tại / Tồn sau duyệt, tô vàng mã đổi tồn và đổi nút thành "Duyệt theo chênh lệch và ghi kho"; Manager vẫn có thể từ chối để kiểm đếm lại.
 - So sánh số đối chiếu và ghi kho trong transaction, dùng khoá sổ kho độc quyền để không chen giữa bút toán khác, kể cả SKU chưa có dòng số dư.
 - Mỗi lần gửi có client key cố định. Mạng lỗi hoặc 5xx giữ nguyên nội dung và key, khoá chỉnh sửa, cho kiểm tra lại đúng lần gửi. Gửi/duyệt lặp không ghi thêm tồn.
 - Điều chuyển kho: khoá toàn bộ thao tác trong drawer, ẩn nút khác, hiện tiến trình và chặn đóng/mở/refresh thay drawer đến khi ghi và tải trạng thái xong; lỗi khôi phục điều khiển. Áp dụng cả gửi mới và lưu chỉnh sửa.
@@ -46,4 +46,12 @@ Nhân viên được xem phiếu kiểm kê của đồng nghiệp trong phạm 
 
 Khi có phiếu kiểm kê chờ duyệt cho cùng (kho, SKU), không gửi phiếu thứ hai. Máy chủ kiểm tra dưới khoá sổ kho độc quyền để hai người gửi đồng thời chỉ tạo được một phiếu; gửi lại cùng client key vẫn trả đúng phiếu cũ. Phiếu đã duyệt/từ chối và các phiếu thuộc kho khác không chặn nhau. Các phiếu điều chỉnh thường chờ duyệt không bị coi là kiểm kê trùng.
 
-Nếu số thực đếm đã nhập mà tồn đối chiếu thay đổi khi cập nhật nền, giữ nguyên số đang nhập và đánh dấu Cần kiểm đếm lại. Nhân viên phải kiểm tra, nhập lại số thực tế để dùng mốc tồn mới; không tự đổi mốc tồn rồi gửi số đếm cũ. Dữ liệu phiếu chờ duyệt chưa tải được thì chưa cho gửi; lỗi tạm thời có một lần thử lại tự động.
+Nếu số thực đếm đã nhập mà tồn đối chiếu thay đổi khi cập nhật nền, giữ nguyên số đang nhập và đánh dấu "tồn đổi sau lúc đếm". Nhập lại số đếm thì dùng mốc tồn mới; gửi nguyên số cũ thì hỏi xác nhận rồi gửi theo chênh lệch (`applyDelta`). Dữ liệu phiếu chờ duyệt chưa tải được thì chưa cho gửi; lỗi tạm thời có một lần thử lại tự động.
+
+## Công cụ khi kiểm đếm
+
+- **Quét mã vạch** (ô "Quét mã vạch: mỗi lần quét +1"): máy quét gõ mã + Enter; khớp SKU hoặc barcode, cộng 1 vào thực đếm, mã chưa có trong phiếu thì tự thêm. Các lần quét xử lý lần lượt, không mất lượt khi quét nhanh.
+- **Tạo nhanh danh sách mã** (`POST /inventory/count-candidates`): theo thương hiệu, mọi mã còn tồn trong kho, hoặc 50 mã lệch Sapo nhiều nhất; trả tồn sổ kho và phiếu kiểm kê chờ duyệt của từng mã, tối đa 1.000 mã/phiếu.
+- **In phiếu đếm** (A4): mã, tên, ĐVT, tồn sổ kho, ô thực đếm trống (hoặc số đã đếm), chữ ký người đếm / Manager. Màn xem phiếu cũng có nút In phiếu.
+- **Lịch sử kiểm kê theo mã** (`GET /inventory/stocktake-history?sku=&warehouseId=`): bấm SKU trong phiếu để xem các lần đếm, tồn lúc đếm, chênh lệch, trạng thái (trong phạm vi kho được xem).
+- **Giá trị chênh lệch**: theo giá nhập gần nhất trong lịch sử sản phẩm (dòng Nhập hàng); chỉ Manager thấy (cột Giá trị lệch ở danh sách, cột Giá nhập / Giá trị lệch và tổng ở màn xem phiếu, file Excel). Mã chưa có giá nhập được đếm riêng, không tính vào tổng.

@@ -246,3 +246,8 @@
 .inv-adjustments-panel > .card-title-row, .inv-compare-panel > .card-title-row { padding: 14px 16px 0; }
 .inv-unopened:not(:empty) { padding: 0 16px 8px; }
 .inv-unopened p { margin: 0; }
+.stocktake-tools { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.stocktake-scan { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; min-width: 0; }
+.stocktake-tools select { flex: 0 1 240px; min-width: 0; }
+@keyframes stocktake-flash { from { background: #d9f5e8; } to { background: transparent; } }
+tr.stocktake-scanned td { animation: stocktake-flash 1.2s ease-out; }

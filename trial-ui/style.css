@@ -2400,3 +2400,7 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
 /* Kiểm kê / cân bằng kho: hộp xem phiếu đủ rộng cho 5 cột (mã, sản phẩm, tồn, chênh, thực đếm). */
 dialog.inv-adjust-review { width: min(880px, 96vw); }
 .inv-adjust-table .actions-cell { text-align: right; white-space: nowrap; }
+.inv-adjust-table:not(.show-value) .inv-value-col { display: none !important; }
+dialog.inv-adjust-review tr.inv-stock-changed td { background: #fff7e0; }
+dialog.inv-adjust-review tr.inv-total-row td { font-weight: 700; border-top: 2px solid var(--line); }
+dialog.inv-count-history { width: min(820px, 96vw); }
