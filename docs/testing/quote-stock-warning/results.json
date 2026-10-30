@@ -1,0 +1,154 @@
+[
+  {
+    "type": "HRC",
+    "width": 1354,
+    "layout": {
+      "page": 1354,
+      "viewport": 1354,
+      "overflow": "auto",
+      "wrapper": 1014,
+      "table": 1160
+    },
+    "headers": [
+      {
+        "label": "Số lượng",
+        "left": 808,
+        "right": 875.21875
+      },
+      {
+        "label": "Đơn giá",
+        "left": 896,
+        "right": 950.28125
+      },
+      {
+        "label": "CK (F6)%đ/SP",
+        "left": 1024,
+        "right": 1152
+      },
+      {
+        "label": "Đơn giá CK",
+        "left": 1204.625,
+        "right": 1280
+      },
+      {
+        "label": "Thành tiền",
+        "left": 1332.21875,
+        "right": 1408
+      }
+    ],
+    "duplicateSku": true,
+    "ownHoldExcluded": true,
+    "manualExcluded": true,
+    "noLookupOnQuantityInput": true
+  },
+  {
+    "type": "B2B",
+    "width": 1024,
+    "layout": {
+      "page": 1024,
+      "viewport": 1024,
+      "overflow": "auto",
+      "wrapper": 684,
+      "table": 1280
+    },
+    "headers": [
+      {
+        "label": "Số lượng",
+        "left": 824,
+        "right": 891.21875
+      },
+      {
+        "label": "Đơn giá",
+        "left": 912,
+        "right": 966.28125
+      },
+      {
+        "label": "CK (F6)Nhiều loại%đ/SP",
+        "left": 1040,
+        "right": 1168
+      },
+      {
+        "label": "Phí in (F7)",
+        "left": 1188,
+        "right": 1253.59375
+      },
+      {
+        "label": "Giá sau CK",
+        "left": 1327.65625,
+        "right": 1400
+      },
+      {
+        "label": "Thành tiền",
+        "left": 1452.21875,
+        "right": 1528
+      }
+    ],
+    "duplicateSku": true,
+    "ownHoldExcluded": true,
+    "manualExcluded": true,
+    "noLookupOnQuantityInput": true
+  },
+  {
+    "type": "VIGIFTS",
+    "width": 1354,
+    "layout": {
+      "page": 1354,
+      "viewport": 1354,
+      "overflow": "auto",
+      "wrapper": 1014,
+      "table": 1280
+    },
+    "headers": [
+      {
+        "label": "Số lượng",
+        "left": 824,
+        "right": 891.21875
+      },
+      {
+        "label": "Đơn giá",
+        "left": 912,
+        "right": 966.28125
+      },
+      {
+        "label": "CK (F6)%đ/SP",
+        "left": 1040,
+        "right": 1168
+      },
+      {
+        "label": "Phí in (F7)",
+        "left": 1188,
+        "right": 1253.59375
+      },
+      {
+        "label": "Giá sau CK",
+        "left": 1327.65625,
+        "right": 1400
+      },
+      {
+        "label": "Thành tiền",
+        "left": 1452.21875,
+        "right": 1528
+      }
+    ],
+    "duplicateSku": true,
+    "ownHoldExcluded": true,
+    "manualExcluded": true,
+    "noLookupOnQuantityInput": true
+  },
+  {
+    "type": "HRC",
+    "width": 390,
+    "layout": {
+      "page": 390,
+      "viewport": 390,
+      "overflow": "auto",
+      "wrapper": 340,
+      "table": 340
+    },
+    "headers": [],
+    "duplicateSku": true,
+    "ownHoldExcluded": true,
+    "manualExcluded": true,
+    "noLookupOnQuantityInput": true
+  }
+]
