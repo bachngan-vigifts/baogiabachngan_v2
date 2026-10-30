@@ -1,3 +1,4 @@
+import { transferApprovalScope } from '../modules/inventory/api/transfer-approvers.ts';
 import { orderScopeFor } from '../modules/sales/api/routes.ts';
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
@@ -46,6 +47,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
     const notMine = (col: typeof cashEntries.createdBy | typeof posReturns.createdBy) => member.role === 'manager' ? undefined : ne(col, member.id);
     const inStore = (col: typeof cashEntries.drawerId | typeof posReturns.registerId, ids: string[] | undefined) => ids ? (ids.length ? inArray(col, ids) : sql`false`) : undefined;
     const returnScope = or(and(eq(posReturns.source,'pos'),cashOk?inStore(posReturns.registerId,store?.scope.registers):sql`false`),and(eq(posReturns.source,'crm'),orderScopeFor(member)));
+    const pendingTransfers=and(eq(stockTransfers.status,'pending'),transferApprovalScope(member));
     const pendingOrders = and(eq(salesOrders.status,'draft'),isNotNull(salesOrders.submittedAt));
     const hasContract = sql`exists(select 1 from ${salesContracts} where ${salesContracts.orderId}=${salesOrders.id})`;
     // Exact counts without transferring document details or inheriting the list's 200-row cap.
@@ -57,7 +59,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         db.select({n}).from(customers).where(eq(customers.approvalStatus,'pending')),
         db.select({n}).from(products).where(eq(products.approvalStatus,'pending')),
         db.select({n}).from(incomingShipments).where(and(eq(incomingShipments.source,'supplier-order'),ne(incomingShipments.approvalStatus,'approved'),isNull(incomingShipments.cancelledAt),isNotNull(incomingShipments.submittedAt))),
-        db.select({n}).from(stockTransfers).where(eq(stockTransfers.status,'pending')),
+        db.select({n}).from(stockTransfers).where(pendingTransfers),
         cashOk ? db.select({n}).from(cashEntries).where(and(eq(cashEntries.status,'pending'),notMine(cashEntries.createdBy),inStore(cashEntries.drawerId,store?.scope.drawers))) : [],
         db.select({n}).from(posReturns).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(eq(posReturns.status,'pending'),notMine(posReturns.createdBy),returnScope)),
       ]);
@@ -81,7 +83,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
       db.select({ id: stockTransfers.id, no: stockTransfers.transferNo, reason: stockTransfers.reason, createdAt: stockTransfers.createdAt, by: employees.name,
         from: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.fromWarehouseId})`,
         to: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.toWarehouseId})` })
-        .from(stockTransfers).leftJoin(employees, eq(employees.id, stockTransfers.requestedBy)).where(eq(stockTransfers.status, 'pending')).orderBy(desc(stockTransfers.createdAt)).limit(LIMIT),
+        .from(stockTransfers).leftJoin(employees, eq(employees.id, stockTransfers.requestedBy)).where(pendingTransfers).orderBy(desc(stockTransfers.createdAt)).limit(LIMIT),
       cashOk ? db.select({ e: cashEntries, by: employees.name }).from(cashEntries).leftJoin(employees, eq(employees.id, cashEntries.createdBy))
         .where(and(eq(cashEntries.status, 'pending'), notMine(cashEntries.createdBy), inStore(cashEntries.drawerId, store?.scope.drawers))).orderBy(desc(cashEntries.createdAt)).limit(LIMIT) : [],
       db.select({ r: posReturns, by: employees.name, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName }).from(posReturns)

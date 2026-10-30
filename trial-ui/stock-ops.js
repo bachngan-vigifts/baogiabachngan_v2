@@ -37,7 +37,7 @@ export function initTransfers({ api, root, toast, go, isManager = () => false })
   let data = null, filter = 'open', listRun = 0, detailRun = 0, showing = '', rendered = '', inFlight = null, formOpen = false, posting = false, updating = false, openedAt = 0;
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Điều chuyển kho'),
-    el('p', 'muted', 'Kho của mình thiếu hàng: xin chuyển từ kho khác. Nhân viên kho được xin (hoặc Manager) bấm Cho / Từ chối; bấm "Đã chuyển" thì sổ kho trừ kho đi, cộng kho đến. Chờ quá 1 giờ hệ thống nhắc lại.'));
+    el('p', 'muted', 'Kho của mình thiếu hàng: xin chuyển từ kho khác. Sale Admin và NVBH Lock/Minh Long duyệt đối ứng theo người xin (Manager duyệt thay); bấm "Đã chuyển" thì sổ kho trừ kho đi, cộng kho đến. Chờ quá 1 giờ hệ thống nhắc lại.'));
   const tools = el('div', 'row-gap'), add = btn('＋ Xin điều chuyển', 'btn primary', () => openForm());
   tools.append(add); head.append(titles, tools);
   const panel = el('div', 'panel'), bar = el('div', 'toolbar chips');
@@ -123,16 +123,30 @@ export function initTransfers({ api, root, toast, go, isManager = () => false })
     if(seq!==detailRun||formOpen||(updating&&!afterUpdate))return;
     const key=JSON.stringify(t);if(rendered===key&&!drawer.hidden)return;rendered=key;
     drawer.replaceChildren();
-    const h = el('div', 'sup-drawer-head'); h.append(el('h2', '', 'Phiếu ' + t.transferNo), btn('✕', 'icon-btn', close));
-    const meta = el('div', 'sup-meta');
-    for (const [k, v] of [['Trạng thái', t.statusLabel], ['Kho đi → kho đến', `${t.fromName} → ${t.toName}`], ['Lý do', t.reason], ['Người xin', `${t.requestedByName} · ${dt(t.createdAt)}`],
-      ['Duyệt', t.approvedByName ? `${t.approvedByName} · ${dt(t.approvedAt)}` : '—'], ['Kho chuyển', t.doneByName ? `${t.doneByName} · ${dt(t.doneAt)}` : '—']])
-      { const r = el('div'); r.append(el('span', 'muted', k + ': '), el('b', '', v)); meta.append(r); }
-    if (t.rejectReason) meta.append(el('p', 'danger-text', 'Từ chối: ' + t.rejectReason));
-    const tbl = el('table', 'data-table'), th = el('tr');
-    for (const x of ['Mã', 'Tên', 'SL chuyển', 'Tồn kho đi', 'Tồn kho đến']) th.append(el('th', '', x));
+    const h = el('div', 'sup-drawer-head transfer-detail-head'),title=el('div');
+    title.append(el('span','eyebrow','Điều chuyển kho'),el('h2','','Phiếu '+t.transferNo),el('span','pill '+(PILL[t.status]||''),t.statusLabel));
+    h.append(title,btn('✕','icon-btn',close));
+    const meta=el('section','transfer-summary');meta.setAttribute('aria-label','Thông tin phiếu điều chuyển');
+    const route=el('div','transfer-route');
+    for(const [label,value] of [['Kho đi · lấy hàng',t.fromName],['Kho đến · nhận hàng',t.toName]]){
+      const box=el('div','transfer-route-stop');box.append(el('span','muted small',label),el('b','',value));route.append(box);
+    }
+    const info=el('div','transfer-summary-grid');
+    for(const [label,value] of [['Người xin',t.requestedByName],['Ngày xin',dt(t.createdAt)],...(t.approvedByName?[[t.status==='rejected'?'Người từ chối':'Người duyệt',`${t.approvedByName} · ${dt(t.approvedAt)}`]]:[]),...(t.doneByName?[['Đã chuyển',`${t.doneByName} · ${dt(t.doneAt)}`]]:[])]){
+      const box=el('div');box.append(el('span','muted small',label),el('span','',value));info.append(box);
+    }
+    const reason=el('div','transfer-summary-reason');reason.append(el('span','muted small','Lý do xin hàng'),el('p','',t.reason||'—'));
+    meta.append(route,info,reason);
+    if(t.status==='pending'&&t.approvalBy)meta.append(el('p','small muted transfer-approval-note','Người được cho hàng: '+t.approvalBy));
+    if (t.rejectReason) meta.append(el('p', 'danger-text', 'Lý do từ chối: ' + t.rejectReason));
+    const tbl = el('table', 'data-table transfer-detail-table'), th = el('tr');
+    for (const x of ['Sản phẩm', 'SL chuyển', 'Tồn kho đi', 'Tồn kho đến']) th.append(el('th', '', x));
     const tb = el('tbody');
-    for (const l of t.lines) { const r = el('tr'); r.append(el('td', '', l.sku), el('td', '', l.name), el('td', '', num(l.qty) + ' ' + (l.unit || '')), el('td', l.fromStock < l.qty && t.status !== 'done' ? 'danger-text' : '', num(l.fromStock)), el('td', '', num(l.toStock))); tb.append(r); }
+    for(const l of t.lines){
+      const row=el('tr'),product=el('td','first');product.append(el('b','',l.name),el('small','',l.sku));product.dataset.label='Sản phẩm';
+      const qty=el('td','num',num(l.qty)+' '+(l.unit||'')),fromStock=el('td','num'+(l.fromStock<l.qty&&t.status!=='done'?' danger-text':''),num(l.fromStock)),toStock=el('td','num',num(l.toStock));
+      qty.dataset.label='SL chuyển';fromStock.dataset.label='Tồn kho đi';toStock.dataset.label='Tồn kho đến';row.append(product,qty,fromStock,toStock);tb.append(row);
+    }
     const thd = el('thead'); thd.append(th); tbl.append(thd, tb);
     const tw = el('div', 'table-wrap'); tw.append(tbl);
     const acts = el('div', 'row-gap');

@@ -20,7 +20,7 @@ const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const pw = await hashPassword(PASSWORD, 1000);
-  for (const [id, pos] of [['ketoan', 'accounting'], ['kho', 'warehouse'], ['ml', 'sales-ml']] as const) {
+  for (const [id, pos] of [['ketoan', 'accounting'], ['kho', 'warehouse'], ['ml', 'sales-ml'], ['sa','sale-admin']] as const) {
     await d1.sqlite.prepare(`INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'0900','employee',?,1,'2026-01-01T00:00:00.000Z')`).run(id, id + '@x.vn', 'Tên ' + id, pos);
     await d1.sqlite.prepare('INSERT INTO staff_credentials (member_id,password_hash,activation_hash,activation_expires,version) VALUES (?,?,NULL,NULL,0)').run(id, pw);
   }
@@ -39,7 +39,7 @@ async function setup() {
   // Đã chốt tồn đầu kỳ: sổ kho là tồn chuẩn (tồn Sapo 999 không còn dùng cho các kho này).
   await postMoves(db as never, 'mgr', [{ sku: 'LY1', warehouseId: 'vig', qty: 50, kind: 'opening', refType: 'opening', refId: 'op1' },
     { sku: 'LY1', warehouseId: 'ml', qty: 20, kind: 'opening', refType: 'opening', refId: 'op1' }, { sku: 'LY1', warehouseId: 'hd', qty: 7, kind: 'opening', refType: 'opening', refId: 'op1' }]);
-  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kt: await login('ketoan@x.vn'), kho: await login('kho@x.vn'), ml: await login('ml@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kt: await login('ketoan@x.vn'), kho: await login('kho@x.vn'), ml: await login('ml@x.vn'), sa: await login('sa@x.vn') };
 }
 type S = Awaited<ReturnType<typeof setup>>;
 const bal = async (s: S, wh: string) => (await s.db.select({ qty: stockBalances.qty }).from(stockBalances).where(and(eq(stockBalances.sku, 'LY1'), eq(stockBalances.warehouseId, wh))))[0]?.qty ?? 0;
@@ -116,9 +116,9 @@ test('điều chuyển kho: NVBH xin → Manager duyệt → Kho chuyển; tồn
   assert.equal(t.status, 201, JSON.stringify(t.data));
   assert.equal((await s.call('/approvals', s.mgr)).data.counts.transfer, 1);
   await reconcileAutoTasks(s.db as never);
-  // Kho được xin (KHO VIGIFTS – chức vụ bán: sale, sale-admin): mỗi nhân viên kho đó một việc Cho / Từ chối.
-  const [approveTask] = await s.db.select().from(tasks).where(eq(tasks.autoKey, `transfer-approve:${t.data.id}:emp`));
-  assert.equal(approveTask?.assigneeId, 'emp');
+  // NVBH xin: chỉ Sale Admin được giao việc Cho / Từ chối; Manager duyệt thay.
+  const [approveTask] = await s.db.select().from(tasks).where(eq(tasks.autoKey, `transfer-approve:${t.data.id}:sa`));
+  assert.equal(approveTask?.assigneeId, 'sa');
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.ml, 'POST', {})).status, 403);
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/done`, s.ml, 'POST', {})).status, 403, 'NVBH không bấm Đã chuyển');
@@ -398,30 +398,30 @@ test('lịch mặc định đóng gói: không tự phục hồi chuyến đã h
   assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.id,slip!.id)))[0]!.status,'draft');
 });
 
-test('phiếu xin hàng: nhân viên kho được xin Cho / Từ chối (không tự duyệt phiếu mình xin), tự bấm Đã chuyển; chờ quá 1 giờ thì nhắc mỗi giờ', async () => {
+test('phiếu xin hàng: chức vụ đối ứng Cho / Từ chối (không tự duyệt phiếu mình xin), tự bấm Đã chuyển; chờ quá 1 giờ thì nhắc mỗi giờ', async () => {
   const s = await setup();
   const { webNotifications } = await import('../../src/modules/notifications/schema.ts');
   const { remindPendingTransfers } = await import('../../src/modules/inventory/api/transfer-routes.ts');
-  // NV Minh Long (sales-ml) xin từ KHO VIGIFTS: emp (sale, bán KHO VIGIFTS) được Cho; kế toán (không bán kho này) không được.
+  // NV Minh Long (sales-ml) xin từ KHO VIGIFTS: sa (Sale Admin) được Cho; kế toán (không bán kho này) không được.
   const t = await s.call('/stock-transfers', s.ml, 'POST', { fromWarehouseId: 'vig', toWarehouseId: 'ml', reason: 'Đơn khách A', lines: [{ sku: 'LY1', qty: 5 }] });
   assert.equal(t.status, 201, JSON.stringify(t.data));
   const notes = await s.db.select().from(webNotifications).where(eq(webNotifications.eventType, 'transfer_pending'));
-  assert.ok(notes.some(n => n.targetMemberId === 'emp'), 'nhân viên kho được xin nhận thông báo');
-  assert.equal((await s.call(`/stock-transfers/${t.data.id}`, s.emp)).data.actions.approve, true);
+  assert.ok(notes.some(n => n.targetMemberId === 'sa'), 'Sale Admin đối ứng nhận thông báo');
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}`, s.sa)).data.actions.approve, true);
   assert.equal((await s.call(`/stock-transfers/${t.data.id}`, s.kt)).data.actions.approve, false);
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.kt, 'POST', {})).status, 403);
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/reject`, s.kt, 'POST', { reason: 'không' })).status, 403);
-  // Chờ quá 1 giờ: nhắc emp + Manager; cùng giờ không nhắc lại, sang giờ sau nhắc tiếp.
-  const created = Date.parse((await s.call(`/stock-transfers/${t.data.id}`, s.emp)).data.createdAt);
+  // Chờ quá 1 giờ: nhắc Sale Admin + Manager; cùng giờ không nhắc lại, sang giờ sau nhắc tiếp.
+  const created = Date.parse((await s.call(`/stock-transfers/${t.data.id}`, s.sa)).data.createdAt);
   const reminders = async () => (await s.db.select().from(webNotifications).where(eq(webNotifications.eventType, 'transfer_pending_reminder'))).map(n => n.targetMemberId).sort();
   assert.equal(await remindPendingTransfers({ db: s.db } as never, new Date(created + 30 * 60_000)), 0, 'chưa đủ 1 giờ');
   assert.equal(await remindPendingTransfers({ db: s.db } as never, new Date(created + 61 * 60_000)), 1);
   const first = await reminders();
-  assert.ok(first.includes('emp') && first.includes('mgr') && !first.includes('ml') && !first.includes('ketoan'), JSON.stringify(first));
+  assert.ok(first.includes('sa') && first.includes('mgr') && !first.includes('ml') && !first.includes('ketoan'), JSON.stringify(first));
   assert.equal(await remindPendingTransfers({ db: s.db } as never, new Date(created + 100 * 60_000)), 0, 'cùng giờ không nhắc lại');
   assert.equal(await remindPendingTransfers({ db: s.db } as never, new Date(created + 125 * 60_000)), 1, 'giờ sau nhắc tiếp');
-  // emp Cho → tự bấm Đã chuyển (cửa hàng không có nhóm Kho riêng).
-  assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.emp, 'POST', {})).status, 200);
+  // Sale Admin Cho → tự bấm Đã chuyển (cửa hàng không có nhóm Kho riêng).
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.sa, 'POST', {})).status, 200);
   const shipped = await s.call(`/stock-transfers/${t.data.id}/done`, s.emp, 'POST', {});
   assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
   assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [45, 25]);
