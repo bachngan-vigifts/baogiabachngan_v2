@@ -587,7 +587,7 @@ async function loadNavigationBadges() {
   } catch { /* Keep last known badges during a temporary connection failure. */ }
 }
 async function loadAll() {
-  $('#global-error').hidden = true;
+  clearGlobalError();
   // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
   // Danh sách báo giá / khách / nhân viên dùng ở nhiều chỗ nên luôn tải, nhưng nếu đang mở trang khác thì chờ trang đó tải xong.
   const page = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'quotes';
@@ -600,7 +600,19 @@ async function loadAll() {
   // Tải sẵn bảng Công việc lúc rảnh: lần bấm đầu vào trang Công việc hiện ngay (sau đó vẫn tải bản mới ở nền).
   setTimeout(() => { if (state.user) tasksView().prefetch(); }, 2500);
 }
-function showGlobalError(message) { const el = $('#global-error'); el.textContent = message; el.hidden = false; }
+// A background list must not mark an unrelated page as disconnected.
+const globalErrorPage = () => location.hash.replace(/^#\/?/, '').split('?')[0] || 'quotes';
+let globalErrorOwner = '';
+function showGlobalError(message, page) {
+  if (globalErrorPage() !== page) return;
+  globalErrorOwner = page;
+  const el = $('#global-error'); el.textContent = message; el.hidden = false;
+}
+function clearGlobalError(page) {
+  if (page && globalErrorOwner !== page) return;
+  globalErrorOwner = '';
+  const el = $('#global-error'); el.hidden = true; el.textContent = '';
+}
 // Báo giá: lọc, sắp xếp, phân trang trên máy chủ (GET /quotes); trang này chỉ giữ các báo giá của trang đang xem.
 const quotePager = createPager($('#quote-pager'), 'quotes', () => loadQuotes(), 50);
 let quoteReq = 0;
@@ -615,7 +627,8 @@ async function loadQuotes() {
     const ids = d.quotes.map(q => q.id);
     state.quoteDocs = ids.length ? (await api('/quote-docs?ids=' + encodeURIComponent(ids.join(','))).catch(() => ({ docs: {} }))).docs : {};
     if (req !== quoteReq) return;
-  } catch (e) { if (req !== quoteReq) return; state.quotes = state.quotes || []; if (e.status !== 401) showGlobalError(e.message); }
+    clearGlobalError('quotes');
+  } catch (e) { if (req !== quoteReq) return; state.quotes = state.quotes || []; if (e.status !== 401) showGlobalError(e.message, 'quotes'); }
   renderQuotes();
 }
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
@@ -634,8 +647,9 @@ async function loadCustomers() {
     state.customerTotal = d.total ?? d.customers.length;
     loadCustomerQuoteCounts(req);
     if (!state.customerQuery && !hasCustomerListFilters($)) state.customerGrandTotal = state.customerTotal;
+    clearGlobalError('customers');
     $('#customer-pending-count').textContent = d.pendingCount || 0; $('#customer-pending-chip').hidden = !d.pendingCount && !$('#customer-pending').checked;
-  } catch (e) { state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message); }
+  } catch (e) { if (req !== customerReq) return; state.customers = state.customers || []; if (e.status !== 401) showGlobalError(e.message, 'customers'); }
   renderCustomers(); renderStats(); loadCustomerDuplicates();
 }
 // Khách trùng mã số thuế (Manager): đếm + gộp.
@@ -673,8 +687,8 @@ $('#dup-merge-all').addEventListener('click', async () => {
   } catch (e) { $('#dup-error').textContent = e.message; btn.disabled = false; await loadCustomerDuplicates(); renderCustomerDuplicates(); }
 });
 async function loadMembers() {
-  try { const d = await api('/admin/members'); state.members = d.members; state.positions = d.positions; }
-  catch (e) { state.members = state.members || []; if (e.status !== 401) showGlobalError(e.message); }
+  try { const d = await api('/admin/members'); state.members = d.members; state.positions = d.positions; clearGlobalError('staff'); }
+  catch (e) { state.members = state.members || []; if (e.status !== 401) showGlobalError(e.message, 'staff'); }
   renderMembers();
 }
 // Tình trạng đồng bộ Sapo → app (sản phẩm, khách hàng, nhân viên): Sapo đẩy sang, hoặc app tự lấy bằng phiên Sapo của Manager.
@@ -777,6 +791,7 @@ function thuChiTabs(view) {
   $('#view-' + view).before(nav);
 }
 function route() {
+  if (globalErrorPage() !== globalErrorOwner) clearGlobalError();
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
   const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
   if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || homeHash()); if (lastRoutedHash) return; }
@@ -2292,6 +2307,7 @@ async function loadProducts() {
   const local = localProducts();
   if (local) {
     state.products = local.slice(productPager.offset, productPager.offset + productPager.limit); state.productTotal = local.length;
+    clearGlobalError('products');
     renderProducts(); loadProductBrands(); return;
   }
   state.products = null; renderProducts();
@@ -2299,8 +2315,8 @@ async function loadProducts() {
     const d = await api(`/products?limit=${productPager.limit}&offset=${productPager.offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}${state.productMinStock !== '' ? '&minStock='+encodeURIComponent(state.productMinStock)+'&stockWarehouse='+encodeURIComponent(state.productWarehouse) : ''}`);
     if (req !== productReq) return;
     applyCatalogMeta(d);
-    state.products = d.products; state.productTotal = d.total;
-  } catch (e) { state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message); }
+    state.products = d.products; state.productTotal = d.total; clearGlobalError('products');
+  } catch (e) { if (req !== productReq) return; state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message, 'products'); }
   renderProducts(); loadProductBrands();
 }
 function loadProductBrands() {
