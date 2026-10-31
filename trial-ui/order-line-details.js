@@ -1,3 +1,4 @@
+import {renderOrderReturns} from './order-return-summary.js';
 const el = (tag, text = '', cls = '') => {
   const node = document.createElement(tag); node.textContent = String(text); node.className = cls; return node;
 };
@@ -6,15 +7,18 @@ const money = n => Number.isFinite(n) ? num(n) + ' đ' : 'Chưa có dữ liệu'
 const snapshotOf = order => { try { return JSON.parse(order.posSnapshot || '{}') || {}; } catch { return {}; } };
 
 /** Show persisted POS prices and charges. Rendering never changes the amount due. */
-export function renderOrderLineDetails({ head, body, details, order, lines }) {
+export function renderOrderLineDetails({ head, body, details, order, lines,returnSummary }) {
   const pos = order.channel === 'pos', snapshot = pos ? snapshotOf(order) : {};
   head.replaceChildren(); body.replaceChildren(); details.replaceChildren();
+  const showReturns=!pos&&order.channel==='crm'&&!!returnSummary?.requests?.length;
+  head.className = showReturns ? 'order-return-columns' : '';
   const titles = pos
     ? ['Sản phẩm / khoản phí', 'SL', 'Đã giao', 'Đơn giá gốc', 'CK', 'Giá sau CK', 'VAT', 'Thành tiền']
-    : ['Sản phẩm', 'SL', 'Đã giao', 'Đơn giá', 'VAT', 'Thành tiền'];
+    : ['Sản phẩm', 'SL', 'Đã giao',...(showReturns?['Đã nhận hoàn','Nhập lại kho','Khách đang giữ']:[]), 'Đơn giá', 'VAT', 'Thành tiền'];
   for (const [i, text] of titles.entries()) head.append(el('th', text, i ? 'right' : ''));
   const cell = (tr, text, numeric = true, sub = '') => {
     const td = el('td', text, numeric ? 'right num' : '');
+    if (showReturns && numeric) td.dataset.label = titles[tr.children.length];
     if (sub) td.append(el('small', sub)); tr.append(td); return td;
   };
   for (const line of lines) {
@@ -27,6 +31,7 @@ export function renderOrderLineDetails({ head, body, details, order, lines }) {
     const sub = [line.sku, line.unit].filter(Boolean).join(' · ');
     if (sub) name.append(el('small', sub));
     cell(tr, num(line.qty)); cell(tr, num(line.deliveredQty));
+    if(showReturns){cell(tr,num(line.returnedQty||0));cell(tr,num(line.restockedQty||0));cell(tr,num(line.customerKeptQty??Math.max(0,line.deliveredQty-(line.returnedQty||0))));}
     if (pos) {
       // Original POS prices include VAT under the VAT policy. Never present them as net prices.
       const saved = Array.isArray(snapshot.lines) ? snapshot.lines.find(x => x && x.sku === line.sku && x.qty === line.qty && x.unitPrice === line.unitPrice) : null;
@@ -42,6 +47,7 @@ export function renderOrderLineDetails({ head, body, details, order, lines }) {
     }
     body.append(tr);
   }
+  renderOrderReturns({host:details,order,summary:returnSummary});
   if (!pos) return;
   const fees = order.posFees;
   const services = fees?.services ?? (fees?.service ? [fees.service] : []);

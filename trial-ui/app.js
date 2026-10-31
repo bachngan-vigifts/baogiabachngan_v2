@@ -1,3 +1,4 @@
+import {returnStateText} from './order-return-summary.js';
 import {mountContractLiquidation} from './contract-liquidation.js';
 import { initQuoteStockWarnings } from './quote-stock-warning.js';
 import { parseSkuQuantities, pasteRows } from './quote-paste.js';
@@ -3965,7 +3966,8 @@ async function openOrder(id, confirmed = null) {
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (d.contract ? 'contracts' : 'orders')));
   const stKey = (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status);
   const stockConflict = d.progress?.reconciliationRequired;
-  $('#order-status').outerHTML = `<span class="pill ${stockConflict ? 'warn' : ORDER_STATUS[stKey]?.[1] || ''}" id="order-status">${esc(stockConflict ? 'Cần đối soát xuất kho' : ORDER_STATUS[stKey]?.[0] || o.status)}</span>`;
+  const returnState=returnStateText(d.returnSummary,d.lines);
+  $('#order-status').outerHTML = `<span class="order-status-pills" id="order-status"><span class="pill ${ORDER_STATUS[stKey]?.[1]||''}">${esc(ORDER_STATUS[stKey]?.[0]||o.status)}</span>${returnState?`<span class="pill info">${esc(returnState)}</span>`:''}${stockConflict?'<span class="pill warn">Cần đối soát xuất kho</span>':''}</span>`;
   // Liên kết các bước của đơn
   const step = (done, label, sub, href) => `<${href ? `a href="${href}"` : 'div'} class="flow-step ${done ? 'done' : ''}"><b>${esc(label)}</b><small>${esc(sub)}</small></${href ? 'a' : 'div'}>`;
   const shipped = d.lines.reduce((s, l) => s + l.deliveredQty, 0), totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
@@ -3973,7 +3975,7 @@ async function openOrder(id, confirmed = null) {
     step(!!o.quoteId, 'Báo giá', o.quoteNo || 'Không có', o.quoteId ? `#/quotes/${encodeURIComponent(o.quoteId)}` : ''),
     ...(!d.contract ? [step(true, 'Đơn đặt hàng', o.orderNo)] : []),
     step(!!d.contract, 'HĐKT', d.contract ? d.contract.contractNo : 'Chưa lập', d.contract ? '#/contracts' : ''),
-    step(o.status === 'delivered' && !stockConflict, 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao${stockConflict ? ' · Chưa đủ xác nhận xuất kho' : ''}`, '#/deliveries'),
+    step(o.status === 'delivered', 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao${returnState?' · '+returnState:''}${stockConflict ? ' · Chưa đủ xác nhận xuất kho' : ''}`, '#/deliveries'),
     step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : r.balance<0?'Còn hoàn '+money(-r.balance):'Đã thu đủ', '#/receivables'),
   ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
   // Phiếu đóng gói / phiếu giao hàng / yêu cầu đóng gói chỉ dùng được khi đơn đã lên lịch giao (có chuyến chưa huỷ).
@@ -4043,7 +4045,7 @@ async function openOrder(id, confirmed = null) {
   $('#order-debt').innerHTML = `<dl class="totals"><div><dt>Giá trị ${what} (gồm VAT)</dt><dd>${money(o.total)}</dd></div><div><dt>Đã thu</dt><dd class="${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</dd></div>
     <div class="grand"><dt>Còn phải thu</dt><dd>${money(r.balance)}</dd></div>${r.overdue ? `<div><dt class="danger-text">Quá hạn</dt><dd class="danger-text">${money(r.overdue)}</dd></div>` : ''}</dl>
     <ul class="plain-list">${allocatePayments(d.effectiveSchedules || d.schedules, r.paid).map(s => `<li class="${s.left <= 0 ? 'installment-paid' : ''}"><span>${esc(s.note || s.kind)}<small>${installmentStatus(s)}</small></span><b>${money(s.amount)}</b><small>${s.left <= 0 ? 'Đã hoàn tất' : s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
-  renderOrderLineDetails({ head: $('#order-lines-head'), body: $('#order-lines'), details: $('#order-line-details'), order: o, lines: d.lines });
+  renderOrderLineDetails({ head: $('#order-lines-head'), body: $('#order-lines'), details: $('#order-line-details'), order: o, lines: d.lines,returnSummary:d.returnSummary });
   const k = d.contract;
   // Đơn hàng và HĐKT là 2 luồng: đơn không có HĐKT (khách có HĐ nguyên tắc) hiện ô "Đơn hàng" thay cho ô HĐKT.
   $('#order-contract-title').textContent = k ? 'HĐKT' : 'Đơn hàng';
@@ -4126,11 +4128,11 @@ function renderProgress(d) {
   const stockPending=p.physicalExportRequired&&p.stages.some(s=>s.key==='export'&&!s.done);
   const by = s => s.by === 'auto' ? 'Tự động theo chứng từ' : s.by === 'task' ? `Hoàn thành việc${s.byName ? ' · ' + s.byName : ''}` : s.by === 'manual' ? `Đánh dấu${s.byName ? ' · ' + s.byName : ''}` : '';
   box.innerHTML = `<div class="card-title-row"><h2 class="card-title">Tiến trình sản phẩm</h2>
-      <span class="pill ${cancelled ? 'muted' : p.done ? 'ok' : 'info'}">${esc(p.label)}</span>
+      <span class="pill ${cancelled ? 'muted' : p.done ? 'ok' : 'info'}">${esc(p.reconciliationRequired?'Chờ đối soát xuất kho':p.label)}</span>
       ${canMark && isManager() && !p.done && !stockPending ? '<button type="button" class="btn secondary small" data-progress="all" title="Đánh dấu xong tất cả các bước (chỉ tiến trình – không đổi giao hàng, công nợ)">✓ Hoàn thành tất cả</button>' : ''}</div>
     <ol class="progress-steps">${p.stages.map((s, i) => `<li data-progress-stage="${esc(s.key)}" class="${s.done ? 'done' : s.key === p.current ? 'current' : ''}">
       <span class="dot" aria-hidden="true">${s.done ? '✓' : i + 1}</span><b>${esc(s.label)}</b>
-      <small>${s.done ? esc(by(s)) + (s.at ? ' · ' + fmtDate(s.at.slice(0, 10)) : '') : s.key === p.current ? 'Đang ở bước này' : 'Chưa tới'}</small>
+      <small>${s.key==='delivered'&&d.order.status==='delivered'?'Đã ghi nhận giao hàng'+(p.reconciliationRequired?' · Chờ đối soát xuất kho':''):s.done ? esc(by(s)) + (s.at ? ' · ' + fmtDate(s.at.slice(0, 10)) : '') : s.key === p.current ? 'Đang ở bước này' : 'Chưa tới'}</small>
       ${canMark && (isManager()||['sample','production'].includes(s.key)) && !s.done && !(['approve','export'].includes(s.key) && p.physicalExportRequired) && !stockPending ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
       ${canMark && (isManager()||['sample','production'].includes(s.key)) && s.by === 'manual' ? `<button type="button" class="link-btn muted" data-progress-undo="${esc(s.key)}" title="Bỏ đánh dấu tay ở bước này và các bước sau">Bỏ</button>` : ''}
       ${progressDocuments(d,s.key)}
