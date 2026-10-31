@@ -158,7 +158,7 @@ export interface PayslipCalc {
   group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
   kpi: KpiCvResult | null;snapshotUnavailable?:boolean;
-  salesCrm?:{apply:boolean;from:string;kpiEligible?:boolean;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};
+  salesCrm?:{apply:boolean;bonusApply?:boolean;kpiApply?:boolean;from:string;kpiEligible?:boolean;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};
 }
 
 const round = (n: number) => Math.round(n);

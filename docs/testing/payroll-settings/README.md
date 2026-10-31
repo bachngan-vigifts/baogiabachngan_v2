@@ -15,3 +15,11 @@ Kiểm chứng: typecheck, kiểm tra cú pháp JS và 19 test bảng lương / 
 - Tham số KPI doanh số khác đã đặt riêng vẫn giữ nguyên khi chỉ sửa cấu hình thưởng.
 - Nhân viên xem hồ sơ mình không có nút sửa lương và API tham số trả 403. Không lỗi JavaScript, không tràn ngang trang.
 - Ảnh/JSON kèm theo là dữ liệu giả lập. Chạy lại: `PLAYWRIGHT_MODULE=<đường dẫn playwright/index.mjs> node --import tsx scripts/testing/payroll-settings.mjs`.
+
+## Khắc phục lỗi KH mới khi chỉ bật thưởng HĐKT
+
+Nút áp dụng cũ dùng chung `salesAutomationApply` cho cả KPI và thưởng, nên thưởng Sale Admin bị chặn bởi trần KH mới 10% dù người đó không tính KPI. Nay thưởng dùng `contractBonusFrom` / `contractBonusApply`; KPI giữ hai tham số riêng. Màn hình Cài đặt thưởng HĐKT không đọc/sửa tháng hoặc công tắc KPI. Các tham số nằm trong JSON cấu hình hiện có, không migration.
+
+Chính sách cũ thiếu hai khoá mới kế thừa đúng tháng/công tắc cũ, không tự ngừng thưởng đang áp dụng. Phiếu đã chốt vẫn dùng bản chụp. Bản chụp mới lưu riêng `salesCrm.bonusApply` và `salesCrm.kpiApply`: chốt chỉ ghi sổ thưởng nếu phần thưởng đã áp dụng; chỉ khoá nguồn giao dịch nếu đã chốt KPI tự động. Bản chụp cũ giữ cách đọc tương thích.
+
+24 test tính lương/ghi sổ/kiến trúc giao diện đạt; 4 test hồi quy riêng được chạy lại sau khi bổ sung trường hợp chốt cả bảng chỉ áp dụng KPI. Kiểm tra typecheck đã hoàn tất thành công. Browser thật 1280/390 px xác nhận giữ nguyên KH mới 20%, tháng KPI 0 và công tắc KPI tắt, vẫn lưu thưởng HĐKT thành công, tính 50.000 sao + 10.000 thanh lý và KPI Sale Admin null. Chế độ đối chiếu chưa cộng tiền; nhân viên không có quyền sửa lương. Ảnh `policy-*.png` và JSON là dữ liệu giả lập. Không sửa dữ liệu production.

@@ -27,8 +27,8 @@ export function initPayroll(deps) {
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Nhân viên</th><th>Vị trí</th><th>Bảng lương</th><th>Hồ sơ</th><th>Cài đặt</th></tr></thead><tbody>${st.d.rows.map(r=>`<tr><td class="first">${memberLink(r,r.member.name)}</td><td>${esc(r.profile.positionLabel||r.member.positionId||'—')}</td><td>${esc(st.d.columns.groups[r.profile.payrollGroup]||'—')}</td><td>${r.profile.hasProfile?'Đã thiết lập':'Chưa thiết lập'}</td><td><a class="btn secondary small" href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">Cài đặt lương</a></td></tr>`).join('')}</tbody></table></div>`;
   }
   function bonusSetupHtml() {
-    const p=st.d.params,from=String(p.salesAutomationFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
-    const status=from==='0'?'Chưa bật tính thưởng từ CRM':st.month<from?'Bắt đầu từ '+monthLabel(from):p.salesAutomationApply===1?'Đang áp dụng vào phiếu lương':'Đang đối chiếu — chưa cộng vào thực nhận';
+    const p=st.d.params,from=String(p.contractBonusFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
+    const status=from==='0'?'Chưa bật tính thưởng từ CRM':st.month<from?'Bắt đầu từ '+monthLabel(from):p.contractBonusApply===1?'Đang áp dụng vào phiếu lương':'Đang đối chiếu — chưa cộng vào thực nhận';
     return `<section class="approval-box pr-bonus-setup"><div class="approval-head"><h3>Thưởng Sale / Sale Admin</h3></div><p><b>${esc(status)}</b></p><p class="small">Thưởng sao tính theo giá trị HĐKT trước VAT trong tháng ký; thưởng thanh lý tính khi Manager duyệt. Sale Admin chỉ hưởng thưởng sao và thanh lý, không tính KPI.</p><p class="small">${[1,2,3,4,5].map(n=>`${n} sao: từ ${money(p['contractStar'+n+'From'])} → ${money(p['contractStar'+n+'Amount'])}`).join(' · ')}<br>Thanh lý: ${money(p.contractLiquidationAmount)} / HĐKT.</p><p class="muted small">Để tính thưởng, chọn tháng bắt đầu trong Cài đặt thưởng HĐKT và bật “Hưởng thưởng sao HĐKT và thanh lý” trong hồ sơ lương từng người. Chế độ đối chiếu chưa cộng vào thực nhận.</p><button class="btn ghost small" data-mobile-inline data-tab="profiles">Cài đặt lương và thưởng cho nhân viên</button></section>`;
   }
 
@@ -129,15 +129,15 @@ export function initPayroll(deps) {
   // ----- Tham số (sheet "Tham số"): nhóm theo mục; ô tỷ lệ nhập dạng % cho dễ đọc.
   async function editParams(bonusOnly = false) {
     let s; try { s = await api('/hr/settings?month=' + st.month); } catch (e) { toast(e.message, 'err'); return; }
-    const fields = bonusOnly ? s.fields.filter(f=>/^(salesAutomation|contractStar|contractLiquidation)/.test(f.key)) : s.fields;
+    const fields = bonusOnly ? s.fields.filter(f=>/^(contractBonus|contractStar|contractLiquidation)/.test(f.key)) : s.fields;
     const groups = [...new Set(fields.map(f => f.group))];
     const val = f => f.kind === 'percent' ? +(s.params[f.key] * 100).toFixed(4) : f.kind === 'money' ? Number(s.params[f.key]).toLocaleString('vi-VN') : s.params[f.key];
     const dlg = document.createElement('dialog'); dlg.className = 'modal pr-params';
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${bonusOnly?'Cài đặt thưởng HĐKT':'Tham số lương'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body"><label class="pr-eff">Áp dụng từ tháng<input type="month" name="effectiveMonth" value="${esc(st.month)}" required></label>
         <p class="muted small">Đang dùng: ${s.effectiveMonth ? 'bản áp dụng từ ' + esc(monthLabel(s.effectiveMonth).toLowerCase()) : 'mặc định theo file mẫu'}. Lưu với tháng mới để giữ nguyên các tháng trước.</p>
-        ${groups.map(g => `<fieldset><legend>${esc(bonusOnly&&g==='KPI & thưởng CRM'?'Thời điểm và chế độ thưởng':g)}</legend><div class="form-grid cols-2">${fields.filter(f => f.group === g).map(f => `<label>${esc(bonusOnly&&f.key==='salesAutomationFrom'?'Tháng bắt đầu tính thưởng':bonusOnly&&f.key==='salesAutomationApply'?'Chế độ thưởng':f.label)}${f.kind === 'percent' ? ' (%)' : ''}
-          ${bonusOnly&&f.key==='salesAutomationFrom'?`<input type="month" name="${f.key}" value="${s.params[f.key]?String(s.params[f.key]).replace(/^(\d{4})(\d{2})$/,'$1-$2'):''}">`:bonusOnly&&f.key==='salesAutomationApply'?`<select name="${f.key}"><option value="0" ${s.params[f.key]===0?'selected':''}>Đối chiếu — chưa cộng thực nhận</option><option value="1" ${s.params[f.key]===1?'selected':''}>Áp dụng vào thực nhận</option></select>`:`<input name="${f.key}" data-kind="${f.kind}" inputmode="decimal" value="${esc(String(val(f)))}">`}${f.note ? `<small class="muted">${esc(f.note)}</small>` : ''}</label>`).join('')}</div></fieldset>`).join('')}
+        ${groups.map(g => `<fieldset><legend>${esc(bonusOnly&&g==='KPI & thưởng CRM'?'Thời điểm và chế độ thưởng':g)}</legend><div class="form-grid cols-2">${fields.filter(f => f.group === g).map(f => `<label>${esc(bonusOnly&&f.key==='contractBonusFrom'?'Tháng bắt đầu tính thưởng':bonusOnly&&f.key==='contractBonusApply'?'Chế độ thưởng':f.label)}${f.kind === 'percent' ? ' (%)' : ''}
+          ${bonusOnly&&f.key==='contractBonusFrom'?`<input type="month" name="${f.key}" value="${s.params[f.key]?String(s.params[f.key]).replace(/^(\d{4})(\d{2})$/,'$1-$2'):''}">`:bonusOnly&&f.key==='contractBonusApply'?`<select name="${f.key}"><option value="0" ${s.params[f.key]===0?'selected':''}>Đối chiếu — chưa cộng thực nhận</option><option value="1" ${s.params[f.key]===1?'selected':''}>Áp dụng vào thực nhận</option></select>`:`<input name="${f.key}" data-kind="${f.kind}" inputmode="decimal" value="${esc(String(val(f)))}">`}${f.note ? `<small class="muted">${esc(f.note)}</small>` : ''}</label>`).join('')}</div></fieldset>`).join('')}
         <p class="error" data-err role="alert"></p></div>
       <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Lưu tham số</button></div></form>`;
     document.body.append(dlg); dlg.showModal();
@@ -148,7 +148,7 @@ export function initPayroll(deps) {
       const f = e.target.elements, params = {...s.params};
       for (const x of fields) {
         const raw = f.namedItem(x.key).value.trim();
-        params[x.key] = bonusOnly&&x.key==='salesAutomationFrom' ? Number(raw.replace('-','')) : x.kind === 'money' ? digits(raw) : x.kind === 'percent' ? Number(raw.replace(',', '.')) / 100 : Number(raw.replace(',', '.'));
+        params[x.key] = bonusOnly&&x.key==='contractBonusFrom' ? Number(raw.replace('-','')) : x.kind === 'money' ? digits(raw) : x.kind === 'percent' ? Number(raw.replace(',', '.')) / 100 : Number(raw.replace(',', '.'));
       }
       try { await api('/hr/settings', 'PUT', { effectiveMonth: f.effectiveMonth.value, params }); dlg.close(); toast('Đã lưu tham số lương.'); open(st.month); }
       catch (ex) { dlg.querySelector('[data-err]').textContent = ex.message; }

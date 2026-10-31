@@ -7,8 +7,10 @@ export type ParamKind = 'money' | 'number' | 'percent' | 'ratio';
 export interface ParamField { key: string; group: string; label: string; value: number; kind: ParamKind; note?: string }
 
 export const PARAM_FIELDS = [
-  {key:'salesAutomationFrom',group:'KPI & thưởng CRM',label:'Tháng bắt đầu đối chiếu CRM (YYYYMM; 0 = tắt)',value:0,kind:'number',note:'KH mới: đơn CRM đã duyệt đầu tiên trong toàn bộ lịch sử; giao dịch: liên hệ hợp lệ; HĐ: tháng ký. Dữ liệu cũ chưa xác nhận không tự tính giao dịch.'},
-  {key:'salesAutomationApply',group:'KPI & thưởng CRM',label:'Áp dụng vào thực nhận (0 = đối chiếu; 1 = áp dụng)',value:0,kind:'number'},
+  {key:'salesAutomationFrom',group:'KPI công việc – Sale',label:'Tháng bắt đầu KPI Sale từ CRM (YYYYMM; 0 = tắt)',value:0,kind:'number',note:'KH mới: đơn CRM đã duyệt đầu tiên trong toàn bộ lịch sử; giao dịch: liên hệ hợp lệ; HĐ: tháng ký. Dữ liệu cũ chưa xác nhận không tự tính giao dịch.'},
+  {key:'salesAutomationApply',group:'KPI công việc – Sale',label:'Áp dụng KPI từ CRM (0 = đối chiếu; 1 = áp dụng)',value:0,kind:'number'},
+  {key:'contractBonusFrom',group:'Thưởng HĐKT',label:'Tháng bắt đầu thưởng HĐKT (YYYYMM; 0 = tắt)',value:0,kind:'number'},
+  {key:'contractBonusApply',group:'Thưởng HĐKT',label:'Áp dụng thưởng sao / thanh lý (0 = đối chiếu; 1 = áp dụng)',value:0,kind:'number'},
   {key:'contractStar1From',group:'Thưởng HĐKT',label:'Cận dưới 1 sao (trước VAT)',value:2000000,kind:'money'},
   {key:'contractStar1Amount',group:'Thưởng HĐKT',label:'Thưởng 1 sao',value:20000,kind:'money'},
   {key:'contractStar2From',group:'Thưởng HĐKT',label:'Cận dưới 2 sao (trước VAT)',value:20000000,kind:'money'},
@@ -87,6 +89,9 @@ export function mergeParams(saved: unknown): PayrollParams {
     const n = Number(src[f.key]);
     if (src[f.key] !== undefined && src[f.key] !== '' && Number.isFinite(n) && n >= 0 && !(POSITIVE.includes(f.key) && n <= 0)) out[f.key] = n;
   }
+  // Existing saved policies used one switch for both. Preserve that policy until explicitly separated.
+  if(src.contractBonusApply===undefined)out.contractBonusApply=out.salesAutomationApply;
+  if(src.contractBonusFrom===undefined)out.contractBonusFrom=out.salesAutomationFrom;
   return out;
 }
 
@@ -103,9 +108,11 @@ export function validateParams(input: unknown): string | null {
     if (f.kind === 'percent' && n > 1) return `${f.label}: nhập dạng tỷ lệ (0,012 = 1,2%).`;
   }
   const values=mergeParams(src);
-  if(values.salesAutomationApply===1&&values.kpiNewCustomersOver>0.1)return 'Trần điểm KH mới phải tối đa 10% trước khi áp dụng CRM.';
+  if(values.salesAutomationApply===1&&values.kpiNewCustomersOver>0.1)return 'Trần điểm KH mới phải tối đa 10% trước khi áp dụng KPI Sale từ CRM.';
+  if(![0,1].includes(values.contractBonusApply))return 'Áp dụng thưởng HĐKT phải là 0 hoặc 1.';
   if(![0,1].includes(values.salesAutomationApply))return 'Áp dụng CRM phải là 0 hoặc 1.';
   if(values.salesAutomationFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.salesAutomationFrom)))return 'Tháng bắt đầu CRM nhập YYYYMM hoặc 0.';
+  if(values.contractBonusFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.contractBonusFrom)))return 'Tháng bắt đầu thưởng HĐKT nhập YYYYMM hoặc 0.';
   for(let i=2;i<=5;i++)if(values[('contractStar'+i+'From') as ParamKey]<=values[('contractStar'+(i-1)+'From') as ParamKey])return 'Cận sao phải tăng dần.';
   return null;
 }
