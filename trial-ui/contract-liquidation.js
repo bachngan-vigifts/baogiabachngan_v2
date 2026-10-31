@@ -32,7 +32,7 @@ export function mountContractLiquidation({api,host,contract,compressPhoto,confir
   }
   const error=el('p','error');error.setAttribute('role','alert');
   const locked=(on,primary,text)=>{busy=on;dialog.dataset.busy=on?'1':'';for(const x of dialog.querySelectorAll('button,input,textarea')){if(on){x.dataset.wasDisabled=x.disabled?'1':'';x.disabled=true;}else if(x.dataset.wasDisabled!==undefined){x.disabled=x.dataset.wasDisabled==='1';delete x.dataset.wasDisabled;}}if(primary&&text)primary.textContent=text;};
-  async function saved(result){paint(result.status);close();toast(result.status==='approved'?'Manager đã duyệt thanh lý HĐKT.':result.status==='pending'?'Đã gửi Manager duyệt thanh lý.':'Đã từ chối đề nghị thanh lý.');await refresh();}
+  async function saved(result){close();toast(result.status==='approved'?'Manager đã duyệt thanh lý HĐKT.':result.status==='pending'?'Đã gửi Manager duyệt thanh lý.':'Đã từ chối đề nghị thanh lý.');await refresh();}
   if(d.canRequest){
    const form=el('form','contract-liquidation-form'),received=el('input'),services=el('input'),file=el('input'),preview=el('img','contract-liquidation-photo');
    for(const box of [received,services]){box.type='checkbox';box.required=true;}
