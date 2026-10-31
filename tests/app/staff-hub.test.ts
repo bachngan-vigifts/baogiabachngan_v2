@@ -85,6 +85,10 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   assert.equal((await call(`/hr/members/emp/payslips/${month}`, mgr, 'DELETE')).status, 200);
   assert.equal((await call(`/hr/adjustments/${bonus.data.id}`, mgr, 'DELETE')).status, 200);
   await call(`/hr/members/emp/payslips/${month}`, mgr, 'POST', {});
+  assert.equal((await call(`/hr/members/emp/payslips/${month}/paid`,mgr,'POST',{})).status,409,'bỏ thưởng làm phiếu âm: cần đối soát trước khi đánh dấu đã trả');
+  assert.equal((await call(`/hr/members/emp/payslips/${month}`,mgr,'DELETE')).status,200);
+  assert.equal((await call('/hr/members/emp/adjustments',mgr,'POST',{month,kind:'bonus',amount:500_000,reason:'Khoản bổ sung đã được Manager đối soát'})).status,201);
+  assert.equal((await call(`/hr/members/emp/payslips/${month}`,mgr,'POST',{})).status,201);
   assert.equal((await call(`/hr/members/emp/payslips/${month}/paid`, mgr, 'POST', {})).status, 200);
   assert.equal((await call(`/hr/members/emp/payslips/${month}`, mgr, 'DELETE')).status, 409, 'đã trả lương thì không mở lại');
   assert.equal((await call(`/members/emp/overview?month=${month}`, emp)).data.payroll.payslip.status, 'paid');

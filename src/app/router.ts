@@ -1,3 +1,4 @@
+import {activityQuotes} from '../modules/quotes/api/activity-quotes.ts';
 import {crmFactsOf} from './sales-payroll-facts.ts';
 import {assertActivityKpiOpen} from '../modules/hr/api/activity-lock.ts';
 import { rememberQuoteCustomer } from './quote-customer-memory.ts';
@@ -111,7 +112,7 @@ export function createAppRouter() {
   registerCustomerHubRoutes(router);
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
-  registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen});
+  registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});
   registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);

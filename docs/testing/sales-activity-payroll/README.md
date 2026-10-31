@@ -52,3 +52,5 @@ Các mặc định nghiệp vụ cần duyệt trong review: KH mới theo đơn
 - Không truy vấn/ghi production, không chạy migration trên CRM, không thay phiên/cron/đồng bộ Sapo, không gọi GHN/email/Zalo.
 
 Bổ sung theo xác nhận của chủ doanh nghiệp: Sale Admin không KPI; kiểm thử API, dữ liệu hồ sơ cũ, loại khỏi thưởng quý tự động và giao diện hồ sơ không còn nút bật KPI. Thưởng 2 sao 50.000 + thanh lý 10.000 vẫn hoạt động. Đổi chức vụ sau khi đã chốt không sửa snapshot phiếu cũ.
+
+Sửa theo CI: adapter đọc phiên bản báo giá đặt trong module quotes và được app truyền vào care qua hợp đồng kiểu dữ liệu ở core; không nới allowlist kiến trúc. Kiểm thử hồ sơ nhân viên kiểm tra phiếu âm bị chặn trả, đối soát và chốt lại phiếu dương mới được đánh dấu đã trả.

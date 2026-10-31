@@ -1,12 +1,11 @@
 import {activityFacts} from './kpi-facts.ts';
 import {activityDay} from '../domain/activity-kpi.ts';
-import {quotations,quoteRevisions} from '../../quotes/schema.ts';
-import {quotationPredicate} from '../../quotes/api/department-access.ts';
+import type {ActivityQuoteAccess} from '../../../core/contracts/activity-quotes.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
 import {payrollLock} from '../../../core/db/payroll-lock.ts';
 import {customerAccess} from '../../customers/api/routes.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
-import { and, asc, count, desc, eq, or, gte, sql,inArray, isNotNull, isNull, lt, lte, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, or, gte, isNotNull, isNull, lt, lte, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -77,7 +76,7 @@ async function ensureCustomer(c: Ctx, id: string) {
   const access=await customerAccess(c.env.db,id,viewer(c));if(!access.canSeeAll&&!access.peer)throw new AppError(404,'Không tìm thấy khách hàng trong phạm vi của bạn.');
 }
 
-export function registerCareRoutes(router: Router<StaffEnv>,deps:{assertKpiOpen?:(db:StaffEnv['db'],owner:string,month:string)=>Promise<void>}={}) {
+export function registerCareRoutes(router: Router<StaffEnv>,deps:{quotes?:ActivityQuoteAccess;assertKpiOpen?:(db:StaffEnv['db'],owner:string,month:string)=>Promise<void>}={}) {
   async function marks(c:Ctx,rows:Row[]){
    const months=[...new Set(rows.map(r=>activityDay(r.a.occurredAt).slice(0,7)))],map=new Map();
    for(const m of months){const end=new Date(m+'-01T00:00:00Z');end.setUTCMonth(end.getUTCMonth()+1);const f=await activityFacts(c.env.db,m+'-01',end.toISOString().slice(0,10));for(const [id,value]of f.marks)map.set(id,value);}return map;
@@ -88,13 +87,8 @@ export function registerCareRoutes(router: Router<StaffEnv>,deps:{assertKpiOpen?
    if(purpose!==null&&!['sales','after_sales'].includes(String(purpose)))throw new AppError(400,'Mục đích giao dịch không hợp lệ.');
    let quoteId:string|null=null,quoteRevision:number|null=null;
    if(b.type==='quote'&&completion==='completed'){
-    const [q]=await c.env.db.select().from(quotations).where(and(eq(quotations.id,String(b.quoteId||'')),quotationPredicate(viewer(c)))).limit(1);
-    if(!q)throw new AppError(404,'Không tìm thấy báo giá trong phạm vi.');
-    let payload=q.data;if(b.quoteRevision!==q.revision){const [old]=await c.env.db.select({data:quoteRevisions.data}).from(quoteRevisions).where(and(eq(quoteRevisions.quoteId,q.id),eq(quoteRevisions.revision,Number(b.quoteRevision)||0))).limit(1);if(!old)throw new AppError(409,'Không tìm thấy bản báo giá đã gửi. Chọn lại đúng phiên bản.');payload=old.data;}
-    let data:any={};try{data=JSON.parse(payload);}catch{}
-    if(data.customerId!==customerId)throw new AppError(400,'Báo giá không thuộc khách hàng đã chọn.');
-
-    quoteId=q.id;quoteRevision=Number(b.quoteRevision);
+    if(!deps.quotes)throw new AppError(503,'Chưa có nguồn báo giá. Liên hệ Manager.');
+    ({quoteId,quoteRevision}=await deps.quotes.read(c.env.db,viewer(c),{id:String(b.quoteId||''),revision:Number(b.quoteRevision)||0,customerId}));
    }
    return{completion:completion as string|null,purpose:purpose as string|null,quoteId,quoteRevision};
   }
@@ -145,9 +139,8 @@ export function registerCareRoutes(router: Router<StaffEnv>,deps:{assertKpiOpen?
 
   router.get('/care/quotes',async c=>{
    const customerId=c.url.searchParams.get('customerId')||'';await ensureCustomer(c,customerId);
-   const rows=await c.env.db.select({id:quotations.id,no:quotations.quoteNo,revision:quotations.revision}).from(quotations).where(and(quotationPredicate(viewer(c)),sql`${quotations.data}::jsonb->>'customerId'=${customerId}`)).orderBy(desc(quotations.updatedAt)).limit(100);
-   const history=rows.length?await c.env.db.select({quoteId:quoteRevisions.quoteId,revision:quoteRevisions.revision}).from(quoteRevisions).where(and(inArray(quoteRevisions.quoteId,rows.map(q=>q.id)),sql`${quoteRevisions.data}::jsonb->>'customerId'=${customerId}`)).orderBy(desc(quoteRevisions.createdAt)).limit(500):[];
-   const all=[...rows,...history.map(v=>({id:v.quoteId,no:rows.find(q=>q.id===v.quoteId)!.no,revision:v.revision}))];return json({quotes:[...new Map(all.map(q=>[q.id+':'+q.revision,q])).values()]});
+   if(!deps.quotes)throw new AppError(503,'Chưa có nguồn báo giá. Liên hệ Manager.');
+   return json({quotes:await deps.quotes.list(c.env.db,viewer(c),customerId)});
   },'business');
   router.get('/care/:id', async c => {const row=await loadOne(c,c.params.id!),kpi=await marks(c,[row]);return json({activity:{...present(row,viewer(c),vnToday()),kpi:kpi.get(row.a.id)}});}, 'business');
 
