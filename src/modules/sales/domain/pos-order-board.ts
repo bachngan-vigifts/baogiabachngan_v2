@@ -4,7 +4,7 @@ type BoardOrder = {
   ownerName: string | null; sapoOrderCode: string | null; orderDate: string;
   bucket: string; orderSource: string; paymentStatus: string; total: number;
   paid: number | null; outstanding: number | null; currency: string;
-  cancelReason?: string; cancellationKind?: string;
+  cancelReason?: string; cancellationKind?: string; status?: string;
 };
 /** Called after register scope is checked, on the complete server-side dataset. */
 export function filterPosOrderBoard<T extends BoardOrder>(rows: T[], params: URLSearchParams, options: {analyticsFrom?:string} = {}) {
@@ -59,10 +59,10 @@ export function cancellationAnalytics(rows: Pick<BoardOrder,'bucket'|'cancelReas
 
 
 /** Website orders are a review signal, not proof of paid-ad attribution or employee fault. */
-export function advertisingCancellationRisk(rows: Pick<BoardOrder,'bucket'|'orderSource'>[]) {
-  const web=rows.filter(o=>o.orderSource==='web'),completed=web.filter(o=>o.bucket==='completed').length,
+export function advertisingCancellationRisk(rows: Pick<BoardOrder,'bucket'|'orderSource'|'status'>[]) {
+  const source=rows.filter(o=>o.orderSource==='web'),web=source.filter(o=>(o.status||'').trim().toLowerCase().replace(/^wc-/,'')!=='trash'),excludedDeleted=source.length-web.length,completed=web.filter(o=>o.bucket==='completed').length,
     unsuccessful=web.filter(o=>o.bucket==='cancelled').length,ended=completed+unsuccessful;
-  const level=ended<30?'insufficient':unsuccessful*100>=ended*20?'budget':unsuccessful*100>=ended*10?'improve':'normal';
-  return {total:web.length,completed,unsuccessful,ended,pending:web.length-ended,
+  const level=ended<30?'insufficient':completed===0&&unsuccessful>0?'check_data':unsuccessful*100>=ended*20?'budget':unsuccessful*100>=ended*10?'improve':'normal';
+  return {total:web.length,excludedDeleted,completed,unsuccessful,ended,pending:web.length-ended,
     rate:ended?Math.round(unsuccessful/ended*10000)/100:null,level,minEnded:30,improveAt:10,reviewBudgetAt:20};
 }
