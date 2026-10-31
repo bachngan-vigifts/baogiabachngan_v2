@@ -36,7 +36,7 @@ import { can, canApprove, type PermissionMember } from '../../staff/domain/permi
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { orderNotesFromQuote, orderDeliveryAddress } from '../domain/order-notes.ts';
 import { cleanOrderInput } from '../domain/order-input.ts';
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -566,7 +566,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       db.select().from(paymentSchedules).where(eq(paymentSchedules.orderId, order.id)).orderBy(asc(paymentSchedules.dueDate)),
       db.select().from(customerPayments).where(eq(customerPayments.orderId, order.id)).orderBy(asc(customerPayments.paidAt)),
     ]);
-    const [shipLines, shipPhotos] = ships.length ? await Promise.all([db.select().from(deliveryLines).where(inArray(deliveryLines.deliveryId, ships.map(s => s.id))),
+    // Print/UI must follow the parent order's line order, never the delivery insertion/query order.
+    const [shipLines, shipPhotos] = ships.length ? await Promise.all([db.select(getTableColumns(deliveryLines)).from(deliveryLines)
+      .innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId))
+      .where(inArray(deliveryLines.deliveryId, ships.map(s => s.id)))
+      .orderBy(asc(deliveryLines.deliveryId), asc(salesOrderLines.lineNo), asc(deliveryLines.orderLineId)),
       photoUrls(db, c.env.files, 'delivery', ships.filter(s => s.status === 'delivered').map(s => s.id))]) : [[], new Map<string, string[]>()];
     const confirmations=await deliveryConfirmations(db,ships);
     // Cho bản in đơn đặt hàng: mã khách hàng, người phụ trách, người soạn.
