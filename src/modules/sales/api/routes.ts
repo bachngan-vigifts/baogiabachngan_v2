@@ -1,3 +1,4 @@
+import {registerContractLiquidationRoutes,assertNoLiquidationHistory} from './contract-liquidation.ts';
 import { editPosOrderWithGhn } from './pos-ghn-edit.ts';
 import { pendingGhnEdit, assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { syncContractQuoteTerms } from './contract-quote-terms.ts';
@@ -430,6 +431,7 @@ quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
   registerCrmReturnRoutes(router, loadOrder);
+  registerContractLiquidationRoutes(router,loadOrder);
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
@@ -904,6 +906,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       const [locked] = await tx.select({ status: salesOrders.status }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== 'cancelled') throw new AppError(409, 'Đơn không còn ở trạng thái đã huỷ.');
       await assertNoReturnActivity(tx, order.id);
+      await assertNoLiquidationHistory(tx,order.id);
       const [ledger] = await tx.select({ id: stockMoves.id }).from(stockMoves).where(sql`
         (${stockMoves.refType} in ('pos_order','sales_order') and (${stockMoves.refId}=${order.id} or ${stockMoves.refId} like ${order.id + '#%'})) or
         (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${order.id})) or

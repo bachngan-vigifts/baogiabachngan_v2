@@ -1,0 +1,18 @@
+[
+  {
+    "width": 1280,
+    "pendingBeforeApproval": true,
+    "onlyManagerApproved": true,
+    "photoCount": 1,
+    "retrySameIntent": true,
+    "changedObligationsInvalidate": true
+  },
+  {
+    "width": 390,
+    "pendingBeforeApproval": true,
+    "onlyManagerApproved": true,
+    "photoCount": 1,
+    "retrySameIntent": false,
+    "changedObligationsInvalidate": true
+  }
+]
