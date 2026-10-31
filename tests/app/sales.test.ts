@@ -41,7 +41,7 @@ test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòn
   // Phiếu thu trừ vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã qua hạn là quá hạn.
   const r = receivable([{ amount: 300, dueDate: '2026-10-01' }, { amount: 700, dueDate: null }], [{ amount: 100 }], '2026-10-06');
   assert.deepEqual(r, { due: 1000, paid: 100, balance: 900, overdue: 200, nextDueDate: null, status: 'overdue', deposit: 0, depositPaid: 0, payState: 'overdue' });
-  assert.deepEqual(contractSchedules(1000, 30, '2026-10-06').map(s => [s.kind, s.amount, s.dueDate]), [['deposit', 300, '2026-10-06'], ['balance', 700, null]]);
+  assert.deepEqual(contractSchedules(1000, 30, '2026-10-06').map(s => [s.kind, s.amount, s.dueDate]), [['deposit', 300, '2026-10-09'], ['balance', 700, null]]);
 });
 
 test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch giao → công nợ, đúng quyền', async t => {

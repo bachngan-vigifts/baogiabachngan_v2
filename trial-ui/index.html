@@ -643,6 +643,7 @@
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input id="receivables-search" type="search" placeholder="Tìm khách hàng, số đơn, MST…" aria-label="Tìm"></label>
           <button type="button" class="btn secondary small" id="receivables-export" title="Tải bảng công nợ đang xem ra Excel">⬇ Excel</button>
+          <button type="button" class="btn secondary small manager-only" id="due-repair-open" hidden title="Tìm kỳ công nợ có hạn sai (đơn tính theo số ngày của báo giá, cọc HĐKT được 3 ngày) rồi sửa có duyệt">Rà hạn công nợ</button>
           <div class="chips" id="receivables-filters" role="group" aria-label="Lọc công nợ"><button type="button" class="chip active" data-status="" aria-pressed="true">Còn phải thu</button><button type="button" class="chip" data-status="overdue" aria-pressed="false">Quá hạn</button><button type="button" class="chip" data-status="paid" aria-pressed="false">Đã thu đủ</button></div>
         </div>
         <div class="orders-filter-grid" id="receivables-filter-grid">
@@ -794,6 +795,16 @@
     <p class="error" id="dup-error" role="alert"></p>
   </div>
   <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button><button type="button" class="btn primary" id="dup-merge-all">Gộp tất cả</button></div>
+</dialog>
+
+<dialog id="due-repair-dialog" class="modal wide">
+  <div class="modal-head"><h2>Rà hạn công nợ</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+  <div class="modal-body">
+    <p class="muted small">Phần còn lại: ngày giao xong + số ngày thanh toán (HĐKT; đơn không có HĐKT lấy theo báo giá, báo giá không ghi thì theo hạn của khách). Cọc HĐKT: ngày ký + 3 ngày. Chỉ xét đơn CRM còn nợ.</p>
+    <div id="due-repair-list"></div>
+    <p class="error" id="due-repair-error" role="alert"></p>
+  </div>
+  <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button><button type="button" class="btn primary" id="due-repair-apply" disabled>Sửa hạn đã chọn</button></div>
 </dialog>
 
 <dialog id="link-dialog" class="modal">
@@ -1071,8 +1082,8 @@
     <div class="modal-body form-grid cols-2">
       <label class="span-2">Pháp nhân bên bán<select name="legalEntity"><option value="BN">Bách Ngân (BN)</option><option value="VG">Vigifts (VG)</option><option value="QTV">QTV</option></select></label>
       <label class="span-2">Số HĐKT <small class="muted">(tự sinh – sửa được)</small><input name="contractNo" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Đang lấy số…"></label>
-      <label>Đặt cọc (%)<input name="depositRate" inputmode="decimal" value="30"></label>
-      <label>Hạn thanh toán còn lại (ngày sau giao)<input name="paymentDays" inputmode="numeric" value="15"></label>
+      <label>Đặt cọc (%)<input name="depositRate" inputmode="decimal" placeholder="Theo báo giá"></label>
+      <label>Hạn thanh toán còn lại (ngày sau giao)<input name="paymentDays" inputmode="numeric" placeholder="Theo báo giá"></label>
       <label>Ngày ký<input name="signedDate" type="date"></label>
       <label>Hình thức thanh toán<input name="paymentMethod" value="Chuyển khoản"></label>
       <label class="span-2">Địa chỉ giao hàng<input name="deliveryAddress"></label>

@@ -71,11 +71,13 @@ export function orderStatusFromLines(current: OrderStatus, lines: readonly { qty
 
 // ---------------- Công nợ ----------------
 export interface ScheduleDraft { kind: 'deposit' | 'installment' | 'balance'; amount: number; dueDate: string | null; note: string }
-/** Kỳ phải thu theo HĐKT: cọc (đến hạn ngày ký) + phần còn lại (đến hạn sau khi giao xong + số ngày thanh toán). */
+/** Số ngày khách được chuyển cọc kể từ ngày ký HĐKT trước khi tính quá hạn. */
+export const DEPOSIT_GRACE_DAYS = 3;
+/** Kỳ phải thu theo HĐKT: cọc (đến hạn ngày ký + DEPOSIT_GRACE_DAYS) + phần còn lại (đến hạn sau khi giao xong + số ngày thanh toán). */
 export function contractSchedules(total: number, depositRate: number, signedDate: string): ScheduleDraft[] {
   const deposit = round(total * depositRate / 100), rest = total - deposit;
   return [
-    ...(deposit > 0 ? [{ kind: 'deposit' as const, amount: deposit, dueDate: signedDate, note: `Đặt cọc ${depositRate}%` }] : []),
+    ...(deposit > 0 ? [{ kind: 'deposit' as const, amount: deposit, dueDate: addDays(signedDate, DEPOSIT_GRACE_DAYS), note: `Đặt cọc ${depositRate}%` }] : []),
     ...(rest > 0 ? [{ kind: 'balance' as const, amount: rest, dueDate: null, note: 'Thanh toán phần còn lại sau khi giao hàng' }] : []),
   ];
 }

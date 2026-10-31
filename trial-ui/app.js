@@ -13,6 +13,7 @@ import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion, createRegionCanary } from './api-region.js';
 import { createPageCache, isCacheable, isPassiveWrite } from './page-cache.js';
 import { createCustomerSearch } from './customer-search.js';
+import { openDueRepair } from './due-repair.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
 import { createSessionResume } from './session-resume.js';
@@ -3639,6 +3640,7 @@ $('#cashbook-export').addEventListener('click', async e => {
         r.createdByName, r.note, r.voided ? r.voidReason || 'Đã huỷ' : '']; }) }]);
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
 });
+$('#due-repair-open').addEventListener('click', () => openDueRepair({ api, toast, confirmBox, esc, money, onDone: loadReceivables }));
 $('#receivables-export').addEventListener('click', async e => {
   const rows = state.receivables || [], b = e.currentTarget; if (!rows.length) return toast('Không có dòng công nợ để xuất.', 'err');
   b.disabled = true;
@@ -4812,13 +4814,20 @@ async function previewContractNo() {
     input.placeholder = r.error || 'Nhập số HĐKT';
     if (untouched || !input.value.trim()) input.value = r.contractNo || '';
     input.dataset.auto = r.contractNo || '';
+    // Cọc / số ngày theo báo giá (ô còn trống thì máy chủ cũng tự lấy theo báo giá khi lập).
+    if (r.terms?.depositRate != null && !f.depositRate.value.trim()) f.depositRate.value = String(r.terms.depositRate);
+    if (r.terms?.paymentDays != null && !f.paymentDays.value.trim()) f.paymentDays.value = String(r.terms.paymentDays);
   } catch (ex) { input.placeholder = 'Nhập số HĐKT'; }
 }
 $('#contract-form').legalEntity.addEventListener('change', previewContractNo);
 $('#contract-form').addEventListener('submit', async e => {
   e.preventDefault(); const f = e.target, err = $('#contract-error'); err.textContent = '';
   const target = contractTarget; if (!target?.sourcing || target.busy) return;
-  const body = { quoteId: target.quoteId, debtWarningAccepted: target.debtWarningAccepted === true, legalEntity: f.legalEntity.value, depositRate: parseNum(f.depositRate.value) || 0, paymentDays: parseInt(f.paymentDays.value, 10) || 0,
+  // Ô trống = theo báo giá (máy chủ tự lấy); nhập sai thì báo, không tự thành 0.
+  const rateText = f.depositRate.value.trim(), daysText = f.paymentDays.value.trim(), rate = rateText ? parseNum(rateText) : undefined;
+  if (rateText && !(rate >= 0 && rate <= 100)) { err.textContent = 'Tỷ lệ đặt cọc phải từ 0 đến 100%.'; return; }
+  if (daysText && (!/^\d+$/.test(daysText) || +daysText > 3650)) { err.textContent = 'Hạn thanh toán còn lại phải là số ngày (0–3650).'; return; }
+  const body = { quoteId: target.quoteId, debtWarningAccepted: target.debtWarningAccepted === true, legalEntity: f.legalEntity.value, depositRate: rate, paymentDays: daysText ? +daysText : undefined,
     signedDate: f.signedDate.value || undefined, paymentMethod: f.paymentMethod.value, deliveryAddress: f.deliveryAddress.value };
   // Giữ số tự sinh → máy chủ cấp số kế tiếp lúc lập (tránh trùng nếu người khác vừa lấy số); đã sửa → gửi số đã sửa.
   const no = f.contractNo.value.trim();
