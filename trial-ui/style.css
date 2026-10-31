@@ -1012,9 +1012,11 @@ a.flow-step:hover { border-color: var(--blue); }
 }
 /* Phiếu đóng gói / phiếu giao hàng: Times New Roman; lề trên 2 cm, trái phải 0,8 cm; in A4 dọc hoặc ngang. */
 /* Bản in GIỐNG HỆT bản xem trên form: phiếu luôn dàn trang ở bề rộng cố định 1000px (như trên form – bảng không xuống dòng),
-   khi in thì THU NHỎ ĐỀU cả phiếu (zoom) cho vừa vùng in: A4 dọc 194 mm ≈ 733px → ×0.73; A4 ngang 281 mm ≈ 1062px → ×1.06. */
+   khi in thì THU NHỎ ĐỀU cả phiếu (zoom) cho vừa vùng in: A4 dọc 194 mm ≈ 733px → ×0.73;
+   A4 ngang dùng ×0.9 và căn giữa để chừa chiều cao cho tiêu đề ảnh và chữ ký. */
 .ddh.slip, .ddh.slip h1 { font-family: "Times New Roman", Times, serif; }
 .ddh.slip { font-size: 14px; width: 1000px; min-width: 1000px; }
+.ddh.slip .slip-letterhead { display: block; width: 100%; height: auto; margin: 0 0 14px; break-inside: avoid; }
 /* Delivery text remains >=11px after the existing 0.73 portrait print zoom: 16 × .73 = 11.68px. */
 .ddh.slip.delivery-slip { font-size: 16px; line-height: 1.35; }
 .ddh.slip.delivery-slip .ddh-table { table-layout: fixed; }
@@ -1028,8 +1030,8 @@ a.flow-step:hover { border-color: var(--blue); }
   .print-sheet .ddh.slip { width: 1000px; min-width: 1000px; font-size: 14px; }
   .print-sheet .ddh.slip.delivery-slip { font-size: 16px; }
   .print-sheet.slip-portrait .ddh.slip { zoom: 0.73; }
-  .print-sheet.slip-landscape .ddh.slip { zoom: 1.06; }
-  .print-sheet .ddh.slip .ddh-table tr { break-inside: avoid; }
+  .print-sheet.slip-landscape .ddh.slip { zoom: 0.9; margin-inline: auto; }
+  .print-sheet .ddh.slip .ddh-table tr, .print-sheet .ddh.slip .ddh-sign { break-inside: avoid; }
 }
 /* ---------- Hồ sơ HĐKT (xem, sửa, tải file Word) ---------- */
 .contract-docs.modal { width: 1240px; } .contract-docs .modal-body { max-height: none; }

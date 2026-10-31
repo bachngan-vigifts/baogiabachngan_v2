@@ -124,6 +124,7 @@ export function slipSheetHtml(p, { edit = false } = {}) {
   const ce = f => edit ? ` contenteditable="true" data-f="${f}"` : '', kind = SLIP_KINDS[p.kind];
   const first = p.cols.findIndex(c => c.sum);
   return `<div class="ddh slip${p.kind === 'delivery' ? ' delivery-slip' : ''}">
+    <img class="slip-letterhead" src="slip-letterhead.jpg" width="1280" height="230" alt="Công ty TNHH Sản xuất Thương mại Bách Ngân — Nhà phân phối gốm sứ cao cấp Minh Long">
     <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
     <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
     <table class="ddh-table">${p.kind === 'delivery' ? '<colgroup>' + [5, 12, 8, 24, 9, 12, 12, 18].map(w => `<col style="width:${w}%">`).join('') + '</colgroup>' : ''}<thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>

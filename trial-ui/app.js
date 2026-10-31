@@ -4676,12 +4676,18 @@ function openSlipPrint({ kind, choices, initial, build }) {
   dlg.querySelector('[data-choice]')?.addEventListener('change', e => render(e.target.value));
   const close = () => { dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
-  dlg.querySelector('[data-print]').addEventListener('click', () => {
-    readEdits(sheet, p);
-    $('#print-sheet').innerHTML = slipSheetHtml(p);
-    // Phiếu: lề trên 2 cm, trái phải 0,8 cm; khổ A4 dọc / ngang theo lựa chọn.
-    printSheet({ page: { size: orient.value === 'landscape' ? 'A4 landscape' : 'A4 portrait', margin: '20mm 8mm 10mm 8mm' }, cls: 'slip-' + orient.value,
-      title: `${k.file}-${p.docNo}`.replace(/[^\w.-]+/g, '-') });
+  dlg.querySelector('[data-print]').addEventListener('click', async e => {
+    const button = e.currentTarget; button.disabled = true;
+    try {
+      readEdits(sheet, p);
+      $('#print-sheet').innerHTML = slipSheetHtml(p);
+      // The print sheet is a fresh DOM tree: wait for the original banner to decode before opening print.
+      await $('#print-sheet .slip-letterhead').decode().catch(() => { throw new Error('Không tải được ảnh tiêu đề. Anh thử in lại.'); });
+      // Phiếu: lề trên 2 cm, trái phải 0,8 cm; khổ A4 dọc / ngang theo lựa chọn.
+      printSheet({ page: { size: orient.value === 'landscape' ? 'A4 landscape' : 'A4 portrait', margin: '20mm 8mm 10mm 8mm' }, cls: 'slip-' + orient.value,
+        title: `${k.file}-${p.docNo}`.replace(/[^\w.-]+/g, '-') });
+    } catch (ex) { toast(ex.message, 'err'); }
+    finally { button.disabled = false; }
   });
   dlg.showModal();
 }
