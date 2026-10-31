@@ -2478,3 +2478,5 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 .contract-liquidation-form {display:grid;gap:10px;}
 .contract-liquidation-dialog textarea {width:100%;min-height:80px;}
 .contract-liquidation-dialog .modal-foot {flex-wrap:wrap;}
+/* Giao dịch thực tế và KPI: cùng typography với CRM, phân biệt giai đoạn và kết quả. */
+.care-kpi{display:block;width:fit-content;margin-top:7px}.care-kpi-guide{background:#f2f7fc;border:1px solid #dbe5ef;padding:12px;border-radius:10px;font-size:13px;line-height:1.6}.care-pager{padding:12px;justify-content:flex-end}.care-stats{grid-template-columns:repeat(4,minmax(0,1fr))}.care-stats .stat strong{font-weight:600}.care-table .care-text>b{font-weight:500}.contract-bonus-dialog{width:min(1100px,96vw);max-width:96vw}.contract-bonus-dialog .table-wrap{max-height:60vh;overflow:auto}.contract-bonus-dialog th{white-space:nowrap}.care-form select{width:100%}@media(max-width:600px){.care-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.care-pager{justify-content:space-between}.care-filters .inline{flex:1;min-width:130px}.care-dialog .modal-body{padding:16px}}

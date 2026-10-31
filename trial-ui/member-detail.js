@@ -1,3 +1,4 @@
+import {openContractBonusDetails} from './contract-bonus-detail.js';
 // Trang chi tiết nhân viên (#/members/<id>[?month=YYYY-MM]): một lượt gọi GET /members/:id/overview?month= rồi vẽ.
 // Cấu trúc: HEAD (ảnh, tên, chọn tháng) → KPI (thẻ chỉ số) → DIỄN BIẾN 6 THÁNG + HỒ SƠ + LƯƠNG THÁNG → TABS.
 // Thêm một mục mới = thêm một phần tử vào TABS (key, nhãn, đếm số, hàm vẽ). Công thức lương ở src/modules/hr/domain/payroll.ts.
@@ -61,7 +62,7 @@ export function initMemberDetail(deps) {
     { key: 'contracts', label: 'HĐKT', count: d => d.contracts.length, html: d => table(['Số HĐKT', 'Khách hàng', 'Tình trạng', 'Ngày ký', '>Giá trị'], d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
         <td><a href="#/contracts/${encodeURIComponent(k.orderId)}">${esc(k.contractNo)}</a></td><td>${esc(k.customerName)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
         <td class="right num">${money(k.value)}</td></tr>`), 'Chưa có hợp đồng kinh tế.') },
-    { key: 'payments', label: 'Giao dịch', count: d => d.payments.length, html: d => table(['Ngày thu', 'Khách hàng', 'Hình thức', 'Đơn / HĐKT', '>Số tiền'], d.payments.map(p => `<tr>
+    { key: 'payments', label: 'Phiếu thu', count: d => d.payments.length, html: d => table(['Ngày thu', 'Khách hàng', 'Hình thức', 'Đơn / HĐKT', '>Số tiền'], d.payments.map(p => `<tr>
         <td>${fmtDate(p.paidAt)}</td><td>${esc(p.customerName)}${p.reference || p.note ? `<small>${esc(p.reference || p.note)}</small>` : ''}</td>
         <td>${esc(METHOD[p.method] || p.method)}</td><td>${docLink(p.orderId, p.orderNo, p.contractNo)}</td><td class="right num paid-text">${money(p.amount)}</td></tr>`), 'Chưa có phiếu thu nào.') },
     { key: 'debts', label: 'Công nợ', count: d => d.debts.length, html: d => table(['Đơn / HĐKT', 'Khách hàng', 'Hạn gần nhất', '>Phải thu', '>Đã thu', '>Còn lại', '>Quá hạn'], d.debts.map(o => `<tr class="clickable" data-href="${docHref(o.id, o.contractNo)}">
@@ -102,8 +103,9 @@ export function initMemberDetail(deps) {
       <div class="md-slip">
         <div class="card-title-row"><h3>Phiếu lương ${esc(monthLabel(d.month).toLowerCase())}</h3>${pill(SLIP, s.status)}</div>
         <p class="muted small">${esc(GROUP[s.group] || '')}${s.positionLabel ? ' · ' + esc(s.positionLabel) : ''} · ${s.workDays} ngày làm việc${inp.workDays === null ? ' (theo chấm công)' : ' (nhập tay)'}</p>
-        <table class="md-slip-table"><tbody>
+        ${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
           ${shown(s.income).map(l => row(l)).join('')}
+          ${s.salesCrm?'<tr><td colspan="2"><button class="btn ghost small" data-act="contract-bonus">Xem KPI & thưởng HĐKT</button></td></tr>':''}
           ${row({ label: 'Tổng thu nhập', amount: s.gross }, 'sum')}
           ${shown(s.deductions).map(l => row(l, 'minus')).join('')}
           ${row({ label: 'Thực nhận', amount: s.net }, 'net')}
@@ -113,10 +115,10 @@ export function initMemberDetail(deps) {
         <div class="row-actions"><button type="button" class="btn secondary small" data-act="print-slip">In phiếu lương</button>${can() && s.status === 'estimate' && hasProfile ? '<button type="button" class="btn primary small" data-act="confirm-slip">Chốt lương tháng</button>' : ''}
           ${can() && s.status === 'confirmed' ? '<button type="button" class="btn primary small" data-act="paid-slip">Đánh dấu đã trả</button><button type="button" class="btn ghost small" data-act="reopen-slip">Mở lại</button>' : ''}</div>
         ${k ? `<div class="md-kpi"><div class="card-title-row"><h3>KPI công việc</h3>${pill(KPI_TIER, k.tier)}</div>
-          <table class="md-slip-table"><tbody>
-            <tr><td>KH mới <small>${inp.kpiNewCustomers ?? '—'} KH</small></td><td class="right num">${pctTxt(k.points.newCustomers)}</td></tr>
-            <tr><td>Giao dịch <small>${inp.kpiTransactions ?? '—'} GD</small></td><td class="right num">${pctTxt(k.points.transactions)}</td></tr>
-            <tr><td>Số hợp đồng <small>${inp.kpiContracts ?? '—'} HĐ</small></td><td class="right num">${pctTxt(k.points.contracts)}</td></tr>
+          ${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
+            <tr><td>KH mới <small>${inp.kpiNewCustomers ?? (s.salesCrm?.apply?s.salesCrm.facts.newCustomers:'—')} KH</small></td><td class="right num">${pctTxt(k.points.newCustomers)}</td></tr>
+            <tr><td>Giao dịch <small>${inp.kpiTransactions ?? (s.salesCrm?.apply?s.salesCrm.facts.transactions:'—')} GD</small></td><td class="right num">${pctTxt(k.points.transactions)}</td></tr>
+            <tr><td>Số hợp đồng <small>${inp.kpiContracts ?? (s.salesCrm?.apply?s.salesCrm.facts.contracts:'—')} HĐ</small></td><td class="right num">${pctTxt(k.points.contracts)}</td></tr>
             <tr><td>DS cá nhân <small>${money(inp.kpiRevenue ?? s.revenue)}</small></td><td class="right num">${pctTxt(k.points.revenue)}</td></tr>
             <tr class="sum"><td>KPI CV${inp.kpiOverride !== null ? ' <small>Dùng KPI chốt nhập tay</small>' : ''}</td><td class="right num">${pctTxt(k.used)}</td></tr>
           </tbody></table></div>` : ''}
@@ -205,7 +207,7 @@ export function initMemberDetail(deps) {
           <dt>Trạng thái</dt><dd>${m.active ? '<span class="pill ok">Đang làm việc</span>' : '<span class="pill off">Đã khoá</span>'}</dd></dl></div>
         ${d.payroll ? `<div class="card md-salary-card"><div class="card-title-row"><h2 class="card-title">Lương ${esc(monthLabel(d.month).toLowerCase())}</h2>${pill(SLIP, s.status)}</div>
           <strong class="md-net">${money(s.net)}</strong><span class="muted">Thực nhận${s.status === 'estimate' ? ' (tạm tính)' : ''}</span>
-          <dl class="kv md-mini"><dt>Tổng thu nhập</dt><dd class="num">${money(s.gross)}</dd><dt>Thưởng</dt><dd class="num">${money(s.income.filter(l => /Bonus$/.test(l.key)).reduce((a, l) => a + l.amount, 0))}</dd>
+          <dl class="kv md-mini"><dt>Tổng thu nhập</dt><dd class="num">${money(s.gross)}</dd><dt>Thưởng</dt><dd class="num">${money(s.income.filter(l => /Bonus(?:Adjustment)?$/.test(l.key)).reduce((a, l) => a + l.amount, 0))}</dd>
             <dt>Khấu trừ</dt><dd class="num">−${money(s.deductionTotal)}</dd></dl>
           <button type="button" class="btn ghost small" data-tab="payroll">Xem phiếu lương ›</button></div>` : ''}
       </div>
@@ -273,7 +275,9 @@ export function initMemberDetail(deps) {
       ${moneyInput('revenueTarget', 'Chỉ tiêu DS cá nhân / tháng', p.revenueTarget)}
       ${moneyInput('insurance', 'BHXH người lao động / tháng', has ? p.insurance : prm.socialInsurance)}
       ${check('mealAllowance', 'Hưởng phụ cấp cơm + xăng (thử việc: bỏ chọn)', p.mealAllowance)}
-      ${check('kpiEnabled', 'Sale: tính KPI công việc + thưởng KPI DS', p.kpiEnabled)}
+      ${check('kpiEnabled', 'Sale / Sale Admin: tính KPI công việc + thưởng KPI DS', p.kpiEnabled)}
+      ${numInput('fixedKpi','KPI cố định (%) — trống = theo tháng / công thức',p.fixedKpi==null?'':p.fixedKpi*100)}
+      ${check('contractBonusEnabled','Sale / Sale Admin: hưởng thưởng HĐKT',p.contractBonusEnabled)}
       ${check('teamBonus', 'NVBH ML / Lock: hưởng thưởng DS của nhóm', p.teamBonus)}
       <label>Mã ngân hàng (VietQR)<input name="bankCode" maxlength="30" value="${esc(p.bankCode)}" placeholder="vcb, acb, vietinbank, tcb…"></label>
       <label>Số tài khoản<input name="bankAccount" maxlength="30" inputmode="numeric" value="${esc(p.bankAccount)}"></label>
@@ -283,7 +287,7 @@ export function initMemberDetail(deps) {
       api(base() + '/salary', 'PUT', { effectiveMonth: f.effectiveMonth.value, payrollGroup: f.payrollGroup.value, positionLabel: f.positionLabel.value,
         baseSalary: digits(f.baseSalary.value), capacityCoef: numVal(f.capacityCoef.value) ?? 0, responsibilityMode: f.responsibilityMode.value, responsibility: digits(f.responsibility.value),
         phoneAllowance: digits(f.phoneAllowance.value), attendanceBonus: digits(f.attendanceBonus.value), outputRate: numVal(f.outputRate.value) ?? 0,
-        revenueTarget: digits(f.revenueTarget.value), insurance: digits(f.insurance.value), mealAllowance: f.mealAllowance.checked, kpiEnabled: f.kpiEnabled.checked,
+        revenueTarget: digits(f.revenueTarget.value), insurance: digits(f.insurance.value), mealAllowance: f.mealAllowance.checked, kpiEnabled: f.kpiEnabled.checked,fixedKpi:numVal(f.fixedKpi.value)===null?null:numVal(f.fixedKpi.value)/100,contractBonusEnabled:f.contractBonusEnabled.checked,
         teamBonus: f.teamBonus.checked, bankCode: f.bankCode.value, bankAccount: f.bankAccount.value, bankHolder: f.bankHolder.value, note: f.note.value })
         .then(() => toast('Đã lưu hồ sơ lương.')));
   }
@@ -297,7 +301,7 @@ export function initMemberDetail(deps) {
         <label>Thưởng quý (trống = tự tính)<input name="quarterBonus" data-money inputmode="numeric" value="${i.quarterBonus === null ? '' : Number(i.quarterBonus).toLocaleString('vi-VN')}" placeholder="Tự tính"></label>` : `
         ${moneyInput('healthInsurance', 'BHYT', i.healthInsurance)}${moneyInput('incomeTax', 'Thuế TNCN', i.incomeTax)}`}
       ${kpi ? `<p class="cd-field-label span-2">KPI công việc (sheet "KPI CV")</p>
-        ${numInput('kpiNewCustomers', 'KH mới', i.kpiNewCustomers)}${numInput('kpiTransactions', 'Giao dịch', i.kpiTransactions)}
+        ${numInput('kpiNewCustomers', 'KH mới (trống = CRM khi áp dụng)', i.kpiNewCustomers,`placeholder="Tự động: ${p.systemFacts?.newCustomers??'chưa bật'}"`)}${numInput('kpiTransactions', 'Giao dịch hợp lệ (trống = CRM khi áp dụng)', i.kpiTransactions,`placeholder="Tự động: ${p.systemFacts?.transactions??'chưa bật'}"`)}
         ${numInput('kpiContracts', 'Số hợp đồng', i.kpiContracts)}
         <label>DS cá nhân tính KPI (trống = DS tháng)<input name="kpiRevenue" data-money inputmode="numeric" value="${i.kpiRevenue === null ? '' : Number(i.kpiRevenue).toLocaleString('vi-VN')}"></label>
         ${numInput('kpiMerchDays', 'Ngày làm hàng', i.kpiMerchDays || '')}${numInput('kpiTripDays', 'Ngày công tác', i.kpiTripDays || '')}
@@ -352,9 +356,11 @@ export function initMemberDetail(deps) {
     try {
       if (act === 'edit') deps.onEdit(m);
       else if (act === 'photo') { if (await deps.onPhoto(m)) reload(); }
+      else if (act === 'contract-bonus')openContractBonusDetails(st.d.payroll.payslip);
       else if (act === 'salary') editSalary();
       else if (act === 'add-adj') addAdjustment();
       else if (act === 'inputs') editInputs();
+      else if (act === 'print-slip'&&st.d.payroll.payslip.snapshotUnavailable)toast('Phiếu cũ thiếu chi tiết; cần đối soát trước khi in.','err');
       else if (act === 'print-slip') printPayslip({ member: m, month: st.month, slip: st.d.payroll.payslip, standardDays: st.d.payroll.params.standardDays, words: deps.moneyWords });
       else if (act === 'fill-days') {
         const done = new Set(st.d.payroll.attendance.map(a => a.date)), days = {};
@@ -367,7 +373,7 @@ export function initMemberDetail(deps) {
         await setDays(days); toast(`Đã chấm đủ công ${Object.keys(days).length} ngày.`);
       } else if (act === 'confirm-slip') {
         if (!await confirmBox(`Chốt lương ${monthLabel(st.month).toLowerCase()} cho ${m.name}: thực lĩnh ${money(st.d.payroll.payslip.net)}? Sau khi chốt, ngày công và thưởng / phạt của tháng bị khoá.`, { ok: 'Chốt lương' })) return;
-        await api(slip, 'POST', {}); toast('Đã chốt lương.'); reload();
+        await api(slip, 'POST', {confirmationHash:st.d.payroll.confirmationHash}); toast('Đã chốt lương.'); reload();
       } else if (act === 'paid-slip') { await api(slip + '/paid', 'POST', {}); toast('Đã đánh dấu đã trả lương.'); reload(); }
       else if (act === 'reopen-slip') {
         if (!await confirmBox('Mở lại phiếu lương để sửa? Số liệu sẽ tính lại theo dữ liệu hiện tại.', { ok: 'Mở lại' })) return;

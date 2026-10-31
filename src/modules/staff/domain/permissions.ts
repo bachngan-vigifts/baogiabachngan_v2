@@ -24,7 +24,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.deliveries', group: 'Trang được vào', label: 'Lịch giao hàng', defaults: ALL },
   { key: 'page.receivables', group: 'Trang được vào', label: 'Công nợ', defaults: OFFICE },
   { key: 'page.customers', group: 'Trang được vào', label: 'Khách hàng', hint: 'Danh bạ, hồ sơ khách. Tắt vẫn chọn được khách khi lập báo giá / đơn.', defaults: OFFICE },
-  { key: 'page.care', group: 'Trang được vào', label: 'Chăm sóc KH', defaults: SALES_KT },
+  { key: 'page.care', group: 'Trang được vào', label: 'Giao dịch & chăm sóc', defaults: SALES_KT },
   { key: 'page.stock-requests', group: 'Trang được vào', label: 'Khách hỏi tồn', defaults: SALES_KT },
   { key: 'page.dashboard', group: 'Trang được vào', label: 'Tổng quan doanh số', defaults: OFFICE },
   { key: 'page.flow', group: 'Trang được vào', label: 'Sơ đồ quy trình', defaults: OFFICE },

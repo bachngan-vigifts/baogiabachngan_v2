@@ -300,3 +300,11 @@
  #view-customers .crm-filter-fields .chip-check { display:flex;align-items:center;justify-content:flex-start;gap:8px; }
  #view-customers .crm-filter-fields .chip-check input { width:auto; }
 }
+@media(max-width:850px){
+ #view-care .crm-card-channel{grid-column:1/-1;grid-row:3;font-size:12px!important;color:var(--muted)}
+ #view-care .crm-card-status{grid-column:1/-1;grid-row:4}
+ #view-care .crm-card-owner,#view-care .crm-card-actions{grid-row:5}
+ #view-care .crm-card-note{grid-row:6}
+ #view-care .crm-card-followup{grid-column:1/-1;grid-row:7;font-size:12px!important}
+ #view-care .crm-card-followup:has(>span.muted:only-child){display:none!important}
+}

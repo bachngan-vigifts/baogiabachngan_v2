@@ -1,4 +1,7 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
+import {payrollLock} from '../../../core/db/payroll-lock.ts';
+import {reserveAwards,releaseAwards,payAwards} from './contract-bonuses.ts';
+import { and, desc, eq, inArray, isNull,lte } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -9,7 +12,7 @@ import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrol
 import { PARAM_FIELDS, validateParams } from '../domain/params.ts';
 import {
   ADJUSTMENT_KINDS, ATTENDANCE_STATUSES, DATE_RE, GROUP_DEDUCTION, GROUP_INCOME, GROUP_LABEL, HR_LIMITS, LINE_LABEL, PAYROLL_GROUPS,
-  RESPONSIBILITY_MODES, isMonth, monthRange, vietQrUrl,
+  RESPONSIBILITY_MODES, isMonth, monthRange,daysInMonth, vietQrUrl,
 } from '../domain/payroll.ts';
 import { buildPayroll, paramsFor, payslipView, type PayrollRow, type RevenueOf } from './payroll-data.ts';
 
@@ -47,7 +50,7 @@ async function assertOpen(db: AnyDb, memberId: string, m: string) {
 const slipValues = (row: PayrollRow, me: string, note: string) => ({
   memberId: row.member.id, status: 'confirmed' as const, payrollGroup: row.calc.group, workDays: row.calc.workDays,
   gross: row.calc.gross, deductionTotal: row.calc.deductionTotal, net: row.calc.net,
-  data: JSON.stringify({ ...row.calc, bank: { code: row.profile.bankCode, account: row.profile.bankAccount, holder: row.profile.bankHolder } }),
+  data: JSON.stringify({ ...row.calc,snapshotVersion:2,calculationContext:row.context, bank: { code: row.profile.bankCode, account: row.profile.bankAccount, holder: row.profile.bankHolder } }),
   note, confirmedBy: me, confirmedAt: nowIso(),
 });
 
@@ -63,7 +66,8 @@ const slipValues = (row: PayrollRow, me: string, note: string) => ({
  *  POST    /hr/members/:id/adjustments · DELETE /hr/adjustments/:adjId   thưởng khác, công tác, vi phạm, tạm ứng, tạm ứng điện thoại
  *  POST    /hr/members/:id/payslips/:month       chốt · POST …/paid đã trả · DELETE mở lại (chưa trả)
  */
-export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf }) {
+export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf;crmFactsOf?:CrmFactsOf }) {
+  const write=(fn:(c:Ctx)=>Promise<Response>)=>async(c:Ctx)=>c.env.db.transaction(async tx=>{await payrollLock(tx as any);return fn({...c,env:{...c.env,db:tx as any}});});
   router.get('/hr/settings', async c => {
     const m = c.url.searchParams.get('month'), db = c.env.db;
     const cur = await paramsFor(db, isMonth(m) ? m : new Date().toISOString().slice(0, 7));
@@ -71,26 +75,28 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     return json({ ...cur, fields: PARAM_FIELDS, versions });
   }, 'admin');
 
-  router.put('/hr/settings', async c => {
+  router.put('/hr/settings', write(async c => {
     const b = await readJson(c.req, 20_000), m = month(b.effectiveMonth), err = validateParams(b.params);
     if (err) throw new AppError(400, err);
-    const params = Object.fromEntries(PARAM_FIELDS.map(f => [f.key, Number((b.params as Record<string, unknown>)[f.key] ?? f.value)]));
+    const previous=(await paramsFor(c.env.db,m)).params;
+    const params = Object.fromEntries(PARAM_FIELDS.map(f => [f.key, Number((b.params as Record<string, unknown>)[f.key] ?? (/^(salesAutomation|contractStar|contractLiquidation)/.test(f.key)?previous[f.key]:f.value))]));
+    const policyError=validateParams(params);if(policyError)throw new AppError(400,policyError);
     const row = { effectiveMonth: m, params: JSON.stringify(params), updatedBy: actor(c).id, updatedAt: nowIso() };
     await c.env.db.insert(hrPayrollSettings).values(row).onConflictDoUpdate({ target: hrPayrollSettings.effectiveMonth, set: { params: row.params, updatedBy: row.updatedBy, updatedAt: row.updatedAt } });
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 
-  router.put('/hr/months/:month', async c => {
+  router.put('/hr/months/:month', write(async c => {
     const m = month(c.params.month), b = await readJson(c.req, 4_000);
     const row = { month: m, bnRevenue: num(b.bnRevenue, 'DS Bách Ngân', 1e13), bnAvgRevenue: num(b.bnAvgRevenue, 'DS TB 6 tháng', 1e13), lockRevenue: num(b.lockRevenue, 'DS team Lock', 1e13),
       payQuarterBonus: b.payQuarterBonus === true, note: text(b.note, HR_LIMITS.note), updatedBy: actor(c).id, updatedAt: nowIso() };
     const { month: _m, ...set } = row;
     await c.env.db.insert(hrPayrollMonths).values(row).onConflictDoUpdate({ target: hrPayrollMonths.month, set });
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 
   router.get('/hr/payroll/:month', async c => {
-    const b = await buildPayroll(c.env.db, month(c.params.month), deps.revenueOf);
+    const b = await buildPayroll(c.env.db, month(c.params.month), deps.revenueOf,undefined,deps.crmFactsOf);
     const rows = b.rows.map(r => {
       const slip = payslipView(r);
       return { member: r.member, profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
@@ -101,36 +107,39 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const counted = rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
     const totals = PAYROLL_GROUPS.map(g => { const list = counted.filter(r => r.payslip.group === g);
       return { group: g, label: GROUP_LABEL[g], people: list.length, gross: list.reduce((s, r) => s + r.payslip.gross, 0), deductions: list.reduce((s, r) => s + r.payslip.deductionTotal, 0), net: list.reduce((s, r) => s + r.payslip.net, 0) }; });
-    return json({ month: b.month, params: b.params, paramsMonth: b.paramsMonth, groupMonth: b.groupMonth, quarter: b.quarter, rows, totals,
+    return json({ month: b.month, params: b.params, paramsMonth: b.paramsMonth, groupMonth: b.groupMonth, quarter: b.quarter,confirmationHash:b.confirmationHash, rows, totals,
       columns: { income: GROUP_INCOME, deductions: GROUP_DEDUCTION, labels: LINE_LABEL, groups: GROUP_LABEL } });
   }, 'admin');
 
-  router.post('/hr/payroll/:month/confirm', async c => {
-    const m = month(c.params.month), me = actor(c).id, b = await buildPayroll(c.env.db, m, deps.revenueOf);
-    const open = b.rows.filter(r => !r.slip && r.profile.effectiveMonth !== null);
-    if (open.length) await c.env.db.insert(hrPayslips).values(open.map(r => ({ ...slipValues(r, me, ''), month: m }))).onConflictDoNothing();
-    return json({ ok: true, confirmed: open.length });
-  }, 'admin');
+  router.post('/hr/payroll/:month/confirm', write(async c => {
+    const m=month(c.params.month),me=actor(c).id,body=await readJson(c.req,2000),db=c.env.db,b=await buildPayroll(db,m,deps.revenueOf,undefined,deps.crmFactsOf,true);
+    const open=b.rows.filter(r=>!r.slip&&r.profile.effectiveMonth!==null);
+    if(open.some(r=>r.calc.salesCrm?.apply)&&body.confirmationHash!==b.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
+    for(const row of open){const runId=crypto.randomUUID();await db.insert(hrPayslips).values({...slipValues(row,me,''),data:JSON.stringify({...JSON.parse(slipValues(row,me,'').data),runId}),month:m});if(row.calc.salesCrm?.apply)await reserveAwards(db,row.member.id,m,runId,row.calc.salesCrm.awards);}
+    return json({ok:true,confirmed:open.length});
+  }), 'admin');
 
-  router.put('/hr/members/:id/salary', async c => {
+  router.put('/hr/members/:id/salary', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), b = await readJson(c.req, 6_000);
+    const [prior]=await db.select().from(hrSalaryProfiles).where(and(eq(hrSalaryProfiles.memberId,id),lte(hrSalaryProfiles.effectiveMonth,month(b.effectiveMonth)))).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(1);
     const row = {
       memberId: id, effectiveMonth: month(b.effectiveMonth),
       payrollGroup: oneOf(b.payrollGroup, PAYROLL_GROUPS, 'Bảng lương', 'sale'), positionLabel: text(b.positionLabel, 60).toUpperCase(),
       baseSalary: Math.round(num(b.baseSalary, 'Lương cơ bản')), capacityCoef: num(b.capacityCoef, 'Hệ số năng lực', 100),
       responsibilityMode: oneOf(b.responsibilityMode, RESPONSIBILITY_MODES, 'Cách tính trách nhiệm', 'fixed'), responsibility: Math.round(num(b.responsibility, 'Trách nhiệm')),
       mealAllowance: b.mealAllowance !== false, phoneAllowance: Math.round(num(b.phoneAllowance, 'Phụ cấp điện thoại')), attendanceBonus: Math.round(num(b.attendanceBonus, 'Chuyên cần')),
-      kpiEnabled: b.kpiEnabled === true, teamBonus: b.teamBonus === true, outputRate: num(b.outputRate, 'Đơn giá sản lượng'),
+      kpiEnabled: b.kpiEnabled === true,fixedKpi:b.fixedKpi===undefined?prior?.fixedKpi??null:optNum(b.fixedKpi,'KPI cố định',10),contractBonusEnabled:b.contractBonusEnabled===undefined?prior?.contractBonusEnabled??false:b.contractBonusEnabled===true, teamBonus: b.teamBonus === true, outputRate: num(b.outputRate, 'Đơn giá sản lượng'),
       revenueTarget: Math.round(num(b.revenueTarget, 'Chỉ tiêu DS', 1e13)), insurance: Math.round(num(b.insurance, 'BHXH')),
       bankCode: text(b.bankCode, 30).toLowerCase().replace(/[^a-z0-9]/g, ''), bankAccount: text(b.bankAccount, 30).replace(/[^\dA-Za-z]/g, ''), bankHolder: text(b.bankHolder, HR_LIMITS.text).toUpperCase(),
       note: text(b.note, HR_LIMITS.note), updatedBy: actor(c).id, updatedAt: nowIso(),
     };
+    if(row.payrollGroup!=='sale'&&(row.contractBonusEnabled||row.fixedKpi!==null))throw new AppError(400,'KPI cố định và thưởng HĐKT chỉ áp dụng bảng Sale & Văn phòng.');
     const { memberId: _m, effectiveMonth: _e, ...set } = row;
     await db.insert(hrSalaryProfiles).values(row).onConflictDoUpdate({ target: [hrSalaryProfiles.memberId, hrSalaryProfiles.effectiveMonth], set });
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 
-  router.put('/hr/members/:id/inputs/:month', async c => {
+  router.put('/hr/members/:id/inputs/:month', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 6_000);
     await assertOpen(db, id, m);
     const kpiOverride = optNum(b.kpiOverride, 'KPI chốt', 10);
@@ -142,12 +151,13 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       healthInsurance: Math.round(num(b.healthInsurance, 'BHYT')), incomeTax: Math.round(num(b.incomeTax, 'Thuế TNCN')),
       quarterBonus: optNum(b.quarterBonus, 'Thưởng quý'), note: text(b.note, HR_LIMITS.note), updatedBy: actor(c).id, updatedAt: nowIso(),
     };
+    if(row.kpiMerchDays+row.kpiTripDays>daysInMonth(m))throw new AppError(400,'Tổng ngày làm hàng và công tác vượt số ngày trong tháng.');
     const { memberId: _m, month: _mo, ...set } = row;
     await db.insert(hrPayrollInputs).values(row).onConflictDoUpdate({ target: [hrPayrollInputs.memberId, hrPayrollInputs.month], set });
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 
-  router.put('/hr/members/:id/attendance/:month', async c => {
+  router.put('/hr/members/:id/attendance/:month', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 20_000);
     await assertOpen(db, id, m);
     const days = b.days && typeof b.days === 'object' ? Object.entries(b.days as Record<string, unknown>) : [];
@@ -166,9 +176,9 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
         .onConflictDoUpdate({ target: [hrAttendance.memberId, hrAttendance.workDate], set: { status: s.status, recordedBy: me, updatedAt: now } });
     });
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 
-  router.post('/hr/members/:id/adjustments', async c => {
+  router.post('/hr/members/:id/adjustments', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), b = await readJson(c.req, 4_000), m = month(b.month);
     if (!(ADJUSTMENT_KINDS as readonly unknown[]).includes(b.kind)) throw new AppError(400, 'Chọn loại khoản (thưởng, công tác, vi phạm, tạm ứng…).');
     const amount = Math.round(num(b.amount, 'Số tiền', HR_LIMITS.maxAmount));
@@ -177,36 +187,42 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const adj = { id: crypto.randomUUID(), memberId: id, month: m, kind: b.kind as typeof ADJUSTMENT_KINDS[number], amount, reason: text(b.reason, HR_LIMITS.reason), createdBy: actor(c).id, createdAt: nowIso() };
     await db.insert(hrAdjustments).values(adj);
     return json({ id: adj.id }, 201);
-  }, 'admin');
+  }), 'admin');
 
-  router.delete('/hr/adjustments/:adjId', async c => {
+  router.delete('/hr/adjustments/:adjId', write(async c => {
     const db = c.env.db, [a] = await db.select().from(hrAdjustments).where(eq(hrAdjustments.id, c.params.adjId!)).limit(1);
     if (!a) throw new AppError(404, 'Không tìm thấy khoản này.');
     await assertOpen(db, a.memberId, a.month);
     await db.delete(hrAdjustments).where(eq(hrAdjustments.id, a.id));
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 
-  router.post('/hr/members/:id/payslips/:month', async c => {
+  router.post('/hr/members/:id/payslips/:month', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 2_000);
     await assertOpen(db, id, m);
-    const [row] = (await buildPayroll(db, m, deps.revenueOf, [id])).rows;
+    const board=await buildPayroll(db,m,deps.revenueOf,[id],deps.crmFactsOf,true),[row]=board.rows;
     if (!row || row.profile.effectiveMonth === null) throw new AppError(400, 'Chưa đặt hồ sơ lương cho nhân viên này.');
-    await db.insert(hrPayslips).values({ ...slipValues(row, actor(c).id, text(b.note, HR_LIMITS.note)), month: m });
+    if(row.calc.salesCrm?.apply&&b.confirmationHash!==board.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
+    const runId=crypto.randomUUID(),values=slipValues(row,actor(c).id,text(b.note,HR_LIMITS.note));
+    await db.insert(hrPayslips).values({...values,data:JSON.stringify({...JSON.parse(values.data),runId}),month:m});
+    if(row.calc.salesCrm?.apply)await reserveAwards(db,id,m,runId,row.calc.salesCrm.awards);
     return json({ ok: true, net: row.calc.net }, 201);
-  }, 'admin');
+  }), 'admin');
 
-  router.post('/hr/members/:id/payslips/:month/paid', async c => {
+  router.post('/hr/members/:id/payslips/:month/paid', write(async c => {
+    const [slip]=await c.env.db.select({net:hrPayslips.net}).from(hrPayslips).where(and(eq(hrPayslips.memberId,c.params.id!),eq(hrPayslips.month,month(c.params.month))));if(slip&&slip.net<0)throw new AppError(409,'Phiếu lương âm cần đối soát khoản phải thu; không đánh dấu đã trả.');
     const done = await c.env.db.update(hrPayslips).set({ status: 'paid', paidAt: nowIso() })
       .where(and(eq(hrPayslips.memberId, c.params.id!), eq(hrPayslips.month, month(c.params.month)), eq(hrPayslips.status, 'confirmed'))).returning({ m: hrPayslips.month });
     if (!done.length) throw new AppError(404, 'Chưa chốt lương tháng này (hoặc đã trả).');
+    await payAwards(c.env.db,c.params.id!,month(c.params.month));
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 
-  router.delete('/hr/members/:id/payslips/:month', async c => {
+  router.delete('/hr/members/:id/payslips/:month', write(async c => {
+    await releaseAwards(c.env.db,c.params.id!,month(c.params.month));
     const done = await c.env.db.delete(hrPayslips)
       .where(and(eq(hrPayslips.memberId, c.params.id!), eq(hrPayslips.month, month(c.params.month)), eq(hrPayslips.status, 'confirmed'))).returning({ m: hrPayslips.month });
     if (!done.length) throw new AppError(409, 'Chỉ mở lại được phiếu lương đã chốt mà chưa trả.');
     return json({ ok: true });
-  }, 'admin');
+  }), 'admin');
 }
