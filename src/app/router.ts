@@ -55,6 +55,7 @@ import { registerPermissionRoutes } from '../modules/staff/api/permission-routes
 import { registerApprovalRoutes } from './approval-routes.ts';
 import { registerNavigationCounts } from './navigation-counts.ts';
 import { registerPulseRoutes } from './pulse-routes.ts';
+import { registerBadgeRoutes } from './badge-routes.ts';
 import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerTransferRoutes, stockHoldHooks } from '../modules/inventory/api/transfer-routes.ts';
 import { assertFreeStock } from '../modules/sales/api/stock-free.ts';
@@ -118,6 +119,7 @@ export function createAppRouter() {
   registerPermissionRoutes(router);
   registerApprovalRoutes(router);
   registerPulseRoutes(router);
+  registerBadgeRoutes(router);
   registerNavigationCounts(router);
   registerWarehouseWork(router);
   registerInventoryRoutes(router);

@@ -190,9 +190,10 @@ export function initCare(deps) {
   }
 
   /** Huy hiệu menu: số hẹn chăm sóc quá hạn + hôm nay của tôi (Manager: của mọi người). */
-  async function badge() {
+  /** `known`: kết quả đã có (từ GET /badges) → không gọi máy chủ. */
+  async function badge(known) {
     const el = document.getElementById('nav-care-count'); if (!el) return;
-    try { const { counts } = await api('/care?view=follow-ups&limit=1'); const n = counts.overdue + counts.today; el.textContent = n; el.hidden = !n; } catch { el.hidden = true; }
+    try { const { counts } = known || await api('/care?view=follow-ups&limit=1'); const n = counts.overdue + counts.today; el.textContent = n; el.hidden = !n; } catch { el.hidden = true; }
   }
   return { load, openForm, badge };
 }
