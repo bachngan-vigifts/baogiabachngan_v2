@@ -29,8 +29,8 @@ export function suggestedWebCod(order: Pick<WebOrder, 'total' | 'financialSnapsh
   return readWebOrderFinancials(order.financialSnapshot)?.payment?.paidAt ? 0 : Math.max(0, Math.round(order.total));
 }
 
-async function ghnPost(env: StaffEnv, url: string, body: unknown) {
-  const account = await posGhnAccount(env, MINH_LONG);
+async function ghnPost(env: StaffEnv, url: string, body: unknown, shop = MINH_LONG) {
+  const account = await posGhnAccount(env, shop);
   if (!account?.token) throw new AppError(503, 'CRM chưa có token GHN Minh Long (secret GHN_ML_API_TOKEN).', 'GHN_ML_NOT_CONFIGURED');
   let response: Response;
   try {
@@ -87,8 +87,9 @@ export async function createWebOrderGhn(env: StaffEnv, orderId: string, address:
 }
 
 /** Huỷ vận đơn GHN Minh Long; GHN từ chối thì ném lỗi để không huỷ đơn trong CRM khi shipper vẫn có thể đến lấy hàng. */
-export async function cancelWebOrderGhn(env: StaffEnv, code: string) {
-  const { response, result } = await ghnPost(env, GHN_CANCEL, { order_codes: [code] });
+/** Huỷ vận đơn GHN của đơn web (mặc định tài khoản Minh Long; `source` 'lock' = tài khoản GHN Lock). */
+export async function cancelWebOrderGhn(env: StaffEnv, code: string, source: 'lock' | 'minhlong' = 'minhlong') {
+  const { response, result } = await ghnPost(env, GHN_CANCEL, { order_codes: [code] }, source === 'lock' ? 'LOCKNLOCK' : MINH_LONG);
   const items = Array.isArray(result.data) ? result.data as Record<string, unknown>[] : [];
   const item = items.find(x => text(x.order_code, 50).toUpperCase() === code.toUpperCase());
   if (!response.ok || item?.result !== true) throw new AppError(409, 'GHN chưa huỷ được vận đơn ' + code + ': ' + (text(item?.message) || text(result.message) || `lỗi ${response.status}`) + '. Xử lý trên trang GHN rồi huỷ lại.', 'GHN_CANCEL_FAILED');
