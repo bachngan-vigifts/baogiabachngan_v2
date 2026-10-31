@@ -62,7 +62,7 @@ test('physical stock and finished trips are required; harmless tracking refresh 
  assert.equal((await f.call(f.path,f.emp)).data.proof.hash,proof.hash);
  assert.equal((await f.request()).status,201);
  await f.db.update(salesOrders).set({status:'cancelled'}).where(eq(salesOrders.id,'liq-order'));
- const deleted=await f.call('/orders/liq-order',f.mgr,'DELETE');assert.equal(deleted.status,409);assert.equal(deleted.data.error.code,'CONTRACT_LIQUIDATION_HISTORY');
+ const deleted=await f.call('/orders/liq-order',f.mgr,'DELETE');assert.equal(deleted.status,409);assert.equal(deleted.data.code,'CONTRACT_LIQUIDATION_HISTORY');
  const rls=await f.client.query<any>("select relrowsecurity from pg_class where relname='contract_liquidation_requests'");assert.equal(rls.rows[0].relrowsecurity,true);
 });
 
@@ -81,4 +81,10 @@ test('storage failure never records an evidence request; successful retry uses t
  f.files.put=async(...args)=>{await put(...args);if(fail)throw new Error('Synthetic storage write failure');};
  const key=crypto.randomUUID();assert.equal((await f.request(key)).status,500);assert.equal((await f.db.select().from(contractLiquidations)).length,0);assert.equal(f.files.files.size,0);
  fail=false;assert.equal((await f.request(key)).status,201);assert.equal(f.files.files.size,1);
+});
+
+test('before manual migration, existing approvals remain usable and liquidation reports unavailable',async()=>{
+ const f=await setupLiquidation();await f.client.query('drop table contract_liquidation_requests');
+ const view=await f.call(f.path,f.emp);assert.equal(view.status,503);assert.equal(view.data.code,'LIQUIDATION_NOT_READY');
+ assert.equal((await f.call('/approvals',f.mgr)).status,200);assert.equal((await f.call('/approvals?summary=1',f.mgr)).status,200);
 });

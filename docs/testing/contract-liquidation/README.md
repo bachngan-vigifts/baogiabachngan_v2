@@ -25,6 +25,6 @@ Chưa chạy migration/deploy/ghi dữ liệu production. Không đụng phiên,
 
 ## Kiểm chứng
 
-- Typecheck và API/PGlite: scope, ảnh giả/thiếu/thừa, gửi đồng thời cùng mã, xung đột nội dung, chỉ Manager, hàng chờ duyệt, điều kiện tiền/kho/giao/invoice, thay đổi sau duyệt, từ chối/gửi lại, replay không lặp audit, lỗi lưu ảnh, mất phản hồi commit vẫn giữ ảnh, chống xoá cứng.
+- Typecheck; 25/25 kiểm thử hồi quy (thanh lý, sửa HĐKT, hàng chờ duyệt và cấu trúc UI). API/PGlite: scope, ảnh giả/thiếu/thừa, gửi đồng thời cùng mã, xung đột nội dung, chỉ Manager, hàng chờ duyệt, điều kiện tiền/kho/giao/invoice, thay đổi sau duyệt, từ chối/gửi lại, replay không lặp audit, lỗi lưu ảnh, mất phản hồi commit vẫn giữ ảnh, chống xoá cứng.
 - Browser thật `scripts/testing/contract-liquidation.mjs`, module CRM đầy đủ + API/PGlite cục bộ, 1280px/390px. Chặn request ngoài máy. Nhân viên gửi ảnh, mô phỏng 502 sau commit và thử lại cùng intent, Manager xem ảnh/xác nhận/duyệt; xanh chỉ sau xác nhận API. Huỷ chứng từ tiền sau duyệt làm badge yêu cầu rà soát. Không lỗi JS.
 - Ảnh trong thư mục này là dữ liệu kiểm thử tổng hợp, không có hồ sơ khách thật.
