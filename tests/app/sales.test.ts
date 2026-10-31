@@ -83,7 +83,7 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
 
   d = (await call('/orders/' + o.data.id, emp)).data;
   assert.equal(d.contract.status, 'signed');
-  assert.deepEqual(d.schedules.map((s: any) => [s.kind, s.amount, s.dueDate]).sort(), [['balance', 17_388_000, null], ['deposit', 7_452_000, '2026-10-06']]);
+  assert.deepEqual(d.schedules.map((s: any) => [s.kind, s.amount, s.dueDate]).sort(), [['balance', 17_388_000, null], ['deposit', 7_452_000, '2026-10-09']]); // cọc: ngày ký 06/10 + 3 ngày
   assert.equal((await call('/contracts', emp)).data.contracts[0].orderNo, d.order.orderNo);
 
   // Lịch giao: giao một phần, không vượt phần còn lại.
