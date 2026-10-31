@@ -12,7 +12,7 @@ export async function setupSalesPayroll(){
  await f.db.update(customerPayments).set({amount:21_600_000}).where(eq(customerPayments.id,'liq-paid'));
  await f.client.query("insert into staff_position_permissions(position_id,permission) values('liquidation-outsider','page.care')");
  const settings=(await f.call('/hr/settings?month=2026-10',f.mgr)).data.params;
- const setPolicy=(apply=0,month='2026-10',extra={})=>f.call('/hr/settings',f.mgr,'PUT',{effectiveMonth:month,params:{...settings,salesAutomationFrom:202610,salesAutomationApply:apply,kpiNewCustomersOver:0.1,...extra}});
+ const setPolicy=(apply=0,month='2026-10',extra={})=>f.call('/hr/settings',f.mgr,'PUT',{effectiveMonth:month,params:{...settings,salesAutomationFrom:202610,contractBonusFrom:202610,salesAutomationApply:apply,contractBonusApply:apply,kpiNewCustomersOver:0.1,...extra}});
  const salary=(extra={})=>f.call('/hr/members/emp/salary',f.mgr,'PUT',{effectiveMonth:'2026-10',payrollGroup:'sale',kpiEnabled:true,contractBonusEnabled:true,baseSalary:1_000_000,...extra});
  const overview=(who=f.mgr,month='2026-10')=>f.call('/members/emp/overview?month='+month,who);
  const care=(extra={})=>f.call('/care',f.emp,'POST',{clientKey:crypto.randomUUID(),customerId:'sales-customer',contactName:'Khách kiểm thử',occurredAt:'2026-10-30',type:'call',completion:'completed',purpose:'sales',result:'consulting',content:'Đã trao đổi nhu cầu và thống nhất bước tiếp theo',nextAt:'2026-11-15',remindBefore:'1d',...extra});

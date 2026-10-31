@@ -79,7 +79,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const b = await readJson(c.req, 20_000), m = month(b.effectiveMonth), err = validateParams(b.params);
     if (err) throw new AppError(400, err);
     const previous=(await paramsFor(c.env.db,m)).params;
-    const params = Object.fromEntries(PARAM_FIELDS.map(f => [f.key, Number((b.params as Record<string, unknown>)[f.key] ?? (/^(salesAutomation|contractStar|contractLiquidation)/.test(f.key)?previous[f.key]:f.value))]));
+    const params = Object.fromEntries(PARAM_FIELDS.map(f => [f.key, Number((b.params as Record<string, unknown>)[f.key] ?? (/^(salesAutomation|contractBonus|contractStar|contractLiquidation)/.test(f.key)?previous[f.key]:f.value))]));
     const policyError=validateParams(params);if(policyError)throw new AppError(400,policyError);
     const row = { effectiveMonth: m, params: JSON.stringify(params), updatedBy: actor(c).id, updatedAt: nowIso() };
     await c.env.db.insert(hrPayrollSettings).values(row).onConflictDoUpdate({ target: hrPayrollSettings.effectiveMonth, set: { params: row.params, updatedBy: row.updatedBy, updatedAt: row.updatedAt } });
@@ -115,7 +115,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const m=month(c.params.month),me=actor(c).id,body=await readJson(c.req,2000),db=c.env.db,b=await buildPayroll(db,m,deps.revenueOf,undefined,deps.crmFactsOf,true);
     const open=b.rows.filter(r=>!r.slip&&r.profile.effectiveMonth!==null);
     if(open.some(r=>r.calc.salesCrm?.apply)&&body.confirmationHash!==b.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
-    for(const row of open){const runId=crypto.randomUUID();await db.insert(hrPayslips).values({...slipValues(row,me,''),data:JSON.stringify({...JSON.parse(slipValues(row,me,'').data),runId}),month:m});if(row.calc.salesCrm?.apply)await reserveAwards(db,row.member.id,m,runId,row.calc.salesCrm.awards);}
+    for(const row of open){const runId=crypto.randomUUID();await db.insert(hrPayslips).values({...slipValues(row,me,''),data:JSON.stringify({...JSON.parse(slipValues(row,me,'').data),runId}),month:m});if(row.calc.salesCrm?.bonusApply??row.calc.salesCrm?.apply)await reserveAwards(db,row.member.id,m,runId,row.calc.salesCrm.awards);}
     return json({ok:true,confirmed:open.length});
   }), 'admin');
 
@@ -207,7 +207,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     if(row.calc.salesCrm?.apply&&b.confirmationHash!==board.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
     const runId=crypto.randomUUID(),values=slipValues(row,actor(c).id,text(b.note,HR_LIMITS.note));
     await db.insert(hrPayslips).values({...values,data:JSON.stringify({...JSON.parse(values.data),runId}),month:m});
-    if(row.calc.salesCrm?.apply)await reserveAwards(db,id,m,runId,row.calc.salesCrm.awards);
+    if(row.calc.salesCrm?.bonusApply??row.calc.salesCrm?.apply)await reserveAwards(db,id,m,runId,row.calc.salesCrm.awards);
     return json({ ok: true, net: row.calc.net }, 201);
   }), 'admin');
 
