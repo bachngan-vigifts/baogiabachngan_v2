@@ -33,7 +33,7 @@ function ask(title, placeholder) {
   });
 }
 
-export function initTransfers({ api, root, toast, go, isManager = () => false }) {
+export function initTransfers({ api, root, toast, go, confirmBox, isManager = () => false }) {
   let data = null, filter = 'open', listRun = 0, detailRun = 0, showing = '', rendered = '', inFlight = null, formOpen = false, posting = false, updating = false, openedAt = 0;
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Điều chuyển kho'),
@@ -173,7 +173,10 @@ export function initTransfers({ api, root, toast, go, isManager = () => false })
     if (t.actions.approve) act('Cho xin hàng', 'btn ok', 'Đang duyệt…', () => run('approve', {}, 'Đã cho – chuyển hàng rồi bấm "Đã chuyển".'));
     if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async () => { const r = await ask('Từ chối phiếu xin hàng', 'Lý do từ chối (người xin sẽ nhận được)'); return r ? run('reject', { reason: r }, 'Đã từ chối.') : false; });
     if (t.actions.done) act('Đã chuyển', 'btn primary', 'Đang ghi sổ kho…', () => run('done', {}, 'Đã ghi sổ kho: trừ kho đi, cộng kho đến.'));
-    if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', () => run('cancel', {}, 'Đã huỷ phiếu.'));
+    if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', async () => {
+      if (!await confirmBox(`Huỷ phiếu điều chuyển ${t.transferNo}? Phiếu sẽ không thể tiếp tục chuyển hàng.`, {title:'Huỷ phiếu điều chuyển',ok:'Xác nhận huỷ phiếu',danger:true,delay:3000})) return false;
+      return run('cancel', {}, 'Đã huỷ phiếu.');
+    });
     if (t.status === 'cancelled') acts.append(btn('Sao chép phiếu', 'btn primary', () => openForm(t)));
     drawer.append(h, meta, tw, acts);
     drawer.hidden = false; shade.hidden = false; openedAt=Date.now();
@@ -278,7 +281,7 @@ const STATUSES = [['', 'Mọi trạng thái'], ['active', 'Đang giao dịch'], 
 const day = iso => iso ? new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 const time = iso => iso ? new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
 const isoDay = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-const dash = v => v ? num(v) : '-';
+const movementQty = (v, sign, zero = '—') => v ? sign + num(Math.abs(v)) : zero;
 /** Nhãn ô khi bảng thành thẻ trên điện thoại (style.css: td[data-label]::before). */
 const labeled = (td, label) => { td.dataset.label = label; return td; };
 /** Bộ lọc trang Sổ kho ↔ query của link (#/stock-moves?q=…&warehouseId=…&from=…&to=…&group=…&brand=…&status=…): link mở đúng bộ lọc. */
@@ -370,12 +373,12 @@ export function initStockMoves({ api, root, toast, createPager, linkAllowed = ()
     renderChips();
     rows = d.moves; pager.render(d.total);
     const total = el('tr', 'ledger-total'), lbl = el('td', '', `Tổng ${num(d.total)} giao dịch`); lbl.colSpan = 4;
-    total.append(lbl, labeled(el('td', 'num', num(d.totals.inQty)), 'Nhập'), labeled(el('td', 'num', num(d.totals.outQty)), 'Xuất'), el('td', 'ledger-empty'), el('td', 'ledger-empty'));
+    total.append(lbl, labeled(el('td', 'num ledger-in', movementQty(d.totals.inQty, '+', '0')), 'Nhập'), labeled(el('td', 'num ledger-out', movementQty(d.totals.outQty, '−', '0')), 'Xuất'), el('td', 'ledger-empty'), el('td', 'ledger-empty'));
     if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Không có giao dịch nào khớp bộ lọc.'); td.colSpan = 8; tr.append(td); tbody.replaceChildren(total, tr); return; }
     tbody.replaceChildren(total, ...rows.map((m, i) => {
       const tr = el('tr'), when = el('td', 'nowrap'); when.append(document.createTextNode(day(m.at)), el('small', '', time(m.at)));
-      tr.append(el('td', 'num muted ledger-no', pager.offset + i + 1), when, refCell(m), itemCell(m), labeled(el('td', 'num', dash(m.inQty)), 'Nhập'), labeled(el('td', 'num', dash(m.outQty)), 'Xuất'),
-        labeled(el('td', 'num' + (m.balanceAfter < 0 ? ' danger-text' : ''), num(m.balanceAfter)), 'Tồn sau'), labeled(el('td', 'ledger-wh', m.warehouse), 'Chi nhánh'));
+      tr.append(el('td', 'num muted ledger-no', pager.offset + i + 1), when, refCell(m), itemCell(m), labeled(el('td', 'num' + (m.inQty ? ' ledger-in' : ''), movementQty(m.inQty, '+')), 'Nhập'), labeled(el('td', 'num' + (m.outQty ? ' ledger-out' : ''), movementQty(m.outQty, '−')), 'Xuất'),
+        labeled(el('td', 'num ledger-balance', num(m.balanceAfter)), 'Tồn sau'), labeled(el('td', 'ledger-wh', m.warehouse), 'Chi nhánh'));
       return tr;
     }));
   }

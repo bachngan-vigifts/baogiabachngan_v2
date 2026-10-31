@@ -17,7 +17,7 @@ class Node {
   remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);}
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
-async function setup(fail=false,overrides:any={},confirm=true,choice:string|null='create'){
+async function setup(fail=false,overrides:any={},confirm=true,choice:string|null='create',chooseWarehouse=true){
   const host=new Node(),posts:any[]=[];let current=true,failWrites=fail;
   const ctx:any={URLSearchParams,document:{createElement:(tag:string)=>new Node(tag)},crypto:{randomUUID:()=> 'safe-client-key'}};
   runInNewContext(readFileSync(new URL('../../trial-ui/quote-sourcing.js',import.meta.url),'utf8').replace('export function chooseSourcePurchase','function chooseSourcePurchase').replace('export async function initQuoteSourcing','globalThis.initQuoteSourcing = async function'),ctx);
@@ -30,6 +30,7 @@ async function setup(fail=false,overrides:any={},confirm=true,choice:string|null
   const ui=await ctx.initQuoteSourcing({api,host,quoteId:'q',confirmBox:async()=>confirm,choosePurchase:async()=>choice,isCurrent:()=>current});
   const label=(name:string)=>all(host).find(n=>n.attrs['aria-label']===name)!;
   const button=(name:string)=>all(host).find(n=>n.tag==='button'&&n.textContent===name)!;
+  if(chooseWarehouse){label('Kho bán / kho xuất').value='a';await label('Kho bán / kho xuất').fire('change');}
   return{host,ui,posts,label,button,recover:()=>{failWrites=false;},close:()=>{current=false;}};
 }
 test('nguồn hàng UI: lập kế hoạch 2+1, chỉ xin hàng khi bấm, giữ tham chiếu và không gửi trùng',async()=>{
@@ -166,4 +167,18 @@ test('gom phiếu: hai dòng cùng SKU cùng đơn mua không được vượt t
   const types=all(s.host).filter(n=>n.attrs['aria-label']==='Nguồn hàng X'),orders=all(s.host).filter(n=>n.attrs['aria-label']==='Đơn mua lấy hàng X');
   types[1]!.value='incoming';await types[1]!.fire('change');orders[1]!.value='p2';
   await assert.rejects(()=>s.ui.prepare(),/tổng xin mã X vượt số còn về 2/);assert.equal(s.posts.length,0);
+});
+
+
+test('must explicitly select a selling warehouse before goods exist, even with a single selling warehouse',async()=>{
+ const s=await setup(false,{},true,'create',false),list=all(s.host).find(n=>n.className==='quote-source-list')!;
+ assert.equal(s.label('Kho bán / kho xuất').value,'');assert.equal(list.hidden,true);assert.equal(list.children.length,0);assert.equal(s.label('Lấy từ kho X'),undefined);assert.match(s.host.textContent,/Chọn kho bán \/ kho xuất để xem hàng hoá/);
+ assert.throws(()=>s.ui.read(),/Chọn kho bán/);await assert.rejects(()=>s.ui.prepare(),/Chọn kho bán/);assert.equal(s.posts.length,0);
+ s.label('Kho bán / kho xuất').value='a';await s.label('Kho bán / kho xuất').fire('change');assert.equal(list.hidden,false);assert.equal(s.label('Lấy từ kho X').value,'2');
+ s.label('Kho bán / kho xuất').value='';await s.label('Kho bán / kho xuất').fire('change');assert.equal(list.hidden,true);assert.equal(list.children.length,0);assert.throws(()=>s.ui.read(),/Chọn kho bán/);
+});
+test('switching selling warehouses redraws quantities from the chosen stock, non-selling warehouse cannot reveal goods',async()=>{
+ const s=await setup(false,{warehouses:[{id:'a',canSell:true,name:'Kho A'},{id:'b',canSell:true,name:'Kho B'},{id:'c',canSell:false,name:'Kho C'}]},true,'create',false);
+ for(const [id,qty] of [['a','2'],['b','1']]){s.label('Kho bán / kho xuất').value=id;await s.label('Kho bán / kho xuất').fire('change');assert.equal(s.label('Lấy từ kho X').value,qty);}
+ s.label('Kho bán / kho xuất').value='c';await s.label('Kho bán / kho xuất').fire('change');assert.equal(s.label('Lấy từ kho X'),undefined);assert.throws(()=>s.ui.read(),/Chọn kho bán/);assert.equal(s.posts.length,0);
 });

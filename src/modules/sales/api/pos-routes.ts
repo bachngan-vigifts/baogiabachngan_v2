@@ -41,6 +41,7 @@ import { syncWebOrderStock } from './web-order-stock.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { vietnamDate } from '../domain/sales.ts';
 import { writeAudit } from '../../../core/audit.ts';
+import {auditLogs} from '../../../core/db/schema.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
 import { sendPosShiftReport } from './pos-shift-report-webhook.ts';
 import { notifyPosOrderCreated } from './pos-notifications.ts';
@@ -343,6 +344,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const rows = !crmWanted ? [] : await c.env.db.select({
         id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, phone: salesOrders.phone,
         ownerId: salesOrders.ownerId, ownerName: employees.name, paid: sql<number>`(select coalesce(sum(${customerPayments.amount}),0) from ${customerPayments} where ${customerPayments.orderId}=${salesOrders.id} and ${customerPayments.voidedAt} is null)`.mapWith(Number), total: salesOrders.total, status: salesOrders.status, fulfillmentMode: salesOrders.fulfillmentMode,
+        cancelSnapshot: sql<string|null>`case when ${salesOrders.status}='cancelled' then ${salesOrders.posSnapshot} else null end`,
         orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
         packingStatus: sql<string>`coalesce((select ${packingSlips.status} from ${packingSlips} where ${packingSlips.orderId}=${salesOrders.id} and ${packingSlips.status}<>'cancelled' order by ${packingSlips.updatedAt} desc limit 1),'')`,
         deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.plannedDate} desc limit 1),'')`,
@@ -369,12 +371,24 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         from ? gte(webStoreOrders.orderedAt, from) : undefined, to ? lte(webStoreOrders.orderedAt, to + 'T23:59:59.999Z') : undefined,
         windowFrom ? or(notInArray(webStoreOrders.status, ['completed', 'cancelled', 'refunded', 'failed', 'trash']), gte(webStoreOrders.orderedAt, windowFrom)) : undefined))
         .orderBy(desc(webStoreOrders.updatedAt));
+      // Fetch the latest recorded CRM reason in one scoped batch, never one query per order.
+      const cancelledWebIds=webRows.filter(o=>webBucket(o.status,o.ghnStatus)==='cancelled').map(o=>o.id);
+      const webReasons=new Map<string,string>();
+      if(cancelledWebIds.length){
+        const logs=await c.env.db.selectDistinctOn([auditLogs.entityId],{id:auditLogs.entityId,data:auditLogs.data}).from(auditLogs)
+          .where(and(eq(auditLogs.entityType,'web-store-order'),eq(auditLogs.action,'web-order-cancel'),inArray(auditLogs.entityId,cancelledWebIds)))
+          .orderBy(auditLogs.entityId,desc(auditLogs.createdAt),desc(auditLogs.id));
+        for(const log of logs)try{const reason=JSON.parse(log.data).reason;if(typeof reason==='string')webReasons.set(log.id,reason.slice(0,2000));}catch{/* Unstructured legacy audit data has no reliable reason. */}
+      }
       const decorated = [
-        ...rows.map(o => ({ ...o, bucket: posOrderBucket(o), source: 'crm', external: false, currency: 'VND', orderSource: o.fulfillmentMode === 'cod' ? 'cod' : 'pos', paymentStatus: o.paid >= o.total ? 'paid' : 'debt', outstanding: Math.max(0, o.total-o.paid) })),
+        ...rows.map(o => {const {cancelSnapshot,...order}=o;let cancelReason='';try{const reason=JSON.parse(cancelSnapshot||'{}').cancelReason;if(typeof reason==='string')cancelReason=reason.slice(0,2000);}catch{/* Legacy snapshots may not contain a reason. */}
+          return {...order,cancelReason,cancellationKind:'cancelled',bucket:posOrderBucket(o),source:'crm',external:false,currency:'VND',orderSource:o.fulfillmentMode==='cod'?'cod':'pos',paymentStatus:o.paid>=o.total?'paid':'debt',outstanding:Math.max(0,o.total-o.paid)};}),
         ...webRows.map(o => {
           const payment = readWebOrderFinancials(o.financialSnapshot)?.payment;
           const paid = payment ? (payment.paidAt ? o.total : 0) : null;
-          return ({ ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
+          const state=o.status.toLowerCase(),carrier=o.ghnStatus.toLowerCase();
+          const cancellationKind=state==='refunded'?'refunded':carrier.startsWith('return')||carrier==='waiting_to_return'?'returned':['lost','damage'].includes(carrier)||state==='failed'?'failed':'cancelled';
+          return ({cancelReason:webReasons.get(o.id)||'',cancellationKind, ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', warehouseReconciliationRequired:true, stockStatus: o.stockStatus, stockNote: o.stockNote, deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
@@ -383,7 +397,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           // Minh Long chưa có cầu nối: CRM tự tạo vận đơn GHN – giao diện hỏi thêm tiền thu hộ / khối lượng.
           ghnDirect: minhLongDirect(c.env, o), suggestedCod: minhLongDirect(c.env, o) ? suggestedWebCod(o) : null }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      const board = filterPosOrderBoard(decorated, c.url.searchParams);
+      const board = filterPosOrderBoard(decorated, c.url.searchParams, {analyticsFrom:windowFrom});
       // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.
       board.owners = (await c.env.db.selectDistinct({ id: salesOrders.ownerId, name: employees.name }).from(salesOrders)
         .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).leftJoin(employees, eq(employees.id, salesOrders.ownerId))

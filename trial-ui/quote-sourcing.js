@@ -31,12 +31,12 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
   if(!isCurrent())return null;
   const selling=data.warehouses.filter(w=>w.canSell);
   const warehouse=select([['','Chọn kho bán / kho xuất'],...selling.map(w=>[w.id,w.name+(w.opened?'':' · Chưa chốt đầu kỳ')])],'Kho bán / kho xuất');
-  if(selling.length===1)warehouse.value=selling[0].id;
   const heading=el('h3','','Lấy hàng từ đâu?'),label=el('label','','Kho bán / kho xuất');label.append(warehouse);
   const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT: phần xin hàng từ kho khác tự lập phiếu điều chuyển chờ duyệt; phần đặt NCC bạn chọn tạo đơn mua nháp ngay hoặc đặt sau. Các mã xin giao trước được gom vào một phiếu nháp khi sinh đơn/HĐKT, chưa gửi NCC. Các nút xin kho / đặt NCC riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
   const summary=el('p','quote-source-summary',`${data.lines.length} mã sản phẩm · Rà số lượng và nguồn cho từng mã`);
   const toolbar=el('div','quote-source-toolbar');toolbar.append(heading,summary,label,hint);
-  const list=el('div','quote-source-list'),error=el('p','error');error.setAttribute('role','alert');host.replaceChildren(toolbar,list,error);
+  const prompt=el('p','muted','Chọn kho bán / kho xuất để xem hàng hoá và phân bổ nguồn hàng.');prompt.setAttribute('role','status');
+  const list=el('div','quote-source-list'),error=el('p','error');error.setAttribute('role','alert');host.replaceChildren(toolbar,prompt,list,error);
   let busy=false,suppliers=null,incomingAttempt=null;const cards=[],incomingCache=new Map();
   const incomingBatch=el('div','quote-incoming-batch'),incomingSummary=el('p','muted small'),incomingResult=el('div','small');incomingResult.setAttribute('role','status');
   const retryIncoming=button('Tiếp tục lưu phiếu xin giao trước',()=>createPendingIncoming().catch(e=>{error.textContent=e.message;}));retryIncoming.hidden=true;incomingBatch.append(incomingSummary,incomingResult,retryIncoming);host.append(incomingBatch);
@@ -51,7 +51,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     })().catch(e=>{incomingCache.delete(sku);throw e;}));
     return incomingCache.get(sku);
   }
-  const requireWarehouse=()=>{if(!warehouse.value)throw Error('Chọn kho bán / kho xuất trước.');return data.warehouses.find(w=>w.id===warehouse.value);};
+  const requireWarehouse=()=>{const w=selling.find(w=>w.id===warehouse.value);if(!w)throw Error('Chọn kho bán / kho xuất trước.');return w;};
   const markBusy=value=>{busy=value;warehouse.disabled=value||cards.some(c=>c.sources.some(s=>s.saved||s.uncertain));for(const c of cards){c.from.disabled=value;for(const s of c.sources){for(const i of [s.type,s.location,s.supplier,s.order,s.amount,s.remove])i.disabled=value||!!s.saved||!!s.uncertain||i===s.order&&s.loading;s.action.disabled=value||!!s.saved||!!s.uncertain||(s.type.value==='incoming'&&(!data.canRequestEarly||s.loading||!s.order.value))||(s.type.value==='purchase'&&!data.canPurchase);}}syncIncomingSummary();};
   function source(card,initial) {
     const row=el('div','quote-source-row'),type=select([['transfer','Xin hàng từ kho khác'],['purchase','Đặt hàng NCC'],['incoming','Hàng đang chờ về · Xin giao trước']],'Nguồn hàng '+card.line.sku);
@@ -91,7 +91,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     }
     row.append(type,location,supplier,order,amount,action,remove,result);card.sourcesHost.append(row);sync();return entry;
   }
-  function draw(){list.replaceChildren();cards.length=0;for(const [index,line] of data.lines.entries()){
+  function draw(){list.replaceChildren();cards.length=0;const chosen=selling.some(w=>w.id===warehouse.value);list.hidden=!chosen;prompt.hidden=chosen;hint.hidden=!chosen;if(!chosen){syncIncomingSummary();return;}for(const [index,line] of data.lines.entries()){
     const box=el('div','pack-line'),head=el('div','pack-head');head.append(el('b','',`${index+1}. ${line.name}`),el('small','',`${line.sku} · ${num(line.qty)} ${line.unit}`));
     const grid=el('div','pack-grid'),need=el('label','','Cần lấy'),total=qty(line.qty,'Cần lấy '+line.sku);total.readOnly=true;need.append(total);
     const available=el('label','','Tồn kho bán'),stock=el('span','pack-av');available.append(stock);
@@ -161,7 +161,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     }finally{markBusy(false);}
     if(!isCurrent())throw Error('Form đã đóng. Các phiếu xin hàng đã lập được giữ trong Điều chuyển kho.');
   }
-  const planner={read(){if(!cards.length)return {};if(busy)throw Error('Đang lưu yêu cầu nguồn hàng, vui lòng chờ.');const w=requireWarehouse();
+  const planner={read(){if(!data.lines.length)return {};if(busy)throw Error('Đang lưu yêu cầu nguồn hàng, vui lòng chờ.');const w=requireWarehouse();
     const stockPlan=[];
     const plan=[`KẾ HOẠCH NGUỒN HÀNG · ${data.quoteNo}`,`Kho bán: ${w.name}`];
     for(const c of cards){const take=Number(c.from.value),amounts=c.sources.map(s=>Number(s.amount.value));
