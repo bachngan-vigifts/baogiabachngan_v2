@@ -1,0 +1,48 @@
+[
+  {
+    "width": 1280,
+    "status": "Đã giao xong\nĐã nhận hoàn một phần\nCần đối soát xuất kho",
+    "stage": "3\nGiao hàng\nĐã ghi nhận giao hàng · Chờ đối soát xuất kho\nGH-LOCAL-HISTORY",
+    "rows": [
+      [
+        "2",
+        "2",
+        "1",
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "2",
+        "1",
+        "1",
+        "1"
+      ]
+    ],
+    "returnDetailOpens": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "status": "Đã giao xong\nĐã nhận hoàn một phần\nCần đối soát xuất kho",
+    "stage": "3\nGiao hàng\nĐã ghi nhận giao hàng · Chờ đối soát xuất kho\nGH-LOCAL-HISTORY",
+    "rows": [
+      [
+        "2",
+        "2",
+        "1",
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "2",
+        "1",
+        "1",
+        "1"
+      ]
+    ],
+    "returnDetailOpens": true,
+    "errors": []
+  }
+]

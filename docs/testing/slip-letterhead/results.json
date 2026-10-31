@@ -1,0 +1,50 @@
+[
+  {
+    "kind": "delivery",
+    "orient": "portrait",
+    "headerDecodedBeforePrint": true,
+    "marginTopMm": 20,
+    "image": {
+      "width": 1280,
+      "height": 230,
+      "displayWidth": 1000,
+      "displayHeight": 179.6875
+    }
+  },
+  {
+    "kind": "delivery",
+    "orient": "landscape",
+    "headerDecodedBeforePrint": true,
+    "marginTopMm": 20,
+    "image": {
+      "width": 1280,
+      "height": 230,
+      "displayWidth": 1000,
+      "displayHeight": 179.6875
+    }
+  },
+  {
+    "kind": "packing",
+    "orient": "portrait",
+    "headerDecodedBeforePrint": true,
+    "marginTopMm": 20,
+    "image": {
+      "width": 1280,
+      "height": 230,
+      "displayWidth": 1000,
+      "displayHeight": 179.6875
+    }
+  },
+  {
+    "kind": "packing",
+    "orient": "landscape",
+    "headerDecodedBeforePrint": true,
+    "marginTopMm": 20,
+    "image": {
+      "width": 1280,
+      "height": 230,
+      "displayWidth": 1000,
+      "displayHeight": 179.6875
+    }
+  }
+]

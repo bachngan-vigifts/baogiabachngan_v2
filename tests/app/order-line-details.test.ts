@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-ignore browser-only DOM renderer
 import { renderOrderLineDetails } from '../../trial-ui/order-line-details.js';
+// @ts-ignore browser-only DOM renderer
+import { returnStateText } from '../../trial-ui/order-return-summary.js';
 class Node {
-  children: Node[] = []; className = ''; text = ''; href = '';
+  children: Node[] = []; className = ''; text = ''; href = ''; dataset: Record<string, string> = {};
   constructor(public tag: string) {}
   set textContent(value: string) { this.text = String(value); this.children = []; }
   get textContent(): string { return this.text + this.children.map(n => n.textContent).join(''); }
@@ -14,6 +16,31 @@ const line = { name: '<img onerror=alert(1)>', sku: '001', unit: 'cái', qty: 2,
   unitPrice: 90000, discountType: 'percent', discountValue: 10, discountAmount: 21600, taxRate: 8, amount: 180000 };
 const source = { ...line, subtotal: 180000, tax: 14400, total: 194400 };
 const fee = { name: '<script>Phí in</script>', quantity: 3, unitPrice: 65000, amount: 195000, subtotal: 180556, tax: 14444, taxRate: 8 };
+
+test('CRM receipt shows historical delivery, actual return, sellable restock and customer-held quantities separately', () => {
+  const previous = globalThis.document;
+  Object.assign(globalThis, { document: { createElement: (tag: string) => new Node(tag) } });
+  try {
+    const head = new Node('tr'), body = new Node('tbody'), details = new Node('div');
+    const lines = [{ ...line, deliveredQty: 2, returnedQty: 1, restockedQty: 1, customerKeptQty: 1 }];
+    const summary = { receivedQty: 1, requests: [{ returnNo: '<img onerror=alert(1)>', status: 'completed', receivedAt: '2026-10-31T06:31:00Z', warehouseName: 'Kho thử', basisKind: 'pre_opening', lines: [{ sku: '001', unit: 'bộ', receivedQty: 1, restockQty: 1, disposition: 'restock' }] }] };
+    renderOrderLineDetails({ head, body, details, lines, returnSummary: summary, order: { id: 'synthetic', channel: 'crm' } });
+    assert.deepEqual(head.children.slice(1, 6).map(n => n.textContent), ['SL', 'Đã giao', 'Đã nhận hoàn', 'Nhập lại kho', 'Khách đang giữ']);
+    assert.deepEqual(body.children[0]!.children.slice(1, 6).map(n => n.textContent), ['2', '2', '1', '1', '1']);
+    assert.match(details.textContent, /Hàng hoàn về/);
+    assert.match(details.textContent, /Kho thử/);
+    assert.match(details.textContent, /trước chốt tồn/);
+    assert.equal(returnStateText(summary, lines), 'Đã nhận hoàn một phần');
+    assert.equal(returnStateText({ receivedQty: 2 }, lines), 'Đã nhận hoàn toàn bộ');
+    assert.equal(returnStateText({ receivedQty: 0 }, lines), '');
+    const record = details.children[0]!.children[2]!;
+    assert.equal(record.children[0]!.tag, 'a');
+    assert.equal(record.children[0]!.textContent, '<img onerror=alert(1)>');
+    assert.equal(record.children[0]!.href, '#/orders/synthetic?returns=1');
+    renderOrderLineDetails({ head, body, details, lines, order: { channel: 'crm' } });
+    assert.equal(head.children.length, 6); assert.equal(details.children.length, 0);
+  } finally { Object.assign(globalThis, { document: previous }); }
+});
 
 test('POS order detail shows original price, discount, gross after discount, fee quantities, ship and exact stored totals as text', () => {
   const previous = globalThis.document;
