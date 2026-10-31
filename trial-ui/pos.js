@@ -1444,7 +1444,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         nodes.search.value = code;
         m.close();
         run(submitScan);
-      }, { signal: controller.signal });
+      }, { signal: controller.signal, keepWarmMs: 30000 }); // quét món kế tiếp trong 30 giây: dùng lại luồng camera, không xin quyền lại
       if (closed) handle.stop();
     } catch (e) {
       handle?.stop();

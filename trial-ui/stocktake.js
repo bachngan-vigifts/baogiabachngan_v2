@@ -136,21 +136,21 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
   if(!warehouseId){feedback.textContent='Chọn kho trước khi quét mã.';return;}
   const dlg=el('dialog','modal stocktake-camera'),head=el('div','modal-head'),body=el('div','modal-body'),video=el('video','stocktake-video');
   const last=el('p','stocktake-camera-last','Đưa mã vạch / QR vào giữa khung.'),hint=el('p','small muted','Mỗi lần đọc được mã là +1 vào thực đếm. Chờ báo số mới rồi đưa mã tiếp; bấm Xong khi đếm xong.');
-  let closed=false,handle=null,timer=0,read=0;const controller=new AbortController();
+  let closed=false,handle=null,read=0;const controller=new AbortController();
   const close=()=>{if(dlg.open)dlg.close();};
   head.append(el('h2','','Quét mã bằng camera'),button('Xong',close,'btn primary'));
   body.append(video,last,hint);dlg.append(head,body);document.body.append(dlg);
   globalThis.addEventListener?.('hashchange',close);
-  dlg.addEventListener('close',()=>{closed=true;clearTimeout(timer);controller.abort();handle?.stop();globalThis.removeEventListener?.('hashchange',close);dlg.remove();if(read)toast(`Đã quét ${read} lần bằng camera.`);},{once:true});
+  dlg.addEventListener('close',()=>{closed=true;controller.abort();handle?.stop();globalThis.removeEventListener?.('hashchange',close);dlg.remove();if(read)toast(`Đã quét ${read} lần bằng camera.`);},{once:true});
   dlg.showModal();
+  // Quét liên tục trên MỘT luồng camera (chỉ xin quyền một lần mỗi lần mở); đóng rồi mở lại trong 30 giây dùng lại luồng cũ.
   const start=async()=>{
    if(closed)return;
    try{
     handle=await startBarcodeCamera(video,code=>{
      if(closed)return;read++;globalThis.navigator?.vibrate?.(60);last.textContent='Đang ghi '+code+'…';
      scanQueue=scanQueue.then(()=>scanCode(code)).catch(()=>{}).then(()=>{if(!closed)last.textContent=scanInfo.textContent||code;});
-     timer=setTimeout(start,1200);
-    },{signal:controller.signal});
+    },{signal:controller.signal,continuous:true,pauseMs:1200,keepWarmMs:30000});
     if(closed)handle.stop();
    }catch(e){if(closed)return;video.hidden=true;last.textContent=cameraError(e);hint.textContent='Có thể gõ mã hoặc dùng máy quét cầm tay ở ô "Quét mã vạch".';}
   };
