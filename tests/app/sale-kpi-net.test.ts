@@ -54,3 +54,10 @@ test('manual KPI still requires fresh net-revenue confirmation if source commiss
  const stale=await f.call('/hr/members/emp/payslips/2026-10',f.mgr,'POST',{confirmationHash:before.confirmationHash});assert.equal(stale.status,409);assert.equal(stale.data.code,'PAYROLL_CHANGED');
  assert.equal((await f.confirm()).status,201);assert.equal(amount((await f.overview()).data.payroll.payslip,'kpiBonus'),1080000);
 });
+
+test('net commission matches canonical order rows: ignores blank placeholders and recognizes manual service lines',async()=>{
+ const f=await sale();await f.call('/hr/members/emp/inputs/2026-10',f.mgr,'PUT',{kpiOverride:1.3});
+ await f.db.update(salesOrderLines).set({sku:''}).where(eq(salesOrderLines.orderId,'liq-order'));
+ await f.db.update(quotations).set({data:JSON.stringify({rows:[{name:' ',qty:1,price:0},{...f.row,manualLine:true,sku:'SERVICE-LABEL',commission:{excluded:true}},{...f.row,qty:0}]})}).where(eq(quotations.id,'net-quote'));
+ const p=(await f.overview()).data.payroll.payslip;assert.equal(p.kpiNetBasis.issues,0);assert.equal(p.kpiNetBasis.netRevenue,100000000);assert.equal(amount(p,'kpiBonus'),1200000);assert.equal((await f.confirm()).status,201);
+});

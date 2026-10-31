@@ -6,7 +6,7 @@ import {commissionOf,quoteStockSku,type QuoteRow} from '../../quotes/domain/quot
 import {debtCounts} from '../domain/sales.ts';
 /** Monetary basis only; HR owns KPI tiers. Never substitute VAT-inclusive totals or assume missing CRM commission is zero. */
 export async function kpiNetRevenue(db:AnyDb,from:string,next:string){
- const orders=await db.select({o:salesOrders,quote:quotations.data}).from(salesOrders).leftJoin(quotations,eq(quotations.id,salesOrders.quoteId)).where(and(gte(salesOrders.orderDate,from),lt(salesOrders.orderDate,next)));
+ const orders=await db.select({o:{id:salesOrders.id,ownerId:salesOrders.ownerId,subtotal:salesOrders.subtotal,status:salesOrders.status,channel:salesOrders.channel,quoteType:salesOrders.quoteType},quote:quotations.data}).from(salesOrders).leftJoin(quotations,eq(quotations.id,salesOrders.quoteId)).where(and(gte(salesOrders.orderDate,from),lt(salesOrders.orderDate,next)));
  const ids=orders.map(r=>r.o.id),out=new Map<string,{netRevenue:number;netRevenueIssues:number}>();
  if(!ids.length)return out;
  const [lines,contracts]=await Promise.all([db.select().from(salesOrderLines).where(inArray(salesOrderLines.orderId,ids)).orderBy(asc(salesOrderLines.lineNo)),db.select({orderId:salesContracts.orderId,status:salesContracts.status}).from(salesContracts).where(inArray(salesContracts.orderId,ids))]);
@@ -14,7 +14,7 @@ export async function kpiNetRevenue(db:AnyDb,from:string,next:string){
   if(!debtCounts(o.status,contracts.find(k=>k.orderId===o.id&&k.status!=='cancelled')?.status))continue;
   const m=out.get(o.ownerId)||{netRevenue:0,netRevenueIssues:0};let commission=0,valid=Number.isFinite(o.subtotal);
   if(o.channel==='crm'){
-   let rows:QuoteRow[]=[];try{const doc=JSON.parse(quote||'null');if(Array.isArray(doc?.rows))rows=doc.rows.filter((r:QuoteRow)=>Number(r.qty)>0);}catch{}
+   let rows:QuoteRow[]=[];try{const doc=JSON.parse(quote||'null');if(Array.isArray(doc?.rows))rows=doc.rows.filter((r:QuoteRow)=>String(r.name||'').trim()&&Number(r.qty)>0);}catch{}
    const orderLines=lines.filter(l=>l.orderId===o.id);
    if(!rows.length||rows.length!==orderLines.length)valid=false;
    for(const l of orderLines){
