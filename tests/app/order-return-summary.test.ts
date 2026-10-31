@@ -31,7 +31,7 @@ test('pre-opening return receipt is visible alongside unresolved stock proof; re
  const f=await setupCrmReturns(),id='historical-return';await f.seed(id,0,'emp',false);
  await f.db.update(salesOrders).set({createdAt:'2026-10-14T01:00:00Z'}).where(eq(salesOrders.id,id));
  await f.db.insert(deliveries).values({id:'historical-trip',deliveryNo:'GH-HISTORY',orderId:id,plannedDate:'2026-10-14',deliveredAt:'2026-10-15',status:'delivered',createdBy:'mgr',createdAt:'2026-10-14T01:00:00Z',updatedAt:'2026-10-15T01:00:00Z'});
- await f.db.insert(deliveryLines).values([{id:'dl-a',deliveryId:'historical-trip',orderLineId:id+'-a',qty:2},{id:'dl-b',deliveryId:'historical-trip',orderLineId:id+'-b',qty:2}]);
+ await f.db.insert(deliveryLines).values([{deliveryId:'historical-trip',orderLineId:id+'-a',qty:2},{deliveryId:'historical-trip',orderLineId:id+'-b',qty:2}]);
  for(const sku of ['09566','22566'])await f.db.insert(stockMoves).values({id:'opening-'+sku,sku,warehouseId:'pos-wh',qty:100,kind:'opening',refType:'opening',refId:'opening-'+sku,createdBy:'mgr',createdAt:'2026-10-18T15:43:50Z'});
  const made=await f.create(id,[{orderLineId:id+'-a',qty:1,disposition:'restock'},{orderLineId:id+'-b',qty:1,disposition:'restock'}]);
  f.ok(await f.call(`/orders/${id}/returns/${made.data.id}/approve`,f.mgr,'POST',{stockBasis:{kind:'pre_opening',note:'Đã giao trước khi chốt tồn ngày 18/10; hàng hoàn thực tế đã kiểm tra'}}));

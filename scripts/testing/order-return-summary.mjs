@@ -21,7 +21,7 @@ try{
  const id='browser-historical-return';await f.seed(id,0,'emp',false);
  await f.db.update(salesOrders).set({createdAt:'2026-10-14T01:00:00Z'}).where(eq(salesOrders.id,id));
  await f.db.insert(deliveries).values({id:'history-trip',deliveryNo:'GH-LOCAL-HISTORY',orderId:id,plannedDate:'2026-10-14',deliveredAt:'2026-10-15',status:'delivered',createdBy:'mgr',createdAt:'2026-10-14T01:00:00Z',updatedAt:'2026-10-15T01:00:00Z'});
- await f.db.insert(deliveryLines).values([{id:'history-a',deliveryId:'history-trip',orderLineId:id+'-a',qty:2},{id:'history-b',deliveryId:'history-trip',orderLineId:id+'-b',qty:2}]);
+ await f.db.insert(deliveryLines).values([{deliveryId:'history-trip',orderLineId:id+'-a',qty:2},{deliveryId:'history-trip',orderLineId:id+'-b',qty:2}]);
  for(const sku of ['09566','22566'])await f.db.insert(stockMoves).values({id:'opening-'+sku,sku,warehouseId:'pos-wh',qty:100,kind:'opening',refType:'opening',refId:'opening-'+sku,createdBy:'mgr',createdAt:'2026-10-18T15:43:50Z'});
  const made=await f.create(id,[{orderLineId:id+'-a',qty:1,disposition:'restock'},{orderLineId:id+'-b',qty:1,disposition:'restock'}]);
  f.ok(await f.call(`/orders/${id}/returns/${made.data.id}/approve`,f.mgr,'POST',{stockBasis:{kind:'pre_opening',note:'Đối chiếu giao trước chốt tồn; kiểm tra thực nhận hàng hoàn'}}));
