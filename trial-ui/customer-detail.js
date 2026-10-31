@@ -45,7 +45,7 @@ export function initCustomerDetail(deps) {
     { key: 'contracts', label: 'HĐKT', count: d => d.contracts.length, html: d => table(['Số HĐKT', 'Pháp nhân', 'Tình trạng', 'Ngày ký', '>Giá trị'], d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
         <td><a href="#/contracts/${encodeURIComponent(k.orderId)}">${esc(k.contractNo)}</a></td><td>${esc(ENTITY[k.legalEntity] || k.legalEntity)}</td><td>${pill(CONTRACT_STATUS, k.status)}</td><td>${fmtDate(k.signedDate) || '—'}</td>
         <td class="right num">${money(k.value)}</td></tr>`), 'Chưa có hợp đồng kinh tế.') },
-    { key: 'payments', label: 'Giao dịch', count: d => d.payments.length, html: d => table(['Ngày thu', 'Hình thức', 'Đơn / HĐKT', 'Ghi chú', '>Số tiền'], d.payments.map(p => `<tr>
+    { key: 'payments', label: 'Phiếu thu', count: d => d.payments.length, html: d => table(['Ngày thu', 'Hình thức', 'Đơn / HĐKT', 'Ghi chú', '>Số tiền'], d.payments.map(p => `<tr>
         <td>${fmtDate(p.paidAt)}</td><td>${esc(METHOD[p.method] || p.method)}</td><td>${docLink(p.orderId, p.orderNo, p.contractNo)}</td>
         <td>${esc(p.reference || p.note) || '<span class="muted">—</span>'}</td><td class="right num paid-text">${money(p.amount)}</td></tr>`), 'Chưa có phiếu thu nào.') },
     { key: 'debts', label: 'Công nợ', count: d => d.orders.filter(o => o.receivable && o.receivable.balance > 0).length, html: d => {
@@ -62,8 +62,8 @@ export function initCustomerDetail(deps) {
         <td>${esc(x.deliveryNo)}</td><td>${fmtDate(x.plannedDate)}${x.timeSlot ? `<small>${esc(x.timeSlot)}</small>` : ''}</td><td>${pill(DELIVERY_STATUS, x.status)}</td><td>${docLink(x.orderId, x.orderNo, x.contractNo)}</td></tr>`), 'Chưa có chuyến giao.') },
     { key: 'stock', label: 'Hỏi tồn', count: d => d.stockRequests.length, html: d => table(['Ngày gửi', 'Số mã', 'Tình trạng', 'Ghi chú'], d.stockRequests.map(r => `<tr class="clickable" data-href="#/stock-requests/${esc(r.id)}">
         <td>${fmtDate(r.createdAt)}</td><td>${r.items}</td><td>${pill(STOCK_STATUS, r.status)}</td><td>${esc(r.note) || '<span class="muted">—</span>'}</td></tr>`), 'Khách chưa gửi đơn check tồn.') },
-    { key: 'care', label: 'Chăm sóc', count: d => d.care.length, html: d => `<div class="row-gap"><button type="button" class="btn primary small" data-act="care-new">＋ Ghi chăm sóc</button>
-      <a class="btn ghost small" href="#/care">Mở trang Chăm sóc KH</a></div>
+    { key: 'care', label: 'Giao dịch & chăm sóc', count: d => d.care.length, html: d => `<div class="row-gap"><button type="button" class="btn primary small" data-act="care-new">＋ Ghi giao dịch</button>
+      <a class="btn ghost small" href="#/care">Mở trang Giao dịch & chăm sóc</a></div>
       ${table(['Thời gian', 'Hình thức', 'Nội dung', 'Kết quả', 'Hẹn tiếp', 'Người ghi', ''], d.care.map(a => `<tr><td>${esc(when(a.occurredAt))}</td><td>${careType(a)}</td>
         <td class="care-text">${careSummary(a)}</td><td>${careResult(a)}</td><td>${followUpCell(a)}</td><td>${esc(a.ownerName)}</td>
         <td>${a.canEdit ? `<button type="button" class="btn ghost small" data-act="care-edit" data-care="${esc(a.id)}">Sửa</button>` : ''}</td></tr>`),

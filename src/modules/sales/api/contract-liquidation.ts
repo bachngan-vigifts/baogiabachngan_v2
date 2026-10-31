@@ -1,3 +1,5 @@
+import {returnBalance} from '../domain/pos-return-money.ts';
+import {posReturns} from '../return-schema.ts';
 import {and,desc,eq,inArray,sql,count} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
 import {json,readJson,type Router,type RouteContext} from '../../../core/http/router.ts';
@@ -33,8 +35,9 @@ export async function pendingLiquidations(db:ReadDb,summary=false){
  }catch(e){if(missingTable(e))return {count:0,items:[]};throw e;}
 }
 /** Current obligation proof. No fulfilment/receipt/invoice is inferred or written here. */
-async function obligations(db:ReadDb,o:typeof salesOrders.$inferSelect,k:typeof salesContracts.$inferSelect){
- const [lines,ships,account,stock,payments]=await Promise.all([
+type ObligationData=[(typeof salesOrderLines.$inferSelect)[],(typeof deliveries.$inferSelect)[],Awaited<ReturnType<typeof returnAccount>>,Awaited<ReturnType<typeof crmStockFulfilment>>,{id:string;amount:number}[]];
+async function obligations(db:ReadDb,o:typeof salesOrders.$inferSelect,k:typeof salesContracts.$inferSelect,supplied?:ObligationData){
+ const [lines,ships,account,stock,payments]=supplied??await Promise.all([
   db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,o.id)).orderBy(salesOrderLines.id),
   db.select().from(deliveries).where(eq(deliveries.orderId,o.id)).orderBy(deliveries.id),
   returnAccount(db,o.id),crmStockFulfilment(db,[o.id]),
@@ -150,4 +153,26 @@ export function registerContractLiquidationRoutes(router:Router<StaffEnv>,loadOr
   if(!result.replayed)await notifyMany(c.env,[result.requestedBy],{eventType:'contract_liquidation_reviewed',title:result.status==='approved'?'HĐKT đã được duyệt thanh lý':'Đề nghị thanh lý bị từ chối',body:note||'Mở HĐKT để xem hồ sơ.',url:`/index.html#/contracts/${result.orderId}`,actorId:me(c).id}).catch(()=>console.warn('liquidation review notification skipped'));
   return json({id:result.id,status:result.status,replayed:result.replayed});
  },'business');
+}
+
+/** Payroll only receives a validated approval date, never private original-document photos. */
+export async function liquidationAwards(db:ReadDb,ids:readonly string[]){
+ const result=new Map<string,{at:string;valid:boolean}>();if(!ids.length)return result;
+ const rows=await db.select({request:requests,contract:salesContracts,order:salesOrders}).from(requests).innerJoin(salesContracts,eq(salesContracts.id,requests.contractId)).innerJoin(salesOrders,eq(salesOrders.id,salesContracts.orderId))
+  .where(and(inArray(requests.contractId,[...ids]),eq(requests.status,'approved')));
+ const orderIds=rows.map(r=>r.order.id);if(!orderIds.length)return result;
+ const cutoff=now();const [lines,ships,payments,returns,stock]=await Promise.all([
+  db.select().from(salesOrderLines).where(inArray(salesOrderLines.orderId,orderIds)).orderBy(salesOrderLines.id),
+  db.select().from(deliveries).where(inArray(deliveries.orderId,orderIds)).orderBy(deliveries.id),
+  db.select().from(customerPayments).where(inArray(customerPayments.orderId,orderIds)).orderBy(customerPayments.id),
+  db.select({orderId:posReturns.orderId}).from(posReturns).where(inArray(posReturns.orderId,orderIds)),crmStockFulfilment(db,orderIds),
+ ]);
+ const withReturns=new Set(returns.map(r=>r.orderId));
+ for(const r of rows){
+  const ps=payments.filter(p=>p.orderId===r.order.id),paid=ps.filter(p=>p.createdAt<=cutoff&&(!p.voidedAt||p.voidedAt>cutoff)).reduce((n,p)=>n+p.amount,0);
+  const account=withReturns.has(r.order.id)?await returnAccount(db,r.order.id,cutoff):{...returnBalance(r.order.total,paid,0,0,0),credit:0,refunded:0,exchanged:0,paid,returns:[],refunds:[],allocations:[]};
+  const proof=await obligations(db,r.order,r.contract,[lines.filter(l=>l.orderId===r.order.id),ships.filter(s=>s.orderId===r.order.id),account,stock,ps.filter(p=>!p.voidedAt).map(p=>({id:p.id,amount:p.amount}))]);
+  result.set(r.contract.id,{at:r.request.reviewedAt!,valid:proof.ready&&proof.hash===r.request.snapshotHash});
+ }
+ return result;
 }

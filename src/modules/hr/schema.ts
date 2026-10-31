@@ -38,6 +38,8 @@ export const hrSalaryProfiles = pgTable('hr_salary_profiles', {
   attendanceBonus: doublePrecision('attendance_bonus').notNull().default(0),
   /** Sale: tính KPI CV + thưởng KPI DS. */
   kpiEnabled: boolean('kpi_enabled').notNull().default(false),
+  fixedKpi: doublePrecision('fixed_kpi'),
+  contractBonusEnabled: boolean('contract_bonus_enabled').notNull().default(false),
   /** Bách Ngân / Lock: hưởng thưởng DS của nhóm. */
   teamBonus: boolean('team_bonus').notNull().default(false),
   /** Đơn giá / tỷ lệ thưởng sản lượng (kho 15.000/đơn, TK 30.000/lượt, IT 0,005 × DS web). */
@@ -58,6 +60,7 @@ export const hrSalaryProfiles = pgTable('hr_salary_profiles', {
   check('chk_hr_salary_month', sql`${t.effectiveMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
   check('chk_hr_salary_money', sql`${t.baseSalary} >= 0 AND ${t.revenueTarget} >= 0 AND ${t.insurance} >= 0`),
   check('chk_hr_salary_extra', sql`${t.capacityCoef} >= 0 AND ${t.responsibility} >= 0 AND ${t.phoneAllowance} >= 0 AND ${t.attendanceBonus} >= 0 AND ${t.outputRate} >= 0`),
+  check('chk_hr_fixed_kpi',sql`${t.fixedKpi} is null or (${t.fixedKpi}>=0 and ${t.fixedKpi}<=10)`),
   enumCheck('chk_hr_salary_group', t.payrollGroup, PAYROLL_GROUPS),
   enumCheck('chk_hr_salary_resp_mode', t.responsibilityMode, RESPONSIBILITY_MODES),
 ]).enableRLS();

@@ -1,3 +1,4 @@
+import {openContractBonusDetails} from './contract-bonus-detail.js';
 // BẢNG LƯƠNG CÔNG TY (#/payroll?month=YYYY-MM) – theo file "Bảng lương mẫu": Tổng hợp · 3 bảng (Sale & VP, NVBH ML – Bách Ngân, NVBH Lock) ·
 // Chuyển khoản (VietQR) · Tham số · Xuất Excel. Mọi con số do máy chủ tính (src/modules/hr/domain/payroll.ts) – trang này chỉ hiển thị.
 // Sửa số liệu từng người ở trang chi tiết nhân viên (tab Lương & thưởng); số liệu chung của nhóm và tham số sửa ngay tại đây.
@@ -13,6 +14,7 @@ const digits = v => Number(String(v ?? '').replace(/[^\d]/g, '')) || 0;
 export function initPayroll(deps) {
   const { api, toast, esc, money, pill, confirmBox } = deps;
   const root = document.getElementById('payroll-board');
+  root.addEventListener('click',e=>{const b=e.target.closest('[data-bonus-member]');if(b){const r=st.d?.rows.find(r=>r.member.id===b.dataset.bonusMember);if(r)openContractBonusDetails(r.payslip);}});
   const st = { month: '', d: null, tab: 'summary', seq: 0 };
   const TABS = [['summary', 'Tổng hợp'], ['sale', 'Sale & VP'], ['bn', 'NVBH ML'], ['lock', 'NVBH Lock'], ['transfer', 'Chuyển khoản']];
   const memberLink = (r, text) => `<a href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">${esc(text)}</a>`;
@@ -33,7 +35,7 @@ export function initPayroll(deps) {
     return missingHtml + `<div class="table-wrap pr-wide"><table class="data-table pr-table"><thead><tr>${head.map((h, i) => `<th class="${i >= 3 && i < head.length - 1 ? 'right' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>
       ${rows.map((r, i) => { const p = r.payslip; return `<tr>
         <td>${i + 1}</td><td class="first">${memberLink(r, r.member.name)}</td><td>${esc(r.profile.positionLabel || '—')}</td><td class="right num" data-label="Ngày công">${p.workDays}</td>
-        ${inc.map(k => { const v = line(p, k); return `<td class="right num ${v ? '' : 'muted'}" data-label="${esc(cols.labels[k])}">${v ? money(v) : '—'}</td>`; }).join('')}
+        ${inc.map(k => { const v = line(p, k); return `<td class="right num ${v ? '' : 'muted'}" data-label="${esc(cols.labels[k])}">${['contractBonus','contractBonusAdjustment'].includes(k)&&p.salesCrm?`<button class="btn ghost small" data-bonus-member="${esc(r.member.id)}">${v?money(v):'—'} · Chi tiết</button>`:(v?money(v):'—')}</td>`; }).join('')}
         <td class="right num strong" data-label="Tổng thu nhập">${money(p.gross)}</td>
         ${ded.map(k => { const v = line(p, k); return `<td class="right num ${v ? 'danger-text' : 'muted'}" data-label="${esc(cols.labels[k])}">${v ? money(v) : '—'}</td>`; }).join('')}
         <td class="right num strong pr-net" data-label="Thực nhận">${money(p.net)}</td><td>${pill(STATUS, p.status)}</td></tr>`; }).join('')}
@@ -144,6 +146,7 @@ export function initPayroll(deps) {
 
   // ----- Xuất Excel theo bố cục file mẫu: Tổng hợp, 3 bảng lương, Chuyển khoản.
   async function exportExcel() {
+    if(withProfile().some(r=>r.payslip.snapshotUnavailable))throw new Error('Có phiếu cũ thiếu bản chụp chi tiết. Đối soát trước khi xuất Excel.');
     await new Promise((resolve, reject) => {
       if (globalThis.ExcelJS) return resolve();
       const s = Object.assign(document.createElement('script'), { src: 'exceljs.min.js', onload: resolve, onerror: () => reject(new Error('Không tải được bộ tạo Excel.')) });
@@ -202,7 +205,7 @@ export function initPayroll(deps) {
       else if (act === 'confirm-all') {
         const n = withProfile().filter(r => r.payslip.status === 'estimate').length;
         if (!await confirmBox(`Chốt lương ${monthLabel(st.month).toLowerCase()} cho ${n} người? Số liệu được cố định; ngày công, số liệu tháng và thưởng phạt của tháng bị khoá (mở lại từng phiếu ở trang nhân viên nếu cần sửa).`, { ok: 'Chốt lương' })) return;
-        const r = await api(`/hr/payroll/${st.month}/confirm`, 'POST', {}); toast(`Đã chốt lương ${r.confirmed} người.`); open(st.month);
+        const r = await api(`/hr/payroll/${st.month}/confirm`, 'POST', {confirmationHash:st.d?.confirmationHash}); toast(`Đã chốt lương ${r.confirmed} người.`); open(st.month);
       }
     } catch (ex) { toast(ex.message, 'err'); }
   });

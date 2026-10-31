@@ -1,3 +1,4 @@
+import {SALE_ADMIN_POSITION_ID} from '../../staff/domain/roles.ts';
 /**
  * BẢNG LƯƠNG (theo file "Bảng lương mẫu" – 3 bảng: Sale & VP, Bách Ngân, Lock). Hàm thuần, test không cần DB.
  * Tham số công ty ở ./params.ts, KPI công việc ở ./kpi-cv.ts. Từng khoản lương có KHOÁ cố định (LINE_LABEL) để
@@ -87,13 +88,13 @@ export interface SalaryProfile {
   responsibilityMode: ResponsibilityMode; responsibility: number;
   mealAllowance: boolean; phoneAllowance: number; attendanceBonus: number;
   /** Sale: tính KPI công việc + thưởng KPI DS. Bách Ngân / Lock: hưởng thưởng DS của nhóm. */
-  kpiEnabled: boolean; teamBonus: boolean;
+  kpiEnabled: boolean; teamBonus: boolean; kpiEligible?:boolean; fixedKpi?: number | null; contractBonusEnabled?: boolean;
   outputRate: number; revenueTarget: number; insurance: number;
   bankCode: string; bankAccount: string; bankHolder: string;
 }
 export const EMPTY_PROFILE: SalaryProfile = {
   payrollGroup: 'sale', positionLabel: '', baseSalary: 0, capacityCoef: 0, responsibilityMode: 'fixed', responsibility: 0,
-  mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, outputRate: 0, revenueTarget: 0, insurance: 0,
+  mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, fixedKpi:null,contractBonusEnabled:false, outputRate: 0, revenueTarget: 0, insurance: 0,
   bankCode: '', bankAccount: '', bankHolder: '',
 };
 
@@ -102,10 +103,11 @@ export const EMPTY_PROFILE: SalaryProfile = {
  * NVBH ML → bảng cửa hàng ML (Bách Ngân), NVBH Lock → bảng Lock (trách nhiệm theo ngày, chuyên cần, thưởng DS nhóm như file mẫu);
  * chức vụ khác → Sale & Văn phòng. Manager vẫn phải lưu hồ sơ lương (LCB, BHXH…) trước khi chốt.
  */
+export const salaryKpiEligible=(positionId:string|null|undefined)=>positionId!==SALE_ADMIN_POSITION_ID;
 export const POSITION_GROUP: Readonly<Record<string, PayrollGroup>> = { 'sales-ml': 'bn', 'sales-lock': 'lock' };
 export function defaultProfileFor(positionId: string | null | undefined): SalaryProfile {
   const g = POSITION_GROUP[positionId ?? ''];
-  return g ? { ...EMPTY_PROFILE, payrollGroup: g, positionLabel: 'NVBH', responsibilityMode: 'per_day', attendanceBonus: 200_000, teamBonus: true } : EMPTY_PROFILE;
+  return g ? { ...EMPTY_PROFILE,kpiEligible:salaryKpiEligible(positionId), payrollGroup: g, positionLabel: 'NVBH', responsibilityMode: 'per_day', attendanceBonus: 200_000, teamBonus: true } : {...EMPTY_PROFILE,kpiEligible:salaryKpiEligible(positionId)};
 }
 
 // ---------------- Số liệu nhập theo tháng (một dòng / người / tháng)
@@ -133,7 +135,7 @@ export const EMPTY_GROUP_MONTH: GroupMonth = { bnRevenue: 0, bnAvgRevenue: 0, lo
 // ---------------- Phiếu lương
 export const LINE_LABEL = {
   salaryByDays: 'Lương theo công', capacity: 'Phụ cấp năng lực', responsibility: 'Trách nhiệm', kpiBonus: 'Thưởng KPI DS',
-  outputBonus: 'Thưởng sản lượng', quarterBonus: 'Thưởng quý', salesBonus: 'Thưởng DS', otherBonus: 'Thưởng khác',
+  outputBonus: 'Thưởng sản lượng', quarterBonus: 'Thưởng quý', salesBonus: 'Thưởng DS', otherBonus: 'Thưởng khác', contractBonus:'Thưởng HĐKT',contractBonusAdjustment:'Điều chỉnh thưởng HĐKT kỳ trước',
   meal: 'Cơm + xăng', phone: 'Điện thoại', attendanceBonus: 'Chuyên cần', trip: 'Công tác / phụ cấp khác', overtime: 'Tăng ca',
   socialInsurance: 'BHXH', healthInsurance: 'BHYT', incomeTax: 'Thuế TNCN', violation: 'Vi phạm / khấu trừ',
   phoneDeduction: 'Điện thoại (tạm ứng / hoàn PC)', advance: 'Tạm ứng',
@@ -142,7 +144,7 @@ export type LineKey = keyof typeof LINE_LABEL;
 export interface PayLine { key: LineKey; label: string; amount: number; note: string }
 /** Cột thu nhập / khấu trừ của từng bảng (thứ tự như file Excel). */
 export const GROUP_INCOME: Record<PayrollGroup, LineKey[]> = {
-  sale: ['salaryByDays', 'capacity', 'responsibility', 'kpiBonus', 'outputBonus', 'quarterBonus', 'otherBonus', 'meal', 'phone', 'trip', 'overtime'],
+  sale: ['salaryByDays', 'capacity', 'responsibility', 'kpiBonus', 'outputBonus', 'quarterBonus', 'otherBonus', 'contractBonus','contractBonusAdjustment', 'meal', 'phone', 'trip', 'overtime'],
   bn: ['salaryByDays', 'capacity', 'responsibility', 'salesBonus', 'otherBonus', 'meal', 'phone', 'attendanceBonus', 'trip', 'overtime'],
   lock: ['salaryByDays', 'capacity', 'responsibility', 'salesBonus', 'otherBonus', 'meal', 'attendanceBonus', 'trip', 'overtime'],
 };
@@ -155,7 +157,8 @@ export const GROUP_DEDUCTION: Record<PayrollGroup, LineKey[]> = {
 export interface PayslipCalc {
   group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
-  kpi: KpiCvResult | null;
+  kpi: KpiCvResult | null;snapshotUnavailable?:boolean;
+  salesCrm?:{apply:boolean;from:string;kpiEligible?:boolean;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};
 }
 
 const round = (n: number) => Math.round(n);
@@ -179,13 +182,13 @@ export const kpiBonusRate = (p: PayrollParams, kpi: number | null) => kpi === nu
 export function computePayslip(a: {
   profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
   /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
-  attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;
+  attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;contractBonus?:number;contractBonusAdjustment?:number;
 }): PayslipCalc {
   const { profile: f, params: p, input: inp, groupMonth: gm } = a, g = f.payrollGroup;
   const adj = (k: AdjustmentKind) => a.adjustments.filter(x => x.kind === k).reduce((s, x) => s + x.amount, 0);
   const days = inp.workDays ?? a.attendanceDays, lcb = f.baseSalary > 0 ? f.baseSalary : minWageMonth(p);
   const revenue = inp.revenue ?? a.systemRevenue;
-  const kpi = g === 'sale' && f.kpiEnabled ? computeKpiCv(inp, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
+  const kpi = g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
   const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;
@@ -200,6 +203,8 @@ export function computePayslip(a: {
     quarterBonus: [inp.quarterBonus ?? a.quarterBonusAuto, inp.quarterBonus === null && a.quarterBonusAuto ? 'Tự tính theo DS quý của team' : ''],
     salesBonus: [salesBonus, salesBonus ? (g === 'bn' ? `DS cửa hàng ${vnd(gm.bnRevenue)} (TB 6 tháng ${vnd(gm.bnAvgRevenue)}) ÷ ${p.bnSplit}` : `DS team ${vnd(gm.lockRevenue)} ÷ ${p.lockSplit}`) : ''],
     otherBonus: [adj('bonus'), ''],
+    contractBonus:[a.contractBonus||0,'Theo từng HĐKT trước VAT'],
+    contractBonusAdjustment:[a.contractBonusAdjustment||0,'Chênh lệch với khoản đã chốt / đã trả'],
     meal: [f.mealAllowance ? (p.mealDay + p.fuelDay) * Math.max(0, days - mealOff) : 0, f.mealAllowance ? `${vnd(p.mealDay + p.fuelDay)} × ${Math.max(0, days - mealOff)} ngày` : 'Không hưởng'],
     phone: [phone, ''],
     attendanceBonus: [g === 'sale' ? 0 : f.attendanceBonus, ''],
