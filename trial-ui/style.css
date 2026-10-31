@@ -2467,3 +2467,14 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 .scan-field-btn:hover::after, .scan-field-btn:focus-visible::after { background: #19844e; }
 .scan-field-btn:disabled { cursor: wait; opacity: .45; }
 .stocktake-scan-info { margin: 0; grid-column: 1 / -1; }
+
+/* HĐKT: thanh lý là kết quả Manager duyệt độc lập với trạng thái ký. */
+.contract-status-pills {display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.contract-liquidation-actions {margin-top:10px;}
+.contract-liquidation-checks {padding-left:20px;margin:12px 0;line-height:1.7;}
+.contract-liquidation-photo {display:block;max-width:100%;max-height:420px;object-fit:contain;margin:12px 0;}
+.contract-liquidation-ack {display:flex;align-items:flex-start;gap:9px;margin:12px 0;line-height:1.5;}
+.contract-liquidation-ack input {flex:none;margin-top:4px;width:18px;height:18px;}
+.contract-liquidation-form {display:grid;gap:10px;}
+.contract-liquidation-dialog textarea {width:100%;min-height:80px;}
+.contract-liquidation-dialog .modal-foot {flex-wrap:wrap;}
