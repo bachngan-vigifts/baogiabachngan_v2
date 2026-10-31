@@ -7,6 +7,10 @@ export type ParamKind = 'money' | 'number' | 'percent' | 'ratio';
 export interface ParamField { key: string; group: string; label: string; value: number; kind: ParamKind; note?: string }
 
 export const PARAM_FIELDS = [
+  {key:'saleKpiNetFrom',group:'Thưởng KPI Sale — doanh số net',label:'Tháng áp dụng doanh số net (YYYYMM; 0 = chính sách cũ)',value:202610,kind:'number'},
+  {key:'saleKpiNetLowRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng từ 60% đến dưới 90%',value:0.005,kind:'percent'},
+  {key:'saleKpiNetHighRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng từ 90% đến hết 120%',value:0.01,kind:'percent'},
+  {key:'saleKpiNetOverRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng trên 120%',value:0.012,kind:'percent'},
   {key:'salesAutomationFrom',group:'KPI công việc – Sale',label:'Tháng bắt đầu KPI Sale từ CRM (YYYYMM; 0 = tắt)',value:0,kind:'number',note:'KH mới: đơn CRM đã duyệt đầu tiên trong toàn bộ lịch sử; giao dịch: liên hệ hợp lệ; HĐ: tháng ký. Dữ liệu cũ chưa xác nhận không tự tính giao dịch.'},
   {key:'salesAutomationApply',group:'KPI công việc – Sale',label:'Áp dụng KPI từ CRM (0 = đối chiếu; 1 = áp dụng)',value:0,kind:'number'},
   {key:'contractBonusFrom',group:'Thưởng HĐKT',label:'Tháng bắt đầu thưởng HĐKT (YYYYMM; 0 = tắt)',value:0,kind:'number'},
@@ -37,10 +41,10 @@ export const PARAM_FIELDS = [
   { key: 'mealOffBn', group: 'Phụ cấp & tăng ca', label: 'Số ngày trừ cơm – Bách Ngân', value: 1, kind: 'number' },
   { key: 'mealOffLock', group: 'Phụ cấp & tăng ca', label: 'Số ngày trừ cơm – Lock', value: 0, kind: 'number' },
   // Thưởng KPI – Sale
-  { key: 'kpiHigh', group: 'Thưởng KPI – Sale', label: 'Ngưỡng KPI CV mức cao', value: 0.9, kind: 'percent' },
-  { key: 'kpiHighRate', group: 'Thưởng KPI – Sale', label: 'Tỷ lệ thưởng DS – mức cao', value: 0.012, kind: 'percent', note: 'File gốc 1,2% (chính sách ghi 1%)' },
-  { key: 'kpiLow', group: 'Thưởng KPI – Sale', label: 'Ngưỡng KPI CV mức thấp', value: 0.6, kind: 'percent' },
-  { key: 'kpiLowRate', group: 'Thưởng KPI – Sale', label: 'Tỷ lệ thưởng DS – mức thấp', value: 0.005, kind: 'percent', note: 'Dưới ngưỡng thấp: không thưởng' },
+  { key: 'kpiHigh', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Ngưỡng KPI CV mức cao', value: 0.9, kind: 'percent' },
+  { key: 'kpiHighRate', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Tỷ lệ thưởng DS – mức cao', value: 0.012, kind: 'percent', note: 'Chỉ dùng cho kỳ trước chính sách doanh số net.' },
+  { key: 'kpiLow', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Ngưỡng KPI CV mức thấp', value: 0.6, kind: 'percent' },
+  { key: 'kpiLowRate', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Tỷ lệ thưởng DS – mức thấp', value: 0.005, kind: 'percent', note: 'Dưới ngưỡng thấp: không thưởng' },
   // KPI công việc – Sale (sheet "KPI CV")
   { key: 'kpiNewCustomers', group: 'KPI công việc – Sale', label: 'Chỉ tiêu KH mới / tháng', value: 96, kind: 'number' },
   { key: 'kpiNewCustomersWeight', group: 'KPI công việc – Sale', label: 'Trọng số KH mới', value: 0.1, kind: 'percent' },
@@ -114,6 +118,7 @@ export function validateParams(input: unknown): string | null {
   if(values.salesAutomationFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.salesAutomationFrom)))return 'Tháng bắt đầu CRM nhập YYYYMM hoặc 0.';
   if(values.contractBonusFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.contractBonusFrom)))return 'Tháng bắt đầu thưởng HĐKT nhập YYYYMM hoặc 0.';
   for(let i=2;i<=5;i++)if(values[('contractStar'+i+'From') as ParamKey]<=values[('contractStar'+(i-1)+'From') as ParamKey])return 'Cận sao phải tăng dần.';
+  if(values.saleKpiNetFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.saleKpiNetFrom)))return 'Tháng áp dụng doanh số net nhập YYYYMM hoặc 0.';
   return null;
 }
 

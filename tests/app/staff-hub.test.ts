@@ -23,10 +23,13 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
 
   // Doanh số: nhân viên lập 2 báo giá, 1 báo giá lên đơn 2.160.000, khách trả 1.000.000.
   const kh = await call('/customers', mgr, 'POST', { name: 'Công ty Hoàng Long' });
-  const doc = { type: 'B2B', customer: 'Công ty Hoàng Long', customerId: kh.data.id, vat: 8, rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8 }] };
+  const doc = { type: 'B2B', customer: 'Công ty Hoàng Long', customerId: kh.data.id, vat: 8, rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8, commission:{excluded:true} }] };
   const q = await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_1' });
   await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_2' });
-  await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
+  const source=(await call('/quotes/'+q.data.id,mgr)).data;
+  const reviewed=await call('/quotes/'+q.data.id,mgr,'PUT',{revision:source.revision,data:{...source.data,rows:source.data.rows.map((r:any)=>({...r,commission:{excluded:true}}))}});
+  assert.equal(reviewed.status,200);
+  await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: reviewed.data.revision });
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
   await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 1_000_000, paidAt: day(2), method: 'transfer' })).status, 201);
@@ -41,7 +44,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
     mealAllowance: false, kpiEnabled: true, revenueTarget: 4_320_000, insurance: 500_000, bankCode: 'VCB', bankAccount: '0123 456', bankHolder: 'Ten emp' })).status, 200);
   assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, payrollGroup: 'khac' })).status, 400);
   assert.equal((await call(`/hr/members/emp/inputs/${month}`, emp, 'PUT', { kpiOverride: 0.95 })).status, 403);
-  assert.equal((await call(`/hr/members/emp/inputs/${month}`, mgr, 'PUT', { kpiOverride: 0.95 })).status, 200, 'KPI chốt 95% → thưởng mức cao 1,2% DS');
+  assert.equal((await call(`/hr/members/emp/inputs/${month}`, mgr, 'PUT', { kpiOverride: 0.95 })).status, 200, 'KPI chốt 95% → thưởng 1% doanh số net');
   assert.equal((await call(`/hr/members/emp/inputs/${month}`, mgr, 'PUT', { overtimeHours: -1 })).status, 400);
   assert.equal((await call(`/hr/members/emp/attendance/${month}`, mgr, 'PUT', { days: { [day(1)]: 'present', [day(2)]: 'present', [day(3)]: 'half', [day(4)]: 'absent' } })).status, 200);
   assert.equal((await call(`/hr/members/emp/attendance/${month}`, mgr, 'PUT', { days: { [day(4)]: '' } })).status, 200, 'xoá chấm công một ngày');
@@ -68,27 +71,28 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   assert.equal(p.status, 'estimate');
   const line = (k: string) => [...p.income, ...p.deductions].find((l: any) => l.key === k).amount;
   assert.equal(p.group, 'sale'); assert.equal(p.workDays, 2.5, 'ngày công theo chấm công');
-  assert.equal(line('salaryByDays'), 1_000_000); assert.equal(line('capacity'), 200_000); assert.equal(line('kpiBonus'), 25_920, '1,2% × DS hệ thống 2.160.000');
+  assert.equal(line('salaryByDays'), 1_000_000); assert.equal(line('capacity'), 200_000); assert.equal(line('kpiBonus'), 20_000, '1% × doanh số chưa VAT 2.000.000, đã xác nhận không hoa hồng');
   assert.equal(line('otherBonus'), 500_000); assert.equal(line('meal'), 0, 'không hưởng cơm-xăng');
-  assert.equal(p.gross, 1_725_920); assert.equal(line('socialInsurance'), 500_000); assert.equal(line('advance'), 1_000_000); assert.equal(p.net, 225_920);
+  assert.equal(p.gross, 1_720_000); assert.equal(line('socialInsurance'), 500_000); assert.equal(line('advance'), 1_000_000); assert.equal(p.net, 220_000);
   assert.equal(d.payroll.profile.bankCode, 'vcb'); assert.equal(d.payroll.profile.bankAccount, '0123456'); assert.equal(d.payroll.profile.positionLabel, 'SALE');
   assert.equal(d.payroll.attendance.length, 3); assert.equal(d.payroll.adjustments.length, 2);
 
+  const confirm=async()=>{const fresh=(await call(`/members/emp/overview?month=${month}`,mgr)).data.payroll;return call(`/hr/members/emp/payslips/${month}`,mgr,'POST',{confirmationHash:fresh.confirmationHash});};
   // Chốt lương: tháng bị khoá; mở lại được khi chưa trả; đã trả thì không mở lại.
   assert.equal((await call(`/hr/members/emp/payslips/${month}`, emp, 'POST', {})).status, 403);
-  assert.equal((await call(`/hr/members/emp/payslips/${month}`, mgr, 'POST', {})).status, 201);
-  assert.equal((await call(`/hr/members/emp/payslips/${month}`, mgr, 'POST', {})).status, 409);
+  assert.equal((await confirm()).status, 201);
+  assert.equal((await confirm()).status, 409);
   assert.equal((await call(`/hr/members/emp/attendance/${month}`, mgr, 'PUT', { days: { [day(6)]: 'present' } })).status, 409);
   assert.equal((await call(`/hr/adjustments/${bonus.data.id}`, mgr, 'DELETE')).status, 409);
   const locked = (await call(`/members/emp/overview?month=${month}`, mgr)).data.payroll;
   assert.equal(locked.locked, true); assert.equal(locked.payslip.status, 'confirmed'); assert.equal(locked.payslip.net, p.net);
   assert.equal((await call(`/hr/members/emp/payslips/${month}`, mgr, 'DELETE')).status, 200);
   assert.equal((await call(`/hr/adjustments/${bonus.data.id}`, mgr, 'DELETE')).status, 200);
-  await call(`/hr/members/emp/payslips/${month}`, mgr, 'POST', {});
+  await confirm();
   assert.equal((await call(`/hr/members/emp/payslips/${month}/paid`,mgr,'POST',{})).status,409,'bỏ thưởng làm phiếu âm: cần đối soát trước khi đánh dấu đã trả');
   assert.equal((await call(`/hr/members/emp/payslips/${month}`,mgr,'DELETE')).status,200);
   assert.equal((await call('/hr/members/emp/adjustments',mgr,'POST',{month,kind:'bonus',amount:500_000,reason:'Khoản bổ sung đã được Manager đối soát'})).status,201);
-  assert.equal((await call(`/hr/members/emp/payslips/${month}`,mgr,'POST',{})).status,201);
+  assert.equal((await confirm()).status,201);
   assert.equal((await call(`/hr/members/emp/payslips/${month}/paid`, mgr, 'POST', {})).status, 200);
   assert.equal((await call(`/hr/members/emp/payslips/${month}`, mgr, 'DELETE')).status, 409, 'đã trả lương thì không mở lại');
   assert.equal((await call(`/members/emp/overview?month=${month}`, emp)).data.payroll.payslip.status, 'paid');
