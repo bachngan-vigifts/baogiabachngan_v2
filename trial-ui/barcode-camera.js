@@ -9,17 +9,43 @@ function loadReader() {
     document.head.append(script);
   });
 }
-/** Both native and fallback readers share one stream and an explicit release handle. */
-export async function startBarcodeCamera(video, onCode, { mediaDevices = navigator.mediaDevices, Detector = globalThis.BarcodeDetector, reader = loadReader, signal } = {}) {
+// Luồng camera "để ấm": đóng hộp quét rồi mở lại trong `keepWarmMs` thì dùng lại luồng cũ, không gọi getUserMedia lần nữa
+// (Safari / app trên màn hình chính có thể hỏi quyền lại mỗi lần gọi khi quyền camera đang là "Hỏi").
+let warm = null;
+const live = s => !!s && s.getTracks().every(t => t.readyState !== 'ended');
+function stopStream(s) { s?.getTracks().forEach(t => t.stop()); }
+async function acquire(mediaDevices) {
+  if (warm && live(warm.stream)) { clearTimeout(warm.timer); const s = warm.stream; warm = null; return s; }
+  if (warm) { clearTimeout(warm.timer); stopStream(warm.stream); warm = null; }
+  return mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+}
+function release(stream, keepWarmMs) {
+  if (!stream) return;
+  if (keepWarmMs > 0 && live(stream)) { if (warm) { clearTimeout(warm.timer); if (warm.stream !== stream) stopStream(warm.stream); } warm = { stream, timer: setTimeout(() => { stopStream(stream); warm = null; }, keepWarmMs) }; }
+  else stopStream(stream);
+}
+/** Tắt hẳn luồng đang để ấm (vd. đăng xuất / rời trang). */
+export function releaseWarmCamera() { if (warm) { clearTimeout(warm.timer); stopStream(warm.stream); warm = null; } }
+// Ẩn app / chuyển tab: tắt ngay luồng đang để ấm (đèn camera không sáng khi người dùng không ở trên trang).
+globalThis.document?.addEventListener?.('visibilitychange', () => { if (globalThis.document.visibilityState === 'hidden') releaseWarmCamera(); });
+
+/**
+ * Both native and fallback readers share one stream and an explicit release handle.
+ * `continuous`: không dừng sau mỗi mã – gọi `onCode` cho từng mã, nghỉ `pauseMs` giữa hai lần đọc (một lần đưa mã = một lần đếm);
+ *   cả phiên quét chỉ xin quyền camera một lần.
+ * `keepWarmMs`: giữ luồng sau khi dừng để lần mở kế tiếp không phải xin quyền lại.
+ */
+export async function startBarcodeCamera(video, onCode, { mediaDevices = navigator.mediaDevices, Detector = globalThis.BarcodeDetector, reader = loadReader, signal, continuous = false, pauseMs = 1200, keepWarmMs = 0, now = () => Date.now() } = {}) {
   if (!mediaDevices?.getUserMedia) throw Error('Trình duyệt chưa hỗ trợ camera. Dùng Safari/Chrome mới hoặc máy quét cầm tay.');
   if (globalThis.isSecureContext === false) throw Error('Camera cần truy cập CRM qua HTTPS.');
   video.autoplay = true; video.playsInline = true; video.muted = true;
-  let stopped = false, stream, controls, timer;
-  const stop = () => { stopped = true; clearTimeout(timer); controls?.stop(); stream?.getTracks().forEach(t => t.stop()); video.srcObject = null; signal?.removeEventListener('abort', stop); };
+  let stopped = false, stream, feed, controls, timer, pausedUntil = 0;
+  const stop = () => { if (stopped) return; stopped = true; clearTimeout(timer); controls?.stop(); if (feed && feed !== stream) stopStream(feed); release(stream, keepWarmMs); video.srcObject = null; signal?.removeEventListener('abort', stop); };
   signal?.addEventListener('abort', stop, { once: true });
   if (signal?.aborted) { stop(); return { stop }; }
   const found = code => {
     if (stopped || !String(code || '').trim()) return;
+    if (continuous) { if (now() < pausedUntil) return; pausedUntil = now() + pauseMs; onCode(String(code).trim()); return; }
     stop();
     onCode(String(code).trim());
   };
@@ -34,8 +60,8 @@ export async function startBarcodeCamera(video, onCode, { mediaDevices = navigat
   }
   try {
     if (stopped || signal?.aborted) return { stop };
-    stream = await mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-    if (stopped || signal?.aborted) { stop(); return { stop }; }
+    stream = await acquire(mediaDevices);
+    if (stopped || signal?.aborted) { const s = stream; stream = null; release(s, keepWarmMs); return { stop }; }
     if (detector) {
       video.srcObject = stream; await video.play();
       const tick = async () => {
@@ -47,7 +73,9 @@ export async function startBarcodeCamera(video, onCode, { mediaDevices = navigat
     } else {
       const lib = await reader();
       if (stopped) return { stop };
-      controls = await new lib.BrowserMultiFormatReader().decodeFromStream(stream, video, result => { if (result) found(result.getText()); });
+      // ZXing tự tắt luồng khi dừng: đưa cho nó bản sao (không cần xin quyền) để luồng gốc còn dùng lại được khi để ấm.
+      feed = keepWarmMs > 0 && typeof stream.clone === 'function' ? stream.clone() : stream;
+      controls = await new lib.BrowserMultiFormatReader().decodeFromStream(feed, video, result => { if (result) found(result.getText()); });
       if (stopped) controls.stop();
     }
     return { stop };
