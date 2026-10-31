@@ -114,7 +114,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
   router.post('/hr/payroll/:month/confirm', write(async c => {
     const m=month(c.params.month),me=actor(c).id,body=await readJson(c.req,2000),db=c.env.db,b=await buildPayroll(db,m,deps.revenueOf,undefined,deps.crmFactsOf,true);
     const open=b.rows.filter(r=>!r.slip&&r.profile.effectiveMonth!==null);
-    if(open.some(r=>r.calc.kpiNetBasis?.issues))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
+    if(open.some(r=>r.calc.kpiNetBasis?.issues&&r.calc.kpiNetBasis.rate>0))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
     if(open.some(r=>r.calc.salesCrm?.apply||r.calc.kpiNetBasis)&&body.confirmationHash!==b.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
     for(const row of open){const runId=crypto.randomUUID();await db.insert(hrPayslips).values({...slipValues(row,me,''),data:JSON.stringify({...JSON.parse(slipValues(row,me,'').data),runId}),month:m});if(row.calc.salesCrm?.bonusApply??row.calc.salesCrm?.apply)await reserveAwards(db,row.member.id,m,runId,row.calc.salesCrm.awards);}
     return json({ok:true,confirmed:open.length});
@@ -204,7 +204,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 2_000);
     await assertOpen(db, id, m);
     const board=await buildPayroll(db,m,deps.revenueOf,[id],deps.crmFactsOf,true),[row]=board.rows;
-    if(row?.calc.kpiNetBasis?.issues)throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
+    if(row?.calc.kpiNetBasis?.issues&&row.calc.kpiNetBasis.rate>0)throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
     if (!row || row.profile.effectiveMonth === null) throw new AppError(400, 'Chưa đặt hồ sơ lương cho nhân viên này.');
     if((row.calc.salesCrm?.apply||row.calc.kpiNetBasis)&&b.confirmationHash!==board.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
     const runId=crypto.randomUUID(),values=slipValues(row,actor(c).id,text(b.note,HR_LIMITS.note));

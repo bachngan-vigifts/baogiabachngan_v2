@@ -61,3 +61,10 @@ test('net commission matches canonical order rows: ignores blank placeholders an
  await f.db.update(quotations).set({data:JSON.stringify({rows:[{name:' ',qty:1,price:0},{...f.row,manualLine:true,sku:'SERVICE-LABEL',commission:{excluded:true}},{...f.row,qty:0}]})}).where(eq(quotations.id,'net-quote'));
  const p=(await f.overview()).data.payroll.payslip;assert.equal(p.kpiNetBasis.issues,0);assert.equal(p.kpiNetBasis.netRevenue,100000000);assert.equal(amount(p,'kpiBonus'),1200000);assert.equal((await f.confirm()).status,201);
 });
+
+test('below 60% has no KPI reward: missing commission does not block the unrelated base salary',async()=>{
+ const f=await sale();await f.salary({mealAllowance:false,contractBonusEnabled:false});
+ await f.call('/hr/members/emp/inputs/2026-10',f.mgr,'PUT',{workDays:26,kpiOverride:0.5});
+ await f.db.update(quotations).set({data:JSON.stringify({rows:[{...f.row,commission:undefined}]})}).where(eq(quotations.id,'net-quote'));
+ const p=(await f.overview()).data.payroll.payslip;assert.equal(p.kpiNetBasis.issues,1);assert.equal(p.kpiNetBasis.rate,0);assert.equal(amount(p,'kpiBonus'),0);assert.equal(amount(p,'salaryByDays'),1000000);assert.equal((await f.confirm()).status,201);
+});

@@ -41,10 +41,10 @@ export const PARAM_FIELDS = [
   { key: 'mealOffBn', group: 'Phụ cấp & tăng ca', label: 'Số ngày trừ cơm – Bách Ngân', value: 1, kind: 'number' },
   { key: 'mealOffLock', group: 'Phụ cấp & tăng ca', label: 'Số ngày trừ cơm – Lock', value: 0, kind: 'number' },
   // Thưởng KPI – Sale
-  { key: 'kpiHigh', group: 'Thưởng KPI – Sale', label: 'Ngưỡng KPI CV mức cao', value: 0.9, kind: 'percent' },
-  { key: 'kpiHighRate', group: 'Thưởng KPI – Sale', label: 'Tỷ lệ thưởng DS – mức cao', value: 0.012, kind: 'percent', note: 'File gốc 1,2% (chính sách ghi 1%)' },
-  { key: 'kpiLow', group: 'Thưởng KPI – Sale', label: 'Ngưỡng KPI CV mức thấp', value: 0.6, kind: 'percent' },
-  { key: 'kpiLowRate', group: 'Thưởng KPI – Sale', label: 'Tỷ lệ thưởng DS – mức thấp', value: 0.005, kind: 'percent', note: 'Dưới ngưỡng thấp: không thưởng' },
+  { key: 'kpiHigh', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Ngưỡng KPI CV mức cao', value: 0.9, kind: 'percent' },
+  { key: 'kpiHighRate', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Tỷ lệ thưởng DS – mức cao', value: 0.012, kind: 'percent', note: 'Chỉ dùng cho kỳ trước chính sách doanh số net.' },
+  { key: 'kpiLow', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Ngưỡng KPI CV mức thấp', value: 0.6, kind: 'percent' },
+  { key: 'kpiLowRate', group: 'Thưởng KPI Sale — chính sách cũ', label: 'Tỷ lệ thưởng DS – mức thấp', value: 0.005, kind: 'percent', note: 'Dưới ngưỡng thấp: không thưởng' },
   // KPI công việc – Sale (sheet "KPI CV")
   { key: 'kpiNewCustomers', group: 'KPI công việc – Sale', label: 'Chỉ tiêu KH mới / tháng', value: 96, kind: 'number' },
   { key: 'kpiNewCustomersWeight', group: 'KPI công việc – Sale', label: 'Trọng số KH mới', value: 0.1, kind: 'percent' },

@@ -103,7 +103,7 @@ export function initMemberDetail(deps) {
       <div class="md-slip">
         <div class="card-title-row"><h3>Phiếu lương ${esc(monthLabel(d.month).toLowerCase())}</h3>${pill(SLIP, s.status)}</div>
         <p class="muted small">${esc(GROUP[s.group] || '')}${s.positionLabel ? ' · ' + esc(s.positionLabel) : ''} · ${s.workDays} ngày làm việc${inp.workDays === null ? ' (theo chấm công)' : ' (nhập tay)'}</p>
-        ${s.kpiNetBasis?`<p class="small"><b>DS net tính thưởng KPI: ${money(s.kpiNetBasis.netRevenue)}</b><br>Doanh số chưa VAT − hoa hồng khách hàng. ${s.kpiNetBasis.issues?`<span class="error">${s.kpiNetBasis.issues} đơn thiếu căn cứ hoa hồng; cần đối chiếu trước khi chốt.</span>`:''}</p>`:''}${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
+        ${s.kpiNetBasis?`<p class="small"><b>DS net tính thưởng KPI: ${money(s.kpiNetBasis.netRevenue)}</b><br>Doanh số chưa VAT − hoa hồng khách hàng. ${s.kpiNetBasis.issues?`<span class="error">${s.kpiNetBasis.issues} đơn thiếu căn cứ hoa hồng${s.kpiNetBasis.rate>0?'; cần đối chiếu trước khi chốt thưởng':'; chưa phát sinh thưởng do KPI dưới 60%' }.</span>`:''}</p>`:''}${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
           ${shown(s.income).map(l => row(l)).join('')}
           ${s.group==='sale'&&(pr.kpiEligible===false||s.income.some(l=>['contractBonus','contractBonusAdjustment'].includes(l.key)&&l.amount))?`<tr><td colspan="2"><button class="btn secondary small" data-act="contract-bonus">${s.salesCrm?.kpiEligible===false||pr.kpiEligible===false?'Xem thưởng sao HĐKT và thanh lý':'Xem KPI & thưởng HĐKT'}</button>${!s.salesCrm?'<p class="muted small">Chưa bật đối chiếu thưởng CRM cho tháng này. Manager cài đặt tại Bảng lương → Cài đặt thưởng HĐKT.</p>':''}</td></tr>`:''}
           ${row({ label: 'Tổng thu nhập', amount: s.gross }, 'sum')}
@@ -295,6 +295,7 @@ export function initMemberDetail(deps) {
   function editInputs() {
     const p = st.d.payroll, i = p.input, g = p.profile.payrollGroup, kpi = g === 'sale' && p.profile.kpiEnabled;
     dialog('Số liệu ' + monthLabel(st.month).toLowerCase(), `
+      ${p.payslip.kpiNetBasis?'<p class="muted small span-2">Thưởng KPI dùng doanh số net tự tính từ đơn và hoa hồng. Các ô doanh số dưới đây dùng tính điểm KPI, không ghi đè cơ sở net.</p>':''}
       ${numInput('workDays', `Ngày làm việc (trống = chấm công: ${p.attendanceSummary.worked})`, i.workDays, 'placeholder="Theo chấm công"')}
       ${numInput('overtimeHours', 'Giờ tăng ca', i.overtimeHours || '', 'placeholder="0"')}
       ${g === 'sale' ? `<label>DS tháng (trống = đơn hàng: ${money(p.systemRevenue)})<input name="revenue" data-money inputmode="numeric" value="${i.revenue === null ? '' : Number(i.revenue).toLocaleString('vi-VN')}" placeholder="Theo đơn hàng"></label>
