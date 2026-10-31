@@ -1,0 +1,22 @@
+[
+  {
+    "width": 1280,
+    "kpi120": 950000,
+    "kpi130": 1140000,
+    "net": 95000000,
+    "vatExcluded": true,
+    "customerCommission": 5000000,
+    "starBonus": 0,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "kpi120": 950000,
+    "kpi130": 1140000,
+    "net": 95000000,
+    "vatExcluded": true,
+    "customerCommission": 5000000,
+    "starBonus": 0,
+    "errors": []
+  }
+]

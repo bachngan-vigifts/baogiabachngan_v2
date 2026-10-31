@@ -28,7 +28,7 @@ try{
   assert.equal((await f.salary({kpiEnabled:false,contractBonusEnabled:false})).status,200);
   const {context,page,errors}=await pageFor(width,f.mgr);
   await page.goto(origin+'/#/payroll?month=2026-10');const board=page.locator('#payroll-board');
-  await board.getByRole('heading',{name:'Thưởng Sale / Sale Admin'}).waitFor();assert.match(await board.innerText(),/Chưa bật tính thưởng từ CRM/);
+  await board.getByRole('heading',{name:'Thưởng sao / thanh lý — Sale Admin'}).waitFor();assert.match(await board.innerText(),/Chưa bật tính thưởng từ CRM/);
   await board.getByRole('button',{name:'Cài đặt lương nhân viên',exact:true}).click();await board.getByRole('heading',{name:'Cài đặt lương nhân viên'}).waitFor();
   const employeeRow=board.locator('tbody tr').filter({has:page.locator('a[href^="#/members/emp?"]')});await employeeRow.getByRole('link',{name:'Cài đặt lương',exact:true}).click();
   const member=page.locator('#member-detail');await member.locator('[data-act="salary"]').first().waitFor();await member.locator('[data-act="salary"]').first().click();

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
 import {mergeParams,validateParams,DEFAULT_PARAMS} from '../../src/modules/hr/domain/params.ts';
 import {hrContractBonusEntries} from '../../src/modules/hr/contract-bonus-schema.ts';
+import {salesOrders,salesContracts} from '../../src/modules/sales/schema.ts';
 import {hrPayrollSettings} from '../../src/modules/hr/schema.ts';
 import {assertActivityKpiOpen} from '../../src/modules/hr/api/activity-lock.ts';
 import {setupSalesPayroll} from '../helpers/sales-payroll-fixture.ts';
@@ -45,8 +46,8 @@ test('KPI-only settlement never reserves preview contract rewards; reward-only s
 });
 
 test('previously stored combined policy continues paying contract rewards without a new parameter or migration',async()=>{
- const f=await setupSalesPayroll();await f.salary();const legacy={...DEFAULT_PARAMS,salesAutomationFrom:202610,salesAutomationApply:1,kpiNewCustomersOver:0.1} as Record<string,number>;delete legacy.contractBonusApply;delete legacy.contractBonusFrom;
- await f.db.insert(hrPayrollSettings).values({effectiveMonth:'2026-10',params:JSON.stringify(legacy),updatedBy:'mgr',updatedAt:f.stamp});
- const p=(await f.overview()).data.payroll.payslip;assert.equal(p.salesCrm.bonusApply,true);assert.equal(amount(p,'contractBonus'),50000);
- assert.equal((await f.confirm()).status,201);assert.equal((await f.db.select().from(hrContractBonusEntries).where(eq(hrContractBonusEntries.memberId,'emp'))).length,1);
+ const f=await setupSalesPayroll();await f.salary({effectiveMonth:'2026-09'});await f.db.update(salesOrders).set({orderDate:'2026-09-15'}).where(eq(salesOrders.id,'liq-order'));await f.db.update(salesContracts).set({signedDate:'2026-09-15'}).where(eq(salesContracts.id,'liq-contract'));const legacy={...DEFAULT_PARAMS,salesAutomationFrom:202609,salesAutomationApply:1,kpiNewCustomersOver:0.1} as Record<string,number>;delete legacy.contractBonusApply;delete legacy.contractBonusFrom;
+ await f.db.insert(hrPayrollSettings).values({effectiveMonth:'2026-09',params:JSON.stringify(legacy),updatedBy:'mgr',updatedAt:f.stamp});
+ const p=(await f.overview(f.mgr,'2026-09')).data.payroll.payslip;assert.equal(p.salesCrm.bonusApply,true);assert.equal(amount(p,'contractBonus'),50000);
+ assert.equal((await f.confirm('2026-09')).status,201);assert.equal((await f.db.select().from(hrContractBonusEntries).where(eq(hrContractBonusEntries.memberId,'emp'))).length,1);
 });

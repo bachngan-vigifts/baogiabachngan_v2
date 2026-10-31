@@ -157,6 +157,7 @@ export const GROUP_DEDUCTION: Record<PayrollGroup, LineKey[]> = {
 export interface PayslipCalc {
   group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
+  kpiNetBasis?:{netRevenue:number;issues:number;rate:number};
   kpi: KpiCvResult | null;snapshotUnavailable?:boolean;
   salesCrm?:{apply:boolean;bonusApply?:boolean;kpiApply?:boolean;from:string;kpiEligible?:boolean;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};
 }
@@ -177,12 +178,18 @@ export function lockSalesBonus(p: PayrollParams, revenue: number) {
   return revenue * (revenue >= p.lockHigh ? p.lockHighRate : p.lockRate) / p.lockSplit;
 }
 /** Tỷ lệ thưởng KPI DS (Sale) theo KPI CV. */
+export function netKpiBonusRate(p:PayrollParams,kpi:number|null){
+  if(kpi===null)return 0;
+  // Ignore floating-point noise at exact 60/90/120% boundaries.
+  const epsilon=1e-12;
+  return kpi+epsilon<0.6?0:kpi+epsilon<0.9?p.saleKpiNetLowRate:kpi<=1.2+epsilon?p.saleKpiNetHighRate:p.saleKpiNetOverRate;
+}
 export const kpiBonusRate = (p: PayrollParams, kpi: number | null) => kpi === null ? 0 : kpi >= p.kpiHigh ? p.kpiHighRate : kpi >= p.kpiLow ? p.kpiLowRate : 0;
 
 export function computePayslip(a: {
   profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
   /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
-  attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;contractBonus?:number;contractBonusAdjustment?:number;
+  attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;kpiNetRevenue?:number;kpiNetRevenueIssues?:number;contractBonus?:number;contractBonusAdjustment?:number;
 }): PayslipCalc {
   const { profile: f, params: p, input: inp, groupMonth: gm } = a, g = f.payrollGroup;
   const adj = (k: AdjustmentKind) => a.adjustments.filter(x => x.kind === k).reduce((s, x) => s + x.amount, 0);
@@ -193,12 +200,12 @@ export function computePayslip(a: {
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;
   const salesBonus = !f.teamBonus ? 0 : g === 'bn' ? bnSalesBonus(p, gm.bnRevenue, gm.bnAvgRevenue) : g === 'lock' ? lockSalesBonus(p, gm.lockRevenue) : 0;
-  const rate = kpiBonusRate(p, kpi?.used ?? null), phone = g === 'lock' ? 0 : f.phoneAllowance, phoneAdvance = adj('phone_advance');
+  const netPolicy=a.kpiNetRevenue!==undefined,rate = netPolicy?netKpiBonusRate(p,kpi?.used??null):kpiBonusRate(p, kpi?.used ?? null),bonusRevenue=netPolicy?Math.max(0,a.kpiNetRevenue!):revenue, phone = g === 'lock' ? 0 : f.phoneAllowance, phoneAdvance = adj('phone_advance');
   const amounts: Record<LineKey, [number, string]> = {
     salaryByDays: [lcb * days / p.standardDays, `${vnd(lcb)} × ${days} ngày ÷ ${p.standardDays}`],
     capacity: [f.capacityCoef * p.capacityUnit, f.capacityCoef ? `Hệ số ${f.capacityCoef} × ${vnd(p.capacityUnit)}` : ''],
     responsibility: [responsibility, f.responsibilityMode === 'per_day' ? `${vnd(p.responsibilityDay)} × ${days} ngày` : f.responsibilityMode === 'prorated' ? `${vnd(f.responsibility)} × ${days} ÷ ${p.standardDays}` : ''],
-    kpiBonus: [revenue * rate, kpi ? `KPI CV ${pct(kpi.used)} → ${pct(rate)} × DS ${vnd(revenue)}` : ''],
+    kpiBonus: [bonusRevenue * rate, kpi ? `KPI CV ${pct(kpi.used)} → ${pct(rate)} × ${netPolicy?'DS net':'DS'} ${vnd(bonusRevenue)}` : ''],
     outputBonus: [inp.outputQty * f.outputRate, inp.outputQty ? `${inp.outputQty.toLocaleString('vi-VN')} × ${f.outputRate < 1 ? pct(f.outputRate) : vnd(f.outputRate)}` : ''],
     quarterBonus: [inp.quarterBonus ?? a.quarterBonusAuto, inp.quarterBonus === null && a.quarterBonusAuto ? 'Tự tính theo DS quý của team' : ''],
     salesBonus: [salesBonus, salesBonus ? (g === 'bn' ? `DS cửa hàng ${vnd(gm.bnRevenue)} (TB 6 tháng ${vnd(gm.bnAvgRevenue)}) ÷ ${p.bnSplit}` : `DS team ${vnd(gm.lockRevenue)} ÷ ${p.lockSplit}`) : ''],
@@ -221,7 +228,7 @@ export function computePayslip(a: {
   const line = (key: LineKey): PayLine => ({ key, label: LINE_LABEL[key], amount: round(amounts[key][0]), note: amounts[key][1] });
   const income = GROUP_INCOME[g].map(line), deductions = GROUP_DEDUCTION[g].map(line);
   const gross = income.reduce((s, l) => s + l.amount, 0), deductionTotal = deductions.reduce((s, l) => s + l.amount, 0);
-  return { group: g, positionLabel: f.positionLabel, workDays: days, baseSalary: lcb, revenue, income, deductions, gross, deductionTotal, net: gross - deductionTotal, kpi };
+  return { ...(netPolicy?{kpiNetBasis:{netRevenue:a.kpiNetRevenue!,issues:a.kpiNetRevenueIssues||0,rate}}:{}),group: g, positionLabel: f.positionLabel, workDays: days, baseSalary: lcb, revenue, income, deductions, gross, deductionTotal, net: gross - deductionTotal, kpi };
 }
 
 // ---------------- Thưởng quý – team Sale (sheet "Thưởng quý")

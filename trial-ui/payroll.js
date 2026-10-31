@@ -26,10 +26,16 @@ export function initPayroll(deps) {
     return `<h3>Cài đặt lương nhân viên</h3><p class="muted small">Chọn nhân viên để đặt lương cơ bản, phụ cấp, BHXH, tài khoản ngân hàng và quyền hưởng thưởng HĐKT. Hồ sơ lưu theo tháng áp dụng; phiếu đã chốt giữ nguyên.</p>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Nhân viên</th><th>Vị trí</th><th>Bảng lương</th><th>Hồ sơ</th><th>Cài đặt</th></tr></thead><tbody>${st.d.rows.map(r=>`<tr><td class="first">${memberLink(r,r.member.name)}</td><td>${esc(r.profile.positionLabel||r.member.positionId||'—')}</td><td>${esc(st.d.columns.groups[r.profile.payrollGroup]||'—')}</td><td>${r.profile.hasProfile?'Đã thiết lập':'Chưa thiết lập'}</td><td><a class="btn secondary small" href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">Cài đặt lương</a></td></tr>`).join('')}</tbody></table></div>`;
   }
+  function saleKpiPolicyHtml() {
+    const p=st.d.params,from=String(p.saleKpiNetFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
+    if(from==='0'||st.month<from)return '';
+    const pct=n=>new Intl.NumberFormat('vi-VN',{style:'percent',maximumFractionDigits:2}).format(n);
+    return `<section class="approval-box"><h3>Thưởng KPI — Sale</h3><p>Doanh số net = doanh số chưa VAT − hoa hồng khách hàng.</p><p>Dưới 60%: 0 · Từ 60% đến dưới 90%: ${pct(p.saleKpiNetLowRate)} · Từ 90% đến hết 120%: ${pct(p.saleKpiNetHighRate)} · Trên 120%: ${pct(p.saleKpiNetOverRate)} doanh số net.</p><p class="small muted">Sale không tính thưởng sao. Phiếu đã chốt giữ nguyên; phiếu chưa chốt cần đối chiếu đủ căn cứ hoa hồng.</p></section>`;
+  }
   function bonusSetupHtml() {
     const p=st.d.params,from=String(p.contractBonusFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
     const status=from==='0'?'Chưa bật tính thưởng từ CRM':st.month<from?'Bắt đầu từ '+monthLabel(from):p.contractBonusApply===1?'Đang áp dụng vào phiếu lương':'Đang đối chiếu — chưa cộng vào thực nhận';
-    return `<section class="approval-box pr-bonus-setup"><div class="approval-head"><h3>Thưởng Sale / Sale Admin</h3></div><p><b>${esc(status)}</b></p><p class="small">Thưởng sao tính theo giá trị HĐKT trước VAT trong tháng ký; thưởng thanh lý tính khi Manager duyệt. Sale Admin chỉ hưởng thưởng sao và thanh lý, không tính KPI.</p><p class="small">${[1,2,3,4,5].map(n=>`${n} sao: từ ${money(p['contractStar'+n+'From'])} → ${money(p['contractStar'+n+'Amount'])}`).join(' · ')}<br>Thanh lý: ${money(p.contractLiquidationAmount)} / HĐKT.</p><p class="muted small">Để tính thưởng, chọn tháng bắt đầu trong Cài đặt thưởng HĐKT và bật “Hưởng thưởng sao HĐKT và thanh lý” trong hồ sơ lương từng người. Chế độ đối chiếu chưa cộng vào thực nhận.</p><button class="btn ghost small" data-mobile-inline data-tab="profiles">Cài đặt lương và thưởng cho nhân viên</button></section>`;
+    return `<section class="approval-box pr-bonus-setup"><div class="approval-head"><h3>Thưởng sao / thanh lý — Sale Admin</h3></div><p><b>${esc(status)}</b></p><p class="small">Thưởng sao tính theo giá trị HĐKT trước VAT trong tháng ký; thưởng thanh lý tính khi Manager duyệt. Sale Admin chỉ hưởng thưởng sao và thanh lý, không tính KPI. Sale nhận thưởng theo tổng điểm KPI trên doanh số net.</p><p class="small">${[1,2,3,4,5].map(n=>`${n} sao: từ ${money(p['contractStar'+n+'From'])} → ${money(p['contractStar'+n+'Amount'])}`).join(' · ')}<br>Thanh lý: ${money(p.contractLiquidationAmount)} / HĐKT.</p><p class="muted small">Để tính thưởng, chọn tháng bắt đầu trong Cài đặt thưởng HĐKT và bật “Hưởng thưởng sao HĐKT và thanh lý” trong hồ sơ lương từng người. Chế độ đối chiếu chưa cộng vào thực nhận.</p><button class="btn ghost small" data-mobile-inline data-tab="profiles">Cài đặt lương và thưởng cho nhân viên</button></section>`;
   }
 
   function groupTable(g) {
@@ -109,7 +115,7 @@ export function initPayroll(deps) {
       </div>
       <div class="card cd-tabs-card">
         <div class="chips cd-tabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" class="chip ${k === st.tab ? 'active' : ''}" data-tab="${k}">${t}${['sale', 'bn', 'lock'].includes(k) ? ` <b>${d.totals.find(x => x.group === k).people}</b>${missingIn(k) ? ` <small class="danger-text" title="Chưa có hồ sơ lương">+${missingIn(k)}</small>` : ''}` : ''}</button>`).join('')}</div>
-        <div class="cd-tab-body">${['summary','sale'].includes(st.tab)?bonusSetupHtml():''}${st.tab === 'summary' ? summaryHtml() : st.tab === 'profiles' ? profilesHtml() : st.tab === 'transfer' ? transferHtml() : groupTable(st.tab)}</div></div>`;
+        <div class="cd-tab-body">${['summary','sale'].includes(st.tab)?saleKpiPolicyHtml()+bonusSetupHtml():''}${st.tab === 'summary' ? summaryHtml() : st.tab === 'profiles' ? profilesHtml() : st.tab === 'transfer' ? transferHtml() : groupTable(st.tab)}</div></div>`;
     root.querySelectorAll('.cd-tab-body table.data-table').forEach(t => {
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
       t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (i && heads[i] && !td.dataset.label) td.dataset.label = heads[i]; }));

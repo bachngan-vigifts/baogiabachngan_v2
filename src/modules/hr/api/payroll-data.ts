@@ -1,5 +1,5 @@
 import {computeKpiCv} from '../domain/kpi-cv.ts';
-import {kpiBonusRate} from '../domain/payroll.ts';
+import {kpiBonusRate,netKpiBonusRate} from '../domain/payroll.ts';
 import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {awardHistory,proposeAwards} from './contract-bonuses.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
@@ -109,7 +109,8 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     quarterBonuses(db, month, params, gm, revenueOf),
   ]);
   const from=String(params.contractBonusFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2'),kpiFrom=String(params.salesAutomationFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
-  const kpiEnabled=!!crmFactsOf&&kpiFrom!=='0'&&month>=kpiFrom,bonusEnabled=!!crmFactsOf&&from!=='0'&&month>=from,enabled=kpiEnabled||bonusEnabled;
+  const netFrom=String(params.saleKpiNetFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2'),netPolicy=!!crmFactsOf&&netFrom!=='0'&&month>=netFrom;
+  const kpiEnabled=!!crmFactsOf&&kpiFrom!=='0'&&month>=kpiFrom,bonusEnabled=!!crmFactsOf&&from!=='0'&&month>=from,enabled=kpiEnabled||bonusEnabled||netPolicy;
   const kpiApply=kpiEnabled&&params.salesAutomationApply===1,bonusApply=bonusEnabled&&params.contractBonusApply===1;
   const history=bonusEnabled?await awardHistory(db):{accounts:[],entries:[]};
   const facts=enabled?await crmFactsOf!(db,month,[...new Set(history.accounts.map(a=>a.contractId))],lock):{members:new Map(),contracts:[]};
@@ -118,12 +119,12 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const profile = toProfile(profiles.get(m.id), m.positionId), input = toInput(inputs.find(i => i.memberId === m.id));
     const adj = adjustments.filter(a => a.memberId === m.id).map(({ memberId: _m, ...a }) => ({ ...a, createdByName: a.createdByName ?? '' }));
     const attendanceDays = summarizeAttendance(attendance.filter(a => a.memberId === m.id)).worked, systemRevenue = revenues.get(m.id)?.[month] ?? 0;
-    const auto=facts.members.get(m.id)||{newCustomers:0,transactions:0,contracts:0},resolved={...input};
+    const fact=facts.members.get(m.id),auto={newCustomers:fact?.newCustomers||0,transactions:fact?.transactions||0,contracts:fact?.contracts||0},resolved={...input};
     if(kpiEnabled&&profile.kpiEnabled)for(const [key,value]of Object.entries({kpiNewCustomers:auto.newCustomers,kpiTransactions:auto.transactions,kpiContracts:auto.contracts}))if((resolved as any)[key]===null)(resolved as any)[key]=value;
-    const ownAwards=awards.filter(a=>a.memberId===m.id&&(profile.contractBonusEnabled||!a.isNew));
-    const calc = computePayslip({profile,params,input:kpiApply?resolved:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,
+    const ownAwards=awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
+    const calc = computePayslip({profile,params,input:kpiApply?resolved:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
      contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
-    if(enabled){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((input.revenue??systemRevenue)*kpiBonusRate(params,previewKpi?.used??null))};}
+    if(enabled){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
     return { member: m, profile, input, attendanceDays, systemRevenue, adjustments: adj, calc, slip: slips.find(s => s.memberId === m.id) ?? null };
   });
   for(const row of rows){if(![row.calc.gross,row.calc.deductionTotal,row.calc.net].every(Number.isSafeInteger))throw new AppError(400,'Tổng tiền vượt giới hạn tính toán an toàn. Kiểm tra tham số.');row.context={params,paramsMonth:effectiveMonth,profile:row.profile,input:row.input,systemRevenue:row.systemRevenue,attendanceDays:row.attendanceDays};}
